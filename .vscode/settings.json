@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "ch32fun.h": "c",
+        "fun_button.h": "c",
+        "modstorage.h": "c",
+        "ch32v003_spi.h": "c"
+    }
+}
