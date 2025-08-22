@@ -1098,7 +1098,7 @@ void tft_draw_rect(
      726:	4782                	lw	a5,0(sp)
      728:	4352                	lw	t1,20(sp)
      72a:	4692                	lw	a3,4(sp)
-     72c:	fff78593          	addi	a1,a5,-1 # ffff <lib_i2c.c.bfb73fe7+0x5fdb>
+     72c:	fff78593          	addi	a1,a5,-1 # ffff <lib_i2c.c.bfb73fe7+0x5fbe>
      730:	4632                	lw	a2,12(sp)
      732:	4522                	lw	a0,8(sp)
      734:	959a                	add	a1,a1,t1
@@ -1487,7 +1487,7 @@ i2c_err_t i2c_ping(const uint8_t addr)
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      9b6:	40005337          	lui	t1,0x40005
 	return (status & status_mask) == status_mask; 
-     9ba:	08268693          	addi	a3,a3,130 # 70082 <lib_i2c.c.bfb73fe7+0x6605e>
+     9ba:	08268693          	addi	a3,a3,130 # 70082 <lib_i2c.c.bfb73fe7+0x66041>
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      9be:	41435703          	lhu	a4,1044(t1) # 40005414 <_eusrstack+0x20004c14>
      9c2:	01071613          	slli	a2,a4,0x10
@@ -1856,7 +1856,7 @@ static inline uint32_t __get_MTVAL(void)
 				ch=*(fmt++);
      c8c:	4605                	li	a2,1
 			while (ch >= '0' && ch <= '9') {
-     c8e:	fd068593          	addi	a1,a3,-48 # 7fffd0 <lib_i2c.c.bfb73fe7+0x7f5fac>
+     c8e:	fd068593          	addi	a1,a3,-48 # 7fffd0 <lib_i2c.c.bfb73fe7+0x7f5f8f>
      c92:	0ff5f313          	andi	t1,a1,255
      c96:	fe6573e3          	bgeu	a0,t1,c7c <mini_vpprintf+0x74>
      c9a:	c219                	beqz	a2,ca0 <mini_vpprintf+0x98>
@@ -2117,7 +2117,7 @@ uint8_t ssd1306_i2c_error(uint8_t err) {
 */
 uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
      e60:	67e1                	lui	a5,0x18
-     e62:	6a178793          	addi	a5,a5,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe67d>
+     e62:	6a178793          	addi	a5,a5,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe660>
 	int32_t timeout;
 	
 	// wait for not busy
@@ -2176,11 +2176,11 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
      eb0:	000706b7          	lui	a3,0x70
 	I2C1->DATAR = addr<<1;
      eb4:	00f61823          	sh	a5,16(a2)
-     eb8:	6a170713          	addi	a4,a4,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe67d>
+     eb8:	6a170713          	addi	a4,a4,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe660>
 	uint32_t status = I2C1->STAR1 | (I2C1->STAR2<<16);
      ebc:	40005337          	lui	t1,0x40005
 	return (status & event_mask) == event_mask;
-     ec0:	08268693          	addi	a3,a3,130 # 70082 <lib_i2c.c.bfb73fe7+0x6605e>
+     ec0:	08268693          	addi	a3,a3,130 # 70082 <lib_i2c.c.bfb73fe7+0x66041>
 	uint32_t status = I2C1->STAR1 | (I2C1->STAR2<<16);
      ec4:	41435783          	lhu	a5,1044(t1) # 40005414 <_eusrstack+0x20004c14>
      ec8:	01079613          	slli	a2,a5,0x10
@@ -2194,7 +2194,7 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
      ed8:	fad793e3          	bne	a5,a3,e7e <ssd1306_i2c_send.constprop.0+0x1e>
      edc:	67e1                	lui	a5,0x18
      ede:	95aa                	add	a1,a1,a0
-     ee0:	6a178793          	addi	a5,a5,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe67d>
+     ee0:	6a178793          	addi	a5,a5,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe660>
 		while(!(I2C1->STAR1 & I2C_STAR1_TXE) && (timeout--));
      ee4:	40005337          	lui	t1,0x40005
 	while(sz--) {
@@ -2204,7 +2204,7 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
 	uint32_t status = I2C1->STAR1 | (I2C1->STAR2<<16);
      ef0:	40005537          	lui	a0,0x40005
 	return (status & event_mask) == event_mask;
-     ef4:	08460613          	addi	a2,a2,132 # 70084 <lib_i2c.c.bfb73fe7+0x66060>
+     ef4:	08460613          	addi	a2,a2,132 # 70084 <lib_i2c.c.bfb73fe7+0x66043>
 	uint32_t status = I2C1->STAR1 | (I2C1->STAR2<<16);
      ef8:	41455703          	lhu	a4,1044(a0) # 40005414 <_eusrstack+0x20004c14>
      efc:	40050693          	addi	a3,a0,1024
@@ -2238,7 +2238,7 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
      f2c:	1007e793          	ori	a5,a5,256
      f30:	00f71023          	sh	a5,0(a4)
      f34:	6761                	lui	a4,0x18
-     f36:	6a170713          	addi	a4,a4,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe67d>
+     f36:	6a170713          	addi	a4,a4,1697 # 186a1 <lib_i2c.c.bfb73fe7+0xe660>
 	return (status & event_mask) == event_mask;
      f3a:	0685                	addi	a3,a3,1
 	uint32_t status = I2C1->STAR1 | (I2C1->STAR2<<16);
@@ -2261,7 +2261,7 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
 
 	// set STOP condition
 	I2C1->CTLR1 |= I2C_CTLR1_STOP;
-     f64:	0006d783          	lhu	a5,0(a3) # 30000 <lib_i2c.c.bfb73fe7+0x25fdc>
+     f64:	0006d783          	lhu	a5,0(a3) # 30000 <lib_i2c.c.bfb73fe7+0x25fbf>
 	return 0;
 }
      f68:	4501                	li	a0,0
@@ -2274,9 +2274,9 @@ uint8_t ssd1306_i2c_send(uint8_t addr, const uint8_t *data, int sz) {
      f76:	8082                	ret
 
 00000f78 <ssd1306_cmd>:
-#endif
-
-#endif
+	.addr = 0x3c,				// Default address for SSD1306
+	.regb = 1,
+};
 
 /* send OLED command byte */
 uint8_t ssd1306_cmd(uint8_t cmd) {
@@ -2429,6 +2429,10 @@ uint8_t ssd1306_data(uint8_t *data, int sz) {
     103e:	00140593          	addi	a1,s0,1
     1042:	850a                	mv	a0,sp
     1044:	3d31                	jal	e60 <ssd1306_i2c_send.constprop.0>
+	uint8_t pkt[33];
+	// pkt[0] = 0;
+	// pkt[1] = *data;
+	// return i2c_write_raw(&dev_ssd1306, pkt, sz+1);
 	return ssd1306_pkt_send(data, sz, 0);
 }
     1046:	50b2                	lw	ra,44(sp)
@@ -2677,7 +2681,7 @@ void i2c_scan_callback(const uint8_t addr) {
 		RCC->CFGR0 = BASE_CFGR0;
     11ce:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
-    11d2:	08170713          	addi	a4,a4,129 # 1080081 <lib_i2c.c.bfb73fe7+0x107605d>
+    11d2:	08170713          	addi	a4,a4,129 # 1080081 <lib_i2c.c.bfb73fe7+0x1076040>
     11d6:	c398                	sw	a4,0(a5)
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;       		// +1 Cycle Latency
 	#endif
@@ -2758,7 +2762,7 @@ void systick_init(void)
 	SysTick->CTLR = 0x0000;
     122a:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
-    122e:	b7f70713          	addi	a4,a4,-1153 # bb7f <lib_i2c.c.bfb73fe7+0x1b5b>
+    122e:	b7f70713          	addi	a4,a4,-1153 # bb7f <lib_i2c.c.bfb73fe7+0x1b3e>
     1232:	cb98                	sw	a4,16(a5)
 
 	// Reset the Count Register, and the global millis counter to 0
@@ -2776,7 +2780,7 @@ void systick_init(void)
 	systick_init();			//! required for millis()
 	Delay_Ms(100);
     1242:	00494537          	lui	a0,0x494
-    1246:	e0050513          	addi	a0,a0,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489ddc>
+    1246:	e0050513          	addi	a0,a0,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489dbf>
     124a:	00776713          	ori	a4,a4,7
     124e:	c398                	sw	a4,0(a5)
 	NVIC->IENR[((uint32_t)(IRQn) >> 5)] = (1 << ((uint32_t)(IRQn) & 0x1F));
@@ -2982,12 +2986,12 @@ void modEncoder_setup(M_Encoder *model) {
 	if(dev->clkr <= 100000)
     13ae:	431c                	lw	a5,0(a4)
     13b0:	6761                	lui	a4,0x18
-    13b2:	6a070713          	addi	a4,a4,1696 # 186a0 <lib_i2c.c.bfb73fe7+0xe67c>
+    13b2:	6a070713          	addi	a4,a4,1696 # 186a0 <lib_i2c.c.bfb73fe7+0xe65f>
     13b6:	00179593          	slli	a1,a5,0x1
     13ba:	5af76663          	bltu	a4,a5,1966 <main+0x750>
 		i2c_conf = (FUNCONF_SYSTEM_CORE_CLOCK / (2 * dev->clkr)) & I2C_CKCFGR_CCR;
     13be:	02dc7537          	lui	a0,0x2dc7
-    13c2:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.bfb73fe7+0x2dbcbdc>
+    13c2:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.bfb73fe7+0x2dbcbbf>
     13c6:	ce3fe0ef          	jal	ra,a8 <__hidden___udivsi3>
     13ca:	14fd                	addi	s1,s1,-1
     13cc:	8d65                	and	a0,a0,s1
@@ -3105,7 +3109,7 @@ void modI2C_setup() {
     14bc:	ca98                	sw	a4,16(a3)
     Delay_Ms(100);
     14be:	00494737          	lui	a4,0x494
-    14c2:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489ddc>
+    14c2:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489dbf>
     14c6:	d8ffe0ef          	jal	ra,254 <DelaySysTick>
     funDigitalWrite(rst_pin, 1);
     14ca:	400117b7          	lui	a5,0x40011
@@ -3116,7 +3120,7 @@ void modI2C_setup() {
     funDigitalWrite(rst_pin, 1);
     14d8:	ca90                	sw	a2,16(a3)
     Delay_Ms(100);
-    14da:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489ddc>
+    14da:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489dbf>
     14de:	d77fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, 0x01);          // Software reset
     14e2:	0004c483          	lbu	s1,0(s1)
@@ -3125,7 +3129,7 @@ void modI2C_setup() {
     14ea:	e89fe0ef          	jal	ra,372 <write_command_8>
     Delay_Ms(200);
     14ee:	00928537          	lui	a0,0x928
-    14f2:	c0050513          	addi	a0,a0,-1024 # 927c00 <lib_i2c.c.bfb73fe7+0x91dbdc>
+    14f2:	c0050513          	addi	a0,a0,-1024 # 927c00 <lib_i2c.c.bfb73fe7+0x91dbbf>
     14f6:	d5ffe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_SLPOUT);
     14fa:	45c5                	li	a1,17
@@ -3133,7 +3137,7 @@ void modI2C_setup() {
     14fe:	e75fe0ef          	jal	ra,372 <write_command_8>
     Delay_Ms(100);
     1502:	00494737          	lui	a4,0x494
-    1506:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489ddc>
+    1506:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.bfb73fe7+0x489dbf>
     150a:	d4bfe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_MADCTL);
     150e:	03600593          	li	a1,54
@@ -3201,7 +3205,7 @@ void modI2C_setup() {
     15a2:	e27fe0ef          	jal	ra,3c8 <tft_send_DMA>
     Delay_Ms(10);
     15a6:	000757b7          	lui	a5,0x75
-    15aa:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2dc>
+    15aa:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2bf>
     15ae:	ca7fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, 0x26);  //! Gamma disable
     15b2:	02600593          	li	a1,38
@@ -3217,7 +3221,7 @@ void modI2C_setup() {
     15ca:	da9fe0ef          	jal	ra,372 <write_command_8>
     Delay_Ms(10);
     15ce:	000757b7          	lui	a5,0x75
-    15d2:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2dc>
+    15d2:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2bf>
     15d6:	c7ffe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_DISPON);
     15da:	02900593          	li	a1,41
@@ -3225,7 +3229,7 @@ void modI2C_setup() {
     15e0:	d93fe0ef          	jal	ra,372 <write_command_8>
     Delay_Ms(10);
     15e4:	000757b7          	lui	a5,0x75
-    15e8:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2dc>
+    15e8:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.bfb73fe7+0x6b2bf>
     15ec:	c69fe0ef          	jal	ra,254 <DelaySysTick>
 
 
@@ -3234,7 +3238,7 @@ void modST7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
     tft_init(rst_pin, dc_pin);
     tft_fill_rect(0, 0, 160, 128, PURPLE);
     15f0:	6721                	lui	a4,0x8
-    15f2:	80f70713          	addi	a4,a4,-2033 # 780f <ch32_mess.c.3c7569de+0x3596>
+    15f2:	80f70713          	addi	a4,a4,-2033 # 780f <ch32_mess.c.0fa46a7d+0x3591>
     15f6:	08000693          	li	a3,128
     15fa:	0a000613          	li	a2,160
     15fe:	4581                	li	a1,0
@@ -3291,7 +3295,7 @@ void tft_test() {
     uint8_t     position  = 11;
     1654:	472d                	li	a4,11
     str[position] = '\0';  // End of the string.
-    1656:	d1548493          	addi	s1,s1,-747 # 75bcd15 <lib_i2c.c.bfb73fe7+0x75b2cf1>
+    1656:	d1548493          	addi	s1,s1,-747 # 75bcd15 <lib_i2c.c.bfb73fe7+0x75b2cd4>
         str[--position] = num % 10 + '0';
     165a:	177d                	addi	a4,a4,-1
     165c:	0ff77713          	andi	a4,a4,255
@@ -3431,7 +3435,7 @@ void tft_line_tests() {
     17be:	6741                	lui	a4,0x10
     17c0:	04600613          	li	a2,70
     17c4:	4795                	li	a5,5
-    17c6:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.bfb73fe7+0x57dc>
+    17c6:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.bfb73fe7+0x57bf>
     17ca:	04600693          	li	a3,70
     17ce:	4581                	li	a1,0
     17d0:	4501                	li	a0,0
@@ -3492,10 +3496,10 @@ void tft_line_tests() {
     1876:	07a9                	addi	a5,a5,10
     1878:	faf42e23          	sw	a5,-68(s0)
     187c:	003c07b7          	lui	a5,0x3c0
-    1880:	02878793          	addi	a5,a5,40 # 3c0028 <lib_i2c.c.bfb73fe7+0x3b6004>
+    1880:	02878793          	addi	a5,a5,40 # 3c0028 <lib_i2c.c.bfb73fe7+0x3b5fe7>
     1884:	fcf42023          	sw	a5,-64(s0)
     1888:	004607b7          	lui	a5,0x460
-    188c:	05078793          	addi	a5,a5,80 # 460050 <lib_i2c.c.bfb73fe7+0x45602c>
+    188c:	05078793          	addi	a5,a5,80 # 460050 <lib_i2c.c.bfb73fe7+0x45600f>
     1890:	fcf42223          	sw	a5,-60(s0)
     // tft_draw_poly2(triangle, 3, RED, 3);
 
@@ -3586,7 +3590,7 @@ void tft_line_tests() {
 		i2c_conf = (FUNCONF_SYSTEM_CORE_CLOCK / (3 * dev->clkr)) & I2C_CKCFGR_CCR;
     1966:	02dc7537          	lui	a0,0x2dc7
     196a:	95be                	add	a1,a1,a5
-    196c:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.bfb73fe7+0x2dbcbdc>
+    196c:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.bfb73fe7+0x2dbcbbf>
     1970:	f38fe0ef          	jal	ra,a8 <__hidden___udivsi3>
     1974:	14fd                	addi	s1,s1,-1
     1976:	8d65                	and	a0,a0,s1
@@ -3982,7 +3986,7 @@ void tft_line_tests() {
     1d16:	8f3ff06f          	j	1608 <main+0x3f2>
     1d1a:	fff70793          	addi	a5,a4,-1
             int16_t key = intersections[i];
-    1d1e:	00261503          	lh	a0,2(a2) # 10002 <lib_i2c.c.bfb73fe7+0x5fde>
+    1d1e:	00261503          	lh	a0,2(a2) # 10002 <lib_i2c.c.bfb73fe7+0x5fc1>
     1d22:	07e2                	slli	a5,a5,0x18
     1d24:	87e1                	srai	a5,a5,0x18
     1d26:	85b2                	mv	a1,a2
@@ -4024,7 +4028,7 @@ void tft_line_tests() {
     1d6c:	6741                	lui	a4,0x10
     1d6e:	85b6                	mv	a1,a3
     1d70:	4785                	li	a5,1
-    1d72:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.bfb73fe7+0x57dc>
+    1d72:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.bfb73fe7+0x57bf>
     1d76:	f8642823          	sw	t1,-112(s0)
     1d7a:	f8542a23          	sw	t0,-108(s0)
     1d7e:	f8742c23          	sw	t2,-104(s0)
@@ -4054,7 +4058,7 @@ void tft_line_tests() {
     1db0:	c436                	sw	a3,8(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
     1db2:	66b1                	lui	a3,0xc
-    1db4:	b8068693          	addi	a3,a3,-1152 # bb80 <lib_i2c.c.bfb73fe7+0x1b5c>
+    1db4:	b8068693          	addi	a3,a3,-1152 # bb80 <lib_i2c.c.bfb73fe7+0x1b3f>
     1db8:	9736                	add	a4,a4,a3
     1dba:	cb98                	sw	a4,16(a5)
 	SysTick->SR = 0x00000000;
@@ -4619,8 +4623,8 @@ static void WS2812FillBuffSec( uint16_t * ptr, int numhalfwords, int tce )
     2168:	4601                	li	a2,0
     216a:	007f45b7          	lui	a1,0x7f4
     216e:	650d                	lui	a0,0x3
-    2170:	04058593          	addi	a1,a1,64 # 7f4040 <lib_i2c.c.bfb73fe7+0x7ea01c>
-    2174:	0ff50513          	addi	a0,a0,255 # 30ff <ch32fun.c.5d7ba795+0xe>
+    2170:	04058593          	addi	a1,a1,64 # 7f4040 <lib_i2c.c.bfb73fe7+0x7e9fff>
+    2174:	0ff50513          	addi	a0,a0,255 # 30ff <ch32fun.c.5d7ba795+0x9>
     2178:	c616                	sw	t0,12(sp)
     217a:	c43e                	sw	a5,8(sp)
     217c:	c236                	sw	a3,4(sp)
@@ -4777,7 +4781,7 @@ void DMA1_Channel3_IRQHandler( void )
     227e:	202d                	jal	22a8 <DMA1_Channel3_IRQHandler+0xb8>
     2280:	6974                	flw	fa3,84(a0)
     2282:	656d                	lui	a0,0x1b
-    2284:	2074756f          	jal	a0,49c8a <lib_i2c.c.bfb73fe7+0x3fc66>
+    2284:	2074756f          	jal	a0,49c8a <lib_i2c.c.bfb73fe7+0x3fc49>
     2288:	74696177          	0x74696177
     228c:	6e69                	lui	t3,0x1a
     228e:	6f662067          	0x6f662067
@@ -4797,7 +4801,7 @@ void DMA1_Channel3_IRQHandler( void )
     22ae:	6c69                	lui	s8,0x1a
     22b0:	6465                	lui	s0,0x19
     22b2:	7420                	flw	fs0,104(s0)
-    22b4:	6e69206f          	j	9499a <lib_i2c.c.bfb73fe7+0x8a976>
+    22b4:	6e69206f          	j	9499a <lib_i2c.c.bfb73fe7+0x8a959>
     22b8:	7469                	lui	s0,0xffffa
     22ba:	4920                	lw	s0,80(a0)
     22bc:	4332                	lw	t1,12(sp)
@@ -4812,7 +4816,7 @@ void DMA1_Channel3_IRQHandler( void )
     22d0:	4220                	lw	s0,64(a2)
     22d2:	7375                	lui	t1,0xffffd
     22d4:	6620                	flw	fs0,72(a2)
-    22d6:	4420726f          	jal	tp,9718 <ch32_mess.c.3c7569de+0x549f>
+    22d6:	4420726f          	jal	tp,9718 <ch32_mess.c.0fa46a7d+0x549a>
     22da:	7665                	lui	a2,0xffff9
     22dc:	6369                	lui	t1,0x1a
     22de:	7365                	lui	t1,0xffff9
@@ -4830,12 +4834,12 @@ void DMA1_Channel3_IRQHandler( void )
     22fa:	0000                	unimp
     22fc:	6548                	flw	fa0,12(a0)
     22fe:	6c6c                	flw	fa1,92(s0)
-    2300:	6542206f          	j	24954 <lib_i2c.c.bfb73fe7+0x1a930>
+    2300:	6542206f          	j	24954 <lib_i2c.c.bfb73fe7+0x1a913>
     2304:	2165                	jal	27ac <font+0x1d4>
     2306:	0000                	unimp
     2308:	6548                	flw	fa0,12(a0)
     230a:	6c6c                	flw	fa1,92(s0)
-    230c:	6f57206f          	j	75200 <lib_i2c.c.bfb73fe7+0x6b1dc>
+    230c:	6f57206f          	j	75200 <lib_i2c.c.bfb73fe7+0x6b1bf>
     2310:	6c72                	flw	fs8,28(sp)
     2312:	2164                	fld	fs1,192(a0)
     2314:	0000                	unimp
@@ -4875,12 +4879,12 @@ void DMA1_Channel3_IRQHandler( void )
     2364:	616d                	addi	sp,sp,240
     2366:	72657473          	csrrci	s0,0x726,10
     236a:	6d20                	flw	fs0,88(a0)
-    236c:	0065646f          	jal	s0,58372 <lib_i2c.c.bfb73fe7+0x4e34e>
+    236c:	0065646f          	jal	s0,58372 <lib_i2c.c.bfb73fe7+0x4e331>
     2370:	7274                	flw	fa3,100(a2)
     2372:	6e61                	lui	t3,0x18
     2374:	74696d73          	csrrsi	s10,0x746,18
     2378:	6d20                	flw	fs0,88(a0)
-    237a:	0065646f          	jal	s0,58380 <lib_i2c.c.bfb73fe7+0x4e35c>
+    237a:	0065646f          	jal	s0,58380 <lib_i2c.c.bfb73fe7+0x4e33f>
     237e:	0000                	unimp
     2380:	7874                	flw	fa3,116(s0)
     2382:	6520                	flw	fs0,72(a0)
@@ -4892,7 +4896,7 @@ void DMA1_Channel3_IRQHandler( void )
     238e:	6e61                	lui	t3,0x18
     2390:	74696d73          	csrrsi	s10,0x746,18
     2394:	6320                	flw	fs0,64(a4)
-    2396:	6c706d6f          	jal	s10,925c <ch32_mess.c.3c7569de+0x4fe3>
+    2396:	6c706d6f          	jal	s10,925c <ch32_mess.c.0fa46a7d+0x4fde>
     239a:	7465                	lui	s0,0xffff9
     239c:	0065                	c.nop	25
 	...

@@ -52,15 +52,19 @@
 
 #endif
 
-/* send OLED command byte */
-uint8_t ssd1306_cmd(uint8_t cmd) {
-	return ssd1306_pkt_send(&cmd, 1, 1);
-}
 
-/* send OLED data packet (up to 32 bytes) */
-uint8_t ssd1306_data(uint8_t *data, int sz) {
-	return ssd1306_pkt_send(data, sz, 0);
-}
+uint8_t ssd1306_cmd(uint8_t cmd);
+uint8_t ssd1306_data(uint8_t *data, int sz);
+
+// /* send OLED command byte */
+// uint8_t ssd1306_cmd(uint8_t cmd) {
+// 	return ssd1306_pkt_send(&cmd, 1, 1);
+// }
+
+// /* send OLED data packet (up to 32 bytes) */
+// uint8_t ssd1306_data(uint8_t *data, int sz) {
+// 	return ssd1306_pkt_send(data, sz, 0);
+// }
 
 #define SSD1306_SETCONTRAST 0x81
 #define SSD1306_SEGREMAP 0xA0
