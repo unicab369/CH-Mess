@@ -55,14 +55,11 @@ void SysTick_Handler(void)
 }
 
 
-// int main(void)
-// {
-// 	SystemInit();
-// 	systick_init();
-
-// 	funGpioInitAll(); // no-op on ch5xx
-
-// 	funPinMode(LED, GPIO_CFGLR_OUT_2Mhz_PP);
-		
-// 	while(1);
-// }
+int8_t systick_handleTimeout(uint32_t *ref_time, uint32_t duration) {
+	uint32_t now = millis();
+	if (now - *ref_time > duration) {
+		*ref_time = now;
+		return 1;
+	}
+	return 0;
+}

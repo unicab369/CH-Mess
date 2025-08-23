@@ -12,7 +12,6 @@
 #endif
 
 
-
 void blink(int n) {
 	for(int i = n-1; i >= 0; i--) {
 		funDigitalWrite( LED, FUN_LOW ); // Turn on LED
@@ -37,19 +36,19 @@ int main()
     WS2812BDMAInit();
 
     uint32_t sec_time = 0;
-    WS2812_resetTask(0);
+    Neo_resetTask(millis());
 
 	while(1) {
         uint32_t now = millis();
 
-        if (now - sec_time > 2000) {
-            sec_time = now;
-            uint8_t data[] = "I like ble 777777";
-            modiSLER_adv_data(data, sizeof(data));
-            blink(1);
-            WS2812_resetTask(now);
-        }
+        // if (now - sec_time > 7000) {
+        //     sec_time = now;
+        //     uint8_t data[] = "I like ble 777777";
+        //     modiSLER_adv_data(data, sizeof(data));
+        //     blink(1);
+        //     Neo_resetTask(now);
+        // }
 
-        WS2812_task();
+        Neo_task();
 	}
 }
