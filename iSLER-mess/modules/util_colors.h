@@ -35,11 +35,11 @@ typedef union {
 
 #define COLOR_BLACK                 MAKE_COLOR_RGB(0x00, 0x00, 0x00)
 #define COLOR_RED_HIGH              MAKE_COLOR_RGB(0xFF, 0x00, 0x00)
-#define COLOR_RED_MED               MAKE_COLOR_RGB(0xAA, 0x00, 0x00)
+#define COLOR_RED_MED               MAKE_COLOR_RGB(0x77, 0x00, 0x00)
 #define COLOR_GREEN_HIGH            MAKE_COLOR_RGB(0x00, 0xFF, 0x00)
-#define COLOR_GREEN_MED             MAKE_COLOR_RGB(0x00, 0xAA, 0x00)
+#define COLOR_GREEN_MED             MAKE_COLOR_RGB(0x00, 0x77, 0x00)
 #define COLOR_BLUE_HIGH             MAKE_COLOR_RGB(0x00, 0x00, 0xFF)
-#define COLOR_BLUE_MED              MAKE_COLOR_RGB(0x00, 0x00, 0xAA)
+#define COLOR_BLUE_MED              MAKE_COLOR_RGB(0x00, 0x00, 0x77)
 
 #define COLOR_MAGENTA_HIGH          MAKE_COLOR_RGB(0xFF, 0x00, 0xFF)
 #define COLOR_CYAN_HIGH             MAKE_COLOR_RGB(0x00, 0xFF, 0xFF)

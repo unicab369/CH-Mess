@@ -35,11 +35,14 @@ int main()
 
     WS2812BDMAInit();
 
-    uint32_t sec_time = 0;
-    Neo_resetTask(millis());
+	uint32_t sec_time = 0;
+	uint32_t now = millis();
+
+    Neo_resetTask(now);
+	// Neo_resetMoveLeds(now);
 
 	while(1) {
-        uint32_t now = millis();
+		now = millis();
 
         // if (now - sec_time > 7000) {
         //     sec_time = now;

@@ -24,3 +24,19 @@ typedef struct {
     uint8_t ref_index;          // Last index used
     uint32_t ref_time;          // Last time the move was updated
 } WS2812_move_t;
+
+
+typedef struct {
+    RGB_t* colors;          // Array of colors to cycle through
+    uint8_t num_colors;     // Number of colors in the array
+    uint8_t ref_index;      // Current color index
+} animation_color_t;
+
+
+void animation_step(animation_color_t* ani) {
+    ani->ref_index = (ani->ref_index + 1) % ani->num_colors;
+}
+
+RGB_t animation_currentColor(animation_color_t* ani) {
+    return ani->colors[ani->ref_index];
+} 
