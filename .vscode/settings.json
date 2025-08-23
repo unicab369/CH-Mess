@@ -8,6 +8,16 @@
         "ssd1306.h": "c",
         "isler.h": "c",
         "stdio.h": "c",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "fun_uart.h": "c",
+        "modpwm.h": "c",
+        "modtimer.h": "c",
+        "fun_gpio.h": "c",
+        "i2c_slave.h": "c",
+        "systick_irq.h": "c",
+        "color_utilities.h": "c",
+        "ws2812b_dma_spi_led_driver.h": "c",
+        "modws2812.h": "c",
+        "modisler.h": "c"
     }
 }
