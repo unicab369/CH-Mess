@@ -3,7 +3,7 @@
 
 #define WS2812DMA_IMPLEMENTATION
 #define WSGRB // For SK6805-EC15
-#define NR_LEDS 10
+#define NR_LEDS 6
 
 #include "ws2812b_dma_spi_led_driver.h"
 #include "color_utilities.h"
@@ -11,6 +11,24 @@
 #define CIRCULAR_BUFF_SIZE 12
 uint8_t circular_buff_idx = 0;
 uint32_t circular_buff[CIRCULAR_BUFF_SIZE] = {0};
+
+#define MAKE_COLOR_RGB(r, g, b)     (0x000000 | ((b & 0xFF) << 16) | ((g & 0xFF) << 8) | ((r & 0xFF)))
+#define MAKE_COLOR_BLUE(value)      (0x000000 | ((value & 0xFF) << 16))
+#define MAKE_COLOR_GREEN(value)     (0x000000 | ((value & 0xFF) << 8))
+#define MAKE_COLOR_RED(value)       (0x000000 | ((value & 0xFF)))
+
+#define MAKE_COLOR_MAGENTA(r, b)    (0x000000 | ((b & 0xFF) << 16) | ((r & 0xFF)))
+#define MAKE_COLOR_CYAN(g, b)       (0x000000 | ((b & 0xFF) << 16) | ((g & 0xFF) << 8))
+#define MAKE_COLOR_YELLOW(r, g)     (0x000000 | ((g & 0xFF) << 8) | ((r & 0xFF)))
+#define MAKE_COLOR_WHITE(value)     MAKE_COLOR_RGB(value, value, value)
+
+#define COLOR_BLACK                 0x000000
+#define COLOR_RED                   MAKE_COLOR_RED(0xA0)
+#define COLOR_GREEN                 MAKE_COLOR_GREEN(0xA0)
+#define COLOR_BLUE                  MAKE_COLOR_BLUE(0xA0)
+#define COLOR_MAGENTA               MAKE_COLOR_MAGENTA(0xA0, 0x50)
+#define COLOR_CYAN                  MAKE_COLOR_CYAN(0xA0, 0xA0)
+#define COLOR_YELLOW                MAKE_COLOR_YELLOW(0xA0, 0xA0)
 
 void circular_buff_add(uint32_t value) {
     circular_buff[circular_buff_idx] = value;
@@ -72,7 +90,7 @@ typedef struct {
 } WS2812_move_t;
 
 WS2812_move_t move_leds = {
-    .color = 0x0000A0,          // Start with RED
+    .color = COLOR_MAGENTA,         
     .frame_duration = 100, 
     .frame_step = 1,            // Move one LED at a time
 
@@ -80,11 +98,11 @@ WS2812_move_t move_leds = {
     .ref_time = 0
 };
 
-
 void WS2812_resetMoveLeds(uint32_t time) {
     move_leds.ref_index = 0;
     move_leds.cycle_count = 5;
     move_leds.ref_time = time;
+    move_leds.color = COLOR_MAGENTA;
 }
 
 uint32_t WS2812_renderMove(WS2812_move_t* input, int ledIdx) {
@@ -100,6 +118,7 @@ uint32_t WS2812_renderMove(WS2812_move_t* input, int ledIdx) {
             if (input->cycle_count > 0) {
                 input->cycle_count--;
             }
+            move_leds.color = COLOR_BLACK;
         }
 
         input->ref_index = next_increment % NR_LEDS;
