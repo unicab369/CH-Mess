@@ -19,13 +19,6 @@
 #define ARRAY_SWAP(arr, i, j) { typeof((arr)[0]) temp = (arr)[i]; (arr)[i] = (arr)[j]; (arr)[j] = temp; }
 #define ARRAY_REVERSE(arr) for (size_t i = 0; i < ARRAY_SIZE(arr) / 2; i++) { SWAP((arr)[i], (arr)[ARRAY_SIZE(arr) - 1 - i]); }
 
-// format example: "%02X", "%04X", "%08X", "%u"
-#define ARRAY_PRINT(arr, format) do { \
-    for (size_t i = 0; i < ARRAY_SIZE(arr); i++) { \
-        printf(format " ", arr[i]); \
-    } \
-    printf("\n"); \
-} while(0)
 
 #define ARRAY_FIND(arr, value, index) do { \
     (index) = -1; \
@@ -36,6 +29,7 @@
         } \
     } \
 } while(0)
+
 
 
 

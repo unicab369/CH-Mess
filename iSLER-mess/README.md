@@ -1,0 +1,2 @@
+wchisp config enable-debug
+

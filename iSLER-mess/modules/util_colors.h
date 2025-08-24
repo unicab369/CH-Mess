@@ -32,14 +32,19 @@ typedef union {
 #define MAKE_COLOR_FROM32(hex)      (RGB_t){ .R = hex & 0xFF, .G = (hex>>8) & 0xFF, .B = (hex>>16) & 0xFF }
 #define MAKE_COLOR_RGB(r, g, b)     (RGB_t){ .R = r, .G = g, .B = b }
 #define MAKE_COLOR_WHITE(value)     MAKE_COLOR_RGB(value, value, value)
-
 #define COLOR_BLACK                 MAKE_COLOR_RGB(0x00, 0x00, 0x00)
+
 #define COLOR_RED_HIGH              MAKE_COLOR_RGB(0xFF, 0x00, 0x00)
 #define COLOR_RED_MED               MAKE_COLOR_RGB(0x77, 0x00, 0x00)
+#define COLOR_RED_LOW               MAKE_COLOR_RGB(0x33, 0x00, 0x00)
+
 #define COLOR_GREEN_HIGH            MAKE_COLOR_RGB(0x00, 0xFF, 0x00)
 #define COLOR_GREEN_MED             MAKE_COLOR_RGB(0x00, 0x77, 0x00)
+#define COLOR_GREEN_LOW             MAKE_COLOR_RGB(0x00, 0x33, 0x00)
+
 #define COLOR_BLUE_HIGH             MAKE_COLOR_RGB(0x00, 0x00, 0xFF)
 #define COLOR_BLUE_MED              MAKE_COLOR_RGB(0x00, 0x00, 0x77)
+#define COLOR_BLUE_LOW              MAKE_COLOR_RGB(0x00, 0x00, 0x33)
 
 #define COLOR_MAGENTA_HIGH          MAKE_COLOR_RGB(0xFF, 0x00, 0xFF)
 #define COLOR_CYAN_HIGH             MAKE_COLOR_RGB(0x00, 0xFF, 0xFF)

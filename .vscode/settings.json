@@ -23,6 +23,8 @@
         "xtr1common": "c",
         "xutility": "c",
         "util_colors.h": "c",
-        "util_operations.h": "c"
+        "util_operations.h": "c",
+        "array": "c",
+        "util_neo.h": "c"
     }
 }
