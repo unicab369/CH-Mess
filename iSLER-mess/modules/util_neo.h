@@ -4,15 +4,6 @@
 #include "util_colors.h"
 
 typedef struct {
-    uint32_t color;
-    uint32_t duration;      // in milliseconds
-    int8_t index;
-    int8_t count;           // -1 for infinite
-    int8_t ref_count;       // last count value
-    uint64_t ref_time;      // timestamp of the last change
-} WS2812_blink_t;
-
-typedef struct {
     RGB_t color;
     uint32_t frame_duration;    // Duration for each frame in ms
     int8_t frame_step;          // Step for moving LEDs
@@ -39,4 +30,8 @@ void animation_step(animation_color_t* ani) {
 
 RGB_t animation_currentColor(animation_color_t* ani) {
     return ani->colors[ani->ref_index];
-} 
+}
+
+RGB_t animation_colorAt(animation_color_t* ani, uint8_t steps, uint8_t index) {
+    return ani->colors[(index/steps) % ani->num_colors];
+}

@@ -10,40 +10,9 @@
 
 RGB_t led_arr[NR_LEDS] = {0};
 
-WS2812_blink_t blink_led = {
-    .color = 0x0000A0, // Start with RED
-    .duration = 50,   // 30 ms
-    .index = 0,
-    .count = 1,
-    .ref_count = 0,
-    .ref_time = 0
-};
-
-// uint32_t Neo_renderBlink(WS2812_blink_t* input, int ledIdx) {
-//     uint32_t now = millis();
-
-//     if (input->ref_count > 0 && ledIdx == input->index)  {
-//         if (now - input->ref_time > input->duration) {
-//             // Time to toggle the LED state
-//             if (led_arr[ledIdx] == 0) {
-//                 led_arr[ledIdx] = input->color; // Turn LED on
-//             } else {
-//                 led_arr[ledIdx] = 0; // Turn LED off
-//                 input->ref_count--;
-//             }
-
-//             input->ref_time = now;
-//         }
-//     }
-
-//     return led_arr[ledIdx];
-// }
-
-
-
 WS2812_move_t move_leds = {
     .color = COLOR_RED_HIGH,         
-    .frame_duration = 40, 
+    .frame_duration = 300, 
     .frame_step = 1,            // Move one LED at a time
     .frame_value = 0,
 
@@ -62,7 +31,6 @@ animation_color_t color_ani = {
     .ref_index = 0,
 };
 
-
 void Neo_resetMoveLeds(uint32_t time) {
     move_leds.ref_index = 0;
     move_leds.prev_index = 0;
@@ -75,7 +43,9 @@ void Neo_resetMoveLeds(uint32_t time) {
 
 uint32_t Neo_render_colorChase(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
     if (systick_handleTimeout(&input->ref_time, input->frame_duration)) {
+        uint8_t animation_idx = input->ref_index + ani->ref_index;
         led_arr[input->ref_index] = animation_currentColor(ani);
+
         uint8_t next_idx = input->ref_index + input->frame_step;
         input->ref_index = next_idx % NR_LEDS;
 
@@ -151,21 +121,30 @@ uint32_t Neo_render_soloColorTrail(WS2812_move_t* input, animation_color_t* ani,
     return led_arr[ledIdx].packed;
 }
 
+uint32_t Neo_render2(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
+    if (systick_handleTimeout(&input->ref_time, input->frame_duration)) {
+        for (int i=0; i < NR_LEDS; i++) {
+            led_arr[i] = animation_colorAt(ani, 3, i+input->ref_index);
+        }
+
+        uint8_t next_idx = input->ref_index + input->frame_step;
+        input->ref_index = next_idx % NR_LEDS;
+    }
+
+    return led_arr[ledIdx].packed;
+}
 
 uint32_t WS2812BLEDCallback(int ledIdx){
-    // return WS2812_renderBlink(&blink_led, ledIdx);
-
     return Neo_render_colorChase(&move_leds, &color_ani, ledIdx);
     // return Neo_render_soloColorChase(&move_leds, &color_ani,ledIdx);
 
     // return Neo_render_colorTrail(&move_leds, &color_ani, ledIdx);
     // return Neo_render_soloColorTrail(&move_leds, &color_ani, ledIdx);
+
+    // return Neo_render2(&move_leds, &color_ani, ledIdx);
 }
 
 void Neo_resetTask(uint32_t time) {
-    blink_led.ref_count = blink_led.count;
-    blink_led.ref_time = time;
-
     Neo_resetMoveLeds(time);
     
     ARRAY_PRINT(circular_buff, "%u");
