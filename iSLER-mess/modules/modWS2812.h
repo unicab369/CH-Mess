@@ -12,7 +12,7 @@ RGB_t led_arr[NR_LEDS] = {0};
 
 WS2812_move_t move_leds = {
     .color = COLOR_RED_HIGH,         
-    .frame_duration = 300, 
+    .frame_duration = 30, 
     .frame_step = 1,            // Move one LED at a time
     .frame_value = 0,
 
@@ -43,15 +43,11 @@ void Neo_resetMoveLeds(uint32_t time) {
 
 uint32_t Neo_render_colorChase(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
     if (systick_handleTimeout(&input->ref_time, input->frame_duration)) {
-        uint8_t animation_idx = input->ref_index + ani->ref_index;
-        led_arr[input->ref_index] = animation_currentColor(ani);
-
-        uint8_t next_idx = input->ref_index + input->frame_step;
-        input->ref_index = next_idx % NR_LEDS;
-
-        if (next_idx >= NR_LEDS) {
-            animation_step(ani);
+        for (int i=0; i < NR_LEDS; i++) {
+            led_arr[i] = animation_colorAt(ani, 2, i+input->ref_index);
         }
+
+        input->ref_index += input->frame_step;
     }
 
     return led_arr[ledIdx].packed;
@@ -68,7 +64,6 @@ uint32_t Neo_render_soloColorChase(WS2812_move_t* input, animation_color_t* ani,
         // update next index
         uint8_t next_idx = input->ref_index + input->frame_step;
         input->ref_index = next_idx % NR_LEDS;
-        // circular_buff_add(input->ref_index);
         
         // animation_step(ani);
 
@@ -121,27 +116,14 @@ uint32_t Neo_render_soloColorTrail(WS2812_move_t* input, animation_color_t* ani,
     return led_arr[ledIdx].packed;
 }
 
-uint32_t Neo_render2(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
-    if (systick_handleTimeout(&input->ref_time, input->frame_duration)) {
-        for (int i=0; i < NR_LEDS; i++) {
-            led_arr[i] = animation_colorAt(ani, 3, i+input->ref_index);
-        }
 
-        uint8_t next_idx = input->ref_index + input->frame_step;
-        input->ref_index = next_idx % NR_LEDS;
-    }
-
-    return led_arr[ledIdx].packed;
-}
 
 uint32_t WS2812BLEDCallback(int ledIdx){
-    return Neo_render_colorChase(&move_leds, &color_ani, ledIdx);
+    // return Neo_render_colorChase(&move_leds, &color_ani, ledIdx);
     // return Neo_render_soloColorChase(&move_leds, &color_ani,ledIdx);
 
     // return Neo_render_colorTrail(&move_leds, &color_ani, ledIdx);
-    // return Neo_render_soloColorTrail(&move_leds, &color_ani, ledIdx);
-
-    // return Neo_render2(&move_leds, &color_ani, ledIdx);
+    return Neo_render_soloColorTrail(&move_leds, &color_ani, ledIdx);
 }
 
 void Neo_resetTask(uint32_t time) {
