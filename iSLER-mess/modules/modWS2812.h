@@ -8,10 +8,26 @@
 #include "ws2812b_dma_spi_led_driver.h"
 #include "util_neo.h"
 
+typedef enum {
+    NEO_COLOR_CHASE = 0x01,
+    NEO_SOLO_COLOR_CHASE = 0x02,
+    NEO_COLOR_FADE = 0x03,
+    NEO_SOLO_COLOR_FADE = 0x04,
+    NEO_COLOR_FLASHING = 0x05,
+} Neo_Event_e;
+
+Neo_Event_e Neo_Event_list[] = {
+    NEO_COLOR_CHASE,
+    NEO_SOLO_COLOR_CHASE,
+    NEO_COLOR_FADE,
+    NEO_SOLO_COLOR_FADE,
+    NEO_COLOR_FLASHING
+};
+
 RGB_t led_arr[NR_LEDS] = {0};
 
 WS2812_move_t move_leds = {     
-    .frame_duration = 100, 
+    .frame_duration = 70, 
     .frame_step = 1,            // Move one LED at a time
     .frame_value = 0,
     .is_enabled = 0,
@@ -103,7 +119,7 @@ uint32_t Neo_render_soloColorFade(WS2812_move_t* input, animation_color_t* ani, 
     return led_arr[ledIdx].packed;
 }
 
-uint32_t Neo_render_flashing(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
+uint32_t Neo_render_colorFlashing(WS2812_move_t* input, animation_color_t* ani, int ledIdx) {
     if (systick_handleTimeout(&input->ref_time, input->frame_duration)) {
         input->frame_value += 1;
         RGB_t color = animation_currentColor(ani);
@@ -122,20 +138,40 @@ uint32_t Neo_render_flashing(WS2812_move_t* input, animation_color_t* ani, int l
     return led_arr[ledIdx].packed;
 }
 
-uint32_t WS2812BLEDCallback(int ledIdx){
-    return Neo_render_colorChase(&move_leds, &color_ani, ledIdx);
-    // return Neo_render_soloColorChase(&move_leds, &color_ani,ledIdx);
-    // return Neo_render_colorFade(&move_leds, &color_ani, ledIdx);
-    // return Neo_render_soloColorFade(&move_leds, &color_ani, ledIdx);
-    // return Neo_render_flashing(&move_leds, &color_ani, ledIdx);
+uint8_t Neo_LedCmd = 0x61;
+
+void Neo_loadCommand(uint8_t cmd) {
+    printf("Neo_loadCommand: %02X\n", cmd);
+
+    Neo_LedCmd = cmd;
+    move_leds.is_enabled = 1;
+    move_leds.ref_index = 0;
+    move_leds.ref_time = millis();
+
+    color_ani.ref_index = 0;
+    ARRAY_SET_VALUE(led_arr, 0);
 }
 
-void Neo_resetTask(uint32_t time) {    
-    // PRINT_ARRAY(circular_buff, "%u");
-    // ARRAY_SET_VALUE(circular_buff, 0);
-
-    // reset led_arr
-    // ARRAY_SET_VALUE(led_arr, 0);
+uint32_t WS2812BLEDCallback(int ledIdx){
+    switch (Neo_LedCmd) {
+        case NEO_COLOR_CHASE:
+            return Neo_render_colorChase(&move_leds, &color_ani, ledIdx);
+            break;
+        case NEO_SOLO_COLOR_CHASE:
+            return Neo_render_soloColorChase(&move_leds, &color_ani, ledIdx);
+            break;
+        case NEO_COLOR_FADE:
+            return Neo_render_colorFade(&move_leds, &color_ani, ledIdx);
+            break;
+        case NEO_SOLO_COLOR_FADE:
+            return Neo_render_soloColorFade(&move_leds, &color_ani, ledIdx);
+            break;
+        case NEO_COLOR_FLASHING:
+            return Neo_render_colorFlashing(&move_leds, &color_ani, ledIdx);
+            break;
+        default:
+            return Neo_render_colorFlashing(&move_leds, &color_ani, ledIdx);
+    }
 }
 
 void Neo_task() {

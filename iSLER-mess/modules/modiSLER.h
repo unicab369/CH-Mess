@@ -9,15 +9,6 @@
 
 #define BLE_AD_FLAGS(flags) 0x02, 0x01, flags
 
-#define PRINT_HEX_ARRAY(arr) \
-    do { \
-        for(size_t i = 0; i < sizeof(arr); i++) { \
-            printf("%02X ", arr[i]); \
-        } \
-        printf("\n"); \
-    } while(0)
-
-
 #define PHY_MODE                PHY_1M
 #define MAX_PACKET_LEN          255
 #define REPORT_ALL              1 // if 0 only report received Find My advertisements
@@ -35,12 +26,13 @@ typedef struct PACKED {
 
 	uint8_t group_id;
 	uint8_t data_len;           // length
-	uint8_t payload[64];        // variable length
+	uint8_t payload[128];      	// variable length
 } MESS_DataFrame_t;
 
 typedef struct PACKED {
 	uint8_t command;
-	uint32_t value;
+	uint32_t value1;
+	uint32_t value2;
 } remote_command_t;
 
 typedef struct PACKED {
@@ -58,22 +50,23 @@ typedef struct PACKED {
 uint8_t adv_channels[] = {37, 38, 39};
 uint8_t dev_name[] = "ch32fun999";
 
-void modiSLER_loadData(MESS_DataFrame_t *dataFrame, uint8_t *data, size_t data_len) {
+void modiSLER_loadCommand(
+	MESS_DataFrame_t *dataFrame, remote_command_t *cmd, size_t data_len
+) {
 	dataFrame->data_len = data_len;
-	memcpy(dataFrame->payload, data, data_len);
+	memcpy(dataFrame->payload, cmd, data_len);
 }
 
 void modiSLER_adv_data(MESS_DataFrame_t *dataFrame) {
 	if (!REPORT_ALL) return;
-	uint8_t data_len = sizeof(MESS_DataFrame_t);
 
 	iSLER_frame_t frame = {
 		.mac = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
 		.field_adv_flags = {0x02, 0x01, 0x06},
 		.name_len = 21,
 		.ad_type_local_name = 0x09,
-		.name = { 'b','e', 'e', '-', '2', '2', '2' },
-		.data_len = data_len+3,
+		.name = { 'b','e', 'e', '-', '5', '5', '5' },
+		.data_len = sizeof(MESS_DataFrame_t)+3,
 		.field_sev_data = {0xFF, 0xD7, 0x07},
 		.dataFrame = *dataFrame
 	};
@@ -84,10 +77,6 @@ void modiSLER_adv_data(MESS_DataFrame_t *dataFrame) {
 	for(int c = 0; c < sizeof(adv_channels); c++) {
 		Frame_TX((uint8_t*)&frame, sizeof(frame), adv_channels[c], PHY_MODE);
 	}
-}
-
-uint8_t modiSLER_print_rawData(uint8_t *data, size_t data_len) {
-	
 }
 
 uint8_t modiSLER_rx_handler() {
@@ -112,12 +101,15 @@ uint8_t modiSLER_rx_handler() {
 		// printf("Raw Data: ");
 		// PRINT_ARRAY_WITH_SIZE(frame, frame[1], "%02X");
 
-		printf("preamble: %04X \n", rx_frame->dataFrame.preamble);
-		printf("controlbit: %04X \n", rx_frame->dataFrame.control_bits);
+		// printf("preamble: %04X \n", rx_frame->dataFrame.preamble);
+		// printf("controlbit: %04X \n", rx_frame->dataFrame.control_bits);
 		printf("msgCode: %04X \n", rx_frame->dataFrame.msgCode);
 		printf("groupId: %02X \n", rx_frame->dataFrame.group_id);
 		
-		return 1;
+		remote_command_t *cmd = (remote_command_t*)rx_frame->dataFrame.payload;
+		printf("Command: %02X Value1: %08X Value2: %08X\n", 
+			cmd->command, cmd->value1, cmd->value2);
+		return cmd->value1;
 	}
 
 	return 0;
