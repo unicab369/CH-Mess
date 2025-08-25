@@ -71,25 +71,20 @@ void modiSLER_adv_data(MESS_DataFrame_t *dataFrame) {
 		.dataFrame = *dataFrame
 	};
 
-	PRINT_STRUCT_BYTES(&frame, "%02X");
-	printf("\n");
+	// PRINT_SEPARATOR();
+	// printf("Frame: ");
+	// PRINT_STRUCT_BYTES(&frame, "%02X");
+	// printf("\n");
 
 	for(int c = 0; c < sizeof(adv_channels); c++) {
 		Frame_TX((uint8_t*)&frame, sizeof(frame), adv_channels[c], PHY_MODE);
 	}
 }
 
-uint8_t modiSLER_rx_handler() {
+remote_command_t* modiSLER_rx_handler() {
 	// The chip stores the incoming frame in LLE_BUF, defined in extralibs/iSLER.h
 	uint8_t *frame = (uint8_t*)LLE_BUF;
 	iSLER_frame_t* rx_frame = (iSLER_frame_t*)(frame + 2);
-
-	// uint8_t sender_mac[6];
-	// for(int i= 0;i<6; i++) sender_mac[i] = frame[7-i];
-	// printf("sender_mac\n");
-	// PRINT_ARRAY(sender_mac, "%02x");
-	// uint8_t target_mac[] = { BLE_AD_MAC(0x112233445566) };
-
 	uint8_t target_mac[] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 };
 
 	if (memcmp(rx_frame->mac, target_mac, 6) == 0) {
@@ -100,17 +95,12 @@ uint8_t modiSLER_rx_handler() {
 		PRINT_ARRAY(rx_frame->mac, "%02X");
 		// printf("Raw Data: ");
 		// PRINT_ARRAY_WITH_SIZE(frame, frame[1], "%02X");
-
-		// printf("preamble: %04X \n", rx_frame->dataFrame.preamble);
-		// printf("controlbit: %04X \n", rx_frame->dataFrame.control_bits);
-		printf("msgCode: %04X \n", rx_frame->dataFrame.msgCode);
-		printf("groupId: %02X \n", rx_frame->dataFrame.group_id);
 		
 		remote_command_t *cmd = (remote_command_t*)rx_frame->dataFrame.payload;
-		printf("Command: %02X Value1: %08X Value2: %08X\n", 
-			cmd->command, cmd->value1, cmd->value2);
-		return cmd->value1;
+		// printf("Command: %02X Value1: %08X Value2: %08X\n", 
+		// 	cmd->command, cmd->value1, cmd->value2);
+		return cmd;
 	}
 
-	return 0;
+	return NULL;
 }

@@ -7,14 +7,15 @@ typedef struct {
     RGB_t color;
     uint32_t frame_duration;    // Duration for each frame in ms
     int8_t frame_step;          // Step for moving LEDs
-    uint8_t frame_value;         // Value for each frame
+    uint8_t frame_value;        // Value for each frame
+    uint8_t frame_LEN;          // number of LEDs
     uint8_t is_enabled;
     int8_t cycle_count;
     
     uint8_t prev_index;         // Previous index used
     uint8_t ref_index;          // Last index used
     uint32_t ref_time;          // Last time the move was updated
-} WS2812_move_t;
+} WS2812_frame_t;
 
 
 typedef struct {

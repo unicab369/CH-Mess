@@ -12,6 +12,9 @@
 #define LED PA9
 #else
 #define LED PA8
+#define BUTTON_PIN 	PA4
+#define INPUT1_PIN 	PA10
+#define INPUT2_PIN 	PA5
 #endif
 
 MESS_DataFrame_t dataFrame = {
@@ -53,13 +56,75 @@ void button_onChanged(Button_Event_e event, uint32_t time) {
 	}
 }
 
+
+uint8_t frame_info[] = {0xff, 0x10}; // PDU, len, (maybe not?) needed in RX mode
+
+int is_slave_device() {
+	return funDigitalRead(INPUT1_PIN);
+}
+
+uint32_t counter = 0;
+
+remote_command_t ping_cmd = {
+	.command = 0,
+	.value1 = 0,
+	.value2 = 0
+}
+
+void handle_receiving_frame(uint32_t time) {
+		// now listen for frames on channel 37. When the RF subsystem
+	// detects and finalizes one, "rx_ready" in iSLER.h is set true
+	Frame_RX(frame_info, 37, PHY_MODE);
+	while(!rx_ready);
+
+	// we stepped over !rx_ready so we got a frame
+	remote_command_t* cmd = modiSLER_rx_handler();
+	if (cmd) {
+		blink(1);
+		printf("Receiv Command: %02X\n", cmd->command);
+
+		switch (cmd->command) {
+			case 0xBB:
+				if (is_slave_device() > 0) {
+					Neo_loadCommand(cmd->value1);
+					WS2812BDMAStart(NR_LEDS);
+				}
+
+				break;
+			case 0xF1:
+				if (is_slave_device() > 0) {
+					remote_command_t remote_cmd1 = {
+						.command = 0xF2,
+						.value1 = cmd->value1,
+						.value2 = cmd->value2
+					};
+					printf("Sending value1: %u, value2: %u\n", 
+						remote_cmd1.value1, remote_cmd1.value2);
+					Delay_Ms(100);
+
+					modiSLER_loadCommand(&dataFrame, &remote_cmd1, sizeof(remote_cmd1));
+					modiSLER_adv_data(&dataFrame);
+				}
+
+				break;
+			case 0xF2:
+				if (is_slave_device() == 0) {
+					printf("Received value1: %u, value2: %u\n", 
+						cmd->value1, cmd->value2);
+					printf("time_diff: %d\n", time - cmd->value2);
+				}
+				break;
+		}
+	}
+}
+
 int main() {
 	SystemInit();
     systick_init();			//! required for millis()
 
 	funGpioInitAll();
 	funPinMode(LED, GPIO_CFGLR_OUT_2Mhz_PP);
-	funPinMode(PA10, GPIO_CFGLR_IN_PUPD);
+	funPinMode(INPUT1_PIN, GPIO_CFGLR_IN_PUPD);
 
 	RFCoreInit(LL_TX_POWER_0_DBM);
 	printf(".~ ch32fun iSLER ~.\n");
@@ -68,7 +133,6 @@ int main() {
     WS2812BDMAInit();
 
 	uint32_t sec_time = 0;
-	uint8_t frame_info[] = {0xff, 0x10}; // PDU, len, (maybe not?) needed in RX mode
 
 	// uint32_t cmdValues[] = { 0x61, 0x62, 0x63, 0x64 };
 	stepper32_t command_step = {
@@ -78,7 +142,7 @@ int main() {
 	};
 
 	Button_t button = {
-		.pin = PA4,
+		.pin = BUTTON_PIN,
 		.btn_state = BUTTON_IDLE,
 		.debounce_time = 0,
 		.release_time = 0,
@@ -87,45 +151,36 @@ int main() {
 
 	button_setup(&button);
 
-	while(1) {		
-		if (funDigitalRead(PA10) == FUN_LOW) {
-			move_leds.is_enabled = 1;
+	while(1) {
+		if (is_slave_device() == 0) {
+			leds_frame.is_enabled = 1;
 
 			if (systick_handleTimeout(&sec_time, 6000)) {
-				remote_command_t remote_cmd1 = {
-					.command = 0xBB,
-					.value1 = command_step.values[command_step.index],
-					.value2 = 0xFFFFFFFF
-				};
-				// move to the next value
-				stepper32_tick(&command_step, 1);
+				blink(1);
 
-				printf("Sending value: %08X\n", remote_cmd1.value1);
+				// remote_command_t remote_cmd1 = {
+				// 	.command = 0xBB,
+				// 	.value1 = command_step.values[command_step.index],
+				// 	.value2 = 0xFFFFFFFF
+				// };
+				// // move to the next value
+				// stepper32_tick(&command_step, 1);
+				// printf("Sending value: %08X\n", remote_cmd1.value1);
+
+				remote_command_t remote_cmd1 = {
+					.command = 0xF1,
+					.value1 = counter++,
+					.value2 = sec_time
+				};
+				printf("[Master] Sending value1: %u, value2: %u\n", 
+					remote_cmd1.value1, remote_cmd1.value2);
 
 				modiSLER_loadCommand(&dataFrame, &remote_cmd1, sizeof(remote_cmd1));
 				modiSLER_adv_data(&dataFrame);
-				blink(1);
 			}
-		} else {
-			// now listen for frames on channel 37. When the RF subsystem
-			// detects and finalizes one, "rx_ready" in iSLER.h is set true
-			Frame_RX(frame_info, 37, PHY_MODE);
-			while(!rx_ready);
-
-			// we stepped over !rx_ready so we got a frame
-			uint8_t cmd_code = modiSLER_rx_handler();
-			if (cmd_code > 0) {
-				Neo_loadCommand(cmd_code);
-				blink(1);
-			}
-			
-			// if (rx_ready) {
-			// 	if (modiSLER_rx_handler()) {
-			// 		blink(1);
-			// 	}
-			// }
 		}
-
+		
+		handle_receiving_frame(millis());
         Neo_task();
 		button_task(&button, button_onChanged);
 	}
