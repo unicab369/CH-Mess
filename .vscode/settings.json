@@ -26,7 +26,13 @@
         "util_operations.h": "c",
         "array": "c",
         "util_neo.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "modutility.h": "c",
+        "lib_i2c.h": "c",
+        "bomb.h": "c",
+        "modi2c.h": "c",
+        "modssd1306.h": "c",
+        "ssd1306_draw.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

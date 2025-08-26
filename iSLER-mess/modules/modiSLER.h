@@ -90,9 +90,9 @@ remote_command_t* modiSLER_rx_handler() {
 	if (memcmp(rx_frame->mac, target_mac, 6) == 0) {
 		// first 8 bytes contains: [RSSI x 1Byte] [len x 1Byte] [MAC x 6Bytes]
 		// The first two bytes of the frame are metadata with RSSI and length
-		PRINT_SEPARATOR();
-		printf("RSSI:%d len:%d MAC:", frame[0], frame[1]);
-		PRINT_ARRAY(rx_frame->mac, "%02X");
+		// PRINT_SEPARATOR();
+		// printf("RSSI:%d len:%d MAC:", frame[0], frame[1]);
+		// PRINT_ARRAY(rx_frame->mac, "%02X");
 		// printf("Raw Data: ");
 		// PRINT_ARRAY_WITH_SIZE(frame, frame[1], "%02X");
 		

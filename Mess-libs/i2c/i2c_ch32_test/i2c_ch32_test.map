@@ -1,0 +1,475 @@
+Archive member included to satisfy reference by file (symbol)
+
+../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                              C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o (__udivsi3)
+
+Discarded input sections
+
+ .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.snprintf
+                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.twoway_strstr
+                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data.ADCPrescTable.lto_priv.0
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data.ADCPrescTable.lto_priv.1
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data.APBAHBPrescTable.lto_priv.0
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data.APBAHBPrescTable.lto_priv.1
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .data.i2c_registers
+                0x0000000000000000       0x20 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+ .data          0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .bss           0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x0000000000000000 0x0000000000004000 xr
+RAM              0x0000000020000000 0x0000000000000800 xrw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\uni\AppData\Local\Temp\ccy3O9rc.o
+LOAD C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+LOAD C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\cch6A8R6.o
+LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
+LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
+
+.init           0x0000000000000000       0xa0
+                0x0000000000000000                _sinit = .
+                0x0000000000000000                . = ALIGN (0x4)
+ *(SORT_NONE(.init))
+ .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x0000000000000000                InterruptVector
+                0x00000000000000a0                . = ALIGN (0x4)
+ *fill*         0x000000000000009e        0x2 
+                0x00000000000000a0                _einit = .
+
+.text           0x00000000000000a0      0xe7c
+                0x00000000000000a0                . = ALIGN (0x4)
+ *(.text)
+ .text          0x00000000000000a0       0x7e ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                0x00000000000000a0                __divsi3
+                0x00000000000000a8                __udivsi3
+                0x00000000000000a8                __hidden___udivsi3
+                0x00000000000000d4                __umodsi3
+                0x00000000000000f8                __modsi3
+ *(.text.*)
+ .text.mini_pad
+                0x000000000000011e       0x9c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text._puts    0x00000000000001ba       0x42 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.PrintHex
+                0x00000000000001fc       0x58 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.mini_itoa.part.0
+                0x0000000000000254       0xbe C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.internal_handle_input.constprop.0
+                0x0000000000000312        0xa C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text._write.constprop.0
+                0x000000000000031c       0xf2 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.__puts_uart
+                0x000000000000040e       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.handle_reset
+                0x0000000000000422       0x72 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x0000000000000422                handle_reset
+ .text.vector_handler
+                0x0000000000000494       0x5e C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x0000000000000494                EXTI2_IRQHandler
+                0x0000000000000494                TIM8_TRG_COM_IRQHandler
+                0x0000000000000494                TIM8_CC_IRQHandler
+                0x0000000000000494                UART8_IRQHandler
+                0x0000000000000494                NFC_IRQHandler
+                0x0000000000000494                TIM1_CC_IRQHandler
+                0x0000000000000494                HardFault_Handler
+                0x0000000000000494                GPIOB_IRQHandler
+                0x0000000000000494                USBPD_IRQHandler
+                0x0000000000000494                TIM6_IRQHandler
+                0x0000000000000494                GPIOA_IRQHandler
+                0x0000000000000494                SysTick_Handler
+                0x0000000000000494                PVD_IRQHandler
+                0x0000000000000494                SDIO_IRQHandler
+                0x0000000000000494                TIM9_BRK_IRQHandler
+                0x0000000000000494                DMA2_Channel8_IRQHandler
+                0x0000000000000494                USBWakeUp_IRQHandler
+                0x0000000000000494                CAN2_RX1_IRQHandler
+                0x0000000000000494                EXTI3_IRQHandler
+                0x0000000000000494                UART1_IRQHandler
+                0x0000000000000494                USBHS_IRQHandler
+                0x0000000000000494                DMA2_Channel9_IRQHandler
+                0x0000000000000494                TIM10_CC_IRQHandler
+                0x0000000000000494                EXTI25_16_IRQHandler
+                0x0000000000000494                USBFS_IRQHandler
+                0x0000000000000494                UART0_IRQHandler
+                0x0000000000000494                EXTI0_IRQHandler
+                0x0000000000000494                I2C2_EV_IRQHandler
+                0x0000000000000494                TIM10_TRG_COM_IRQHandler
+                0x0000000000000494                CAN2_SCE_IRQHandler
+                0x0000000000000494                ADC1_2_IRQHandler
+                0x0000000000000494                BB_IRQHandler
+                0x0000000000000494                Break_Point_Handler
+                0x0000000000000494                TIM2_CC_IRQHandler
+                0x0000000000000494                SPI1_IRQHandler
+                0x0000000000000494                TAMPER_IRQHandler
+                0x0000000000000494                TMR0_IRQHandler
+                0x0000000000000494                AWU_IRQHandler
+                0x0000000000000494                EXTI7_0_IRQHandler
+                0x0000000000000494                CAN2_RX0_IRQHandler
+                0x0000000000000494                OSCWakeUp_IRQHandler
+                0x0000000000000494                TIM8_UP_IRQHandler
+                0x0000000000000494                Ecall_M_Mode_Handler
+                0x0000000000000494                DMA2_Channel2_IRQHandler
+                0x0000000000000494                DMA1_Channel4_IRQHandler
+                0x0000000000000494                ADC1_IRQHandler
+                0x0000000000000494                TIM2_BRK_IRQHandler
+                0x0000000000000494                TIM9_UP_IRQHandler
+                0x0000000000000494                USART3_IRQHandler
+                0x0000000000000494                RTC_IRQHandler
+                0x0000000000000494                DMA1_Channel7_IRQHandler
+                0x0000000000000494                LED_IRQHandler
+                0x0000000000000494                CAN1_RX1_IRQHandler
+                0x0000000000000494                DVP_IRQHandler
+                0x0000000000000494                UART5_IRQHandler
+                0x0000000000000494                EXTI15_8_IRQHandler
+                0x0000000000000494                TIM4_IRQHandler
+                0x0000000000000494                DMA2_Channel1_IRQHandler
+                0x0000000000000494                USBPD_WKUP_IRQHandler
+                0x0000000000000494                I2C1_EV_IRQHandler
+                0x0000000000000494                UART2_IRQHandler
+                0x0000000000000494                USART4_IRQHandler
+                0x0000000000000494                PWMX_IRQHandler
+                0x0000000000000494                DMA1_Channel6_IRQHandler
+                0x0000000000000494                UART4_IRQHandler
+                0x0000000000000494                DMA2_Channel4_IRQHandler
+                0x0000000000000494                TIM3_IRQHandler
+                0x0000000000000494                RCC_IRQHandler
+                0x0000000000000494                TIM1_TRG_COM_IRQHandler
+                0x0000000000000494                DMA1_Channel1_IRQHandler
+                0x0000000000000494                DMA2_Channel7_IRQHandler
+                0x0000000000000494                EXTI15_10_IRQHandler
+                0x0000000000000494                ADC_IRQHandler
+                0x0000000000000494                DMA1_Channel8_IRQHandler
+                0x0000000000000494                TMR2_IRQHandler
+                0x0000000000000494                DefaultIRQHandler
+                0x0000000000000494                TIM7_IRQHandler
+                0x0000000000000494                CAN2_TX_IRQHandler
+                0x0000000000000494                TIM5_IRQHandler
+                0x0000000000000494                TMR1_IRQHandler
+                0x0000000000000494                USB_IRQHandler
+                0x0000000000000494                EXTI9_5_IRQHandler
+                0x0000000000000494                PIOC_IRQHandler
+                0x0000000000000494                SPI2_IRQHandler
+                0x0000000000000494                OSC32KCal_IRQHandler
+                0x0000000000000494                I2C_IRQHandler
+                0x0000000000000494                TIM10_BRK_IRQHandler
+                0x0000000000000494                TIM9_CC_IRQHandler
+                0x0000000000000494                DMA2_Channel5_IRQHandler
+                0x0000000000000494                USB2_IRQHandler
+                0x0000000000000494                USBHSWakeUp_IRQHandler
+                0x0000000000000494                DMA1_Channel5_IRQHandler
+                0x0000000000000494                EXTI4_IRQHandler
+                0x0000000000000494                USB_LP_CAN1_RX0_IRQHandler
+                0x0000000000000494                RNG_IRQHandler
+                0x0000000000000494                USB_HP_CAN1_TX_IRQHandler
+                0x0000000000000494                LLE_IRQHandler
+                0x0000000000000494                DMA1_Channel3_IRQHandler
+                0x0000000000000494                FSMC_IRQHandler
+                0x0000000000000494                ETH_IRQHandler
+                0x0000000000000494                TIM1_UP_IRQHandler
+                0x0000000000000494                WWDG_IRQHandler
+                0x0000000000000494                DMA2_Channel11_IRQHandler
+                0x0000000000000494                WDOG_BAT_IRQHandler
+                0x0000000000000494                Ecall_U_Mode_Handler
+                0x0000000000000494                TMR3_IRQHandler
+                0x0000000000000494                DMA2_Channel6_IRQHandler
+                0x0000000000000494                TIM2_IRQHandler
+                0x0000000000000494                SW_Handler
+                0x0000000000000494                TIM1_BRK_IRQHandler
+                0x0000000000000494                OPA_IRQHandler
+                0x0000000000000494                DMA2_Channel10_IRQHandler
+                0x0000000000000494                EXTI1_IRQHandler
+                0x0000000000000494                SPI0_IRQHandler
+                0x0000000000000494                USB2_HOST_IRQHandler
+                0x0000000000000494                RTCAlarm_IRQHandler
+                0x0000000000000494                TIM10_UP_IRQHandler
+                0x0000000000000494                TIM9_TRG_COM_IRQHandler
+                0x0000000000000494                UART7_IRQHandler
+                0x0000000000000494                USART2_IRQHandler
+                0x0000000000000494                UART6_IRQHandler
+                0x0000000000000494                ETHWakeUp_IRQHandler
+                0x0000000000000494                I2C2_ER_IRQHandler
+                0x0000000000000494                DMA1_Channel2_IRQHandler
+                0x0000000000000494                TIM8_BRK_IRQHandler
+                0x0000000000000494                TIM2_TRG_IRQHandler
+                0x0000000000000494                CAN1_SCE_IRQHandler
+                0x0000000000000494                FLASH_IRQHandler
+                0x0000000000000494                USBFSWakeUp_IRQHandler
+                0x0000000000000494                USART1_IRQHandler
+                0x0000000000000494                OTG_FS_IRQHandler
+                0x0000000000000494                SPI3_IRQHandler
+                0x0000000000000494                USBFS_WakeUp_IRQHandler
+                0x0000000000000494                UART3_IRQHandler
+                0x0000000000000494                I2C1_ER_IRQHandler
+                0x0000000000000494                USB2_DEVICE_IRQHandler
+                0x0000000000000494                DMA2_Channel3_IRQHandler
+                0x00000000000004e4                NMI_Handler
+                0x00000000000004e4                NMI_RCC_CSS_IRQHandler
+ .text.strlen   0x00000000000004f2       0x12 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000004f2                strlen
+ .text.mini_vpprintf
+                0x0000000000000504      0x1ae C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.printf   0x00000000000006b2       0x26 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000006b2                printf
+ .text.ssd1306_i2c_error
+                0x00000000000006d8       0x7c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.ssd1306_i2c_send.constprop.0
+                0x0000000000000754      0x118 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.ssd1306_cmd
+                0x000000000000086c       0x18 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.mini_vsnprintf
+                0x0000000000000884       0x30 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.sprintf  0x00000000000008b4       0x22 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000008b4                sprintf
+ .text.memset   0x00000000000008d6       0x12 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000008d6                memset
+ .text.strcpy   0x00000000000008e8       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000008e8                strcpy
+ .text.memcpy   0x00000000000008fc       0x1c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000008fc                memcpy
+ .text.ssd1306_data.isra.0
+                0x0000000000000918       0x2a C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.ssd1306_print_str_at.constprop.0
+                0x0000000000000942       0x68 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.puts     0x00000000000009aa       0x2c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000009aa                puts
+ .text.putchar  0x00000000000009d6       0x6c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x00000000000009d6                putchar
+ .text.i2c_scan_callback
+                0x0000000000000a42       0x6c C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .text.SystemInit
+                0x0000000000000aae       0x58 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x0000000000000aae                SystemInit
+ .text.startup.main
+                0x0000000000000b06      0x124 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                0x0000000000000b06                main
+ *(.rodata)
+ *(.rodata*)
+ *fill*         0x0000000000000c2a        0x2 
+ .rodata.ssd1306_i2c_error.str1.4
+                0x0000000000000c2c       0x2d C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *fill*         0x0000000000000c59        0x3 
+ .rodata.puts.str1.4
+                0x0000000000000c5c        0x2 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *fill*         0x0000000000000c5e        0x2 
+ .rodata.i2c_scan_callback.str1.4
+                0x0000000000000c60        0xc C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rodata.main.str1.4
+                0x0000000000000c6c       0x5b C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *fill*         0x0000000000000cc7        0x1 
+ .rodata.str1.4
+                0x0000000000000cc8       0x46 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *fill*         0x0000000000000d0e        0x2 
+ .rodata.FONT_7x5
+                0x0000000000000d10      0x1db C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *fill*         0x0000000000000eeb        0x1 
+ .rodata.errstr
+                0x0000000000000eec       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rodata.ssd1306_init_array
+                0x0000000000000f00       0x1a C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *(.gnu.linkonce.t.*)
+                0x0000000000000f1c                . = ALIGN (0x4)
+ *fill*         0x0000000000000f1a        0x2 
+
+.rela.dyn       0x0000000000000f1c        0x0
+ .rela.text.mini_pad
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text._write.constprop.0
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.handle_reset
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.mini_vpprintf
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.ssd1306_i2c_error
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.ssd1306_data.isra.0
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.puts
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.i2c_scan_callback
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .rela.text.startup.main
+                0x0000000000000f1c        0x0 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+
+.fini           0x0000000000000f1c        0x0
+ *(SORT_NONE(.fini))
+                0x0000000000000f1c                . = ALIGN (0x4)
+                [!provide]                        PROVIDE (_etext = .)
+                [!provide]                        PROVIDE (_eitcm = .)
+
+.preinit_array  0x0000000000000f1c        0x0
+                [!provide]                        PROVIDE (__preinit_array_start = .)
+ *(.preinit_array)
+                [!provide]                        PROVIDE (__preinit_array_end = .)
+
+.init_array     0x0000000000000f1c        0x0
+                [!provide]                        PROVIDE (__init_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
+ *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
+                [!provide]                        PROVIDE (__init_array_end = .)
+
+.fini_array     0x0000000000000f1c        0x0
+                [!provide]                        PROVIDE (__fini_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
+ *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
+                [!provide]                        PROVIDE (__fini_array_end = .)
+
+.ctors
+ *crtbegin.o(.ctors)
+ *crtbegin?.o(.ctors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors)
+ *(SORT_BY_NAME(.ctors.*))
+ *(.ctors)
+
+.dtors
+ *crtbegin.o(.dtors)
+ *crtbegin?.o(.dtors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors)
+ *(SORT_BY_NAME(.dtors.*))
+ *(.dtors)
+
+.dalign         0x0000000020000000        0x0 load address 0x0000000000000f1c
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                PROVIDE (_data_vma = .)
+
+.dlalign        0x0000000000000f1c        0x0
+                0x0000000000000f1c                . = ALIGN (0x4)
+                0x0000000000000f1c                PROVIDE (_data_lma = .)
+
+.data           0x0000000020000000       0x18 load address 0x0000000000000f1c
+                0x0000000020000000                . = ALIGN (0x4)
+                0x00000000200003fc                __global_pointer$ = (. + 0x3fc)
+ *(.gnu.linkonce.r.*)
+ *(.data .data.*)
+ .data.dev_aht21
+                0x0000000020000000        0xc C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *(.gnu.linkonce.d.*)
+                0x0000000020000010                . = ALIGN (0x8)
+ *fill*         0x000000002000000c        0x4 
+ *(.sdata .sdata.*)
+ .sdata.line.0  0x0000000020000010        0x4 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *(.sdata2*)
+ *(.gnu.linkonce.s.*)
+                0x0000000020000018                . = ALIGN (0x8)
+ *fill*         0x0000000020000014        0x4 
+ *(.srodata.cst16)
+ *(.srodata.cst8)
+ *(.srodata.cst4)
+ *(.srodata.cst2)
+ *(.srodata .srodata.*)
+                0x0000000020000018                . = ALIGN (0x4)
+                0x0000000020000018                PROVIDE (_edata = .)
+
+.bss            0x0000000020000018      0x418 load address 0x0000000000000f34
+                0x0000000020000018                . = ALIGN (0x4)
+                0x0000000020000018                PROVIDE (_sbss = .)
+ *(.sbss*)
+ .sbss.ssd1306_buffer
+                0x0000000020000018        0x1 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *(.gnu.linkonce.sb.*)
+ *(.bss*)
+ *fill*         0x0000000020000019        0x3 
+ .bss.frame_buffer
+                0x000000002000001c      0x400 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .bss.str_output
+                0x000000002000041c       0x14 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ *(.gnu.linkonce.b.*)
+ *(COMMON*)
+                0x0000000020000430                . = ALIGN (0x4)
+                0x0000000020000430                PROVIDE (_ebss = .)
+                [!provide]                        PROVIDE (_end = _ebss)
+                [!provide]                        PROVIDE (end = .)
+                0x0000000020000800                PROVIDE (_eusrstack = (ORIGIN (RAM) + LENGTH (RAM)))
+
+/DISCARD/
+ *(.note .note.*)
+ *(.eh_frame .eh_frame.*)
+ *(.comment .comment.*)
+ *(.ARM.extab* .gnu.linkonce.armextab.*)
+ *(.ARM.exidx*)
+OUTPUT(i2c_ch32_test.elf elf32-littleriscv)
+
+.riscv.attributes
+                0x0000000000000000       0x21
+ .riscv.attributes
+                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .riscv.attributes
+                0x0000000000000021       0x1f ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+.debug_info     0x0000000000000000     0x42f9
+ .debug_info    0x0000000000000000     0x1819 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .debug_info    0x0000000000001819     0x1188 C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+                0x0000000000001819                ch32fun.c.00c2efea
+ .debug_info    0x00000000000029a1     0x18fb C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+                0x00000000000029a1                i2c_ch32_test.c.e8febafc
+ .debug_info    0x000000000000429c       0x5d ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+.debug_abbrev   0x0000000000000000      0x6bf
+ .debug_abbrev  0x0000000000000000      0x1d6 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .debug_abbrev  0x00000000000001d6      0x233 C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+ .debug_abbrev  0x0000000000000409      0x28e C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+ .debug_abbrev  0x0000000000000697       0x28 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+.debug_loc      0x0000000000000000     0x29d2
+ .debug_loc     0x0000000000000000     0x29d2 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+
+.debug_aranges  0x0000000000000000      0x188
+ .debug_aranges
+                0x0000000000000000      0x168 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .debug_aranges
+                0x0000000000000168       0x20 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+.debug_ranges   0x0000000000000000      0x508
+ .debug_ranges  0x0000000000000000      0x508 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+
+.debug_line     0x0000000000000000     0x31c9
+ .debug_line    0x0000000000000000     0x2d45 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+ .debug_line    0x0000000000002d45      0x19a C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+ .debug_line    0x0000000000002edf      0x197 C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+ .debug_line    0x0000000000003076      0x153 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+.debug_str      0x0000000000000000     0x13e6
+ .debug_str     0x0000000000000000      0x1a6 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+                                        0x1ce (size before relaxing)
+ .debug_str     0x00000000000001a6      0x5ff C:\Users\uni\AppData\Local\Temp\cclIKUEk.debug.temp.o
+                                        0x724 (size before relaxing)
+ .debug_str     0x00000000000007a5      0xb7c C:\Users\uni\AppData\Local\Temp\cc6zdqEq.debug.temp.o
+                                        0xe3f (size before relaxing)
+ .debug_str     0x0000000000001321       0xc5 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                                         0xd9 (size before relaxing)
+
+.debug_frame    0x0000000000000000      0x450
+ .debug_frame   0x0000000000000000      0x450 C:\Users\uni\AppData\Local\Temp\i2c_ch32_test.elf.7NiSic.ltrans0.ltrans.o
+
+.debug_line_str
+                0x0000000000000000       0x92
+ .debug_line_str
+                0x0000000000000000       0x92 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)

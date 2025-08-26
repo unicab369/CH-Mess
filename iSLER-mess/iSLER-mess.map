@@ -1,36 +1,37 @@
 
 Discarded input sections
 
- .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .srodata       0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+ .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .srodata       0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.mini_vsnprintf
-                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.snprintf
-                0x0000000000000000       0x20 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.sprintf  0x0000000000000000       0x2c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000       0x20 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.sprintf  0x0000000000000000       0x2c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.twoway_strstr
-                0x0000000000000000      0x254 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.strstr   0x0000000000000000      0x13a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000      0x254 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.strstr   0x0000000000000000      0x13a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.putchar  0x0000000000000000       0x72 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.EHSVtoHEX
-                0x0000000000000000      0x15e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000      0x15e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.TweenHexColors
-                0x0000000000000000       0xdc C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
+                0x0000000000000000       0xdc C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
 
 Memory Configuration
 
@@ -41,275 +42,272 @@ RAM              0x0000000020000000 0x0000000000008000 xrw
 
 Linker script and memory map
 
-LOAD C:\Users\uni\AppData\Local\Temp\ccalEKf3.o
-LOAD C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\cciCLVG9.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccmFSacH.o
+LOAD C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\cczgMDkg.o
 LOAD c:/sysgcc/risc-v/bin/../lib/gcc/riscv64-unknown-elf/10.1.0/rv32imac/ilp32\libgcc.a
 
 .init           0x0000000000000000       0x90
                 0x0000000000000000                _sinit = .
                 0x0000000000000000                . = ALIGN (0x4)
  *(SORT_NONE(.init))
- .init          0x0000000000000000       0x90 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+ .init          0x0000000000000000       0x90 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
                 0x0000000000000000                InterruptVector
                 0x0000000000000090                . = ALIGN (0x4)
                 0x0000000000000090                _einit = .
 
-.text           0x0000000000000090     0x1c84
+.text           0x0000000000000090     0x1b3c
                 0x0000000000000090                . = ALIGN (0x4)
  *(.text)
  *(.text.*)
  .text.mini_pad
-                0x0000000000000090       0x9c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.DelaySysTick
-                0x000000000000012c       0x32 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000090       0x9c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.mini_itoa.part.0
-                0x000000000000015e       0x8e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x000000000000012c       0x8e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.DevSetMode
-                0x00000000000001ec       0x4e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000001ba       0x4e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.RFEND_TXCTune
-                0x000000000000023a       0x8a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.blink    0x00000000000002c4       0x54 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000208       0x8a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.Neo_render_colorFlashing.constprop.0
-                0x0000000000000318       0xea C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000292       0xea C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.WS2812FillBuffSec.constprop.0
-                0x0000000000000402      0x3f4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.WS2812BDMAStart.constprop.0
-                0x00000000000007f6       0x8c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x000000000000037c      0x3f4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.DelaySysTick.constprop.0
+                0x0000000000000770       0x38 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.blink    0x00000000000007a8       0x44 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.internal_handle_input.constprop.0
-                0x0000000000000882        0xa C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000007ec        0xa C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text._write.constprop.0
-                0x000000000000088c       0xf4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000007f6       0xf4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.__puts_uart
-                0x0000000000000980       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000008ea       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.handle_reset
-                0x0000000000000994       0x84 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000994                handle_reset
+                0x00000000000008fe       0x84 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x00000000000008fe                handle_reset
  .text.vector_handler
-                0x0000000000000a18        0x2 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000a18                EXTI2_IRQHandler
-                0x0000000000000a18                TIM8_TRG_COM_IRQHandler
-                0x0000000000000a18                TIM8_CC_IRQHandler
-                0x0000000000000a18                UART8_IRQHandler
-                0x0000000000000a18                NFC_IRQHandler
-                0x0000000000000a18                TIM1_CC_IRQHandler
-                0x0000000000000a18                HardFault_Handler
-                0x0000000000000a18                GPIOB_IRQHandler
-                0x0000000000000a18                USBPD_IRQHandler
-                0x0000000000000a18                TIM6_IRQHandler
-                0x0000000000000a18                GPIOA_IRQHandler
-                0x0000000000000a18                PVD_IRQHandler
-                0x0000000000000a18                SDIO_IRQHandler
-                0x0000000000000a18                TIM9_BRK_IRQHandler
-                0x0000000000000a18                DMA2_Channel8_IRQHandler
-                0x0000000000000a18                NMI_Handler
-                0x0000000000000a18                CAN2_RX1_IRQHandler
-                0x0000000000000a18                EXTI3_IRQHandler
-                0x0000000000000a18                UART1_IRQHandler
-                0x0000000000000a18                USBHS_IRQHandler
-                0x0000000000000a18                DMA2_Channel9_IRQHandler
-                0x0000000000000a18                TIM10_CC_IRQHandler
-                0x0000000000000a18                EXTI25_16_IRQHandler
-                0x0000000000000a18                USBFS_IRQHandler
-                0x0000000000000a18                UART0_IRQHandler
-                0x0000000000000a18                EXTI0_IRQHandler
-                0x0000000000000a18                I2C2_EV_IRQHandler
-                0x0000000000000a18                TIM10_TRG_COM_IRQHandler
-                0x0000000000000a18                CAN2_SCE_IRQHandler
-                0x0000000000000a18                ADC1_2_IRQHandler
-                0x0000000000000a18                BB_IRQHandler
-                0x0000000000000a18                Break_Point_Handler
-                0x0000000000000a18                TIM2_CC_IRQHandler
-                0x0000000000000a18                SPI1_IRQHandler
-                0x0000000000000a18                TAMPER_IRQHandler
-                0x0000000000000a18                TMR0_IRQHandler
-                0x0000000000000a18                AWU_IRQHandler
-                0x0000000000000a18                EXTI7_0_IRQHandler
-                0x0000000000000a18                CAN2_RX0_IRQHandler
-                0x0000000000000a18                OSCWakeUp_IRQHandler
-                0x0000000000000a18                TIM8_UP_IRQHandler
-                0x0000000000000a18                Ecall_M_Mode_Handler
-                0x0000000000000a18                DMA2_Channel2_IRQHandler
-                0x0000000000000a18                DMA1_Channel4_IRQHandler
-                0x0000000000000a18                ADC1_IRQHandler
-                0x0000000000000a18                TIM2_BRK_IRQHandler
-                0x0000000000000a18                TIM9_UP_IRQHandler
-                0x0000000000000a18                USART3_IRQHandler
-                0x0000000000000a18                RTC_IRQHandler
-                0x0000000000000a18                DMA1_Channel7_IRQHandler
-                0x0000000000000a18                LED_IRQHandler
-                0x0000000000000a18                CAN1_RX1_IRQHandler
-                0x0000000000000a18                DVP_IRQHandler
-                0x0000000000000a18                UART5_IRQHandler
-                0x0000000000000a18                EXTI15_8_IRQHandler
-                0x0000000000000a18                TIM4_IRQHandler
-                0x0000000000000a18                DMA2_Channel1_IRQHandler
-                0x0000000000000a18                USBPD_WKUP_IRQHandler
-                0x0000000000000a18                I2C1_EV_IRQHandler
-                0x0000000000000a18                UART2_IRQHandler
-                0x0000000000000a18                USART4_IRQHandler
-                0x0000000000000a18                PWMX_IRQHandler
-                0x0000000000000a18                DMA1_Channel6_IRQHandler
-                0x0000000000000a18                UART4_IRQHandler
-                0x0000000000000a18                DMA2_Channel4_IRQHandler
-                0x0000000000000a18                TIM3_IRQHandler
-                0x0000000000000a18                RCC_IRQHandler
-                0x0000000000000a18                TIM1_TRG_COM_IRQHandler
-                0x0000000000000a18                DMA1_Channel1_IRQHandler
-                0x0000000000000a18                DMA2_Channel7_IRQHandler
-                0x0000000000000a18                EXTI15_10_IRQHandler
-                0x0000000000000a18                ADC_IRQHandler
-                0x0000000000000a18                DMA1_Channel8_IRQHandler
-                0x0000000000000a18                TMR2_IRQHandler
-                0x0000000000000a18                DefaultIRQHandler
-                0x0000000000000a18                TIM7_IRQHandler
-                0x0000000000000a18                CAN2_TX_IRQHandler
-                0x0000000000000a18                TIM5_IRQHandler
-                0x0000000000000a18                USB_IRQHandler
-                0x0000000000000a18                EXTI9_5_IRQHandler
-                0x0000000000000a18                PIOC_IRQHandler
-                0x0000000000000a18                SPI2_IRQHandler
-                0x0000000000000a18                OSC32KCal_IRQHandler
-                0x0000000000000a18                I2C_IRQHandler
-                0x0000000000000a18                TIM10_BRK_IRQHandler
-                0x0000000000000a18                TIM9_CC_IRQHandler
-                0x0000000000000a18                DMA2_Channel5_IRQHandler
-                0x0000000000000a18                USB2_IRQHandler
-                0x0000000000000a18                USBHSWakeUp_IRQHandler
-                0x0000000000000a18                DMA1_Channel5_IRQHandler
-                0x0000000000000a18                EXTI4_IRQHandler
-                0x0000000000000a18                USB_LP_CAN1_RX0_IRQHandler
-                0x0000000000000a18                RNG_IRQHandler
-                0x0000000000000a18                USB_HP_CAN1_TX_IRQHandler
-                0x0000000000000a18                DMA1_Channel3_IRQHandler
-                0x0000000000000a18                FSMC_IRQHandler
-                0x0000000000000a18                ETH_IRQHandler
-                0x0000000000000a18                TIM1_UP_IRQHandler
-                0x0000000000000a18                WWDG_IRQHandler
-                0x0000000000000a18                DMA2_Channel11_IRQHandler
-                0x0000000000000a18                WDOG_BAT_IRQHandler
-                0x0000000000000a18                Ecall_U_Mode_Handler
-                0x0000000000000a18                TMR3_IRQHandler
-                0x0000000000000a18                DMA2_Channel6_IRQHandler
-                0x0000000000000a18                TIM2_IRQHandler
-                0x0000000000000a18                SW_Handler
-                0x0000000000000a18                TIM1_BRK_IRQHandler
-                0x0000000000000a18                OPA_IRQHandler
-                0x0000000000000a18                DMA2_Channel10_IRQHandler
-                0x0000000000000a18                EXTI1_IRQHandler
-                0x0000000000000a18                USB2_HOST_IRQHandler
-                0x0000000000000a18                RTCAlarm_IRQHandler
-                0x0000000000000a18                TIM10_UP_IRQHandler
-                0x0000000000000a18                TIM9_TRG_COM_IRQHandler
-                0x0000000000000a18                UART7_IRQHandler
-                0x0000000000000a18                USART2_IRQHandler
-                0x0000000000000a18                UART6_IRQHandler
-                0x0000000000000a18                ETHWakeUp_IRQHandler
-                0x0000000000000a18                I2C2_ER_IRQHandler
-                0x0000000000000a18                DMA1_Channel2_IRQHandler
-                0x0000000000000a18                TIM8_BRK_IRQHandler
-                0x0000000000000a18                TIM2_TRG_IRQHandler
-                0x0000000000000a18                CAN1_SCE_IRQHandler
-                0x0000000000000a18                FLASH_IRQHandler
-                0x0000000000000a18                USBFSWakeUp_IRQHandler
-                0x0000000000000a18                USART1_IRQHandler
-                0x0000000000000a18                OTG_FS_IRQHandler
-                0x0000000000000a18                SPI3_IRQHandler
-                0x0000000000000a18                USBFS_WakeUp_IRQHandler
-                0x0000000000000a18                UART3_IRQHandler
-                0x0000000000000a18                I2C1_ER_IRQHandler
-                0x0000000000000a18                USB2_DEVICE_IRQHandler
-                0x0000000000000a18                TMR1_IRQHandler
-                0x0000000000000a18                USBWakeUp_IRQHandler
-                0x0000000000000a18                DMA2_Channel3_IRQHandler
- .text.strlen   0x0000000000000a1a       0x12 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000a1a                strlen
+                0x0000000000000982        0x2 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000982                EXTI2_IRQHandler
+                0x0000000000000982                TIM8_TRG_COM_IRQHandler
+                0x0000000000000982                TIM8_CC_IRQHandler
+                0x0000000000000982                UART8_IRQHandler
+                0x0000000000000982                NFC_IRQHandler
+                0x0000000000000982                TIM1_CC_IRQHandler
+                0x0000000000000982                HardFault_Handler
+                0x0000000000000982                GPIOB_IRQHandler
+                0x0000000000000982                USBPD_IRQHandler
+                0x0000000000000982                TIM6_IRQHandler
+                0x0000000000000982                GPIOA_IRQHandler
+                0x0000000000000982                PVD_IRQHandler
+                0x0000000000000982                SDIO_IRQHandler
+                0x0000000000000982                TIM9_BRK_IRQHandler
+                0x0000000000000982                DMA2_Channel8_IRQHandler
+                0x0000000000000982                NMI_Handler
+                0x0000000000000982                CAN2_RX1_IRQHandler
+                0x0000000000000982                EXTI3_IRQHandler
+                0x0000000000000982                UART1_IRQHandler
+                0x0000000000000982                USBHS_IRQHandler
+                0x0000000000000982                DMA2_Channel9_IRQHandler
+                0x0000000000000982                TIM10_CC_IRQHandler
+                0x0000000000000982                EXTI25_16_IRQHandler
+                0x0000000000000982                USBFS_IRQHandler
+                0x0000000000000982                UART0_IRQHandler
+                0x0000000000000982                EXTI0_IRQHandler
+                0x0000000000000982                I2C2_EV_IRQHandler
+                0x0000000000000982                TIM10_TRG_COM_IRQHandler
+                0x0000000000000982                CAN2_SCE_IRQHandler
+                0x0000000000000982                ADC1_2_IRQHandler
+                0x0000000000000982                BB_IRQHandler
+                0x0000000000000982                Break_Point_Handler
+                0x0000000000000982                TIM2_CC_IRQHandler
+                0x0000000000000982                SPI1_IRQHandler
+                0x0000000000000982                TAMPER_IRQHandler
+                0x0000000000000982                TMR0_IRQHandler
+                0x0000000000000982                AWU_IRQHandler
+                0x0000000000000982                EXTI7_0_IRQHandler
+                0x0000000000000982                CAN2_RX0_IRQHandler
+                0x0000000000000982                OSCWakeUp_IRQHandler
+                0x0000000000000982                TIM8_UP_IRQHandler
+                0x0000000000000982                Ecall_M_Mode_Handler
+                0x0000000000000982                DMA2_Channel2_IRQHandler
+                0x0000000000000982                DMA1_Channel4_IRQHandler
+                0x0000000000000982                ADC1_IRQHandler
+                0x0000000000000982                TIM2_BRK_IRQHandler
+                0x0000000000000982                TIM9_UP_IRQHandler
+                0x0000000000000982                USART3_IRQHandler
+                0x0000000000000982                RTC_IRQHandler
+                0x0000000000000982                DMA1_Channel7_IRQHandler
+                0x0000000000000982                LED_IRQHandler
+                0x0000000000000982                CAN1_RX1_IRQHandler
+                0x0000000000000982                DVP_IRQHandler
+                0x0000000000000982                UART5_IRQHandler
+                0x0000000000000982                EXTI15_8_IRQHandler
+                0x0000000000000982                TIM4_IRQHandler
+                0x0000000000000982                DMA2_Channel1_IRQHandler
+                0x0000000000000982                USBPD_WKUP_IRQHandler
+                0x0000000000000982                I2C1_EV_IRQHandler
+                0x0000000000000982                UART2_IRQHandler
+                0x0000000000000982                USART4_IRQHandler
+                0x0000000000000982                PWMX_IRQHandler
+                0x0000000000000982                DMA1_Channel6_IRQHandler
+                0x0000000000000982                UART4_IRQHandler
+                0x0000000000000982                DMA2_Channel4_IRQHandler
+                0x0000000000000982                TIM3_IRQHandler
+                0x0000000000000982                RCC_IRQHandler
+                0x0000000000000982                TIM1_TRG_COM_IRQHandler
+                0x0000000000000982                DMA1_Channel1_IRQHandler
+                0x0000000000000982                DMA2_Channel7_IRQHandler
+                0x0000000000000982                EXTI15_10_IRQHandler
+                0x0000000000000982                ADC_IRQHandler
+                0x0000000000000982                DMA1_Channel8_IRQHandler
+                0x0000000000000982                TMR2_IRQHandler
+                0x0000000000000982                DefaultIRQHandler
+                0x0000000000000982                TIM7_IRQHandler
+                0x0000000000000982                CAN2_TX_IRQHandler
+                0x0000000000000982                TIM5_IRQHandler
+                0x0000000000000982                USB_IRQHandler
+                0x0000000000000982                EXTI9_5_IRQHandler
+                0x0000000000000982                PIOC_IRQHandler
+                0x0000000000000982                SPI2_IRQHandler
+                0x0000000000000982                OSC32KCal_IRQHandler
+                0x0000000000000982                I2C_IRQHandler
+                0x0000000000000982                TIM10_BRK_IRQHandler
+                0x0000000000000982                TIM9_CC_IRQHandler
+                0x0000000000000982                DMA2_Channel5_IRQHandler
+                0x0000000000000982                USB2_IRQHandler
+                0x0000000000000982                USBHSWakeUp_IRQHandler
+                0x0000000000000982                DMA1_Channel5_IRQHandler
+                0x0000000000000982                EXTI4_IRQHandler
+                0x0000000000000982                USB_LP_CAN1_RX0_IRQHandler
+                0x0000000000000982                RNG_IRQHandler
+                0x0000000000000982                USB_HP_CAN1_TX_IRQHandler
+                0x0000000000000982                DMA1_Channel3_IRQHandler
+                0x0000000000000982                FSMC_IRQHandler
+                0x0000000000000982                ETH_IRQHandler
+                0x0000000000000982                TIM1_UP_IRQHandler
+                0x0000000000000982                WWDG_IRQHandler
+                0x0000000000000982                DMA2_Channel11_IRQHandler
+                0x0000000000000982                WDOG_BAT_IRQHandler
+                0x0000000000000982                Ecall_U_Mode_Handler
+                0x0000000000000982                TMR3_IRQHandler
+                0x0000000000000982                DMA2_Channel6_IRQHandler
+                0x0000000000000982                TIM2_IRQHandler
+                0x0000000000000982                SW_Handler
+                0x0000000000000982                TIM1_BRK_IRQHandler
+                0x0000000000000982                OPA_IRQHandler
+                0x0000000000000982                DMA2_Channel10_IRQHandler
+                0x0000000000000982                EXTI1_IRQHandler
+                0x0000000000000982                USB2_HOST_IRQHandler
+                0x0000000000000982                RTCAlarm_IRQHandler
+                0x0000000000000982                TIM10_UP_IRQHandler
+                0x0000000000000982                TIM9_TRG_COM_IRQHandler
+                0x0000000000000982                UART7_IRQHandler
+                0x0000000000000982                USART2_IRQHandler
+                0x0000000000000982                UART6_IRQHandler
+                0x0000000000000982                ETHWakeUp_IRQHandler
+                0x0000000000000982                I2C2_ER_IRQHandler
+                0x0000000000000982                DMA1_Channel2_IRQHandler
+                0x0000000000000982                TIM8_BRK_IRQHandler
+                0x0000000000000982                TIM2_TRG_IRQHandler
+                0x0000000000000982                CAN1_SCE_IRQHandler
+                0x0000000000000982                FLASH_IRQHandler
+                0x0000000000000982                USBFSWakeUp_IRQHandler
+                0x0000000000000982                USART1_IRQHandler
+                0x0000000000000982                OTG_FS_IRQHandler
+                0x0000000000000982                SPI3_IRQHandler
+                0x0000000000000982                USBFS_WakeUp_IRQHandler
+                0x0000000000000982                UART3_IRQHandler
+                0x0000000000000982                I2C1_ER_IRQHandler
+                0x0000000000000982                USB2_DEVICE_IRQHandler
+                0x0000000000000982                TMR1_IRQHandler
+                0x0000000000000982                USBWakeUp_IRQHandler
+                0x0000000000000982                DMA2_Channel3_IRQHandler
+ .text.strlen   0x0000000000000984       0x12 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000984                strlen
  .text.mini_vpprintf
-                0x0000000000000a2c      0x1c4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.printf   0x0000000000000bf0       0x28 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000bf0                printf
- .text.memset   0x0000000000000c18       0x12 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000c18                memset
- .text.memcpy   0x0000000000000c2a       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000c2a                memcpy
+                0x0000000000000996      0x1c4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.printf   0x0000000000000b5a       0x28 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000b5a                printf
+ .text.memset   0x0000000000000b82       0x12 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000b82                memset
+ .text.memcpy   0x0000000000000b94       0x1c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000b94                memcpy
  .text.modiSLER_adv_data.constprop.0
-                0x0000000000000c46      0x1e0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .text.memcmp   0x0000000000000e26       0x26 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000e26                memcmp
- .text.puts     0x0000000000000e4c       0x2c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000e4c                puts
- .text.putchar  0x0000000000000e78       0x6c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000e78                putchar
+                0x0000000000000bb0      0x1e0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .text.memcmp   0x0000000000000d90       0x26 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000d90                memcmp
+ .text.puts     0x0000000000000db6       0x2c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000db6                puts
  .text.SystemInit
-                0x0000000000000ee4       0x94 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000ee4                SystemInit
+                0x0000000000000de2       0x94 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000de2                SystemInit
  .text.startup.main
-                0x0000000000000f78      0x992 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                0x0000000000000f78                main
+                0x0000000000000e76      0x9f4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+                0x0000000000000e76                main
  .text.SysTick_Handler
-                0x000000000000190a       0x56 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x000000000000186a       0x56 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.SPI0_IRQHandler
-                0x0000000000001960       0x66 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000018c0       0x66 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .text.LLE_IRQHandler
-                0x00000000000019c6       0xaa C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001926       0xaa C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.rodata)
- .rodata        0x0000000000001a70       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+ *fill*         0x00000000000019d0        0x0 
+ .rodata        0x00000000000019d0       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.rodata*)
  .rodata.WS2812FillBuffSec.constprop.0
-                0x0000000000001a84       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000000019e4       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rodata.puts.str1.4
-                0x0000000000001a98        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
-                                          0x2 (size before relaxing)
+                0x00000000000019f8        0x2 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ *fill*         0x00000000000019fa        0x2 
  .rodata.main.str1.4
-                0x0000000000001a98      0x131 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- *fill*         0x0000000000001bc9        0x3 
+                0x00000000000019fc       0x85 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ *fill*         0x0000000000001a81        0x3 
  .rodata.SIN_LUT
-                0x0000000000001bcc      0x100 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001a84      0x100 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rodata.bitquartets.0
-                0x0000000000001ccc       0x20 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001b84       0x20 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rodata.channel_map
-                0x0000000000001cec       0x28 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001ba4       0x28 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.gnu.linkonce.t.*)
-                0x0000000000001d14                . = ALIGN (0x4)
+                0x0000000000001bcc                . = ALIGN (0x4)
 
-.rela.dyn       0x0000000000001d14        0x0
+.rela.dyn       0x0000000000001bcc        0x0
  .rela.text.mini_pad
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.WS2812FillBuffSec.constprop.0
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text._write.constprop.0
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.handle_reset
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.mini_vpprintf
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.modiSLER_adv_data.constprop.0
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.puts
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .rela.text.startup.main
-                0x0000000000001d14        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000001bcc        0x0 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
 
-.fini           0x0000000000001d14        0x0
+.fini           0x0000000000001bcc        0x0
  *(SORT_NONE(.fini))
-                0x0000000000001d14                . = ALIGN (0x4)
+                0x0000000000001bcc                . = ALIGN (0x4)
                 [!provide]                        PROVIDE (_etext = .)
                 [!provide]                        PROVIDE (_eitcm = .)
 
-.preinit_array  0x0000000000001d14        0x0
+.preinit_array  0x0000000000001bcc        0x0
                 [!provide]                        PROVIDE (__preinit_array_start = .)
  *(.preinit_array)
                 [!provide]                        PROVIDE (__preinit_array_end = .)
 
-.init_array     0x0000000000001d14        0x0
+.init_array     0x0000000000001bcc        0x0
                 [!provide]                        PROVIDE (__init_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
  *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
                 [!provide]                        PROVIDE (__init_array_end = .)
 
-.fini_array     0x0000000000001d14        0x0
+.fini_array     0x0000000000001bcc        0x0
                 [!provide]                        PROVIDE (__fini_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
  *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
@@ -329,34 +327,34 @@ LOAD c:/sysgcc/risc-v/bin/../lib/gcc/riscv64-unknown-elf/10.1.0/rv32imac/ilp32\l
  *(SORT_BY_NAME(.dtors.*))
  *(.dtors)
 
-.dalign         0x0000000020000000        0x0 load address 0x0000000000001d14
+.dalign         0x0000000020000000        0x0 load address 0x0000000000001bcc
                 0x0000000020000000                . = ALIGN (0x4)
                 0x0000000020000000                PROVIDE (_data_vma = .)
 
-.dlalign        0x0000000000001d14        0x0
-                0x0000000000001d14                . = ALIGN (0x4)
-                0x0000000000001d14                PROVIDE (_data_lma = .)
+.dlalign        0x0000000000001bcc        0x0
+                0x0000000000001bcc                . = ALIGN (0x4)
+                0x0000000000001bcc                PROVIDE (_data_lma = .)
 
-.data           0x0000000020000000       0xc4 load address 0x0000000000001d14
+.data           0x0000000020000000       0xc4 load address 0x0000000000001bcc
                 0x0000000020000000                . = ALIGN (0x4)
                 0x00000000200003fc                __global_pointer$ = (. + 0x3fc)
  *(.gnu.linkonce.r.*)
  *(.data .data.*)
  .data.color_arr
-                0x0000000020000000        0xc C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000020000000        0xc C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .data.dataFrame
-                0x000000002000000c       0x8e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x000000002000000c       0x8e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *fill*         0x000000002000009a        0x2 
  .data.leds_frame
-                0x000000002000009c       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x000000002000009c       0x14 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.gnu.linkonce.d.*)
                 0x00000000200000b0                . = ALIGN (0x8)
  *(.sdata .sdata.*)
  .sdata.Neo_LedCmd
-                0x00000000200000b0        0x1 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000b0        0x1 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *fill*         0x00000000200000b1        0x3 
  .sdata.color_ani
-                0x00000000200000b4        0x8 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000b4        0x8 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.sdata2*)
  *(.gnu.linkonce.s.*)
                 0x00000000200000c0                . = ALIGN (0x8)
@@ -367,40 +365,44 @@ LOAD c:/sysgcc/risc-v/bin/../lib/gcc/riscv64-unknown-elf/10.1.0/rv32imac/ilp32\l
  *(.srodata.cst2)
  *(.srodata .srodata.*)
  .srodata.adv_channels
-                0x00000000200000c0        0x3 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000c0        0x3 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
                 0x00000000200000c4                . = ALIGN (0x4)
  *fill*         0x00000000200000c3        0x1 
                 0x00000000200000c4                PROVIDE (_edata = .)
 
-.bss            0x00000000200000c4      0x4d8 load address 0x0000000000001dd8
+.bss            0x00000000200000c4      0x4e8 load address 0x0000000000001c90
                 0x00000000200000c4                . = ALIGN (0x4)
                 0x00000000200000c4                PROVIDE (_sbss = .)
  *(.sbss*)
  .sbss.WS2812BLEDInUse
-                0x00000000200000c4        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000c4        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.WS2812LEDPlace
-                0x00000000200000c8        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000c8        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.WS2812LEDs
-                0x00000000200000cc        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .sbss.counter  0x00000000200000d0        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000cc        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .sbss.counter  0x00000000200000d0        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .sbss.delay_send
+                0x00000000200000d4        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.rx_ready
-                0x00000000200000d4        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000d8        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.systick_millis
-                0x00000000200000d8        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000dc        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.tuneFilter
-                0x00000000200000dc        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000e0        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .sbss.tuneFilter2M
-                0x00000000200000e0        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x00000000200000e4        0x4 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.gnu.linkonce.sb.*)
  *(.bss*)
- .bss.LLE_BUF   0x00000000200000e4      0x440 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+ .bss.LLE_BUF   0x00000000200000e8      0x440 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  .bss.WS2812dmabuff
-                0x0000000020000524       0x60 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .bss.led_arr   0x0000000020000584       0x18 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000020000528       0x60 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .bss.led_arr   0x0000000020000588       0x18 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .bss.ping_cmd  0x00000000200005a0        0x9 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
  *(.gnu.linkonce.b.*)
  *(COMMON*)
-                0x000000002000059c                . = ALIGN (0x4)
-                0x000000002000059c                PROVIDE (_ebss = .)
+                0x00000000200005ac                . = ALIGN (0x4)
+ *fill*         0x00000000200005a9        0x3 
+                0x00000000200005ac                PROVIDE (_ebss = .)
                 [!provide]                        PROVIDE (_end = _ebss)
                 [!provide]                        PROVIDE (end = .)
                 0x0000000020008000                PROVIDE (_eusrstack = (ORIGIN (RAM) + LENGTH (RAM)))
@@ -416,42 +418,42 @@ OUTPUT(iSLER-mess.elf elf32-littleriscv)
 .riscv.attributes
                 0x0000000000000000       0x2b
  .riscv.attributes
-                0x0000000000000000       0x2b C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000       0x2b C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
 
-.debug_info     0x0000000000000000     0x51cb
- .debug_info    0x0000000000000000     0x231d C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .debug_info    0x000000000000231d      0xebb C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
-                0x000000000000231d                ch32fun.c.e0983271
- .debug_info    0x00000000000031d8     0x1ff3 C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
-                0x00000000000031d8                iSLER_mess.c.731a8212
+.debug_info     0x0000000000000000     0x50ba
+ .debug_info    0x0000000000000000     0x220e C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .debug_info    0x000000000000220e      0xebb C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
+                0x000000000000220e                ch32fun.c.e0983271
+ .debug_info    0x00000000000030c9     0x1ff1 C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
+                0x00000000000030c9                iSLER_mess.c.0d7236ba
 
-.debug_abbrev   0x0000000000000000      0x7c7
- .debug_abbrev  0x0000000000000000      0x222 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .debug_abbrev  0x0000000000000222      0x251 C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
- .debug_abbrev  0x0000000000000473      0x354 C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
+.debug_abbrev   0x0000000000000000      0x7d0
+ .debug_abbrev  0x0000000000000000      0x22b C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .debug_abbrev  0x000000000000022b      0x251 C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
+ .debug_abbrev  0x000000000000047c      0x354 C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
 
-.debug_loc      0x0000000000000000     0x3e7f
- .debug_loc     0x0000000000000000     0x3e7f C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+.debug_loc      0x0000000000000000     0x3e4b
+ .debug_loc     0x0000000000000000     0x3e4b C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
 
-.debug_aranges  0x0000000000000000      0x198
+.debug_aranges  0x0000000000000000      0x190
  .debug_aranges
-                0x0000000000000000      0x198 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+                0x0000000000000000      0x190 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
 
-.debug_ranges   0x0000000000000000      0xb08
- .debug_ranges  0x0000000000000000      0xb08 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+.debug_ranges   0x0000000000000000      0xaf8
+ .debug_ranges  0x0000000000000000      0xaf8 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
 
-.debug_line     0x0000000000000000     0x52b9
- .debug_line    0x0000000000000000     0x4f17 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
- .debug_line    0x0000000000004f17      0x18b C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
- .debug_line    0x00000000000050a2      0x217 C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
+.debug_line     0x0000000000000000     0x52c6
+ .debug_line    0x0000000000000000     0x4f24 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
+ .debug_line    0x0000000000004f24      0x18b C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
+ .debug_line    0x00000000000050af      0x217 C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
 
-.debug_str      0x0000000000000000     0x156f
- .debug_str     0x0000000000000000      0x16a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+.debug_str      0x0000000000000000     0x1583
+ .debug_str     0x0000000000000000      0x16a C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o
                                         0x18d (size before relaxing)
- .debug_str     0x000000000000016a      0x623 C:\Users\uni\AppData\Local\Temp\ccyHy6NR.debug.temp.o
+ .debug_str     0x000000000000016a      0x623 C:\Users\uni\AppData\Local\Temp\ccRPsVye.debug.temp.o
                                         0x719 (size before relaxing)
- .debug_str     0x000000000000078d      0xde2 C:\Users\uni\AppData\Local\Temp\ccgxY5f9.debug.temp.o
-                                       0x1075 (size before relaxing)
+ .debug_str     0x000000000000078d      0xdf6 C:\Users\uni\AppData\Local\Temp\ccgNN9IY.debug.temp.o
+                                       0x1089 (size before relaxing)
 
-.debug_frame    0x0000000000000000      0x674
- .debug_frame   0x0000000000000000      0x674 C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.YiUxrn.ltrans0.ltrans.o
+.debug_frame    0x0000000000000000      0x64c
+ .debug_frame   0x0000000000000000      0x64c C:\Users\uni\AppData\Local\Temp\iSLER-mess.elf.bF4OsP.ltrans0.ltrans.o

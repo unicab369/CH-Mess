@@ -9,7 +9,10 @@
 #include "1_Foundation/modJoystick.h"
 #include "Display/modST77xx.h"
 #include "2_Device/fun_ws2812.h"
-#include "2_Device/ssd1306_draw.h"
+
+
+
+#include "2_Device/mod_ssd1306.h"
 
 #include "ST7735/modTFT.h"
 #include "Storage/modStorage.h"
@@ -37,8 +40,8 @@ int main()
 	modI2C_setup();
 
 	// uses SCK-PC5, MOSI-PC6, RST-PD2, CD-PC4
-	SPI_init();
-	modST7735_setup(PD2, PC4);
+	// SPI_init();
+	// modST7735_setup(PD2, PC4);
 
 	while(1)
 	{
@@ -50,17 +53,17 @@ int main()
 		if (now - sec_time > 2000) {
 			sec_time = now;
 
-			// modI2C_task2(counter++);
+			modI2C_task2(counter++);
 
 			// // modJoystick_task();
 			// // dma_uart_tx(message, sizeof(message) - 1);
 
-			// uint32_t runtime_i2c = get_runTime(modI2C_task);
-			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
+			uint32_t runtime_i2c = get_runTime(ssd1306_draw_test);
+			sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = get_runTime(tft_test);
-			printf("ST7735 runtime: %lu us\n", runtime_tft);
+			// uint32_t runtime_tft = get_runTime(tft_test);
+			// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
 			// storage_test();
 		}

@@ -1,5 +1,4 @@
 #include "ch32fun.h"
-#include "i2c_hal.h"
 #include "modUtility.h"
 
 #define SSD1306_128X64

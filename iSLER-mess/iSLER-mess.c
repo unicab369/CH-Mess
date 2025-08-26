@@ -69,7 +69,9 @@ remote_command_t ping_cmd = {
 	.command = 0,
 	.value1 = 0,
 	.value2 = 0
-}
+};
+
+uint32_t delay_send = 0;
 
 void handle_receiving_frame(uint32_t time) {
 		// now listen for frames on channel 37. When the RF subsystem
@@ -81,7 +83,7 @@ void handle_receiving_frame(uint32_t time) {
 	remote_command_t* cmd = modiSLER_rx_handler();
 	if (cmd) {
 		blink(1);
-		printf("Receiv Command: %02X\n", cmd->command);
+		// printf("Receiv Command: %02X\n", cmd->command);
 
 		switch (cmd->command) {
 			case 0xBB:
@@ -93,24 +95,17 @@ void handle_receiving_frame(uint32_t time) {
 				break;
 			case 0xF1:
 				if (is_slave_device() > 0) {
-					remote_command_t remote_cmd1 = {
-						.command = 0xF2,
-						.value1 = cmd->value1,
-						.value2 = cmd->value2
-					};
-					printf("Sending value1: %u, value2: %u\n", 
-						remote_cmd1.value1, remote_cmd1.value2);
-					Delay_Ms(100);
-
-					modiSLER_loadCommand(&dataFrame, &remote_cmd1, sizeof(remote_cmd1));
-					modiSLER_adv_data(&dataFrame);
+					ping_cmd.command = 0xF2;
+					ping_cmd.value1 = cmd->value1;
+					ping_cmd.value2 = cmd->value2;
+					delay_send = millis();
 				}
 
 				break;
 			case 0xF2:
 				if (is_slave_device() == 0) {
-					printf("Received value1: %u, value2: %u\n", 
-						cmd->value1, cmd->value2);
+					// printf("Received value1: %u, value2: %u\n", 
+					// 	cmd->value1, cmd->value2);
 					printf("time_diff: %d\n", time - cmd->value2);
 				}
 				break;
@@ -152,10 +147,21 @@ int main() {
 	button_setup(&button);
 
 	while(1) {
+		if (ping_cmd.command == 0xF2 && millis() - delay_send > 200) {
+			blink(1);
+			printf("Sending value1: %u, value2: %u\n", ping_cmd.value1, ping_cmd.value2);
+			modiSLER_loadCommand(&dataFrame, &ping_cmd, sizeof(ping_cmd));
+			modiSLER_adv_data(&dataFrame);
+
+			ping_cmd.command = 0;
+			ping_cmd.value1 = 0;
+			ping_cmd.value2 = 0;
+		}
+
 		if (is_slave_device() == 0) {
 			leds_frame.is_enabled = 1;
 
-			if (systick_handleTimeout(&sec_time, 6000)) {
+			if (systick_handleTimeout(&sec_time, 3000)) {
 				blink(1);
 
 				// remote_command_t remote_cmd1 = {
@@ -172,8 +178,8 @@ int main() {
 					.value1 = counter++,
 					.value2 = sec_time
 				};
-				printf("[Master] Sending value1: %u, value2: %u\n", 
-					remote_cmd1.value1, remote_cmd1.value2);
+				// printf("[Master] Sending value1: %u, value2: %u\n", 
+				// 	remote_cmd1.value1, remote_cmd1.value2);
 
 				modiSLER_loadCommand(&dataFrame, &remote_cmd1, sizeof(remote_cmd1));
 				modiSLER_adv_data(&dataFrame);
@@ -181,7 +187,7 @@ int main() {
 		}
 		
 		handle_receiving_frame(millis());
-        Neo_task();
 		button_task(&button, button_onChanged);
+		// Neo_task();
 	}
 }
