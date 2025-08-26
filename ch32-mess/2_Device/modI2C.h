@@ -1,33 +1,39 @@
 #include "ch32fun.h"
-#include "modUtility.h"
 
 #define SSD1306_128X64
 
 #include "lib_i2c.h"
-#include "ssd1306_i2c.h"
+// #include "ssd1306_i2c.h"
 #include "ssd1306.h"
 #include "bomb.h"
 
 
 i2c_device_t dev_ssd1306 = {
-	.clkr = I2C_CLK_400KHZ,
+	.clkr = I2C_CLK_100KHZ,
 	.type = I2C_ADDR_7BIT,
-	.addr = 0x3c,				// Default address for SSD1306
+	.addr = 0x3C,				// Default address for SSD1306
 	.regb = 1,
 };
 
 /* send OLED command byte */
 uint8_t ssd1306_cmd(uint8_t cmd) {
-	return ssd1306_pkt_send(&cmd, 1, 1);
+	uint8_t pkt[2];
+	pkt[0] = 0;
+	pkt[1] = cmd;
+	return i2c_write_raw(&dev_ssd1306, pkt, 2);
+	// return ssd1306_pkt_send(&cmd, 1, 1);
 }
 
 /* send OLED data packet (up to 32 bytes) */
 uint8_t ssd1306_data(uint8_t *data, int sz) {
 	uint8_t pkt[33];
+	pkt[0] = 0x40;
+	memcpy(&pkt[1], data, sz);
+
 	// pkt[0] = 0;
 	// pkt[1] = *data;
-	// return i2c_write_raw(&dev_ssd1306, pkt, sz+1);
-	return ssd1306_pkt_send(data, sz, 0);
+	return i2c_write_raw(&dev_ssd1306, pkt, sz+1);
+	// return ssd1306_pkt_send(data, sz, 0);
 }
 
 

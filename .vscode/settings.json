@@ -32,7 +32,10 @@
         "bomb.h": "c",
         "modi2c.h": "c",
         "modssd1306.h": "c",
-        "ssd1306_draw.h": "c"
+        "ssd1306_draw.h": "c",
+        "stdint.h": "c",
+        "word_font.h": "c",
+        "utility": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
