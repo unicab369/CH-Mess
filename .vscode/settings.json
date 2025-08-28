@@ -36,7 +36,9 @@
         "stdint.h": "c",
         "word_font.h": "c",
         "utility": "c",
-        "mod_ssd1306.h": "c"
+        "mod_ssd1306.h": "c",
+        "fun_ws2812.h": "c",
+        "modencoder.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

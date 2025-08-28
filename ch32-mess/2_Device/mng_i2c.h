@@ -1,7 +1,8 @@
 #include "ch32fun.h"
 
-#include "mod_ssd1306.h"
+// #include "mod_ssd1306.h"
 #include "../Mess-libs/i2c/lib_i2c.h"
+#include "../Mess-libs/i2c/ssd1306/mod_ssd1306.h"
 
 i2c_device_t dev_ssd1306 = {
 	.clkr = I2C_CLK_100KHZ,
