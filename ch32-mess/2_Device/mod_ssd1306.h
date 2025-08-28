@@ -2,7 +2,16 @@
 #define _MODSSD1306_H
 
 #include "ch32fun.h"
-#include "modI2C.h"
+
+#define SSD1306_128X64
+#include "ssd1306.h"
+
+/* send OLED command byte */
+uint8_t ssd1306_cmd(uint8_t cmd);
+
+/* send OLED data packet (up to 32 bytes) */
+uint8_t ssd1306_data(uint8_t *data, int sz);
+
 
 const uint8_t SIN_LUT[] = {
     0, 4, 9, 13, 18, 22, 27, 31, 36, 40, 44, 49, 53, 58, 62, 66,

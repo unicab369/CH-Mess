@@ -12,7 +12,8 @@
 
 
 
-#include "2_Device/mod_ssd1306.h"
+// #include "2_Device/mod_ssd1306.h"
+#include "2_Device/mng_i2c.h"
 
 #include "ST7735/modTFT.h"
 #include "Storage/modStorage.h"
@@ -58,8 +59,8 @@ int main()
 			// // modJoystick_task();
 			// // dma_uart_tx(message, sizeof(message) - 1);
 
-			uint32_t runtime_i2c = get_runTime(ssd1306_draw_test);
-			sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
+			// uint32_t runtime_i2c = get_runTime(ssd1306_draw_test);
+			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
 			// uint32_t runtime_tft = get_runTime(tft_test);

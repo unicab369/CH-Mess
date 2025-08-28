@@ -35,7 +35,8 @@
         "ssd1306_draw.h": "c",
         "stdint.h": "c",
         "word_font.h": "c",
-        "utility": "c"
+        "utility": "c",
+        "mod_ssd1306.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
