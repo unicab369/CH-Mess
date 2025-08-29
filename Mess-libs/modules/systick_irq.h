@@ -72,7 +72,7 @@ void SysTick_Handler(void)
 	systick_millis++;
 }
 
-uint32_t get_runTime(void *handler(void)) {
+uint32_t SysTick_getRunTime(void *handler(void)) {
 	uint32_t now = micros();
 	handler();
 	return micros() - now;

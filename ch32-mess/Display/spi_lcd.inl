@@ -485,19 +485,19 @@ void lcdInit(int iLCDType, uint32_t u32Speed, uint8_t u8CSPin, uint8_t u8DCPin, 
 	} // switch on LCD type
 	iLCDPitch = iLCDWidth*2;
 	u8CS = u8CSPin;
-	if (u8CSPin != 0xff) {
-		pinMode(u8CSPin, OUTPUT);
-		digitalWrite(u8CSPin, 1);
-	}
-	pinMode(u8RSTPin, OUTPUT);
-	digitalWrite(u8RSTPin, 0); // reset the display controller
-	Delay_Ms(100);
-	digitalWrite(u8RSTPin, 1);
-	Delay_Ms(200);
+	// if (u8CSPin != 0xff) {
+	// 	pinMode(u8CSPin, OUTPUT);
+	// 	digitalWrite(u8CSPin, 1);
+	// }
+	// pinMode(u8RSTPin, OUTPUT);
+	// digitalWrite(u8RSTPin, 0); // reset the display controller
+	// Delay_Ms(100);
+	// digitalWrite(u8RSTPin, 1);
+	// Delay_Ms(200);
 
-	SPI_begin(u32Speed, 0);
-	u8DC = u8DCPin;
-	pinMode(u8DCPin, OUTPUT);
+	// SPI_begin(u32Speed, 0);
+	// u8DC = u8DCPin;
+	// pinMode(u8DCPin, OUTPUT);
 
 	// u8BL = u8BLPin;
 	// pinMode(u8BL, OUTPUT);

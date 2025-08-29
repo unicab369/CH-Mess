@@ -34,7 +34,6 @@ void _reset_timers(uint8_t newState, Button_t *model) {
 
 void button_setup(Button_t *model) {
    if (model->pin == 0xFF) return; 
-   // button_pin = pin;
 
 	funPinMode(model->pin, GPIO_CFGLR_IN_PUPD);
    _reset_timers(BUTTON_IDLE, model);

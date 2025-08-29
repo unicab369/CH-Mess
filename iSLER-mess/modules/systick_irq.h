@@ -63,3 +63,9 @@ int8_t systick_handleTimeout(uint32_t *ref_time, uint32_t duration) {
 	}
 	return 0;
 }
+
+uint32_t systick_getRunTime(void *handler(void)) {
+	uint32_t now = micros();
+	handler();
+	return micros() - now;
+}
