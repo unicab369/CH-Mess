@@ -13,14 +13,12 @@
 /--------------------------------------------------------------------------*/
 
 #include "diskio.h"
-
-/*-------------------------------------------------------------------------*/
-/* Platform dependent macros and functions needed to be modified           */
-/*-------------------------------------------------------------------------*/
-
-#include "thing_config.h"
 #include "ch32fun.h"
-// #include "hw_spi.h"
+
+
+#define SD_CS_GPIO GPIOC
+#define SD_CS_PIN 0
+
 
 #define DLY_US(n)	Delay_Us(n)	/* Delay n microseconds */
 #define	FORWARD(d)		/* Data in-time processing function (depends on the project) */

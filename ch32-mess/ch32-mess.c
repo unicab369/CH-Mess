@@ -13,7 +13,8 @@
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
-#include "Storage/modStorage.h"
+// #include "Storage/modStorage.h"
+#include "Storage/mod_sdCard.h"
 
 #include "../Mess-libs/modules/systick_irq.h"
 #include "../Mess-libs/modules/fun_button.h"
@@ -71,8 +72,12 @@ int main()
 	}
 	
 	// uses SCK-PC5, MOSI-PC6, RST-PD2, DC-PC4
-	SPI_init();
-	mod_st7735_setup(PC0, PC3);
+	// SPI_init();
+	// mod_st7735_setup(PC0, PC3);
+
+	SPI_init2();
+	Delay_Ms(100);
+	mod_sdCard_loadFile(0, "testfile.txt");
 
 	// TIM2 Ch1, Ch2 : uses PD3, PD4.
 	// modEncoder_setup(&encoder_a);

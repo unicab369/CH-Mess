@@ -1,15 +1,8 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-// #include "emulator.h"
-// #include "hw_spi.h"
-
-// #include "psram.h"
-
-
 #include "pff.h"
 #include "mmcbbp.h"
-#include "thing_config.h"
 
 void die( FRESULT rc )
 {
@@ -17,7 +10,7 @@ void die( FRESULT rc )
 	for (;;);
 }
 
-void load_sd_file(uint32_t addr, const char filename[] ) {
+void mod_sdCard_loadFile(uint32_t addr, const char filename[] ) {
 
 	FATFS fatfs; /* File system object */
 	UINT br;
@@ -25,6 +18,7 @@ void load_sd_file(uint32_t addr, const char filename[] ) {
 
 	printf( "Mounting volume.\n\r" );
 	FRESULT rc = pf_mount( &fatfs );
+	printf( "rc=%u\n\r", rc );
 	if ( rc ) return;
 
 	printf( "Opening file \"%s\"\n\r", filename );
@@ -44,23 +38,17 @@ void load_sd_file(uint32_t addr, const char filename[] ) {
 		printf( "Read %u bytes\n\r", br );
 		printf( "string: %s\n\r", buff );
 
-		// psram_write( addr, buff, br );
 		total_bytes += br;
 		addr += br;
 
 		if(total_bytes % (16*1024) == 0){
 			cnt++;
-			// printf("%d kb so far...  ", total_bytes/1024);
+			printf("%d kb so far...  ", total_bytes/1024);
 			putchar(spinner[cnt%4]);
 			putchar('\r');
 		}
 
 	}
 	if ( rc ) return;
-	// printf("\n\rLoaded %d kilobytes.\n\r", total_bytes/1024);
-}
-
-
-void storage_test() {
-	load_sd_file( 0, "testfile.txt" );
+	printf("\n\rLoaded %d kilobytes.\n\r", total_bytes/1024);
 }
