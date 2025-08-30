@@ -1,6 +1,178 @@
 // stolen and adjusted from: GitHub: https://github.com/limingjie/
 
-#include "modST7735.h"
+#include "ch32fun.h"
+#include "font5x7.h"
+
+#define ST7735_W    160
+
+#ifndef TFT_X_OFFSET
+    #define TFT_X_OFFSET 1
+#endif
+
+#ifndef TFT_Y_OFFSET
+    #define TFT_Y_OFFSET 26
+#endif
+
+// 5x7 Font
+#define FONT_WIDTH  5  // Font width
+#define FONT_HEIGHT 7  // Font height
+
+#define RGB565(r, g, b) ((((r)&0xF8) << 8) | (((g)&0xFC) << 3) | ((b) >> 3))
+#define BGR565(r, g, b) ((((b)&0xF8) << 8) | (((g)&0xFC) << 3) | ((r) >> 3))
+#define RGB         RGB565
+
+#define BLACK       RGB(0, 0, 0)
+#define NAVY        RGB(0, 0, 123)
+#define DARKGREEN   RGB(0, 125, 0)
+#define DARKCYAN    RGB(0, 125, 123)
+#define MAROON      RGB(123, 0, 0)
+#define PURPLE      RGB(123, 0, 123)
+#define OLIVE       RGB(123, 125, 0)
+#define LIGHTGREY   RGB(198, 195, 198)
+#define DARKGREY    RGB(123, 125, 123)
+#define BLUE        RGB(0, 0, 255)
+#define GREEN       RGB(0, 255, 0)
+#define CYAN        RGB(0, 255, 255)
+#define RED         RGB(255, 0, 0)
+#define MAGENTA     RGB(255, 0, 255)
+#define YELLOW      RGB(255, 255, 0)
+#define WHITE       RGB(255, 255, 255)
+#define ORANGE      RGB(255, 165, 0)
+#define GREENYELLOW RGB(173, 255, 41)
+#define PINK        RGB(255, 130, 198)
+
+static uint16_t colors[] = {
+    BLACK, NAVY, DARKGREEN, DARKCYAN, MAROON, PURPLE, OLIVE,  LIGHTGREY,   DARKGREY, BLUE,
+    GREEN, CYAN, RED,       MAGENTA,  YELLOW, WHITE,  ORANGE, GREENYELLOW, PINK,
+};
+
+
+// interfaces: use these to control CS pin
+#ifndef INTF_TFT_START_WRITE
+    void INTF_TFT_START_WRITE() {}
+#endif
+
+#ifndef INTF_TFT_END_WRITE
+    void INTF_TFT_END_WRITE() {}
+#endif
+
+void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat);
+void INTF_TFT_SEND_COLOR(uint16_t color);
+
+static uint8_t  _frame_buffer[ST7735_W << 1] = {0};
+static uint16_t _cursor_x                  = 0;
+static uint16_t _cursor_y                  = 0;      // Cursor position (x, y)
+
+static uint8_t  _buffer[ST7735_W << 1] = {0};    // DMA buffer, long enough to fill a row.
+
+void tft_print_char(
+    char c, uint8_t height, uint8_t width,
+    uint16_t color, uint16_t bg_color
+) {
+    const unsigned char* start = &font[c + (c << 2)];
+
+    uint16_t sz = 0;
+    for (uint8_t i = 0; i < height; i++) {
+        for (uint8_t j = 0; j < width; j++) {
+            if ((*(start + j)) & (0x01 << i)) {
+                _frame_buffer[sz++] = color >> 8;
+                _frame_buffer[sz++] = color;
+            }
+            else {
+                _frame_buffer[sz++] = bg_color >> 8;
+                _frame_buffer[sz++] = bg_color;
+            }
+        }
+    }
+
+    START_WRITE();
+    INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
+    END_WRITE();
+}
+
+void tft_print(const char* str) {
+    uint8_t font_width = 5; // Assuming a fixed width for the font
+
+    while (*str) {
+        tft_print_char(*str++, 7, font_width, 0xFFFF, 0x0000); // 7x5 font size
+        _cursor_x += font_width + 1;
+    }
+}
+
+
+void tft_set_cursor(uint16_t x, uint16_t y) {
+    _cursor_x = x + TFT_X_OFFSET;
+    _cursor_y = y + TFT_Y_OFFSET;
+}
+
+void tft_fill_rect(
+    uint16_t x, uint16_t y,
+    uint16_t width, uint16_t height, uint16_t color
+) {
+    x += TFT_X_OFFSET;
+    y += TFT_Y_OFFSET;
+
+    uint16_t sz = 0;
+    for (uint16_t x = 0; x < width; x++) {
+        _buffer[sz++] = color >> 8;
+        _buffer[sz++] = color;
+    }
+
+    START_WRITE();
+    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
+    INTF_TFT_SEND_BUFF(_buffer, sz, height);
+    END_WRITE();
+}
+
+void tft_print_number(int32_t num, uint16_t width) {
+    static char str[12];
+    uint8_t     position  = 11;
+    uint8_t     negative  = 0;
+    uint16_t    num_width = 0;
+
+    // Handle negative number
+    if (num < 0) {
+        negative = 1;
+        num      = -num;
+    }
+
+    str[position] = '\0';  // End of the string.
+    while (num) {
+        str[--position] = num % 10 + '0';
+        num /= 10;
+    }
+
+    if (position == 11) str[--position] = '0';
+
+    if (negative) str[--position] = '-';
+    
+    // Calculate alignment
+    num_width = (11 - position) * (FONT_WIDTH + 1) - 1;
+    if (width > num_width) {
+        _cursor_x += width - num_width;
+    }
+
+    tft_print(&str[position]);
+}
+
+
+void tft_draw_bitmap(
+    uint16_t x, uint16_t y,
+    uint16_t width, uint16_t height, const uint8_t* bitmap
+) {
+    x += TFT_X_OFFSET;
+    y += TFT_Y_OFFSET;
+
+    START_WRITE();
+    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
+    INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
+    END_WRITE();
+}
+
+
+// stolen and adjusted from: GitHub: https://github.com/limingjie/
 
 // Draw line helpers
 #define _diff(a, b) ((a > b) ? (a - b) : (b - a))
@@ -14,11 +186,11 @@
 void tft_draw_pixel(
     uint16_t x, uint16_t y, uint16_t color
 ) {
-    x += ST7735_X_OFFSET;
-    y += ST7735_Y_OFFSET;
+    x += TFT_X_OFFSET;
+    y += TFT_Y_OFFSET;
     START_WRITE();
-    tft_set_window(x, y, x, y);
-    tft_send_color(color);
+    INTF_TFT_SET_WINDOW(x, y, x, y);
+    INTF_TFT_SEND_COLOR(color);
     END_WRITE();
 }
 
@@ -26,8 +198,8 @@ void tft_draw_pixel(
 static void _draw_fast_vLine(
     int16_t x, int16_t y, int16_t h, uint16_t color
 ) {
-    x += ST7735_X_OFFSET;
-    y += ST7735_Y_OFFSET;
+    x += TFT_X_OFFSET;
+    y += TFT_Y_OFFSET;
 
     uint16_t sz = 0;
     for (int16_t j = 0; j < h; j++) {
@@ -36,8 +208,8 @@ static void _draw_fast_vLine(
     }
 
     START_WRITE();
-    tft_set_window(x, y, x, y + h - 1);
-    tft_send_DMA(_buffer, sz, 1);
+    INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
+    INTF_TFT_SEND_BUFF(_buffer, sz, 1);
     END_WRITE();
 }
 
@@ -46,8 +218,8 @@ static void _draw_fast_vLine(
 static void _draw_fast_hLine(
     int16_t x, int16_t y, int16_t w, uint16_t color
 ) {
-    x += ST7735_X_OFFSET;
-    y += ST7735_Y_OFFSET;
+    x += TFT_X_OFFSET;
+    y += TFT_Y_OFFSET;
 
     uint16_t sz = 0;
     for (int16_t j = 0; j < w; j++) {
@@ -56,8 +228,8 @@ static void _draw_fast_hLine(
     }
 
     START_WRITE();
-    tft_set_window(x, y, x + w - 1, y);
-    tft_send_DMA(_buffer, sz, 1);
+    INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
+    INTF_TFT_SEND_BUFF(_buffer, sz, 1);
     END_WRITE();
 }
 
@@ -406,48 +578,3 @@ static void tft_draw_ring(
 }
 
 
-void tft_line_tests() {
-    //! dots test
-    tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
-
-    // //! draw vertical lines
-    static uint8_t x_idx = 0;
-    tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
-    x_idx += 1;
-    if (x_idx >= 160) x_idx = 0;
-
-    // //! draw horizontal lines
-    static uint8_t y_idx = 0;
-    tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
-    y_idx += 1;
-    if (y_idx >= 80) y_idx = 0;
-
-    //! draw random lines
-    tft_draw_line(0, 0, 70, 70, RED, 5);
-
-    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
-
-    //! draw poly
-    int16_t triangle_x[] = {10, 40, 80};
-    int16_t triangle_y[] = {20, 60, 70};
-
-    // _draw_poly(triangle_x, triangle_y, 3, RED, 3);
-
-    // int16_t square_x[] = {10, 60, 60, 10};
-    // int16_t square_y[] = {10, 10, 60, 60};
-    // _draw_poly(square_x, square_y, 4, RED, 3);
-
-    Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
-    // tft_draw_poly2(triangle, 3, RED, 3);
-
-    tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
-
-    // Point16_t square[] = {{10, 10}, {60, 10}, {60, 60}, {10, 60}};
-    // _draw_poly2(square, 4, RED, 3);
-
-    // tft_draw_circle((Point16_t){ 50, 50 }, 20, 0x07E0); // Green circle with radius = 30
-    // tft_draw_circle((Point16_t){ 30, 30 }, 30, 0x001F); // Blue circle with radius = 40
-
-    // tft_draw_filled_circle((Point16_t){ 50, 50 }, 10, 0x07E0);
-    // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
-}

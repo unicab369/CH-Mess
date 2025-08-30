@@ -36,67 +36,10 @@
 #include "ch32fun.h"
 #include <stdint.h>
 
-#include "modSpi.h"
-#include "font5x7.h"
-
-
-// Define screen resolution and offset
-#define ST7735_WIDTH    160
-#define ST7735_HEIGHT   80
-#define ST7735_X_OFFSET 1
-#define ST7735_Y_OFFSET 26
-
-// Note: To not use CS, uncomment the following line and pull CS to ground.
-//  #define ST7735_NO_CS
-
-#define RGB565(r, g, b) ((((r)&0xF8) << 8) | (((g)&0xFC) << 3) | ((b) >> 3))
-#define BGR565(r, g, b) ((((b)&0xF8) << 8) | (((g)&0xFC) << 3) | ((r) >> 3))
-#define RGB             RGB565
-
-#define BLACK       RGB(0, 0, 0)
-#define NAVY        RGB(0, 0, 123)
-#define DARKGREEN   RGB(0, 125, 0)
-#define DARKCYAN    RGB(0, 125, 123)
-#define MAROON      RGB(123, 0, 0)
-#define PURPLE      RGB(123, 0, 123)
-#define OLIVE       RGB(123, 125, 0)
-#define LIGHTGREY   RGB(198, 195, 198)
-#define DARKGREY    RGB(123, 125, 123)
-#define BLUE        RGB(0, 0, 255)
-#define GREEN       RGB(0, 255, 0)
-#define CYAN        RGB(0, 255, 255)
-#define RED         RGB(255, 0, 0)
-#define MAGENTA     RGB(255, 0, 255)
-#define YELLOW      RGB(255, 255, 0)
-#define WHITE       RGB(255, 255, 255)
-#define ORANGE      RGB(255, 165, 0)
-#define GREENYELLOW RGB(173, 255, 41)
-#define PINK        RGB(255, 130, 198)
-
-
-static uint16_t colors[] = {
-    BLACK, NAVY, DARKGREEN, DARKCYAN, MAROON, PURPLE, OLIVE,  LIGHTGREY,   DARKGREY, BLUE,
-    GREEN, CYAN, RED,       MAGENTA,  YELLOW, WHITE,  ORANGE, GREENYELLOW, PINK,
-};
+#include "lib_spi.h"
+#include "lib_tft.h"
 
 uint8_t rand8(void);
-
-
-// #ifndef ST7735_NO_CS
-//     #define PIN_CS 4  // PC4
-// #endif
-#define SPI_SCLK 5  // PC5
-#define SPI_MOSI 6  // PC6
-
-// #define DATA_MODE()    (GPIOC->BSHR |= 1 << PIN_DC)  // DC High
-
-#ifndef ST7735_NO_CS
-    #define START_WRITE() (GPIOC->BCR |= 1 << PIN_CS)   // CS Low
-    #define END_WRITE()   (GPIOC->BSHR |= 1 << PIN_CS)  // CS High
-#else
-    #define START_WRITE()
-    #define END_WRITE()
-#endif
 
 
 // ST7735 Datasheet
@@ -140,19 +83,24 @@ uint8_t rand8(void);
 // COLMOD Parameter
 #define ST7735_COLMOD_16_BPP 0x05  // 101 - 16-bit/pixel
 
-// 5x7 Font
-#define FONT_WIDTH  5  // Font width
-#define FONT_HEIGHT 7  // Font height
-
-static uint16_t _cursor_x                  = 0;
-static uint16_t _cursor_y                  = 0;      // Cursor position (x, y)
-// static uint16_t _color                     = WHITE;  // Color
-static uint16_t _bg_color                  = BLACK;  // Background color
-static uint8_t  _buffer[ST7735_WIDTH << 1] = {0};    // DMA buffer, long enough to fill a row.
 static uint8_t DC_PIN2;
 
-void tft_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
     SPI_send_DMA(DC_PIN2, buffer, size, repeat);
+}
+
+void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    write_command_8(DC_PIN2, ST7735_CASET);
+    write_data_16(DC_PIN2, x0);
+    write_data_16(DC_PIN2, x1);
+    write_command_8(DC_PIN2, ST7735_RASET);
+    write_data_16(DC_PIN2, y0);
+    write_data_16(DC_PIN2, y1);
+    write_command_8(DC_PIN2, ST7735_RAMWR);
+}
+
+void INTF_TFT_SEND_COLOR(uint16_t color) {
+    write_data_16(DC_PIN2, color);
 }
 
 /// \brief Initialize ST7735
@@ -193,14 +141,14 @@ void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
     uint8_t gamma_p[] = {0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19,
                         0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E};
     write_command_8(DC_PIN2, ST7735_GMCTRP1);
-    tft_send_DMA(gamma_p, 16, 1);
+    INTF_TFT_SEND_BUFF(gamma_p, 16, 1);
 
     // Gamma Adjustments (neg. polarity), 16 args.
     // (Not entirely necessary, but provides accurate colors)
     uint8_t gamma_n[] = {0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E,
                         0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F};
     write_command_8(DC_PIN2, ST7735_GMCTRN1);
-    tft_send_DMA(gamma_n, 16, 1);
+    INTF_TFT_SEND_BUFF(gamma_n, 16, 1);
 
     Delay_Ms(10);
 
@@ -221,31 +169,194 @@ void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
     END_WRITE();
 }
 
-void tft_set_cursor(uint16_t x, uint16_t y) {
-    _cursor_x = x + ST7735_X_OFFSET;
-    _cursor_y = y + ST7735_Y_OFFSET;
+void modST7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
+    tft_init(rst_pin, dc_pin);
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+}
+
+void tft_line_tests() {
+    //! dots test
+    tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+
+    // //! draw vertical lines
+    static uint8_t x_idx = 0;
+    tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
+    x_idx += 1;
+    if (x_idx >= 160) x_idx = 0;
+
+    // //! draw horizontal lines
+    static uint8_t y_idx = 0;
+    tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
+    y_idx += 1;
+    if (y_idx >= 80) y_idx = 0;
+
+    //! draw random lines
+    tft_draw_line(0, 0, 70, 70, RED, 5);
+
+    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+
+    //! draw poly
+    int16_t triangle_x[] = {10, 40, 80};
+    int16_t triangle_y[] = {20, 60, 70};
+
+    // _draw_poly(triangle_x, triangle_y, 3, RED, 3);
+
+    // int16_t square_x[] = {10, 60, 60, 10};
+    // int16_t square_y[] = {10, 10, 60, 60};
+    // _draw_poly(square_x, square_y, 4, RED, 3);
+
+    Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
+    // tft_draw_poly2(triangle, 3, RED, 3);
+
+    tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
+
+    // Point16_t square[] = {{10, 10}, {60, 10}, {60, 60}, {10, 60}};
+    // _draw_poly2(square, 4, RED, 3);
+
+    // tft_draw_circle((Point16_t){ 50, 50 }, 20, 0x07E0); // Green circle with radius = 30
+    // tft_draw_circle((Point16_t){ 30, 30 }, 30, 0x001F); // Blue circle with radius = 40
+
+    // tft_draw_filled_circle((Point16_t){ 50, 50 }, 10, 0x07E0);
+    // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
 }
 
 
-// void tft_set_color(uint16_t color) {
-//     _color = color;
-// }
 
+static uint32_t frame = 0;
 
-void tft_set_background_color(uint16_t color) {
-    _bg_color = color;
+int st7735_test1(void) {
+    // tft_set_color(RED);
+    // popup("Draw Point", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 30000;
+    while (frame-- > 0)
+    {
+        tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+    }
+
+    // popup("Scan Line", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 50;
+    while (frame-- > 0)
+    {
+        for (uint8_t i = 0; i < 160; i++)
+        {
+            tft_draw_line(i, 0, i, 80, colors[rand8() % 19], 1);
+        }
+    }
+    frame = 50;
+    while (frame-- > 0)
+    {
+        for (uint8_t i = 0; i < 80; i++)
+        {
+            tft_draw_line(0, i, 180, i, colors[rand8() % 19], 1);
+        }
+    }
+
+    // popup("Draw Line", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 2000;
+    while (frame-- > 0)
+    {
+        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+    }
+
+    // popup("Scan Rect", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 100;
+    while (frame-- > 0)
+    {
+        for (uint8_t i = 0; i < 40; i++)
+        {
+            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), colors[rand8() % 19]);
+        }
+    }
+
+    // popup("Draw Rect", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 5000;
+    while (frame-- > 0)
+    {
+        tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+    }
+
+    // popup("Fill Rect", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame = 5000;
+    while (frame-- > 0)
+    {
+        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+    }
+
+    // popup("Move Text", 1000);
+    tft_fill_rect(0, 0, 160, 80, BLACK);
+
+    frame     = 500;
+    uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
+    while (frame-- > 0)
+    {
+        uint16_t bg = colors[rand8() % 19];
+        tft_fill_rect(x, y, 88, 17, bg);
+        // tft_set_color(colors[rand8() % 19]);
+        // tft_set_background_color(bg);
+        // tft_set_cursor(x + 5, y + 5);
+        // tft_print("Hello, World!");
+        Delay_Ms(25);
+
+        x += step_x;
+        if (x >= 72)
+        {
+            step_x = -step_x;
+        }
+        y += step_y;
+        if (y >= 63)
+        {
+            step_y = -step_y;
+        }
+    }
 }
 
-static void tft_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    write_command_8(DC_PIN2, ST7735_CASET);
-    write_data_16(DC_PIN2, x0);
-    write_data_16(DC_PIN2, x1);
-    write_command_8(DC_PIN2, ST7735_RASET);
-    write_data_16(DC_PIN2, y0);
-    write_data_16(DC_PIN2, y1);
-    write_command_8(DC_PIN2, ST7735_RAMWR);
-}
 
-void tft_send_color(uint16_t color) {
-    write_data_16(DC_PIN2, color);
+void ST7735_test2() {
+    tft_set_cursor(0, 0);
+    tft_print("Hello World!");
+    tft_print_number(123456789, 0);
+
+
+    tft_line_tests();
+
+
+    // draw rectangles
+    static uint8_t rect_idx = 0;
+    tft_draw_rect(rect_idx, rect_idx, 160 - (rect_idx << 1), 80 - (rect_idx << 1), colors[rand8() % 19]);
+    rect_idx += 1;
+    if (rect_idx >= 40) rect_idx = 0;
+
+    // draw random rectangles
+    tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+
+    // draw filled rectangles
+    tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+
+
+    // static uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
+
+    // uint16_t bg = colors[rand8() % 19];
+    // tft_fill_rect(x, y, 88, 17, bg);
+    // tft_set_color(colors[rand8() % 19]);
+    // tft_set_background_color(bg);
+    // tft_set_cursor(x + 5, y + 5);
+    // tft_print("Hello, World!");
+    // // Delay_Ms(25);
+
+    // x += step_x;
+    // if (x >= 72) step_x = -step_x;
+    // y += step_y;
+    // if (y >= 63) step_y = -step_y;
 }

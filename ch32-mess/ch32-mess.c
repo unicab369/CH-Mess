@@ -12,7 +12,8 @@
 
 #include "2_Device/mng_i2c.h"
 
-#include "ST7735/modTFT.h"
+// #include "ST7735/lib_tft.h"
+#include "ST7735/modST7735.h"
 #include "Storage/modStorage.h"
 
 #include "../Mess-libs/modules/systick_irq.h"
@@ -87,7 +88,7 @@ int main()
 			sec_time = now;
 
 			if (slave_mode != 0) {
-				// modI2C_task(counter++);
+				modI2C_task(counter++);
 			}
 			
 			// // modJoystick_task();
@@ -97,7 +98,7 @@ int main()
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = SysTick_getRunTime(tft_test);
+			uint32_t runtime_tft = SysTick_getRunTime(ST7735_test2);
 			printf("ST7735 runtime: %lu us\n", runtime_tft);
 
 			// storage_test();
