@@ -991,23 +991,30 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 	DWORD sect	/* Sector# (lba) to check if it is an FAT boot record or not */
 )
 {
-	if (disk_readp(buf, sect, 510, 2)) {	/* Read the boot record */
-		printf("Check1\n\r");
-		return 3;
+	BYTE retries = 3; 
+
+	for (BYTE i=1; i<=retries; i++) {
+		if (disk_readp(buf, sect, 510, 2)) {	/* Read the boot record */
+			if (i == retries) return 3;
+		}
+
+		WORD sig = ld_dword(buf);
+		
+		if (sig == 0xAA55 || sig == 0xBA55) {
+			break;
+		} else {			/* Check record signature */
+			printf("check_fs_err: bad signature %08X\n\r", sig);
+			if (i == retries) return 2;
+		}
 	}
-	if (ld_word(buf) != 0xAA55) {			/* Check record signature */
-		printf("Check2\n\r");
-		return 2;
-	}
+
 
 	if (!_FS_32ONLY && !disk_readp(buf, sect, BS_FilSysType, 2) && ld_word(buf) == 0x4146) {	/* Check FAT12/16 */
 		return 0;
 	}
-	printf("IM HERE check_fs0\n\r");
 	if (PF_FS_FAT32 && !disk_readp(buf, sect, BS_FilSysType32, 2) && ld_word(buf) == 0x4146) {	/* Check FAT32 */
 		return 0;
 	}
-	printf("IM HERE check_fs1\n\r");
 	return 1;
 }
 
@@ -1035,12 +1042,10 @@ FRESULT pf_mount (
 	if (disk_initialize() & STA_NOINIT) {	/* Check if the drive is ready or not */
 		return FR_NOT_READY;
 	}
-	Delay_Ms(100);
 
 	/* Search FAT partition on the drive */
 	bsect = 0;
 	fmt = check_fs(buf, bsect);			/* Check sector 0 as an SFD format */
-	printf("check fmt %d\n\r", fmt);
 
 	if (fmt == 1) {						/* Not an FAT boot record, it may be FDISK format */
 		/* Check a partition listed in top of the partition table */
@@ -1055,7 +1060,6 @@ FRESULT pf_mount (
 	}
 	if (fmt == 3) return FR_DISK_ERR;
 	if (fmt) return FR_NO_FILESYSTEM;	/* No valid FAT patition is found */
-	printf("IM HERE 111\n\r");
 
 	/* Initialize the file system object */
 	if (disk_readp(buf, bsect, 13, sizeof (buf))) return FR_DISK_ERR;

@@ -78,12 +78,14 @@ int main()
 	Delay_Ms(200);
 
 	FRESULT rc;
-	rc = mod_sdCard_write("testfile.txt", "hello world 66666!\n\r");
+	rc = mod_sdCard_write("testfile.txt", "hello world 99999999999999999999!\n\r");
 
 	if (rc == 0) {
 		Delay_Ms(200);
 		rc = mod_sdCard_loadFile("testfile.txt",0);
 		printf("read result: %u\n\r", rc);
+	} else {
+		printf("write error: %u\n\r", rc);
 	}
 	
 	// TIM2 Ch1, Ch2 : uses PD3, PD4.

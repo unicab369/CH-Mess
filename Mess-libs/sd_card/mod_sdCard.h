@@ -10,41 +10,35 @@ FRESULT rc;
 FRESULT mod_sdCard_write(const char filename[], const char data[]) {
 	printf("\nMounting volume.\n\r");
 	rc = pf_mount(&fatfs);
-	printf("rc=%u\n\r", rc);
-	if (rc) return;
+	if (rc) return rc;
 
 	printf("Opening file \"%s\"\n\r", filename);
 	rc = pf_open(filename);
-	printf("rc=%u\n\r", rc);
-	if (rc) return;
+	if (rc) return rc;
 
 	rc = pf_write(data, strlen(data), &br);
-
-	if (rc!=FR_OK) {
-		printf("write error: %u\n\r", rc);
-		return rc;
-	}
+	if (rc) return rc;
 
 	rc = pf_write(0, 0, &br);
-	if (rc!=FR_OK) {
-		printf("write finish error: %u\n\r", rc);
-	}
-
 	return rc;
 }
 
 FRESULT mod_sdCard_loadFile(const char filename[], uint32_t addr) {
 	BYTE buff[64];
 
-	printf("\nMounting volume.\n\r");
-	rc = pf_mount(&fatfs);
+	printf("\nlseek to %u\n\r", addr);
+	rc = pf_lseek(addr);
 	printf("rc=%u\n\r", rc);
-	if (rc) return;
+	
+	// printf("\nMounting volume.\n\r");
+	// rc = pf_mount(&fatfs);
+	// printf("rc=%u\n\r", rc);
+	// if (rc) return;
 
-	printf("Opening file \"%s\"\n\r", filename);
-	rc = pf_open(filename);
-	printf("rc=%u\n\r", rc);
-	if (rc) return;
+	// printf("Opening file \"%s\"\n\r", filename);
+	// rc = pf_open(filename);
+	// printf("rc=%u\n\r", rc);
+	// if (rc) return;
 
 	uint32_t total_bytes = 0;
 	uint8_t cnt = 0;
