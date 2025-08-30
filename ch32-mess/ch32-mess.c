@@ -13,9 +13,8 @@
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
-// #include "Storage/modStorage.h"
-#include "Storage/mod_sdCard.h"
 
+#include "../Mess-libs/sd_card/mod_sdCard.h"
 #include "../Mess-libs/modules/systick_irq.h"
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
@@ -76,9 +75,17 @@ int main()
 	// mod_st7735_setup(PC0, PC3);
 
 	SPI_init2();
-	Delay_Ms(100);
-	mod_sdCard_loadFile(0, "testfile.txt");
+	Delay_Ms(200);
 
+	FRESULT rc;
+	rc = mod_sdCard_write("testfile.txt", "hello world 66666!\n\r");
+
+	if (rc == 0) {
+		Delay_Ms(200);
+		rc = mod_sdCard_loadFile("testfile.txt",0);
+		printf("read result: %u\n\r", rc);
+	}
+	
 	// TIM2 Ch1, Ch2 : uses PD3, PD4.
 	// modEncoder_setup(&encoder_a);
 
@@ -92,7 +99,7 @@ int main()
 			sec_time = now;
 
 			if (slave_mode != 0) {
-				modI2C_task(counter++);
+				// modI2C_task(counter++);
 			}
 			
 			// // modJoystick_task();
@@ -102,8 +109,8 @@ int main()
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
-			printf("ST7735 runtime: %lu us\n", runtime_tft);
+			// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
+			// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
 			// storage_test();
 		}

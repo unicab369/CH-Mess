@@ -27,9 +27,9 @@ extern "C" {
 /---------------------------------------------------------------------------*/
 
 #define	PF_USE_READ		1	/* pf_read() function */
-#define	PF_USE_DIR		0	/* pf_opendir() and pf_readdir() function */
-#define	PF_USE_LSEEK	0	/* pf_lseek() function */
-#define	PF_USE_WRITE	0	/* pf_write() function */
+#define	PF_USE_DIR		1	/* pf_opendir() and pf_readdir() function */
+#define	PF_USE_LSEEK	1	/* pf_lseek() function */
+#define	PF_USE_WRITE	1	/* pf_write() function */
 
 #define PF_FS_FAT12		0	/* FAT12 */
 #define PF_FS_FAT16		1	/* FAT16 */
@@ -249,9 +249,7 @@ typedef enum {
 
 
 /*--------------------------------------------------------------------------
-
-   Module Private Definitions
-
+Module Private Definitions
 ---------------------------------------------------------------------------*/
 
 
@@ -994,18 +992,22 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 )
 {
 	if (disk_readp(buf, sect, 510, 2)) {	/* Read the boot record */
+		printf("Check1\n\r");
 		return 3;
 	}
 	if (ld_word(buf) != 0xAA55) {			/* Check record signature */
+		printf("Check2\n\r");
 		return 2;
 	}
 
 	if (!_FS_32ONLY && !disk_readp(buf, sect, BS_FilSysType, 2) && ld_word(buf) == 0x4146) {	/* Check FAT12/16 */
 		return 0;
 	}
+	printf("IM HERE check_fs0\n\r");
 	if (PF_FS_FAT32 && !disk_readp(buf, sect, BS_FilSysType32, 2) && ld_word(buf) == 0x4146) {	/* Check FAT32 */
 		return 0;
 	}
+	printf("IM HERE check_fs1\n\r");
 	return 1;
 }
 
@@ -1013,11 +1015,8 @@ static BYTE check_fs (	/* 0:The FAT boot record, 1:Valid boot record but not an 
 
 
 /*--------------------------------------------------------------------------
-
-   Public Functions
-
+Public Functions
 --------------------------------------------------------------------------*/
-
 
 
 /*-----------------------------------------------------------------------*/
@@ -1036,10 +1035,13 @@ FRESULT pf_mount (
 	if (disk_initialize() & STA_NOINIT) {	/* Check if the drive is ready or not */
 		return FR_NOT_READY;
 	}
+	Delay_Ms(100);
 
 	/* Search FAT partition on the drive */
 	bsect = 0;
 	fmt = check_fs(buf, bsect);			/* Check sector 0 as an SFD format */
+	printf("check fmt %d\n\r", fmt);
+
 	if (fmt == 1) {						/* Not an FAT boot record, it may be FDISK format */
 		/* Check a partition listed in top of the partition table */
 		if (disk_readp(buf, bsect, MBR_Table, 16)) {	/* 1st partition entry */
@@ -1053,6 +1055,7 @@ FRESULT pf_mount (
 	}
 	if (fmt == 3) return FR_DISK_ERR;
 	if (fmt) return FR_NO_FILESYSTEM;	/* No valid FAT patition is found */
+	printf("IM HERE 111\n\r");
 
 	/* Initialize the file system object */
 	if (disk_readp(buf, bsect, 13, sizeof (buf))) return FR_DISK_ERR;
@@ -1106,7 +1109,6 @@ FRESULT pf_open (
 	DIR dj;
 	BYTE sp[12], dir[32];
 	FATFS *fs = FatFs;
-
 
 	if (!fs) return FR_NOT_ENABLED;		/* Check file system */
 

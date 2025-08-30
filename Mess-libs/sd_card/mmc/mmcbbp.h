@@ -12,25 +12,26 @@
 /
 /--------------------------------------------------------------------------*/
 
-#include "diskio.h"
 #include "ch32fun.h"
 
-
-#define SD_CS_GPIO GPIOC
-#define SD_CS_PIN 0
+#include "pff.h"
+#include "diskio.h"
 
 
 #define DLY_US(n)	Delay_Us(n)	/* Delay n microseconds */
 #define	FORWARD(d)		/* Data in-time processing function (depends on the project) */
 
-#define	CS_H()		SD_CS_GPIO->BSHR = ( 1 << SD_CS_PIN )
-#define CS_L()		SD_CS_GPIO->BSHR = ( 1 << ( 16 + SD_CS_PIN ) )
 
+#ifndef INTF_MMC_CS_HIGH
+	void INTF_MMC_CS_HIGH() { }
+#endif
+
+#ifndef INTF_MMC_CS_LOW
+	void INTF_MMC_CS_LOW() { }
+#endif
 
 /*--------------------------------------------------------------------------
-
-   Module Private Functions
-
+Module Private Functions
 ---------------------------------------------------------------------------*/
 
 /* Definitions for MMC/SDC command */
@@ -233,7 +234,7 @@ void skip_mmc (
 static
 void release_spi (void)
 {
-	CS_H();
+	INTF_MMC_CS_HIGH();
 	rcvr_mmc();
 }
 
@@ -257,8 +258,8 @@ BYTE send_cmd (
 	}
 
 	/* Select the card */
-	CS_H(); rcvr_mmc();
-	CS_L(); rcvr_mmc();
+	INTF_MMC_CS_HIGH(); rcvr_mmc();
+	INTF_MMC_CS_LOW(); rcvr_mmc();
 
 	/* Send a command packet */
 	xmit_mmc(cmd);					/* Start + Command index */
@@ -282,9 +283,7 @@ BYTE send_cmd (
 
 
 /*--------------------------------------------------------------------------
-
-   Public Functions
-
+Public Functions
 ---------------------------------------------------------------------------*/
 
 
@@ -299,7 +298,7 @@ DSTATUS disk_initialize (void)
 
 	SPI_set_prescaler(7);
 
-	CS_H();
+	INTF_MMC_CS_HIGH();
 	skip_mmc(10);			/* Dummy clocks */
 
 	ty = 0;
@@ -352,7 +351,6 @@ DRESULT disk_readp (
 	DRESULT res;
 	BYTE d;
 	UINT bc, tmr;
-
 
 	if (!(CardType & CT_BLOCK)) sector *= 512;	/* Convert to byte address if needed */
 
