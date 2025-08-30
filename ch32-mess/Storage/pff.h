@@ -1031,7 +1031,6 @@ FRESULT pf_mount (
 	BYTE fmt, buf[36];
 	DWORD bsect, fsize, tsect, mclst;
 
-
 	FatFs = 0;
 
 	if (disk_initialize() & STA_NOINIT) {	/* Check if the drive is ready or not */

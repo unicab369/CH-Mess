@@ -3725,10 +3725,10 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     1838:	9efff0ef          	jal	ra,1226 <printf>
 	SPI_set_prescaler(7);
     183c:	451d                	li	a0,7
+)
 {
 	BYTE fmt, buf[36];
 	DWORD bsect, fsize, tsect, mclst;
-
 
 	FatFs = 0;
     183e:	c801aa23          	sw	zero,-876(gp) # 20000090 <FatFs>
@@ -5195,7 +5195,7 @@ void mod_st7735_test2() {
     247e:	f5442583          	lw	a1,-172(s0)
     2482:	f5442503          	lw	a0,-172(s0)
     2486:	6741                	lui	a4,0x10
-    2488:	00259583          	lh	a1,2(a1) # 8002 <ch32_mess.c.3f1378af+0x2fd0>
+    2488:	00259583          	lh	a1,2(a1) # 8002 <ch32_mess.c.07c7b56d+0x2fd0>
     248c:	00051503          	lh	a0,0(a0)
     2490:	4789                	li	a5,2
     2492:	177d                	addi	a4,a4,-1
