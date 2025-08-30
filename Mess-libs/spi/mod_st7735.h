@@ -35,12 +35,7 @@
 
 #include "ch32fun.h"
 #include <stdint.h>
-
-#include "lib_spi.h"
 #include "lib_tft.h"
-
-uint8_t rand8(void);
-
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
@@ -172,6 +167,34 @@ void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
 void modST7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
     tft_init(rst_pin, dc_pin);
     tft_fill_rect(0, 0, 160, 128, PURPLE);
+}
+
+
+/* White Noise Generator State */
+#define NOISE_BITS 8
+#define NOISE_MASK ((1<<NOISE_BITS)-1)
+#define NOISE_POLY_TAP0 31
+#define NOISE_POLY_TAP1 21
+#define NOISE_POLY_TAP2 1
+#define NOISE_POLY_TAP3 0
+uint32_t lfsr = 1;
+
+/*
+ * random byte generator
+ */
+uint8_t rand8(void) {
+    uint8_t bit;
+    uint32_t new_data;
+
+    for(bit=0;bit<NOISE_BITS;bit++) {
+        new_data = ((lfsr>>NOISE_POLY_TAP0) ^
+                                (lfsr>>NOISE_POLY_TAP1) ^
+                                (lfsr>>NOISE_POLY_TAP2) ^
+                                (lfsr>>NOISE_POLY_TAP3));
+        lfsr = (lfsr<<1) | (new_data&1);
+    }
+
+    return lfsr&NOISE_MASK;
 }
 
 void tft_line_tests() {
@@ -327,8 +350,7 @@ void ST7735_test2() {
     tft_set_cursor(0, 0);
     tft_print("Hello World!");
     tft_print_number(123456789, 0);
-
-
+    
     tft_line_tests();
 
 

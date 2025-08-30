@@ -145,7 +145,6 @@ void tft_print_number(int32_t num, uint16_t width) {
     }
 
     if (position == 11) str[--position] = '0';
-
     if (negative) str[--position] = '-';
     
     // Calculate alignment

@@ -7,13 +7,12 @@
 #include "1_Foundation/modPWM.h"
 #include "1_Foundation/modEncoder.h"
 #include "1_Foundation/modJoystick.h"
-#include "Display/modST77xx.h"
 #include "2_Device/fun_ws2812.h"
 
 #include "2_Device/mng_i2c.h"
 
-// #include "ST7735/lib_tft.h"
-#include "ST7735/modST7735.h"
+#include "../Mess-libs/spi/lib_spi.h"
+#include "../Mess-libs/spi/mod_st7735.h"
 #include "Storage/modStorage.h"
 
 #include "../Mess-libs/modules/systick_irq.h"
