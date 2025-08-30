@@ -495,353 +495,333 @@ static void write_data_16(uint8_t dc_pin, uint16_t data) {
     SPI_send(data);
      392:	bf59                	j	328 <SPI_send>
 
-00000394 <INTF_TFT_SEND_BUFF>:
+00000394 <INTF_TFT_SET_WINDOW>:
+// COLMOD Parameter
 #define ST7735_COLMOD_16_BPP 0x05  // 101 - 16-bit/pixel
 
 static uint8_t DC_PIN2;
 
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    SPI_send_DMA(DC_PIN2, buffer, size, repeat);
-     394:	c901c703          	lbu	a4,-880(gp) # 2000008c <DC_PIN2>
-    funDigitalWrite(dc_pin, 1);     // Data Mode
-     398:	400116b7          	lui	a3,0x40011
-     39c:	80068693          	addi	a3,a3,-2048 # 40010800 <_eusrstack+0x20010000>
-     3a0:	00475793          	srli	a5,a4,0x4
-     3a4:	07aa                	slli	a5,a5,0xa
-     3a6:	97b6                	add	a5,a5,a3
-     3a8:	8b3d                	andi	a4,a4,15
-     3aa:	4685                	li	a3,1
-     3ac:	00e69733          	sll	a4,a3,a4
-     3b0:	cb98                	sw	a4,16(a5)
-    DMA1_Channel3->MADDR = (uint32_t)buffer;
-     3b2:	400207b7          	lui	a5,0x40020
-     3b6:	dfc8                	sw	a0,60(a5)
-    DMA1_Channel3->CNTR  = size;
-     3b8:	dbcc                	sw	a1,52(a5)
-    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
-     3ba:	5b98                	lw	a4,48(a5)
-        DMA1->INTFCR = DMA1_FLAG_TC3;
-     3bc:	400206b7          	lui	a3,0x40020
-     3c0:	20000593          	li	a1,512
-    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
-     3c4:	00176713          	ori	a4,a4,1
-     3c8:	db98                	sw	a4,48(a5)
-    while (repeat--) {
-     3ca:	67c1                	lui	a5,0x10
-     3cc:	17fd                	addi	a5,a5,-1
-     3ce:	167d                	addi	a2,a2,-1
-     3d0:	0642                	slli	a2,a2,0x10
-     3d2:	8241                	srli	a2,a2,0x10
-     3d4:	00f61863          	bne	a2,a5,3e4 <INTF_TFT_SEND_BUFF+0x50>
-    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Turn off channel
-     3d8:	40020737          	lui	a4,0x40020
-     3dc:	5b1c                	lw	a5,48(a4)
-     3de:	9bf9                	andi	a5,a5,-2
-     3e0:	db1c                	sw	a5,48(a4)
-}
-     3e2:	8082                	ret
-        DMA1->INTFCR = DMA1_FLAG_TC3;
-     3e4:	c2cc                	sw	a1,4(a3)
-        while (!(DMA1->INTFR & DMA1_FLAG_TC3))
-     3e6:	4298                	lw	a4,0(a3)
-     3e8:	20077713          	andi	a4,a4,512
-     3ec:	df6d                	beqz	a4,3e6 <INTF_TFT_SEND_BUFF+0x52>
-     3ee:	b7c5                	j	3ce <INTF_TFT_SEND_BUFF+0x3a>
+void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+     394:	1121                	addi	sp,sp,-24
+     396:	c626                	sw	s1,12(sp)
+     398:	84b6                	mv	s1,a3
+     39a:	c822                	sw	s0,16(sp)
+    INTF_TFT_START_WRITE();
 
-000003f0 <INTF_TFT_SET_WINDOW>:
-
-void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-     3f0:	1121                	addi	sp,sp,-24
-     3f2:	c626                	sw	s1,12(sp)
-     3f4:	84b6                	mv	s1,a3
-     3f6:	c822                	sw	s0,16(sp)
     write_command_8(DC_PIN2, ST7735_CASET);
-     3f8:	c901c403          	lbu	s0,-880(gp) # 2000008c <DC_PIN2>
+     39c:	c901c403          	lbu	s0,-880(gp) # 2000008c <DC_PIN2>
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-     3fc:	c42a                	sw	a0,8(sp)
-     3fe:	c22e                	sw	a1,4(sp)
+     3a0:	c42a                	sw	a0,8(sp)
+     3a2:	c22e                	sw	a1,4(sp)
     write_command_8(DC_PIN2, ST7735_CASET);
-     400:	8522                	mv	a0,s0
-     402:	02a00593          	li	a1,42
+     3a4:	8522                	mv	a0,s0
+     3a6:	02a00593          	li	a1,42
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-     406:	ca06                	sw	ra,20(sp)
-     408:	c032                	sw	a2,0(sp)
+     3aa:	ca06                	sw	ra,20(sp)
+     3ac:	c032                	sw	a2,0(sp)
     write_command_8(DC_PIN2, ST7735_CASET);
-     40a:	3f15                	jal	33e <write_command_8>
+     3ae:	3f41                	jal	33e <write_command_8>
     write_data_16(DC_PIN2, x0);
-     40c:	4722                	lw	a4,8(sp)
-     40e:	8522                	mv	a0,s0
-     410:	85ba                	mv	a1,a4
-     412:	37b9                	jal	360 <write_data_16>
+     3b0:	4722                	lw	a4,8(sp)
+     3b2:	8522                	mv	a0,s0
+     3b4:	85ba                	mv	a1,a4
+     3b6:	376d                	jal	360 <write_data_16>
     write_data_16(DC_PIN2, x1);
-     414:	4602                	lw	a2,0(sp)
-     416:	8522                	mv	a0,s0
-     418:	85b2                	mv	a1,a2
-     41a:	3799                	jal	360 <write_data_16>
+     3b8:	4602                	lw	a2,0(sp)
+     3ba:	8522                	mv	a0,s0
+     3bc:	85b2                	mv	a1,a2
+     3be:	374d                	jal	360 <write_data_16>
     write_command_8(DC_PIN2, ST7735_RASET);
-     41c:	8522                	mv	a0,s0
-     41e:	02b00593          	li	a1,43
-     422:	3f31                	jal	33e <write_command_8>
+     3c0:	8522                	mv	a0,s0
+     3c2:	02b00593          	li	a1,43
+     3c6:	3fa5                	jal	33e <write_command_8>
     write_data_16(DC_PIN2, y0);
-     424:	4792                	lw	a5,4(sp)
-     426:	8522                	mv	a0,s0
-     428:	85be                	mv	a1,a5
-     42a:	3f1d                	jal	360 <write_data_16>
+     3c8:	4792                	lw	a5,4(sp)
+     3ca:	8522                	mv	a0,s0
+     3cc:	85be                	mv	a1,a5
+     3ce:	3f49                	jal	360 <write_data_16>
     write_data_16(DC_PIN2, y1);
-     42c:	85a6                	mv	a1,s1
-     42e:	8522                	mv	a0,s0
-     430:	3f05                	jal	360 <write_data_16>
+     3d0:	85a6                	mv	a1,s1
+     3d2:	8522                	mv	a0,s0
+     3d4:	3771                	jal	360 <write_data_16>
     write_command_8(DC_PIN2, ST7735_RAMWR);
-     432:	8522                	mv	a0,s0
+     3d6:	8522                	mv	a0,s0
 }
-     434:	4442                	lw	s0,16(sp)
-     436:	40d2                	lw	ra,20(sp)
-     438:	44b2                	lw	s1,12(sp)
+     3d8:	4442                	lw	s0,16(sp)
+     3da:	40d2                	lw	ra,20(sp)
+     3dc:	44b2                	lw	s1,12(sp)
     write_command_8(DC_PIN2, ST7735_RAMWR);
-     43a:	02c00593          	li	a1,44
+     3de:	02c00593          	li	a1,44
 }
-     43e:	0161                	addi	sp,sp,24
+     3e2:	0161                	addi	sp,sp,24
     write_command_8(DC_PIN2, ST7735_RAMWR);
-     440:	bdfd                	j	33e <write_command_8>
+     3e4:	bfa9                	j	33e <write_command_8>
 
-00000442 <tft_print>:
-    INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
-    END_WRITE();
-}
-
-void tft_print(const char* str) {
-     442:	1131                	addi	sp,sp,-20
-     444:	c622                	sw	s0,12(sp)
-     446:	c806                	sw	ra,16(sp)
-     448:	c426                	sw	s1,8(sp)
-     44a:	842a                	mv	s0,a0
-    uint8_t font_width = 5; // Assuming a fixed width for the font
-
-    while (*str) {
-     44c:	00044783          	lbu	a5,0(s0)
-     450:	e791                	bnez	a5,45c <tft_print+0x1a>
-        tft_print_char(*str++, 7, font_width, 0xFFFF, 0x0000); // 7x5 font size
-        _cursor_x += font_width + 1;
-    }
-}
-     452:	40c2                	lw	ra,16(sp)
-     454:	4432                	lw	s0,12(sp)
-     456:	44a2                	lw	s1,8(sp)
-     458:	0151                	addi	sp,sp,20
-     45a:	8082                	ret
-    const unsigned char* start = &font[c + (c << 2)];
-     45c:	00279713          	slli	a4,a5,0x2
-     460:	97ba                	add	a5,a5,a4
-        tft_print_char(*str++, 7, font_width, 0xFFFF, 0x0000); // 7x5 font size
-     462:	0405                	addi	s0,s0,1
-    const unsigned char* start = &font[c + (c << 2)];
-     464:	c03e                	sw	a5,0(sp)
-     466:	4301                	li	t1,0
-    uint16_t sz = 0;
-     468:	4681                	li	a3,0
-     46a:	e5818513          	addi	a0,gp,-424 # 20000254 <_frame_buffer>
-                _frame_buffer[sz++] = color >> 8;
-     46e:	53fd                	li	t2,-1
-     470:	4785                	li	a5,1
-     472:	006797b3          	sll	a5,a5,t1
-     476:	c23e                	sw	a5,4(sp)
-            if ((*(start + j)) & (0x01 << i)) {
-     478:	8636                	mv	a2,a3
-     47a:	4581                	li	a1,0
-     47c:	4282                	lw	t0,0(sp)
-     47e:	6089                	lui	ra,0x2
-     480:	6ec08093          	addi	ra,ra,1772 # 26ec <font>
-     484:	92ae                	add	t0,t0,a1
-     486:	9286                	add	t0,t0,ra
-     488:	0002c283          	lbu	t0,0(t0)
-     48c:	4092                	lw	ra,4(sp)
-     48e:	00160793          	addi	a5,a2,1
-                _frame_buffer[sz++] = color >> 8;
-     492:	8732                	mv	a4,a2
-                _frame_buffer[sz++] = color;
-     494:	0609                	addi	a2,a2,2
-     496:	07c2                	slli	a5,a5,0x10
-     498:	0642                	slli	a2,a2,0x10
-            if ((*(start + j)) & (0x01 << i)) {
-     49a:	0012f2b3          	and	t0,t0,ra
-     49e:	83c1                	srli	a5,a5,0x10
-                _frame_buffer[sz++] = color;
-     4a0:	8241                	srli	a2,a2,0x10
-                _frame_buffer[sz++] = color >> 8;
-     4a2:	972a                	add	a4,a4,a0
-            if ((*(start + j)) & (0x01 << i)) {
-     4a4:	06028163          	beqz	t0,506 <tft_print+0xc4>
-                _frame_buffer[sz++] = color >> 8;
-     4a8:	00770023          	sb	t2,0(a4) # 40020000 <_eusrstack+0x2001f800>
-                _frame_buffer[sz++] = color;
-     4ac:	97aa                	add	a5,a5,a0
-     4ae:	00778023          	sb	t2,0(a5) # 10000 <lib_i2c.c.d894f163+0x6bc0>
-        for (uint8_t j = 0; j < width; j++) {
-     4b2:	0585                	addi	a1,a1,1
-     4b4:	4795                	li	a5,5
-     4b6:	fcf593e3          	bne	a1,a5,47c <tft_print+0x3a>
-                _frame_buffer[sz++] = color;
-     4ba:	06a9                	addi	a3,a3,10
-     4bc:	06c2                	slli	a3,a3,0x10
-     4be:	82c1                	srli	a3,a3,0x10
-    for (uint8_t i = 0; i < height; i++) {
-     4c0:	04600793          	li	a5,70
-     4c4:	0305                	addi	t1,t1,1
-     4c6:	faf695e3          	bne	a3,a5,470 <tft_print+0x2e>
-    INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
-     4ca:	ca018713          	addi	a4,gp,-864 # 2000009c <_cursor_x>
-     4ce:	00075783          	lhu	a5,0(a4)
-     4d2:	ca21d583          	lhu	a1,-862(gp) # 2000009e <_cursor_y>
-     4d6:	00478613          	addi	a2,a5,4
-     4da:	00658693          	addi	a3,a1,6
-     4de:	06c2                	slli	a3,a3,0x10
-     4e0:	0642                	slli	a2,a2,0x10
-     4e2:	853e                	mv	a0,a5
-     4e4:	82c1                	srli	a3,a3,0x10
-     4e6:	8241                	srli	a2,a2,0x10
-     4e8:	c03e                	sw	a5,0(sp)
-     4ea:	3719                	jal	3f0 <INTF_TFT_SET_WINDOW>
-    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
-     4ec:	4605                	li	a2,1
-     4ee:	04600593          	li	a1,70
-     4f2:	e5818513          	addi	a0,gp,-424 # 20000254 <_frame_buffer>
-     4f6:	3d79                	jal	394 <INTF_TFT_SEND_BUFF>
-        _cursor_x += font_width + 1;
-     4f8:	4782                	lw	a5,0(sp)
-     4fa:	ca018713          	addi	a4,gp,-864 # 2000009c <_cursor_x>
-     4fe:	0799                	addi	a5,a5,6
-     500:	00f71023          	sh	a5,0(a4)
-     504:	b7a1                	j	44c <tft_print+0xa>
-                _frame_buffer[sz++] = bg_color >> 8;
-     506:	00070023          	sb	zero,0(a4)
-                _frame_buffer[sz++] = bg_color;
-     50a:	97aa                	add	a5,a5,a0
-     50c:	00078023          	sb	zero,0(a5)
-     510:	b74d                	j	4b2 <tft_print+0x70>
-
-00000512 <tft_fill_rect>:
-
-void tft_fill_rect(
-    uint16_t x, uint16_t y,
-    uint16_t width, uint16_t height, uint16_t color
-) {
-    x += TFT_X_OFFSET;
-     512:	0505                	addi	a0,a0,1
-    y += TFT_Y_OFFSET;
-     514:	05e9                	addi	a1,a1,26
-) {
-     516:	1151                	addi	sp,sp,-12
-    x += TFT_X_OFFSET;
-     518:	0542                	slli	a0,a0,0x10
-    y += TFT_Y_OFFSET;
-     51a:	05c2                	slli	a1,a1,0x10
-) {
-     51c:	c222                	sw	s0,4(sp)
-     51e:	c026                	sw	s1,0(sp)
-     520:	c406                	sw	ra,8(sp)
-     522:	84b6                	mv	s1,a3
-     524:	8432                	mv	s0,a2
-    x += TFT_X_OFFSET;
-     526:	8141                	srli	a0,a0,0x10
-    y += TFT_Y_OFFSET;
-     528:	81c1                	srli	a1,a1,0x10
-
-    uint16_t sz = 0;
-    for (uint16_t x = 0; x < width; x++) {
-        _buffer[sz++] = color >> 8;
-     52a:	00875293          	srli	t0,a4,0x8
-     52e:	d1818313          	addi	t1,gp,-744 # 20000114 <_buffer>
-    for (uint16_t x = 0; x < width; x++) {
-     532:	4681                	li	a3,0
-        _buffer[sz++] = color >> 8;
-     534:	8636                	mv	a2,a3
-    for (uint16_t x = 0; x < width; x++) {
-     536:	0685                	addi	a3,a3,1
-     538:	06c2                	slli	a3,a3,0x10
-        _buffer[sz++] = color >> 8;
-     53a:	00530023          	sb	t0,0(t1)
-        _buffer[sz++] = color;
-     53e:	00e300a3          	sb	a4,1(t1)
-    for (uint16_t x = 0; x < width; x++) {
-     542:	82c1                	srli	a3,a3,0x10
-     544:	0309                	addi	t1,t1,2
-     546:	fed417e3          	bne	s0,a3,534 <tft_fill_rect+0x22>
-    }
-
-    START_WRITE();
-    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
-     54a:	fff48693          	addi	a3,s1,-1
-     54e:	96ae                	add	a3,a3,a1
-     550:	962a                	add	a2,a2,a0
-     552:	06c2                	slli	a3,a3,0x10
-     554:	0642                	slli	a2,a2,0x10
-     556:	8241                	srli	a2,a2,0x10
-     558:	82c1                	srli	a3,a3,0x10
-     55a:	3d59                	jal	3f0 <INTF_TFT_SET_WINDOW>
-        _buffer[sz++] = color;
-     55c:	00141593          	slli	a1,s0,0x1
-    INTF_TFT_SEND_BUFF(_buffer, sz, height);
-    END_WRITE();
-}
-     560:	4412                	lw	s0,4(sp)
-     562:	40a2                	lw	ra,8(sp)
-    INTF_TFT_SEND_BUFF(_buffer, sz, height);
-     564:	8626                	mv	a2,s1
-}
-     566:	4482                	lw	s1,0(sp)
-    INTF_TFT_SEND_BUFF(_buffer, sz, height);
-     568:	05c2                	slli	a1,a1,0x10
-     56a:	81c1                	srli	a1,a1,0x10
-     56c:	d1818513          	addi	a0,gp,-744 # 20000114 <_buffer>
-}
-     570:	0131                	addi	sp,sp,12
-    INTF_TFT_SEND_BUFF(_buffer, sz, height);
-     572:	b50d                	j	394 <INTF_TFT_SEND_BUFF>
-
-00000574 <tft_draw_pixel>:
+000003e6 <tft_draw_pixel>:
                             }
 
 //! draw pixel
 void tft_draw_pixel(
     uint16_t x, uint16_t y, uint16_t color
 ) {
-     574:	1151                	addi	sp,sp,-12
+     3e6:	1151                	addi	sp,sp,-12
     x += TFT_X_OFFSET;
-     576:	0505                	addi	a0,a0,1
+     3e8:	0505                	addi	a0,a0,1
     y += TFT_Y_OFFSET;
-     578:	01a58693          	addi	a3,a1,26
+     3ea:	01a58693          	addi	a3,a1,26
 ) {
-     57c:	c222                	sw	s0,4(sp)
+     3ee:	c222                	sw	s0,4(sp)
     y += TFT_Y_OFFSET;
-     57e:	06c2                	slli	a3,a3,0x10
+     3f0:	06c2                	slli	a3,a3,0x10
 ) {
-     580:	8432                	mv	s0,a2
+     3f2:	8432                	mv	s0,a2
     x += TFT_X_OFFSET;
-     582:	01051613          	slli	a2,a0,0x10
-     586:	8241                	srli	a2,a2,0x10
+     3f4:	01051613          	slli	a2,a0,0x10
+     3f8:	8241                	srli	a2,a2,0x10
     y += TFT_Y_OFFSET;
-     588:	82c1                	srli	a3,a3,0x10
-    START_WRITE();
+     3fa:	82c1                	srli	a3,a3,0x10
+
     INTF_TFT_SET_WINDOW(x, y, x, y);
-     58a:	85b6                	mv	a1,a3
-     58c:	8532                	mv	a0,a2
+     3fc:	85b6                	mv	a1,a3
+     3fe:	8532                	mv	a0,a2
 ) {
-     58e:	c406                	sw	ra,8(sp)
+     400:	c406                	sw	ra,8(sp)
     INTF_TFT_SET_WINDOW(x, y, x, y);
-     590:	3585                	jal	3f0 <INTF_TFT_SET_WINDOW>
+     402:	3f49                	jal	394 <INTF_TFT_SET_WINDOW>
+
+    INTF_TFT_END_WRITE();
+}
 
 void INTF_TFT_SEND_COLOR(uint16_t color) {
     write_data_16(DC_PIN2, color);
-     592:	85a2                	mv	a1,s0
+     404:	85a2                	mv	a1,s0
     INTF_TFT_SEND_COLOR(color);
-    END_WRITE();
 }
-     594:	4412                	lw	s0,4(sp)
-     596:	40a2                	lw	ra,8(sp)
-     598:	c901c503          	lbu	a0,-880(gp) # 2000008c <DC_PIN2>
+     406:	4412                	lw	s0,4(sp)
+     408:	40a2                	lw	ra,8(sp)
+     40a:	c901c503          	lbu	a0,-880(gp) # 2000008c <DC_PIN2>
+     40e:	0131                	addi	sp,sp,12
+     410:	bf81                	j	360 <write_data_16>
+
+00000412 <INTF_TFT_SEND_BUFF>:
+    SPI_send_DMA(DC_PIN2, buffer, size, repeat);
+     412:	c901c703          	lbu	a4,-880(gp) # 2000008c <DC_PIN2>
+    funDigitalWrite(dc_pin, 1);     // Data Mode
+     416:	400116b7          	lui	a3,0x40011
+     41a:	80068693          	addi	a3,a3,-2048 # 40010800 <_eusrstack+0x20010000>
+     41e:	00475793          	srli	a5,a4,0x4
+     422:	07aa                	slli	a5,a5,0xa
+     424:	97b6                	add	a5,a5,a3
+     426:	8b3d                	andi	a4,a4,15
+     428:	4685                	li	a3,1
+     42a:	00e69733          	sll	a4,a3,a4
+     42e:	cb98                	sw	a4,16(a5)
+    DMA1_Channel3->MADDR = (uint32_t)buffer;
+     430:	400207b7          	lui	a5,0x40020
+     434:	dfc8                	sw	a0,60(a5)
+    DMA1_Channel3->CNTR  = size;
+     436:	dbcc                	sw	a1,52(a5)
+    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
+     438:	5b98                	lw	a4,48(a5)
+        DMA1->INTFCR = DMA1_FLAG_TC3;
+     43a:	400206b7          	lui	a3,0x40020
+     43e:	20000593          	li	a1,512
+    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
+     442:	00176713          	ori	a4,a4,1
+     446:	db98                	sw	a4,48(a5)
+    while (repeat--) {
+     448:	67c1                	lui	a5,0x10
+     44a:	17fd                	addi	a5,a5,-1
+     44c:	167d                	addi	a2,a2,-1
+     44e:	0642                	slli	a2,a2,0x10
+     450:	8241                	srli	a2,a2,0x10
+     452:	00f61863          	bne	a2,a5,462 <INTF_TFT_SEND_BUFF+0x50>
+    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Turn off channel
+     456:	40020737          	lui	a4,0x40020
+     45a:	5b1c                	lw	a5,48(a4)
+     45c:	9bf9                	andi	a5,a5,-2
+     45e:	db1c                	sw	a5,48(a4)
+}
+     460:	8082                	ret
+        DMA1->INTFCR = DMA1_FLAG_TC3;
+     462:	c2cc                	sw	a1,4(a3)
+        while (!(DMA1->INTFR & DMA1_FLAG_TC3))
+     464:	4298                	lw	a4,0(a3)
+     466:	20077713          	andi	a4,a4,512
+     46a:	df6d                	beqz	a4,464 <INTF_TFT_SEND_BUFF+0x52>
+     46c:	b7c5                	j	44c <INTF_TFT_SEND_BUFF+0x3a>
+
+0000046e <tft_print>:
+void tft_print(const char* str) {
+     46e:	1131                	addi	sp,sp,-20
+     470:	c622                	sw	s0,12(sp)
+     472:	c806                	sw	ra,16(sp)
+     474:	c426                	sw	s1,8(sp)
+     476:	842a                	mv	s0,a0
+    while (*str) {
+     478:	00044783          	lbu	a5,0(s0)
+     47c:	e791                	bnez	a5,488 <tft_print+0x1a>
+}
+     47e:	40c2                	lw	ra,16(sp)
+     480:	4432                	lw	s0,12(sp)
+     482:	44a2                	lw	s1,8(sp)
+     484:	0151                	addi	sp,sp,20
+     486:	8082                	ret
+    const unsigned char* start = &font[c + (c << 2)];
+     488:	00279713          	slli	a4,a5,0x2
+     48c:	97ba                	add	a5,a5,a4
+        tft_print_char(*str++, 7, font_width, 0xFFFF, 0x0000); // 7x5 font size
+     48e:	0405                	addi	s0,s0,1
+    const unsigned char* start = &font[c + (c << 2)];
+     490:	c03e                	sw	a5,0(sp)
+     492:	4301                	li	t1,0
+    uint16_t sz = 0;
+     494:	4681                	li	a3,0
+     496:	e5818513          	addi	a0,gp,-424 # 20000254 <_frame_buffer>
+                _frame_buffer[sz++] = color >> 8;
+     49a:	53fd                	li	t2,-1
+     49c:	4785                	li	a5,1
+     49e:	006797b3          	sll	a5,a5,t1
+     4a2:	c23e                	sw	a5,4(sp)
+            if ((*(start + j)) & (0x01 << i)) {
+     4a4:	8636                	mv	a2,a3
+     4a6:	4581                	li	a1,0
+     4a8:	4282                	lw	t0,0(sp)
+     4aa:	6089                	lui	ra,0x2
+     4ac:	6ec08093          	addi	ra,ra,1772 # 26ec <font>
+     4b0:	92ae                	add	t0,t0,a1
+     4b2:	9286                	add	t0,t0,ra
+     4b4:	0002c283          	lbu	t0,0(t0)
+     4b8:	4092                	lw	ra,4(sp)
+     4ba:	00160793          	addi	a5,a2,1
+                _frame_buffer[sz++] = color >> 8;
+     4be:	8732                	mv	a4,a2
+                _frame_buffer[sz++] = color;
+     4c0:	0609                	addi	a2,a2,2
+     4c2:	07c2                	slli	a5,a5,0x10
+     4c4:	0642                	slli	a2,a2,0x10
+            if ((*(start + j)) & (0x01 << i)) {
+     4c6:	0012f2b3          	and	t0,t0,ra
+     4ca:	83c1                	srli	a5,a5,0x10
+                _frame_buffer[sz++] = color;
+     4cc:	8241                	srli	a2,a2,0x10
+                _frame_buffer[sz++] = color >> 8;
+     4ce:	972a                	add	a4,a4,a0
+            if ((*(start + j)) & (0x01 << i)) {
+     4d0:	06028163          	beqz	t0,532 <tft_print+0xc4>
+                _frame_buffer[sz++] = color >> 8;
+     4d4:	00770023          	sb	t2,0(a4) # 40020000 <_eusrstack+0x2001f800>
+                _frame_buffer[sz++] = color;
+     4d8:	97aa                	add	a5,a5,a0
+     4da:	00778023          	sb	t2,0(a5) # 10000 <lib_i2c.c.d894f163+0x6be7>
+        for (uint8_t j = 0; j < width; j++) {
+     4de:	0585                	addi	a1,a1,1
+     4e0:	4795                	li	a5,5
+     4e2:	fcf593e3          	bne	a1,a5,4a8 <tft_print+0x3a>
+                _frame_buffer[sz++] = color;
+     4e6:	06a9                	addi	a3,a3,10
+     4e8:	06c2                	slli	a3,a3,0x10
+     4ea:	82c1                	srli	a3,a3,0x10
+    for (uint8_t i = 0; i < height; i++) {
+     4ec:	04600793          	li	a5,70
+     4f0:	0305                	addi	t1,t1,1
+     4f2:	faf695e3          	bne	a3,a5,49c <tft_print+0x2e>
+    INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
+     4f6:	ca018713          	addi	a4,gp,-864 # 2000009c <_cursor_x>
+     4fa:	00075783          	lhu	a5,0(a4)
+     4fe:	ca21d583          	lhu	a1,-862(gp) # 2000009e <_cursor_y>
+     502:	00478613          	addi	a2,a5,4
+     506:	00658693          	addi	a3,a1,6
+     50a:	06c2                	slli	a3,a3,0x10
+     50c:	0642                	slli	a2,a2,0x10
+     50e:	853e                	mv	a0,a5
+     510:	82c1                	srli	a3,a3,0x10
+     512:	8241                	srli	a2,a2,0x10
+     514:	c03e                	sw	a5,0(sp)
+     516:	3dbd                	jal	394 <INTF_TFT_SET_WINDOW>
+    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
+     518:	4605                	li	a2,1
+     51a:	04600593          	li	a1,70
+     51e:	e5818513          	addi	a0,gp,-424 # 20000254 <_frame_buffer>
+     522:	3dc5                	jal	412 <INTF_TFT_SEND_BUFF>
+        _cursor_x += font_width + 1;
+     524:	4782                	lw	a5,0(sp)
+     526:	ca018713          	addi	a4,gp,-864 # 2000009c <_cursor_x>
+     52a:	0799                	addi	a5,a5,6
+     52c:	00f71023          	sh	a5,0(a4)
+     530:	b7a1                	j	478 <tft_print+0xa>
+                _frame_buffer[sz++] = bg_color >> 8;
+     532:	00070023          	sb	zero,0(a4)
+                _frame_buffer[sz++] = bg_color;
+     536:	97aa                	add	a5,a5,a0
+     538:	00078023          	sb	zero,0(a5)
+     53c:	b74d                	j	4de <tft_print+0x70>
+
+0000053e <tft_fill_rect>:
+    x += TFT_X_OFFSET;
+     53e:	0505                	addi	a0,a0,1
+    y += TFT_Y_OFFSET;
+     540:	05e9                	addi	a1,a1,26
+) {
+     542:	1151                	addi	sp,sp,-12
+    x += TFT_X_OFFSET;
+     544:	0542                	slli	a0,a0,0x10
+    y += TFT_Y_OFFSET;
+     546:	05c2                	slli	a1,a1,0x10
+) {
+     548:	c222                	sw	s0,4(sp)
+     54a:	c026                	sw	s1,0(sp)
+     54c:	c406                	sw	ra,8(sp)
+     54e:	84b6                	mv	s1,a3
+     550:	8432                	mv	s0,a2
+    x += TFT_X_OFFSET;
+     552:	8141                	srli	a0,a0,0x10
+    y += TFT_Y_OFFSET;
+     554:	81c1                	srli	a1,a1,0x10
+        _buffer[sz++] = color >> 8;
+     556:	00875293          	srli	t0,a4,0x8
+     55a:	d1818313          	addi	t1,gp,-744 # 20000114 <_buffer>
+    for (uint16_t x = 0; x < width; x++) {
+     55e:	4681                	li	a3,0
+        _buffer[sz++] = color >> 8;
+     560:	8636                	mv	a2,a3
+    for (uint16_t x = 0; x < width; x++) {
+     562:	0685                	addi	a3,a3,1
+     564:	06c2                	slli	a3,a3,0x10
+        _buffer[sz++] = color >> 8;
+     566:	00530023          	sb	t0,0(t1)
+        _buffer[sz++] = color;
+     56a:	00e300a3          	sb	a4,1(t1)
+    for (uint16_t x = 0; x < width; x++) {
+     56e:	82c1                	srli	a3,a3,0x10
+     570:	0309                	addi	t1,t1,2
+     572:	fed417e3          	bne	s0,a3,560 <tft_fill_rect+0x22>
+    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
+     576:	fff48693          	addi	a3,s1,-1
+     57a:	96ae                	add	a3,a3,a1
+     57c:	962a                	add	a2,a2,a0
+     57e:	06c2                	slli	a3,a3,0x10
+     580:	0642                	slli	a2,a2,0x10
+     582:	8241                	srli	a2,a2,0x10
+     584:	82c1                	srli	a3,a3,0x10
+     586:	3539                	jal	394 <INTF_TFT_SET_WINDOW>
+        _buffer[sz++] = color;
+     588:	00141593          	slli	a1,s0,0x1
+}
+     58c:	4412                	lw	s0,4(sp)
+     58e:	40a2                	lw	ra,8(sp)
+    INTF_TFT_SEND_BUFF(_buffer, sz, height);
+     590:	8626                	mv	a2,s1
+}
+     592:	4482                	lw	s1,0(sp)
+    INTF_TFT_SEND_BUFF(_buffer, sz, height);
+     594:	05c2                	slli	a1,a1,0x10
+     596:	81c1                	srli	a1,a1,0x10
+     598:	d1818513          	addi	a0,gp,-744 # 20000114 <_buffer>
+}
      59c:	0131                	addi	sp,sp,12
-     59e:	b3c9                	j	360 <write_data_16>
+    INTF_TFT_SEND_BUFF(_buffer, sz, height);
+     59e:	bd95                	j	412 <INTF_TFT_SEND_BUFF>
 
 000005a0 <_draw_fast_vLine>:
 
@@ -882,19 +862,17 @@ static void _draw_fast_vLine(
         _buffer[sz++] = color;
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
      5c6:	fff40693          	addi	a3,s0,-1
      5ca:	96ae                	add	a3,a3,a1
      5cc:	06c2                	slli	a3,a3,0x10
      5ce:	82c1                	srli	a3,a3,0x10
      5d0:	8532                	mv	a0,a2
-     5d2:	3d39                	jal	3f0 <INTF_TFT_SET_WINDOW>
+     5d2:	33c9                	jal	394 <INTF_TFT_SET_WINDOW>
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
      5d4:	85a2                	mv	a1,s0
      5d6:	00045363          	bgez	s0,5dc <_draw_fast_vLine+0x3c>
      5da:	4581                	li	a1,0
-    END_WRITE();
 }
      5dc:	4412                	lw	s0,4(sp)
      5de:	40a2                	lw	ra,8(sp)
@@ -910,7 +888,7 @@ static void _draw_fast_vLine(
 }
      5ee:	0131                	addi	sp,sp,12
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
-     5f0:	b355                	j	394 <INTF_TFT_SEND_BUFF>
+     5f0:	b50d                	j	412 <INTF_TFT_SEND_BUFF>
         _buffer[sz++] = color >> 8;
      5f2:	0785                	addi	a5,a5,1
      5f4:	07c2                	slli	a5,a5,0x10
@@ -963,19 +941,17 @@ static void _draw_fast_hLine(
         _buffer[sz++] = color;
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
      62c:	fff40613          	addi	a2,s0,-1
      630:	962a                	add	a2,a2,a0
      632:	0642                	slli	a2,a2,0x10
      634:	85b6                	mv	a1,a3
      636:	8241                	srli	a2,a2,0x10
-     638:	3b65                	jal	3f0 <INTF_TFT_SET_WINDOW>
+     638:	3bb1                	jal	394 <INTF_TFT_SET_WINDOW>
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
      63a:	85a2                	mv	a1,s0
      63c:	00045363          	bgez	s0,642 <_draw_fast_hLine+0x3e>
      640:	4581                	li	a1,0
-    END_WRITE();
 }
      642:	4412                	lw	s0,4(sp)
      644:	40a2                	lw	ra,8(sp)
@@ -991,7 +967,7 @@ static void _draw_fast_hLine(
 }
      654:	0131                	addi	sp,sp,12
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
-     656:	bb3d                	j	394 <INTF_TFT_SEND_BUFF>
+     656:	bb75                	j	412 <INTF_TFT_SEND_BUFF>
         _buffer[sz++] = color >> 8;
      658:	0785                	addi	a5,a5,1
      65a:	07c2                	slli	a5,a5,0x10
@@ -1155,7 +1131,7 @@ void tft_draw_line(
      788:	04f75d63          	bge	a4,a5,7e2 <tft_draw_line+0x178>
                 tft_draw_pixel(y0 + w, x0, color); // Draw perpendicular pixels for width
      78c:	85a2                	mv	a1,s0
-     78e:	33dd                	jal	574 <tft_draw_pixel>
+     78e:	39a1                	jal	3e6 <tft_draw_pixel>
      790:	46e2                	lw	a3,24(sp)
      792:	4772                	lw	a4,28(sp)
      794:	5782                	lw	a5,32(sp)
@@ -1198,7 +1174,7 @@ void tft_draw_line(
                 tft_draw_pixel(x0, y0 + w, color); // Draw perpendicular pixels for width
      7e2:	85aa                	mv	a1,a0
      7e4:	8522                	mv	a0,s0
-     7e6:	3379                	jal	574 <tft_draw_pixel>
+     7e6:	3101                	jal	3e6 <tft_draw_pixel>
      7e8:	52b2                	lw	t0,44(sp)
      7ea:	5322                	lw	t1,40(sp)
      7ec:	5392                	lw	t2,36(sp)
@@ -1422,7 +1398,7 @@ static inline i2c_err_t i2c_send_addr_write(const i2c_device_t *dev)
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      956:	40005337          	lui	t1,0x40005
 	return (status & status_mask) == status_mask; 
-     95a:	08260613          	addi	a2,a2,130 # 70082 <lib_i2c.c.d894f163+0x66c42>
+     95a:	08260613          	addi	a2,a2,130 # 70082 <lib_i2c.c.d894f163+0x66c69>
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      95e:	41435703          	lhu	a4,1044(t1) # 40005414 <_eusrstack+0x20004c14>
      962:	01071593          	slli	a1,a4,0x10
@@ -1672,7 +1648,7 @@ i2c_err_t i2c_write_raw(const i2c_device_t *dev,    const uint8_t *buf,
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      ae0:	400052b7          	lui	t0,0x40005
 	return (status & status_mask) == status_mask; 
-     ae4:	08458593          	addi	a1,a1,132 # 70084 <lib_i2c.c.d894f163+0x66c44>
+     ae4:	08458593          	addi	a1,a1,132 # 70084 <lib_i2c.c.d894f163+0x66c6b>
 	uint32_t status = (uint32_t)I2C1->STAR1 | (uint32_t)(I2C1->STAR2 << 16);
      ae8:	4142d603          	lhu	a2,1044(t0) # 40005414 <_eusrstack+0x20004c14>
      aec:	01061513          	slli	a0,a2,0x10
@@ -2104,7 +2080,7 @@ static inline uint32_t __get_MTVAL(void)
 				ch=*(fmt++);
      e12:	4605                	li	a2,1
 			while (ch >= '0' && ch <= '9') {
-     e14:	fd068593          	addi	a1,a3,-48 # 7fffd0 <lib_i2c.c.d894f163+0x7f6b90>
+     e14:	fd068593          	addi	a1,a3,-48 # 7fffd0 <lib_i2c.c.d894f163+0x7f6bb7>
      e18:	0ff5f313          	andi	t1,a1,255
      e1c:	fe6573e3          	bgeu	a0,t1,e02 <mini_vpprintf+0x74>
      e20:	c219                	beqz	a2,e26 <mini_vpprintf+0x98>
@@ -2640,7 +2616,7 @@ void i2c_scan_callback(const uint8_t addr) {
 		RCC->CFGR0 = BASE_CFGR0;
     1156:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
-    115a:	08170713          	addi	a4,a4,129 # 1080081 <lib_i2c.c.d894f163+0x1076c41>
+    115a:	08170713          	addi	a4,a4,129 # 1080081 <lib_i2c.c.d894f163+0x1076c68>
     115e:	c398                	sw	a4,0(a5)
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;       		// +1 Cycle Latency
 	#endif
@@ -2721,7 +2697,7 @@ void systick_init(void)
 	SysTick->CTLR = 0x0000;
     11b2:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
-    11b6:	b7f70713          	addi	a4,a4,-1153 # bb7f <lib_i2c.c.d894f163+0x273f>
+    11b6:	b7f70713          	addi	a4,a4,-1153 # bb7f <lib_i2c.c.d894f163+0x2766>
     11ba:	cb98                	sw	a4,16(a5)
 
 	// Reset the Count Register, and the global millis counter to 0
@@ -2741,7 +2717,7 @@ void systick_init(void)
 	funGpioInitAll();
 	Delay_Ms(100);
     11ca:	00494537          	lui	a0,0x494
-    11ce:	e0050513          	addi	a0,a0,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9c0>
+    11ce:	e0050513          	addi	a0,a0,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9e7>
     11d2:	00776713          	ori	a4,a4,7
     11d6:	c398                	sw	a4,0(a5)
 	NVIC->IENR[((uint32_t)(IRQn) >> 5)] = (1 << ((uint32_t)(IRQn) & 0x1F));
@@ -2860,12 +2836,12 @@ void systick_init(void)
 	if(dev->clkr <= 100000)
     12ba:	431c                	lw	a5,0(a4)
     12bc:	6761                	lui	a4,0x18
-    12be:	6a070713          	addi	a4,a4,1696 # 186a0 <lib_i2c.c.d894f163+0xf260>
+    12be:	6a070713          	addi	a4,a4,1696 # 186a0 <lib_i2c.c.d894f163+0xf287>
     12c2:	00179593          	slli	a1,a5,0x1
     12c6:	3af76d63          	bltu	a4,a5,1680 <main+0x4e2>
 		i2c_conf = (FUNCONF_SYSTEM_CORE_CLOCK / (2 * dev->clkr)) & I2C_CKCFGR_CCR;
     12ca:	02dc7537          	lui	a0,0x2dc7
-    12ce:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.d894f163+0x2dbd7c0>
+    12ce:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.d894f163+0x2dbd7e7>
     12d2:	dd7fe0ef          	jal	ra,a8 <__hidden___udivsi3>
     12d6:	14fd                	addi	s1,s1,-1
     12d8:	8d65                	and	a0,a0,s1
@@ -3136,7 +3112,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     14c6:	cb98                	sw	a4,16(a5)
     Delay_Ms(100);
     14c8:	00494737          	lui	a4,0x494
-    14cc:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9c0>
+    14cc:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9e7>
     14d0:	d85fe0ef          	jal	ra,254 <DelaySysTick>
     funDigitalWrite(rst_pin, 1);
     14d4:	4685                	li	a3,1
@@ -3146,7 +3122,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     funDigitalWrite(rst_pin, 1);
     14de:	cb94                	sw	a3,16(a5)
     Delay_Ms(100);
-    14e0:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9c0>
+    14e0:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9e7>
     14e4:	d71fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, 0x01);          // Software reset
     14e8:	0004c483          	lbu	s1,0(s1)
@@ -3155,7 +3131,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     14f0:	e4ffe0ef          	jal	ra,33e <write_command_8>
     Delay_Ms(200);
     14f4:	00928537          	lui	a0,0x928
-    14f8:	c0050513          	addi	a0,a0,-1024 # 927c00 <lib_i2c.c.d894f163+0x91e7c0>
+    14f8:	c0050513          	addi	a0,a0,-1024 # 927c00 <lib_i2c.c.d894f163+0x91e7e7>
     14fc:	d59fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_SLPOUT);
     1500:	45c5                	li	a1,17
@@ -3163,7 +3139,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     1504:	e3bfe0ef          	jal	ra,33e <write_command_8>
     Delay_Ms(100);
     1508:	00494737          	lui	a4,0x494
-    150c:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9c0>
+    150c:	e0070513          	addi	a0,a4,-512 # 493e00 <lib_i2c.c.d894f163+0x48a9e7>
     1510:	d45fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_MADCTL);
     1514:	03600593          	li	a1,54
@@ -3213,7 +3189,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     157c:	4605                	li	a2,1
     157e:	45c1                	li	a1,16
     1580:	fbc40513          	addi	a0,s0,-68
-    1584:	e11fe0ef          	jal	ra,394 <INTF_TFT_SEND_BUFF>
+    1584:	e8ffe0ef          	jal	ra,412 <INTF_TFT_SEND_BUFF>
     uint8_t gamma_n[] = {0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E,
     1588:	6589                	lui	a1,0x2
     158a:	4641                	li	a2,16
@@ -3228,10 +3204,10 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     15a0:	4605                	li	a2,1
     15a2:	45c1                	li	a1,16
     15a4:	fcc40513          	addi	a0,s0,-52
-    15a8:	dedfe0ef          	jal	ra,394 <INTF_TFT_SEND_BUFF>
+    15a8:	e6bfe0ef          	jal	ra,412 <INTF_TFT_SEND_BUFF>
     Delay_Ms(10);
     15ac:	000757b7          	lui	a5,0x75
-    15b0:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bec0>
+    15b0:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bee7>
     15b4:	ca1fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, 0x26);  //! Gamma disable
     15b8:	8526                	mv	a0,s1
@@ -3247,7 +3223,7 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     15d0:	d6ffe0ef          	jal	ra,33e <write_command_8>
     Delay_Ms(10);
     15d4:	000757b7          	lui	a5,0x75
-    15d8:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bec0>
+    15d8:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bee7>
     15dc:	c79fe0ef          	jal	ra,254 <DelaySysTick>
     write_command_8(DC_PIN2, ST7735_DISPON);
     15e0:	02900593          	li	a1,41
@@ -3255,16 +3231,16 @@ void SetupI2CSlave(uint8_t address, volatile uint8_t* registers, uint8_t size,
     15e6:	d59fe0ef          	jal	ra,33e <write_command_8>
     Delay_Ms(10);
     15ea:	000757b7          	lui	a5,0x75
-    15ee:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bec0>
+    15ee:	30078513          	addi	a0,a5,768 # 75300 <lib_i2c.c.d894f163+0x6bee7>
     15f2:	c63fe0ef          	jal	ra,254 <DelaySysTick>
     tft_fill_rect(0, 0, 160, 128, PURPLE);
     15f6:	6721                	lui	a4,0x8
-    15f8:	80f70713          	addi	a4,a4,-2033 # 780f <ch32_mess.c.8a49ffc4+0x31eb>
+    15f8:	80f70713          	addi	a4,a4,-2033 # 780f <ch32_mess.c.5a56f218+0x3206>
     15fc:	08000693          	li	a3,128
     1600:	0a000613          	li	a2,160
     1604:	4581                	li	a1,0
     1606:	4501                	li	a0,0
-    1608:	f0bfe0ef          	jal	ra,512 <tft_fill_rect>
+    1608:	f37fe0ef          	jal	ra,53e <tft_fill_rect>
     model->btn_state = newState;
     160c:	478d                	li	a5,3
 	Button_t button1 = { BUTTON_PIN, BUTTON_IDLE, 0, 0, 0, 0, 0, 0 };
@@ -3345,7 +3321,7 @@ void button_run(Button_t *model, void (*handler)(int, uint32_t)) {
 		i2c_conf = (FUNCONF_SYSTEM_CORE_CLOCK / (3 * dev->clkr)) & I2C_CKCFGR_CCR;
     1680:	02dc7537          	lui	a0,0x2dc7
     1684:	95be                	add	a1,a1,a5
-    1686:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.d894f163+0x2dbd7c0>
+    1686:	c0050513          	addi	a0,a0,-1024 # 2dc6c00 <lib_i2c.c.d894f163+0x2dbd7e7>
     168a:	a1ffe0ef          	jal	ra,a8 <__hidden___udivsi3>
     168e:	14fd                	addi	s1,s1,-1
     1690:	8d65                	and	a0,a0,s1
@@ -3540,7 +3516,7 @@ uint32_t SysTick_getRunTime(void *handler(void)) {
 }
 
 
-void ST7735_test2() {
+void mod_st7735_test2() {
     tft_set_cursor(0, 0);
     tft_print("Hello World!");
     182c:	6509                	lui	a0,0x2
@@ -3549,7 +3525,7 @@ void ST7735_test2() {
     _cursor_y = y + TFT_Y_OFFSET;
     1836:	4769                	li	a4,26
     1838:	cae19123          	sh	a4,-862(gp) # 2000009e <_cursor_y>
-    183c:	c07fe0ef          	jal	ra,442 <tft_print>
+    183c:	c33fe0ef          	jal	ra,46e <tft_print>
     str[position] = '\0';  // End of the string.
     1840:	3c418713          	addi	a4,gp,964 # 200007c0 <str.4>
     1844:	000705a3          	sb	zero,11(a4)
@@ -3557,7 +3533,7 @@ void ST7735_test2() {
     uint8_t     position  = 11;
     184c:	472d                	li	a4,11
     str[position] = '\0';  // End of the string.
-    184e:	d1548493          	addi	s1,s1,-747 # 75bcd15 <lib_i2c.c.d894f163+0x75b38d5>
+    184e:	d1548493          	addi	s1,s1,-747 # 75bcd15 <lib_i2c.c.d894f163+0x75b38fc>
         str[--position] = num % 10 + '0';
     1852:	177d                	addi	a4,a4,-1
     1854:	0ff77713          	andi	a4,a4,255
@@ -3587,7 +3563,10 @@ void ST7735_test2() {
     188e:	fcc712e3          	bne	a4,a2,1852 <main+0x6b4>
     tft_print(&str[position]);
     1892:	00278513          	addi	a0,a5,2 # e000f002 <_eusrstack+0xc000e802>
-    1896:	badfe0ef          	jal	ra,442 <tft_print>
+    1896:	bd9fe0ef          	jal	ra,46e <tft_print>
+    tft_print_number(123456789, 0);
+    
+    //! dots test
     tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
     189a:	fcdfe0ef          	jal	ra,866 <rand8>
     189e:	faa42023          	sw	a0,-96(s0)
@@ -3617,7 +3596,10 @@ void ST7735_test2() {
     18f2:	fa442603          	lw	a2,-92(s0)
     18f6:	0ff57513          	andi	a0,a0,255
     18fa:	85be                	mv	a1,a5
-    18fc:	c79fe0ef          	jal	ra,574 <tft_draw_pixel>
+    18fc:	aebfe0ef          	jal	ra,3e6 <tft_draw_pixel>
+
+    // //! draw vertical lines
+    static uint8_t x_idx = 0;
     tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
     1900:	cb418293          	addi	t0,gp,-844 # 200000b0 <x_idx.3>
     1904:	0002c303          	lbu	t1,0(t0)
@@ -3651,6 +3633,9 @@ void ST7735_test2() {
     195a:	2867ea63          	bltu	a5,t1,1bee <main+0xa50>
     x_idx += 1;
     195e:	00628023          	sb	t1,0(t0)
+
+    // //! draw horizontal lines
+    static uint8_t y_idx = 0;
     tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
     1962:	cb518313          	addi	t1,gp,-843 # 200000b1 <y_idx.2>
     1966:	00034483          	lbu	s1,0(t1)
@@ -3680,15 +3665,18 @@ void ST7735_test2() {
     19ae:	2497e363          	bltu	a5,s1,1bf4 <main+0xa56>
     y_idx += 1;
     19b2:	00930023          	sb	s1,0(t1)
+
+    //! draw random lines
     tft_draw_line(0, 0, 70, 70, RED, 5);
     19b6:	6741                	lui	a4,0x10
     19b8:	04600613          	li	a2,70
     19bc:	4795                	li	a5,5
-    19be:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.d894f163+0x63c0>
+    19be:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.d894f163+0x63e7>
     19c2:	04600693          	li	a3,70
     19c6:	4581                	li	a1,0
     19c8:	4501                	li	a0,0
     19ca:	ca1fe0ef          	jal	ra,66a <tft_draw_line>
+
     tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
     19ce:	e99fe0ef          	jal	ra,866 <rand8>
     19d2:	f8a42023          	sw	a0,-128(s0)
@@ -3734,16 +3722,23 @@ void ST7735_test2() {
     1a60:	85a6                	mv	a1,s1
     1a62:	0ff57513          	andi	a0,a0,255
     1a66:	c05fe0ef          	jal	ra,66a <tft_draw_line>
+
+    // int16_t square_x[] = {10, 60, 60, 10};
+    // int16_t square_y[] = {10, 10, 60, 60};
+    // _draw_poly(square_x, square_y, 4, RED, 3);
+
     Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
     1a6a:	001407b7          	lui	a5,0x140
     1a6e:	07a9                	addi	a5,a5,10
     1a70:	faf42e23          	sw	a5,-68(s0)
     1a74:	003c07b7          	lui	a5,0x3c0
-    1a78:	02878793          	addi	a5,a5,40 # 3c0028 <lib_i2c.c.d894f163+0x3b6be8>
+    1a78:	02878793          	addi	a5,a5,40 # 3c0028 <lib_i2c.c.d894f163+0x3b6c0f>
     1a7c:	fcf42023          	sw	a5,-64(s0)
     1a80:	004607b7          	lui	a5,0x460
-    1a84:	05078793          	addi	a5,a5,80 # 460050 <lib_i2c.c.d894f163+0x456c10>
+    1a84:	05078793          	addi	a5,a5,80 # 460050 <lib_i2c.c.d894f163+0x456c37>
     1a88:	fcf42223          	sw	a5,-60(s0)
+    // tft_draw_poly2(triangle, 3, RED, 3);
+
     tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
     1a8c:	fbc40793          	addi	a5,s0,-68
         int16_t y_min, y_max;
@@ -4045,7 +4040,7 @@ void ST7735_test2() {
     1cd2:	fa842583          	lw	a1,-88(s0)
     1cd6:	fa842503          	lw	a0,-88(s0)
     1cda:	6741                	lui	a4,0x10
-    1cdc:	00259583          	lh	a1,2(a1) # 8002 <ch32_mess.c.8a49ffc4+0x39de>
+    1cdc:	00259583          	lh	a1,2(a1) # 8002 <ch32_mess.c.5a56f218+0x39f9>
     1ce0:	00051503          	lh	a0,0(a0)
     1ce4:	4789                	li	a5,2
     1ce6:	177d                	addi	a4,a4,-1
@@ -4057,7 +4052,7 @@ void ST7735_test2() {
     1cf4:	faf42423          	sw	a5,-88(s0)
     1cf8:	4791                	li	a5,4
     1cfa:	fcf490e3          	bne	s1,a5,1cba <main+0xb1c>
-    tft_line_tests();
+    // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
 
 
     // draw rectangles
@@ -4160,7 +4155,7 @@ void ST7735_test2() {
     1e1a:	4651                	li	a2,20
     1e1c:	85a6                	mv	a1,s1
     1e1e:	0ff57513          	andi	a0,a0,255
-    1e22:	ef0fe0ef          	jal	ra,512 <tft_fill_rect>
+    1e22:	f1cfe0ef          	jal	ra,53e <tft_fill_rect>
 	handler();
 	return micros() - now;
     1e26:	e000f7b7          	lui	a5,0xe000f
@@ -4171,7 +4166,7 @@ void ST7735_test2() {
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = SysTick_getRunTime(ST7735_test2);
+			uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 			printf("ST7735 runtime: %lu us\n", runtime_tft);
     1e34:	f8842783          	lw	a5,-120(s0)
     1e38:	40f505b3          	sub	a1,a0,a5
@@ -4181,7 +4176,7 @@ void ST7735_test2() {
 		uint32_t now = millis();
     1e46:	f9042483          	lw	s1,-112(s0)
     1e4a:	fd2ff06f          	j	161c <main+0x47e>
-    1e4e:	fff70793          	addi	a5,a4,-1 # ffff <lib_i2c.c.d894f163+0x6bbf>
+    1e4e:	fff70793          	addi	a5,a4,-1 # ffff <lib_i2c.c.d894f163+0x6be6>
             int16_t key = intersections[i];
     1e52:	00261503          	lh	a0,2(a2)
     1e56:	07e2                	slli	a5,a5,0x18
@@ -4225,7 +4220,7 @@ void ST7735_test2() {
     1ea0:	6741                	lui	a4,0x10
     1ea2:	85b6                	mv	a1,a3
     1ea4:	4785                	li	a5,1
-    1ea6:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.d894f163+0x63c0>
+    1ea6:	80070713          	addi	a4,a4,-2048 # f800 <lib_i2c.c.d894f163+0x63e7>
     1eaa:	f6742c23          	sw	t2,-136(s0)
     1eae:	f6642e23          	sw	t1,-132(s0)
     1eb2:	f8542023          	sw	t0,-128(s0)
@@ -4488,7 +4483,7 @@ static void WS2812FillBuffSec( uint16_t * ptr, int numhalfwords, int tce )
     204e:	4601                	li	a2,0
     2050:	007f45b7          	lui	a1,0x7f4
     2054:	650d                	lui	a0,0x3
-    2056:	04058593          	addi	a1,a1,64 # 7f4040 <lib_i2c.c.d894f163+0x7eac00>
+    2056:	04058593          	addi	a1,a1,64 # 7f4040 <lib_i2c.c.d894f163+0x7eac27>
     205a:	0ff50513          	addi	a0,a0,255 # 30ff <_data_lma+0x4f7>
     205e:	c616                	sw	t0,12(sp)
     2060:	c43e                	sw	a5,8(sp)
@@ -4651,7 +4646,7 @@ void DMA1_Channel3_IRQHandler( void )
     215c:	c436                	sw	a3,8(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
     215e:	66b1                	lui	a3,0xc
-    2160:	b8068693          	addi	a3,a3,-1152 # bb80 <lib_i2c.c.d894f163+0x2740>
+    2160:	b8068693          	addi	a3,a3,-1152 # bb80 <lib_i2c.c.d894f163+0x2767>
     2164:	9736                	add	a4,a4,a3
     2166:	cb98                	sw	a4,16(a5)
 	SysTick->SR = 0x00000000;
@@ -5001,14 +4996,14 @@ void I2C1_ER_IRQHandler(void) {
     23e2:	6c69                	lui	s8,0x1a
     23e4:	6465                	lui	s0,0x19
     23e6:	7420                	flw	fs0,104(s0)
-    23e8:	6e69206f          	j	94ace <lib_i2c.c.d894f163+0x8b68e>
+    23e8:	6e69206f          	j	94ace <lib_i2c.c.d894f163+0x8b6b5>
     23ec:	7469                	lui	s0,0xffffa
     23ee:	4920                	lw	s0,80(a0)
     23f0:	4332                	lw	t1,12(sp)
     23f2:	0000                	unimp
     23f4:	6548                	flw	fa0,12(a0)
     23f6:	6c6c                	flw	fa1,92(s0)
-    23f8:	6542206f          	j	24a4c <lib_i2c.c.d894f163+0x1b60c>
+    23f8:	6542206f          	j	24a4c <lib_i2c.c.d894f163+0x1b633>
     23fc:	2165                	jal	28a4 <font+0x1b8>
     23fe:	0000                	unimp
     2400:	2d2d                	jal	2a3a <font+0x34e>
@@ -5021,7 +5016,7 @@ void I2C1_ER_IRQHandler(void) {
     2410:	4220                	lw	s0,64(a2)
     2412:	7375                	lui	t1,0xffffd
     2414:	6620                	flw	fs0,72(a2)
-    2416:	4420726f          	jal	tp,9858 <lib_i2c.c.d894f163+0x418>
+    2416:	4420726f          	jal	tp,9858 <lib_i2c.c.d894f163+0x43f>
     241a:	7665                	lui	a2,0xffff9
     241c:	6369                	lui	t1,0x1a
     241e:	7365                	lui	t1,0xffff9
@@ -5064,7 +5059,7 @@ void I2C1_ER_IRQHandler(void) {
     2476:	0000                	unimp
     2478:	6548                	flw	fa0,12(a0)
     247a:	6c6c                	flw	fa1,92(s0)
-    247c:	6f57206f          	j	75370 <lib_i2c.c.d894f163+0x6bf30>
+    247c:	6f57206f          	j	75370 <lib_i2c.c.d894f163+0x6bf57>
     2480:	6c72                	flw	fs8,28(sp)
     2482:	2164                	fld	fs1,192(a0)
     2484:	0000                	unimp

@@ -3,25 +3,9 @@
 #define SPI_SCLK 5  // PC5
 #define SPI_MOSI 6  // PC6
 
-#define ST7735_NO_CS
-
-#ifndef ST7735_NO_CS
-    #define START_WRITE() (GPIOC->BCR |= 1 << PIN_CS)   // CS Low
-    #define END_WRITE()   (GPIOC->BSHR |= 1 << PIN_CS)  // CS High
-#else
-    #define START_WRITE()
-    #define END_WRITE()
-#endif
-
 static void SPI_init(void) {
     // Enable GPIO Port C and SPI peripheral
     RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
-
-#ifndef ST7735_NO_CS
-    // PC4 - CS
-    // GPIOC->CFGLR &= ~(0xf << (PIN_CS << 2));
-    // GPIOC->CFGLR |= (GPIO_CNF_OUT_PP | GPIO_Speed_50MHz) << (PIN_CS << 2);
-#endif
 
     // PC5 - SCLK
     GPIOC->CFGLR &= ~(0xf << (SPI_SCLK << 2));

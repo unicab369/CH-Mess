@@ -72,7 +72,7 @@ int main()
 	
 	// uses SCK-PC5, MOSI-PC6, RST-PD2, DC-PC4
 	SPI_init();
-	modST7735_setup(PC0, PC3);
+	mod_st7735_setup(PC0, PC3);
 
 	// TIM2 Ch1, Ch2 : uses PD3, PD4.
 	// modEncoder_setup(&encoder_a);
@@ -97,7 +97,7 @@ int main()
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = SysTick_getRunTime(ST7735_test2);
+			uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 			printf("ST7735 runtime: %lu us\n", runtime_tft);
 
 			// storage_test();

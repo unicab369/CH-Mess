@@ -80,11 +80,9 @@
 
 static uint8_t DC_PIN2;
 
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    SPI_send_DMA(DC_PIN2, buffer, size, repeat);
-}
-
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    INTF_TFT_START_WRITE();
+
     write_command_8(DC_PIN2, ST7735_CASET);
     write_data_16(DC_PIN2, x0);
     write_data_16(DC_PIN2, x1);
@@ -94,14 +92,22 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     write_command_8(DC_PIN2, ST7735_RAMWR);
 }
 
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
+    SPI_send_DMA(DC_PIN2, buffer, size, repeat);
+
+    INTF_TFT_END_WRITE();
+}
+
 void INTF_TFT_SEND_COLOR(uint16_t color) {
     write_data_16(DC_PIN2, color);
+
+    INTF_TFT_END_WRITE();
 }
 
 /// \brief Initialize ST7735
 /// \details Initialization sequence from Arduino_GFX
 /// https://github.com/moononournation/Arduino_GFX/blob/master/src/display/Arduino_ST7735.h
-void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
+void mod_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
     DC_PIN2 = dc_pin;
 
     funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
@@ -113,7 +119,7 @@ void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
     funDigitalWrite(rst_pin, 1);
     Delay_Ms(100);
 
-    START_WRITE();
+    INTF_TFT_START_WRITE();
 
     write_command_8(DC_PIN2, 0x01);          // Software reset
     Delay_Ms(200);
@@ -161,11 +167,11 @@ void tft_init(uint8_t rst_pin, uint8_t dc_pin) {
     write_command_8(DC_PIN2, ST7735_DISPON);
     Delay_Ms(10);
 
-    END_WRITE();
+    INTF_TFT_END_WRITE();
 }
 
-void modST7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
-    tft_init(rst_pin, dc_pin);
+void mod_st7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
+    mod_st7335_init(rst_pin, dc_pin);
     tft_fill_rect(0, 0, 160, 128, PURPLE);
 }
 
@@ -197,57 +203,10 @@ uint8_t rand8(void) {
     return lfsr&NOISE_MASK;
 }
 
-void tft_line_tests() {
-    //! dots test
-    tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
-
-    // //! draw vertical lines
-    static uint8_t x_idx = 0;
-    tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
-    x_idx += 1;
-    if (x_idx >= 160) x_idx = 0;
-
-    // //! draw horizontal lines
-    static uint8_t y_idx = 0;
-    tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
-    y_idx += 1;
-    if (y_idx >= 80) y_idx = 0;
-
-    //! draw random lines
-    tft_draw_line(0, 0, 70, 70, RED, 5);
-
-    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
-
-    //! draw poly
-    int16_t triangle_x[] = {10, 40, 80};
-    int16_t triangle_y[] = {20, 60, 70};
-
-    // _draw_poly(triangle_x, triangle_y, 3, RED, 3);
-
-    // int16_t square_x[] = {10, 60, 60, 10};
-    // int16_t square_y[] = {10, 10, 60, 60};
-    // _draw_poly(square_x, square_y, 4, RED, 3);
-
-    Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
-    // tft_draw_poly2(triangle, 3, RED, 3);
-
-    tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
-
-    // Point16_t square[] = {{10, 10}, {60, 10}, {60, 60}, {10, 60}};
-    // _draw_poly2(square, 4, RED, 3);
-
-    // tft_draw_circle((Point16_t){ 50, 50 }, 20, 0x07E0); // Green circle with radius = 30
-    // tft_draw_circle((Point16_t){ 30, 30 }, 30, 0x001F); // Blue circle with radius = 40
-
-    // tft_draw_filled_circle((Point16_t){ 50, 50 }, 10, 0x07E0);
-    // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
-}
-
-
 
 static uint32_t frame = 0;
 
-int st7735_test1(void) {
+int mod_st7735_test1(void) {
     // tft_set_color(RED);
     // popup("Draw Point", 1000);
     tft_fill_rect(0, 0, 160, 80, BLACK);
@@ -346,12 +305,54 @@ int st7735_test1(void) {
 }
 
 
-void ST7735_test2() {
+void mod_st7735_test2() {
     tft_set_cursor(0, 0);
     tft_print("Hello World!");
     tft_print_number(123456789, 0);
     
-    tft_line_tests();
+    //! dots test
+    tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+
+    // //! draw vertical lines
+    static uint8_t x_idx = 0;
+    tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
+    x_idx += 1;
+    if (x_idx >= 160) x_idx = 0;
+
+    // //! draw horizontal lines
+    static uint8_t y_idx = 0;
+    tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
+    y_idx += 1;
+    if (y_idx >= 80) y_idx = 0;
+
+    //! draw random lines
+    tft_draw_line(0, 0, 70, 70, RED, 5);
+
+    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+
+    //! draw poly
+    int16_t triangle_x[] = {10, 40, 80};
+    int16_t triangle_y[] = {20, 60, 70};
+
+    // _draw_poly(triangle_x, triangle_y, 3, RED, 3);
+
+    // int16_t square_x[] = {10, 60, 60, 10};
+    // int16_t square_y[] = {10, 10, 60, 60};
+    // _draw_poly(square_x, square_y, 4, RED, 3);
+
+    Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
+    // tft_draw_poly2(triangle, 3, RED, 3);
+
+    tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
+
+    // Point16_t square[] = {{10, 10}, {60, 10}, {60, 60}, {10, 60}};
+    // _draw_poly2(square, 4, RED, 3);
+
+    // tft_draw_circle((Point16_t){ 50, 50 }, 20, 0x07E0); // Green circle with radius = 30
+    // tft_draw_circle((Point16_t){ 30, 30 }, 30, 0x001F); // Blue circle with radius = 40
+
+    // tft_draw_filled_circle((Point16_t){ 50, 50 }, 10, 0x07E0);
+    // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
 
 
     // draw rectangles

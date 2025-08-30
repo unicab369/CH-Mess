@@ -40,7 +40,8 @@
         "fun_ws2812.h": "c",
         "modencoder.h": "c",
         "lib_spi.h": "c",
-        "modjoystick.h": "c"
+        "modjoystick.h": "c",
+        "lib_tft.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

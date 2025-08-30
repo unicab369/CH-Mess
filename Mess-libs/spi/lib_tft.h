@@ -86,10 +86,8 @@ void tft_print_char(
         }
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
     INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
-    END_WRITE();
 }
 
 void tft_print(const char* str) {
@@ -120,10 +118,8 @@ void tft_fill_rect(
         _buffer[sz++] = color;
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
     INTF_TFT_SEND_BUFF(_buffer, sz, height);
-    END_WRITE();
 }
 
 void tft_print_number(int32_t num, uint16_t width) {
@@ -164,10 +160,8 @@ void tft_draw_bitmap(
     x += TFT_X_OFFSET;
     y += TFT_Y_OFFSET;
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
     INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
-    END_WRITE();
 }
 
 
@@ -187,10 +181,9 @@ void tft_draw_pixel(
 ) {
     x += TFT_X_OFFSET;
     y += TFT_Y_OFFSET;
-    START_WRITE();
+
     INTF_TFT_SET_WINDOW(x, y, x, y);
     INTF_TFT_SEND_COLOR(color);
-    END_WRITE();
 }
 
 //! private
@@ -206,10 +199,8 @@ static void _draw_fast_vLine(
         _buffer[sz++] = color;
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
-    END_WRITE();
 }
 
 
@@ -226,10 +217,8 @@ static void _draw_fast_hLine(
         _buffer[sz++] = color;
     }
 
-    START_WRITE();
     INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
     INTF_TFT_SEND_BUFF(_buffer, sz, 1);
-    END_WRITE();
 }
 
 //! draw_line_bresenham
@@ -575,5 +564,3 @@ static void tft_draw_ring(
     tft_draw_filled_circle(center, radius, color); // Draw outer circle
     tft_draw_filled_circle(center, radius - width, PURPLE); // Draw inner circle
 }
-
-
