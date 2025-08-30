@@ -44,9 +44,7 @@ static void SPI_init(void) {
 }
 
 
-static void SPI_send_DMA(uint8_t dc_pin, const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    funDigitalWrite(dc_pin, 1);     // Data Mode
-
+static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
     DMA1_Channel3->MADDR = (uint32_t)buffer;
     DMA1_Channel3->CNTR  = size;
     DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
@@ -72,18 +70,22 @@ static void SPI_send(uint8_t data) {
     while (!(SPI1->STATR & SPI_STATR_TXE)) ;
 }
 
-static void write_command_8(uint8_t dc_pin, uint8_t cmd) {
-    funDigitalWrite(dc_pin, 0);     // Command Mode
+//! REQUIRED
+void INTF_SPI_DC_LOW();
+void INTF_SPI_DC_HIGH();
+
+static void write_cmd_8(uint8_t cmd) {
+    INTF_SPI_DC_LOW();      // Command Mode
     SPI_send(cmd);
 }
 
-static void write_data_8(uint8_t dc_pin, uint8_t data) {
-    funDigitalWrite(dc_pin, 1);     // Data Mode
+static void write_data_8(uint8_t data) {
+    INTF_SPI_DC_HIGH();     // Data Mode
     SPI_send(data);
 }
 
-static void write_data_16(uint8_t dc_pin, uint16_t data) {
-    funDigitalWrite(dc_pin, 1);     // Data Mode
+static void write_data_16(uint16_t data) {
+    INTF_SPI_DC_HIGH();     // Data Mode
     SPI_send(data >> 8);
     SPI_send(data);
 }

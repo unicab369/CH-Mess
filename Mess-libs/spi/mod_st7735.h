@@ -78,28 +78,32 @@
 // COLMOD Parameter
 #define ST7735_COLMOD_16_BPP 0x05  // 101 - 16-bit/pixel
 
-static uint8_t DC_PIN2;
+static uint8_t DC_PIN;
+
+void INTF_SPI_DC_LOW()  { funDigitalWrite(DC_PIN, 0); }
+void INTF_SPI_DC_HIGH() { funDigitalWrite(DC_PIN, 1); }
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     INTF_TFT_START_WRITE();
 
-    write_command_8(DC_PIN2, ST7735_CASET);
-    write_data_16(DC_PIN2, x0);
-    write_data_16(DC_PIN2, x1);
-    write_command_8(DC_PIN2, ST7735_RASET);
-    write_data_16(DC_PIN2, y0);
-    write_data_16(DC_PIN2, y1);
-    write_command_8(DC_PIN2, ST7735_RAMWR);
+    write_cmd_8(ST7735_CASET);
+    write_data_16(x0);
+    write_data_16(x1);
+    write_cmd_8(ST7735_RASET);
+    write_data_16(y0);
+    write_data_16(y1);
+    write_cmd_8(ST7735_RAMWR);
 }
 
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    SPI_send_DMA(DC_PIN2, buffer, size, repeat);
+    INTF_SPI_DC_HIGH();
+    SPI_send_DMA(buffer, size, repeat);
 
     INTF_TFT_END_WRITE();
 }
 
 void INTF_TFT_SEND_COLOR(uint16_t color) {
-    write_data_16(DC_PIN2, color);
+    write_data_16(color);
 
     INTF_TFT_END_WRITE();
 }
@@ -108,7 +112,7 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
 /// \details Initialization sequence from Arduino_GFX
 /// https://github.com/moononournation/Arduino_GFX/blob/master/src/display/Arduino_ST7735.h
 void mod_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
-    DC_PIN2 = dc_pin;
+    DC_PIN = dc_pin;
 
     funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
     funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
@@ -121,50 +125,49 @@ void mod_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
 
     INTF_TFT_START_WRITE();
 
-    write_command_8(DC_PIN2, 0x01);          // Software reset
+    write_cmd_8(0x01);          // Software reset
     Delay_Ms(200);
-    write_command_8(DC_PIN2, ST7735_SLPOUT);
+    write_cmd_8(ST7735_SLPOUT);
     Delay_Ms(100);
 
     // Set rotation
-    write_command_8(DC_PIN2, ST7735_MADCTL);
-    write_data_8(DC_PIN2, ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 0 - Horizontal
+    write_cmd_8(ST7735_MADCTL);
+    write_data_8(ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 0 - Horizontal
     // write_data_8(ST7735_MADCTL_BGR);                                        // 1 - Vertical
     // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 2 - Horizontal
     // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MY | ST7735_MADCTL_BGR);  // 3 - Vertical
 
     // Set Interface Pixel Format - 16-bit/pixel
-    write_command_8(DC_PIN2, ST7735_COLMOD);
-    write_data_8(DC_PIN2, ST7735_COLMOD_16_BPP);
+    write_cmd_8(ST7735_COLMOD);
+    write_data_8(ST7735_COLMOD_16_BPP);
 
     // Gamma Adjustments (pos. polarity), 16 args.
     // (Not entirely necessary, but provides accurate colors)
     uint8_t gamma_p[] = {0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19,
                         0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E};
-    write_command_8(DC_PIN2, ST7735_GMCTRP1);
+    write_cmd_8(ST7735_GMCTRP1);
     INTF_TFT_SEND_BUFF(gamma_p, 16, 1);
 
     // Gamma Adjustments (neg. polarity), 16 args.
     // (Not entirely necessary, but provides accurate colors)
     uint8_t gamma_n[] = {0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E,
                         0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F};
-    write_command_8(DC_PIN2, ST7735_GMCTRN1);
+    write_cmd_8(ST7735_GMCTRN1);
     INTF_TFT_SEND_BUFF(gamma_n, 16, 1);
-
     Delay_Ms(10);
 
-    write_command_8(DC_PIN2, 0x26);  //! Gamma disable
+    write_cmd_8(0x26);  //! Gamma disable
 
     // Invert display
-    write_command_8(DC_PIN2, ST7735_INVON);
-    // write_command_8(ST7735_INVOFF);
+    write_cmd_8(ST7735_INVON);
+    // write_cmd_8(ST7735_INVOFF);
 
     // Normal display on, no args, w/delay
-    write_command_8(DC_PIN2, ST7735_NORON);
+    write_cmd_8(ST7735_NORON);
     Delay_Ms(10);
 
     // Main screen turn on, no args, w/delay
-    write_command_8(DC_PIN2, ST7735_DISPON);
+    write_cmd_8(ST7735_DISPON);
     Delay_Ms(10);
 
     INTF_TFT_END_WRITE();
