@@ -2,13 +2,14 @@
 #include <stdio.h>
 
 #include "1_Foundation/modPWM.h"
-#include "1_Foundation/modEncoder.h"
-#include "1_Foundation/modJoystick.h"
+#include "1_Foundation/fun_Encoder.h"
+
 #include "2_Device/fun_ws2812.h"
 #include "2_Device/mng_i2c.h"
 
-
+// #include "1_Foundation/fun_joystick.h"
 #include "../Mess-libs/modules/systick_irq.h"
+#include "../Mess-libs/modules/fun_joystick.h"
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
@@ -43,7 +44,7 @@ void button_onChanged(Button_Event_e event, uint32_t time) {
 }
 
 void encoder_onChanged(Encoder_t *model) {
-	printf("Encoder: %ld\n", model->last_count);
+	printf("Encoder: %d\n", model->last_count);
 }
 
 int main() {
@@ -95,13 +96,16 @@ int main() {
 	}
 	
 	//# TIM2 Ch1, Ch2 : uses PD3, PD4.
-	// modEncoder_setup(&encoder_a);
+	modEncoder_setup(&encoder_a);
+
+	//# Analog: use PA1 and PA2
+	modJoystick_setup();
 
 	while(1) {
 		uint32_t now = millis();
 
 		button_run(&button1, button_onChanged);
-		// modEncoder_task(now, &encoder_a, encoder_onChanged);
+		modEncoder_task(now, &encoder_a, encoder_onChanged);
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
@@ -110,7 +114,7 @@ int main() {
 				modI2C_task(counter++);
 			}
 			
-			// // modJoystick_task();
+			modJoystick_task();
 			dma_uart_tx(message, sizeof(message) - 1);
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
