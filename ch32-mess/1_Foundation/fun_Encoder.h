@@ -34,35 +34,7 @@ typedef struct {
 		D5		T2CH4_		//! UART_RX
 */
 
-//# Timer 1 pin mappings by AFIO->PCFR1
-/*  00	AFIO_PCFR1_TIM1_REMAP_NOREMAP
-        (ETR/PC5, BKIN/PC2)
-        CH1/CH1N PD2/PD0
-        CH2/CH2N PA1/PA2
-        CH3/CH3N PC3/PD1	//! PD1 SWIO
-        CH4 PC4
-    01	AFIO_PCFR1_TIM1_REMAP_PARTIALREMAP1
-        (ETR/PA12, CH1/PA8, CH2/PA9, CH3/PA10, CH4/PA11, BKIN/PA6, CH1N/PA7, CH2N/PB0, CH3N/PB1)
-        CH1/CH1N PC6/PC3	//! PC6 SPI-MOSI
-        CH2/CH2N PC7/PC4	//! PC7 SPI-MISO
-        CH3/CH3N PC0/PD1	//! PD1 SWIO
-        CH4 PD3
-    10	AFIO_PCFR1_TIM1_REMAP_PARTIALREMAP2
-        (ETR/PD4, CH1/PD2, CH2/PA1, CH3/PC3, CH4/PC4, BKIN/PC2, CH1N/PD0, CN2N/PA2, CH3N/PD1)
-        CH1/CH1N PD2/PD0
-        CH2/CH2N PA1/PA2
-        CH3/CH3N PC3/PD1	//! PD1 SWIO
-        CH4 PC4
-    11	AFIO_PCFR1_TIM1_REMAP_FULLREMAP
-        (ETR/PE7, CH1/PE9, CH2/PE11, CH3/PE13, CH4/PE14, BKIN/PE15, CH1N/PE8, CH2N/PE10, CH3N/PE12)
-        CH1/CH1N PC4/PC3	
-        CH2/CH2N PC7/PD2	//! PC7 SPI-MISO
-        CH3/CH3N PC5/PC6	//! PC5 SPI-SCK, PC6 SPI-MOSI
-        CH4 PD2
-*/
-
-
-void modEncoder_setup(Encoder_t *model) {
+void fun_encoder_setup(Encoder_t *model) {
 	//! Enable GPIOC, TIM2, and AFIO *very important!*
 	RCC->APB2PCENR |= RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOC;
 	RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
@@ -70,12 +42,12 @@ void modEncoder_setup(Encoder_t *model) {
 	//! TIM2 remap mode
 	AFIO->PCFR1 |= AFIO_PCFR1_TIM2_REMAP_NOREMAP;
 
-	// PD3 is T2CH1_, Input w/ Pullup/down
+	// PD3 is T2CH2_, Input w/ Pullup/down
 	GPIOD->CFGLR &= ~(0xf<<(4*3)); 					//clear old values
 	GPIOD->CFGLR |= (GPIO_CNF_IN_PUPD)<<(4*3); 		//set new ones
 	GPIOD->OUTDR |= 1<<2;							//1 = pull-up, 0 = pull-down
 
-	// PD4 is T2CH2_, Input w/ Pullup/down
+	// PD4 is T2CH1_, Input w/ Pullup/down
 	GPIOD->CFGLR &= ~(0xf<<(4*4)); 					//clear values
 	GPIOD->CFGLR |= (GPIO_CNF_IN_PUPD)<<(4*4); 		//set new ones
 	GPIOD->OUTDR |= 1<<4;							//1 = pull-up, 0 = pull-down
@@ -122,7 +94,7 @@ void modEncoder_setup(Encoder_t *model) {
 
 static uint32_t encoder_debounceTime = 0;
 
-void modEncoder_task(uint32_t current_time, Encoder_t *model, void (*handler)(Encoder_t *model)) {
+void fun_encoder_task(uint32_t current_time, Encoder_t *model, void (*handler)(Encoder_t *model)) {
 	// if (current_time - encoder_debounceTime < 50) return;
 	// encoder_debounceTime = current_time;
 

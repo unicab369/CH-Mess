@@ -7,18 +7,18 @@
 #include "2_Device/fun_ws2812.h"
 #include "2_Device/mng_i2c.h"
 
-// #include "1_Foundation/fun_joystick.h"
 #include "../Mess-libs/modules/systick_irq.h"
 #include "../Mess-libs/modules/fun_joystick.h"
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
+#include "../Mess-libs/pwm/tim1_pwm.h"
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
 #include "../Mess-libs/sd_card/mod_sdCard.h"
 
-#define BUTTON_PIN 		PD0
+#define BUTTON_PIN 		PC0
 
 void onI2C_SlaveWrite(uint8_t reg, uint8_t length) {
 	printf("IM WRITEEN TO\n\r");
@@ -72,17 +72,17 @@ int main() {
 		printf("I2C Slave mode\n");
 		SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
 	}
-	
+
+	//# UARTX - DMA1_CH4: uses PD5
+	static const char message[] = "Hello World!\r\n";
+	uart_setup();
+	dma_uart_setup();
+
 	//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 	//# RST-PD2, DC-PC4
 	// SPI_init();
 	// mod_st7735_setup(PC0, PC3);
 	SPI_init2();
-
-	//# UART TX: uses PD5
-	static const char message[] = "Hello World!\r\n";
-	uart_setup();
-	dma_uart_setup();
 
 	FRESULT rc;
 	rc = mod_sdCard_write("testfile.txt", "hello world 99999999999999999999!\n\r");
@@ -95,17 +95,21 @@ int main() {
 		printf("write error: %u\n\r", rc);
 	}
 	
-	//# TIM2 Ch1, Ch2 : uses PD3, PD4.
-	modEncoder_setup(&encoder_a);
+	//# TIM1: uses PD0(CH1)
+	fun_t1pwm_init(PD0);
 
-	//# Analog: use PA1 and PA2
-	modJoystick_setup();
+	//# TIM2: uses PD4(CH1) and PD3(CH2)
+	fun_encoder_setup(&encoder_a);
+
+	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
+	fun_joystick_setup();
 
 	while(1) {
 		uint32_t now = millis();
 
 		button_run(&button1, button_onChanged);
-		modEncoder_task(now, &encoder_a, encoder_onChanged);
+		fun_encoder_task(now, &encoder_a, encoder_onChanged);
+		fund_t1pwm_task();
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
@@ -114,7 +118,7 @@ int main() {
 				modI2C_task(counter++);
 			}
 			
-			modJoystick_task();
+			// fun_joystick_task();
 			dma_uart_tx(message, sizeof(message) - 1);
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);

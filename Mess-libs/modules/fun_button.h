@@ -31,9 +31,9 @@ void _reset_timers(uint8_t newState, Button_t *model) {
     model->btn_state = newState;
     model->debounce_time = millis();
     model->release_time = millis();
-    }
+}
 
-    void button_setup(Button_t *model) {
+void button_setup(Button_t *model) {
     if (model->pin == 0xFF) return; 
 
     funPinMode(model->pin, GPIO_CFGLR_IN_PUPD);

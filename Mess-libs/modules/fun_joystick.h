@@ -5,7 +5,7 @@
 #define ADC_NUMCHLS 2
 volatile uint16_t adc_buffer[ADC_NUMCHLS];
 
-void modJoystick_setup() {
+void fun_joystick_setup() {
 	// ADCCLK = 24 MHz => RCC_ADCPRE = 0: divide by 2
 	RCC->CFGR0 &= ~(0x1F<<11);
 	
@@ -75,6 +75,6 @@ void modJoystick_setup() {
 uint16_t last_x = 0;
 uint16_t last_y = 0;
 
-int modJoystick_task() {
+int fun_joystick_task() {
     printf("%4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
 }
