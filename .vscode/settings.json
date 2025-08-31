@@ -45,7 +45,9 @@
         "mmcbbp.h": "c",
         "mng_i2c.h": "c",
         "fun_joystick.h": "c",
-        "mod_sdcard.h": "c"
+        "mod_sdcard.h": "c",
+        "fun_encoder.h": "c",
+        "tim1_pwm.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

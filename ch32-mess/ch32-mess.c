@@ -53,8 +53,6 @@ int main() {
 	uint32_t sec_time = 0;
 	uint32_t time_ref = 0;
 
-	Encoder_t encoder_a = {0, 0, 0};
-
 	SystemInit();
 	systick_init();			//! required for millis()
 
@@ -68,6 +66,8 @@ int main() {
 	modI2C_setup();
 
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
+
+	//# Hold BUTTON_PIN low to enter slave mode
 	if (slave_mode == 0) {
 		printf("I2C Slave mode\n");
 		SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
@@ -96,9 +96,16 @@ int main() {
 	}
 	
 	//# TIM1: uses PD0(CH1)
-	fun_t1pwm_init(PD0);
+	PWM_GPIO_t pwm_CH1c = {
+		.pin = PD0,
+		.CCER = TIM_CC1NE
+	};
+
+	fun_t1pwm_init();
+	fun_t1pwm_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
+	Encoder_t encoder_a = {0, 0, 0};
 	fun_encoder_setup(&encoder_a);
 
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
@@ -109,10 +116,12 @@ int main() {
 
 		button_run(&button1, button_onChanged);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
-		fund_t1pwm_task();
+		fun_t1pwm_task(now, &pwm_CH1);
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
+
+			printf("IM HERE\n\r");
 
 			if (slave_mode != 0) {
 				modI2C_task(counter++);
