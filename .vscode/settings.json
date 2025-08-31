@@ -47,7 +47,8 @@
         "fun_joystick.h": "c",
         "mod_sdcard.h": "c",
         "fun_encoder.h": "c",
-        "tim1_pwm.h": "c"
+        "tim1_pwm.h": "c",
+        "fun_timpwm.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

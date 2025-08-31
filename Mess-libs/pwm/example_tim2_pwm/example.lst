@@ -11,67 +11,67 @@ Disassembly of section .init:
 	{
 		#if !defined(FUNCONF_TINYVECTOR) || !FUNCONF_TINYVECTOR
 			asm volatile( DEFAULT_INTERRUPT_VECTOR_CONTENTS );
-   0:	2b40006f          	j	2b4 <handle_reset>
+   0:	2c60006f          	j	2c6 <handle_reset>
    4:	0000                	unimp
    6:	0000                	unimp
-   8:	0370                	addi	a2,sp,396
+   8:	0382                	c.slli64	t2
    a:	0000                	unimp
-   c:	0320                	addi	s0,sp,392
+   c:	0332                	slli	t1,t1,0xc
 	...
   2e:	0000                	unimp
-  30:	058c                	addi	a1,sp,704
+  30:	059a                	slli	a1,a1,0x6
   32:	0000                	unimp
   34:	0000                	unimp
   36:	0000                	unimp
-  38:	0320                	addi	s0,sp,392
+  38:	0332                	slli	t1,t1,0xc
   3a:	0000                	unimp
   3c:	0000                	unimp
   3e:	0000                	unimp
-  40:	0320                	addi	s0,sp,392
+  40:	0332                	slli	t1,t1,0xc
   42:	0000                	unimp
-  44:	0320                	addi	s0,sp,392
+  44:	0332                	slli	t1,t1,0xc
   46:	0000                	unimp
-  48:	0320                	addi	s0,sp,392
+  48:	0332                	slli	t1,t1,0xc
   4a:	0000                	unimp
-  4c:	0320                	addi	s0,sp,392
+  4c:	0332                	slli	t1,t1,0xc
   4e:	0000                	unimp
-  50:	0320                	addi	s0,sp,392
+  50:	0332                	slli	t1,t1,0xc
   52:	0000                	unimp
-  54:	0320                	addi	s0,sp,392
+  54:	0332                	slli	t1,t1,0xc
   56:	0000                	unimp
-  58:	0320                	addi	s0,sp,392
+  58:	0332                	slli	t1,t1,0xc
   5a:	0000                	unimp
-  5c:	0320                	addi	s0,sp,392
+  5c:	0332                	slli	t1,t1,0xc
   5e:	0000                	unimp
-  60:	0320                	addi	s0,sp,392
+  60:	0332                	slli	t1,t1,0xc
   62:	0000                	unimp
-  64:	0320                	addi	s0,sp,392
+  64:	0332                	slli	t1,t1,0xc
   66:	0000                	unimp
-  68:	0320                	addi	s0,sp,392
+  68:	0332                	slli	t1,t1,0xc
   6a:	0000                	unimp
-  6c:	0320                	addi	s0,sp,392
+  6c:	0332                	slli	t1,t1,0xc
   6e:	0000                	unimp
-  70:	0320                	addi	s0,sp,392
+  70:	0332                	slli	t1,t1,0xc
   72:	0000                	unimp
-  74:	0320                	addi	s0,sp,392
+  74:	0332                	slli	t1,t1,0xc
   76:	0000                	unimp
-  78:	0320                	addi	s0,sp,392
+  78:	0332                	slli	t1,t1,0xc
   7a:	0000                	unimp
-  7c:	0320                	addi	s0,sp,392
+  7c:	0332                	slli	t1,t1,0xc
   7e:	0000                	unimp
-  80:	0320                	addi	s0,sp,392
+  80:	0332                	slli	t1,t1,0xc
   82:	0000                	unimp
-  84:	0320                	addi	s0,sp,392
+  84:	0332                	slli	t1,t1,0xc
   86:	0000                	unimp
-  88:	0320                	addi	s0,sp,392
+  88:	0332                	slli	t1,t1,0xc
   8a:	0000                	unimp
-  8c:	0320                	addi	s0,sp,392
+  8c:	0332                	slli	t1,t1,0xc
   8e:	0000                	unimp
-  90:	0320                	addi	s0,sp,392
+  90:	0332                	slli	t1,t1,0xc
   92:	0000                	unimp
-  94:	0320                	addi	s0,sp,392
+  94:	0332                	slli	t1,t1,0xc
   96:	0000                	unimp
-  98:	0320                	addi	s0,sp,392
+  98:	0332                	slli	t1,t1,0xc
   9a:	0000                	unimp
   9c:	0000                	unimp
 	...
@@ -119,10 +119,10 @@ Disassembly of section .text:
 }
   f6:	8082                	ret
 
-000000f8 <fun_t1pwm_reload>:
+000000f8 <fun_timPWM_reload>:
 }
 
-void fun_t1pwm_reload(TIM1_PWM_t* model) {
+void fun_timPWM_reload(TIM_PWM_t* model) {
 	model->counter = 0;
 	model->timeRef = 0;
 	funPinMode(model->pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP_AF);
@@ -170,712 +170,707 @@ void fun_t1pwm_reload(TIM1_PWM_t* model) {
  140:	c3b8                	sw	a4,64(a5)
 	switch (model->CCER) {
  142:	00255703          	lhu	a4,2(a0)
- 146:	0ad70163          	beq	a4,a3,1e8 <fun_t1pwm_reload+0xf0>
- 14a:	00e6ec63          	bltu	a3,a4,162 <fun_t1pwm_reload+0x6a>
+ 146:	0ad70363          	beq	a4,a3,1ec <fun_timPWM_reload+0xf4>
+ 14a:	00e6ec63          	bltu	a3,a4,162 <fun_timPWM_reload+0x6a>
  14e:	4691                	li	a3,4
- 150:	04d70463          	beq	a4,a3,198 <fun_t1pwm_reload+0xa0>
+ 150:	04d70463          	beq	a4,a3,198 <fun_timPWM_reload+0xa0>
  154:	46c1                	li	a3,16
- 156:	06d70563          	beq	a4,a3,1c0 <fun_t1pwm_reload+0xc8>
+ 156:	06d70563          	beq	a4,a3,1c0 <fun_timPWM_reload+0xc8>
  15a:	4685                	li	a3,1
- 15c:	00d70b63          	beq	a4,a3,172 <fun_t1pwm_reload+0x7a>
+ 15c:	00d70b63          	beq	a4,a3,172 <fun_timPWM_reload+0x7a>
  160:	8082                	ret
  162:	10000693          	li	a3,256
- 166:	08d70b63          	beq	a4,a3,1fc <fun_t1pwm_reload+0x104>
+ 166:	0ad70263          	beq	a4,a3,20a <fun_timPWM_reload+0x112>
  16a:	6685                	lui	a3,0x1
- 16c:	0ad70c63          	beq	a4,a3,224 <fun_t1pwm_reload+0x12c>
+ 16c:	0cd70163          	beq	a4,a3,22e <fun_timPWM_reload+0x136>
  170:	8082                	ret
 		//# TIM1->CHCTLR1 Control Reg1: CH1 & CH2
 		case TIM_CC1E:
-			timer->CCER |= TIM_CC1E | TIM_CC1P;
- 172:	0207d683          	lhu	a3,32(a5)
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1 | TIM_OC1PE;		// TIM_OC1PE is used by TIM2 only
+ 172:	0187d683          	lhu	a3,24(a5)
  176:	06c2                	slli	a3,a3,0x10
  178:	82c1                	srli	a3,a3,0x10
- 17a:	0036e693          	ori	a3,a3,3
- 17e:	02d79023          	sh	a3,32(a5)
-			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
- 182:	0187d683          	lhu	a3,24(a5)
+ 17a:	0686e693          	ori	a3,a3,104
+ 17e:	00d79c23          	sh	a3,24(a5)
+			timer->CCER |= TIM_CC1E | TIM_CC1P;
+ 182:	0207d683          	lhu	a3,32(a5)
  186:	06c2                	slli	a3,a3,0x10
  188:	82c1                	srli	a3,a3,0x10
- 18a:	0606e693          	ori	a3,a3,96
- 18e:	00d79c23          	sh	a3,24(a5)
+ 18a:	0036e693          	ori	a3,a3,3
+ 18e:	02d79023          	sh	a3,32(a5)
 			model->channel = 1;
  192:	00e500a3          	sb	a4,1(a0)
 			break;
  196:	8082                	ret
 		case TIM_CC1NE:
-			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
- 198:	0207d703          	lhu	a4,32(a5)
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
+ 198:	0187d703          	lhu	a4,24(a5)
  19c:	0742                	slli	a4,a4,0x10
  19e:	8341                	srli	a4,a4,0x10
- 1a0:	00c76713          	ori	a4,a4,12
- 1a4:	02e79023          	sh	a4,32(a5)
-			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
- 1a8:	0187d703          	lhu	a4,24(a5)
+ 1a0:	06076713          	ori	a4,a4,96
+ 1a4:	00e79c23          	sh	a4,24(a5)
+			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
+ 1a8:	0207d703          	lhu	a4,32(a5)
  1ac:	0742                	slli	a4,a4,0x10
  1ae:	8341                	srli	a4,a4,0x10
- 1b0:	06076713          	ori	a4,a4,96
- 1b4:	00e79c23          	sh	a4,24(a5)
+ 1b0:	00c76713          	ori	a4,a4,12
+ 1b4:	02e79023          	sh	a4,32(a5)
 			model->channel = 1;
  1b8:	4785                	li	a5,1
- 1ba:	00f500a3          	sb	a5,1(a0)
-			break;
- 1be:	8082                	ret
-		case TIM_CC2E:
-			model->channel = 2;
- 1c0:	4709                	li	a4,2
- 1c2:	00e500a3          	sb	a4,1(a0)
-			timer->CCER |= TIM_CC2E | TIM_CC2P;
- 1c6:	0207d703          	lhu	a4,32(a5)
- 1ca:	0742                	slli	a4,a4,0x10
- 1cc:	8341                	srli	a4,a4,0x10
- 1ce:	03076713          	ori	a4,a4,48
-			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
-			break;
-		case TIM_CC2NE:
-			model->channel = 2;
-			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
- 1d2:	02e79023          	sh	a4,32(a5)
-			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
- 1d6:	0187d703          	lhu	a4,24(a5)
- 1da:	6699                	lui	a3,0x6
- 1dc:	0742                	slli	a4,a4,0x10
- 1de:	8341                	srli	a4,a4,0x10
- 1e0:	8f55                	or	a4,a4,a3
- 1e2:	00e79c23          	sh	a4,24(a5)
-			break;
- 1e6:	8082                	ret
-			model->channel = 2;
- 1e8:	4709                	li	a4,2
- 1ea:	00e500a3          	sb	a4,1(a0)
-			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
- 1ee:	0207d703          	lhu	a4,32(a5)
- 1f2:	0742                	slli	a4,a4,0x10
- 1f4:	8341                	srli	a4,a4,0x10
- 1f6:	0c076713          	ori	a4,a4,192
- 1fa:	bfe1                	j	1d2 <fun_t1pwm_reload+0xda>
-		
-		//# TIM1->CHCTLR2 Control Reg2: CH3 & CH4
-		case TIM_CC3E:
-			model->channel = 3;
- 1fc:	470d                	li	a4,3
- 1fe:	00e500a3          	sb	a4,1(a0)
-			timer->CCER |= TIM_CC3E | TIM_CC3P;
- 202:	0207d703          	lhu	a4,32(a5)
- 206:	0742                	slli	a4,a4,0x10
- 208:	8341                	srli	a4,a4,0x10
- 20a:	30076713          	ori	a4,a4,768
- 20e:	02e79023          	sh	a4,32(a5)
-			timer->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1;
- 212:	01c7d703          	lhu	a4,28(a5)
- 216:	0742                	slli	a4,a4,0x10
- 218:	8341                	srli	a4,a4,0x10
- 21a:	06076713          	ori	a4,a4,96
 			break;
 		// case TIM_CC3NE: TIM1->CCER |= TIM_CC3E | TIM_CC3NP; break;	//! Prevent overwrite SWDIO
 		case TIM_CC4E:
-			model->channel = 4;
+			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1 | TIM_OC4PE;		// TIM_OC4PE is used by TIM2 only
 			timer->CCER |= TIM_CC4E | TIM_CC4P;
-			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1;
- 21e:	00e79e23          	sh	a4,28(a5)
+			model->channel = 4;
+ 1ba:	00f500a3          	sb	a5,1(a0)
 			break;
 	}
 }
- 222:	8082                	ret
-			model->channel = 4;
- 224:	4711                	li	a4,4
- 226:	00e500a3          	sb	a4,1(a0)
+ 1be:	8082                	ret
+			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1 | TIM_OC2PE;		// TIM_OC2PE is used by TIM2 only
+ 1c0:	0187d703          	lhu	a4,24(a5)
+ 1c4:	669d                	lui	a3,0x7
+ 1c6:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.a6cf43f4+0x44ee>
+ 1ca:	0742                	slli	a4,a4,0x10
+ 1cc:	8341                	srli	a4,a4,0x10
+ 1ce:	8f55                	or	a4,a4,a3
+ 1d0:	0742                	slli	a4,a4,0x10
+ 1d2:	8341                	srli	a4,a4,0x10
+ 1d4:	00e79c23          	sh	a4,24(a5)
+			timer->CCER |= TIM_CC2E | TIM_CC2P;
+ 1d8:	0207d703          	lhu	a4,32(a5)
+ 1dc:	0742                	slli	a4,a4,0x10
+ 1de:	8341                	srli	a4,a4,0x10
+ 1e0:	03076713          	ori	a4,a4,48
+			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
+ 1e4:	02e79023          	sh	a4,32(a5)
+			model->channel = 2;
+ 1e8:	4789                	li	a5,2
+ 1ea:	bfc1                	j	1ba <fun_timPWM_reload+0xc2>
+			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
+ 1ec:	0187d703          	lhu	a4,24(a5)
+ 1f0:	6699                	lui	a3,0x6
+ 1f2:	0742                	slli	a4,a4,0x10
+ 1f4:	8341                	srli	a4,a4,0x10
+ 1f6:	8f55                	or	a4,a4,a3
+ 1f8:	00e79c23          	sh	a4,24(a5)
+			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
+ 1fc:	0207d703          	lhu	a4,32(a5)
+ 200:	0742                	slli	a4,a4,0x10
+ 202:	8341                	srli	a4,a4,0x10
+ 204:	0c076713          	ori	a4,a4,192
+ 208:	bff1                	j	1e4 <fun_timPWM_reload+0xec>
+			timer->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1 | TIM_OC3PE;		// TIM_OC3PE is used by TIM2 only
+ 20a:	01c7d703          	lhu	a4,28(a5)
+ 20e:	0742                	slli	a4,a4,0x10
+ 210:	8341                	srli	a4,a4,0x10
+ 212:	06876713          	ori	a4,a4,104
+ 216:	00e79e23          	sh	a4,28(a5)
+			timer->CCER |= TIM_CC3E | TIM_CC3P;
+ 21a:	0207d703          	lhu	a4,32(a5)
+ 21e:	0742                	slli	a4,a4,0x10
+ 220:	8341                	srli	a4,a4,0x10
+ 222:	30076713          	ori	a4,a4,768
+ 226:	02e79023          	sh	a4,32(a5)
+			model->channel = 3;
+ 22a:	478d                	li	a5,3
+ 22c:	b779                	j	1ba <fun_timPWM_reload+0xc2>
+			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1 | TIM_OC4PE;		// TIM_OC4PE is used by TIM2 only
+ 22e:	01c7d703          	lhu	a4,28(a5)
+ 232:	669d                	lui	a3,0x7
+ 234:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.a6cf43f4+0x44ee>
+ 238:	0742                	slli	a4,a4,0x10
+ 23a:	8341                	srli	a4,a4,0x10
+ 23c:	8f55                	or	a4,a4,a3
+ 23e:	0742                	slli	a4,a4,0x10
+ 240:	8341                	srli	a4,a4,0x10
+ 242:	00e79e23          	sh	a4,28(a5)
 			timer->CCER |= TIM_CC4E | TIM_CC4P;
- 22a:	0207d703          	lhu	a4,32(a5)
- 22e:	668d                	lui	a3,0x3
- 230:	0742                	slli	a4,a4,0x10
- 232:	8341                	srli	a4,a4,0x10
- 234:	8f55                	or	a4,a4,a3
- 236:	02e79023          	sh	a4,32(a5)
-			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1;
- 23a:	01c7d703          	lhu	a4,28(a5)
- 23e:	6699                	lui	a3,0x6
- 240:	0742                	slli	a4,a4,0x10
- 242:	8341                	srli	a4,a4,0x10
- 244:	8f55                	or	a4,a4,a3
- 246:	bfe1                	j	21e <fun_t1pwm_reload+0x126>
+ 246:	0207d703          	lhu	a4,32(a5)
+ 24a:	668d                	lui	a3,0x3
+ 24c:	0742                	slli	a4,a4,0x10
+ 24e:	8341                	srli	a4,a4,0x10
+ 250:	8f55                	or	a4,a4,a3
+ 252:	02e79023          	sh	a4,32(a5)
+			model->channel = 4;
+ 256:	4791                	li	a5,4
+ 258:	b78d                	j	1ba <fun_timPWM_reload+0xc2>
 
-00000248 <fun_t1pwm_task>:
+0000025a <fun_timPWM_task>:
 	}
 }
 
 
-void fun_t1pwm_task(uint32_t time, TIM1_PWM_t* model) {
+void fun_timPWM_task(uint32_t time, TIM_PWM_t* model) {
 	if (time - model->timeRef < 5) { return; }
- 248:	45dc                	lw	a5,12(a1)
- 24a:	4611                	li	a2,4
- 24c:	40f507b3          	sub	a5,a0,a5
- 250:	02f67663          	bgeu	a2,a5,27c <fun_t1pwm_task+0x34>
+ 25a:	45dc                	lw	a5,12(a1)
+ 25c:	4611                	li	a2,4
+ 25e:	40f507b3          	sub	a5,a0,a5
+ 262:	02f67663          	bgeu	a2,a5,28e <fun_timPWM_task+0x34>
 	switch(model->channel) {
- 254:	0015c703          	lbu	a4,1(a1)
+ 266:	0015c703          	lbu	a4,1(a1)
 	model->timeRef = time;
- 258:	c5c8                	sw	a0,12(a1)
+ 26a:	c5c8                	sw	a0,12(a1)
 	switch(model->channel) {
- 25a:	450d                	li	a0,3
+ 26c:	450d                	li	a0,3
 
-	fun_t1pwm_setpw(model, model->counter);
- 25c:	459c                	lw	a5,8(a1)
+	fun_timPWM_setpw(model, model->counter);
+ 26e:	459c                	lw	a5,8(a1)
 	TIM_TypeDef* timer = model->TIM;
- 25e:	41d4                	lw	a3,4(a1)
+ 270:	41d4                	lw	a3,4(a1)
 	switch(model->channel) {
- 260:	04a70063          	beq	a4,a0,2a0 <fun_t1pwm_task+0x58>
- 264:	00e56d63          	bltu	a0,a4,27e <fun_t1pwm_task+0x36>
- 268:	4605                	li	a2,1
- 26a:	02c70163          	beq	a4,a2,28c <fun_t1pwm_task+0x44>
- 26e:	4609                	li	a2,2
- 270:	02c70363          	beq	a4,a2,296 <fun_t1pwm_task+0x4e>
+ 272:	04a70063          	beq	a4,a0,2b2 <fun_timPWM_task+0x58>
+ 276:	00e56d63          	bltu	a0,a4,290 <fun_timPWM_task+0x36>
+ 27a:	4605                	li	a2,1
+ 27c:	02c70163          	beq	a4,a2,29e <fun_timPWM_task+0x44>
+ 280:	4609                	li	a2,2
+ 282:	02c70363          	beq	a4,a2,2a8 <fun_timPWM_task+0x4e>
 	model->counter++;
- 274:	0785                	addi	a5,a5,1
+ 286:	0785                	addi	a5,a5,1
 	model->counter &= 255;
- 276:	0ff7f793          	andi	a5,a5,255
- 27a:	c59c                	sw	a5,8(a1)
- 27c:	8082                	ret
+ 288:	0ff7f793          	andi	a5,a5,255
+ 28c:	c59c                	sw	a5,8(a1)
+ 28e:	8082                	ret
 	switch(model->channel) {
- 27e:	fec71be3          	bne	a4,a2,274 <fun_t1pwm_task+0x2c>
+ 290:	fec71be3          	bne	a4,a2,286 <fun_timPWM_task+0x2c>
 		case 4: timer->CH4CVR = width; break;
- 282:	01079713          	slli	a4,a5,0x10
- 286:	8341                	srli	a4,a4,0x10
- 288:	c2b8                	sw	a4,64(a3)
- 28a:	b7ed                	j	274 <fun_t1pwm_task+0x2c>
+ 294:	01079713          	slli	a4,a5,0x10
+ 298:	8341                	srli	a4,a4,0x10
+ 29a:	c2b8                	sw	a4,64(a3)
+ 29c:	b7ed                	j	286 <fun_timPWM_task+0x2c>
 		case 1: timer->CH1CVR = width; break;
- 28c:	01079713          	slli	a4,a5,0x10
- 290:	8341                	srli	a4,a4,0x10
- 292:	dad8                	sw	a4,52(a3)
- 294:	b7c5                	j	274 <fun_t1pwm_task+0x2c>
+ 29e:	01079713          	slli	a4,a5,0x10
+ 2a2:	8341                	srli	a4,a4,0x10
+ 2a4:	dad8                	sw	a4,52(a3)
+ 2a6:	b7c5                	j	286 <fun_timPWM_task+0x2c>
 		case 2: timer->CH2CVR = width; break;
- 296:	01079713          	slli	a4,a5,0x10
- 29a:	8341                	srli	a4,a4,0x10
- 29c:	de98                	sw	a4,56(a3)
- 29e:	bfd9                	j	274 <fun_t1pwm_task+0x2c>
+ 2a8:	01079713          	slli	a4,a5,0x10
+ 2ac:	8341                	srli	a4,a4,0x10
+ 2ae:	de98                	sw	a4,56(a3)
+ 2b0:	bfd9                	j	286 <fun_timPWM_task+0x2c>
 		case 3: timer->CH3CVR = width; break;
- 2a0:	01079713          	slli	a4,a5,0x10
- 2a4:	8341                	srli	a4,a4,0x10
- 2a6:	ded8                	sw	a4,60(a3)
- 2a8:	b7f1                	j	274 <fun_t1pwm_task+0x2c>
+ 2b2:	01079713          	slli	a4,a5,0x10
+ 2b6:	8341                	srli	a4,a4,0x10
+ 2b8:	ded8                	sw	a4,60(a3)
+ 2ba:	b7f1                	j	286 <fun_timPWM_task+0x2c>
 
-000002aa <internal_handle_input.constprop.0>:
+000002bc <internal_handle_input.constprop.0>:
 void handle_debug_input( int numbytes, uint8_t * data ) __attribute__((weak));
 void handle_debug_input( int numbytes, uint8_t * data ) { (void)numbytes; (void)data; }
 
 static void internal_handle_input( volatile uint32_t * dmdata0 )
 {
 	uint32_t dmd0 = *dmdata0;
- 2aa:	e00007b7          	lui	a5,0xe0000
- 2ae:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
+ 2bc:	e00007b7          	lui	a5,0xe0000
+ 2c0:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
 	int bytes = (dmd0 & 0x3f) - 4;
 	if( bytes > 0 && bytes < 16 )
 	{
 		handle_debug_input( bytes, ((uint8_t*)dmdata0) + 1 );
 	}
 }
- 2b2:	8082                	ret
+ 2c4:	8082                	ret
 
-000002b4 <handle_reset>:
+000002c6 <handle_reset>:
 	asm volatile( "\n\
- 2b4:	20000197          	auipc	gp,0x20000
- 2b8:	14818193          	addi	gp,gp,328 # 200003fc <__global_pointer$>
- 2bc:	40418113          	addi	sp,gp,1028 # 20000800 <_eusrstack>
- 2c0:	6509                	lui	a0,0x2
- 2c2:	88050513          	addi	a0,a0,-1920 # 1880 <ch32fun.c.8e54cce3+0x6f6>
- 2c6:	30051073          	csrw	mstatus,a0
- 2ca:	468d                	li	a3,3
- 2cc:	00000517          	auipc	a0,0x0
- 2d0:	d3450513          	addi	a0,a0,-716 # 0 <InterruptVector>
- 2d4:	8d55                	or	a0,a0,a3
- 2d6:	30551073          	csrw	mtvec,a0
+ 2c6:	20000197          	auipc	gp,0x20000
+ 2ca:	13618193          	addi	gp,gp,310 # 200003fc <__global_pointer$>
+ 2ce:	40418113          	addi	sp,gp,1028 # 20000800 <_eusrstack>
+ 2d2:	6509                	lui	a0,0x2
+ 2d4:	88050513          	addi	a0,a0,-1920 # 1880 <ch32fun.c.8e54cce3+0x6f6>
+ 2d8:	30051073          	csrw	mstatus,a0
+ 2dc:	468d                	li	a3,3
+ 2de:	00000517          	auipc	a0,0x0
+ 2e2:	d2250513          	addi	a0,a0,-734 # 0 <InterruptVector>
+ 2e6:	8d55                	or	a0,a0,a3
+ 2e8:	30551073          	csrw	mtvec,a0
 asm volatile(
- 2da:	c0418513          	addi	a0,gp,-1020 # 20000000 <systick_millis>
- 2de:	c0818593          	addi	a1,gp,-1016 # 20000004 <_ebss>
- 2e2:	4601                	li	a2,0
- 2e4:	00b55663          	bge	a0,a1,2f0 <handle_reset+0x3c>
- 2e8:	c110                	sw	a2,0(a0)
- 2ea:	0511                	addi	a0,a0,4
- 2ec:	feb54ee3          	blt	a0,a1,2e8 <handle_reset+0x34>
- 2f0:	5c000513          	li	a0,1472
- 2f4:	c0418593          	addi	a1,gp,-1020 # 20000000 <systick_millis>
- 2f8:	c0418613          	addi	a2,gp,-1020 # 20000000 <systick_millis>
- 2fc:	00c58863          	beq	a1,a2,30c <handle_reset+0x58>
- 300:	4114                	lw	a3,0(a0)
- 302:	c194                	sw	a3,0(a1)
- 304:	0511                	addi	a0,a0,4
- 306:	0591                	addi	a1,a1,4
- 308:	fec59ae3          	bne	a1,a2,2fc <handle_reset+0x48>
+ 2ec:	c0418513          	addi	a0,gp,-1020 # 20000000 <systick_millis>
+ 2f0:	c0818593          	addi	a1,gp,-1016 # 20000004 <_ebss>
+ 2f4:	4601                	li	a2,0
+ 2f6:	00b55663          	bge	a0,a1,302 <handle_reset+0x3c>
+ 2fa:	c110                	sw	a2,0(a0)
+ 2fc:	0511                	addi	a0,a0,4
+ 2fe:	feb54ee3          	blt	a0,a1,2fa <handle_reset+0x34>
+ 302:	5cc00513          	li	a0,1484
+ 306:	c0418593          	addi	a1,gp,-1020 # 20000000 <systick_millis>
+ 30a:	c0418613          	addi	a2,gp,-1020 # 20000000 <systick_millis>
+ 30e:	00c58863          	beq	a1,a2,31e <handle_reset+0x58>
+ 312:	4114                	lw	a3,0(a0)
+ 314:	c194                	sw	a3,0(a1)
+ 316:	0511                	addi	a0,a0,4
+ 318:	0591                	addi	a1,a1,4
+ 31a:	fec59ae3          	bne	a1,a2,30e <handle_reset+0x48>
 	SysTick->CTLR = 5;
- 30c:	e000f7b7          	lui	a5,0xe000f
- 310:	4715                	li	a4,5
- 312:	c398                	sw	a4,0(a5)
+ 31e:	e000f7b7          	lui	a5,0xe000f
+ 322:	4715                	li	a4,5
+ 324:	c398                	sw	a4,0(a5)
 asm volatile(
- 314:	44200793          	li	a5,1090
- 318:	34179073          	csrw	mepc,a5
- 31c:	30200073          	mret
+ 326:	45400793          	li	a5,1108
+ 32a:	34179073          	csrw	mepc,a5
+ 32e:	30200073          	mret
 
-00000320 <ADC1_2_IRQHandler>:
+00000332 <ADC1_2_IRQHandler>:
 
 // Return the Machine Exception Program Register (MEPC)
 static inline uint32_t __get_MEPC(void)
 {
 	uint32_t result;
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mepc" : "=r"(result));
- 320:	34102573          	csrr	a0,mepc
+ 332:	34102573          	csrr	a0,mepc
 	PrintHex( __get_MEPC() ); // "addr2line -e debugprintfdemo.elf 0x000007e6" ---> debugprintfdemo.c:45
- 324:	3bb5                	jal	a0 <PrintHex>
+ 336:	33ad                	jal	a0 <PrintHex>
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0, mstatus": "=r"(result) );
- 326:	30002573          	csrr	a0,mstatus
+ 338:	30002573          	csrr	a0,mstatus
 	PrintHex( __get_MSTATUS() );
- 32a:	3b9d                	jal	a0 <PrintHex>
+ 33c:	3395                	jal	a0 <PrintHex>
 
 // Return the Machine Trap Value Register (MTVAL)
 static inline uint32_t __get_MTVAL(void)
 {
 	uint32_t result;
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mtval" : "=r" (result) );
- 32c:	34302573          	csrr	a0,mtval
+ 33e:	34302573          	csrr	a0,mtval
 	PrintHex( __get_MTVAL() );
- 330:	3b85                	jal	a0 <PrintHex>
+ 342:	3bb9                	jal	a0 <PrintHex>
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mcause": "=r"(result));
- 332:	34202573          	csrr	a0,mcause
+ 344:	34202573          	csrr	a0,mcause
 	PrintHex( __get_MCAUSE() );
- 336:	33ad                	jal	a0 <PrintHex>
+ 348:	3ba1                	jal	a0 <PrintHex>
 	while( (*DMDATA0) & 0x80 );
- 338:	e0000737          	lui	a4,0xe0000
- 33c:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
- 340:	0f470693          	addi	a3,a4,244
- 344:	0807f793          	andi	a5,a5,128
- 348:	fbf5                	bnez	a5,33c <ADC1_2_IRQHandler+0x1c>
+ 34a:	e0000737          	lui	a4,0xe0000
+ 34e:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 352:	0f470693          	addi	a3,a4,244
+ 356:	0807f793          	andi	a5,a5,128
+ 35a:	fbf5                	bnez	a5,34e <ADC1_2_IRQHandler+0x1c>
 	*DMDATA0 = 0x0a85;
- 34a:	6785                	lui	a5,0x1
- 34c:	a8578793          	addi	a5,a5,-1403 # a85 <_data_lma+0x4c5>
- 350:	c29c                	sw	a5,0(a3)
+ 35c:	6785                	lui	a5,0x1
+ 35e:	a8578793          	addi	a5,a5,-1403 # a85 <_data_lma+0x4b9>
+ 362:	c29c                	sw	a5,0(a3)
 	while( (*DMDATA0) & 0x80 );
- 352:	e0000737          	lui	a4,0xe0000
- 356:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
- 35a:	0f470693          	addi	a3,a4,244
- 35e:	0807f793          	andi	a5,a5,128
- 362:	fbf5                	bnez	a5,356 <ADC1_2_IRQHandler+0x36>
+ 364:	e0000737          	lui	a4,0xe0000
+ 368:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 36c:	0f470693          	addi	a3,a4,244
+ 370:	0807f793          	andi	a5,a5,128
+ 374:	fbf5                	bnez	a5,368 <ADC1_2_IRQHandler+0x36>
 	*DMDATA0 = 0xaaaaaa83;
- 364:	aaaab7b7          	lui	a5,0xaaaab
- 368:	a8378793          	addi	a5,a5,-1405 # aaaaaa83 <_eusrstack+0x8aaaa283>
- 36c:	c29c                	sw	a5,0(a3)
+ 376:	aaaab7b7          	lui	a5,0xaaaab
+ 37a:	a8378793          	addi	a5,a5,-1405 # aaaaaa83 <_eusrstack+0x8aaaa283>
+ 37e:	c29c                	sw	a5,0(a3)
 	asm volatile( "1: j 1b" );
- 36e:	a001                	j	36e <ADC1_2_IRQHandler+0x4e>
+ 380:	a001                	j	380 <ADC1_2_IRQHandler+0x4e>
 
-00000370 <NMI_Handler>:
+00000382 <NMI_Handler>:
 	RCC->INTR |= RCC_CSSC;	// clear the clock security int flag
- 370:	40021737          	lui	a4,0x40021
- 374:	471c                	lw	a5,8(a4)
- 376:	008006b7          	lui	a3,0x800
- 37a:	8fd5                	or	a5,a5,a3
- 37c:	c71c                	sw	a5,8(a4)
+ 382:	40021737          	lui	a4,0x40021
+ 386:	471c                	lw	a5,8(a4)
+ 388:	008006b7          	lui	a3,0x800
+ 38c:	8fd5                	or	a5,a5,a3
+ 38e:	c71c                	sw	a5,8(a4)
 
-0000037e <putchar>:
+00000390 <putchar>:
 }
 
 // single to debug intf
 WEAK int putchar(int c)
 {
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 37e:	e00007b7          	lui	a5,0xe0000
- 382:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
- 386:	0c000713          	li	a4,192
- 38a:	0c07f793          	andi	a5,a5,192
- 38e:	04e78c63          	beq	a5,a4,3e6 <putchar+0x68>
+ 390:	e00007b7          	lui	a5,0xe0000
+ 394:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
+ 398:	0c000713          	li	a4,192
+ 39c:	0c07f793          	andi	a5,a5,192
+ 3a0:	04e78c63          	beq	a5,a4,3f8 <putchar+0x68>
 {
- 392:	1151                	addi	sp,sp,-12
+ 3a4:	1151                	addi	sp,sp,-12
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 394:	001007b7          	lui	a5,0x100
+ 3a6:	001007b7          	lui	a5,0x100
 {
- 398:	c222                	sw	s0,4(sp)
- 39a:	c406                	sw	ra,8(sp)
- 39c:	842a                	mv	s0,a0
+ 3aa:	c222                	sw	s0,4(sp)
+ 3ac:	c406                	sw	ra,8(sp)
+ 3ae:	842a                	mv	s0,a0
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 39e:	0785                	addi	a5,a5,1
+ 3b0:	0785                	addi	a5,a5,1
 
 	int timeout = FUNCONF_DEBUGPRINTF_TIMEOUT;
 	uint32_t lastdmd = 0;
 
 	while( ( lastdmd = (*DMDATA0) ) & 0x80 )
- 3a0:	e00006b7          	lui	a3,0xe0000
- 3a4:	0f46a703          	lw	a4,244(a3) # e00000f4 <_eusrstack+0xbffff8f4>
- 3a8:	0f468613          	addi	a2,a3,244
- 3ac:	08077593          	andi	a1,a4,128
- 3b0:	e185                	bnez	a1,3d0 <putchar+0x52>
+ 3b2:	e00006b7          	lui	a3,0xe0000
+ 3b6:	0f46a703          	lw	a4,244(a3) # e00000f4 <_eusrstack+0xbffff8f4>
+ 3ba:	0f468613          	addi	a2,a3,244
+ 3be:	08077593          	andi	a1,a4,128
+ 3c2:	e185                	bnez	a1,3e2 <putchar+0x52>
 			return 0;
 		}
 	}
 
 	// Simply seeking input.
 	if( lastdmd ) internal_handle_input( (uint32_t*)DMDATA0 );
- 3b2:	c311                	beqz	a4,3b6 <putchar+0x38>
- 3b4:	3ddd                	jal	2aa <internal_handle_input.constprop.0>
+ 3c4:	c311                	beqz	a4,3c8 <putchar+0x38>
+ 3c6:	3ddd                	jal	2bc <internal_handle_input.constprop.0>
 
 	// Write out character.
 	*DMDATA0 = 0x85 | ((const char)c<<8);
- 3b6:	6541                	lui	a0,0x10
- 3b8:	157d                	addi	a0,a0,-1
- 3ba:	00841793          	slli	a5,s0,0x8
- 3be:	8fe9                	and	a5,a5,a0
- 3c0:	0857e793          	ori	a5,a5,133
- 3c4:	e0000737          	lui	a4,0xe0000
- 3c8:	0ef72a23          	sw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 3c8:	6541                	lui	a0,0x10
+ 3ca:	157d                	addi	a0,a0,-1
+ 3cc:	00841793          	slli	a5,s0,0x8
+ 3d0:	8fe9                	and	a5,a5,a0
+ 3d2:	0857e793          	ori	a5,a5,133
+ 3d6:	e0000737          	lui	a4,0xe0000
+ 3da:	0ef72a23          	sw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
 	return 1;
- 3cc:	4505                	li	a0,1
- 3ce:	a801                	j	3de <putchar+0x60>
+ 3de:	4505                	li	a0,1
+ 3e0:	a801                	j	3f0 <putchar+0x60>
 		if( timeout-- == 0 )
- 3d0:	17fd                	addi	a5,a5,-1
- 3d2:	fbe9                	bnez	a5,3a4 <putchar+0x26>
+ 3e2:	17fd                	addi	a5,a5,-1
+ 3e4:	fbe9                	bnez	a5,3b6 <putchar+0x26>
 			*DMDATA0 |= 0xc0;
- 3d4:	421c                	lw	a5,0(a2)
- 3d6:	4501                	li	a0,0
- 3d8:	0c07e793          	ori	a5,a5,192
- 3dc:	c21c                	sw	a5,0(a2)
+ 3e6:	421c                	lw	a5,0(a2)
+ 3e8:	4501                	li	a0,0
+ 3ea:	0c07e793          	ori	a5,a5,192
+ 3ee:	c21c                	sw	a5,0(a2)
 }
- 3de:	40a2                	lw	ra,8(sp)
- 3e0:	4412                	lw	s0,4(sp)
- 3e2:	0131                	addi	sp,sp,12
- 3e4:	8082                	ret
+ 3f0:	40a2                	lw	ra,8(sp)
+ 3f2:	4412                	lw	s0,4(sp)
+ 3f4:	0131                	addi	sp,sp,12
+ 3f6:	8082                	ret
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 3e6:	4501                	li	a0,0
+ 3f8:	4501                	li	a0,0
 }
- 3e8:	8082                	ret
+ 3fa:	8082                	ret
 
-000003ea <SystemInit>:
+000003fc <SystemInit>:
 	#endif
 #elif defined(CH32X03x)
 	FLASH->ACTLR = FLASH_ACTLR_LATENCY_2;                   // +2 Cycle Latency (Recommended per TRM)
 #elif defined(CH32V003)
 	#if FUNCONF_SYSTEM_CORE_CLOCK > 25000000
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;               // +1 Cycle Latency
- 3ea:	400227b7          	lui	a5,0x40022
- 3ee:	4705                	li	a4,1
- 3f0:	c398                	sw	a4,0(a5)
+ 3fc:	400227b7          	lui	a5,0x40022
+ 400:	4705                	li	a4,1
+ 402:	c398                	sw	a4,0(a5)
 #elif defined(FUNCONF_USE_HSI) && FUNCONF_USE_HSI
 	#if defined(CH32V30x) || defined(CH32V20x) || defined(CH32V10x)
 		EXTEN->EXTEN_CTR |= EXTEN_PLL_HSI_PRE;
 	#endif
 	#if defined(FUNCONF_USE_PLL) && FUNCONF_USE_PLL
 		RCC->CFGR0 = BASE_CFGR0;
- 3f2:	400217b7          	lui	a5,0x40021
+ 404:	400217b7          	lui	a5,0x40021
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
- 3f6:	01080737          	lui	a4,0x1080
+ 408:	01080737          	lui	a4,0x1080
 		RCC->CFGR0 = BASE_CFGR0;
- 3fa:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
+ 40c:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
- 3fe:	08170713          	addi	a4,a4,129 # 1080081 <example.c.b47e8823+0x107dd6f>
- 402:	c398                	sw	a4,0(a5)
+ 410:	08170713          	addi	a4,a4,129 # 1080081 <example.c.a6cf43f4+0x107dd6f>
+ 414:	c398                	sw	a4,0(a5)
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;       		// +1 Cycle Latency
 	#endif
 #endif
 
 #if !defined(CH57x) && !defined(CH58x) && !defined(CH59x)
 	RCC->INTR  = 0x009F0000;                               // Clear PLL, CSSC, HSE, HSI and LSI ready flags.
- 404:	009f0737          	lui	a4,0x9f0
- 408:	c798                	sw	a4,8(a5)
+ 416:	009f0737          	lui	a4,0x9f0
+ 41a:	c798                	sw	a4,8(a5)
 #endif
 
 #if defined(FUNCONF_USE_PLL) && FUNCONF_USE_PLL && !defined(CH57x) && !defined(CH58x) && !defined(CH59x)
 	while((RCC->CTLR & RCC_PLLRDY) == 0);                       	// Wait till PLL is ready
- 40a:	020006b7          	lui	a3,0x2000
- 40e:	40021737          	lui	a4,0x40021
- 412:	431c                	lw	a5,0(a4)
- 414:	8ff5                	and	a5,a5,a3
- 416:	dff5                	beqz	a5,412 <SystemInit+0x28>
+ 41c:	020006b7          	lui	a3,0x2000
+ 420:	40021737          	lui	a4,0x40021
+ 424:	431c                	lw	a5,0(a4)
+ 426:	8ff5                	and	a5,a5,a3
+ 428:	dff5                	beqz	a5,424 <SystemInit+0x28>
 	uint32_t tmp32 = RCC->CFGR0 & ~(0x03);							// clr the SW
- 418:	435c                	lw	a5,4(a4)
+ 42a:	435c                	lw	a5,4(a4)
 	RCC->CFGR0 = tmp32 | RCC_SW_PLL;                       			// Select PLL as system clock source
 	while ((RCC->CFGR0 & (uint32_t)RCC_SWS) != (uint32_t)0x08); 	// Wait till PLL is used as system clock source
- 41a:	400216b7          	lui	a3,0x40021
+ 42c:	400216b7          	lui	a3,0x40021
 	uint32_t tmp32 = RCC->CFGR0 & ~(0x03);							// clr the SW
- 41e:	9bf1                	andi	a5,a5,-4
+ 430:	9bf1                	andi	a5,a5,-4
 	RCC->CFGR0 = tmp32 | RCC_SW_PLL;                       			// Select PLL as system clock source
- 420:	0027e793          	ori	a5,a5,2
- 424:	c35c                	sw	a5,4(a4)
+ 432:	0027e793          	ori	a5,a5,2
+ 436:	c35c                	sw	a5,4(a4)
 	while ((RCC->CFGR0 & (uint32_t)RCC_SWS) != (uint32_t)0x08); 	// Wait till PLL is used as system clock source
- 426:	4721                	li	a4,8
- 428:	42dc                	lw	a5,4(a3)
- 42a:	8bb1                	andi	a5,a5,12
- 42c:	fee79ee3          	bne	a5,a4,428 <SystemInit+0x3e>
+ 438:	4721                	li	a4,8
+ 43a:	42dc                	lw	a5,4(a3)
+ 43c:	8bb1                	andi	a5,a5,12
+ 43e:	fee79ee3          	bne	a5,a4,43a <SystemInit+0x3e>
 	*DMDATA1 = 0x00;
- 430:	e00007b7          	lui	a5,0xe0000
- 434:	0e07ac23          	sw	zero,248(a5) # e00000f8 <_eusrstack+0xbffff8f8>
+ 442:	e00007b7          	lui	a5,0xe0000
+ 446:	0e07ac23          	sw	zero,248(a5) # e00000f8 <_eusrstack+0xbffff8f8>
 	*DMDATA0 = 0x80;
- 438:	08000713          	li	a4,128
- 43c:	0ee7aa23          	sw	a4,244(a5)
+ 44a:	08000713          	li	a4,128
+ 44e:	0ee7aa23          	sw	a4,244(a5)
 	SetupUART( UART_BRR );
 #endif
 #if defined( FUNCONF_USE_DEBUGPRINTF ) && FUNCONF_USE_DEBUGPRINTF
 	SetupDebugPrintf();
 #endif
 }
- 440:	8082                	ret
+ 452:	8082                	ret
 
-00000442 <main>:
+00000454 <main>:
 #include <stdio.h>
 
-#include "../fun_tim1_pwm.h"
+#include "../fun_timPWM.h"
 #include "../../modules/systick_irq.h"
 
 int main() {
- 442:	715d                	addi	sp,sp,-80
- 444:	c4a2                	sw	s0,72(sp)
- 446:	c686                	sw	ra,76(sp)
- 448:	c2a6                	sw	s1,68(sp)
+ 454:	715d                	addi	sp,sp,-80
+ 456:	c4a2                	sw	s0,72(sp)
+ 458:	c686                	sw	ra,76(sp)
+ 45a:	c2a6                	sw	s1,68(sp)
     SystemInit();
- 44a:	3745                	jal	3ea <SystemInit>
+ 45c:	3745                	jal	3fc <SystemInit>
 * its clock source
 */
 void systick_init(void)
 {
 	// Reset any pre-existing configuration
 	SysTick->CTLR = 0x0000;
- 44c:	e000f7b7          	lui	a5,0xe000f
+ 45e:	e000f7b7          	lui	a5,0xe000f
 	
 	// Set the compare register to trigger once per millisecond
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
- 450:	6731                	lui	a4,0xc
+ 462:	6731                	lui	a4,0xc
 	SysTick->CTLR = 0x0000;
- 452:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
+ 464:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
- 456:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.b47e8823+0x986d>
- 45a:	cb98                	sw	a4,16(a5)
+ 468:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.a6cf43f4+0x986d>
+ 46c:	cb98                	sw	a4,16(a5)
 
 	// Reset the Count Register, and the global millis counter to 0
 	SysTick->CNT = 0x00000000;
- 45c:	0007a423          	sw	zero,8(a5)
+ 46e:	0007a423          	sw	zero,8(a5)
 	systick_millis = 0x00000000;
- 460:	c0418713          	addi	a4,gp,-1020 # 20000000 <systick_millis>
- 464:	00072023          	sw	zero,0(a4)
+ 472:	c0418713          	addi	a4,gp,-1020 # 20000000 <systick_millis>
+ 476:	00072023          	sw	zero,0(a4)
 	
 	// Set the SysTick Configuration
 	// NOTE: By not setting SYSTICK_CTLR_STRE, we maintain compatibility with
 	// busywait delay funtions used by ch32v003_fun.
 	SysTick->CTLR |= SYSTICK_CTLR_STE   |  // Enable Counter
- 468:	4398                	lw	a4,0(a5)
+ 47a:	4398                	lw	a4,0(a5)
 	NVIC->IENR[((uint32_t)(IRQn) >> 5)] = (1 << ((uint32_t)(IRQn) & 0x1F));
- 46a:	6685                	lui	a3,0x1
- 46c:	c0418413          	addi	s0,gp,-1020 # 20000000 <systick_millis>
- 470:	00776713          	ori	a4,a4,7
- 474:	c398                	sw	a4,0(a5)
- 476:	e000e737          	lui	a4,0xe000e
- 47a:	10d72023          	sw	a3,256(a4) # e000e100 <_eusrstack+0xc000d900>
+ 47c:	6685                	lui	a3,0x1
+ 47e:	c0418413          	addi	s0,gp,-1020 # 20000000 <systick_millis>
+ 482:	00776713          	ori	a4,a4,7
+ 486:	c398                	sw	a4,0(a5)
+ 488:	e000e737          	lui	a4,0xe000e
+ 48c:	10d72023          	sw	a3,256(a4) # e000e100 <_eusrstack+0xc000d900>
     systick_init();			//! required for millis()
 
     funGpioInitAll();
- 47e:	400216b7          	lui	a3,0x40021
- 482:	4e98                	lw	a4,24(a3)
- 484:	03576713          	ori	a4,a4,53
- 488:	ce98                	sw	a4,24(a3)
+ 490:	400216b7          	lui	a3,0x40021
+ 494:	4e98                	lw	a4,24(a3)
+ 496:	03576713          	ori	a4,a4,53
+ 49a:	ce98                	sw	a4,24(a3)
 	uint32_t targend = SysTick->CNT + n;
- 48a:	4798                	lw	a4,8(a5)
- 48c:	004947b7          	lui	a5,0x494
- 490:	e0078793          	addi	a5,a5,-512 # 493e00 <example.c.b47e8823+0x491aee>
- 494:	973e                	add	a4,a4,a5
+ 49c:	4798                	lw	a4,8(a5)
+ 49e:	004947b7          	lui	a5,0x494
+ 4a2:	e0078793          	addi	a5,a5,-512 # 493e00 <example.c.a6cf43f4+0x491aee>
+ 4a6:	973e                	add	a4,a4,a5
 	while( ((int32_t)( SysTick->CNT - targend )) < 0 );
- 496:	e000f6b7          	lui	a3,0xe000f
- 49a:	469c                	lw	a5,8(a3)
- 49c:	8f99                	sub	a5,a5,a4
- 49e:	fe07cee3          	bltz	a5,49a <main+0x58>
+ 4a8:	e000f6b7          	lui	a3,0xe000f
+ 4ac:	469c                	lw	a5,8(a3)
+ 4ae:	8f99                	sub	a5,a5,a4
+ 4b0:	fe07cee3          	bltz	a5,4ac <main+0x58>
 		.pin = PD4,
         .TIM = TIM2,
 		.CCER = TIM_CC1E
 	};
 
-	TIM1_PWM_t pwm_CH2 = {
- 4a2:	00100737          	lui	a4,0x100
- 4a6:	03370713          	addi	a4,a4,51 # 100033 <example.c.b47e8823+0xfdd21>
- 4aa:	d23a                	sw	a4,36(sp)
+	TIM_PWM_t pwm_CH2 = {
+ 4b4:	00100737          	lui	a4,0x100
+ 4b8:	03370713          	addi	a4,a4,51 # 100033 <example.c.a6cf43f4+0xfdd21>
+ 4bc:	d23a                	sw	a4,36(sp)
 		.pin = PD3,
         .TIM = TIM2,
 		.CCER = TIM_CC2E
 	};
 	
-	TIM1_PWM_t pwm_CH3 = {
- 4ac:	01000737          	lui	a4,0x1000
- 4b0:	02070713          	addi	a4,a4,32 # 1000020 <example.c.b47e8823+0xffdd0e>
- 4b4:	ca3a                	sw	a4,20(sp)
-    TIM1_PWM_t pwm_CH1 = {
- 4b6:	67c1                	lui	a5,0x10
+	TIM_PWM_t pwm_CH3 = {
+ 4be:	01000737          	lui	a4,0x1000
+ 4c2:	02070713          	addi	a4,a4,32 # 1000020 <example.c.a6cf43f4+0xffdd0e>
+ 4c6:	ca3a                	sw	a4,20(sp)
+    TIM_PWM_t pwm_CH1 = {
+ 4c8:	67c1                	lui	a5,0x10
         .TIM = TIM2,
 		.CCER = TIM_CC3E
 	};
 
 
-	TIM1_PWM_t pwm_CH4 = {
- 4b8:	10000737          	lui	a4,0x10000
-    TIM1_PWM_t pwm_CH1 = {
- 4bc:	03478793          	addi	a5,a5,52 # 10034 <example.c.b47e8823+0xdd22>
-	TIM1_PWM_t pwm_CH4 = {
- 4c0:	03770713          	addi	a4,a4,55 # 10000037 <example.c.b47e8823+0xfffdd25>
-    TIM1_PWM_t pwm_CH1 = {
- 4c4:	da3e                	sw	a5,52(sp)
-	TIM1_PWM_t pwm_CH4 = {
- 4c6:	c23a                	sw	a4,4(sp)
-    TIM1_PWM_t pwm_CH1 = {
- 4c8:	de02                	sw	zero,60(sp)
- 4ca:	c082                	sw	zero,64(sp)
-	TIM1_PWM_t pwm_CH2 = {
- 4cc:	d602                	sw	zero,44(sp)
- 4ce:	d802                	sw	zero,48(sp)
-	TIM1_PWM_t pwm_CH3 = {
- 4d0:	ce02                	sw	zero,28(sp)
- 4d2:	d002                	sw	zero,32(sp)
-	TIM1_PWM_t pwm_CH4 = {
- 4d4:	c602                	sw	zero,12(sp)
- 4d6:	c802                	sw	zero,16(sp)
-	RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
- 4d8:	40021737          	lui	a4,0x40021
- 4dc:	4f14                	lw	a3,24(a4)
- 4de:	6605                	lui	a2,0x1
-    TIM1_PWM_t pwm_CH1 = {
- 4e0:	400007b7          	lui	a5,0x40000
- 4e4:	80060613          	addi	a2,a2,-2048 # 800 <_data_lma+0x240>
- 4e8:	dc3e                	sw	a5,56(sp)
-	TIM1_PWM_t pwm_CH2 = {
- 4ea:	d43e                	sw	a5,40(sp)
-	TIM1_PWM_t pwm_CH3 = {
- 4ec:	cc3e                	sw	a5,24(sp)
-	TIM1_PWM_t pwm_CH4 = {
- 4ee:	c43e                	sw	a5,8(sp)
- 4f0:	8ed1                	or	a3,a3,a2
- 4f2:	cf14                	sw	a3,24(a4)
+	TIM_PWM_t pwm_CH4 = {
+ 4ca:	10000737          	lui	a4,0x10000
+    TIM_PWM_t pwm_CH1 = {
+ 4ce:	03478793          	addi	a5,a5,52 # 10034 <example.c.a6cf43f4+0xdd22>
+	TIM_PWM_t pwm_CH4 = {
+ 4d2:	03770713          	addi	a4,a4,55 # 10000037 <example.c.a6cf43f4+0xfffdd25>
+    TIM_PWM_t pwm_CH1 = {
+ 4d6:	da3e                	sw	a5,52(sp)
+	TIM_PWM_t pwm_CH4 = {
+ 4d8:	c23a                	sw	a4,4(sp)
+    TIM_PWM_t pwm_CH1 = {
+ 4da:	de02                	sw	zero,60(sp)
+ 4dc:	c082                	sw	zero,64(sp)
+	TIM_PWM_t pwm_CH2 = {
+ 4de:	d602                	sw	zero,44(sp)
+ 4e0:	d802                	sw	zero,48(sp)
+	TIM_PWM_t pwm_CH3 = {
+ 4e2:	ce02                	sw	zero,28(sp)
+ 4e4:	d002                	sw	zero,32(sp)
+	TIM_PWM_t pwm_CH4 = {
+ 4e6:	c602                	sw	zero,12(sp)
+ 4e8:	c802                	sw	zero,16(sp)
 	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
- 4f4:	400106b7          	lui	a3,0x40010
- 4f8:	42d0                	lw	a2,4(a3)
+ 4ea:	40010737          	lui	a4,0x40010
+ 4ee:	4354                	lw	a3,4(a4)
+    TIM_PWM_t pwm_CH1 = {
+ 4f0:	400007b7          	lui	a5,0x40000
+ 4f4:	dc3e                	sw	a5,56(sp)
+	TIM_PWM_t pwm_CH2 = {
+ 4f6:	d43e                	sw	a5,40(sp)
+	TIM_PWM_t pwm_CH3 = {
+ 4f8:	cc3e                	sw	a5,24(sp)
+	TIM_PWM_t pwm_CH4 = {
+ 4fa:	c43e                	sw	a5,8(sp)
+ 4fc:	c354                	sw	a3,4(a4)
+		RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
+ 4fe:	40021737          	lui	a4,0x40021
+ 502:	4f54                	lw	a3,28(a4)
         .TIM = TIM2,
 		.CCER = TIM_CC4E
 	};
 
-	fun_t1pwm_init(&pwm_CH1);
-	fun_t1pwm_reload(&pwm_CH1);
- 4fa:	1848                	addi	a0,sp,52
- 4fc:	c2d0                	sw	a2,4(a3)
+	fun_timPWM_init(&pwm_CH1);
+	fun_timPWM_reload(&pwm_CH1);
+ 504:	1848                	addi	a0,sp,52
+ 506:	0016e693          	ori	a3,a3,1
+ 50a:	cf54                	sw	a3,28(a4)
 		RCC->APB1PRSTR |= RCC_APB1Periph_TIM2;
- 4fe:	4b14                	lw	a3,16(a4)
- 500:	0016e693          	ori	a3,a3,1
- 504:	cb14                	sw	a3,16(a4)
+ 50c:	4b14                	lw	a3,16(a4)
+ 50e:	0016e693          	ori	a3,a3,1
+ 512:	cb14                	sw	a3,16(a4)
 		RCC->APB1PRSTR &= ~RCC_APB1Periph_TIM2;
- 506:	4b14                	lw	a3,16(a4)
- 508:	9af9                	andi	a3,a3,-2
- 50a:	cb14                	sw	a3,16(a4)
+ 514:	4b14                	lw	a3,16(a4)
+ 516:	9af9                	andi	a3,a3,-2
+ 518:	cb14                	sw	a3,16(a4)
 	timer->PSC = 0x0000;			// Prescaler 
- 50c:	02079423          	sh	zero,40(a5) # 40000028 <_eusrstack+0x1ffff828>
+ 51a:	02079423          	sh	zero,40(a5) # 40000028 <_eusrstack+0x1ffff828>
 	timer->ATRLR = 255;				// Auto Reload - sets period
- 510:	0ff00713          	li	a4,255
- 514:	02e79623          	sh	a4,44(a5)
+ 51e:	0ff00713          	li	a4,255
+ 522:	02e79623          	sh	a4,44(a5)
 	timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
- 518:	0447d703          	lhu	a4,68(a5)
- 51c:	66a1                	lui	a3,0x8
- 51e:	0742                	slli	a4,a4,0x10
- 520:	8341                	srli	a4,a4,0x10
- 522:	8f55                	or	a4,a4,a3
- 524:	04e79223          	sh	a4,68(a5)
-	timer->SWEVGR |= TIM_UG;		// Reload immediately
- 528:	0147d703          	lhu	a4,20(a5)
+ 526:	0447d703          	lhu	a4,68(a5)
+ 52a:	66a1                	lui	a3,0x8
  52c:	0742                	slli	a4,a4,0x10
  52e:	8341                	srli	a4,a4,0x10
- 530:	00176713          	ori	a4,a4,1
- 534:	00e79a23          	sh	a4,20(a5)
+ 530:	8f55                	or	a4,a4,a3
+ 532:	04e79223          	sh	a4,68(a5)
+	timer->SWEVGR |= TIM_UG;		// Reload immediately
+ 536:	0147d703          	lhu	a4,20(a5)
+ 53a:	0742                	slli	a4,a4,0x10
+ 53c:	8341                	srli	a4,a4,0x10
+ 53e:	00176713          	ori	a4,a4,1
+ 542:	00e79a23          	sh	a4,20(a5)
 	timer->CTLR1 |= TIM_CEN;		// Enable TIM1
- 538:	0007d703          	lhu	a4,0(a5)
- 53c:	0742                	slli	a4,a4,0x10
- 53e:	8341                	srli	a4,a4,0x10
- 540:	00176713          	ori	a4,a4,1
- 544:	00e79023          	sh	a4,0(a5)
- 548:	3e45                	jal	f8 <fun_t1pwm_reload>
-	fun_t1pwm_reload(&pwm_CH2);
- 54a:	1048                	addi	a0,sp,36
- 54c:	3675                	jal	f8 <fun_t1pwm_reload>
-	fun_t1pwm_reload(&pwm_CH3);
- 54e:	0848                	addi	a0,sp,20
- 550:	3665                	jal	f8 <fun_t1pwm_reload>
-	fun_t1pwm_reload(&pwm_CH4);
- 552:	0048                	addi	a0,sp,4
- 554:	3655                	jal	f8 <fun_t1pwm_reload>
+ 546:	0007d703          	lhu	a4,0(a5)
+ 54a:	0742                	slli	a4,a4,0x10
+ 54c:	8341                	srli	a4,a4,0x10
+ 54e:	00176713          	ori	a4,a4,1
+ 552:	00e79023          	sh	a4,0(a5)
+ 556:	364d                	jal	f8 <fun_timPWM_reload>
+	fun_timPWM_reload(&pwm_CH2);
+ 558:	1048                	addi	a0,sp,36
+ 55a:	3e79                	jal	f8 <fun_timPWM_reload>
+	fun_timPWM_reload(&pwm_CH3);
+ 55c:	0848                	addi	a0,sp,20
+ 55e:	3e69                	jal	f8 <fun_timPWM_reload>
+	fun_timPWM_reload(&pwm_CH4);
+ 560:	0048                	addi	a0,sp,4
+ 562:	3e59                	jal	f8 <fun_timPWM_reload>
 
     uint32_t sec_time = 0;
- 556:	4781                	li	a5,0
+ 564:	4781                	li	a5,0
 
     while(1) {
         uint32_t now = millis();
- 558:	4004                	lw	s1,0(s0)
+ 566:	4004                	lw	s1,0(s0)
 
-		fun_t1pwm_task(now, &pwm_CH1);
- 55a:	184c                	addi	a1,sp,52
- 55c:	c03e                	sw	a5,0(sp)
- 55e:	8526                	mv	a0,s1
- 560:	31e5                	jal	248 <fun_t1pwm_task>
-		fun_t1pwm_task(now, &pwm_CH2);
- 562:	104c                	addi	a1,sp,36
- 564:	8526                	mv	a0,s1
- 566:	31cd                	jal	248 <fun_t1pwm_task>
-		fun_t1pwm_task(now, &pwm_CH3);
- 568:	084c                	addi	a1,sp,20
- 56a:	8526                	mv	a0,s1
- 56c:	39f1                	jal	248 <fun_t1pwm_task>
-		fun_t1pwm_task(now, &pwm_CH4);
- 56e:	004c                	addi	a1,sp,4
- 570:	8526                	mv	a0,s1
- 572:	39d9                	jal	248 <fun_t1pwm_task>
+		fun_timPWM_task(now, &pwm_CH1);
+ 568:	184c                	addi	a1,sp,52
+ 56a:	c03e                	sw	a5,0(sp)
+ 56c:	8526                	mv	a0,s1
+ 56e:	31f5                	jal	25a <fun_timPWM_task>
+		fun_timPWM_task(now, &pwm_CH2);
+ 570:	104c                	addi	a1,sp,36
+ 572:	8526                	mv	a0,s1
+ 574:	31dd                	jal	25a <fun_timPWM_task>
+		fun_timPWM_task(now, &pwm_CH3);
+ 576:	084c                	addi	a1,sp,20
+ 578:	8526                	mv	a0,s1
+ 57a:	31c5                	jal	25a <fun_timPWM_task>
+		fun_timPWM_task(now, &pwm_CH4);
+ 57c:	004c                	addi	a1,sp,4
+ 57e:	8526                	mv	a0,s1
+ 580:	39e9                	jal	25a <fun_timPWM_task>
 
         if (now - sec_time > 1000) {
- 574:	4782                	lw	a5,0(sp)
- 576:	3e800713          	li	a4,1000
- 57a:	40f486b3          	sub	a3,s1,a5
- 57e:	fcd77de3          	bgeu	a4,a3,558 <main+0x116>
+ 582:	4782                	lw	a5,0(sp)
+ 584:	3e800713          	li	a4,1000
+ 588:	40f486b3          	sub	a3,s1,a5
+ 58c:	fcd77de3          	bgeu	a4,a3,566 <main+0x112>
 			sec_time = now;
             printf(".");
- 582:	02e00513          	li	a0,46
- 586:	3be5                	jal	37e <putchar>
+ 590:	02e00513          	li	a0,46
+ 594:	3bf5                	jal	390 <putchar>
         uint32_t now = millis();
- 588:	87a6                	mv	a5,s1
- 58a:	b7f9                	j	558 <main+0x116>
+ 596:	87a6                	mv	a5,s1
+ 598:	b7f9                	j	566 <main+0x112>
 
-0000058c <SysTick_Handler>:
+0000059a <SysTick_Handler>:
 * Increments Compare Register and systick_millis when triggered (every 1ms)
 * NOTE: the `__attribute__((interrupt))` attribute is very important
 */
 void SysTick_Handler(void) __attribute__((interrupt));
 void SysTick_Handler(void)
 {
- 58c:	1151                	addi	sp,sp,-12
- 58e:	c03e                	sw	a5,0(sp)
+ 59a:	1151                	addi	sp,sp,-12
+ 59c:	c03e                	sw	a5,0(sp)
 	// Increment the Compare Register for the next trigger
 	// If more than this number of ticks elapse before the trigger is reset,
 	// you may miss your next interrupt trigger
 	// (Make sure the IQR is lightweight and CMP value is reasonable)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 590:	e000f7b7          	lui	a5,0xe000f
+ 59e:	e000f7b7          	lui	a5,0xe000f
 {
- 594:	c23a                	sw	a4,4(sp)
+ 5a2:	c23a                	sw	a4,4(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 596:	4b98                	lw	a4,16(a5)
+ 5a4:	4b98                	lw	a4,16(a5)
 {
- 598:	c436                	sw	a3,8(sp)
+ 5a6:	c436                	sw	a3,8(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 59a:	66b1                	lui	a3,0xc
- 59c:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.b47e8823+0x986e>
- 5a0:	9736                	add	a4,a4,a3
- 5a2:	cb98                	sw	a4,16(a5)
+ 5a8:	66b1                	lui	a3,0xc
+ 5aa:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.a6cf43f4+0x986e>
+ 5ae:	9736                	add	a4,a4,a3
+ 5b0:	cb98                	sw	a4,16(a5)
 
 	// Clear the trigger state for the next IRQ
 	SysTick->SR = 0x00000000;
- 5a4:	0007a223          	sw	zero,4(a5) # e000f004 <_eusrstack+0xc000e804>
+ 5b2:	0007a223          	sw	zero,4(a5) # e000f004 <_eusrstack+0xc000e804>
 
 	// Increment the milliseconds count
 	systick_millis++;
- 5a8:	c0418793          	addi	a5,gp,-1020 # 20000000 <systick_millis>
- 5ac:	4398                	lw	a4,0(a5)
+ 5b6:	c0418793          	addi	a5,gp,-1020 # 20000000 <systick_millis>
+ 5ba:	4398                	lw	a4,0(a5)
 }
- 5ae:	46a2                	lw	a3,8(sp)
+ 5bc:	46a2                	lw	a3,8(sp)
 	systick_millis++;
- 5b0:	0705                	addi	a4,a4,1
- 5b2:	c398                	sw	a4,0(a5)
+ 5be:	0705                	addi	a4,a4,1
+ 5c0:	c398                	sw	a4,0(a5)
 }
- 5b4:	4712                	lw	a4,4(sp)
- 5b6:	4782                	lw	a5,0(sp)
- 5b8:	0131                	addi	sp,sp,12
- 5ba:	30200073          	mret
-	...
+ 5c2:	4712                	lw	a4,4(sp)
+ 5c4:	4782                	lw	a5,0(sp)
+ 5c6:	0131                	addi	sp,sp,12
+ 5c8:	30200073          	mret

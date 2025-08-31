@@ -33,7 +33,7 @@
 		D4		T2CH1ETR
 		D3		T2CH2
 		C0		T2CH3
-		D7		T2CH4
+		D7		T2CH4		//! RST PIN
 	01
 		C5		T2CH1ETR_	//! SPI-SCK
 		C2		T2CH2_		//! I2C-SDA
@@ -59,23 +59,26 @@ typedef struct {
 	TIM_TypeDef* TIM;
 	uint32_t counter;
 	uint32_t timeRef;
-} TIM1_PWM_t;
+} TIM_PWM_t;
 
 //! Expected funGpioInitAll() before init
-void fun_t1pwm_init(TIM1_PWM_t* model) {
-	// Enable TIM1
-	RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
-	
+void fun_timPWM_init(TIM_PWM_t* model) {	
 	//! TIM2 remap mode
 	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
 	
 	TIM_TypeDef* timer = model->TIM;
 	
 	if (timer == TIM1) {
+		RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
+
 		// Reset TIM1 to init all regs
 		RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
 		RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
+	
 	} else if (timer == TIM2) {
+		RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
+
+		// Reset TIM2 to init all regs
 		RCC->APB1PRSTR |= RCC_APB1Periph_TIM2;
 		RCC->APB1PRSTR &= ~RCC_APB1Periph_TIM2;
 	}
@@ -90,7 +93,7 @@ void fun_t1pwm_init(TIM1_PWM_t* model) {
 	timer->CTLR1 |= TIM_CEN;		// Enable TIM1
 }
 
-void fun_t1pwm_reload(TIM1_PWM_t* model) {
+void fun_timPWM_reload(TIM_PWM_t* model) {
 	model->counter = 0;
 	model->timeRef = 0;
 	funPinMode(model->pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP_AF);
@@ -105,43 +108,43 @@ void fun_t1pwm_reload(TIM1_PWM_t* model) {
 	switch (model->CCER) {
 		//# TIM1->CHCTLR1 Control Reg1: CH1 & CH2
 		case TIM_CC1E:
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1 | TIM_OC1PE;		// TIM_OC1PE is used by TIM2 only
 			timer->CCER |= TIM_CC1E | TIM_CC1P;
-			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
 			model->channel = 1;
 			break;
 		case TIM_CC1NE:
-			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
 			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
+			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
 			model->channel = 1;
 			break;
 		case TIM_CC2E:
-			model->channel = 2;
+			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1 | TIM_OC2PE;		// TIM_OC2PE is used by TIM2 only
 			timer->CCER |= TIM_CC2E | TIM_CC2P;
-			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
+			model->channel = 2;
 			break;
 		case TIM_CC2NE:
-			model->channel = 2;
-			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
 			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
+			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
+			model->channel = 2;
 			break;
 		
 		//# TIM1->CHCTLR2 Control Reg2: CH3 & CH4
 		case TIM_CC3E:
-			model->channel = 3;
+			timer->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1 | TIM_OC3PE;		// TIM_OC3PE is used by TIM2 only
 			timer->CCER |= TIM_CC3E | TIM_CC3P;
-			timer->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1;
+			model->channel = 3;
 			break;
 		// case TIM_CC3NE: TIM1->CCER |= TIM_CC3E | TIM_CC3NP; break;	//! Prevent overwrite SWDIO
 		case TIM_CC4E:
-			model->channel = 4;
+			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1 | TIM_OC4PE;		// TIM_OC4PE is used by TIM2 only
 			timer->CCER |= TIM_CC4E | TIM_CC4P;
-			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1;
+			model->channel = 4;
 			break;
 	}
 }
 
 
-void fun_t1pwm_setpw(TIM1_PWM_t* model, uint16_t width) {
+void fun_timPWM_setpw(TIM_PWM_t* model, uint16_t width) {
 	TIM_TypeDef* timer = model->TIM;
 
 	switch(model->channel) {
@@ -153,11 +156,11 @@ void fun_t1pwm_setpw(TIM1_PWM_t* model, uint16_t width) {
 }
 
 
-void fun_t1pwm_task(uint32_t time, TIM1_PWM_t* model) {
+void fun_timPWM_task(uint32_t time, TIM_PWM_t* model) {
 	if (time - model->timeRef < 5) { return; }
 	model->timeRef = time;
 
-	fun_t1pwm_setpw(model, model->counter);
+	fun_timPWM_setpw(model, model->counter);
 	model->counter++;
 	model->counter &= 255;
 }

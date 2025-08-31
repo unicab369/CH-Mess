@@ -11,7 +11,7 @@
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
-#include "../Mess-libs/pwm/fun_tim1_pwm.h"
+#include "../Mess-libs/pwm/fun_timPWM.h"
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
@@ -95,14 +95,14 @@ int main() {
 	}
 	
 	//# TIM1: uses PD0(CH1)
-	TIM1_PWM_t pwm_CH1c = {
+	TIM_PWM_t pwm_CH1c = {
 		.pin = PD0,
 		.TIM = TIM1,
 		.CCER = TIM_CC1NE
 	};
 
-	fun_t1pwm_init(&pwm_CH1c);
-	fun_t1pwm_reload(&pwm_CH1c);
+	fun_timPWM_init(&pwm_CH1c);
+	fun_timPWM_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
 	Encoder_t encoder_a = {0, 0, 0};
@@ -116,12 +116,10 @@ int main() {
 
 		button_run(&button1, button_onChanged);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
-		fun_t1pwm_task(now, &pwm_CH1c);
+		fun_timPWM_task(now, &pwm_CH1c);
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
-
-			printf("IM HERE\n\r");
 
 			if (slave_mode != 0) {
 				// modI2C_task(counter++);

@@ -1756,7 +1756,7 @@ static inline uint32_t __get_MTVAL(void)
      bde:	6691                	lui	a3,0x4
      be0:	0722                	slli	a4,a4,0x8
      be2:	8f5d                	or	a4,a4,a5
-     be4:	14668693          	addi	a3,a3,326 # 4146 <ch32_mess.c.51b2a96d+0x3c2>
+     be4:	14668693          	addi	a3,a3,326 # 4146 <ch32_mess.c.1d5bc29f+0x3c2>
 		return 0;
      be8:	4481                	li	s1,0
 	if (!_FS_32ONLY && !disk_readp(buf, sect, BS_FilSysType, 2) && ld_word(buf) == 0x4146) {	/* Check FAT12/16 */
@@ -2251,7 +2251,7 @@ static void uart_setup(void)
      ec6:	40021637          	lui	a2,0x40021
      eca:	4e1c                	lw	a5,24(a2)
      ecc:	6711                	lui	a4,0x4
-     ece:	02070713          	addi	a4,a4,32 # 4020 <ch32_mess.c.51b2a96d+0x29c>
+     ece:	02070713          	addi	a4,a4,32 # 4020 <ch32_mess.c.1d5bc29f+0x29c>
      ed2:	8fd9                	or	a5,a5,a4
      ed4:	ce1c                	sw	a5,24(a2)
 
@@ -3008,42 +3008,46 @@ FRESULT mod_sdCard_loadFile(const char filename[], uint32_t addr) {
     1432:	438c                	lw	a1,0(a5)
 		printf("write error: %u\n\r", rc);
     1434:	f0eff0ef          	jal	ra,b42 <printf>
-} TIM1_PWM_t;
+} TIM_PWM_t;
 
 //! Expected funGpioInitAll() before init
-void fun_t1pwm_init(TIM1_PWM_t* model) {
-	// Enable TIM1
-	RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
-    1438:	400217b7          	lui	a5,0x40021
-    143c:	4f94                	lw	a3,24(a5)
-    143e:	6705                	lui	a4,0x1
-    1440:	80070713          	addi	a4,a4,-2048 # 800 <_write.constprop.0+0x66>
-    1444:	8ed9                	or	a3,a3,a4
-    1446:	cf94                	sw	a3,24(a5)
-	
+void fun_timPWM_init(TIM_PWM_t* model) {	
 	//! TIM2 remap mode
 	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
-    1448:	40010537          	lui	a0,0x40010
-    144c:	4154                	lw	a3,4(a0)
-
+    1438:	40010537          	lui	a0,0x40010
+    143c:	415c                	lw	a5,4(a0)
+	
 	TIM_TypeDef* timer = model->TIM;
 	
+	if (timer == TIM1) {
+		RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
+    143e:	6705                	lui	a4,0x1
+    1440:	80070713          	addi	a4,a4,-2048 # 800 <_write.constprop.0+0x66>
+	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
+    1444:	c15c                	sw	a5,4(a0)
+		RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
+    1446:	400217b7          	lui	a5,0x40021
+    144a:	4f94                	lw	a3,24(a5)
+		RCC->APB1PRSTR &= ~RCC_APB1Periph_TIM2;
+	}
+
 	// CTLR1: default is up, events generated, edge align
 	// SMCFGR: default clk input is CK_INT
 	timer->PSC = 0x0000;			// Prescaler 
-    144e:	40013637          	lui	a2,0x40013
+    144c:	40013637          	lui	a2,0x40013
 	timer->ATRLR = 255;				// Auto Reload - sets period
-    1452:	0ff00593          	li	a1,255
-	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
-    1456:	c154                	sw	a3,4(a0)
-	RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
+    1450:	0ff00593          	li	a1,255
+		RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
+    1454:	8ed9                	or	a3,a3,a4
+    1456:	cf94                	sw	a3,24(a5)
+		RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
     1458:	47d4                	lw	a3,12(a5)
 	timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
     145a:	6321                	lui	t1,0x8
-	RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
+		RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
     145c:	8f55                	or	a4,a4,a3
     145e:	c7d8                	sw	a4,12(a5)
-	RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
+		RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
     1460:	47d8                	lw	a4,12(a5)
     1462:	76fd                	lui	a3,0xfffff
     1464:	7ff68693          	addi	a3,a3,2047 # fffff7ff <_eusrstack+0xdfffefff>
@@ -3077,7 +3081,7 @@ void fun_t1pwm_init(TIM1_PWM_t* model) {
     14a4:	c0e61023          	sh	a4,-1024(a2)
 }
 
-void fun_t1pwm_reload(TIM1_PWM_t* model) {
+void fun_timPWM_reload(TIM_PWM_t* model) {
 	model->counter = 0;
 	model->timeRef = 0;
 	funPinMode(model->pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP_AF);
@@ -3098,23 +3102,23 @@ void fun_t1pwm_reload(TIM1_PWM_t* model) {
     14c4:	decc                	sw	a1,60(a3)
 	timer->CH4CVR = 255;
     14c6:	c2ac                	sw	a1,64(a3)
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1 | TIM_OC1PE;		// TIM_OC1PE is used by TIM2 only
 			timer->CCER |= TIM_CC1E | TIM_CC1P;
-			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
 			model->channel = 1;
 			break;
 		case TIM_CC1NE:
-			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
-    14c8:	0206d583          	lhu	a1,32(a3)
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
+    14c8:	0186d583          	lhu	a1,24(a3)
     14cc:	05c2                	slli	a1,a1,0x10
     14ce:	81c1                	srli	a1,a1,0x10
-    14d0:	00c5e593          	ori	a1,a1,12
-    14d4:	02b69023          	sh	a1,32(a3)
-			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
-    14d8:	0186d583          	lhu	a1,24(a3)
+    14d0:	0605e593          	ori	a1,a1,96
+    14d4:	00b69c23          	sh	a1,24(a3)
+			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
+    14d8:	0206d583          	lhu	a1,32(a3)
     14dc:	05c2                	slli	a1,a1,0x10
     14de:	81c1                	srli	a1,a1,0x10
-    14e0:	0605e593          	ori	a1,a1,96
-    14e4:	00b69c23          	sh	a1,24(a3)
+    14e0:	00c5e593          	ori	a1,a1,12
+    14e4:	02b69023          	sh	a1,32(a3)
 		D5		T2CH4_		//! UART_RX
 */
 
@@ -3394,7 +3398,7 @@ void fun_joystick_setup() {
 
 		button_run(&button1, button_onChanged);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
-		fun_t1pwm_task(now, &pwm_CH1c);
+		fun_timPWM_task(now, &pwm_CH1c);
 
 		if (now - sec_time > 1000) {
     1674:	4682                	lw	a3,0(sp)
@@ -3660,7 +3664,7 @@ void button_run(Button_t *model, void (*handler)(int, uint32_t)) {
 }
 
 
-void fun_t1pwm_task(uint32_t time, TIM1_PWM_t* model) {
+void fun_timPWM_task(uint32_t time, TIM_PWM_t* model) {
 	if (time - model->timeRef < 5) { return; }
     1830:	4792                	lw	a5,4(sp)
     1832:	46d2                	lw	a3,20(sp)
@@ -3675,7 +3679,7 @@ void fun_t1pwm_task(uint32_t time, TIM1_PWM_t* model) {
     1848:	dac0                	sw	s0,52(a3)
 	model->timeRef = time;
 
-	fun_t1pwm_setpw(model, model->counter);
+	fun_timPWM_setpw(model, model->counter);
 	model->counter++;
     184a:	0405                	addi	s0,s0,1
 	model->counter &= 255;
