@@ -5,7 +5,7 @@ typedef struct {
 	uint16_t initial_count;		// initial count
 	uint16_t last_count;		// previous count
 	uint16_t count;				// current count
-} M_Encoder;
+} Encoder_t;
 
 // uint16_t initial_count = 0;
 // uint16_t last_count = 0;
@@ -62,7 +62,7 @@ typedef struct {
 */
 
 
-void modEncoder_setup(M_Encoder *model) {
+void modEncoder_setup(Encoder_t *model) {
 	//! Enable GPIOC, TIM2, and AFIO *very important!*
 	RCC->APB2PCENR |= RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOC;
 	RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
@@ -122,7 +122,7 @@ void modEncoder_setup(M_Encoder *model) {
 
 static uint32_t encoder_debounceTime = 0;
 
-void modEncoder_task(uint32_t current_time, M_Encoder *model, void (*handler)(M_Encoder *model)) {
+void modEncoder_task(uint32_t current_time, Encoder_t *model, void (*handler)(Encoder_t *model)) {
 	// if (current_time - encoder_debounceTime < 50) return;
 	// encoder_debounceTime = current_time;
 

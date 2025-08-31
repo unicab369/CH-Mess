@@ -1,23 +1,23 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#define BUTTON_PIN 		PD0
-
-#include "1_Foundation/fun_uart.h"
 #include "1_Foundation/modPWM.h"
 #include "1_Foundation/modEncoder.h"
 #include "1_Foundation/modJoystick.h"
 #include "2_Device/fun_ws2812.h"
-
 #include "2_Device/mng_i2c.h"
+
+
+#include "../Mess-libs/modules/systick_irq.h"
+#include "../Mess-libs/modules/fun_button.h"
+#include "../Mess-libs/modules/fun_uart.h"
+#include "../Mess-libs/i2c/i2c_slave.h"
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
-
 #include "../Mess-libs/sd_card/mod_sdCard.h"
-#include "../Mess-libs/modules/systick_irq.h"
-#include "../Mess-libs/modules/fun_button.h"
-#include "../Mess-libs/i2c/i2c_slave.h"
+
+#define BUTTON_PIN 		PD0
 
 void onI2C_SlaveWrite(uint8_t reg, uint8_t length) {
 	printf("IM WRITEEN TO\n\r");
@@ -42,15 +42,17 @@ void button_onChanged(Button_Event_e event, uint32_t time) {
 	}
 }
 
-int main()
-{
-	static const char message[] = "Hello World!\r\n";
+void encoder_onChanged(Encoder_t *model) {
+	printf("Encoder: %ld\n", model->last_count);
+}
+
+int main() {
 	uint32_t counter = 0;
 	uint32_t ledc_time = 0;
 	uint32_t sec_time = 0;
 	uint32_t time_ref = 0;
 
-	M_Encoder encoder_a = {0, 0, 0};
+	Encoder_t encoder_a = {0, 0, 0};
 
 	SystemInit();
 	systick_init();			//! required for millis()
@@ -61,7 +63,7 @@ int main()
 	Button_t button1 = { BUTTON_PIN, BUTTON_IDLE, 0, 0, 0, 0, 0, 0 };
 	button_setup(&button1);
 
-	// I2C1: uses PC1 & PC2
+	//# I2C1: uses PC1 & PC2
 	modI2C_setup();
 
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
@@ -70,12 +72,16 @@ int main()
 		SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
 	}
 	
-	// uses SCK-PC5, MOSI-PC6, RST-PD2, DC-PC4
+	//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
+	//# RST-PD2, DC-PC4
 	// SPI_init();
 	// mod_st7735_setup(PC0, PC3);
-
 	SPI_init2();
-	Delay_Ms(200);
+
+	//# UART TX: uses PD5
+	static const char message[] = "Hello World!\r\n";
+	uart_setup();
+	dma_uart_setup();
 
 	FRESULT rc;
 	rc = mod_sdCard_write("testfile.txt", "hello world 99999999999999999999!\n\r");
@@ -88,7 +94,7 @@ int main()
 		printf("write error: %u\n\r", rc);
 	}
 	
-	// TIM2 Ch1, Ch2 : uses PD3, PD4.
+	//# TIM2 Ch1, Ch2 : uses PD3, PD4.
 	// modEncoder_setup(&encoder_a);
 
 	while(1) {
@@ -101,11 +107,11 @@ int main()
 			sec_time = now;
 
 			if (slave_mode != 0) {
-				// modI2C_task(counter++);
+				modI2C_task(counter++);
 			}
 			
 			// // modJoystick_task();
-			// // dma_uart_tx(message, sizeof(message) - 1);
+			dma_uart_tx(message, sizeof(message) - 1);
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
@@ -113,8 +119,6 @@ int main()
 
 			// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 			// printf("ST7735 runtime: %lu us\n", runtime_tft);
-
-			// storage_test();
 		}
 	}
 }
