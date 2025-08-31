@@ -1,8 +1,3 @@
-/*
- * Example for using Advanced Control Timer (TIM1) for PWM generation
- * 03-28-2023 E. Brombaugh
- */
-
 #include "ch32fun.h"
 #include <stdio.h>
 
@@ -33,106 +28,136 @@
         CH4 PD4?
 */
 
+//# Timer 2 pin mappings by AFIO->PCFR1
+/*	00 (default)
+		D4		T2CH1ETR
+		D3		T2CH2
+		C0		T2CH3
+		D7		T2CH4
+	01
+		C5		T2CH1ETR_	//! SPI-SCK
+		C2		T2CH2_		//! I2C-SDA
+		D2		T2CH3_
+		C1		T2CH4_		//! I2C-SCL
+	10
+		C1		T2CH1ETR_	//! I2C-SCL
+		D3		T2CH2
+		C0		T2CH3
+		D7		T2CH4
+	11
+		C1		T2CH1ETR_	//! I2C-SCL
+		C7		T2CH2_		//! SPI-MISO
+		D6		T2CH3_
+		D5		T2CH4_
+*/
+
+
 typedef struct {
 	uint8_t pin;
 	uint8_t channel;
 	uint16_t CCER;
+	TIM_TypeDef* TIM;
 	uint32_t counter;
 	uint32_t timeRef;
-} PWM_GPIO_t;
+} TIM1_PWM_t;
 
-/*
- * initialize TIM1 for PWM
- */
 //! Expected funGpioInitAll() before init
-void fun_t1pwm_init() {
+void fun_t1pwm_init(TIM1_PWM_t* model) {
 	// Enable TIM1
 	RCC->APB2PCENR |= RCC_APB2Periph_TIM1;
 	
 	//! TIM2 remap mode
 	AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_NOREMAP;
-		
-	// Reset TIM1 to init all regs
-	RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
-	RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
 	
+	TIM_TypeDef* timer = model->TIM;
+	
+	if (timer == TIM1) {
+		// Reset TIM1 to init all regs
+		RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
+		RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
+	} else if (timer == TIM2) {
+		RCC->APB1PRSTR |= RCC_APB1Periph_TIM2;
+		RCC->APB1PRSTR &= ~RCC_APB1Periph_TIM2;
+	}
+
 	// CTLR1: default is up, events generated, edge align
 	// SMCFGR: default clk input is CK_INT
-	TIM1->PSC = 0x0000;			// Prescaler 
-	TIM1->ATRLR = 255;			// Auto Reload - sets period
-	TIM1->SWEVGR |= TIM_UG;		// Reload immediately
-	
-	TIM1->BDTR |= TIM_MOE;			// Enable TIM1 outputs
-	TIM1->CTLR1 |= TIM_CEN;			// Enable TIM1
+	timer->PSC = 0x0000;			// Prescaler 
+	timer->ATRLR = 255;				// Auto Reload - sets period
+	timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
+
+	timer->SWEVGR |= TIM_UG;		// Reload immediately
+	timer->CTLR1 |= TIM_CEN;		// Enable TIM1
 }
 
-void fun_t1pwm_reload(PWM_GPIO_t* model) {
+void fun_t1pwm_reload(TIM1_PWM_t* model) {
 	model->counter = 0;
 	model->timeRef = 0;
 	funPinMode(model->pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP_AF);
+	TIM_TypeDef* timer = model->TIM;
 
 	// default value
-	TIM1->CH1CVR = 255;
-	TIM1->CH2CVR = 255;
-	TIM1->CH3CVR = 255;
-	TIM1->CH4CVR = 255;
+	timer->CH1CVR = 255;
+	timer->CH2CVR = 255;
+	timer->CH3CVR = 255;
+	timer->CH4CVR = 255;
 
 	switch (model->CCER) {
 		//# TIM1->CHCTLR1 Control Reg1: CH1 & CH2
 		case TIM_CC1E:
-			TIM1->CCER |= TIM_CC1E | TIM_CC1P;
-			TIM1->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
+			timer->CCER |= TIM_CC1E | TIM_CC1P;
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
 			model->channel = 1;
 			break;
 		case TIM_CC1NE:
-			TIM1->CCER |= TIM_CC1NE | TIM_CC1NP;
-			TIM1->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
+			timer->CCER |= TIM_CC1NE | TIM_CC1NP;
+			timer->CHCTLR1 |= TIM_OC1M_2 | TIM_OC1M_1;
 			model->channel = 1;
 			break;
 		case TIM_CC2E:
 			model->channel = 2;
-			TIM1->CCER |= TIM_CC2E | TIM_CC2P;
-			TIM1->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
+			timer->CCER |= TIM_CC2E | TIM_CC2P;
+			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
 			break;
 		case TIM_CC2NE:
 			model->channel = 2;
-			TIM1->CCER |= TIM_CC2NE | TIM_CC2NP;
-			TIM1->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
+			timer->CCER |= TIM_CC2NE | TIM_CC2NP;
+			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1;
 			break;
 		
 		//# TIM1->CHCTLR2 Control Reg2: CH3 & CH4
 		case TIM_CC3E:
 			model->channel = 3;
-			TIM1->CCER |= TIM_CC3E | TIM_CC3P;
-			TIM1->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1;
+			timer->CCER |= TIM_CC3E | TIM_CC3P;
+			timer->CHCTLR2 |= TIM_OC3M_2 | TIM_OC3M_1;
 			break;
 		// case TIM_CC3NE: TIM1->CCER |= TIM_CC3E | TIM_CC3NP; break;	//! Prevent overwrite SWDIO
 		case TIM_CC4E:
 			model->channel = 4;
-			TIM1->CCER |= TIM_CC4E | TIM_CC4P;
-			TIM1->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1;
+			timer->CCER |= TIM_CC4E | TIM_CC4P;
+			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1;
 			break;
 	}
 }
 
-/*
- * set timer channel PW
- */
-void fun_t1pwm_setpw(uint8_t channel, uint16_t width) {
-	switch(channel) {
-		case 1: TIM1->CH1CVR = width; break;
-		case 2: TIM1->CH2CVR = width; break;
-		case 3: TIM1->CH3CVR = width; break;
-		case 4: TIM1->CH4CVR = width; break;
+
+void fun_t1pwm_setpw(TIM1_PWM_t* model, uint16_t width) {
+	TIM_TypeDef* timer = model->TIM;
+
+	switch(model->channel) {
+		case 1: timer->CH1CVR = width; break;
+		case 2: timer->CH2CVR = width; break;
+		case 3: timer->CH3CVR = width; break;
+		case 4: timer->CH4CVR = width; break;
 	}
 }
 
 
-void fun_t1pwm_task(uint32_t time, PWM_GPIO_t* model) {
+void fun_t1pwm_task(uint32_t time, TIM1_PWM_t* model) {
 	if (time - model->timeRef < 5) { return; }
 	model->timeRef = time;
 
-	fun_t1pwm_setpw(model->channel, model->counter);
+	fun_t1pwm_setpw(model, model->counter);
 	model->counter++;
 	model->counter &= 255;
 }

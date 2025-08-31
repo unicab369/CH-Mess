@@ -1,7 +1,6 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#include "1_Foundation/modPWM.h"
 #include "1_Foundation/fun_Encoder.h"
 
 #include "2_Device/fun_ws2812.h"
@@ -12,7 +11,7 @@
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
-#include "../Mess-libs/pwm/tim1_pwm.h"
+#include "../Mess-libs/pwm/fun_tim1_pwm.h"
 
 #include "../Mess-libs/spi/lib_spi.h"
 #include "../Mess-libs/spi/mod_st7735.h"
@@ -63,7 +62,7 @@ int main() {
 	button_setup(&button1);
 
 	//# I2C1: uses PC1 & PC2
-	modI2C_setup();
+	// modI2C_setup();
 
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
 
@@ -96,12 +95,13 @@ int main() {
 	}
 	
 	//# TIM1: uses PD0(CH1)
-	PWM_GPIO_t pwm_CH1c = {
+	TIM1_PWM_t pwm_CH1c = {
 		.pin = PD0,
+		.TIM = TIM1,
 		.CCER = TIM_CC1NE
 	};
 
-	fun_t1pwm_init();
+	fun_t1pwm_init(&pwm_CH1c);
 	fun_t1pwm_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
@@ -116,7 +116,7 @@ int main() {
 
 		button_run(&button1, button_onChanged);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
-		fun_t1pwm_task(now, &pwm_CH1);
+		fun_t1pwm_task(now, &pwm_CH1c);
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
@@ -124,7 +124,7 @@ int main() {
 			printf("IM HERE\n\r");
 
 			if (slave_mode != 0) {
-				modI2C_task(counter++);
+				// modI2C_task(counter++);
 			}
 			
 			// fun_joystick_task();
