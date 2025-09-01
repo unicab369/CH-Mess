@@ -1,6 +1,5 @@
 #include "ch32fun.h"
 
-
 #include "../Mess-libs/i2c/lib_i2c.h"
 #include "../Mess-libs/i2c/ssd1306/mod_ssd1306.h"
 
@@ -860,7 +859,7 @@ void i2c_device_tests() {
 	// test_ina219();
 }
 
-char str_output[24];
+char str_output[SSD1306_STR_SIZE];
 
 
 void test_v003Slave() {
@@ -918,7 +917,7 @@ void modI2C_setup() {
 #define PRINT_BUFF_SIZE 10
 
 typedef struct PACKED {
-	char str[25];
+	char str[SSD1306_STR_SIZE];
 	uint8_t line_num;		// line_num = 0 means empty
 } PrintBuff_t;
 
@@ -931,8 +930,8 @@ void mngI2c_load_printBuff(const char *str, uint8_t line_idx) {
 	printBuff_has_data = 1;
 	PrintBuff_t *buff = &printBuff[printBuff_idx];
 	buff->line_num = line_idx + 1;
-	strncpy(buff->str, str, 24);
-	buff->str[24] = '\0';
+	strncpy(buff->str, str, SSD1306_STR_SIZE);
+	// buff->str[24] = '\0';
 	printBuff_idx = (printBuff_idx + 1) % PRINT_BUFF_SIZE;
 }
 
@@ -963,8 +962,8 @@ void cycle_loading_char() {
     }
 }
 
-void mngI2c_loadCounter(uint32_t counter) {
-	sprintf(str_output, "%s cycle/sec %lu", loading_char, counter);
+void mngI2c_loadCounter(uint32_t counter, uint32_t runTime) {
+	sprintf(str_output, "%s cyc/s %lu ~ %lums", loading_char, counter, runTime);
 	mngI2c_load_printBuff(str_output, 7);
 	cycle_loading_char();
 }

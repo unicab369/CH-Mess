@@ -48,7 +48,7 @@ void encoder_onChanged(Encoder_t *model) {
 }
 
 void joystick_onChanged(uint16_t x, uint16_t y) {
-	char str_output[24];
+	char str_output[SSD1306_STR_SIZE];
 	sprintf(str_output, "jx: %d, jy: %d", x, y);
 	mngI2c_load_printBuff(str_output, 6);
 }
@@ -138,15 +138,17 @@ int main() {
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
 	fun_joystick_setup();
 
-	Session_t session = { 0, 0, millis() };
+	uint32_t now = millis();
+	Session_t session = { 0, 0, now };
+	uint32_t fullCycle_time = 0;
 
 	while(1) {
-		uint32_t now = millis();
+		now = millis();
 		session.cycle_count++;
 
 		fun_button_task(now, &button1, button_onChanged);
-		fun_encoder_task(now, &encoder_a, encoder_onChanged);
-		fun_joystick_task(now, joystick_onChanged);
+		fun_encoder_task(&encoder_a, encoder_onChanged);
+		fun_joystick_timerTask(now, joystick_onChanged);
 
 		fun_timPWM_task(now, &pwm_CH1c);
 		mngI2c_printBuff_task(now);
@@ -155,7 +157,7 @@ int main() {
 			session.timeRef = now;
 
 			if (slave_mode != 0) {
-				mngI2c_loadCounter(session.cycle_count);
+				mngI2c_loadCounter(session.cycle_count, fullCycle_time);
 			}
 			session.cycle_count = 0;
 			
@@ -168,5 +170,7 @@ int main() {
 			// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 			// printf("ST7735 runtime: %lu us\n", runtime_tft);
 		}
+
+		fullCycle_time = millis() - now;
 	}
 }

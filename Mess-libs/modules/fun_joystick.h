@@ -5,12 +5,13 @@
 #define ADC_NUMCHLS 2
 volatile uint16_t adc_buffer[ADC_NUMCHLS];
 
+//! Expected funGpioInitAll() before init
 void fun_joystick_setup() {
 	// ADCCLK = 24 MHz => RCC_ADCPRE = 0: divide by 2
 	RCC->CFGR0 &= ~(0x1F<<11);
 	
 	// Enable GPIOD and ADC
-	RCC->APB2PCENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_ADC1;
+	RCC->APB2PCENR |= RCC_APB2Periph_ADC1;
 	
 	// GPIOD->CFGLR &= ~(0xf<<(4*4));	// PD4 Analog input Chan7
 	// GPIOD->CFGLR &= ~(0xf<<(4*6));	// PD5 Analog input Chan6
@@ -72,13 +73,17 @@ void fun_joystick_setup() {
 	ADC1->CTLR2 |= ADC_SWSTART;             // start conversion
 }
 
-uint16_t last_x = 0;
-uint16_t last_y = 0;
 uint32_t joystick_timeRef = 0;
 
-void fun_joystick_task(uint32_t time, void (*handler)(uint16_t, uint16_t)) {
-	if (time - joystick_timeRef < 50) return;
-	joystick_timeRef = time;
-	handler(adc_buffer[0], adc_buffer[1]);
-    // printf("%4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
+void fun_joystick_task(void (*handler)(uint16_t, uint16_t)) {
+	uint16_t x = 10 * ((adc_buffer[0] + 5) / 10);		// round to nearest 10
+	uint16_t y = 10 * ((adc_buffer[1] + 5) / 10);		// round to nearest 10
+	handler(x, y);
+	// handler(adc_buffer[0], adc_buffer[1]);
+}
+
+void fun_joystick_timerTask(uint32_t time, void (*handler)(uint16_t, uint16_t)) {
+	if (time - joystick_timeRef < 100) return;
+    joystick_timeRef = time;
+	fun_joystick_task(handler);
 }

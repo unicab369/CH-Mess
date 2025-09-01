@@ -12,6 +12,9 @@ uint8_t ssd1306_cmd(uint8_t cmd);
 /* send OLED data packet (up to 32 bytes) */
 uint8_t ssd1306_data(uint8_t *data, int sz);
 
+#ifndef SSD1306_STR_SIZE
+    #define SSD1306_STR_SIZE 25
+#endif
 
 const uint8_t SIN_LUT[] = {
     0, 4, 9, 13, 18, 22, 27, 31, 36, 40, 44, 49, 53, 58, 62, 66,
@@ -90,7 +93,7 @@ void ssd1306_print_str_at(
 ) {
 	ssd1306_setWindow_pages(page, page); // Set the window to the current page
 
-	for (int i=0; i<25; i++) {
+	for (int i=0; i < SSD1306_STR_SIZE; i++) {
 		if (*str) {
 			uint8_t char_index = *str - 32; // Adjust for ASCII offset
 			ssd1306_data((uint8_t *)FONT_7x5[char_index], 5); // Send font data
