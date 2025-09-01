@@ -28,8 +28,6 @@ void onI2C_SlaveRead(uint8_t reg) {
 	printf("IM READEN FROM.\n\r");
 }
 
-volatile uint8_t i2c_registers[32] = {0xaa};
-
 void button_onChanged(Button_Event_e event, uint32_t time) {
 	switch (event) {
 		case BTN_SINGLECLICK:
@@ -57,6 +55,7 @@ typedef struct {
 	uint32_t cycle_count;
 	uint32_t counter;
 	uint32_t timeRef;
+	uint32_t fullCycle_time;
 } Session_t;
 
 
@@ -93,6 +92,8 @@ int main() {
 
 	//# Hold BUTTON_PIN low to enter slave mode
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
+
+	volatile uint8_t i2c_registers[32] = {0xaa};
 
 	if (slave_mode == 0) {
 		printf("I2C Slave mode\n");
@@ -140,7 +141,6 @@ int main() {
 
 	uint32_t now = millis();
 	Session_t session = { 0, 0, now };
-	uint32_t fullCycle_time = 0;
 
 	while(1) {
 		now = millis();
@@ -157,7 +157,7 @@ int main() {
 			session.timeRef = now;
 
 			if (slave_mode != 0) {
-				mngI2c_loadCounter(session.cycle_count, fullCycle_time);
+				mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
 			}
 			session.cycle_count = 0;
 			
@@ -171,6 +171,6 @@ int main() {
 			// printf("ST7735 runtime: %lu us\n", runtime_tft);
 		}
 
-		fullCycle_time = millis() - now;
+		session.fullCycle_time = millis() - now;
 	}
 }

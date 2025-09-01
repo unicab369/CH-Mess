@@ -80,10 +80,7 @@ void fun_encoder_setup(Encoder_t *model) {
 
 static uint32_t encoder_debounceTime = 0;
 
-void fun_encoder_task(uint32_t time, Encoder_t *model, void (*handler)(Encoder_t *model)) {
-	// if (time - encoder_debounceTime < 50) return;
-	// encoder_debounceTime = time;
-
+void fun_encoder_task(Encoder_t *model, void (*handler)(Encoder_t *model)) {
 	uint16_t count = TIM2->CNT;
 
 	if (count != model->last_count) {
