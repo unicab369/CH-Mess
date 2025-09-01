@@ -36,6 +36,11 @@ void _reset_timers(uint8_t newState, Button_t *model) {
 void button_setup(Button_t *model) {
     if (model->pin == 0xFF) return; 
 
+    model->btn_state = BUTTON_IDLE;
+    model->debounce_time = 0;
+    model->release_time = 0;
+    model->press_time = 0;
+
     funPinMode(model->pin, GPIO_CFGLR_IN_PUPD);
     funDigitalWrite(model->pin, 1);
     _reset_timers(BUTTON_IDLE, model);

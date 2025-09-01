@@ -912,6 +912,6 @@ void modI2C_setup() {
 }
 
 void modI2C_task(uint32_t counter) {
-	sprintf(str_output, "counter %lu", counter);
+	sprintf(str_output, "cycle/sec %lu", counter);
 	modI2C_display(str_output, 7);
 }

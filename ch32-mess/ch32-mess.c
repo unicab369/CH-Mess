@@ -10,6 +10,7 @@
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
 #include "../Mess-libs/modules/fun_encoder.h"
+#include "../Mess-libs/modules/fun_optionByte.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
 #include "../Mess-libs/pwm/fun_timPWM.h"
 
@@ -46,27 +47,48 @@ void encoder_onChanged(Encoder_t *model) {
 	printf("pos relative: %d\n", model->relative_pos);
 }
 
+typedef struct {
+	uint32_t cycle_count;
+	uint32_t counter;
+	uint32_t timeRef;
+} Session_t;
+
+
+//# 	*ENC_A*		PD4 - [ 				] - PD3		*ENC_B*
+//# 	*UTX*		PD5 - [ 				] - PD2
+//# 				PD6 - [ 				] - PD1		*SWIO*
+//# 	*RST* 		PD7 - [ 				] - PC7		*MISO*
+//# 	*J_X*		PA1 - [ 	V003F4P6	] - PC6		*MOSI*
+//# 	*J_Y*		PA2 - [   	TSSOP-20 	] - PC5		*SCK*
+//# 		x		Vcc - [ 				] - PC4
+//# 				PD0 - [ 				] - PC3
+//# 		x		GND - [ 				] - PC2		*SCL*
+//# 	*BTN*		PC0 - [ 				] - PC1		*SDA*
+
 int main() {
 	uint32_t counter = 0;
-	uint32_t ledc_time = 0;
-	uint32_t sec_time = 0;
-	uint32_t time_ref = 0;
 
 	SystemInit();
 	systick_init();			//! required for millis()
 
 	funGpioInitAll();
-	Delay_Ms(100);
+	Delay_Ms(10);
 
-	Button_t button1 = { BUTTON_PIN, BUTTON_IDLE, 0, 0, 0, 0, 0, 0 };
+	uint16_t bootCnt = fun_optionByte_getValue();
+	bootCnt++;
+	fun_optionByte_store(bootCnt);
+	printf("Boot Count: %d\n", bootCnt);
+
+	//# Button: uses PC0
+	Button_t button1 = { .pin = BUTTON_PIN };
 	button_setup(&button1);
 
 	//# I2C1: uses PC1 & PC2
 	modI2C_setup();
 
+	//# Hold BUTTON_PIN low to enter slave mode
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
 
-	//# Hold BUTTON_PIN low to enter slave mode
 	if (slave_mode == 0) {
 		printf("I2C Slave mode\n");
 		SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
@@ -111,19 +133,23 @@ int main() {
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
 	fun_joystick_setup();
 
+	Session_t session = {0, 0, 0};
+
 	while(1) {
 		uint32_t now = millis();
+		session.cycle_count++;
 
 		button_run(&button1, button_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
 
-		if (now - sec_time > 1000) {
-			sec_time = now;
+		if (now - session.timeRef > 1000) {
+			session.timeRef = now;
 
 			if (slave_mode != 0) {
-				modI2C_task(counter++);
+				modI2C_task(session.cycle_count);
 			}
+			session.cycle_count = 0;
 			
 			// fun_joystick_task();
 			dma_uart_tx(message, sizeof(message) - 1);
