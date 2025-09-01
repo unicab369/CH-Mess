@@ -1,7 +1,6 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#include "1_Foundation/fun_Encoder.h"
 
 #include "2_Device/fun_ws2812.h"
 #include "2_Device/mng_i2c.h"
@@ -10,6 +9,7 @@
 #include "../Mess-libs/modules/fun_joystick.h"
 #include "../Mess-libs/modules/fun_button.h"
 #include "../Mess-libs/modules/fun_uart.h"
+#include "../Mess-libs/modules/fun_encoder.h"
 #include "../Mess-libs/i2c/i2c_slave.h"
 #include "../Mess-libs/pwm/fun_timPWM.h"
 
@@ -43,7 +43,7 @@ void button_onChanged(Button_Event_e event, uint32_t time) {
 }
 
 void encoder_onChanged(Encoder_t *model) {
-	printf("Encoder: %d\n", model->last_count);
+	printf("pos relative: %d\n", model->relative_pos);
 }
 
 int main() {
@@ -84,7 +84,7 @@ int main() {
 	SPI_init2();
 
 	FRESULT rc;
-	rc = mod_sdCard_write("testfile.txt", "hello world 99999999999999999999!\n\r");
+	rc = mod_sdCard_write("testfile.txt", "hello world 1111!\n\r");
 
 	if (rc == 0) {
 		Delay_Ms(200);
@@ -115,8 +115,8 @@ int main() {
 		uint32_t now = millis();
 
 		button_run(&button1, button_onChanged);
-		fun_encoder_task(now, &encoder_a, encoder_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
+		fun_encoder_task(now, &encoder_a, encoder_onChanged);
 
 		if (now - sec_time > 1000) {
 			sec_time = now;
