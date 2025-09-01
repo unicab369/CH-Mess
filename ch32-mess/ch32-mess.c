@@ -62,7 +62,7 @@ int main() {
 	button_setup(&button1);
 
 	//# I2C1: uses PC1 & PC2
-	// modI2C_setup();
+	modI2C_setup();
 
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
 
@@ -122,7 +122,7 @@ int main() {
 			sec_time = now;
 
 			if (slave_mode != 0) {
-				// modI2C_task(counter++);
+				modI2C_task(counter++);
 			}
 			
 			// fun_joystick_task();

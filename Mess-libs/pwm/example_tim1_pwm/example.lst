@@ -231,7 +231,7 @@ void fun_timPWM_reload(TIM_PWM_t* model) {
 			timer->CHCTLR1 |= TIM_OC2M_2 | TIM_OC2M_1 | TIM_OC2PE;		// TIM_OC2PE is used by TIM2 only
  1c0:	0187d703          	lhu	a4,24(a5)
  1c4:	669d                	lui	a3,0x7
- 1c6:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.50eba611+0x447c>
+ 1c6:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.5e9830c8+0x447c>
  1ca:	0742                	slli	a4,a4,0x10
  1cc:	8341                	srli	a4,a4,0x10
  1ce:	8f55                	or	a4,a4,a3
@@ -279,7 +279,7 @@ void fun_timPWM_reload(TIM_PWM_t* model) {
 			timer->CHCTLR2 |= TIM_OC4M_2 | TIM_OC4M_1 | TIM_OC4PE;		// TIM_OC4PE is used by TIM2 only
  22e:	01c7d703          	lhu	a4,28(a5)
  232:	669d                	lui	a3,0x7
- 234:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.50eba611+0x447c>
+ 234:	80068693          	addi	a3,a3,-2048 # 6800 <example.c.5e9830c8+0x447c>
  238:	0742                	slli	a4,a4,0x10
  23a:	8341                	srli	a4,a4,0x10
  23c:	8f55                	or	a4,a4,a3
@@ -562,7 +562,7 @@ WEAK int putchar(int c)
 		RCC->CFGR0 = BASE_CFGR0;
  40c:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
- 410:	08170713          	addi	a4,a4,129 # 1080081 <example.c.50eba611+0x107dcfd>
+ 410:	08170713          	addi	a4,a4,129 # 1080081 <example.c.5e9830c8+0x107dcfd>
  414:	c398                	sw	a4,0(a5)
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;       		// +1 Cycle Latency
 	#endif
@@ -637,7 +637,7 @@ void systick_init(void)
 	SysTick->CTLR = 0x0000;
  464:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
- 468:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.50eba611+0x97fb>
+ 468:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.5e9830c8+0x97fb>
  46c:	cb98                	sw	a4,16(a5)
 
 	// Reset the Count Register, and the global millis counter to 0
@@ -669,7 +669,7 @@ void systick_init(void)
 	uint32_t targend = SysTick->CNT + n;
  49c:	4798                	lw	a4,8(a5)
  49e:	004947b7          	lui	a5,0x494
- 4a2:	e0078793          	addi	a5,a5,-512 # 493e00 <example.c.50eba611+0x491a7c>
+ 4a2:	e0078793          	addi	a5,a5,-512 # 493e00 <example.c.5e9830c8+0x491a7c>
  4a6:	973e                	add	a4,a4,a5
 	while( ((int32_t)( SysTick->CNT - targend )) < 0 );
  4a8:	e000f6b7          	lui	a3,0xe000f
@@ -683,7 +683,7 @@ void systick_init(void)
 
 	TIM_PWM_t pwm_CH1c = {
  4b4:	00040737          	lui	a4,0x40
- 4b8:	03070713          	addi	a4,a4,48 # 40030 <example.c.50eba611+0x3dcac>
+ 4b8:	03070713          	addi	a4,a4,48 # 40030 <example.c.5e9830c8+0x3dcac>
  4bc:	c2ba                	sw	a4,68(sp)
 		.pin = PD0,
         .TIM = TIM1,
@@ -710,7 +710,7 @@ void systick_init(void)
 
 	TIM_PWM_t pwm_CH3 = {
  4ce:	01000737          	lui	a4,0x1000
- 4d2:	02370713          	addi	a4,a4,35 # 1000023 <example.c.50eba611+0xffdc9f>
+ 4d2:	02370713          	addi	a4,a4,35 # 1000023 <example.c.5e9830c8+0xffdc9f>
  4d6:	ca3a                	sw	a4,20(sp)
     TIM_PWM_t pwm_CH1 = {
  4d8:	67c1                	lui	a5,0x10
@@ -722,9 +722,9 @@ void systick_init(void)
 	TIM_PWM_t pwm_CH4 = {
  4da:	10000737          	lui	a4,0x10000
     TIM_PWM_t pwm_CH1 = {
- 4de:	03278793          	addi	a5,a5,50 # 10032 <example.c.50eba611+0xdcae>
+ 4de:	03278793          	addi	a5,a5,50 # 10032 <example.c.5e9830c8+0xdcae>
 	TIM_PWM_t pwm_CH4 = {
- 4e2:	02470713          	addi	a4,a4,36 # 10000024 <example.c.50eba611+0xfffdca0>
+ 4e2:	02470713          	addi	a4,a4,36 # 10000024 <example.c.5e9830c8+0xfffdca0>
     TIM_PWM_t pwm_CH1 = {
  4e6:	cabe                	sw	a5,84(sp)
 	TIM_PWM_t pwm_CH4 = {
@@ -789,26 +789,25 @@ void systick_init(void)
  53a:	7ff58593          	addi	a1,a1,2047 # fffff7ff <_eusrstack+0xdfffefff>
  53e:	8e6d                	and	a2,a2,a1
  540:	c750                	sw	a2,12(a4)
-	timer->ATRLR = 255;				// Auto Reload - sets period
- 542:	0ff00713          	li	a4,255
+		timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
+ 542:	c446d703          	lhu	a4,-956(a3)
+ 546:	6621                	lui	a2,0x8
+ 548:	0742                	slli	a4,a4,0x10
+ 54a:	8341                	srli	a4,a4,0x10
+ 54c:	8f51                	or	a4,a4,a2
+ 54e:	c4e69223          	sh	a4,-956(a3)
 	timer->PSC = 0x0000;			// Prescaler 
- 546:	c2069423          	sh	zero,-984(a3)
+ 552:	c2069423          	sh	zero,-984(a3)
 	timer->ATRLR = 255;				// Auto Reload - sets period
- 54a:	c2e69623          	sh	a4,-980(a3)
-	timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
- 54e:	c446d703          	lhu	a4,-956(a3)
- 552:	6621                	lui	a2,0x8
- 554:	0742                	slli	a4,a4,0x10
- 556:	8341                	srli	a4,a4,0x10
- 558:	8f51                	or	a4,a4,a2
- 55a:	c4e69223          	sh	a4,-956(a3)
+ 556:	0ff00713          	li	a4,255
+ 55a:	c2e69623          	sh	a4,-980(a3)
 	timer->SWEVGR |= TIM_UG;		// Reload immediately
  55e:	c146d703          	lhu	a4,-1004(a3)
  562:	0742                	slli	a4,a4,0x10
  564:	8341                	srli	a4,a4,0x10
  566:	00176713          	ori	a4,a4,1
  56a:	c0e69a23          	sh	a4,-1004(a3)
-	timer->CTLR1 |= TIM_CEN;		// Enable TIM1
+	timer->CTLR1 |= TIM_CEN;		// Enable timer
  56e:	c006d783          	lhu	a5,-1024(a3)
  572:	07c2                	slli	a5,a5,0x10
  574:	83c1                	srli	a5,a5,0x10
@@ -900,7 +899,7 @@ void SysTick_Handler(void)
  5e2:	c436                	sw	a3,8(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
  5e4:	66b1                	lui	a3,0xc
- 5e6:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.50eba611+0x97fc>
+ 5e6:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.5e9830c8+0x97fc>
  5ea:	9736                	add	a4,a4,a3
  5ec:	cb98                	sw	a4,16(a5)
 

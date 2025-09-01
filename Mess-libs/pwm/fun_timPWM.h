@@ -29,22 +29,22 @@
 */
 
 //# Timer 2 pin mappings by AFIO->PCFR1
-/*	00 (default)
+/*	00 	AFIO_PCFR1_TIM2_REMAP_NOREMAP
 		D4		T2CH1ETR
 		D3		T2CH2
 		C0		T2CH3
 		D7		T2CH4		//! RST PIN
-	01
+	01 	AFIO_PCFR1_TIM2_REMAP_PARTIALREMAP1
 		C5		T2CH1ETR_	//! SPI-SCK
 		C2		T2CH2_		//! I2C-SDA
 		D2		T2CH3_
 		C1		T2CH4_		//! I2C-SCL
-	10
+	10	AFIO_PCFR1_TIM2_REMAP_PARTIALREMAP2
 		C1		T2CH1ETR_	//! I2C-SCL
 		D3		T2CH2
 		C0		T2CH3
 		D7		T2CH4
-	11
+	11	AFIO_PCFR1_TIM2_REMAP_FULLREMAP
 		C1		T2CH1ETR_	//! I2C-SCL
 		C7		T2CH2_		//! SPI-MISO
 		D6		T2CH3_
@@ -74,6 +74,8 @@ void fun_timPWM_init(TIM_PWM_t* model) {
 		// Reset TIM1 to init all regs
 		RCC->APB2PRSTR |= RCC_APB2Periph_TIM1;
 		RCC->APB2PRSTR &= ~RCC_APB2Periph_TIM1;
+		
+		timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
 	
 	} else if (timer == TIM2) {
 		RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
@@ -87,10 +89,9 @@ void fun_timPWM_init(TIM_PWM_t* model) {
 	// SMCFGR: default clk input is CK_INT
 	timer->PSC = 0x0000;			// Prescaler 
 	timer->ATRLR = 255;				// Auto Reload - sets period
-	timer->BDTR |= TIM_MOE;			// Enable TIM1 outputs
 
 	timer->SWEVGR |= TIM_UG;		// Reload immediately
-	timer->CTLR1 |= TIM_CEN;		// Enable TIM1
+	timer->CTLR1 |= TIM_CEN;		// Enable timer
 }
 
 void fun_timPWM_reload(TIM_PWM_t* model) {
