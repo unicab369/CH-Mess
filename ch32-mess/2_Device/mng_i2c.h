@@ -921,13 +921,14 @@ typedef struct PACKED {
 	uint8_t line_num;		// line_num = 0 means empty
 } PrintBuff_t;
 
-uint32_t printBuff_time = 0;
+
+uint32_t lock_printTime = 0;
 uint8_t printBuff_idx = 0;
 PrintBuff_t printBuff[PRINT_BUFF_SIZE] = { 0 };
-uint8_t printBuff_has_data = 0;
+uint8_t flag_printBuff_data = 1;					// set to 1 to allow initial print
 
 void mngI2c_load_printBuff(const char *str, uint8_t line_idx) {
-	printBuff_has_data = 1;
+	flag_printBuff_data = 1;
 	PrintBuff_t *buff = &printBuff[printBuff_idx];
 	buff->line_num = line_idx + 1;
 	strncpy(buff->str, str, SSD1306_STR_SIZE);
@@ -935,18 +936,28 @@ void mngI2c_load_printBuff(const char *str, uint8_t line_idx) {
 	printBuff_idx = (printBuff_idx + 1) % PRINT_BUFF_SIZE;
 }
 
-void mngI2c_printBuff_task(uint32_t time) {
-	// 50ms interval
-	if (time - printBuff_time < 50 || !printBuff_has_data) return;
+uint32_t line6_preserve_time = 0;
 
-	for (int i = 0; i < PRINT_BUFF_SIZE; i++) {
-		if (printBuff[i].line_num == 0) continue;
-		modI2C_display(printBuff[i].str, printBuff[i].line_num-1);
-	}
+void mngI2c_load_joystick(uint32_t time, uint16_t x, uint16_t y) {
+	// keep line6_preserve_time shown for at least 1 second
+	if (time - line6_preserve_time < 1000) return;
 
-	//! Clear printBuff
-	memset(printBuff, 0, sizeof(printBuff));
-	printBuff_has_data = 0;
+	sprintf(str_output, "jx: %d, jy: %d", x, y);
+	mngI2c_load_printBuff(str_output, 6);
+}
+
+void mngI2c_load_buttonState(uint32_t time, uint8_t state) {
+	line6_preserve_time = time;
+
+	sprintf(str_output, "button: %d", state);
+	mngI2c_load_printBuff(str_output, 6);
+}
+
+void mngI2c_load_encoder(uint32_t time, uint8_t pos, uint8_t dir) {
+	line6_preserve_time = time;
+
+	sprintf(str_output, "pos: %d, dir: %s", pos, dir ? "CW" : "CCW");
+	mngI2c_load_printBuff(str_output, 6);
 }
 
 char loading_char[4] = "\\";
@@ -966,4 +977,17 @@ void mngI2c_loadCounter(uint32_t counter, uint32_t runTime) {
 	sprintf(str_output, "%s cyc/s %lu ~ %lums", loading_char, counter, runTime);
 	mngI2c_load_printBuff(str_output, 7);
 	cycle_loading_char();
+}
+
+void mngI2c_printBuff_task() {
+	if (!flag_printBuff_data) return;
+
+	for (int i = 0; i < PRINT_BUFF_SIZE; i++) {
+		if (printBuff[i].line_num == 0) continue;
+		modI2C_display(printBuff[i].str, printBuff[i].line_num-1);
+	}
+
+	//! Clear printBuff
+	memset(printBuff, 0, sizeof(printBuff));
+	flag_printBuff_data = 0;
 }

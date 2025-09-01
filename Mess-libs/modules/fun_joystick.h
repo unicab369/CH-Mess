@@ -85,5 +85,6 @@ void fun_joystick_task(void (*handler)(uint16_t, uint16_t)) {
 void fun_joystick_timerTask(uint32_t time, void (*handler)(uint16_t, uint16_t)) {
 	if (time - joystick_timeRef < 100) return;
     joystick_timeRef = time;
+	
 	fun_joystick_task(handler);
 }

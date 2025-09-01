@@ -20,6 +20,9 @@
 
 #define BUTTON_PIN 		PC0
 
+
+
+
 void onI2C_SlaveWrite(uint8_t reg, uint8_t length) {
 	printf("IM WRITEEN TO\n\r");
 }
@@ -39,37 +42,42 @@ void button_onChanged(Button_Event_e event, uint32_t time) {
 		case BTN_LONGPRESS:
 			printf("Long Press\n"); break;
 	}
+
+	mngI2c_load_buttonState(millis(), event);
 }
 
 void encoder_onChanged(Encoder_t *model) {
-	printf("pos relative: %d\n", model->relative_pos);
+	// printf("pos relative: %d, direction: %d\n", model->relative_pos, model->direction);
+	mngI2c_load_encoder(millis(), model->relative_pos, model->direction);
 }
 
 void joystick_onChanged(uint16_t x, uint16_t y) {
-	char str_output[SSD1306_STR_SIZE];
-	sprintf(str_output, "jx: %d, jy: %d", x, y);
-	mngI2c_load_printBuff(str_output, 6);
+	mngI2c_load_joystick(millis(), x, y);
 }
 
 typedef struct {
 	uint32_t cycle_count;
 	uint32_t counter;
-	uint32_t timeRef;
 	uint32_t fullCycle_time;
+	uint32_t timeRef_1sec;
+	uint32_t timeRef_50ms;
+	uint32_t timeRef_100ms;
 } Session_t;
 
 
 //# 	*ENC_A*		PD4 - [ 				] - PD3		*ENC_B*
 //# 	*UTX*		PD5 - [ 				] - PD2
-//# 				PD6 - [ 				] - PD1		*SWIO*
+//# 	*UTR*		PD6 - [ 				] - PD1		*SWIO*
 //# 	*RST* 		PD7 - [ 				] - PC7		*MISO*
 //# 	*J_X*		PA1 - [ 	V003F4P6	] - PC6		*MOSI*
 //# 	*J_Y*		PA2 - [   	TSSOP-20 	] - PC5		*SCK*
 //# 		x		Vcc - [ 				] - PC4
-//# 				PD0 - [ 				] - PC3
+//# 	*PWM*		PD0 - [ 				] - PC3
 //# 		x		GND - [ 				] - PC2		*SCL*
 //# 	*BTN*		PC0 - [ 				] - PC1		*SDA*
 
+
+volatile uint8_t i2c_registers[32] = {0xaa};
 
 int main() {
 	SystemInit();
@@ -92,8 +100,6 @@ int main() {
 
 	//# Hold BUTTON_PIN low to enter slave mode
 	uint8_t slave_mode = funDigitalRead(BUTTON_PIN);
-
-	volatile uint8_t i2c_registers[32] = {0xaa};
 
 	if (slave_mode == 0) {
 		printf("I2C Slave mode\n");
@@ -146,15 +152,12 @@ int main() {
 		now = millis();
 		session.cycle_count++;
 
+		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
-		fun_encoder_task(&encoder_a, encoder_onChanged);
-		fun_joystick_timerTask(now, joystick_onChanged);
-
 		fun_timPWM_task(now, &pwm_CH1c);
-		mngI2c_printBuff_task(now);
 
-		if (now - session.timeRef > 1000) {
-			session.timeRef = now;
+		if (now - session.timeRef_1sec > 1000) {
+			session.timeRef_1sec = now;
 
 			if (slave_mode != 0) {
 				mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
@@ -169,6 +172,19 @@ int main() {
 
 			// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 			// printf("ST7735 runtime: %lu us\n", runtime_tft);
+		}
+
+		else if (now - session.timeRef_100ms > 100) {
+			session.timeRef_100ms = now;
+
+			mngI2c_printBuff_task(now);
+		}
+
+		else if (now - session.timeRef_50ms > 50) {
+			session.timeRef_50ms = now;
+
+			fun_encoder_task(&encoder_a, encoder_onChanged);
+			fun_joystick_task(joystick_onChanged);
 		}
 
 		session.fullCycle_time = millis() - now;
