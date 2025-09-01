@@ -90,8 +90,6 @@ void fun_encoder_task(uint32_t time, Encoder_t *model, void (*handler)(Encoder_t
 		model->relative_pos = count - model->initial_count;
 		model->delta 		= count - model->last_count;
 		handler(model);
-		// printf("Position relative=%ld delta=%ld\n",
-		// 		(int32_t)count - model->initial_count, (int32_t)count-model->last_count);
 		model->last_count = count;
 	}
 }

@@ -33,7 +33,7 @@ void _reset_timers(uint8_t newState, Button_t *model) {
     model->release_time = millis();
 }
 
-void button_setup(Button_t *model) {
+void fun_button_setup(Button_t *model) {
     if (model->pin == 0xFF) return; 
 
     model->btn_state = BUTTON_IDLE;
@@ -46,20 +46,18 @@ void button_setup(Button_t *model) {
     _reset_timers(BUTTON_IDLE, model);
 }
 
-void button_run(Button_t *model, void (*handler)(int, uint32_t)) {
+void fun_button_task(uint32_t time, Button_t *model, void (*handler)(int, uint32_t)) {
     if (model->pin == 0xFF) return;
-    
-    uint32_t now = millis();
     uint8_t read = funDigitalRead(model->pin);
 
     // Debounce check
-    if (now - model->debounce_time < TICK_DEBOUNCE_DUR) return;
-    model->debounce_time = now;
+    if (time - model->debounce_time < TICK_DEBOUNCE_DUR) return;
+    model->debounce_time = time;
 
     switch (model->btn_state) {
     case BUTTON_IDLE:
         if (read == 0) {
-            model->press_time = now;
+            model->press_time = time;
             _reset_timers(BTN_DOWN, model);      // First Press  
         }
         break;
@@ -70,7 +68,7 @@ void button_run(Button_t *model, void (*handler)(int, uint32_t)) {
 
         } else {
             // Long press detection
-            uint32_t press_duration = now - model->press_time;
+            uint32_t press_duration = time - model->press_time;
             if (press_duration > TICK_LONG_PRESS_DUR) {
             handler(BTN_LONGPRESS, press_duration - TICK_LONG_PRESS_DUR);
             }
@@ -78,7 +76,7 @@ void button_run(Button_t *model, void (*handler)(int, uint32_t)) {
         break;
 
     case BTN_UP: {
-        uint32_t release_duration = now - model->release_time;
+        uint32_t release_duration = time - model->release_time;
 
         if (read == 0 && release_duration < TICK_CLICK_DUR) {
             // Second Press in less than TICK_CLICK_DUR

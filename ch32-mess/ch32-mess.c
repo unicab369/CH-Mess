@@ -47,6 +47,12 @@ void encoder_onChanged(Encoder_t *model) {
 	printf("pos relative: %d\n", model->relative_pos);
 }
 
+void joystick_onChanged(uint16_t x, uint16_t y) {
+	char str_output[24];
+	sprintf(str_output, "jx: %d, jy: %d", x, y);
+	mngI2c_load_printBuff(str_output, 6);
+}
+
 typedef struct {
 	uint32_t cycle_count;
 	uint32_t counter;
@@ -80,7 +86,7 @@ int main() {
 	
 	//# Button: uses PC0
 	Button_t button1 = { .pin = BUTTON_PIN };
-	button_setup(&button1);
+	fun_button_setup(&button1);
 
 	//# I2C1: uses PC1 & PC2
 	modI2C_setup();
@@ -138,19 +144,21 @@ int main() {
 		uint32_t now = millis();
 		session.cycle_count++;
 
-		button_run(&button1, button_onChanged);
-		fun_timPWM_task(now, &pwm_CH1c);
+		fun_button_task(now, &button1, button_onChanged);
 		fun_encoder_task(now, &encoder_a, encoder_onChanged);
+		fun_joystick_task(now, joystick_onChanged);
+
+		fun_timPWM_task(now, &pwm_CH1c);
+		mngI2c_printBuff_task(now);
 
 		if (now - session.timeRef > 1000) {
 			session.timeRef = now;
 
 			if (slave_mode != 0) {
-				modI2C_task(session.cycle_count);
+				mngI2c_loadCounter(session.cycle_count);
 			}
 			session.cycle_count = 0;
 			
-			// fun_joystick_task();
 			dma_uart_tx(message, sizeof(message) - 1);
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);

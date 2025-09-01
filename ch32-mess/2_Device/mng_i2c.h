@@ -4,6 +4,10 @@
 #include "../Mess-libs/i2c/lib_i2c.h"
 #include "../Mess-libs/i2c/ssd1306/mod_ssd1306.h"
 
+#ifndef PACKED
+#define PACKED __attribute__((packed))
+#endif
+
 i2c_device_t dev_ssd1306 = {
 	.clkr = I2C_CLK_100KHZ,
 	.type = I2C_ADDR_7BIT,
@@ -856,7 +860,7 @@ void i2c_device_tests() {
 	// test_ina219();
 }
 
-char str_output[20];
+char str_output[24];
 
 
 void test_v003Slave() {
@@ -904,11 +908,46 @@ void modI2C_setup() {
 		printf("----Scanning I2C Bus for Devices---\n");
 		i2c_scan(i2c_scan_callback);
 		printf("----Done Scanning----\n\n");
-		modI2C_task();
 	}
 
 	// i2c_device_tests();
 	// test_v003Slave();
+}
+
+
+#define PRINT_BUFF_SIZE 10
+
+typedef struct PACKED {
+	char str[25];
+	uint8_t line_num;		// line_num = 0 means empty
+} PrintBuff_t;
+
+uint32_t printBuff_time = 0;
+uint8_t printBuff_idx = 0;
+PrintBuff_t printBuff[PRINT_BUFF_SIZE] = { 0 };
+uint8_t printBuff_has_data = 0;
+
+void mngI2c_load_printBuff(const char *str, uint8_t line_idx) {
+	printBuff_has_data = 1;
+	PrintBuff_t *buff = &printBuff[printBuff_idx];
+	buff->line_num = line_idx + 1;
+	strncpy(buff->str, str, 24);
+	buff->str[24] = '\0';
+	printBuff_idx = (printBuff_idx + 1) % PRINT_BUFF_SIZE;
+}
+
+void mngI2c_printBuff_task(uint32_t time) {
+	// 50ms interval
+	if (time - printBuff_time < 50 || !printBuff_has_data) return;
+
+	for (int i = 0; i < PRINT_BUFF_SIZE; i++) {
+		if (printBuff[i].line_num == 0) continue;
+		modI2C_display(printBuff[i].str, printBuff[i].line_num-1);
+	}
+
+	//! Clear printBuff
+	memset(printBuff, 0, sizeof(printBuff));
+	printBuff_has_data = 0;
 }
 
 char loading_char[4] = "\\";
@@ -924,9 +963,8 @@ void cycle_loading_char() {
     }
 }
 
-void modI2C_task(uint32_t counter) {
+void mngI2c_loadCounter(uint32_t counter) {
 	sprintf(str_output, "%s cycle/sec %lu", loading_char, counter);
-	// sprintf(str_output, "cycle/sec %lu", counter);
-	modI2C_display(str_output, 7);
+	mngI2c_load_printBuff(str_output, 7);
 	cycle_loading_char();
 }

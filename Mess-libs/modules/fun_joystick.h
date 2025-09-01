@@ -74,7 +74,11 @@ void fun_joystick_setup() {
 
 uint16_t last_x = 0;
 uint16_t last_y = 0;
+uint32_t joystick_timeRef = 0;
 
-int fun_joystick_task() {
-    printf("%4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
+void fun_joystick_task(uint32_t time, void (*handler)(uint16_t, uint16_t)) {
+	if (time - joystick_timeRef < 50) return;
+	joystick_timeRef = time;
+	handler(adc_buffer[0], adc_buffer[1]);
+    // printf("%4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
 }
