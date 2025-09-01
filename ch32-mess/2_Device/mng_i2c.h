@@ -911,7 +911,22 @@ void modI2C_setup() {
 	// test_v003Slave();
 }
 
+char loading_char[4] = "\\";
+
+void cycle_loading_char() {
+    // Since we're only dealing with single characters, we can just check the first byte.
+    // This is faster and safer than strcmp/strcpy.
+    switch(loading_char[0]) {
+        case '\\':	strcpy(loading_char, "|"); break;
+        case '|':	strcpy(loading_char, "/"); break;
+        case '/':	strcpy(loading_char, "-"); break;
+        case '-':	strcpy(loading_char, "\\"); break;
+    }
+}
+
 void modI2C_task(uint32_t counter) {
-	sprintf(str_output, "cycle/sec %lu", counter);
+	sprintf(str_output, "%s cycle/sec %lu", loading_char, counter);
+	// sprintf(str_output, "cycle/sec %lu", counter);
 	modI2C_display(str_output, 7);
+	cycle_loading_char();
 }

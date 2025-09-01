@@ -18,7 +18,7 @@ void fun_optionByte_store(uint16_t data) {
 	uint32_t *hold32p=(uint32_t *)hold;
 	uint32_t *ob32p=(uint32_t *)OB_BASE;
 	hold32p[0]=ob32p[0]; 			// Copy RDPR and USER
-	hold32p[1]=data0+(data1<<16);	// Copy in the two Data values to be written
+	hold32p[1]=(uint32_t)data;	    // Copy in the two Data values to be written
 	hold32p[2]=ob32p[2];			// Copy WRPR0 and WEPR1
 
 	// Unlock both the general Flash and the User-selected words

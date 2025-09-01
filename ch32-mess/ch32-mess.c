@@ -65,20 +65,19 @@ typedef struct {
 //# 		x		GND - [ 				] - PC2		*SCL*
 //# 	*BTN*		PC0 - [ 				] - PC1		*SDA*
 
+
 int main() {
-	uint32_t counter = 0;
-
 	SystemInit();
-	systick_init();			//! required for millis()
-
-	funGpioInitAll();
-	Delay_Ms(10);
 
 	uint16_t bootCnt = fun_optionByte_getValue();
 	bootCnt++;
 	fun_optionByte_store(bootCnt);
 	printf("Boot Count: %d\n", bootCnt);
 
+	systick_init();			//! required for millis()
+	funGpioInitAll();
+	Delay_Ms(10);
+	
 	//# Button: uses PC0
 	Button_t button1 = { .pin = BUTTON_PIN };
 	button_setup(&button1);
@@ -127,13 +126,13 @@ int main() {
 	fun_timPWM_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
-	Encoder_t encoder_a = {0, 0, 0};
+	Encoder_t encoder_a = { 0, 0, 0 };
 	fun_encoder_setup(&encoder_a);
 
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
 	fun_joystick_setup();
 
-	Session_t session = {0, 0, 0};
+	Session_t session = { 0, 0, millis() };
 
 	while(1) {
 		uint32_t now = millis();
