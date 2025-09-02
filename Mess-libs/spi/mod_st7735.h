@@ -158,7 +158,7 @@ void mod_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
     INTF_TFT_END_WRITE();
 }
 
-void mod_st7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
+void mod_st7735_setup(uint8_t dc_pin, uint8_t rst_pin) {
     mod_st7335_init(rst_pin, dc_pin);
     tft_fill_rect(0, 0, 160, 128, PURPLE);
 }

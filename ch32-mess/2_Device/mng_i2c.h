@@ -895,7 +895,8 @@ void i2c_scan_callback(const uint8_t addr) {
 void modI2C_setup() {
 	if(i2c_init(&dev_aht21) != I2C_OK) {
 		printf("Failed to init I2C\n");
-	} else {
+	} 
+	else {
 		if (i2c_ping(0x3C) == I2C_OK) {
 			ssd1306_setup();
 
