@@ -55,171 +55,10 @@ uint8_t SHT_LOWREP_FREE_CMD[2]  = { 0x24, 0x16 };
 uint8_t SHT_HEATER_DISABLE[2]   = { 0x30, 0x66 };
 uint8_t SHT_HEATER_ENABLE[2]    = { 0x30, 0x6D };
 
-static const i2c_device_t dev_ds3231 = {
-	.clkr = I2C_CLK_400KHZ,
+i2c_device_t dev_sensor = {
+	.clkr = I2C_CLK_100KHZ,
 	.type = I2C_ADDR_7BIT,
-	.addr = 0x68,				//! Default address for DS3231
-	.regb = 1,
-};
-
-static const i2c_device_t dev_aht21 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x38,				// Default address for AHT21
-	.regb = 1,
-};
-
-static const i2c_device_t dev_htu21 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x40,				//! Default address for HTU21
-	.regb = 1,
-};
-
-static const i2c_device_t dev_bmp280 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x76, 				// Default address for BMP280
-	.regb = 1,
-};
-
-static const i2c_device_t dev_hdc1080 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x40, 				//! Default address for HDc1080
-	.regb = 1,
-};
-
-static const i2c_device_t dev_si7021 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x40, 				//! Default address for SI7021
-	.regb = 1,
-};
-
-static const i2c_device_t dev_max44009 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x4A,		 		// Default address for MAX44009
-	.regb = 1,
-};
-
-static const i2c_device_t dev_AP3216 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x1E,				// Default address for AP3216
-	.regb = 1,
-};
-
-static const i2c_device_t dev_vl35lox = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x29,				// Default address for VL53L0X
-	.regb = 1,
-};
-
-static const i2c_device_t dev_ens160 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x53,				// Default address for ENS160
-	.regb = 1,
-};
-
-static const i2c_device_t dev_sgp30 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x58,				// Default address for SGP30
-	.regb = 1,
-};
-
-static const i2c_device_t dev_scd40 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x62,				// Default address for SCD40
-	.regb = 1,
-};
-
-static const i2c_device_t dev_mpu6050 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x68,				//! Default address for MPU6050
-	.regb = 1,
-};
-
-static const i2c_device_t dev_adxl345 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x53,				// Default address for ADXL345
-	.regb = 1,
-};
-
-static const i2c_device_t dev_at24c = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x57,				// Default address for AT24C32
-	.regb = 1,
-};
-
-static const i2c_device_t dev_ina3221 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x42,				//! Default address for INA3221
-	.regb = 1,				
-};
-
-static const i2c_device_t dev_as5600 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x36,				// Default address for AS5600
-	.regb = 1,
-};
-
-static const i2c_device_t dev_max30102 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x57,				//! Default address for MAX30102
-	.regb = 1,
-};
-
-static const i2c_device_t dev_amg88xx = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x69,				// Default address for AMG88XX
-	.regb = 1,
-};
-
-static const i2c_device_t dev_bh1750 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x23,				// Default address for BH1750
-	.regb = 1,
-};
-
-static const i2c_device_t dev_sht3x = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x44,				// Default address for SHT30
-	.regb = 1,
-};
-
-static const i2c_device_t dev_ina219 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x40,				//! Default address for INA219
-	.regb = 1,
-};
-
-static const i2c_device_t dev_apds9960 = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x39,				// Default address for APDS9960
-	.regb = 1,
-};
-
-static const i2c_device_t dev_v003Slave = {
-	.clkr = I2C_CLK_400KHZ,
-	.type = I2C_ADDR_7BIT,
-	.addr = 0x77,				// Default address for V003 Slave
+	.addr = 0x3C,
 	.regb = 1,
 };
 
@@ -291,39 +130,41 @@ i2c_err_t ret;
 uint8_t buff[8];
 
 void test_htu21() {
-    if (i2c_ping(dev_htu21.addr) != I2C_OK) {
+    dev_sensor.addr = 0x40;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("HTU21 not found\n");
 		return;
 	}
 
 	Delay_Ms(100);
-	ret = i2c_write_raw(&dev_htu21, (uint8_t[]){0xFE}, 1);		// Soft reset
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0xFE}, 1);		// Soft reset
 	printf("Error0: %d\n", ret);
 
 	// Delay_Ms(100);
-	// ret = i2c_read_reg(&dev_htu21, 0xE7, buff, 3);		// Read User register
+	// ret = i2c_read_reg(&dev_sensor, 0xE7, buff, 3);		// Read User register
 	// printf("Error1: %d\n", ret);
 	// printf("HTU21 User Register: %02X, %02X, %02X\n", buff[0], buff[1], buff[2]);
 
 
 	Delay_Ms(200);
-	// ret = i2c_read_reg(&dev_htu21, 0xF3, buff, 3);				// Read Temperature
-	ret = i2c_write_raw(&dev_htu21, (uint8_t[]){0xF3}, 1);
+	// ret = i2c_read_reg(&dev_sensor, 0xF3, buff, 3);				// Read Temperature
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0xF3}, 1);
 	printf("Error3: %d\n", ret);
 
 	Delay_Ms(200);
-	ret = i2c_read_raw(&dev_htu21, buff, 3);				// Read Temperature
+	ret = i2c_read_raw(&dev_sensor, buff, 3);				// Read Temperature
 	printf("Error4: %d\n", ret);
 	uint16_t temp_raw = (buff[0] << 8) | buff[1];
 	uint16_t temp = (temp_raw * 17572) >> 16;					// >> 16 is equivalent to / 65536
 
 	Delay_Ms(200);
-	// ret = i2c_read_reg(&dev_htu21, 0xF5, buff, 3);				// Read Humidity
-	ret = i2c_write_raw(&dev_htu21, (uint8_t[]){0xF5}, 1);
+	// ret = i2c_read_reg(&dev_sensor, 0xF5, buff, 3);				// Read Humidity
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0xF5}, 1);
 	printf("Error4: %d\n", ret);
 
 	Delay_Ms(200);
-	ret = i2c_read_raw(&dev_htu21, buff, 3);				// Read Humidity
+	ret = i2c_read_raw(&dev_sensor, buff, 3);				// Read Humidity
 	printf("Error5: %d\n", ret);
 	uint16_t hum_raw = (buff[0] << 8) | buff[1];
 	uint16_t hum = (hum_raw * 125) >> 16;							// >> 16 is equivalent to / 65536
@@ -332,12 +173,14 @@ void test_htu21() {
 }
 
 void test_aht21() {
-    if (i2c_ping(dev_aht21.addr) != I2C_OK) {
+    dev_sensor.addr = 0x38;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("AHT21 not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_aht21, 0x71, buff, 1);
+	ret = i2c_read_reg(&dev_sensor, 0x71, buff, 1);
 	buff[0] = buff[0] & 0x18;
 	printf("Error0: %d\n", ret);
 	printf("AHT21 Read reg 0x71: %02X\n", buff[0]);		// expect 0x18
@@ -345,10 +188,10 @@ void test_aht21() {
 	buff[0] = 0xAC;
 	buff[1] = 0X33;
 	buff[2] = 0x00;
-	ret = i2c_write_raw(&dev_aht21, buff, 3);
+	ret = i2c_write_raw(&dev_sensor, buff, 3);
 	printf("Error1: %d\n", ret);
 
-	ret = i2c_read_raw(&dev_aht21, buff, 6);		// Read sensor
+	ret = i2c_read_raw(&dev_sensor, buff, 6);		// Read sensor
 	printf("Error2: %d\n", ret);
 
 	// calculate humidity
@@ -363,7 +206,9 @@ void test_aht21() {
 }
 
 void test_bmp280() {
-    if (i2c_ping(dev_bmp280.addr) != I2C_OK) {
+    dev_sensor.addr = 0x76;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("BMP280 not found\n");
 		return;
 	}
@@ -375,26 +220,26 @@ void test_bmp280() {
 		// Pressure calibration would be added similarly
 	} bmp280_calib;
 
-	ret = i2c_read_reg(&dev_bmp280, 0xD0, buff, 1);
+	ret = i2c_read_reg(&dev_sensor, 0xD0, buff, 1);
 	printf("Error0: %d\n", ret);
 	printf("BMP280 Read reg 0xD0: %02X\n", buff[0]);		// expect 0x58
 
-	ret = i2c_read_reg(&dev_bmp280, 0x88, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x88, buff, 2);
 	bmp280_calib.dig_T1 =  (int16_t)(buff[1] << 8) | buff[0];
 
-	ret = i2c_read_reg(&dev_bmp280, 0x8A, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x8A, buff, 2);
 	bmp280_calib.dig_T2 =  (int16_t)(buff[1] << 8) | buff[0];
 
-	ret = i2c_read_reg(&dev_bmp280, 0x8C, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x8C, buff, 2);
 	bmp280_calib.dig_T3 =  (int16_t)(buff[1] << 8) | buff[0];
 
 	printf("dig_T1: %lu\n", bmp280_calib.dig_T1);
 	printf("dig_T2: %lu\n", bmp280_calib.dig_T2);
 	printf("dig_T3: %ld\n", bmp280_calib.dig_T3);
 
-	ret = i2c_write_reg(&dev_bmp280, 0xF4, (uint8_t[]){0x5D}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0xF4, (uint8_t[]){0x5D}, 1);
 	printf("Error1: %d\n", ret);
-	ret = i2c_read_reg(&dev_bmp280, 0xF7, buff, 6);			// read sensors
+	ret = i2c_read_reg(&dev_sensor, 0xF7, buff, 6);			// read sensors
 
 	uint32_t raw_pressure = (uint32_t)(buff[0]*4096 + buff[1]*16 + (buff[2]/16));
 	uint32_t raw_temp = (uint32_t)(buff[3]*4096 + buff[4]*16 + (buff[5]/16));
@@ -409,19 +254,21 @@ void test_bmp280() {
 }
 
 void test_hdc1080() {
-    if (i2c_ping(dev_hdc1080.addr) != I2C_OK) {
+    dev_sensor.addr = 0x40;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("HDC1080 not found\n");
 		return;
 	}
 
-	ret = i2c_write_reg(&dev_hdc1080, 0x02, (uint8_t[]){0x10}, 1);	// Set configuration register
+	ret = i2c_write_reg(&dev_sensor, 0x02, (uint8_t[]){0x10}, 1);	// Set configuration register
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_write_raw(&dev_hdc1080, (uint8_t[]){0x00}, 1);		// Trigger measurement
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x00}, 1);		// Trigger measurement
 	printf("Error1: %d\n", ret);
 
 	Delay_Ms(100);											//! Wait for measurement to complete
-	ret = i2c_read_raw(&dev_hdc1080, buff, 4);				// Read data register
+	ret = i2c_read_raw(&dev_sensor, buff, 4);				// Read data register
 	printf("Error2: %d\n", ret);
 	printf("HDC1080 Read: %02X %02X %02X %02X\n", buff[0], buff[1], buff[2], buff[3]);
 
@@ -436,15 +283,17 @@ void test_hdc1080() {
 }
 
 void test_si7021() {
-    if (i2c_ping(dev_si7021.addr) != I2C_OK) {
+    dev_sensor.addr = 0x40;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("SI7021 not found\n");
 		return;
 	}
 
-	ret = i2c_write_raw(&dev_si7021, (uint8_t[]){0xE3}, 1);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0xE3}, 1);
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_read_raw(&dev_si7021, buff, 4);				// Read Temperature and Humidity
+	ret = i2c_read_raw(&dev_sensor, buff, 4);				// Read Temperature and Humidity
 	printf("Error0: %d\n", ret);
 
 	uint16_t raw_temp = (buff[0] << 8) | buff[1];
@@ -457,12 +306,14 @@ void test_si7021() {
 }
 
 void test_max44009() {
-    if (i2c_ping(dev_max44009.addr) != I2C_OK) {
+    dev_sensor.addr = 0x4A;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("Max44009 not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_max44009, 0x03, buff, 2);		// Read lux registers
+	ret = i2c_read_reg(&dev_sensor, 0x03, buff, 2);		// Read lux registers
 	printf("Error0: %d\n", ret);
 
 	int exponent = (buff[0] & 0xF0) >> 4;		// Get exponent from first byte
@@ -474,15 +325,17 @@ void test_max44009() {
 }
 
 void test_ap3216() {
-    if (i2c_ping(dev_AP3216.addr) != I2C_OK) {
+    dev_sensor.addr = 0x1E;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("AP3216 not found\n");
 		return;
 	}
 
-	ret = i2c_write_raw(&dev_AP3216, (uint8_t[]){0x00, 0x03}, 2);		// Trigger measurement
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x00, 0x03}, 2);		// Trigger measurement
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_read_reg(&dev_AP3216, 0x0C, buff, 4);		// Read data registers
+	ret = i2c_read_reg(&dev_sensor, 0x0C, buff, 4);		// Read data registers
 	printf("Error1: %d\n", ret);
 
 	uint16_t lux = (buff[1] << 8) + buff[0];
@@ -494,44 +347,46 @@ void test_ap3216() {
 }
 
 void test_vl53l0x() {
-    if (i2c_ping(dev_vl35lox.addr) != I2C_OK) {
+    dev_sensor.addr = 0x29;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("VL53L0X not found\n");
 		return;
 	}
 
-	// ret = i2c_write_raw(&dev_vl35lox, (uint8_t[]){0x00, 0x01}, 2);		// Trigger measurement
+	// ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x00, 0x01}, 2);		// Trigger measurement
 
 	uint8_t status;
-	ret = i2c_read_reg(&dev_vl35lox, 0xC0, &status, 1);		// Read system status register
+	ret = i2c_read_reg(&dev_sensor, 0xC0, &status, 1);		// Read system status register
 	printf("Error0: %d\n", ret);
 	printf("status: %02X\n", status);						// expect 0xEE
 	
-	// ret = i2c_write_reg(&dev_vl35lox, 0x88, (uint8_t[]){0x00}, 1);		// Start initialization
+	// ret = i2c_write_reg(&dev_sensor, 0x88, (uint8_t[]){0x00}, 1);		// Start initialization
 
-	// ret = i2c_write_reg(&dev_vl35lox, 0x80, (uint8_t[]){0x01}, 1);
-	// ret = i2c_write_reg(&dev_vl35lox, 0xFF, (uint8_t[]){0x01}, 1);
-	// ret = i2c_write_reg(&dev_vl35lox, 0x00, (uint8_t[]){0x00}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0x80, (uint8_t[]){0x01}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0xFF, (uint8_t[]){0x01}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0x00}, 1);
 
-	// // ret = i2c_read_reg(&dev_vl35lox, 0x91, buff, 1);		// Read I2C mode register
+	// // ret = i2c_read_reg(&dev_sensor, 0x91, buff, 1);		// Read I2C mode register
 	// // printf("Error1: %d\n", ret);
 	// // printf("VL53L0X Read reg 0x91: %02X\n", buff[0]);		// expect 0x3C
-	// ret = i2c_write_reg(&dev_vl35lox, 0x91, (uint8_t[]){0x3C}, 1);		// Set I2C mode
+	// ret = i2c_write_reg(&dev_sensor, 0x91, (uint8_t[]){0x3C}, 1);		// Set I2C mode
 
-	// ret = i2c_write_reg(&dev_vl35lox, 0x00, (uint8_t[]){0x01}, 1);
-	// ret = i2c_write_reg(&dev_vl35lox, 0xFF, (uint8_t[]){0x00}, 1);
-	// ret = i2c_write_reg(&dev_vl35lox, 0x80, (uint8_t[]){0x00}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0x01}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0xFF, (uint8_t[]){0x00}, 1);
+	// ret = i2c_write_reg(&dev_sensor, 0x80, (uint8_t[]){0x00}, 1);
 
 	// start measurement
-	ret = i2c_write_reg(&dev_vl35lox, 0x00, (uint8_t[]){0x00}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0x00}, 1);
 
 	Delay_Ms(100);											// Wait for measurement to complete
 
-	ret = i2c_read_reg(&dev_vl35lox, 0x13, buff, 1);
+	ret = i2c_read_reg(&dev_sensor, 0x13, buff, 1);
 	printf("Error0: %d\n", ret);
 	printf("VL53L0X Read reg 0x13: %02X\n", buff[0]);
 
 	Delay_Ms(100);	
-	ret = i2c_read_reg(&dev_vl35lox, 0x14 + 10, buff, 2);				// Read distance register
+	ret = i2c_read_reg(&dev_sensor, 0x14 + 10, buff, 2);				// Read distance register
 	printf("Error1: %d\n", ret);
 
 	printf("VL53L0X Read: %02X %02X\n", buff[0], buff[1]);
@@ -540,19 +395,21 @@ void test_vl53l0x() {
 }
 
 void test_ens160() {
-    if (i2c_ping(dev_ens160.addr) != I2C_OK) {
+    dev_sensor.addr = 0x53;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("ENS160 not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_ens160, 0x00, buff, 2);		// Read ENS160 ID
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 2);		// Read ENS160 ID
 	uint16_t ens160_id = (buff[1] << 8) | buff[0];
 	printf("ENS160 ID: %04X\n", ens160_id);
-	ret = i2c_write_reg(&dev_ens160, 0x10, (uint8_t[]){0x02}, 1);		// set Mode
+	ret = i2c_write_reg(&dev_sensor, 0x10, (uint8_t[]){0x02}, 1);		// set Mode
 
 	// get Air Quality Index (AQI)
 	// value: 1 - excelent, 2 - good, 3 - fair, 4 - poor, 5 - very poor
-	ret = i2c_read_reg(&dev_ens160, 0x21, buff, 5);		
+	ret = i2c_read_reg(&dev_sensor, 0x21, buff, 5);		
 	printf("ENS160 AQI: %d\n", buff[0]);
 
 	// get Total Volatile Organic Compounds (TVOC)
@@ -568,35 +425,37 @@ void test_ens160() {
 }
 
 void test_sgp30() {
-    if (i2c_ping(dev_sgp30.addr) != I2C_OK) {
+    dev_sensor.addr = 0x58;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("SGP30 not found\n");
 		return;
 	}
 
-	ret = i2c_write_raw(&dev_sgp30, (uint8_t[]){0x36, 0x82}, 2);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x36, 0x82}, 2);
 	printf("Error0: %d\n", ret);					// Initialize SGP30
-	ret = i2c_read_raw(&dev_sgp30, buff, 3);		// Read ID
+	ret = i2c_read_raw(&dev_sensor, buff, 3);		// Read ID
 	printf("Error1: %d\n", ret);
 	uint32_t id = (buff[0] << 16) | (buff[1] << 8) | buff[2];		// Get ID	
 	printf("SGP30 ID: %04X\n", id);
 
-	ret = i2c_write_raw(&dev_sgp30, (uint8_t[]){0x20, 0x03}, 2);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x20, 0x03}, 2);
 	printf("Error2: %d\n", ret);		// Initialize SGP30	
 
-	ret = i2c_write_raw(&dev_sgp30, (uint8_t[]){0x20, 0x08}, 2);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x20, 0x08}, 2);
 	printf("Error0: %d\n", ret);		// Start measurement
 
 	Delay_Ms(100);		// Wait for measurement
-	ret = i2c_read_raw(&dev_sgp30, buff, 6);		// Read sensor data
+	ret = i2c_read_raw(&dev_sensor, buff, 6);		// Read sensor data
 	printf("Error1: %d\n", ret);
 	uint16_t co2 = (buff[0] << 8) | buff[1];		// CO2 in ppm
 	uint16_t tvoc = (buff[3] << 8) | buff[4];		// TVOC in ppb
 
-	ret = i2c_write_raw(&dev_sgp30, (uint8_t[]){0x20, 0x50}, 2);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x20, 0x50}, 2);
 	printf("Error2: %d\n", ret);		// Set baseline
 
 	Delay_Ms(100);		// Wait for baseline to be
-	ret = i2c_read_raw(&dev_sgp30, buff, 6);		// Read baseline data
+	ret = i2c_read_raw(&dev_sensor, buff, 6);		// Read baseline data
 	printf("Error3: %d\n", ret);
 	uint16_t h2 = (buff[0] << 8) | buff[1];			// H2 baseline
 	uint16_t ethanol = (buff[3] << 8) | buff[4];	// Ethanol baseline
@@ -606,21 +465,23 @@ void test_sgp30() {
 }
 
 void test_scd40() {
-    if (i2c_ping(dev_scd40.addr) != I2C_OK) {
+    dev_sensor.addr = 0x62;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("SCD40 not found\n");
 		return;
 	}
 
-	ret = i2c_write_raw(&dev_scd40, (uint8_t[]){0x36, 0xF6}, 2); 	// wake up
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x36, 0xF6}, 2); 	// wake up
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_write_raw(&dev_scd40, (uint8_t[]){0x21, 0xB1}, 2);	// periodic measurement
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x21, 0xB1}, 2);	// periodic measurement
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_write_raw(&dev_scd40, (uint8_t[]){0xEC, 0x05}, 2);	// read measurement
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0xEC, 0x05}, 2);	// read measurement
 	printf("Error1: %d\n", ret);
 	
-	ret = i2c_read_raw(&dev_scd40, buff, 8);		// Read sensor data
+	ret = i2c_read_raw(&dev_sensor, buff, 8);		// Read sensor data
 	printf("Error2: %d\n", ret);
 
 	uint16_t co2 = (buff[0] << 8) | buff[1];		// CO2 in ppm
@@ -633,20 +494,22 @@ void test_scd40() {
 }
 
 void test_mpu6050() {
-    if (i2c_ping(dev_mpu6050.addr) != I2C_OK) {
+    dev_sensor.addr = 0x68;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("MPU6050 not found\n");
 		return;
 	}
     
-	ret = i2c_write_reg(&dev_mpu6050, 0x6B, (uint8_t[]){0x00}, 1);	// Reset MPU6050
+	ret = i2c_write_reg(&dev_sensor, 0x6B, (uint8_t[]){0x00}, 1);	// Reset MPU6050
 
-	ret = i2c_read_reg(&dev_mpu6050, 0x3B, buff, 6);
+	ret = i2c_read_reg(&dev_sensor, 0x3B, buff, 6);
 	uint16_t acc_x = (buff[0] << 8) | buff[1];
 	uint16_t acc_y = (buff[2] << 8) | buff[3];
 	uint16_t acc_z = (buff[4] << 8) | buff[5];
 	printf("MPU6050 acc_x: %d, acc_y: %d, acc_z: %d\n", acc_x, acc_y, acc_z);
 
-	ret = i2c_read_reg(&dev_mpu6050, 0x43, buff, 6);
+	ret = i2c_read_reg(&dev_sensor, 0x43, buff, 6);
 	uint16_t gyro_x = (buff[0] << 8) | buff[1];
 	uint16_t gyro_y = (buff[2] << 8) | buff[3];
 	uint16_t gyro_z = (buff[4] << 8) | buff[5];
@@ -654,15 +517,17 @@ void test_mpu6050() {
 }
 
 void test_adxl345() {
-    if (i2c_ping(dev_adxl345.addr) != I2C_OK) {
+    dev_sensor.addr = 0x53;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("ADXL345 not found\n");
 		return;
 	}
 
-	ret = i2c_write_reg(&dev_adxl345, 0x2D, (uint8_t[]){0x08}, 1);	// Set power mode to measurement
+	ret = i2c_write_reg(&dev_sensor, 0x2D, (uint8_t[]){0x08}, 1);	// Set power mode to measurement
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_read_reg(&dev_adxl345, 0x32, buff, 6);
+	ret = i2c_read_reg(&dev_sensor, 0x32, buff, 6);
 	uint16_t x = (buff[1] << 8) | buff[0];
 	uint16_t y = (buff[3] << 8) | buff[2];
 	uint16_t z = (buff[5] << 8) | buff[4];
@@ -670,29 +535,31 @@ void test_adxl345() {
 }
 
 void test_ina3221() {
-    if (i2c_ping(dev_ina3221.addr) != I2C_OK) {
+    dev_sensor.addr = 0x42;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("INA3221 not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_ina3221, 0x00, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 2);
 	printf("Error0: %d\n", ret);
 	printf("INA3221: %02X %02X\n", buff[0], buff[1]);
 
-	// ret = i2c_write_reg(&dev_ina3221, 0x00, (uint8_t[]){0xF1, 0x27}, 2); // Reset + 128x avg
+	// ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0xF1, 0x27}, 2); // Reset + 128x avg
 	// printf("Config Error: %d\n", ret);
 	// Delay_Ms(100);
 
-	ret = i2c_write_raw(&dev_ina3221, (uint8_t[]){0x00, 0xF1, 0x26}, 3); // Reset + 128x avg
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x00, 0xF1, 0x26}, 3); // Reset + 128x avg
 	printf("Error: %d\n", ret);
 
 	Delay_Ms(100);
-	ret = i2c_read_reg(&dev_ina3221, 0x00, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 2);
 	printf("Error0: %d\n", ret);
 	printf("INA3221: %02X %02X\n", buff[0], buff[1]);
 
 	// // Read all 6 registers (shunt1, bus1, shunt2, bus2, shunt3, bus3)
-	// ret = i2c_read_reg(&dev_ina3221, 0x01, buff, 12); // Reads 0x01-0x0C
+	// ret = i2c_read_reg(&dev_sensor, 0x01, buff, 12); // Reads 0x01-0x0C
 	// printf("Read Error: %d\n", ret);
 
 	// // Extract raw values (signed!)
@@ -718,12 +585,14 @@ void test_ina3221() {
 }
 
 void test_as5600() {
-    if (i2c_ping(dev_as5600.addr) != I2C_OK) {
+    dev_sensor.addr = 0x36;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("AS5600 not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_as5600, 0x0C, buff, 4);
+	ret = i2c_read_reg(&dev_sensor, 0x0C, buff, 4);
 	printf("Error0: %d\n", ret);
 
 	uint16_t angle_raw = (buff[0] << 8) | buff[1];
@@ -732,42 +601,46 @@ void test_as5600() {
 }
 
 void test_max30102() {
-    if (i2c_ping(dev_max30102.addr) != I2C_OK) {
+    dev_sensor.addr = 0x57;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("MAX30102 not found\n");
 		return;
 	}
 
 	uint8_t part_id;
-	ret = i2c_read_reg(&dev_max30102, 0xFF, &part_id, 1);
+	ret = i2c_read_reg(&dev_sensor, 0xFF, &part_id, 1);
 	printf("MAX30102: %02X\n", part_id);		// expect 0x15
 
 	// heart rate + SP02 mode
-	ret = i2c_write_reg(&dev_max30102, 0x09, (uint8_t[]){0x03}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0x09, (uint8_t[]){0x03}, 1);
 
 	// set RED LED current to 36mA
-	ret = i2c_write_reg(&dev_max30102, 0x0C, (uint8_t[]){0x24}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0x0C, (uint8_t[]){0x24}, 1);
 
 	// set IR LED current to 36mA
-	ret = i2c_write_reg(&dev_max30102, 0x0D, (uint8_t[]){0x24}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0x0D, (uint8_t[]){0x24}, 1);
 
 	// set sample average to 4
-	ret = i2c_write_reg(&dev_max30102, 0x08, (uint8_t[]){0x40}, 1);
+	ret = i2c_write_reg(&dev_sensor, 0x08, (uint8_t[]){0x40}, 1);
 
 	Delay_Ms(100);
-	ret = i2c_read_reg(&dev_max30102, 0x07, buff, 6);
+	ret = i2c_read_reg(&dev_sensor, 0x07, buff, 6);
 	uint32_t red_led = (buff[0] << 16) | (buff[1] << 8) | buff[2];
 	uint32_t ir_led = (buff[3] << 16) | (buff[4] << 8) | buff[5];
 	printf("MAX30102: %lu, %lu\n", red_led, ir_led);
 }
 
 void test_amg88xx() {
-    if (i2c_ping(dev_amg88xx.addr) != I2C_OK) {
+    dev_sensor.addr = 0x69;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("AMG88xx not found\n");
 		return;
 	}
 
 	uint16_t pixels[64];
-	ret = i2c_read_reg(&dev_amg88xx, 0x80, buff, 128);
+	ret = i2c_read_reg(&dev_sensor, 0x80, buff, 128);
 	printf("Error0: %d\n", ret);
 
 	for (int i=0; i<64; i++) {
@@ -782,17 +655,18 @@ void test_amg88xx() {
 	}
 }
 
-
 void test_bh1750() {
-	if (i2c_ping(dev_bh1750.addr) != I2C_OK) {
+    dev_sensor.addr = 0x23;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("BH1750 not found\n");
 		return;
 	}
 
-	ret = i2c_write_raw(&dev_bh1750, (uint8_t[]){0x01}, 1);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x01}, 1);
 
 	// One-time H-resolution mode
-	ret = i2c_read_reg(&dev_bh1750, 0x20, buff, 2);
+	ret = i2c_read_reg(&dev_sensor, 0x20, buff, 2);
 
 	uint32_t lux_raw = (buff[0] << 8) | buff[1];
 	uint32_t lux = (lux_raw / 1.2);
@@ -800,21 +674,23 @@ void test_bh1750() {
 }
 
 void test_sht3x() {
-	if (i2c_ping(dev_sht3x.addr) != I2C_OK) {
+    dev_sensor.addr = 0x44;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("SHT3X not found\n");
 		return;
 	}
 
 	// Soft reset
-	ret = i2c_write_reg(&dev_sht3x, 0x30, (uint8_t[]){0xA2}, 1);
-	// ret = i2c_write_raw(&dev_sht3x, (uint8_t[]){0x30, 0xA2}, 2);
+	ret = i2c_write_reg(&dev_sensor, 0x30, (uint8_t[]){0xA2}, 1);
+	// ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x30, 0xA2}, 2);
 	Delay_Ms(20);	//! REQUIRED
 	
 	// High repeatability, 1 update per second
-	ret = i2c_write_raw(&dev_sht3x, (uint8_t[]){0x21, 0x30}, 2);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){0x21, 0x30}, 2);
 	Delay_Ms(20);	//! REQUIRED
 
-	ret = i2c_read_raw(&dev_sht3x, buff, 6);
+	ret = i2c_read_raw(&dev_sensor, buff, 6);
 	uint16_t temp_raw = (buff[0] << 8) | buff[1];
 	uint16_t hum_raw = (buff[3] << 8) | buff[4];
 	uint16_t temp = (175 * temp_raw) >> 16;			// >> 16 is equivalent to / 65536
@@ -823,7 +699,9 @@ void test_sht3x() {
 }
 
 void test_apds9960() {
-	if (i2c_ping(dev_apds9960.addr) != I2C_OK) {
+    dev_sensor.addr = 0x39;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("APDS9960 not found\n");
 		return;
 	}
@@ -836,14 +714,14 @@ void test_apds9960() {
 		0x8F, 0x20,     // Proximity pulse count (8 pulses)
 		0x8E, 0x87      // Proximity pulse length (16us)
 	};
-	ret = i2c_write_raw(&dev_apds9960, config, sizeof(config));
+	ret = i2c_write_raw(&dev_sensor, config, sizeof(config));
 	Delay_Ms(50);  // Wait for sensor to initialize
 
 	uint8_t proximity;
-	ret = i2c_read_reg(&dev_apds9960, 0x9C, &proximity, 1);		// Read proximity register
+	ret = i2c_read_reg(&dev_sensor, 0x9C, &proximity, 1);		// Read proximity register
 	printf("APDS9960 Proximity: %d\n", proximity);
 
-	ret = i2c_read_reg(&dev_apds9960, 0x94, buff, 8);			// Read lux registers
+	ret = i2c_read_reg(&dev_sensor, 0x94, buff, 8);			// Read lux registers
 	uint16_t clear = (buff[1] << 8) | buff[0];
 	uint16_t red = (buff[3] << 8) | buff[2];
 	uint16_t green = (buff[5] << 8) | buff[4];
@@ -852,32 +730,34 @@ void test_apds9960() {
 }
 
 void test_ina219() {
-	if (i2c_ping(dev_ina219.addr) != I2C_OK) {
+    dev_sensor.addr = 0x40;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("INA219 not found\n");
 		return;
 	}
 
 	uint16_t powerLSB = 2;    	// 2uW per bit
-	ret = i2c_write_reg(&dev_ina219, 0x00, (uint8_t[]){0x39, 0x9F}, 2);		// Configure INA219 32V 1A Range
+	ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0x39, 0x9F}, 2);		// Configure INA219 32V 1A Range
 
 	// 2. Set calibration for 1A range (assuming 0.1Ω shunt)
 	uint16_t cal = 4096;  // 0.04096 / (0.0001 * 0.1)
 	uint8_t cal_bytes[2] = {cal >> 8, cal & 0xFF};
-	i2c_write_reg(&dev_ina219, 0x05, cal_bytes, 2);
+	i2c_write_reg(&dev_sensor, 0x05, cal_bytes, 2);
 
-	ret = i2c_read_reg(&dev_ina219, 0x01, buff, 2);		// Read shunt voltage
+	ret = i2c_read_reg(&dev_sensor, 0x01, buff, 2);		// Read shunt voltage
 	uint16_t shunt_raw = (buff[1] << 8) | buff[0];
 	uint16_t shunt = shunt_raw / 100;					// in mV
 
-	ret = i2c_read_reg(&dev_ina219, 0x02, buff, 2);		// Read bus voltage
+	ret = i2c_read_reg(&dev_sensor, 0x02, buff, 2);		// Read bus voltage
 	uint16_t bus_raw = (buff[1] << 8) | buff[0];
 	uint16_t bus = (shunt_raw >> 3) * 4;				// in mV
 
-	ret = i2c_read_reg(&dev_ina219, 0x03, buff, 2);		// Read power
+	ret = i2c_read_reg(&dev_sensor, 0x03, buff, 2);		// Read power
 	uint16_t power_raw = (buff[1] << 8) | buff[0];
 	uint16_t power = power_raw * powerLSB;				// in uW
 
-	ret = i2c_read_reg(&dev_ina219, 0x04, buff, 2);		// Read current
+	ret = i2c_read_reg(&dev_sensor, 0x04, buff, 2);		// Read current
 	uint16_t current_raw = (buff[1] << 8) | buff[0];
 	uint16_t current = current_raw;						// in mA
 
@@ -889,7 +769,14 @@ uint8_t decimal_to_bcd(uint8_t val) { return ((val/10)*16) + (val%10); }
 uint8_t bcd_to_decimal(uint8_t val) { return ((val/16)*10) + (val%16); }
 
 void test_ds3231() {
-	ret = i2c_write_reg(&dev_ds3231, 0x00, (uint8_t[]){
+    dev_sensor.addr = 0x68;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
+		printf("DS3231 not found\n");
+		return;
+	}
+
+	ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){
 		decimal_to_bcd(9),		// seconds
 		decimal_to_bcd(58),		// minutes
 		decimal_to_bcd(11),		// hours
@@ -900,7 +787,7 @@ void test_ds3231() {
 	}, 7);	// Reset ds3231
 	printf("Error0: %d\n", ret);
 
-	ret = i2c_read_reg(&dev_ds3231, 0x00, buff, 7);
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 7);
 	printf("Error1: %d\n", ret);
 
 	// print date and time
@@ -910,28 +797,37 @@ void test_ds3231() {
 }
 
 void test_at24c() {
-	ret = i2c_write_raw(&dev_at24c, (uint8_t[]){ 0x00, 0x11, 0xDD }, 3);
+    dev_sensor.addr = 0x57;
+
+    if (i2c_ping(dev_sensor.addr) != I2C_OK) {
+		printf("AT24C not found\n");
+		return;
+	}
+
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){ 0x00, 0x11, 0xDD }, 3);
 	printf("Error0: %d\n", ret);
 
 	Delay_Ms(10);
-	ret = i2c_write_raw(&dev_at24c, (uint8_t[]){ 0x00, 0x11 }, 2);
-	ret = i2c_read_raw(&dev_at24c, buff, 1);
+	ret = i2c_write_raw(&dev_sensor, (uint8_t[]){ 0x00, 0x11 }, 2);
+	ret = i2c_read_raw(&dev_sensor, buff, 1);
 	printf("Error1: %d\n", ret);
 	printf("0x%02X\n", buff[0]);
 }
 
 void test_v003Slave() {
-	if (i2c_ping(dev_v003Slave.addr) != I2C_OK) {
+    dev_sensor.addr = 0x77;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
 		printf("v003Slave not found\n");
 		return;
 	}
 
-	ret = i2c_read_reg(&dev_v003Slave, 0x00, buff, 3);
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 3);
 	printf("v003Slave: %02X, %02X, %02X\n", buff[0], buff[1], buff[2]);
 
-	ret = i2c_write_reg(&dev_v003Slave, 0x01, (uint8_t[]){0x11, 0x22}, 2);
+	ret = i2c_write_reg(&dev_sensor, 0x01, (uint8_t[]){0x11, 0x22}, 2);
 
-	ret = i2c_read_reg(&dev_v003Slave, 0x00, buff, 3);
+	ret = i2c_read_reg(&dev_sensor, 0x00, buff, 3);
 	printf("v003Slave: %02X, %02X, %02X\n", buff[0], buff[1], buff[2]);
 }
 
@@ -986,7 +882,7 @@ int main() {
     funGpioInitAll();
     Delay_Ms(100);
 
-	if(i2c_init(&dev_aht21) != I2C_OK) {
+	if(i2c_init(&dev_ssd1306) != I2C_OK) {
 		printf("Failed to init I2C\n");
 	} 
 	else {
