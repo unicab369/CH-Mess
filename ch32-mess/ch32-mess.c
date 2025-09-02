@@ -173,8 +173,8 @@ int main() {
 		// }
 	#endif
 
-	// WS2812BDMAInit();
-	// Neo_loadCommand(NEO_COLOR_CHASE);
+	WS2812BDMAInit();
+	Neo_loadCommand(NEO_COLOR_CHASE);
 
 	uint32_t now = millis();
 	Session_t session = { 0, 0, now };
@@ -186,7 +186,7 @@ int main() {
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
-		// Neo_task(now);
+		Neo_task(now);
 
 		if (now - session.timeRef_1sec > 1000) {
 			session.timeRef_1sec = now;
