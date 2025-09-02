@@ -58,7 +58,7 @@ void fun_joystick_setup() {
 	DMA1_Channel1->CNTR  = ADC_NUMCHLS;
 	DMA1_Channel1->CFGR  =
 		DMA_M2M_Disable |		 
-		DMA_Priority_VeryHigh |
+		DMA_Priority_Medium |
 		DMA_MemoryDataSize_HalfWord |
 		DMA_PeripheralDataSize_HalfWord |
 		DMA_MemoryInc_Enable |

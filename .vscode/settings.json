@@ -48,7 +48,9 @@
         "mod_sdcard.h": "c",
         "fun_encoder.h": "c",
         "tim1_pwm.h": "c",
-        "fun_timpwm.h": "c"
+        "fun_timpwm.h": "c",
+        "fun_spi_ws2812.h": "c",
+        "mod_st7735.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

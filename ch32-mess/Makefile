@@ -3,7 +3,6 @@ all : flash
 TARGET_MCU:=CH32V003
 TARGET:=ch32-mess
 
-ADDITIONAL_C_FILES+= 2_Device/fun_ws2812.h 
 ADDITIONAL_C_FILES+= 3_Nrf/nrf24l01_low_level.c 3_Nrf/nrf24l01.c
 ADDITIONAL_C_FILES+= ../Mess-libs/i2c/lib_i2c.c
 

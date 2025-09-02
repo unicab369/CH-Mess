@@ -1,7 +1,4 @@
 #include "ch32fun.h"
-#include "util_operations.h"
-#include "color_utilities.h"
-
 
 static const unsigned char SIN_LUT2[] = {
     0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x02, 0x03, 0x04, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 
@@ -55,7 +52,13 @@ typedef union {
 
 #define DECREMENT_OR_ZERO(value, decr) (((value) > (decr)) ? ((value) - (decr)) : 0)
 
-#define DECREMENT_PERCENTAGE(value, perc) ((uint8_t)MAX(0, (value) - ((value) * (perc)) / 100))
+// MAX of the 2 values
+#define DECREMENT_PERCENTAGE(value, perc) \
+    ((uint8_t)( \
+        ((value) - ((value) * (perc)) / 100) > 0 \
+        ? ((value) - ((value) * (perc)) / 100) \
+        : 0 \
+    ))
 
 
 #define COLOR_DECREMENT(color_t, perc) \

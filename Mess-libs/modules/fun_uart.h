@@ -2,8 +2,7 @@
 
 // Set UART baud rate here
 #define UART_BR 115200
-// LED on D6 (nanoCH32V003 board)
-#define LED_PIN 6
+
 
 // DMA transfer completion interrupt. It will fire when the DMA transfer is
 // complete. We use it just to blink the LED
@@ -14,18 +13,7 @@ void DMA1_Channel4_IRQHandler(void)
 	DMA1->INTFCR |= DMA_CTCIF4;
 
 	// Blink LED
-	GPIOD->OUTDR ^= 1<<LED_PIN;
-}
-
-static void led_setup(void)
-{
-	RCC->APB2PCENR = RCC_APB2Periph_GPIOD;
-	GPIOD->CFGLR =
-		((GPIO_CNF_IN_PUPD)<<(4*1)) | // Keep SWIO enabled.
-		(GPIO_Speed_2MHz | GPIO_CNF_OUT_PP)<<(4*LED_PIN);
-
-	// LED ON
-	GPIOD->BSHR = 1<<LED_PIN;
+	// GPIOD->OUTDR ^= 1<<LED_PIN;
 }
 
 static void uart_setup(void)

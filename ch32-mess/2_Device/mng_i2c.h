@@ -53,168 +53,168 @@ uint8_t SHT_LOWREP_FREE_CMD[2]  = { 0x24, 0x16 };
 uint8_t SHT_HEATER_DISABLE[2]   = { 0x30, 0x66 };
 uint8_t SHT_HEATER_ENABLE[2]    = { 0x30, 0x6D };
 
-i2c_device_t dev_ds3231 = {
+static const i2c_device_t dev_ds3231 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x68,				//! Default address for DS3231
 	.regb = 1,
 };
 
-i2c_device_t dev_aht21 = {
+static const i2c_device_t dev_aht21 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x38,				// Default address for AHT21
 	.regb = 1,
 };
 
-i2c_device_t dev_htu21 = {
+static const i2c_device_t dev_htu21 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x40,				//! Default address for HTU21
 	.regb = 1,
 };
 
-i2c_device_t dev_bmp280 = {
+static const i2c_device_t dev_bmp280 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x76, 				// Default address for BMP280
 	.regb = 1,
 };
 
-i2c_device_t dev_hdc1080 = {
+static const i2c_device_t dev_hdc1080 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x40, 				//! Default address for HDc1080
 	.regb = 1,
 };
 
-i2c_device_t dev_si7021 = {
+static const i2c_device_t dev_si7021 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x40, 				//! Default address for SI7021
 	.regb = 1,
 };
 
-i2c_device_t dev_max44009 = {
+static const i2c_device_t dev_max44009 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x4A,		 		// Default address for MAX44009
 	.regb = 1,
 };
 
-i2c_device_t dev_AP3216 = {
+static const i2c_device_t dev_AP3216 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x1E,				// Default address for AP3216
 	.regb = 1,
 };
 
-i2c_device_t dev_vl35lox = {
+static const i2c_device_t dev_vl35lox = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x29,				// Default address for VL53L0X
 	.regb = 1,
 };
 
-i2c_device_t dev_ens160 = {
+static const i2c_device_t dev_ens160 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x53,				// Default address for ENS160
 	.regb = 1,
 };
 
-i2c_device_t dev_sgp30 = {
+static const i2c_device_t dev_sgp30 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x58,				// Default address for SGP30
 	.regb = 1,
 };
 
-i2c_device_t dev_scd40 = {
+static const i2c_device_t dev_scd40 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x62,				// Default address for SCD40
 	.regb = 1,
 };
 
-i2c_device_t dev_mpu6050 = {
+static const i2c_device_t dev_mpu6050 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x68,				//! Default address for MPU6050
 	.regb = 1,
 };
 
-i2c_device_t dev_adxl345 = {
+static const i2c_device_t dev_adxl345 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x53,				// Default address for ADXL345
 	.regb = 1,
 };
 
-i2c_device_t dev_at24c = {
+static const i2c_device_t dev_at24c = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x57,				// Default address for AT24C32
 	.regb = 1,
 };
 
-i2c_device_t dev_ina3221 = {
+static const i2c_device_t dev_ina3221 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x42,				//! Default address for INA3221
 	.regb = 1,				
 };
 
-i2c_device_t dev_as5600 = {
+static const i2c_device_t dev_as5600 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x36,				// Default address for AS5600
 	.regb = 1,
 };
 
-i2c_device_t dev_max30102 = {
+static const i2c_device_t dev_max30102 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x57,				//! Default address for MAX30102
 	.regb = 1,
 };
 
-i2c_device_t dev_amg88xx = {
+static const i2c_device_t dev_amg88xx = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x69,				// Default address for AMG88XX
 	.regb = 1,
 };
 
-i2c_device_t dev_bh1750 = {
+static const i2c_device_t dev_bh1750 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x23,				// Default address for BH1750
 	.regb = 1,
 };
 
-i2c_device_t dev_sht3x = {
+static const i2c_device_t dev_sht3x = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x44,				// Default address for SHT30
 	.regb = 1,
 };
 
-i2c_device_t dev_ina219 = {
+static const i2c_device_t dev_ina219 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x40,				//! Default address for INA219
 	.regb = 1,
 };
 
-i2c_device_t dev_apds9960 = {
+static const i2c_device_t dev_apds9960 = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x39,				// Default address for APDS9960
 	.regb = 1,
 };
 
-i2c_device_t dev_v003Slave = {
+static const i2c_device_t dev_v003Slave = {
 	.clkr = I2C_CLK_400KHZ,
 	.type = I2C_ADDR_7BIT,
 	.addr = 0x77,				// Default address for V003 Slave
@@ -914,7 +914,7 @@ void modI2C_setup() {
 }
 
 
-#define PRINT_BUFF_SIZE 10
+#define PRINT_BUFF_SIZE 5
 
 typedef struct PACKED {
 	char str[SSD1306_STR_SIZE];

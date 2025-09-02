@@ -4,8 +4,8 @@
 typedef struct {
 	uint16_t initial_count;		// initial count
 	uint16_t last_count;		// previous count
-	uint8_t relative_pos;
 	int8_t delta;
+	uint8_t relative_pos;
 	uint8_t direction;
 } Encoder_t;
 
@@ -81,14 +81,14 @@ void fun_encoder_setup(Encoder_t *model) {
 
 static uint32_t encoder_debounceTime = 0;
 
-void fun_encoder_task(Encoder_t *model, void (*handler)(Encoder_t *model)) {
+void fun_encoder_task(Encoder_t *model, void (*handler)(uint8_t, uint8_t)) {
 	uint16_t count = TIM2->CNT;
 
 	if (count != model->last_count) {
 		model->relative_pos = 255 - count - model->initial_count;
 		model->delta 		= count - model->last_count;
 		model->direction	= model->last_count > count;
-		handler(model);
+		handler(model->relative_pos, model->direction);
 		model->last_count = count;
 	}
 }
