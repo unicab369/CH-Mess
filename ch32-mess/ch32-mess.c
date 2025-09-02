@@ -1,21 +1,29 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-// #define I2C_ENABLED 		1
-#define SPI_ENABLED 		1
+#define I2C_ENABLED
+// #define SPI_ENABLED
+// #define I2C_SLAVE_ENABLED
+// #define UART_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
 #include "../Mess-libs/modules/fun_button.h"				// 592 Bytes?
-#include "../Mess-libs/modules/fun_uart.h"					// 168 Bytes? + RAM 48 Bytes
 #include "../Mess-libs/modules/fun_encoder.h"				// 136 Bytes?
 #include "../Mess-libs/pwm/fun_timPWM.h"					// 224 Bytes?
 #include "../Mess-libs/modules/fun_joystick.h"				// 244 Bytes?
 #include "../Mess-libs/ws2812/fun_spi_ws2812.h"
 
+#ifdef I2C_SLAVE_ENABLED
+	#include "../Mess-libs/i2c/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
+#endif
+
+#ifdef UART_ENABLED
+	#include "../Mess-libs/modules/fun_uart.h"				// 168 Bytes? + RAM 48 Bytes
+#endif
+
 #ifdef I2C_ENABLED
-	#include "../Mess-libs/i2c/i2c_slave.h"						// 908 Bytes? + RAM 76 Bytes
-	#include "2_Device/mng_i2c.h"								// 3032 Bytes? + RAM 1370 Bytes
+	#include "2_Device/mng_i2c.h"							// 3032 Bytes? + RAM 1370 Bytes
 #else
 	void mngI2c_load_buttonState(uint32_t time, uint8_t state) {}
 	void mngI2c_load_encoder(uint32_t time, uint8_t pos, uint8_t dir) {}
@@ -102,7 +110,7 @@ int main() {
 	Delay_Ms(10);
 	
 	//# Button: uses PC0
-	Button_t button1 = { .pin = BUTTON_PIN };
+	static Button_t button1 = { .pin = BUTTON_PIN };
 	fun_button_setup(&button1);
 
 	//# Hold BUTTON_PIN low to enter slave mode
@@ -111,7 +119,9 @@ int main() {
 	#ifdef I2C_ENABLED
 		//# I2C1: uses PC1 & PC2
 		modI2C_setup();
+	#endif
 
+	#ifdef I2C_SLAVE_ENABLED
 		// Enable Low
 		if (i2cMaster_mode == 0) {
 			printf("I2C Slave mode\n");
@@ -120,12 +130,15 @@ int main() {
 	#endif
 
 	//# UARTX - DMA1_CH4: uses PD5
-	static const char message[] = "Hello World!\r\n";
-	uart_setup();
-	dma_uart_setup();
+	const char message[] = "Hello World!\r\n";
+
+	#ifdef UART_ENABLED
+		uart_setup();
+		dma_uart_setup();
+	#endif
 	
 	//# TIM1: uses PD0(CH1)
-	TIM_PWM_t pwm_CH1c = {
+	static TIM_PWM_t pwm_CH1c = {
 		.pin = PD0,
 		.TIM = TIM1,
 		.CCER = TIM_CC1NE
@@ -140,7 +153,6 @@ int main() {
 
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
 	fun_joystick_setup();
-
 
 	#ifdef SPI_ENABLED
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
@@ -184,14 +196,20 @@ int main() {
 			}
 			session.cycle_count = 0;
 			
-			dma_uart_tx(message, sizeof(message) - 1);
+			#ifdef UART_ENABLED
+				dma_uart_tx(message, sizeof(message) - 1);
+			#endif
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
 			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
 			// ssd1306_print_str_at(str_output, 0, 0);
 
-			uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
-			// printf("ST7735 runtime: %lu us\n", runtime_tft);
+			#ifdef SPI_ENABLED
+				tft_set_cursor(0, 0);
+				tft_print("Hello World!");
+				// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
+				// printf("ST7735 runtime: %lu us\n", runtime_tft);
+			#endif
 		}
 
 		else if (now - session.timeRef_100ms > 100) {

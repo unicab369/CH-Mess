@@ -1,64 +1,58 @@
 Archive member included to satisfy reference by file (symbol)
 
 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
-                              C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o (__mulsi3)
+                              C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o (__mulsi3)
 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
-                              C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o (__divsi3)
+                              C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o (__divsi3)
 
 Discarded input sections
 
- .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.mini_vsnprintf
-                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+ .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.snprintf
-                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.sprintf  0x0000000000000000       0x28 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.twoway_strstr
-                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.putchar  0x0000000000000000       0x72 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.putchar  0x0000000000000000       0x72 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.0
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.1
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.2
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.3
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.0
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.1
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.2
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.3
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.i2c_registers
-                0x0000000000000000       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
- .debug_info    0x0000000000000000      0x56f C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
- .debug_abbrev  0x0000000000000000      0x13d C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
- .debug_line    0x0000000000000000       0xb9 C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
- .debug_str     0x0000000000000000      0x637 C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
+                0x0000000000000000       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
+ .debug_info    0x0000000000000000      0x56f C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+ .debug_abbrev  0x0000000000000000      0x13d C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+ .debug_line    0x0000000000000000       0xb9 C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+ .debug_str     0x0000000000000000      0x637 C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
  .data          0x0000000000000000        0x0 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
  .bss           0x0000000000000000        0x0 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
  .data          0x0000000000000000        0x0 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
@@ -73,17 +67,17 @@ RAM              0x0000000020000000 0x0000000000000800 xrw
 
 Linker script and memory map
 
-LOAD C:\Users\uni\AppData\Local\Temp\cc0E3d6L.o
-LOAD C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccEoAp0J.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccP3o9jR.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccIaA6U3.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccxrdjUn.o
-LOAD C:\Users\uni\AppData\Local\Temp\ccek2QWO.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccSLEeyf.o
+LOAD C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccwzIEbs.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccUh4TXL.o
+LOAD C:\Users\uni\AppData\Local\Temp\cccGLwJp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccW81XU8.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccWZM8PY.o
 LOAD ../ch32fun/ch32fun//../misc\libgcc.a
 LOAD ../ch32fun/ch32fun//../misc\libgcc.a
 
@@ -91,13 +85,13 @@ LOAD ../ch32fun/ch32fun//../misc\libgcc.a
                 0x0000000000000000                _sinit = .
                 0x0000000000000000                . = ALIGN (0x4)
  *(SORT_NONE(.init))
- .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+ .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
                 0x0000000000000000                InterruptVector
                 0x00000000000000a0                . = ALIGN (0x4)
  *fill*         0x000000000000009e        0x2 
                 0x00000000000000a0                _einit = .
 
-.text           0x00000000000000a0     0x2374
+.text           0x00000000000000a0     0x1d08
                 0x00000000000000a0                . = ALIGN (0x4)
  *(.text)
  .text          0x00000000000000a0       0x16 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
@@ -111,266 +105,272 @@ LOAD ../ch32fun/ch32fun//../misc\libgcc.a
                 0x0000000000000110                __modsi3
  *(.text.*)
  .text.mini_pad
-                0x0000000000000136       0x9c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000136       0x9c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text._puts    0x00000000000001d2       0x42 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.PrintHex
-                0x00000000000001d2       0x58 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.DelaySysTick
-                0x000000000000022a       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000214       0x58 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.mini_itoa.part.0
-                0x0000000000000240       0xbe C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.SPI_send
-                0x00000000000002fe       0x16 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.write_cmd_8
-                0x0000000000000314       0x22 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.INTF_SPI_DC_HIGH
-                0x0000000000000336       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.write_data_16
-                0x0000000000000356       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.INTF_TFT_SET_WINDOW
-                0x0000000000000372       0x3e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.tft_draw_pixel
-                0x00000000000003b0       0x28 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.INTF_TFT_SEND_BUFF
-                0x00000000000003d8       0x58 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.tft_print
-                0x0000000000000430       0xd0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.tft_fill_rect
-                0x0000000000000500       0x62 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text._draw_fast_vLine
-                0x0000000000000562       0x64 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text._draw_fast_hLine
-                0x00000000000005c6       0x66 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.tft_draw_line
-                0x000000000000062c      0x18c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.tft_draw_rect
-                0x00000000000007b8       0x70 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.rand8    0x0000000000000828       0x34 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000000000026c       0xbe C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.i2c_error
+                0x000000000000032a       0x92 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.i2c_send_addr_write
+                0x00000000000003bc       0x6c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.i2c_ping
+                0x0000000000000428       0x98 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.i2c_write_raw.constprop.0
+                0x00000000000004c0      0x144 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.ssd1306_cmd
+                0x0000000000000604       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.Neo_render_colorFlashing.constprop.0
-                0x000000000000085c      0x118 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000620      0x10e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.WS2812FillBuffSec.constprop.0
-                0x0000000000000974      0x114 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000000000072e      0x114 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.internal_handle_input.constprop.0
-                0x0000000000000a88        0xa C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000842        0xa C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text._write.constprop.0
-                0x0000000000000a92       0xf2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000000000084c       0xf2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.__puts_uart
-                0x0000000000000b84       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000000000093e       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.handle_reset
-                0x0000000000000b98       0x76 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000b98                handle_reset
+                0x0000000000000952       0x72 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000952                handle_reset
  .text.vector_handler
-                0x0000000000000c0e       0x66 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000c0e                EXTI2_IRQHandler
-                0x0000000000000c0e                TIM8_TRG_COM_IRQHandler
-                0x0000000000000c0e                TIM8_CC_IRQHandler
-                0x0000000000000c0e                UART8_IRQHandler
-                0x0000000000000c0e                TIM1_CC_IRQHandler
-                0x0000000000000c0e                HardFault_Handler
-                0x0000000000000c0e                GPIOB_IRQHandler
-                0x0000000000000c0e                USBPD_IRQHandler
-                0x0000000000000c0e                TIM6_IRQHandler
-                0x0000000000000c0e                GPIOA_IRQHandler
-                0x0000000000000c0e                PVD_IRQHandler
-                0x0000000000000c0e                SDIO_IRQHandler
-                0x0000000000000c0e                TIM9_BRK_IRQHandler
-                0x0000000000000c0e                DMA2_Channel8_IRQHandler
-                0x0000000000000c0e                USBWakeUp_IRQHandler
-                0x0000000000000c0e                CAN2_RX1_IRQHandler
-                0x0000000000000c0e                EXTI3_IRQHandler
-                0x0000000000000c0e                UART1_IRQHandler
-                0x0000000000000c0e                USBHS_IRQHandler
-                0x0000000000000c0e                DMA2_Channel9_IRQHandler
-                0x0000000000000c0e                TIM10_CC_IRQHandler
-                0x0000000000000c0e                EXTI25_16_IRQHandler
-                0x0000000000000c0e                USBFS_IRQHandler
-                0x0000000000000c0e                UART0_IRQHandler
-                0x0000000000000c0e                EXTI0_IRQHandler
-                0x0000000000000c0e                I2C2_EV_IRQHandler
-                0x0000000000000c0e                TIM10_TRG_COM_IRQHandler
-                0x0000000000000c0e                CAN2_SCE_IRQHandler
-                0x0000000000000c0e                ADC1_2_IRQHandler
-                0x0000000000000c0e                BB_IRQHandler
-                0x0000000000000c0e                Break_Point_Handler
-                0x0000000000000c0e                TIM2_CC_IRQHandler
-                0x0000000000000c0e                SPI1_IRQHandler
-                0x0000000000000c0e                TAMPER_IRQHandler
-                0x0000000000000c0e                TMR0_IRQHandler
-                0x0000000000000c0e                AWU_IRQHandler
-                0x0000000000000c0e                EXTI7_0_IRQHandler
-                0x0000000000000c0e                CAN2_RX0_IRQHandler
-                0x0000000000000c0e                OSCWakeUp_IRQHandler
-                0x0000000000000c0e                TIM8_UP_IRQHandler
-                0x0000000000000c0e                Ecall_M_Mode_Handler
-                0x0000000000000c0e                DMA2_Channel2_IRQHandler
-                0x0000000000000c0e                ADC1_IRQHandler
-                0x0000000000000c0e                TIM2_BRK_IRQHandler
-                0x0000000000000c0e                TIM9_UP_IRQHandler
-                0x0000000000000c0e                USART3_IRQHandler
-                0x0000000000000c0e                RTC_IRQHandler
-                0x0000000000000c0e                DMA1_Channel7_IRQHandler
-                0x0000000000000c0e                CAN1_RX1_IRQHandler
-                0x0000000000000c0e                DVP_IRQHandler
-                0x0000000000000c0e                UART5_IRQHandler
-                0x0000000000000c0e                EXTI15_8_IRQHandler
-                0x0000000000000c0e                TIM4_IRQHandler
-                0x0000000000000c0e                DMA2_Channel1_IRQHandler
-                0x0000000000000c0e                USBPD_WKUP_IRQHandler
-                0x0000000000000c0e                I2C1_EV_IRQHandler
-                0x0000000000000c0e                UART2_IRQHandler
-                0x0000000000000c0e                USART4_IRQHandler
-                0x0000000000000c0e                PWMX_IRQHandler
-                0x0000000000000c0e                DMA1_Channel6_IRQHandler
-                0x0000000000000c0e                UART4_IRQHandler
-                0x0000000000000c0e                DMA2_Channel4_IRQHandler
-                0x0000000000000c0e                TIM3_IRQHandler
-                0x0000000000000c0e                RCC_IRQHandler
-                0x0000000000000c0e                TIM1_TRG_COM_IRQHandler
-                0x0000000000000c0e                DMA1_Channel1_IRQHandler
-                0x0000000000000c0e                DMA2_Channel7_IRQHandler
-                0x0000000000000c0e                EXTI15_10_IRQHandler
-                0x0000000000000c0e                ADC_IRQHandler
-                0x0000000000000c0e                DMA1_Channel8_IRQHandler
-                0x0000000000000c0e                TMR2_IRQHandler
-                0x0000000000000c0e                DefaultIRQHandler
-                0x0000000000000c0e                TIM7_IRQHandler
-                0x0000000000000c0e                CAN2_TX_IRQHandler
-                0x0000000000000c0e                TIM5_IRQHandler
-                0x0000000000000c0e                TMR1_IRQHandler
-                0x0000000000000c0e                USB_IRQHandler
-                0x0000000000000c0e                EXTI9_5_IRQHandler
-                0x0000000000000c0e                PIOC_IRQHandler
-                0x0000000000000c0e                SPI2_IRQHandler
-                0x0000000000000c0e                OSC32KCal_IRQHandler
-                0x0000000000000c0e                I2C_IRQHandler
-                0x0000000000000c0e                TIM10_BRK_IRQHandler
-                0x0000000000000c0e                TIM9_CC_IRQHandler
-                0x0000000000000c0e                DMA2_Channel5_IRQHandler
-                0x0000000000000c0e                USB2_IRQHandler
-                0x0000000000000c0e                USBHSWakeUp_IRQHandler
-                0x0000000000000c0e                DMA1_Channel5_IRQHandler
-                0x0000000000000c0e                EXTI4_IRQHandler
-                0x0000000000000c0e                USB_LP_CAN1_RX0_IRQHandler
-                0x0000000000000c0e                RNG_IRQHandler
-                0x0000000000000c0e                USB_HP_CAN1_TX_IRQHandler
-                0x0000000000000c0e                LLE_IRQHandler
-                0x0000000000000c0e                FSMC_IRQHandler
-                0x0000000000000c0e                ETH_IRQHandler
-                0x0000000000000c0e                TIM1_UP_IRQHandler
-                0x0000000000000c0e                WWDG_IRQHandler
-                0x0000000000000c0e                DMA2_Channel11_IRQHandler
-                0x0000000000000c0e                WDOG_BAT_IRQHandler
-                0x0000000000000c0e                Ecall_U_Mode_Handler
-                0x0000000000000c0e                TMR3_IRQHandler
-                0x0000000000000c0e                DMA2_Channel6_IRQHandler
-                0x0000000000000c0e                TIM2_IRQHandler
-                0x0000000000000c0e                SW_Handler
-                0x0000000000000c0e                TIM1_BRK_IRQHandler
-                0x0000000000000c0e                OPA_IRQHandler
-                0x0000000000000c0e                DMA2_Channel10_IRQHandler
-                0x0000000000000c0e                EXTI1_IRQHandler
-                0x0000000000000c0e                SPI0_IRQHandler
-                0x0000000000000c0e                RTCAlarm_IRQHandler
-                0x0000000000000c0e                TIM10_UP_IRQHandler
-                0x0000000000000c0e                TIM9_TRG_COM_IRQHandler
-                0x0000000000000c0e                UART7_IRQHandler
-                0x0000000000000c0e                USART2_IRQHandler
-                0x0000000000000c0e                UART6_IRQHandler
-                0x0000000000000c0e                ETHWakeUp_IRQHandler
-                0x0000000000000c0e                I2C2_ER_IRQHandler
-                0x0000000000000c0e                DMA1_Channel2_IRQHandler
-                0x0000000000000c0e                TIM8_BRK_IRQHandler
-                0x0000000000000c0e                TIM2_TRG_IRQHandler
-                0x0000000000000c0e                CAN1_SCE_IRQHandler
-                0x0000000000000c0e                FLASH_IRQHandler
-                0x0000000000000c0e                USBFSWakeUp_IRQHandler
-                0x0000000000000c0e                USART1_IRQHandler
-                0x0000000000000c0e                OTG_FS_IRQHandler
-                0x0000000000000c0e                SPI3_IRQHandler
-                0x0000000000000c0e                USBFS_WakeUp_IRQHandler
-                0x0000000000000c0e                UART3_IRQHandler
-                0x0000000000000c0e                I2C1_ER_IRQHandler
-                0x0000000000000c0e                DMA2_Channel3_IRQHandler
-                0x0000000000000c66                NMI_Handler
-                0x0000000000000c66                NMI_RCC_CSS_IRQHandler
- .text.strlen   0x0000000000000c74       0x12 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000c74                strlen
+                0x00000000000009c4       0x66 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x00000000000009c4                EXTI2_IRQHandler
+                0x00000000000009c4                TIM8_TRG_COM_IRQHandler
+                0x00000000000009c4                TIM8_CC_IRQHandler
+                0x00000000000009c4                UART8_IRQHandler
+                0x00000000000009c4                TIM1_CC_IRQHandler
+                0x00000000000009c4                HardFault_Handler
+                0x00000000000009c4                GPIOB_IRQHandler
+                0x00000000000009c4                USBPD_IRQHandler
+                0x00000000000009c4                TIM6_IRQHandler
+                0x00000000000009c4                GPIOA_IRQHandler
+                0x00000000000009c4                PVD_IRQHandler
+                0x00000000000009c4                SDIO_IRQHandler
+                0x00000000000009c4                TIM9_BRK_IRQHandler
+                0x00000000000009c4                DMA2_Channel8_IRQHandler
+                0x00000000000009c4                USBWakeUp_IRQHandler
+                0x00000000000009c4                CAN2_RX1_IRQHandler
+                0x00000000000009c4                EXTI3_IRQHandler
+                0x00000000000009c4                UART1_IRQHandler
+                0x00000000000009c4                USBHS_IRQHandler
+                0x00000000000009c4                DMA2_Channel9_IRQHandler
+                0x00000000000009c4                TIM10_CC_IRQHandler
+                0x00000000000009c4                EXTI25_16_IRQHandler
+                0x00000000000009c4                USBFS_IRQHandler
+                0x00000000000009c4                UART0_IRQHandler
+                0x00000000000009c4                EXTI0_IRQHandler
+                0x00000000000009c4                I2C2_EV_IRQHandler
+                0x00000000000009c4                TIM10_TRG_COM_IRQHandler
+                0x00000000000009c4                CAN2_SCE_IRQHandler
+                0x00000000000009c4                ADC1_2_IRQHandler
+                0x00000000000009c4                BB_IRQHandler
+                0x00000000000009c4                Break_Point_Handler
+                0x00000000000009c4                TIM2_CC_IRQHandler
+                0x00000000000009c4                SPI1_IRQHandler
+                0x00000000000009c4                TAMPER_IRQHandler
+                0x00000000000009c4                TMR0_IRQHandler
+                0x00000000000009c4                AWU_IRQHandler
+                0x00000000000009c4                EXTI7_0_IRQHandler
+                0x00000000000009c4                CAN2_RX0_IRQHandler
+                0x00000000000009c4                OSCWakeUp_IRQHandler
+                0x00000000000009c4                TIM8_UP_IRQHandler
+                0x00000000000009c4                Ecall_M_Mode_Handler
+                0x00000000000009c4                DMA2_Channel2_IRQHandler
+                0x00000000000009c4                DMA1_Channel4_IRQHandler
+                0x00000000000009c4                ADC1_IRQHandler
+                0x00000000000009c4                TIM2_BRK_IRQHandler
+                0x00000000000009c4                TIM9_UP_IRQHandler
+                0x00000000000009c4                USART3_IRQHandler
+                0x00000000000009c4                RTC_IRQHandler
+                0x00000000000009c4                DMA1_Channel7_IRQHandler
+                0x00000000000009c4                CAN1_RX1_IRQHandler
+                0x00000000000009c4                DVP_IRQHandler
+                0x00000000000009c4                UART5_IRQHandler
+                0x00000000000009c4                EXTI15_8_IRQHandler
+                0x00000000000009c4                TIM4_IRQHandler
+                0x00000000000009c4                DMA2_Channel1_IRQHandler
+                0x00000000000009c4                USBPD_WKUP_IRQHandler
+                0x00000000000009c4                I2C1_EV_IRQHandler
+                0x00000000000009c4                UART2_IRQHandler
+                0x00000000000009c4                USART4_IRQHandler
+                0x00000000000009c4                PWMX_IRQHandler
+                0x00000000000009c4                DMA1_Channel6_IRQHandler
+                0x00000000000009c4                UART4_IRQHandler
+                0x00000000000009c4                DMA2_Channel4_IRQHandler
+                0x00000000000009c4                TIM3_IRQHandler
+                0x00000000000009c4                RCC_IRQHandler
+                0x00000000000009c4                TIM1_TRG_COM_IRQHandler
+                0x00000000000009c4                DMA1_Channel1_IRQHandler
+                0x00000000000009c4                DMA2_Channel7_IRQHandler
+                0x00000000000009c4                EXTI15_10_IRQHandler
+                0x00000000000009c4                ADC_IRQHandler
+                0x00000000000009c4                DMA1_Channel8_IRQHandler
+                0x00000000000009c4                TMR2_IRQHandler
+                0x00000000000009c4                DefaultIRQHandler
+                0x00000000000009c4                TIM7_IRQHandler
+                0x00000000000009c4                CAN2_TX_IRQHandler
+                0x00000000000009c4                TIM5_IRQHandler
+                0x00000000000009c4                TMR1_IRQHandler
+                0x00000000000009c4                USB_IRQHandler
+                0x00000000000009c4                EXTI9_5_IRQHandler
+                0x00000000000009c4                PIOC_IRQHandler
+                0x00000000000009c4                SPI2_IRQHandler
+                0x00000000000009c4                OSC32KCal_IRQHandler
+                0x00000000000009c4                I2C_IRQHandler
+                0x00000000000009c4                TIM10_BRK_IRQHandler
+                0x00000000000009c4                TIM9_CC_IRQHandler
+                0x00000000000009c4                DMA2_Channel5_IRQHandler
+                0x00000000000009c4                USB2_IRQHandler
+                0x00000000000009c4                USBHSWakeUp_IRQHandler
+                0x00000000000009c4                DMA1_Channel5_IRQHandler
+                0x00000000000009c4                EXTI4_IRQHandler
+                0x00000000000009c4                USB_LP_CAN1_RX0_IRQHandler
+                0x00000000000009c4                RNG_IRQHandler
+                0x00000000000009c4                USB_HP_CAN1_TX_IRQHandler
+                0x00000000000009c4                LLE_IRQHandler
+                0x00000000000009c4                FSMC_IRQHandler
+                0x00000000000009c4                ETH_IRQHandler
+                0x00000000000009c4                TIM1_UP_IRQHandler
+                0x00000000000009c4                WWDG_IRQHandler
+                0x00000000000009c4                DMA2_Channel11_IRQHandler
+                0x00000000000009c4                WDOG_BAT_IRQHandler
+                0x00000000000009c4                Ecall_U_Mode_Handler
+                0x00000000000009c4                TMR3_IRQHandler
+                0x00000000000009c4                DMA2_Channel6_IRQHandler
+                0x00000000000009c4                TIM2_IRQHandler
+                0x00000000000009c4                SW_Handler
+                0x00000000000009c4                TIM1_BRK_IRQHandler
+                0x00000000000009c4                OPA_IRQHandler
+                0x00000000000009c4                DMA2_Channel10_IRQHandler
+                0x00000000000009c4                EXTI1_IRQHandler
+                0x00000000000009c4                SPI0_IRQHandler
+                0x00000000000009c4                RTCAlarm_IRQHandler
+                0x00000000000009c4                TIM10_UP_IRQHandler
+                0x00000000000009c4                TIM9_TRG_COM_IRQHandler
+                0x00000000000009c4                UART7_IRQHandler
+                0x00000000000009c4                USART2_IRQHandler
+                0x00000000000009c4                UART6_IRQHandler
+                0x00000000000009c4                ETHWakeUp_IRQHandler
+                0x00000000000009c4                I2C2_ER_IRQHandler
+                0x00000000000009c4                DMA1_Channel2_IRQHandler
+                0x00000000000009c4                TIM8_BRK_IRQHandler
+                0x00000000000009c4                TIM2_TRG_IRQHandler
+                0x00000000000009c4                CAN1_SCE_IRQHandler
+                0x00000000000009c4                FLASH_IRQHandler
+                0x00000000000009c4                USBFSWakeUp_IRQHandler
+                0x00000000000009c4                USART1_IRQHandler
+                0x00000000000009c4                OTG_FS_IRQHandler
+                0x00000000000009c4                SPI3_IRQHandler
+                0x00000000000009c4                USBFS_WakeUp_IRQHandler
+                0x00000000000009c4                UART3_IRQHandler
+                0x00000000000009c4                I2C1_ER_IRQHandler
+                0x00000000000009c4                DMA2_Channel3_IRQHandler
+                0x0000000000000a1c                NMI_Handler
+                0x0000000000000a1c                NMI_RCC_CSS_IRQHandler
+ .text.strlen   0x0000000000000a2a       0x12 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000a2a                strlen
  .text.mini_vpprintf
-                0x0000000000000c86      0x1b4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .text.printf   0x0000000000000e3a       0x28 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000e3a                printf
- .text.memset   0x0000000000000e62       0x12 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000e62                memset
- .text.memcpy   0x0000000000000e74       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000e74                memcpy
- .text.puts     0x0000000000000e90       0x2c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000e90                puts
+                0x0000000000000a3c      0x1b4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.printf   0x0000000000000bf0       0x28 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000bf0                printf
+ .text.mini_vsnprintf
+                0x0000000000000c18       0x30 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.sprintf  0x0000000000000c48       0x22 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000c48                sprintf
+ .text.memset   0x0000000000000c6a       0x12 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000c6a                memset
+ .text.strcpy   0x0000000000000c7c       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000c7c                strcpy
+ .text.strncpy  0x0000000000000c90       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000c90                strncpy
+ .text.mngI2c_load_printBuff.constprop.0
+                0x0000000000000cac       0x4a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.memcpy   0x0000000000000cf6       0x1c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000cf6                memcpy
+ .text.ssd1306_data.isra.0
+                0x0000000000000d12       0x2c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.ssd1306_print_str_at.constprop.0
+                0x0000000000000d3e       0x72 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .text.puts     0x0000000000000db0       0x2c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000db0                puts
+ .text.i2c_scan_callback
+                0x0000000000000ddc       0x5a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.SystemInit
-                0x0000000000000ebc       0x58 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000ebc                SystemInit
+                0x0000000000000e36       0x58 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000e36                SystemInit
  .text.startup.main
-                0x0000000000000f14      0xd7e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000000000f14                main
+                0x0000000000000e8e      0xa4a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                0x0000000000000e8e                main
  .text.SysTick_Handler
-                0x0000000000001c92       0x32 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x00000000000018d8       0x32 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .text.DMA1_Channel3_IRQHandler
-                0x0000000000001cc4       0x7e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000000000190a       0x7e C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.rodata)
  *(.rodata*)
- *fill*         0x0000000000001d42        0x2 
+ *fill*         0x0000000000001988        0x0 
  .rodata.puts.str1.4
-                0x0000000000001d44        0x2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- *fill*         0x0000000000001d46        0x2 
+                0x0000000000001988        0x2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x000000000000198a        0x2 
+ .rodata.i2c_scan_callback.str1.4
+                0x000000000000198c        0xc C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rodata.main.str1.4
-                0x0000000000001d48       0x71 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- *fill*         0x0000000000001db9        0x3 
+                0x0000000000001998       0xf7 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x0000000000001a8f        0x1 
+ .rodata.FONT_7x5
+                0x0000000000001a90      0x1db C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x0000000000001c6b        0x1 
  .rodata.SIN_LUT2
-                0x0000000000001dbc      0x100 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .rodata.bitquartets.7
-                0x0000000000001ebc       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .rodata.colors
-                0x0000000000001edc       0x26 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- *fill*         0x0000000000001f02        0x2 
- .rodata.font   0x0000000000001f04      0x500 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .rodata.message.0
-                0x0000000000002404        0xf C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001c6c      0x100 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .rodata.bitquartets.5
+                0x0000000000001d6c       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .rodata.ssd1306_init_array
+                0x0000000000001d8c       0x1a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.gnu.linkonce.t.*)
-                0x0000000000002414                . = ALIGN (0x4)
- *fill*         0x0000000000002413        0x1 
+                0x0000000000001da8                . = ALIGN (0x4)
+ *fill*         0x0000000000001da6        0x2 
 
-.rela.dyn       0x0000000000002414        0x0
+.rela.dyn       0x0000000000001da8        0x0
  .rela.text.mini_pad
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text.WS2812FillBuffSec.constprop.0
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text._write.constprop.0
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text.handle_reset
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text.mini_vpprintf
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .rela.text.mngI2c_load_printBuff.constprop.0
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .rela.text.ssd1306_data.isra.0
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text.puts
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .rela.text.i2c_scan_callback
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .rela.text.startup.main
-                0x0000000000002414        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000001da8        0x0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
 
-.fini           0x0000000000002414        0x0
+.fini           0x0000000000001da8        0x0
  *(SORT_NONE(.fini))
-                0x0000000000002414                . = ALIGN (0x4)
+                0x0000000000001da8                . = ALIGN (0x4)
                 [!provide]                        PROVIDE (_etext = .)
                 [!provide]                        PROVIDE (_eitcm = .)
 
-.preinit_array  0x0000000000002414        0x0
+.preinit_array  0x0000000000001da8        0x0
                 [!provide]                        PROVIDE (__preinit_array_start = .)
  *(.preinit_array)
                 [!provide]                        PROVIDE (__preinit_array_end = .)
 
-.init_array     0x0000000000002414        0x0
+.init_array     0x0000000000001da8        0x0
                 [!provide]                        PROVIDE (__init_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
  *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
                 [!provide]                        PROVIDE (__init_array_end = .)
 
-.fini_array     0x0000000000002414        0x0
+.fini_array     0x0000000000001da8        0x0
                 [!provide]                        PROVIDE (__fini_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
  *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
@@ -390,81 +390,93 @@ LOAD ../ch32fun/ch32fun//../misc\libgcc.a
  *(SORT_BY_NAME(.dtors.*))
  *(.dtors)
 
-.dalign         0x0000000020000000        0x0 load address 0x0000000000002414
+.dalign         0x0000000020000000        0x0 load address 0x0000000000001da8
                 0x0000000020000000                . = ALIGN (0x4)
                 0x0000000020000000                PROVIDE (_data_vma = .)
 
-.dlalign        0x0000000000002414        0x0
-                0x0000000000002414                . = ALIGN (0x4)
-                0x0000000000002414                PROVIDE (_data_lma = .)
+.dlalign        0x0000000000001da8        0x0
+                0x0000000000001da8                . = ALIGN (0x4)
+                0x0000000000001da8                PROVIDE (_data_lma = .)
 
-.data           0x0000000020000000       0x50 load address 0x0000000000002414
+.data           0x0000000020000000       0x68 load address 0x0000000000001da8
                 0x0000000020000000                . = ALIGN (0x4)
                 0x00000000200003fc                __global_pointer$ = (. + 0x3fc)
  *(.gnu.linkonce.r.*)
  *(.data .data.*)
+ .data.button1.1
+                0x0000000020000000       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.color_arr
-                0x0000000020000000        0xc C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000010        0xc C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .data.dev_ssd1306
+                0x000000002000001c        0xc C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .data.leds_frame
-                0x000000002000000c       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000028       0x14 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .data.pwm_CH1c.0
+                0x000000002000003c       0x10 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.gnu.linkonce.d.*)
-                0x0000000020000020                . = ALIGN (0x8)
+                0x0000000020000050                . = ALIGN (0x8)
+ *fill*         0x000000002000004c        0x4 
  *(.sdata .sdata.*)
  .sdata.color_ani
-                0x0000000020000020        0x8 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sdata.lfsr    0x0000000020000028        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000050        0x8 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .sdata.flag_printBuff_data
+                0x0000000020000058        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x0000000020000059        0x3 
+ .sdata.line.2  0x000000002000005c        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .sdata.loading_char
+                0x0000000020000060        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.sdata2*)
  *(.gnu.linkonce.s.*)
-                0x0000000020000030                . = ALIGN (0x8)
- *fill*         0x000000002000002c        0x4 
+                0x0000000020000068                . = ALIGN (0x8)
+ *fill*         0x0000000020000064        0x4 
  *(.srodata.cst16)
  *(.srodata.cst8)
  *(.srodata.cst4)
  *(.srodata.cst2)
  *(.srodata .srodata.*)
- .srodata       0x0000000020000030       0x20 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                0x0000000020000050                . = ALIGN (0x4)
-                0x0000000020000050                PROVIDE (_edata = .)
+                0x0000000020000068                . = ALIGN (0x4)
+                0x0000000020000068                PROVIDE (_edata = .)
 
-.bss            0x0000000020000050      0x328 load address 0x0000000000002464
-                0x0000000020000050                . = ALIGN (0x4)
-                0x0000000020000050                PROVIDE (_sbss = .)
+.bss            0x0000000020000068      0x4ec load address 0x0000000000001e10
+                0x0000000020000068                . = ALIGN (0x4)
+                0x0000000020000068                PROVIDE (_sbss = .)
  *(.sbss*)
- .sbss.DC_PIN   0x0000000020000050        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- *fill*         0x0000000020000051        0x3 
  .sbss.WS2812BLEDInUse
-                0x0000000020000054        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000068        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .sbss.WS2812LEDPlace
-                0x0000000020000058        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000002000006c        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .sbss.WS2812LEDs
-                0x000000002000005c        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sbss._cursor_x
-                0x0000000020000060        0x2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sbss._cursor_y
-                0x0000000020000062        0x2 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000070        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .sbss._i2c_timeout
+                0x0000000020000074        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .sbss.adc_buffer
-                0x0000000020000064        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sbss.rect_idx.3
-                0x0000000020000068        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- *fill*         0x0000000020000069        0x3 
+                0x0000000020000078        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .sbss.line6_preserve_time
+                0x000000002000007c        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .sbss.printBuff_idx
+                0x0000000020000080        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x0000000020000081        0x3 
+ .sbss.ssd1306_buffer
+                0x0000000020000084        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ *fill*         0x0000000020000085        0x3 
  .sbss.systick_millis
-                0x000000002000006c        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sbss.x_idx.5  0x0000000020000070        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .sbss.y_idx.4  0x0000000020000071        0x1 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000020000088        0x4 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.gnu.linkonce.sb.*)
  *(.bss*)
- *fill*         0x0000000020000072        0x2 
  .bss.WS2812dmabuff
-                0x0000000020000074       0x60 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .bss._buffer   0x00000000200000d4      0x140 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .bss._frame_buffer
-                0x0000000020000214      0x140 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .bss.led_arr   0x0000000020000354       0x18 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .bss.str.6     0x000000002000036c        0xc C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x000000002000008c       0x60 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .bss.frame_buffer
+                0x00000000200000ec      0x400 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .bss.led_arr   0x00000000200004ec       0x18 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .bss.printBuff
+                0x0000000020000504       0x34 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .bss.str_output
+                0x0000000020000538       0x19 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  *(.gnu.linkonce.b.*)
  *(COMMON*)
-                0x0000000020000378                . = ALIGN (0x4)
-                0x0000000020000378                PROVIDE (_ebss = .)
+                0x0000000020000554                . = ALIGN (0x4)
+ *fill*         0x0000000020000551        0x3 
+                0x0000000020000554                PROVIDE (_ebss = .)
                 [!provide]                        PROVIDE (_end = _ebss)
                 [!provide]                        PROVIDE (end = .)
                 0x0000000020000800                PROVIDE (_eusrstack = (ORIGIN (RAM) + LENGTH (RAM)))
@@ -480,75 +492,75 @@ OUTPUT(ch32-mess.elf elf32-littleriscv)
 .riscv.attributes
                 0x0000000000000000       0x21
  .riscv.attributes
-                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .riscv.attributes
                 0x0000000000000021       0x1f ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
  .riscv.attributes
                 0x0000000000000040       0x1f ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_info     0x0000000000000000     0x7968
- .debug_info    0x0000000000000000     0x287a C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .debug_info    0x000000000000287a     0x1188 C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
-                0x000000000000287a                ch32fun.c.963ac852
- .debug_info    0x0000000000003a02     0x3290 C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
-                0x0000000000003a02                ch32_mess.c.c30defdd
- .debug_info    0x0000000000006c92      0x47c C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
-                0x0000000000006c92                nrf24l01_low_level.c.429e1874
- .debug_info    0x000000000000710e      0x7cc C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
-                0x000000000000710e                lib_i2c.c.d894f163
- .debug_info    0x00000000000078da       0x31 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
- .debug_info    0x000000000000790b       0x5d ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+.debug_info     0x0000000000000000     0x7da6
+ .debug_info    0x0000000000000000     0x2590 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .debug_info    0x0000000000002590     0x1188 C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
+                0x0000000000002590                ch32fun.c.963ac852
+ .debug_info    0x0000000000003718     0x39b8 C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+                0x0000000000003718                ch32_mess.c.4b3621fa
+ .debug_info    0x00000000000070d0      0x47c C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
+                0x00000000000070d0                nrf24l01_low_level.c.429e1874
+ .debug_info    0x000000000000754c      0x7cc C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
+                0x000000000000754c                lib_i2c.c.d894f163
+ .debug_info    0x0000000000007d18       0x31 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
+ .debug_info    0x0000000000007d49       0x5d ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_abbrev   0x0000000000000000      0xbe4
- .debug_abbrev  0x0000000000000000      0x25c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .debug_abbrev  0x000000000000025c      0x233 C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
- .debug_abbrev  0x000000000000048f      0x3a1 C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
- .debug_abbrev  0x0000000000000830      0x171 C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
- .debug_abbrev  0x00000000000009a1      0x1f3 C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
- .debug_abbrev  0x0000000000000b94       0x28 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
- .debug_abbrev  0x0000000000000bbc       0x28 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+.debug_abbrev   0x0000000000000000      0xb8c
+ .debug_abbrev  0x0000000000000000      0x213 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .debug_abbrev  0x0000000000000213      0x233 C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
+ .debug_abbrev  0x0000000000000446      0x392 C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+ .debug_abbrev  0x00000000000007d8      0x171 C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
+ .debug_abbrev  0x0000000000000949      0x1f3 C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
+ .debug_abbrev  0x0000000000000b3c       0x28 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
+ .debug_abbrev  0x0000000000000b64       0x28 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_loc      0x0000000000000000     0x4558
- .debug_loc     0x0000000000000000     0x4558 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+.debug_loc      0x0000000000000000     0x364d
+ .debug_loc     0x0000000000000000     0x364d C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
 
-.debug_aranges  0x0000000000000000      0x218
+.debug_aranges  0x0000000000000000      0x1e0
  .debug_aranges
-                0x0000000000000000      0x1d8 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+                0x0000000000000000      0x1a0 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
  .debug_aranges
-                0x00000000000001d8       0x20 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
+                0x00000000000001a0       0x20 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
  .debug_aranges
-                0x00000000000001f8       0x20 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                0x00000000000001c0       0x20 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_ranges   0x0000000000000000      0xb78
- .debug_ranges  0x0000000000000000      0xb78 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+.debug_ranges   0x0000000000000000      0xb18
+ .debug_ranges  0x0000000000000000      0xb18 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
 
-.debug_line     0x0000000000000000     0x58e3
- .debug_line    0x0000000000000000     0x509f C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
- .debug_line    0x000000000000509f      0x18e C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
- .debug_line    0x000000000000522d      0x2a1 C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
- .debug_line    0x00000000000054ce      0x10d C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
- .debug_line    0x00000000000055db      0x13b C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
- .debug_line    0x0000000000005716       0x7a ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
- .debug_line    0x0000000000005790      0x153 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+.debug_line     0x0000000000000000     0x50e7
+ .debug_line    0x0000000000000000     0x4888 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+ .debug_line    0x0000000000004888      0x18e C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
+ .debug_line    0x0000000000004a16      0x2bc C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+ .debug_line    0x0000000000004cd2      0x10d C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
+ .debug_line    0x0000000000004ddf      0x13b C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
+ .debug_line    0x0000000000004f1a       0x7a ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
+ .debug_line    0x0000000000004f94      0x153 ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_str      0x0000000000000000     0x202a
- .debug_str     0x0000000000000000      0x1a6 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
-                                        0x1db (size before relaxing)
- .debug_str     0x00000000000001a6      0x5e7 C:\Users\uni\AppData\Local\Temp\ccNdsQNS.debug.temp.o
+.debug_str      0x0000000000000000     0x2555
+ .debug_str     0x0000000000000000      0x19d C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
+                                        0x1bc (size before relaxing)
+ .debug_str     0x000000000000019d      0x5d9 C:\Users\uni\AppData\Local\Temp\ccCNQsog.debug.temp.o
                                         0x70c (size before relaxing)
- .debug_str     0x000000000000078d     0x153f C:\Users\uni\AppData\Local\Temp\ccE9UoUu.debug.temp.o
-                                       0x1975 (size before relaxing)
- .debug_str     0x0000000000001ccc       0xa8 C:\Users\uni\AppData\Local\Temp\cc9Lfps7.debug.temp.o
+ .debug_str     0x0000000000000776     0x1ab1 C:\Users\uni\AppData\Local\Temp\ccAZ503j.debug.temp.o
+                                       0x1ee9 (size before relaxing)
+ .debug_str     0x0000000000002227      0x102 C:\Users\uni\AppData\Local\Temp\ccIqwqdo.debug.temp.o
                                         0x43f (size before relaxing)
- .debug_str     0x0000000000001d74      0x1d7 C:\Users\uni\AppData\Local\Temp\ccpnkrCm.debug.temp.o
+ .debug_str     0x0000000000002329      0x14d C:\Users\uni\AppData\Local\Temp\cckIUS9v.debug.temp.o
                                         0x519 (size before relaxing)
- .debug_str     0x0000000000001f4b       0xa3 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
+ .debug_str     0x0000000000002476       0xa3 ../ch32fun/ch32fun//../misc\libgcc.a(muldi3.o)
                                          0xac (size before relaxing)
- .debug_str     0x0000000000001fee       0x3c ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_str     0x0000000000002519       0x3c ../ch32fun/ch32fun//../misc\libgcc.a(div.o)
                                          0xd9 (size before relaxing)
 
-.debug_frame    0x0000000000000000      0x644
- .debug_frame   0x0000000000000000      0x644 C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.dINhkI.ltrans0.ltrans.o
+.debug_frame    0x0000000000000000      0x57c
+ .debug_frame   0x0000000000000000      0x57c C:\Users\uni\AppData\Local\Temp\ch32-mess.elf.sorJmb.ltrans0.ltrans.o
 
 .debug_line_str
                 0x0000000000000000       0x9b

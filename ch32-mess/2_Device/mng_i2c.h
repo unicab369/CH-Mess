@@ -915,7 +915,7 @@ void modI2C_setup() {
 }
 
 
-#define PRINT_BUFF_SIZE 5
+#define PRINT_BUFF_SIZE 2
 
 typedef struct PACKED {
 	char str[SSD1306_STR_SIZE];
