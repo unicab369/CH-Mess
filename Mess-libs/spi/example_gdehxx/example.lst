@@ -11,67 +11,67 @@ Disassembly of section .init:
 	{
 		#if !defined(FUNCONF_TINYVECTOR) || !FUNCONF_TINYVECTOR
 			asm volatile( DEFAULT_INTERRUPT_VECTOR_CONTENTS );
-   0:	1b40006f          	j	1b4 <handle_reset>
+   0:	1ac0006f          	j	1ac <handle_reset>
    4:	0000                	unimp
    6:	0000                	unimp
-   8:	0270                	addi	a2,sp,268
+   8:	026c                	addi	a1,sp,268
    a:	0000                	unimp
-   c:	0220                	addi	s0,sp,264
+   c:	021c                	addi	a5,sp,256
 	...
   2e:	0000                	unimp
-  30:	056c                	addi	a1,sp,652
+  30:	05ba                	slli	a1,a1,0xe
   32:	0000                	unimp
   34:	0000                	unimp
   36:	0000                	unimp
-  38:	0220                	addi	s0,sp,264
+  38:	021c                	addi	a5,sp,256
   3a:	0000                	unimp
   3c:	0000                	unimp
   3e:	0000                	unimp
-  40:	0220                	addi	s0,sp,264
+  40:	021c                	addi	a5,sp,256
   42:	0000                	unimp
-  44:	0220                	addi	s0,sp,264
+  44:	021c                	addi	a5,sp,256
   46:	0000                	unimp
-  48:	0220                	addi	s0,sp,264
+  48:	021c                	addi	a5,sp,256
   4a:	0000                	unimp
-  4c:	0220                	addi	s0,sp,264
+  4c:	021c                	addi	a5,sp,256
   4e:	0000                	unimp
-  50:	0220                	addi	s0,sp,264
+  50:	021c                	addi	a5,sp,256
   52:	0000                	unimp
-  54:	0220                	addi	s0,sp,264
+  54:	021c                	addi	a5,sp,256
   56:	0000                	unimp
-  58:	0220                	addi	s0,sp,264
+  58:	021c                	addi	a5,sp,256
   5a:	0000                	unimp
-  5c:	0220                	addi	s0,sp,264
+  5c:	021c                	addi	a5,sp,256
   5e:	0000                	unimp
-  60:	0220                	addi	s0,sp,264
+  60:	021c                	addi	a5,sp,256
   62:	0000                	unimp
-  64:	0220                	addi	s0,sp,264
+  64:	021c                	addi	a5,sp,256
   66:	0000                	unimp
-  68:	0220                	addi	s0,sp,264
+  68:	021c                	addi	a5,sp,256
   6a:	0000                	unimp
-  6c:	0220                	addi	s0,sp,264
+  6c:	021c                	addi	a5,sp,256
   6e:	0000                	unimp
-  70:	0220                	addi	s0,sp,264
+  70:	021c                	addi	a5,sp,256
   72:	0000                	unimp
-  74:	0220                	addi	s0,sp,264
+  74:	021c                	addi	a5,sp,256
   76:	0000                	unimp
-  78:	0220                	addi	s0,sp,264
+  78:	021c                	addi	a5,sp,256
   7a:	0000                	unimp
-  7c:	0220                	addi	s0,sp,264
+  7c:	021c                	addi	a5,sp,256
   7e:	0000                	unimp
-  80:	0220                	addi	s0,sp,264
+  80:	021c                	addi	a5,sp,256
   82:	0000                	unimp
-  84:	0220                	addi	s0,sp,264
+  84:	021c                	addi	a5,sp,256
   86:	0000                	unimp
-  88:	0220                	addi	s0,sp,264
+  88:	021c                	addi	a5,sp,256
   8a:	0000                	unimp
-  8c:	0220                	addi	s0,sp,264
+  8c:	021c                	addi	a5,sp,256
   8e:	0000                	unimp
-  90:	0220                	addi	s0,sp,264
+  90:	021c                	addi	a5,sp,256
   92:	0000                	unimp
-  94:	0220                	addi	s0,sp,264
+  94:	021c                	addi	a5,sp,256
   96:	0000                	unimp
-  98:	0220                	addi	s0,sp,264
+  98:	021c                	addi	a5,sp,256
   9a:	0000                	unimp
   9c:	0000                	unimp
 	...
@@ -220,679 +220,785 @@ static void write_data_8(uint8_t data) {
 
 void fun_gdehxx_setCursor(uint8_t x, uint16_t y) {
  178:	1151                	addi	sp,sp,-12
- 17a:	c222                	sw	s0,4(sp)
- 17c:	842a                	mv	s0,a0
     write_cmd_8( 0x4E );
- 17e:	04e00513          	li	a0,78
+ 17a:	04e00513          	li	a0,78
 void fun_gdehxx_setCursor(uint8_t x, uint16_t y) {
- 182:	c406                	sw	ra,8(sp)
+ 17e:	c406                	sw	ra,8(sp)
     write_cmd_8( 0x4E );
- 184:	3769                	jal	10e <write_cmd_8>
+ 180:	3779                	jal	10e <write_cmd_8>
     write_data_8( (x >> 3) &0xFF );
- 186:	4501                	li	a0,0
- 188:	3f75                	jal	144 <write_data_8>
+ 182:	4501                	li	a0,0
+ 184:	37c1                	jal	144 <write_data_8>
 
     write_cmd_8( 0x4F );
- 18a:	04f00513          	li	a0,79
- 18e:	3741                	jal	10e <write_cmd_8>
+ 186:	04f00513          	li	a0,79
+ 18a:	3751                	jal	10e <write_cmd_8>
     write_data_8( y );
- 190:	0ff47513          	andi	a0,s0,255
- 194:	3f45                	jal	144 <write_data_8>
+ 18c:	4501                	li	a0,0
+ 18e:	3f5d                	jal	144 <write_data_8>
     write_data_8( 0x00 );
- 196:	4501                	li	a0,0
- 198:	3775                	jal	144 <write_data_8>
+ 190:	4501                	li	a0,0
+ 192:	3f4d                	jal	144 <write_data_8>
 
     Delay_Ms(100);
 }
- 19a:	4412                	lw	s0,4(sp)
- 19c:	40a2                	lw	ra,8(sp)
+ 194:	40a2                	lw	ra,8(sp)
     Delay_Ms(100);
- 19e:	00494537          	lui	a0,0x494
- 1a2:	e0050513          	addi	a0,a0,-512 # 493e00 <example.c.652e340b+0x4917cf>
+ 196:	00494537          	lui	a0,0x494
+ 19a:	e0050513          	addi	a0,a0,-512 # 493e00 <example.c.9eaf7308+0x491746>
 }
- 1a6:	0131                	addi	sp,sp,12
+ 19e:	0131                	addi	sp,sp,12
     Delay_Ms(100);
- 1a8:	bf81                	j	f8 <DelaySysTick>
+ 1a0:	bfa1                	j	f8 <DelaySysTick>
 
-000001aa <internal_handle_input.constprop.0>:
+000001a2 <internal_handle_input.constprop.0>:
 	uint32_t dmd0 = *dmdata0;
- 1aa:	e00007b7          	lui	a5,0xe0000
- 1ae:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
+ 1a2:	e00007b7          	lui	a5,0xe0000
+ 1a6:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
 }
- 1b2:	8082                	ret
+ 1aa:	8082                	ret
 
-000001b4 <handle_reset>:
+000001ac <handle_reset>:
 	asm volatile( "\n\
- 1b4:	20000197          	auipc	gp,0x20000
- 1b8:	24818193          	addi	gp,gp,584 # 200003fc <__global_pointer$>
- 1bc:	40418113          	addi	sp,gp,1028 # 20000800 <_eusrstack>
- 1c0:	6509                	lui	a0,0x2
- 1c2:	88050513          	addi	a0,a0,-1920 # 1880 <ch32fun.c.474464e1+0x3d7>
- 1c6:	30051073          	csrw	mstatus,a0
- 1ca:	468d                	li	a3,3
- 1cc:	00000517          	auipc	a0,0x0
- 1d0:	e3450513          	addi	a0,a0,-460 # 0 <InterruptVector>
- 1d4:	8d55                	or	a0,a0,a3
- 1d6:	30551073          	csrw	mtvec,a0
+ 1ac:	20000197          	auipc	gp,0x20000
+ 1b0:	25018193          	addi	gp,gp,592 # 200003fc <__global_pointer$>
+ 1b4:	40418113          	addi	sp,gp,1028 # 20000800 <_eusrstack>
+ 1b8:	6509                	lui	a0,0x2
+ 1ba:	88050513          	addi	a0,a0,-1920 # 1880 <ch32fun.c.474464e1+0x34e>
+ 1be:	30051073          	csrw	mstatus,a0
+ 1c2:	468d                	li	a3,3
+ 1c4:	00000517          	auipc	a0,0x0
+ 1c8:	e3c50513          	addi	a0,a0,-452 # 0 <InterruptVector>
+ 1cc:	8d55                	or	a0,a0,a3
+ 1ce:	30551073          	csrw	mtvec,a0
 asm volatile(
- 1da:	c0418513          	addi	a0,gp,-1020 # 20000000 <GDEH_DC_PIN>
- 1de:	c0c18593          	addi	a1,gp,-1012 # 20000008 <_ebss>
- 1e2:	4601                	li	a2,0
- 1e4:	00b55663          	bge	a0,a1,1f0 <handle_reset+0x3c>
- 1e8:	c110                	sw	a2,0(a0)
- 1ea:	0511                	addi	a0,a0,4
- 1ec:	feb54ee3          	blt	a0,a1,1e8 <handle_reset+0x34>
- 1f0:	5a000513          	li	a0,1440
- 1f4:	c0418593          	addi	a1,gp,-1020 # 20000000 <GDEH_DC_PIN>
- 1f8:	c0418613          	addi	a2,gp,-1020 # 20000000 <GDEH_DC_PIN>
- 1fc:	00c58863          	beq	a1,a2,20c <handle_reset+0x58>
- 200:	4114                	lw	a3,0(a0)
- 202:	c194                	sw	a3,0(a1)
- 204:	0511                	addi	a0,a0,4
- 206:	0591                	addi	a1,a1,4
- 208:	fec59ae3          	bne	a1,a2,1fc <handle_reset+0x48>
+ 1d2:	c0418513          	addi	a0,gp,-1020 # 20000000 <GDEH_DC_PIN>
+ 1d6:	c1418593          	addi	a1,gp,-1004 # 20000010 <_ebss>
+ 1da:	4601                	li	a2,0
+ 1dc:	00b55663          	bge	a0,a1,1e8 <handle_reset+0x3c>
+ 1e0:	c110                	sw	a2,0(a0)
+ 1e2:	0511                	addi	a0,a0,4
+ 1e4:	feb54ee3          	blt	a0,a1,1e0 <handle_reset+0x34>
+ 1e8:	00000517          	auipc	a0,0x0
+ 1ec:	6b450513          	addi	a0,a0,1716 # 89c <_data_lma>
+ 1f0:	c0418593          	addi	a1,gp,-1020 # 20000000 <GDEH_DC_PIN>
+ 1f4:	c0418613          	addi	a2,gp,-1020 # 20000000 <GDEH_DC_PIN>
+ 1f8:	00c58863          	beq	a1,a2,208 <handle_reset+0x5c>
+ 1fc:	4114                	lw	a3,0(a0)
+ 1fe:	c194                	sw	a3,0(a1)
+ 200:	0511                	addi	a0,a0,4
+ 202:	0591                	addi	a1,a1,4
+ 204:	fec59ae3          	bne	a1,a2,1f8 <handle_reset+0x4c>
 	SysTick->CTLR = 5;
- 20c:	e000f7b7          	lui	a5,0xe000f
- 210:	4715                	li	a4,5
- 212:	c398                	sw	a4,0(a5)
+ 208:	e000f7b7          	lui	a5,0xe000f
+ 20c:	4715                	li	a4,5
+ 20e:	c398                	sw	a4,0(a5)
 asm volatile(
- 214:	34200793          	li	a5,834
- 218:	34179073          	csrw	mepc,a5
- 21c:	30200073          	mret
+ 210:	36c00793          	li	a5,876
+ 214:	34179073          	csrw	mepc,a5
+ 218:	30200073          	mret
 
-00000220 <ADC1_2_IRQHandler>:
+0000021c <ADC1_2_IRQHandler>:
 
 // Return the Machine Exception Program Register (MEPC)
 static inline uint32_t __get_MEPC(void)
 {
 	uint32_t result;
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mepc" : "=r"(result));
- 220:	34102573          	csrr	a0,mepc
+ 21c:	34102573          	csrr	a0,mepc
 	PrintHex( __get_MEPC() ); // "addr2line -e debugprintfdemo.elf 0x000007e6" ---> debugprintfdemo.c:45
- 224:	3db5                	jal	a0 <PrintHex>
+ 220:	3541                	jal	a0 <PrintHex>
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0, mstatus": "=r"(result) );
- 226:	30002573          	csrr	a0,mstatus
+ 222:	30002573          	csrr	a0,mstatus
 	PrintHex( __get_MSTATUS() );
- 22a:	3d9d                	jal	a0 <PrintHex>
+ 226:	3dad                	jal	a0 <PrintHex>
 
 // Return the Machine Trap Value Register (MTVAL)
 static inline uint32_t __get_MTVAL(void)
 {
 	uint32_t result;
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mtval" : "=r" (result) );
- 22c:	34302573          	csrr	a0,mtval
+ 228:	34302573          	csrr	a0,mtval
 	PrintHex( __get_MTVAL() );
- 230:	3d85                	jal	a0 <PrintHex>
+ 22c:	3d95                	jal	a0 <PrintHex>
 	__ASM volatile( ADD_ARCH_ZICSR "csrr %0," "mcause": "=r"(result));
- 232:	34202573          	csrr	a0,mcause
+ 22e:	34202573          	csrr	a0,mcause
 	PrintHex( __get_MCAUSE() );
- 236:	35ad                	jal	a0 <PrintHex>
+ 232:	35bd                	jal	a0 <PrintHex>
 	while( (*DMDATA0) & 0x80 );
- 238:	e0000737          	lui	a4,0xe0000
- 23c:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
- 240:	0f470693          	addi	a3,a4,244
- 244:	0807f793          	andi	a5,a5,128
- 248:	fbf5                	bnez	a5,23c <ADC1_2_IRQHandler+0x1c>
+ 234:	e0000737          	lui	a4,0xe0000
+ 238:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 23c:	0f470693          	addi	a3,a4,244
+ 240:	0807f793          	andi	a5,a5,128
+ 244:	fbf5                	bnez	a5,238 <ADC1_2_IRQHandler+0x1c>
 	*DMDATA0 = 0x0a85;
- 24a:	6785                	lui	a5,0x1
- 24c:	a8578793          	addi	a5,a5,-1403 # a85 <_data_lma+0x4e5>
- 250:	c29c                	sw	a5,0(a3)
+ 246:	6785                	lui	a5,0x1
+ 248:	a8578793          	addi	a5,a5,-1403 # a85 <_data_lma+0x1e9>
+ 24c:	c29c                	sw	a5,0(a3)
 	while( (*DMDATA0) & 0x80 );
- 252:	e0000737          	lui	a4,0xe0000
- 256:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
- 25a:	0f470693          	addi	a3,a4,244
- 25e:	0807f793          	andi	a5,a5,128
- 262:	fbf5                	bnez	a5,256 <ADC1_2_IRQHandler+0x36>
+ 24e:	e0000737          	lui	a4,0xe0000
+ 252:	0f472783          	lw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 256:	0f470693          	addi	a3,a4,244
+ 25a:	0807f793          	andi	a5,a5,128
+ 25e:	fbf5                	bnez	a5,252 <ADC1_2_IRQHandler+0x36>
 	*DMDATA0 = 0xaaaaaa83;
- 264:	aaaab7b7          	lui	a5,0xaaaab
- 268:	a8378793          	addi	a5,a5,-1405 # aaaaaa83 <_eusrstack+0x8aaaa283>
- 26c:	c29c                	sw	a5,0(a3)
+ 260:	aaaab7b7          	lui	a5,0xaaaab
+ 264:	a8378793          	addi	a5,a5,-1405 # aaaaaa83 <_eusrstack+0x8aaaa283>
+ 268:	c29c                	sw	a5,0(a3)
 	asm volatile( "1: j 1b" );
- 26e:	a001                	j	26e <ADC1_2_IRQHandler+0x4e>
+ 26a:	a001                	j	26a <ADC1_2_IRQHandler+0x4e>
 
-00000270 <NMI_Handler>:
+0000026c <NMI_Handler>:
 	RCC->INTR |= RCC_CSSC;	// clear the clock security int flag
- 270:	40021737          	lui	a4,0x40021
- 274:	471c                	lw	a5,8(a4)
- 276:	008006b7          	lui	a3,0x800
- 27a:	8fd5                	or	a5,a5,a3
- 27c:	c71c                	sw	a5,8(a4)
+ 26c:	40021737          	lui	a4,0x40021
+ 270:	471c                	lw	a5,8(a4)
+ 272:	008006b7          	lui	a3,0x800
+ 276:	8fd5                	or	a5,a5,a3
+ 278:	c71c                	sw	a5,8(a4)
 
-0000027e <putchar>:
-	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 27e:	e00007b7          	lui	a5,0xe0000
- 282:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
- 286:	0c000713          	li	a4,192
- 28a:	0c07f793          	andi	a5,a5,192
- 28e:	04e78c63          	beq	a5,a4,2e6 <putchar+0x68>
+0000027a <strlen>:
 {
- 292:	1151                	addi	sp,sp,-12
-	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 294:	001007b7          	lui	a5,0x100
+ 27a:	87aa                	mv	a5,a0
+	for (; *s; s++);
+ 27c:	0007c703          	lbu	a4,0(a5)
+ 280:	e701                	bnez	a4,288 <strlen+0xe>
+}
+ 282:	40a78533          	sub	a0,a5,a0
+ 286:	8082                	ret
+	for (; *s; s++);
+ 288:	0785                	addi	a5,a5,1
+ 28a:	bfcd                	j	27c <strlen+0x2>
+
+0000028c <memcpy>:
 {
- 298:	c222                	sw	s0,4(sp)
- 29a:	c406                	sw	ra,8(sp)
- 29c:	842a                	mv	s0,a0
+ 28c:	4781                	li	a5,0
+	for (; n; n--) *d++ = *s++;
+ 28e:	00f61363          	bne	a2,a5,294 <memcpy+0x8>
+}
+ 292:	8082                	ret
+	for (; n; n--) *d++ = *s++;
+ 294:	00f58733          	add	a4,a1,a5
+ 298:	00074683          	lbu	a3,0(a4) # 40021000 <_eusrstack+0x20020800>
+ 29c:	00f50733          	add	a4,a0,a5
+ 2a0:	0785                	addi	a5,a5,1
+ 2a2:	00d70023          	sb	a3,0(a4)
+ 2a6:	b7e5                	j	28e <memcpy+0x2>
+
+000002a8 <putchar>:
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 29e:	0785                	addi	a5,a5,1
+ 2a8:	e00007b7          	lui	a5,0xe0000
+ 2ac:	0f47a783          	lw	a5,244(a5) # e00000f4 <_eusrstack+0xbffff8f4>
+ 2b0:	0c000713          	li	a4,192
+ 2b4:	0c07f793          	andi	a5,a5,192
+ 2b8:	04e78c63          	beq	a5,a4,310 <putchar+0x68>
+{
+ 2bc:	1151                	addi	sp,sp,-12
+	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
+ 2be:	001007b7          	lui	a5,0x100
+{
+ 2c2:	c222                	sw	s0,4(sp)
+ 2c4:	c406                	sw	ra,8(sp)
+ 2c6:	842a                	mv	s0,a0
+	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
+ 2c8:	0785                	addi	a5,a5,1
 	while( ( lastdmd = (*DMDATA0) ) & 0x80 )
- 2a0:	e00006b7          	lui	a3,0xe0000
- 2a4:	0f46a703          	lw	a4,244(a3) # e00000f4 <_eusrstack+0xbffff8f4>
- 2a8:	0f468613          	addi	a2,a3,244
- 2ac:	08077593          	andi	a1,a4,128
- 2b0:	e185                	bnez	a1,2d0 <putchar+0x52>
+ 2ca:	e00006b7          	lui	a3,0xe0000
+ 2ce:	0f46a703          	lw	a4,244(a3) # e00000f4 <_eusrstack+0xbffff8f4>
+ 2d2:	0f468613          	addi	a2,a3,244
+ 2d6:	08077593          	andi	a1,a4,128
+ 2da:	e185                	bnez	a1,2fa <putchar+0x52>
 	if( lastdmd ) internal_handle_input( (uint32_t*)DMDATA0 );
- 2b2:	c311                	beqz	a4,2b6 <putchar+0x38>
- 2b4:	3ddd                	jal	1aa <internal_handle_input.constprop.0>
+ 2dc:	c311                	beqz	a4,2e0 <putchar+0x38>
+ 2de:	35d1                	jal	1a2 <internal_handle_input.constprop.0>
 	*DMDATA0 = 0x85 | ((const char)c<<8);
- 2b6:	6541                	lui	a0,0x10
- 2b8:	157d                	addi	a0,a0,-1
- 2ba:	00841793          	slli	a5,s0,0x8
- 2be:	8fe9                	and	a5,a5,a0
- 2c0:	0857e793          	ori	a5,a5,133
- 2c4:	e0000737          	lui	a4,0xe0000
- 2c8:	0ef72a23          	sw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
+ 2e0:	6541                	lui	a0,0x10
+ 2e2:	157d                	addi	a0,a0,-1
+ 2e4:	00841793          	slli	a5,s0,0x8
+ 2e8:	8fe9                	and	a5,a5,a0
+ 2ea:	0857e793          	ori	a5,a5,133
+ 2ee:	e0000737          	lui	a4,0xe0000
+ 2f2:	0ef72a23          	sw	a5,244(a4) # e00000f4 <_eusrstack+0xbffff8f4>
 	return 1;
- 2cc:	4505                	li	a0,1
- 2ce:	a801                	j	2de <putchar+0x60>
+ 2f6:	4505                	li	a0,1
+ 2f8:	a801                	j	308 <putchar+0x60>
 		if( timeout-- == 0 )
- 2d0:	17fd                	addi	a5,a5,-1
- 2d2:	fbe9                	bnez	a5,2a4 <putchar+0x26>
+ 2fa:	17fd                	addi	a5,a5,-1
+ 2fc:	fbe9                	bnez	a5,2ce <putchar+0x26>
 			*DMDATA0 |= 0xc0;
- 2d4:	421c                	lw	a5,0(a2)
- 2d6:	4501                	li	a0,0
- 2d8:	0c07e793          	ori	a5,a5,192
- 2dc:	c21c                	sw	a5,0(a2)
+ 2fe:	421c                	lw	a5,0(a2)
+ 300:	4501                	li	a0,0
+ 302:	0c07e793          	ori	a5,a5,192
+ 306:	c21c                	sw	a5,0(a2)
 }
- 2de:	40a2                	lw	ra,8(sp)
- 2e0:	4412                	lw	s0,4(sp)
- 2e2:	0131                	addi	sp,sp,12
- 2e4:	8082                	ret
+ 308:	40a2                	lw	ra,8(sp)
+ 30a:	4412                	lw	s0,4(sp)
+ 30c:	0131                	addi	sp,sp,12
+ 30e:	8082                	ret
 	if( ( *DMDATA0 & 0xc0 ) == 0xc0 ) return 0;
- 2e6:	4501                	li	a0,0
+ 310:	4501                	li	a0,0
 }
- 2e8:	8082                	ret
+ 312:	8082                	ret
 
-000002ea <SystemInit>:
+00000314 <SystemInit>:
 	#endif
 #elif defined(CH32X03x)
 	FLASH->ACTLR = FLASH_ACTLR_LATENCY_2;                   // +2 Cycle Latency (Recommended per TRM)
 #elif defined(CH32V003)
 	#if FUNCONF_SYSTEM_CORE_CLOCK > 25000000
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;               // +1 Cycle Latency
- 2ea:	400227b7          	lui	a5,0x40022
- 2ee:	4705                	li	a4,1
- 2f0:	c398                	sw	a4,0(a5)
+ 314:	400227b7          	lui	a5,0x40022
+ 318:	4705                	li	a4,1
+ 31a:	c398                	sw	a4,0(a5)
 #elif defined(FUNCONF_USE_HSI) && FUNCONF_USE_HSI
 	#if defined(CH32V30x) || defined(CH32V20x) || defined(CH32V10x)
 		EXTEN->EXTEN_CTR |= EXTEN_PLL_HSI_PRE;
 	#endif
 	#if defined(FUNCONF_USE_PLL) && FUNCONF_USE_PLL
 		RCC->CFGR0 = BASE_CFGR0;
- 2f2:	400217b7          	lui	a5,0x40021
+ 31c:	400217b7          	lui	a5,0x40021
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
- 2f6:	01080737          	lui	a4,0x1080
+ 320:	01080737          	lui	a4,0x1080
 		RCC->CFGR0 = BASE_CFGR0;
- 2fa:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
+ 324:	0007a223          	sw	zero,4(a5) # 40021004 <_eusrstack+0x20020804>
 		RCC->CTLR  = BASE_CTLR | RCC_HSION | RCC_PLLON; 			// Use HSI, enable PLL.
- 2fe:	08170713          	addi	a4,a4,129 # 1080081 <example.c.652e340b+0x107da50>
- 302:	c398                	sw	a4,0(a5)
+ 328:	08170713          	addi	a4,a4,129 # 1080081 <example.c.9eaf7308+0x107d9c7>
+ 32c:	c398                	sw	a4,0(a5)
 		FLASH->ACTLR = FLASH_ACTLR_LATENCY_1;       		// +1 Cycle Latency
 	#endif
 #endif
 
 #if !defined(CH57x) && !defined(CH58x) && !defined(CH59x)
 	RCC->INTR  = 0x009F0000;                               // Clear PLL, CSSC, HSE, HSI and LSI ready flags.
- 304:	009f0737          	lui	a4,0x9f0
- 308:	c798                	sw	a4,8(a5)
+ 32e:	009f0737          	lui	a4,0x9f0
+ 332:	c798                	sw	a4,8(a5)
 #endif
 
 #if defined(FUNCONF_USE_PLL) && FUNCONF_USE_PLL && !defined(CH57x) && !defined(CH58x) && !defined(CH59x)
 	while((RCC->CTLR & RCC_PLLRDY) == 0);                       	// Wait till PLL is ready
- 30a:	020006b7          	lui	a3,0x2000
- 30e:	40021737          	lui	a4,0x40021
- 312:	431c                	lw	a5,0(a4)
- 314:	8ff5                	and	a5,a5,a3
- 316:	dff5                	beqz	a5,312 <SystemInit+0x28>
+ 334:	020006b7          	lui	a3,0x2000
+ 338:	40021737          	lui	a4,0x40021
+ 33c:	431c                	lw	a5,0(a4)
+ 33e:	8ff5                	and	a5,a5,a3
+ 340:	dff5                	beqz	a5,33c <SystemInit+0x28>
 	uint32_t tmp32 = RCC->CFGR0 & ~(0x03);							// clr the SW
- 318:	435c                	lw	a5,4(a4)
+ 342:	435c                	lw	a5,4(a4)
 	RCC->CFGR0 = tmp32 | RCC_SW_PLL;                       			// Select PLL as system clock source
 	while ((RCC->CFGR0 & (uint32_t)RCC_SWS) != (uint32_t)0x08); 	// Wait till PLL is used as system clock source
- 31a:	400216b7          	lui	a3,0x40021
+ 344:	400216b7          	lui	a3,0x40021
 	uint32_t tmp32 = RCC->CFGR0 & ~(0x03);							// clr the SW
- 31e:	9bf1                	andi	a5,a5,-4
+ 348:	9bf1                	andi	a5,a5,-4
 	RCC->CFGR0 = tmp32 | RCC_SW_PLL;                       			// Select PLL as system clock source
- 320:	0027e793          	ori	a5,a5,2
- 324:	c35c                	sw	a5,4(a4)
+ 34a:	0027e793          	ori	a5,a5,2
+ 34e:	c35c                	sw	a5,4(a4)
 	while ((RCC->CFGR0 & (uint32_t)RCC_SWS) != (uint32_t)0x08); 	// Wait till PLL is used as system clock source
- 326:	4721                	li	a4,8
- 328:	42dc                	lw	a5,4(a3)
- 32a:	8bb1                	andi	a5,a5,12
- 32c:	fee79ee3          	bne	a5,a4,328 <SystemInit+0x3e>
+ 350:	4721                	li	a4,8
+ 352:	42dc                	lw	a5,4(a3)
+ 354:	8bb1                	andi	a5,a5,12
+ 356:	fee79ee3          	bne	a5,a4,352 <SystemInit+0x3e>
 	*DMDATA1 = 0x00;
- 330:	e00007b7          	lui	a5,0xe0000
- 334:	0e07ac23          	sw	zero,248(a5) # e00000f8 <_eusrstack+0xbffff8f8>
+ 35a:	e00007b7          	lui	a5,0xe0000
+ 35e:	0e07ac23          	sw	zero,248(a5) # e00000f8 <_eusrstack+0xbffff8f8>
 	*DMDATA0 = 0x80;
- 338:	08000713          	li	a4,128
- 33c:	0ee7aa23          	sw	a4,244(a5)
+ 362:	08000713          	li	a4,128
+ 366:	0ee7aa23          	sw	a4,244(a5)
 	SetupUART( UART_BRR );
 #endif
 #if defined( FUNCONF_USE_DEBUGPRINTF ) && FUNCONF_USE_DEBUGPRINTF
 	SetupDebugPrintf();
 #endif
 }
- 340:	8082                	ret
+ 36a:	8082                	ret
 
-00000342 <main>:
+0000036c <main>:
 #include <stdio.h>
 
 #include "../fun_gdehxx.h"
 #include "../../modules/systick_irq.h"
 
 int main() {
- 342:	1141                	addi	sp,sp,-16
- 344:	c606                	sw	ra,12(sp)
- 346:	c422                	sw	s0,8(sp)
- 348:	c226                	sw	s1,4(sp)
+ 36c:	fd810113          	addi	sp,sp,-40
+ 370:	d206                	sw	ra,36(sp)
+ 372:	d022                	sw	s0,32(sp)
+ 374:	ce26                	sw	s1,28(sp)
     SystemInit();
- 34a:	3745                	jal	2ea <SystemInit>
+ 376:	3f79                	jal	314 <SystemInit>
 * its clock source
 */
 void systick_init(void)
 {
 	// Reset any pre-existing configuration
 	SysTick->CTLR = 0x0000;
- 34c:	e000f7b7          	lui	a5,0xe000f
+ 378:	e000f7b7          	lui	a5,0xe000f
 	
 	// Set the compare register to trigger once per millisecond
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
- 350:	6731                	lui	a4,0xc
+ 37c:	6731                	lui	a4,0xc
 	SysTick->CTLR = 0x0000;
- 352:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
+ 37e:	0007a023          	sw	zero,0(a5) # e000f000 <_eusrstack+0xc000e800>
 	SysTick->CMP = SYSTICK_ONE_MILLISECOND - 1;
- 356:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.652e340b+0x954e>
- 35a:	cb98                	sw	a4,16(a5)
+ 382:	b7f70713          	addi	a4,a4,-1153 # bb7f <example.c.9eaf7308+0x94c5>
+ 386:	cb98                	sw	a4,16(a5)
 
 	// Reset the Count Register, and the global millis counter to 0
 	SysTick->CNT = 0x00000000;
 	systick_millis = 0x00000000;
- 35c:	c0818613          	addi	a2,gp,-1016 # 20000004 <systick_millis>
+ 388:	c1018613          	addi	a2,gp,-1008 # 2000000c <systick_millis>
 	SysTick->CNT = 0x00000000;
- 360:	0007a423          	sw	zero,8(a5)
+ 38c:	0007a423          	sw	zero,8(a5)
 	systick_millis = 0x00000000;
- 364:	00062023          	sw	zero,0(a2)
+ 390:	00062023          	sw	zero,0(a2)
 	
 	// Set the SysTick Configuration
 	// NOTE: By not setting SYSTICK_CTLR_STRE, we maintain compatibility with
 	// busywait delay funtions used by ch32v003_fun.
 	SysTick->CTLR |= SYSTICK_CTLR_STE   |  // Enable Counter
- 368:	4398                	lw	a4,0(a5)
+ 394:	4398                	lw	a4,0(a5)
 	NVIC->IENR[((uint32_t)(IRQn) >> 5)] = (1 << ((uint32_t)(IRQn) & 0x1F));
- 36a:	6585                	lui	a1,0x1
+ 396:	6585                	lui	a1,0x1
     systick_init();			//! required for millis()
 
     funGpioInitAll();
     Delay_Ms(100);
- 36c:	004944b7          	lui	s1,0x494
- 370:	00776713          	ori	a4,a4,7
- 374:	c398                	sw	a4,0(a5)
- 376:	e000e7b7          	lui	a5,0xe000e
- 37a:	10b7a023          	sw	a1,256(a5) # e000e100 <_eusrstack+0xc000d900>
+ 398:	004944b7          	lui	s1,0x494
+ 39c:	00776713          	ori	a4,a4,7
+ 3a0:	c398                	sw	a4,0(a5)
+ 3a2:	e000e7b7          	lui	a5,0xe000e
+ 3a6:	10b7a023          	sw	a1,256(a5) # e000e100 <_eusrstack+0xc000d900>
     funGpioInitAll();
- 37e:	40021737          	lui	a4,0x40021
- 382:	4f1c                	lw	a5,24(a4)
+ 3aa:	40021737          	lui	a4,0x40021
+ 3ae:	4f1c                	lw	a5,24(a4)
     Delay_Ms(100);
- 384:	e0048513          	addi	a0,s1,-512 # 493e00 <example.c.652e340b+0x4917cf>
+ 3b0:	e0048513          	addi	a0,s1,-512 # 493e00 <example.c.9eaf7308+0x491746>
     GPIOC->CFGLR &= ~(0xf << (SPI_SCLK << 2));
- 388:	40011437          	lui	s0,0x40011
+ 3b4:	40011437          	lui	s0,0x40011
     funGpioInitAll();
- 38c:	0357e793          	ori	a5,a5,53
- 390:	cf1c                	sw	a5,24(a4)
+ 3b8:	0357e793          	ori	a5,a5,53
+ 3bc:	cf1c                	sw	a5,24(a4)
     Delay_Ms(100);
- 392:	339d                	jal	f8 <DelaySysTick>
+ 3be:	3b2d                	jal	f8 <DelaySysTick>
     RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
- 394:	40021737          	lui	a4,0x40021
- 398:	4f1c                	lw	a5,24(a4)
- 39a:	6585                	lui	a1,0x1
- 39c:	01058513          	addi	a0,a1,16 # 1010 <_data_lma+0xa70>
- 3a0:	8fc9                	or	a5,a5,a0
- 3a2:	cf1c                	sw	a5,24(a4)
-    GPIOC->CFGLR &= ~(0xf << (SPI_SCLK << 2));
- 3a4:	401c                	lw	a5,0(s0)
- 3a6:	ff100537          	lui	a0,0xff100
- 3aa:	157d                	addi	a0,a0,-1
- 3ac:	8fe9                	and	a5,a5,a0
- 3ae:	c01c                	sw	a5,0(s0)
-    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_SCLK << 2);
- 3b0:	401c                	lw	a5,0(s0)
- 3b2:	00b00537          	lui	a0,0xb00
- 3b6:	8fc9                	or	a5,a5,a0
- 3b8:	c01c                	sw	a5,0(s0)
-    GPIOC->CFGLR &= ~(0xf << (SPI_MOSI << 2));
- 3ba:	401c                	lw	a5,0(s0)
- 3bc:	f1000537          	lui	a0,0xf1000
- 3c0:	157d                	addi	a0,a0,-1
- 3c2:	8fe9                	and	a5,a5,a0
- 3c4:	c01c                	sw	a5,0(s0)
-    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_MOSI << 2);
- 3c6:	401c                	lw	a5,0(s0)
- 3c8:	0b000537          	lui	a0,0xb000
+ 3c0:	40021737          	lui	a4,0x40021
+ 3c4:	4f1c                	lw	a5,24(a4)
+ 3c6:	6585                	lui	a1,0x1
+ 3c8:	01058513          	addi	a0,a1,16 # 1010 <_data_lma+0x774>
  3cc:	8fc9                	or	a5,a5,a0
-    SPI1->CTLR1 = SPI_CPHA_1Edge             // Bit 0     - Clock PHAse
- 3ce:	7571                	lui	a0,0xffffc
+ 3ce:	cf1c                	sw	a5,24(a4)
+    GPIOC->CFGLR &= ~(0xf << (SPI_SCLK << 2));
+ 3d0:	401c                	lw	a5,0(s0)
+ 3d2:	ff100537          	lui	a0,0xff100
+ 3d6:	157d                	addi	a0,a0,-1
+ 3d8:	8fe9                	and	a5,a5,a0
+ 3da:	c01c                	sw	a5,0(s0)
+    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_SCLK << 2);
+ 3dc:	401c                	lw	a5,0(s0)
+ 3de:	00b00537          	lui	a0,0xb00
+ 3e2:	8fc9                	or	a5,a5,a0
+ 3e4:	c01c                	sw	a5,0(s0)
+    GPIOC->CFGLR &= ~(0xf << (SPI_MOSI << 2));
+ 3e6:	401c                	lw	a5,0(s0)
+ 3e8:	f1000537          	lui	a0,0xf1000
+ 3ec:	157d                	addi	a0,a0,-1
+ 3ee:	8fe9                	and	a5,a5,a0
+ 3f0:	c01c                	sw	a5,0(s0)
     GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_MOSI << 2);
- 3d0:	c01c                	sw	a5,0(s0)
+ 3f2:	401c                	lw	a5,0(s0)
+ 3f4:	0b000537          	lui	a0,0xb000
+ 3f8:	8fc9                	or	a5,a5,a0
     SPI1->CTLR1 = SPI_CPHA_1Edge             // Bit 0     - Clock PHAse
- 3d2:	30450513          	addi	a0,a0,772 # ffffc304 <_eusrstack+0xdfffbb04>
- 3d6:	400137b7          	lui	a5,0x40013
- 3da:	00a79023          	sh	a0,0(a5) # 40013000 <_eusrstack+0x20012800>
+ 3fa:	7571                	lui	a0,0xffffc
+    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_MOSI << 2);
+ 3fc:	c01c                	sw	a5,0(s0)
+    SPI1->CTLR1 = SPI_CPHA_1Edge             // Bit 0     - Clock PHAse
+ 3fe:	30450513          	addi	a0,a0,772 # ffffc304 <_eusrstack+0xdfffbb04>
+ 402:	400137b7          	lui	a5,0x40013
+ 406:	00a79023          	sh	a0,0(a5) # 40013000 <_eusrstack+0x20012800>
     SPI1->CRCR = 7;                          // CRC
- 3de:	451d                	li	a0,7
- 3e0:	00a79823          	sh	a0,16(a5)
+ 40a:	451d                	li	a0,7
+ 40c:	00a79823          	sh	a0,16(a5)
     SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;        // Configure SPI DMA Transfer
- 3e4:	0047d503          	lhu	a0,4(a5)
+ 410:	0047d503          	lhu	a0,4(a5)
     DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
- 3e8:	07b1                	addi	a5,a5,12
+ 414:	07b1                	addi	a5,a5,12
     SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;        // Configure SPI DMA Transfer
- 3ea:	0542                	slli	a0,a0,0x10
- 3ec:	8141                	srli	a0,a0,0x10
- 3ee:	00256513          	ori	a0,a0,2
- 3f2:	fea79c23          	sh	a0,-8(a5)
+ 416:	0542                	slli	a0,a0,0x10
+ 418:	8141                	srli	a0,a0,0x10
+ 41a:	00256513          	ori	a0,a0,2
+ 41e:	fea79c23          	sh	a0,-8(a5)
     SPI1->CTLR1 |= CTLR1_SPE_Set;            // Bit 6     - Enable SPI
- 3f6:	ff47d503          	lhu	a0,-12(a5)
- 3fa:	0542                	slli	a0,a0,0x10
- 3fc:	8141                	srli	a0,a0,0x10
- 3fe:	04056513          	ori	a0,a0,64
- 402:	fea79a23          	sh	a0,-12(a5)
+ 422:	ff47d503          	lhu	a0,-12(a5)
+ 426:	0542                	slli	a0,a0,0x10
+ 428:	8141                	srli	a0,a0,0x10
+ 42a:	04056513          	ori	a0,a0,64
+ 42e:	fea79a23          	sh	a0,-12(a5)
     RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
- 406:	4b48                	lw	a0,20(a4)
- 408:	00156513          	ori	a0,a0,1
- 40c:	cb48                	sw	a0,20(a4)
+ 432:	4b48                	lw	a0,20(a4)
+ 434:	00156513          	ori	a0,a0,1
+ 438:	cb48                	sw	a0,20(a4)
     DMA1_Channel3->CFGR = DMA_DIR_PeripheralDST          // Bit 4     - Read from memory
- 40e:	670d                	lui	a4,0x3
- 410:	40020537          	lui	a0,0x40020
- 414:	0b070713          	addi	a4,a4,176 # 30b0 <example.c.652e340b+0xa7f>
- 418:	d918                	sw	a4,48(a0)
+ 43a:	670d                	lui	a4,0x3
+ 43c:	40020537          	lui	a0,0x40020
+ 440:	0b070713          	addi	a4,a4,176 # 30b0 <example.c.9eaf7308+0x9f6>
+ 444:	d918                	sw	a4,48(a0)
     DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
- 41a:	dd1c                	sw	a5,56(a0)
+ 446:	dd1c                	sw	a5,56(a0)
     write_cmd_8(0x20);          //Activate Display Update Sequence
 }
 
 
 void fun_gdehxx_setup(uint8_t dc_pin, uint8_t rst_pin, uint8_t busy_pin) {
     GDEH_DC_PIN = dc_pin;
- 41c:	02300713          	li	a4,35
- 420:	c0e18223          	sb	a4,-1020(gp) # 20000000 <GDEH_DC_PIN>
+ 448:	02300713          	li	a4,35
+ 44c:	c0e18223          	sb	a4,-1020(gp) # 20000000 <GDEH_DC_PIN>
 
     funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
- 424:	401c                	lw	a5,0(s0)
+ 450:	401c                	lw	a5,0(s0)
     funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
- 426:	7745                	lui	a4,0xffff1
- 428:	177d                	addi	a4,a4,-1
+ 452:	7745                	lui	a4,0xffff1
+ 454:	177d                	addi	a4,a4,-1
     funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
- 42a:	9bc1                	andi	a5,a5,-16
- 42c:	0017e793          	ori	a5,a5,1
- 430:	c01c                	sw	a5,0(s0)
+ 456:	9bc1                	andi	a5,a5,-16
+ 458:	0017e793          	ori	a5,a5,1
+ 45c:	c01c                	sw	a5,0(s0)
     funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
- 432:	401c                	lw	a5,0(s0)
- 434:	8ff9                	and	a5,a5,a4
- 436:	8fcd                	or	a5,a5,a1
- 438:	c01c                	sw	a5,0(s0)
+ 45e:	401c                	lw	a5,0(s0)
+ 460:	8ff9                	and	a5,a5,a4
+ 462:	8fcd                	or	a5,a5,a1
+ 464:	c01c                	sw	a5,0(s0)
 
     funPinMode(PD0, GPIO_CFGLR_IN_PUPD);
- 43a:	40040713          	addi	a4,s0,1024 # 40011400 <_eusrstack+0x20010c00>
- 43e:	431c                	lw	a5,0(a4)
+ 466:	40040713          	addi	a4,s0,1024 # 40011400 <_eusrstack+0x20010c00>
+ 46a:	431c                	lw	a5,0(a4)
     funDigitalWrite(PD0, 1);
- 440:	4585                	li	a1,1
+ 46c:	4585                	li	a1,1
     funPinMode(PD0, GPIO_CFGLR_IN_PUPD);
- 442:	9bc1                	andi	a5,a5,-16
- 444:	0087e793          	ori	a5,a5,8
- 448:	c31c                	sw	a5,0(a4)
+ 46e:	9bc1                	andi	a5,a5,-16
+ 470:	0087e793          	ori	a5,a5,8
+ 474:	c31c                	sw	a5,0(a4)
     funDigitalWrite(PD0, 1);
- 44a:	cb0c                	sw	a1,16(a4)
+ 476:	cb0c                	sw	a1,16(a4)
 
     funPinMode(PA1, GPIO_CFGLR_IN_PUPD);
- 44c:	80040713          	addi	a4,s0,-2048
- 450:	431c                	lw	a5,0(a4)
- 452:	f0f7f793          	andi	a5,a5,-241
- 456:	0807e793          	ori	a5,a5,128
- 45a:	c31c                	sw	a5,0(a4)
+ 478:	80040713          	addi	a4,s0,-2048
+ 47c:	431c                	lw	a5,0(a4)
+ 47e:	f0f7f793          	andi	a5,a5,-241
+ 482:	0807e793          	ori	a5,a5,128
+ 486:	c31c                	sw	a5,0(a4)
     funDigitalWrite(PA1, 1); 
- 45c:	4789                	li	a5,2
- 45e:	cb1c                	sw	a5,16(a4)
+ 488:	4789                	li	a5,2
+ 48a:	cb1c                	sw	a5,16(a4)
 
     funDigitalWrite(dc_pin, 1);
- 460:	47a1                	li	a5,8
- 462:	c81c                	sw	a5,16(s0)
+ 48c:	47a1                	li	a5,8
+ 48e:	c81c                	sw	a5,16(s0)
 
     // Reset display
     funDigitalWrite(rst_pin, 0);
- 464:	67c1                	lui	a5,0x10
- 466:	c81c                	sw	a5,16(s0)
+ 490:	67c1                	lui	a5,0x10
+ 492:	c81c                	sw	a5,16(s0)
     Delay_Ms(15);
- 468:	000b07b7          	lui	a5,0xb0
- 46c:	c8078513          	addi	a0,a5,-896 # afc80 <example.c.652e340b+0xad64f>
- 470:	3161                	jal	f8 <DelaySysTick>
+ 494:	000b07b7          	lui	a5,0xb0
+ 498:	c8078513          	addi	a0,a5,-896 # afc80 <example.c.9eaf7308+0xad5c6>
+ 49c:	39b1                	jal	f8 <DelaySysTick>
     funDigitalWrite(rst_pin, 1);
     Delay_Ms(15);
- 472:	000b07b7          	lui	a5,0xb0
+ 49e:	000b07b7          	lui	a5,0xb0
     funDigitalWrite(rst_pin, 1);
- 476:	4585                	li	a1,1
+ 4a2:	4585                	li	a1,1
     Delay_Ms(15);
- 478:	c8078513          	addi	a0,a5,-896 # afc80 <example.c.652e340b+0xad64f>
+ 4a4:	c8078513          	addi	a0,a5,-896 # afc80 <example.c.9eaf7308+0xad5c6>
     funDigitalWrite(rst_pin, 1);
- 47c:	c80c                	sw	a1,16(s0)
+ 4a8:	c80c                	sw	a1,16(s0)
     Delay_Ms(15);
- 47e:	39ad                	jal	f8 <DelaySysTick>
+ 4aa:	31b9                	jal	f8 <DelaySysTick>
 
     //! Reset Display
     write_cmd_8(0x12);
- 480:	4549                	li	a0,18
- 482:	3171                	jal	10e <write_cmd_8>
+ 4ac:	4549                	li	a0,18
+ 4ae:	3185                	jal	10e <write_cmd_8>
     Delay_Ms(100);
- 484:	e0048513          	addi	a0,s1,-512
- 488:	3985                	jal	f8 <DelaySysTick>
+ 4b0:	e0048513          	addi	a0,s1,-512
+ 4b4:	3191                	jal	f8 <DelaySysTick>
 
     //! Init Code
     write_cmd_8(0x01);
- 48a:	4505                	li	a0,1
- 48c:	3149                	jal	10e <write_cmd_8>
+ 4b6:	4505                	li	a0,1
+ 4b8:	3999                	jal	10e <write_cmd_8>
     write_data_8(GDEHXX_HEIGHT-1);
- 48e:	04500513          	li	a0,69
- 492:	394d                	jal	144 <write_data_8>
+ 4ba:	0c700513          	li	a0,199
+ 4be:	3159                	jal	144 <write_data_8>
     write_data_8(0x00);
- 494:	4501                	li	a0,0
- 496:	317d                	jal	144 <write_data_8>
-    write_data_8(0x00);
- 498:	4501                	li	a0,0
- 49a:	316d                	jal	144 <write_data_8>
+ 4c0:	4501                	li	a0,0
+ 4c2:	3149                	jal	144 <write_data_8>
+    write_data_8(0b001);
+ 4c4:	4505                	li	a0,1
+ 4c6:	39bd                	jal	144 <write_data_8>
+
+
+    /////////////////////////////
+    //# X decrement, Y decrement
+    write_cmd_8(0x11);
+ 4c8:	4545                	li	a0,17
+ 4ca:	3191                	jal	10e <write_cmd_8>
+    write_data_8(0b0100);
+ 4cc:	4511                	li	a0,4
+ 4ce:	399d                	jal	144 <write_data_8>
+    write_cmd_8( 0x44 );
+ 4d0:	04400513          	li	a0,68
+ 4d4:	392d                	jal	10e <write_cmd_8>
+    write_data_8( (x0 >> 3) &0xFF );
+ 4d6:	4539                	li	a0,14
+ 4d8:	31b5                	jal	144 <write_data_8>
+    write_data_8( x1 );
+ 4da:	4501                	li	a0,0
+ 4dc:	31a5                	jal	144 <write_data_8>
+    write_cmd_8( 0x45 );
+ 4de:	04500513          	li	a0,69
+ 4e2:	3135                	jal	10e <write_cmd_8>
+    write_data_8( y0 );
+ 4e4:	0c700513          	li	a0,199
+ 4e8:	39b1                	jal	144 <write_data_8>
+    write_data_8( 0x00 );
+ 4ea:	4501                	li	a0,0
+ 4ec:	39a1                	jal	144 <write_data_8>
+    write_data_8( y1 );
+ 4ee:	4501                	li	a0,0
+ 4f0:	3991                	jal	144 <write_data_8>
+    write_data_8( 0x00 );
+ 4f2:	4501                	li	a0,0
+ 4f4:	3981                	jal	144 <write_data_8>
+    Delay_Ms(100);
+ 4f6:	e0048513          	addi	a0,s1,-512
+ 4fa:	3efd                	jal	f8 <DelaySysTick>
+
+    //! setWindow
+    fun_gdehxx_setWindow(GDEHXX_WIDTH-1, GDEHXX_HEIGHT-1, 0x00, 0x00);
+    fun_gdehxx_setCursor(0x00, 0x00);
+ 4fc:	39b5                	jal	178 <fun_gdehxx_setCursor.constprop.0>
+
+    // //! setWindow
     // fun_gdehxx_setWindow(0x00, 0x00, GDEHXX_WIDTH-1, GDEHXX_HEIGHT-1);
     // fun_gdehxx_setCursor(0x00, 0x00);
 
-    //////////////////////////////
-    //# X increment, Y decrement
-    write_cmd_8(0x11);
- 49c:	4545                	li	a0,17
- 49e:	3985                	jal	10e <write_cmd_8>
-    write_data_8(0b0101);
- 4a0:	4515                	li	a0,5
- 4a2:	314d                	jal	144 <write_data_8>
-    write_cmd_8( 0x44 );
- 4a4:	04400513          	li	a0,68
- 4a8:	319d                	jal	10e <write_cmd_8>
-    write_data_8( (x0 >> 3) &0xFF );
- 4aa:	4501                	li	a0,0
- 4ac:	3961                	jal	144 <write_data_8>
-    write_data_8( x1 );
- 4ae:	07700513          	li	a0,119
- 4b2:	3949                	jal	144 <write_data_8>
-    write_cmd_8( 0x45 );
- 4b4:	04500513          	li	a0,69
- 4b8:	3999                	jal	10e <write_cmd_8>
-    write_data_8( y0 );
- 4ba:	04500513          	li	a0,69
- 4be:	3159                	jal	144 <write_data_8>
-    write_data_8( 0x00 );
- 4c0:	4501                	li	a0,0
- 4c2:	3149                	jal	144 <write_data_8>
-    write_data_8( y1 );
- 4c4:	4501                	li	a0,0
- 4c6:	39bd                	jal	144 <write_data_8>
-    write_data_8( 0x00 );
- 4c8:	4501                	li	a0,0
- 4ca:	39ad                	jal	144 <write_data_8>
     Delay_Ms(100);
- 4cc:	e0048513          	addi	a0,s1,-512
- 4d0:	3125                	jal	f8 <DelaySysTick>
-
-    //! setWindow
-    fun_gdehxx_setWindow( 0x00, GDEHXX_HEIGHT-1, GDEHXX_WIDTH-1, 0x00);
-    fun_gdehxx_setCursor(0x00, GDEHXX_HEIGHT-1);
- 4d2:	04500513          	li	a0,69
- 4d6:	314d                	jal	178 <fun_gdehxx_setCursor.constprop.0>
-
-    Delay_Ms(100);
- 4d8:	e0048513          	addi	a0,s1,-512
- 4dc:	3931                	jal	f8 <DelaySysTick>
+ 4fe:	e0048513          	addi	a0,s1,-512
+ 502:	3edd                	jal	f8 <DelaySysTick>
 
     SPI_init();
     fun_gdehxx_setup(PC3, PC0, PC2);
 
     uint32_t now = millis();
- 4de:	c0818613          	addi	a2,gp,-1016 # 20000004 <systick_millis>
- 4e2:	421c                	lw	a5,0(a2)
+ 504:	c1018613          	addi	a2,gp,-1008 # 2000000c <systick_millis>
+ 508:	421c                	lw	a5,0(a2)
     uint32_t timeRef = now;
- 4e4:	c0818413          	addi	s0,gp,-1016 # 20000004 <systick_millis>
+ 50a:	c1018713          	addi	a4,gp,-1008 # 2000000c <systick_millis>
+ 50e:	c23a                	sw	a4,4(sp)
 
     while(1) {
         now = millis();
 
         if (now - timeRef > 200) {
- 4e8:	0c800713          	li	a4,200
+ 510:	0c800713          	li	a4,200
         now = millis();
- 4ec:	4004                	lw	s1,0(s0)
+ 514:	4692                	lw	a3,4(sp)
+ 516:	4294                	lw	a3,0(a3)
+ 518:	c036                	sw	a3,0(sp)
         if (now - timeRef > 200) {
- 4ee:	40f486b3          	sub	a3,s1,a5
- 4f2:	fed77de3          	bgeu	a4,a3,4ec <main+0x1aa>
+ 51a:	8e9d                	sub	a3,a3,a5
+ 51c:	fed77ce3          	bgeu	a4,a3,514 <main+0x1a8>
             printf(".");
- 4f6:	02e00513          	li	a0,46
- 4fa:	3351                	jal	27e <putchar>
+ 520:	02e00513          	li	a0,46
+ 524:	3351                	jal	2a8 <putchar>
+    }
+}
 
-
-const char_arr[] = { '!', "#", "$", "&", "(", "A", "B", "C", "D", "E" };
 
 void fun_gdehxx_task() {
     if (funDigitalRead(PA1) == 0) {
- 4fc:	400117b7          	lui	a5,0x40011
- 500:	80078713          	addi	a4,a5,-2048 # 40010800 <_eusrstack+0x20010000>
- 504:	4718                	lw	a4,8(a4)
- 506:	8b09                	andi	a4,a4,2
- 508:	c321                	beqz	a4,548 <main+0x206>
+ 526:	40011437          	lui	s0,0x40011
+ 52a:	80040793          	addi	a5,s0,-2048 # 40010800 <_eusrstack+0x20010000>
+ 52e:	479c                	lw	a5,8(a5)
+ 530:	8b89                	andi	a5,a5,2
+ 532:	cb9d                	beqz	a5,568 <main+0x1fc>
         return;    
     }
 
     write_cmd_8(0x24);
- 50a:	02400513          	li	a0,36
- 50e:	3101                	jal	10e <write_cmd_8>
+ 534:	02400513          	li	a0,36
+ 538:	3ed9                	jal	10e <write_cmd_8>
 
     uint8_t read = funDigitalRead(PD0);
- 510:	400117b7          	lui	a5,0x40011
- 514:	40078793          	addi	a5,a5,1024 # 40011400 <_eusrstack+0x20010c00>
- 518:	479c                	lw	a5,8(a5)
+ 53a:	40040413          	addi	s0,s0,1024
+ 53e:	441c                	lw	a5,8(s0)
     uint8_t color;
 
     if (read == 0) {
- 51a:	8b85                	andi	a5,a5,1
- 51c:	eb85                	bnez	a5,54c <main+0x20a>
- 51e:	6785                	lui	a5,0x1
- 520:	38878793          	addi	a5,a5,904 # 1388 <_data_lma+0xde8>
+ 540:	8b85                	andi	a5,a5,1
+ 542:	e78d                	bnez	a5,56c <main+0x200>
+ 544:	6405                	lui	s0,0x1
+ 546:	38840413          	addi	s0,s0,904 # 1388 <_data_lma+0xaec>
         for (int i = 0; i < 5000; i++) {
             write_data_8(0xFF);
- 524:	0ff00513          	li	a0,255
- 528:	c03e                	sw	a5,0(sp)
- 52a:	3929                	jal	144 <write_data_8>
+ 54a:	0ff00513          	li	a0,255
         for (int i = 0; i < 5000; i++) {
- 52c:	4782                	lw	a5,0(sp)
- 52e:	17fd                	addi	a5,a5,-1
- 530:	fbf5                	bnez	a5,524 <main+0x1e2>
+ 54e:	147d                	addi	s0,s0,-1
+            write_data_8(0xFF);
+ 550:	3ed5                	jal	144 <write_data_8>
+        for (int i = 0; i < 5000; i++) {
+ 552:	fc65                	bnez	s0,54a <main+0x1de>
         }
         fun_gdehxx_setCursor(0, 0);
- 532:	4501                	li	a0,0
- 534:	3191                	jal	178 <fun_gdehxx_setCursor.constprop.0>
+ 554:	3115                	jal	178 <fun_gdehxx_setCursor.constprop.0>
     write_cmd_8(0x22);          //Display Update Control
- 536:	02200513          	li	a0,34
- 53a:	3ed1                	jal	10e <write_cmd_8>
+ 556:	02200513          	li	a0,34
+ 55a:	3e55                	jal	10e <write_cmd_8>
     write_data_8(data);         // 0xF7 for full update, 0xFF for partial update
- 53c:	0f700513          	li	a0,247
- 540:	3111                	jal	144 <write_data_8>
+ 55c:	0f700513          	li	a0,247
+ 560:	36d5                	jal	144 <write_data_8>
     write_cmd_8(0x20);          //Activate Display Update Sequence
- 542:	02000513          	li	a0,32
- 546:	36e1                	jal	10e <write_cmd_8>
+ 562:	02000513          	li	a0,32
+ 566:	3665                	jal	10e <write_cmd_8>
         now = millis();
- 548:	87a6                	mv	a5,s1
- 54a:	bf79                	j	4e8 <main+0x1a6>
-        // for (int j = 0; j < 7; j++) {
-        //     write_data_8(_frame_buffer2[j]);            
-        // }
+ 568:	4782                	lw	a5,0(sp)
+ 56a:	b75d                	j	510 <main+0x1a4>
 
-        for (int i = 0; i < 5; i++) {
-            write_data_8(0xAA);
- 54c:	0aa00513          	li	a0,170
- 550:	3ed5                	jal	144 <write_data_8>
- 552:	0aa00513          	li	a0,170
- 556:	36fd                	jal	144 <write_data_8>
- 558:	0aa00513          	li	a0,170
- 55c:	36e5                	jal	144 <write_data_8>
- 55e:	0aa00513          	li	a0,170
- 562:	36cd                	jal	144 <write_data_8>
- 564:	0aa00513          	li	a0,170
- 568:	3ef1                	jal	144 <write_data_8>
-        for (int i = 0; i < 5; i++) {
- 56a:	b7f1                	j	536 <main+0x1f4>
+    } else {
+        char my_str[] = "Hello, world!";
+ 56c:	4639                	li	a2,14
+ 56e:	5ec00593          	li	a1,1516
+ 572:	0068                	addi	a0,sp,12
+ 574:	3b21                	jal	28c <memcpy>
 
-0000056c <SysTick_Handler>:
+        for (int i = 0; i < strlen(my_str); i++) {
+ 576:	4401                	li	s0,0
+ 578:	0068                	addi	a0,sp,12
+ 57a:	3301                	jal	27a <strlen>
+ 57c:	fca47de3          	bgeu	s0,a0,556 <main+0x1ea>
+            tft_print_char2(my_str[i], 7, &font7x8);
+ 580:	007c                	addi	a5,sp,12
+ 582:	97a2                	add	a5,a5,s0
+    const unsigned char* start = &font[(c-32)*width];
+ 584:	0007c583          	lbu	a1,0(a5)
+        _frame_buffer2[i] = *start++;
+ 588:	461d                	li	a2,7
+ 58a:	c0818513          	addi	a0,gp,-1016 # 20000004 <_frame_buffer2>
+    const unsigned char* start = &font[(c-32)*width];
+ 58e:	1581                	addi	a1,a1,-32
+        _frame_buffer2[i] = *start++;
+ 590:	00359793          	slli	a5,a1,0x3
+ 594:	40b785b3          	sub	a1,a5,a1
+ 598:	5fc00793          	li	a5,1532
+ 59c:	95be                	add	a1,a1,a5
+ 59e:	31fd                	jal	28c <memcpy>
+ 5a0:	479d                	li	a5,7
+
+            for (int j = 0; j < 7; j++) {
+                write_data_8(_frame_buffer2[7-j]);            
+ 5a2:	c0818713          	addi	a4,gp,-1016 # 20000004 <_frame_buffer2>
+ 5a6:	973e                	add	a4,a4,a5
+ 5a8:	00074503          	lbu	a0,0(a4) # ffff1000 <_eusrstack+0xdfff0800>
+ 5ac:	c43e                	sw	a5,8(sp)
+ 5ae:	3e59                	jal	144 <write_data_8>
+            for (int j = 0; j < 7; j++) {
+ 5b0:	47a2                	lw	a5,8(sp)
+ 5b2:	17fd                	addi	a5,a5,-1
+ 5b4:	f7fd                	bnez	a5,5a2 <main+0x236>
+        for (int i = 0; i < strlen(my_str); i++) {
+ 5b6:	0405                	addi	s0,s0,1
+ 5b8:	b7c1                	j	578 <main+0x20c>
+
+000005ba <SysTick_Handler>:
 * Increments Compare Register and systick_millis when triggered (every 1ms)
 * NOTE: the `__attribute__((interrupt))` attribute is very important
 */
 void SysTick_Handler(void) __attribute__((interrupt));
 void SysTick_Handler(void)
 {
- 56c:	1151                	addi	sp,sp,-12
- 56e:	c03e                	sw	a5,0(sp)
+ 5ba:	1151                	addi	sp,sp,-12
+ 5bc:	c03e                	sw	a5,0(sp)
 	// Increment the Compare Register for the next trigger
 	// If more than this number of ticks elapse before the trigger is reset,
 	// you may miss your next interrupt trigger
 	// (Make sure the IQR is lightweight and CMP value is reasonable)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 570:	e000f7b7          	lui	a5,0xe000f
+ 5be:	e000f7b7          	lui	a5,0xe000f
 {
- 574:	c23a                	sw	a4,4(sp)
+ 5c2:	c23a                	sw	a4,4(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 576:	4b98                	lw	a4,16(a5)
+ 5c4:	4b98                	lw	a4,16(a5)
 {
- 578:	c436                	sw	a3,8(sp)
+ 5c6:	c436                	sw	a3,8(sp)
 	SysTick->CMP += SYSTICK_ONE_MILLISECOND;
- 57a:	66b1                	lui	a3,0xc
- 57c:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.652e340b+0x954f>
- 580:	9736                	add	a4,a4,a3
- 582:	cb98                	sw	a4,16(a5)
+ 5c8:	66b1                	lui	a3,0xc
+ 5ca:	b8068693          	addi	a3,a3,-1152 # bb80 <example.c.9eaf7308+0x94c6>
+ 5ce:	9736                	add	a4,a4,a3
+ 5d0:	cb98                	sw	a4,16(a5)
 
 	// Clear the trigger state for the next IRQ
 	SysTick->SR = 0x00000000;
- 584:	0007a223          	sw	zero,4(a5) # e000f004 <_eusrstack+0xc000e804>
+ 5d2:	0007a223          	sw	zero,4(a5) # e000f004 <_eusrstack+0xc000e804>
 
 	// Increment the milliseconds count
 	systick_millis++;
- 588:	c0818793          	addi	a5,gp,-1016 # 20000004 <systick_millis>
- 58c:	4398                	lw	a4,0(a5)
+ 5d6:	c1018793          	addi	a5,gp,-1008 # 2000000c <systick_millis>
+ 5da:	4398                	lw	a4,0(a5)
 }
- 58e:	46a2                	lw	a3,8(sp)
+ 5dc:	46a2                	lw	a3,8(sp)
 	systick_millis++;
- 590:	0705                	addi	a4,a4,1
- 592:	c398                	sw	a4,0(a5)
+ 5de:	0705                	addi	a4,a4,1
+ 5e0:	c398                	sw	a4,0(a5)
 }
- 594:	4712                	lw	a4,4(sp)
- 596:	4782                	lw	a5,0(sp)
- 598:	0131                	addi	sp,sp,12
- 59a:	30200073          	mret
+ 5e2:	4712                	lw	a4,4(sp)
+ 5e4:	4782                	lw	a5,0(sp)
+ 5e6:	0131                	addi	sp,sp,12
+ 5e8:	30200073          	mret
+ 5ec:	6548                	flw	fa0,12(a0)
+ 5ee:	6c6c                	flw	fa1,92(s0)
+ 5f0:	77202c6f          	jal	s8,2d62 <example.c.9eaf7308+0x6a8>
+ 5f4:	646c726f          	jal	tp,c7c3a <example.c.9eaf7308+0xc5580>
+ 5f8:	0021                	c.nop	8
 	...
+
+000005fc <font7x8>:
+	...
+ 608:	7a00 0000 0000 0030 0030 2800 287c 287c     .z....0.0..(|(|(
+ 618:	0000 545c 54fe 0e74 3e00 3800 3828 0000     ..\T.Tt..>.8(8..
+ 628:	7402 725a 001e 0000 0000 3000 0000 0000     .tZr.......0....
+ 638:	8100 007e 0000 0000 817e 0000 3820 3870     ..~.....~... 8p8
+ 648:	0020 0000 1000 1038 0000 0000 0000 0003      .....8.........
+ 658:	0000 1000 1010 0000 0000 0000 0002 0000     ................
+ 668:	0000 0e70 0000 0000 223e 003e 0000 0000     ..p.....>">.....
+ 678:	103e 0000 0000 2a32 0026 0000 3e00 222a     >.....2*&....>*"
+ 688:	0000 0000 083e 0038 0000 2c00 3a2a 0000     ....>.8....,*:..
+ 698:	0000 2a2e 003e 0000 3e00 2020 0000 0000     ...*>....>  ....
+ 6a8:	2a3e 003e 0000 3e00 3828 0000 0000 0000     >*>....>(8......
+ 6b8:	000a 0000 0000 0b00 0000 0000 0a0a 0004     ................
+ 6c8:	0000 1400 1414 0000 0000 0a04 000a 0000     ................
+ 6d8:	7000 405a 7a00 5a4a 425a 007e 0000 507e     .pZ@.zJZZB~...~P
+ 6e8:	7e50 0000 3e00 5252 007e 0000 4242 7e42     P~...>RR~...BBB~
+ 6f8:	0000 3e00 4242 007e 0000 5242 7e52 0000     ...>BB~...BRR~..
+ 708:	4000 5050 007e 0000 525e 7e42 0000 7e00     .@PP~...^RB~...~
+ 718:	1010 007e 4200 7e42 4242 0000 4000 427e     ..~..BB~BB...@~B
+ 728:	0042 0000 701e 7e10 0000 0200 0202 007e     B....p.~......~.
+ 738:	7e00 6040 7e40 0000 7e00 2010 007e 0000     .~@`@~...~. ~...
+ 748:	427e 7e42 0000 7000 5050 007e 0000 437e     ~BB~...pPP~...~C
+ 758:	7e42 0000 7000 505e 007e 0000 525e 7252     B~...p^P~...^RRr
+ 768:	0000 4040 407e 0040 0000 027e 7e02 0000     ..@@~@@...~..~..
+ 778:	0478 0402 0078 7e00 0602 7e02 0000 2442     x...x..~...~..B$
+ 788:	2418 0042 7000 1e10 7010 0000 6200 4a52     .$B..p...p...bRJ
+ 798:	0046 0000 0000 ff81 0000 0000 0e00 0070     F.............p.
+ 7a8:	0000 0000 81ff 0000 0000 4020 0020 0200     .......... @ ...
+ 7b8:	0202 0202 0000 0000 2000 0040 0000 283e     ......... @...>(
+ 7c8:	3e28 0000 1e00 2a2a 003e 0000 2222 3e22     (>....**>...""">
+ 7d8:	0000 1e00 2222 003e 0000 2a22 3e2a 0000     ...."">..."**>..
+ 7e8:	2000 2828 003e 0000 2a2e 3e22 0000 3e00     . ((>....*">...>
+ 7f8:	0808 003e 2200 3e22 2222 0000 2000 223e     ..>.."">""... >"
+ 808:	0022 0000 380e 3e08 0000 0200 0202 003e     "....8.>......>.
+ 818:	3e00 3020 3e20 0000 3e00 1008 003e 0000     .> 0 >...>..>...
+ 828:	223e 3e22 0000 3800 2828 003e 0000 233e     >"">...8((>...>#
+ 838:	3e22 0000 3800 282e 003e 0000 2a2e 3a2a     ">...8.(>....**:
+ 848:	0000 2020 203e 0020 0000 023e 3e02 0000     ..  >  ...>..>..
+ 858:	0438 0402 0038 3e00 0602 3e02 0000 1422     8...8..>...>..".
+ 868:	1408 0022 3800 0e08 3808 0000 2200 2a32     .."..8...8..."2*
+ 878:	0026 0000 8100 10ef 0000 0000 0000 00ff     &...............
+ 888:	0000 1000 81ef 0000 1800 1008 0018 0000     ................
+ 898:	0000 0000                                   ....
