@@ -849,29 +849,29 @@ void i2c_scan_callback(const uint8_t addr) {
 }
 
 void i2c_device_tests() {
-	test_htu21();				//! NOT WORKING
-	test_aht21();
-	test_bmp280();
-	test_hdc1080();
-	test_si7021();
-	test_max44009();
-	test_ap3216();
-	test_vl53l0x();			    //! NOT WORKING
-	test_ens160();
-	test_sgp30();
-	test_scd40();
-	test_mpu6050();
-	test_adxl345();
-	test_ds3231();
-	test_at24c();
-	test_ina3221();			    //! NOT WORKING
-	test_as5600();
-	test_max30102();
-	test_amg88xx();
-	test_bh1750();
-	test_sht3x();
-	test_apds9960();
+	// test_htu21();				//! NOT WORKING
+	// test_aht21();
+	// test_bmp280();
+	// test_hdc1080();
+	// test_si7021();
+	// test_max44009();
+	// test_ap3216();
+	// test_vl53l0x();			    //! NOT WORKING
+	// test_ens160();
+	// test_sgp30();
+	// test_scd40();
+	// test_mpu6050();
+	// test_adxl345();
+	// test_ds3231();
+	// test_at24c();
+	// test_ina3221();			    //! NOT WORKING
+	// test_as5600();
+	// test_max30102();
+	// test_amg88xx();
+	// test_apds9960();
 	test_ina219();
+    test_bh1750();
+	test_sht3x();
 }
 
 

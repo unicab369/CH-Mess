@@ -1,0 +1,409 @@
+Archive member included to satisfy reference by file (symbol)
+
+../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                              C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o (__udivsi3)
+
+Discarded input sections
+
+ .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.mini_pad
+                0x0000000000000000       0xa0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.mini_itoa.part.0
+                0x0000000000000000       0xca C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text._write.constprop.0
+                0x0000000000000000      0x104 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.__puts_uart
+                0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strlen   0x0000000000000000       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.mini_vpprintf
+                0x0000000000000000      0x1c6 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.printf   0x0000000000000000       0x30 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.mini_vsnprintf
+                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.snprintf
+                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.sprintf  0x0000000000000000       0x28 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.memset   0x0000000000000000       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.memcpy   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.twoway_strstr
+                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .rodata.puts.str1.4
+                0x0000000000000000        0x2 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.puts     0x0000000000000000       0x40 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .data.ADCPrescTable.lto_priv.0
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .data.ADCPrescTable.lto_priv.1
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .data.APBAHBPrescTable.lto_priv.0
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .data.APBAHBPrescTable.lto_priv.1
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+ .text          0x0000000000000000       0x80 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .data          0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .bss           0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_line    0x0000000000000000      0x153 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_line_str
+                0x0000000000000000       0x92 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_info    0x0000000000000000       0x5d ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_abbrev  0x0000000000000000       0x28 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_aranges
+                0x0000000000000000       0x20 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .debug_str     0x0000000000000000       0xd9 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+ .riscv.attributes
+                0x0000000000000000       0x1f ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x0000000000000000 0x0000000000004000 xr
+RAM              0x0000000020000000 0x0000000000000800 xrw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD C:\Users\uni\AppData\Local\Temp\ccTyeFfc.o
+LOAD C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccaSC4Ou.o
+LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
+LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
+
+.init           0x0000000000000000       0xa0
+                0x0000000000000000                _sinit = .
+                0x0000000000000000                . = ALIGN (0x4)
+ *(SORT_NONE(.init))
+ .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x0000000000000000                InterruptVector
+                0x00000000000000a0                . = ALIGN (0x4)
+ *fill*         0x000000000000009e        0x2 
+                0x00000000000000a0                _einit = .
+
+.text           0x00000000000000a0      0x500
+                0x00000000000000a0                . = ALIGN (0x4)
+ *(.text)
+ *(.text.*)
+ .text.PrintHex
+                0x00000000000000a0       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.DelaySysTick
+                0x00000000000000f8       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.write_cmd_8
+                0x000000000000010e       0x36 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.write_data_8
+                0x0000000000000144       0x34 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.fun_gdehxx_setCursor.constprop.0
+                0x0000000000000178       0x32 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.internal_handle_input.constprop.0
+                0x00000000000001aa        0xa C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .text.handle_reset
+                0x00000000000001b4       0x6c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x00000000000001b4                handle_reset
+ .text.vector_handler
+                0x0000000000000220       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x0000000000000220                EXTI2_IRQHandler
+                0x0000000000000220                TIM8_TRG_COM_IRQHandler
+                0x0000000000000220                TIM8_CC_IRQHandler
+                0x0000000000000220                UART8_IRQHandler
+                0x0000000000000220                TIM1_CC_IRQHandler
+                0x0000000000000220                HardFault_Handler
+                0x0000000000000220                GPIOB_IRQHandler
+                0x0000000000000220                USBPD_IRQHandler
+                0x0000000000000220                TIM6_IRQHandler
+                0x0000000000000220                GPIOA_IRQHandler
+                0x0000000000000220                PVD_IRQHandler
+                0x0000000000000220                SDIO_IRQHandler
+                0x0000000000000220                TIM9_BRK_IRQHandler
+                0x0000000000000220                DMA2_Channel8_IRQHandler
+                0x0000000000000220                USBWakeUp_IRQHandler
+                0x0000000000000220                CAN2_RX1_IRQHandler
+                0x0000000000000220                EXTI3_IRQHandler
+                0x0000000000000220                UART1_IRQHandler
+                0x0000000000000220                USBHS_IRQHandler
+                0x0000000000000220                DMA2_Channel9_IRQHandler
+                0x0000000000000220                TIM10_CC_IRQHandler
+                0x0000000000000220                EXTI25_16_IRQHandler
+                0x0000000000000220                USBFS_IRQHandler
+                0x0000000000000220                UART0_IRQHandler
+                0x0000000000000220                EXTI0_IRQHandler
+                0x0000000000000220                I2C2_EV_IRQHandler
+                0x0000000000000220                TIM10_TRG_COM_IRQHandler
+                0x0000000000000220                CAN2_SCE_IRQHandler
+                0x0000000000000220                ADC1_2_IRQHandler
+                0x0000000000000220                BB_IRQHandler
+                0x0000000000000220                Break_Point_Handler
+                0x0000000000000220                TIM2_CC_IRQHandler
+                0x0000000000000220                SPI1_IRQHandler
+                0x0000000000000220                TAMPER_IRQHandler
+                0x0000000000000220                TMR0_IRQHandler
+                0x0000000000000220                AWU_IRQHandler
+                0x0000000000000220                EXTI7_0_IRQHandler
+                0x0000000000000220                CAN2_RX0_IRQHandler
+                0x0000000000000220                OSCWakeUp_IRQHandler
+                0x0000000000000220                TIM8_UP_IRQHandler
+                0x0000000000000220                Ecall_M_Mode_Handler
+                0x0000000000000220                DMA2_Channel2_IRQHandler
+                0x0000000000000220                DMA1_Channel4_IRQHandler
+                0x0000000000000220                ADC1_IRQHandler
+                0x0000000000000220                TIM2_BRK_IRQHandler
+                0x0000000000000220                TIM9_UP_IRQHandler
+                0x0000000000000220                USART3_IRQHandler
+                0x0000000000000220                RTC_IRQHandler
+                0x0000000000000220                DMA1_Channel7_IRQHandler
+                0x0000000000000220                CAN1_RX1_IRQHandler
+                0x0000000000000220                DVP_IRQHandler
+                0x0000000000000220                UART5_IRQHandler
+                0x0000000000000220                EXTI15_8_IRQHandler
+                0x0000000000000220                TIM4_IRQHandler
+                0x0000000000000220                DMA2_Channel1_IRQHandler
+                0x0000000000000220                USBPD_WKUP_IRQHandler
+                0x0000000000000220                I2C1_EV_IRQHandler
+                0x0000000000000220                UART2_IRQHandler
+                0x0000000000000220                USART4_IRQHandler
+                0x0000000000000220                PWMX_IRQHandler
+                0x0000000000000220                DMA1_Channel6_IRQHandler
+                0x0000000000000220                UART4_IRQHandler
+                0x0000000000000220                DMA2_Channel4_IRQHandler
+                0x0000000000000220                TIM3_IRQHandler
+                0x0000000000000220                RCC_IRQHandler
+                0x0000000000000220                TIM1_TRG_COM_IRQHandler
+                0x0000000000000220                DMA1_Channel1_IRQHandler
+                0x0000000000000220                DMA2_Channel7_IRQHandler
+                0x0000000000000220                EXTI15_10_IRQHandler
+                0x0000000000000220                ADC_IRQHandler
+                0x0000000000000220                DMA1_Channel8_IRQHandler
+                0x0000000000000220                TMR2_IRQHandler
+                0x0000000000000220                DefaultIRQHandler
+                0x0000000000000220                TIM7_IRQHandler
+                0x0000000000000220                CAN2_TX_IRQHandler
+                0x0000000000000220                TIM5_IRQHandler
+                0x0000000000000220                TMR1_IRQHandler
+                0x0000000000000220                USB_IRQHandler
+                0x0000000000000220                EXTI9_5_IRQHandler
+                0x0000000000000220                PIOC_IRQHandler
+                0x0000000000000220                SPI2_IRQHandler
+                0x0000000000000220                OSC32KCal_IRQHandler
+                0x0000000000000220                I2C_IRQHandler
+                0x0000000000000220                TIM10_BRK_IRQHandler
+                0x0000000000000220                TIM9_CC_IRQHandler
+                0x0000000000000220                DMA2_Channel5_IRQHandler
+                0x0000000000000220                USB2_IRQHandler
+                0x0000000000000220                USBHSWakeUp_IRQHandler
+                0x0000000000000220                DMA1_Channel5_IRQHandler
+                0x0000000000000220                EXTI4_IRQHandler
+                0x0000000000000220                USB_LP_CAN1_RX0_IRQHandler
+                0x0000000000000220                RNG_IRQHandler
+                0x0000000000000220                USB_HP_CAN1_TX_IRQHandler
+                0x0000000000000220                LLE_IRQHandler
+                0x0000000000000220                DMA1_Channel3_IRQHandler
+                0x0000000000000220                FSMC_IRQHandler
+                0x0000000000000220                ETH_IRQHandler
+                0x0000000000000220                TIM1_UP_IRQHandler
+                0x0000000000000220                WWDG_IRQHandler
+                0x0000000000000220                DMA2_Channel11_IRQHandler
+                0x0000000000000220                WDOG_BAT_IRQHandler
+                0x0000000000000220                Ecall_U_Mode_Handler
+                0x0000000000000220                TMR3_IRQHandler
+                0x0000000000000220                DMA2_Channel6_IRQHandler
+                0x0000000000000220                TIM2_IRQHandler
+                0x0000000000000220                SW_Handler
+                0x0000000000000220                TIM1_BRK_IRQHandler
+                0x0000000000000220                OPA_IRQHandler
+                0x0000000000000220                DMA2_Channel10_IRQHandler
+                0x0000000000000220                EXTI1_IRQHandler
+                0x0000000000000220                SPI0_IRQHandler
+                0x0000000000000220                RTCAlarm_IRQHandler
+                0x0000000000000220                TIM10_UP_IRQHandler
+                0x0000000000000220                TIM9_TRG_COM_IRQHandler
+                0x0000000000000220                UART7_IRQHandler
+                0x0000000000000220                USART2_IRQHandler
+                0x0000000000000220                UART6_IRQHandler
+                0x0000000000000220                ETHWakeUp_IRQHandler
+                0x0000000000000220                I2C2_ER_IRQHandler
+                0x0000000000000220                DMA1_Channel2_IRQHandler
+                0x0000000000000220                TIM8_BRK_IRQHandler
+                0x0000000000000220                TIM2_TRG_IRQHandler
+                0x0000000000000220                CAN1_SCE_IRQHandler
+                0x0000000000000220                FLASH_IRQHandler
+                0x0000000000000220                USBFSWakeUp_IRQHandler
+                0x0000000000000220                USART1_IRQHandler
+                0x0000000000000220                OTG_FS_IRQHandler
+                0x0000000000000220                SPI3_IRQHandler
+                0x0000000000000220                USBFS_WakeUp_IRQHandler
+                0x0000000000000220                UART3_IRQHandler
+                0x0000000000000220                I2C1_ER_IRQHandler
+                0x0000000000000220                DMA2_Channel3_IRQHandler
+                0x0000000000000270                NMI_Handler
+                0x0000000000000270                NMI_RCC_CSS_IRQHandler
+ .text.putchar  0x000000000000027e       0x6c C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x000000000000027e                putchar
+ .text.SystemInit
+                0x00000000000002ea       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x00000000000002ea                SystemInit
+ .text.startup.main
+                0x0000000000000342      0x22a C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                0x0000000000000342                main
+ .text.SysTick_Handler
+                0x000000000000056c       0x32 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ *(.rodata)
+ *(.rodata*)
+ *(.gnu.linkonce.t.*)
+                0x00000000000005a0                . = ALIGN (0x4)
+ *fill*         0x000000000000059e        0x2 
+
+.rela.dyn       0x00000000000005a0        0x0
+ .rela.text.handle_reset
+                0x00000000000005a0        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .rela.text.startup.main
+                0x00000000000005a0        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+
+.fini           0x00000000000005a0        0x0
+ *(SORT_NONE(.fini))
+                0x00000000000005a0                . = ALIGN (0x4)
+                [!provide]                        PROVIDE (_etext = .)
+                [!provide]                        PROVIDE (_eitcm = .)
+
+.preinit_array  0x00000000000005a0        0x0
+                [!provide]                        PROVIDE (__preinit_array_start = .)
+ *(.preinit_array)
+                [!provide]                        PROVIDE (__preinit_array_end = .)
+
+.init_array     0x00000000000005a0        0x0
+                [!provide]                        PROVIDE (__init_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
+ *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
+                [!provide]                        PROVIDE (__init_array_end = .)
+
+.fini_array     0x00000000000005a0        0x0
+                [!provide]                        PROVIDE (__fini_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
+ *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
+                [!provide]                        PROVIDE (__fini_array_end = .)
+
+.ctors
+ *crtbegin.o(.ctors)
+ *crtbegin?.o(.ctors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors)
+ *(SORT_BY_NAME(.ctors.*))
+ *(.ctors)
+
+.dtors
+ *crtbegin.o(.dtors)
+ *crtbegin?.o(.dtors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors)
+ *(SORT_BY_NAME(.dtors.*))
+ *(.dtors)
+
+.dalign         0x0000000020000000        0x0 load address 0x00000000000005a0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                PROVIDE (_data_vma = .)
+
+.dlalign        0x00000000000005a0        0x0
+                0x00000000000005a0                . = ALIGN (0x4)
+                0x00000000000005a0                PROVIDE (_data_lma = .)
+
+.data           0x0000000020000000        0x0 load address 0x00000000000005a0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x00000000200003fc                __global_pointer$ = (. + 0x3fc)
+ *(.gnu.linkonce.r.*)
+ *(.data .data.*)
+ *(.gnu.linkonce.d.*)
+                0x0000000020000000                . = ALIGN (0x8)
+ *(.sdata .sdata.*)
+ *(.sdata2*)
+ *(.gnu.linkonce.s.*)
+                0x0000000020000000                . = ALIGN (0x8)
+ *(.srodata.cst16)
+ *(.srodata.cst8)
+ *(.srodata.cst4)
+ *(.srodata.cst2)
+ *(.srodata .srodata.*)
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                PROVIDE (_edata = .)
+
+.bss            0x0000000020000000        0x8 load address 0x00000000000005a0
+                0x0000000020000000                . = ALIGN (0x4)
+                0x0000000020000000                PROVIDE (_sbss = .)
+ *(.sbss*)
+ .sbss.GDEH_DC_PIN
+                0x0000000020000000        0x1 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ *fill*         0x0000000020000001        0x3 
+ .sbss.systick_millis
+                0x0000000020000004        0x4 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ *(.gnu.linkonce.sb.*)
+ *(.bss*)
+ *(.gnu.linkonce.b.*)
+ *(COMMON*)
+                0x0000000020000008                . = ALIGN (0x4)
+                0x0000000020000008                PROVIDE (_ebss = .)
+                [!provide]                        PROVIDE (_end = _ebss)
+                [!provide]                        PROVIDE (end = .)
+                0x0000000020000800                PROVIDE (_eusrstack = (ORIGIN (RAM) + LENGTH (RAM)))
+
+/DISCARD/
+ *(.note .note.*)
+ *(.eh_frame .eh_frame.*)
+ *(.comment .comment.*)
+ *(.ARM.extab* .gnu.linkonce.armextab.*)
+ *(.ARM.exidx*)
+OUTPUT(example.elf elf32-littleriscv)
+
+.riscv.attributes
+                0x0000000000000000       0x21
+ .riscv.attributes
+                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+
+.debug_info     0x0000000000000000     0x3636
+ .debug_info    0x0000000000000000     0x14a9 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .debug_info    0x00000000000014a9     0x1188 C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+                0x00000000000014a9                ch32fun.c.474464e1
+ .debug_info    0x0000000000002631     0x1005 C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+                0x0000000000002631                example.c.652e340b
+
+.debug_abbrev   0x0000000000000000      0x6a3
+ .debug_abbrev  0x0000000000000000      0x1df C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .debug_abbrev  0x00000000000001df      0x233 C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+ .debug_abbrev  0x0000000000000412      0x291 C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+
+.debug_loc      0x0000000000000000     0x2416
+ .debug_loc     0x0000000000000000     0x2416 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+
+.debug_aranges  0x0000000000000000      0x160
+ .debug_aranges
+                0x0000000000000000      0x160 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+
+.debug_ranges   0x0000000000000000      0x388
+ .debug_ranges  0x0000000000000000      0x388 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+
+.debug_line     0x0000000000000000     0x2f95
+ .debug_line    0x0000000000000000     0x2cad C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+ .debug_line    0x0000000000002cad      0x19a C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+ .debug_line    0x0000000000002e47      0x14e C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+
+.debug_str      0x0000000000000000      0xf67
+ .debug_str     0x0000000000000000      0x18e C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o
+                                        0x19c (size before relaxing)
+ .debug_str     0x000000000000018e      0x61e C:\Users\uni\AppData\Local\Temp\ccpjhEqi.debug.temp.o
+                                        0x725 (size before relaxing)
+ .debug_str     0x00000000000007ac      0x7bb C:\Users\uni\AppData\Local\Temp\ccwRjz7I.debug.temp.o
+                                        0xa7c (size before relaxing)
+
+.debug_frame    0x0000000000000000      0x404
+ .debug_frame   0x0000000000000000      0x404 C:\Users\uni\AppData\Local\Temp\example.elf.3mrUPv.ltrans0.ltrans.o

@@ -118,7 +118,7 @@ int main() {
 
 	#ifdef I2C_ENABLED
 		//# I2C1: uses PC1 & PC2
-		modI2C_setup();
+		modI2C_setup(bootCnt);
 	#endif
 
 	#ifdef I2C_SLAVE_ENABLED

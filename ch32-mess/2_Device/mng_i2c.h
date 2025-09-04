@@ -7,7 +7,7 @@
 #define PACKED __attribute__((packed))
 #endif
 
-#define PRINT_BUFF_SIZE 2
+#define PRINT_BUFF_SIZE 5
 
 char str_output[SSD1306_STR_SIZE];
 
@@ -50,7 +50,7 @@ void i2c_scan_callback(const uint8_t addr) {
 	modI2C_display(str_output, line++);
 }
 
-void modI2C_setup() {
+void modI2C_setup(uint16_t counter) {
 	if(i2c_init(&dev_ssd1306) != I2C_OK) {
 		printf("Failed to init I2C\n");
 	} 
@@ -58,7 +58,7 @@ void modI2C_setup() {
 		if (i2c_ping(0x3C) == I2C_OK) {
 			ssd1306_setup();
 
-			sprintf(str_output, "Hello Bee!");
+			sprintf(str_output, "Hello Bee %ld", counter);
 			ssd1306_print_str_at(str_output, 0, 0);
 		}
 
