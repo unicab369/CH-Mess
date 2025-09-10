@@ -50,7 +50,7 @@ int main() {
 
     char my_str[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!#$&'()*+,-./0123456789:;<=>?@";
     timeRef = millis();
-    render_string_7x8(my_str, 0, GDEHXX_HEIGHT-1);
+    render_string_12x8(my_str, 0, GDEHXX_HEIGHT-1);
     getTimeDiff(timeRef);
 
     while(1) {

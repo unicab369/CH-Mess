@@ -3,7 +3,7 @@
 #include "lib_tft.h"
 #include "lib_spi.h"
 
-#include "font7x8.h"
+#include "font6x8.h"
 #include "../modules/fun_print.h"
 
 static uint8_t GDEH_DC_PIN;
@@ -157,14 +157,14 @@ void get_font_char(char c, uint8_t width, const char *font, char* buff) {
     }
 }
 
-void render_string_7x8(const char* str, uint8_t vertical, uint8_t horizontal) {
+void render_string_6x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     char verLINES = 6;
     char char_buff[8] = {0};
     fun_gdehxx_setCursor(vertical, horizontal);
     write_cmd_8(0x24);
 
     for (int i = 0; i<strlen(str); i++) {
-        get_font_char(str[i], verLINES, &font7x8, char_buff);
+        get_font_char(str[i], verLINES, &font6x8, char_buff);
 
         for (int j = 0; j < verLINES; j++) {
             char target = ~(char_buff[verLINES-j-1]);
@@ -175,7 +175,7 @@ void render_string_7x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     fun_gdehxx_update(0xF7);
 }
 
-void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
+void render_string_12x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     char verLINES = 6;
     char char_buff[8] = {0};
     printf("str len: %lu\n", strlen(str));
@@ -187,7 +187,7 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
-        get_font_char(str[i], verLINES, &font7x8, char_buff);
+        get_font_char(str[i], verLINES, &font6x8, char_buff);
 
         if (ref_horz < verLINES) {
             // # update cursor for next line
@@ -215,7 +215,7 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
-        get_font_char(str[i], verLINES, &font7x8, char_buff);
+        get_font_char(str[i], verLINES, &font6x8, char_buff);
         
         if (ref_horz < verLINES) {
             // # update cursor for next line
