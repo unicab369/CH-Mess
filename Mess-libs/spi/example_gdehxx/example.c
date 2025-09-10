@@ -48,12 +48,9 @@ int main() {
     // fun_ghdehxx_fill(0xAA);
     // getTimeDiff(timeRef);
 
-    char my_str[] = "Hello world ZZZZ";
-    uint32_t height = 16 * 7 - 1;
-    fun_gdehxx_setWindow(0x00, height, GDEHXX_WIDTH-1, 0x00);
-    fun_gdehxx_setCursor(0, height);
+    char my_str[] = "Hello world ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
     timeRef = millis();
-    render_string_14x16(my_str);
+    render_string_14x8(my_str, 0, 80);
     getTimeDiff(timeRef);
 
     while(1) {

@@ -173,8 +173,14 @@ void render_string_7x8(const char* str) {
     fun_gdehxx_update(0xF7);
 }
 
-void render_string_14x16(const char* str) {
+void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     char char_buff[8] = {0};
+    printf("str len: %lu\n", strlen(str));
+    uint8_t ref_horz, ref_vert;
+    
+    ref_horz = horizontal;
+    ref_vert = vertical;
+    fun_gdehxx_setCursor(ref_vert, ref_horz);
     write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
@@ -186,7 +192,24 @@ void render_string_14x16(const char* str) {
             write_data_8(halfTop);
             // write_data_8(halfTop);
         }
+
+        ref_horz = ref_horz - 7;
+
+        if (ref_horz < 7) {
+            // # update cursor for next line
+            ref_horz = GDEHXX_HEIGHT-1;
+            ref_vert = ref_vert + 16;
+
+            fun_gdehxx_setCursor(ref_vert, ref_horz);
+            write_cmd_8(0x24);
+        }
     }
+
+    // second pass for bottom half
+    ref_horz = horizontal;
+    ref_vert = vertical + 8;
+    fun_gdehxx_setCursor(ref_vert, ref_horz);
+    write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
         get_font_char(str[i], 7, &font7x8, char_buff);
@@ -196,6 +219,17 @@ void render_string_14x16(const char* str) {
             const char halfBottom = double_bits_forHalfByte(target, 0);
             write_data_8(halfBottom);
             // write_data_8(halfBottom);
+        }
+
+        ref_horz = ref_horz - 7;
+
+        if (ref_horz < 7) {
+            // # update cursor for next line
+            ref_horz = GDEHXX_HEIGHT-1;
+            ref_vert = ref_vert + 16;
+
+            fun_gdehxx_setCursor(ref_vert, ref_horz);
+            write_cmd_8(0x24);
         }
     }
 
