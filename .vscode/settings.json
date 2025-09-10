@@ -50,7 +50,10 @@
         "tim1_pwm.h": "c",
         "fun_timpwm.h": "c",
         "fun_spi_ws2812.h": "c",
-        "mod_st7735.h": "c"
+        "mod_st7735.h": "c",
+        "cstddef": "c",
+        "font7x8.h": "c",
+        "fun_gdehxx.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

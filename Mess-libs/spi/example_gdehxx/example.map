@@ -1,72 +1,50 @@
 Archive member included to satisfy reference by file (symbol)
 
 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
-                              C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o (__udivsi3)
+                              C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o (__udivsi3)
 
 Discarded input sections
 
- .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.mini_pad
-                0x0000000000000000       0xa0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.mini_itoa.part.0
-                0x0000000000000000       0xca C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text._write.constprop.0
-                0x0000000000000000      0x104 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.__puts_uart
-                0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.mini_vpprintf
-                0x0000000000000000      0x1c6 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.printf   0x0000000000000000       0x30 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+ .text          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .data          0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .bss           0x0000000000000000        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text._puts    0x0000000000000000       0x42 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.vprintf  0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.mini_vsnprintf
-                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x3a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.snprintf
-                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.sprintf  0x0000000000000000       0x28 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.memset   0x0000000000000000       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.sprintf  0x0000000000000000       0x28 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strcpy   0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strncpy  0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strcmp   0x0000000000000000       0x1a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strncmp  0x0000000000000000       0x2e C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strchr   0x0000000000000000       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strrchr  0x0000000000000000       0x3c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.memcmp   0x0000000000000000       0x26 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.memmove  0x0000000000000000       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.memchr   0x0000000000000000       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strnlen  0x0000000000000000       0x2a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.twoway_strstr
-                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000      0x236 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.strstr   0x0000000000000000      0x140 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .rodata.puts.str1.4
-                0x0000000000000000        0x2 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.puts     0x0000000000000000       0x40 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000        0x2 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.puts     0x0000000000000000       0x40 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.putchar  0x0000000000000000       0x72 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.0
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .data.ADCPrescTable.lto_priv.1
-                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.0
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .data.APBAHBPrescTable.lto_priv.1
-                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
- .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
- .text          0x0000000000000000       0x80 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                0x0000000000000000       0x10 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
+ .comment       0x0000000000000000       0x13 C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
  .data          0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
  .bss           0x0000000000000000        0x0 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_line    0x0000000000000000      0x153 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_line_str
-                0x0000000000000000       0x92 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_info    0x0000000000000000       0x5d ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_abbrev  0x0000000000000000       0x28 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_aranges
-                0x0000000000000000       0x20 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .debug_str     0x0000000000000000       0xd9 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
- .riscv.attributes
-                0x0000000000000000       0x1f ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
 Memory Configuration
 
@@ -77,11 +55,11 @@ RAM              0x0000000020000000 0x0000000000000800 xrw
 
 Linker script and memory map
 
-LOAD C:\Users\uni\AppData\Local\Temp\ccg4JS9J.o
-LOAD C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-LOAD C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
-LOAD C:\Users\uni\AppData\Local\Temp\cc3S9LCM.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccEEnkTY.o
+LOAD C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
+LOAD C:\Users\uni\AppData\Local\Temp\ccvkG25F.o
 LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
 LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
 
@@ -89,216 +67,249 @@ LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
                 0x0000000000000000                _sinit = .
                 0x0000000000000000                . = ALIGN (0x4)
  *(SORT_NONE(.init))
- .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+ .init          0x0000000000000000       0x9e C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
                 0x0000000000000000                InterruptVector
                 0x00000000000000a0                . = ALIGN (0x4)
  *fill*         0x000000000000009e        0x2 
                 0x00000000000000a0                _einit = .
 
-.text           0x00000000000000a0      0x7fc
+.text           0x00000000000000a0      0xda4
                 0x00000000000000a0                . = ALIGN (0x4)
  *(.text)
+ .text          0x00000000000000a0       0x7e ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                0x00000000000000a0                __divsi3
+                0x00000000000000a8                __udivsi3
+                0x00000000000000a8                __hidden___udivsi3
+                0x00000000000000d4                __umodsi3
+                0x00000000000000f8                __modsi3
  *(.text.*)
+ .text.mini_pad
+                0x000000000000011e       0x9a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.PrintHex
-                0x00000000000000a0       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x00000000000001b8       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.DelaySysTick
-                0x00000000000000f8       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000210       0x16 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.mini_itoa.part.0
+                0x0000000000000226       0xbe C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.write_cmd_8
-                0x000000000000010e       0x36 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x00000000000002e4       0x36 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.write_data_8
-                0x0000000000000144       0x34 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .text.fun_gdehxx_setCursor.constprop.0
-                0x0000000000000178       0x2a C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x000000000000031a       0x34 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.fun_gdehxx_setWindow
+                0x000000000000034e       0x4c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.fun_gdehxx_setCursor
+                0x000000000000039a       0x3a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.internal_handle_input.constprop.0
-                0x00000000000001a2        0xa C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x00000000000003d4        0xa C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text._write.constprop.0
+                0x00000000000003de       0xf2 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.__puts_uart
+                0x00000000000004d0       0x14 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .text.handle_reset
-                0x00000000000001ac       0x70 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x00000000000001ac                handle_reset
+                0x00000000000004e4       0x72 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x00000000000004e4                handle_reset
  .text.vector_handler
-                0x000000000000021c       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x000000000000021c                EXTI2_IRQHandler
-                0x000000000000021c                TIM8_TRG_COM_IRQHandler
-                0x000000000000021c                TIM8_CC_IRQHandler
-                0x000000000000021c                UART8_IRQHandler
-                0x000000000000021c                TIM1_CC_IRQHandler
-                0x000000000000021c                HardFault_Handler
-                0x000000000000021c                GPIOB_IRQHandler
-                0x000000000000021c                USBPD_IRQHandler
-                0x000000000000021c                TIM6_IRQHandler
-                0x000000000000021c                GPIOA_IRQHandler
-                0x000000000000021c                PVD_IRQHandler
-                0x000000000000021c                SDIO_IRQHandler
-                0x000000000000021c                TIM9_BRK_IRQHandler
-                0x000000000000021c                DMA2_Channel8_IRQHandler
-                0x000000000000021c                USBWakeUp_IRQHandler
-                0x000000000000021c                CAN2_RX1_IRQHandler
-                0x000000000000021c                EXTI3_IRQHandler
-                0x000000000000021c                UART1_IRQHandler
-                0x000000000000021c                USBHS_IRQHandler
-                0x000000000000021c                DMA2_Channel9_IRQHandler
-                0x000000000000021c                TIM10_CC_IRQHandler
-                0x000000000000021c                EXTI25_16_IRQHandler
-                0x000000000000021c                USBFS_IRQHandler
-                0x000000000000021c                UART0_IRQHandler
-                0x000000000000021c                EXTI0_IRQHandler
-                0x000000000000021c                I2C2_EV_IRQHandler
-                0x000000000000021c                TIM10_TRG_COM_IRQHandler
-                0x000000000000021c                CAN2_SCE_IRQHandler
-                0x000000000000021c                ADC1_2_IRQHandler
-                0x000000000000021c                BB_IRQHandler
-                0x000000000000021c                Break_Point_Handler
-                0x000000000000021c                TIM2_CC_IRQHandler
-                0x000000000000021c                SPI1_IRQHandler
-                0x000000000000021c                TAMPER_IRQHandler
-                0x000000000000021c                TMR0_IRQHandler
-                0x000000000000021c                AWU_IRQHandler
-                0x000000000000021c                EXTI7_0_IRQHandler
-                0x000000000000021c                CAN2_RX0_IRQHandler
-                0x000000000000021c                OSCWakeUp_IRQHandler
-                0x000000000000021c                TIM8_UP_IRQHandler
-                0x000000000000021c                Ecall_M_Mode_Handler
-                0x000000000000021c                DMA2_Channel2_IRQHandler
-                0x000000000000021c                DMA1_Channel4_IRQHandler
-                0x000000000000021c                ADC1_IRQHandler
-                0x000000000000021c                TIM2_BRK_IRQHandler
-                0x000000000000021c                TIM9_UP_IRQHandler
-                0x000000000000021c                USART3_IRQHandler
-                0x000000000000021c                RTC_IRQHandler
-                0x000000000000021c                DMA1_Channel7_IRQHandler
-                0x000000000000021c                CAN1_RX1_IRQHandler
-                0x000000000000021c                DVP_IRQHandler
-                0x000000000000021c                UART5_IRQHandler
-                0x000000000000021c                EXTI15_8_IRQHandler
-                0x000000000000021c                TIM4_IRQHandler
-                0x000000000000021c                DMA2_Channel1_IRQHandler
-                0x000000000000021c                USBPD_WKUP_IRQHandler
-                0x000000000000021c                I2C1_EV_IRQHandler
-                0x000000000000021c                UART2_IRQHandler
-                0x000000000000021c                USART4_IRQHandler
-                0x000000000000021c                PWMX_IRQHandler
-                0x000000000000021c                DMA1_Channel6_IRQHandler
-                0x000000000000021c                UART4_IRQHandler
-                0x000000000000021c                DMA2_Channel4_IRQHandler
-                0x000000000000021c                TIM3_IRQHandler
-                0x000000000000021c                RCC_IRQHandler
-                0x000000000000021c                TIM1_TRG_COM_IRQHandler
-                0x000000000000021c                DMA1_Channel1_IRQHandler
-                0x000000000000021c                DMA2_Channel7_IRQHandler
-                0x000000000000021c                EXTI15_10_IRQHandler
-                0x000000000000021c                ADC_IRQHandler
-                0x000000000000021c                DMA1_Channel8_IRQHandler
-                0x000000000000021c                TMR2_IRQHandler
-                0x000000000000021c                DefaultIRQHandler
-                0x000000000000021c                TIM7_IRQHandler
-                0x000000000000021c                CAN2_TX_IRQHandler
-                0x000000000000021c                TIM5_IRQHandler
-                0x000000000000021c                TMR1_IRQHandler
-                0x000000000000021c                USB_IRQHandler
-                0x000000000000021c                EXTI9_5_IRQHandler
-                0x000000000000021c                PIOC_IRQHandler
-                0x000000000000021c                SPI2_IRQHandler
-                0x000000000000021c                OSC32KCal_IRQHandler
-                0x000000000000021c                I2C_IRQHandler
-                0x000000000000021c                TIM10_BRK_IRQHandler
-                0x000000000000021c                TIM9_CC_IRQHandler
-                0x000000000000021c                DMA2_Channel5_IRQHandler
-                0x000000000000021c                USB2_IRQHandler
-                0x000000000000021c                USBHSWakeUp_IRQHandler
-                0x000000000000021c                DMA1_Channel5_IRQHandler
-                0x000000000000021c                EXTI4_IRQHandler
-                0x000000000000021c                USB_LP_CAN1_RX0_IRQHandler
-                0x000000000000021c                RNG_IRQHandler
-                0x000000000000021c                USB_HP_CAN1_TX_IRQHandler
-                0x000000000000021c                LLE_IRQHandler
-                0x000000000000021c                DMA1_Channel3_IRQHandler
-                0x000000000000021c                FSMC_IRQHandler
-                0x000000000000021c                ETH_IRQHandler
-                0x000000000000021c                TIM1_UP_IRQHandler
-                0x000000000000021c                WWDG_IRQHandler
-                0x000000000000021c                DMA2_Channel11_IRQHandler
-                0x000000000000021c                WDOG_BAT_IRQHandler
-                0x000000000000021c                Ecall_U_Mode_Handler
-                0x000000000000021c                TMR3_IRQHandler
-                0x000000000000021c                DMA2_Channel6_IRQHandler
-                0x000000000000021c                TIM2_IRQHandler
-                0x000000000000021c                SW_Handler
-                0x000000000000021c                TIM1_BRK_IRQHandler
-                0x000000000000021c                OPA_IRQHandler
-                0x000000000000021c                DMA2_Channel10_IRQHandler
-                0x000000000000021c                EXTI1_IRQHandler
-                0x000000000000021c                SPI0_IRQHandler
-                0x000000000000021c                RTCAlarm_IRQHandler
-                0x000000000000021c                TIM10_UP_IRQHandler
-                0x000000000000021c                TIM9_TRG_COM_IRQHandler
-                0x000000000000021c                UART7_IRQHandler
-                0x000000000000021c                USART2_IRQHandler
-                0x000000000000021c                UART6_IRQHandler
-                0x000000000000021c                ETHWakeUp_IRQHandler
-                0x000000000000021c                I2C2_ER_IRQHandler
-                0x000000000000021c                DMA1_Channel2_IRQHandler
-                0x000000000000021c                TIM8_BRK_IRQHandler
-                0x000000000000021c                TIM2_TRG_IRQHandler
-                0x000000000000021c                CAN1_SCE_IRQHandler
-                0x000000000000021c                FLASH_IRQHandler
-                0x000000000000021c                USBFSWakeUp_IRQHandler
-                0x000000000000021c                USART1_IRQHandler
-                0x000000000000021c                OTG_FS_IRQHandler
-                0x000000000000021c                SPI3_IRQHandler
-                0x000000000000021c                USBFS_WakeUp_IRQHandler
-                0x000000000000021c                UART3_IRQHandler
-                0x000000000000021c                I2C1_ER_IRQHandler
-                0x000000000000021c                DMA2_Channel3_IRQHandler
-                0x000000000000026c                NMI_Handler
-                0x000000000000026c                NMI_RCC_CSS_IRQHandler
- .text.strlen   0x000000000000027a       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x000000000000027a                strlen
- .text.memcpy   0x000000000000028c       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x000000000000028c                memcpy
- .text.putchar  0x00000000000002a8       0x6c C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x00000000000002a8                putchar
+                0x0000000000000556       0x5e C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x0000000000000556                EXTI2_IRQHandler
+                0x0000000000000556                TIM8_TRG_COM_IRQHandler
+                0x0000000000000556                TIM8_CC_IRQHandler
+                0x0000000000000556                UART8_IRQHandler
+                0x0000000000000556                TIM1_CC_IRQHandler
+                0x0000000000000556                HardFault_Handler
+                0x0000000000000556                GPIOB_IRQHandler
+                0x0000000000000556                USBPD_IRQHandler
+                0x0000000000000556                TIM6_IRQHandler
+                0x0000000000000556                GPIOA_IRQHandler
+                0x0000000000000556                PVD_IRQHandler
+                0x0000000000000556                SDIO_IRQHandler
+                0x0000000000000556                TIM9_BRK_IRQHandler
+                0x0000000000000556                DMA2_Channel8_IRQHandler
+                0x0000000000000556                USBWakeUp_IRQHandler
+                0x0000000000000556                CAN2_RX1_IRQHandler
+                0x0000000000000556                EXTI3_IRQHandler
+                0x0000000000000556                UART1_IRQHandler
+                0x0000000000000556                USBHS_IRQHandler
+                0x0000000000000556                DMA2_Channel9_IRQHandler
+                0x0000000000000556                TIM10_CC_IRQHandler
+                0x0000000000000556                EXTI25_16_IRQHandler
+                0x0000000000000556                USBFS_IRQHandler
+                0x0000000000000556                UART0_IRQHandler
+                0x0000000000000556                EXTI0_IRQHandler
+                0x0000000000000556                I2C2_EV_IRQHandler
+                0x0000000000000556                TIM10_TRG_COM_IRQHandler
+                0x0000000000000556                CAN2_SCE_IRQHandler
+                0x0000000000000556                ADC1_2_IRQHandler
+                0x0000000000000556                BB_IRQHandler
+                0x0000000000000556                Break_Point_Handler
+                0x0000000000000556                TIM2_CC_IRQHandler
+                0x0000000000000556                SPI1_IRQHandler
+                0x0000000000000556                TAMPER_IRQHandler
+                0x0000000000000556                TMR0_IRQHandler
+                0x0000000000000556                AWU_IRQHandler
+                0x0000000000000556                EXTI7_0_IRQHandler
+                0x0000000000000556                CAN2_RX0_IRQHandler
+                0x0000000000000556                OSCWakeUp_IRQHandler
+                0x0000000000000556                TIM8_UP_IRQHandler
+                0x0000000000000556                Ecall_M_Mode_Handler
+                0x0000000000000556                DMA2_Channel2_IRQHandler
+                0x0000000000000556                DMA1_Channel4_IRQHandler
+                0x0000000000000556                ADC1_IRQHandler
+                0x0000000000000556                TIM2_BRK_IRQHandler
+                0x0000000000000556                TIM9_UP_IRQHandler
+                0x0000000000000556                USART3_IRQHandler
+                0x0000000000000556                RTC_IRQHandler
+                0x0000000000000556                DMA1_Channel7_IRQHandler
+                0x0000000000000556                CAN1_RX1_IRQHandler
+                0x0000000000000556                DVP_IRQHandler
+                0x0000000000000556                UART5_IRQHandler
+                0x0000000000000556                EXTI15_8_IRQHandler
+                0x0000000000000556                TIM4_IRQHandler
+                0x0000000000000556                DMA2_Channel1_IRQHandler
+                0x0000000000000556                USBPD_WKUP_IRQHandler
+                0x0000000000000556                I2C1_EV_IRQHandler
+                0x0000000000000556                UART2_IRQHandler
+                0x0000000000000556                USART4_IRQHandler
+                0x0000000000000556                PWMX_IRQHandler
+                0x0000000000000556                DMA1_Channel6_IRQHandler
+                0x0000000000000556                UART4_IRQHandler
+                0x0000000000000556                DMA2_Channel4_IRQHandler
+                0x0000000000000556                TIM3_IRQHandler
+                0x0000000000000556                RCC_IRQHandler
+                0x0000000000000556                TIM1_TRG_COM_IRQHandler
+                0x0000000000000556                DMA1_Channel1_IRQHandler
+                0x0000000000000556                DMA2_Channel7_IRQHandler
+                0x0000000000000556                EXTI15_10_IRQHandler
+                0x0000000000000556                ADC_IRQHandler
+                0x0000000000000556                DMA1_Channel8_IRQHandler
+                0x0000000000000556                TMR2_IRQHandler
+                0x0000000000000556                DefaultIRQHandler
+                0x0000000000000556                TIM7_IRQHandler
+                0x0000000000000556                CAN2_TX_IRQHandler
+                0x0000000000000556                TIM5_IRQHandler
+                0x0000000000000556                TMR1_IRQHandler
+                0x0000000000000556                USB_IRQHandler
+                0x0000000000000556                EXTI9_5_IRQHandler
+                0x0000000000000556                PIOC_IRQHandler
+                0x0000000000000556                SPI2_IRQHandler
+                0x0000000000000556                OSC32KCal_IRQHandler
+                0x0000000000000556                I2C_IRQHandler
+                0x0000000000000556                TIM10_BRK_IRQHandler
+                0x0000000000000556                TIM9_CC_IRQHandler
+                0x0000000000000556                DMA2_Channel5_IRQHandler
+                0x0000000000000556                USB2_IRQHandler
+                0x0000000000000556                USBHSWakeUp_IRQHandler
+                0x0000000000000556                DMA1_Channel5_IRQHandler
+                0x0000000000000556                EXTI4_IRQHandler
+                0x0000000000000556                USB_LP_CAN1_RX0_IRQHandler
+                0x0000000000000556                RNG_IRQHandler
+                0x0000000000000556                USB_HP_CAN1_TX_IRQHandler
+                0x0000000000000556                LLE_IRQHandler
+                0x0000000000000556                DMA1_Channel3_IRQHandler
+                0x0000000000000556                FSMC_IRQHandler
+                0x0000000000000556                ETH_IRQHandler
+                0x0000000000000556                TIM1_UP_IRQHandler
+                0x0000000000000556                WWDG_IRQHandler
+                0x0000000000000556                DMA2_Channel11_IRQHandler
+                0x0000000000000556                WDOG_BAT_IRQHandler
+                0x0000000000000556                Ecall_U_Mode_Handler
+                0x0000000000000556                TMR3_IRQHandler
+                0x0000000000000556                DMA2_Channel6_IRQHandler
+                0x0000000000000556                TIM2_IRQHandler
+                0x0000000000000556                SW_Handler
+                0x0000000000000556                TIM1_BRK_IRQHandler
+                0x0000000000000556                OPA_IRQHandler
+                0x0000000000000556                DMA2_Channel10_IRQHandler
+                0x0000000000000556                EXTI1_IRQHandler
+                0x0000000000000556                SPI0_IRQHandler
+                0x0000000000000556                RTCAlarm_IRQHandler
+                0x0000000000000556                TIM10_UP_IRQHandler
+                0x0000000000000556                TIM9_TRG_COM_IRQHandler
+                0x0000000000000556                UART7_IRQHandler
+                0x0000000000000556                USART2_IRQHandler
+                0x0000000000000556                UART6_IRQHandler
+                0x0000000000000556                ETHWakeUp_IRQHandler
+                0x0000000000000556                I2C2_ER_IRQHandler
+                0x0000000000000556                DMA1_Channel2_IRQHandler
+                0x0000000000000556                TIM8_BRK_IRQHandler
+                0x0000000000000556                TIM2_TRG_IRQHandler
+                0x0000000000000556                CAN1_SCE_IRQHandler
+                0x0000000000000556                FLASH_IRQHandler
+                0x0000000000000556                USBFSWakeUp_IRQHandler
+                0x0000000000000556                USART1_IRQHandler
+                0x0000000000000556                OTG_FS_IRQHandler
+                0x0000000000000556                SPI3_IRQHandler
+                0x0000000000000556                USBFS_WakeUp_IRQHandler
+                0x0000000000000556                UART3_IRQHandler
+                0x0000000000000556                I2C1_ER_IRQHandler
+                0x0000000000000556                DMA2_Channel3_IRQHandler
+                0x00000000000005a6                NMI_Handler
+                0x00000000000005a6                NMI_RCC_CSS_IRQHandler
+ .text.strlen   0x00000000000005b4       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x00000000000005b4                strlen
+ .text.mini_vpprintf
+                0x00000000000005c6      0x1ae C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.printf   0x0000000000000774       0x26 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x0000000000000774                printf
+ .text.getTimeDiff
+                0x000000000000079a       0x2a C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .text.memset   0x00000000000007c4       0x12 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x00000000000007c4                memset
+ .text.memcpy   0x00000000000007d6       0x1c C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x00000000000007d6                memcpy
  .text.SystemInit
-                0x0000000000000314       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x0000000000000314                SystemInit
+                0x00000000000007f2       0x58 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x00000000000007f2                SystemInit
  .text.startup.main
-                0x000000000000036c      0x24e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
-                0x000000000000036c                main
+                0x000000000000084a      0x2fc C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+                0x000000000000084a                main
  .text.SysTick_Handler
-                0x00000000000005ba       0x32 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000b46       0x32 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  *(.rodata)
  *(.rodata*)
- *fill*         0x00000000000005ec        0x0 
+ *fill*         0x0000000000000b78        0x0 
+ .rodata.getTimeDiff.str1.4
+                0x0000000000000b78       0x15 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ *fill*         0x0000000000000b8d        0x3 
  .rodata.main.str1.4
-                0x00000000000005ec        0xe C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- *fill*         0x00000000000005fa        0x2 
+                0x0000000000000b90       0x11 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ *fill*         0x0000000000000ba1        0x3 
  .rodata.font7x8
-                0x00000000000005fc      0x2a0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000ba4      0x2a0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  *(.gnu.linkonce.t.*)
-                0x000000000000089c                . = ALIGN (0x4)
+                0x0000000000000e44                . = ALIGN (0x4)
 
-.rela.dyn       0x000000000000089c        0x0
+.rela.dyn       0x0000000000000e44        0x0
+ .rela.text.mini_pad
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .rela.text._write.constprop.0
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .rela.text.handle_reset
-                0x000000000000089c        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .rela.text.mini_vpprintf
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .rela.text.getTimeDiff
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  .rela.text.startup.main
-                0x000000000000089c        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000e44        0x0 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
 
-.fini           0x000000000000089c        0x0
+.fini           0x0000000000000e44        0x0
  *(SORT_NONE(.fini))
-                0x000000000000089c                . = ALIGN (0x4)
+                0x0000000000000e44                . = ALIGN (0x4)
                 [!provide]                        PROVIDE (_etext = .)
                 [!provide]                        PROVIDE (_eitcm = .)
 
-.preinit_array  0x000000000000089c        0x0
+.preinit_array  0x0000000000000e44        0x0
                 [!provide]                        PROVIDE (__preinit_array_start = .)
  *(.preinit_array)
                 [!provide]                        PROVIDE (__preinit_array_end = .)
 
-.init_array     0x000000000000089c        0x0
+.init_array     0x0000000000000e44        0x0
                 [!provide]                        PROVIDE (__init_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
  *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
                 [!provide]                        PROVIDE (__init_array_end = .)
 
-.fini_array     0x000000000000089c        0x0
+.fini_array     0x0000000000000e44        0x0
                 [!provide]                        PROVIDE (__fini_array_start = .)
  *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
  *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
@@ -318,15 +329,15 @@ LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
  *(SORT_BY_NAME(.dtors.*))
  *(.dtors)
 
-.dalign         0x0000000020000000        0x0 load address 0x000000000000089c
+.dalign         0x0000000020000000        0x0 load address 0x0000000000000e44
                 0x0000000020000000                . = ALIGN (0x4)
                 0x0000000020000000                PROVIDE (_data_vma = .)
 
-.dlalign        0x000000000000089c        0x0
-                0x000000000000089c                . = ALIGN (0x4)
-                0x000000000000089c                PROVIDE (_data_lma = .)
+.dlalign        0x0000000000000e44        0x0
+                0x0000000000000e44                . = ALIGN (0x4)
+                0x0000000000000e44                PROVIDE (_data_lma = .)
 
-.data           0x0000000020000000        0x0 load address 0x000000000000089c
+.data           0x0000000020000000        0x0 load address 0x0000000000000e44
                 0x0000000020000000                . = ALIGN (0x4)
                 0x00000000200003fc                __global_pointer$ = (. + 0x3fc)
  *(.gnu.linkonce.r.*)
@@ -345,24 +356,21 @@ LOAD ../../../ch32fun/ch32fun//../misc\libgcc.a
                 0x0000000020000000                . = ALIGN (0x4)
                 0x0000000020000000                PROVIDE (_edata = .)
 
-.bss            0x0000000020000000       0x10 load address 0x000000000000089c
+.bss            0x0000000020000000        0x8 load address 0x0000000000000e44
                 0x0000000020000000                . = ALIGN (0x4)
                 0x0000000020000000                PROVIDE (_sbss = .)
  *(.sbss*)
  .sbss.GDEH_DC_PIN
-                0x0000000020000000        0x1 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000020000000        0x1 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  *fill*         0x0000000020000001        0x3 
- .sbss._frame_buffer2
-                0x0000000020000004        0x7 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- *fill*         0x000000002000000b        0x1 
  .sbss.systick_millis
-                0x000000002000000c        0x4 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000020000004        0x4 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
  *(.gnu.linkonce.sb.*)
  *(.bss*)
  *(.gnu.linkonce.b.*)
  *(COMMON*)
-                0x0000000020000010                . = ALIGN (0x4)
-                0x0000000020000010                PROVIDE (_ebss = .)
+                0x0000000020000008                . = ALIGN (0x4)
+                0x0000000020000008                PROVIDE (_ebss = .)
                 [!provide]                        PROVIDE (_end = _ebss)
                 [!provide]                        PROVIDE (end = .)
                 0x0000000020000800                PROVIDE (_eusrstack = (ORIGIN (RAM) + LENGTH (RAM)))
@@ -378,42 +386,56 @@ OUTPUT(example.elf elf32-littleriscv)
 .riscv.attributes
                 0x0000000000000000       0x21
  .riscv.attributes
-                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000       0x21 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .riscv.attributes
+                0x0000000000000021       0x1f ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_info     0x0000000000000000     0x36c3
- .debug_info    0x0000000000000000     0x1532 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .debug_info    0x0000000000001532     0x1188 C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
-                0x0000000000001532                ch32fun.c.474464e1
- .debug_info    0x00000000000026ba     0x1009 C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
-                0x00000000000026ba                example.c.9eaf7308
+.debug_info     0x0000000000000000     0x3c8d
+ .debug_info    0x0000000000000000     0x182f C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .debug_info    0x000000000000182f     0x1188 C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
+                0x000000000000182f                ch32fun.c.474464e1
+ .debug_info    0x00000000000029b7     0x1279 C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
+                0x00000000000029b7                example.c.efe2f731
+ .debug_info    0x0000000000003c30       0x5d ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_abbrev   0x0000000000000000      0x6ac
- .debug_abbrev  0x0000000000000000      0x1e8 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .debug_abbrev  0x00000000000001e8      0x233 C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
- .debug_abbrev  0x000000000000041b      0x291 C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
+.debug_abbrev   0x0000000000000000      0x6d4
+ .debug_abbrev  0x0000000000000000      0x1e8 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .debug_abbrev  0x00000000000001e8      0x233 C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
+ .debug_abbrev  0x000000000000041b      0x291 C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
+ .debug_abbrev  0x00000000000006ac       0x28 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_loc      0x0000000000000000     0x246b
- .debug_loc     0x0000000000000000     0x246b C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+.debug_loc      0x0000000000000000     0x28e1
+ .debug_loc     0x0000000000000000     0x28e1 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
 
-.debug_aranges  0x0000000000000000      0x160
+.debug_aranges  0x0000000000000000      0x190
  .debug_aranges
-                0x0000000000000000      0x160 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+                0x0000000000000000      0x170 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .debug_aranges
+                0x0000000000000170       0x20 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_ranges   0x0000000000000000      0x3f8
- .debug_ranges  0x0000000000000000      0x3f8 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+.debug_ranges   0x0000000000000000      0x518
+ .debug_ranges  0x0000000000000000      0x518 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
 
-.debug_line     0x0000000000000000     0x2ff7
- .debug_line    0x0000000000000000     0x2d0f C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
- .debug_line    0x0000000000002d0f      0x19a C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
- .debug_line    0x0000000000002ea9      0x14e C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
+.debug_line     0x0000000000000000     0x3513
+ .debug_line    0x0000000000000000     0x30c9 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+ .debug_line    0x00000000000030c9      0x19a C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
+ .debug_line    0x0000000000003263      0x15d C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
+ .debug_line    0x00000000000033c0      0x153 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
 
-.debug_str      0x0000000000000000      0xf65
- .debug_str     0x0000000000000000      0x18e C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+.debug_str      0x0000000000000000     0x1129
+ .debug_str     0x0000000000000000      0x184 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
                                         0x19c (size before relaxing)
- .debug_str     0x000000000000018e      0x61e C:\Users\uni\AppData\Local\Temp\cc0YmZKq.debug.temp.o
+ .debug_str     0x0000000000000184      0x61e C:\Users\uni\AppData\Local\Temp\ccRtEnlT.debug.temp.o
                                         0x725 (size before relaxing)
- .debug_str     0x00000000000007ac      0x7b9 C:\Users\uni\AppData\Local\Temp\cccggFku.debug.temp.o
-                                        0xa7a (size before relaxing)
+ .debug_str     0x00000000000007a2      0x8c2 C:\Users\uni\AppData\Local\Temp\ccIlsByT.debug.temp.o
+                                        0xb8e (size before relaxing)
+ .debug_str     0x0000000000001064       0xc5 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
+                                         0xd9 (size before relaxing)
 
-.debug_frame    0x0000000000000000      0x400
- .debug_frame   0x0000000000000000      0x400 C:\Users\uni\AppData\Local\Temp\example.elf.nY9Yyg.ltrans0.ltrans.o
+.debug_frame    0x0000000000000000      0x448
+ .debug_frame   0x0000000000000000      0x448 C:\Users\uni\AppData\Local\Temp\example.elf.fBWvx1.ltrans0.ltrans.o
+
+.debug_line_str
+                0x0000000000000000       0x92
+ .debug_line_str
+                0x0000000000000000       0x92 ../../../ch32fun/ch32fun//../misc\libgcc.a(div.o)
