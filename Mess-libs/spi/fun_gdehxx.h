@@ -167,7 +167,7 @@ void render_string_6x8(const char* str, uint8_t vertical, uint8_t horizontal) {
         get_font_char(str[i], verLINES, &font6x8, char_buff);
 
         for (int j = 0; j < verLINES; j++) {
-            char target = ~(char_buff[verLINES-j-1]);
+            char target = ~(char_buff[j]);
             write_data_8(target);            
         }
     }
@@ -199,7 +199,7 @@ void render_string_12x8(const char* str, uint8_t vertical, uint8_t horizontal) {
         }
 
         for (int j = 0; j < verLINES; j++) {
-            char lineBits = ~(char_buff[verLINES - j - 1]);
+            char lineBits = ~(char_buff[j]);
             const char halfTop = double_bits_forHalfByte(lineBits, 1);
             write_data_8(halfTop);
             // write_data_8(halfTop);
@@ -227,7 +227,7 @@ void render_string_12x8(const char* str, uint8_t vertical, uint8_t horizontal) {
         }
 
         for (int j = 0; j < verLINES; j++) {
-            char lineBits = ~(char_buff[verLINES - j - 1]);
+            char lineBits = ~(char_buff[j]);
             const char halfBottom = double_bits_forHalfByte(lineBits, 0);
             write_data_8(halfBottom);
             // write_data_8(halfBottom);
