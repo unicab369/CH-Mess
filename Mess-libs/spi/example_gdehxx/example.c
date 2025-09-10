@@ -48,9 +48,9 @@ int main() {
     // fun_ghdehxx_fill(0xAA);
     // getTimeDiff(timeRef);
 
-    char my_str[] = "Hello world ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
+    char my_str[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!#$&'()*+,-./0123456789:;<=>?@";
     timeRef = millis();
-    render_string_14x8(my_str, 0, 80);
+    render_string_7x8(my_str, 0, GDEHXX_HEIGHT-1);
     getTimeDiff(timeRef);
 
     while(1) {

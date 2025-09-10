@@ -157,15 +157,17 @@ void get_font_char(char c, uint8_t width, const char *font, char* buff) {
     }
 }
 
-void render_string_7x8(const char* str) {
+void render_string_7x8(const char* str, uint8_t vertical, uint8_t horizontal) {
+    char verLINES = 6;
     char char_buff[8] = {0};
+    fun_gdehxx_setCursor(vertical, horizontal);
     write_cmd_8(0x24);
 
     for (int i = 0; i<strlen(str); i++) {
-        get_font_char(str[i], 7, &font7x8, char_buff);
+        get_font_char(str[i], verLINES, &font7x8, char_buff);
 
-        for (int j = 0; j < 7; j++) {
-            char target = ~(char_buff[7-j]);
+        for (int j = 0; j < verLINES; j++) {
+            char target = ~(char_buff[verLINES-j-1]);
             write_data_8(target);            
         }
     }
@@ -174,6 +176,7 @@ void render_string_7x8(const char* str) {
 }
 
 void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
+    char verLINES = 6;
     char char_buff[8] = {0};
     printf("str len: %lu\n", strlen(str));
     uint8_t ref_horz, ref_vert;
@@ -184,18 +187,9 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
-        get_font_char(str[i], 7, &font7x8, char_buff);
+        get_font_char(str[i], verLINES, &font7x8, char_buff);
 
-        for (int j = 0; j < 7; j++) {
-            char target = ~(char_buff[7-j]);
-            const char halfTop = double_bits_forHalfByte(target, 1);
-            write_data_8(halfTop);
-            // write_data_8(halfTop);
-        }
-
-        ref_horz = ref_horz - 7;
-
-        if (ref_horz < 7) {
+        if (ref_horz < verLINES) {
             // # update cursor for next line
             ref_horz = GDEHXX_HEIGHT-1;
             ref_vert = ref_vert + 16;
@@ -203,6 +197,15 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
             fun_gdehxx_setCursor(ref_vert, ref_horz);
             write_cmd_8(0x24);
         }
+
+        for (int j = 0; j < verLINES; j++) {
+            char lineBits = ~(char_buff[verLINES - j - 1]);
+            const char halfTop = double_bits_forHalfByte(lineBits, 1);
+            write_data_8(halfTop);
+            // write_data_8(halfTop);
+        }
+
+        ref_horz = ref_horz - verLINES;
     }
 
     // second pass for bottom half
@@ -212,18 +215,9 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
     write_cmd_8(0x24);
 
     for (int i = 0; i < strlen(str); i++) {
-        get_font_char(str[i], 7, &font7x8, char_buff);
-
-        for (int j = 0; j < 7; j++) {
-            char target = ~(char_buff[7-j]);
-            const char halfBottom = double_bits_forHalfByte(target, 0);
-            write_data_8(halfBottom);
-            // write_data_8(halfBottom);
-        }
-
-        ref_horz = ref_horz - 7;
-
-        if (ref_horz < 7) {
+        get_font_char(str[i], verLINES, &font7x8, char_buff);
+        
+        if (ref_horz < verLINES) {
             // # update cursor for next line
             ref_horz = GDEHXX_HEIGHT-1;
             ref_vert = ref_vert + 16;
@@ -231,6 +225,15 @@ void render_string_14x8(const char* str, uint8_t vertical, uint8_t horizontal) {
             fun_gdehxx_setCursor(ref_vert, ref_horz);
             write_cmd_8(0x24);
         }
+
+        for (int j = 0; j < verLINES; j++) {
+            char lineBits = ~(char_buff[verLINES - j - 1]);
+            const char halfBottom = double_bits_forHalfByte(lineBits, 0);
+            write_data_8(halfBottom);
+            // write_data_8(halfBottom);
+        }
+
+        ref_horz = ref_horz - verLINES;
     }
 
     fun_gdehxx_update(0xF7);
@@ -258,29 +261,5 @@ void fund_ghdehxx_fillLen(uint8_t byte, uint16_t len) {
 
     while(1) {
         if (funDigitalRead(PC7) == 0) break;
-    }
-}
-
-// #define TEST_FILLED
-
-uint8_t refresh_count = 4;
-
-void fun_gdehxx_task() {
-    uint8_t read = funDigitalRead(PD0);
-
-    if (read == 0) {
-        fun_ghdehxx_fill(0xFF);
-        refresh_count = 4;
-
-    } else {
-        if (refresh_count < 1) return;
-        refresh_count--;
-
-        #ifndef TEST_FILLED
-            char my_str[] = "Hello world!";
-            render_string_7x8(my_str);
-        #else
-            fund_ghdehxx_fillLen(0xAA, 10);
-        #endif
     }
 }
