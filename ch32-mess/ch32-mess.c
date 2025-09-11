@@ -1,6 +1,8 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
+#include "fun_usb.h"
+
 #define I2C_ENABLED
 // #define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
@@ -49,10 +51,14 @@ void onI2C_SlaveRead(uint8_t reg) {
 	printf("IM READEN FROM.\n\r");
 }
 
+uint32_t sendtok2;
+
 void button_onChanged(Button_Event_e event, uint32_t time) {
 	switch (event) {
 		case BTN_SINGLECLICK:
 			printf("Single Click\n");
+			// USB_SEND_FLAG = 1;
+			usb_setKey(0x05);
 			break;
 		case BTN_DOUBLECLICK:
 			printf("Double Click\n");
@@ -99,6 +105,8 @@ volatile uint8_t i2c_registers[32] = {0xaa};
 
 int main() {
 	SystemInit();
+	Delay_Ms(1);
+	usb_setup();
 
 	uint16_t bootCnt = fun_optionByte_getValue();
 	bootCnt++;
@@ -107,8 +115,7 @@ int main() {
 
 	systick_init();			//! required for millis()
 	funGpioInitAll();
-	Delay_Ms(10);
-	
+
 	//# Button: uses PC0
 	static Button_t button1 = { .pin = BUTTON_PIN };
 	fun_button_setup(&button1);
@@ -186,7 +193,7 @@ int main() {
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
-		Neo_task(now);
+		// Neo_task(now);
 
 		if (now - session.timeRef_1sec > 1000) {
 			session.timeRef_1sec = now;
@@ -221,10 +228,11 @@ int main() {
 		else if (now - session.timeRef_50ms > 50) {
 			session.timeRef_50ms = now;
 
-			fun_encoder_task(&encoder_a, encoder_onChanged);
-			fun_joystick_task(joystick_onChanged);
+			// fun_encoder_task(&encoder_a, encoder_onChanged);
+			// fun_joystick_task(joystick_onChanged);
 		}
 
 		session.fullCycle_time = millis() - now;
 	}
 }
+
