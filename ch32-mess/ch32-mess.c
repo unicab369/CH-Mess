@@ -1,8 +1,6 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#include "fun_usb.h"
-
 #define I2C_ENABLED
 // #define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
@@ -15,6 +13,7 @@
 #include "../Mess-libs/pwm/fun_timPWM.h"					// 224 Bytes?
 #include "../Mess-libs/modules/fun_joystick.h"				// 244 Bytes?
 #include "../Mess-libs/ws2812/fun_spi_ws2812.h"
+#include "../Mess-libs/usb/fun_usb.h"
 
 #ifdef I2C_SLAVE_ENABLED
 	#include "../Mess-libs/i2c/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
