@@ -71,21 +71,21 @@ static void SPI_send(uint8_t data) {
 }
 
 //! REQUIRED
-void INTF_SPI_DC_LOW();
-void INTF_SPI_DC_HIGH();
+void FN_SPI_DC_LOW();
+void FN_SPI_DC_HIGH();
 
 static void write_cmd_8(uint8_t cmd) {
-    INTF_SPI_DC_LOW();      // Command Mode
+    FN_SPI_DC_LOW();      // Command Mode
     SPI_send(cmd);
 }
 
 static void write_data_8(uint8_t data) {
-    INTF_SPI_DC_HIGH();     // Data Mode
+    FN_SPI_DC_HIGH();     // Data Mode
     SPI_send(data);
 }
 
 static void write_data_16(uint16_t data) {
-    INTF_SPI_DC_HIGH();     // Data Mode
+    FN_SPI_DC_HIGH();     // Data Mode
     SPI_send(data >> 8);
     SPI_send(data);
 }
