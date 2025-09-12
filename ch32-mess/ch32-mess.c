@@ -2,9 +2,9 @@
 #include <stdio.h>
 
 #define I2C_ENABLED
+#define UART_ENABLED
 // #define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
-// #define UART_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -88,16 +88,16 @@ typedef struct {
 } Session_t;
 
 
-//# 	*ENC_A*		PD4 - [ 				] - PD3		*ENC_B*
-//# 	*UTX*		PD5 - [ 				] - PD2
-//# 	*UTR*		PD6 - [ 				] - PD1		*SWIO*
-//# 	*RST* 		PD7 - [ 				] - PC7		*MISO*
-//# 	*J_X*		PA1 - [ 	V003F4P6	] - PC6		*MOSI*
-//# 	*J_Y*		PA2 - [   	TSSOP-20 	] - PC5		*SCK*
-//# 		x		Vcc - [ 				] - PC4
-//# 	*PWM*		PD0 - [ 				] - PC3
-//# 		x		GND - [ 				] - PC2		*SCL*
-//# 	*BTN*		PC0 - [ 				] - PC1		*SDA*
+//# 	*ENC_A		PD4 - [ 				] - PD3		*ENC_B
+//# 	*UTX		PD5 - [ 				] - PD2
+//# 	*UTR		PD6 - [ 				] - PD1		*SWIO
+//# 	*RST 		PD7 - [ 				] - PC7		*MISO
+//# 	*J_X		PA1 - [ 	V003F4P6	] - PC6		*MOSI
+//# 	*J_Y		PA2 - [   	TSSOP-20 	] - PC5		*SCK
+//# 	x			Vcc - [ 				] - PC4
+//# 	*PWM		PD0 - [ 				] - PC3
+//# 	x			GND - [ 				] - PC2		*SCL
+//# 	*BTN		PC0 - [ 				] - PC1		*SDA
 
 
 volatile uint8_t i2c_registers[32] = {0xaa};
@@ -105,7 +105,7 @@ volatile uint8_t i2c_registers[32] = {0xaa};
 int main() {
 	SystemInit();
 	Delay_Ms(1);
-	usb_setup();
+	// usb_setup();
 
 	uint16_t bootCnt = fun_optionByte_getValue();
 	bootCnt++;
@@ -141,6 +141,7 @@ int main() {
 	#ifdef UART_ENABLED
 		uart_setup();
 		dma_uart_setup();
+		uart_rx_setup();
 	#endif
 	
 	//# TIM1: uses PD0(CH1)
@@ -192,8 +193,9 @@ int main() {
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
-		// Neo_task(now);
-
+		uart_rx_task();
+		Neo_task(now);
+		
 		if (now - session.timeRef_1sec > 1000) {
 			session.timeRef_1sec = now;
 
@@ -227,8 +229,8 @@ int main() {
 		else if (now - session.timeRef_50ms > 50) {
 			session.timeRef_50ms = now;
 
-			// fun_encoder_task(&encoder_a, encoder_onChanged);
-			// fun_joystick_task(joystick_onChanged);
+			fun_encoder_task(&encoder_a, encoder_onChanged);
+			fun_joystick_task(joystick_onChanged);
 		}
 
 		session.fullCycle_time = millis() - now;
