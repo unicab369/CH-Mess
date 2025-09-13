@@ -94,9 +94,9 @@ typedef struct {
 //# 	*RST 		PD7 - [ 				] - PC7		*MISO
 //# 	*J_X		PA1 - [ 	V003F4P6	] - PC6		*MOSI
 //# 	*J_Y		PA2 - [   	TSSOP-20 	] - PC5		*SCK
-//# 	x			Vcc - [ 				] - PC4
+//# 	GND -		GND - [ 				] - PC4
 //# 	*PWM		PD0 - [ 				] - PC3
-//# 	x			GND - [ 				] - PC2		*SCL
+//# 	VCC +		VCC - [ 				] - PC2		*SCL
 //# 	*BTN		PC0 - [ 				] - PC1		*SDA
 
 
@@ -193,7 +193,7 @@ int main() {
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
 		fun_timPWM_task(now, &pwm_CH1c);
-		uart_rx_task();
+		// uart_rx_task();
 		Neo_task(now);
 		
 		if (now - session.timeRef_1sec > 1000) {
@@ -205,7 +205,7 @@ int main() {
 			session.cycle_count = 0;
 			
 			#ifdef UART_ENABLED
-				dma_uart_tx(message, sizeof(message) - 1);
+				// dma_uart_tx(message, sizeof(message) - 1);
 			#endif
 
 			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);

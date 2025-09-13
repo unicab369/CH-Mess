@@ -3,7 +3,7 @@
 
 #define WS2812DMA_IMPLEMENTATION
 #define WSGRB // For SK6805-EC15
-#define NR_LEDS 6
+#define NR_LEDS 12
 #include "ws2812b_dma_spi_led_driver.h"
 #include "util_colors.h"
 

@@ -50,7 +50,8 @@ void fun_encoder_setup(Encoder_t *model) {
 	RCC->APB1PRSTR &= ~RCC_APB1Periph_TIM2;
 	
 	// set TIM2 clock prescaler If you want to reduce the resolution of the encoder
-	// TIM2->PSC = 0x0000;
+	// Prescaler: divide by 10 => 4.8MHz
+	// TIM1->PSC = 0x0009;
 
 	// set a automatic reload if you want the counter to wrap earlier than 0xffff
 	//TIM2->ATRLR = 0xffff;
@@ -85,7 +86,7 @@ void fun_encoder_task(Encoder_t *model, void (*handler)(uint8_t, uint8_t)) {
 	uint16_t count = TIM2->CNT;
 
 	if (count != model->last_count) {
-		model->relative_pos = 255 - count - model->initial_count;
+		model->relative_pos = count - model->initial_count;
 		model->delta 		= count - model->last_count;
 		model->direction	= model->last_count > count;
 		handler(model->relative_pos, model->direction);
