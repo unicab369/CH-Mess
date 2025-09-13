@@ -4,7 +4,7 @@ TARGET:=ch32-mess
 TARGET_MCU:=CH32V003
 
 ADDITIONAL_C_FILES+= 3_Nrf/nrf24l01_low_level.c 3_Nrf/nrf24l01.c
-ADDITIONAL_C_FILES+= ../Mess-libs/i2c/lib_i2c.c
+ADDITIONAL_C_FILES+= ../Mess-libs/i2c/lib/lib_i2c.c
 
 # USB stuff
 ADDITIONAL_C_FILES+= ../Mess-libs/usb/rv003usb/rv003usb.S 

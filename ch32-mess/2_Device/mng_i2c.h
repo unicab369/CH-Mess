@@ -1,6 +1,6 @@
 #include "ch32fun.h"
 
-#include "../Mess-libs/i2c/lib_i2c.h"
+#include "../Mess-libs/i2c/lib/lib_i2c.h"
 #include "../Mess-libs/i2c/ssd1306/fun_ssd1306.h"
 
 #ifndef PACKED
@@ -92,7 +92,58 @@ uint32_t i2c_sht3x_reading(uint16_t *temperature, uint16_t *humidity) {
 	printf("SHT3X temp: %d, hum: %d\n\n", *temperature, *humidity);
 }
 
-void i2c_ina219_reading(uint16_t *shunt, uint16_t *bus, uint16_t *power, uint16_t *current) {
+void i2c_ina219_setup() {
+	dev_sensor.addr = 0x40;
+
+	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
+		printf("INA219 not found\n");
+		return;
+	}
+
+	// 32V = 0x2000, 16V = 0x0000
+	uint16_t BUS_VOLTAGE_RANGE = 0x2000;
+	
+	// Gain/1 40mV 		= 0x0000
+	// Gain/2 80mV	 	= 0x0800
+	// Gain/4 160mV		= 0x1000
+	// Gain/8 320mV		= 0x1800
+	uint16_t GAIN_AMPLIFIER_RANGE = 0x1800;
+
+	// 9bits				= 0x0000	84us
+	// 10bits 				= 0x0080	148us 
+	// 11bits 				= 0x0100	276us 
+	// 12bits 				= 0x0180	532us 
+	// 12bits 2 samples 	= 0x0480	1.06ms
+	// 12bits 4 samples 	= 0x0500	2.13ms
+	// 12bits 8 samples 	= 0x0580	4.26ms	
+	// 12bits 16 samples 	= 0x0600	8.51ms	
+	// 12bits 32 samples 	= 0x0680	17.02ms	
+	// 12bits 64 samples 	= 0x0700	34.05ms	 
+	// 12bits 128 samples 	= 0x0780	68.10ms
+	uint16_t BUS_RESOLUTION_AVERAGE = 0x0180;
+
+	// Shunt Resolution = Bus_Resolution >> 1
+	uint16_t SHUNT_RESOLUTION_AVERAGE = 0x0018;
+
+	// 0x00 = Power Down
+	// 0x01 = Shunt Voltage, triggered
+	// 0x02 = Bus Voltage, triggered
+	// 0x03 = Shunt and Bus Voltage, triggered
+	// 0x04 = ADC Off
+	// 0x05 = Shunt Voltage, continuous
+	// 0x06 = Bus Voltage, continuous
+	// 0x07 = Shunt and Bus Voltage, continuous
+	uint8_t DEVICE_MODE = 0x07;
+
+	uint16_t config = BUS_VOLTAGE_RANGE | GAIN_AMPLIFIER_RANGE |
+					BUS_RESOLUTION_AVERAGE | SHUNT_RESOLUTION_AVERAGE |
+					DEVICE_MODE;
+
+	// Configure INA219 32V 1A Range
+	i2c_err_t ret = i2c_write_reg(&dev_sensor, 0x00, config, 2);
+}
+
+void i2c_ina219_reading(int16_t *shunt, int16_t *bus, int16_t *power, int16_t *current) {
 	dev_sensor.addr = 0x40;
 
 	if (i2c_ping(dev_sensor.addr) != I2C_OK) {
@@ -101,47 +152,37 @@ void i2c_ina219_reading(uint16_t *shunt, uint16_t *bus, uint16_t *power, uint16_
 	}
 
 	i2c_err_t ret;
-	uint8_t buff[8];
+	uint8_t buff[2];
+	uint16_t raw_value;
 
-	// // Set Calibration to 32V, 2A
-	// ret = i2c_write_reg(&dev_sensor, 0x05, (uint8_t[]){0x20, 0x00}, 2);
-	// printf("Error0: %d\n", ret);
+	uint16_t powerLSB = 2;    	// 2uW per bit
 
-	// Set Config to:
-	// Bus Voltage Range = 32V
-	// Gain = /8 320mV
-	// Bus ADC Resolution = 12bit
-	// Shunt ADC Resolution = 12bit
-	// Mode = Shunt and Bus, Continuous
-	ret = i2c_write_reg(&dev_sensor, 0x00, (uint8_t[]){0x39, 0x9F}, 2);
-	printf("Error1: %d\n", ret);
+	// 2. Set calibration for 1A range (assuming 0.1Ω shunt)
+	uint16_t cal = 4096;  // 0.04096 / (0.0001 * 0.1)
+	uint8_t cal_bytes[2] = {cal >> 8, cal & 0xFF};
+	i2c_write_reg(&dev_sensor, 0x05, cal_bytes, 2);
 
+	// Read shunt voltage in uV
+	ret = i2c_read_reg(&dev_sensor, 0x01, buff, 2);		
+	raw_value = (buff[0] << 8) | buff[1];
+	*shunt = raw_value * 10;
 
-	// Read Shunt Voltage Register
-	ret = i2c_read_reg(&dev_sensor, 0x01, buff, 2);
-	printf("Error2: %d\n", ret);
-	uint16_t raw_shunt = (buff[0] << 8) | buff[1];
-	*shunt = raw_shunt / 100;							// in mV
-	
-	// Read Bus Voltage Register
+	// Read bus voltage in mV
 	ret = i2c_read_reg(&dev_sensor, 0x02, buff, 2);
-	printf("Error2: %d\n", ret);
-	uint16_t raw_bus = (buff[0] << 8) | buff[1];
-	*bus = (raw_bus >> 3) * 4;							// in mV
+	raw_value = (buff[0] << 8) | buff[1];
+	*bus = (raw_value >> 3) * 4;
 
-	// Read Power Register
-	ret = i2c_read_reg(&dev_sensor, 0x03, buff, 2);
-	printf("Error4: %d\n", ret);
-	uint16_t raw_power = (buff[0] << 8) | buff[1];
-	*power = raw_power * 20;							// in mW
+	// Read power in uW
+	ret = i2c_read_reg(&dev_sensor, 0x03, buff, 2);		
+	raw_value = (buff[0] << 8) | buff[1];
+	*power = raw_value * powerLSB;
 
-	// Read Current Register
+	// Read current in mA
 	ret = i2c_read_reg(&dev_sensor, 0x04, buff, 2);
-	printf("Error3: %d\n", ret);
-	uint16_t raw_current = (buff[0] << 8) | buff[1];
-	*current = raw_current / 100;						// in mA
+	raw_value = (buff[0] << 8) | buff[1];
+	*current = raw_value;
 
-	printf("INA219 shunt: %d mV, bus: %d mA, power: %d mW, current: %d mA\n",
+	printf("shunt: %ld uV, bus: %ld mV, P: %ld mW, I: %ld mA\n",
 			*shunt, *bus, *power,*current);
 }
 
@@ -255,11 +296,11 @@ void cycle_loading_char() {
 }
 
 void mngI2c_loadCounter(uint32_t counter, uint32_t runTime) {
-	uint16_t lux;
-	i2c_bh1750_reading(&lux);
+	// uint16_t lux;
+	// i2c_bh1750_reading(&lux);
 
-	uint16_t temp, hum;
-	i2c_sht3x_reading(&temp, &hum);
+	// uint16_t temp, hum;
+	// i2c_sht3x_reading(&temp, &hum);
 
 	uint16_t shunt, bus, power, current;
 	i2c_ina219_reading(&shunt, &bus, &power, &current);

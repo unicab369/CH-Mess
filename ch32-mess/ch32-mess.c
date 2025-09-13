@@ -16,7 +16,7 @@
 #include "../Mess-libs/usb/fun_usb.h"
 
 #ifdef I2C_SLAVE_ENABLED
-	#include "../Mess-libs/i2c/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
+	#include "../Mess-libs/i2c/lib/i2c_slave.h"					// 908 Bytes? + RAM 76 Bytes
 #endif
 
 #ifdef UART_ENABLED
@@ -125,6 +125,7 @@ int main() {
 	#ifdef I2C_ENABLED
 		//# I2C1: uses PC1 & PC2
 		modI2C_setup(bootCnt);
+		i2c_ina219_setup();
 	#endif
 
 	#ifdef I2C_SLAVE_ENABLED
@@ -237,3 +238,96 @@ int main() {
 	}
 }
 
+
+void SetClock(uint32_t u32Clock) {
+	uint32_t u32Div = 0;
+	uint32_t SystemCoreClock = 48000000;
+
+	if (u32Clock > 24000000)
+		SystemCoreClock = 48000000;
+	else if (u32Clock > 12000000) {
+		SystemCoreClock = 24000000;
+		u32Div = RCC_HPRE_DIV1;
+	}
+	else if (u32Clock > 8000000) {
+		SystemCoreClock = 12000000;
+		u32Div = RCC_HPRE_DIV2;
+	}
+	else if (u32Clock > 6000000) {
+		SystemCoreClock = 8000000;
+		u32Div = RCC_HPRE_DIV3;
+	}
+	else if (u32Clock > 4800000) {
+		SystemCoreClock = 6000000;
+		u32Div = RCC_HPRE_DIV4;
+	}
+	else if (u32Clock > 4000000) {
+		SystemCoreClock = 4800000;
+		u32Div = RCC_HPRE_DIV5;
+	}
+	else if (u32Clock > 3428571) {
+		SystemCoreClock = 4000000;
+		u32Div = RCC_HPRE_DIV6;
+	}
+	else if (u32Clock >= 3000000) {
+		SystemCoreClock = 3428571;
+		u32Div = RCC_HPRE_DIV7;
+	}
+	else if (u32Clock > 1500000) {
+		SystemCoreClock = 3000000;
+		u32Div = RCC_HPRE_DIV8;
+	}
+	else if (u32Clock > 750000) {
+		SystemCoreClock = 1500000;
+		u32Div = RCC_HPRE_DIV16;
+	}
+	else if (u32Clock > 375000) {
+		SystemCoreClock = 750000;
+		u32Div = RCC_HPRE_DIV32;
+	}
+	else if (u32Clock > 187500) {
+		SystemCoreClock = 375000;
+		u32Div = RCC_HPRE_DIV64;
+	}
+	else {
+		SystemCoreClock = 187500; // slowest setting for now
+		u32Div = RCC_HPRE_DIV128;
+	}
+
+	switch (SystemCoreClock) {
+		case 48000000: // special case - needs PLL
+			/* Flash 0 wait state */
+			FLASH->ACTLR &= (uint32_t)((uint32_t)~FLASH_ACTLR_LATENCY);
+			FLASH->ACTLR |= (uint32_t)FLASH_ACTLR_LATENCY_1;
+
+			/* HCLK = SYSCLK = APB1 */
+			RCC->CFGR0 |= (uint32_t)RCC_HPRE_DIV1;
+
+			/* PLL configuration: PLLCLK = HSI * 2 = 48 MHz */
+			RCC->CFGR0 &= (uint32_t)((uint32_t)~(RCC_PLLSRC));
+			RCC->CFGR0 |= (uint32_t)(RCC_PLLSRC_HSI_Mul2);
+
+			/* Enable PLL */
+			RCC->CTLR |= RCC_PLLON;
+			/* Wait till PLL is ready */
+			while((RCC->CTLR & RCC_PLLRDY) == 0) { }
+
+			/* Select PLL as system clock source */
+			RCC->CFGR0 &= (uint32_t)((uint32_t)~(RCC_SW));
+			RCC->CFGR0 |= (uint32_t)RCC_SW_PLL;
+			/* Wait till PLL is used as system clock source */
+			while ((RCC->CFGR0 & (uint32_t)RCC_SWS) != (uint32_t)0x08) {}
+			break;
+
+		default: // simpler - just use the RC clock with a divider
+			/* Flash 0 wait state */
+			FLASH->ACTLR &= (uint32_t)((uint32_t)~FLASH_ACTLR_LATENCY);
+			FLASH->ACTLR |= (SystemCoreClock >= 24000000) ? (uint32_t)FLASH_ACTLR_LATENCY_1 : (uint32_t)FLASH_ACTLR_LATENCY_0;
+
+			/* HCLK = SYSCLK = APB1 */
+			RCC->CFGR0 |= u32Div;
+			break;
+	} // switch on clock
+
+	// UpdateDelay();
+} /* SetClock() */
