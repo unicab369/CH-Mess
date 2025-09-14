@@ -25,6 +25,7 @@
 
 #ifdef I2C_ENABLED
 	#include "2_Device/mng_i2c.h"							// 3032 Bytes? + RAM 1370 Bytes
+	#include "2_Device/i2c_devices.h"						// 1016 Bytes? + RAM 16 Bytes
 #else
 	void mngI2c_load_buttonState(uint32_t time, uint8_t state) {}
 	void mngI2c_load_encoder(uint32_t time, uint8_t pos, uint8_t dir) {}
@@ -201,6 +202,15 @@ int main() {
 			session.timeRef_1sec = now;
 
 			if (i2cMaster_mode) {
+				// uint16_t lux;
+				// i2c_bh1750_reading(&lux);
+
+				// uint16_t temp, hum;
+				// i2c_sht3x_reading(&temp, &hum);
+
+				int16_t shunt, bus, power, current;
+				i2c_ina219_reading(&shunt, &bus, &power, &current);
+
 				mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
 			}
 			session.cycle_count = 0;
