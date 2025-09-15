@@ -6,7 +6,7 @@
 #define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
 // #define WS2812_ENABLED
-// #define LORA_ENABLED
+#define LORA_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -170,16 +170,16 @@ int main() {
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD3, DC-PC4
 		SPI_init();
-		fun_st7735_setup(PC3, PD0);
-
-		// SPI_init2();
 
 		#ifdef LORA_ENABLED
 			uint32_t loRa_Frequency = 915E6;
 			fun_sx72xx_init(loRa_Frequency, PC3, PC4);
 			fun_sx72xx_setTxPower(17);
+		#else
+			fun_st7735_setup(PC3, PD0);
 		#endif
 
+		// SPI_init2();
 		// FRESULT rc;
 		// rc = mod_sdCard_write("testfile.txt", "hello world 1111!\n\r");
 
@@ -243,6 +243,10 @@ int main() {
 					i2c_ina219_reading(&shunt, &bus, &power, &current);
 
 					mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
+
+					// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
+					// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
+					// ssd1306_print_str_at(str_output, 0, 0);
 				}
 			#endif
 			
@@ -250,16 +254,14 @@ int main() {
 				// dma_uart_tx(message, sizeof(message) - 1);
 			#endif
 
-			// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
-			// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
-			// ssd1306_print_str_at(str_output, 0, 0);
-
 			#ifdef SPI_ENABLED
-				// uint8_t loRa_message[] = "Hello World 222";
-				// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
-
-				uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test2);
-				// printf("ST7735 runtime: %lu us\n", runtime_tft);
+				#ifdef LORA_ENABLED
+					uint8_t loRa_message[] = "Hello World 222";
+					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+				#else
+					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test2);
+					printf("ST7735 runtime: %lu us\n", runtime_tft);
+				#endif
 			#endif
 		}
 
