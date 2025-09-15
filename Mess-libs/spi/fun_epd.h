@@ -1,10 +1,10 @@
 #include "ch32fun.h"
 #include <stdint.h>
-#include "lib_tft.h"
-#include "lib_spi.h"
+#include "lib/lib_tft.h"
+#include "lib/lib_spi.h"
 #include "epd_luts.h"
 
-#include "font6x8.h"
+#include "lib/font6x8.h"
 #include "../modules/fun_print.h"
 
 

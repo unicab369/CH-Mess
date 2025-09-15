@@ -1,10 +1,11 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#define I2C_ENABLED
-#define UART_ENABLED
-// #define SPI_ENABLED
+// #define I2C_ENABLED
+// #define UART_ENABLED
+#define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
+// #define WS2812_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -35,9 +36,12 @@
 #endif
 
 #ifdef SPI_ENABLED
-	#include "../Mess-libs/spi/lib_spi.h"
+	#include "../Mess-libs/spi/lib/lib_spi.h"
 	#include "../Mess-libs/spi/mod_st7735.h"
 	#include "../Mess-libs/sd_card/mod_sdCard.h"
+
+	void FN_SPI_DC_LOW()    { funDigitalWrite(PD0, 0); }
+	void FN_SPI_DC_HIGH()   { funDigitalWrite(PD0, 1); }
 #endif
 
 #define BUTTON_PIN 		PC0
@@ -89,16 +93,16 @@ typedef struct {
 } Session_t;
 
 
-//# 	*ENC_A		PD4 - [ 				] - PD3		*ENC_B
-//# 	*UTX		PD5 - [ 				] - PD2
-//# 	*UTR		PD6 - [ 				] - PD1		*SWIO
-//# 	*RST 		PD7 - [ 				] - PC7		*MISO
-//# 	*J_X		PA1 - [ 	V003F4P6	] - PC6		*MOSI
-//# 	*J_Y		PA2 - [   	TSSOP-20 	] - PC5		*SCK
-//# 	GND -		GND - [ 				] - PC4
-//# 	*PWM		PD0 - [ 				] - PC3
-//# 	VCC +		VCC - [ 				] - PC2		*SCL
-//# 	*BTN		PC0 - [ 				] - PC1		*SDA
+//# 	ENC_A		PD4 - [ 				] - PD3		ENC_B
+//# 	**UTX		PD5 - [ 				] - PD2
+//# 	**UTR		PD6 - [ 				] - PD1		**SWIO
+//# 	**RST 		PD7 - [ 				] - PC7		**MISO
+//# 	J_X			PA1 - [ 	V003F4P6	] - PC6		**MOSI
+//# 	J_Y			PA2 - [   	TSSOP-20 	] - PC5		**SCK
+//# 	**GND-		GND - [ 				] - PC4
+//# 	PWM			PD0 - [ 				] - PC3		RST0 
+//# 	**VCC+		VCC - [ 				] - PC2		**SCL
+//# 	BTN			PC0 - [ 				] - PC1		**SDA
 
 
 volatile uint8_t i2c_registers[32] = {0xaa};
@@ -146,15 +150,15 @@ int main() {
 		uart_rx_setup();
 	#endif
 	
-	//# TIM1: uses PD0(CH1)
-	static TIM_PWM_t pwm_CH1c = {
-		.pin = PD0,
-		.TIM = TIM1,
-		.CCER = TIM_CC1NE
-	};
+	// //# TIM1: uses PD0(CH1)
+	// static TIM_PWM_t pwm_CH1c = {
+	// 	.pin = PD0,
+	// 	.TIM = TIM1,
+	// 	.CCER = TIM_CC1NE
+	// };
 
-	fun_timPWM_init(&pwm_CH1c);
-	fun_timPWM_reload(&pwm_CH1c);
+	// fun_timPWM_init(&pwm_CH1c);
+	// fun_timPWM_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
 	Encoder_t encoder_a = { 0, 0, 0 };
@@ -167,7 +171,7 @@ int main() {
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD2, DC-PC4
 		SPI_init();
-		mod_st7735_setup(PC3, PC4);
+		mod_st7735_setup(PC3, PD0);
 		// SPI_init2();
 
 		// FRESULT rc;
@@ -182,8 +186,10 @@ int main() {
 		// }
 	#endif
 
-	WS2812BDMAInit();
-	Neo_loadCommand(NEO_COLOR_CHASE);
+	#ifdef WS2812_ENABLED
+		WS2812BDMAInit();
+		Neo_loadCommand(NEO_COLOR_CHASE);
+	#endif
 
 	uint32_t now = millis();
 	Session_t session = { 0, 0, now };
@@ -194,26 +200,35 @@ int main() {
 
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
-		fun_timPWM_task(now, &pwm_CH1c);
-		// uart_rx_task();
-		Neo_task(now);
+		// fun_timPWM_task(now, &pwm_CH1c);
+
+		#ifdef WS2812_ENABLED
+			Neo_task(now);	
+		#endif
+
+		#ifdef UART_ENABLED
+			uart_rx_task();
+		#endif
 		
 		if (now - session.timeRef_1sec > 1000) {
 			session.timeRef_1sec = now;
-
-			if (i2cMaster_mode) {
-				// uint16_t lux;
-				// i2c_bh1750_reading(&lux);
-
-				// uint16_t temp, hum;
-				// i2c_sht3x_reading(&temp, &hum);
-
-				int16_t shunt, bus, power, current;
-				i2c_ina219_reading(&shunt, &bus, &power, &current);
-
-				mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
-			}
 			session.cycle_count = 0;
+			printf(".");
+
+			#ifdef I2C_ENABLED
+				if (i2cMaster_mode) {
+					// uint16_t lux;
+					// i2c_bh1750_reading(&lux);
+
+					// uint16_t temp, hum;
+					// i2c_sht3x_reading(&temp, &hum);
+
+					int16_t shunt, bus, power, current;
+					i2c_ina219_reading(&shunt, &bus, &power, &current);
+
+					mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
+				}
+			#endif
 			
 			#ifdef UART_ENABLED
 				// dma_uart_tx(message, sizeof(message) - 1);
@@ -225,7 +240,7 @@ int main() {
 
 			#ifdef SPI_ENABLED
 				tft_set_cursor(0, 0);
-				tft_print("Hello World!");
+				tft_print("Hello World 222");
 				// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 				// printf("ST7735 runtime: %lu us\n", runtime_tft);
 			#endif

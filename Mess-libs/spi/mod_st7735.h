@@ -35,7 +35,7 @@
 
 #include "ch32fun.h"
 #include <stdint.h>
-#include "lib_tft.h"
+#include "lib/lib_tft.h"
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
@@ -158,7 +158,7 @@ void mod_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
     INTF_TFT_END_WRITE();
 }
 
-void mod_st7735_setup(uint8_t dc_pin, uint8_t rst_pin) {
+void mod_st7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
     mod_st7335_init(rst_pin, dc_pin);
     tft_fill_rect(0, 0, 160, 128, PURPLE);
 }
