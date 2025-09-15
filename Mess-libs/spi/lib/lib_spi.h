@@ -26,13 +26,13 @@ static void SPI_init(void) {
     SPI1->CTLR1 = SPI_CPHA_2Edge             // Bit 0     - Clock PHAse
                   | SPI_CPOL_Low             // Bit 1     - Clock POLarity - idles at the logical low voltage
                   | SPI_Mode_Master          // Bit 2     - Master device
-                  | SPI_BaudRatePrescaler_8  // Bit 3-5   - F_HCLK / 2
+                  | SPI_BaudRatePrescaler_2  // Bit 3-5   - F_HCLK / 2
                   | SPI_FirstBit_MSB         // Bit 7     - MSB transmitted first
                   | SPI_NSS_Soft             // Bit 9     - Software slave management
                   | SPI_DataSize_8b;         // Bit 11    - 8-bit data
     
-    // SPI_Direction_1Line_Tx | SPI_Direction_2Lines_FullDuplex
-    SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex; 
+    SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;
+    // SPI1->CTLR1 |= SPI_Direction_1Line_Tx;
 
     SPI1->CRCR = 7;                          // CRC
     SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;        // Configure SPI DMA Transfer
@@ -54,7 +54,14 @@ static void SPI_init(void) {
 }
 
 
+//! INTERFACES
+void FN_SPI_DC_LOW();
+void FN_SPI_DC_HIGH();
+
+
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
+    FN_SPI_DC_HIGH();
+    
     DMA1_Channel3->MADDR = (uint32_t)buffer;
     DMA1_Channel3->CNTR  = size;
     DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
@@ -79,10 +86,6 @@ static void SPI_send(uint8_t data) {
     // Waiting for transmission complete
     while (!(SPI1->STATR & SPI_STATR_TXE)) ;
 }
-
-//! INTERFACES
-void FN_SPI_DC_LOW();
-void FN_SPI_DC_HIGH();
 
 static void write_cmd_8(uint8_t cmd) {
     FN_SPI_DC_LOW();      // Command Mode

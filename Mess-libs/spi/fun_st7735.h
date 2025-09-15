@@ -66,8 +66,8 @@
 
 static uint8_t DC_PIN;
 
-void INTF_SPI_DC_LOW()  { funDigitalWrite(DC_PIN, 0); }
-void INTF_SPI_DC_HIGH() { funDigitalWrite(DC_PIN, 1); }
+void FN_SPI_DC_LOW()    { funDigitalWrite(DC_PIN, 0); }
+void FN_SPI_DC_HIGH()   { funDigitalWrite(DC_PIN, 1); }
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     INTF_TFT_START_WRITE();
@@ -82,7 +82,6 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
 }
 
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    INTF_SPI_DC_HIGH();
     SPI_send_DMA(buffer, size, repeat);
 
     INTF_TFT_END_WRITE();

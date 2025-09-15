@@ -55,7 +55,8 @@
         "font7x8.h": "c",
         "fun_gdehxx.h": "c",
         "fun_print.h": "c",
-        "initializer_list": "c"
+        "initializer_list": "c",
+        "fun_st7735.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
