@@ -6,6 +6,7 @@
 #define SPI_ENABLED
 // #define I2C_SLAVE_ENABLED
 // #define WS2812_ENABLED
+#define LORA_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -37,8 +38,9 @@
 
 #ifdef SPI_ENABLED
 	#include "../Mess-libs/spi/lib/lib_spi.h"
-	#include "../Mess-libs/spi/mod_st7735.h"
-	#include "../Mess-libs/sd_card/mod_sdCard.h"
+	#include "../Mess-libs/spi/fun_st7735.h"
+	// #include "../Mess-libs/sd_card/mod_sdCard.h"
+	#include "../Mess-libs/spi/fun_sx72xx.h"
 
 	void FN_SPI_DC_LOW()    { funDigitalWrite(PD0, 0); }
 	void FN_SPI_DC_HIGH()   { funDigitalWrite(PD0, 1); }
@@ -99,7 +101,7 @@ typedef struct {
 //# 	**RST 		PD7 - [ 				] - PC7		**MISO
 //# 	J_X			PA1 - [ 	V003F4P6	] - PC6		**MOSI
 //# 	J_Y			PA2 - [   	TSSOP-20 	] - PC5		**SCK
-//# 	**GND-		GND - [ 				] - PC4
+//# 	**GND-		GND - [ 				] - PC4		CS0
 //# 	PWM			PD0 - [ 				] - PC3		RST0 
 //# 	**VCC+		VCC - [ 				] - PC2		**SCL
 //# 	BTN			PC0 - [ 				] - PC1		**SDA
@@ -171,8 +173,15 @@ int main() {
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD2, DC-PC4
 		SPI_init();
-		mod_st7735_setup(PC3, PD0);
+		// fun_st7735_setup(PC3, PD0);
+
 		// SPI_init2();
+
+		#ifdef LORA_ENABLED
+			uint32_t loRa_Frequency = 915E6;
+			fun_sx72xx_init(loRa_Frequency, PC3, PC4);
+			fun_sx72xx_setTxPower(17);
+		#endif
 
 		// FRESULT rc;
 		// rc = mod_sdCard_write("testfile.txt", "hello world 1111!\n\r");
@@ -210,6 +219,16 @@ int main() {
 			uart_rx_task();
 		#endif
 		
+		#ifdef LORA_ENABLED
+			int packetSize = fun_sx72xx_parsePacket();
+			if (packetSize) {
+				char buff[packetSize + 1];
+				fun_sx72xx_readPacket(buff);
+				buff[packetSize] = 0;
+				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
+			}
+		#endif
+		
 		if (now - session.timeRef_1sec > 1000) {
 			session.timeRef_1sec = now;
 			session.cycle_count = 0;
@@ -239,8 +258,11 @@ int main() {
 			// ssd1306_print_str_at(str_output, 0, 0);
 
 			#ifdef SPI_ENABLED
-				tft_set_cursor(0, 0);
-				tft_print("Hello World 222");
+				// uint8_t loRa_message[] = "Hello World 222";
+				// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+
+				// tft_set_cursor(0, 0);
+				// tft_print("Hello World 222");
 				// uint32_t runtime_tft = SysTick_getRunTime(mod_st7735_test2);
 				// printf("ST7735 runtime: %lu us\n", runtime_tft);
 			#endif
