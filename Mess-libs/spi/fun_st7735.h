@@ -88,9 +88,6 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
     INTF_TFT_END_WRITE();
 }
 
-/// \brief Initialize ST7735
-/// \details Initialization sequence from Arduino_GFX
-/// https://github.com/moononournation/Arduino_GFX/blob/master/src/display/Arduino_ST7735.h
 void fun_st7335_init() {
     INTF_TFT_START_WRITE();
 
@@ -139,13 +136,9 @@ void fun_st7335_init() {
     Delay_Ms(10);
 
     INTF_TFT_END_WRITE();
-}
 
-void fun_st7735_setup() {
-    fun_st7335_init();
     tft_fill_rect(0, 0, 160, 128, PURPLE);
 }
-
 
 /* White Noise Generator State */
 #define NOISE_BITS 8
@@ -174,131 +167,46 @@ uint8_t rand8(void) {
     return lfsr&NOISE_MASK;
 }
 
-
-static uint32_t frame = 0;
-
-int fun_st7735_test1(void) {
-    // tft_set_color(RED);
-    // popup("Draw Point", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 30000;
-    while (frame-- > 0)
-    {
-        tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
-    }
-
-    // popup("Scan Line", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 50;
-    while (frame-- > 0)
-    {
-        for (uint8_t i = 0; i < 160; i++)
-        {
-            tft_draw_line(i, 0, i, 80, colors[rand8() % 19], 1);
-        }
-    }
-    frame = 50;
-    while (frame-- > 0)
-    {
-        for (uint8_t i = 0; i < 80; i++)
-        {
-            tft_draw_line(0, i, 180, i, colors[rand8() % 19], 1);
-        }
-    }
-
-    // popup("Draw Line", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 2000;
-    while (frame-- > 0)
-    {
-        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
-    }
-
-    // popup("Scan Rect", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 100;
-    while (frame-- > 0)
-    {
-        for (uint8_t i = 0; i < 40; i++)
-        {
-            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), colors[rand8() % 19]);
-        }
-    }
-
-    // popup("Draw Rect", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 5000;
-    while (frame-- > 0)
-    {
-        tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
-    }
-
-    // popup("Fill Rect", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame = 5000;
-    while (frame-- > 0)
-    {
-        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
-    }
-
-    // popup("Move Text", 1000);
-    tft_fill_rect(0, 0, 160, 80, BLACK);
-
-    frame     = 500;
-    uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
-    while (frame-- > 0)
-    {
-        uint16_t bg = colors[rand8() % 19];
-        tft_fill_rect(x, y, 88, 17, bg);
-        // tft_set_color(colors[rand8() % 19]);
-        // tft_set_background_color(bg);
-        // tft_set_cursor(x + 5, y + 5);
-        // tft_print("Hello, World!");
-        Delay_Ms(25);
-
-        x += step_x;
-        if (x >= 72)
-        {
-            step_x = -step_x;
-        }
-        y += step_y;
-        if (y >= 63)
-        {
-            step_y = -step_y;
-        }
-    }
-}
-
-
 void fun_st7735_test2() {
     tft_set_cursor(0, 0);
     tft_print("Hello World!");
     
+    static test_counter;
+
     //! dots test
-    tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+    test_counter = 40000;
 
-    // //! draw vertical lines
-    static uint8_t x_idx = 0;
-    tft_draw_line(x_idx, 0, x_idx, 80, colors[rand8() % 19], 1);
-    x_idx += 1;
-    if (x_idx >= 160) x_idx = 0;
+    while (test_counter-- > 0) {
+        tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+    }
+    
+    //! draw vertical lines
+    test_counter = 70;
 
-    // //! draw horizontal lines
-    static uint8_t y_idx = 0;
-    tft_draw_line(0, y_idx, 180, y_idx, colors[rand8() % 19], 1);
-    y_idx += 1;
-    if (y_idx >= 80) y_idx = 0;
+    while (test_counter-- > 0) {
+        for (int i = 0; i < 160; i++) {
+            tft_draw_line(i, 0, i, 80, colors[rand8() % 19], 1);
+        }
+    }
+
+    //! draw horizontal lines
+    test_counter = 70;
+
+    while(test_counter-- > 0) {
+        for (int i = 0; i < 180; i++) {
+            tft_draw_line(0, i, 180, i, colors[rand8() % 19], 1);
+        }
+    }
 
     //! draw random lines
-    tft_draw_line(0, 0, 70, 70, RED, 5);
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+    test_counter = 2000;
 
-    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+    while (test_counter-- > 0) {
+        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+    }
+    
 
     //! draw poly
     int16_t triangle_x[] = {10, 40, 80};
@@ -325,31 +233,44 @@ void fun_st7735_test2() {
     // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
 
 
-    // draw rectangles
-    static uint8_t rect_idx = 0;
-    tft_draw_rect(rect_idx, rect_idx, 160 - (rect_idx << 1), 80 - (rect_idx << 1), colors[rand8() % 19]);
-    rect_idx += 1;
-    if (rect_idx >= 40) rect_idx = 0;
+    //! draw rectangles
+    test_counter = 100;
 
-    // draw random rectangles
-    tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
-
-    // draw filled rectangles
-    tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+    while (test_counter-- > 0) {
+        for (uint8_t i = 0; i < 40; i++) {
+            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), colors[rand8() % 19]);
+        }
+    }
 
 
-    // static uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
+    //! draw random rectangles
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+    test_counter = 10000;
 
-    // uint16_t bg = colors[rand8() % 19];
-    // tft_fill_rect(x, y, 88, 17, bg);
-    // tft_set_color(colors[rand8() % 19]);
-    // tft_set_background_color(bg);
-    // tft_set_cursor(x + 5, y + 5);
-    // tft_print("Hello, World!");
-    // // Delay_Ms(25);
+    while (test_counter-- > 0) {
+        tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+    }
+    
+    //! draw filled rectangles
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+    test_counter = 10000;
 
-    // x += step_x;
-    // if (x >= 72) step_x = -step_x;
-    // y += step_y;
-    // if (y >= 63) step_y = -step_y;
+    while (test_counter-- > 0) {
+        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
+    }
+
+    tft_fill_rect(0, 0, 160, 128, PURPLE);
+
+    test_counter     = 500;
+    uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
+    while (test_counter-- > 0) {
+        uint16_t bg = colors[rand8() % 19];
+        tft_fill_rect(x, y, 88, 17, bg);
+
+        Delay_Ms(25);
+        x += step_x;
+        if (x >= 72) step_x = -step_x;
+        y += step_y;
+        if (y >= 63) step_y = -step_y;
+    }
 }

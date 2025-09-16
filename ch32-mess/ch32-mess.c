@@ -182,7 +182,7 @@ int main() {
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
 		#else
-			fun_st7735_setup();
+			fun_st7335_init();
 		#endif
 
 		// SPI_init2();
@@ -256,7 +256,7 @@ int main() {
 					uint8_t loRa_message[] = "Hello World 222";
 					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 				#else
-					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test1);
+					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test2);
 					printf("ST7735 runtime: %lu us\n", runtime_tft);
 				#endif
 			#endif
