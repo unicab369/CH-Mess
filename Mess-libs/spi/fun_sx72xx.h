@@ -3,18 +3,21 @@
 #include "ch32fun.h"
 #include <stdint.h>
 
+uint8_t LORA_OK = 0;
+
 //! ####################################
 //! SPI FUNCTIONS
 //! ####################################
 
-uint8_t LORA_CS_PIN;
+uint8_t LORA_CS_PIN = -1;
 
 uint8_t sx72xx_transfer(uint8_t reg, uint8_t value) {
     uint8_t resp;
-    funDigitalWrite(LORA_CS_PIN, 0);
+
+    if (LORA_CS_PIN != -1) funDigitalWrite(LORA_CS_PIN, 0);
     resp = SPI_transfer_8(reg);
     resp = SPI_transfer_8(value);
-    funDigitalWrite(LORA_CS_PIN, 1);
+    if (LORA_CS_PIN != -1) funDigitalWrite(LORA_CS_PIN, 1);
     return resp;
 }
 
@@ -106,19 +109,15 @@ void sx72xx_idle() {
 }
 
 void fun_sx72xx_init(uint32_t frequency, uint8_t rst_pin, uint8_t cs_pin) {
-    LORA_CS_PIN = cs_pin;
-
-    funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-    funDigitalWrite(cs_pin, 1);
-
-    funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-    funDigitalWrite(rst_pin, 0);
-    Delay_Ms(10);
-    funDigitalWrite(rst_pin, 1);
-    Delay_Ms(10);
+    if (rst_pin != -1) {
+        LORA_CS_PIN = cs_pin;
+        funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        funDigitalWrite(cs_pin, 1);
+    }
 
     uint8_t version = sx72xx_read(0x42);
     printf("LoRa version: 0x%02x\n", version);         // expect 0x12
+    LORA_OK = version == 0x12;
 
     //# Set Mode
     uint8_t sleep = sx72xx_write(0x01, 0x80 | 0x00);
@@ -163,6 +162,11 @@ void sx72xx_headerMode(uint8_t mode) {
 }
 
 void fun_sx72xx_send(uint8_t *data, uint8_t size) {
+    if (!LORA_OK) {
+        printf("Err: LoRa not initialized\n");
+        return;
+    }
+
     // explicit header mode
     sx72xx_headerMode(0xFE);
 
@@ -202,6 +206,7 @@ void fun_sx72xx_send(uint8_t *data, uint8_t size) {
 int LORA_PACKET_INDEX;
 
 int fun_sx72xx_parsePacket() {
+    if (!LORA_OK) return 0;
     int packetLength = 0;
 
     // explicit header mode

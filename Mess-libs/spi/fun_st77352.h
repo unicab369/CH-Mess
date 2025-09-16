@@ -26,9 +26,21 @@ static uint16_t st7735_colors[] = {
 #define ST7735_RASET        0x2B    // Row Address Set
 #define ST7735_RAMWR        0x2C    // RAM Write
 
-void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    INTF_TFT_START_WRITE();
+uint8_t ST7735_CS_PIN = -1;
 
+// Disable
+void INT_TFT_CS_HIGH() {
+    if (ST7735_CS_PIN == -1) return;
+    funDigitalWrite(ST7735_CS_PIN, 1);
+}
+
+// Enable
+void INT_TFT_CS_LOW() {
+    if (ST7735_CS_PIN == -1) return;
+    funDigitalWrite(ST7735_CS_PIN, 0);
+}
+
+void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     write_cmd_8(ST7735_CASET);
     write_data_16(x0);
     write_data_16(x1);
@@ -40,14 +52,11 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
 
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
     SPI_send_DMA(buffer, len, repeat);
-
-    INTF_TFT_END_WRITE();
 }
 
-void INTF_TFT_SEND_COLOR(uint16_t color) {
+void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color) {
+    INTF_TFT_SET_WINDOW(x0, y0, x0, y0);
     write_data_16(color);
-
-    INTF_TFT_END_WRITE();
 }
 
 #define ST7735_SWRESET      0x01
@@ -72,11 +81,17 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
 uint8_t ST7735_WIDTH = 160;
 uint8_t ST7735_HEIGHT = 80;
 
-void fun_st7335_init(uint8_t width, uint8_t height) {
+void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     ST7735_WIDTH = width;
     ST7735_HEIGHT = height;
 
-    INTF_TFT_START_WRITE();
+    if (cs_pin != -1) {
+        ST7735_CS_PIN = cs_pin;
+        funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        funDigitalWrite(cs_pin, 1);
+    }
+
+    INT_TFT_CS_LOW();
 
     //# Software reset
     write_cmd_8(ST7735_SWRESET);
@@ -127,7 +142,7 @@ void fun_st7335_init(uint8_t width, uint8_t height) {
     write_cmd_8(ST7735_DISPON);
     Delay_Ms(10);
 
-    INTF_TFT_END_WRITE();
+    INT_TFT_CS_HIGH();
 
     tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
 }
@@ -167,7 +182,6 @@ void fun_st7735_test() {
     static uint8_t color_idx = 0;
 
     uint8_t idx = color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t));
-    printf("idx: %d\n", idx);
     uint16_t color = st7735_colors[idx % sizeof(st7735_colors)];
 
     //! draw vertical lines

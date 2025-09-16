@@ -31,6 +31,7 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
 
     SPI1->CTLR1 |= CTLR1_SPE_Set;            // Enable SPI Port
 
+    //# Reset SPI Devices
     if (rst_pin != -1) {
         funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         
@@ -71,12 +72,8 @@ static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) 
 
     // Circulate the buffer
     while (repeat--) {
-        // Clear flag, start sending?
         DMA1->INTFCR = DMA1_FLAG_TC3;
-
-        // Waiting for channel 3 transmission complete
-        while (!(DMA1->INTFR & DMA1_FLAG_TC3))
-            ;
+        while (!(DMA1->INTFR & DMA1_FLAG_TC3));
     }
 
     DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Turn off channel

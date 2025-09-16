@@ -6,7 +6,7 @@
 // #define UART_ENABLED
 #define SPI_ENABLED
 // #define WS2812_ENABLED
-// #define LORA_ENABLED
+#define LORA_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -176,14 +176,15 @@ int main() {
 		SPI_DMA_init();
 
 		#ifdef LORA_ENABLED
+			fun_st7335_init(160, 80, ST7735_CS_PIN);
+
 			uint32_t loRa_Frequency = 915E6;
 			fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
 			fun_sx72xx_setTxPower(17);
+
 		#elif WS2812_ENABLED
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
-		#else
-			fun_st7335_init(160, 80);
 		#endif
 
 		// SPI_init2();
@@ -256,9 +257,8 @@ int main() {
 				#ifdef LORA_ENABLED
 					uint8_t loRa_message[] = "Hello World 222";
 					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
-				#else
 					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
-					printf("ST7735 runtime: %lu us\n", runtime_tft);
+					// printf("ST7735 runtime: %lu us\n", runtime_tft);
 				#endif
 			#endif
 

@@ -17,18 +17,12 @@
 #define FONT_WIDTH  5  // Font width
 #define FONT_HEIGHT 7  // Font height
 
-// interfaces: use these to control CS pin
-#ifndef INTF_TFT_START_WRITE
-    void INTF_TFT_START_WRITE() {}
-#endif
-
-#ifndef INTF_TFT_END_WRITE
-    void INTF_TFT_END_WRITE() {}
-#endif
+void INT_TFT_CS_HIGH();
+void INT_TFT_CS_LOW();
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat);
-void INTF_TFT_SEND_COLOR(uint16_t color);
+void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color);
 
 static uint8_t  _frame_buffer[ST7735_W << 1] = {0};
 static uint16_t _cursor_x                  = 0;
@@ -41,6 +35,8 @@ void tft_print_char(
     uint16_t color, uint16_t bg_color
 ) {
     const unsigned char* start = &font[c + (c << 2)];
+
+    INT_TFT_CS_LOW();
 
     uint16_t sz = 0;
     for (uint8_t i = 0; i < height; i++) {
@@ -58,6 +54,8 @@ void tft_print_char(
 
     INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
     INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
+
+    INT_TFT_CS_HIGH();
 }
 
 void tft_print(const char* str) {
@@ -88,8 +86,10 @@ void tft_fill_rect(
         _buffer[sz++] = color;
     }
 
+    INT_TFT_CS_LOW();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
     INTF_TFT_SEND_BUFF(_buffer, sz, height);
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -104,13 +104,9 @@ void tft_draw_bitmap(
     INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
 }
 
-// Draw line helpers
-#define _diff(a, b) ((a > b) ? (a - b) : (b - a))
-#define _swap_int16(a, b)   {                           \
-                                int16_t temp = a;       \
-                                a            = b;       \
-                                b            = temp;    \
-                            }
+
+#define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
+#define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
 
 //! draw pixel
 void tft_draw_pixel(
@@ -119,8 +115,7 @@ void tft_draw_pixel(
     x += TFT_X_OFFSET;
     y += TFT_Y_OFFSET;
 
-    INTF_TFT_SET_WINDOW(x, y, x, y);
-    INTF_TFT_SEND_COLOR(color);
+    INTF_TFT_SEND_PIXEL(x, y, color);
 }
 
 //! private
@@ -179,6 +174,8 @@ static void _draw_line_bresenham(
     int16_t err  = dx >> 1;
     int16_t step = (y0 < y1) ? 1 : -1;
 
+    INT_TFT_CS_LOW();
+
     for (; x0 <= x1; x0++) {
         for (int16_t w = -(width / 2); w <= width / 2; w++) {
             if (steep) {
@@ -193,6 +190,8 @@ static void _draw_line_bresenham(
             y0 += step;
         }
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -201,6 +200,7 @@ void tft_draw_line(
     int16_t x0, int16_t y0,
     int16_t x1, int16_t y1, uint16_t color, uint8_t width
 ) {
+    INT_TFT_CS_LOW();
     if (x0 == x1) {
         if (y0 > y1) _swap_int16(y0, y1);
         _draw_fast_vLine(x0, y0, y1 - y0 + 1, color);
@@ -212,6 +212,7 @@ void tft_draw_line(
     else {
         _draw_line_bresenham(x0, y0, x1, y1, color, width);
     }
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -220,10 +221,12 @@ void tft_draw_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
 ) {
+    INT_TFT_CS_LOW();
     _draw_fast_hLine(x, y, width, color);
     _draw_fast_hLine(x, y + height - 1, width, color);
     _draw_fast_vLine(x, y, height, color);
     _draw_fast_vLine(x + width - 1, y, height, color);
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -242,6 +245,8 @@ static void _draw_poly(
 ) {
     if (num_vertices < 3) return; // A polygon must have at least 3 vertices
 
+    INT_TFT_CS_LOW();
+
     for (uint16_t i = 0; i < num_vertices; i++) {
         int16_t x0 = vertices_x[i];
         int16_t y0 = vertices_y[i];
@@ -250,6 +255,8 @@ static void _draw_poly(
 
         tft_draw_line(x0, y0, x1, y1, color, width); // Draw edge with specified width
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 //! draw polygon
@@ -259,12 +266,16 @@ static void tft_draw_poly2(
 ) {
     if (num_vertices < 3) return; // A polygon must have at least 3 vertices
 
+    INT_TFT_CS_LOW();
+
     for (uint16_t i = 0; i < num_vertices; i++) {
         Point16_t p0 = vertices[i];
         Point16_t p1 = vertices[(i + 1) % num_vertices]; // Wrap around to connect last vertex to first
 
         tft_draw_line(p0.x, p0.y, p1.x, p1.y, color, width); // Draw edge with specified width
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 //! draw solid polygon
@@ -281,6 +292,9 @@ static void tft_draw_solid_poly(
         if (vertices[i].y < min_y) min_y = vertices[i].y;
         if (vertices[i].y > max_y) max_y = vertices[i].y;
     }
+
+
+    INT_TFT_CS_LOW();
 
     // Scan through each row of the polygon
     for (int16_t y = min_y; y <= max_y; y++) {
@@ -329,6 +343,8 @@ static void tft_draw_solid_poly(
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -384,6 +400,8 @@ static void tft_draw_solid_poly2(
         valid_edges++;
     }
 
+    INT_TFT_CS_LOW();
+
     // Scan through each row of the polygon
     for (int16_t y = min_y; y <= max_y; y++) {
         int16_t intersections[20];
@@ -425,6 +443,8 @@ static void tft_draw_solid_poly2(
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 //! draw circle
@@ -435,6 +455,8 @@ static void tft_draw_circle(
     int16_t y = radius;
     int16_t err = 1 - radius; // Initial error term
 
+    INT_TFT_CS_LOW();
+    
     while (x <= y) {
         // Draw symmetric points in all octants
         tft_draw_pixel(center.x + x, center.y + y, color); // Octant 1
@@ -454,6 +476,8 @@ static void tft_draw_circle(
         }
         x++;
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 
@@ -464,6 +488,8 @@ static void tft_draw_filled_circle(
     int16_t x = radius;
     int16_t y = 0;
     int16_t err = 0;
+
+    INT_TFT_CS_LOW();
 
     //# optimize for radius <= 4
     if (radius <= 4) {
@@ -492,12 +518,16 @@ static void tft_draw_filled_circle(
             err -= 2 * x + 1;
         }
     }
+
+    INT_TFT_CS_HIGH();
 }
 
 //! draw ring
 static void tft_draw_ring(
     Point16_t center, int16_t radius, uint16_t color, uint8_t width
 ) {
+    INT_TFT_CS_LOW();
     tft_draw_filled_circle(center, radius, color); // Draw outer circle
     // tft_draw_filled_circle(center, radius - width, PURPLE); // Draw inner circle
+    INT_TFT_CS_HIGH();
 }
