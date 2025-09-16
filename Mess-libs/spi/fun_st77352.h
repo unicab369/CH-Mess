@@ -1,57 +1,9 @@
-/// \brief ST7735 Driver for CH32V003 - Demo
-///
-/// \author Li Mingjie
-///  - Email:  limingjie@outlook.com
-///  - GitHub: https://github.com/limingjie/
-///
-/// \date Aug 2023
-///
-/// \section References
-///  - https://github.com/moononournation/Arduino_GFX
-///  - https://gitee.com/morita/ch32-v003/tree/master/Driver
-///  - https://github.com/cnlohr/ch32v003fun/tree/master/examples/spi_oled
-///
-/// \copyright Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0)
-///  - Attribution - You must give appropriate credit, provide a link to the
-///    license, and indicate if changes were made. You may do so in any
-///    reasonable manner, but not in any way that suggests the licensor endorses
-///    you or your use.
-///  - NonCommercial - You may not use the material for commercial purposes.
-///  - ShareAlike - If you remix, transform, or build upon the material, you
-///    must distribute your contributions under the same license as the original.
-///
-/// \section Wiring
-/// | CH32V003       | ST7735    | Power | Description                       |
-/// | -------------- | --------- | ----- | --------------------------------- |
-/// |                | 1 - LEDA  | 3V3   | Use PWM to control brightness     |
-/// |                | 2 - GND   | GND   | GND                               |
-/// | PC2            | 3 - RESET |       | Reset                             |
-/// | PC3            | 4 - RS    |       | DC (Data / Command)               |
-/// | PC6 (SPI MOSI) | 5 - SDA   |       | SPI MOSI (Master Output Slave In) |
-/// | PC5 (SPI SCLK) | 6 - SCL   |       | SPI SCLK (Serial Clock)           |
-/// |                | 7 - VDD   | 3V3   | VDD                               |
-/// | PC4            | 8 - CS    |       | SPI CS/SS (Chip/Slave Select)     |
-
-
 #include "ch32fun.h"
 #include <stdint.h>
 #include "lib/lib_tft.h"
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
-// Delays
-
-// System Function Command List - Write Commands Only
-#define ST7735_PTLON   0x12  // Partial Display Mode On
-#define ST7735_GAMSET  0x26  // Gamma Set
-#define ST7735_CASET   0x2A  // Column Address Set
-#define ST7735_RASET   0x2B  // Row Address Set
-#define ST7735_RAMWR   0x2C  // Memory Write
-#define ST7735_PLTAR   0x30  // Partial Area
-#define ST7735_TEOFF   0x34  // Tearing Effect Line Off
-#define ST7735_TEON    0x35  // Tearing Effect Line On
-#define ST7735_IDMOFF  0x38  // Idle Mode Off
-#define ST7735_IDMON   0x39  // Idle Mode On
 
 
 // MADCTL Parameters
@@ -63,6 +15,10 @@
 #define ST7735_MADCTL_MX  0x40  // Bit 6 - X-Mirror
 #define ST7735_MADCTL_MY  0x80  // Bit 7 - Y-Mirror
 
+
+#define ST7735_CASET        0x2A    // Column Address Set
+#define ST7735_RASET        0x2B    // Row Address Set
+#define ST7735_RAMWR        0x2C    // RAM Write
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     INTF_TFT_START_WRITE();
@@ -76,8 +32,8 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     write_cmd_8(ST7735_RAMWR);
 }
 
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    SPI_send_DMA(buffer, size, repeat);
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
+    SPI_send_DMA(buffer, len, repeat);
 
     INTF_TFT_END_WRITE();
 }
@@ -88,51 +44,66 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
     INTF_TFT_END_WRITE();
 }
 
+#define ST7735_SWRESET      0x01
+#define ST7735_SLEEPON      0x10    // Sleep ON
+#define ST7735_SLEEPOFF     0x11    // Sleep OFF
+#define ST7735_COLMODE      0x3A    // Color Mode bit/pixel
+
+#define ST7735_INVERTON     0x21    // Invert ON
+#define ST7735_INVERTOFF    0x20    // Invert OFF
+#define ST7735_NORON        0x13    // Normal Display ON
+
+#define ST7735_DISPON       0x29    // Display ON
+#define ST7735_DISPOFF      0x28    // Display OFF
+
+#define ST7735_GAMCTRP     0xE0    // Gamma Control Positive
+#define ST7735_GAMCTRN     0xE1    // Gamma Control Neigative
+
 void fun_st7335_init() {
     INTF_TFT_START_WRITE();
 
-    write_cmd_8(0x01);              //# Software reset
+    //# Software reset
+    write_cmd_8(ST7735_SWRESET);
     Delay_Ms(200);
-    write_cmd_8(0x11);              //# SLPOUT - Sleep Out; SLPIN 0x10
+    write_cmd_8(ST7735_SLEEPOFF);
     Delay_Ms(100);
 
+    //# Interface Pixel Format
+    write_cmd_8(ST7735_COLMODE);
+    write_data_8(0x05);             // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
+
+    //# Display inversion
+    write_cmd_8(ST7735_INVERTON);
+
+    //# Normal display on
+    write_cmd_8(ST7735_NORON);
+    Delay_Ms(10);
+
     // Set rotation
-    write_cmd_8(0x36);              //# MADCTL - Memory Access Control
+    write_cmd_8(0x36);                          //# MADCTL - Memory Access Control
     // write_data_8(0x68);                 // For 1.8"
     write_data_8(ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 0 - Horizontal
     // write_data_8(ST7735_MADCTL_BGR);                                        // 1 - Vertical
     // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 2 - Horizontal
     // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MY | ST7735_MADCTL_BGR);  // 3 - Vertical
+    
+    //# Gamma+ Adjustments (magic numbers)
+    uint8_t gamma_pos[] = {
+        0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19, 0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
+    };
+    write_cmd_8(ST7735_GAMCTRP);
+    INTF_TFT_SEND_BUFF(gamma_pos, 16, 1);
 
-    // Set Interface Pixel Format
-    write_cmd_8(0x3A);              //# COLMOD - Color Mode
-    write_data_8(0x05);             // 16-bit/pixel
-
-    // Gamma Adjustments (pos. polarity), 16 args.
-    // (Not entirely necessary, but provides accurate colors)
-    uint8_t gamma_p[] = {0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19,
-                        0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E};
-    write_cmd_8(0xE0);              //# GMCTRP1 - Gamama Control + Positive Polarity
-    INTF_TFT_SEND_BUFF(gamma_p, 16, 1);
-
-    // Gamma Adjustments (neg. polarity), 16 args.
-    // (Not entirely necessary, but provides accurate colors)
-    uint8_t gamma_n[] = {0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E,
-                        0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F};
-    write_cmd_8(0xE1);              //# GMCTRN1 - Gamma Control - Negative Polarity
-    INTF_TFT_SEND_BUFF(gamma_n, 16, 1);
+    //# Gamma- Adjustments (magic numbers)
+    uint8_t gamma_neg[] = {
+        0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E, 0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
+    };
+    write_cmd_8(ST7735_GAMCTRN);
+    INTF_TFT_SEND_BUFF(gamma_neg, 16, 1);
     Delay_Ms(10);
 
-    // Invert display
-    write_cmd_8(0x21);              //# INVON - Inversion On
-    // write_cmd_8(0x20);              //# INVOFF - Inversion Off: For 1.8"
-
-    // Normal display on, no args, w/delay
-    write_cmd_8(0x13);              //# NORON - Normal Display On
-    Delay_Ms(10);
-
-    // Main screen turn on, no args, w/delay
-    write_cmd_8(0x29);              //# DISPON - Display On; DISPOFF 0x28
+    //# Display On
+    write_cmd_8(ST7735_DISPON);
     Delay_Ms(10);
 
     INTF_TFT_END_WRITE();

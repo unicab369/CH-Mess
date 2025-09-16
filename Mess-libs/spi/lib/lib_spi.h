@@ -70,19 +70,6 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     }
 }
 
-
-//! INTERFACES
-void FN_SPI_DC_LOW() {
-    if (SPI_DC_PIN == -1) return;
-    funDigitalWrite(SPI_DC_PIN, 0);
-}
-
-void FN_SPI_DC_HIGH() {
-    if (SPI_DC_PIN == -1) return;
-    funDigitalWrite(SPI_DC_PIN, 1);
-}
-
-
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
     FN_SPI_DC_HIGH();
     
@@ -103,31 +90,21 @@ static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) 
     DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Turn off channel
 }
 
-static void SPI_send(uint8_t data) {
-    // Send byte
-    SPI1->DATAR = data;
-
-    // Waiting for transmission complete
-    while (!(SPI1->STATR & SPI_STATR_TXE)) ;
+//# write read raw
+static inline uint8_t SPI_read_8() {
+	return SPI1->DATAR;
+}
+static inline uint16_t SPI_read_16() {
+	return SPI1->DATAR;
+}
+static inline void SPI_write_8(uint8_t data) {
+	SPI1->DATAR = data;
+}
+static inline void SPI_write_16(uint16_t data) {
+	SPI1->DATAR = data;
 }
 
-static void write_cmd_8(uint8_t cmd) {
-    FN_SPI_DC_LOW();      // Command Mode
-    SPI_send(cmd);
-}
-
-static void write_data_8(uint8_t data) {
-    FN_SPI_DC_HIGH();     // Data Mode
-    SPI_send(data);
-}
-
-static void write_data_16(uint16_t data) {
-    FN_SPI_DC_HIGH();     // Data Mode
-    SPI_send(data >> 8);
-    SPI_send(data);
-}
-
-
+//# write read wait
 static inline void SPI_wait_TX_complete() {
     while (!(SPI1->STATR & SPI_STATR_TXE)) { }
 }
@@ -144,6 +121,40 @@ static inline void SPI_wait_not_busy() {
     while ((SPI1->STATR & SPI_STATR_BSY) != 0) { }
 }
 
+
+//! INTERFACES
+void FN_SPI_DC_LOW() {
+    if (SPI_DC_PIN == -1) return;
+    funDigitalWrite(SPI_DC_PIN, 0);
+}
+
+void FN_SPI_DC_HIGH() {
+    if (SPI_DC_PIN == -1) return;
+    funDigitalWrite(SPI_DC_PIN, 1);
+}
+
+static void write_cmd_8(uint8_t cmd) {
+    FN_SPI_DC_LOW();
+    SPI_write_8(cmd);
+    SPI_wait_TX_complete();
+}
+
+static void write_data_8(uint8_t data) {
+    FN_SPI_DC_HIGH();
+    SPI_write_8(data);
+    SPI_wait_TX_complete();
+}
+
+static void write_data_16(uint16_t data) {
+    FN_SPI_DC_HIGH();
+    SPI_write_8(data >> 8);
+    SPI_wait_TX_complete();
+
+    SPI_write_8(data);
+    SPI_wait_TX_complete();
+}
+
+
 static inline void SPI_wait_transmit_finished() {
     SPI_wait_TX_complete();
     SPI_wait_not_busy();
@@ -152,14 +163,6 @@ static inline void SPI_wait_transmit_finished() {
 
 void SPI_end() {
     SPI1->CTLR1 &= ~(SPI_CTLR1_SPE);
-}
-
-static inline uint8_t SPI_read_8() {
-    return SPI1->DATAR;
-}
-
-static inline void SPI_write_8(uint8_t data) {
-    SPI1->DATAR = data;
 }
 
 uint8_t SPI_transfer_8(uint8_t data) {

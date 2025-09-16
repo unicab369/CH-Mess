@@ -38,7 +38,7 @@
 
 #ifdef SPI_ENABLED
 	#include "../Mess-libs/spi/lib/lib_spi.h"
-	#include "../Mess-libs/spi/fun_st7735.h"
+	#include "../Mess-libs/spi/fun_st77352.h"
 	// #include "../Mess-libs/sd_card/mod_sdCard.h"
 	#include "../Mess-libs/spi/fun_sx72xx.h"
 #endif
