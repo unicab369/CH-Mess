@@ -1,5 +1,3 @@
-// stolen and adjusted from: GitHub: https://github.com/limingjie/
-
 #include "ch32fun.h"
 #include "font5x7.h"
 
@@ -26,17 +24,13 @@ void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color);
 
 static uint8_t  _frame_buffer[ST7735_W << 1] = {0};
 static uint16_t _cursor_x                  = 0;
-static uint16_t _cursor_y                  = 0;      // Cursor position (x, y)
-
-static uint8_t  _buffer[ST7735_W << 1] = {0};    // DMA buffer, long enough to fill a row.
+static uint16_t _cursor_y                  = 0;
 
 void tft_print_char(
     char c, uint8_t height, uint8_t width,
     uint16_t color, uint16_t bg_color
 ) {
-    const unsigned char* start = &font[c + (c << 2)];
-
-    INT_TFT_CS_LOW();
+    const char* start = &font[c + (c << 2)];
 
     uint16_t sz = 0;
     for (uint8_t i = 0; i < height; i++) {
@@ -44,8 +38,7 @@ void tft_print_char(
             if ((*(start + j)) & (0x01 << i)) {
                 _frame_buffer[sz++] = color >> 8;
                 _frame_buffer[sz++] = color;
-            }
-            else {
+            } else {
                 _frame_buffer[sz++] = bg_color >> 8;
                 _frame_buffer[sz++] = bg_color;
             }
@@ -54,23 +47,21 @@ void tft_print_char(
 
     INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
     INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
-
-    INT_TFT_CS_HIGH();
 }
 
-void tft_print(const char* str) {
-    uint8_t font_width = 5; // Assuming a fixed width for the font
-
-    while (*str) {
-        tft_print_char(*str++, 7, font_width, 0xFFFF, 0x0000); // 7x5 font size
-        _cursor_x += font_width + 1;
-    }
-}
-
-
-void tft_set_cursor(uint16_t x, uint16_t y) {
+void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
+    uint8_t font_width = 5;
     _cursor_x = x + TFT_X_OFFSET;
     _cursor_y = y + TFT_Y_OFFSET;
+
+    INT_TFT_CS_LOW();
+
+    while (*str) {
+        tft_print_char(*str++, 7, font_width, color, bg_color);
+        _cursor_x += font_width + 1;
+    }
+
+    INT_TFT_CS_HIGH();
 }
 
 void tft_fill_rect(
@@ -82,13 +73,13 @@ void tft_fill_rect(
 
     uint16_t sz = 0;
     for (uint16_t x = 0; x < width; x++) {
-        _buffer[sz++] = color >> 8;
-        _buffer[sz++] = color;
+        _frame_buffer[sz++] = color >> 8;
+        _frame_buffer[sz++] = color;
     }
 
     INT_TFT_CS_LOW();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
-    INTF_TFT_SEND_BUFF(_buffer, sz, height);
+    INTF_TFT_SEND_BUFF(_frame_buffer, sz, height);
     INT_TFT_CS_HIGH();
 }
 
@@ -127,12 +118,12 @@ static void _draw_fast_vLine(
 
     uint16_t sz = 0;
     for (int16_t j = 0; j < h; j++) {
-        _buffer[sz++] = color >> 8;
-        _buffer[sz++] = color;
+        _frame_buffer[sz++] = color >> 8;
+        _frame_buffer[sz++] = color;
     }
 
     INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
-    INTF_TFT_SEND_BUFF(_buffer, sz, 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
 }
 
 
@@ -145,12 +136,12 @@ static void _draw_fast_hLine(
 
     uint16_t sz = 0;
     for (int16_t j = 0; j < w; j++) {
-        _buffer[sz++] = color >> 8;
-        _buffer[sz++] = color;
+        _frame_buffer[sz++] = color >> 8;
+        _frame_buffer[sz++] = color;
     }
 
     INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
-    INTF_TFT_SEND_BUFF(_buffer, sz, 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, sz, 1);
 }
 
 //! draw_line_bresenham

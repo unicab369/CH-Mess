@@ -41,13 +41,13 @@ void INT_TFT_CS_LOW() {
 }
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-    write_cmd_8(ST7735_CASET);
-    write_data_16(x0);
-    write_data_16(x1);
-    write_cmd_8(ST7735_RASET);
-    write_data_16(y0);
-    write_data_16(y1);
-    write_cmd_8(ST7735_RAMWR);
+    SPI_cmd_8(ST7735_CASET);
+    SPI_cmd_data_16(x0);
+    SPI_cmd_data_16(x1);
+    SPI_cmd_8(ST7735_RASET);
+    SPI_cmd_data_16(y0);
+    SPI_cmd_data_16(y1);
+    SPI_cmd_8(ST7735_RAMWR);
 }
 
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
@@ -56,7 +56,7 @@ void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
 
 void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color) {
     INTF_TFT_SET_WINDOW(x0, y0, x0, y0);
-    write_data_16(color);
+    SPI_cmd_data_16(color);
 }
 
 #define ST7735_SWRESET      0x01
@@ -94,20 +94,20 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     INT_TFT_CS_LOW();
 
     //# Software reset
-    write_cmd_8(ST7735_SWRESET);
+    SPI_cmd_8(ST7735_SWRESET);
     Delay_Ms(200);
-    write_cmd_8(ST7735_SLEEPOFF);
+    SPI_cmd_8(ST7735_SLEEPOFF);
     Delay_Ms(100);
 
     //# Interface Pixel Format
-    write_cmd_8(ST7735_COLMODE);
-    write_data_8(0x05);             // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
+    SPI_cmd_8(ST7735_COLMODE);
+    SPI_cmd_data_8(0x05);             // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
 
     //# Display inversion
-    write_cmd_8(ST7735_INVERTON);
+    SPI_cmd_8(ST7735_INVERTON);
 
     //# Normal display on
-    write_cmd_8(ST7735_NORON);
+    SPI_cmd_8(ST7735_NORON);
     Delay_Ms(10);
 
     //# MADCTL - Memory Access Control
@@ -119,27 +119,27 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     uint8_t MADCTL_RGB = 0b00001000;    // bit3: Color order (0 = RGB, 1 = BGR)
 
     // &0 to turn off
-    write_cmd_8(ST7735_MADCTL);
+    SPI_cmd_8(ST7735_MADCTL);
     uint8_t ctrValue = (MADCTL_MY & 0xFF) | (MADCTL_MV & 0xFF);
-    write_data_8(ctrValue);
+    SPI_cmd_data_8(ctrValue);
     
     //# Gamma+ Adjustments Control (magic numbers)
     uint8_t gamma_pos[] = {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19, 0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
-    write_cmd_8(ST7735_GAMCTRP);
+    SPI_cmd_8(ST7735_GAMCTRP);
     INTF_TFT_SEND_BUFF(gamma_pos, 16, 1);
 
     //# Gamma- Adjustments Control (magic numbers)
     uint8_t gamma_neg[] = {
         0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E, 0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
-    write_cmd_8(ST7735_GAMCTRN);
+    SPI_cmd_8(ST7735_GAMCTRN);
     INTF_TFT_SEND_BUFF(gamma_neg, 16, 1);
     Delay_Ms(10);
 
     //# Display On
-    write_cmd_8(ST7735_DISPON);
+    SPI_cmd_8(ST7735_DISPON);
     Delay_Ms(10);
 
     INT_TFT_CS_HIGH();
@@ -147,36 +147,9 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
 }
 
-/* White Noise Generator State */
-#define NOISE_BITS 8
-#define NOISE_MASK ((1<<NOISE_BITS)-1)
-#define NOISE_POLY_TAP0 31
-#define NOISE_POLY_TAP1 21
-#define NOISE_POLY_TAP2 1
-#define NOISE_POLY_TAP3 0
-uint32_t lfsr = 1;
-
-/*
- * random byte generator
- */
-uint8_t rand8(void) {
-    uint8_t bit;
-    uint32_t new_data;
-
-    for(bit=0;bit<NOISE_BITS;bit++) {
-        new_data = ((lfsr>>NOISE_POLY_TAP0) ^
-                                (lfsr>>NOISE_POLY_TAP1) ^
-                                (lfsr>>NOISE_POLY_TAP2) ^
-                                (lfsr>>NOISE_POLY_TAP3));
-        lfsr = (lfsr<<1) | (new_data&1);
-    }
-
-    return lfsr&NOISE_MASK;
-}
 
 void fun_st7735_test() {
-    tft_set_cursor(0, 0);
-    tft_print("Hello World!");
+    tft_print("Hello World!", 0, 0, 0xFFFF, PURPLE);
     
     static int idx_counter;
     static uint8_t color_idx = 0;
@@ -195,8 +168,8 @@ void fun_st7735_test() {
     uint8_t y_value = y_idx++ % ST7735_HEIGHT;
     tft_draw_line(0, y_value, ST7735_WIDTH, y_value, color, 1);
 
-    //! draw random lines
-    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, color, 1);
+    //! draw diagonal lines
+    tft_draw_line(x_value, y_value, x_value + 30, y_value + 80, color, 1);
 
     //! draw poly
     int16_t triangle_x[] = {10, 40, 80};
@@ -224,8 +197,8 @@ void fun_st7735_test() {
 
 
     //! draw rectangles
-    tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, color);
+    tft_draw_rect(x_value, y_value, 20, 20, color);
 
     //! draw random rectangles
-    tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, color);
+    tft_fill_rect(x_value + 20, y_value + 20, 20, 20, color);
 }

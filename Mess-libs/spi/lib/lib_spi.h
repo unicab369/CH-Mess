@@ -122,19 +122,19 @@ void FN_SPI_DC_HIGH() {
     funDigitalWrite(SPI_DC_PIN, 1);
 }
 
-static void write_cmd_8(uint8_t cmd) {
+static void SPI_cmd_8(uint8_t cmd) {
     FN_SPI_DC_LOW();
     SPI_write_8(cmd);
     SPI_wait_TX_complete();
 }
 
-static void write_data_8(uint8_t data) {
+static void SPI_cmd_data_8(uint8_t data) {
     FN_SPI_DC_HIGH();
     SPI_write_8(data);
     SPI_wait_TX_complete();
 }
 
-static void write_data_16(uint16_t data) {
+static void SPI_cmd_data_16(uint16_t data) {
     FN_SPI_DC_HIGH();
 
     SPI_write_8(data >> 8);
