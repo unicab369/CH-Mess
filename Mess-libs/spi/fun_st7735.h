@@ -64,11 +64,6 @@
 #define ST7735_MADCTL_MY  0x80  // Bit 7 - Y-Mirror
 
 
-static uint8_t DC_PIN;
-
-void FN_SPI_DC_LOW()    { funDigitalWrite(DC_PIN, 0); }
-void FN_SPI_DC_HIGH()   { funDigitalWrite(DC_PIN, 1); }
-
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     INTF_TFT_START_WRITE();
 
@@ -96,18 +91,7 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
 /// \brief Initialize ST7735
 /// \details Initialization sequence from Arduino_GFX
 /// https://github.com/moononournation/Arduino_GFX/blob/master/src/display/Arduino_ST7735.h
-void fun_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
-    DC_PIN = dc_pin;
-
-    funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-    funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-
-    // Reset display
-    funDigitalWrite(rst_pin, 0);
-    Delay_Ms(100);
-    funDigitalWrite(rst_pin, 1);
-    Delay_Ms(100);
-
+void fun_st7335_init() {
     INTF_TFT_START_WRITE();
 
     write_cmd_8(0x01);              //# Software reset
@@ -157,8 +141,8 @@ void fun_st7335_init(uint8_t rst_pin, uint8_t dc_pin) {
     INTF_TFT_END_WRITE();
 }
 
-void fun_st7735_setup(uint8_t rst_pin, uint8_t dc_pin) {
-    fun_st7335_init(rst_pin, dc_pin);
+void fun_st7735_setup() {
+    fun_st7335_init();
     tft_fill_rect(0, 0, 160, 128, PURPLE);
 }
 
@@ -295,7 +279,6 @@ int fun_st7735_test1(void) {
 void fun_st7735_test2() {
     tft_set_cursor(0, 0);
     tft_print("Hello World!");
-    tft_print_number(123456789, 0);
     
     //! dots test
     tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);

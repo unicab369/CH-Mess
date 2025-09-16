@@ -2,11 +2,11 @@
 #include <stdio.h>
 
 // #define I2C_ENABLED
+// #define I2C_SLAVE_ENABLED
 // #define UART_ENABLED
 #define SPI_ENABLED
-// #define I2C_SLAVE_ENABLED
 // #define WS2812_ENABLED
-#define LORA_ENABLED
+// #define LORA_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -42,8 +42,6 @@
 	// #include "../Mess-libs/sd_card/mod_sdCard.h"
 	#include "../Mess-libs/spi/fun_sx72xx.h"
 #endif
-
-#define BUTTON_PIN 		PC0
 
 
 void onI2C_SlaveWrite(uint8_t reg, uint8_t length) {
@@ -86,14 +84,14 @@ typedef struct {
 	uint32_t cycle_count;
 	uint32_t counter;
 	uint32_t fullCycle_time;
-	uint32_t timeRef_1sec;
-	uint32_t timeRef_50ms;
-	uint32_t timeRef_100ms;
+	uint32_t period_1sec;
+	uint32_t period_50ms;
+	uint32_t period_100ms;
 } Session_t;
 
 
 //# 	ENC_A		PD4 - [ 				] - PD3		ENC_B
-//# 	**UTX		PD5 - [ 				] - PD2
+//# 	**UTX		PD5 - [ 				] - PD2		DC
 //# 	**UTR		PD6 - [ 				] - PD1		**SWIO
 //# 	**RST 		PD7 - [ 				] - PC7		**MISO
 //# 	J_X			PA1 - [ 	V003F4P6	] - PC6		**MOSI
@@ -103,6 +101,11 @@ typedef struct {
 //# 	**VCC+		VCC - [ 				] - PC2		**SCL
 //# 	BTN			PC0 - [ 				] - PC1		**SDA
 
+#define BUTTON_PIN 		PC0
+#define SPI_DC_PIN		PD2
+#define SPI_RST_PIN		PC3
+#define LORA_CS_PIN		PC4
+#define ST7735_CS_PIN	PD0
 
 volatile uint8_t i2c_registers[32] = {0xaa};
 
@@ -168,15 +171,18 @@ int main() {
 
 	#ifdef SPI_ENABLED
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
-		//# RST-PD3, DC-PC4
-		SPI_init();
+		//# RST-PD3, DC-P
+		SPI_init(SPI_RST_PIN, SPI_DC_PIN);
 
 		#ifdef LORA_ENABLED
 			uint32_t loRa_Frequency = 915E6;
-			fun_sx72xx_init(loRa_Frequency, PC3, PC4);
+			fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
 			fun_sx72xx_setTxPower(17);
+		#elif WS2812_ENABLED
+			WS2812BDMAInit();
+			Neo_loadCommand(NEO_COLOR_CHASE);
 		#else
-			fun_st7735_setup(PC3, PD0);
+			fun_st7735_setup();
 		#endif
 
 		// SPI_init2();
@@ -192,25 +198,15 @@ int main() {
 		// }
 	#endif
 
-	#ifdef WS2812_ENABLED
-		WS2812BDMAInit();
-		Neo_loadCommand(NEO_COLOR_CHASE);
-	#endif
-
 	uint32_t now = millis();
 	Session_t session = { 0, 0, now };
 
 	while(1) {
 		now = millis();
-		session.cycle_count++;
 
 		//# prioritize tasks
 		fun_button_task(now, &button1, button_onChanged);
 		// fun_timPWM_task(now, &pwm_CH1c);
-
-		#ifdef WS2812_ENABLED
-			Neo_task(now);	
-		#endif
 
 		#ifdef UART_ENABLED
 			uart_rx_task();
@@ -224,11 +220,12 @@ int main() {
 				buff[packetSize] = 0;
 				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
 			}
+		#elif WS2812_ENABLED
+			Neo_task(now);
 		#endif
 		
-		if (now - session.timeRef_1sec > 1000) {
-			session.timeRef_1sec = now;
-			session.cycle_count = 0;
+		if (now - session.period_1sec > 1000) {
+			session.period_1sec = now;
 			printf(".");
 
 			#ifdef I2C_ENABLED
@@ -259,25 +256,29 @@ int main() {
 					uint8_t loRa_message[] = "Hello World 222";
 					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 				#else
-					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test2);
+					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test1);
 					printf("ST7735 runtime: %lu us\n", runtime_tft);
 				#endif
 			#endif
+
+			// reset cycle_count
+			session.cycle_count = 0;
 		}
 
-		else if (now - session.timeRef_100ms > 100) {
-			session.timeRef_100ms = now;
+		else if (now - session.period_100ms > 100) {
+			session.period_100ms = now;
 
 			mngI2c_printBuff_task(now);
 		}
 
-		else if (now - session.timeRef_50ms > 50) {
-			session.timeRef_50ms = now;
+		else if (now - session.period_50ms > 50) {
+			session.period_50ms = now;
 
 			fun_encoder_task(&encoder_a, encoder_onChanged);
 			fun_joystick_task(joystick_onChanged);
 		}
 
+		session.cycle_count++;
 		session.fullCycle_time = millis() - now;
 	}
 }

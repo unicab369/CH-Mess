@@ -122,36 +122,6 @@ void tft_fill_rect(
     INTF_TFT_SEND_BUFF(_buffer, sz, height);
 }
 
-void tft_print_number(int32_t num, uint16_t width) {
-    static char str[12];
-    uint8_t     position  = 11;
-    uint8_t     negative  = 0;
-    uint16_t    num_width = 0;
-
-    // Handle negative number
-    if (num < 0) {
-        negative = 1;
-        num      = -num;
-    }
-
-    str[position] = '\0';  // End of the string.
-    while (num) {
-        str[--position] = num % 10 + '0';
-        num /= 10;
-    }
-
-    if (position == 11) str[--position] = '0';
-    if (negative) str[--position] = '-';
-    
-    // Calculate alignment
-    num_width = (11 - position) * (FONT_WIDTH + 1) - 1;
-    if (width > num_width) {
-        _cursor_x += width - num_width;
-    }
-
-    tft_print(&str[position]);
-}
-
 
 void tft_draw_bitmap(
     uint16_t x, uint16_t y,

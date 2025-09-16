@@ -3,7 +3,9 @@
 #define SPI_SCLK 5  // PC5
 #define SPI_MOSI 6  // PC6
 
-static void SPI_init(void) {
+uint8_t SPI_DC_PIN = -1;
+
+static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     // reset control register
 	SPI1->CTLR1 = 0;
 
@@ -51,12 +53,34 @@ static void SPI_init(void) {
                           | DMA_Priority_VeryHigh        // Bit 12-13 - Very high priority
                           | DMA_M2M_Disable;             // Bit 14    - Disable memory to memory mode
     DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
+
+    if (rst_pin != -1) {
+        funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        
+        // Reset Spi Devices
+        funDigitalWrite(rst_pin, 0);
+        Delay_Ms(100);
+        funDigitalWrite(rst_pin, 1);
+        Delay_Ms(100);
+    }
+    
+    if (dc_pin != -1) {
+        funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        SPI_DC_PIN = dc_pin;   
+    }
 }
 
 
 //! INTERFACES
-void FN_SPI_DC_LOW();
-void FN_SPI_DC_HIGH();
+void FN_SPI_DC_LOW() {
+    if (SPI_DC_PIN == -1) return;
+    funDigitalWrite(SPI_DC_PIN, 0);
+}
+
+void FN_SPI_DC_HIGH() {
+    if (SPI_DC_PIN == -1) return;
+    funDigitalWrite(SPI_DC_PIN, 1);
+}
 
 
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
