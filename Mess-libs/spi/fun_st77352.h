@@ -4,17 +4,19 @@
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
+#define ST7735_RGB(r, g, b) ((r >> 3) | ((g&0xFC) << 3) | ((b&0xF8) << 8))
 
+#define BLACK       ST7735_RGB(0, 0, 0)
+#define WHITE       ST7735_RGB(0xFF, 0xFF, 0xFF)
+#define RED         ST7735_RGB(0xFF, 0, 0)
+#define GREEN       ST7735_RGB(0, 0xFF, 0)
+#define BLUE        ST7735_RGB(0, 0, 0xFF)
+#define PURPLE      ST7735_RGB(0x80, 0, 0x80)
+#define YELLOW      ST7735_RGB(0xFF, 0xFF, 0)
 
-// MADCTL Parameters
-#define ST7735_MADCTL_MH  0x04  // Bit 2 - Refresh Left to Right
-#define ST7735_MADCTL_RGB 0x00  // Bit 3 - RGB Order
-#define ST7735_MADCTL_BGR 0x08  // Bit 3 - BGR Order
-#define ST7735_MADCTL_ML  0x10  // Bit 4 - Scan Address Increase
-#define ST7735_MADCTL_MV  0x20  // Bit 5 - X-Y Exchange
-#define ST7735_MADCTL_MX  0x40  // Bit 6 - X-Mirror
-#define ST7735_MADCTL_MY  0x80  // Bit 7 - Y-Mirror
-
+static uint16_t st7735_colors[] = {
+    RED, GREEN, BLUE, YELLOW, WHITE, BLACK, PURPLE
+};
 
 #define ST7735_CASET        0x2A    // Column Address Set
 #define ST7735_RASET        0x2B    // Row Address Set
@@ -56,10 +58,20 @@ void INTF_TFT_SEND_COLOR(uint16_t color) {
 #define ST7735_DISPON       0x29    // Display ON
 #define ST7735_DISPOFF      0x28    // Display OFF
 
-#define ST7735_GAMCTRP     0xE0    // Gamma Control Positive
-#define ST7735_GAMCTRN     0xE1    // Gamma Control Neigative
+#define ST7735_GAMCTRP      0xE0    // Gamma Control Positive
+#define ST7735_GAMCTRN      0xE1    // Gamma Control Neigative
 
-void fun_st7335_init() {
+#define ST7735_MADCTL       0x36    // Memory Access Control
+#define ST7735_MADCTL_ML    0x10  // Bit 4 - Scan Address Increase
+#define ST7735_MADCTL_MV    0x20  // Bit 5 - X-Y Exchange
+
+uint8_t ST7735_WIDTH = 160;
+uint8_t ST7735_HEIGHT = 80;
+
+void fun_st7335_init(uint8_t width, uint8_t height) {
+    ST7735_WIDTH = width;
+    ST7735_HEIGHT = height;
+
     INTF_TFT_START_WRITE();
 
     //# Software reset
@@ -79,22 +91,27 @@ void fun_st7335_init() {
     write_cmd_8(ST7735_NORON);
     Delay_Ms(10);
 
-    // Set rotation
-    write_cmd_8(0x36);                          //# MADCTL - Memory Access Control
-    // write_data_8(0x68);                 // For 1.8"
-    write_data_8(ST7735_MADCTL_MY | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 0 - Horizontal
-    // write_data_8(ST7735_MADCTL_BGR);                                        // 1 - Vertical
-    // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MV | ST7735_MADCTL_BGR);  // 2 - Horizontal
-    // write_data_8(ST7735_MADCTL_MX | ST7735_MADCTL_MY | ST7735_MADCTL_BGR);  // 3 - Vertical
+    //# MADCTL - Memory Access Control
+    uint8_t MADCTL_MY = 0b10000000;     // bit7: Row address order
+    uint8_t MADCTL_MX = 0b01000000;     // bit6: Column address order
+    uint8_t MADCTL_MV = 0b00100000;     // bit5: Row/Column exchange
+    uint8_t MADCTL_ML = 0b00010000;     // bit4: Vertical refresh order (0 = top to bottom, 1 = bottom to top)
+    uint8_t MADCTL_MH = 0b00000100;     // bit2:Horizontal refresh order (0 = left to right, 1 = right to left)
+    uint8_t MADCTL_RGB = 0b00001000;    // bit3: Color order (0 = RGB, 1 = BGR)
+
+    // &0 to turn off
+    write_cmd_8(ST7735_MADCTL);
+    uint8_t ctrValue = (MADCTL_MY & 0xFF) | (MADCTL_MV & 0xFF);
+    write_data_8(ctrValue);
     
-    //# Gamma+ Adjustments (magic numbers)
+    //# Gamma+ Adjustments Control (magic numbers)
     uint8_t gamma_pos[] = {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19, 0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
     write_cmd_8(ST7735_GAMCTRP);
     INTF_TFT_SEND_BUFF(gamma_pos, 16, 1);
 
-    //# Gamma- Adjustments (magic numbers)
+    //# Gamma- Adjustments Control (magic numbers)
     uint8_t gamma_neg[] = {
         0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E, 0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
@@ -108,7 +125,7 @@ void fun_st7335_init() {
 
     INTF_TFT_END_WRITE();
 
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
 }
 
 /* White Noise Generator State */
@@ -140,42 +157,44 @@ uint8_t rand8(void) {
 
 void fun_st7735_test2() {
     tft_set_cursor(0, 0);
-    tft_print("Hello World!");
     
-    static test_counter;
+    static int idx_counter;
+    uint16_t color;
 
-    //! dots test
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
-    test_counter = 40000;
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
+    idx_counter = 3000;
 
-    while (test_counter-- > 0) {
-        tft_draw_pixel(rand8() % 160, rand8() % 80, colors[rand8() % 19]);
+    while (idx_counter-- > 0) {
+        tft_print("Hello World!");
     }
-    
-    //! draw vertical lines
-    test_counter = 70;
 
-    while (test_counter-- > 0) {
-        for (int i = 0; i < 160; i++) {
-            tft_draw_line(i, 0, i, 80, colors[rand8() % 19], 1);
+    //! draw vertical lines
+    idx_counter = 70;
+
+    while (idx_counter-- > 0) {
+        for (int i = 0; i < ST7735_WIDTH; i++) {
+            color = st7735_colors[rand8() % sizeof(st7735_colors)];
+            tft_draw_line(i, 0, i, 80, color, 1);
         }
     }
 
     //! draw horizontal lines
-    test_counter = 70;
+    idx_counter = 70;
 
-    while(test_counter-- > 0) {
-        for (int i = 0; i < 180; i++) {
-            tft_draw_line(0, i, 180, i, colors[rand8() % 19], 1);
+    while(idx_counter-- > 0) {
+        for (int i = 0; i < ST7735_HEIGHT; i++) {
+            color = st7735_colors[rand8() % sizeof(st7735_colors)];
+            tft_draw_line(0, i, 180, i, color, 1);
         }
     }
 
     //! draw random lines
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
-    test_counter = 2000;
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
+    idx_counter = 2000;
 
-    while (test_counter-- > 0) {
-        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, colors[rand8() % 19], 1);
+    while (idx_counter-- > 0) {
+        uint16_t color = st7735_colors[rand8() % sizeof(st7735_colors)];
+        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, color, 1);
     }
     
 
@@ -205,43 +224,21 @@ void fun_st7735_test2() {
 
 
     //! draw rectangles
-    test_counter = 100;
+    idx_counter = 100;
 
-    while (test_counter-- > 0) {
+    while (idx_counter-- > 0) {
         for (uint8_t i = 0; i < 40; i++) {
-            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), colors[rand8() % 19]);
+            color = st7735_colors[rand8() % sizeof(st7735_colors)];
+            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), color);
         }
     }
 
-
     //! draw random rectangles
     tft_fill_rect(0, 0, 160, 128, PURPLE);
-    test_counter = 10000;
+    idx_counter = 10000;
 
-    while (test_counter-- > 0) {
-        tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
-    }
-    
-    //! draw filled rectangles
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
-    test_counter = 10000;
-
-    while (test_counter-- > 0) {
-        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, colors[rand8() % 19]);
-    }
-
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
-
-    test_counter     = 500;
-    uint8_t x = 0, y = 0, step_x = 1, step_y = 1;
-    while (test_counter-- > 0) {
-        uint16_t bg = colors[rand8() % 19];
-        tft_fill_rect(x, y, 88, 17, bg);
-
-        Delay_Ms(25);
-        x += step_x;
-        if (x >= 72) step_x = -step_x;
-        y += step_y;
-        if (y >= 63) step_y = -step_y;
+    while (idx_counter-- > 0) {
+        color = st7735_colors[rand8() % sizeof(st7735_colors)];
+        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, color);
     }
 }

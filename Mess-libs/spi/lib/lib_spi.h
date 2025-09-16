@@ -1,8 +1,5 @@
 #include "ch32fun.h"
 
-#define SPI_SCLK 5  // PC5
-#define SPI_MOSI 6  // PC6
-
 uint8_t SPI_DC_PIN = -1;
 
 static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
@@ -12,47 +9,27 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     // Enable GPIO Port C and SPI peripheral
     RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_SPI1;
 
-    // PC5 - SCLK
-    GPIOC->CFGLR &= ~(0xf << (SPI_SCLK << 2));
-    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_SCLK << 2);
+    // PC5 is SCLK
+    GPIOC->CFGLR &= ~(0xf << (4*5));
+    GPIOC->CFGLR |= (GPIO_Speed_50MHz | GPIO_CNF_OUT_PP_AF) << (4*5);
 
-    // PC6 - MOSI
-    GPIOC->CFGLR &= ~(0xf << (SPI_MOSI << 2));
-    GPIOC->CFGLR |= (GPIO_CNF_OUT_PP_AF | GPIO_Speed_50MHz) << (SPI_MOSI << 2);
+    // PC6 is MOSI
+    GPIOC->CFGLR &= ~(0xf << (4*6));
+    GPIOC->CFGLR |= (GPIO_Speed_50MHz | GPIO_CNF_OUT_PP_AF) << (4*6);
 
-    // PC7 - MISO
+    // PC7 is MISO
     GPIOC->CFGLR &= ~(0xf << (4 * 7));
     GPIOC->CFGLR |= GPIO_CNF_IN_FLOATING << (4 * 7);
 
     // Configure SPI
-    SPI1->CTLR1 = SPI_CPHA_2Edge             // Bit 0     - Clock PHAse
-                  | SPI_CPOL_Low             // Bit 1     - Clock POLarity - idles at the logical low voltage
-                  | SPI_Mode_Master          // Bit 2     - Master device
-                  | SPI_BaudRatePrescaler_2  // Bit 3-5   - F_HCLK / 2
-                  | SPI_FirstBit_MSB         // Bit 7     - MSB transmitted first
-                  | SPI_NSS_Soft             // Bit 9     - Software slave management
-                  | SPI_DataSize_8b;         // Bit 11    - 8-bit data
+    SPI1->CTLR1 |= SPI_CPHA_2Edge | SPI_CPOL_Low
+                | SPI_Mode_Master| SPI_BaudRatePrescaler_2
+                | SPI_NSS_Soft | SPI_DataSize_8b;
     
     SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;
     // SPI1->CTLR1 |= SPI_Direction_1Line_Tx;
 
-    SPI1->CRCR = 7;                          // CRC
-    SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;        // Configure SPI DMA Transfer
-    SPI1->CTLR1 |= CTLR1_SPE_Set;            // Bit 6     - Enable SPI
-
-    // Enable DMA peripheral
-    RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
-
-    // Config DMA for SPI TX
-    DMA1_Channel3->CFGR = DMA_DIR_PeripheralDST          // Bit 4     - Read from memory
-                          | DMA_Mode_Circular            // Bit 5     - Circulation mode
-                          | DMA_PeripheralInc_Disable    // Bit 6     - Peripheral address no change
-                          | DMA_MemoryInc_Enable         // Bit 7     - Increase memory address
-                          | DMA_PeripheralDataSize_Byte  // Bit 8-9   - 8-bit data
-                          | DMA_MemoryDataSize_Byte      // Bit 10-11 - 8-bit data
-                          | DMA_Priority_VeryHigh        // Bit 12-13 - Very high priority
-                          | DMA_M2M_Disable;             // Bit 14    - Disable memory to memory mode
-    DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
+    SPI1->CTLR1 |= CTLR1_SPE_Set;            // Enable SPI Port
 
     if (rst_pin != -1) {
         funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
@@ -68,6 +45,21 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
         funPinMode(dc_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         SPI_DC_PIN = dc_pin;   
     }
+}
+
+static void SPI_DMA_init() {
+    // Enable Tx DMA
+    SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;
+
+    // Enable DMA peripheral
+    RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
+
+    // Configure DMA
+    DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
+    DMA1_Channel3->CFGR = DMA_M2M_Disable | DMA_Priority_VeryHigh 
+                        | DMA_MemoryDataSize_Byte | DMA_PeripheralDataSize_Byte
+                        | DMA_MemoryInc_Enable | DMA_PeripheralInc_Disable
+                        | DMA_Mode_Circular | DMA_DIR_PeripheralDST;
 }
 
 static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
@@ -147,9 +139,9 @@ static void write_data_8(uint8_t data) {
 
 static void write_data_16(uint16_t data) {
     FN_SPI_DC_HIGH();
+
     SPI_write_8(data >> 8);
     SPI_wait_TX_complete();
-
     SPI_write_8(data);
     SPI_wait_TX_complete();
 }

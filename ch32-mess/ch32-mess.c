@@ -173,6 +173,7 @@ int main() {
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD3, DC-P
 		SPI_init(SPI_RST_PIN, SPI_DC_PIN);
+		SPI_DMA_init();
 
 		#ifdef LORA_ENABLED
 			uint32_t loRa_Frequency = 915E6;
@@ -182,7 +183,7 @@ int main() {
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
 		#else
-			fun_st7335_init();
+			fun_st7335_init(160, 80);
 		#endif
 
 		// SPI_init2();
