@@ -104,9 +104,6 @@ void tft_draw_bitmap(
     INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
 }
 
-
-// stolen and adjusted from: GitHub: https://github.com/limingjie/
-
 // Draw line helpers
 #define _diff(a, b) ((a > b) ? (a - b) : (b - a))
 #define _swap_int16(a, b)   {                           \

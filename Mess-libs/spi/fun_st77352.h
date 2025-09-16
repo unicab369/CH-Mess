@@ -8,14 +8,18 @@
 
 #define BLACK       ST7735_RGB(0, 0, 0)
 #define WHITE       ST7735_RGB(0xFF, 0xFF, 0xFF)
-#define RED         ST7735_RGB(0xFF, 0, 0)
-#define GREEN       ST7735_RGB(0, 0xFF, 0)
-#define BLUE        ST7735_RGB(0, 0, 0xFF)
-#define PURPLE      ST7735_RGB(0x80, 0, 0x80)
-#define YELLOW      ST7735_RGB(0xFF, 0xFF, 0)
+#define RED         ST7735_RGB(0xFF , 0     , 0)
+#define GREEN       ST7735_RGB(0    , 0xFF  , 0)
+#define BLUE        ST7735_RGB(0    , 0     , 0xFF)
+#define PURPLE      ST7735_RGB(0x80 , 0     , 0x80)
+#define YELLOW      ST7735_RGB(0xFF , 0xFF  , 0)
+#define CYAN        ST7735_RGB(0    , 0xFF  , 0xFF)
+#define MAGENTA     ST7735_RGB(0xFF , 0     , 0xFF)
+#define ORANGE      ST7735_RGB(0xFF , 0x80  , 0)
+
 
 static uint16_t st7735_colors[] = {
-    RED, GREEN, BLUE, YELLOW, WHITE, BLACK, PURPLE
+    RED, GREEN, BLUE, YELLOW, CYAN, MAGENTA, ORANGE
 };
 
 #define ST7735_CASET        0x2A    // Column Address Set
@@ -155,48 +159,30 @@ uint8_t rand8(void) {
     return lfsr&NOISE_MASK;
 }
 
-void fun_st7735_test2() {
+void fun_st7735_test() {
     tft_set_cursor(0, 0);
+    tft_print("Hello World!");
     
     static int idx_counter;
-    uint16_t color;
+    static uint8_t color_idx = 0;
 
-    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
-    idx_counter = 3000;
-
-    while (idx_counter-- > 0) {
-        tft_print("Hello World!");
-    }
+    uint8_t idx = color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t));
+    printf("idx: %d\n", idx);
+    uint16_t color = st7735_colors[idx % sizeof(st7735_colors)];
 
     //! draw vertical lines
-    idx_counter = 70;
+    static uint8_t x_idx = 0;
+    static uint8_t y_idx = 0;
 
-    while (idx_counter-- > 0) {
-        for (int i = 0; i < ST7735_WIDTH; i++) {
-            color = st7735_colors[rand8() % sizeof(st7735_colors)];
-            tft_draw_line(i, 0, i, 80, color, 1);
-        }
-    }
+    uint8_t x_value = x_idx++ % ST7735_WIDTH;
+    tft_draw_line(x_value, 0, x_value, ST7735_HEIGHT, color, 1);
 
     //! draw horizontal lines
-    idx_counter = 70;
-
-    while(idx_counter-- > 0) {
-        for (int i = 0; i < ST7735_HEIGHT; i++) {
-            color = st7735_colors[rand8() % sizeof(st7735_colors)];
-            tft_draw_line(0, i, 180, i, color, 1);
-        }
-    }
+    uint8_t y_value = y_idx++ % ST7735_HEIGHT;
+    tft_draw_line(0, y_value, ST7735_WIDTH, y_value, color, 1);
 
     //! draw random lines
-    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
-    idx_counter = 2000;
-
-    while (idx_counter-- > 0) {
-        uint16_t color = st7735_colors[rand8() % sizeof(st7735_colors)];
-        tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, color, 1);
-    }
-    
+    tft_draw_line(rand8() % 160, rand8() % 80, rand8() % 160, rand8() % 80, color, 1);
 
     //! draw poly
     int16_t triangle_x[] = {10, 40, 80};
@@ -224,21 +210,8 @@ void fun_st7735_test2() {
 
 
     //! draw rectangles
-    idx_counter = 100;
-
-    while (idx_counter-- > 0) {
-        for (uint8_t i = 0; i < 40; i++) {
-            color = st7735_colors[rand8() % sizeof(st7735_colors)];
-            tft_draw_rect(i, i, 160 - (i << 1), 80 - (i << 1), color);
-        }
-    }
+    tft_draw_rect(rand8() % 140, rand8() % 60, 20, 20, color);
 
     //! draw random rectangles
-    tft_fill_rect(0, 0, 160, 128, PURPLE);
-    idx_counter = 10000;
-
-    while (idx_counter-- > 0) {
-        color = st7735_colors[rand8() % sizeof(st7735_colors)];
-        tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, color);
-    }
+    tft_fill_rect(rand8() % 140, rand8() % 60, 20, 20, color);
 }
