@@ -9,8 +9,8 @@ void INT_TFT_CS_HIGH();
 void INT_TFT_CS_LOW();
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat);
-void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color);
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len);
+void INTF_TFT_SEND_PIXEL(uint16_t color);
 
 uint8_t  _frame_buffer[ST7735_W << 1] = {0};
 
@@ -25,7 +25,6 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
     while (*str) {
         char c = *str++;
         const char* start = &font[c + (c << 2)];
-
         uint16_t len = 0;
 
         for (uint8_t i = 0; i < height; i++) {
@@ -41,7 +40,7 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
         }
 
         INTF_TFT_SET_WINDOW(current_x, current_y, current_x + width - 1, current_y + height - 1);
-        INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+        INTF_TFT_SEND_BUFF(_frame_buffer, len);
         current_x += width + 1;
     }
 
@@ -61,7 +60,11 @@ void tft_fill_rect(
 
     INT_TFT_CS_LOW();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, height);
+
+    while(height-- > 0) {
+        INTF_TFT_SEND_BUFF(_frame_buffer, len);
+    }
+    
     INT_TFT_CS_HIGH();
 }
 
@@ -79,7 +82,7 @@ static void _render_vertical_line(
     }
 
     INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, len);
 }
 
 
@@ -94,12 +97,13 @@ static void _render_horizontal_line(
     }
 
     INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, len);
 }
 
 //# draw pixel
 void _render_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    INTF_TFT_SEND_PIXEL(x, y, color);
+    INTF_TFT_SET_WINDOW(x, y, x, y);
+    INTF_TFT_SEND_PIXEL(color);
 }
 
 //# draw line diagonal (use bresenham algorithm) - draw with CS controls

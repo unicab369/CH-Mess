@@ -8,20 +8,20 @@
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
 #define ST7735_RGB(r, g, b) ((r >> 3) | ((g & 0xFC) << 3) | ((b & 0xF8) << 8))
 
-#define BLACK       ST7735_RGB(0, 0, 0)
-#define WHITE       ST7735_RGB(0xFF, 0xFF, 0xFF)
-#define RED         ST7735_RGB(0xFF , 0     , 0)
-#define GREEN       ST7735_RGB(0    , 0xFF  , 0)
-#define BLUE        ST7735_RGB(0    , 0     , 0xFF)
-#define PURPLE      ST7735_RGB(0x80 , 0     , 0x80)
-#define YELLOW      ST7735_RGB(0xFF , 0xFF  , 0)
-#define CYAN        ST7735_RGB(0    , 0xFF  , 0xFF)
-#define MAGENTA     ST7735_RGB(0xFF , 0     , 0xFF)
-#define ORANGE      ST7735_RGB(0xFF , 0x80  , 0)
+#define ST_BLACK       ST7735_RGB(0, 0, 0)
+#define ST_WHITE       ST7735_RGB(0xFF, 0xFF, 0xFF)
+#define ST_RED         ST7735_RGB(0xFF , 0     , 0)
+#define ST_GREEN       ST7735_RGB(0    , 0xFF  , 0)
+#define ST_BLUE        ST7735_RGB(0    , 0     , 0xFF)
+#define ST_PURPLE      ST7735_RGB(0x80 , 0     , 0x80)
+#define ST_YELLOW      ST7735_RGB(0xFF , 0xFF  , 0)
+#define ST_CYAN        ST7735_RGB(0    , 0xFF  , 0xFF)
+#define ST_MAGENTA     ST7735_RGB(0xFF , 0     , 0xFF)
+#define ST_ORANGE      ST7735_RGB(0xFF , 0x80  , 0)
 
 
 static uint16_t st7735_colors[] = {
-    RED, GREEN, BLUE, YELLOW, CYAN, MAGENTA, ORANGE
+    ST_RED, ST_GREEN, ST_BLUE, ST_YELLOW, ST_CYAN, ST_MAGENTA, ST_ORANGE
 };
 
 #define ST7735_CASET        0x2A    // Column Address Set
@@ -55,18 +55,15 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_RAMWR);
 }
 
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
-    SPI_send_DMA(buffer, len, repeat);
+void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len) {
+    for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
 }
 
-// void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
-//     while(repeat-- > 0) {
-//         for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
-//     }
-// }
+void INTF_TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len) {
+    for (int i = 0; i < len; i++) SPI_cmd_data_16(buffer[i]);
+}
 
-void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color) {
-    INTF_TFT_SET_WINDOW(x0, y0, x0, y0);
+void INTF_TFT_SEND_PIXEL(uint16_t color) {
     SPI_cmd_data_16(color);
 }
 
@@ -111,21 +108,21 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     INT_TFT_CS_LOW();
 
     //# Software reset
+    //! 1.8" display need at least 110ms
     SPI_cmd_8(ST7735_SWRESET);
-    Delay_Ms(10);
+    Delay_Ms(110);
     SPI_cmd_8(ST7735_SLEEPOFF);
     Delay_Ms(10);
 
     //# Interface Pixel Format
     SPI_cmd_8(ST7735_COLMODE);
-    SPI_cmd_data_8(0x05);             // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
+    SPI_cmd_data_8(0x05);               // 0x03: 12-bit, 0x05: 16-bit, 0x06: 18-bit, 0x07: Not used
 
     //# Display inversion
     SPI_cmd_8(ST7735_INVERTON);
 
     //# Normal display on
     SPI_cmd_8(ST7735_NORON);
-    Delay_Ms(10);
 
     //# MADCTL - Memory Access Control
     uint8_t MADCTL_MY = 0b10000000;     // bit7: Row address order
@@ -145,29 +142,29 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19, 0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
     SPI_cmd_8(ST7735_GAMCTRP);
-    INTF_TFT_SEND_BUFF(gamma_pos, 16, 1);
+    INTF_TFT_SEND_BUFF(gamma_pos, 16);
 
     //# Gamma- Adjustments Control (magic numbers)
     uint8_t gamma_neg[] = {
         0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E, 0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
     SPI_cmd_8(ST7735_GAMCTRN);
-    INTF_TFT_SEND_BUFF(gamma_neg, 16, 1);
-    Delay_Ms(10);
+    INTF_TFT_SEND_BUFF(gamma_neg, 16);
+    // Delay_Ms(10);
 
     //# Display On
     SPI_cmd_8(ST7735_DISPON);
-    Delay_Ms(10);
+    // Delay_Ms(10);
 
     INT_TFT_CS_HIGH();
 
-    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, ST_PURPLE);
 }
 
 
 void fun_st7735_test() {
-    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
-    tft_print("Hello World 222", 0, 0, 0xFFFF, PURPLE);
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, ST_PURPLE);
+    tft_print("Hello World 222", 0, 0, 0xFFFF, ST_PURPLE);
     
     static uint8_t color_idx = 0;
     uint16_t color = st7735_colors[color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t))];
@@ -205,7 +202,7 @@ void fun_st7735_test() {
     Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
     // tft_draw_poly2(triangle, 3, RED, 3);
 
-    tft_draw_solid_poly2(triangle, 3, RED, WHITE, 2);
+    tft_draw_solid_poly2(triangle, 3, ST_RED, ST_WHITE, 2);
 
     // Point16_t square[] = {{10, 10}, {60, 10}, {60, 60}, {10, 60}};
     // _draw_poly2(square, 4, RED, 3);

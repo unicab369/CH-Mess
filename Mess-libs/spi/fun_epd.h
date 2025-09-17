@@ -26,11 +26,6 @@ void FN_EPD_WAIT_BUSY() {
     }
 }
 
-void FN_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
-    FN_SPI_DC_HIGH();
-    SPI_send_DMA(buffer, size, repeat);
-}
-
 
 void fun_epd_setWindow(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1) {
     SPI_cmd_8(0x44);

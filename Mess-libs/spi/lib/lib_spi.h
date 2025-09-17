@@ -63,20 +63,20 @@ static void SPI_DMA_init(DMA_Channel_TypeDef* DMA_Channel) {
                         | DMA_Mode_Circular | DMA_DIR_PeripheralDST;
 }
 
-static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) {
+static void SPI_send_DMA(const uint8_t* buffer, uint16_t len) {
     FN_SPI_DC_HIGH();
     
+    DMA1_Channel3->CNTR  = len;
     DMA1_Channel3->MADDR = (uint32_t)buffer;
-    DMA1_Channel3->CNTR  = size;
-    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Start DMA transfer
 
-    // Circulate the buffer
-    while (repeat--) {
-        DMA1->INTFCR = DMA1_FLAG_TC3;
-        while (!(DMA1->INTFR & DMA1_FLAG_TC3));
-    }
+    // Start DMA transfer
+    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  
 
-    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Stop DMA transfer
+    DMA1->INTFCR = DMA1_FLAG_TC3;
+    while (!(DMA1->INTFR & DMA1_FLAG_TC3));
+
+    // Stop DMA transfer
+    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;
 }
 
 //# write read raw
