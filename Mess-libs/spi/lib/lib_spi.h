@@ -68,7 +68,7 @@ static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) 
     
     DMA1_Channel3->MADDR = (uint32_t)buffer;
     DMA1_Channel3->CNTR  = size;
-    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Turn on channel
+    DMA1_Channel3->CFGR |= DMA_CFGR1_EN;  // Start DMA transfer
 
     // Circulate the buffer
     while (repeat--) {
@@ -76,7 +76,7 @@ static void SPI_send_DMA(const uint8_t* buffer, uint16_t size, uint16_t repeat) 
         while (!(DMA1->INTFR & DMA1_FLAG_TC3));
     }
 
-    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Turn off channel
+    DMA1_Channel3->CFGR &= ~DMA_CFGR1_EN;  // Stop DMA transfer
 }
 
 //# write read raw

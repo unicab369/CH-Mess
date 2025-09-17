@@ -40,18 +40,27 @@ void INT_TFT_CS_LOW() {
     funDigitalWrite(ST7735_CS_PIN, 0);
 }
 
+uint8_t ST7735_XOFFSET = 0;
+uint8_t ST7735_YOFFSET = 0;
+
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_CASET);
-    SPI_cmd_data_16(x0);
-    SPI_cmd_data_16(x1);
+    SPI_cmd_data_16(x0 + ST7735_XOFFSET);
+    SPI_cmd_data_16(x1 + ST7735_XOFFSET);
     SPI_cmd_8(ST7735_RASET);
-    SPI_cmd_data_16(y0);
-    SPI_cmd_data_16(y1);
+    SPI_cmd_data_16(y0 + ST7735_YOFFSET);
+    SPI_cmd_data_16(y1 + ST7735_YOFFSET);
     SPI_cmd_8(ST7735_RAMWR);
 }
 
+// void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
+//     SPI_send_DMA(buffer, len, repeat);
+// }
+
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
-    SPI_send_DMA(buffer, len, repeat);
+    while(repeat-- > 0) {
+        for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
+    }
 }
 
 void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color) {
@@ -84,6 +93,12 @@ uint8_t ST7735_HEIGHT = 80;
 void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     ST7735_WIDTH = width;
     ST7735_HEIGHT = height;
+
+    // different screen sizes have different offsets
+    if (height == 80) {
+        ST7735_XOFFSET = 1;
+        ST7735_YOFFSET = 26;
+    }
 
     if (cs_pin != -1) {
         ST7735_CS_PIN = cs_pin;
@@ -149,6 +164,7 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
 
 
 void fun_st7735_test() {
+    tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
     tft_print("Hello World!", 0, 0, 0xFFFF, PURPLE);
     
     static int idx_counter;
