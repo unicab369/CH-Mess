@@ -182,7 +182,7 @@ uint8_t double_bits_forHalfByte(uint8_t byte, uint8_t firstHalf) {
 }
 
 void get_font_char(char c, uint8_t width, const char *font, char* buff) {
-    const unsigned char* start = &font[(c-32)*width];
+    const char* start = &font[(c-32)*width];
 
     for (uint8_t i = 0; i < width; i++) {
         buff[i] = *start++;

@@ -181,6 +181,7 @@ int main() {
 			fun_sx72xx_setTxPower(17);
 
 			fun_st7335_init(160, 80, ST7735_CS_PIN);
+			fun_st7735_fill_all(ST_PURPLE);
 		#elif WS2812_ENABLED
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);

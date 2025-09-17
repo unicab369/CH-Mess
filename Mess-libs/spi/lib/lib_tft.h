@@ -1,7 +1,7 @@
 // modified from https://github.com/adafruit/Adafruit-GFX-Library
 
 #include "ch32fun.h"
-#include "font5x7.h"
+#include "font6x8.h"
 
 #define ST7735_W    160
 
@@ -25,31 +25,30 @@ void INTF_TFT_SEND_PIXEL(uint16_t color);
 uint16_t _tft_frame[ST7735_W] = {0};
 
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
-    uint8_t width = 5;
-    uint8_t height = 7;
-    uint16_t current_x = x;
-    uint16_t current_y = y;
-
+    uint8_t font_width = 6, font_height = 8;
+    uint16_t current_x = x, current_y = y;
+    
     INT_TFT_CS_LOW();
 
     while (*str) {
         char c = *str++;
-        const char* start = &font[c + (c << 2)];
         uint16_t len = 0;
+        const char* glyph = &font6x8[(c-32) * font_width];
 
-        for (uint8_t i = 0; i < height; i++) {
-            for (uint8_t j = 0; j < width; j++) {
-                if ((*(start + j)) & (0x01 << i)) {
-                    _tft_frame[len++] = color;
-                } else {
-                    _tft_frame[len++] = bg_color;
-                }
+        for (uint8_t y = font_height - 1; y < font_height; y--) {
+            uint8_t mask = 0x01 << y;
+            
+            for (uint8_t x = 0; x < font_width; x++) {
+                _tft_frame[len++] = (glyph[x] & mask) ? color : bg_color;
             }
         }
 
-        INTF_TFT_SET_WINDOW(current_x, current_y, current_x + width - 1, current_y + height - 1);
+        INTF_TFT_SET_WINDOW(
+            current_x, current_y,
+            current_x + font_width - 1, current_y + font_height - 1
+        );
         INTF_TFT_SEND_BUFF16(_tft_frame, len);
-        current_x += width + 1;
+        current_x += font_width;
     }
 
     INT_TFT_CS_HIGH();
