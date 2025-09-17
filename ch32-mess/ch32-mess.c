@@ -176,12 +176,11 @@ int main() {
 		SPI_DMA_init(DMA1_Channel3);
 
 		#ifdef LORA_ENABLED
-			fun_st7335_init(160, 80, ST7735_CS_PIN);
-
 			uint32_t loRa_Frequency = 915E6;
 			fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
 			fun_sx72xx_setTxPower(17);
 
+			fun_st7335_init(160, 80, ST7735_CS_PIN);
 		#elif WS2812_ENABLED
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
@@ -255,10 +254,11 @@ int main() {
 
 			#ifdef SPI_ENABLED
 				#ifdef LORA_ENABLED
-					uint8_t loRa_message[] = "Hello World 222";
-					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
 					printf("ST7735 runtime: %lu us\n", runtime_tft);
+
+					uint8_t loRa_message[] = "Hello World 222";
+					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 				#endif
 			#endif
 

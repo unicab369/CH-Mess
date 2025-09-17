@@ -19,14 +19,14 @@
 #define ST_MAGENTA     ST7735_RGB(0xFF , 0     , 0xFF)
 #define ST_ORANGE      ST7735_RGB(0xFF , 0x80  , 0)
 
-
 static uint16_t st7735_colors[] = {
     ST_RED, ST_GREEN, ST_BLUE, ST_YELLOW, ST_CYAN, ST_MAGENTA, ST_ORANGE
 };
 
-#define ST7735_CASET        0x2A    // Column Address Set
-#define ST7735_RASET        0x2B    // Row Address Set
-#define ST7735_RAMWR        0x2C    // RAM Write
+
+//###########################################
+//# INTERFACES
+//###########################################
 
 uint8_t ST7735_CS_PIN = -1;
 
@@ -42,6 +42,10 @@ void INT_TFT_CS_LOW() {
     funDigitalWrite(ST7735_CS_PIN, 0);
 }
 
+#define ST7735_CASET        0x2A    // Column Address Set
+#define ST7735_RASET        0x2B    // Row Address Set
+#define ST7735_RAMWR        0x2C    // RAM Write
+
 uint8_t ST7735_XOFFSET = 0;
 uint8_t ST7735_YOFFSET = 0;
 
@@ -55,7 +59,7 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_RAMWR);
 }
 
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len) {
+void INTF_TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len) {
     for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
 }
 
@@ -66,6 +70,11 @@ void INTF_TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len) {
 void INTF_TFT_SEND_PIXEL(uint16_t color) {
     SPI_cmd_data_16(color);
 }
+
+
+//###########################################
+//# CONFIGURATIONS
+//###########################################
 
 #define ST7735_SWRESET      0x01
 #define ST7735_SLEEPON      0x10    // Sleep ON
@@ -108,11 +117,10 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
     INT_TFT_CS_LOW();
 
     //# Software reset
-    //! 1.8" display need at least 110ms
     SPI_cmd_8(ST7735_SWRESET);
-    Delay_Ms(110);
+    Delay_Ms(110);                      //! 1.8" display need at least 110ms
     SPI_cmd_8(ST7735_SLEEPOFF);
-    Delay_Ms(10);
+    Delay_Ms(20);
 
     //# Interface Pixel Format
     SPI_cmd_8(ST7735_COLMODE);
@@ -142,14 +150,14 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
         0x09, 0x16, 0x09, 0x20, 0x21, 0x1B, 0x13, 0x19, 0x17, 0x15, 0x1E, 0x2B, 0x04, 0x05, 0x02, 0x0E
     };
     SPI_cmd_8(ST7735_GAMCTRP);
-    INTF_TFT_SEND_BUFF(gamma_pos, 16);
+    INTF_TFT_SEND_BUFF8(gamma_pos, 16);
 
     //# Gamma- Adjustments Control (magic numbers)
     uint8_t gamma_neg[] = {
         0x0B, 0x14, 0x08, 0x1E, 0x22, 0x1D, 0x18, 0x1E, 0x1B, 0x1A, 0x24, 0x2B, 0x06, 0x06, 0x02, 0x0F
     };
     SPI_cmd_8(ST7735_GAMCTRN);
-    INTF_TFT_SEND_BUFF(gamma_neg, 16);
+    INTF_TFT_SEND_BUFF8(gamma_neg, 16);
     // Delay_Ms(10);
 
     //# Display On
@@ -169,27 +177,27 @@ void fun_st7735_test() {
     static uint8_t color_idx = 0;
     uint16_t color = st7735_colors[color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t))];
 
-    //! draw vertical lines
+    //# draw vertical lines
     static uint8_t x_idx = 0;
     static uint8_t y_idx = 0;
 
     uint8_t x_value = x_idx++ % ST7735_WIDTH;
     tft_draw_line(x_value, 0, x_value, ST7735_HEIGHT, color, 1);
 
-    //! draw horizontal lines
+    //# draw horizontal lines
     uint8_t y_value = y_idx++ % ST7735_HEIGHT;
     tft_draw_line(0, y_value, ST7735_WIDTH, y_value, color, 1);
 
-    //! draw diagonal lines
+    //# draw diagonal lines
     tft_draw_line(x_value, y_value, x_value + 30, y_value + 80, color, 1);
 
-    //! draw rectangles
+    //# draw rectangles
     tft_draw_rect(x_value, y_value, 20, 20, color);
 
-    //! draw random rectangles
+    //# draw random rectangles
     tft_fill_rect(x_value + 20, y_value + 20, 20, 20, color);
 
-    //! draw poly
+    //# draw poly
     int16_t triangle_x[] = {10, 40, 80};
     int16_t triangle_y[] = {20, 60, 70};
 
@@ -199,7 +207,7 @@ void fun_st7735_test() {
     // int16_t square_y[] = {10, 10, 60, 60};
     // _draw_poly(square_x, square_y, 4, RED, 3);
 
-    Point16_t triangle[] = {{10, 20}, {40, 60}, {80, 70}};
+    Point16_t triangle[] = {{30, 30}, {40, 60}, {80, 70}};
     // tft_draw_poly2(triangle, 3, RED, 3);
 
     tft_draw_solid_poly2(triangle, 3, ST_RED, ST_WHITE, 2);

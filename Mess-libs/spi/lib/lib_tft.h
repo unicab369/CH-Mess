@@ -5,14 +5,24 @@
 
 #define ST7735_W    160
 
+//###########################################
+//# INTERFACES
+//###########################################
+
 void INT_TFT_CS_HIGH();
 void INT_TFT_CS_LOW();
 
 void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len);
+void INTF_TFT_SEND_BUFF8(const uint8_t* buffer, uint16_t len);
+void INTF_TFT_SEND_BUFF16(const uint16_t* buffer, uint16_t len);
 void INTF_TFT_SEND_PIXEL(uint16_t color);
 
-uint8_t  _frame_buffer[ST7735_W << 1] = {0};
+
+//###########################################
+//# BASE METHODS
+//###########################################
+
+uint16_t _tft_frame[ST7735_W] = {0};
 
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
     uint8_t width = 5;
@@ -30,17 +40,15 @@ void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t b
         for (uint8_t i = 0; i < height; i++) {
             for (uint8_t j = 0; j < width; j++) {
                 if ((*(start + j)) & (0x01 << i)) {
-                    _frame_buffer[len++] = color >> 8;
-                    _frame_buffer[len++] = color;
+                    _tft_frame[len++] = color;
                 } else {
-                    _frame_buffer[len++] = bg_color >> 8;
-                    _frame_buffer[len++] = bg_color;
+                    _tft_frame[len++] = bg_color;
                 }
             }
         }
 
         INTF_TFT_SET_WINDOW(current_x, current_y, current_x + width - 1, current_y + height - 1);
-        INTF_TFT_SEND_BUFF(_frame_buffer, len);
+        INTF_TFT_SEND_BUFF16(_tft_frame, len);
         current_x += width + 1;
     }
 
@@ -52,17 +60,13 @@ void tft_fill_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
 ) {
-    uint16_t len = 0;
-    for (uint16_t x = 0; x < width; x++) {
-        _frame_buffer[len++] = color >> 8;
-        _frame_buffer[len++] = color;
-    }
-
     INT_TFT_CS_LOW();
     INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
 
+    for (uint16_t i = 0; i < width; i++) _tft_frame[i] = color;
+
     while(height-- > 0) {
-        INTF_TFT_SEND_BUFF(_frame_buffer, len);
+        INTF_TFT_SEND_BUFF16(_tft_frame, width);
     }
     
     INT_TFT_CS_HIGH();
@@ -73,31 +77,23 @@ void tft_fill_rect(
 
 //# render vertical line - draw with CS controls
 static void _render_vertical_line(
-    int16_t x, int16_t y, int16_t h, uint16_t color
+    int16_t x, int16_t y, int16_t len, uint16_t color
 ) {
-    uint16_t len = 0;
-    for (int16_t j = 0; j < h; j++) {
-        _frame_buffer[len++] = color >> 8;
-        _frame_buffer[len++] = color;
-    }
+    for (int16_t i = 0; i < len; i++) _tft_frame[i] = color;
 
-    INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len);
+    INTF_TFT_SET_WINDOW(x, y, x, y + len - 1);
+    INTF_TFT_SEND_BUFF16(_tft_frame, len);
 }
 
 
 //# render horizontal line - draw with CS controls
 static void _render_horizontal_line(
-    int16_t x, int16_t y, int16_t w, uint16_t color
+    int16_t x, int16_t y, int16_t len, uint16_t color
 ) {
-    uint16_t len = 0;
-    for (int16_t j = 0; j < w; j++) {
-        _frame_buffer[len++] = color >> 8;
-        _frame_buffer[len++] = color;
-    }
+    for (int16_t i = 0; i < len; i++) _tft_frame[i] = color;
 
-    INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len);
+    INTF_TFT_SET_WINDOW(x, y, x + len - 1, y);
+    INTF_TFT_SEND_BUFF16(_tft_frame, len);
 }
 
 //# draw pixel
@@ -105,6 +101,10 @@ void _render_pixel(uint16_t x, uint16_t y, uint16_t color) {
     INTF_TFT_SET_WINDOW(x, y, x, y);
     INTF_TFT_SEND_PIXEL(color);
 }
+
+//###########################################
+//# OTHER METHODS
+//###########################################
 
 //# draw line diagonal (use bresenham algorithm) - draw with CS controls
 static void _render_diagonal_line(
