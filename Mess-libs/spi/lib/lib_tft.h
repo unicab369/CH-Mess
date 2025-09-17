@@ -1,3 +1,5 @@
+// Line methods are modifications from https://github.com/adafruit/Adafruit-GFX-Library
+
 #include "ch32fun.h"
 #include "font5x7.h"
 
@@ -14,7 +16,8 @@ static uint8_t  _frame_buffer[ST7735_W << 1] = {0};
 static uint16_t _cursor_x = 0;
 static uint16_t _cursor_y = 0;
 
-void tft_print_char(
+//# render character - draw with CS controls
+void render_char(
     char c, uint8_t height, uint8_t width,
     uint16_t color, uint16_t bg_color
 ) {
@@ -38,18 +41,22 @@ void tft_print_char(
 }
 
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
-    uint8_t font_width = 5;
+    uint8_t width = 5;
+    _cursor_x = x;
+    _cursor_y = y;
+
     INT_TFT_CS_LOW();
 
     while (*str) {
-        tft_print_char(*str++, 7, font_width, color, bg_color);
-        _cursor_x += font_width + 1;
+        render_char(*str++, 7, width, color, bg_color);
+        _cursor_x += width + 1;
     }
 
     INT_TFT_CS_HIGH();
 }
 
-void tft_draw_bitmap(
+//# render bitmap - draw with CS controls
+void render_bitmap(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, const uint8_t* bitmap
 ) {
@@ -57,47 +64,7 @@ void tft_draw_bitmap(
     INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
 }
 
-
-#define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
-#define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
-
-//! draw pixel
-void tft_draw_pixel(
-    uint16_t x, uint16_t y, uint16_t color
-) {
-    INTF_TFT_SEND_PIXEL(x, y, color);
-}
-
-//! private
-static void _draw_fast_vLine(
-    int16_t x, int16_t y, int16_t h, uint16_t color
-) {
-    uint16_t len = 0;
-    for (int16_t j = 0; j < h; j++) {
-        _frame_buffer[len++] = color >> 8;
-        _frame_buffer[len++] = color;
-    }
-
-    INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
-}
-
-
-//! private
-static void _draw_fast_hLine(
-    int16_t x, int16_t y, int16_t w, uint16_t color
-) {
-    uint16_t len = 0;
-    for (int16_t j = 0; j < w; j++) {
-        _frame_buffer[len++] = color >> 8;
-        _frame_buffer[len++] = color;
-    }
-
-    INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
-}
-
-//! draw filled_rect
+//# draw filled_rect
 void tft_fill_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
@@ -114,10 +81,46 @@ void tft_fill_rect(
     INT_TFT_CS_HIGH();
 }
 
+#define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
+#define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
 
-//! draw line diagonal
-// use bresenham algorithm
-static void _draw_line_diagonal(
+//# draw pixel
+void tft_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
+    INTF_TFT_SEND_PIXEL(x, y, color);
+}
+
+//# render vertical line - draw with CS controls
+static void _render_vertical_line(
+    int16_t x, int16_t y, int16_t h, uint16_t color
+) {
+    uint16_t len = 0;
+    for (int16_t j = 0; j < h; j++) {
+        _frame_buffer[len++] = color >> 8;
+        _frame_buffer[len++] = color;
+    }
+
+    INTF_TFT_SET_WINDOW(x, y, x, y + h - 1);
+    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+}
+
+
+//# render horizontal line - draw with CS controls
+static void _render_horizontal_line(
+    int16_t x, int16_t y, int16_t w, uint16_t color
+) {
+    uint16_t len = 0;
+    for (int16_t j = 0; j < w; j++) {
+        _frame_buffer[len++] = color >> 8;
+        _frame_buffer[len++] = color;
+    }
+
+    INTF_TFT_SET_WINDOW(x, y, x + w - 1, y);
+    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+}
+
+
+//# draw line diagonal (use bresenham algorithm) - draw with CS controls
+static void _render_diagonal_line(
     int16_t x0, int16_t y0,
     int16_t x1, int16_t y1, uint16_t color, uint8_t width
 ) {
@@ -137,8 +140,6 @@ static void _draw_line_diagonal(
     int16_t err  = dx >> 1;
     int16_t step = (y0 < y1) ? 1 : -1;
 
-    INT_TFT_CS_LOW();
-
     for (; x0 <= x1; x0++) {
         for (int16_t w = -(width / 2); w <= width / 2; w++) {
             if (steep) {
@@ -153,42 +154,40 @@ static void _draw_line_diagonal(
             y0 += step;
         }
     }
-
-    INT_TFT_CS_HIGH();
 }
 
 
-//! draw line
+//# draw line
 void tft_draw_line(
-    int16_t x0, int16_t y0,
-    int16_t x1, int16_t y1, uint16_t color, uint8_t width
+    int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+    uint16_t color, uint8_t width
 ) {
     INT_TFT_CS_LOW();
     if (x0 == x1) {
         if (y0 > y1) _swap_int16(y0, y1);
-        _draw_fast_vLine(x0, y0, y1 - y0 + 1, color);
+        _render_vertical_line(x0, y0, y1 - y0 + 1, color);
     }
     else if (y0 == y1) {
         if (x0 > x1) _swap_int16(x0, x1);
-        _draw_fast_hLine(x0, y0, x1 - x0 + 1, color);
+        _render_horizontal_line(x0, y0, x1 - x0 + 1, color);
     }
     else {
-        _draw_line_diagonal(x0, y0, x1, y1, color, width);
+        _render_diagonal_line(x0, y0, x1, y1, color, width);
     }
     INT_TFT_CS_HIGH();
 }
 
 
-//! draw rectangle
+//# draw rectangle
 void tft_draw_rect(
     uint16_t x, uint16_t y,
     uint16_t width, uint16_t height, uint16_t color
 ) {
     INT_TFT_CS_LOW();
-    _draw_fast_hLine(x, y, width, color);
-    _draw_fast_hLine(x, y + height - 1, width, color);
-    _draw_fast_vLine(x, y, height, color);
-    _draw_fast_vLine(x + width - 1, y, height, color);
+    _render_horizontal_line(x, y, width, color);
+    _render_horizontal_line(x, y + height - 1, width, color);
+    _render_vertical_line(x, y, height, color);
+    _render_vertical_line(x + width - 1, y, height, color);
     INT_TFT_CS_HIGH();
 }
 
@@ -198,7 +197,7 @@ typedef struct {
     int16_t y; // Y-coordinate
 } Point16_t;
 
-//! draw polygon
+//# draw polygon
 static void _draw_poly(
     const int16_t* vertices_x, // Array of x-coordinates of vertices
     const int16_t* vertices_y, // Array of y-coordinates of vertices
@@ -208,8 +207,6 @@ static void _draw_poly(
 ) {
     if (num_vertices < 3) return; // A polygon must have at least 3 vertices
 
-    INT_TFT_CS_LOW();
-
     for (uint16_t i = 0; i < num_vertices; i++) {
         int16_t x0 = vertices_x[i];
         int16_t y0 = vertices_y[i];
@@ -218,18 +215,14 @@ static void _draw_poly(
 
         tft_draw_line(x0, y0, x1, y1, color, width); // Draw edge with specified width
     }
-
-    INT_TFT_CS_HIGH();
 }
 
-//! draw polygon
+//# draw polygon
 static void tft_draw_poly2(
     const Point16_t* vertices, uint16_t num_vertices,
     uint16_t color, uint8_t width
 ) {
     if (num_vertices < 3) return; // A polygon must have at least 3 vertices
-
-    INT_TFT_CS_LOW();
 
     for (uint16_t i = 0; i < num_vertices; i++) {
         Point16_t p0 = vertices[i];
@@ -237,11 +230,9 @@ static void tft_draw_poly2(
 
         tft_draw_line(p0.x, p0.y, p1.x, p1.y, color, width); // Draw edge with specified width
     }
-
-    INT_TFT_CS_HIGH();
 }
 
-//! draw solid polygon
+//# draw solid polygon
 static void tft_draw_solid_poly(
     const Point16_t* vertices, uint16_t num_vertices,
     uint16_t fill_color, uint16_t edge_color, uint8_t edge_width
@@ -255,9 +246,6 @@ static void tft_draw_solid_poly(
         if (vertices[i].y < min_y) min_y = vertices[i].y;
         if (vertices[i].y > max_y) max_y = vertices[i].y;
     }
-
-
-    INT_TFT_CS_LOW();
 
     // Scan through each row of the polygon
     for (int16_t y = min_y; y <= max_y; y++) {
@@ -306,12 +294,10 @@ static void tft_draw_solid_poly(
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
     }
-
-    INT_TFT_CS_HIGH();
 }
 
 
-//! optimized draw solid polygon
+//# optimized draw solid polygon
 static void tft_draw_solid_poly2(
     const Point16_t* vertices, uint16_t num_vertices,
     uint16_t fill_color, uint16_t edge_color, uint8_t edge_width
@@ -363,8 +349,6 @@ static void tft_draw_solid_poly2(
         valid_edges++;
     }
 
-    INT_TFT_CS_LOW();
-
     // Scan through each row of the polygon
     for (int16_t y = min_y; y <= max_y; y++) {
         int16_t intersections[20];
@@ -406,11 +390,9 @@ static void tft_draw_solid_poly2(
     if (edge_width > 0) {
         tft_draw_poly2(vertices, num_vertices, edge_color, edge_width); // Draw edges with specified width
     }
-
-    INT_TFT_CS_HIGH();
 }
 
-//! draw circle
+//# draw circle
 static void tft_draw_circle(
     Point16_t center, int16_t radius, uint16_t color
 ) {
@@ -444,7 +426,7 @@ static void tft_draw_circle(
 }
 
 
-//! draw filled circle
+//# draw filled circle
 static void tft_draw_filled_circle(
     Point16_t p0, int16_t radius, uint16_t color
 ) {
@@ -456,21 +438,21 @@ static void tft_draw_filled_circle(
 
     //# optimize for radius <= 4
     if (radius <= 4) {
-        _draw_fast_hLine(p0.x - radius, p0.y, radius + radius + 1, color);
+        _render_horizontal_line(p0.x - radius, p0.y, radius + radius + 1, color);
         for (int16_t i = 1; i <= radius; i++) {
             int16_t w = (radius - i) + (radius - i) + 1;
-            _draw_fast_hLine(p0.x - (radius - i), p0.y + i, w, color);
-            _draw_fast_hLine(p0.x - (radius - i), p0.y - i, w, color);
+            _render_horizontal_line(p0.x - (radius - i), p0.y + i, w, color);
+            _render_horizontal_line(p0.x - (radius - i), p0.y - i, w, color);
         }
         return;
     }
 
     while (x >= y) {
         // Draw horizontal spans for each octant
-        _draw_fast_hLine(p0.x - x, p0.y + y, 2 * x + 1, color);  // Bottom span
-        _draw_fast_hLine(p0.x - x, p0.y - y, 2 * x + 1, color);  // Top span
-        _draw_fast_hLine(p0.x - y, p0.y + x, 2 * y + 1, color);  // Right span
-        _draw_fast_hLine(p0.x - y, p0.y - x, 2 * y + 1, color);  // Left span
+        _render_horizontal_line(p0.x - x, p0.y + y, 2 * x + 1, color);  // Bottom span
+        _render_horizontal_line(p0.x - x, p0.y - y, 2 * x + 1, color);  // Top span
+        _render_horizontal_line(p0.x - y, p0.y + x, 2 * y + 1, color);  // Right span
+        _render_horizontal_line(p0.x - y, p0.y - x, 2 * y + 1, color);  // Left span
 
         if (err <= 0) {
             y++;
@@ -485,12 +467,10 @@ static void tft_draw_filled_circle(
     INT_TFT_CS_HIGH();
 }
 
-//! draw ring
+//# draw ring
 static void tft_draw_ring(
     Point16_t center, int16_t radius, uint16_t color, uint8_t width
 ) {
-    INT_TFT_CS_LOW();
     tft_draw_filled_circle(center, radius, color); // Draw outer circle
     // tft_draw_filled_circle(center, radius - width, PURPLE); // Draw inner circle
-    INT_TFT_CS_HIGH();
 }

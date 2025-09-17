@@ -187,6 +187,12 @@ void fun_st7735_test() {
     //! draw diagonal lines
     tft_draw_line(x_value, y_value, x_value + 30, y_value + 80, color, 1);
 
+    //! draw rectangles
+    tft_draw_rect(x_value, y_value, 20, 20, color);
+
+    //! draw random rectangles
+    tft_fill_rect(x_value + 20, y_value + 20, 20, 20, color);
+
     //! draw poly
     int16_t triangle_x[] = {10, 40, 80};
     int16_t triangle_y[] = {20, 60, 70};
@@ -210,11 +216,4 @@ void fun_st7735_test() {
 
     // tft_draw_filled_circle((Point16_t){ 50, 50 }, 10, 0x07E0);
     // tft_draw_ring((Point16_t){ 50, 50 }, 20, 0x07E0, 5); // Green ring with radius = 30 and width = 5
-
-
-    //! draw rectangles
-    tft_draw_rect(x_value, y_value, 20, 20, color);
-
-    //! draw random rectangles
-    tft_fill_rect(x_value + 20, y_value + 20, 20, 20, color);
 }
