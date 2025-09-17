@@ -1,10 +1,12 @@
+// modified from https://github.com/moononournation/Arduino_GFX
+
 #include "ch32fun.h"
 #include <stdint.h>
 #include "lib/lib_tft.h"
 
 // ST7735 Datasheet
 // https://www.displayfuture.com/Display/datasheet/controller/ST7735.pdf
-#define ST7735_RGB(r, g, b) ((r >> 3) | ((g&0xFC) << 3) | ((b&0xF8) << 8))
+#define ST7735_RGB(r, g, b) ((r >> 3) | ((g & 0xFC) << 3) | ((b & 0xF8) << 8))
 
 #define BLACK       ST7735_RGB(0, 0, 0)
 #define WHITE       ST7735_RGB(0xFF, 0xFF, 0xFF)
@@ -53,15 +55,15 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
     SPI_cmd_8(ST7735_RAMWR);
 }
 
-// void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
-//     SPI_send_DMA(buffer, len, repeat);
-// }
-
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
-    while(repeat-- > 0) {
-        for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
-    }
+    SPI_send_DMA(buffer, len, repeat);
 }
+
+// void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t len, uint16_t repeat) {
+//     while(repeat-- > 0) {
+//         for (int i = 0; i < len; i++) SPI_cmd_data_8(buffer[i]);
+//     }
+// }
 
 void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color) {
     INTF_TFT_SET_WINDOW(x0, y0, x0, y0);
@@ -110,9 +112,9 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
 
     //# Software reset
     SPI_cmd_8(ST7735_SWRESET);
-    Delay_Ms(200);
+    Delay_Ms(10);
     SPI_cmd_8(ST7735_SLEEPOFF);
-    Delay_Ms(100);
+    Delay_Ms(10);
 
     //# Interface Pixel Format
     SPI_cmd_8(ST7735_COLMODE);
@@ -165,13 +167,10 @@ void fun_st7335_init(uint8_t width, uint8_t height, uint8_t cs_pin) {
 
 void fun_st7735_test() {
     tft_fill_rect(0, 0, ST7735_WIDTH, ST7735_HEIGHT, PURPLE);
-    tft_print("Hello World!", 0, 0, 0xFFFF, PURPLE);
+    tft_print("Hello World 222", 0, 0, 0xFFFF, PURPLE);
     
-    static int idx_counter;
     static uint8_t color_idx = 0;
-
-    uint8_t idx = color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t));
-    uint16_t color = st7735_colors[idx % sizeof(st7735_colors)];
+    uint16_t color = st7735_colors[color_idx++ % (sizeof(st7735_colors)/sizeof(uint16_t))];
 
     //! draw vertical lines
     static uint8_t x_idx = 0;

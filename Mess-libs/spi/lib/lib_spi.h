@@ -48,7 +48,7 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     }
 }
 
-static void SPI_DMA_init() {
+static void SPI_DMA_init(DMA_Channel_TypeDef* DMA_Channel) {
     // Enable Tx DMA
     SPI1->CTLR2 |= SPI_I2S_DMAReq_Tx;
 
@@ -56,8 +56,8 @@ static void SPI_DMA_init() {
     RCC->AHBPCENR |= RCC_AHBPeriph_DMA1;
 
     // Configure DMA
-    DMA1_Channel3->PADDR = (uint32_t)&SPI1->DATAR;
-    DMA1_Channel3->CFGR = DMA_M2M_Disable | DMA_Priority_VeryHigh 
+    DMA_Channel->PADDR = (uint32_t)&SPI1->DATAR;
+    DMA_Channel->CFGR = DMA_M2M_Disable | DMA_Priority_VeryHigh 
                         | DMA_MemoryDataSize_Byte | DMA_PeripheralDataSize_Byte
                         | DMA_MemoryInc_Enable | DMA_PeripheralInc_Disable
                         | DMA_Mode_Circular | DMA_DIR_PeripheralDST;

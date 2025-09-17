@@ -173,7 +173,7 @@ int main() {
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD3, DC-P
 		SPI_init(SPI_RST_PIN, SPI_DC_PIN);
-		SPI_DMA_init();
+		SPI_DMA_init(DMA1_Channel3);
 
 		#ifdef LORA_ENABLED
 			fun_st7335_init(160, 80, ST7735_CS_PIN);

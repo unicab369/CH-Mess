@@ -1,4 +1,4 @@
-// Line methods are modifications from https://github.com/adafruit/Adafruit-GFX-Library
+// modified from https://github.com/adafruit/Adafruit-GFX-Library
 
 #include "ch32fun.h"
 #include "font5x7.h"
@@ -12,56 +12,40 @@ void INTF_TFT_SET_WINDOW(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 void INTF_TFT_SEND_BUFF(const uint8_t* buffer, uint16_t size, uint16_t repeat);
 void INTF_TFT_SEND_PIXEL(uint16_t x0, uint16_t y0, uint16_t color);
 
-static uint8_t  _frame_buffer[ST7735_W << 1] = {0};
-static uint16_t _cursor_x = 0;
-static uint16_t _cursor_y = 0;
-
-//# render character - draw with CS controls
-void render_char(
-    char c, uint8_t height, uint8_t width,
-    uint16_t color, uint16_t bg_color
-) {
-    const char* start = &font[c + (c << 2)];
-
-    uint16_t len = 0;
-    for (uint8_t i = 0; i < height; i++) {
-        for (uint8_t j = 0; j < width; j++) {
-            if ((*(start + j)) & (0x01 << i)) {
-                _frame_buffer[len++] = color >> 8;
-                _frame_buffer[len++] = color;
-            } else {
-                _frame_buffer[len++] = bg_color >> 8;
-                _frame_buffer[len++] = bg_color;
-            }
-        }
-    }
-
-    INTF_TFT_SET_WINDOW(_cursor_x, _cursor_y, _cursor_x + width - 1, _cursor_y + height - 1);
-    INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
-}
+uint8_t  _frame_buffer[ST7735_W << 1] = {0};
 
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
     uint8_t width = 5;
-    _cursor_x = x;
-    _cursor_y = y;
+    uint8_t height = 7;
+    uint16_t current_x = x;
+    uint16_t current_y = y;
 
     INT_TFT_CS_LOW();
 
     while (*str) {
-        render_char(*str++, 7, width, color, bg_color);
-        _cursor_x += width + 1;
+        char c = *str++;
+        const char* start = &font[c + (c << 2)];
+
+        uint16_t len = 0;
+
+        for (uint8_t i = 0; i < height; i++) {
+            for (uint8_t j = 0; j < width; j++) {
+                if ((*(start + j)) & (0x01 << i)) {
+                    _frame_buffer[len++] = color >> 8;
+                    _frame_buffer[len++] = color;
+                } else {
+                    _frame_buffer[len++] = bg_color >> 8;
+                    _frame_buffer[len++] = bg_color;
+                }
+            }
+        }
+
+        INTF_TFT_SET_WINDOW(current_x, current_y, current_x + width - 1, current_y + height - 1);
+        INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
+        current_x += width + 1;
     }
 
     INT_TFT_CS_HIGH();
-}
-
-//# render bitmap - draw with CS controls
-void render_bitmap(
-    uint16_t x, uint16_t y,
-    uint16_t width, uint16_t height, const uint8_t* bitmap
-) {
-    INTF_TFT_SET_WINDOW(x, y, x + width - 1, y + height - 1);
-    INTF_TFT_SEND_BUFF(bitmap, width * height << 1, 1);
 }
 
 //# draw filled_rect
@@ -83,11 +67,6 @@ void tft_fill_rect(
 
 #define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
 #define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
-
-//# draw pixel
-void tft_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
-    INTF_TFT_SEND_PIXEL(x, y, color);
-}
 
 //# render vertical line - draw with CS controls
 static void _render_vertical_line(
@@ -118,6 +97,10 @@ static void _render_horizontal_line(
     INTF_TFT_SEND_BUFF(_frame_buffer, len, 1);
 }
 
+//# draw pixel
+void _render_pixel(uint16_t x, uint16_t y, uint16_t color) {
+    INTF_TFT_SEND_PIXEL(x, y, color);
+}
 
 //# draw line diagonal (use bresenham algorithm) - draw with CS controls
 static void _render_diagonal_line(
@@ -143,9 +126,9 @@ static void _render_diagonal_line(
     for (; x0 <= x1; x0++) {
         for (int16_t w = -(width / 2); w <= width / 2; w++) {
             if (steep) {
-                tft_draw_pixel(y0 + w, x0, color); // Draw perpendicular pixels for width
+                _render_pixel(y0 + w, x0, color); // Draw perpendicular pixels for width
             } else {
-                tft_draw_pixel(x0, y0 + w, color); // Draw perpendicular pixels for width
+                _render_pixel(x0, y0 + w, color); // Draw perpendicular pixels for width
             }
         }
         err -= dy;
@@ -404,14 +387,14 @@ static void tft_draw_circle(
     
     while (x <= y) {
         // Draw symmetric points in all octants
-        tft_draw_pixel(center.x + x, center.y + y, color); // Octant 1
-        tft_draw_pixel(center.x - x, center.y + y, color); // Octant 2
-        tft_draw_pixel(center.x + x, center.y - y, color); // Octant 3
-        tft_draw_pixel(center.x - x, center.y - y, color); // Octant 4
-        tft_draw_pixel(center.x + y, center.y + x, color); // Octant 5
-        tft_draw_pixel(center.x - y, center.y + x, color); // Octant 6
-        tft_draw_pixel(center.x + y, center.y - x, color); // Octant 7
-        tft_draw_pixel(center.x - y, center.y - x, color); // Octant 8
+        _render_pixel(center.x + x, center.y + y, color); // Octant 1
+        _render_pixel(center.x - x, center.y + y, color); // Octant 2
+        _render_pixel(center.x + x, center.y - y, color); // Octant 3
+        _render_pixel(center.x - x, center.y - y, color); // Octant 4
+        _render_pixel(center.x + y, center.y + x, color); // Octant 5
+        _render_pixel(center.x - y, center.y + x, color); // Octant 6
+        _render_pixel(center.x + y, center.y - x, color); // Octant 7
+        _render_pixel(center.x - y, center.y - x, color); // Octant 8
 
         if (err < 0) {
             err += 2 * x + 3;
