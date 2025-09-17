@@ -24,6 +24,7 @@ void INTF_TFT_SEND_PIXEL(uint16_t color);
 
 uint16_t _tft_frame[ST7735_W] = {0};
 
+//# draw text
 void tft_print(const char* str, uint8_t x, uint8_t y, uint16_t color, uint16_t bg_color) {
     uint8_t font_width = 6, font_height = 8;
     uint16_t current_x = x, current_y = y;
@@ -71,10 +72,8 @@ void tft_fill_rect(
     INT_TFT_CS_HIGH();
 }
 
-#define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
-#define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
 
-//# render vertical line - draw with CS controls
+// render vertical line - draw with CS controls
 static void _render_vertical_line(
     int16_t x, int16_t y, int16_t len, uint16_t color
 ) {
@@ -85,7 +84,7 @@ static void _render_vertical_line(
 }
 
 
-//# render horizontal line - draw with CS controls
+// render horizontal line - draw with CS controls
 static void _render_horizontal_line(
     int16_t x, int16_t y, int16_t len, uint16_t color
 ) {
@@ -95,17 +94,27 @@ static void _render_horizontal_line(
     INTF_TFT_SEND_BUFF16(_tft_frame, len);
 }
 
-//# draw pixel
+// render pixel - draw with CS controls
 void _render_pixel(uint16_t x, uint16_t y, uint16_t color) {
     INTF_TFT_SET_WINDOW(x, y, x, y);
     INTF_TFT_SEND_PIXEL(color);
+}
+
+//# draw pixel
+void tft_draw_pixel(uint16_t x, uint16_t y, uint16_t color) {
+    INT_TFT_CS_LOW();
+    _render_pixel(x, y, color);
+    INT_TFT_CS_HIGH();
 }
 
 //###########################################
 //# OTHER METHODS
 //###########################################
 
-//# draw line diagonal (use bresenham algorithm) - draw with CS controls
+#define _diff(a, b)         ((a > b) ? (a - b) : (b - a))
+#define _swap_int16(a, b)   { int16_t temp = a; a = b; b = temp; }
+
+// draw line diagonal (use bresenham algorithm) - draw with CS controls
 static void _render_diagonal_line(
     int16_t x0, int16_t y0,
     int16_t x1, int16_t y1, uint16_t color, uint8_t width
@@ -142,9 +151,8 @@ static void _render_diagonal_line(
     }
 }
 
-
-//# draw line
-void tft_draw_line(
+// render line - draw with CS controls
+static void _render_line(
     int16_t x0, int16_t y0, int16_t x1, int16_t y1,
     uint16_t color, uint8_t width
 ) {
@@ -160,6 +168,16 @@ void tft_draw_line(
     else {
         _render_diagonal_line(x0, y0, x1, y1, color, width);
     }
+    INT_TFT_CS_HIGH();
+}
+
+//# draw line
+void tft_draw_line(
+    int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+    uint16_t color, uint8_t width
+) {
+    INT_TFT_CS_LOW();
+    _render_line(x0, y0, x1, y1, color, width);
     INT_TFT_CS_HIGH();
 }
 
@@ -184,7 +202,7 @@ typedef struct {
 } Point16_t;
 
 //# draw polygon
-static void _draw_poly(
+static void tft_draw_poly(
     const int16_t* vertices_x, // Array of x-coordinates of vertices
     const int16_t* vertices_y, // Array of y-coordinates of vertices
     uint16_t num_vertices,     // Number of vertices in the polygon
