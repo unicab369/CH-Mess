@@ -40,7 +40,8 @@
 	#include "../Mess-libs/spi/lib/lib_spi.h"
 	#include "../Mess-libs/spi/fun_st77352.h"
 	// #include "../Mess-libs/sd_card/mod_sdCard.h"
-	#include "../Mess-libs/spi/fun_sx72xx.h"
+	#include "../Mess-libs/spi/fun_sx127x.h"
+	#include "../Mess-libs/spi/fun_sx126x.h"
 #endif
 
 
@@ -90,6 +91,7 @@ typedef struct {
 } Session_t;
 
 
+//# ------------ CH32V003F4P6 ------------
 //# 	ENC_A		PD4 - [ 				] - PD3		ENC_B
 //# 	**UTX		PD5 - [ 				] - PD2		DC
 //# 	**UTR		PD6 - [ 				] - PD1		**SWIO
@@ -100,6 +102,18 @@ typedef struct {
 //# 	PWM			PD0 - [ 				] - PC3		RST0 
 //# 	**VCC+		VCC - [ 				] - PC2		**SCL
 //# 	BTN			PC0 - [ 				] - PC1		**SDA
+
+
+//# -------------- LORA MODULE --------------
+//#   	GND
+//#   	MISO
+//#   	MOSI
+//#   	SCK
+//#   	CS
+//#   	RST
+//# 	VCC
+//# 	GND
+
 
 #define BUTTON_PIN 		PC0
 #define SPI_DC_PIN		PD2
@@ -177,11 +191,13 @@ int main() {
 
 		#ifdef LORA_ENABLED
 			uint32_t loRa_Frequency = 915E6;
-			fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
-			fun_sx72xx_setTxPower(17);
+			fun_sx126x_init(loRa_Frequency);
+			// fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
+			// fun_sx72xx_setTxPower(17);
 
-			fun_st7335_init(160, 80, ST7735_CS_PIN);
-			fun_st7735_fill_all(ST_PURPLE);
+			// fun_st7335_init(160, 80, ST7735_CS_PIN);
+			// fun_st7735_fill_all(ST_PURPLE);
+
 		#elif WS2812_ENABLED
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
@@ -215,13 +231,15 @@ int main() {
 		#endif
 		
 		#ifdef LORA_ENABLED
-			int packetSize = fun_sx72xx_parsePacket();
-			if (packetSize) {
-				char buff[packetSize + 1];
-				fun_sx72xx_readPacket(buff);
-				buff[packetSize] = 0;
-				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
-			}
+			fun_sx126x_parsePacket();
+			
+			// int packetSize = fun_sx72xx_parsePacket();
+			// if (packetSize) {
+			// 	char buff[packetSize + 1];
+			// 	fun_sx72xx_readPacket(buff);
+			// 	buff[packetSize] = 0;
+			// 	printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
+			// }
 		#elif WS2812_ENABLED
 			Neo_task(now);
 		#endif
@@ -255,11 +273,11 @@ int main() {
 
 			#ifdef SPI_ENABLED
 				#ifdef LORA_ENABLED
-					uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
-					printf("ST7735 runtime: %lu us\n", runtime_tft);
+					// uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
+					// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
-					uint8_t loRa_message[] = "Hello World 222";
-					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+					// uint8_t loRa_message[] = "Hello World 222";
+					// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 				#endif
 			#endif
 

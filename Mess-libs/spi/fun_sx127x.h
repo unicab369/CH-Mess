@@ -3,8 +3,6 @@
 #include "ch32fun.h"
 #include <stdint.h>
 
-uint8_t LORA_OK = 0;
-
 //! ####################################
 //! SPI FUNCTIONS
 //! ####################################
@@ -92,7 +90,6 @@ void fun_sx72xx_setTxPower(uint8_t level) {
     sx72xx_write(REG_PA_CONFIG, PA_BOOST | (level - 2));
 }
 
-
 #define REG_OP_MODE                 0x01
 #define MODE_LONG_RANGE_MODE        0x80
 #define MODE_STDBY                  0x01
@@ -103,6 +100,8 @@ void fun_sx72xx_setTxPower(uint8_t level) {
 #define REG_FIFO_RX_CURRENT_ADDR    0x10
 #define REG_MODEM_CONFIG_3          0x26
 #define REG_LNA                     0x0c
+
+uint8_t LORA_OK = 0;
 
 void sx72xx_idle() {
     sx72xx_write(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
