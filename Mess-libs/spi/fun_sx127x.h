@@ -169,7 +169,7 @@ void fun_sx72xx_send(uint8_t *data, uint8_t size) {
     // explicit header mode
     sx72xx_headerMode(0xFE);
 
-    // reset FIFO address and paload length
+    // reset FIFO address and payload length
     sx72xx_write(REG_FIFO_ADDR_PTR, 0);
     sx72xx_write(REG_PAYLOAD_LENGTH, 0);
 

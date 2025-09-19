@@ -162,3 +162,11 @@ uint8_t SPI_transfer_8(uint8_t data) {
     return SPI_read_8();
 }
 
+
+uint16_t SPI_transfer_16(uint8_t data) {
+    SPI_write_16(data);
+    SPI_wait_TX_complete();
+    asm volatile("nop");
+    SPI_wait_RX_available();
+    return SPI_read_16();
+}
