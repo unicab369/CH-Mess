@@ -226,7 +226,6 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
 
     //! configure CS Pin
     if (cs_pin != -1) {
-        printf("LoRa CS Pin: %d\n", cs_pin);
         LORA_CS_PIN2 = cs_pin;
         funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         funDigitalWrite(cs_pin, 1);
@@ -236,14 +235,14 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     u8 default_syncWord[2];
     sx126x_read_regs(0x0740, default_syncWord, 2);
     printf("Default SyncWord: 0x%02X 0x%02X\n", default_syncWord[0], default_syncWord[1]);
-    // Expect 0x2414 OR 0xA2A2
-    LORA_OK2 = default_syncWord[0] == 0x14 || default_syncWord[0] == 0xA2;
+    //! Expect 0x2414
+    LORA_OK2 = default_syncWord[0] == 0x14;
     printf("LoRa OK2: %d\n", LORA_OK2);
 
     // # 0x80 set standby (Not needed for minimal init? it works without this command)
     buf[0] = 0x00;      // 0x00 = RC (low power), 0x01 = XOSC (performant)
     sx126x_write_buffer(0x80, buf, 1);
-    Delay_Ms(100);
+    Delay_Ms(10);
 
     // # 0x8A set modem
     u8 value[1] = {0x01};    // 0x00 = GFSK, 0x01 = LoRa
@@ -252,15 +251,18 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     // # 0x11 Get modem
     sx126x_read_cmd(0x11, buf, 2);
     printf("packetType: 0x%02X 0x%02X\n", buf[0], buf[1]);
-    Delay_Ms(100);
+    //! Expect 0x01
+    LORA_OK2 = buf[1] == 0x01;
+    printf("LoRa OK2: %d\n", LORA_OK2);
 
     //# set frequency
-    // fun_sx126x_setFreq(frequency);
+    fun_sx126x_setFreq(frequency);
+    Delay_Ms(10);
 
     // # set modulation
     u8 cr = 0x01;     // 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
     fun_sx126x_setModulation(7, SX126X_BW_125000, cr, 0);
-    Delay_Ms(100);
+    Delay_Ms(10);
 
     //# 0x95 set PA and TX power setting
     // for SX1261
@@ -274,7 +276,6 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
         0x01        // PowerLUT
     };
     sx126x_write_cmd(0x95, buff2, 4);
-
 
     //# 0x8E set TX power
     // RampTime 0x00 = 10 us, 0x01 = 20 us, 0x02 = 40 us, 0x03 = 80 us,
@@ -439,27 +440,10 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     //# packet configuration
     // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
     fun_sx126x_setPacketParams(12, 0, len, 1, 0);
+    Delay_Ms(10);
 
-    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    // SPI_transfer_8(0x8C);
-    // SPI_transfer_8(0x00);
-    // SPI_transfer_8(0x0C);
-    // SPI_transfer_8(0x00);
-    // SPI_transfer_8(len);
-    // SPI_transfer_8(0x00);
-    // SPI_transfer_8(0x00);
-    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-    Delay_Ms(150);
-
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x0E);
-    SPI_transfer_8(0x00);
-
-    for (int i = 0; i < len; i++) {
-        SPI_transfer_8(message[i]);
-    }
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-    Delay_Ms(100);
+    //# set payload
+    sx126x_write_buffer(0x00, (u8*)message, len);
 
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(0x83);
@@ -467,8 +451,16 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     SPI_transfer_8(0xFF);
     SPI_transfer_8(0xFF);
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-    Delay_Ms(2000);
+    Delay_Ms(10);
 
+    //# 0x83 set Tx with timeout
+    u8 timeoutBuff[3] = {
+        (u8)((timeoutMs >> 16) & 0xFF),
+        (u8)((timeoutMs >> 8) & 0xFF),
+        (u8)(timeoutMs & 0xFF)
+    };
+    sx126x_write_cmd(0x83, timeoutBuff, 3);
+    Delay_Ms(2000);
 
     // //# set DIO IRQ
     // u8 iqrDio1_mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
@@ -481,17 +473,6 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     // buff[0] = 0x00;
     // buff[1] = 0x00;
     // sx126x_write_cmd(0x8F, buff, 2);
-
-    // //# set payload
-    // sx126x_write_buffer(0x00, (u8*)message, len);
-
-    // //# 0x83 set Tx with timeout
-    // u8 timeoutBuff[3] = {
-    //     (u8)((timeoutMs >> 16) & 0xFF),
-    //     (u8)((timeoutMs >> 8) & 0xFF),
-    //     (u8)(timeoutMs & 0xFF)
-    // };
-    // sx126x_write_cmd(0x83, timeoutBuff, 3);
 
     // //# clear IRQ status
     // // clear status command = 0x43FF
