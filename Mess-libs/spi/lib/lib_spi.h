@@ -163,7 +163,7 @@ uint8_t SPI_transfer_8(uint8_t data) {
 }
 
 
-uint16_t SPI_transfer_16(uint8_t data) {
+uint16_t SPI_transfer_16(uint16_t data) {
     SPI_write_16(data);
     SPI_wait_TX_complete();
     asm volatile("nop");

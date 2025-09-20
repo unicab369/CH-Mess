@@ -8,42 +8,23 @@
 
 u8 LORA_CS_PIN2 = -1;
 
-void sx126x_transfer_read(
-    u8 opCode, u8* out, u8 outLen,
-    u8* in, u8 inLen
-) {
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(opCode);
-
-    for (int i=0; i<outLen; i++) out[i] = SPI_transfer_8(out[i]);
-    for (int i=0; i<inLen; i++) in[i] = SPI_transfer_8(in[i]);
-
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-}
-
-void sx126x_readBuffer(u8 offset, u8 *data, u8 len) {
-    u8 buff[2] = { offset, 0x00 };
-    sx126x_transfer_read(0x1E, buff, 2, data, len);
-}
-
-
 //# Write/Read Commands
 
-void Asx126x_write_cmd8(u8 opCode, u8 byte) {
+void sx126x_write_cmd8(u8 opCode, u8 byte) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(opCode);
     SPI_transfer_8(byte);
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
-void Asx126x_write_cmd(u8 opCode, u8* data, u8 len) {
+void sx126x_write_cmd(u8 opCode, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(opCode);
     for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
-void Asx126x_read_cmd(u8 opCode, u8* data, u8 len) {
+void sx126x_read_cmd(u8 opCode, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(opCode);
     for (int i=0; i<len; i++) data[i] = SPI_transfer_8(data[i]);
@@ -52,36 +33,31 @@ void Asx126x_read_cmd(u8 opCode, u8* data, u8 len) {
 
 //# Write/Read Registers
 
-void Asx126x_write_regs(u16 addr, u8 *data, u8 len) {
+void sx126x_write_regs(u16 addr, u8 *data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x0D);                   //# 0x0D Write Register
-    SPI_transfer_16(addr);
+    SPI_transfer_8(0x0D);                       //# 0x0D Write Register
+    SPI_transfer_8((u8)((addr >> 8) & 0xFF));   // trasfer MSB
+    SPI_transfer_8((u8)(addr & 0xFF));          // transfer LSB
+
     for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
-u8 Asx126x_read_reg(u16 addr) {
+void sx126x_read_regs(u16 addr, u8 *data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x1D);                   //# 0x1D Read Register
-    SPI_transfer_16(addr);
-    SPI_transfer_8(0x00);                   // Dummy Byte
-    
-    u8 read = SPI_transfer_8(0x00);         // Read Response
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-    return read;
-}
+    SPI_transfer_8(0x1D);                       //# 0x1D Read Register
+    SPI_transfer_8((u8)((addr >> 8) & 0xFF));   // trasfer MSB
+    SPI_transfer_8((u8)(addr & 0xFF));          // transfer LSB
+    SPI_transfer_8(0x00);                       // Dummy Byte
 
-void Asx126x_read_regs(u16 addr, u8 *data, u8 len) {
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x1D);                   //# 0x1D Read Register
-    SPI_transfer_16(addr);
+    // read data
     for (int i=0; i<len; i++) data[i] = SPI_transfer_8(data[i]);
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
 //# Write/Read Buffer
 
-void Asx126x_write_buffer(u8 offset, u8* data, u8 len) {
+void sx126x_write_buffer(u8 offset, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(0x0E);                   //# 0x0E Write Buffer
     SPI_transfer_8(offset);
@@ -90,6 +66,14 @@ void Asx126x_write_buffer(u8 offset, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
+void sx126x_read_buffer(u8 offset, u8 *data, u8 len) {
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x1E);                   //# 0x1E Read Buffer
+    SPI_transfer_8(offset);
+    SPI_transfer_8(0x00);                   // Dummy Byte
+    for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);    
+}
 
 //! ####################################
 //! OTHER SETUP FUNCTIONS
@@ -104,9 +88,9 @@ void Asx126x_write_buffer(u8 offset, u8* data, u8 len) {
 void fun_sx126x_setRxGain(u8 boost) {
     //# 0x08AC set Rx gain
     // 0x94 = 0dBm, 0x96 = 14dBm
-    u8 gain[1] = { 0x94 };
+    u8 gain[1] = { 0x94 };          // default
     if (boost) gain[0] = 0x96;
-    Asx126x_write_regs(0x08AC, gain, 1);
+    sx126x_write_regs(0x08AC, gain, 1);
 }
 
 void fun_sx126x_setPacketParams(
@@ -123,7 +107,7 @@ void fun_sx126x_setPacketParams(
     };
 
     //# 0x8C set LoRa packet
-    Asx126x_write_cmd(0x8C, buff, 6);
+    sx126x_write_cmd(0x8C, buff, 6);
 }
 
 void fun_sx126x_setSyncWord(u16 syncWord) {
@@ -136,14 +120,13 @@ void fun_sx126x_setSyncWord(u16 syncWord) {
     }
 
     //# 0x0740 set sync word
-    Asx126x_write_regs(0x0740, buf, 2);
+    sx126x_write_regs(0x0740, buf, 2);
 }
 
 u8 fun_sx126x_getMode() {
     u8 mode;
-    Asx126x_read_cmd(0xC0, &mode, 1);
-    printf("Status0: 0x%02X\n", mode);
-    return mode & 0x70;
+    sx126x_read_cmd(0xC0, &mode, 1);
+    return mode;
 }
 
 //! ####################################
@@ -161,11 +144,6 @@ u8 fun_sx126x_getMode() {
 #define SX126X_BW_125000        0x04        //                 125 kHz
 #define SX126X_BW_250000        0x05        //                 250 kHz
 #define SX126X_BW_500000        0x06        //                 500 kHz
-#define SX126X_CR_4_4           0x00        // LoRa coding rate: 4/4 (no coding rate)
-#define SX126X_CR_4_5           0x01        //                   4/5
-#define SX126X_CR_4_6           0x02        //                   4/6
-#define SX126X_CR_4_7           0x03        //                   4/7
-#define SX126X_CR_4_8           0x04        //                   4/8
 
 
 void fun_sx126x_setFreq(uint32_t frequency) {
@@ -203,7 +181,7 @@ void fun_sx126x_setFreq(uint32_t frequency) {
     buff[3] = (u8)(rfFreq & 0xFF);
 
     //# 0x84 set frequency
-    Asx126x_write_cmd(0x86, buff, 4);
+    sx126x_write_cmd(0x86, buff, 4);
 }
 
 void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOpt) {
@@ -216,7 +194,7 @@ void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOpt) {
     };
 
     //# 0x8B set modulation
-    Asx126x_write_cmd(0x8B, buf, 4);
+    sx126x_write_cmd(0x8B, buf, 4);
 }
 
 
@@ -242,39 +220,90 @@ void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOpt) {
 
 u8 LORA_OK2 = 0;
 
-void fun_sx126x_init(uint32_t frequency) {
+void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
+    u8 buf[4];
+    u8 b0, b1;
+
+    //! configure CS Pin
+    if (cs_pin != -1) {
+        LORA_CS_PIN2 = cs_pin;
+        funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        funDigitalWrite(cs_pin, 1);
+    }
+
     //! sanity check
-    u8 check = Asx126x_read_reg(0x0740);
-    printf("check: 0x%02X\n", check);   // Expect 0x14
+    u8 default_syncWord[2];
+    sx126x_read_regs(0x0740, default_syncWord, 2);
+    printf("Default SyncWord: 0x%02X 0x%02X\n", default_syncWord[0], default_syncWord[1]);
+    // Expect 0x2414 OR 0xA2A2
+    LORA_OK2 = default_syncWord[0] == 0x14 || default_syncWord[0] == 0xA2;
+    printf("LoRa OK2: %d\n", LORA_OK2);
+    Delay_Ms(100);
 
-    //! read version
-    u8 ver[16];
-    Asx126x_read_regs(0x0320, ver, 16);
-    printf("version: %s\n", ver);
+    //# 0x80 set stanby
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x80);
+    SPI_transfer_8(0x00);    // 0x00 = RC (low power), 0x01 = XOSC (performant)
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(100);    
 
-    //# 0x80 set standby
-    u8 mode = 0x00;     // 0x00 = RC (low power), 0x01 = XOSC (performant)
-    Asx126x_write_cmd8(0x80, mode);
+    //# 0x8A set modem
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x8A);
+    SPI_transfer_8(0x01);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(100);
 
-    //# 0x9D set DIO2 as RF Switch Control
-    Asx126x_write_cmd8(0x9D, 0x01);
-
-    //# check status mode. Expect 0x20
-    if (fun_sx126x_getMode() == SX126X_MODE_STDBY_RC) LORA_OK2 = 1;
-    printf("Status1: 0x%02X\n", fun_sx126x_getMode());
-
-    //# 0x8A set packet type
-    mode = 0x01;        // 0x00 = GFSK, 0x01 = LoRa
-    Asx126x_write_cmd8(0x8A, 0x01);
-
-    //# 0x11 get packet type
-    u8 buf[2];
-    Asx126x_read_cmd(0x11, buf, 2);
-    u8 packet_type = buf[1];
-    printf("Packet type: %d\n", packet_type);
+    //# 0x11 Get modem
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x11);
+    b0 = SPI_transfer_8(0xFF);
+    b1 = SPI_transfer_8(0xFF);
+    printf("packetType: 0x%02X 0x%02X\n", b0, b1);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(100);
 
     //# set frequency
     fun_sx126x_setFreq(frequency);
+
+    //# 0xC0 get Status
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0xC0);
+    b0 = SPI_transfer_8(0xFF);
+    printf("status: 0x%02X, chipMode: 0x%02X, cmdStatus: 0x%02X\n", 
+            b0, (b0 >> 4) & 0x7, (b0 >> 1) & 0x7);
+    printf("status Mode: 0x%02X\n", b0 & 0x70);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(100);
+
+    //# 0x12 get IRQ status
+    sx126x_read_cmd(0x12, buf, 2);
+    printf("\nIRQ status: 0x%02X 0x%02X\n", buf[0], buf[1]);
+    for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
+    for (int i = 7; i >= 0; i--) printf("%d", (buf[1] >> i) & 1);
+    printf("\n");
+
+    //# 0x13 get buffer status
+    sx126x_read_cmd(0x13, buf, 3);
+    printf("\nBuffer status: 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2]);
+
+    //# 0x14 get packet status
+    sx126x_read_cmd(0x14, buf, 4);
+    printf("\nPacket status: 0x%02X 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2], buf[3]);
+    for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
+    u16 rssi = buf[1] / -2;
+    u16 snr = buf[2] / 4;
+    printf("\nRSSI: %d dbm, SNR = %d dB\n", rssi, snr);
+
+
+    // //# 0x9D set DIO2 as RF Switch Control
+    // Asx126x_write_cmd8(0x9D, 0x01);
+
+    // //# 0x8A set modem
+    // u8 value[1] = {0x01};    // 0x00 = GFSK, 0x01 = LoRa
+    // Asx126x_write_cmd(0x8A, value, 1);
+    // Delay_Ms(100);
+
 
     // //# SX1262: 0x08D8 get TX clamp config
     // u8 value = Asx126x_read_reg(0x08D8);
@@ -293,7 +322,7 @@ void fun_sx126x_init(uint32_t frequency) {
         0x00,       // Device Select: 0x00 = SX1262, 0x01 = SX1261
         0x01        // PowerLUT
     };
-    Asx126x_write_cmd(0x95, buff2, 4);
+    sx126x_write_cmd(0x95, buff2, 4);
 
     //# 0x8E set TX power
     // RampTime 0x00 = 10 us, 0x01 = 20 us, 0x02 = 40 us, 0x03 = 80 us,
@@ -307,10 +336,11 @@ void fun_sx126x_init(uint32_t frequency) {
     power = (power > 22) ? 22 : power;
     buf[0] = power;
     buf[1] = rampTime;
-    Asx126x_write_cmd(0x8E, buf, 2);
+    sx126x_write_cmd(0x8E, buf, 2);
 
     //# set modulation
-    fun_sx126x_setModulation(7, SX126X_BW_125000, SX126X_CR_4_5, 0);
+    u8 cr = 0x01;     // 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
+    fun_sx126x_setModulation(7, SX126X_BW_125000, cr, 0);
 
     printf("\n-- LORA RECEIVER --\n");
 }
@@ -321,7 +351,7 @@ static u16 irqStatus;
 
 u8 fun_sx126x_readByte() {
     u8 data;
-    sx126x_readBuffer(buffIndex, &data, 1);
+    sx126x_read_buffer(buffIndex, &data, 1);
     buffIndex++;
     if (payloadTxRx > 0) payloadTxRx--;
     return data;
@@ -329,7 +359,7 @@ u8 fun_sx126x_readByte() {
 
 u16 fun_sx126x_getIRQStatus() {
     u8 buff3[3];
-    Asx126x_read_cmd(0x12, buff3, 3);        //# 0x12 get IRQ status
+    sx126x_read_cmd(0x12, buff3, 3);        //# 0x12 get IRQ status
     return (buff3[1] << 8) | buff3[2];
 }
 
@@ -362,7 +392,7 @@ void fun_sx126x_setDioIrqParams(
         (u8)(dio3Mask & 0xFF)
     };
 
-    Asx126x_write_cmd(0x08, buff, 8);
+    sx126x_write_cmd(0x08, buff, 8);
 }
 
 
@@ -377,7 +407,7 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs) {
     u8 buf[2];
     buf[0] = 0x03FF >> 8;
     buf[1] = 0x03FF;
-    Asx126x_write_cmd(0x02, buf, 2);
+    sx126x_write_cmd(0x02, buf, 2);
 
     //# set DIO IRQ
     u16 iqrDio1_mask = SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT | SX126X_IRQ_CRC_ERR;
@@ -391,13 +421,13 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs) {
         (u8)((timeoutMs >> 8) & 0xFF),
         (u8)(timeoutMs & 0xFF) 
     };
-    Asx126x_write_cmd(0x82, timeoutBuff, 3);
+    sx126x_write_cmd(0x82, timeoutBuff, 3);
 
     fun_sx126x_getIRQStatus();
 
     //# 0x13 get buffer status
     u8 buff3[3];
-    Asx126x_read_cmd(0x13, buff3, 3);
+    sx126x_read_cmd(0x13, buff3, 3);
     payloadTxRx = buff3[1];
     buffIndex = buff3[2];
 
@@ -416,7 +446,7 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs) {
 
     //# 0x14 get packet status
     uint8_t buff[4];
-    Asx126x_read_cmd(0x14, buff, 4);
+    sx126x_read_cmd(0x14, buff, 4);
     u16 rssi = buff[0] / -2;
     u16 snr = buff[1] / 4;
     printf("RSSI: %d dbm, SNR = %d dB\n", rssi, snr);
@@ -443,10 +473,10 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     u8 buff[2];
     buff[0] = 0x00;
     buff[1] = 0x00;
-    Asx126x_write_cmd(0x8F, buff, 2);
+    sx126x_write_cmd(0x8F, buff, 2);
 
     //# set payload
-    Asx126x_write_buffer(0x00, (u8*)message, len);
+    sx126x_write_buffer(0x00, (u8*)message, len);
 
     //# 0x83 set Tx with timeout
     u8 timeoutBuff[3] = {
@@ -454,7 +484,7 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
         (u8)((timeoutMs >> 8) & 0xFF),
         (u8)(timeoutMs & 0xFF)
     };
-    Asx126x_write_cmd(0x83, timeoutBuff, 3);
+    sx126x_write_cmd(0x83, timeoutBuff, 3);
 
     //# clear IRQ status
     // clear status command = 0x43FF
@@ -462,5 +492,5 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     // u16 status = fun_sx126x_getIRQStatus();
     buff[0] = (u8)((status >> 8) & 0xFF);
     buff[1] = (u8)(status & 0xFF);
-    Asx126x_write_cmd(0x02, buff, 2);
+    sx126x_write_cmd(0x02, buff, 2);
 }

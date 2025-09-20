@@ -107,8 +107,9 @@ void sx72xx_idle() {
     sx72xx_write(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
 }
 
-void fun_sx72xx_init(uint32_t frequency, uint8_t rst_pin, uint8_t cs_pin) {
-    if (rst_pin != -1) {
+void fun_sx72xx_init(uint32_t frequency, uint8_t cs_pin) {
+    //! configure CS Pin
+    if (cs_pin != -1) {
         LORA_CS_PIN = cs_pin;
         funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         funDigitalWrite(cs_pin, 1);

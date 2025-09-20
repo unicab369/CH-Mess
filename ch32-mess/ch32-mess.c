@@ -112,7 +112,6 @@ typedef struct {
 //#   	CS
 //#   	RST
 //# 	VCC
-//# 	GND
 
 
 #define BUTTON_PIN 		PC0
@@ -191,9 +190,9 @@ int main() {
 
 		#ifdef LORA_ENABLED
 			uint32_t loRa_Frequency = 915E6;
-			// fun_sx126x_init(loRa_Frequency);
-			fun_sx72xx_init(loRa_Frequency, SPI_RST_PIN, LORA_CS_PIN);
-			fun_sx72xx_setTxPower(17);
+			fun_sx126x_init(loRa_Frequency, LORA_CS_PIN);
+			// fun_sx72xx_init(loRa_Frequency, LORA_CS_PIN);
+			// fun_sx72xx_setTxPower(17);
 
 			// fun_st7335_init(160, 80, ST7735_CS_PIN);
 			// fun_st7735_fill_all(ST_PURPLE);
@@ -233,13 +232,13 @@ int main() {
 		#ifdef LORA_ENABLED
 			// fun_sx126x_parsePacket();
 			
-			int packetSize = fun_sx72xx_parsePacket();
-			if (packetSize) {
-				char buff[packetSize + 1];
-				fun_sx72xx_readPacket(buff);
-				buff[packetSize] = 0;
-				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
-			}
+			// int packetSize = fun_sx72xx_parsePacket();
+			// if (packetSize) {
+			// 	char buff[packetSize + 1];
+			// 	fun_sx72xx_readPacket(buff);
+			// 	buff[packetSize] = 0;
+			// 	printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
+			// }
 		#elif WS2812_ENABLED
 			Neo_task(now);
 		#endif
@@ -277,7 +276,8 @@ int main() {
 					// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
 					uint8_t loRa_message[] = "Hello World 222";
-					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+					// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+					// fun_sx126x_send(loRa_message, sizeof(loRa_message), 0);
 				#endif
 			#endif
 
