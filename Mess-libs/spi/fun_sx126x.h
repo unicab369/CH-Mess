@@ -239,27 +239,19 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     // Expect 0x2414 OR 0xA2A2
     LORA_OK2 = default_syncWord[0] == 0x14 || default_syncWord[0] == 0xA2;
     printf("LoRa OK2: %d\n", LORA_OK2);
-    Delay_Ms(100);
 
     // # 0x80 set standby (Not needed for minimal init? it works without this command)
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x80);
-    SPI_transfer_8(0x00);    // 0x00 = RC (low power), 0x01 = XOSC (performant)
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
-    Delay_Ms(100);    
+    buf[0] = 0x00;      // 0x00 = RC (low power), 0x01 = XOSC (performant)
+    sx126x_write_buffer(0x80, buf, 1);
+    Delay_Ms(100);
 
     // # 0x8A set modem
     u8 value[1] = {0x01};    // 0x00 = GFSK, 0x01 = LoRa
     sx126x_write_cmd(0x8A, value, 1);
-    Delay_Ms(100);
 
     // # 0x11 Get modem
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x11);
-    b0 = SPI_transfer_8(0xFF);
-    b1 = SPI_transfer_8(0xFF);
-    printf("packetType: 0x%02X 0x%02X\n", b0, b1);
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    sx126x_read_cmd(0x11, buf, 2);
+    printf("packetType: 0x%02X 0x%02X\n", buf[0], buf[1]);
     Delay_Ms(100);
 
     //# set frequency
@@ -444,15 +436,19 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs) {
 //! ####################################
 
 void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x8C);
-    SPI_transfer_8(0x00);
-    SPI_transfer_8(0x0C);
-    SPI_transfer_8(0x00);
-    SPI_transfer_8(len);
-    SPI_transfer_8(0x00);
-    SPI_transfer_8(0x00);
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    //# packet configuration
+    // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
+    fun_sx126x_setPacketParams(12, 0, len, 1, 0);
+
+    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    // SPI_transfer_8(0x8C);
+    // SPI_transfer_8(0x00);
+    // SPI_transfer_8(0x0C);
+    // SPI_transfer_8(0x00);
+    // SPI_transfer_8(len);
+    // SPI_transfer_8(0x00);
+    // SPI_transfer_8(0x00);
+    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
     Delay_Ms(150);
 
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
@@ -473,9 +469,6 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
     Delay_Ms(2000);
 
-    // //# packet configuration
-    // // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
-    // fun_sx126x_setPacketParams(12, 0, len, 1, 0);
 
     // //# set DIO IRQ
     // u8 iqrDio1_mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
