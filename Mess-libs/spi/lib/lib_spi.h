@@ -34,8 +34,7 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     //# Reset SPI Devices
     if (rst_pin != -1) {
         funPinMode(rst_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-        
-        funDigitalWrite(PC3, 1);
+        funDigitalWrite(rst_pin, 1);
         
         // Reset Spi Devices
         funDigitalWrite(rst_pin, 0);

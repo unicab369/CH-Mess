@@ -104,7 +104,7 @@ typedef struct {
 //# 	BTN			PC0 - [ 				] - PC1		**SDA
 
 
-//# -------------- LORA MODULE --------------
+//# -------------- XL1262 LORA MODULE --------------
 //#   	GND
 //#   	MISO
 //#   	MOSI
@@ -112,6 +112,14 @@ typedef struct {
 //#   	CS
 //#   	RST
 //# 	VCC
+
+//# -------------- E220-900MM LORA MODULE --------------
+//#								     RST
+//#   	1 - Vcc					15 - SCK
+//#   	2 - GND					14 - CS
+//#   	3 - RST					13 - MOSI
+//#   	4 - nc					12 - MISO
+//#   	5 - nc					11 - BUSY
 
 
 #define BUTTON_PIN 		PC0
