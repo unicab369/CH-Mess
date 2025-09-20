@@ -185,6 +185,9 @@ int main() {
 	#ifdef SPI_ENABLED
 		//# uses SCK-PC5, MOSI-PC6, MISO-PC7,
 		//# RST-PD3, DC-P
+		funPinMode(SPI_DC_PIN, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        funDigitalWrite(SPI_DC_PIN, 1);
+
 		SPI_init(SPI_RST_PIN, SPI_DC_PIN);
 		SPI_DMA_init(DMA1_Channel3);
 
@@ -275,7 +278,8 @@ int main() {
 					// uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
 					// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
-					uint8_t loRa_message[] = "Hello World 222";
+					uint8_t loRa_message[] = "Hello World 333333";
+					fun_sx126x_send(loRa_message, strlen(loRa_message), 0);
 					// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 					// fun_sx126x_send(loRa_message, sizeof(loRa_message), 0);
 				#endif

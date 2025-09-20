@@ -226,12 +226,13 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
 
     //! configure CS Pin
     if (cs_pin != -1) {
+        printf("LoRa CS Pin: %d\n", cs_pin);
         LORA_CS_PIN2 = cs_pin;
         funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         funDigitalWrite(cs_pin, 1);
     }
 
-    //! sanity check
+    //! default sync_word check
     u8 default_syncWord[2];
     sx126x_read_regs(0x0740, default_syncWord, 2);
     printf("Default SyncWord: 0x%02X 0x%02X\n", default_syncWord[0], default_syncWord[1]);
@@ -240,21 +241,19 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     printf("LoRa OK2: %d\n", LORA_OK2);
     Delay_Ms(100);
 
-    //# 0x80 set stanby
+    // # 0x80 set standby (Not needed for minimal init? it works without this command)
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(0x80);
     SPI_transfer_8(0x00);    // 0x00 = RC (low power), 0x01 = XOSC (performant)
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
     Delay_Ms(100);    
 
-    //# 0x8A set modem
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0x8A);
-    SPI_transfer_8(0x01);
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    // # 0x8A set modem
+    u8 value[1] = {0x01};    // 0x00 = GFSK, 0x01 = LoRa
+    sx126x_write_cmd(0x8A, value, 1);
     Delay_Ms(100);
 
-    //# 0x11 Get modem
+    // # 0x11 Get modem
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(0x11);
     b0 = SPI_transfer_8(0xFF);
@@ -264,52 +263,12 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     Delay_Ms(100);
 
     //# set frequency
-    fun_sx126x_setFreq(frequency);
+    // fun_sx126x_setFreq(frequency);
 
-    //# 0xC0 get Status
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
-    SPI_transfer_8(0xC0);
-    b0 = SPI_transfer_8(0xFF);
-    printf("status: 0x%02X, chipMode: 0x%02X, cmdStatus: 0x%02X\n", 
-            b0, (b0 >> 4) & 0x7, (b0 >> 1) & 0x7);
-    printf("status Mode: 0x%02X\n", b0 & 0x70);
-    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    // # set modulation
+    u8 cr = 0x01;     // 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
+    fun_sx126x_setModulation(7, SX126X_BW_125000, cr, 0);
     Delay_Ms(100);
-
-    //# 0x12 get IRQ status
-    sx126x_read_cmd(0x12, buf, 2);
-    printf("\nIRQ status: 0x%02X 0x%02X\n", buf[0], buf[1]);
-    for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
-    for (int i = 7; i >= 0; i--) printf("%d", (buf[1] >> i) & 1);
-    printf("\n");
-
-    //# 0x13 get buffer status
-    sx126x_read_cmd(0x13, buf, 3);
-    printf("\nBuffer status: 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2]);
-
-    //# 0x14 get packet status
-    sx126x_read_cmd(0x14, buf, 4);
-    printf("\nPacket status: 0x%02X 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2], buf[3]);
-    for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
-    u16 rssi = buf[1] / -2;
-    u16 snr = buf[2] / 4;
-    printf("\nRSSI: %d dbm, SNR = %d dB\n", rssi, snr);
-
-
-    // //# 0x9D set DIO2 as RF Switch Control
-    // Asx126x_write_cmd8(0x9D, 0x01);
-
-    // //# 0x8A set modem
-    // u8 value[1] = {0x01};    // 0x00 = GFSK, 0x01 = LoRa
-    // Asx126x_write_cmd(0x8A, value, 1);
-    // Delay_Ms(100);
-
-
-    // //# SX1262: 0x08D8 get TX clamp config
-    // u8 value = Asx126x_read_reg(0x08D8);
-    // printf("TX clamp config: 0x%02X\n", value);
-    // value |= 0x1E;
-    // Asx126x_write_regs(0x08D8, &value, 1);
 
     //# 0x95 set PA and TX power setting
     // for SX1261
@@ -323,6 +282,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
         0x01        // PowerLUT
     };
     sx126x_write_cmd(0x95, buff2, 4);
+
 
     //# 0x8E set TX power
     // RampTime 0x00 = 10 us, 0x01 = 20 us, 0x02 = 40 us, 0x03 = 80 us,
@@ -338,11 +298,36 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     buf[1] = rampTime;
     sx126x_write_cmd(0x8E, buf, 2);
 
-    //# set modulation
-    u8 cr = 0x01;     // 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
-    fun_sx126x_setModulation(7, SX126X_BW_125000, cr, 0);
 
-    printf("\n-- LORA RECEIVER --\n");
+    // //# 0xC0 get Status
+    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    // SPI_transfer_8(0xC0);
+    // b0 = SPI_transfer_8(0xFF);
+    // printf("status: 0x%02X, chipMode: 0x%02X, cmdStatus: 0x%02X\n", 
+    //         b0, (b0 >> 4) & 0x7, (b0 >> 1) & 0x7);
+    // printf("status Mode: 0x%02X\n", b0 & 0x70);
+    // if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    // Delay_Ms(100);
+
+    // //# 0x12 get IRQ status
+    // sx126x_read_cmd(0x12, buf, 2);
+    // printf("\nIRQ status: 0x%02X 0x%02X\n", buf[0], buf[1]);
+    // for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
+    // for (int i = 7; i >= 0; i--) printf("%d", (buf[1] >> i) & 1);
+    // printf("\n");
+
+    // //# 0x13 get buffer status
+    // sx126x_read_cmd(0x13, buf, 3);
+    // printf("\nBuffer status: 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2]);
+
+    // //# 0x14 get packet status
+    // sx126x_read_cmd(0x14, buf, 4);
+    // printf("\nPacket status: 0x%02X 0x%02X 0x%02X 0x%02X\n", buf[0], buf[1], buf[2], buf[3]);
+    // for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
+    // u16 rssi = buf[1] / -2;
+    // u16 snr = buf[2] / 4;
+    // printf("\nRSSI: %d dbm, SNR = %d dB\n", rssi, snr);
+
 }
 
 static u8 payloadTxRx;
@@ -459,38 +444,67 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs) {
 //! ####################################
 
 void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
-    //# packet configuration
-    // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
-    fun_sx126x_setPacketParams(12, 0, len, 1, 0);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x8C);
+    SPI_transfer_8(0x00);
+    SPI_transfer_8(0x0C);
+    SPI_transfer_8(0x00);
+    SPI_transfer_8(len);
+    SPI_transfer_8(0x00);
+    SPI_transfer_8(0x00);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(150);
 
-    //# set DIO IRQ
-    u8 iqrDio1_mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
-    fun_sx126x_setDioIrqParams(
-        iqrDio1_mask, iqrDio1_mask, SX126X_IRQ_NONE, SX126X_IRQ_NONE
-    );
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x0E);
+    SPI_transfer_8(0x00);
 
-    //# 0x8F set buffer base address
-    u8 buff[2];
-    buff[0] = 0x00;
-    buff[1] = 0x00;
-    sx126x_write_cmd(0x8F, buff, 2);
+    for (int i = 0; i < len; i++) {
+        SPI_transfer_8(message[i]);
+    }
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(100);
 
-    //# set payload
-    sx126x_write_buffer(0x00, (u8*)message, len);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
+    SPI_transfer_8(0x83);
+    SPI_transfer_8(0xFF);
+    SPI_transfer_8(0xFF);
+    SPI_transfer_8(0xFF);
+    if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
+    Delay_Ms(2000);
 
-    //# 0x83 set Tx with timeout
-    u8 timeoutBuff[3] = {
-        (u8)((timeoutMs >> 16) & 0xFF),
-        (u8)((timeoutMs >> 8) & 0xFF),
-        (u8)(timeoutMs & 0xFF)
-    };
-    sx126x_write_cmd(0x83, timeoutBuff, 3);
+    // //# packet configuration
+    // // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
+    // fun_sx126x_setPacketParams(12, 0, len, 1, 0);
 
-    //# clear IRQ status
-    // clear status command = 0x43FF
-    u16 status = 0x43FF;
-    // u16 status = fun_sx126x_getIRQStatus();
-    buff[0] = (u8)((status >> 8) & 0xFF);
-    buff[1] = (u8)(status & 0xFF);
-    sx126x_write_cmd(0x02, buff, 2);
+    // //# set DIO IRQ
+    // u8 iqrDio1_mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
+    // fun_sx126x_setDioIrqParams(
+    //     iqrDio1_mask, iqrDio1_mask, SX126X_IRQ_NONE, SX126X_IRQ_NONE
+    // );
+
+    // //# 0x8F set buffer base address
+    // u8 buff[2];
+    // buff[0] = 0x00;
+    // buff[1] = 0x00;
+    // sx126x_write_cmd(0x8F, buff, 2);
+
+    // //# set payload
+    // sx126x_write_buffer(0x00, (u8*)message, len);
+
+    // //# 0x83 set Tx with timeout
+    // u8 timeoutBuff[3] = {
+    //     (u8)((timeoutMs >> 16) & 0xFF),
+    //     (u8)((timeoutMs >> 8) & 0xFF),
+    //     (u8)(timeoutMs & 0xFF)
+    // };
+    // sx126x_write_cmd(0x83, timeoutBuff, 3);
+
+    // //# clear IRQ status
+    // // clear status command = 0x43FF
+    // u16 status = 0x43FF;
+    // // u16 status = fun_sx126x_getIRQStatus();
+    // buff[0] = (u8)((status >> 8) & 0xFF);
+    // buff[1] = (u8)(status & 0xFF);
+    // sx126x_write_cmd(0x02, buff, 2);
 }
