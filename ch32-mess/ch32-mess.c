@@ -191,8 +191,8 @@ int main() {
 	// fun_timPWM_reload(&pwm_CH1c);
 
 	//# TIM2: uses PD4(CH1) and PD3(CH2)
-	Encoder_t encoder_a = { 0, 0, 0 };
-	fun_encoder_setup(&encoder_a);
+	// Encoder_t encoder_a = { 0, 0, 0 };
+	// fun_encoder_setup(&encoder_a);
 
 	//# ADC - DMA1_CH1: use PA2(CH0) and PA1(CH1)
 	fun_joystick_setup();
@@ -253,8 +253,6 @@ int main() {
 		#endif
 		
 		#ifdef SX127X_ENABLED
-			// fun_sx126x_parsePacket();
-			
 			int packetSize = fun_sx72xx_parsePacket();
 			if (packetSize) {
 				char buff[packetSize + 1];
@@ -268,7 +266,7 @@ int main() {
 			}
 		
 		#elif defined SX126X_ENABLED
-			// fun_sx126x_parsePacket();
+			fun_sx126x_parsePacket(0xFFFFFF);
 
 		#elif WS2812_ENABLED
 			Neo_task(now);
@@ -327,7 +325,7 @@ int main() {
 		else if (now - session.period_50ms > 50) {
 			session.period_50ms = now;
 
-			fun_encoder_task(&encoder_a, encoder_onChanged);
+			// fun_encoder_task(&encoder_a, encoder_onChanged);
 			fun_joystick_task(joystick_onChanged);
 		}
 
