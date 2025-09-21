@@ -22,8 +22,8 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
     GPIOC->CFGLR |= GPIO_CNF_IN_FLOATING << (4 * 7);
 
     // Configure SPI
-    SPI1->CTLR1 |= SPI_CPHA_2Edge | SPI_CPOL_Low
-                | SPI_Mode_Master| SPI_BaudRatePrescaler_16
+    SPI1->CTLR1 |= SPI_CPHA_1Edge | SPI_CPOL_Low
+                | SPI_Mode_Master| SPI_BaudRatePrescaler_2
                 | SPI_NSS_Soft | SPI_DataSize_8b;
     
     SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;

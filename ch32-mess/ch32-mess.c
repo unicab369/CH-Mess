@@ -6,7 +6,9 @@
 // #define UART_ENABLED
 #define SPI_ENABLED
 // #define WS2812_ENABLED
-#define LORA_ENABLED
+
+#define SX126X_ENABLED
+// #define SX127X_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -131,6 +133,7 @@ typedef struct {
 volatile uint8_t i2c_registers[32] = {0xaa};
 
 int main() {
+	uint8_t toggleValue = 0;
 	SystemInit();
 	Delay_Ms(1);
 	// usb_setup();
@@ -148,21 +151,25 @@ int main() {
 	fun_button_setup(&button1);
 
 	//# Hold BUTTON_PIN low to enter slave mode
-	uint8_t i2cMaster_mode = funDigitalRead(BUTTON_PIN);
+	uint8_t master_mode = funDigitalRead(BUTTON_PIN);
 
 	#ifdef I2C_ENABLED
 		//# I2C1: uses PC1 & PC2
 		modI2C_setup(bootCnt);
 		i2c_ina219_setup();
-	#endif
 
-	#ifdef I2C_SLAVE_ENABLED
 		// Enable Low
-		if (i2cMaster_mode == 0) {
+		if (master_mode == 0) {
 			printf("I2C Slave mode\n");
 			SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
 		}
 	#endif
+
+	if (master_mode == 0) {
+		printf("Slave mode\n");
+	}
+	
+
 
 	//# UARTX - DMA1_CH4: uses PD5
 	const char message[] = "Hello World!\r\n";
@@ -199,16 +206,21 @@ int main() {
 		SPI_init(SPI_RST_PIN, SPI_DC_PIN);
 		SPI_DMA_init(DMA1_Channel3);
 
-		#ifdef LORA_ENABLED
-			uint32_t loRa_Frequency = 915E6;
+		uint32_t loRa_Frequency = 915E6;
+
+		#ifdef SX126X_ENABLED
 			fun_sx126x_init(loRa_Frequency, LORA_CS_PIN);
-			// fun_sx72xx_init(loRa_Frequency, LORA_CS_PIN);
-			// fun_sx72xx_setTxPower(17);
 
 			// fun_st7335_init(160, 80, ST7735_CS_PIN);
 			// fun_st7735_fill_all(ST_PURPLE);
+		#elif defined SX127X_ENABLED
+			fun_sx127x_init(loRa_Frequency, LORA_CS_PIN);
+			fun_sx72xx_setTxPower(17);
 
-		#elif WS2812_ENABLED
+			funPinMode(ST7735_CS_PIN, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+			funDigitalWrite(ST7735_CS_PIN, 1);
+
+		#elif defined WS2812_ENABLED
 			WS2812BDMAInit();
 			Neo_loadCommand(NEO_COLOR_CHASE);
 		#endif
@@ -240,18 +252,27 @@ int main() {
 			uart_rx_task();
 		#endif
 		
-		#ifdef LORA_ENABLED
+		#ifdef SX127X_ENABLED
 			// fun_sx126x_parsePacket();
 			
-			// int packetSize = fun_sx72xx_parsePacket();
-			// if (packetSize) {
-			// 	char buff[packetSize + 1];
-			// 	fun_sx72xx_readPacket(buff);
-			// 	buff[packetSize] = 0;
-			// 	printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
-			// }
+			int packetSize = fun_sx72xx_parsePacket();
+			if (packetSize) {
+				char buff[packetSize + 1];
+				fun_sx72xx_readPacket(buff);
+				buff[packetSize] = 0;
+				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
+
+				funDigitalWrite(ST7735_CS_PIN, toggleValue);
+				toggleValue = !toggleValue;
+				printf(toggleValue ? "ON\n" : "OFF\n");
+			}
+		
+		#elif defined SX126X_ENABLED
+			// fun_sx126x_parsePacket();
+
 		#elif WS2812_ENABLED
 			Neo_task(now);
+
 		#endif
 		
 		if (now - session.period_1sec > 1000) {
@@ -282,14 +303,14 @@ int main() {
 			#endif
 
 			#ifdef SPI_ENABLED
-				#ifdef LORA_ENABLED
-					// uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
-					// printf("ST7735 runtime: %lu us\n", runtime_tft);
+				uint8_t loRa_message[] = "Hello World 333333";
+				// uint32_t runtime_tft = SysTick_getRunTime(fun_st7735_test);
+				// printf("ST7735 runtime: %lu us\n", runtime_tft);
 
-					uint8_t loRa_message[] = "Hello World 333333";
+				#ifdef SX126X_ENABLED
 					fun_sx126x_send(loRa_message, strlen(loRa_message), 0);
-					// fun_sx72xx_send(loRa_message, sizeof(loRa_message));
-					// fun_sx126x_send(loRa_message, sizeof(loRa_message), 0);
+				#elif defined SX127X_ENABLED
+					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
 				#endif
 			#endif
 
