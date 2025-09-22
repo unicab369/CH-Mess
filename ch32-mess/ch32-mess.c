@@ -267,7 +267,7 @@ int main() {
 		
 		#elif defined SX126X_ENABLED
 			u8 memoryIndex;
-			int packetSize = fun_sx126x_parsePacket(0xFFFFFF, &memoryIndex);
+			int packetSize = fun_sx126x_parsePacket(0x000000, &memoryIndex);
 
 			if (packetSize) {
 				char buf[packetSize];
