@@ -266,7 +266,15 @@ int main() {
 			}
 		
 		#elif defined SX126X_ENABLED
-			fun_sx126x_parsePacket(0xFFFFFF);
+			u8 memoryIndex;
+			int packetSize = fun_sx126x_parsePacket(0xFFFFFF, &memoryIndex);
+
+			if (packetSize) {
+				char buf[packetSize];
+				s16 rssi, snr;
+				fun_sx126x_getReceivedMessage(buf, packetSize, memoryIndex, &rssi, &snr);
+				printf("Receive RSSI %d SNR %d: '%s'\n\r", rssi, snr, buf);
+			}
 
 		#elif WS2812_ENABLED
 			Neo_task(now);

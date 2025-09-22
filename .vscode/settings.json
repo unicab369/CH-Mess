@@ -61,7 +61,8 @@
         "font6x8.h": "c",
         "compare": "c",
         "fun_optionbyte.h": "c",
-        "fun_st77352.h": "c"
+        "fun_st77352.h": "c",
+        "ch32v003hw.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
