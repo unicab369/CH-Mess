@@ -315,7 +315,7 @@ void fun_sx126x_setBufferBaseAddr(u8 txAddress, u8 rxAddress) {
 
 u8 SX126X_OK = 0;
 
-#define DIO_PIN         PD4
+// #define DIO_PIN         PD4
 
 #define SX126X_PREAMBLE_LEN     12
 #define SX126X_HEADER_IMPLICIT  0x00    // 0x00: implicit, 0x01: explicit
@@ -328,18 +328,18 @@ void fun_sx126x_RXMode(u32 timeoutMs) {
         SX126X_PREAMBLE_LEN, SX126X_HEADER_IMPLICIT,
         255, 0, 0
     );
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //! 0x82: START Rx with timeout - 0xFFFFFF to listen continously
     buf[0] = (u8)((timeoutMs >> 16) & 0xFF);
     buf[1] = (u8)((timeoutMs >> 8) & 0xFF);
     buf[2] = (u8)(timeoutMs & 0xFF);
     sx126x_write_CMD(0x82, buf, 3);
-    Delay_Ms(1);
+    Delay_Ms(10);
 }
 
 void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
-    funPinMode(DIO_PIN, GPIO_CFGLR_IN_PUPD);
+    // funPinMode(DIO_PIN, GPIO_CFGLR_IN_PUPD);
     u8 buf[9];
 
     //! configure CS Pin
@@ -348,12 +348,6 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
         funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
         funDigitalWrite(cs_pin, 1);
     }
-
-    // //# Reset Spi Devices
-    // funDigitalWrite(PC3, 0);
-    // Delay_Ms(100);
-    // funDigitalWrite(PC3, 1);
-    // Delay_Ms(100);
 
     //! 0x0740 addr: default sync_word - sanity check
     u8 default_syncWord[2];
@@ -365,7 +359,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     //# 0x8A: set modem (*REQUIRED*)
     buf[0] = 0x01;    // 0x00 = GFSK, 0x01 = LoRa
     sx126x_write_CMD(0x8A, buf, 1);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //! 0x11: Get modem - sanity check
     sx126x_read_CMD(0x11, buf, 2);
@@ -376,7 +370,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     // # 0x80: set standby mode
     buf[0] = 0x00;      // 0x00 = RC (low power), 0x01 = XOSC (performant)
     sx126x_write_BUFF(0x80, buf, 1);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //# 0x98: set calibration image
     //# 0x84: set frequency
@@ -391,7 +385,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     //# 0x95: set PA and TX power setting
     //# 0x8E: set TX power
     fun_sx126x_setTxPower(22, SX126X_PA_DUTYCYCLE_22DBM);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //# 0x08: set IRQ params
     fun_sx126x_setDioIrqParams(
@@ -400,17 +394,31 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
         0x0000,     // DIO2 mask
         0x0000      // DIO3 mask
     );
+    Delay_Ms(10);
 
-    // //# 0x12 get IRQ status
-    // sx126x_read_cmd(0x12, buf, 2);
-    // printf("\nIRQ status: 0x%02X 0x%02X\n", buf[0], buf[1]);
-    // for (int i = 7; i >= 0; i--) printf("%d", (buf[0] >> i) & 1);
-    // for (int i = 7; i >= 0; i--) printf("%d", (buf[1] >> i) & 1);
-    // printf("\n");
+    //! 0x82: START Rx with timeout
+    fun_sx126x_RXMode(0xFFFFFF);
 }
 
+void fun_sx126x_clearIQR_status() {
+    u16 clearMask = 0xFFFF;         // flag to select all IRQs to clear
+    u8 buf[2] = {
+        (u8)((clearMask >> 8) & 0xFF),
+        (u8)(clearMask & 0xFF)
+    };
 
-void fun_sx126x_printIQR_status() {
+    //# 0x02: clear all IRQ status
+    sx126x_write_CMD(0x02, buf, 2);
+}
+
+// ref: 13.5.1 `GetStatus`
+#define SX126X_CHIPMODE_STBY_RC         0x02
+#define SX126X_CHIPMODE_STBY_XOSC       0x03
+#define SX126X_CHIPMODE_FS              0x04
+#define SX126X_CHIPMODE_RX              0x05
+#define SX126X_CHIPMODE_TX              0x06
+
+void fun_sx126x_printIQR_status(u8 chipMode, u8 cmdStatus) {
     //# 0x12: get IRQ status
     // ref: `13.3.3 GetIrqStatus`
     u8 buf[2];
@@ -427,38 +435,26 @@ void fun_sx126x_printIQR_status() {
     // bit7: CadDone
     // bit8: CadDetected
 
-    for (int i = 7; i >= 0; i--) printf("%d ", (buf[0] >> i) & 1);
-    // printf("\n");
-    Delay_Ms(50);
+    const char *chipModeStr = (chipMode == SX126X_CHIPMODE_RX) ? "RX" : 
+                    (chipMode == SX126X_CHIPMODE_TX) ? "TX" : "__";
+    printf("chipMode %s, cmdStatus %d     ", chipModeStr, cmdStatus);
+    
+    for (int i = 7; i >= 1; i--) printf("%d ", (buf[0] >> i) & 1);
+    printf("\n");
+    Delay_Ms(1);
 }
 
-void fun_sx126x_clearIQR_status() {
-    u16 clearMask = 0xFFFF;         // flag to select all IRQs to clear
-    u8 buf[2] = {
-        (u8)((clearMask >> 8) & 0xFF),
-        (u8)(clearMask & 0xFF)
-    };
 
-    //# 0x02: clear all IRQ status
-    sx126x_write_CMD(0x02, buf, 2);
-}
+// #define SX126X_RECEIVE_DEBUG
+// #define SX126X_SEND_DEBUG
 
 //! ####################################
 //! RECEIVE FUNCTION
 //! ####################################
 
-// ref: 13.5.1 `GetStatus`
-#define SX126X_CHIPMODE_STBY_RC         0x02
-#define SX126X_CHIPMODE_STBY_XOSC       0x03
-#define SX126X_CHIPMODE_FS              0x04
-#define SX126x_CHIPMODE_RX              0x05
-#define SX126x_CHIPMODE_TX              0x06
-
 // ref: `Table 13-76: Status Bytes Definition`
 #define SX126X_CMDSTATUS_RX_AVAILABLE   0x02
 #define SX126X_CMDSTATUS_TIMEOUT        0x03
-#define SX126X_CMDSTATUS_ERROR          0x04
-#define SX126X_CMDSTATUS_FAILURE        0x05
 #define SX126X_CMDSTATUS_TX_DONE        0x06
 
 u8 is_transmiting = 0;
@@ -479,33 +475,35 @@ void fun_sx126x_getReceivedMessage(
 }
 
 u8 fun_sx126x_parsePacket(u32 timeoutMs, u8 *memoryIndex) {
-    return;
-    
+    // return;
+
     //# 0xC0: get Status - ref: 13.5.1 `GetStatus`
     u8 status;
     sx126x_read_CMD(0xC0, &status, 1);
     u8 chipMode = (status >> 4) & 0b111;    // bit 6:4
     u8 cmdStatus = (status >> 1) & 0b111;   // bit 3:1
 
-    // printf("\nReceive Command ");
-    // fun_sx126x_printIQR_status();
-    // printf("chipMode: %d, cmdStatus: %d\n", chipMode, cmdStatus);
-
     //! filter for error
-    if (cmdStatus == SX126X_CMDSTATUS_ERROR | 
-        cmdStatus == SX126X_CMDSTATUS_FAILURE) return 0;
+    // 0x04 = Processing Error, 0x05 = Command Error
+    if (cmdStatus == 0x04 | cmdStatus == 0x05) return 0;
 
-    //! check if device is transmitting and not completed
-    if (is_transmiting && cmdStatus != SX126X_CMDSTATUS_TX_DONE) return 0;
+    if (cmdStatus == SX126X_CMDSTATUS_TX_DONE || is_transmiting == 0) {
+        //! 0x82: START Rx with timeout
+        fun_sx126x_RXMode(timeoutMs);
 
-    //! 0x82: START Rx with timeout
-    fun_sx126x_RXMode(timeoutMs);
+        is_transmiting = 0;
+        Delay_Ms(10);
+    }
 
+#ifdef SX126X_RECEIVE_DEBUG
+    # 0x12: get IRQ status
+    printf("RX: ");
+    fun_sx126x_printIQR_status(chipMode, cmdStatus);
+#endif
+
+    //! check if rx available flag
     if (cmdStatus != SX126X_CMDSTATUS_RX_AVAILABLE) return 0;
-
-    // printf("chipMode: %d, cmdStatus: %d\n", chipMode, cmdStatus);
-    Delay_Ms(10);
-    
+    if (chipMode == SX126X_CHIPMODE_RX) return 0;
 
     // if (funDigitalRead(DIO_PIN) == 0) return 0;
 
@@ -530,58 +528,57 @@ u8 fun_sx126x_parsePacket(u32 timeoutMs, u8 *memoryIndex) {
 u32 send_time = 0;
 
 void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
+    // return;
+
     //# 0xC0: get Status - ref: 13.5.1 `GetStatus`
     u8 status;
     sx126x_read_CMD(0xC0, &status, 1);
     u8 chipMode = (status >> 4) & 0b111;    // bit 6:4
     u8 cmdStatus = (status >> 1) & 0b111;   // bit 3:1
 
-    printf("\nSend Command ");
-    fun_sx126x_printIQR_status();
-    printf("chipMode: %d, cmdStatus: %d\n", chipMode, cmdStatus);
-
     //# filter for error
-    if (cmdStatus == SX126X_CMDSTATUS_ERROR | 
-        cmdStatus == SX126X_CMDSTATUS_FAILURE) return;
+    // 0x04 = Processing Error, 0x05 = Command Error
+    if (cmdStatus == 0x04 | cmdStatus == 0x05) return 0;
 
-    // if (cmdStatus == SX126X_CMDSTATUS_RX_AVAILABLE) return;
     if (millis() - send_time < 5000) return;
     send_time = millis();
-    // printf("chipMode: %d, cmdStatus: %d\n", chipMode, cmdStatus);
 
+#ifdef SX126X_SEND_DEBUG
+    //# 0x12: get IRQ status
+    printf("*******TX: ");
+    fun_sx126x_printIQR_status(chipMode, cmdStatus);
+#endif
+    
     //! packet configuration
     // (preambleLen, headerType, payloadLen, crcOn, invertIQ)
     fun_sx126x_setPacketParams(
         SX126X_PREAMBLE_LEN, SX126X_HEADER_IMPLICIT,
         len, 1, 0
     );
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //# 0x8F: reset buffer base address
     u8 buf[4];
     buf[0] = 0x00;
     buf[1] = 0x00;
     sx126x_write_CMD(0x8F, buf, 2);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     // ref: `7.3 Data Buffer in Transmit Mode`
     //# 0x0E: Write Buffer
     sx126x_write_BUFF(0x00, (u8*)message, len);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //! 0x83: START Tx with timeout
     buf[0] = (u8)((timeoutMs >> 16) & 0xFF);
     buf[1] = (u8)((timeoutMs >> 8) & 0xFF);
     buf[2] = (u8)(timeoutMs & 0xFF);
     sx126x_write_CMD(0x83, buf, 3);
-    Delay_Ms(1);
+    Delay_Ms(10);
 
     //# 0x02: clear all IRQ status
     fun_sx126x_clearIQR_status();
     Delay_Ms(10);
-    // Delay_Ms(50);
-
-    // fun_sx126x_RXMode(0xFFFFF);
-
+    
     is_transmiting = 1;
 }
