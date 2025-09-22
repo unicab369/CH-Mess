@@ -17,14 +17,20 @@ void SX126X_CS_HI() {
 void sx126x_write_cmd(u8 opCode, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(opCode);
-    for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
+
+    for (int i=0; i<len; i++) {
+        SPI_transfer_8(data[i]);
+    }
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
 void sx126x_read_cmd(u8 opCode, u8* data, u8 len) {
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 0);
     SPI_transfer_8(opCode);
-    for (int i=0; i<len; i++) data[i] = SPI_transfer_8(data[i]);
+
+    for (int i=0; i<len; i++) {
+        data[i] = SPI_transfer_8(data[i]);
+    }
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
@@ -36,7 +42,9 @@ void sx126x_write_regs(u16 addr, u8 *data, u8 len) {
     SPI_transfer_8((u8)((addr >> 8) & 0xFF));   // trasfer MSB
     SPI_transfer_8((u8)(addr & 0xFF));          // transfer LSB
 
-    for (int i=0; i<len; i++) SPI_transfer_8(data[i]);
+    for (int i=0; i<len; i++) {
+        SPI_transfer_8(data[i]);
+    }
     if (LORA_CS_PIN2 != -1) funDigitalWrite(LORA_CS_PIN2, 1);
 }
 
@@ -388,7 +396,7 @@ void fun_sx126x_setDioIrqParams(
 //! ####################################
 //! RECEIVE FUNCTION
 //! ####################################
-u8 fun_sx126x_getReceivedMessage(
+void fun_sx126x_getReceivedMessage(
     u8 *message, u8 len, u8 memoryIndex,
     s16 *rssi, s16 *snr
 ) {
@@ -404,7 +412,8 @@ u8 fun_sx126x_getReceivedMessage(
 }
 
 u8 fun_sx126x_parsePacket(u32 timeoutMs, u8 *memoryIndex) {
-    // return;
+    // return 0;
+
     u8 buf[4];
 
     //# packet configuration 
@@ -448,7 +457,7 @@ u32 send_time = 0;
 //! ####################################
 
 void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
-    return;
+    // return;
 
     if (millis() - send_time < 2000) return;
     send_time = millis();
@@ -459,32 +468,29 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
         SX126X_PREAMBLE_LEN, SX126X_HEADER_IMPLICIT,
         len, 1, 0
     );
-    Delay_Ms(10);
+    Delay_Ms(1);
 
-    // //# 0x8F set buffer base address
-    // u8 buff[2];
-    // buff[0] = 0x00;
-    // buff[1] = 0x00;
-    // sx126x_write_cmd(0x8F, buff, 2);
-    // Delay_Ms(10);
+    //# 0x8F: reset buffer base address
+    u8 buf[4];
+    buf[0] = 0x00;
+    buf[1] = 0x00;
+    sx126x_write_cmd(0x8F, buf, 2);
+    Delay_Ms(1);
 
     //# set payload
     sx126x_write_buffer(0x00, (u8*)message, len);
+    Delay_Ms(1);
 
-    //# 0x83 start Tx with timeout
-    u8 timeoutBuff[3] = {
-        (u8)((timeoutMs >> 16) & 0xFF),
-        (u8)((timeoutMs >> 8) & 0xFF),
-        (u8)(timeoutMs & 0xFF)
-    };
-    sx126x_write_cmd(0x83, timeoutBuff, 3);
+    //# 0x83: start Tx with timeout
+    buf[0] = (u8)((timeoutMs >> 16) & 0xFF);
+    buf[1] = (u8)((timeoutMs >> 8) & 0xFF);
+    buf[2] = (u8)(timeoutMs & 0xFF);
+    sx126x_write_cmd(0x83, buf, 3);
+    Delay_Ms(1);
 
-
-    // //# clear IRQ status
-    // // clear status command = 0x43FF
-    // u16 status = 0x43FF;
-    // // u16 status = fun_sx126x_getIRQStatus();
-    // buff[0] = (u8)((status >> 8) & 0xFF);
-    // buff[1] = (u8)(status & 0xFF);
-    // sx126x_write_cmd(0x02, buff, 2);
+    //# 0x02: clear all IRQ status
+    u16 clearCode = 0xFFFF;
+    buf[0] = (u8)((clearCode >> 8) & 0xFF);
+    buf[1] = (u8)(clearCode & 0xFF);
+    sx126x_write_cmd(0x02, buf, 2);
 }
