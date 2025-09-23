@@ -23,7 +23,7 @@ static void SPI_init(uint8_t rst_pin, uint8_t dc_pin) {
 
     // Configure SPI
     SPI1->CTLR1 |= SPI_CPHA_1Edge | SPI_CPOL_Low
-                | SPI_Mode_Master| SPI_BaudRatePrescaler_2
+                | SPI_Mode_Master| SPI_BaudRatePrescaler_4
                 | SPI_NSS_Soft | SPI_DataSize_8b;
     
     SPI1->CTLR1 |= SPI_Direction_2Lines_FullDuplex;
@@ -150,7 +150,6 @@ static inline void SPI_wait_transmit_finished() {
     SPI_wait_not_busy();
 }
 
-
 void SPI_end() {
     SPI1->CTLR1 &= ~(SPI_CTLR1_SPE);
 }
@@ -162,7 +161,6 @@ uint8_t SPI_transfer_8(uint8_t data) {
     SPI_wait_RX_available();
     return SPI_read_8();
 }
-
 
 uint16_t SPI_transfer_16(uint16_t data) {
     SPI_write_16(data);

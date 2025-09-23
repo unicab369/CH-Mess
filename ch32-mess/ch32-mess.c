@@ -7,8 +7,8 @@
 #define SPI_ENABLED
 // #define WS2812_ENABLED
 
-#define SX126X_ENABLED
-// #define SX127X_ENABLED
+// #define SX126X_ENABLED
+#define SX127X_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -215,10 +215,7 @@ int main() {
 			// fun_st7735_fill_all(ST_PURPLE);
 		#elif defined SX127X_ENABLED
 			fun_sx127x_init(loRa_Frequency, LORA_CS_PIN);
-			fun_sx72xx_setTxPower(17);
-
-			funPinMode(ST7735_CS_PIN, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-			funDigitalWrite(ST7735_CS_PIN, 1);
+			fun_sx127x_setTxPower(17);
 
 		#elif defined WS2812_ENABLED
 			WS2812BDMAInit();
@@ -253,21 +250,22 @@ int main() {
 		#endif
 		
 		#ifdef SX127X_ENABLED
-			int packetSize = fun_sx72xx_parsePacket();
+			int packetSize = fun_sx127x_parsePacket();
 			if (packetSize) {
-				char buff[packetSize + 1];
-				fun_sx72xx_readPacket(buff);
-				buff[packetSize] = 0;
-				printf("Receive Packet RSSI %d: '%s'\n\r", fun_sx72xx_getRssi(loRa_Frequency), buff);
+				char buff[packetSize];
+				fun_sx127x_readPacket(buff);
+				u8 rssi = fun_sx127x_getRssi(loRa_Frequency);
+				// buff[packetSize] = 0;
+				printf("Receive Packet RSSI %d: '%s'\n\r", rssi, buff);
 
 				funDigitalWrite(ST7735_CS_PIN, toggleValue);
 				toggleValue = !toggleValue;
-				printf(toggleValue ? "ON\n" : "OFF\n");
+				// printf(toggleValue ? "ON\n" : "OFF\n");
 			}
 		
 		#elif defined SX126X_ENABLED
 			u8 memoryIndex;
-			int packetSize = fun_sx126x_parsePacket(0x000000, &memoryIndex);
+			s8 packetSize = fun_sx126x_parsePacket(&memoryIndex, 0);
 
 			if (packetSize) {
 				char buf[packetSize];
@@ -281,7 +279,7 @@ int main() {
 
 		#endif
 		
-		if (now - session.period_1sec > 1000) {
+		if (now - session.period_1sec > 5000) {
 			session.period_1sec = now;
 			printf(".");
 
@@ -316,7 +314,7 @@ int main() {
 				#ifdef SX126X_ENABLED
 					fun_sx126x_send(loRa_message, strlen(loRa_message), 0);
 				#elif defined SX127X_ENABLED
-					fun_sx72xx_send(loRa_message, sizeof(loRa_message));
+					fun_sx127x_send(loRa_message, sizeof(loRa_message));
 				#endif
 			#endif
 

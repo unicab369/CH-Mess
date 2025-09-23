@@ -1,8 +1,33 @@
+// MIT License
+
+// Copyright (c) 2025 UniTheCat
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 // DataSheet
 // ref: https://www.mouser.com/pdfDocs/DS_LLCC68_V10-2.pdf?srsltid=AfmBOooSw4VnT0K2j8FhU1Ni7i8inGRofGu9IxMCgdq02lwq11JMnoPt
 
+
 #include "ch32fun.h"
 #include <stdint.h>
+#include <stdio.h>
+
 
 //! ####################################
 //! SPI FUNCTIONS
@@ -107,41 +132,41 @@ void sx126x_read_BUFF(u8 offset, u8 *data, u8 len) {
 #define SX126X_BW_500000        0x06        // 500 kHz
 
 void fun_sx126x_setFreq(uint32_t frequency) {
-    if (frequency < 150000000 || frequency > 960000000) { return; }
+    if (frequency < 150E6 || frequency > 960E6) { return; }
 
     u8 buf[4];
-    if (frequency < 446000000) {        // 430 - 440 Mhz
+    if (frequency < 446E6) {            // 430 - 440 Mhz
         buf[0] = 0x6B;
         buf[1] = 0x6F;
     }
-    else if (frequency < 734000000) {   // 470 - 510 Mhz
+    else if (frequency < 734E6) {       // 470 - 510 Mhz
         buf[0] = 0x75;
         buf[1] = 0x81;
     }
-    else if (frequency < 828000000) {   // 779 - 787 Mhz
+    else if (frequency < 828E6) {       // 779 - 787 Mhz
         buf[0] = 0xC1;
         buf[1] = 0xC5;
     }
-    else if (frequency < 877000000) {   // 863 - 870 Mhz
+    else if (frequency < 877E6) {       // 863 - 870 Mhz
         buf[0] = 0xD7;
         buf[1] = 0xDB;
     }
-    else if (frequency < 1100000000) {  // 902 - 928 Mhz
+    else if (frequency < 1100E6) {      // 902 - 928 Mhz
         buf[0] = 0xE1;
         buf[1] = 0xE9;
     }
 
     // ref: `9.2.1 Image Calibration for Specific Frequency Bands`
-    // default for 902-928 Mhz band.
+    // default 902-928 Mhz band.
     //# 0x98: set calibration image (OPTIONAL?)
     sx126x_write_CMD(0x98, buf, 2);
     Delay_Ms(10);
 
-    uint32_t rfFreq = ((uint64_t) frequency << 25) / 32000000;
-    buf[0] = (u8)((rfFreq >> 24) & 0xFF);
-    buf[1] = (u8)((rfFreq >> 16) & 0xFF);
-    buf[2] = (u8)((rfFreq >> 8) & 0xFF);
-    buf[3] = (u8)(rfFreq & 0xFF);
+    uint32_t freq = ((uint64_t) frequency << 25) / 32E6;
+    buf[0] = (u8)((freq >> 24) & 0xFF);
+    buf[1] = (u8)((freq >> 16) & 0xFF);
+    buf[2] = (u8)((freq >> 8) & 0xFF);
+    buf[3] = (u8)(freq & 0xFF);
 
     //# 0x84: set frequency
     sx126x_write_CMD(0x86, buf, 4);
@@ -150,12 +175,12 @@ void fun_sx126x_setFreq(uint32_t frequency) {
 void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOptimization) {
     // ref: `6.1.1.1 Spreading Factor`
     // Symbol_Rate = BW / (2^SF)
-    // Higher speading factor provides better receiver sensitivity at the expense of longer transmission time
+    // Higher SF provides better receiver sensitivity at the expense of longer transmission time
     // Higher BW allows higher data rate at the expense of reduced sensitivity    
     // Higher CR (Coding Rate) allows higher data rate at the expense of reduced sensitivity
-    // CR: 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
-    // lowDataRateOptimization can be used for low data rates (high FS for low BW) and payloads which last longer
-    // time on air in order to allow the receiver to have better tracking of the LoRa signal
+    // CR 0x01 = 4/5, CR 0x02 = 4/6, CR 0x03 = 4/7, CR 0x04 = 4/8
+    // lowDataRateOptimization can be used for low data rates (high FS for low BW) and payloads
+    // which last longer time on air in order to allow the receiver to get better LoRa signal
 
     // ref: `Time On Air`
     // ToA = 2^FS * Nsymbol / BW(kHz)
@@ -174,9 +199,9 @@ void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOptimization) {
 }
 
 // setTxPower
-#define SX126X_PA_DUTYCYCLE_22DBM       0x04    // +22 dBm
-#define SX126X_PA_DUTYCYCLE_20DBM       0x03    // +20 dBm
-#define SX126X_PA_DUTYCYCLE_LOWDBM      0x02    // +14 dBm or +17 dBm
+#define SX126X_PA_DUTYCYCLE_22DBM       0x04        // +22 dBm
+#define SX126X_PA_DUTYCYCLE_20DBM       0x03        // +20 dBm
+#define SX126X_PA_DUTYCYCLE_LOWDBM      0x02        // +14 dBm or +17 dBm
 
 // Ramp time
 #define SX126X_PA_RAMP_10US             0x00        // 10 us
@@ -189,7 +214,6 @@ void fun_sx126x_setModulation(u8 sf, u8 bw, u8 cr, u8 lowDataRateOptimization) {
 #define SX126X_PA_RAMP_3400US           0x07        // 3400 us
 
 void fun_sx126x_setTxPower(s8 power, u8 paDutyCycle) {
-    //# 0x95: set PA (Power Amplifier) and TX power setting
     // ref: `Table 13-21: PA Operating Modes with Optimal Settings`
     u8 hpMax = 0x02;    // 0x02 = +14 dBm, 0x03 = +17 dBm
 
@@ -199,24 +223,25 @@ void fun_sx126x_setTxPower(s8 power, u8 paDutyCycle) {
         default: break;
     }
 
-    u8 buff2[4] = {
+    u8 buf[4] = {
         paDutyCycle,
         hpMax,
-        0x00,               // Device Select: 0x00 = SX1262, 0x01 = SX1261
+        0x00,               // Device Select
         0x01                // PowerLUT. Reserved value 0x01
     };
-    sx126x_write_CMD(0x95, buff2, 4);
-    Delay_Ms(10);
 
-    //# 0x8E: set TX power
+    //# 0x95: set PA (Power Amplifier) and TX power setting
+    sx126x_write_CMD(0x95, buf, 4);
+    Delay_Ms(10);
     u8 rampTime = SX126X_PA_RAMP_200US;
 
     // High Power Mode -9 dBm (0xF7) to +22 dBm (0x16) in step of 1 dB
-    u8 buf[2];
     power = (power < -9) ? -9 : power;
     power = (power > 22) ? 22 : power;
     buf[0] = power;
     buf[1] = rampTime;
+
+    //# 0x8E: set TX power
     sx126x_write_CMD(0x8E, buf, 2);
     Delay_Ms(10);
 }
@@ -257,18 +282,13 @@ void fun_sx126x_setDioIrqParams(
     sx126x_write_CMD(0x08, buff, 8);
 }
 
-// RxGain
-#define SX126X_RX_GAIN_POWER_SAVING     0x00        // gain used in Rx mode: power saving gain (default)
-#define SX126X_RX_GAIN_BOOSTED          0x01        //                       boosted gain
-#define SX126X_POWER_SAVING_GAIN        0x94        // power saving gain register value
-#define SX126X_BOOSTED_GAIN             0x96        // boosted gain register value
 
 // ref: `Table 9-3: Rx Gain Configuration`
 void fun_sx126x_setRxGain(u8 boost) {
     //# addr 0x08AC: set Rx gain
-    u8 gain[0] = { 0x94 };          // 0x94 = 0dBm default, 0x96 = 14dBm
-    if (boost) gain[0] = 0x96;
-    sx126x_write_REG(0x08AC, gain, 1);
+    u8 buf[1] = { 0x94 };          // 0x94 = 0dBm default, 0x96 = 14dBm
+    if (boost) buf[0] = 0x96;
+    sx126x_write_REG(0x08AC, buf, 1);
 }
 
 void fun_sx126x_setSyncWord(u16 syncWord) {
@@ -293,11 +313,11 @@ void fun_sx126x_setBufferBaseAddr(u8 txAddress, u8 rxAddress) {
 //! ####################################
 
 // Chip mode
-#define SX126X_MODE_STDBY_RC            0x20        // current chip mode: STDBY_RC
-#define SX126X_MODE_STDBY_XOSC          0x30        //                    STDBY_XOSC
-#define SX126X_STATUS_MODE_FS           0x40        //                    FS
-#define SX126X_STATUS_MODE_RX           0x50        //                    RX
-#define SX126X_STATUS_MODE_TX           0x60        //
+#define SX126X_MODE_STDBY_RC            0x20      
+#define SX126X_MODE_STDBY_XOSC          0x30
+#define SX126X_STATUS_MODE_FS           0x40
+#define SX126X_STATUS_MODE_RX           0x50
+#define SX126X_STATUS_MODE_TX           0x60
 
 // SetDioIrqParams
 #define SX126X_IRQ_NONE                 0x0000      // no interrupts
@@ -353,7 +373,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     u8 default_syncWord[2];
     sx126x_read_REG(0x0740, default_syncWord, 2);
     printf("Default SyncWord: 0x%02X 0x%02X\n", default_syncWord[0], default_syncWord[1]);
-    SX126X_OK = default_syncWord[0] == 0x14;    //! Expect 0x2414
+    SX126X_OK = default_syncWord[1] == 0x24;    //! Expect 0x2414
     printf("SX126X_OK1: %d\n", SX126X_OK);
 
     //# 0x8A: set modem (*REQUIRED*)
@@ -378,7 +398,7 @@ void fun_sx126x_init(uint32_t frequency, u8 cs_pin) {
     Delay_Ms(10);
 
     //# 0x8B: set modulation (*REQUIRED*)
-    u8 cr = 0x01;     // 0x01 = 4/5, 0x02 = 4/6, 0x03 = 4/7, 0x04 = 4/8
+    u8 cr = 0x01;     // CR 0x01 = 4/5, CR 0x02 = 4/6, CR 0x03 = 4/7, CR 0x04 = 4/8
     fun_sx126x_setModulation(7, SX126X_BW_125000, cr, 0);
     Delay_Ms(10);
 
@@ -474,7 +494,7 @@ void fun_sx126x_getReceivedMessage(
     *snr = buf[2] / 4;
 }
 
-u8 fun_sx126x_parsePacket(u32 timeoutMs, u8 *memoryIndex) {
+u8 fun_sx126x_parsePacket(u8 *memoryIndex, u32 timeoutMs) {
     // return;
 
     //# 0xC0: get Status - ref: 13.5.1 `GetStatus`
@@ -538,7 +558,7 @@ void fun_sx126x_send(char* message, u8 len, u32 timeoutMs) {
 
     //# filter for error
     // 0x04 = Processing Error, 0x05 = Command Error
-    if (cmdStatus == 0x04 | cmdStatus == 0x05) return 0;
+    if (cmdStatus == 0x04 | cmdStatus == 0x05) return;
 
     if (millis() - send_time < 5000) return;
     send_time = millis();
