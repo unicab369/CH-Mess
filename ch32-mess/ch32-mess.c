@@ -251,16 +251,17 @@ int main() {
 		
 		#ifdef SX127X_ENABLED
 			int packetSize = fun_sx127x_parsePacket();
+
 			if (packetSize) {
-				char buff[packetSize];
-				fun_sx127x_readPacket(buff);
-				u8 rssi = fun_sx127x_getRssi(loRa_Frequency);
-				// buff[packetSize] = 0;
-				printf("Receive Packet RSSI %d: '%s'\n\r", rssi, buff);
+				char buf[packetSize];
+				fun_sx127x_readPacket(buf, packetSize);
+				int rssi = fun_sx127x_getRssi(loRa_Frequency);
+				int snr = fun_sx127x_getSNR();
+				// buf[packetSize] = 0;
+				printf("Receive Packet: '%s' RSSI %d, SNR %d\n\r", buf, rssi, snr);
 
 				funDigitalWrite(ST7735_CS_PIN, toggleValue);
 				toggleValue = !toggleValue;
-				// printf(toggleValue ? "ON\n" : "OFF\n");
 			}
 		
 		#elif defined SX126X_ENABLED

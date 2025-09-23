@@ -1,4 +1,30 @@
-// Stolen from https://github.com/sandeepmistry/arduino-LoRa
+// Datasheet
+// Ref: https://www.mouser.com/datasheet/2/761/sx1276-1278113.pdf?srsltid=AfmBOorDqVAyhX5J-Lmr_4lud-BnEsvxK5Ckh002gdR3Nj9gTKy8Qciv
+
+// Copyright (c) 2025 UniTheCat
+// This is a rework of the original code
+
+// MIT License
+// Copyright (c) 2016 Sandeep Mistry
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 
 #include "ch32fun.h"
 #include <stdint.h>
@@ -7,15 +33,15 @@
 //! SPI FUNCTIONS
 //! ####################################
 
-u8 LORA_CS_PIN = -1;
+u8 SX127X_CS_PIN = -1;
 
 u8 sx127x_transfer(u8 reg, u8 value) {
     u8 resp;
 
-    if (LORA_CS_PIN != -1) funDigitalWrite(LORA_CS_PIN, 0);
+    if (SX127X_CS_PIN != -1) funDigitalWrite(SX127X_CS_PIN, 0);
     resp = SPI_transfer_8(reg);
     resp = SPI_transfer_8(value);
-    if (LORA_CS_PIN != -1) funDigitalWrite(LORA_CS_PIN, 1);
+    if (SX127X_CS_PIN != -1) funDigitalWrite(SX127X_CS_PIN, 1);
     return resp;
 }
 
@@ -61,32 +87,27 @@ void sx772xx_setOCP(u8 mA) {
     sx127x_write(0x0B, 0x20 | (0x1F & ocpTrim));
 }
 
-void fun_sx127x_setTxPower(u8 level) {
+void fun_sx127x_setTxPower(u8 powerDbM) {
     //# 0x4D: RegPaDac
     u8 RegPaDac = 0x4D;
 
-    if (level > 17) {
-        if (level > 20) {
-            level = 20;
-        }
-
-        // subtract 3 from level, so 18 - 20 maps to 15 - 17
-        level -= 3;
+    if (powerDbM > 17) {
+        if (powerDbM > 20) powerDbM = 20;
+        // subtract 3 from powerDbM, so 18 - 20 maps to 15 - 17
+        powerDbM -= 3;
 
         // High Power +20 dBm Operation (Semtech SX1276/77/78/79 5.4.3.)
         sx127x_write(RegPaDac, 0x87);
         sx772xx_setOCP(140);
-    } else {
-        if (level < 2) {
-            level = 2;
-        }
 
+    } else {
+        if (powerDbM < 2) powerDbM = 2;
         sx127x_write(RegPaDac, 0x84);
         sx772xx_setOCP(100);
     }
 
     //# 0x09: RegPaConfig
-    sx127x_write(0x09, PA_BOOST | (level - 2));
+    sx127x_write(0x09, PA_BOOST | (powerDbM - 2));
 }
 
 // Modem Config
@@ -104,7 +125,6 @@ void fun_sx127x_setTxPower(u8 level) {
 #define SX127X_BW_250000            0x08
 #define SX127X_BW_500000            0x09
 
-
 void fun_sx127x_config1(u8 headerMode, u8 cr, u8 bw) {
     // bit0 (LSB): 0 = explicit header mode, 1 = implicit header mode
     headerMode = headerMode & 0x01; // Ensure 1 bit value
@@ -115,7 +135,7 @@ void fun_sx127x_config1(u8 headerMode, u8 cr, u8 bw) {
     cr = cr & 0b00000111;   // Ensure 3 bit value
 
     // bit4-7: Bandwidth
-    bw = bw & 0b00001111;   // ensure 4 bit value
+    bw = bw & 0b00001111;   // Ensure 4 bit value
 
     //# 0x1D: RegModemConfig1
     u8 configValue = (bw << 4) | (cr << 1) | headerMode ;
@@ -127,7 +147,6 @@ void fun_sx127x_config1(u8 headerMode, u8 cr, u8 bw) {
 //! INIT FUNCTIONS
 //! ####################################
 
-#define SX127X_REG_OP_MODE          0x01
 #define SX127X_LONGRANGE_MODE       0b10000000      // bit7: 1 = LoRa, 0 = FSK/OOK
 #define SX127X_MODE_SLEEP           0b00000000      // bit0-2: 0 = Sleep
 #define SX127X_MODE_STDBY           0b00000001      // bit0-2: 1 = Standby
@@ -136,30 +155,33 @@ void fun_sx127x_config1(u8 headerMode, u8 cr, u8 bw) {
 
 #define SX127X_FIFO_RX_CURRENTADDR      0x10
 
-u8 LORA_OK = 0;
+u8 SX127X_OK = 0;
 
 void sx127x_setMode(u8 mode) {
-    sx127x_write(SX127X_REG_OP_MODE, SX127X_LONGRANGE_MODE | mode);
+    //# 0x01: RegOpMode
+    sx127x_write(0x01, SX127X_LONGRANGE_MODE | mode);
 }
 
 u8 sx127x_getMode() {
+    //# 0x01: RegOpMode
     // mask the first 3 bits
-    return sx127x_read(SX127X_REG_OP_MODE) & 0b00000111;
+    return sx127x_read(0x01) & 0b00000111;
 }
 
 void fun_sx127x_init(uint32_t frequency, u8 cs_pin) {
     //! configure CS Pin
     if (cs_pin != -1) {
-        LORA_CS_PIN = cs_pin;
-        funPinMode(cs_pin, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
-        funDigitalWrite(cs_pin, 1);
+        SX127X_CS_PIN = cs_pin;
+        funPinMode(SX127X_CS_PIN, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+        funDigitalWrite(SX127X_CS_PIN, 1);
     }
 
+    //! 0x42: RegVersion = sanity check
     u8 version = sx127x_read(0x42);
-    printf("LoRa version: 0x%02x\n", version);         // expect 0x12
-    LORA_OK = version == 0x12;
+    printf("LoRa version: 0x%02x\n", version);
+    SX127X_OK = version == 0x12;      // expect 0x12
 
-    //! Set Mode sleep (*REQUIRED*)
+    //! 0x01: RegOpMode - Set Mode sleep (*REQUIRED*)
     sx127x_setMode(SX127X_MODE_SLEEP);
 
     //# Set frequency
@@ -178,13 +200,12 @@ void fun_sx127x_init(uint32_t frequency, u8 cs_pin) {
     sx127x_write(0x0C, read | 0b11);
 
     //# 0x26: RegModemConfig3
-    read = sx127x_read(0x26);
-    printf("Config3: 0x%02X\n", read);          // expect 0x04
+    // bit3: lowDataRateOptimize 0 = Disabled, 1 = Enabled
+    // bit2: AGCAutoOn 0 = Disabled, 1 = Enabled
+    // bit0-1: Reserved
+    sx127x_write(0x26, 0x0010);  // AGCAutoOn
 
-    sx127x_write(0x26, 0x04);
-    // u8 read_modem = sx127x_read(REG_MODEM_CONFIG_3);
-    // printf("Modem: 0x%02X\n", read_modem);          // expect 0x04
-
+    //# 0x1D: RegModemConfig1
     sx127x_setMode(SX127X_MODE_STDBY);
 }
 
@@ -193,39 +214,39 @@ void fun_sx127x_init(uint32_t frequency, u8 cs_pin) {
 //! TRANSMITION FUNCTIONS
 //! ####################################
 
-#define REG_FIFO_ADDR_PTR           0x0D
-#define REG_PAYLOAD_LENGTH          0x22
-#define REG_IRQ_FLAGS               0x12
-#define IRQ_TX_DONE_MASK            0x08
-#define REG_FIFO                    0x00
+#define SX127X_REG_FIFO_ADDR_PTR        0x0D
+#define SX127X_REG_PAYLOAD_LENGTH       0x22
+#define SX127X_REG_FIFO                 0x00
 
 void fun_sx127x_send(u8 *data, u8 size) {
-    if (!LORA_OK) {
+    if (!SX127X_OK) {
         printf("Err: LoRa not initialized\n");
         return;
     }
 
     // reset FIFO address and payload length
-    sx127x_write(REG_FIFO_ADDR_PTR, 0);
-    sx127x_write(REG_PAYLOAD_LENGTH, 0);
+    sx127x_write(SX127X_REG_FIFO_ADDR_PTR, 0);
+    sx127x_write(SX127X_REG_PAYLOAD_LENGTH, 0);
 
     //# write data
     for (int i = 0; i < size; i++) {
-        sx127x_write(REG_FIFO, data[i]);
+        sx127x_write(SX127X_REG_FIFO, data[i]);
     }
 
     // update len
-    sx127x_write(REG_PAYLOAD_LENGTH, size);
+    sx127x_write(SX127X_REG_PAYLOAD_LENGTH, size);
 
-    //# Send packet
+    //# 0x01: RegOpMode - Send packet
     sx127x_setMode(SX127X_MODE_TX);
     Delay_Ms(1);
 
     // read = sx127x_read(REG_IRQ_FLAGS);
     // printf("IRQ: 0x%02X\n", read);
     
-    //# clear IRQ's
-    sx127x_write(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
+    //# 0x12: RegIrqFlags - clear IRQ's
+    // 0b (0RxTimeout, RxDone, CrcErr, ValidHeader, TxDone, CadDone, FhssChange, CadDetected)
+    u8 tx_done_mask = 0b0001000;
+    sx127x_write(0x12, tx_done_mask);
 }
 
 
@@ -235,65 +256,64 @@ void fun_sx127x_send(u8 *data, u8 size) {
 
 #define IRQ_RX_DONE_MASK            0x40
 #define IRQ_PAYLOAD_CRC_ERROR_MASK  0x20
-#define REG_RX_NB_BYTES             0x13
+#define REG_RX_NB_BYTES             0x13    // Reg for number of payload bytes of latest packet
 
-int LORA_PACKET_INDEX;
 
 int fun_sx127x_parsePacket() {
-    if (!LORA_OK) return 0;
+    if (!SX127X_OK) return 0;
     int packetLength = 0;
 
-    // clear IRQ's
-    int irqFlags = sx127x_read(REG_IRQ_FLAGS);
-    sx127x_write(REG_IRQ_FLAGS, irqFlags);
+    //# 0x12: RegIrqFlags - clear IRQ's
+    //! A Read is *REQUIRED*
+    int irqFlags = sx127x_read(0x12);
+    sx127x_write(0x12, irqFlags);
 
     if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
         // received a packet
-        LORA_PACKET_INDEX = 0;
 
         // read packet length
         // if (_implicitHeaderMode) {
         //     packetLength = sx127x_read(REG_PAYLOAD_LENGTH);
         // } else {
+            //# get the number of payload bytes of latest packet
             packetLength = sx127x_read(REG_RX_NB_BYTES);
         // }
 
         // set FIFO address to current RX address
         u8 rxAdress = sx127x_read(SX127X_FIFO_RX_CURRENTADDR);
-        sx127x_write(REG_FIFO_ADDR_PTR, rxAdress);
+        sx127x_write(SX127X_REG_FIFO_ADDR_PTR, rxAdress);
 
-        // put in standby mode
+        //# 0x01: RegOpMode - Set to Standby mode
         sx127x_setMode(SX127X_MODE_STDBY);
 
     } else if (sx127x_getMode() != SX127X_MODE_RX_SINGLE) {
         // not currently in RX mode
         // reset FIFO address
-        sx127x_write(REG_FIFO_ADDR_PTR, 0);
+        sx127x_write(SX127X_REG_FIFO_ADDR_PTR, 0);
 
-        // put in single RX mode
+        //# 0x01: RegOpMode - Set to Single RX mode
         sx127x_setMode(SX127X_MODE_RX_SINGLE);
     }
 
     return packetLength;
 }
 
-int sx127x_available() {
-    return sx127x_read(REG_RX_NB_BYTES) - LORA_PACKET_INDEX;
-}
-
-void fun_sx127x_readPacket(char* buff) {
-    while (sx127x_available()) {
-        LORA_PACKET_INDEX++;
-        *buff++ = sx127x_read(REG_FIFO);
+void fun_sx127x_readPacket(char* buff, int len) {
+    for (int i = 0; i < len; i++) {
+        *buff++ = sx127x_read(SX127X_REG_FIFO);
     }
 }
 
-#define REG_PKT_RSSI_VALUE       0x1a
 #define RF_MID_BAND_THRESHOLD    525E6
-#define RSSI_OFFSET_HF_PORT      157
-#define RSSI_OFFSET_LF_PORT      164
 
 int fun_sx127x_getRssi(uint32_t frequency) {
-    int offset = (frequency < 525E6) ? RSSI_OFFSET_LF_PORT : RSSI_OFFSET_HF_PORT;
-    return sx127x_read(REG_PKT_RSSI_VALUE) - offset;
+    //# 0x1A: RegPktRssiValue
+    // ref: RegPktRssiValue page 112
+    int offset = (frequency < RF_MID_BAND_THRESHOLD) ? 157 : 164;
+    return sx127x_read(0x1A) - offset;
+}
+
+int fun_sx127x_getSNR() {
+    //# 0x1B: RegPktSnrValue
+    return sx127x_read(0x19) / 4;
 }
