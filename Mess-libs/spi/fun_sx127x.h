@@ -2,7 +2,7 @@
 // Ref: https://www.mouser.com/datasheet/2/761/sx1276-1278113.pdf?srsltid=AfmBOorDqVAyhX5J-Lmr_4lud-BnEsvxK5Ckh002gdR3Nj9gTKy8Qciv
 
 // Copyright (c) 2025 UniTheCat
-// This is a rework of the original code
+// This is a large modification of the original code
 
 // MIT License
 // Copyright (c) 2016 Sandeep Mistry
@@ -240,9 +240,6 @@ void fun_sx127x_send(u8 *data, u8 size) {
     sx127x_setMode(SX127X_MODE_TX);
     Delay_Ms(1);
 
-    // read = sx127x_read(REG_IRQ_FLAGS);
-    // printf("IRQ: 0x%02X\n", read);
-    
     //# 0x12: RegIrqFlags - clear IRQ's
     // 0b (0RxTimeout, RxDone, CrcErr, ValidHeader, TxDone, CadDone, FhssChange, CadDetected)
     u8 tx_done_mask = 0b0001000;
@@ -257,7 +254,6 @@ void fun_sx127x_send(u8 *data, u8 size) {
 #define IRQ_RX_DONE_MASK            0x40
 #define IRQ_PAYLOAD_CRC_ERROR_MASK  0x20
 #define REG_RX_NB_BYTES             0x13    // Reg for number of payload bytes of latest packet
-
 
 int fun_sx127x_parsePacket() {
     if (!SX127X_OK) return 0;

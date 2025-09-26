@@ -62,7 +62,10 @@
         "compare": "c",
         "fun_optionbyte.h": "c",
         "fun_st77352.h": "c",
-        "ch32v003hw.h": "c"
+        "ch32v003hw.h": "c",
+        "fun_ssd1306.h": "c",
+        "fun_74hc595.h": "c",
+        "font_5x7.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
