@@ -32,8 +32,6 @@ int main() {
 			frame = 10000;
 		}
 
-		
-
 		// Delay_Ms(100);
 		// for (int i = 0; i < 8; i++) {
 		// 	hc595_setColumn_ON(i);
