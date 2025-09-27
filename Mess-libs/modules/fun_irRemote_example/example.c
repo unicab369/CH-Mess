@@ -4,8 +4,11 @@
 
 #include "../systick_irq.h"
 #include "../fun_irRemote.h"
+#include "../../fun_log.h"
 
+#define CONFIG_DEBUG_ENABLE_LOGS 0
 #define IR_PIN			PC3
+
 
 int main() {
 	SystemInit();
@@ -14,7 +17,13 @@ int main() {
 	systick_init();			//! required for millis()
 	funGpioInitAll();
 
+	int i = 0;
 	fun_irRemote_init(IR_PIN);
+
+	LOG_Init(&systick_millis);
+	LOG_listUsages();
+	LOG_banner("IR Remote Example");
+
 
 	while(1) {
 		fun_irRemote_task();
