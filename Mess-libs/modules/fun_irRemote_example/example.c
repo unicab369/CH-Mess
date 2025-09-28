@@ -9,6 +9,9 @@
 #define CONFIG_DEBUG_ENABLE_LOGS 0
 #define IR_PIN			PC3
 
+void on_irRemote_NecHandler(u16 address, u16 command) {
+	printf("Nec: %04X %04X\n", address, command);
+}
 
 int main() {
 	SystemInit();
@@ -26,7 +29,7 @@ int main() {
 
 
 	while(1) {
-		fun_irRemote_task();
+		fun_irRemote_task(on_irRemote_NecHandler);
 		// printf(".");
 	}
 }

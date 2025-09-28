@@ -2,7 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define IRREMOTE_DEBUG_PRINT
+// #define IRREMOTE_DEBUG_PRINT
+
 #define IRREMOTE_TIMEOUT_US 50000
 #define IRREMOTE_MAX_PULSES 200
 
@@ -34,17 +35,16 @@ void fun_irRemote_init(int pin) {
     IR_refTime = micros();
 }
 
-
 //! ####################################
 //! HANDLER FUNCTIONS
 //! ####################################
 
-void irRemote_decode() {
+void irRemote_decode(void (*handler)(u16, u16)) {
     //# the first 2 pulses are start pulses
-    printf("\nPulses: %d\n", IR_pulseCount);
-    printf("start pulses (us): %ld %ld\n", IR_durations[0], IR_durations[1]);
-
     #ifdef IRREMOTE_DEBUG_PRINT
+        printf("\nPulses: %d\n", IR_pulseCount);
+        printf("start pulses (us): %ld %ld\n", IR_durations[0], IR_durations[1]);
+
         u8 len_count = 0;
         for (int i = 2; i < IR_pulseCount; i++) {
             u16 rounded = 10 * (IR_durations[i] / 10);
@@ -52,13 +52,12 @@ void irRemote_decode() {
             len_count++;
             if (len_count%16 == 0) printf("\n"); // line seperator
         }
-        printf("\n");
+        printf("\n\nData :\n");
     #endif
 
     // u16 data_lsb[IRREMOTE_BUFFER_SIZE] = {0};
     u16 data_msb[IRREMOTE_BUFFER_SIZE] = {0};
     int bits_processed = 0;
-    printf("\nData :\n");
 
     for (int i = 3; i < IR_pulseCount; i += 2) {
         if (bits_processed >= 16*IRREMOTE_BUFFER_SIZE) break;
@@ -66,8 +65,10 @@ void irRemote_decode() {
         int word_idx = bits_processed / 16;
         int bit_pos = bits_processed % 16;
         
-        printf("%ld ", IR_durations[i]);
-        if (bit_pos == 15) printf("\n");
+        #ifdef IRREMOTE_DEBUG_PRINT
+            printf("%ld ", IR_durations[i]);
+            if (bit_pos == 15) printf("\n");
+        #endif
         
         if (IR_durations[i] > IRREMOTE_PULSE_THRESHOLD_US) {
             // LSB first (original)
@@ -79,16 +80,20 @@ void irRemote_decode() {
         bits_processed++;
     }
 
-    // printf("\nLSB First: ");
-    // for (int i = 0; i < 4; i++) printf("0x%04X ", data_lsb[i]);
-    // printf("\n");
+    handler(data_msb[0], data_msb[1]);
 
-    printf("\nMSB First: ");
-    for (int i = 0; i < 4; i++) printf("0x%04X ", data_msb[i]);
-    printf("\n");
+    #ifdef IRREMOTE_DEBUG_PRINT
+        // printf("\nLSB First: ");
+        // for (int i = 0; i < 4; i++) printf("0x%04X ", data_lsb[i]);
+        // printf("\n");
+
+        printf("\nMSB First: ");
+        for (int i = 0; i < 4; i++) printf("0x%04X ", data_msb[i]);
+        printf("\n");
+    #endif
 }
 
-void fun_irRemote_task() {
+void fun_irRemote_task(void (*handler)(u16, u16)) {
     if (IR_REMOTE_PIN == -1) return;
     IR_currentState = funDigitalRead(IR_REMOTE_PIN);
 
@@ -128,7 +133,7 @@ void fun_irRemote_task() {
         && (micros() - IR_refTime > 100000)
     ) {
         IRRemote_Code_State = IRRemote_Code_Idle;
-        irRemote_decode();
+        irRemote_decode(handler);
 
         IR_pulseCount = 0;
         IR_refTime = micros();
