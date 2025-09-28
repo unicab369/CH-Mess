@@ -10,6 +10,7 @@
 // high state: average 1500us-1700us
 // estimated threshold: greater than 1000 for high state
 #define IRREMOTE_PULSE_THRESHOLD_US 1000
+#define IRREMOTE_BUFFER_SIZE 4
 
 int IR_REMOTE_PIN = -1;
 
@@ -39,45 +40,51 @@ void fun_irRemote_init(int pin) {
 //! ####################################
 
 void irRemote_decode() {
+    //# the first 2 pulses are start pulses
+    printf("\nPulses: %d\n", IR_pulseCount);
+    printf("start pulses (us): %ld %ld\n", IR_durations[0], IR_durations[1]);
+
     #ifdef IRREMOTE_DEBUG_PRINT
-        printf("\nPulses: %d\n", IR_pulseCount);
-        for (int i = 0; i < IR_pulseCount - 1; i++) {
+        u8 len_count = 0;
+        for (int i = 2; i < IR_pulseCount; i++) {
             u16 rounded = 10 * (IR_durations[i] / 10);
             printf((i%2 == 0) ? "%ld " : "-%ld ", rounded);
-            if (i%16 == 0 && i != 0) printf("\n");          // line seperator
+            len_count++;
+            if (len_count%16 == 0) printf("\n"); // line seperator
         }
         printf("\n");
     #endif
-    
-    //# the first 2 pulses are start pulses
-    printf("\nstart pulse: %ld us %ld us\n", IR_durations[0], IR_durations[1]);
 
-    uint8_t data[8] = {0};
+    // u16 data_lsb[IRREMOTE_BUFFER_SIZE] = {0};
+    u16 data_msb[IRREMOTE_BUFFER_SIZE] = {0};
     int bits_processed = 0;
+    printf("\nData :\n");
 
-    //# get every other bit after the start pulses
-    // the first one starts at index 3, then 5, 7, 9, and so on.
     for (int i = 3; i < IR_pulseCount; i += 2) {
-        int byte_idx = bits_processed / 8;
-        if (byte_idx >= 8) break;  // Buffer full
-        int bit_idx = (bits_processed % 8);
-
-        #ifdef IRREMOTE_DEBUG_PRINT
-            printf("%ld ", IR_durations[i]);
-            if (bit_idx == 7) printf("\n"); // line seperator
-        #endif
+        if (bits_processed >= 16*IRREMOTE_BUFFER_SIZE) break;
+        
+        int word_idx = bits_processed / 16;
+        int bit_pos = bits_processed % 16;
+        
+        printf("%ld ", IR_durations[i]);
+        if (bit_pos == 15) printf("\n");
         
         if (IR_durations[i] > IRREMOTE_PULSE_THRESHOLD_US) {
-            data[byte_idx] |= (1 << bit_idx);
+            // LSB first (original)
+            // data_lsb[word_idx] |= (1 << bit_pos);
+            // MSB first (reversed)
+            data_msb[word_idx] |= (1 << (15 - bit_pos));
         }
         
         bits_processed++;
     }
 
-    printf("\ndata: ");
-    for (int i = 0; i < 8; i++) {
-        printf("0x%02X ", data[i]);
-    }
+    // printf("\nLSB First: ");
+    // for (int i = 0; i < 4; i++) printf("0x%04X ", data_lsb[i]);
+    // printf("\n");
+
+    printf("\nMSB First: ");
+    for (int i = 0; i < 4; i++) printf("0x%04X ", data_msb[i]);
     printf("\n");
 }
 
