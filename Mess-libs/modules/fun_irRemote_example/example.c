@@ -10,7 +10,7 @@
 #define IR_PIN			PC3
 
 void on_irRemote_NecHandler(u16 address, u16 command) {
-	printf("Nec: %04X %04X\n", address, command);
+	printf("\nNec: 0x%04X 0x%04X\n", address, command);
 }
 
 int main() {

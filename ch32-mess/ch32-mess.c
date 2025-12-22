@@ -1,14 +1,14 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-// #define I2C_ENABLED
+#define I2C_ENABLED
 // #define I2C_SLAVE_ENABLED
-// #define UART_ENABLED
+#define UART_ENABLED
 #define SPI_ENABLED
 // #define WS2812_ENABLED
 
 // #define SX126X_ENABLED
-#define SX127X_ENABLED
+// #define SX127X_ENABLED
 
 #include "../Mess-libs/modules/fun_optionByte.h"			// 1480 Bytes?
 #include "../Mess-libs/modules/systick_irq.h"				// 76 Bytes?
@@ -132,7 +132,31 @@ typedef struct {
 
 volatile uint8_t i2c_registers[32] = {0xaa};
 
+
 int main() {
+	SystemInit();
+	Delay_Ms(1);
+
+	systick_init();			//! required for millis()
+	funGpioInitAll();
+
+	funPinMode(SPI_DC_PIN, GPIO_Speed_10MHz | GPIO_CNF_OUT_PP);
+	funDigitalWrite(SPI_DC_PIN, 1);
+
+	SPI_init(SPI_RST_PIN, SPI_DC_PIN);
+	SPI_DMA_init(DMA1_Channel3);
+
+	fun_st7335_init(160, 80, ST7735_CS_PIN);
+	fun_st7735_fill_all(ST_PURPLE);
+
+	while(1) {
+		Delay_Ms(1000);
+		// fun_st7335_init(160, 80, ST7735_CS_PIN);
+		fun_st7735_fill_all(ST_PURPLE);
+	}
+}
+
+int main1() {
 	uint8_t toggleValue = 0;
 	SystemInit();
 	Delay_Ms(1);
@@ -156,12 +180,12 @@ int main() {
 	#ifdef I2C_ENABLED
 		//# I2C1: uses PC1 & PC2
 		modI2C_setup(bootCnt);
-		i2c_ina219_setup();
+		// i2c_ina219_setup();
 
 		// Enable Low
 		if (master_mode == 0) {
 			printf("I2C Slave mode\n");
-			SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, false);
+			// SetupI2CSlave(0x77, i2c_registers, sizeof(i2c_registers), onI2C_SlaveWrite, onI2C_SlaveRead, 0);
 		}
 	#endif
 
@@ -285,7 +309,7 @@ int main() {
 			printf(".");
 
 			#ifdef I2C_ENABLED
-				if (i2cMaster_mode) {
+				// if (i2cMaster_mode) {
 					// uint16_t lux;
 					// i2c_bh1750_reading(&lux);
 
@@ -297,14 +321,14 @@ int main() {
 
 					mngI2c_loadCounter(session.cycle_count, session.fullCycle_time);
 
-					// uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
-					// sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
-					// ssd1306_print_str_at(str_output, 0, 0);
-				}
+					uint32_t runtime_i2c = SysTick_getRunTime(ssd1306_draw_test);
+					sprintf(str_output, "I2C runtime: %lu us", runtime_i2c);
+					ssd1306_print_str_at(str_output, 0, 0);
+				// }
 			#endif
 			
 			#ifdef UART_ENABLED
-				// dma_uart_tx(message, sizeof(message) - 1);
+				dma_uart_tx(message, sizeof(message) - 1);
 			#endif
 
 			#ifdef SPI_ENABLED
