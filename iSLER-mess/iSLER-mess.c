@@ -22,6 +22,7 @@
 #define INPUT2_PIN 	PA5
 #endif
 
+
 // MESS_DataFrame_t dataFrame = {
 // 	.preamble = 0xA1A2,
 // 	.control_bits = 0xB1B2,
@@ -242,7 +243,9 @@ void incoming_frame_handler() {
 	}
 }
 
-#define ROM_CFG_MAC_ADDR2		((const u32*)0x0007F018)
+// #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
+
+#include "aes_cmm.h"
 
 int main()
 {
@@ -257,16 +260,16 @@ int main()
 	blink(5);
 	printf(".~ ch32fun iSLER ~.\n");
 
-	printf("\n");
-	printf("\n");
-	uint8_t mac_addr[6];
-	for (int i = 0; i < 6; i++) {
-		mac_addr[i] = ((uint8_t *)ROM_CFG_MAC_ADDR2)[i];
-	}
+	// printf("\n");
+	// printf("\n");
+	// uint8_t mac_addr[6];
+	// for (int i = 0; i < 6; i++) {
+	// 	mac_addr[i] = ((uint8_t *)ROM_CFG_MAC_ADDR)[i];
+	// }
 
-	printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n", 
-       mac_addr[0], mac_addr[1], mac_addr[2], 
-       mac_addr[3], mac_addr[4], mac_addr[5]);
+	// printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n", 
+    //    mac_addr[0], mac_addr[1], mac_addr[2], 
+    //    mac_addr[3], mac_addr[4], mac_addr[5]);
 
 	// send out a first RX:?? advertisement to show we are alive
 	for(int c = 0; c < sizeof(adv_channels); c++) {
