@@ -30,10 +30,10 @@ static int ct_equal(const uint8_t *a, const uint8_t *b, size_t n) {
 
 /* Build counter block A_i:  flags(1) || nonce || counter(L bytes, BE)
  * L = 15 - nonce_len. counter is written into the low L bytes. */
-static void make_ctr_block(uint8_t *blk,
-                           const uint8_t *nonce, size_t nonce_len,
-                           size_t counter)
-{
+static void make_ctr_block(
+    uint8_t *blk, const uint8_t *nonce, size_t nonce_len,
+    size_t counter
+) {
     size_t L = 15 - nonce_len;           /* 2..8 */
     memset(blk, 0, 16);
     blk[0] = (uint8_t)(L - 1);           /* flags for CTR */
@@ -47,11 +47,10 @@ static void make_ctr_block(uint8_t *blk,
 
 /* XOR data with AES-CTR keystream, starting at counter value `start_ctr`.
  * Works in-place-ish: input and output may be the same buffer. */
-static void ctr_xor(const uint8_t *key,
-                    const uint8_t *nonce, size_t nonce_len,
-                    size_t start_ctr,
-                    const uint8_t *in, uint8_t *out, size_t len)
-{
+static void ctr_xor(
+    const uint8_t *key, const uint8_t *nonce, size_t nonce_len,
+    size_t start_ctr, const uint8_t *in, uint8_t *out, size_t len
+) {
     uint8_t ctr_blk[16], ks[16];
     size_t off = 0;
     size_t ctr = start_ctr;
@@ -74,11 +73,11 @@ static void ctr_xor(const uint8_t *key,
 /* Absorb two consecutive buffers into the running MAC. `mac` is 16 bytes,
  * in/out. The two buffers are treated as one stream, and only the final
  * partial block is zero-padded. */
-static void cbc_mac_update_parts(const uint8_t *key,
-                                 uint8_t *mac,
-                                 const uint8_t *first, size_t first_len,
-                                 const uint8_t *second, size_t second_len)
-{
+static void cbc_mac_update_parts(
+    const uint8_t *key, uint8_t *mac,
+    const uint8_t *first, size_t first_len,
+    const uint8_t *second, size_t second_len
+) {
     uint8_t blk[16];
     size_t used = 0;
     const uint8_t *parts[] = { first, second };
@@ -109,21 +108,20 @@ static void cbc_mac_update_parts(const uint8_t *key,
     }
 }
 
-static void cbc_mac_update(const uint8_t *key,
-                           uint8_t *mac,
-                           const uint8_t *data, size_t len)
-{
+static void cbc_mac_update(
+    const uint8_t *key, uint8_t *mac,
+    const uint8_t *data, size_t len
+) {
     cbc_mac_update_parts(key, mac, data, len, NULL, 0);
 }
 
 /* ---- B0 formatting ---------------------------------------------------- */
 
 /* Build B0 from nonce, tag length, and message length. */
-static int make_b0(uint8_t *b0,
-                   const uint8_t *nonce, size_t nonce_len,
-                   size_t tag_len, size_t msg_len,
-                   int has_aad)
-{
+static int make_b0(
+    uint8_t *b0, const uint8_t *nonce, size_t nonce_len,
+    size_t tag_len, size_t msg_len, int has_aad
+) {
     if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
 
     size_t L = 15 - nonce_len;               /* 2..8 */
@@ -146,8 +144,7 @@ static int make_b0(uint8_t *b0,
 }
 
 /* Encode the AAD length prefix, per RFC 3610 §2.2. */
-static size_t encode_aad_len(uint8_t *out, size_t aad_len)
-{
+static size_t encode_aad_len(uint8_t *out, size_t aad_len) {
     if (aad_len < 0xFF00) {
         out[0] = (uint8_t)(aad_len >> 8);
         out[1] = (uint8_t)(aad_len & 0xFF);
@@ -170,13 +167,11 @@ static size_t encode_aad_len(uint8_t *out, size_t aad_len)
 /* ---- MAC computation -------------------------------------------------- */
 
 /* Compute the raw tag (before CTR encryption) over B0 || AAD || PT. */
-static int compute_mac(const uint8_t *key,
-                       const uint8_t *nonce, size_t nonce_len,
-                       size_t tag_len,
-                       const uint8_t *aad, size_t aad_len,
-                       const uint8_t *pt,  size_t pt_len,
-                       uint8_t mac[16])
-{
+static int compute_mac(
+    const uint8_t *key, const uint8_t *nonce, size_t nonce_len,
+    size_t tag_len, const uint8_t *aad, size_t aad_len,
+    const uint8_t *pt,  size_t pt_len, uint8_t mac[16]
+) {
     uint8_t b0[16];
     int rc = make_b0(b0, nonce, nonce_len, tag_len, pt_len, aad_len > 0);
     if (rc != CCM_OK) return rc;
@@ -202,11 +197,10 @@ static int compute_mac(const uint8_t *key,
 /* ---- Tag encryption --------------------------------------------------- */
 
 /* tag = AES(A0) XOR raw_mac, where A0 is CTR block with counter = 0. */
-static void encrypt_tag(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t raw_mac[16],
-                        uint8_t tag_out[16])
-{
+static void encrypt_tag(
+    const uint8_t *key, const uint8_t *nonce, size_t nonce_len,
+    const uint8_t raw_mac[16], uint8_t tag_out[16]
+) {
     uint8_t a0[16], s0[16];
     make_ctr_block(a0, nonce, nonce_len, 0);
     hw_aes_encrypt_block(key, a0, s0);
@@ -219,13 +213,12 @@ static void encrypt_tag(const uint8_t *key,
  * `tag_len` must be one of 4,6,8,10,12,14,16.
  * `nonce_len` must be 7..13.
  * `out` may alias `pt` for in-place operation. */
-int ccm_encrypt_and_tag(const uint8_t *key,
-                        const uint8_t *nonce, size_t nonce_len,
-                        const uint8_t *aad,   size_t aad_len,
-                        const uint8_t *pt,    size_t pt_len,
-                        uint8_t *out,
-                        uint8_t *tag, size_t tag_len)
-{
+int ccm_encrypt_and_tag(
+    const uint8_t *key, const uint8_t *nonce, size_t nonce_len,
+    const uint8_t *aad, size_t aad_len,
+    const uint8_t *pt, size_t pt_len,
+    uint8_t *out, uint8_t *tag, size_t tag_len
+) {
     /* validate */
     if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
     switch (tag_len) {
@@ -255,13 +248,12 @@ int ccm_encrypt_and_tag(const uint8_t *key,
 
 /* Auth-decrypt. Verifies tag in constant time; on failure, `out` is
  * undefined and should be discarded by the caller. */
-int ccm_auth_decrypt(const uint8_t *key,
-                     const uint8_t *nonce, size_t nonce_len,
-                     const uint8_t *aad,   size_t aad_len,
-                     const uint8_t *ct,    size_t ct_len,
-                     const uint8_t *tag,   size_t tag_len,
-                     uint8_t *out)
-{
+int ccm_auth_decrypt(
+    const uint8_t *key, const uint8_t *nonce, size_t nonce_len,
+    const uint8_t *aad, size_t aad_len,
+    const uint8_t *ct, size_t ct_len,
+    const uint8_t *tag, size_t tag_len, uint8_t *out
+) {
     if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
     switch (tag_len) {
         case 4: case 6: case 8: case 10:
