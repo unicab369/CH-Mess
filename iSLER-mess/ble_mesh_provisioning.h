@@ -501,7 +501,7 @@ void provisioner_poll(void) {
         // [6]     Transaction Number = 0x00
         // [7]     GPC = PB_LINK_ACK (0x07) */
 
-        //! Send STEP_4: PROV_OP_INVITE advertisement
+        //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
         // [0]      AD Length = PROV_OP_INVITE_AD_LEN (12 bytes follow)
         // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
         // [2..5]   Link ID
@@ -554,7 +554,7 @@ void provisioner_poll(void) {
         // [11]     PROV_OP_CAPABILITIES (0x01)
         // [12..22] Capabilities fields
 
-        //! Send ACK (the commisionEE need to handle this?)
+        //! Provisioner Send ACK (the commisionEE need to handle this?)
         if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
             provisioner_ctx.state = PROVISIONER_FAILED;
             return;
@@ -577,7 +577,7 @@ void provisioner_poll(void) {
             return;
         }
 
-        //! Send STEP_6: PROV_OP_START advertisement
+        //! Provisioner Send STEP_6: PROV_OP_START advertisement
         // [0]      AD Length = PROV_OP_START_AD_LEN (16B follow)
         // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
         // [2..5]   Link ID
@@ -620,8 +620,8 @@ void provisioner_poll(void) {
         adv_data[7] == PB_ADV_GPC_ACK
     ) {
         if (prov_ecdh_generate_keypair(
-                provisioner_ctx.private_key, provisioner_ctx.public_key
-            ) != 0) {
+                provisioner_ctx.private_key, provisioner_ctx.public_key) != 0
+        ) {
             provisioner_ctx.state = PROVISIONER_FAILED;
             return;
         }
@@ -795,7 +795,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // Store the Link ID sent by the provisioner.
             memcpy(pb_link_id, &adv_data[2], sizeof(pb_link_id));
 
-            //! Send STEP_3: PB_LINK_ACK advertisement
+            //! Provisionee Send STEP_3: PB_LINK_ACK advertisement
             // [0]     AD Length = PB_LINK_ACK_AD_LEN (7 bytes follow)
             // [1]     AD Type = MESH_PROV_AD_TYPE (0x29)
             // [2..5]  Link ID
@@ -837,7 +837,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // [11]     PROV_OP_INVITE (0x00)
             // [12]     Attention Duration in seconds
 
-            //! Send ACK (the commisionER need to handle this?)
+            //! Provisionee Send ACK (the commisionER need to handle this?)
             if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
                 return;
@@ -845,7 +845,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
             provisionee_attention_start(adv_data[12]);
 
-            //! Send STEP_5: PROV_OP_CAPABILITIES advertisement
+            //! Provisionee Send STEP_5: PROV_OP_CAPABILITIES advertisement
             // [0]      AD Length = PROV_OP_CAPABILITIES_AD_LEN (22 bytes follow)
             // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
             // [2..5]   Link ID
@@ -906,7 +906,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // [10]     FCS
             // [11..16] PROV_OP_START PDU
 
-            //! Send ACK (the commisionER need to handle this?)
+            //! Provisionee Send ACK (the commisionER need to handle this?)
             if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
                 return;
@@ -988,7 +988,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
         uint32_t now = get_millis();
 
         if ((uint32_t)(now - last_beacon_ms) >= 1000u) {
-            //! Send STEP_1: MESH_BEACON_UNPROVISIONED advertisement
+            //! Provisionee Send STEP_1: MESH_BEACON_UNPROVISIONED advertisement
             // [0]      AD Length = MESH_BEACON_UNPROVISIONED_AD_LEN (20 bytes follow)
             // [1]      AD Type = MESH_BEACON_AD_TYPE (0x2B)
             // [2]      Beacon Type = MESH_BEACON_UNPROVISIONED (0x00)
