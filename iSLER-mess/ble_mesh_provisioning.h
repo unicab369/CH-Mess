@@ -141,10 +141,18 @@
 #define PROV_PUBKEY_CONT2_AD_LEN  29
 #define PROV_OP_INPUT_COMPLETE 0x04
 #define PROV_OP_CONFIRM       0x05
+#define PROV_CONFIRM_PDU_LEN  17
+#define PROV_CONFIRM_AD_LEN   27
 #define PROV_OP_RANDOM        0x06
+#define PROV_RANDOM_PDU_LEN   17
+#define PROV_RANDOM_AD_LEN    27
 #define PROV_OP_DATA          0x07
 #define PROV_OP_COMPLETE      0x08
 #define PROV_OP_FAILED        0x09
+
+/* Invite value (1) + Capabilities value (11) + Start value (5) +
+ * Provisioner public key (64) + Provisionee public key (64). */
+#define PROV_CONFIRM_INPUTS_LEN 145
 
 #define PROV_ALG_FIPS_P256    0x00      // Algorithm values (Mesh Profile 5.4.1.1)
 #define PROV_PUBKEY_OOB_AVAILABLE 0x01  // Public Key OOB info bits
@@ -180,6 +188,20 @@ int prov_ecdh_generate_keypair(uint8_t private_key[32], uint8_t public_key[64]);
 int prov_ecdh_compute_dhkey(
     const uint8_t private_key[32],
     const uint8_t peer_public_key[64], uint8_t dhkey[32]
+);
+
+/* Authentication interfaces supplied by the platform crypto implementation.
+ * prov_generate_random must return a fresh cryptographically secure value.
+ * For Algorithm 0, prov_generate_confirmation performs the Bluetooth Mesh
+ * s1/k1/AES-CMAC confirmation calculation and also returns ConfirmationSalt,
+ * which is needed by the later provisioning-data phase. */
+int prov_generate_random(uint8_t random[16]);
+
+int prov_generate_confirmation(
+    const uint8_t dhkey[32],
+    const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t random[16], const uint8_t auth_value[16],
+    uint8_t confirmation_salt[16], uint8_t confirmation[16]
 );
 
 /* --- Forward declarations of methods you must implement --- */
@@ -279,6 +301,17 @@ static int pb_send_gpc_ack(
     };
 
     return ble_mesh_send_adv(ack, sizeof(ack));
+}
+
+static int pb_gpc_ack_matches(
+    const uint8_t *adv_data, size_t len,
+    const uint8_t link_id[4], uint8_t tx_num
+) {
+    return ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
+           adv_data[1] == MESH_PROV_AD_TYPE &&
+           memcmp(&adv_data[2], link_id, 4) == 0 &&
+           adv_data[6] == tx_num &&
+           adv_data[7] == PB_GPC_ACK;
 }
 
 typedef struct {
@@ -435,6 +468,67 @@ static int pb_receive_public_key(
     return 1;
 }
 
+static int pb_send_auth_value(
+    const uint8_t link_id[4], uint8_t tx_num,
+    uint8_t opcode, const uint8_t value[16]
+) {
+    // Single-segment Confirmation or Random advertisement:
+    // [0]      AD Length = 27 bytes follow
+    // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
+    // [2..5]   Link ID
+    // [6]      Transaction Number
+    // [7]      GPC = PB_GPC_START(0), last segment index 0
+    // [8..9]   Provisioning PDU length = 17
+    // [10]     FCS over the complete Provisioning PDU
+    // [11]     PROV_OP_CONFIRM (0x05) or PROV_OP_RANDOM (0x06)
+    // [12..27] Confirmation or Random value (16 bytes)
+    uint8_t adv[PROV_CONFIRM_AD_LEN + 1];
+    adv[0] = PROV_CONFIRM_AD_LEN;
+    adv[1] = MESH_PROV_AD_TYPE;
+    memcpy(&adv[2], link_id, 4);
+    adv[6] = tx_num;
+    adv[7] = PB_GPC_START(0);
+    adv[8] = 0;
+    adv[9] = PROV_CONFIRM_PDU_LEN;
+    adv[11] = opcode;
+    memcpy(&adv[12], value, 16);
+    adv[10] = pb_adv_fcs(&adv[11], PROV_CONFIRM_PDU_LEN);
+    return ble_mesh_send_adv(adv, sizeof(adv));
+}
+
+static int prov_values_equal(const uint8_t a[16], const uint8_t b[16]) {
+    uint8_t different = 0;
+
+    for (size_t i = 0; i < 16; ++i) {
+        different |= (uint8_t)(a[i] ^ b[i]);
+    }
+
+    return different == 0;
+}
+
+static int prov_peer_confirmation_is_valid(
+    const uint8_t dhkey[32],
+    const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t peer_random[16], const uint8_t local_random[16],
+    const uint8_t peer_confirmation[16]
+) {
+    static const uint8_t no_oob_auth_value[16] = {0};
+    uint8_t confirmation_salt[16];
+    uint8_t expected[16];
+
+    /* Equal local and peer random values are forbidden by the provisioning
+     * security improvements and would also produce equal confirmations. */
+    if (prov_values_equal(peer_random, local_random) ||
+        prov_generate_confirmation(
+            dhkey, confirmation_inputs, peer_random, no_oob_auth_value,
+            confirmation_salt, expected
+        ) != 0) {
+        return 0;
+    }
+
+    return prov_values_equal(peer_confirmation, expected);
+}
+
 typedef enum {
     PROVISIONER_IDLE = 0,
     WAITING_FOR_BEACON,
@@ -442,7 +536,11 @@ typedef enum {
     WAITING_FOR_CAPABILITIES,
     WAITING_FOR_START_ACK,
     PROVISIONER_WAITING_FOR_PUBLIC_KEY,
-    PROVISIONER_ECDH,
+    PROVISIONER_WAITING_FOR_CONFIRM_ACK,
+    PROVISIONER_WAITING_FOR_CONFIRMATION,
+    PROVISIONER_WAITING_FOR_RANDOM_ACK,
+    PROVISIONER_WAITING_FOR_RANDOM,
+    PROVISIONER_AUTHENTICATED,
     PROVISIONER_FAILED
 } provisioner_state_t;
 
@@ -454,6 +552,12 @@ typedef struct {
     uint8_t public_key[64];
     uint8_t peer_public_key[64];
     uint8_t dhkey[32];
+    uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN];
+    uint8_t confirmation_salt[16];
+    uint8_t confirmation[16];
+    uint8_t peer_confirmation[16];
+    uint8_t random[16];
+    uint8_t peer_random[16];
     public_key_rx_t pubkey_rx;
 } provisioner_ctx_t;
 
@@ -473,7 +577,7 @@ void provisioner_poll(void) {
     if (ble_mesh_receive_adv(adv_data, &len) <= 0 ||    // check received message
         len < 2 ||                                      // validate message length
         provisioner_ctx.state == PROVISIONER_FAILED ||
-        provisioner_ctx.state == PROVISIONER_ECDH) {
+        provisioner_ctx.state == PROVISIONER_AUTHENTICATED) {
         return;
     }
 
@@ -556,6 +660,7 @@ void provisioner_poll(void) {
         invite[11] = PROV_OP_INVITE;
         invite[12] = 5;
         invite[10] = pb_adv_fcs(&invite[11], 2);
+        provisioner_ctx.confirmation_inputs[0] = invite[12];
 
         int send_ok = ble_mesh_send_adv(invite, sizeof(invite)) == 0;
         provisioner_ctx.state = send_ok ? WAITING_FOR_CAPABILITIES
@@ -590,6 +695,9 @@ void provisioner_poll(void) {
             provisioner_ctx.state = PROVISIONER_FAILED;
             return;
         }
+
+        /* ConfirmationInputs contains the PDU values without their opcodes. */
+        memcpy(&provisioner_ctx.confirmation_inputs[1], &adv_data[12], 11);
 
         const uint8_t *prov_pdu = &adv_data[11];
 
@@ -636,6 +744,7 @@ void provisioner_poll(void) {
         start[15] = provisioner_ctx.start.auth_action;
         start[16] = provisioner_ctx.start.auth_size;
         start[10] = pb_adv_fcs(&start[11], 6);
+        memcpy(&provisioner_ctx.confirmation_inputs[12], &start[12], 5);
 
         int send_ok = ble_mesh_send_adv(start, sizeof(start)) == 0;
         provisioner_ctx.state = send_ok ? WAITING_FOR_START_ACK
@@ -644,18 +753,9 @@ void provisioner_poll(void) {
 
     else if (
         provisioner_ctx.state == WAITING_FOR_START_ACK &&
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[1] == MESH_PROV_AD_TYPE &&
-        memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
-        adv_data[6] == provisioner_ctx.tx_num &&
-        adv_data[7] == PB_GPC_ACK
+        pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
     ) {
         //! Check ACK for STEP_5: Expected PROV_OP_START Transaction Ack
-        // [0]     AD Length = PB_TRANSACTION_ACK_AD_LEN (7 bytes follow)
-        // [1]     AD Type = MESH_PROV_AD_TYPE (0x29)
-        // [2..5]  Link ID
-        // [6]     Transaction Number of the acknowledged PROV_OP_START
-        // [7]     GPC = PB_GPC_ACK (0x01)
 
         uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
         provisioner_ctx.tx_num = tx_num;
@@ -667,6 +767,11 @@ void provisioner_poll(void) {
                     pb_send_public_key(
                         pb_link_id, tx_num,
                         provisioner_ctx.public_key) == 0;
+
+        if (success) {
+            memcpy(&provisioner_ctx.confirmation_inputs[17],
+                   provisioner_ctx.public_key, 64);
+        }
 
         provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_PUBLIC_KEY
                                         : PROVISIONER_FAILED;
@@ -691,16 +796,118 @@ void provisioner_poll(void) {
         }
 
         if (result > 0) {
-            int success = pb_send_gpc_ack(pb_link_id,
-                            provisioner_ctx.pubkey_rx.tx_num) == 0 &&
-                        prov_ecdh_compute_dhkey(
-                            provisioner_ctx.private_key,
-                            provisioner_ctx.peer_public_key,
-                            provisioner_ctx.dhkey) == 0;
+            memcpy(&provisioner_ctx.confirmation_inputs[81],
+                   provisioner_ctx.peer_public_key, 64);
 
-            provisioner_ctx.state = success ? PROVISIONER_ECDH
+            uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
+            provisioner_ctx.tx_num = tx_num;
+            const uint8_t auth_value[16] = {0};
+
+            int success = pb_send_gpc_ack(
+                              pb_link_id, provisioner_ctx.pubkey_rx.tx_num) == 0 &&
+                          prov_ecdh_compute_dhkey(
+                              provisioner_ctx.private_key,
+                              provisioner_ctx.peer_public_key,
+                              provisioner_ctx.dhkey) == 0 &&
+                          prov_generate_random(provisioner_ctx.random) == 0 &&
+                          prov_generate_confirmation(
+                              provisioner_ctx.dhkey,
+                              provisioner_ctx.confirmation_inputs,
+                              provisioner_ctx.random,
+                              auth_value,
+                              provisioner_ctx.confirmation_salt,
+                              provisioner_ctx.confirmation) == 0 &&
+                          pb_send_auth_value(
+                              pb_link_id, tx_num, PROV_OP_CONFIRM,
+                              provisioner_ctx.confirmation) == 0;
+
+            provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONER_FAILED;
         }
+    }
+
+    else if (
+        provisioner_ctx.state == PROVISIONER_WAITING_FOR_CONFIRM_ACK &&
+        pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
+    ) {
+        //! Check STEP_10 ACK: Expected PROV_OP_CONFIRM Transaction Ack
+        provisioner_ctx.state = PROVISIONER_WAITING_FOR_CONFIRMATION;
+    }
+
+    else if (
+        provisioner_ctx.state == PROVISIONER_WAITING_FOR_CONFIRMATION &&
+        ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
+        adv_data[1] == MESH_PROV_AD_TYPE &&
+        memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
+        (adv_data[6] & 0x80) != 0 &&
+        adv_data[7] == PB_GPC_START(0) &&
+        adv_data[8] == 0 && adv_data[9] == PROV_CONFIRM_PDU_LEN &&
+        adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_CONFIRM_PDU_LEN) &&
+        adv_data[11] == PROV_OP_CONFIRM
+    ) {
+        //! Check STEP_11: Expected PROV_OP_CONFIRM advertisement
+        // [0]      AD Length = PROV_CONFIRM_AD_LEN (27 bytes follow)
+        // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
+        // [2..5]   Link ID
+        // [6]      Provisionee Transaction Number (0x80..0xFF)
+        // [7]      GPC = PB_GPC_START(0), last segment index 0
+        // [8..9]   Provisioning PDU length = 17
+        // [10]     FCS
+        // [11]     PROV_OP_CONFIRM (0x05)
+        // [12..27] Provisionee Confirmation value
+        memcpy(provisioner_ctx.peer_confirmation, &adv_data[12], 16);
+
+        uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
+        provisioner_ctx.tx_num = tx_num;
+
+        int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                      pb_send_auth_value(
+                          pb_link_id, tx_num, PROV_OP_RANDOM,
+                          provisioner_ctx.random) == 0;
+        provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_RANDOM_ACK
+                                        : PROVISIONER_FAILED;
+    }
+
+    else if (
+        provisioner_ctx.state == PROVISIONER_WAITING_FOR_RANDOM_ACK &&
+        pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
+    ) {
+        //! Check STEP_12 ACK: Expected PROV_OP_RANDOM Transaction Ack
+        provisioner_ctx.state = PROVISIONER_WAITING_FOR_RANDOM;
+    }
+
+    else if (
+        provisioner_ctx.state == PROVISIONER_WAITING_FOR_RANDOM &&
+        ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
+        adv_data[1] == MESH_PROV_AD_TYPE &&
+        memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
+        (adv_data[6] & 0x80) != 0 &&
+        adv_data[7] == PB_GPC_START(0) &&
+        adv_data[8] == 0 && adv_data[9] == PROV_RANDOM_PDU_LEN &&
+        adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_RANDOM_PDU_LEN) &&
+        adv_data[11] == PROV_OP_RANDOM
+    ) {
+        //! Check STEP_13: Expected PROV_OP_RANDOM advertisement
+        // [0]      AD Length = PROV_RANDOM_AD_LEN (27 bytes follow)
+        // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
+        // [2..5]   Link ID
+        // [6]      Provisionee Transaction Number (0x80..0xFF)
+        // [7]      GPC = PB_GPC_START(0), last segment index 0
+        // [8..9]   Provisioning PDU length = 17
+        // [10]     FCS
+        // [11]     PROV_OP_RANDOM (0x06)
+        // [12..27] Provisionee Random value
+        memcpy(provisioner_ctx.peer_random, &adv_data[12], 16);
+
+        int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                      prov_peer_confirmation_is_valid(
+                          provisioner_ctx.dhkey,
+                          provisioner_ctx.confirmation_inputs,
+                          provisioner_ctx.peer_random,
+                          provisioner_ctx.random,
+                          provisioner_ctx.peer_confirmation);
+        provisioner_ctx.state = success ? PROVISIONER_AUTHENTICATED
+                                        : PROVISIONER_FAILED;
     }
 }
 
@@ -715,7 +922,11 @@ typedef enum {
     WAITING_FOR_START,
     PROVISIONEE_WAITING_FOR_PUBLIC_KEY,
     PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK,
-    PROVISIONEE_ECDH,
+    PROVISIONEE_WAITING_FOR_CONFIRMATION,
+    PROVISIONEE_WAITING_FOR_CONFIRM_ACK,
+    PROVISIONEE_WAITING_FOR_RANDOM,
+    PROVISIONEE_WAITING_FOR_RANDOM_ACK,
+    PROVISIONEE_AUTHENTICATED,
     PROVISIONEE_COMPLETE,
     PROVISIONEE_FAILED
 } provisionee_state_t;
@@ -728,6 +939,12 @@ typedef struct {
     uint8_t public_key[64];
     uint8_t peer_public_key[64];
     uint8_t dhkey[32];
+    uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN];
+    uint8_t confirmation_salt[16];
+    uint8_t confirmation[16];
+    uint8_t peer_confirmation[16];
+    uint8_t random[16];
+    uint8_t peer_random[16];
     public_key_rx_t pubkey_rx;
 } provisionee_ctx_t;
 
@@ -805,6 +1022,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
     if (ble_mesh_receive_adv(adv_data, &len) > 0 &&         // check received message
         len >= 2 && adv_data[1] == MESH_PROV_AD_TYPE &&     // check for provisioning related msg
         provisionee_ctx.state != PROVISIONEE_FAILED &&
+        provisionee_ctx.state != PROVISIONEE_AUTHENTICATED &&
         provisionee_ctx.state != PROVISIONEE_COMPLETE
     ) {
         if (
@@ -867,6 +1085,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // [11]     PROV_OP_INVITE (0x00)
             // [12]     Attention Duration in seconds
 
+            provisionee_ctx.confirmation_inputs[0] = adv_data[12];
+
             //! Provisionee Send ACK (the commisionER need to handle this?)
             if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
@@ -909,6 +1129,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             adv_cap[21] = (uint8_t)caps->input_oob_size;
             adv_cap[22] = (uint8_t)(caps->input_oob_size >> 8);
             adv_cap[10] = pb_adv_fcs(&adv_cap[11], 12);
+            memcpy(&provisionee_ctx.confirmation_inputs[1], &adv_cap[12], 11);
 
             int success = ble_mesh_send_adv(adv_cap, sizeof(adv_cap)) == 0;
             provisionee_ctx.state = success ? WAITING_FOR_START
@@ -936,6 +1157,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // [10]     FCS
             // [11..16] PROV_OP_START PDU
 
+            memcpy(&provisionee_ctx.confirmation_inputs[12], &adv_data[12], 5);
+
             //! Provisionee Send ACK (the commisionER need to handle this?)
             if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
@@ -949,13 +1172,21 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             start.auth_action = adv_data[15];
             start.auth_size = adv_data[16];
 
-            if (!prov_start_is_valid(&start, caps)) {
+            /* This implementation currently supports the normal public-key
+             * exchange with No OOB authentication only. */
+            if (!prov_start_is_valid(&start, caps) ||
+                start.public_key_oob != 0 ||
+                start.auth_method != PROV_OOB_NONE) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
                 return;
             }
 
             int success = prov_ecdh_generate_keypair(
                 provisionee_ctx.private_key, provisionee_ctx.public_key) == 0;
+            if (success) {
+                memcpy(&provisionee_ctx.confirmation_inputs[81],
+                       provisionee_ctx.public_key, 64);
+            }
             provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_PUBLIC_KEY
                                             : PROVISIONEE_FAILED;
 
@@ -979,6 +1210,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             }
 
             if (result > 0) {
+                memcpy(&provisionee_ctx.confirmation_inputs[17],
+                       provisionee_ctx.peer_public_key, 64);
+
                 if (pb_send_gpc_ack(pb_link_id, provisionee_ctx.pubkey_rx.tx_num) != 0 ||
                     prov_ecdh_compute_dhkey(
                         provisionee_ctx.private_key, provisionee_ctx.peer_public_key, provisionee_ctx.dhkey
@@ -1001,12 +1235,107 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
         } else if (
             provisionee_ctx.state == PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK &&
-            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
-            adv_data[6] == provisionee_ctx.tx_num &&
-            adv_data[7] == PB_GPC_ACK
+            pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
         ) {
-            provisionee_ctx.state = PROVISIONEE_ECDH;
+            const uint8_t auth_value[16] = {0};
+            int success = prov_generate_random(provisionee_ctx.random) == 0 &&
+                          prov_generate_confirmation(
+                              provisionee_ctx.dhkey,
+                              provisionee_ctx.confirmation_inputs,
+                              provisionee_ctx.random,
+                              auth_value,
+                              provisionee_ctx.confirmation_salt,
+                              provisionee_ctx.confirmation) == 0;
+            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_CONFIRMATION
+                                            : PROVISIONEE_FAILED;
+        }
+
+        else if (
+            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_CONFIRMATION &&
+            ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
+            memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
+            (adv_data[6] & 0x80) == 0 &&
+            adv_data[7] == PB_GPC_START(0) &&
+            adv_data[8] == 0 && adv_data[9] == PROV_CONFIRM_PDU_LEN &&
+            adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_CONFIRM_PDU_LEN) &&
+            adv_data[11] == PROV_OP_CONFIRM
+        ) {
+            //! Check STEP_10: Expected PROV_OP_CONFIRM advertisement
+            // [0]      AD Length = PROV_CONFIRM_AD_LEN (27 bytes follow)
+            // [1]      AD Type = MESH_PROV_AD_TYPE (0x29), prechecked
+            // [2..5]   Link ID
+            // [6]      Provisioner Transaction Number (0x00..0x7F)
+            // [7]      GPC = PB_GPC_START(0), last segment index 0
+            // [8..9]   Provisioning PDU length = 17
+            // [10]     FCS
+            // [11]     PROV_OP_CONFIRM (0x05)
+            // [12..27] Provisioner Confirmation value
+            memcpy(provisionee_ctx.peer_confirmation, &adv_data[12], 16);
+
+            uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
+            provisionee_ctx.tx_num = tx_num;
+
+            int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                          pb_send_auth_value(
+                              pb_link_id, tx_num, PROV_OP_CONFIRM,
+                              provisionee_ctx.confirmation) == 0;
+            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_CONFIRM_ACK
+                                            : PROVISIONEE_FAILED;
+        }
+
+        else if (
+            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_CONFIRM_ACK &&
+            pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
+        ) {
+            //! Check STEP_11 ACK: Expected PROV_OP_CONFIRM Transaction Ack
+            provisionee_ctx.state = PROVISIONEE_WAITING_FOR_RANDOM;
+        }
+
+        else if (
+            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_RANDOM &&
+            ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
+            memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
+            (adv_data[6] & 0x80) == 0 &&
+            adv_data[7] == PB_GPC_START(0) &&
+            adv_data[8] == 0 && adv_data[9] == PROV_RANDOM_PDU_LEN &&
+            adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_RANDOM_PDU_LEN) &&
+            adv_data[11] == PROV_OP_RANDOM
+        ) {
+            //! Check STEP_12: Expected PROV_OP_RANDOM advertisement
+            // [0]      AD Length = PROV_RANDOM_AD_LEN (27 bytes follow)
+            // [1]      AD Type = MESH_PROV_AD_TYPE (0x29), prechecked
+            // [2..5]   Link ID
+            // [6]      Provisioner Transaction Number (0x00..0x7F)
+            // [7]      GPC = PB_GPC_START(0), last segment index 0
+            // [8..9]   Provisioning PDU length = 17
+            // [10]     FCS
+            // [11]     PROV_OP_RANDOM (0x06)
+            // [12..27] Provisioner Random value
+            memcpy(provisionee_ctx.peer_random, &adv_data[12], 16);
+
+            uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
+            provisionee_ctx.tx_num = tx_num;
+
+            int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                          prov_peer_confirmation_is_valid(
+                              provisionee_ctx.dhkey,
+                              provisionee_ctx.confirmation_inputs,
+                              provisionee_ctx.peer_random,
+                              provisionee_ctx.random,
+                              provisionee_ctx.peer_confirmation) &&
+                          pb_send_auth_value(
+                              pb_link_id, tx_num, PROV_OP_RANDOM,
+                              provisionee_ctx.random) == 0;
+            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_RANDOM_ACK
+                                            : PROVISIONEE_FAILED;
+        }
+
+        else if (
+            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_RANDOM_ACK &&
+            pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
+        ) {
+            //! Check STEP_13 ACK: Expected PROV_OP_RANDOM Transaction Ack
+            provisionee_ctx.state = PROVISIONEE_AUTHENTICATED;
         }
     }
 
