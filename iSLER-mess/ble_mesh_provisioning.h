@@ -232,9 +232,10 @@ static int provisioner_choose_prov_params(
     return 0;
 }
 
-static inline int ad_length_matches(uint8_t len, size_t data0, uint8_t ad_len) {
-    return len == ad_len + 1 &&
-            data0 == ad_len;
+static inline int ad_length_matches(
+    size_t len, uint8_t data0, uint8_t ad_len
+) {
+    return len == ad_len + 1 && data0 == ad_len;
 }
 
 /* =========================================================================
@@ -363,8 +364,7 @@ static int pb_receive_public_key(
     uint8_t gpc = adv_data[7];
 
     if (gpc == PB_GPC_START(2)) {
-        if (len < PROV_PUBKEY_START_AD_LEN + 1 ||
-            adv_data[0] != PROV_PUBKEY_START_AD_LEN ||
+        if (!ad_length_matches(len, adv_data[0], PROV_PUBKEY_START_AD_LEN) ||
             adv_data[8] != 0 ||
             adv_data[9] != PROV_PUBKEY_PDU_LEN
         ) {
@@ -395,9 +395,7 @@ static int pb_receive_public_key(
     // [8..30]  Public Key PDU bytes 20..42
 
     if (gpc == PB_GPC_CONT(1) && rx->next_segment == 1) {
-        if (len < PROV_PUBKEY_CONT1_AD_LEN + 1 ||
-            adv_data[0] != PROV_PUBKEY_CONT1_AD_LEN
-        ) {
+        if (!ad_length_matches(len, adv_data[0], PROV_PUBKEY_CONT1_AD_LEN)) {
             return -1;
         }
 
@@ -419,9 +417,7 @@ static int pb_receive_public_key(
     // [7]      GPC = PB_GPC_CONT(2), segment index 2
     // [8..29]  Public Key PDU bytes 43..64
 
-    if (len < PROV_PUBKEY_CONT2_AD_LEN + 1 ||
-        adv_data[0] != PROV_PUBKEY_CONT2_AD_LEN
-    ) {
+    if (!ad_length_matches(len, adv_data[0], PROV_PUBKEY_CONT2_AD_LEN)) {
         return -1;
     }
 
@@ -483,8 +479,7 @@ void provisioner_poll(void) {
     }
 
     if (provisioner_ctx.state == WAITING_FOR_BEACON &&
-        len == MESH_BEACON_UNPROVISIONED_AD_LEN + 1 &&
-        adv_data[0] == MESH_BEACON_UNPROVISIONED_AD_LEN &&
+        ad_length_matches(len, adv_data[0], MESH_BEACON_UNPROVISIONED_AD_LEN) &&
         adv_data[1] == MESH_BEACON_AD_TYPE &&
         adv_data[2] == MESH_BEACON_UNPROVISIONED
     ) {
@@ -525,8 +520,7 @@ void provisioner_poll(void) {
 
     else if (
         provisioner_ctx.state == WAITING_FOR_LINK_ACK &&
-        len == PB_LINK_ACK_AD_LEN + 1 &&
-        adv_data[0] == PB_LINK_ACK_AD_LEN &&
+        ad_length_matches(len, adv_data[0], PB_LINK_ACK_AD_LEN) &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
         adv_data[6] == 0 &&
@@ -571,8 +565,7 @@ void provisioner_poll(void) {
 
     else if (
         provisioner_ctx.state == WAITING_FOR_CAPABILITIES &&
-        len == PROV_OP_CAPABILITIES_AD_LEN + 1 &&
-        adv_data[0] == PROV_OP_CAPABILITIES_AD_LEN &&
+        ad_length_matches(len, adv_data[0], PROV_OP_CAPABILITIES_AD_LEN) &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
         (adv_data[6] & 0x80) != 0 &&
@@ -652,8 +645,7 @@ void provisioner_poll(void) {
 
     else if (
         provisioner_ctx.state == WAITING_FOR_START_ACK &&
-        len == PB_TRANSACTION_ACK_AD_LEN + 1 &&
-        adv_data[0] == PB_TRANSACTION_ACK_AD_LEN &&
+        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
         adv_data[6] == provisioner_ctx.tx_num &&
@@ -820,8 +812,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
     ) {
         if (
             provisionee_ctx.state == WAITING_FOR_LINK_OPEN &&
-            len == PB_LINK_OPEN_AD_LEN + 1 &&
-            adv_data[0] == PB_LINK_OPEN_AD_LEN &&
+            ad_length_matches(len, adv_data[0], PB_LINK_OPEN_AD_LEN) &&
             adv_data[6] == 0 &&
             adv_data[7] == PB_LINK_OPEN &&
             memcmp(&adv_data[8], provisionee_ctx.device_uuid, sizeof(provisionee_ctx.device_uuid)) == 0
@@ -859,8 +850,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
         else if (
             provisionee_ctx.state == WAITING_FOR_INVITE &&
-            len == PROV_OP_INVITE_AD_LEN + 1 &&
-            adv_data[0] == PROV_OP_INVITE_AD_LEN &&
+            ad_length_matches(len, adv_data[0], PROV_OP_INVITE_AD_LEN) &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -930,8 +920,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
         else if (
             provisionee_ctx.state == WAITING_FOR_START &&
-            len == PROV_OP_START_AD_LEN + 1 &&
-            adv_data[0] == PROV_OP_START_AD_LEN &&
+            ad_length_matches(len, adv_data[0], PROV_OP_START_AD_LEN) &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -979,7 +968,6 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
         else if (
             provisionee_ctx.state == PROVISIONEE_WAITING_FOR_PUBLIC_KEY &&
             len >= 8 &&
-            adv_data[0] + 1 <= len &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0
         ) {
@@ -1014,8 +1002,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
         } else if (
             provisionee_ctx.state == PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK &&
-            len == PB_TRANSACTION_ACK_AD_LEN + 1 &&
-            adv_data[0] == PB_TRANSACTION_ACK_AD_LEN &&
+            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             adv_data[6] == provisionee_ctx.tx_num &&
             adv_data[7] == PB_GPC_ACK
