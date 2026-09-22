@@ -232,6 +232,10 @@ static int provisioner_choose_prov_params(
     return 0;
 }
 
+static inline int ad_length_matches(uint8_t len, size_t data0, uint8_t ad_len) {
+    return len == ad_len + 1 &&
+            data0 == ad_len;
+}
 
 /* =========================================================================
  * PROVISIONER SIDE
@@ -282,7 +286,6 @@ typedef struct {
     uint8_t transaction_number;
     uint8_t next_segment;
     uint8_t fcs;
-    uint8_t active;
 } pb_public_key_rx_t;
 
 static int pb_send_public_key(
@@ -347,7 +350,6 @@ static int pb_receive_public_key(
     // AD Type MESH_PROV_AD_TYPE (0x29) # prechecked
     // Link ID                          # prechecked
 
-    uint8_t gpc = adv_data[7];
     // Expected Transaction Start advertisement:
     // [0]      AD Length = PROV_PUBKEY_START_AD_LEN (30 bytes follow)
     // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
@@ -358,6 +360,7 @@ static int pb_receive_public_key(
     // [10]     FCS over the complete 65-byte Provisioning PDU
     // [11]     PROV_OP_PUBLIC_KEY (0x03)
     // [12..30] Public Key PDU bytes 1..19
+    uint8_t gpc = adv_data[7];
 
     if (gpc == PB_GPC_START(2)) {
         if (len < PROV_PUBKEY_START_AD_LEN + 1 ||
@@ -368,16 +371,18 @@ static int pb_receive_public_key(
             return -1;
         }
 
+        rx->offset = PB_START_PAYLOAD_MAX;
+        rx->fcs = adv_data[10];
+        memcpy(rx->pdu, &adv_data[11], PB_START_PAYLOAD_MAX);
+
         rx->transaction_number = adv_data[6];
         rx->next_segment = 1;
-        rx->fcs = adv_data[10];
-        rx->offset = PB_START_PAYLOAD_MAX;
-        memcpy(rx->pdu, &adv_data[11], PB_START_PAYLOAD_MAX);
-        rx->active = 1;
         return 0;
     }
 
-    if (!rx->active || adv_data[6] != rx->transaction_number) {
+    // next_segment == 0 means no transaction is being reassembled.
+    if (rx->next_segment == 0 ||
+        adv_data[6] != rx->transaction_number) {
         return 0;
     }
 
@@ -422,7 +427,7 @@ static int pb_receive_public_key(
 
     memcpy(&rx->pdu[rx->offset], &adv_data[8], 22);
     rx->offset += 22;
-    rx->active = 0;
+    rx->next_segment = 0;
 
     if (rx->offset != PROV_PUBKEY_PDU_LEN ||
         rx->pdu[0] != PROV_OP_PUBLIC_KEY ||
@@ -739,47 +744,47 @@ typedef struct {
 static provisionee_ctx_t provisionee_ctx;
 static uint32_t last_beacon_ms;
 
-static int validate_prov_start(const prov_start_t *start, const prov_caps_t *caps) {
-    if (!start || !caps || caps->num_elements == 0) return -1;
+static int prov_start_is_valid(const prov_start_t *start, const prov_caps_t *caps) {
+    if (!start || !caps || caps->num_elements == 0) return 0;
 
     /* The algorithm field selects a bit in the capabilities bitfield. */
     if (start->algorithm >= 16 || !(caps->algorithms & (uint16_t)(1u << start->algorithm))) {
-        return -1;
+        return 0;
     }
 
     /* 0 selects normal ECDH; 1 requires public-key OOB support. */
     if (start->public_key_oob > 1 || (start->public_key_oob &&
          !(caps->pubkey_oob & PROV_PUBKEY_OOB_AVAILABLE))) {
-        return -1;
+        return 0;
     }
 
     switch (start->auth_method) {
         case PROV_OOB_NONE:
-            return (start->auth_action == 0 && start->auth_size == 0) ? 0 : -1;
+            return start->auth_action == 0 && start->auth_size == 0;
 
         case PROV_OOB_STATIC:
-            return (caps->static_oob != 0 &&
-                    start->auth_action == 0 && start->auth_size == 0) ? 0 : -1;
+            return caps->static_oob != 0 &&
+                   start->auth_action == 0 && start->auth_size == 0;
 
         case PROV_OOB_OUTPUT:
             if (start->auth_action >= 8 ||
                 !(caps->output_oob & (uint8_t)(1u << start->auth_action)) ||
                 start->auth_size == 0 || start->auth_size > caps->output_oob_size
             ) {
-                return -1;
+                return 0;
             }
-            return 0;
+            return 1;
 
         case PROV_OOB_INPUT:
             if (start->auth_action >= 8 ||
                 !(caps->input_oob & (uint8_t)(1u << start->auth_action)) ||
                 start->auth_size == 0 || start->auth_size > caps->input_oob_size) {
-                return -1;
+                return 0;
             }
-            return 0;
+            return 1;
 
         default:
-            return -1;
+            return 0;
     }
 }
 
@@ -958,7 +963,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             start.auth_action = adv_data[15];
             start.auth_size = adv_data[16];
 
-            if (validate_prov_start(&start, caps) != 0) {
+            if (!prov_start_is_valid(&start, caps)) {
                 provisionee_ctx.state = PROVISIONEE_FAILED;
                 return;
             }
