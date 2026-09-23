@@ -198,7 +198,7 @@ int prov_generate_random(uint8_t random[16]);
  * the already-concatenated ConfirmationInputs. ConfirmationSalt is returned
  * because the provisioning-data phase needs it later. */
 int prov_generate_confirmation(
-    const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN],
     const uint8_t dhkey[32],
     const uint8_t random[16], const uint8_t auth_value[16],
     uint8_t confirmation_salt[16], uint8_t confirmation[16]
@@ -498,7 +498,7 @@ static int equal_16(const uint8_t a[16], const uint8_t b[16]) {
 }
 
 static int prov_peer_confirmation_is_valid(
-    const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN],
     const uint8_t dhkey[32],
     const uint8_t peer_random[16], const uint8_t local_random[16],
     const uint8_t peer_confirmation[16]
@@ -510,7 +510,7 @@ static int prov_peer_confirmation_is_valid(
      * security improvements and would also produce equal confirmations. */
     return !equal_16(peer_random, local_random) &&
            prov_generate_confirmation(
-               confirmation_inputs, dhkey, peer_random,
+               confirm_inputs, dhkey, peer_random,
                no_oob_auth, salt, expected
             ) == 0 &&
            equal_16(peer_confirmation, expected);
@@ -539,9 +539,8 @@ typedef struct {
     uint8_t public_key[64];
     uint8_t peer_public_key[64];
     uint8_t dhkey[32];
-    uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN];
+    uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN];
     uint8_t confirmation_salt[16];
-    uint8_t confirmation[16];
     uint8_t peer_confirmation[16];
     uint8_t random[16];
     uint8_t peer_random[16];
@@ -642,7 +641,7 @@ void provisioner_poll(void) {
         invite[11] = PROV_OP_INVITE;
         invite[12] = 5;
         invite[10] = pb_adv_fcs(&invite[11], 2);
-        provisioner_ctx.confirmation_inputs[0] = invite[12];
+        provisioner_ctx.confirm_inputs[0] = invite[12];
 
             //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
         // [0]      AD Length = PROV_OP_INVITE_AD_LEN (12 bytes follow)
@@ -723,8 +722,8 @@ void provisioner_poll(void) {
         start[10] = pb_adv_fcs(&start[11], 6);
 
         /* ConfirmationInputs contains the PDU values without their opcodes. */
-        memcpy(&provisioner_ctx.confirmation_inputs[1], &adv_data[12], 11);
-        memcpy(&provisioner_ctx.confirmation_inputs[12], &start[12], 5);
+        memcpy(&provisioner_ctx.confirm_inputs[1], &adv_data[12], 11);
+        memcpy(&provisioner_ctx.confirm_inputs[12], &start[12], 5);
 
         //! Provisioner Send STEP_6: PROV_OP_START advertisement
         // [0]      AD Length = PROV_OP_START_AD_LEN (16B follow)
@@ -756,7 +755,7 @@ void provisioner_poll(void) {
                     pb_send_public_key(pb_link_id, tx_num, provisioner_ctx.public_key) == 0;
 
         if (success) {
-            memcpy(&provisioner_ctx.confirmation_inputs[17], provisioner_ctx.public_key, 64);
+            memcpy(&provisioner_ctx.confirm_inputs[17], provisioner_ctx.public_key, 64);
         }
 
         provisioner_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
@@ -780,11 +779,12 @@ void provisioner_poll(void) {
         }
 
         if (result > 0) {
-            memcpy(&provisioner_ctx.confirmation_inputs[81],
+            memcpy(&provisioner_ctx.confirm_inputs[81],
                    provisioner_ctx.peer_public_key, 64);
 
             uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
             provisioner_ctx.tx_num = tx_num;
+            uint8_t confirmation[16];
 
             int success =
                 //! Provisioner Send PB_GPC_ACK
@@ -796,16 +796,16 @@ void provisioner_poll(void) {
                     provisioner_ctx.dhkey) == 0 &&
                 prov_generate_random(provisioner_ctx.random) == 0 &&
                 prov_generate_confirmation(
-                    provisioner_ctx.confirmation_inputs,
+                    provisioner_ctx.confirm_inputs,
                     provisioner_ctx.dhkey,
                     provisioner_ctx.random,
                     no_oob_auth,
                     provisioner_ctx.confirmation_salt,
-                    provisioner_ctx.confirmation) == 0 &&
+                    confirmation) == 0 &&
                 //! Provisioner Send STEP_10: PROV_OP_CONFIRM advertisement
                 pb_send_confirm_or_random(
                     pb_link_id, tx_num, PROV_OP_CONFIRM,
-                    provisioner_ctx.confirmation) == 0;
+                    confirmation) == 0;
 
             provisioner_ctx.state = success ? WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONER_FAILED;
@@ -845,11 +845,13 @@ void provisioner_poll(void) {
         uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
         provisioner_ctx.tx_num = tx_num;
 
-        //! Provisioner send PB_GPC_ACK
-        int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
-                      pb_send_confirm_or_random(
-                          pb_link_id, tx_num, PROV_OP_RANDOM,
-                          provisioner_ctx.random) == 0;
+        int success =
+            //! Provisioner send PB_GPC_ACK
+            pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+            //! Provisioner Send STEP_12: PROV_OP_RANDOM advertisement
+            pb_send_confirm_or_random(
+                pb_link_id, tx_num, PROV_OP_RANDOM,
+                provisioner_ctx.random) == 0;
 
         provisioner_ctx.state = success ? WAITING_FOR_RANDOM_ACK
                                         : PROVISIONER_FAILED;
@@ -886,13 +888,16 @@ void provisioner_poll(void) {
         // [12..27] Provisionee Random value
         memcpy(provisioner_ctx.peer_random, &adv_data[12], 16);
 
-        int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
-                      prov_peer_confirmation_is_valid(
-                          provisioner_ctx.confirmation_inputs,
-                          provisioner_ctx.dhkey,
-                          provisioner_ctx.peer_random,
-                          provisioner_ctx.random,
-                          provisioner_ctx.peer_confirmation);
+        int success =
+            //! Provisioner send PB_GPC_ACK
+            pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+            prov_peer_confirmation_is_valid(
+                provisioner_ctx.confirm_inputs,
+                provisioner_ctx.dhkey,
+                provisioner_ctx.peer_random,
+                provisioner_ctx.random,
+                provisioner_ctx.peer_confirmation);
+
         provisioner_ctx.state = success ? PROVISIONER_AUTHENTICATED
                                         : PROVISIONER_FAILED;
     }
@@ -926,7 +931,7 @@ typedef struct {
     uint8_t public_key[64];
     uint8_t peer_public_key[64];
     uint8_t dhkey[32];
-    uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN];
+    uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN];
     uint8_t confirmation_salt[16];
     uint8_t confirmation[16];
     uint8_t peer_confirmation[16];
@@ -1105,8 +1110,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             adv_cap[22] = (uint8_t)(caps->input_oob_size >> 8);
             adv_cap[10] = pb_adv_fcs(&adv_cap[11], 12);
 
-            provisionee_ctx.confirmation_inputs[0] = adv_data[12];
-            memcpy(&provisionee_ctx.confirmation_inputs[1], &adv_cap[12], 11);
+            provisionee_ctx.confirm_inputs[0] = adv_data[12];
+            memcpy(&provisionee_ctx.confirm_inputs[1], &adv_cap[12], 11);
 
             //! Provisionee Send STEP_5: PROV_OP_CAPABILITIES advertisement
             // [0]      AD Length = PROV_OP_CAPABILITIES_AD_LEN (22 bytes follow)
@@ -1141,7 +1146,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             // [8..9]   Provisioning PDU length = 6
             // [10]     FCS
             // [11..16] PROV_OP_START PDU
-            memcpy(&provisionee_ctx.confirmation_inputs[12], &adv_data[12], 5);
+            memcpy(&provisionee_ctx.confirm_inputs[12], &adv_data[12], 5);
 
             //! Provisionee Send ACK (the commisionER need to handle this?)
             if (pb_send_gpc_ack(pb_link_id, adv_data[6]) != 0) {
@@ -1166,10 +1171,10 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                                 provisionee_ctx.public_key) == 0;
 
             if (success) {
-                memcpy(&provisionee_ctx.confirmation_inputs[81],
+                memcpy(&provisionee_ctx.confirm_inputs[81],
                        provisionee_ctx.public_key, 64);
             }
-            
+
             provisionee_attention_stop();
             provisionee_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
                                             : PROVISIONEE_FAILED;
@@ -1193,7 +1198,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             }
 
             if (result > 0) {
-                memcpy(&provisionee_ctx.confirmation_inputs[17],
+                memcpy(&provisionee_ctx.confirm_inputs[17],
                        provisionee_ctx.peer_public_key, 64);
 
                 uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
@@ -1222,7 +1227,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
         ) {
             int success = prov_generate_random(provisionee_ctx.random) == 0 &&
                           prov_generate_confirmation(
-                              provisionee_ctx.confirmation_inputs,
+                              provisionee_ctx.confirm_inputs,
                               provisionee_ctx.dhkey,
                               provisionee_ctx.random,
                               no_oob_auth,
@@ -1302,16 +1307,20 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
             provisionee_ctx.tx_num = tx_num;
 
-            int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
-                          prov_peer_confirmation_is_valid(
-                              provisionee_ctx.confirmation_inputs,
-                              provisionee_ctx.dhkey,
-                              provisionee_ctx.peer_random,
-                              provisionee_ctx.random,
-                              provisionee_ctx.peer_confirmation) &&
-                          pb_send_confirm_or_random(
-                              pb_link_id, tx_num, PROV_OP_RANDOM,
-                              provisionee_ctx.random) == 0;
+            int success =
+                //! Check PB_GPC_ACK
+                pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                prov_peer_confirmation_is_valid(
+                    provisionee_ctx.confirm_inputs,
+                    provisionee_ctx.dhkey,
+                    provisionee_ctx.peer_random,
+                    provisionee_ctx.random,
+                    provisionee_ctx.peer_confirmation) &&
+                //! Provisionee Send STEP_13: PROV_OP_RANDOM advertisement
+                pb_send_confirm_or_random(
+                    pb_link_id, tx_num, PROV_OP_RANDOM,
+                    provisionee_ctx.random) == 0;
+                    
             provisionee_ctx.state = success ? WAITING_FOR_RANDOM_ACK
                                             : PROVISIONEE_FAILED;
         }
