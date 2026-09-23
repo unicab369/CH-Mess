@@ -191,18 +191,20 @@ int prov_ecdh_compute_dhkey(
 );
 
 /* Authentication interfaces supplied by the platform crypto implementation.
- * prov_generate_random must return a fresh cryptographically secure value.
- * For Algorithm 0, prov_generate_confirmation performs the Bluetooth Mesh
- * s1/k1/AES-CMAC confirmation calculation and also returns ConfirmationSalt,
- * which is needed by the later provisioning-data phase. */
+ * prov_generate_random must return a fresh cryptographically secure value. */
 int prov_generate_random(uint8_t random[16]);
 
+/* Builds ConfirmationSalt, ConfirmationKey, and Confirmation internally from
+ * the already-concatenated ConfirmationInputs. ConfirmationSalt is returned
+ * because the provisioning-data phase needs it later. */
 int prov_generate_confirmation(
-    const uint8_t dhkey[32],
     const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t dhkey[32],
     const uint8_t random[16], const uint8_t auth_value[16],
     uint8_t confirmation_salt[16], uint8_t confirmation[16]
 );
+
+static const uint8_t no_oob_auth[16] = {0};
 
 /* --- Forward declarations of methods you must implement --- */
 void provisionee_attention_start(uint8_t seconds) {}
@@ -496,37 +498,33 @@ static int pb_send_confirmation_or_random(
     return ble_mesh_send_adv(adv, sizeof(adv));
 }
 
-static int prov_values_equal(const uint8_t a[16], const uint8_t b[16]) {
-    uint8_t different = 0;
+static int equal_16(const uint8_t a[16], const uint8_t b[16]) {
+    uint8_t diff = 0;
 
     for (size_t i = 0; i < 16; ++i) {
-        different |= (uint8_t)(a[i] ^ b[i]);
+        diff |= (uint8_t)(a[i] ^ b[i]);
     }
 
-    return different == 0;
+    return diff == 0;
 }
 
 static int prov_peer_confirmation_is_valid(
-    const uint8_t dhkey[32],
     const uint8_t confirmation_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t dhkey[32],
     const uint8_t peer_random[16], const uint8_t local_random[16],
     const uint8_t peer_confirmation[16]
 ) {
-    static const uint8_t no_oob_auth_value[16] = {0};
-    uint8_t confirmation_salt[16];
+    uint8_t salt[16];
     uint8_t expected[16];
 
     /* Equal local and peer random values are forbidden by the provisioning
      * security improvements and would also produce equal confirmations. */
-    if (prov_values_equal(peer_random, local_random) ||
-        prov_generate_confirmation(
-            dhkey, confirmation_inputs, peer_random, no_oob_auth_value,
-            confirmation_salt, expected
-        ) != 0) {
-        return 0;
-    }
-
-    return prov_values_equal(peer_confirmation, expected);
+    return !equal_16(peer_random, local_random) &&
+           prov_generate_confirmation(
+               confirmation_inputs, dhkey, peer_random,
+               no_oob_auth, salt, expected
+            ) == 0 &&
+           equal_16(peer_confirmation, expected);
 }
 
 typedef enum {
@@ -801,7 +799,6 @@ void provisioner_poll(void) {
 
             uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
             provisioner_ctx.tx_num = tx_num;
-            const uint8_t auth_value[16] = {0};
 
             //! Provisioner Send PB_GPC_ACK
             int success = pb_send_gpc_ack(
@@ -812,10 +809,10 @@ void provisioner_poll(void) {
                               provisioner_ctx.dhkey) == 0 &&
                           prov_generate_random(provisioner_ctx.random) == 0 &&
                           prov_generate_confirmation(
-                              provisioner_ctx.dhkey,
                               provisioner_ctx.confirmation_inputs,
+                              provisioner_ctx.dhkey,
                               provisioner_ctx.random,
-                              auth_value,
+                              no_oob_auth,
                               provisioner_ctx.confirmation_salt,
                               provisioner_ctx.confirmation) == 0 &&
                           pb_send_confirmation_or_random(
@@ -903,8 +900,8 @@ void provisioner_poll(void) {
 
         int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
                       prov_peer_confirmation_is_valid(
-                          provisioner_ctx.dhkey,
                           provisioner_ctx.confirmation_inputs,
+                          provisioner_ctx.dhkey,
                           provisioner_ctx.peer_random,
                           provisioner_ctx.random,
                           provisioner_ctx.peer_confirmation);
@@ -1220,7 +1217,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                 //! Provisionee Send PB_GPC_ACK
                 if (pb_send_gpc_ack(pb_link_id, provisionee_ctx.pubkey_rx.tx_num) != 0 ||
                     prov_ecdh_compute_dhkey(
-                        provisionee_ctx.private_key, provisionee_ctx.peer_public_key, provisionee_ctx.dhkey
+                        provisionee_ctx.private_key,
+                        provisionee_ctx.peer_public_key,
+                        provisionee_ctx.dhkey
                     ) != 0) {
                     provisionee_ctx.state = PROVISIONEE_FAILED;
                     return;
@@ -1243,13 +1242,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             provisionee_ctx.state == WAITING_FOR_PUBLIC_KEY_ACK &&
             pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
         ) {
-            const uint8_t auth_value[16] = {0};
             int success = prov_generate_random(provisionee_ctx.random) == 0 &&
                           prov_generate_confirmation(
-                              provisionee_ctx.dhkey,
                               provisionee_ctx.confirmation_inputs,
+                              provisionee_ctx.dhkey,
                               provisionee_ctx.random,
-                              auth_value,
+                              no_oob_auth,
                               provisionee_ctx.confirmation_salt,
                               provisionee_ctx.confirmation) == 0;
             provisionee_ctx.state = success ? WAITING_FOR_CONFIRMATION
@@ -1324,8 +1322,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
 
             int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
                           prov_peer_confirmation_is_valid(
-                              provisionee_ctx.dhkey,
                               provisionee_ctx.confirmation_inputs,
+                              provisionee_ctx.dhkey,
                               provisionee_ctx.peer_random,
                               provisionee_ctx.random,
                               provisionee_ctx.peer_confirmation) &&
