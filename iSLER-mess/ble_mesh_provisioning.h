@@ -468,7 +468,7 @@ static int pb_receive_public_key(
     return 1;
 }
 
-static int pb_send_auth_value(
+static int pb_send_confirmation_or_random(
     const uint8_t link_id[4], uint8_t tx_num,
     uint8_t opcode, const uint8_t value[16]
 ) {
@@ -535,11 +535,11 @@ typedef enum {
     WAITING_FOR_LINK_ACK,
     WAITING_FOR_CAPABILITIES,
     WAITING_FOR_START_ACK,
-    PROVISIONER_WAITING_FOR_PUBLIC_KEY,
-    PROVISIONER_WAITING_FOR_CONFIRM_ACK,
-    PROVISIONER_WAITING_FOR_CONFIRMATION,
-    PROVISIONER_WAITING_FOR_RANDOM_ACK,
-    PROVISIONER_WAITING_FOR_RANDOM,
+    WAITING_FOR_PUBLIC_KEY,
+    WAITING_FOR_CONFIRM_ACK,
+    WAITING_FOR_CONFIRMATION,
+    WAITING_FOR_RANDOM_ACK,
+    WAITING_FOR_RANDOM,
     PROVISIONER_AUTHENTICATED,
     PROVISIONER_FAILED
 } provisioner_state_t;
@@ -755,7 +755,7 @@ void provisioner_poll(void) {
         provisioner_ctx.state == WAITING_FOR_START_ACK &&
         pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
     ) {
-        //! Check ACK for STEP_5: Expected PROV_OP_START Transaction Ack
+        //! Check ACK for STEP_6: Expected PROV_OP_START Transaction Ack
 
         uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
         provisioner_ctx.tx_num = tx_num;
@@ -773,20 +773,20 @@ void provisioner_poll(void) {
                    provisioner_ctx.public_key, 64);
         }
 
-        provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_PUBLIC_KEY
+        provisioner_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
                                         : PROVISIONER_FAILED;
 
     } else if (
-        provisioner_ctx.state == PROVISIONER_WAITING_FOR_PUBLIC_KEY &&
+        provisioner_ctx.state == WAITING_FOR_PUBLIC_KEY &&
         len >= 8 &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
         (adv_data[6] & 0x80) != 0
     ) {
-        //! Check
+        //! Check STEP_8: Expect PROV_OP_PUBLIC_KEY advertisement
+        // Need to also check PB_GPC_START(2), PB_GPC_CONT(1), and PB_GPC_CONT(2) in order
         int result = pb_receive_public_key(
-            &provisioner_ctx.pubkey_rx,
-            adv_data, len,
+            &provisioner_ctx.pubkey_rx, adv_data, len,
             provisioner_ctx.peer_public_key
         );
 
@@ -803,6 +803,7 @@ void provisioner_poll(void) {
             provisioner_ctx.tx_num = tx_num;
             const uint8_t auth_value[16] = {0};
 
+            //! Provisioner Send PB_GPC_ACK
             int success = pb_send_gpc_ack(
                               pb_link_id, provisioner_ctx.pubkey_rx.tx_num) == 0 &&
                           prov_ecdh_compute_dhkey(
@@ -817,25 +818,25 @@ void provisioner_poll(void) {
                               auth_value,
                               provisioner_ctx.confirmation_salt,
                               provisioner_ctx.confirmation) == 0 &&
-                          pb_send_auth_value(
+                          pb_send_confirmation_or_random(
                               pb_link_id, tx_num, PROV_OP_CONFIRM,
                               provisioner_ctx.confirmation) == 0;
 
-            provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_CONFIRM_ACK
+            provisioner_ctx.state = success ? WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONER_FAILED;
         }
     }
 
     else if (
-        provisioner_ctx.state == PROVISIONER_WAITING_FOR_CONFIRM_ACK &&
+        provisioner_ctx.state == WAITING_FOR_CONFIRM_ACK &&
         pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
     ) {
         //! Check STEP_10 ACK: Expected PROV_OP_CONFIRM Transaction Ack
-        provisioner_ctx.state = PROVISIONER_WAITING_FOR_CONFIRMATION;
+        provisioner_ctx.state = WAITING_FOR_CONFIRMATION;
     }
 
     else if (
-        provisioner_ctx.state == PROVISIONER_WAITING_FOR_CONFIRMATION &&
+        provisioner_ctx.state == WAITING_FOR_CONFIRMATION &&
         ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
@@ -856,28 +857,29 @@ void provisioner_poll(void) {
         // [11]     PROV_OP_CONFIRM (0x05)
         // [12..27] Provisionee Confirmation value
         memcpy(provisioner_ctx.peer_confirmation, &adv_data[12], 16);
-
         uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
         provisioner_ctx.tx_num = tx_num;
 
+        //! Provisioner send PB_GPC_ACK
         int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
-                      pb_send_auth_value(
+                      pb_send_confirmation_or_random(
                           pb_link_id, tx_num, PROV_OP_RANDOM,
                           provisioner_ctx.random) == 0;
-        provisioner_ctx.state = success ? PROVISIONER_WAITING_FOR_RANDOM_ACK
+
+        provisioner_ctx.state = success ? WAITING_FOR_RANDOM_ACK
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == PROVISIONER_WAITING_FOR_RANDOM_ACK &&
+        provisioner_ctx.state == WAITING_FOR_RANDOM_ACK &&
         pb_gpc_ack_matches(adv_data, len, pb_link_id, provisioner_ctx.tx_num)
     ) {
         //! Check STEP_12 ACK: Expected PROV_OP_RANDOM Transaction Ack
-        provisioner_ctx.state = PROVISIONER_WAITING_FOR_RANDOM;
+        provisioner_ctx.state = WAITING_FOR_RANDOM;
     }
 
     else if (
-        provisioner_ctx.state == PROVISIONER_WAITING_FOR_RANDOM &&
+        provisioner_ctx.state == WAITING_FOR_RANDOM &&
         ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
@@ -920,12 +922,12 @@ typedef enum {
     WAITING_FOR_LINK_OPEN,
     WAITING_FOR_INVITE,
     WAITING_FOR_START,
-    PROVISIONEE_WAITING_FOR_PUBLIC_KEY,
-    PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK,
-    PROVISIONEE_WAITING_FOR_CONFIRMATION,
-    PROVISIONEE_WAITING_FOR_CONFIRM_ACK,
-    PROVISIONEE_WAITING_FOR_RANDOM,
-    PROVISIONEE_WAITING_FOR_RANDOM_ACK,
+    WAITING_FOR_PUBLIC_KEY,
+    WAITING_FOR_PUBLIC_KEY_ACK,
+    WAITING_FOR_CONFIRMATION,
+    WAITING_FOR_CONFIRM_ACK,
+    WAITING_FOR_RANDOM,
+    WAITING_FOR_RANDOM_ACK,
     PROVISIONEE_AUTHENTICATED,
     PROVISIONEE_COMPLETE,
     PROVISIONEE_FAILED
@@ -1187,21 +1189,23 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                 memcpy(&provisionee_ctx.confirmation_inputs[81],
                        provisionee_ctx.public_key, 64);
             }
-            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_PUBLIC_KEY
+            provisionee_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
                                             : PROVISIONEE_FAILED;
 
             provisionee_attention_stop();
         }
 
         else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_PUBLIC_KEY &&
+            provisionee_ctx.state == WAITING_FOR_PUBLIC_KEY &&
             len >= 8 &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0
         ) {
-
+            //! Check STEP_7: Expect PROV_OP_PUBLIC_KEY advertisement
+            // Need to also check PB_GPC_START(2), PB_GPC_CONT(1), and PB_GPC_CONT(2) in order
             int result = pb_receive_public_key(
-                &provisionee_ctx.pubkey_rx, adv_data, len, provisionee_ctx.peer_public_key
+                &provisionee_ctx.pubkey_rx, adv_data, len,
+                provisionee_ctx.peer_public_key
             );
 
             if (result < 0) {
@@ -1213,6 +1217,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                 memcpy(&provisionee_ctx.confirmation_inputs[17],
                        provisionee_ctx.peer_public_key, 64);
 
+                //! Provisionee Send PB_GPC_ACK
                 if (pb_send_gpc_ack(pb_link_id, provisionee_ctx.pubkey_rx.tx_num) != 0 ||
                     prov_ecdh_compute_dhkey(
                         provisionee_ctx.private_key, provisionee_ctx.peer_public_key, provisionee_ctx.dhkey
@@ -1230,11 +1235,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                     return;
                 }
 
-                provisionee_ctx.state = PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK;
+                provisionee_ctx.state = WAITING_FOR_PUBLIC_KEY_ACK;
             }
 
         } else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_PUBLIC_KEY_ACK &&
+            //! Check PB_GPC_ACK
+            provisionee_ctx.state == WAITING_FOR_PUBLIC_KEY_ACK &&
             pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
         ) {
             const uint8_t auth_value[16] = {0};
@@ -1246,12 +1252,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                               auth_value,
                               provisionee_ctx.confirmation_salt,
                               provisionee_ctx.confirmation) == 0;
-            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_CONFIRMATION
+            provisionee_ctx.state = success ? WAITING_FOR_CONFIRMATION
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_CONFIRMATION &&
+            provisionee_ctx.state == WAITING_FOR_CONFIRMATION &&
             ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0 &&
@@ -1276,23 +1282,23 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             provisionee_ctx.tx_num = tx_num;
 
             int success = pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
-                          pb_send_auth_value(
+                          pb_send_confirmation_or_random(
                               pb_link_id, tx_num, PROV_OP_CONFIRM,
                               provisionee_ctx.confirmation) == 0;
-            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_CONFIRM_ACK
+            provisionee_ctx.state = success ? WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_CONFIRM_ACK &&
+            provisionee_ctx.state == WAITING_FOR_CONFIRM_ACK &&
             pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
         ) {
             //! Check STEP_11 ACK: Expected PROV_OP_CONFIRM Transaction Ack
-            provisionee_ctx.state = PROVISIONEE_WAITING_FOR_RANDOM;
+            provisionee_ctx.state = WAITING_FOR_RANDOM;
         }
 
         else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_RANDOM &&
+            provisionee_ctx.state == WAITING_FOR_RANDOM &&
             ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
             memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0 &&
             (adv_data[6] & 0x80) == 0 &&
@@ -1323,15 +1329,15 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                               provisionee_ctx.peer_random,
                               provisionee_ctx.random,
                               provisionee_ctx.peer_confirmation) &&
-                          pb_send_auth_value(
+                          pb_send_confirmation_or_random(
                               pb_link_id, tx_num, PROV_OP_RANDOM,
                               provisionee_ctx.random) == 0;
-            provisionee_ctx.state = success ? PROVISIONEE_WAITING_FOR_RANDOM_ACK
+            provisionee_ctx.state = success ? WAITING_FOR_RANDOM_ACK
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == PROVISIONEE_WAITING_FOR_RANDOM_ACK &&
+            provisionee_ctx.state == WAITING_FOR_RANDOM_ACK &&
             pb_gpc_ack_matches(adv_data, len, pb_link_id, provisionee_ctx.tx_num)
         ) {
             //! Check STEP_13 ACK: Expected PROV_OP_RANDOM Transaction Ack
