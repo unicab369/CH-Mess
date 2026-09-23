@@ -110,6 +110,8 @@
 #define PB_LINK_ACK         0x07 /* GPCF=control, BearerOpcode=Link Ack */
 #define PB_LINK_ACK_AD_LEN  7
 #define PB_LINK_CLOSE       0x0B /* GPCF=control, BearerOpcode=Link Close */
+#define PB_LINK_CLOSE_AD_LEN 8
+#define PB_CLOSE_SUCCESS     0x00
 #define PB_TRANSACTION_ACK_AD_LEN 7
 #define MESH_PROV_AD_TYPE   0x29
 #define MESH_BEACON_AD_TYPE 0x2B
@@ -147,7 +149,12 @@
 #define PROV_RANDOM_PDU_LEN   17
 #define PROV_RANDOM_AD_LEN    27
 #define PROV_OP_DATA          0x07
+#define PROV_DATA_PDU_LEN     34
+#define PROV_DATA_START_AD_LEN 30
+#define PROV_DATA_CONT_AD_LEN  21
 #define PROV_OP_COMPLETE      0x08
+#define PROV_COMPLETE_PDU_LEN 1
+#define PROV_COMPLETE_AD_LEN  11
 #define PROV_OP_FAILED        0x09
 
 /* Invite value (1) + Capabilities value (11) + Start value (5) +
@@ -164,6 +171,14 @@ typedef enum {
     PROV_OOB_OUTPUT = 0x02,
     PROV_OOB_INPUT  = 0x03
 } oob_method_t;
+
+typedef struct {
+    uint8_t net_key[16];
+    uint16_t net_key_index;
+    uint8_t flags;
+    uint32_t iv_index;
+    uint16_t unicast_address;
+} prov_data_t;
 
 /* Generic radio advertisement interface. The caller supplies the complete
  * AD structure, including its length byte and AD type. */
@@ -204,6 +219,30 @@ int prov_generate_confirmation(
     uint8_t confirmation_salt[16], uint8_t confirmation[16]
 );
 
+/* ProvisioningSalt = s1(ConfirmationSalt || RandomProvisioner ||
+ * RandomProvisionee). SessionKey and DevKey use k1 with the "prsk" and
+ * "prdk" labels. SessionNonce is the least-significant 13 bytes of the k1
+ * result produced with "prsn". */
+int prov_generate_session(
+    const uint8_t dhkey[32], const uint8_t confirmation_salt[16],
+    const uint8_t provisioner_random[16],
+    const uint8_t provisionee_random[16],
+    uint8_t session_key[16], uint8_t session_nonce[13],
+    uint8_t device_key[16]
+);
+
+/* Provisioning Data uses AES-CCM with no additional authenticated data and
+ * an 8-byte MIC. */
+int prov_encrypt_data(
+    const uint8_t session_key[16], const uint8_t session_nonce[13],
+    const uint8_t plain[25], uint8_t encrypted[25], uint8_t mic[8]
+);
+
+int prov_decrypt_data(
+    const uint8_t session_key[16], const uint8_t session_nonce[13],
+    const uint8_t encrypted[25], const uint8_t mic[8], uint8_t plain[25]
+);
+
 static const uint8_t no_oob_auth[16] = {0};
 
 /* --- Forward declarations of methods you must implement --- */
@@ -231,6 +270,15 @@ typedef struct {
     uint8_t  input_oob;
     uint16_t input_oob_size;
 } prov_caps_t;
+
+/* Application-owned provisioning data and persistent storage interfaces. */
+int provisioner_get_prov_data(prov_data_t *data);
+int provisioner_store_devkey(
+    const uint8_t device_key[16], uint16_t unicast_address
+);
+int provisionee_store_prov_data(
+    const prov_data_t *data, const uint8_t device_key[16]
+);
 
 static int  provisioner_choose_prov_params(const prov_caps_t *caps, prov_start_t *out);
 
@@ -459,6 +507,178 @@ static int pb_receive_public_key(
     return 1;
 }
 
+typedef struct {
+    uint8_t pdu[PROV_DATA_PDU_LEN];
+    uint8_t tx_num;
+    uint8_t next_segment;
+    uint8_t fcs;
+} data_rx_t;
+
+static int prov_data_is_valid(const prov_data_t *data, uint8_t num_elements) {
+    uint32_t last_address;
+
+    if (!data || num_elements == 0 || data->net_key_index > 0x0FFF ||
+        (data->flags & 0xFC) != 0 || data->unicast_address == 0 ||
+        data->unicast_address > 0x7FFF) {
+        return 0;
+    }
+
+    last_address = (uint32_t)data->unicast_address + num_elements - 1;
+    return last_address <= 0x7FFF;
+}
+
+static void prov_data_encode(const prov_data_t *data, uint8_t out[25]) {
+    memcpy(out, data->net_key, 16);
+    out[16] = (uint8_t)(data->net_key_index >> 8);
+    out[17] = (uint8_t)data->net_key_index;
+    out[18] = data->flags;
+    out[19] = (uint8_t)(data->iv_index >> 24);
+    out[20] = (uint8_t)(data->iv_index >> 16);
+    out[21] = (uint8_t)(data->iv_index >> 8);
+    out[22] = (uint8_t)data->iv_index;
+    out[23] = (uint8_t)(data->unicast_address >> 8);
+    out[24] = (uint8_t)data->unicast_address;
+}
+
+static void prov_data_decode(prov_data_t *data, const uint8_t in[25]) {
+    memcpy(data->net_key, in, 16);
+    data->net_key_index = (uint16_t)((in[16] << 8) | in[17]);
+    data->flags = in[18];
+    data->iv_index = ((uint32_t)in[19] << 24) |
+                     ((uint32_t)in[20] << 16) |
+                     ((uint32_t)in[21] << 8) |
+                     in[22];
+    data->unicast_address = (uint16_t)((in[23] << 8) | in[24]);
+}
+
+static int pb_send_data(
+    const uint8_t link_id[4], uint8_t tx_num,
+    const uint8_t encrypted[25], const uint8_t mic[8]
+) {
+    uint8_t pdu[PROV_DATA_PDU_LEN];
+    pdu[0] = PROV_OP_DATA;
+    memcpy(&pdu[1], encrypted, 25);
+    memcpy(&pdu[26], mic, 8);
+
+    // Transaction Start:
+    // [0]      AD Length = PROV_DATA_START_AD_LEN (30 bytes follow)
+    // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
+    // [2..5]   Link ID
+    // [6]      Transaction Number
+    // [7]      GPC = PB_GPC_START(1), last segment index 1
+    // [8..9]   Provisioning PDU length = 34
+    // [10]     FCS over the complete Provisioning Data PDU
+    // [11..30] Provisioning Data PDU bytes 0..19
+    uint8_t start[PROV_DATA_START_AD_LEN + 1];
+    start[0] = PROV_DATA_START_AD_LEN;
+    start[1] = MESH_PROV_AD_TYPE;
+    memcpy(&start[2], link_id, 4);
+    start[6] = tx_num;
+    start[7] = PB_GPC_START(1);
+    start[8] = 0;
+    start[9] = PROV_DATA_PDU_LEN;
+    start[10] = pb_adv_fcs(pdu, sizeof(pdu));
+    memcpy(&start[11], pdu, PB_START_PAYLOAD_MAX);
+
+    // Transaction Continuation 1:
+    // [0]     AD Length = PROV_DATA_CONT_AD_LEN (21 bytes follow)
+    // [1]     AD Type = MESH_PROV_AD_TYPE (0x29)
+    // [2..5]  Link ID
+    // [6]     Same Transaction Number
+    // [7]     GPC = PB_GPC_CONT(1), segment index 1
+    // [8..21] Provisioning Data PDU bytes 20..33
+    uint8_t cont[PROV_DATA_CONT_AD_LEN + 1];
+    cont[0] = PROV_DATA_CONT_AD_LEN;
+    cont[1] = MESH_PROV_AD_TYPE;
+    memcpy(&cont[2], link_id, 4);
+    cont[6] = tx_num;
+    cont[7] = PB_GPC_CONT(1);
+    memcpy(&cont[8], &pdu[PB_START_PAYLOAD_MAX], 14);
+
+    return ble_mesh_send_adv(start, sizeof(start)) != 0 ||
+           ble_mesh_send_adv(cont, sizeof(cont)) != 0 ? -1 : 0;
+}
+
+static int pb_receive_data(
+    data_rx_t *rx, const uint8_t *adv_data, size_t len,
+    uint8_t encrypted[25], uint8_t mic[8]
+) {
+    if (adv_data[7] == PB_GPC_START(1)) {
+        if (!ad_length_matches(len, adv_data[0], PROV_DATA_START_AD_LEN) ||
+            adv_data[8] != 0 || adv_data[9] != PROV_DATA_PDU_LEN) {
+            return -1;
+        }
+
+        memcpy(rx->pdu, &adv_data[11], PB_START_PAYLOAD_MAX);
+        rx->tx_num = adv_data[6];
+        rx->fcs = adv_data[10];
+        rx->next_segment = 1;
+        return 0;
+    }
+
+    if (rx->next_segment == 0 || adv_data[6] != rx->tx_num) {
+        return 0;
+    }
+
+    if (adv_data[7] != PB_GPC_CONT(1) ||
+        !ad_length_matches(len, adv_data[0], PROV_DATA_CONT_AD_LEN)) {
+        return -1;
+    }
+
+    memcpy(&rx->pdu[PB_START_PAYLOAD_MAX], &adv_data[8], 14);
+    rx->next_segment = 0;
+
+    if (rx->pdu[0] != PROV_OP_DATA ||
+        pb_adv_fcs(rx->pdu, sizeof(rx->pdu)) != rx->fcs) {
+        return -1;
+    }
+
+    memcpy(encrypted, &rx->pdu[1], 25);
+    memcpy(mic, &rx->pdu[26], 8);
+    return 1;
+}
+
+static int pb_send_complete(const uint8_t link_id[4], uint8_t tx_num) {
+    // Provisioning Complete advertisement:
+    // [0]     AD Length = PROV_COMPLETE_AD_LEN (11 bytes follow)
+    // [1]     AD Type = MESH_PROV_AD_TYPE (0x29)
+    // [2..5]  Link ID
+    // [6]     Transaction Number
+    // [7]     GPC = PB_GPC_START(0), last segment index 0
+    // [8..9]  Provisioning PDU length = 1
+    // [10]    FCS
+    // [11]    PROV_OP_COMPLETE (0x08)
+    uint8_t adv[PROV_COMPLETE_AD_LEN + 1];
+    adv[0] = PROV_COMPLETE_AD_LEN;
+    adv[1] = MESH_PROV_AD_TYPE;
+    memcpy(&adv[2], link_id, 4);
+    adv[6] = tx_num;
+    adv[7] = PB_GPC_START(0);
+    adv[8] = 0;
+    adv[9] = PROV_COMPLETE_PDU_LEN;
+    adv[11] = PROV_OP_COMPLETE;
+    adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
+    return ble_mesh_send_adv(adv, sizeof(adv));
+}
+
+static int pb_send_link_close(const uint8_t link_id[4], uint8_t reason) {
+    // PB-ADV Link Close advertisement:
+    // [0]    AD Length = PB_LINK_CLOSE_AD_LEN (8 bytes follow)
+    // [1]    AD Type = MESH_PROV_AD_TYPE (0x29)
+    // [2..5] Link ID
+    // [6]    Transaction Number = 0x00
+    // [7]    GPC = PB_LINK_CLOSE (0x0B)
+    // [8]    Close reason
+    uint8_t adv[PB_LINK_CLOSE_AD_LEN + 1];
+    adv[0] = PB_LINK_CLOSE_AD_LEN;
+    adv[1] = MESH_PROV_AD_TYPE;
+    memcpy(&adv[2], link_id, 4);
+    adv[6] = 0;
+    adv[7] = PB_LINK_CLOSE;
+    adv[8] = reason;
+    return ble_mesh_send_adv(adv, sizeof(adv));
+}
+
 static int pb_send_confirm_or_random(
     const uint8_t link_id[4], uint8_t tx_num,
     uint8_t opcode, const uint8_t value[16]
@@ -518,23 +738,36 @@ static int prov_peer_confirmation_is_valid(
 
 typedef enum {
     PROVISIONER_IDLE = 0,
+    PROVISIONEE_IDLE,
     WAITING_FOR_BEACON,
+    WAITING_FOR_LINK_OPEN,
     WAITING_FOR_LINK_ACK,
+    WAITING_FOR_INVITE,
     WAITING_FOR_CAPABILITIES,
+    WAITING_FOR_START,
     WAITING_FOR_START_ACK,
     WAITING_FOR_PUBLIC_KEY,
+    WAITING_FOR_PUBLIC_KEY_ACK,
     WAITING_FOR_CONFIRM_ACK,
     WAITING_FOR_CONFIRMATION,
     WAITING_FOR_RANDOM_ACK,
     WAITING_FOR_RANDOM,
-    PROVISIONER_AUTHENTICATED,
+    WAITING_FOR_DATA_ACK,
+    WAITING_FOR_DATA,
+    WAITING_FOR_COMPLETE,
+    WAITING_FOR_COMPLETE_ACK,
+    WAITING_FOR_LINK_CLOSE,
+    PROVISIONER_COMPLETE,
+    PROVISIONEE_COMPLETE,
+    PROVISIONEE_FAILED,
     PROVISIONER_FAILED
-} provisioner_state_t;
+} provisioning_state_t;
 
 typedef struct {
-    provisioner_state_t state;
+    provisioning_state_t state;
     prov_start_t start;
     uint8_t tx_num;
+    uint8_t num_elements;
     uint8_t private_key[32];
     uint8_t public_key[64];
     uint8_t peer_public_key[64];
@@ -544,6 +777,10 @@ typedef struct {
     uint8_t peer_confirmation[16];
     uint8_t random[16];
     uint8_t peer_random[16];
+    uint8_t session_key[16];
+    uint8_t session_nonce[13];
+    uint8_t device_key[16];
+    prov_data_t data;
     public_key_rx_t pubkey_rx;
 } provisioner_ctx_t;
 
@@ -563,7 +800,7 @@ void provisioner_poll(void) {
     if (ble_mesh_receive_adv(adv_data, &len) <= 0 ||
         len < 2 || (size_t)adv_data[0] + 1 != len ||
         provisioner_ctx.state == PROVISIONER_FAILED ||
-        provisioner_ctx.state == PROVISIONER_AUTHENTICATED) {
+        provisioner_ctx.state == PROVISIONER_COMPLETE) {
         return;
     }
 
@@ -695,6 +932,7 @@ void provisioner_poll(void) {
         caps.output_oob_size = (uint16_t)(prov_pdu[7] | (prov_pdu[8] << 8));
         caps.input_oob = prov_pdu[9];
         caps.input_oob_size = (uint16_t)(prov_pdu[10] | (prov_pdu[11] << 8));
+        provisioner_ctx.num_elements = caps.num_elements;
 
         if (provisioner_choose_prov_params(&caps, &provisioner_ctx.start) != 0) {
             provisioner_ctx.state = PROVISIONER_FAILED;
@@ -888,6 +1126,10 @@ void provisioner_poll(void) {
         // [12..27] Provisionee Random value
         memcpy(provisioner_ctx.peer_random, &adv_data[12], 16);
 
+        uint8_t plain[25];
+        uint8_t encrypted[25];
+        uint8_t mic[8];
+
         int success =
             //! Provisioner send PB_GPC_ACK
             pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
@@ -896,9 +1138,75 @@ void provisioner_poll(void) {
                 provisioner_ctx.dhkey,
                 provisioner_ctx.peer_random,
                 provisioner_ctx.random,
-                provisioner_ctx.peer_confirmation);
+                provisioner_ctx.peer_confirmation) &&
+            prov_generate_session(
+                provisioner_ctx.dhkey,
+                provisioner_ctx.confirmation_salt,
+                provisioner_ctx.random,
+                provisioner_ctx.peer_random,
+                provisioner_ctx.session_key,
+                provisioner_ctx.session_nonce,
+                provisioner_ctx.device_key) == 0 &&
+            provisioner_get_prov_data(&provisioner_ctx.data) == 0 &&
+            prov_data_is_valid(
+                &provisioner_ctx.data,
+                provisioner_ctx.num_elements);
 
-        provisioner_ctx.state = success ? PROVISIONER_AUTHENTICATED
+        if (success) {
+            prov_data_encode(&provisioner_ctx.data, plain);
+            success = prov_encrypt_data(
+                provisioner_ctx.session_key,
+                provisioner_ctx.session_nonce,
+                plain, encrypted, mic) == 0;
+        }
+
+        if (success) {
+            uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
+            provisioner_ctx.tx_num = tx_num;
+
+            //! Provisioner Send STEP_14: PROV_OP_DATA advertisement
+            success = pb_send_data(pb_link_id, tx_num, encrypted, mic) == 0;
+        }
+
+        provisioner_ctx.state = success ? WAITING_FOR_DATA_ACK
+                                        : PROVISIONER_FAILED;
+    }
+
+    else if (
+        provisioner_ctx.state == WAITING_FOR_DATA_ACK &&
+        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
+        adv_data[6] == provisioner_ctx.tx_num &&
+        adv_data[7] == PB_GPC_ACK
+    ) {
+        //! Check STEP_14 ACK: Expected PROV_OP_DATA Transaction Ack
+        provisioner_ctx.state = WAITING_FOR_COMPLETE;
+    }
+
+    else if (
+        provisioner_ctx.state == WAITING_FOR_COMPLETE &&
+        ad_length_matches(len, adv_data[0], PROV_COMPLETE_AD_LEN) &&
+        (adv_data[6] & 0x80) != 0 &&
+        adv_data[7] == PB_GPC_START(0) &&
+        adv_data[8] == 0 && adv_data[9] == PROV_COMPLETE_PDU_LEN &&
+        adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_COMPLETE_PDU_LEN) &&
+        adv_data[11] == PROV_OP_COMPLETE
+    ) {
+        //! Check STEP_15: Expected PROV_OP_COMPLETE advertisement
+        // [0]     AD Length = PROV_COMPLETE_AD_LEN (11 bytes follow)
+        // [1]     AD Type = MESH_PROV_AD_TYPE (0x29), prechecked
+        // [2..5]  Link ID, prechecked
+        // [6]     Provisionee Transaction Number (0x80..0xFF)
+        // [7]     GPC = PB_GPC_START(0), last segment index 0
+        // [8..9]  Provisioning PDU length = 1
+        // [10]    FCS
+        // [11]    PROV_OP_COMPLETE (0x08)
+        int success = provisioner_store_devkey(
+                          provisioner_ctx.device_key,
+                          provisioner_ctx.data.unicast_address) == 0 &&
+                      pb_send_gpc_ack(pb_link_id, adv_data[6]) == 0 &&
+                      pb_send_link_close(pb_link_id, PB_CLOSE_SUCCESS) == 0;
+
+        provisioner_ctx.state = success ? PROVISIONER_COMPLETE
                                         : PROVISIONER_FAILED;
     }
 }
@@ -907,24 +1215,8 @@ void provisioner_poll(void) {
  * PROVISIONEE SIDE (the node being provisioned)
  * ========================================================================= */
 
-typedef enum {
-    PROVISIONEE_IDLE = 0,
-    WAITING_FOR_LINK_OPEN,
-    WAITING_FOR_INVITE,
-    WAITING_FOR_START,
-    WAITING_FOR_PUBLIC_KEY,
-    WAITING_FOR_PUBLIC_KEY_ACK,
-    WAITING_FOR_CONFIRMATION,
-    WAITING_FOR_CONFIRM_ACK,
-    WAITING_FOR_RANDOM,
-    WAITING_FOR_RANDOM_ACK,
-    PROVISIONEE_AUTHENTICATED,
-    PROVISIONEE_COMPLETE,
-    PROVISIONEE_FAILED
-} provisionee_state_t;
-
 typedef struct {
-    provisionee_state_t state;
+    provisioning_state_t state;
     uint8_t tx_num;
     uint8_t device_uuid[16];
     uint8_t private_key[32];
@@ -937,7 +1229,12 @@ typedef struct {
     uint8_t peer_confirmation[16];
     uint8_t random[16];
     uint8_t peer_random[16];
+    uint8_t session_key[16];
+    uint8_t session_nonce[13];
+    uint8_t device_key[16];
+    prov_data_t data;
     public_key_rx_t pubkey_rx;
+    data_rx_t data_rx;
 } provisionee_ctx_t;
 
 static provisionee_ctx_t provisionee_ctx;
@@ -1015,7 +1312,6 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
         len >= 2 && (size_t)adv_data[0] + 1 == len &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         provisionee_ctx.state != PROVISIONEE_FAILED &&
-        provisionee_ctx.state != PROVISIONEE_AUTHENTICATED &&
         provisionee_ctx.state != PROVISIONEE_COMPLETE &&
         (provisionee_ctx.state == WAITING_FOR_LINK_OPEN ||
          (len >= 6 && memcmp(&adv_data[2], pb_link_id, sizeof(pb_link_id)) == 0))
@@ -1332,7 +1628,95 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
             adv_data[7] == PB_GPC_ACK
         ) {
             //! Check STEP_13 ACK: Expected PROV_OP_RANDOM Transaction Ack
-            provisionee_ctx.state = PROVISIONEE_AUTHENTICATED;
+            int success = prov_generate_session(
+                provisionee_ctx.dhkey,
+                provisionee_ctx.confirmation_salt,
+                provisionee_ctx.peer_random,
+                provisionee_ctx.random,
+                provisionee_ctx.session_key,
+                provisionee_ctx.session_nonce,
+                provisionee_ctx.device_key) == 0;
+            provisionee_ctx.state = success ? WAITING_FOR_DATA
+                                            : PROVISIONEE_FAILED;
+        }
+
+        else if (
+            provisionee_ctx.state == WAITING_FOR_DATA &&
+            len >= 8 &&
+            (adv_data[6] & 0x80) == 0
+        ) {
+            //! Check STEP_14: Expected segmented PROV_OP_DATA advertisement
+            uint8_t encrypted[25];
+            uint8_t mic[8];
+            int result = pb_receive_data(
+                &provisionee_ctx.data_rx, adv_data, len, encrypted, mic
+            );
+
+            if (result < 0) {
+                provisionee_ctx.state = PROVISIONEE_FAILED;
+                return;
+            }
+
+            if (result > 0) {
+                uint8_t plain[25];
+                int success = pb_send_gpc_ack(
+                                  pb_link_id,
+                                  provisionee_ctx.data_rx.tx_num) == 0 &&
+                              prov_decrypt_data(
+                                  provisionee_ctx.session_key,
+                                  provisionee_ctx.session_nonce,
+                                  encrypted, mic, plain) == 0;
+
+                if (success) {
+                    prov_data_decode(&provisionee_ctx.data, plain);
+                    success = prov_data_is_valid(
+                                  &provisionee_ctx.data,
+                                  caps->num_elements) &&
+                              provisionee_store_prov_data(
+                                  &provisionee_ctx.data,
+                                  provisionee_ctx.device_key) == 0;
+                }
+
+                if (success) {
+                    uint8_t tx_num = (uint8_t)(
+                        ((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80
+                    );
+                    provisionee_ctx.tx_num = tx_num;
+
+                    //! Provisionee Send STEP_15: PROV_OP_COMPLETE advertisement
+                    success = pb_send_complete(pb_link_id, tx_num) == 0;
+                }
+
+                provisionee_ctx.state = success ? WAITING_FOR_COMPLETE_ACK
+                                                : PROVISIONEE_FAILED;
+            }
+        }
+
+        else if (
+            provisionee_ctx.state == WAITING_FOR_COMPLETE_ACK &&
+            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
+            adv_data[6] == provisionee_ctx.tx_num &&
+            adv_data[7] == PB_GPC_ACK
+        ) {
+            //! Check STEP_15 ACK: Expected PROV_OP_COMPLETE Transaction Ack
+            provisionee_ctx.state = WAITING_FOR_LINK_CLOSE;
+        }
+
+        else if (
+            provisionee_ctx.state == WAITING_FOR_LINK_CLOSE &&
+            ad_length_matches(len, adv_data[0], PB_LINK_CLOSE_AD_LEN) &&
+            adv_data[6] == 0 &&
+            adv_data[7] == PB_LINK_CLOSE &&
+            adv_data[8] == PB_CLOSE_SUCCESS
+        ) {
+            //! Check STEP_16: Expected successful PB_LINK_CLOSE advertisement
+            // [0]     AD Length = PB_LINK_CLOSE_AD_LEN (8 bytes follow)
+            // [1]     AD Type = MESH_PROV_AD_TYPE (0x29), prechecked
+            // [2..5]  Link ID, prechecked
+            // [6]     Transaction Number = 0x00
+            // [7]     GPC = PB_LINK_CLOSE (0x0B)
+            // [8]     Reason = PB_CLOSE_SUCCESS (0x00)
+            provisionee_ctx.state = PROVISIONEE_COMPLETE;
         }
     }
 
