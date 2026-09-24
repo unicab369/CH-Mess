@@ -1101,7 +1101,7 @@ void provisioner_poll(void) {
             adv[6] = 0;
             adv[7] = PB_LINK_CLOSE;
             adv[8] = PB_CLOSE_SUCCESS;
-            success = ble_mesh_send_adv(adv, sizeof(adv));
+            success = ble_mesh_send_adv(adv, sizeof(adv)) == 0;
         }
         provisioner_ctx.state = success ? PROVISIONER_COMPLETE
                                         : PROVISIONER_FAILED;
@@ -1381,10 +1381,17 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
         ) {
             //! Check STEP_7: Expect PROV_OP_PUBLIC_KEY advertisement
             // Need to also check PB_GPC_START(2), PB_GPC_CONT(1), and PB_GPC_CONT(2) in order
-            if (pb_rx_public_key(
+            int result = pb_rx_public_key(
                 &provisionee_ctx.pubkey_rx, adv_data, len,
-                provisionee_ctx.peer_public_key) > 0
-            ) {
+                provisionee_ctx.peer_public_key
+            );
+
+            if (result < 0) {
+                provisionee_ctx.state = PROVISIONEE_FAILED;
+                return;
+            }
+
+            if (result > 0) {
                 memcpy(&provisionee_ctx.confirm_inputs[17], provisionee_ctx.peer_public_key, 64);
                 uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
                 provisionee_ctx.tx_num = tx_num;
@@ -1619,7 +1626,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps_t *caps) {
                         adv[9] = PROV_COMPLETE_PDU_LEN;
                         adv[11] = PROV_OP_COMPLETE;
                         adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
-                        success =  ble_mesh_send_adv(adv, sizeof(adv));
+                        success = ble_mesh_send_adv(adv, sizeof(adv)) == 0;
                     }
                 }
 
