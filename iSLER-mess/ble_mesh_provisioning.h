@@ -4,6 +4,15 @@
 // GPC = Generic Provisioning Control
 // ADV = Advertising
 
+// BLE Mesh device types
+// | Type           | Role
+// | Provisioner    | Adds devices to the Mesh
+// | Provisionee    | Device being added
+// | Relay Node     | Forwards messages to extend range
+// | Proxy Node     | Bridges GATT - Mesh advertising bearer
+// | Friend Node    | Caches messages for an LPN
+// | Low Power Node | Sleepy node that polls its Friend
+
 /* =========================================================================
  * BLE Mesh Provisioning
  * =========================================================================
@@ -465,16 +474,14 @@ static int pb_rx_public_key(
     return 1;
 }
 
-typedef struct {
-    uint8_t pdu[PROV_DATA_PDU_LEN];
-    uint8_t tx_num;
-    uint8_t next_segment;
-    uint8_t fcs;
-} data_rx_t;
-
 static int prov_data_is_valid(const prov_data *data, uint8_t num_elements) {
     uint32_t last_address;
-
+    // unicast address ranges
+    // 0x0001-0x7EFF (32,511 count) - Unicast addresses
+    // 0x7F00–0x7FFF (256 count)    - Provisioner only addresses
+    // 0x8000-0xBFFF (16,384 count) - Group addresses
+    // 0xC000-0xFEFF (16,128 count) - Virtual addresses
+    // 0xFF00-0xFFFF (256 count) - Fixed (all-proxies, all-friends, etc.)
     if (!data || num_elements == 0 || data->net_key_index > 0x0FFF ||
         (data->flags & 0xFC) != 0 || data->unicast_address == 0 ||
         data->unicast_address > 0x7FFF) {
@@ -560,13 +567,13 @@ typedef struct {
     uint8_t device_key[16];
     uint16_t unicast_address;
     public_key_rx_t pubkey_rx;
-} provisioner_ctx_t;
+} provisioner_context;
 
 //! =========================================================================
 //! PROVISIONER SIDE
 //! =========================================================================
 
-static provisioner_ctx_t provisioner_ctx;
+static provisioner_context provisioner;
 static const uint8_t no_oob_auth[16] = {0};
 
 static int equal_16(const uint8_t a[16], const uint8_t b[16]) {
@@ -598,9 +605,9 @@ static int peer_confirm_valid(
 }
 
 void provisioner_start(void) {
-    memset(&provisioner_ctx, 0, sizeof(provisioner_ctx));
-    provisioner_ctx.tx_num = 0x7F;
-    provisioner_ctx.state = WAITING_FOR_BEACON;
+    memset(&provisioner, 0, sizeof(provisioner));
+    provisioner.tx_num = 0x7F;
+    provisioner.state = WAITING_FOR_BEACON;
 }
 
 /* Poll the radio and handle one received advertisement. */
@@ -610,20 +617,20 @@ void provisioner_poll(void) {
 
     if (BLE_MESH_RX(adv_data, &len) <= 0 ||
         len < 2 || (size_t)adv_data[0] + 1 != len ||
-        provisioner_ctx.state == PROVISIONER_FAILED ||
-        provisioner_ctx.state == PROVISIONER_COMPLETE) {
+        provisioner.state == PROVISIONER_FAILED ||
+        provisioner.state == PROVISIONER_COMPLETE) {
         return;
     }
 
     // Link ID must match the current provisioning session.
-    if (provisioner_ctx.state != WAITING_FOR_BEACON &&
+    if (provisioner.state != WAITING_FOR_BEACON &&
         (len < 6 || adv_data[1] != MESH_PROV_AD_TYPE ||
-         memcmp(&adv_data[2], provisioner_ctx.link_id,
-                sizeof(provisioner_ctx.link_id)) != 0)) {
+         memcmp(&adv_data[2], provisioner.link_id,
+                sizeof(provisioner.link_id)) != 0)) {
         return;
     }
 
-    if (provisioner_ctx.state == WAITING_FOR_BEACON &&
+    if (provisioner.state == WAITING_FOR_BEACON &&
         ad_length_matches(len, adv_data[0], MESH_BEACON_UNPROVISIONED_AD_LEN) &&
         adv_data[1] == MESH_BEACON_AD_TYPE &&
         adv_data[2] == MESH_BEACON_UNPROVISIONED
@@ -636,17 +643,17 @@ void provisioner_poll(void) {
         // [19..20] OOB Information (2 bytes) */
 
         // Start a new session with a new Link ID.
-        if (GET_RANDOM_BYTES(provisioner_ctx.link_id,
-                             sizeof(provisioner_ctx.link_id)) != 0) {
-            provisioner_ctx.state = PROVISIONER_FAILED;
+        if (GET_RANDOM_BYTES(provisioner.link_id,
+                             sizeof(provisioner.link_id)) != 0) {
+            provisioner.state = PROVISIONER_FAILED;
             return;
         }
 
         uint8_t link_open[PB_LINK_OPEN_AD_LEN + 1];
         link_open[0] = PB_LINK_OPEN_AD_LEN;
         link_open[1] = MESH_PROV_AD_TYPE;
-        memcpy(&link_open[2], provisioner_ctx.link_id,
-               sizeof(provisioner_ctx.link_id));
+        memcpy(&link_open[2], provisioner.link_id,
+               sizeof(provisioner.link_id));
         link_open[6] = 0;
         link_open[7] = PB_LINK_OPEN;
 
@@ -661,12 +668,12 @@ void provisioner_poll(void) {
         // [7]     GPC = PB_LINK_OPEN (0x03)
         // [8..23] Device UUID (16 bytes)
         int success = BLE_MESH_TX(link_open, sizeof(link_open)) == 0;
-        provisioner_ctx.state = success ? WAITING_FOR_LINK_ACK
+        provisioner.state = success ? WAITING_FOR_LINK_ACK
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_LINK_ACK &&
+        provisioner.state == WAITING_FOR_LINK_ACK &&
         ad_length_matches(len, adv_data[0], PB_LINK_ACK_AD_LEN) &&
         adv_data[6] == 0 &&
         adv_data[7] == PB_LINK_ACK
@@ -681,11 +688,11 @@ void provisioner_poll(void) {
         uint8_t invite[PROV_OP_INVITE_AD_LEN + 1];
         invite[0] = PROV_OP_INVITE_AD_LEN;
         invite[1] = MESH_PROV_AD_TYPE;
-        memcpy(&invite[2], provisioner_ctx.link_id,
-               sizeof(provisioner_ctx.link_id));
+        memcpy(&invite[2], provisioner.link_id,
+               sizeof(provisioner.link_id));
 
-        uint8_t transaction_id = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-        provisioner_ctx.tx_num = transaction_id;
+        uint8_t transaction_id = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+        provisioner.tx_num = transaction_id;
         invite[6] = transaction_id;
         invite[7] = PB_GPC_START(0);
         invite[8] = 0;
@@ -693,7 +700,7 @@ void provisioner_poll(void) {
         invite[11] = PROV_OP_INVITE;
         invite[12] = 5;
         invite[10] = pb_adv_fcs(&invite[11], 2);
-        provisioner_ctx.confirm_inputs[0] = invite[12];
+        provisioner.confirm_inputs[0] = invite[12];
 
         //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
         // [0]      AD Length = PROV_OP_INVITE_AD_LEN (12 bytes follow)
@@ -706,12 +713,12 @@ void provisioner_poll(void) {
         // [11]     PROV_OP_INVITE (0x00)
         // [12]     Attention Duration = 5 seconds
         int success = BLE_MESH_TX(invite, sizeof(invite)) == 0;
-        provisioner_ctx.state = success ? WAITING_FOR_CAPABILITIES
+        provisioner.state = success ? WAITING_FOR_CAPABILITIES
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_CAPABILITIES &&
+        provisioner.state == WAITING_FOR_CAPABILITIES &&
         ad_length_matches(len, adv_data[0], PROV_OP_CAPABILITIES_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 &&
         adv_data[7] == PB_GPC_START(0) &&
@@ -732,8 +739,8 @@ void provisioner_poll(void) {
         // [12..22] Capabilities fields
 
         //! Provisioner Send PB_GPC_ACK (the commisionEE need to handle this?)
-        if (pb_tx_gpc_ack(provisioner_ctx.link_id, adv_data[6]) != 0) {
-            provisioner_ctx.state = PROVISIONER_FAILED;
+        if (pb_tx_gpc_ack(provisioner.link_id, adv_data[6]) != 0) {
+            provisioner.state = PROVISIONER_FAILED;
             return;
         }
 
@@ -747,10 +754,10 @@ void provisioner_poll(void) {
         caps.output_oob_size = (uint16_t)(prov_pdu[7] | (prov_pdu[8] << 8));
         caps.input_oob = prov_pdu[9];
         caps.input_oob_size = (uint16_t)(prov_pdu[10] | (prov_pdu[11] << 8));
-        provisioner_ctx.num_elements = caps.num_elements;
+        provisioner.num_elements = caps.num_elements;
 
-        if (PROVISIONER_CHOOSE_PARAMS(&caps, &provisioner_ctx.start) != 0) {
-            provisioner_ctx.state = PROVISIONER_FAILED;
+        if (PROVISIONER_CHOOSE_PARAMS(&caps, &provisioner.start) != 0) {
+            provisioner.state = PROVISIONER_FAILED;
             return;
         }
 
@@ -758,26 +765,26 @@ void provisioner_poll(void) {
         start[0] = PROV_OP_START_AD_LEN;
         start[1] = MESH_PROV_AD_TYPE;
 
-        memcpy(&start[2], provisioner_ctx.link_id,
-               sizeof(provisioner_ctx.link_id));
-        uint8_t transaction_id = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-        provisioner_ctx.tx_num = transaction_id;
+        memcpy(&start[2], provisioner.link_id,
+               sizeof(provisioner.link_id));
+        uint8_t transaction_id = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+        provisioner.tx_num = transaction_id;
 
         start[6] = transaction_id;
         start[7] = PB_GPC_START(0);
         start[8] = 0;
         start[9] = 6;
         start[11] = PROV_OP_START;
-        start[12] = provisioner_ctx.start.algorithm;
-        start[13] = provisioner_ctx.start.public_key_oob;
-        start[14] = provisioner_ctx.start.auth_method;
-        start[15] = provisioner_ctx.start.auth_action;
-        start[16] = provisioner_ctx.start.auth_size;
+        start[12] = provisioner.start.algorithm;
+        start[13] = provisioner.start.public_key_oob;
+        start[14] = provisioner.start.auth_method;
+        start[15] = provisioner.start.auth_action;
+        start[16] = provisioner.start.auth_size;
         start[10] = pb_adv_fcs(&start[11], 6);
 
         /* ConfirmationInputs contains the PDU values without their opcodes. */
-        memcpy(&provisioner_ctx.confirm_inputs[1], &adv_data[12], 11);
-        memcpy(&provisioner_ctx.confirm_inputs[12], &start[12], 5);
+        memcpy(&provisioner.confirm_inputs[1], &adv_data[12], 11);
+        memcpy(&provisioner.confirm_inputs[12], &start[12], 5);
 
         //! Provisioner Send STEP_6: PROV_OP_START advertisement
         // [0]      AD Length = PROV_OP_START_AD_LEN (16B follow)
@@ -789,92 +796,92 @@ void provisioner_poll(void) {
         // [10]     FCS
         // [11..16] PROV_OP_START PDU */
         int send_ok = BLE_MESH_TX(start, sizeof(start)) == 0;
-        provisioner_ctx.state = send_ok ? WAITING_FOR_START_ACK
+        provisioner.state = send_ok ? WAITING_FOR_START_ACK
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_START_ACK &&
+        provisioner.state == WAITING_FOR_START_ACK &&
         ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == provisioner_ctx.tx_num &&
+        adv_data[6] == provisioner.tx_num &&
         adv_data[7] == PB_GPC_ACK
     ) {
         //! Check ACK for STEP_6: Expected PROV_OP_START Transaction Ack
-        uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-        provisioner_ctx.tx_num = tx_num;
+        uint8_t tx_num = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+        provisioner.tx_num = tx_num;
 
         //! Provisioner Send STEP_7: PROV_OP_PUBLIC_KEY advertisement
-        int success =   ECDH_GENERATE_KPAIR(provisioner_ctx.private_key,
-                                                provisioner_ctx.public_key) == 0 &&
-                        pb_tx_public_key(provisioner_ctx.link_id, tx_num,
-                                         provisioner_ctx.public_key) == 0;
-        if (success) memcpy(&provisioner_ctx.confirm_inputs[17],
-                            provisioner_ctx.public_key, 64);
+        int success =   ECDH_GENERATE_KPAIR(provisioner.private_key,
+                                                provisioner.public_key) == 0 &&
+                        pb_tx_public_key(provisioner.link_id, tx_num,
+                                         provisioner.public_key) == 0;
+        if (success) memcpy(&provisioner.confirm_inputs[17],
+                            provisioner.public_key, 64);
 
-        provisioner_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
+        provisioner.state = success ? WAITING_FOR_PUBLIC_KEY
                                         : PROVISIONER_FAILED;
 
     } else if (
-        provisioner_ctx.state == WAITING_FOR_PUBLIC_KEY &&
+        provisioner.state == WAITING_FOR_PUBLIC_KEY &&
         len >= 8 &&
         (adv_data[6] & 0x80) != 0
     ) {
         //! Check STEP_8: Expect PROV_OP_PUBLIC_KEY advertisement
         // Need to also check PB_GPC_START(2), PB_GPC_CONT(1), and PB_GPC_CONT(2) in order
-        int result = pb_rx_public_key(&provisioner_ctx.pubkey_rx, adv_data, len);
+        int result = pb_rx_public_key(&provisioner.pubkey_rx, adv_data, len);
 
         if (result < 0) {
-            provisioner_ctx.state = PROVISIONER_FAILED;
+            provisioner.state = PROVISIONER_FAILED;
             return;
         }
 
         if (result > 0) {
-            const uint8_t *peer_public_key = &provisioner_ctx.pubkey_rx.pdu[1];
-            memcpy(&provisioner_ctx.confirm_inputs[81], peer_public_key, 64);
+            const uint8_t *peer_public_key = &provisioner.pubkey_rx.pdu[1];
+            memcpy(&provisioner.confirm_inputs[81], peer_public_key, 64);
 
-            uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-            provisioner_ctx.tx_num = tx_num;
+            uint8_t tx_num = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+            provisioner.tx_num = tx_num;
             uint8_t confirmation[16];
 
             int success =
                 //! Provisioner Send PB_GPC_ACK
                 pb_tx_gpc_ack(
-                    provisioner_ctx.link_id,
-                    provisioner_ctx.pubkey_rx.tx_num) == 0 &&
+                    provisioner.link_id,
+                    provisioner.pubkey_rx.tx_num) == 0 &&
                 ECDH_COMPUTE_DHKEY(
-                    provisioner_ctx.private_key,
+                    provisioner.private_key,
                     peer_public_key,
-                    provisioner_ctx.dhkey) == 0 &&
+                    provisioner.dhkey) == 0 &&
                 GET_RANDOM_BYTES(
-                    provisioner_ctx.random, sizeof(provisioner_ctx.random)) == 0 &&
+                    provisioner.random, sizeof(provisioner.random)) == 0 &&
                 AUTH_COMPUTE_CONFIRMATION(
-                    provisioner_ctx.confirm_inputs,
-                    provisioner_ctx.dhkey,
-                    provisioner_ctx.random,
+                    provisioner.confirm_inputs,
+                    provisioner.dhkey,
+                    provisioner.random,
                     no_oob_auth,
-                    provisioner_ctx.confirmation_salt,
+                    provisioner.confirmation_salt,
                     confirmation) == 0 &&
                 //! Provisioner Send STEP_10: PROV_OP_CONFIRM advertisement
                 pb_tx_confirm_or_random(
-                    provisioner_ctx.link_id, tx_num, PROV_OP_CONFIRM, confirmation) == 0;
+                    provisioner.link_id, tx_num, PROV_OP_CONFIRM, confirmation) == 0;
 
-            provisioner_ctx.state = success ? WAITING_FOR_CONFIRM_ACK
+            provisioner.state = success ? WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONER_FAILED;
         }
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_CONFIRM_ACK &&
+        provisioner.state == WAITING_FOR_CONFIRM_ACK &&
         ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == provisioner_ctx.tx_num &&
+        adv_data[6] == provisioner.tx_num &&
         adv_data[7] == PB_GPC_ACK
     ) {
         //! Check STEP_10 ACK: Expected PROV_OP_CONFIRM Transaction Ack
-        provisioner_ctx.state = WAITING_FOR_CONFIRMATION;
+        provisioner.state = WAITING_FOR_CONFIRMATION;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_CONFIRMATION &&
+        provisioner.state == WAITING_FOR_CONFIRMATION &&
         ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 &&
         adv_data[7] == PB_GPC_START(0) &&
@@ -892,33 +899,33 @@ void provisioner_poll(void) {
         // [10]     FCS
         // [11]     PROV_OP_CONFIRM (0x05)
         // [12..27] Provisionee Confirmation value
-        memcpy(provisioner_ctx.peer_confirmation, &adv_data[12], 16);
-        uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-        provisioner_ctx.tx_num = tx_num;
+        memcpy(provisioner.peer_confirmation, &adv_data[12], 16);
+        uint8_t tx_num = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+        provisioner.tx_num = tx_num;
 
         int success =   //! Provisioner send PB_GPC_ACK
-                        pb_tx_gpc_ack(provisioner_ctx.link_id, adv_data[6]) == 0 &&
+                        pb_tx_gpc_ack(provisioner.link_id, adv_data[6]) == 0 &&
                         //! Provisioner Send STEP_12: PROV_OP_RANDOM advertisement
-                        pb_tx_confirm_or_random(provisioner_ctx.link_id, tx_num,
+                        pb_tx_confirm_or_random(provisioner.link_id, tx_num,
                                                 PROV_OP_RANDOM,
-                                                provisioner_ctx.random) == 0;
+                                                provisioner.random) == 0;
 
-        provisioner_ctx.state = success ? WAITING_FOR_RANDOM_ACK
+        provisioner.state = success ? WAITING_FOR_RANDOM_ACK
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_RANDOM_ACK &&
+        provisioner.state == WAITING_FOR_RANDOM_ACK &&
         ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == provisioner_ctx.tx_num &&
+        adv_data[6] == provisioner.tx_num &&
         adv_data[7] == PB_GPC_ACK
     ) {
         //! Check STEP_12 ACK: Expected PROV_OP_RANDOM Transaction Ack
-        provisioner_ctx.state = WAITING_FOR_RANDOM;
+        provisioner.state = WAITING_FOR_RANDOM;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_RANDOM &&
+        provisioner.state == WAITING_FOR_RANDOM &&
         ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 &&
         adv_data[7] == PB_GPC_START(0) &&
@@ -936,7 +943,7 @@ void provisioner_poll(void) {
         // [10]     FCS
         // [11]     PROV_OP_RANDOM (0x06)
         // [12..27] Provisionee Random value
-        memcpy(provisioner_ctx.peer_random, &adv_data[12], 16);
+        memcpy(provisioner.peer_random, &adv_data[12], 16);
 
         uint8_t plain[25];
         uint8_t encrypted[25];
@@ -944,26 +951,26 @@ void provisioner_poll(void) {
         prov_data data;
 
         int success =   //! Provisioner send PB_GPC_ACK
-                        pb_tx_gpc_ack(provisioner_ctx.link_id, adv_data[6]) == 0 &&
+                        pb_tx_gpc_ack(provisioner.link_id, adv_data[6]) == 0 &&
                         peer_confirm_valid(
-                            provisioner_ctx.confirm_inputs,
-                            provisioner_ctx.dhkey,
-                            provisioner_ctx.peer_random,
-                            provisioner_ctx.random,
-                            provisioner_ctx.peer_confirmation) &&
+                            provisioner.confirm_inputs,
+                            provisioner.dhkey,
+                            provisioner.peer_random,
+                            provisioner.random,
+                            provisioner.peer_confirmation) &&
                         AUTH_DERIVE_SESSION(
-                            provisioner_ctx.dhkey,
-                            provisioner_ctx.confirmation_salt,
-                            provisioner_ctx.random,
-                            provisioner_ctx.peer_random,
-                            provisioner_ctx.session_key,
-                            provisioner_ctx.session_nonce,
-                            provisioner_ctx.device_key) == 0 &&
+                            provisioner.dhkey,
+                            provisioner.confirmation_salt,
+                            provisioner.random,
+                            provisioner.peer_random,
+                            provisioner.session_key,
+                            provisioner.session_nonce,
+                            provisioner.device_key) == 0 &&
                         PROVISIONER_GET_DATA(&data) == 0 &&
-                        prov_data_is_valid(&data, provisioner_ctx.num_elements);
+                        prov_data_is_valid(&data, provisioner.num_elements);
 
         if (success) {
-            provisioner_ctx.unicast_address = data.unicast_address;
+            provisioner.unicast_address = data.unicast_address;
             memcpy(plain, data.net_key, 16);
             plain[16] = (uint8_t)(data.net_key_index >> 8);
             plain[17] = (uint8_t)data.net_key_index;
@@ -975,11 +982,11 @@ void provisioner_poll(void) {
             plain[23] = (uint8_t)(data.unicast_address >> 8);
             plain[24] = (uint8_t)data.unicast_address;
 
-            if(AUTH_ENCRYPT_DATA(provisioner_ctx.session_key,
-                                provisioner_ctx.session_nonce,
+            if(AUTH_ENCRYPT_DATA(provisioner.session_key,
+                                provisioner.session_nonce,
                                 plain, encrypted, mic) == 0) {
-                uint8_t tx_num = (uint8_t)((provisioner_ctx.tx_num + 1) & 0x7F);
-                provisioner_ctx.tx_num = tx_num;
+                uint8_t tx_num = (uint8_t)((provisioner.tx_num + 1) & 0x7F);
+                provisioner.tx_num = tx_num;
 
                 uint8_t pdu[PROV_DATA_PDU_LEN];
                 pdu[0] = PROV_OP_DATA;
@@ -998,8 +1005,8 @@ void provisioner_poll(void) {
                 uint8_t start[PROV_DATA_START_AD_LEN + 1];
                 start[0] = PROV_DATA_START_AD_LEN;
                 start[1] = MESH_PROV_AD_TYPE;
-                memcpy(&start[2], provisioner_ctx.link_id,
-                       sizeof(provisioner_ctx.link_id));
+                memcpy(&start[2], provisioner.link_id,
+                       sizeof(provisioner.link_id));
                 start[6] = tx_num;
                 start[7] = PB_GPC_START(1);
                 start[8] = 0;
@@ -1017,8 +1024,8 @@ void provisioner_poll(void) {
                 uint8_t cont[PROV_DATA_CONT_AD_LEN + 1];
                 cont[0] = PROV_DATA_CONT_AD_LEN;
                 cont[1] = MESH_PROV_AD_TYPE;
-                memcpy(&cont[2], provisioner_ctx.link_id,
-                       sizeof(provisioner_ctx.link_id));
+                memcpy(&cont[2], provisioner.link_id,
+                       sizeof(provisioner.link_id));
                 cont[6] = tx_num;
                 cont[7] = PB_GPC_CONT(1);
                 memcpy(&cont[8], &pdu[PB_START_PAYLOAD_MAX], 14);
@@ -1029,22 +1036,22 @@ void provisioner_poll(void) {
             }
         }
 
-        provisioner_ctx.state = success ? WAITING_FOR_DATA_ACK
+        provisioner.state = success ? WAITING_FOR_DATA_ACK
                                         : PROVISIONER_FAILED;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_DATA_ACK &&
+        provisioner.state == WAITING_FOR_DATA_ACK &&
         ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == provisioner_ctx.tx_num &&
+        adv_data[6] == provisioner.tx_num &&
         adv_data[7] == PB_GPC_ACK
     ) {
         //! Check STEP_14 ACK: Expected PROV_OP_DATA Transaction Ack
-        provisioner_ctx.state = WAITING_FOR_COMPLETE;
+        provisioner.state = WAITING_FOR_COMPLETE;
     }
 
     else if (
-        provisioner_ctx.state == WAITING_FOR_COMPLETE &&
+        provisioner.state == WAITING_FOR_COMPLETE &&
         ad_length_matches(len, adv_data[0], PROV_COMPLETE_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 &&
         adv_data[7] == PB_GPC_START(0) &&
@@ -1062,9 +1069,9 @@ void provisioner_poll(void) {
         // [10]    FCS
         // [11]    PROV_OP_COMPLETE (0x08)
         int success = PROVISIONER_STORE_NODE_DEVKEY(
-                          provisioner_ctx.device_key,
-                          provisioner_ctx.unicast_address) == 0 &&
-                      pb_tx_gpc_ack(provisioner_ctx.link_id, adv_data[6]) == 0;
+                          provisioner.device_key,
+                          provisioner.unicast_address) == 0 &&
+                      pb_tx_gpc_ack(provisioner.link_id, adv_data[6]) == 0;
 
         if (success) {
             // PB-ADV Link Close advertisement:
@@ -1077,14 +1084,14 @@ void provisioner_poll(void) {
             uint8_t adv[PB_LINK_CLOSE_AD_LEN + 1];
             adv[0] = PB_LINK_CLOSE_AD_LEN;
             adv[1] = MESH_PROV_AD_TYPE;
-            memcpy(&adv[2], provisioner_ctx.link_id,
-                   sizeof(provisioner_ctx.link_id));
+            memcpy(&adv[2], provisioner.link_id,
+                   sizeof(provisioner.link_id));
             adv[6] = 0;
             adv[7] = PB_LINK_CLOSE;
             adv[8] = PB_CLOSE_SUCCESS;
             success = BLE_MESH_TX(adv, sizeof(adv)) == 0;
         }
-        provisioner_ctx.state = success ? PROVISIONER_COMPLETE
+        provisioner.state = success ? PROVISIONER_COMPLETE
                                         : PROVISIONER_FAILED;
     }
 }
@@ -1092,6 +1099,23 @@ void provisioner_poll(void) {
 //! =========================================================================
 //! PROVISIONEE SIDE (the node being provisioned)
 //! =========================================================================
+
+// in provisionee_prov_rx, the reassembled message is the Provisioner's PROV_DATA PDU.
+// It's 33B payload contains 25B of encrypted prov data plus an 8B auth tag (MIC)
+
+// After decryption, the 25B are:
+// - NetKey (16B)
+// - NetKey Index (2B - 12bits)
+// - Flags (1B - bit0 - Key Refresh Flag)
+// - IV Index (4B)
+// - Unicast address (2B)
+
+typedef struct {
+    uint8_t pdu[PROV_DATA_PDU_LEN];
+    uint8_t tx_num;
+    uint8_t next_segment;
+    uint8_t fcs;
+} provisionee_prov_rx;
 
 typedef struct {
     provisioning_state_t state;
@@ -1111,10 +1135,10 @@ typedef struct {
     uint8_t session_nonce[13];
     uint8_t device_key[16];
     public_key_rx_t pubkey_rx;
-    data_rx_t data_rx;
-} provisionee_ctx_t;
+} provisionee_context;
 
-static provisionee_ctx_t provisionee_ctx;
+static provisionee_context provisionee;
+static provisionee_prov_rx prov_rx;
 static uint32_t last_beacon_ms;
 
 static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
@@ -1155,23 +1179,24 @@ static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
 }
 
 int provisionee_start(void) {
-    memset(&provisionee_ctx, 0, sizeof(provisionee_ctx));
+    memset(&provisionee, 0, sizeof(provisionee));
+    memset(&prov_rx, 0, sizeof(prov_rx));
 
-    if (GET_LOCAL_UUID(provisionee_ctx.device_uuid) != 0) {
-        provisionee_ctx.state = PROVISIONEE_FAILED;
+    if (GET_LOCAL_UUID(provisionee.device_uuid) != 0) {
+        provisionee.state = PROVISIONEE_FAILED;
         return -1;
     }
 
     // force the provision beacon on first poll cycle
-    provisionee_ctx.tx_num = 0xFF;
-    provisionee_ctx.state = WAITING_FOR_LINK_OPEN;
+    provisionee.tx_num = 0xFF;
+    provisionee.state = WAITING_FOR_LINK_OPEN;
     last_beacon_ms = GET_MILLIS() - 1000u;
     return 0;
 }
 
 void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     if (!oob_info || !caps) {
-        provisionee_ctx.state = PROVISIONEE_FAILED;
+        provisionee.state = PROVISIONEE_FAILED;
         return;
     }
 
@@ -1181,19 +1206,19 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     if (BLE_MESH_RX(adv_data, &len) > 0 &&
         len >= 2 && (size_t)adv_data[0] + 1 == len &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
-        provisionee_ctx.state != PROVISIONEE_FAILED &&
-        provisionee_ctx.state != PROVISIONEE_COMPLETE &&
-        (provisionee_ctx.state == WAITING_FOR_LINK_OPEN ||
-         (len >= 6 && memcmp(&adv_data[2], provisionee_ctx.link_id,
-                             sizeof(provisionee_ctx.link_id)) == 0))
+        provisionee.state != PROVISIONEE_FAILED &&
+        provisionee.state != PROVISIONEE_COMPLETE &&
+        (provisionee.state == WAITING_FOR_LINK_OPEN ||
+         (len >= 6 && memcmp(&adv_data[2], provisionee.link_id,
+                             sizeof(provisionee.link_id)) == 0))
     ) {
         if (
-            provisionee_ctx.state == WAITING_FOR_LINK_OPEN &&
+            provisionee.state == WAITING_FOR_LINK_OPEN &&
             ad_length_matches(len, adv_data[0], PB_LINK_OPEN_AD_LEN) &&
             adv_data[6] == 0 &&
             adv_data[7] == PB_LINK_OPEN &&
-            memcmp(&adv_data[8], provisionee_ctx.device_uuid,
-                    sizeof(provisionee_ctx.device_uuid)) == 0
+            memcmp(&adv_data[8], provisionee.device_uuid,
+                    sizeof(provisionee.device_uuid)) == 0
         ) {
             //! Check STEP_2: Expected PB_LINK_OPEN advertisement
             // [0]     AD Length = PB_LINK_OPEN_AD_LEN (23 bytes follow)
@@ -1208,10 +1233,10 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             link_ack[1] = MESH_PROV_AD_TYPE;
 
             // Store the Link ID sent by the provisioner.
-            memcpy(provisionee_ctx.link_id, &adv_data[2],
-                   sizeof(provisionee_ctx.link_id));
-            memcpy(&link_ack[2], provisionee_ctx.link_id,
-                   sizeof(provisionee_ctx.link_id));
+            memcpy(provisionee.link_id, &adv_data[2],
+                   sizeof(provisionee.link_id));
+            memcpy(&link_ack[2], provisionee.link_id,
+                   sizeof(provisionee.link_id));
             link_ack[6] = 0;
             link_ack[7] = PB_LINK_ACK;
 
@@ -1222,12 +1247,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [6]     Transaction Number = 0x00
             // [7]     GPC = PB_LINK_ACK (0x07)
             int success = BLE_MESH_TX(link_ack, sizeof(link_ack)) == 0;
-            provisionee_ctx.state = success ? WAITING_FOR_INVITE
+            provisionee.state = success ? WAITING_FOR_INVITE
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_INVITE &&
+            provisionee.state == WAITING_FOR_INVITE &&
             ad_length_matches(len, adv_data[0], PROV_OP_INVITE_AD_LEN) &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -1248,8 +1273,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [12]     Attention Duration in seconds
 
             //! Provisionee Send ACK (the commisionER need to handle this?)
-            if (pb_tx_gpc_ack(provisionee_ctx.link_id, adv_data[6]) != 0) {
-                provisionee_ctx.state = PROVISIONEE_FAILED;
+            if (pb_tx_gpc_ack(provisionee.link_id, adv_data[6]) != 0) {
+                provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
 
@@ -1257,9 +1282,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_cap[0] = PROV_OP_CAPABILITIES_AD_LEN;
             adv_cap[1] = MESH_PROV_AD_TYPE;
 
-            memcpy(&adv_cap[2], provisionee_ctx.link_id, sizeof(provisionee_ctx.link_id));
-            uint8_t transaction_id = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
-            provisionee_ctx.tx_num = transaction_id;
+            memcpy(&adv_cap[2], provisionee.link_id, sizeof(provisionee.link_id));
+            uint8_t transaction_id = (uint8_t)(((provisionee.tx_num + 1) & 0x7F) | 0x80);
+            provisionee.tx_num = transaction_id;
 
             adv_cap[6] = transaction_id;
             adv_cap[7] = PB_GPC_START(0);
@@ -1279,8 +1304,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_cap[21] = (uint8_t)caps->input_oob_size;
             adv_cap[22] = (uint8_t)(caps->input_oob_size >> 8);
 
-            provisionee_ctx.confirm_inputs[0] = adv_data[12];
-            memcpy(&provisionee_ctx.confirm_inputs[1], &adv_cap[12], 11);
+            provisionee.confirm_inputs[0] = adv_data[12];
+            memcpy(&provisionee.confirm_inputs[1], &adv_cap[12], 11);
             PROV_ATTENTION_START(adv_data[12]);
 
             //! Provisionee Send STEP_5: PROV_OP_CAPABILITIES advertisement
@@ -1294,12 +1319,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [11..22] PROV_OP_CAPABILITIES PDU */
 
             int success = BLE_MESH_TX(adv_cap, sizeof(adv_cap)) == 0;
-            provisionee_ctx.state = success ? WAITING_FOR_START
+            provisionee.state = success ? WAITING_FOR_START
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_START &&
+            provisionee.state == WAITING_FOR_START &&
             ad_length_matches(len, adv_data[0], PROV_OP_START_AD_LEN) &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -1317,11 +1342,11 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [8..9]   Provisioning PDU length = 6
             // [10]     FCS
             // [11..16] PROV_OP_START PDU
-            memcpy(&provisionee_ctx.confirm_inputs[12], &adv_data[12], 5);
+            memcpy(&provisionee.confirm_inputs[12], &adv_data[12], 5);
 
             //! Provisionee Send ACK (the commisionER need to handle this?)
-            if (pb_tx_gpc_ack(provisionee_ctx.link_id, adv_data[6]) != 0) {
-                provisionee_ctx.state = PROVISIONEE_FAILED;
+            if (pb_tx_gpc_ack(provisionee.link_id, adv_data[6]) != 0) {
+                provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
 
@@ -1338,78 +1363,75 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                                 start.public_key_oob == 0 &&
                                 start.auth_method == PROV_OOB_NONE &&
                           ECDH_GENERATE_KPAIR(
-                                provisionee_ctx.private_key,
-                                provisionee_ctx.public_key) == 0;
+                                provisionee.private_key,
+                                provisionee.public_key) == 0;
 
             if (success) {
-                memcpy(&provisionee_ctx.confirm_inputs[81], provisionee_ctx.public_key, 64);
+                memcpy(&provisionee.confirm_inputs[81], provisionee.public_key, 64);
             }
 
             PROV_ATTENTION_STOP();
-            provisionee_ctx.state = success ? WAITING_FOR_PUBLIC_KEY
+            provisionee.state = success ? WAITING_FOR_PUBLIC_KEY
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_PUBLIC_KEY &&
-            len >= 8 &&
-            (adv_data[6] & 0x80) == 0
+            provisionee.state == WAITING_FOR_PUBLIC_KEY &&
+            len >= 8 && (adv_data[6] & 0x80) == 0
         ) {
             //! Check STEP_7: Expect PROV_OP_PUBLIC_KEY advertisement
             // Need to also check PB_GPC_START(2), PB_GPC_CONT(1), and PB_GPC_CONT(2) in order
-            int result = pb_rx_public_key(&provisionee_ctx.pubkey_rx,
-                                          adv_data, len);
+            int result = pb_rx_public_key(&provisionee.pubkey_rx, adv_data, len);
 
             if (result < 0) {
-                provisionee_ctx.state = PROVISIONEE_FAILED;
+                provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
 
             if (result > 0) {
-                const uint8_t *peer_public_key = &provisionee_ctx.pubkey_rx.pdu[1];
-                memcpy(&provisionee_ctx.confirm_inputs[17], peer_public_key, 64);
-                uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
-                provisionee_ctx.tx_num = tx_num;
+                const uint8_t *peer_public_key = &provisionee.pubkey_rx.pdu[1];
+                memcpy(&provisionee.confirm_inputs[17], peer_public_key, 64);
+                uint8_t tx_num = (uint8_t)(((provisionee.tx_num + 1) & 0x7F) | 0x80);
+                provisionee.tx_num = tx_num;
 
                 int success =
                     //! Provisionee Send PB_GPC_ACK
-                    pb_tx_gpc_ack(provisionee_ctx.link_id,
-                                  provisionee_ctx.pubkey_rx.tx_num) == 0 &&
-                    ECDH_COMPUTE_DHKEY(
-                        provisionee_ctx.private_key,
-                        peer_public_key,
-                        provisionee_ctx.dhkey) == 0 &&
+                    pb_tx_gpc_ack(provisionee.link_id,
+                                  provisionee.pubkey_rx.tx_num) == 0 &&
+                    ECDH_COMPUTE_DHKEY(provisionee.private_key,
+                                    peer_public_key,
+                                    provisionee.dhkey) == 0 &&
                     //! Provisionee Send STEP_8: PROV_OP_PUBLIC_KEY advertisement
-                    pb_tx_public_key(provisionee_ctx.link_id, tx_num,
-                                     provisionee_ctx.public_key) == 0;
+                    pb_tx_public_key(provisionee.link_id, tx_num,
+                                     provisionee.public_key) == 0;
 
-                provisionee_ctx.state = success ? WAITING_FOR_PUBLIC_KEY_ACK
+                provisionee.state = success ? WAITING_FOR_PUBLIC_KEY_ACK
                                                 : PROVISIONEE_FAILED;
             }
 
         } else if (
             //! Check PB_GPC_ACK
-            provisionee_ctx.state == WAITING_FOR_PUBLIC_KEY_ACK &&
+            provisionee.state == WAITING_FOR_PUBLIC_KEY_ACK &&
             ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == provisionee_ctx.tx_num &&
+            adv_data[6] == provisionee.tx_num &&
             adv_data[7] == PB_GPC_ACK
         ) {
             int success = GET_RANDOM_BYTES(
-                              provisionee_ctx.random,
-                              sizeof(provisionee_ctx.random)) == 0 &&
+                              provisionee.random,
+                              sizeof(provisionee.random)) == 0 &&
                           AUTH_COMPUTE_CONFIRMATION(
-                              provisionee_ctx.confirm_inputs,
-                              provisionee_ctx.dhkey,
-                              provisionee_ctx.random,
+                              provisionee.confirm_inputs,
+                              provisionee.dhkey,
+                              provisionee.random,
                               no_oob_auth,
-                              provisionee_ctx.confirmation_salt,
-                              provisionee_ctx.confirmation) == 0;
-            provisionee_ctx.state = success ? WAITING_FOR_CONFIRMATION
+                              provisionee.confirmation_salt,
+                              provisionee.confirmation) == 0;
+            provisionee.state = success ? WAITING_FOR_CONFIRMATION
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_CONFIRMATION &&
+            provisionee.state == WAITING_FOR_CONFIRMATION &&
             ad_length_matches(len, adv_data[0], PROV_CONFIRM_AD_LEN) &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -1427,34 +1449,34 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [10]     FCS
             // [11]     PROV_OP_CONFIRM (0x05)
             // [12..27] Provisioner Confirmation value
-            memcpy(provisionee_ctx.peer_confirmation, &adv_data[12], 16);
-            uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
-            provisionee_ctx.tx_num = tx_num;
+            memcpy(provisionee.peer_confirmation, &adv_data[12], 16);
+            uint8_t tx_num = (uint8_t)(((provisionee.tx_num + 1) & 0x7F) | 0x80);
+            provisionee.tx_num = tx_num;
 
             int success =
                 //! Provisionee Send PB_GPC_ACK
-                pb_tx_gpc_ack(provisionee_ctx.link_id, adv_data[6]) == 0 &&
+                pb_tx_gpc_ack(provisionee.link_id, adv_data[6]) == 0 &&
                 //! Provisionee Send STEP_11: PROV_OP_CONFIRM advertisement
                 pb_tx_confirm_or_random(
-                    provisionee_ctx.link_id, tx_num, PROV_OP_CONFIRM,
-                    provisionee_ctx.confirmation) == 0;
+                    provisionee.link_id, tx_num, PROV_OP_CONFIRM,
+                    provisionee.confirmation) == 0;
 
-            provisionee_ctx.state = success ? WAITING_FOR_CONFIRM_ACK
+            provisionee.state = success ? WAITING_FOR_CONFIRM_ACK
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_CONFIRM_ACK &&
+            provisionee.state == WAITING_FOR_CONFIRM_ACK &&
             ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == provisionee_ctx.tx_num &&
+            adv_data[6] == provisionee.tx_num &&
             adv_data[7] == PB_GPC_ACK
         ) {
             //! Check STEP_11 ACK: Expected PROV_OP_CONFIRM Transaction Ack
-            provisionee_ctx.state = WAITING_FOR_RANDOM;
+            provisionee.state = WAITING_FOR_RANDOM;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_RANDOM &&
+            provisionee.state == WAITING_FOR_RANDOM &&
             ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
@@ -1472,103 +1494,99 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [10]     FCS
             // [11]     PROV_OP_RANDOM (0x06)
             // [12..27] Provisioner Random value
-            memcpy(provisionee_ctx.peer_random, &adv_data[12], 16);
-            uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
-            provisionee_ctx.tx_num = tx_num;
+            memcpy(provisionee.peer_random, &adv_data[12], 16);
+            uint8_t tx_num = (uint8_t)(((provisionee.tx_num + 1) & 0x7F) | 0x80);
+            provisionee.tx_num = tx_num;
 
             int success =
                 //! Check PB_GPC_ACK
-                pb_tx_gpc_ack(provisionee_ctx.link_id, adv_data[6]) == 0 &&
+                pb_tx_gpc_ack(provisionee.link_id, adv_data[6]) == 0 &&
                 peer_confirm_valid(
-                    provisionee_ctx.confirm_inputs,
-                    provisionee_ctx.dhkey,
-                    provisionee_ctx.peer_random,
-                    provisionee_ctx.random,
-                    provisionee_ctx.peer_confirmation) &&
+                    provisionee.confirm_inputs,
+                    provisionee.dhkey,
+                    provisionee.peer_random,
+                    provisionee.random,
+                    provisionee.peer_confirmation) &&
                 //! Provisionee Send STEP_13: PROV_OP_RANDOM advertisement
                 pb_tx_confirm_or_random(
-                    provisionee_ctx.link_id, tx_num, PROV_OP_RANDOM,
-                    provisionee_ctx.random) == 0;
+                    provisionee.link_id, tx_num, PROV_OP_RANDOM,
+                    provisionee.random) == 0;
 
-            provisionee_ctx.state = success ? WAITING_FOR_RANDOM_ACK
+            provisionee.state = success ? WAITING_FOR_RANDOM_ACK
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_RANDOM_ACK &&
+            provisionee.state == WAITING_FOR_RANDOM_ACK &&
             ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == provisionee_ctx.tx_num &&
+            adv_data[6] == provisionee.tx_num &&
             adv_data[7] == PB_GPC_ACK
         ) {
             //! Check STEP_13 ACK: Expected PROV_OP_RANDOM Transaction Ack
             int success = AUTH_DERIVE_SESSION(
-                provisionee_ctx.dhkey,
-                provisionee_ctx.confirmation_salt,
-                provisionee_ctx.peer_random,
-                provisionee_ctx.random,
-                provisionee_ctx.session_key,
-                provisionee_ctx.session_nonce,
-                provisionee_ctx.device_key) == 0;
-            provisionee_ctx.state = success ? WAITING_FOR_DATA
+                provisionee.dhkey,
+                provisionee.confirmation_salt,
+                provisionee.peer_random,
+                provisionee.random,
+                provisionee.session_key,
+                provisionee.session_nonce,
+                provisionee.device_key) == 0;
+            provisionee.state = success ? WAITING_FOR_DATA
                                             : PROVISIONEE_FAILED;
         }
 
         else if (
             // Wait for the provisioner's data transaction.
-            provisionee_ctx.state == WAITING_FOR_DATA &&
+            provisionee.state == WAITING_FOR_DATA &&
             // The segment header and transaction direction byte must be present.
-            len >= 8 &&
-            (adv_data[6] & 0x80) == 0
+            len >= 8 && (adv_data[6] & 0x80) == 0
         ) {
             //! Check STEP_14: Expected segmented PROV_OP_DATA advertisement
             // Save the first segment and remember its transaction number and FCS.
             if (adv_data[7] == PB_GPC_START(1)) {
                 if (!ad_length_matches(len, adv_data[0], PROV_DATA_START_AD_LEN) ||
                     adv_data[8] != 0 || adv_data[9] != PROV_DATA_PDU_LEN) {
-                    provisionee_ctx.state = PROVISIONEE_FAILED;
+                    provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
 
-                memcpy(provisionee_ctx.data_rx.pdu, &adv_data[11], PB_START_PAYLOAD_MAX);
-                provisionee_ctx.data_rx.tx_num = adv_data[6];
-                provisionee_ctx.data_rx.fcs = adv_data[10];
-                provisionee_ctx.data_rx.next_segment = 1;
+                memcpy(prov_rx.pdu, &adv_data[11], PB_START_PAYLOAD_MAX);
+                prov_rx.tx_num = adv_data[6];
+                prov_rx.fcs = adv_data[10];
+                prov_rx.next_segment = 1;
             }
 
             // Accept a continuation only for the transaction we started receiving.
             else if (
-                provisionee_ctx.data_rx.next_segment != 0 &&
-                adv_data[6] == provisionee_ctx.data_rx.tx_num
+                prov_rx.next_segment != 0 && prov_rx.tx_num == adv_data[6]
             ) {
                 if (adv_data[7] != PB_GPC_CONT(1) ||
                     !ad_length_matches(len, adv_data[0], PROV_DATA_CONT_AD_LEN)) {
-                    provisionee_ctx.state = PROVISIONEE_FAILED;
+                    provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
 
-                memcpy(&provisionee_ctx.data_rx.pdu[PB_START_PAYLOAD_MAX], &adv_data[8], 14);
-                provisionee_ctx.data_rx.next_segment = 0;
+                memcpy(&prov_rx.pdu[PB_START_PAYLOAD_MAX], &adv_data[8], 14);
+                prov_rx.next_segment = 0;
 
                 // Check the reassembled PDU opcode and FCS before using its payload.
-                if (provisionee_ctx.data_rx.pdu[0] != PROV_OP_DATA ||
-                    pb_adv_fcs(provisionee_ctx.data_rx.pdu,
-                               sizeof(provisionee_ctx.data_rx.pdu)) != provisionee_ctx.data_rx.fcs) {
-                    provisionee_ctx.state = PROVISIONEE_FAILED;
+                if (prov_rx.pdu[0] != PROV_OP_DATA ||
+                    pb_adv_fcs(prov_rx.pdu, sizeof(prov_rx.pdu)) != prov_rx.fcs) {
+                    provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
 
                 uint8_t encrypted[25];
                 uint8_t mic[8];
-                memcpy(encrypted, &provisionee_ctx.data_rx.pdu[1], 25);
-                memcpy(mic, &provisionee_ctx.data_rx.pdu[26], 8);
+                memcpy(encrypted, &prov_rx.pdu[1], 25);
+                memcpy(mic, &prov_rx.pdu[26], 8);
                 uint8_t plain[25];
+
                 // Acknowledge the completed transaction, then decrypt its payload.
-                int success = pb_tx_gpc_ack(provisionee_ctx.link_id,
-                                            provisionee_ctx.data_rx.tx_num) == 0 &&
-                              AUTH_DECRYPT_DATA(
-                                  provisionee_ctx.session_key,
-                                  provisionee_ctx.session_nonce,
-                                  encrypted, mic, plain) == 0;
+                int success = pb_tx_gpc_ack(provisionee.link_id, prov_rx.tx_num) == 0 &&
+                              AUTH_DECRYPT_DATA(provisionee.session_key,
+                                                provisionee.session_nonce,
+                                                encrypted, mic, plain) == 0;
 
                 if (success) {
                     // Decode the 25-byte provisioning data fields.
@@ -1583,11 +1601,11 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
                     // Validate the assigned address range and store the provisioned keys.
                     if (prov_data_is_valid(&data, caps->num_elements) &&
-                        PROVISIONEE_STORE_DATA(&data, provisionee_ctx.device_key) == 0
+                        PROVISIONEE_STORE_DATA(&data, provisionee.device_key) == 0
                     ) {
                         // Send Complete only after the provisioning data is accepted.
-                        uint8_t tx_num = (uint8_t)(((provisionee_ctx.tx_num + 1) & 0x7F) | 0x80);
-                        provisionee_ctx.tx_num = tx_num;
+                        uint8_t tx_num = (uint8_t)(((provisionee.tx_num + 1) & 0x7F) | 0x80);
+                        provisionee.tx_num = tx_num;
 
                         //! Provisionee Send STEP_15: PROV_OP_COMPLETE advertisement
                         // [0]     AD Length = PROV_COMPLETE_AD_LEN (11 bytes follow)
@@ -1601,7 +1619,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                         uint8_t adv[PROV_COMPLETE_AD_LEN + 1];
                         adv[0] = PROV_COMPLETE_AD_LEN;
                         adv[1] = MESH_PROV_AD_TYPE;
-                        memcpy(&adv[2], provisionee_ctx.link_id, sizeof(provisionee_ctx.link_id));
+                        memcpy(&adv[2], provisionee.link_id, sizeof(provisionee.link_id));
 
                         adv[6] = tx_num;
                         adv[7] = PB_GPC_START(0);
@@ -1613,23 +1631,23 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     }
                 }
 
-                provisionee_ctx.state = success ? WAITING_FOR_COMPLETE_ACK
+                provisionee.state = success ? WAITING_FOR_COMPLETE_ACK
                                                 : PROVISIONEE_FAILED;
             }
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_COMPLETE_ACK &&
+            provisionee.state == WAITING_FOR_COMPLETE_ACK &&
             ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == provisionee_ctx.tx_num &&
+            adv_data[6] == provisionee.tx_num &&
             adv_data[7] == PB_GPC_ACK
         ) {
             //! Check STEP_15 ACK: Expected PROV_OP_COMPLETE Transaction Ack
-            provisionee_ctx.state = WAITING_FOR_LINK_CLOSE;
+            provisionee.state = WAITING_FOR_LINK_CLOSE;
         }
 
         else if (
-            provisionee_ctx.state == WAITING_FOR_LINK_CLOSE &&
+            provisionee.state == WAITING_FOR_LINK_CLOSE &&
             ad_length_matches(len, adv_data[0], PB_LINK_CLOSE_AD_LEN) &&
             adv_data[6] == 0 &&
             adv_data[7] == PB_LINK_CLOSE &&
@@ -1642,12 +1660,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             // [6]     Transaction Number = 0x00
             // [7]     GPC = PB_LINK_CLOSE (0x0B)
             // [8]     Reason = PB_CLOSE_SUCCESS (0x00)
-            provisionee_ctx.state = PROVISIONEE_COMPLETE;
+            provisionee.state = PROVISIONEE_COMPLETE;
         }
     }
 
     /* Only the unprovisioned state needs periodic beacon retransmission. */
-    if (provisionee_ctx.state == WAITING_FOR_LINK_OPEN) {
+    if (provisionee.state == WAITING_FOR_LINK_OPEN) {
         uint32_t now = GET_MILLIS();
 
         if ((uint32_t)(now - last_beacon_ms) >= 1000u) {
@@ -1662,11 +1680,11 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             beacon[0] = MESH_BEACON_UNPROVISIONED_AD_LEN;
             beacon[1] = MESH_BEACON_AD_TYPE;
             beacon[2] = MESH_BEACON_UNPROVISIONED;
-            memcpy(&beacon[3], provisionee_ctx.device_uuid, sizeof(provisionee_ctx.device_uuid));
+            memcpy(&beacon[3], provisionee.device_uuid, sizeof(provisionee.device_uuid));
             memcpy(&beacon[19], oob_info, 2);
 
             if (BLE_MESH_TX(beacon, sizeof(beacon)) != 0) {
-                provisionee_ctx.state = PROVISIONEE_FAILED;
+                provisionee.state = PROVISIONEE_FAILED;
             } else {
                 last_beacon_ms = now;
             }
