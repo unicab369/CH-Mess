@@ -117,7 +117,7 @@
 /* PB-ADV control values. The upper two bits select bearer-control format;
  * the lower six bits select Link Open or Link Ack. */
 #define PB_LINK_OPEN                0x03 /* GPCF=control, BearerOpcode=Link Open */
-#define PB_LINK_OPEN_AD_LEN         24
+#define PB_LINK_OPEN_AD_LEN         23
 #define PB_LINK_ACK                 0x07 /* GPCF=control, BearerOpcode=Link Ack */
 #define PB_LINK_ACK_AD_LEN          7
 #define PB_LINK_CLOSE               0x0B /* GPCF=control, BearerOpcode=Link Close */
@@ -494,18 +494,18 @@ static int auth_rx_pubkey(
     // [7]      GPC = PB_GPC_CONT(1), segment index 1
     // [8..30]  Public Key PDU bytes 20..42
 
-    if (gpc == PB_GPC_CONT(1) && rx->next_segment == 1) {
+    if (gpc == PB_GPC_CONT(1) && pubkey_rx->next_segment == 1) {
         if (!ad_length_matches(len, adv_data[0], PROV_PUBKEY_CONT1_AD_LEN)) {
             return -1;
         }
 
-        memcpy(&rx->pdu[rx->offset], &adv_data[8], PB_CONT_PAYLOAD_MAX);
-        rx->offset += PB_CONT_PAYLOAD_MAX;
-        rx->next_segment = 2;
+        memcpy(&pubkey_rx->pdu[pubkey_rx->offset], &adv_data[8], PB_CONT_PAYLOAD_MAX);
+        pubkey_rx->offset += PB_CONT_PAYLOAD_MAX;
+        pubkey_rx->next_segment = 2;
         return 0;
     }
 
-    if (gpc != PB_GPC_CONT(2) || rx->next_segment != 2) {
+    if (gpc != PB_GPC_CONT(2) || pubkey_rx->next_segment != 2) {
         return 0;
     }
 
@@ -519,13 +519,13 @@ static int auth_rx_pubkey(
         return -1;
     }
 
-    memcpy(&rx->pdu[rx->offset], &adv_data[8], 22);
-    rx->offset += 22;
-    rx->next_segment = 0;
+    memcpy(&pubkey_rx->pdu[pubkey_rx->offset], &adv_data[8], 22);
+    pubkey_rx->offset += 22;
+    pubkey_rx->next_segment = 0;
 
-    if (rx->offset != PROV_PUBKEY_PDU_LEN ||
-        rx->pdu[0] != PROV_OP_PUBLIC_KEY ||
-        pb_adv_fcs(rx->pdu, sizeof(rx->pdu)) != rx->fcs
+    if (pubkey_rx->offset != PROV_PUBKEY_PDU_LEN ||
+        pubkey_rx->pdu[0] != PROV_OP_PUBLIC_KEY ||
+        pb_adv_fcs(pubkey_rx->pdu, sizeof(pubkey_rx->pdu)) != pubkey_rx->fcs
     ) {
         return -1;
     }
@@ -728,9 +728,11 @@ void provisioner_poll(void) {
         invite[7] = PB_GPC_START(0);
         invite[8] = 0;                  // PROV-PDU length byte0
         invite[9] = 2;                  // PROV-PDU length byte1
-        invite[10] = pb_adv_fcs(&invite[11], 2);
         invite[11] = PROV_OP_INVITE;    // 1-byte opcode
         invite[12] = 5;                 // 1-byte attention duration in seconds
+
+        // compute the FCS after the PDU is initialized
+        invite[10] = pb_adv_fcs(&invite[11], 2);
         provisioner.confirm_inputs[0] = invite[12];
 
         //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
@@ -795,13 +797,15 @@ void provisioner_poll(void) {
         start[7] = PB_GPC_START(0);
         start[8] = 0;           // PROV-DPU length byte0
         start[9] = 6;           // PROV-PDU length byte1
-        start[10] = pb_adv_fcs(&start[11], 6);
         start[11] = PROV_OP_START;
         start[12] = provisioner.start.algorithm;
         start[13] = provisioner.start.public_key_oob;
         start[14] = provisioner.start.auth_method;
         start[15] = provisioner.start.auth_action;
         start[16] = provisioner.start.auth_size;
+
+        // compute the FCS after the PDU is initialized
+        start[10] = pb_adv_fcs(&start[11], 6);
 
         /* ConfirmationInputs contains the PDU values without their opcodes. */
         memcpy(&provisioner.confirm_inputs[1], &adv_data[12], 11);
@@ -1270,7 +1274,6 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_cap[7] = PB_GPC_START(0);
             adv_cap[8] = 0;         // PROV-PDU length byte0
             adv_cap[9] = 12;        // PROV-PDU length byte1
-            adv_cap[10] = pb_adv_fcs(&adv_cap[11], 12);
             adv_cap[11] = PROV_OP_CAPABILITIES;
             adv_cap[12] = caps->num_elements;
             adv_cap[13] = (uint8_t)caps->algorithms;
@@ -1283,6 +1286,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_cap[20] = caps->input_oob;
             adv_cap[21] = (uint8_t)caps->input_oob_size;
             adv_cap[22] = (uint8_t)(caps->input_oob_size >> 8);
+
+            // compute the FCS after the PDU is initialized
+            adv_cap[10] = pb_adv_fcs(&adv_cap[11], 12);
 
             provisionee.confirm_inputs[0] = adv_data[12];
             memcpy(&provisionee.confirm_inputs[1], &adv_cap[12], 11);
@@ -1591,8 +1597,10 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                         adv[7] = PB_GPC_START(0);
                         adv[8] = 0;                     // PROV-PDU length byte0
                         adv[9] = PROV_COMPLETE_PDU_LEN;
-                        adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
                         adv[11] = PROV_OP_COMPLETE;
+
+                        // compute the FCS after the PDU is initialized
+                        adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
                         success = BLE_MESH_TX(adv, sizeof(adv)) == 0;
                     }
                 }
