@@ -1,8 +1,6 @@
 #include "ch32fun.h"
 #include <stdio.h>
 
-#include "iSLER.h"
-
 #define PHY_MODE       PHY_1M
 #define ACCESS_ADDRESS 0x8E89BED6 // the "BED6" address for BLE advertisements
 
@@ -86,7 +84,7 @@ int main()
 	funGpioInitAll();
 	funPinMode( LED, GPIO_CFGLR_OUT_2Mhz_PP );
 
-	iSLERInit(LL_TX_POWER_0_DBM);
+	ble_mesh_radio_init();
 	memcpy(adv, adv_data, sizeof(adv_data));
 
 	blink(5);

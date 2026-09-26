@@ -1,4 +1,5 @@
 #include "ch32fun.h"
+#include "iSLER.h"
 #include "ble_mesh_crypto.h"
 #include "aes_cmm.h"
 #include "ble_mesh_provisioning.h"
@@ -23,142 +24,6 @@ typedef struct {
     uint8_t  payload[27];
 } mesh_pdu_t;
 
-// PDU Construction
-size_t build_mesh_pdu(const mesh_pdu_t *pdu, uint8_t *buffer, size_t buf_len) {
-    // pdu->payload contains encrypted DST || TransportPDU || NetMIC.
-    size_t total = 7 + pdu->payload_len;
-    if (total > buf_len) return 0;   // caller's buffer too small
-
-    buffer[0] = ((pdu->ivi & 0x01) << 7) | (pdu->nid & 0x7F);
-    buffer[1] = ((pdu->ctl & 0x01) << 7) | (pdu->ttl & 0x7F);
-
-    // SEQ: 24 bits, big-endian
-    buffer[2] = (pdu->seq >> 16) & 0xFF;
-    buffer[3] = (pdu->seq >>  8) & 0xFF;
-    buffer[4] = (pdu->seq      ) & 0xFF;
-
-    // SRC: 16 bits, big-endian
-    buffer[5] = (pdu->src >> 8) & 0xFF;
-    buffer[6] = (pdu->src     ) & 0xFF;
-
-    // The encrypted payload starts at offset 7 and contains DST.
-    memcpy(&buffer[7], pdu->payload, pdu->payload_len);
-    return total;
-}
-
-
-// Encrypt message
-size_t encrypt_pdu(mesh_pdu_t *pdu, const uint8_t *net_key, uint32_t iv_index) {
-    if (pdu->payload_len > sizeof(pdu->payload) - 6) return 0;
-
-    uint8_t nonce[13];
-    nonce[0] = 0x00;  // Network Nonce type
-    nonce[1] = ((pdu->ctl & 0x01) << 7) | (pdu->ttl & 0x7F);
-
-    // SEQ: 24-bit big-endian
-    nonce[2] = (pdu->seq >> 16) & 0xFF;
-    nonce[3] = (pdu->seq >>  8) & 0xFF;
-    nonce[4] = (pdu->seq      ) & 0xFF;
-
-    // SRC: 16-bit big-endian
-    nonce[5] = (pdu->src >> 8) & 0xFF;
-    nonce[6] = (pdu->src     ) & 0xFF;
-
-    // DST: 16-bit big-endian
-    // Network nonce reserved bytes. DST is encrypted, not part of this nonce.
-    nonce[7] = 0x00;
-    nonce[8] = 0x00;
-
-    // IV Index: 4 bytes, big-endian
-    nonce[9]  = (iv_index >> 24) & 0xFF;
-    nonce[10] = (iv_index >> 16) & 0xFF;
-    nonce[11] = (iv_index >>  8) & 0xFF;
-    nonce[12] = (iv_index      ) & 0xFF;
-
-    // AES-CCM encrypts DST || TransportPDU and appends a 4-byte NetMIC.
-    // This local 27-byte buffer allows at most 21 bytes of plaintext.
-    uint8_t mic[4];
-    uint8_t plaintext[2 + sizeof(pdu->payload)];
-    size_t pt_len = pdu->payload_len;
-
-    plaintext[0] = (pdu->dst >> 8) & 0xFF;
-    plaintext[1] = pdu->dst & 0xFF;
-    memcpy(&plaintext[2], pdu->payload, pt_len);
-
-    int rc = ccm_encrypt_and_tag(
-        net_key,
-        nonce, sizeof(nonce),
-        NULL, 0,
-        plaintext, pt_len + 2,
-        pdu->payload,
-        mic, sizeof(mic)
-    );
-
-    if (rc != CCM_OK) return 0;
-
-    memcpy(&pdu->payload[pt_len + 2], mic, sizeof(mic));
-    pdu->payload_len = (uint8_t)(pt_len + 2 + sizeof(mic));
-    return pdu->payload_len;
-}
-
-
-// void send_message(
-//     uint16_t src, uint16_t dst, const char *text, 
-//     const uint8_t *net_key, uint32_t iv_index
-// ) {
-//     mesh_pdu_t pdu = {0};
-//     pdu.ctl = 0;                        // 0 = access message
-//     pdu.ttl = 5;                        // default TTL
-//     pdu.seq = get_next_seq();           // monotonic counter, network state
-//     pdu.src = src;
-//     pdu.dst = dst;
-
-//     size_t text_len = strlen(text);
-//     if (text_len > 21) return;          // 2 DST + 21 text + 4 NetMIC = 27 max
-//     memcpy(pdu.payload, text, text_len);
-//     pdu.payload_len = (uint8_t)text_len;
-
-//     // Encrypt: payload becomes ciphertext + MIC ---
-//     if (encrypt_pdu(&pdu, net_key, iv_index) == 0) return; // handle encryption failed
-
-//     // Now: pdu.payload = [ciphertext][MIC]
-//     //      pdu.payload_len = text_len + 4
-//     //      pdu.ivi, pdu.nid are set
-//     // Build: serialize to wire bytes ---
-//     uint8_t wire[7 + sizeof(pdu.payload)];   // 7 header + 27 encrypted bytes = 34
-//     size_t wire_len = build_mesh_pdu(&pdu, wire, sizeof(wire));
-//     if (wire_len == 0) {
-//         return;                          // buffer too small (shouldn't happen)
-//     }
-
-//     // Send over the bearer ---
-//     ble_mesh_advertise_bearer(wire, wire_len);
-// }
-
-
-// // PDU parsing. The first 7 bytes are available before decryption; the
-// // encrypted payload still contains DST || TransportPDU || NetMIC.
-// void parse_mesh_pdu(mesh_pdu_t *pdu, const uint8_t *buffer, size_t len) {
-//     if (!pdu || !buffer || len < 7) return;
-//     pdu->ivi = (buffer[0] >> 7) & 0x01;
-//     pdu->nid = buffer[0] & 0x7F;
-//     pdu->ctl = (buffer[1] >> 7) & 0x01;
-//     pdu->ttl = buffer[1] & 0x7F;
-
-//     pdu->seq = ((uint32_t)buffer[2] << 16)
-//                 | ((uint32_t)buffer[3] <<  8)
-//                 | ((uint32_t)buffer[4]);
-
-//     pdu->src = ((uint16_t)buffer[5] << 8) | buffer[6];
-//     pdu->dst = 0; // DST is encrypted and must be recovered after authentication.
-
-//     // Encrypted payload length = total len - 7, capped at 27.
-//     size_t tpdu_len = (len >= 7) ? (len - 7) : 0;
-//     if (tpdu_len > 27) tpdu_len = 27;
-//     memcpy(pdu->payload, &buffer[7], tpdu_len);
-//     pdu->payload_len = tpdu_len;
-// }
-
 
 // Key management
 typedef struct {
@@ -178,28 +43,126 @@ typedef struct {
     uint8_t bearer_type; // 0=PB-ADV, 1=PB-GATT
 } provision_data_t;
 
-// Provisioning platform hooks. Replace these placeholders before using PB-ADV.
+// The radio sends a complete advertising PDU, while provisioning supplies an
+// AD structure. Keep queued AD structures in order, including delayed ACKs.
+#define BLE_MESH_RADIO_QUEUE_SIZE 8
+#define BLE_MESH_ADV_ACCESS_ADDRESS 0x8E89BED6u
+static struct {
+    uint8_t data[PB_MAX_AD_SIZE];
+    uint8_t len;
+    uint32_t due_ms;
+} ble_mesh_radio_queue[BLE_MESH_RADIO_QUEUE_SIZE];
+static uint8_t ble_mesh_radio_head, ble_mesh_radio_count;
+static uint8_t ble_mesh_radio_ready, ble_mesh_rx_armed, ble_mesh_rx_channel;
+static uint32_t ble_mesh_rx_started_ms;
+static ISLER_BUF_ATTR uint8_t ble_mesh_radio_frame[8 + PB_MAX_AD_SIZE];
+
+static void ble_mesh_radio_init(void) {
+    if (ble_mesh_radio_ready) return;
+    iSLERInit(LL_TX_POWER_0_DBM);
+    ble_mesh_radio_ready = 1;
+}
+
+static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t due_ms) {
+    if (!adv_data || len < 2 || len > PB_MAX_AD_SIZE ||
+        (size_t)adv_data[0] + 1 != len ||
+        ble_mesh_radio_count == BLE_MESH_RADIO_QUEUE_SIZE
+    ) return -1;
+
+    uint8_t slot = (ble_mesh_radio_head + ble_mesh_radio_count) %
+                   BLE_MESH_RADIO_QUEUE_SIZE;
+    memcpy(ble_mesh_radio_queue[slot].data, adv_data, len);
+    ble_mesh_radio_queue[slot].len = (uint8_t)len;
+    ble_mesh_radio_queue[slot].due_ms = due_ms;
+    ble_mesh_radio_count++;
+    return 0;
+}
+
 int BLE_MESH_TX(const uint8_t *adv_data, size_t len) {
-    (void)adv_data;
-    (void)len;
-    return -1;
+    ble_mesh_radio_init();
+    return ble_mesh_queue_ad(adv_data, len, GET_MILLIS());
 }
 
 int BLE_MESH_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
-    (void)adv_data;
-    (void)len;
-    (void)min_delay_ms;
-    (void)max_delay_ms;
-    return -1;
+    uint8_t random_byte;
+    if (min_delay_ms > max_delay_ms ||
+        GET_RANDOM_BYTES(&random_byte, 1) != 1
+    ) return -1;
+
+    uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
+    uint32_t delay_ms = min_delay_ms + random_byte % range;
+    ble_mesh_radio_init();
+    return ble_mesh_queue_ad(adv_data, len, GET_MILLIS() + delay_ms);
 }
 
 int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
-    (void)adv_data;
-    (void)len;
-    return 0;
+    if (!adv_data || !len) return -1;
+    ble_mesh_radio_init();
+    uint32_t now = GET_MILLIS();
+    int received = 0;
+
+    if (rx_ready) {
+        const uint8_t *frame = (const uint8_t *)LLE_BUF;
+        uint8_t payload_len = frame[1];
+        ble_mesh_rx_armed = 0;
+        rx_ready = 0;
+
+        // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
+        if ((frame[0] & 0x0F) == 0x02 && payload_len >= 8 &&
+            payload_len <= 37
+        ) {
+            size_t end = (size_t)payload_len + 2;
+            for (size_t offset = 8; offset < end;) {
+                uint8_t ad_len = frame[offset];
+                if (ad_len == 0 || offset + ad_len + 1 > end) break;
+                if (frame[offset + 1] == MESH_PROV_AD_TYPE ||
+                    frame[offset + 1] == MESH_BEACON_AD_TYPE
+                ) {
+                    if ((size_t)ad_len + 1 > *len) return -1;
+                    memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
+                    *len = (size_t)ad_len + 1;
+                    received = 1;
+                    break;
+                }
+                offset += (size_t)ad_len + 1;
+            }
+        }
+    }
+
+    if (ble_mesh_radio_count &&
+        (int32_t)(now - ble_mesh_radio_queue[ble_mesh_radio_head].due_ms) >= 0
+    ) {
+        // The factory MAC is stored most-significant byte first in ROM.
+        const uint8_t *mac = (const uint8_t *)0x0007f018;
+        ble_mesh_radio_frame[0] = 0x02;
+        ble_mesh_radio_frame[1] = 0;
+        for (uint8_t i = 0; i < 6; i++) ble_mesh_radio_frame[7 - i] = mac[i];
+        memcpy(ble_mesh_radio_frame + 8,
+               ble_mesh_radio_queue[ble_mesh_radio_head].data,
+               ble_mesh_radio_queue[ble_mesh_radio_head].len);
+        size_t frame_len = 8 + ble_mesh_radio_queue[ble_mesh_radio_head].len;
+        ble_mesh_radio_head = (ble_mesh_radio_head + 1) % BLE_MESH_RADIO_QUEUE_SIZE;
+        ble_mesh_radio_count--;
+        ble_mesh_rx_armed = 0;
+
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            iSLERTX(BLE_MESH_ADV_ACCESS_ADDRESS, ble_mesh_radio_frame,
+                    frame_len, channel, PHY_1M);
+            if (!tx_done) return -1;
+        }
+    }
+
+    if (!ble_mesh_rx_armed || (uint32_t)(now - ble_mesh_rx_started_ms) >= 20u) {
+        uint8_t channel = 37 + ble_mesh_rx_channel;
+        ble_mesh_rx_channel = (ble_mesh_rx_channel + 1) % 3;
+        iSLERRX(BLE_MESH_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+        ble_mesh_rx_started_ms = GET_MILLIS();
+        ble_mesh_rx_armed = 1;
+    }
+    return received;
 }
 
 int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
@@ -324,26 +287,4 @@ int AUTH_DECRYPT_DATA(
                             encrypted, 25, mic, 8, plain);
 }
 
-// Network Relay/Forwarding
-typedef struct {
-    uint16_t src;
-    uint32_t seq;
-    uint32_t timestamp;
-} replay_cache_t;
 
-// void relay_pdu(mesh_pdu_t *pdu) {
-//     // Check TTL
-//     if (pdu->ttl <= 1) return; // Don't relay
-
-//     // Check replay cache
-//     if (is_replayed(pdu)) return;
-
-//     // Decrement TTL
-//     pdu->ttl--;
-
-//     // Re-encrypt with new sequence number
-//     pdu->seq = get_next_seq_num();
-
-//     // Forward to all other interfaces
-//     forward_to_interfaces(pdu);
-// }

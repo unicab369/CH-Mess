@@ -89,13 +89,14 @@
 #define PROV_ALG_FIPS_P256    0x00      // Algorithm values (Mesh Profile 5.4.1.1)
 #define PROV_PUBKEY_OOB_AVAILABLE 0x01  // Public Key OOB info bits
 
-// Generic radio advertisement interface. The caller supplies the complete
-// AD structure, including its length byte and AD type.
+// Queue a copy of a complete AD structure, including its length byte and AD
+// type. Return 0 if queued, or -1 if the radio queue cannot accept it.
 int BLE_MESH_TX(const uint8_t *adv_data, size_t len);
 
 // Queue a copy of an AD structure for transmission after a random delay in
 // the inclusive range. PB-ADV Transaction Acknowledgments use 20-50 ms.
 // Later BLE_MESH_TX calls must remain behind this item in transmit order.
+// Return 0 if queued, or -1 if the radio queue cannot accept it.
 int BLE_MESH_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
@@ -720,6 +721,7 @@ void provisioner_poll(void) {
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
+    int received = BLE_MESH_RX(adv_data, &len);
     uint32_t now = GET_MILLIS();
 
     // Close the link if a cached transmission times out or fails.
@@ -750,7 +752,7 @@ void provisioner_poll(void) {
     }
 
     // Ignore receive errors, empty queues, or malformed AD lengths.
-    if (BLE_MESH_RX(adv_data, &len) <= 0 ||
+    if (received <= 0 ||
         len < 2 || (size_t)adv_data[0] + 1 != len
     ) {
         return;
@@ -1360,6 +1362,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
+    int received = BLE_MESH_RX(adv_data, &len);
     uint32_t now = GET_MILLIS();
 
     if (pb_tx_poll(now) != 0) {
@@ -1391,7 +1394,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         return;
     }
 
-    if (BLE_MESH_RX(adv_data, &len) > 0 &&
+    if (received > 0 &&
         len >= 2 && (size_t)adv_data[0] + 1 == len &&
         adv_data[1] == MESH_PROV_AD_TYPE &&
         provisionee.state != PROVISIONEE_FAILED &&
