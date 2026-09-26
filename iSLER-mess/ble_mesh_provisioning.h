@@ -846,8 +846,8 @@ void provisioner_poll(void) {
         memcpy(&link_open[8], &adv_data[3], 16);
 
         //! Send STEP_2: PB_LINK_OPEN advertisement
-        int success = pb_tx_send_once(
-            link_open, sizeof(link_open), PB_LINK_OPEN_MS, 1) == 0;
+        int success = pb_tx_send_once(link_open, sizeof(link_open),
+                                        PB_LINK_OPEN_MS, 1) == 0;
         if (success) bearer.last_activity_ms = GET_MILLIS();
         provisioner.state = success ? WAITING_FOR_LINK_ACK
                                     : PROVISIONER_FAILED;
@@ -867,14 +867,14 @@ void provisioner_poll(void) {
         adv_data[7] == PB_LINK_ACK
     ) {
         pb_tx_stop();
+
         uint8_t invite[PROV_OP_INVITE_AD_LEN + 1];
         invite[0] = PROV_OP_INVITE_AD_LEN;
         invite[1] = MESH_PROV_AD_TYPE;
-        memcpy(&invite[2], bearer.link_id, sizeof(bearer.link_id));
 
-        uint8_t transaction_id = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-        bearer.tx_num = transaction_id;
-        invite[6] = transaction_id;
+        bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
+        memcpy(&invite[2], bearer.link_id, sizeof(bearer.link_id));
+        invite[6] = bearer.tx_num;
         invite[7] = PB_GPC_START(0);
         invite[8] = 0;                  // PROV-PDU length MSB
         invite[9] = 2;                  // PROV-PDU length LSB
@@ -886,8 +886,7 @@ void provisioner_poll(void) {
         provisioner.confirm_inputs[0] = invite[12];
 
         //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
-        int success = pb_tx_send_once(
-            invite, sizeof(invite), PB_TRANSACTION_MS, 1) == 0;
+        int success = pb_tx_send_once(invite, sizeof(invite), PB_TRANSACTION_MS, 1) == 0;
         provisioner.state = success ? WAITING_FOR_CAPABILITIES
                                     : PROVISIONER_FAILED;
     }
@@ -923,13 +922,13 @@ void provisioner_poll(void) {
         const uint8_t *prov_pdu = &adv_data[11];
         prov_caps caps;
         caps.num_elements = prov_pdu[1];
-        caps.algorithms = (uint16_t)(((uint16_t)prov_pdu[2] << 8) | prov_pdu[3]);
+        caps.algorithms = ((uint16_t)prov_pdu[2] << 8) | prov_pdu[3];
         caps.pubkey_oob = prov_pdu[4];
         caps.static_oob = prov_pdu[5];
         caps.output_oob_size = prov_pdu[6];
-        caps.output_oob_action = (uint16_t)(((uint16_t)prov_pdu[7] << 8) | prov_pdu[8]);
+        caps.output_oob_action = ((uint16_t)prov_pdu[7] << 8) | prov_pdu[8];
         caps.input_oob_size = prov_pdu[9];
-        caps.input_oob_action = (uint16_t)(((uint16_t)prov_pdu[10] << 8) | prov_pdu[11]);
+        caps.input_oob_action = ((uint16_t)prov_pdu[10] << 8) | prov_pdu[11];
         provisioner.num_elements = caps.num_elements;
 
         if (PROVISIONER_CHOOSE_PARAMS(&caps, &provisioner.start) != 0) {
@@ -942,10 +941,8 @@ void provisioner_poll(void) {
         start[1] = MESH_PROV_AD_TYPE;
 
         memcpy(&start[2], bearer.link_id, sizeof(bearer.link_id));
-        uint8_t transaction_id = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-        bearer.tx_num = transaction_id;
-
-        start[6] = transaction_id;
+        bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
+        start[6] = bearer.tx_num;
         start[7] = PB_GPC_START(0);
         start[8] = 0;           // PROV-PDU length MSB
         start[9] = 6;           // PROV-PDU length LSB
@@ -976,9 +973,7 @@ void provisioner_poll(void) {
     ) {
         bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
 
-        if (ECDH_GENERATE_KPAIR(
-            provisioner.private_key, provisioner.public_key) != 0
-        ) {
+        if (ECDH_GENERATE_KPAIR(provisioner.private_key, provisioner.public_key) != 0) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
             return;
         }
@@ -1127,18 +1122,17 @@ void provisioner_poll(void) {
             provisioner_fail(PROV_ERR_CONFIRM_FAILED);
             return;
         }
-        /* Validate that the NetKey index is 12-bit, only defined flag bits are
-         * set, and the assigned unicast range fits every device element. */
+
+        // Provisioning data needs a 12-bit NetKey Index, only the two defined
+        // flag bits, and one valid unicast address for each element.
         if (AUTH_DERIVE_SESSION(
                 provisioner.dhkey, provisioner.confirmation_salt,
                 provisioner.random, provisioner.peer_random,
                 provisioner.session_key, provisioner.session_nonce,
                 provisioner.device_key) != 0 ||
             PROVISIONER_GET_DATA(&data) != 0 ||
-            data.net_key_index > 0x0FFF ||
-            (data.flags & 0xFC) != 0 ||
-            data.unicast_address == 0 ||
-            data.unicast_address > 0x7FFF ||
+            data.net_key_index > 0x0FFF || (data.flags & 0xFC) != 0 ||
+            data.unicast_address == 0 || data.unicast_address > 0x7FFF ||
             provisioner.num_elements == 0 ||
             (uint32_t)data.unicast_address + provisioner.num_elements - 1 > 0x7FFF
         ) {
@@ -1166,9 +1160,6 @@ void provisioner_poll(void) {
             return;
         }
 
-        uint8_t tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-        bearer.tx_num = tx_num;
-
         uint8_t pdu[PROV_DATA_PDU_LEN];
         pdu[0] = PROV_OP_DATA;
         memcpy(&pdu[1], encrypted, 25);
@@ -1178,8 +1169,10 @@ void provisioner_poll(void) {
         uint8_t start[PROV_DATA_START_AD_LEN + 1];
         start[0] = PROV_DATA_START_AD_LEN;
         start[1] = MESH_PROV_AD_TYPE;
+
         memcpy(&start[2], bearer.link_id, sizeof(bearer.link_id));
-        start[6] = tx_num;
+        bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
+        start[6] = bearer.tx_num;
         start[7] = PB_GPC_START(1);
         start[8] = 0;
         start[9] = PROV_DATA_PDU_LEN;
@@ -1190,8 +1183,9 @@ void provisioner_poll(void) {
         uint8_t cont[PROV_DATA_CONT_AD_LEN + 1];
         cont[0] = PROV_DATA_CONT_AD_LEN;
         cont[1] = MESH_PROV_AD_TYPE;
+
         memcpy(&cont[2], bearer.link_id, sizeof(bearer.link_id));
-        cont[6] = tx_num;
+        cont[6] = bearer.tx_num;
         cont[7] = PB_GPC_CONT(1);
         memcpy(&cont[8], &pdu[PB_START_PAYLOAD_MAX],
                 PROV_DATA_CONT_PAYLOAD_LEN);
@@ -1379,8 +1373,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     /* This implementation advertises only the modes it actually implements. */
     prov_caps supported_caps = {0};
     supported_caps.num_elements = caps->num_elements;
-    supported_caps.algorithms =
-        caps->algorithms & (uint16_t)(1u << PROV_ALG_FIPS_P256);
+    supported_caps.algorithms = caps->algorithms & (uint16_t)(1u << PROV_ALG_FIPS_P256);
     caps = &supported_caps;
 
     if (caps->num_elements == 0 || caps->algorithms == 0) {
@@ -1484,12 +1477,12 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             memcmp(&adv_data[8], provisionee.device_uuid,
                     sizeof(provisionee.device_uuid)) == 0
         ) {
-            // Store the Link ID sent by the provisioner.
-            memcpy(bearer.link_id, &adv_data[2], sizeof(bearer.link_id));
-
             uint8_t link_ack[PB_LINK_ACK_AD_LEN + 1];
             link_ack[0] = PB_LINK_ACK_AD_LEN;
             link_ack[1] = MESH_PROV_AD_TYPE;
+
+            // Store the Link ID sent by the provisioner.
+            memcpy(bearer.link_id, &adv_data[2], sizeof(bearer.link_id));
             memcpy(&link_ack[2], bearer.link_id, sizeof(bearer.link_id));
             link_ack[6] = 0;        // transaction number
             link_ack[7] = PB_LINK_ACK;
@@ -1536,10 +1529,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_cap[1] = MESH_PROV_AD_TYPE;
 
             memcpy(&adv_cap[2], bearer.link_id, sizeof(bearer.link_id));
-            uint8_t transaction_id = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-            bearer.tx_num = transaction_id;
-
-            adv_cap[6] = transaction_id;
+            bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
+            adv_cap[6] = bearer.tx_num;
             adv_cap[7] = PB_GPC_START(0);
             adv_cap[8] = 0;         // PROV-PDU length MSB
             adv_cap[9] = 12;        // PROV-PDU length LSB
@@ -1881,15 +1872,14 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 }
 
                 // Send Complete only after the provisioning data is accepted.
-                uint8_t tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-                bearer.tx_num = tx_num;
+                bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
                 //! Provisionee Send STEP_15: PROV_OP_COMPLETE advertisement
                 uint8_t adv[PROV_COMPLETE_AD_LEN + 1];
                 adv[0] = PROV_COMPLETE_AD_LEN;
                 adv[1] = MESH_PROV_AD_TYPE;
                 memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
-                adv[6] = tx_num;
+                adv[6] = bearer.tx_num;
                 adv[7] = PB_GPC_START(0);
                 adv[8] = 0;                     // PROV-PDU length MSB
                 adv[9] = PROV_COMPLETE_PDU_LEN;
