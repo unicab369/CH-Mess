@@ -12,7 +12,7 @@
 #include "modules/modWS2812.h"
 // #include "modules/modiSLER.h"
 #include "modules/fun_button.h"
-#include "ccm_impl.h"
+#include "ble_mesh.h"
 
 
 #ifdef CH570_CH572
@@ -247,8 +247,6 @@ void incoming_frame_handler() {
 
 // #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
 
-#include "aes_cmm.h"
-
 int main()
 {
 	SystemInit();
@@ -261,9 +259,9 @@ int main()
 
 	blink(5);
 	printf(".~ ch32fun iSLER ~.\n");
+	printf("micro-ecc self-test: %s\n", ble_mesh_test_ecc() == 0 ? "PASS" : "FAIL");
 
-	test_ccm();
-	
+
 	// printf("\n");
 	// printf("\n");
 	// uint8_t mac_addr[6];

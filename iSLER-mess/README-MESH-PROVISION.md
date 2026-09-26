@@ -5,6 +5,7 @@ GPC = Generic Provisioning Control
 ADV = Advertising
 MIC = Message Integrity Check
 FCS = Frame Check Sequence
+ECDH = Elliptic Curve Diffie-Hellman
 
 BLE Mesh device types
 | Type           | Role

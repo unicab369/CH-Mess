@@ -106,8 +106,8 @@ int BLE_MESH_TX_DELAYED(
 // and -1 on a radio error.
 int BLE_MESH_RX(uint8_t *adv_data, size_t *len);
 
-/* Fill out with cryptographically secure random bytes. */
-int GET_RANDOM_BYTES(uint8_t *out, size_t len);
+// Fill the buffer with random bytes. Return 1 on success, 0 on failure.
+int GET_RANDOM_BYTES(uint8_t *out, unsigned len);
 int GET_LOCAL_UUID(uint8_t device_uuid[16]);
 uint32_t GET_MILLIS(void);
 
@@ -820,7 +820,7 @@ void provisioner_poll(void) {
         adv_data[2] == MESH_BEACON_UNPROVISIONED
     ) {
         // Start a new session with a new Link ID.
-        if (GET_RANDOM_BYTES(bearer.link_id, sizeof(bearer.link_id)) != 0) {
+        if (GET_RANDOM_BYTES(bearer.link_id, sizeof(bearer.link_id)) != 1) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
@@ -1002,7 +1002,7 @@ void provisioner_poll(void) {
                 provisioner_fail(PROV_ERR_INVALID_FORMAT);
                 return;
             }
-            if (GET_RANDOM_BYTES(session.random, sizeof(session.random)) != 0 ||
+            if (GET_RANDOM_BYTES(session.random, sizeof(session.random)) != 1 ||
                 AUTH_COMPUTE_CONFIRMATION(
                     session.confirm_inputs, session.dhkey,
                     session.confirmation_salt,
@@ -1628,7 +1628,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
             int success =
-                GET_RANDOM_BYTES(session.random, sizeof(session.random)) == 0 &&
+                GET_RANDOM_BYTES(session.random, sizeof(session.random)) == 1 &&
                 AUTH_COMPUTE_CONFIRMATION(session.confirm_inputs, session.dhkey,
                                         session.confirmation_salt,
                                         session.random, no_oob_auth,

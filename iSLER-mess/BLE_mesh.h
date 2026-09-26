@@ -1,4 +1,7 @@
 #include "ccm_impl.h"
+#include "ble_mesh_provisioning.h"
+#include "micro-ecc/uECC.h"
+#include <stdio.h>
 
 void ble_mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
 
@@ -97,62 +100,62 @@ size_t encrypt_pdu(mesh_pdu_t *pdu, const uint8_t *net_key, uint32_t iv_index) {
 }
 
 
-void send_message(
-    uint16_t src, uint16_t dst, const char *text, 
-    const uint8_t *net_key, uint32_t iv_index
-) {
-    mesh_pdu_t pdu = {0};
-    pdu.ctl = 0;                        // 0 = access message
-    pdu.ttl = 5;                        // default TTL
-    pdu.seq = get_next_seq();           // monotonic counter, network state
-    pdu.src = src;
-    pdu.dst = dst;
+// void send_message(
+//     uint16_t src, uint16_t dst, const char *text, 
+//     const uint8_t *net_key, uint32_t iv_index
+// ) {
+//     mesh_pdu_t pdu = {0};
+//     pdu.ctl = 0;                        // 0 = access message
+//     pdu.ttl = 5;                        // default TTL
+//     pdu.seq = get_next_seq();           // monotonic counter, network state
+//     pdu.src = src;
+//     pdu.dst = dst;
 
-    size_t text_len = strlen(text);
-    if (text_len > 21) return;          // 2 DST + 21 text + 4 NetMIC = 27 max
-    memcpy(pdu.payload, text, text_len);
-    pdu.payload_len = (uint8_t)text_len;
+//     size_t text_len = strlen(text);
+//     if (text_len > 21) return;          // 2 DST + 21 text + 4 NetMIC = 27 max
+//     memcpy(pdu.payload, text, text_len);
+//     pdu.payload_len = (uint8_t)text_len;
 
-    // Encrypt: payload becomes ciphertext + MIC ---
-    if (encrypt_pdu(&pdu, net_key, iv_index) == 0) return; // handle encryption failed
+//     // Encrypt: payload becomes ciphertext + MIC ---
+//     if (encrypt_pdu(&pdu, net_key, iv_index) == 0) return; // handle encryption failed
 
-    // Now: pdu.payload = [ciphertext][MIC]
-    //      pdu.payload_len = text_len + 4
-    //      pdu.ivi, pdu.nid are set
-    // Build: serialize to wire bytes ---
-    uint8_t wire[7 + sizeof(pdu.payload)];   // 7 header + 27 encrypted bytes = 34
-    size_t wire_len = build_mesh_pdu(&pdu, wire, sizeof(wire));
-    if (wire_len == 0) {
-        return;                          // buffer too small (shouldn't happen)
-    }
+//     // Now: pdu.payload = [ciphertext][MIC]
+//     //      pdu.payload_len = text_len + 4
+//     //      pdu.ivi, pdu.nid are set
+//     // Build: serialize to wire bytes ---
+//     uint8_t wire[7 + sizeof(pdu.payload)];   // 7 header + 27 encrypted bytes = 34
+//     size_t wire_len = build_mesh_pdu(&pdu, wire, sizeof(wire));
+//     if (wire_len == 0) {
+//         return;                          // buffer too small (shouldn't happen)
+//     }
 
-    // Send over the bearer ---
-    ble_mesh_advertise_bearer(wire, wire_len);
-}
+//     // Send over the bearer ---
+//     ble_mesh_advertise_bearer(wire, wire_len);
+// }
 
 
-// PDU parsing. The first 7 bytes are available before decryption; the
-// encrypted payload still contains DST || TransportPDU || NetMIC.
-void parse_mesh_pdu(mesh_pdu_t *pdu, const uint8_t *buffer, size_t len) {
-    if (!pdu || !buffer || len < 7) return;
-    pdu->ivi = (buffer[0] >> 7) & 0x01;
-    pdu->nid = buffer[0] & 0x7F;
-    pdu->ctl = (buffer[1] >> 7) & 0x01;
-    pdu->ttl = buffer[1] & 0x7F;
+// // PDU parsing. The first 7 bytes are available before decryption; the
+// // encrypted payload still contains DST || TransportPDU || NetMIC.
+// void parse_mesh_pdu(mesh_pdu_t *pdu, const uint8_t *buffer, size_t len) {
+//     if (!pdu || !buffer || len < 7) return;
+//     pdu->ivi = (buffer[0] >> 7) & 0x01;
+//     pdu->nid = buffer[0] & 0x7F;
+//     pdu->ctl = (buffer[1] >> 7) & 0x01;
+//     pdu->ttl = buffer[1] & 0x7F;
 
-    pdu->seq = ((uint32_t)buffer[2] << 16)
-                | ((uint32_t)buffer[3] <<  8)
-                | ((uint32_t)buffer[4]);
+//     pdu->seq = ((uint32_t)buffer[2] << 16)
+//                 | ((uint32_t)buffer[3] <<  8)
+//                 | ((uint32_t)buffer[4]);
 
-    pdu->src = ((uint16_t)buffer[5] << 8) | buffer[6];
-    pdu->dst = 0; // DST is encrypted and must be recovered after authentication.
+//     pdu->src = ((uint16_t)buffer[5] << 8) | buffer[6];
+//     pdu->dst = 0; // DST is encrypted and must be recovered after authentication.
 
-    // Encrypted payload length = total len - 7, capped at 27.
-    size_t tpdu_len = (len >= 7) ? (len - 7) : 0;
-    if (tpdu_len > 27) tpdu_len = 27;
-    memcpy(pdu->payload, &buffer[7], tpdu_len);
-    pdu->payload_len = tpdu_len;
-}
+//     // Encrypted payload length = total len - 7, capped at 27.
+//     size_t tpdu_len = (len >= 7) ? (len - 7) : 0;
+//     if (tpdu_len > 27) tpdu_len = 27;
+//     memcpy(pdu->payload, &buffer[7], tpdu_len);
+//     pdu->payload_len = tpdu_len;
+// }
 
 
 // Key management
@@ -173,12 +176,63 @@ typedef struct {
     uint8_t bearer_type; // 0=PB-ADV, 1=PB-GATT
 } provision_data_t;
 
-void handle_provisioning(provision_data_t *prov) {
-    // Exchange public keys (ECDH)
-    // Authenticate (OOB or static)
-    // Distribute network key
-    // Assign unicast address
-    // Generate device key
+// Temporary test stub: replace before using provisioning with real devices.
+int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
+    memset(out, 22, len);
+    return 1;
+}
+
+int ECDH_GENERATE_KPAIR(uint8_t private_key[32], uint8_t public_key[64]) {
+    // micro-ecc needs an RNG callback before it can generate a private key.
+    uECC_set_rng(GET_RANDOM_BYTES);
+    return uECC_make_key(public_key, private_key, uECC_secp256r1()) ? 0 : -1;
+}
+
+int ECDH_COMPUTE_DHKEY(
+    const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]
+) {
+    uECC_Curve curve = uECC_secp256r1();
+    // This validates the peer's key; it does not verify a signature.
+    if (!uECC_valid_public_key(peer_public_key, curve)) return -1;
+    return uECC_shared_secret(peer_public_key, private_key, dhkey, curve) ? 0 : -1;
+}
+
+int ble_mesh_test_ecc(void) {
+    uint8_t private_a[32], public_a[64], secret_a[32];
+    uint8_t private_b[32], public_b[64], secret_b[32];
+    uECC_RNG_Function previous_rng = uECC_get_rng();
+
+    int ok1 = ECDH_GENERATE_KPAIR(private_a, public_a) == 0 &&
+                ECDH_GENERATE_KPAIR(private_b, public_b) == 0;
+    printf("ECC key generation: %s\n", ok1 ? "PASS" : "FAIL");
+    int ok2 = ok1 &&
+                ECDH_COMPUTE_DHKEY(private_a, public_b, secret_a) == 0 &&
+                ECDH_COMPUTE_DHKEY(private_b, public_a, secret_b) == 0;
+    printf("ECC shared secret: %s\n", ok2 ? "PASS" : "FAIL");
+
+    int success = ok1 && ok2 &&
+                  memcmp(secret_a, secret_b, sizeof(secret_a)) == 0;
+    uECC_set_rng(previous_rng);
+    return success ? 0 : -1;
+}
+
+// The provisioning state machine supplies a 25-byte data PDU and an 8-byte MIC.
+// AES-CCM is already available here, so these two crypto interfaces can be wired now.
+int AUTH_ENCRYPT_DATA(
+    const uint8_t session_key[16], const uint8_t session_nonce[13],
+    const uint8_t plain[25], uint8_t encrypted[25], uint8_t mic[8]
+) {
+    return ccm_encrypt_and_tag(session_key, session_nonce, 13, NULL, 0,
+                               plain, 25, encrypted, mic, 8);
+}
+
+int AUTH_DECRYPT_DATA(
+    const uint8_t session_key[16], const uint8_t session_nonce[13],
+    const uint8_t encrypted[25], const uint8_t mic[8], uint8_t plain[25]
+) {
+    return ccm_auth_decrypt(session_key, session_nonce, 13, NULL, 0,
+                            encrypted, 25, mic, 8, plain);
 }
 
 // Network Relay/Forwarding
@@ -188,19 +242,19 @@ typedef struct {
     uint32_t timestamp;
 } replay_cache_t;
 
-void relay_pdu(mesh_pdu_t *pdu) {
-    // Check TTL
-    if (pdu->ttl <= 1) return; // Don't relay
+// void relay_pdu(mesh_pdu_t *pdu) {
+//     // Check TTL
+//     if (pdu->ttl <= 1) return; // Don't relay
 
-    // Check replay cache
-    if (is_replayed(pdu)) return;
+//     // Check replay cache
+//     if (is_replayed(pdu)) return;
 
-    // Decrement TTL
-    pdu->ttl--;
+//     // Decrement TTL
+//     pdu->ttl--;
 
-    // Re-encrypt with new sequence number
-    pdu->seq = get_next_seq_num();
+//     // Re-encrypt with new sequence number
+//     pdu->seq = get_next_seq_num();
 
-    // Forward to all other interfaces
-    forward_to_interfaces(pdu);
-}
+//     // Forward to all other interfaces
+//     forward_to_interfaces(pdu);
+// }
