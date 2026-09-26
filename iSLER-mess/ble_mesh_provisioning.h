@@ -264,6 +264,14 @@ static inline int ad_length_matches(
     return len == (size_t)ad_len + 1 && data0 == ad_len;
 }
 
+static inline int pb_ack_matches(
+    const uint8_t *adv_data, size_t len, uint8_t tx_num
+) {
+    return len >= PB_TRANSACTION_ACK_AD_LEN + 1 &&
+           ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
+           adv_data[6] == tx_num && adv_data[7] == PB_GPC_ACK;
+}
+
 typedef struct {
     uint8_t adv[PB_MAX_TX_SEGMENTS][PB_MAX_AD_SIZE];
     uint8_t len[PB_MAX_TX_SEGMENTS];
@@ -429,9 +437,8 @@ static uint8_t pb_adv_fcs(const uint8_t *data, size_t len) {
     return (uint8_t)(0xFF - fcs);
 }
 
-// transmit confirmation or random number
+// Send Confirmation or Random on the active link.
 static int pb_tx_confirm_or_random(
-    const uint8_t link_id[4], uint8_t tx_num,
     uint8_t opcode, const uint8_t value[16]
 ) {
     // Single-segment Confirmation or Random advertisement:
@@ -447,8 +454,8 @@ static int pb_tx_confirm_or_random(
     uint8_t adv[PROV_CONFIRM_AD_LEN + 1];
     adv[0] = PROV_CONFIRM_AD_LEN;
     adv[1] = MESH_PROV_AD_TYPE;
-    memcpy(&adv[2], link_id, 4);
-    adv[6] = tx_num;
+    memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
+    adv[6] = bearer.tx_num;
     adv[7] = PB_GPC_START(0);
     adv[8] = 0;
     adv[9] = PROV_CONFIRM_PDU_LEN;
@@ -458,15 +465,13 @@ static int pb_tx_confirm_or_random(
     return pb_tx_send_once(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
 }
 
-static int pb_send_fail_pdu(
-    const uint8_t link_id[4], uint8_t tx_num,
-    uint8_t reason
-) {
+// Caller sets bearer.tx_num before sending Failed on the active link.
+static int pb_send_fail_pdu(uint8_t reason) {
     uint8_t adv[PROV_FAILED_AD_LEN + 1];
     adv[0] = PROV_FAILED_AD_LEN;
     adv[1] = MESH_PROV_AD_TYPE;
-    memcpy(&adv[2], link_id, 4);
-    adv[6] = tx_num;
+    memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
+    adv[6] = bearer.tx_num;
     adv[7] = PB_GPC_START(0);
     adv[8] = 0;
     adv[9] = PROV_FAILED_PDU_LEN;
@@ -476,13 +481,12 @@ static int pb_send_fail_pdu(
     return pb_tx_send_once(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
 }
 
-static int pb_send_link_close(
-    const uint8_t link_id[4], uint8_t reason
-) {
+// Close the active bearer link with the given reason.
+static int pb_send_link_close(uint8_t reason) {
     uint8_t adv[PB_LINK_CLOSE_AD_LEN + 1];
     adv[0] = PB_LINK_CLOSE_AD_LEN;
     adv[1] = MESH_PROV_AD_TYPE;
-    memcpy(&adv[2], link_id, 4);
+    memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
     adv[6] = 0;
     adv[7] = PB_LINK_CLOSE;
     adv[8] = reason;
@@ -585,10 +589,8 @@ static int auth_rx_pubkey(
     return 1;
 }
 
-static int auth_tx_pubkey(
-    const uint8_t public_key[64],
-    const uint8_t link_id[4], uint8_t tx_num
-) {
+// Caller sets bearer.tx_num before sending a public key on the active link.
+static int auth_tx_pubkey(const uint8_t public_key[64]) {
     uint8_t pdu[PROV_PUBKEY_PDU_LEN];
     pdu[0] = PROV_OP_PUBLIC_KEY;
     memcpy(&pdu[1], public_key, 64);
@@ -606,8 +608,8 @@ static int auth_tx_pubkey(
     uint8_t start[PROV_PUBKEY_START_AD_LEN + 1];
     start[0] = PROV_PUBKEY_START_AD_LEN;
     start[1] = MESH_PROV_AD_TYPE;
-    memcpy(&start[2], link_id, 4);
-    start[6] = tx_num;
+    memcpy(&start[2], bearer.link_id, sizeof(bearer.link_id));
+    start[6] = bearer.tx_num;
     start[7] = PB_GPC_START(2);
     start[8] = 0;
     start[9] = PROV_PUBKEY_PDU_LEN;
@@ -618,8 +620,8 @@ static int auth_tx_pubkey(
     uint8_t cont_1[PROV_PUBKEY_CONT1_AD_LEN + 1];
     cont_1[0] = PROV_PUBKEY_CONT1_AD_LEN;
     cont_1[1] = MESH_PROV_AD_TYPE;
-    memcpy(&cont_1[2], link_id, 4);
-    cont_1[6] = tx_num;
+    memcpy(&cont_1[2], bearer.link_id, sizeof(bearer.link_id));
+    cont_1[6] = bearer.tx_num;
     cont_1[7] = PB_GPC_CONT(1);
     memcpy(&cont_1[8], &pdu[20], PB_CONT_PAYLOAD_MAX);
 
@@ -627,8 +629,8 @@ static int auth_tx_pubkey(
     uint8_t cont_2[PROV_PUBKEY_CONT2_AD_LEN + 1];
     cont_2[0] = PROV_PUBKEY_CONT2_AD_LEN;
     cont_2[1] = MESH_PROV_AD_TYPE;
-    memcpy(&cont_2[2], link_id, 4);
-    cont_2[6] = tx_num;
+    memcpy(&cont_2[2], bearer.link_id, sizeof(bearer.link_id));
+    cont_2[6] = bearer.tx_num;
     cont_2[7] = PB_GPC_CONT(2);
     memcpy(&cont_2[8], &pdu[43], 22);
 
@@ -698,8 +700,7 @@ static void provisioner_fail(uint8_t reason) {
     }
 
     bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-    provisioner.state = pb_send_fail_pdu(bearer.link_id,
-                                        bearer.tx_num, reason) == 0
+    provisioner.state = pb_send_fail_pdu(reason) == 0
                                 ? WAITING_FOR_FAILED_ACK
                                 : PROVISIONER_FAILED;
 }
@@ -731,7 +732,7 @@ void provisioner_poll(void) {
         uint8_t reason = provisioner.state == WAITING_FOR_FAILED_ACK
                             ? PB_CLOSE_FAIL
                             : PB_CLOSE_TIMEOUT;
-        pb_send_link_close(bearer.link_id, reason);
+        pb_send_link_close(reason);
         provisioner.state = PROVISIONER_FAILED;
     }
 
@@ -748,7 +749,7 @@ void provisioner_poll(void) {
     if (provisioner.state != WAITING_FOR_BEACON &&
         (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
     ) {
-        pb_send_link_close(bearer.link_id, PB_CLOSE_TIMEOUT);
+        pb_send_link_close(PB_CLOSE_TIMEOUT);
         provisioner.state = PROVISIONER_FAILED;
         return;
     }
@@ -771,17 +772,12 @@ void provisioner_poll(void) {
         bearer.last_activity_ms = now;
     }
 
-    int transaction_ack =
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num &&
-        adv_data[7] == PB_GPC_ACK;
-
     // Stop retransmitting when the peer acknowledges our transaction.
-    if (transaction_ack) {
+    if (pb_ack_matches(adv_data, len, bearer.tx_num)) {
         pb_tx_stop();
         // Close the link after our Failed PDU is acknowledged.
         if (provisioner.state == WAITING_FOR_FAILED_ACK) {
-            pb_send_link_close(bearer.link_id, PB_CLOSE_FAIL);
+            pb_send_link_close(PB_CLOSE_FAIL);
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
@@ -815,7 +811,7 @@ void provisioner_poll(void) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
-        pb_send_link_close(bearer.link_id, PB_CLOSE_FAIL);
+        pb_send_link_close(PB_CLOSE_FAIL);
         provisioner.state = PROVISIONER_FAILED;
         return;
     }
@@ -867,7 +863,7 @@ void provisioner_poll(void) {
     else if (
         provisioner.state == WAITING_FOR_LINK_ACK &&
         ad_length_matches(len, adv_data[0], PB_LINK_ACK_AD_LEN) &&
-        adv_data[6] == 0 &&
+        adv_data[6] == 0 &&         // transaction number
         adv_data[7] == PB_LINK_ACK
     ) {
         pb_tx_stop();
@@ -880,8 +876,8 @@ void provisioner_poll(void) {
         bearer.tx_num = transaction_id;
         invite[6] = transaction_id;
         invite[7] = PB_GPC_START(0);
-        invite[8] = 0;                  // PROV-PDU length byte0
-        invite[9] = 2;                  // PROV-PDU length byte1
+        invite[8] = 0;                  // PROV-PDU length MSB
+        invite[9] = 2;                  // PROV-PDU length LSB
         invite[11] = PROV_OP_INVITE;    // 1-byte opcode
         invite[12] = 5;                 // 1-byte attention duration in seconds
 
@@ -931,11 +927,9 @@ void provisioner_poll(void) {
         caps.pubkey_oob = prov_pdu[4];
         caps.static_oob = prov_pdu[5];
         caps.output_oob_size = prov_pdu[6];
-        caps.output_oob_action =
-            (uint16_t)(((uint16_t)prov_pdu[7] << 8) | prov_pdu[8]);
+        caps.output_oob_action = (uint16_t)(((uint16_t)prov_pdu[7] << 8) | prov_pdu[8]);
         caps.input_oob_size = prov_pdu[9];
-        caps.input_oob_action =
-            (uint16_t)(((uint16_t)prov_pdu[10] << 8) | prov_pdu[11]);
+        caps.input_oob_action = (uint16_t)(((uint16_t)prov_pdu[10] << 8) | prov_pdu[11]);
         provisioner.num_elements = caps.num_elements;
 
         if (PROVISIONER_CHOOSE_PARAMS(&caps, &provisioner.start) != 0) {
@@ -953,8 +947,8 @@ void provisioner_poll(void) {
 
         start[6] = transaction_id;
         start[7] = PB_GPC_START(0);
-        start[8] = 0;           // PROV-PDU length byte0
-        start[9] = 6;           // PROV-PDU length byte1
+        start[8] = 0;           // PROV-PDU length MSB
+        start[9] = 6;           // PROV-PDU length LSB
         start[11] = PROV_OP_START;
         start[12] = provisioner.start.algorithm;
         start[13] = provisioner.start.public_key_oob;
@@ -970,8 +964,7 @@ void provisioner_poll(void) {
         memcpy(&provisioner.confirm_inputs[12], &start[12], 5);
 
         //! Provisioner Send STEP_6: PROV_OP_START advertisement
-        int send_ok = pb_tx_send_once(
-            start, sizeof(start), PB_TRANSACTION_MS, 1) == 0;
+        int send_ok = pb_tx_send_once(start, sizeof(start), PB_TRANSACTION_MS, 1) == 0;
         provisioner.state = send_ok ? WAITING_FOR_START_ACK
                                     : PROVISIONER_FAILED;
     }
@@ -979,13 +972,12 @@ void provisioner_poll(void) {
     //! Check ACK for STEP_6: Expected PROV_OP_START Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_START_ACK &&
-        transaction_ack
+        pb_ack_matches(adv_data, len, bearer.tx_num)
     ) {
-        uint8_t tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-        bearer.tx_num = tx_num;
+        bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
 
         if (ECDH_GENERATE_KPAIR(
-                provisioner.private_key, provisioner.public_key) != 0
+            provisioner.private_key, provisioner.public_key) != 0
         ) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
             return;
@@ -993,11 +985,9 @@ void provisioner_poll(void) {
 
         memcpy(&provisioner.confirm_inputs[17], provisioner.public_key, 64);
         //! Provisioner Send STEP_7: PROV_OP_PUBLIC_KEY advertisement
-        provisioner.state =
-            auth_tx_pubkey(provisioner.public_key,
-                           bearer.link_id, tx_num) == 0
-                ? WAITING_FOR_PUBLIC_KEY
-                : PROVISIONER_FAILED;
+        provisioner.state = auth_tx_pubkey(provisioner.public_key) == 0
+                                ? WAITING_FOR_PUBLIC_KEY
+                                : PROVISIONER_FAILED;
 
     //! Check STEP_8: Expect PROV_OP_PUBLIC_KEY advertisement
     } else if (
@@ -1016,17 +1006,15 @@ void provisioner_poll(void) {
             const uint8_t *peer_pubkey = &provisioner.pubkey_rx.pdu[1];
             memcpy(&provisioner.confirm_inputs[81], peer_pubkey, 64);
 
-            uint8_t tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-            bearer.tx_num = tx_num;
+            bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
             uint8_t confirmation[16];
 
             if (pb_ack_rx(provisioner.pubkey_rx.tx_num) != 0) {
                 provisioner.state = PROVISIONER_FAILED;
                 return;
             }
-            if (ECDH_COMPUTE_DHKEY(
-                    provisioner.private_key, peer_pubkey,
-                    provisioner.dhkey) != 0
+            if (ECDH_COMPUTE_DHKEY(provisioner.private_key, peer_pubkey,
+                                    provisioner.dhkey) != 0
             ) {
                 provisioner_fail(PROV_ERR_INVALID_FORMAT);
                 return;
@@ -1044,17 +1032,16 @@ void provisioner_poll(void) {
 
             //! Provisioner Send STEP_10: PROV_OP_CONFIRM advertisement
             provisioner.state = pb_tx_confirm_or_random(
-                                    bearer.link_id, tx_num,
                                     PROV_OP_CONFIRM, confirmation) == 0
-                                    ? WAITING_FOR_CONFIRM_ACK
-                                    : PROVISIONER_FAILED;
+                                        ? WAITING_FOR_CONFIRM_ACK
+                                        : PROVISIONER_FAILED;
         }
     }
 
     //! Check STEP_10 ACK: Expected PROV_OP_CONFIRM Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_CONFIRM_ACK &&
-        transaction_ack
+        pb_ack_matches(adv_data, len, bearer.tx_num)
     ) {
         provisioner.state = WAITING_FOR_CONFIRMATION;
     }
@@ -1080,15 +1067,13 @@ void provisioner_poll(void) {
         adv_data[11] == PROV_OP_CONFIRM
     ) {
         memcpy(provisioner.peer_confirmation, &adv_data[12], 16);
-        uint8_t tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
-        bearer.tx_num = tx_num;
+        bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
 
         int success =
             //! Provisioner send PB_GPC_ACK
             pb_ack_rx(adv_data[6]) == 0 &&
             //! Provisioner Send STEP_12: PROV_OP_RANDOM advertisement
             pb_tx_confirm_or_random(
-                bearer.link_id, tx_num,
                 PROV_OP_RANDOM, provisioner.random) == 0;
 
         provisioner.state = success ? WAITING_FOR_RANDOM_ACK
@@ -1098,7 +1083,7 @@ void provisioner_poll(void) {
     //! Check STEP_12 ACK: Expected PROV_OP_RANDOM Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_RANDOM_ACK &&
-        transaction_ack
+        pb_ack_matches(adv_data, len, bearer.tx_num)
     ) {
         provisioner.state = WAITING_FOR_RANDOM;
     }
@@ -1214,18 +1199,16 @@ void provisioner_poll(void) {
         //! Provisioner Send STEP_14: PROV_OP_DATA advertisement
         const uint8_t *frames[] = {start, cont};
         const size_t lengths[] = {sizeof(start), sizeof(cont)};
-        int success = pb_tx_start(
-            frames, lengths, 2,
-            PB_TRANSACTION_MS, 1) == 0;
 
-        provisioner.state = success ? WAITING_FOR_DATA_ACK
+        provisioner.state = pb_tx_start(frames, lengths, 2, PB_TRANSACTION_MS, 1) == 0
+                                    ? WAITING_FOR_DATA_ACK
                                     : PROVISIONER_FAILED;
     }
 
     //! Check STEP_14 ACK: Expected PROV_OP_DATA Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_DATA_ACK &&
-        transaction_ack
+        pb_ack_matches(adv_data, len, bearer.tx_num)
     ) {
         provisioner.state = WAITING_FOR_COMPLETE;
     }
@@ -1245,18 +1228,15 @@ void provisioner_poll(void) {
         ad_length_matches(len, adv_data[0], PROV_COMPLETE_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 &&
         adv_data[7] == PB_GPC_START(0) &&
-        adv_data[8] == 0 && adv_data[9] == PROV_COMPLETE_PDU_LEN &&
+        adv_data[8] == 0 &&
+        adv_data[9] == PROV_COMPLETE_PDU_LEN &&
         adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_COMPLETE_PDU_LEN) &&
         adv_data[11] == PROV_OP_COMPLETE
     ) {
-        int success = PROVISIONER_STORE_NODE_DEVKEY(
-                          provisioner.device_key,
-                          provisioner.unicast_address) == 0 &&
-                      pb_ack_rx(adv_data[6]) == 0;
-
-        if (success) {
-            success = pb_send_link_close(bearer.link_id, PB_CLOSE_SUCCESS) == 0;
-        }
+        int success = PROVISIONER_STORE_NODE_DEVKEY(provisioner.device_key,
+                                                provisioner.unicast_address) == 0 &&
+                      pb_ack_rx(adv_data[6]) == 0 &&
+                      pb_send_link_close(PB_CLOSE_SUCCESS) == 0;
         provisioner.state = success ? PROVISIONER_COMPLETE
                                     : PROVISIONER_FAILED;
     }
@@ -1320,8 +1300,7 @@ static void provisionee_fail(uint8_t reason) {
     }
 
     bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-    provisionee.state = pb_send_fail_pdu(bearer.link_id,
-                                        bearer.tx_num, reason) == 0
+    provisionee.state = pb_send_fail_pdu(reason) == 0
                                 ? WAITING_FOR_FAILED_CLOSE
                                 : PROVISIONEE_FAILED;
 }
@@ -1414,16 +1393,15 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     uint32_t now = GET_MILLIS();
 
     if (pb_tx_poll(now) != 0) {
-        pb_send_link_close(
-            bearer.link_id,
-            provisionee.state == WAITING_FOR_FAILED_CLOSE
-                ? PB_CLOSE_FAIL : PB_CLOSE_TIMEOUT);
+        uint8_t reason = provisionee.state == WAITING_FOR_FAILED_CLOSE
+                            ? PB_CLOSE_FAIL
+                            : PB_CLOSE_TIMEOUT;
+        pb_send_link_close(reason);
         provisionee.state = PROVISIONEE_FAILED;
     }
 
     if ((provisionee.state == PROVISIONEE_FAILED ||
-         provisionee.state == PROVISIONEE_COMPLETE) &&
-        !tx.active
+         provisionee.state == PROVISIONEE_COMPLETE) && !tx.active
     ) {
         bearer.role = PB_ROLE_NONE;
         return;
@@ -1434,7 +1412,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         provisionee.state != PROVISIONEE_COMPLETE &&
         (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
     ) {
-        pb_send_link_close(bearer.link_id, PB_CLOSE_TIMEOUT);
+        pb_send_link_close(PB_CLOSE_TIMEOUT);
         provisionee.state = PROVISIONEE_FAILED;
     }
 
@@ -1456,9 +1434,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             bearer.last_activity_ms = now;
         }
 
-        if (ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK
-        ) {
+        if (pb_ack_matches(adv_data, len, bearer.tx_num)) {
             pb_tx_stop();
         }
 
@@ -1476,7 +1452,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
         if (provisionee.state != WAITING_FOR_LINK_OPEN &&
             ad_length_matches(len, adv_data[0], PROV_FAILED_AD_LEN) &&
-            (adv_data[6] & 0x80) == 0 && adv_data[7] == PB_GPC_START(0) &&
+            (adv_data[6] & 0x80) == 0 &&
+            adv_data[7] == PB_GPC_START(0) &&
             adv_data[8] == 0 && adv_data[9] == PROV_FAILED_PDU_LEN &&
             adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_FAILED_PDU_LEN) &&
             adv_data[11] == PROV_OP_FAILED &&
@@ -1564,8 +1541,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
             adv_cap[6] = transaction_id;
             adv_cap[7] = PB_GPC_START(0);
-            adv_cap[8] = 0;         // PROV-PDU length byte0
-            adv_cap[9] = 12;        // PROV-PDU length byte1
+            adv_cap[8] = 0;         // PROV-PDU length MSB
+            adv_cap[9] = 12;        // PROV-PDU length LSB
             adv_cap[11] = PROV_OP_CAPABILITIES;
             adv_cap[12] = caps->num_elements;
             adv_cap[13] = (uint8_t)(caps->algorithms >> 8);
@@ -1639,13 +1616,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 return;
             }
 
-            int success = ECDH_GENERATE_KPAIR(provisionee.private_key,
-                                            provisionee.public_key) == 0;
-            if (success) {
+            if (ECDH_GENERATE_KPAIR(provisionee.private_key,
+                                   provisionee.public_key) == 0) {
                 memcpy(&provisionee.confirm_inputs[81], provisionee.public_key, 64);
-            }
-
-            if (success) {
                 provisionee.state = WAITING_FOR_PUBLIC_KEY;
             } else {
                 provisionee_fail(PROV_ERR_UNEXPECTED_ERROR);
@@ -1668,8 +1641,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             if (result > 0) {
                 const uint8_t *peer_public_key = &provisionee.pubkey_rx.pdu[1];
                 memcpy(&provisionee.confirm_inputs[17], peer_public_key, 64);
-                uint8_t tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-                bearer.tx_num = tx_num;
+                bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
                 if (pb_ack_rx(provisionee.pubkey_rx.tx_num) != 0) {
                     provisionee.state = PROVISIONEE_FAILED;
@@ -1683,8 +1655,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 }
 
                 //! Provisionee Send STEP_8: PROV_OP_PUBLIC_KEY advertisement
-                provisionee.state = auth_tx_pubkey(provisionee.public_key,
-                                                    bearer.link_id, tx_num) == 0
+                provisionee.state = auth_tx_pubkey(provisionee.public_key) == 0
                         ? WAITING_FOR_PUBLIC_KEY_ACK
                         : PROVISIONEE_FAILED;
             }
@@ -1694,9 +1665,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         //! Check PB_GPC_ACK
         else if (
             provisionee.state == WAITING_FOR_PUBLIC_KEY_ACK &&
-            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num &&
-            adv_data[7] == PB_GPC_ACK
+            pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
             int success =
                 GET_RANDOM_BYTES(provisionee.random, sizeof(provisionee.random)) == 0 &&
@@ -1731,16 +1700,14 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_data[11] == PROV_OP_CONFIRM
         ) {
             memcpy(provisionee.peer_confirmation, &adv_data[12], 16);
-            uint8_t tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-            bearer.tx_num = tx_num;
+            bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
             int success =
                 //! Provisionee Send PB_GPC_ACK
                 pb_ack_rx(adv_data[6]) == 0 &&
                 //! Provisionee Send STEP_11: PROV_OP_CONFIRM advertisement
                 pb_tx_confirm_or_random(
-                    bearer.link_id, tx_num, PROV_OP_CONFIRM,
-                    provisionee.confirmation) == 0;
+                    PROV_OP_CONFIRM, provisionee.confirmation) == 0;
 
             provisionee.state = success ? WAITING_FOR_CONFIRM_ACK
                                         : PROVISIONEE_FAILED;
@@ -1749,9 +1716,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         //! Check STEP_11 ACK: Expected PROV_OP_CONFIRM Transaction Ack
         else if (
             provisionee.state == WAITING_FOR_CONFIRM_ACK &&
-            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num &&
-            adv_data[7] == PB_GPC_ACK
+            pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
             provisionee.state = WAITING_FOR_RANDOM;
         }
@@ -1772,13 +1737,13 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             ad_length_matches(len, adv_data[0], PROV_RANDOM_AD_LEN) &&
             (adv_data[6] & 0x80) == 0 &&
             adv_data[7] == PB_GPC_START(0) &&
-            adv_data[8] == 0 && adv_data[9] == PROV_RANDOM_PDU_LEN &&
+            adv_data[8] == 0 &&
+            adv_data[9] == PROV_RANDOM_PDU_LEN &&
             adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_RANDOM_PDU_LEN) &&
             adv_data[11] == PROV_OP_RANDOM
         ) {
             memcpy(provisionee.peer_random, &adv_data[12], 16);
-            uint8_t tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
-            bearer.tx_num = tx_num;
+            bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
             if (pb_ack_rx(adv_data[6]) != 0) {
                 provisionee.state = PROVISIONEE_FAILED;
@@ -1794,18 +1759,16 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             }
 
             //! Provisionee Send STEP_13: PROV_OP_RANDOM advertisement
-            provisionee.state = pb_tx_confirm_or_random(bearer.link_id, tx_num,
-                                            PROV_OP_RANDOM, provisionee.random) == 0
-                                    ? WAITING_FOR_RANDOM_ACK
-                                    : PROVISIONEE_FAILED;
+            provisionee.state = pb_tx_confirm_or_random(
+                                    PROV_OP_RANDOM, provisionee.random) == 0
+                                        ? WAITING_FOR_RANDOM_ACK
+                                        : PROVISIONEE_FAILED;
         }
 
         //! Check STEP_13 ACK: Expected PROV_OP_RANDOM Transaction Ack
         else if (
             provisionee.state == WAITING_FOR_RANDOM_ACK &&
-            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num &&
-            adv_data[7] == PB_GPC_ACK
+            pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
             int success = AUTH_DERIVE_SESSION(
                 provisionee.dhkey,
@@ -1928,7 +1891,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
                 adv[6] = tx_num;
                 adv[7] = PB_GPC_START(0);
-                adv[8] = 0;                     // PROV-PDU length byte0
+                adv[8] = 0;                     // PROV-PDU length MSB
                 adv[9] = PROV_COMPLETE_PDU_LEN;
                 adv[11] = PROV_OP_COMPLETE;
                 adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
@@ -1942,9 +1905,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         //! Check STEP_15 ACK: Expected PROV_OP_COMPLETE Transaction Ack
         else if (
             provisionee.state == WAITING_FOR_COMPLETE_ACK &&
-            ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num &&
-            adv_data[7] == PB_GPC_ACK
+            pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
             provisionee.state = WAITING_FOR_LINK_CLOSE;
         }
@@ -1960,7 +1921,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         else if (
             provisionee.state == WAITING_FOR_LINK_CLOSE &&
             ad_length_matches(len, adv_data[0], PB_LINK_CLOSE_AD_LEN) &&
-            adv_data[6] == 0 && 
+            adv_data[6] == 0 &&
             adv_data[7] == PB_LINK_CLOSE &&
             adv_data[8] == PB_CLOSE_SUCCESS
         ) {
@@ -1971,7 +1932,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         else if (
             provisionee.state == WAITING_FOR_FAILED_CLOSE &&
             ad_length_matches(len, adv_data[0], PB_LINK_CLOSE_AD_LEN) &&
-            adv_data[6] == 0 && adv_data[7] == PB_LINK_CLOSE
+            adv_data[6] == 0 &&
+            adv_data[7] == PB_LINK_CLOSE
         ) {
             pb_tx_stop();
             provisionee.state = PROVISIONEE_FAILED;
