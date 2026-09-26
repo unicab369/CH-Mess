@@ -93,9 +93,9 @@
 // AD structure, including its length byte and AD type.
 int BLE_MESH_TX(const uint8_t *adv_data, size_t len);
 
-/* Queue a copy of an AD structure for transmission after a random delay in
- * the inclusive range. PB-ADV Transaction Acknowledgments use 20-50 ms.
- * Later BLE_MESH_TX calls must remain behind this item in transmit order. */
+// Queue a copy of an AD structure for transmission after a random delay in
+// the inclusive range. PB-ADV Transaction Acknowledgments use 20-50 ms.
+// Later BLE_MESH_TX calls must remain behind this item in transmit order.
 int BLE_MESH_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
@@ -115,14 +115,12 @@ uint32_t GET_MILLIS(void);
 void PROV_ATTENTION_START(uint8_t seconds);
 void PROV_ATTENTION_STOP(void);
 
-/* Generate a fresh ephemeral P-256 key pair for this provisioning session.
- * public_key is the 32-byte big-endian X coordinate followed by the 32-byte
- * big-endian Y coordinate, with no SEC1 prefix. */
+// create 2 matching numbers, the private key stays on this device
+// the public key is send to the other device
 int ECDH_GENERATE_KPAIR(uint8_t private_key[32], uint8_t public_key[64]);
 
-/* Compute the 32-byte big-endian P-256 ECDH shared secret. The implementation
- * must parse peer_public_key as X || Y, verify that it is a valid, non-infinity
- * point on P-256, and reject invalid points before doing the multiplication. */
+// calculates the shared secret using the private key and the other
+// device's public key, then put the result into dhkey (Diffie-Hellman key)
 int ECDH_COMPUTE_DHKEY(
     const uint8_t private_key[32],
     const uint8_t peer_public_key[64], uint8_t dhkey[32]
@@ -1599,10 +1597,10 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
             // This implementation currently supports the normal public-key
             // exchange with No OOB authentication only.
-            int supported = prov_start_is_valid(&start, caps) &&
-                            start.public_key_oob == 0 &&
-                            start.auth_method == PROV_OOB_NONE;
-            if (!supported) {
+            if (!prov_start_is_valid(&start, caps) ||
+                start.public_key_oob != 0 ||
+                start.auth_method != PROV_OOB_NONE
+            ) {
                 provisionee_fail(PROV_ERR_INVALID_FORMAT);
                 return;
             }
@@ -1647,8 +1645,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
                 //! Provisionee Send STEP_8: PROV_OP_PUBLIC_KEY advertisement
                 provisionee.state = auth_tx_pubkey(provisionee.public_key) == 0
-                        ? WAITING_FOR_PUBLIC_KEY_ACK
-                        : PROVISIONEE_FAILED;
+                                        ? WAITING_FOR_PUBLIC_KEY_ACK
+                                        : PROVISIONEE_FAILED;
             }
 
         }
@@ -1831,9 +1829,9 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
-                if (AUTH_DECRYPT_DATA(
-                        provisionee.session_key, provisionee.session_nonce,
-                        encrypted, mic, plain) != 0
+                if (AUTH_DECRYPT_DATA(provisionee.session_key,
+                                    provisionee.session_nonce,
+                                    encrypted, mic, plain) != 0
                 ) {
                     provisionee_fail(PROV_ERR_DECRYPTION_FAILED);
                     return;
