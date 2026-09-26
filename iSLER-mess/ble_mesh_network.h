@@ -208,7 +208,8 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
             return 0;
         if (next.key_refresh_phase == 2) return 1;
         next.key_refresh_phase = 2;
-    } else if (transition == 3) {
+    }
+    else if (transition == 3) {
         memcpy(next.net_key, next.new_net_key, 16);
         memset(next.new_net_key, 0, 16);
         next.has_new_key = 0;
@@ -219,17 +220,18 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
             next.has_new_app_key = 0;
         }
     } else return 0;
+
     return mesh_commit(&next);
 }
 
 static int iv_time_ready(uint64_t *now) {
-    return mesh_network.state.iv_time_valid &&
-        BLE_MESH_NETWORK_TIME_SECONDS(now) == 1 &&
-        *now >= mesh_network.state.iv_state_start_time &&
-        ((mesh_network.state.iv_update &&
-          mesh_network.state.iv_skip_min_time) ||
-         *now - mesh_network.state.iv_state_start_time >=
-             MESH_NETWORK_IV_MIN_SECONDS);
+    const mesh_network_state *state = &mesh_network.state;
+
+    return state->iv_time_valid &&
+        BLE_MESH_NETWORK_TIME_SECONDS(now) &&
+        state->iv_state_start_time <= *now &&
+        ((state->iv_update && state->iv_skip_min_time) ||
+         *now - state->iv_state_start_time >= MESH_NETWORK_IV_MIN_SECONDS);
 }
 
 // Enter IV Update in Progress. Transmit continues with the previous IV Index.
@@ -250,23 +252,24 @@ static inline int ble_mesh_start_iv_update(void) {
 // Beacon AD: length, type, beacon type, flags, Network ID, IV Index, CMAC[0..7].
 static inline int ble_mesh_send_net_beacon(void) {
     if (!mesh_network.ready) return 0;
-    const mesh_network_credentials *key =
-        mesh_network.state.key_refresh_phase == 2 ?
-        &mesh_network.new_key : &mesh_network.old_key;
-    uint8_t ad[24], mac[16];
 
+    uint8_t ad[24], mac[16];
+    const mesh_network_state *state = &mesh_network.state;
+    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
+                                    &mesh_network.new_key : &mesh_network.old_key;
     ad[0] = 23;
     ad[1] = MESH_NETWORK_BEACON_AD_TYPE;
     ad[2] = 0x01;
-    ad[3] = (mesh_network.state.key_refresh_phase == 2 ||
-             mesh_network.state.phase2_provisioned ? 1u : 0u) |
-            (mesh_network.state.iv_update ? 2u : 0u);
+    ad[3] = (state->key_refresh_phase == 2 ||
+             state->phase2_provisioned ? 1 : 0) | (state->iv_update ? 2 : 0);
+
+    uint32_t iv = state->iv_index;
     memcpy(ad + 4, key->network_id, 8);
-    uint32_t iv = mesh_network.state.iv_index;
     ad[12] = (uint8_t)(iv >> 24);
     ad[13] = (uint8_t)(iv >> 16);
     ad[14] = (uint8_t)(iv >> 8);
     ad[15] = (uint8_t)iv;
+
     aes_cmac(key->beacon_key, ad + 3, 13, mac);
     memcpy(ad + 16, mac, 8);
     return BLE_MESH_TX(ad, sizeof(ad)) == 0;
@@ -278,7 +281,9 @@ static inline int ble_mesh_send_net_beacon(void) {
 static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
-        (ad[3] & 0xfcu) != 0 || !mesh_network.ready) return 0;
+        (ad[3] & 0xfcu) != 0 || !mesh_network.ready
+    ) return 0;
+
     const mesh_network_credentials *key = NULL;
     uint8_t used_new = 0;
 
@@ -299,7 +304,9 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     mesh_network_state next = mesh_network.state;
     if (used_new) {
         if (ad[3] & 1u) {
-            if (next.key_refresh_phase == 1) next.key_refresh_phase = 2;
+            if (next.key_refresh_phase == 1) {
+                next.key_refresh_phase = 2;
+            }
         }
         else if (next.key_refresh_phase == 1 || next.key_refresh_phase == 2) {
             memcpy(next.net_key, next.new_net_key, 16);
@@ -323,6 +330,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
                            ((uint32_t)ad[13] << 16) |
                            ((uint32_t)ad[14] << 8) | ad[15];
     uint64_t now;
+
     if (next.iv_index != UINT32_MAX &&
         observed_iv == next.iv_index + 1 &&
         (ad[3] & 2u) && !next.iv_update &&
@@ -342,12 +350,14 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         next.iv_skip_min_time = 0;
         next.iv_state_start_time = now;
         next.next_seq = 0;
-    } else if (
+    }
+    else if (
         observed_iv != next.iv_index ||
         ((ad[3] & 2u) != 0) != (next.iv_update != 0)
     ) {
         return 0;
     }
+
     if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
         mesh_commit(&next) != 1) return -1;
     return 1;
@@ -355,7 +365,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 
 // The 13-byte network nonce authenticates CTL/TTL, SEQ, SRC, and IV Index.
 static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
-                               uint32_t iv_index) {
+                        uint32_t iv_index) {
     nonce[0] = 0;
     memcpy(nonce + 1, header, 6);
     nonce[7] = 0;
@@ -368,8 +378,8 @@ static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
 
 // The first seven encrypted octets form PrivacyRandom for header obfuscation.
 static void mesh_obfuscate(const mesh_network_credentials *key,
-                                   uint8_t pdu[MESH_NETWORK_MAX_PDU],
-                                   uint32_t iv_index) {
+                            uint8_t pdu[MESH_NETWORK_MAX_PDU],
+                            uint32_t iv_index) {
     uint8_t privacy[16] = {0}, pecb[16];
     privacy[5] = (uint8_t)(iv_index >> 24);
     privacy[6] = (uint8_t)(iv_index >> 16);
@@ -383,20 +393,17 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // The next sequence number must be durable before a transmission is queued.
 static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
-                                        const uint8_t *transport, size_t len) {
+                                    const uint8_t *transport, size_t len) {
+    mesh_network_state *state = &mesh_network.state;
+
     if (!mesh_network.ready || !transport || dst == 0 || ctl > 1 ||
         ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
-        mesh_network.state.next_seq > 0xffffffu
+        state->next_seq > 0xffffffu
     ) return 0;
 
     uint8_t ad[31], *pdu = ad + 2;
-    uint8_t nonce[13], plain[18];
-    uint32_t seq = mesh_network.state.next_seq;
-    uint32_t iv = mesh_network.state.iv_index -
-                  (mesh_network.state.iv_update ? 1u : 0u);
-    const mesh_network_credentials *key =
-        mesh_network.state.key_refresh_phase == 2 ?
-        &mesh_network.new_key : &mesh_network.old_key;
+    uint32_t seq = state->next_seq;
+    uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
     size_t mic_len = ctl ? 8u : 4u;
 
     ad[0] = (uint8_t)(1 + 7 + 2 + len + mic_len);
@@ -406,20 +413,24 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
     pdu[2] = (uint8_t)(seq >> 16);
     pdu[3] = (uint8_t)(seq >> 8);
     pdu[4] = (uint8_t)seq;
-    pdu[5] = (uint8_t)(mesh_network.state.unicast_address >> 8);
-    pdu[6] = (uint8_t)mesh_network.state.unicast_address;
+    pdu[5] = (uint8_t)(state->unicast_address >> 8);
+    pdu[6] = (uint8_t)state->unicast_address;
+
+    uint8_t plain[18], nonce[13];
     plain[0] = (uint8_t)(dst >> 8);
     plain[1] = (uint8_t)dst;
     memcpy(plain + 2, transport, len);
     mesh_nonce(nonce, pdu + 1, iv);
 
+    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
+                                &mesh_network.new_key : &mesh_network.old_key;
     if (ccm_encrypt_and_tag(key->encryption_key, nonce, 13,
                             NULL, 0, plain, len + 2, pdu + 7,
                             pdu + 9 + len, mic_len) != CCM_OK) return 0;
     mesh_obfuscate(key, pdu, iv);
 
     if (BLE_MESH_NETWORK_STORE_SEQ(seq + 1) != 1) return 0;
-    mesh_network.state.next_seq = seq + 1;
+    state->next_seq = seq + 1;
     return BLE_MESH_TX(ad, (size_t)ad[0] + 1) == 0;
 }
 
@@ -428,7 +439,7 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
 // lower-transport bytes. Returns 1 if accepted, 0 if ignored, or -1 for bad
 // arguments. A full replay list rejects new sources until reinitialized.
 static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
-                                           mesh_network_message *message) {
+                                        mesh_network_message *message) {
     if (!pdu || !message) return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
         return 0;
@@ -448,9 +459,10 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
     for (uint8_t i = 0; i < 2; i++) {
         if (i && !mesh_network.state.has_new_key) break;
-        const mesh_network_credentials *key = i ?
-            &mesh_network.new_key : &mesh_network.old_key;
+        const mesh_network_credentials *key = i ? &mesh_network.new_key
+                                                : &mesh_network.old_key;
         if ((pdu[0] & 0x7f) != key->nid) continue;
+
         memcpy(clear, pdu, len);
         mesh_obfuscate(key, clear, iv);
         ctl = clear[1] >> 7;
@@ -464,8 +476,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
         if (src == 0 || src > 0x7fff ||
             src == mesh_network.state.unicast_address) continue;
-        seq = ((uint32_t)clear[2] << 16) |
-              ((uint32_t)clear[3] << 8) | clear[4];
+        seq = ((uint32_t)clear[2] << 16) | ((uint32_t)clear[3] << 8) | clear[4];
         mesh_nonce(nonce, clear + 1, iv);
 
         if (ccm_auth_decrypt(key->encryption_key, nonce, 13,
@@ -482,17 +493,22 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
     uint8_t slot = 0;
     while (slot < mesh_network.replay_count &&
-           mesh_network.replay[slot].src != src) slot++;
+           mesh_network.replay[slot].src != src
+    ) slot++;
+
     if (slot == mesh_network.replay_count) {
         if (slot == MESH_NETWORK_REPLAY_SLOTS) return 0;
         mesh_network.replay[slot].src = src;
         mesh_network.replay_count++;
-    } else if (mesh_network.replay[slot].iv_index > iv ||
-               (mesh_network.replay[slot].iv_index == iv &&
-                mesh_network.replay[slot].seq >= seq)) return 0;
+    }
+    else if (
+        mesh_network.replay[slot].iv_index > iv ||
+        (mesh_network.replay[slot].iv_index == iv &&
+        mesh_network.replay[slot].seq >= seq)
+    ) return 0;
+
     mesh_network.replay[slot].iv_index = iv;
     mesh_network.replay[slot].seq = seq;
-
     message->ctl = ctl;
     message->ttl = clear[1] & 0x7f;
     message->seq = seq;
@@ -507,9 +523,11 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 static inline int ble_mesh_net_poll(mesh_network_message *message) {
     int tick_result = 0;
     uint64_t now;
+
     if (mesh_network.ready && mesh_network.state.iv_update &&
         !mesh_network.state.iv_skip_min_time &&
-        iv_time_ready(&now)) {
+        iv_time_ready(&now)
+    ) {
         // Switch TX to the new IV Index and reset SEQ after 96 hours.
         mesh_network_state next = mesh_network.state;
         next.iv_update = 0;
@@ -518,15 +536,18 @@ static inline int ble_mesh_net_poll(mesh_network_message *message) {
         next.next_seq = 0;
         tick_result = mesh_commit(&next) ? 0 : -1;
     }
+
     uint8_t ad[31];
     size_t len = sizeof(ad);
     int received = BLE_MESH_ADV_POLL(ad, &len);
+
     if (received <= 0 || len < 2 || (size_t)ad[0] + 1 != len)
         return received < 0 || tick_result < 0 ? -1 : 0;
     if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
         int processed = ble_mesh_handle_net_beacon(ad, len);
         return processed < 0 || tick_result < 0 ? -1 : 0;
     }
+
     if (ad[1] != MESH_NETWORK_AD_TYPE) return tick_result < 0 ? -1 : 0;
     int result = ble_mesh_net_receive(ad + 2, len - 2, message);
     return result == 0 && tick_result < 0 ? -1 : result;
