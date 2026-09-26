@@ -108,6 +108,8 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len);
 
 // Fill the buffer with random bytes. Return 1 on success, 0 on failure.
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len);
+int GET_RAMDOM_NUMBER();
+
 int GET_LOCAL_UUID(uint8_t device_uuid[16]);
 uint32_t GET_MILLIS(void);
 
@@ -364,8 +366,8 @@ static void pb_tx_stop(void) {
     tx.active = 0;
 }
 
-// Transmit PB_GPC_ACK packet
-static int pb_tx_gpc_ack(uint8_t tx_num) {
+// Queue a PB_GPC_ACK packet. Returns 1 if queued, or 0 if queueing fails.
+static int pb_queue_gpc_ack(uint8_t tx_num) {
     uint8_t ack[PB_TRANSACTION_ACK_AD_LEN + 1] = {
         PB_TRANSACTION_ACK_AD_LEN,
         MESH_PROV_AD_TYPE,
@@ -374,14 +376,16 @@ static int pb_tx_gpc_ack(uint8_t tx_num) {
         PB_GPC_ACK
     };
 
-    return BLE_MESH_TX_DELAYED(ack, sizeof(ack), 20, 50);
+    return BLE_MESH_TX_DELAYED(ack, sizeof(ack), 20, 50) == 0;
 }
 
+// Returns 1 after queueing the ACK and recording the received transaction,
+// or 0 if the ACK could not be queued.
 static int pb_ack_rx(uint8_t tx_num) {
-    if (pb_tx_gpc_ack(tx_num) != 0) return -1;
+    if (pb_queue_gpc_ack(tx_num) == 0) return 0;
     bearer.last_rx_tx = tx_num;
     bearer.last_rx_valid = 1;
-    return 0;
+    return 1;
 }
 
 // verify the peer's confirmation against the revealed random value and shared
@@ -493,6 +497,8 @@ typedef struct {
 // The public key is split into 3 BLE advertisements:
 // 20 bytes in the start segment,
 // then 23 and 22 bytes in the two continuation segments
+// Returns -1 for an invalid segment, 0 while incomplete or ignored,
+// and 1 when the complete public-key PDU is valid.
 
 static int auth_rx_pubkey(
     public_key_rx *pubkey_rx, const uint8_t *adv_data, size_t len
@@ -780,7 +786,7 @@ void provisioner_poll(void) {
          (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)
     ) {
         // Fail if the repeated acknowledgment cannot be sent.
-        if (pb_tx_gpc_ack(adv_data[6]) != 0) {
+        if (pb_queue_gpc_ack(adv_data[6]) == 0) {
             provisioner.state = PROVISIONER_FAILED;
         }
         return;
@@ -797,7 +803,7 @@ void provisioner_poll(void) {
         adv_data[12] <= PROV_ERR_CANNOT_ASSIGN_ADDR
     ) {
         // Fail locally if we cannot acknowledge the peer's Failed PDU.
-        if (pb_ack_rx(adv_data[6]) != 0) {
+        if (pb_ack_rx(adv_data[6]) == 0) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
@@ -904,7 +910,7 @@ void provisioner_poll(void) {
     ) {
         pb_tx_stop();
         //! Acknowledge the provisionee's completed Capabilities transaction.
-        if (pb_ack_rx(adv_data[6]) != 0) {
+        if (pb_ack_rx(adv_data[6]) == 0) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
@@ -994,7 +1000,7 @@ void provisioner_poll(void) {
             bearer.tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
             uint8_t confirmation[16];
 
-            if (pb_ack_rx(provisioner.pubkey_rx.tx_num) != 0) {
+            if (pb_ack_rx(provisioner.pubkey_rx.tx_num) == 0) {
                 provisioner.state = PROVISIONER_FAILED;
                 return;
             }
@@ -1052,7 +1058,7 @@ void provisioner_poll(void) {
 
         int success =
             //! Provisioner send PB_GPC_ACK
-            pb_ack_rx(adv_data[6]) == 0 &&
+            pb_ack_rx(adv_data[6]) == 1 &&
             //! Provisioner Send STEP_12: PROV_OP_RANDOM advertisement
             pb_tx_confirm_or_random(
                 PROV_OP_RANDOM, session.random) == 0;
@@ -1096,7 +1102,7 @@ void provisioner_poll(void) {
         uint8_t mic[8];
         prov_data data;
 
-        if (pb_ack_rx(adv_data[6]) != 0) {
+        if (pb_ack_rx(adv_data[6]) == 0) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
@@ -1211,7 +1217,7 @@ void provisioner_poll(void) {
     ) {
         int success = PROVISIONER_STORE_NODE_DEVKEY(session.device_key,
                                                 provisioner.unicast_address) == 0 &&
-                      pb_ack_rx(adv_data[6]) == 0 &&
+                      pb_ack_rx(adv_data[6]) == 1 &&
                       pb_send_link_close(PB_CLOSE_SUCCESS) == 0;
         provisioner.state = success ? PROVISIONER_COMPLETE
                                     : PROVISIONER_FAILED;
@@ -1408,7 +1414,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             ((adv_data[7] & PB_GPCF_MASK) == PB_GPCF_START ||
              (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)
         ) {
-            if (pb_tx_gpc_ack(adv_data[6]) != 0) {
+            if (pb_queue_gpc_ack(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
             }
             return;
@@ -1424,7 +1430,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             adv_data[12] >= PROV_ERR_INVALID_PDU &&
             adv_data[12] <= PROV_ERR_CANNOT_ASSIGN_ADDR
         ) {
-            if (pb_ack_rx(adv_data[6]) != 0) {
+            if (pb_ack_rx(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
@@ -1490,7 +1496,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             pb_tx_stop();
 
             //! Acknowledge the provisioner's completed Invite transaction.
-            if (pb_ack_rx(adv_data[6]) != 0) {
+            if (pb_ack_rx(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
@@ -1556,7 +1562,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             memcpy(&session.confirm_inputs[12], &adv_data[12], 5);
 
             //! Acknowledge the provisioner's completed Start transaction.
-            if (pb_ack_rx(adv_data[6]) != 0) {
+            if (pb_ack_rx(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
@@ -1604,7 +1610,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 memcpy(&session.confirm_inputs[17], peer_public_key, 64);
                 bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
-                if (pb_ack_rx(provisionee.pubkey_rx.tx_num) != 0) {
+                if (pb_ack_rx(provisionee.pubkey_rx.tx_num) == 0) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
@@ -1662,7 +1668,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
             int success =
                 //! Provisionee Send PB_GPC_ACK
-                pb_ack_rx(adv_data[6]) == 0 &&
+                pb_ack_rx(adv_data[6]) == 1 &&
                 //! Provisionee Send STEP_11: PROV_OP_CONFIRM advertisement
                 pb_tx_confirm_or_random(
                     PROV_OP_CONFIRM, provisionee.confirmation) == 0;
@@ -1703,7 +1709,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             memcpy(session.peer_random, &adv_data[12], 16);
             bearer.tx_num = (uint8_t)(((bearer.tx_num + 1) & 0x7F) | 0x80);
 
-            if (pb_ack_rx(adv_data[6]) != 0) {
+            if (pb_ack_rx(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
@@ -1791,7 +1797,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 uint8_t plain[25];
 
                 // Acknowledge the completed bearer transaction before parsing it.
-                if (pb_ack_rx(prov_rx.tx_num) != 0) {
+                if (pb_ack_rx(prov_rx.tx_num) == 0) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }

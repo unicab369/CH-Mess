@@ -178,6 +178,61 @@ typedef struct {
     uint8_t bearer_type; // 0=PB-ADV, 1=PB-GATT
 } provision_data_t;
 
+// Provisioning platform hooks. Replace these placeholders before using PB-ADV.
+int BLE_MESH_TX(const uint8_t *adv_data, size_t len) {
+    (void)adv_data;
+    (void)len;
+    return -1;
+}
+
+int BLE_MESH_TX_DELAYED(
+    const uint8_t *adv_data, size_t len,
+    uint16_t min_delay_ms, uint16_t max_delay_ms
+) {
+    (void)adv_data;
+    (void)len;
+    (void)min_delay_ms;
+    (void)max_delay_ms;
+    return -1;
+}
+
+int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
+    (void)adv_data;
+    (void)len;
+    return 0;
+}
+
+int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
+    (void)device_uuid;
+    return -1;
+}
+
+void PROV_ATTENTION_START(uint8_t seconds) {
+    (void)seconds;
+}
+
+void PROV_ATTENTION_STOP(void) {
+}
+
+int PROVISIONER_GET_DATA(prov_data *data) {
+    (void)data;
+    return -1;
+}
+
+int PROVISIONER_STORE_NODE_DEVKEY(
+    const uint8_t device_key[16], uint16_t unicast_address
+) {
+    (void)device_key;
+    (void)unicast_address;
+    return -1;
+}
+
+int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) {
+    (void)data;
+    (void)device_key;
+    return -1;
+}
+
 // Temporary test stub: replace before using provisioning with real devices.
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
     memset(out, 22, len);
