@@ -6,6 +6,7 @@ ADV = Advertising
 MIC = Message Integrity Check
 FCS = Frame Check Sequence
 ECDH = Elliptic Curve Diffie-Hellman
+IV = Initialization Vector
 
 BLE Mesh device types
 | Type           | Role
