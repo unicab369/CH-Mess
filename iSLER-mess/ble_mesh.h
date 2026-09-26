@@ -16,16 +16,23 @@
 
 void ble_mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
 
+static int flash_data_range_valid(uint32_t addr, int len) {
+    return len > 0 && addr >= BLE_MESH_DATA_ADDR &&
+           addr < BLE_MESH_DATA_ADDR + BLE_MESH_DATA_SIZE &&
+           (uint32_t)len <= BLE_MESH_DATA_ADDR + BLE_MESH_DATA_SIZE - addr;
+}
+
 __HIGH_CODE
 int flash_erase_data(uint32_t addr, int len) {
-    if (len == 0 || len > BLE_MESH_DATA_SIZE) return 0;
+    if (!flash_data_range_valid(addr, len) ||
+        (addr & (SECTOR_SIZE - 1u))) return 0;
     return ch5xx_flash_cmd_erase(addr, len) == 0;
 }
 
 __HIGH_CODE
 int flash_read_data(uint32_t addr, uint8_t *out, int len) {
-    if (!out || len == 0 || len > BLE_MESH_DATA_SIZE ||
-        (len & 3u) || ((uintptr_t)out & 3u)
+    if (!out || !flash_data_range_valid(addr, len) ||
+        (addr & 3u) || (len & 3u) || ((uintptr_t)out & 3u)
     ) return 0;
 
     ch5xx_flash_cmd_read(addr, out, len);
@@ -34,12 +41,11 @@ int flash_read_data(uint32_t addr, uint8_t *out, int len) {
 
 __HIGH_CODE
 int flash_write_data(uint32_t addr, uint8_t *data, int len) {
-    if (!data || len == 0 || len > BLE_MESH_DATA_SIZE ||
-        (len & 3u) || ((uintptr_t)data & 3u)
+    if (!data || !flash_data_range_valid(addr, len) ||
+        (addr & 3u) || (len & 3u) || ((uintptr_t)data & 3u)
     ) return 0;
 
-    return ch5xx_flash_cmd_write(addr, data, len) == 0 &&
-            ch5xx_flash_cmd_verify(addr, data, len);
+    return ch5xx_flash_cmd_write(addr, data, len) == 0;
 }
 
 // The radio sends a complete advertising PDU, while provisioning supplies an
@@ -208,6 +214,7 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     state.iv_update = (data->flags & 2u) != 0;
     state.iv_skip_min_time = state.iv_update;
     state.unicast_address = data->unicast_address;
+
     uint64_t seconds;
     if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 1) {
         state.iv_time_valid = 1;
@@ -217,15 +224,79 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     return ble_mesh_network_init(&state) ? 0 : -1;
 }
 
-// Storage interfaces: implement these with nonvolatile storage before use.
+#define MESH_STATE_MAGIC 0x4d455348u
+#define MESH_STATE_VERSION 1u
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t generation;
+    mesh_net_state state;
+    uint32_t checksum;
+} mesh_state_record;
+
+static uint32_t mesh_state_checksum(const mesh_state_record *record) {
+    const uint8_t *bytes = (const uint8_t *)record;
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < offsetof(mesh_state_record, checksum); i++) {
+        hash = (hash ^ bytes[i]) * 16777619u;
+    }
+    return hash;
+}
+
+static int mesh_state_read(uint32_t addr, mesh_state_record *record) {
+    return flash_read_data(addr, (uint8_t *)record, sizeof(*record)) &&
+           record->magic == MESH_STATE_MAGIC &&
+           record->version == MESH_STATE_VERSION &&
+           record->checksum == mesh_state_checksum(record);
+}
+
+// The two sectors alternate so an interrupted save leaves the prior copy.
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
-    (void)state;
-    return 0;
+    if (!state) return 0;
+    mesh_state_record first, second;
+    int has_first = mesh_state_read(BLE_MESH_DATA_ADDR, &first);
+    int has_second = mesh_state_read(BLE_MESH_DATA_ADDR + SECTOR_SIZE, &second);
+    if (!has_first && !has_second) return 0;
+
+    // get the latest valid state
+    if (!has_first || (has_second &&
+         (int32_t)(second.generation - first.generation) >= 0)) {
+        *state = second.state;
+    } else {
+        *state = first.state;
+    }
+    return 1;
 }
 
 int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
-    (void)state;
-    return 0;
+    if (!state) return 0;
+    mesh_state_record first, second;
+    int has_first = mesh_state_read(BLE_MESH_DATA_ADDR, &first);
+    int has_second = mesh_state_read(BLE_MESH_DATA_ADDR + SECTOR_SIZE, &second);
+    uint32_t addr = BLE_MESH_DATA_ADDR;
+    uint32_t generation = 1;
+
+    if (has_second &&
+        (!has_first || (int32_t)(second.generation - first.generation) >= 0)
+    ) {
+        generation = second.generation + 1;
+    } else if (has_first) {
+        addr += SECTOR_SIZE;
+        generation = first.generation + 1;
+    }
+
+    mesh_state_record record = {0}, check;
+    record.magic = MESH_STATE_MAGIC;
+    record.version = MESH_STATE_VERSION;
+    record.generation = generation;
+    record.state = *state;
+    record.checksum = mesh_state_checksum(&record);
+
+    if (!flash_erase_data(addr, SECTOR_SIZE) ||
+        !flash_write_data(addr, (uint8_t *)&record, sizeof(record)) ||
+        !flash_read_data(addr, (uint8_t *)&check, sizeof(check))) return 0;
+    return memcmp(&record, &check, sizeof(record)) == 0;
 }
 
 // Persist the next sequence number in the same state loaded by

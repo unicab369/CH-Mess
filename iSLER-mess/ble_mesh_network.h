@@ -331,10 +331,10 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     }
     else if (ad[3] & 1u) return 0;
 
+    uint64_t now;
     uint32_t observed_iv = ((uint32_t)ad[12] << 24) |
                            ((uint32_t)ad[13] << 16) |
                            ((uint32_t)ad[14] << 8) | ad[15];
-    uint64_t now;
 
     if (next.iv_index != UINT32_MAX &&
         observed_iv == next.iv_index + 1 &&
