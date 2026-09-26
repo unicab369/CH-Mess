@@ -238,28 +238,6 @@ static inline int ble_mesh_network_start_iv_update(void) {
     return mesh_network_commit(&next);
 }
 
-// Reset SEQ only when switching TX to the new IV Index after 96 hours.
-static inline int ble_mesh_network_finish_iv_update(void) {
-    uint64_t now;
-    if (!mesh_network.ready || !mesh_network.state.iv_update_active ||
-        !mesh_network_iv_time_ready(&now)) return -1;
-    mesh_network_state next = mesh_network.state;
-    next.iv_update_active = 0;
-    next.iv_min_time_exempt = 0;
-    next.iv_state_since_seconds = now;
-    next.next_seq = 0;
-    return mesh_network_commit(&next);
-}
-
-// Call periodically so an in-progress update completes even without beacons.
-static inline int ble_mesh_network_tick(void) {
-    uint64_t now;
-    if (!mesh_network.ready || !mesh_network.state.iv_update_active ||
-        mesh_network.state.iv_min_time_exempt) return 0;
-    if (!mesh_network_iv_time_ready(&now)) return 0;
-    return ble_mesh_network_finish_iv_update();
-}
-
 // Beacon AD: length, type, beacon type, flags, Network ID, IV Index, CMAC[0..7].
 static inline int ble_mesh_network_send_beacon(void) {
     if (!mesh_network.ready) return -1;
@@ -284,9 +262,9 @@ static inline int ble_mesh_network_send_beacon(void) {
     return BLE_MESH_TX(ad, sizeof(ad));
 }
 
-// Authenticate before applying either a Key Refresh or an IV Update signal.
-// Returns 1 for an authenticated known-subnet beacon, 0 if ignored, -1 on
-// durable-storage failure.
+// Check the complete beacon AD format, flags, known Network ID, and CMAC.
+// Only an authenticated beacon may change Key Refresh or IV Update state.
+// Returns 1 if accepted, 0 if ignored, or -1 if saving state fails.
 static inline int ble_mesh_network_receive_beacon(const uint8_t *ad, size_t len) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
@@ -421,9 +399,10 @@ static inline int ble_mesh_network_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
     return BLE_MESH_TX(ad, (size_t)ad[0] + 1);
 }
 
-// Authenticate a raw Network PDU and pass its lower transport bytes upward.
-// Returns 1 for a new authenticated packet, 0 for an ignored packet, -1 for
-// invalid input. A full replay list rejects new sources until reinitialized.
+// Check a raw Network PDU's length and IVI/NID, deobfuscate its header, then
+// verify its addresses, AES-CCM NetMIC, and replay sequence before delivering
+// lower-transport bytes. Returns 1 if accepted, 0 if ignored, or -1 for bad
+// arguments. A full replay list rejects new sources until reinitialized.
 static inline int ble_mesh_network_receive(const uint8_t *pdu, size_t len,
                                            mesh_network_message *message) {
     if (!pdu || !message) return -1;
@@ -500,7 +479,19 @@ accepted:
 
 // Poll the shared advertising bearer and accept only Mesh Message AD data.
 static inline int ble_mesh_network_poll(mesh_network_message *message) {
-    int tick_result = ble_mesh_network_tick();
+    int tick_result = 0;
+    uint64_t now;
+    if (mesh_network.ready && mesh_network.state.iv_update_active &&
+        !mesh_network.state.iv_min_time_exempt &&
+        mesh_network_iv_time_ready(&now)) {
+        // Switch TX to the new IV Index and reset SEQ after 96 hours.
+        mesh_network_state next = mesh_network.state;
+        next.iv_update_active = 0;
+        next.iv_min_time_exempt = 0;
+        next.iv_state_since_seconds = now;
+        next.next_seq = 0;
+        tick_result = mesh_network_commit(&next);
+    }
     uint8_t ad[31];
     size_t len = sizeof(ad);
     int received = BLE_MESH_ADV_POLL(ad, &len);
