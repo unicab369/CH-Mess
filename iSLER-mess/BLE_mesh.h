@@ -204,23 +204,51 @@ int ECDH_COMPUTE_DHKEY(
     return uECC_shared_secret(peer_public_key, private_key, dhkey, curve) ? 0 : -1;
 }
 
-int ble_mesh_test_ecc(void) {
-    uint8_t private_a[32], public_a[64], secret_a[32];
-    uint8_t private_b[32], public_b[64], secret_b[32];
-    uECC_RNG_Function previous_rng = uECC_get_rng();
+int AUTH_COMPUTE_CONFIRMATION(
+    const uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t dhkey[32], uint8_t confirmation_salt[16],
+    const uint8_t random[16], const uint8_t auth_value[16],
+    uint8_t confirmation[16]
+) {
+    const uint8_t zero[16] = {0};
+    uint8_t confirmation_key[16], input[32], t[16];
 
-    int ok1 = ECDH_GENERATE_KPAIR(private_a, public_a) == 0 &&
-                ECDH_GENERATE_KPAIR(private_b, public_b) == 0;
-    printf("ECC key generation: %s\n", ok1 ? "PASS" : "FAIL");
-    int ok2 = ok1 &&
-                ECDH_COMPUTE_DHKEY(private_a, public_b, secret_a) == 0 &&
-                ECDH_COMPUTE_DHKEY(private_b, public_a, secret_b) == 0;
-    printf("ECC shared secret: %s\n", ok2 ? "PASS" : "FAIL");
+    // s1(confirm_inputs) is AES-CMAC with an all-zero key.
+    aes_cmac(zero, confirm_inputs, PROV_CONFIRM_INPUTS_LEN, confirmation_salt);
 
-    int success = ok1 && ok2 &&
-                  memcmp(secret_a, secret_b, sizeof(secret_a)) == 0;
-    uECC_set_rng(previous_rng);
-    return success ? 0 : -1;
+    // k1 derives the confirmation key from the DHKey and confirmation salt.
+    aes_cmac(confirmation_salt, dhkey, 32, t);
+    aes_cmac(t, (const uint8_t *)"prck", 4, confirmation_key);
+    memcpy(input, random, 16);
+    memcpy(input + 16, auth_value, 16);
+    aes_cmac(confirmation_key, input, sizeof(input), confirmation);
+    return 0;
+}
+
+int AUTH_DERIVE_SESSION(
+    const uint8_t dhkey[32], const uint8_t confirmation_salt[16],
+    const uint8_t provisioner_random[16],
+    const uint8_t provisionee_random[16],
+    uint8_t session_key[16], uint8_t session_nonce[13],
+    uint8_t device_key[16]
+) {
+    const uint8_t zero[16] = {0};
+    uint8_t input[48], provisioning_salt[16], nonce_key[16], t[16];
+
+    memcpy(input, confirmation_salt, 16);
+    memcpy(input + 16, provisioner_random, 16);
+    memcpy(input + 32, provisionee_random, 16);
+
+    // s1(confirmation_salt || both random values) uses an all-zero key.
+    aes_cmac(zero, input, sizeof(input), provisioning_salt);
+
+    // k1 uses the same first CMAC result for all three derived keys.
+    aes_cmac(provisioning_salt, dhkey, 32, t);
+    aes_cmac(t, (const uint8_t *)"prsk", 4, session_key);
+    aes_cmac(t, (const uint8_t *)"prsn", 4, nonce_key);
+    memcpy(session_nonce, nonce_key + 3, 13);
+    aes_cmac(t, (const uint8_t *)"prdk", 4, device_key);
+    return 0;
 }
 
 // The provisioning state machine supplies a 25-byte data PDU and an 8-byte MIC.

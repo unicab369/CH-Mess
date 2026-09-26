@@ -132,7 +132,7 @@ int ECDH_COMPUTE_DHKEY(
 // 2. Derive confirmation_key = k1(dhkey, confirmation_salt, "prck")
 // 3. Compute confirmation = AES-CMAC(confirmation_key, random || auth_value)
 
-int ble_mesh_compute_confirmation(
+int AUTH_COMPUTE_CONFIRMATION(
     const uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN],
     const uint8_t dhkey[32], uint8_t confirmation_salt[16],
     const uint8_t random[16], const uint8_t auth_value[16],
@@ -147,7 +147,7 @@ int ble_mesh_compute_confirmation(
 //      provisioning_salt, "prsn")
 //   4. device_key = k1(dhkey, provisioning_salt, "prdk")
 
-int ble_mesh_derive_session(
+int AUTH_DERIVE_SESSION(
     const uint8_t dhkey[32], const uint8_t confirmation_salt[16],
     const uint8_t provisioner_random[16],
     const uint8_t provisionee_random[16],
@@ -405,7 +405,7 @@ static int peer_confirm_valid(
         return 0;
     }
 
-    if (ble_mesh_compute_confirmation(confirm_inputs, dhkey, salt,
+    if (AUTH_COMPUTE_CONFIRMATION(confirm_inputs, dhkey, salt,
         peer_random, no_oob_auth, expected) != 0
     ) {
         return 0;
@@ -1003,7 +1003,7 @@ void provisioner_poll(void) {
                 return;
             }
             if (GET_RANDOM_BYTES(session.random, sizeof(session.random)) != 1 ||
-                ble_mesh_compute_confirmation(
+                AUTH_COMPUTE_CONFIRMATION(
                     session.confirm_inputs, session.dhkey,
                     session.confirmation_salt,
                     session.random, no_oob_auth, confirmation) != 0
@@ -1110,7 +1110,7 @@ void provisioner_poll(void) {
 
         // Provisioning data needs a 12-bit NetKey Index, only the two defined
         // flag bits, and one valid unicast address for each element.
-        if (ble_mesh_derive_session(session.dhkey, session.confirmation_salt,
+        if (AUTH_DERIVE_SESSION(session.dhkey, session.confirmation_salt,
                                 session.random, session.peer_random,
                                 session.session_key, session.session_nonce,
                                 session.device_key) != 0 ||
@@ -1628,7 +1628,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         ) {
             int success =
                 GET_RANDOM_BYTES(session.random, sizeof(session.random)) == 1 &&
-                ble_mesh_compute_confirmation(session.confirm_inputs, session.dhkey,
+                AUTH_COMPUTE_CONFIRMATION(session.confirm_inputs, session.dhkey,
                                         session.confirmation_salt,
                                         session.random, no_oob_auth,
                                         provisionee.confirmation) == 0;
@@ -1726,7 +1726,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             provisionee.state == WAITING_FOR_RANDOM_ACK &&
             pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
-            int success = ble_mesh_derive_session(session.dhkey,
+            int success = AUTH_DERIVE_SESSION(session.dhkey,
                                             session.confirmation_salt,
                                             session.peer_random,
                                             session.random,
