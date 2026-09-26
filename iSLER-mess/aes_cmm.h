@@ -1,4 +1,4 @@
-#include "ccm_impl.h"
+#include "ble_mesh_crypto.h"
 #include <stdio.h>
 
 #if defined(CH5xx)

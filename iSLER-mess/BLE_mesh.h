@@ -1,4 +1,6 @@
-#include "ccm_impl.h"
+#include "ch32fun.h"
+#include "ble_mesh_crypto.h"
+#include "aes_cmm.h"
 #include "ble_mesh_provisioning.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
@@ -180,6 +182,10 @@ typedef struct {
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
     memset(out, 22, len);
     return 1;
+}
+
+uint32_t GET_MILLIS(void) {
+    return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
 int ECDH_GENERATE_KPAIR(uint8_t private_key[32], uint8_t public_key[64]) {

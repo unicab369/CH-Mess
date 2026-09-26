@@ -260,6 +260,7 @@ int main()
 	blink(5);
 	printf(".~ ch32fun iSLER ~.\n");
 	printf("micro-ecc self-test: %s\n", ble_mesh_test_ecc() == 0 ? "PASS" : "FAIL");
+	printf("AES-CMAC self-test: %s\n", aes_cmac_test() == 0 ? "PASS" : "FAIL");
 
 
 	// printf("\n");

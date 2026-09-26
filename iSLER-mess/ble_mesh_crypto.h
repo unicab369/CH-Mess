@@ -1,11 +1,12 @@
-// ccm_impl.h — minimal AES-CCM per RFC 3610 / NIST SP 800-38C
+// AES-CCM (RFC 3610 / NIST SP 800-38C) and AES-CMAC (NIST SP 800-38B)
 
-#ifndef ISLER_CCM_IMPL_H
-#define ISLER_CCM_IMPL_H
+#ifndef ISLER_BLE_MESH_CRYPTO_H
+#define ISLER_BLE_MESH_CRYPTO_H
 
 #include <stdint.h>
 #include <string.h>
 #include <stddef.h>
+#include "ble_mesh_provisioning.h"
 
 // Implement this interface with a 16-byte AES block encryptor.
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out);
@@ -256,4 +257,103 @@ int ccm_auth_decrypt(
     return ok ? CCM_OK : CCM_ERR_AUTH;
 }
 
-#endif // ISLER_CCM_IMPL_H
+// AES-128-CMAC per NIST SP 800-38B.
+static void aes_cmac(
+    const uint8_t key[16], const uint8_t *message, size_t len,
+    uint8_t mac[16]
+) {
+    const uint8_t zero[16] = {0};
+    uint8_t subkey[16], state[16] = {0}, block[16];
+
+    AES_ENCRYPT_BLOCK(key, zero, subkey);
+    // Double once for a complete last block (K1), twice for a padded one (K2).
+    int shifts = len != 0 && len % 16 == 0 ? 1 : 2;
+    for (int j = 0; j < shifts; j++) {
+        uint8_t carry = subkey[0] >> 7;
+        for (int i = 0; i < 15; i++) {
+            subkey[i] = (uint8_t)((subkey[i] << 1) | (subkey[i + 1] >> 7));
+        }
+        subkey[15] = (uint8_t)((subkey[15] << 1) ^ (carry ? 0x87 : 0));
+    }
+
+    while (len > 16) {
+        for (int i = 0; i < 16; i++) block[i] = state[i] ^ message[i];
+        AES_ENCRYPT_BLOCK(key, block, state);
+        message += 16;
+        len -= 16;
+    }
+
+    memset(block, 0, sizeof(block));
+    if (len != 0) memcpy(block, message, len);
+    if (len < 16) block[len] = 0x80;
+    for (int i = 0; i < 16; i++) block[i] ^= state[i] ^ subkey[i];
+    AES_ENCRYPT_BLOCK(key, block, mac);
+}
+
+static int aes_cmac_test(void) {
+    // NIST SP 800-38B Appendix D.1, AES-128 example 2.
+    const uint8_t key[16] = {
+        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+        0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+    };
+    const uint8_t message[16] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+        0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a
+    };
+    const uint8_t expected[16] = {
+        0x07, 0x0a, 0x16, 0xb4, 0x6b, 0x4d, 0x41, 0x44,
+        0xf7, 0x9b, 0xdd, 0x9d, 0xd0, 0x4a, 0x28, 0x7c
+    };
+    uint8_t actual[16];
+    aes_cmac(key, message, sizeof(message), actual);
+    return memcmp(actual, expected, sizeof(expected)) == 0 ? 0 : -1;
+}
+
+int ble_mesh_compute_confirmation(
+    const uint8_t confirm_inputs[PROV_CONFIRM_INPUTS_LEN],
+    const uint8_t dhkey[32], uint8_t confirmation_salt[16],
+    const uint8_t random[16], const uint8_t auth_value[16],
+    uint8_t confirmation[16]
+) {
+    const uint8_t zero[16] = {0};
+    uint8_t confirmation_key[16], input[32], t[16];
+
+    // s1(confirm_inputs) is AES-CMAC with an all-zero key.
+    aes_cmac(zero, confirm_inputs, PROV_CONFIRM_INPUTS_LEN, confirmation_salt);
+
+    // k1 derives the confirmation key from the DHKey and confirmation salt.
+    aes_cmac(confirmation_salt, dhkey, 32, t);
+    aes_cmac(t, (const uint8_t *)"prck", 4, confirmation_key);
+    memcpy(input, random, 16);
+    memcpy(input + 16, auth_value, 16);
+    aes_cmac(confirmation_key, input, sizeof(input), confirmation);
+    return 0;
+}
+
+int ble_mesh_derive_session(
+    const uint8_t dhkey[32], const uint8_t confirmation_salt[16],
+    const uint8_t provisioner_random[16],
+    const uint8_t provisionee_random[16],
+    uint8_t session_key[16], uint8_t session_nonce[13],
+    uint8_t device_key[16]
+) {
+    const uint8_t zero[16] = {0};
+    uint8_t input[48], provisioning_salt[16], nonce_key[16], t[16];
+
+    memcpy(input, confirmation_salt, 16);
+    memcpy(input + 16, provisioner_random, 16);
+    memcpy(input + 32, provisionee_random, 16);
+
+    // s1(confirmation_salt || both random values) uses an all-zero key.
+    aes_cmac(zero, input, sizeof(input), provisioning_salt);
+
+    // k1 uses the same first CMAC result for all three derived keys.
+    aes_cmac(provisioning_salt, dhkey, 32, t);
+    aes_cmac(t, (const uint8_t *)"prsk", 4, session_key);
+    aes_cmac(t, (const uint8_t *)"prsn", 4, nonce_key);
+    memcpy(session_nonce, nonce_key + 3, 13);
+    aes_cmac(t, (const uint8_t *)"prdk", 4, device_key);
+    return 0;
+}
+
+#endif // ISLER_BLE_MESH_CRYPTO_H
