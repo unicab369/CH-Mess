@@ -10,7 +10,7 @@
 #include "modules/modWS2812.h"
 #include "modules/fun_button.h"
 #include "ble_mesh.h"
-#include "ble_mesh_crypto_test.h"
+#include "tests/ble_mesh_crypto_test.h"
 
 
 #ifdef CH570_CH572

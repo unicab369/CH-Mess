@@ -6,10 +6,41 @@
 #include "ble_mesh_network.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
+#include "ch5xx_flash.h"
+
+#define SECTOR_SIZE         4096 // 4kB
+#define BLE_MESH_DATA_ADDR  110 * SECTOR_SIZE // 0x6E000 = 440K of 448K
+#define BLE_MESH_DATA_SIZE  2 * SECTOR_SIZE
 
 #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
 
 void ble_mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
+
+__HIGH_CODE
+int flash_erase_data(uint32_t addr, int len) {
+    if (len == 0 || len > BLE_MESH_DATA_SIZE) return 0;
+    return ch5xx_flash_cmd_erase(addr, len) == 0;
+}
+
+__HIGH_CODE
+int flash_read_data(uint32_t addr, uint8_t *out, int len) {
+    if (!out || len == 0 || len > BLE_MESH_DATA_SIZE ||
+        (len & 3u) || ((uintptr_t)out & 3u)
+    ) return 0;
+
+    ch5xx_flash_cmd_read(addr, out, len);
+    return 1;
+}
+
+__HIGH_CODE
+int flash_write_data(uint32_t addr, uint8_t *data, int len) {
+    if (!data || len == 0 || len > BLE_MESH_DATA_SIZE ||
+        (len & 3u) || ((uintptr_t)data & 3u)
+    ) return 0;
+
+    return ch5xx_flash_cmd_write(addr, data, len) == 0 &&
+            ch5xx_flash_cmd_verify(addr, data, len);
+}
 
 // The radio sends a complete advertising PDU, while provisioning supplies an
 // AD structure. Keep queued AD structures in order, including delayed ACKs.
@@ -168,7 +199,7 @@ int PROVISIONER_STORE_NODE_DEVKEY(
 
 int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) {
     if (!data || !device_key) return -1;
-    mesh_network_state state = {0};
+    mesh_net_state state = {0};
     memcpy(state.net_key, data->net_key, 16);
     state.net_key_index = data->net_key_index;
     memcpy(state.dev_key, device_key, 16);
@@ -187,12 +218,12 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
 }
 
 // Storage interfaces: implement these with nonvolatile storage before use.
-int BLE_MESH_NETWORK_LOAD_STATE(mesh_network_state *state) {
+int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
     (void)state;
     return 0;
 }
 
-int BLE_MESH_NETWORK_SAVE_STATE(const mesh_network_state *state) {
+int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     (void)state;
     return 0;
 }

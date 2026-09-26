@@ -16,7 +16,7 @@ static uint8_t sent[31];
 static size_t sent_len;
 static uint32_t stored_seq;
 static int storage_fails;
-static mesh_network_state saved_state;
+static mesh_net_state saved_state;
 static uint64_t current_seconds;
 
 int BLE_MESH_TX(const uint8_t *ad, size_t len) {
@@ -31,12 +31,12 @@ int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len) {
     return 0;
 }
 
-int BLE_MESH_NETWORK_LOAD_STATE(mesh_network_state *state) {
+int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
     *state = saved_state;
     return 1;
 }
 
-int BLE_MESH_NETWORK_SAVE_STATE(const mesh_network_state *state) {
+int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     if (storage_fails) return 0;
     saved_state = *state;
     return 1;
@@ -102,7 +102,7 @@ int main(void) {
         0x2f,0x67,0x33,0x70,0x12,0x34,0x56,0x79,
         0xc6,0x2f,0x09,0xe4,0xc9,0x57,0xf5,0x9d
     };
-    mesh_network_state state = {0};
+    mesh_net_state state = {0};
     memcpy(state.net_key, net_key, sizeof(net_key));
     state.iv_index = 0x12345678;
     state.next_seq = 1;
@@ -162,7 +162,7 @@ int main(void) {
     assert(mesh_network.state.iv_index == 0x12345679);
     assert(ble_mesh_net_send(0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
-    mesh_network_state active = mesh_network.state;
+    mesh_net_state active = mesh_network.state;
     active.unicast_address = 0x0003;
     assert(ble_mesh_network_init(&active) == 1);
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
@@ -180,7 +180,7 @@ int main(void) {
     assert(ble_mesh_network_restore() == 1);
     assert(mesh_network.state.iv_index == 0x12345679);
     assert(mesh_network.state.next_seq == 0);
-    mesh_network_state normal = mesh_network.state;
+    mesh_net_state normal = mesh_network.state;
     normal.unicast_address = 0x0003;
     assert(ble_mesh_network_init(&normal) == 1);
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
@@ -205,9 +205,9 @@ int main(void) {
     assert(ble_mesh_network_init(&state) == 1);
     uint8_t new_net_key[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
     assert(ble_mesh_stage_net_key(new_net_key) == 1);
-    mesh_network_state phase1 = mesh_network.state;
+    mesh_net_state phase1 = mesh_network.state;
     state.unicast_address = 0x0003;
-    mesh_network_state old_sender = phase1;
+    mesh_net_state old_sender = phase1;
     old_sender.unicast_address = 0x0003;
     old_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&old_sender) == 1);
@@ -227,7 +227,7 @@ int main(void) {
     assert(mesh_network.state.key_refresh_phase == 2);
 
     // Both network credentials receive during Phase 2; only new is sent.
-    mesh_network_state new_sender = mesh_network.state;
+    mesh_net_state new_sender = mesh_network.state;
     new_sender.unicast_address = 0x0003;
     new_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&new_sender) == 1);
@@ -244,7 +244,7 @@ int main(void) {
     assert(ble_mesh_send_net_beacon() == 1);
     uint8_t phase3_beacon[24];
     memcpy(phase3_beacon, sent, sizeof(phase3_beacon));
-    mesh_network_state phase2 = phase1;
+    mesh_net_state phase2 = phase1;
     phase2.key_refresh_phase = 2;
     assert(ble_mesh_network_init(&phase2) == 1);
     assert(ble_mesh_handle_net_beacon(phase3_beacon,
@@ -253,7 +253,7 @@ int main(void) {
     assert(memcmp(mesh_network.state.net_key, new_net_key, 16) == 0);
 
     assert(mesh_network.state.has_new_key == 0);
-    mesh_network_state receiver = mesh_network.state;
+    mesh_net_state receiver = mesh_network.state;
     receiver.unicast_address = 0x1201;
     assert(ble_mesh_network_init(&receiver) == 1);
     assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 0);

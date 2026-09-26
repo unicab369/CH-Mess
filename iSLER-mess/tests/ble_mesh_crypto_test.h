@@ -2,8 +2,8 @@
 #define ISLER_BLE_MESH_CRYPTO_TEST_H
 
 #include <stdio.h>
-#include "ble_mesh_crypto.h"
-#include "micro-ecc/uECC.h"
+#include "../ble_mesh_crypto.h"
+#include "../micro-ecc/uECC.h"
 
 static int ble_mesh_test_ecc(void) {
     uint8_t private_a[32], public_a[64], secret_a[32];

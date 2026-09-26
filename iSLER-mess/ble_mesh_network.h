@@ -36,7 +36,7 @@ typedef struct {
     uint64_t iv_state_start_time;
     uint32_t next_seq;
     uint16_t unicast_address;
-} mesh_network_state;
+} mesh_net_state;
 
 typedef struct {
     uint8_t ctl;
@@ -51,9 +51,14 @@ typedef struct {
 // BLE_MESH_TX queues a complete AD structure; success is 0.
 int BLE_MESH_TX(const uint8_t *adv_data, size_t len);
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len);
-int BLE_MESH_NETWORK_LOAD_STATE(mesh_network_state *state);
-int BLE_MESH_NETWORK_SAVE_STATE(const mesh_network_state *state);
+int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state);
+
+// Save after provisioning or a Key Refresh/IV Update state change.
+// Packet sends persist only the sequence number through STORE_SEQ.
+int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state);
+
 int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq);
+
 // Network storage and time interfaces return 1 on success, 0 on failure.
 // Return durable monotonic seconds across reboots, or 0 if unavailable.
 int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds);
@@ -67,7 +72,7 @@ typedef struct {
 } mesh_network_credentials;
 
 static struct {
-    mesh_network_state state;
+    mesh_net_state state;
     mesh_network_credentials old_key;
     mesh_network_credentials new_key;
     struct {
@@ -109,7 +114,7 @@ static void mesh_derive_keys(const uint8_t net_key[16],
 }
 
 // Call after loading provisioned state. Reinitialize after an IV Update.
-static inline int ble_mesh_network_init(const mesh_network_state *state) {
+static inline int ble_mesh_network_init(const mesh_net_state *state) {
     if (!state || state->unicast_address == 0 ||
         state->unicast_address > 0x7fff ||
         state->net_key_index > 0x0fff ||
@@ -140,13 +145,13 @@ static inline int ble_mesh_network_init(const mesh_network_state *state) {
 }
 
 static inline int ble_mesh_network_restore(void) {
-    mesh_network_state state;
+    mesh_net_state state;
     if (BLE_MESH_NETWORK_LOAD_STATE(&state) != 1) return 0;
     return ble_mesh_network_init(&state);
 }
 
 // Save first, then make a key or IV transition visible to packet processing.
-static int mesh_commit(const mesh_network_state *next) {
+static int mesh_commit(const mesh_net_state *next) {
     if (BLE_MESH_NETWORK_SAVE_STATE(next) != 1) return 0;
     mesh_network.state = *next;
     mesh_derive_keys(next->net_key, &mesh_network.old_key);
@@ -167,7 +172,7 @@ static inline int ble_mesh_stage_net_key(const uint8_t new_net_key[16]) {
         mesh_network.state.phase2_provisioned ||
         memcmp(mesh_network.state.net_key, new_net_key, 16) == 0) return 0;
 
-    mesh_network_state next = mesh_network.state;
+    mesh_net_state next = mesh_network.state;
     memcpy(next.new_net_key, new_net_key, 16);
     next.has_new_key = 1;
     next.key_refresh_phase = 1;
@@ -185,7 +190,7 @@ static inline int ble_mesh_stage_app_key(const uint8_t new_app_key[16]) {
     if (mesh_network.state.has_new_app_key ||
         memcmp(mesh_network.state.app_key, new_app_key, 16) == 0) return 0;
 
-    mesh_network_state next = mesh_network.state;
+    mesh_net_state next = mesh_network.state;
     memcpy(next.new_app_key, new_app_key, 16);
     next.has_new_app_key = 1;
     return mesh_commit(&next);
@@ -196,13 +201,13 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
     if (!mesh_network.ready) return 0;
     if (transition == 3 && !mesh_network.state.has_new_key) {
         if (!mesh_network.state.phase2_provisioned) return 1;
-        mesh_network_state next = mesh_network.state;
+        mesh_net_state next = mesh_network.state;
         next.phase2_provisioned = 0;
         return mesh_commit(&next);
     }
     if (!mesh_network.state.has_new_key) return 0;
 
-    mesh_network_state next = mesh_network.state;
+    mesh_net_state next = mesh_network.state;
     if (transition == 2) {
         if (next.key_refresh_phase != 1 && next.key_refresh_phase != 2)
             return 0;
@@ -225,7 +230,7 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
 }
 
 static int iv_time_ready(uint64_t *now) {
-    const mesh_network_state *state = &mesh_network.state;
+    const mesh_net_state *state = &mesh_network.state;
 
     return state->iv_time_valid &&
         BLE_MESH_NETWORK_TIME_SECONDS(now) &&
@@ -241,7 +246,7 @@ static inline int ble_mesh_start_iv_update(void) {
         mesh_network.state.iv_index == UINT32_MAX ||
         !iv_time_ready(&now)) return 0;
 
-    mesh_network_state next = mesh_network.state;
+    mesh_net_state next = mesh_network.state;
     next.iv_index++;
     next.iv_update = 1;
     next.iv_skip_min_time = 0;
@@ -254,7 +259,7 @@ static inline int ble_mesh_send_net_beacon(void) {
     if (!mesh_network.ready) return 0;
 
     uint8_t ad[24], mac[16];
-    const mesh_network_state *state = &mesh_network.state;
+    const mesh_net_state *state = &mesh_network.state;
     const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
                                     &mesh_network.new_key : &mesh_network.old_key;
     ad[0] = 23;
@@ -301,7 +306,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     }
     if (!key) return 0;
 
-    mesh_network_state next = mesh_network.state;
+    mesh_net_state next = mesh_network.state;
     if (used_new) {
         if (ad[3] & 1u) {
             if (next.key_refresh_phase == 1) {
@@ -394,7 +399,7 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 // The next sequence number must be durable before a transmission is queued.
 static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
                                     const uint8_t *transport, size_t len) {
-    mesh_network_state *state = &mesh_network.state;
+    mesh_net_state *state = &mesh_network.state;
 
     if (!mesh_network.ready || !transport || dst == 0 || ctl > 1 ||
         ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
@@ -405,6 +410,8 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
     uint32_t seq = state->next_seq;
     uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
     size_t mic_len = ctl ? 8u : 4u;
+    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
+                                &mesh_network.new_key : &mesh_network.old_key;
 
     ad[0] = (uint8_t)(1 + 7 + 2 + len + mic_len);
     ad[1] = MESH_NETWORK_AD_TYPE;
@@ -422,8 +429,6 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
     memcpy(plain + 2, transport, len);
     mesh_nonce(nonce, pdu + 1, iv);
 
-    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
-                                &mesh_network.new_key : &mesh_network.old_key;
     if (ccm_encrypt_and_tag(key->encryption_key, nonce, 13,
                             NULL, 0, plain, len + 2, pdu + 7,
                             pdu + 9 + len, mic_len) != CCM_OK) return 0;
@@ -529,7 +534,7 @@ static inline int ble_mesh_net_poll(mesh_network_message *message) {
         iv_time_ready(&now)
     ) {
         // Switch TX to the new IV Index and reset SEQ after 96 hours.
-        mesh_network_state next = mesh_network.state;
+        mesh_net_state next = mesh_network.state;
         next.iv_update = 0;
         next.iv_skip_min_time = 0;
         next.iv_state_start_time = now;
