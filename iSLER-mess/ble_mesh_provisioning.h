@@ -227,7 +227,8 @@ static int prov_caps_valid(const prov_caps *caps) {
         (caps->static_oob & 0xFEu) != 0 ||
         caps->output_oob_size > 8 || caps->input_oob_size > 8 ||
         (caps->output_oob_action & 0xFFE0u) != 0 ||
-        (caps->input_oob_action & 0xFFF0u) != 0) {
+        (caps->input_oob_action & 0xFFF0u) != 0
+    ) {
         return 0;
     }
 
@@ -242,7 +243,8 @@ static int PROVISIONER_CHOOSE_PARAMS(
     const prov_caps *caps, prov_start *out
 ) {
     if (!out || !prov_caps_valid(caps) ||
-        !(caps->algorithms & (1u << PROV_ALG_FIPS_P256))) {
+        !(caps->algorithms & (1u << PROV_ALG_FIPS_P256))
+    ) {
         return -1;
     }
 
@@ -283,7 +285,6 @@ typedef enum {
 } pb_role;
 
 typedef struct {
-    pb_tx_cache tx;
     uint32_t last_activity_ms;
     pb_role role;
     uint8_t link_id[4];
@@ -293,8 +294,9 @@ typedef struct {
 } bearer_context;
 
 static bearer_context bearer;
+static pb_tx_cache tx;
 
-static int pb_tx_send(
+static int pb_tx_start(
     const uint8_t *const adv[], const size_t len[],
     uint8_t count, uint32_t timeout_ms, int fail_on_timeout
 ) {
@@ -302,68 +304,62 @@ static int pb_tx_send(
         return -1;
     }
 
-    memset(&bearer.tx, 0, sizeof(bearer.tx));
+    memset(&tx, 0, sizeof(tx));
     for (uint8_t i = 0; i < count; ++i) {
         if (!adv[i] || len[i] == 0 || len[i] > PB_MAX_AD_SIZE) return -1;
-        memcpy(bearer.tx.adv[i], adv[i], len[i]);
-        bearer.tx.len[i] = (uint8_t)len[i];
+        memcpy(tx.adv[i], adv[i], len[i]);
+        tx.len[i] = (uint8_t)len[i];
     }
 
-    bearer.tx.count = count;
-    bearer.tx.timeout_ms = timeout_ms;
-    bearer.tx.fail_on_timeout = fail_on_timeout != 0;
-    bearer.tx.started_ms = GET_MILLIS();
-    bearer.tx.last_tx_ms = bearer.tx.started_ms;
-    bearer.tx.active = 1;
+    tx.count = count;
+    tx.timeout_ms = timeout_ms;
+    tx.fail_on_timeout = fail_on_timeout != 0;
+    tx.started_ms = GET_MILLIS();
+    tx.last_tx_ms = tx.started_ms;
+    tx.active = 1;
 
-    for (uint8_t i = 0; i < bearer.tx.count; ++i) {
-        if (BLE_MESH_TX(bearer.tx.adv[i], bearer.tx.len[i]) != 0) {
-            bearer.tx.active = 0;
+    for (uint8_t i = 0; i < tx.count; ++i) {
+        if (BLE_MESH_TX(tx.adv[i], tx.len[i]) != 0) {
+            tx.active = 0;
             return -1;
         }
     }
     return 0;
 }
 
-static int pb_tx_send_one(
+static int pb_tx_send_once(
     const uint8_t *adv, size_t len,
     uint32_t timeout_ms, int fail_on_timeout
 ) {
     const uint8_t *frames[] = {adv};
     const size_t lengths[] = {len};
-    return pb_tx_send(frames, lengths, 1, timeout_ms, fail_on_timeout);
+    return pb_tx_start(frames, lengths, 1, timeout_ms, fail_on_timeout);
 }
 
 static int pb_tx_poll(uint32_t now) {
-    if (!bearer.tx.active) return 0;
+    if (!tx.active) return 0;
 
-    if ((uint32_t)(now - bearer.tx.started_ms) >= bearer.tx.timeout_ms) {
-        int failed = bearer.tx.fail_on_timeout;
-        bearer.tx.active = 0;
+    if ((uint32_t)(now - tx.started_ms) >= tx.timeout_ms) {
+        int failed = tx.fail_on_timeout;
+        tx.active = 0;
         return failed ? -1 : 0;
     }
 
-    if ((uint32_t)(now - bearer.tx.last_tx_ms) < PB_RETRANSMIT_MS) return 0;
+    if ((uint32_t)(now - tx.last_tx_ms) < PB_RETRANSMIT_MS) return 0;
 
-    for (uint8_t i = 0; i < bearer.tx.count; ++i) {
-        if (BLE_MESH_TX(bearer.tx.adv[i], bearer.tx.len[i]) != 0) return -1;
+    for (uint8_t i = 0; i < tx.count; ++i) {
+        if (BLE_MESH_TX(tx.adv[i], tx.len[i]) != 0) return -1;
     }
-    bearer.tx.last_tx_ms = now;
+    tx.last_tx_ms = now;
     return 0;
 }
 
 static void pb_tx_stop(void) {
-    bearer.tx.active = 0;
+    tx.active = 0;
 }
 
 // Transmit PB_GPC_ACK packet
 static int pb_tx_gpc_ack(uint8_t tx_num) {
-    // PB-ADV Transaction Ack advertisement:
-    // [0]     AD Length = PB_TRANSACTION_ACK_AD_LEN (7 bytes follow)
-    // [1]     AD Type = MESH_PROV_AD_TYPE (0x29)
-    // [2..5]  Link ID (4 bytes)
-    // [6]     Transaction Number being acknowledged
-    // [7]     GPC = PB_GPC_ACK (0x01)
     uint8_t ack[PB_TRANSACTION_ACK_AD_LEN + 1] = {
         PB_TRANSACTION_ACK_AD_LEN,
         MESH_PROV_AD_TYPE,
@@ -381,21 +377,6 @@ static int pb_ack_rx(uint8_t tx_num) {
     bearer.last_rx_valid = 1;
     return 0;
 }
-
-// check if the provisioning data is structurally valid
-static int prov_address_valid(uint16_t address, uint8_t num_elements) {
-    if (address == 0 || address > 0x7FFF || num_elements == 0) return 0;
-    return (uint32_t)address + num_elements - 1 <= 0x7FFF;
-}
-
-static int prov_data_valid(const prov_data *data, uint8_t num_elements) {
-    if (!data || data->net_key_index > 0x0FFF ||
-        (data->flags & 0xFC) != 0) {
-        return 0;
-    }
-    return prov_address_valid(data->unicast_address, num_elements);
-}
-
 
 // verify the peer's confirmation against the revealed random value and shared
 // prov data. It rejects identical local and peer random values
@@ -419,7 +400,8 @@ static int peer_confirm_valid(
     }
 
     if (AUTH_COMPUTE_CONFIRMATION(confirm_inputs, dhkey, salt,
-                peer_random, no_oob_auth, expected) != 0) {
+        peer_random, no_oob_auth, expected) != 0
+    ) {
         return 0;
     }
 
@@ -473,7 +455,7 @@ static int pb_tx_confirm_or_random(
     adv[11] = opcode;
     memcpy(&adv[12], value, 16);
     adv[10] = pb_adv_fcs(&adv[11], PROV_CONFIRM_PDU_LEN);
-    return pb_tx_send_one(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
+    return pb_tx_send_once(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
 }
 
 static int pb_send_fail_pdu(
@@ -491,7 +473,7 @@ static int pb_send_fail_pdu(
     adv[11] = PROV_OP_FAILED;
     adv[12] = reason;
     adv[10] = pb_adv_fcs(&adv[11], PROV_FAILED_PDU_LEN);
-    return pb_tx_send_one(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
+    return pb_tx_send_once(adv, sizeof(adv), PB_TRANSACTION_MS, 1);
 }
 
 static int pb_send_link_close(
@@ -504,7 +486,7 @@ static int pb_send_link_close(
     adv[6] = 0;
     adv[7] = PB_LINK_CLOSE;
     adv[8] = reason;
-    return pb_tx_send_one(adv, sizeof(adv), PB_LINK_CLOSE_MS, 0);
+    return pb_tx_send_once(adv, sizeof(adv), PB_LINK_CLOSE_MS, 0);
 }
 
 typedef struct {
@@ -652,7 +634,7 @@ static int auth_tx_pubkey(
 
     const uint8_t *frames[] = {start, cont_1, cont_2};
     const size_t lengths[] = {sizeof(start), sizeof(cont_1), sizeof(cont_2)};
-    return pb_tx_send(frames, lengths, 3, PB_TRANSACTION_MS, 1);
+    return pb_tx_start(frames, lengths, 3, PB_TRANSACTION_MS, 1);
 }
 
 //! =========================================================================
@@ -728,6 +710,7 @@ int provisioner_start(void) {
 
     memset(&provisioner, 0, sizeof(provisioner));
     memset(&bearer, 0, sizeof(bearer));
+    memset(&tx, 0, sizeof(tx));
     bearer.role = PB_ROLE_PROVISIONER;
     bearer.tx_num = 0x7F;
     provisioner.state = WAITING_FOR_BEACON;
@@ -743,16 +726,17 @@ void provisioner_poll(void) {
     uint32_t now = GET_MILLIS();
 
     if (pb_tx_poll(now) != 0) {
-        pb_send_link_close(
-            bearer.link_id,
-            provisioner.state == WAITING_FOR_FAILED_ACK
-                ? PB_CLOSE_FAIL : PB_CLOSE_TIMEOUT);
+        uint8_t reason = provisioner.state == WAITING_FOR_FAILED_ACK
+                            ? PB_CLOSE_FAIL
+                            : PB_CLOSE_TIMEOUT
+        pb_send_link_close(bearer.link_id, reason);
         provisioner.state = PROVISIONER_FAILED;
     }
 
     if ((provisioner.state == PROVISIONER_FAILED ||
          provisioner.state == PROVISIONER_COMPLETE) &&
-        !bearer.tx.active) {
+        !tx.active
+    ) {
         bearer.role = PB_ROLE_NONE;
         return;
     }
@@ -760,7 +744,8 @@ void provisioner_poll(void) {
     if (provisioner.state != WAITING_FOR_BEACON &&
         provisioner.state != PROVISIONER_FAILED &&
         provisioner.state != PROVISIONER_COMPLETE &&
-        (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS) {
+        (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
+    ) {
         pb_send_link_close(bearer.link_id, PB_CLOSE_TIMEOUT);
         provisioner.state = PROVISIONER_FAILED;
     }
@@ -768,7 +753,8 @@ void provisioner_poll(void) {
     if (provisioner.state == PROVISIONER_FAILED ||
         provisioner.state == PROVISIONER_COMPLETE ||
         BLE_MESH_RX(adv_data, &len) <= 0 ||
-        len < 2 || (size_t)adv_data[0] + 1 != len) {
+        len < 2 || (size_t)adv_data[0] + 1 != len
+    ) {
         return;
     }
 
@@ -785,7 +771,8 @@ void provisioner_poll(void) {
     }
 
     if (ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK) {
+        adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK
+    ) {
         pb_tx_stop();
         if (provisioner.state == WAITING_FOR_FAILED_ACK) {
             pb_send_link_close(bearer.link_id, PB_CLOSE_FAIL);
@@ -798,7 +785,8 @@ void provisioner_poll(void) {
     if (len >= 8 && bearer.last_rx_valid &&
         adv_data[6] == bearer.last_rx_tx &&
         ((adv_data[7] & PB_GPCF_MASK) == PB_GPCF_START ||
-         (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)) {
+         (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)
+    ) {
         if (pb_tx_gpc_ack(adv_data[6]) != 0) {
             provisioner.state = PROVISIONER_FAILED;
         }
@@ -812,7 +800,8 @@ void provisioner_poll(void) {
         adv_data[10] == pb_adv_fcs(&adv_data[11], PROV_FAILED_PDU_LEN) &&
         adv_data[11] == PROV_OP_FAILED &&
         adv_data[12] >= PROV_ERR_INVALID_PDU &&
-        adv_data[12] <= PROV_ERR_CANNOT_ASSIGN_ADDR) {
+        adv_data[12] <= PROV_ERR_CANNOT_ASSIGN_ADDR
+    ) {
         if (pb_ack_rx(adv_data[6]) != 0) {
             provisioner.state = PROVISIONER_FAILED;
             return;
@@ -852,7 +841,7 @@ void provisioner_poll(void) {
         memcpy(&link_open[8], &adv_data[3], 16);
 
         //! Send STEP_2: PB_LINK_OPEN advertisement
-        int success = pb_tx_send_one(
+        int success = pb_tx_send_once(
             link_open, sizeof(link_open), PB_LINK_OPEN_MS, 1) == 0;
         if (success) bearer.last_activity_ms = GET_MILLIS();
         provisioner.state = success ? WAITING_FOR_LINK_ACK
@@ -892,7 +881,7 @@ void provisioner_poll(void) {
         provisioner.confirm_inputs[0] = invite[12];
 
         //! Provisioner Send STEP_4: PROV_OP_INVITE advertisement
-        int success = pb_tx_send_one(
+        int success = pb_tx_send_once(
             invite, sizeof(invite), PB_TRANSACTION_MS, 1) == 0;
         provisioner.state = success ? WAITING_FOR_CAPABILITIES
                                     : PROVISIONER_FAILED;
@@ -972,7 +961,7 @@ void provisioner_poll(void) {
         memcpy(&provisioner.confirm_inputs[12], &start[12], 5);
 
         //! Provisioner Send STEP_6: PROV_OP_START advertisement
-        int send_ok = pb_tx_send_one(
+        int send_ok = pb_tx_send_once(
             start, sizeof(start), PB_TRANSACTION_MS, 1) == 0;
         provisioner.state = send_ok ? WAITING_FOR_START_ACK
                                     : PROVISIONER_FAILED;
@@ -989,7 +978,8 @@ void provisioner_poll(void) {
         bearer.tx_num = tx_num;
 
         if (ECDH_GENERATE_KPAIR(
-                provisioner.private_key, provisioner.public_key) != 0) {
+                provisioner.private_key, provisioner.public_key) != 0
+        ) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
             return;
         }
@@ -1029,7 +1019,8 @@ void provisioner_poll(void) {
             }
             if (ECDH_COMPUTE_DHKEY(
                     provisioner.private_key, peer_pubkey,
-                    provisioner.dhkey) != 0) {
+                    provisioner.dhkey) != 0
+            ) {
                 provisioner_fail(PROV_ERR_INVALID_FORMAT);
                 return;
             }
@@ -1038,7 +1029,8 @@ void provisioner_poll(void) {
                 AUTH_COMPUTE_CONFIRMATION(
                     provisioner.confirm_inputs, provisioner.dhkey,
                     provisioner.confirmation_salt,
-                    provisioner.random, no_oob_auth, confirmation) != 0) {
+                    provisioner.random, no_oob_auth, confirmation) != 0
+            ) {
                 provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
                 return;
             }
@@ -1142,17 +1134,26 @@ void provisioner_poll(void) {
         if (!peer_confirm_valid(
                 provisioner.confirm_inputs, provisioner.dhkey,
                 provisioner.peer_random, provisioner.random,
-                provisioner.peer_confirmation)) {
+                provisioner.peer_confirmation)
+        ) {
             provisioner_fail(PROV_ERR_CONFIRM_FAILED);
             return;
         }
+        /* Validate that the NetKey index is 12-bit, only defined flag bits are
+         * set, and the assigned unicast range fits every device element. */
         if (AUTH_DERIVE_SESSION(
                 provisioner.dhkey, provisioner.confirmation_salt,
                 provisioner.random, provisioner.peer_random,
                 provisioner.session_key, provisioner.session_nonce,
                 provisioner.device_key) != 0 ||
             PROVISIONER_GET_DATA(&data) != 0 ||
-            !prov_data_valid(&data, provisioner.num_elements)) {
+            data.net_key_index > 0x0FFF ||
+            (data.flags & 0xFC) != 0 ||
+            data.unicast_address == 0 ||
+            data.unicast_address > 0x7FFF ||
+            provisioner.num_elements == 0 ||
+            (uint32_t)data.unicast_address + provisioner.num_elements - 1 > 0x7FFF
+        ) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
             return;
         }
@@ -1171,7 +1172,8 @@ void provisioner_poll(void) {
 
         if (AUTH_ENCRYPT_DATA(provisioner.session_key,
                               provisioner.session_nonce,
-                              plain, encrypted, mic) != 0) {
+                              plain, encrypted, mic) != 0
+        ) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
             return;
         }
@@ -1209,7 +1211,7 @@ void provisioner_poll(void) {
         //! Provisioner Send STEP_14: PROV_OP_DATA advertisement
         const uint8_t *frames[] = {start, cont};
         const size_t lengths[] = {sizeof(start), sizeof(cont)};
-        int success = pb_tx_send(
+        int success = pb_tx_start(
             frames, lengths, 2,
             PB_TRANSACTION_MS, 1) == 0;
 
@@ -1259,7 +1261,7 @@ void provisioner_poll(void) {
             adv[6] = 0;                 // transaction number
             adv[7] = PB_LINK_CLOSE;
             adv[8] = PB_CLOSE_SUCCESS;  // close reason
-            success = pb_tx_send_one(
+            success = pb_tx_send_once(
                 adv, sizeof(adv), PB_LINK_CLOSE_MS, 0) == 0;
         }
         provisioner.state = success ? PROVISIONER_COMPLETE
@@ -1268,7 +1270,8 @@ void provisioner_poll(void) {
 
     if ((provisioner.state == PROVISIONER_FAILED ||
          provisioner.state == PROVISIONER_COMPLETE) &&
-        !bearer.tx.active) {
+        !tx.active
+    ) {
         bearer.role = PB_ROLE_NONE;
     }
 }
@@ -1378,6 +1381,7 @@ int provisionee_start(void) {
     memset(&provisionee, 0, sizeof(provisionee));
     memset(&prov_rx, 0, sizeof(prov_rx));
     memset(&bearer, 0, sizeof(bearer));
+    memset(&tx, 0, sizeof(tx));
 
     if (GET_LOCAL_UUID(provisionee.device_uuid) != 0) {
         provisionee.state = PROVISIONEE_FAILED;
@@ -1417,15 +1421,16 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     uint32_t now = GET_MILLIS();
 
     if (pb_tx_poll(now) != 0) {
-        provisionee_context failed = provisionee.state == WAITING_FOR_FAILED_CLOSE;
-        pb_send_link_close(bearer.link_id, failed
-                                ? PB_CLOSE_FAIL : PB_CLOSE_TIMEOUT);
+        pb_send_link_close(
+            bearer.link_id,
+            provisionee.state == WAITING_FOR_FAILED_CLOSE
+                ? PB_CLOSE_FAIL : PB_CLOSE_TIMEOUT);
         provisionee.state = PROVISIONEE_FAILED;
     }
 
     if ((provisionee.state == PROVISIONEE_FAILED ||
          provisionee.state == PROVISIONEE_COMPLETE) &&
-        !bearer.tx.active
+        !tx.active
     ) {
         bearer.role = PB_ROLE_NONE;
         return;
@@ -1459,7 +1464,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         }
 
         if (ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-            adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK) {
+            adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK
+        ) {
             pb_tx_stop();
         }
 
@@ -1467,7 +1473,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         if (len >= 8 && bearer.last_rx_valid &&
             adv_data[6] == bearer.last_rx_tx &&
             ((adv_data[7] & PB_GPCF_MASK) == PB_GPCF_START ||
-             (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)) {
+             (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)
+        ) {
             if (pb_tx_gpc_ack(adv_data[6]) != 0) {
                 provisionee.state = PROVISIONEE_FAILED;
             }
@@ -1518,7 +1525,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             link_ack[7] = PB_LINK_ACK;
 
             //! Provisionee Send STEP_3: PB_LINK_ACK advertisement
-            int success = pb_tx_send_one(link_ack, sizeof(link_ack),
+            int success = pb_tx_send_once(link_ack, sizeof(link_ack),
                                             PB_LINK_OPEN_MS, 1) == 0;
             if (success) bearer.last_activity_ms = GET_MILLIS();
             provisionee.state = success ? WAITING_FOR_INVITE
@@ -1587,7 +1594,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             PROV_ATTENTION_START(adv_data[12]);
 
             //! Provisionee Send STEP_5: PROV_OP_CAPABILITIES advertisement
-            int success = pb_tx_send_one(adv_cap, sizeof(adv_cap),
+            int success = pb_tx_send_once(adv_cap, sizeof(adv_cap),
                                             PB_TRANSACTION_MS, 1) == 0;
             provisionee.state = success ? WAITING_FOR_START
                                         : PROVISIONEE_FAILED;
@@ -1676,7 +1683,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     return;
                 }
                 if (ECDH_COMPUTE_DHKEY(provisionee.private_key, peer_public_key,
-                                        provisionee.dhkey) != 0) {
+                                        provisionee.dhkey) != 0
+                ) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1786,7 +1794,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             if (!peer_confirm_valid(
                     provisionee.confirm_inputs, provisionee.dhkey,
                     provisionee.peer_random, provisionee.random,
-                    provisionee.peer_confirmation)) {
+                    provisionee.peer_confirmation)
+            ) {
                 provisionee_fail(PROV_ERR_CONFIRM_FAILED);
                 return;
             }
@@ -1827,7 +1836,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             //! Check STEP_14: Expected PB_GPC_START advertisement
             if (adv_data[7] == PB_GPC_START(1)) {
                 if (!ad_length_matches(len, adv_data[0], PROV_DATA_START_AD_LEN) ||
-                    adv_data[8] != 0 || adv_data[9] != PROV_DATA_PDU_LEN) {
+                    adv_data[8] != 0 || adv_data[9] != PROV_DATA_PDU_LEN
+                ) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1845,7 +1855,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             ) {
                 //! Check STEP_14: Expect PB_GPC_CONT(1) advertisement
                 if (adv_data[7] != PB_GPC_CONT(1) ||
-                    !ad_length_matches(len, adv_data[0], PROV_DATA_CONT_AD_LEN)) {
+                    !ad_length_matches(len, adv_data[0], PROV_DATA_CONT_AD_LEN)
+                ) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1856,7 +1867,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
                 // Check the reassembled PDU opcode and FCS before using its payload.
                 if (prov_rx.pdu[0] != PROV_OP_DATA ||
-                    pb_adv_fcs(prov_rx.pdu, sizeof(prov_rx.pdu)) != prov_rx.fcs) {
+                    pb_adv_fcs(prov_rx.pdu, sizeof(prov_rx.pdu)) != prov_rx.fcs
+                ) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1874,7 +1886,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 }
                 if (AUTH_DECRYPT_DATA(
                         provisionee.session_key, provisionee.session_nonce,
-                        encrypted, mic, plain) != 0) {
+                        encrypted, mic, plain) != 0
+                ) {
                     provisionee_fail(PROV_ERR_DECRYPTION_FAILED);
                     return;
                 }
@@ -1889,11 +1902,20 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                                 ((uint32_t)plain[21] << 8) | plain[22];
                 data.unicast_address = (uint16_t)((plain[23] << 8) | plain[24]);
 
-                if (!prov_address_valid(data.unicast_address, caps->num_elements)) {
+                // The starting address and every following element address
+                // must remain within the unicast range 0x0001-0x7FFF.
+                if (data.unicast_address == 0 ||
+                    data.unicast_address > 0x7FFF ||
+                    caps->num_elements == 0 ||
+                    (uint32_t)data.unicast_address + caps->num_elements - 1 > 0x7FFF
+                ) {
                     provisionee_fail(PROV_ERR_CANNOT_ASSIGN_ADDR);
                     return;
                 }
-                if (!prov_data_valid(&data, caps->num_elements)) {
+
+                // NetKey Index is 12-bit; only Key Refresh and IV Update flags
+                // are defined in the provisioning data. */
+                if (data.net_key_index > 0x0FFF || (data.flags & 0xFC) != 0) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1917,7 +1939,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 adv[9] = PROV_COMPLETE_PDU_LEN;
                 adv[11] = PROV_OP_COMPLETE;
                 adv[10] = pb_adv_fcs(&adv[11], PROV_COMPLETE_PDU_LEN);
-                int success = pb_tx_send_one(adv, sizeof(adv), PB_TRANSACTION_MS, 1) == 0;
+                int success = pb_tx_send_once(adv, sizeof(adv), PB_TRANSACTION_MS, 1) == 0;
 
                 provisionee.state = success ? WAITING_FOR_COMPLETE_ACK
                                             : PROVISIONEE_FAILED;
@@ -1982,9 +2004,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         }
     }
 
-
     if ((provisionee.state == PROVISIONEE_FAILED ||
-         provisionee.state == PROVISIONEE_COMPLETE) && !bearer.tx.active
+         provisionee.state == PROVISIONEE_COMPLETE) && !tx.active
     ) {
         bearer.role = PB_ROLE_NONE;
     }
