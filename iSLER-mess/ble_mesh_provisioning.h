@@ -719,12 +719,14 @@ int provisioner_start(void) {
 
 /* Poll the radio and handle one received advertisement. */
 void provisioner_poll(void) {
+    // Only the active provisioner handles this poll.
     if (bearer.role != PB_ROLE_PROVISIONER) return;
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
     uint32_t now = GET_MILLIS();
 
+    // Close the link if a cached transmission times out or fails.
     if (pb_tx_poll(now) != 0) {
         uint8_t reason = provisioner.state == WAITING_FOR_FAILED_ACK
                             ? PB_CLOSE_FAIL
@@ -733,47 +735,48 @@ void provisioner_poll(void) {
         provisioner.state = PROVISIONER_FAILED;
     }
 
-    if ((provisioner.state == PROVISIONER_FAILED ||
-         provisioner.state == PROVISIONER_COMPLETE) &&
-        !tx.active
+    // Stop processing after provisioning completes or fails.
+    if (provisioner.state == PROVISIONER_FAILED ||
+        provisioner.state == PROVISIONER_COMPLETE
     ) {
-        bearer.role = PB_ROLE_NONE;
+        // Release the bearer after the final transmission stops.
+        if (!tx.active) bearer.role = PB_ROLE_NONE;
         return;
     }
 
+    // Close an established link that has been inactive too long.
     if (provisioner.state != WAITING_FOR_BEACON &&
-        provisioner.state != PROVISIONER_FAILED &&
-        provisioner.state != PROVISIONER_COMPLETE &&
         (uint32_t)(now - bearer.last_activity_ms) >= PROV_PROTOCOL_MS
     ) {
         pb_send_link_close(bearer.link_id, PB_CLOSE_TIMEOUT);
         provisioner.state = PROVISIONER_FAILED;
+        return;
     }
 
-    if (provisioner.state == PROVISIONER_FAILED ||
-        provisioner.state == PROVISIONER_COMPLETE ||
-        BLE_MESH_RX(adv_data, &len) <= 0 ||
+    // Ignore receive errors, empty queues, or malformed AD lengths.
+    if (BLE_MESH_RX(adv_data, &len) <= 0 ||
         len < 2 || (size_t)adv_data[0] + 1 != len
     ) {
         return;
     }
 
-    // Link ID must match the current provisioning session.
-    if (provisioner.state != WAITING_FOR_BEACON &&
-        (len < 6 || adv_data[1] != MESH_PROV_AD_TYPE ||
-         memcmp(&adv_data[2], bearer.link_id, sizeof(bearer.link_id)) != 0)
-    ) {
-        return;
-    }
-
+    // Check the Link ID after a provisioning link is established.
     if (provisioner.state != WAITING_FOR_BEACON) {
+        // Ignore advertisements from another link.
+        if (len < 6 || adv_data[1] != MESH_PROV_AD_TYPE ||
+            memcmp(&adv_data[2], bearer.link_id, sizeof(bearer.link_id)) != 0
+        ) {
+            return;
+        }
         bearer.last_activity_ms = now;
     }
 
+    // Stop retransmitting when the peer acknowledges our transaction.
     if (ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
         adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK
     ) {
         pb_tx_stop();
+        // Close the link after our Failed PDU is acknowledged.
         if (provisioner.state == WAITING_FOR_FAILED_ACK) {
             pb_send_link_close(bearer.link_id, PB_CLOSE_FAIL);
             provisioner.state = PROVISIONER_FAILED;
@@ -787,12 +790,14 @@ void provisioner_poll(void) {
         ((adv_data[7] & PB_GPCF_MASK) == PB_GPCF_START ||
          (adv_data[7] & PB_GPCF_MASK) == PB_GPCF_CONT)
     ) {
+        // Fail if the repeated acknowledgment cannot be sent.
         if (pb_tx_gpc_ack(adv_data[6]) != 0) {
             provisioner.state = PROVISIONER_FAILED;
         }
         return;
     }
 
+    // Accept a valid Failed PDU from the provisionee and close the link.
     if (provisioner.state != WAITING_FOR_BEACON &&
         ad_length_matches(len, adv_data[0], PROV_FAILED_AD_LEN) &&
         (adv_data[6] & 0x80) != 0 && adv_data[7] == PB_GPC_START(0) &&
@@ -802,6 +807,7 @@ void provisioner_poll(void) {
         adv_data[12] >= PROV_ERR_INVALID_PDU &&
         adv_data[12] <= PROV_ERR_CANNOT_ASSIGN_ADDR
     ) {
+        // Fail locally if we cannot acknowledge the peer's Failed PDU.
         if (pb_ack_rx(adv_data[6]) != 0) {
             provisioner.state = PROVISIONER_FAILED;
             return;
