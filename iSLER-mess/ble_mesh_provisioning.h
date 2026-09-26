@@ -439,15 +439,6 @@ static uint8_t pb_adv_fcs(const uint8_t *data, size_t len) {
 static int pb_tx_confirm_or_random(
     uint8_t opcode, const uint8_t value[16]
 ) {
-    // Single-segment Confirmation or Random advertisement:
-    // [0]      AD Length = 27 bytes follow
-    // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
-    // [2..5]   Link ID
-    // [6]      Transaction Number
-    // [7]      GPC = PB_GPC_START(0), last segment index 0
-    // [8..9]   Provisioning PDU length = 17
-    // [10]     FCS over the complete Provisioning PDU
-    // [11]     PROV_OP_CONFIRM (0x05) or PROV_OP_RANDOM (0x06)
     // [12..27] Confirmation or Random value (16 bytes)
     uint8_t adv[PROV_CONFIRM_AD_LEN + 1];
     adv[0] = PROV_CONFIRM_AD_LEN;
@@ -594,13 +585,6 @@ static int auth_tx_pubkey(const uint8_t public_key[64]) {
     memcpy(&pdu[1], public_key, 64);
 
     // Transaction Start: first 20 bytes of the 65-byte Public Key PDU.
-    // [0]      AD Length = 30
-    // [1]      AD Type = MESH_PROV_AD_TYPE (0x29)
-    // [2..5]   Link ID
-    // [6]      Transaction Number
-    // [7]      GPC = Transaction Start, last segment index 2
-    // [8..9]   Provisioning PDU length = 65
-    // [10]     FCS over the complete Provisioning PDU
     // [11..30] Public Key PDU bytes 0..19
 
     uint8_t start[PROV_PUBKEY_START_AD_LEN + 1];
@@ -780,6 +764,7 @@ void provisioner_poll(void) {
     // Stop retransmitting when the peer acknowledges our transaction.
     if (pb_ack_matches(adv_data, len, bearer.tx_num)) {
         pb_tx_stop();
+
         // Close the link after our Failed PDU is acknowledged.
         if (provisioner.state == WAITING_FOR_FAILED_ACK) {
             pb_send_link_close(PB_CLOSE_FAIL);
@@ -1013,14 +998,11 @@ void provisioner_poll(void) {
                 provisioner.state = PROVISIONER_FAILED;
                 return;
             }
-            if (ECDH_COMPUTE_DHKEY(session.private_key, peer_pubkey,
-                                    session.dhkey) != 0
-            ) {
+            if (ECDH_COMPUTE_DHKEY(session.private_key, peer_pubkey, session.dhkey) != 0) {
                 provisioner_fail(PROV_ERR_INVALID_FORMAT);
                 return;
             }
-            if (GET_RANDOM_BYTES(
-                    session.random, sizeof(session.random)) != 0 ||
+            if (GET_RANDOM_BYTES(session.random, sizeof(session.random)) != 0 ||
                 AUTH_COMPUTE_CONFIRMATION(
                     session.confirm_inputs, session.dhkey,
                     session.confirmation_salt,
@@ -1031,8 +1013,7 @@ void provisioner_poll(void) {
             }
 
             //! Provisioner Send STEP_10: PROV_OP_CONFIRM advertisement
-            provisioner.state = pb_tx_confirm_or_random(
-                                    PROV_OP_CONFIRM, confirmation) == 0
+            provisioner.state = pb_tx_confirm_or_random(PROV_OP_CONFIRM, confirmation) == 0
                                         ? WAITING_FOR_CONFIRM_ACK
                                         : PROVISIONER_FAILED;
         }
@@ -1119,10 +1100,9 @@ void provisioner_poll(void) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
-        if (!peer_confirm_valid(
-                session.confirm_inputs, session.dhkey,
-                session.peer_random, session.random,
-                session.peer_confirmation)
+        if (!peer_confirm_valid(session.confirm_inputs, session.dhkey,
+                                session.peer_random, session.random,
+                                session.peer_confirmation)
         ) {
             provisioner_fail(PROV_ERR_CONFIRM_FAILED);
             return;
@@ -1130,11 +1110,10 @@ void provisioner_poll(void) {
 
         // Provisioning data needs a 12-bit NetKey Index, only the two defined
         // flag bits, and one valid unicast address for each element.
-        if (AUTH_DERIVE_SESSION(
-                session.dhkey, session.confirmation_salt,
-                session.random, session.peer_random,
-                session.session_key, session.session_nonce,
-                session.device_key) != 0 ||
+        if (AUTH_DERIVE_SESSION(session.dhkey, session.confirmation_salt,
+                                session.random, session.peer_random,
+                                session.session_key, session.session_nonce,
+                                session.device_key) != 0 ||
             PROVISIONER_GET_DATA(&data) != 0 ||
             data.net_key_index > 0x0FFF || (data.flags & 0xFC) != 0 ||
             data.unicast_address == 0 || data.unicast_address > 0x7FFF ||
@@ -1157,8 +1136,7 @@ void provisioner_poll(void) {
         plain[23] = (uint8_t)(data.unicast_address >> 8);
         plain[24] = (uint8_t)data.unicast_address;
 
-        if (AUTH_ENCRYPT_DATA(session.session_key,
-                              session.session_nonce,
+        if (AUTH_ENCRYPT_DATA(session.session_key, session.session_nonce,
                               plain, encrypted, mic) != 0
         ) {
             provisioner_fail(PROV_ERR_UNEXPECTED_ERROR);
@@ -1192,8 +1170,7 @@ void provisioner_poll(void) {
         memcpy(&cont[2], bearer.link_id, sizeof(bearer.link_id));
         cont[6] = bearer.tx_num;
         cont[7] = PB_GPC_CONT(1);
-        memcpy(&cont[8], &pdu[PB_START_PAYLOAD_MAX],
-                PROV_DATA_CONT_PAYLOAD_LEN);
+        memcpy(&cont[8], &pdu[PB_START_PAYLOAD_MAX], PROV_DATA_CONT_PAYLOAD_LEN);
 
         //! Provisioner Send STEP_14: PROV_OP_DATA advertisement
         const uint8_t *frames[] = {start, cont};
@@ -1602,8 +1579,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 return;
             }
 
-            if (ECDH_GENERATE_KPAIR(session.private_key,
-                                   session.public_key) == 0) {
+            if (ECDH_GENERATE_KPAIR(session.private_key, session.public_key) == 0) {
                 memcpy(&session.confirm_inputs[81], session.public_key, 64);
                 provisionee.state = WAITING_FOR_PUBLIC_KEY;
             } else {
@@ -1633,9 +1609,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
-                if (ECDH_COMPUTE_DHKEY(session.private_key, peer_public_key,
-                                        session.dhkey) != 0
-                ) {
+                if (ECDH_COMPUTE_DHKEY(session.private_key, peer_public_key, session.dhkey) != 0) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
@@ -1655,11 +1629,10 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         ) {
             int success =
                 GET_RANDOM_BYTES(session.random, sizeof(session.random)) == 0 &&
-                AUTH_COMPUTE_CONFIRMATION(
-                    session.confirm_inputs, session.dhkey,
-                    session.confirmation_salt,
-                    session.random, no_oob_auth,
-                    provisionee.confirmation) == 0;
+                AUTH_COMPUTE_CONFIRMATION(session.confirm_inputs, session.dhkey,
+                                        session.confirmation_salt,
+                                        session.random, no_oob_auth,
+                                        provisionee.confirmation) == 0;
 
             provisionee.state = success ? WAITING_FOR_CONFIRMATION
                                         : PROVISIONEE_FAILED;
@@ -1735,18 +1708,16 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
-            if (!peer_confirm_valid(
-                    session.confirm_inputs, session.dhkey,
-                    session.peer_random, session.random,
-                    session.peer_confirmation)
+            if (!peer_confirm_valid(session.confirm_inputs, session.dhkey,
+                                    session.peer_random, session.random,
+                                    session.peer_confirmation)
             ) {
                 provisionee_fail(PROV_ERR_CONFIRM_FAILED);
                 return;
             }
 
             //! Provisionee Send STEP_13: PROV_OP_RANDOM advertisement
-            provisionee.state = pb_tx_confirm_or_random(
-                                    PROV_OP_RANDOM, session.random) == 0
+            provisionee.state = pb_tx_confirm_or_random(PROV_OP_RANDOM, session.random) == 0
                                         ? WAITING_FOR_RANDOM_ACK
                                         : PROVISIONEE_FAILED;
         }
@@ -1756,14 +1727,13 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             provisionee.state == WAITING_FOR_RANDOM_ACK &&
             pb_ack_matches(adv_data, len, bearer.tx_num)
         ) {
-            int success = AUTH_DERIVE_SESSION(
-                session.dhkey,
-                session.confirmation_salt,
-                session.peer_random,
-                session.random,
-                session.session_key,
-                session.session_nonce,
-                session.device_key) == 0;
+            int success = AUTH_DERIVE_SESSION(session.dhkey,
+                                            session.confirmation_salt,
+                                            session.peer_random,
+                                            session.random,
+                                            session.session_key,
+                                            session.session_nonce,
+                                            session.device_key) == 0;
 
             provisionee.state = success ? WAITING_FOR_DATA
                                         : PROVISIONEE_FAILED;
