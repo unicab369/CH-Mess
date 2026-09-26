@@ -12,6 +12,8 @@
 #include "modules/modWS2812.h"
 // #include "modules/modiSLER.h"
 #include "modules/fun_button.h"
+#include "ccm_impl.h"
+
 
 #ifdef CH570_CH572
 #define LED PA9
@@ -192,7 +194,7 @@ void blink(int n) {
 // 				modiSLER_adv_data(&dataFrame);
 // 			}
 // 		}
-		
+
 // 		handle_receiving_frame(millis());
 // 		button_task(&button, button_onChanged);
 // 		// Neo_task();
@@ -223,7 +225,7 @@ void incoming_frame_handler() {
 
 	// The first two bytes of the frame are metadata with PDU and length
 	printf("RSSI:%d PDU:%d len:%d MAC:", rssi, frame[0], frame[1]);
-	
+
 	for(int i = 7; i > 2; i--) {
 		printf("%02x:", frame[i]);
 	}
@@ -260,6 +262,8 @@ int main()
 	blink(5);
 	printf(".~ ch32fun iSLER ~.\n");
 
+	test_ccm();
+	
 	// printf("\n");
 	// printf("\n");
 	// uint8_t mac_addr[6];
@@ -270,6 +274,7 @@ int main()
 	// printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n", 
     //    mac_addr[0], mac_addr[1], mac_addr[2], 
     //    mac_addr[3], mac_addr[4], mac_addr[5]);
+
 
 	// send out a first RX:?? advertisement to show we are alive
 	for(int c = 0; c < sizeof(adv_channels); c++) {

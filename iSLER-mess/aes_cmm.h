@@ -1,4 +1,5 @@
 #include "ccm_impl.h"
+#include <stdio.h>
 
 #if defined(CH5xx)
 #define AES_BASE ((uint32_t)0x4000c300)
@@ -42,7 +43,7 @@ void doAES(uint32_t * key, uint32_t * in, uint32_t * out, uint8_t enc) {
 	out[3] = AES->data[3];
 }
 
-void hw_aes_encrypt_block(const uint8_t *key, const uint8_t *in, uint8_t *out) {
+void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
       uint32_t key_words[4];
       uint32_t input_words[4];
       uint32_t output_words[4];
