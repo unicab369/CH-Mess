@@ -771,10 +771,13 @@ void provisioner_poll(void) {
         bearer.last_activity_ms = now;
     }
 
+    int transaction_ack =
+        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
+        adv_data[6] == bearer.tx_num &&
+        adv_data[7] == PB_GPC_ACK;
+
     // Stop retransmitting when the peer acknowledges our transaction.
-    if (ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num && adv_data[7] == PB_GPC_ACK
-    ) {
+    if (transaction_ack) {
         pb_tx_stop();
         // Close the link after our Failed PDU is acknowledged.
         if (provisioner.state == WAITING_FOR_FAILED_ACK) {
@@ -976,9 +979,7 @@ void provisioner_poll(void) {
     //! Check ACK for STEP_6: Expected PROV_OP_START Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_START_ACK &&
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num &&
-        adv_data[7] == PB_GPC_ACK
+        transaction_ack
     ) {
         uint8_t tx_num = (uint8_t)((bearer.tx_num + 1) & 0x7F);
         bearer.tx_num = tx_num;
@@ -1053,9 +1054,7 @@ void provisioner_poll(void) {
     //! Check STEP_10 ACK: Expected PROV_OP_CONFIRM Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_CONFIRM_ACK &&
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num &&
-        adv_data[7] == PB_GPC_ACK
+        transaction_ack
     ) {
         provisioner.state = WAITING_FOR_CONFIRMATION;
     }
@@ -1099,9 +1098,7 @@ void provisioner_poll(void) {
     //! Check STEP_12 ACK: Expected PROV_OP_RANDOM Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_RANDOM_ACK &&
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num &&
-        adv_data[7] == PB_GPC_ACK
+        transaction_ack
     ) {
         provisioner.state = WAITING_FOR_RANDOM;
     }
@@ -1228,9 +1225,7 @@ void provisioner_poll(void) {
     //! Check STEP_14 ACK: Expected PROV_OP_DATA Transaction Ack
     else if (
         provisioner.state == WAITING_FOR_DATA_ACK &&
-        ad_length_matches(len, adv_data[0], PB_TRANSACTION_ACK_AD_LEN) &&
-        adv_data[6] == bearer.tx_num &&
-        adv_data[7] == PB_GPC_ACK
+        transaction_ack
     ) {
         provisioner.state = WAITING_FOR_COMPLETE;
     }
