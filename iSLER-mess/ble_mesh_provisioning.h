@@ -728,7 +728,7 @@ void provisioner_poll(void) {
     if (pb_tx_poll(now) != 0) {
         uint8_t reason = provisioner.state == WAITING_FOR_FAILED_ACK
                             ? PB_CLOSE_FAIL
-                            : PB_CLOSE_TIMEOUT
+                            : PB_CLOSE_TIMEOUT;
         pb_send_link_close(bearer.link_id, reason);
         provisioner.state = PROVISIONER_FAILED;
     }
@@ -1254,15 +1254,7 @@ void provisioner_poll(void) {
                       pb_ack_rx(adv_data[6]) == 0;
 
         if (success) {
-            uint8_t adv[PB_LINK_CLOSE_AD_LEN + 1];
-            adv[0] = PB_LINK_CLOSE_AD_LEN;
-            adv[1] = MESH_PROV_AD_TYPE;
-            memcpy(&adv[2], bearer.link_id, sizeof(bearer.link_id));
-            adv[6] = 0;                 // transaction number
-            adv[7] = PB_LINK_CLOSE;
-            adv[8] = PB_CLOSE_SUCCESS;  // close reason
-            success = pb_tx_send_once(
-                adv, sizeof(adv), PB_LINK_CLOSE_MS, 0) == 0;
+            success = pb_send_link_close(bearer.link_id, PB_CLOSE_SUCCESS) == 0;
         }
         provisioner.state = success ? PROVISIONER_COMPLETE
                                     : PROVISIONER_FAILED;
@@ -1967,7 +1959,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
         else if (
             provisionee.state == WAITING_FOR_LINK_CLOSE &&
             ad_length_matches(len, adv_data[0], PB_LINK_CLOSE_AD_LEN) &&
-            adv_data[6] == 0 &&
+            adv_data[6] == 0 && 
             adv_data[7] == PB_LINK_CLOSE &&
             adv_data[8] == PB_CLOSE_SUCCESS
         ) {
