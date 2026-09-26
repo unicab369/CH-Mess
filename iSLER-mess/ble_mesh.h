@@ -3,45 +3,13 @@
 #include "ble_mesh_crypto.h"
 #include "aes_cmm.h"
 #include "ble_mesh_provisioning.h"
+#include "ble_mesh_network.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
 
+#define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
+
 void ble_mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
-
-// Network layer
-typedef struct {
-    // Header
-    uint8_t ivi;        // IV Index (1 bit)
-    uint8_t nid;        // Network ID (7 bits)
-    uint8_t ctl;        // Control (1 bit)
-    uint8_t ttl;        // Time To Live (7 bits)
-    uint32_t seq;       // Sequence Number (24 bits)
-    uint16_t src;       // Source Address (16 bits)
-    uint16_t dst;       // Destination Address (16 bits)
-
-    // Payload
-    uint8_t  payload_len;
-    uint8_t  payload[27];
-} mesh_pdu_t;
-
-
-// Key management
-typedef struct {
-    uint8_t net_key[16];      // Network Key
-    uint8_t app_key[16];      // Application Key
-    uint8_t dev_key[16];      // Device Key
-    uint8_t iv_index[4];      // IV Index
-    uint32_t seq_num;         // Sequence counter
-} mesh_keys_t;
-
-// Provisioning
-typedef struct {
-    uint8_t uuid[16];
-    uint16_t unicast_addr;
-    uint8_t net_key[16];
-    uint8_t dev_key[16];
-    uint8_t bearer_type; // 0=PB-ADV, 1=PB-GATT
-} provision_data_t;
 
 // The radio sends a complete advertising PDU, while provisioning supplies an
 // AD structure. Keep queued AD structures in order, including delayed ACKs.
@@ -52,9 +20,10 @@ static struct {
     uint8_t len;
     uint32_t due_ms;
 } ble_mesh_radio_queue[BLE_MESH_RADIO_QUEUE_SIZE];
+
 static uint8_t ble_mesh_radio_head, ble_mesh_radio_count;
-static uint8_t ble_mesh_radio_ready, ble_mesh_rx_armed, ble_mesh_rx_channel;
-static uint32_t ble_mesh_rx_started_ms;
+static uint8_t ble_mesh_radio_ready, BLE_MESH_ADV_POLL_armed, BLE_MESH_ADV_POLL_channel;
+static uint32_t BLE_MESH_ADV_POLL_started_ms;
 static ISLER_BUF_ATTR uint8_t ble_mesh_radio_frame[8 + PB_MAX_AD_SIZE];
 
 static void ble_mesh_radio_init(void) {
@@ -98,7 +67,7 @@ int BLE_MESH_TX_DELAYED(
     return ble_mesh_queue_ad(adv_data, len, GET_MILLIS() + delay_ms);
 }
 
-int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
+int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
     if (!adv_data || !len) return -1;
     ble_mesh_radio_init();
     uint32_t now = GET_MILLIS();
@@ -107,7 +76,7 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
     if (rx_ready) {
         const uint8_t *frame = (const uint8_t *)LLE_BUF;
         uint8_t payload_len = frame[1];
-        ble_mesh_rx_armed = 0;
+        BLE_MESH_ADV_POLL_armed = 0;
         rx_ready = 0;
 
         // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
@@ -119,7 +88,8 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
                 uint8_t ad_len = frame[offset];
                 if (ad_len == 0 || offset + ad_len + 1 > end) break;
                 if (frame[offset + 1] == MESH_PROV_AD_TYPE ||
-                    frame[offset + 1] == MESH_BEACON_AD_TYPE
+                    frame[offset + 1] == MESH_BEACON_AD_TYPE ||
+                    frame[offset + 1] == MESH_NETWORK_AD_TYPE
                 ) {
                     if ((size_t)ad_len + 1 > *len) return -1;
                     memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
@@ -136,7 +106,7 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
         (int32_t)(now - ble_mesh_radio_queue[ble_mesh_radio_head].due_ms) >= 0
     ) {
         // The factory MAC is stored most-significant byte first in ROM.
-        const uint8_t *mac = (const uint8_t *)0x0007f018;
+        const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
         ble_mesh_radio_frame[0] = 0x02;
         ble_mesh_radio_frame[1] = 0;
         for (uint8_t i = 0; i < 6; i++) ble_mesh_radio_frame[7 - i] = mac[i];
@@ -146,7 +116,7 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
         size_t frame_len = 8 + ble_mesh_radio_queue[ble_mesh_radio_head].len;
         ble_mesh_radio_head = (ble_mesh_radio_head + 1) % BLE_MESH_RADIO_QUEUE_SIZE;
         ble_mesh_radio_count--;
-        ble_mesh_rx_armed = 0;
+        BLE_MESH_ADV_POLL_armed = 0;
 
         for (uint8_t channel = 37; channel <= 39; channel++) {
             iSLERTX(BLE_MESH_ADV_ACCESS_ADDRESS, ble_mesh_radio_frame,
@@ -155,19 +125,25 @@ int BLE_MESH_RX(uint8_t *adv_data, size_t *len) {
         }
     }
 
-    if (!ble_mesh_rx_armed || (uint32_t)(now - ble_mesh_rx_started_ms) >= 20u) {
-        uint8_t channel = 37 + ble_mesh_rx_channel;
-        ble_mesh_rx_channel = (ble_mesh_rx_channel + 1) % 3;
+    if (!BLE_MESH_ADV_POLL_armed || (uint32_t)(now - BLE_MESH_ADV_POLL_started_ms) >= 20u) {
+        uint8_t channel = 37 + BLE_MESH_ADV_POLL_channel;
+        BLE_MESH_ADV_POLL_channel = (BLE_MESH_ADV_POLL_channel + 1) % 3;
         iSLERRX(BLE_MESH_ADV_ACCESS_ADDRESS, channel, PHY_1M);
-        ble_mesh_rx_started_ms = GET_MILLIS();
-        ble_mesh_rx_armed = 1;
+        BLE_MESH_ADV_POLL_started_ms = GET_MILLIS();
+        BLE_MESH_ADV_POLL_armed = 1;
     }
     return received;
 }
 
 int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
-    (void)device_uuid;
-    return -1;
+    if (!device_uuid) return -1;
+
+    // Use the factory MAC as the stable, device-specific part of the UUID.
+    memset(device_uuid, 0, 16);
+    for (int i = 0; i < 6; i++) {
+        device_uuid[i] = ((const uint8_t *)ROM_CFG_MAC_ADDR)[i];
+    }
+    return 0;
 }
 
 void PROV_ATTENTION_START(uint8_t seconds) {
@@ -193,6 +169,14 @@ int PROVISIONER_STORE_NODE_DEVKEY(
 int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) {
     (void)data;
     (void)device_key;
+    return -1;
+}
+
+// Persist the next sequence number before a Network PDU can be transmitted.
+// Return 0 only after the value is durably stored. A RAM-only implementation
+// could reuse a nonce after reboot and must not report success here.
+int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
+    (void)next_seq;
     return -1;
 }
 
@@ -287,4 +271,5 @@ int AUTH_DECRYPT_DATA(
                             encrypted, 25, mic, 8, plain);
 }
 
-
+// Transport and access
+// Message states

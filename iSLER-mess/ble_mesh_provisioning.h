@@ -105,7 +105,7 @@ int BLE_MESH_TX_DELAYED(
 // Nonblocking generic radio advertisement receive interface.
 // Returns 1 when a frame was received, 0 when none is available,
 // and -1 on a radio error.
-int BLE_MESH_RX(uint8_t *adv_data, size_t *len);
+int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len);
 
 // Fill the buffer with random bytes. Return 1 on success, 0 on failure.
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len);
@@ -721,7 +721,7 @@ void provisioner_poll(void) {
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
-    int received = BLE_MESH_RX(adv_data, &len);
+    int received = BLE_MESH_ADV_POLL(adv_data, &len);
     uint32_t now = GET_MILLIS();
 
     // Close the link if a cached transmission times out or fails.
@@ -1362,7 +1362,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
-    int received = BLE_MESH_RX(adv_data, &len);
+    int received = BLE_MESH_ADV_POLL(adv_data, &len);
     uint32_t now = GET_MILLIS();
 
     if (pb_tx_poll(now) != 0) {

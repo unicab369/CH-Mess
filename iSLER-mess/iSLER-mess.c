@@ -95,7 +95,7 @@ int main()
     funPinMode(INPUT1_PIN, GPIO_CFGLR_IN_PUPD);
     funDigitalWrite(INPUT1_PIN, 1);
 	int isProvissioner = funDigitalRead(INPUT1_PIN);
-	
+
 	// printf("\n");
 	// printf("\n");
 	// uint8_t mac_addr[6];
