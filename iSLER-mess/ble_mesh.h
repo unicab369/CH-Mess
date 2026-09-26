@@ -167,16 +167,49 @@ int PROVISIONER_STORE_NODE_DEVKEY(
 }
 
 int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) {
-    (void)data;
-    (void)device_key;
+    if (!data || !device_key) return -1;
+    mesh_network_state state = {0};
+    memcpy(state.net_key, data->net_key, 16);
+    state.net_key_index = data->net_key_index;
+    memcpy(state.dev_key, device_key, 16);
+    state.iv_index = data->iv_index;
+    state.key_refresh_only_new = (data->flags & 1u) != 0;
+    state.iv_update_active = (data->flags & 2u) != 0;
+    state.iv_min_time_exempt = state.iv_update_active;
+    state.unicast_address = data->unicast_address;
+    uint64_t seconds;
+    if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 0) {
+        state.iv_time_valid = 1;
+        state.iv_state_since_seconds = seconds;
+    }
+    if (BLE_MESH_NETWORK_SAVE_STATE(&state) != 0) return -1;
+    return ble_mesh_network_init(&state);
+}
+
+// Storage interfaces: implement these with nonvolatile storage before use.
+int BLE_MESH_NETWORK_LOAD_STATE(mesh_network_state *state) {
+    (void)state;
     return -1;
 }
 
-// Persist the next sequence number before a Network PDU can be transmitted.
-// Return 0 only after the value is durably stored. A RAM-only implementation
-// could reuse a nonce after reboot and must not report success here.
+int BLE_MESH_NETWORK_SAVE_STATE(const mesh_network_state *state) {
+    (void)state;
+    return -1;
+}
+
+// Persist the next sequence number in the same state loaded by
+// BLE_MESH_NETWORK_LOAD_STATE. Return 0 only after it is durably stored;
+// a RAM-only implementation could reuse a nonce after reboot.
 int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
     (void)next_seq;
+    return -1;
+}
+
+// Supply a trusted monotonic second count that survives reboot. Until a clock
+// is available, IV Update timing remains disabled rather than skipping its
+// required minimum durations.
+int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
+    (void)seconds;
     return -1;
 }
 
