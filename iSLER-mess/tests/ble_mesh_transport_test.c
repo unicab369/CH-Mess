@@ -63,8 +63,8 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
 static mesh_net_state node(uint16_t address) {
     mesh_net_state state = {0};
     memset(state.net_key, 0x42, 16);
-    memset(state.app_key, 0x73, 16);
-    state.has_app_key = 1;
+    memset(state.app_keys[0].key, 0x73, 16);
+    state.app_keys[0].used = 1;
     state.unicast_address = address;
     return state;
 }
@@ -96,7 +96,7 @@ int main(void) {
     for (int i = 0; i < 40; i++) long_access[i] = (uint8_t)i;
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
-    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1, NULL,
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
                                          long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
@@ -118,7 +118,7 @@ int main(void) {
 
     // A partial acknowledgment causes only the missing segment to be resent.
     sent_count = 0;
-    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1, NULL,
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
                                          long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
@@ -200,5 +200,46 @@ int main(void) {
            memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(transport_tx.active == 0 && sent_count == 4);
+
+    // A second AppKey is selected by index and identified after decryption.
+    sent_count = 0;
+    a.app_keys[1].used = b.app_keys[1].used = 1;
+    a.app_keys[1].index = b.app_keys[1].index = 0x235;
+    memset(a.app_keys[1].key, 0x99, 16);
+    memset(b.app_keys[1].key, 0x99, 16);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0x235, NULL,
+                                    short_access, sizeof(short_access)) == 1);
+    a = mesh_network.state;
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 1);
+    assert(received.app_key_index == 0x235);
+    b.app_keys[1].used = 0;
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 0);
+
+    // AID is only six bits: a collision still has to try both full keys.
+    uint8_t candidate[16] = {0};
+    uint8_t target_aid = transport_app_aid(a.app_keys[0].key);
+    int collision_found = 0;
+    for (int value = 0; value < 256; value++) {
+        candidate[15] = (uint8_t)value;
+        if (memcmp(candidate, a.app_keys[0].key, 16) != 0 &&
+            transport_app_aid(candidate) == target_aid) {
+            collision_found = 1;
+            break;
+        }
+    }
+    assert(collision_found);
+    memcpy(a.app_keys[1].key, candidate, 16);
+    memcpy(b.app_keys[1].key, candidate, 16);
+    b.app_keys[1].used = 1;
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0x235, NULL,
+                                    short_access, sizeof(short_access)) == 1);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 1);
+    assert(received.app_key_index == 0x235);
     return 0;
 }

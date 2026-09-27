@@ -6,6 +6,7 @@
 // Exercise Access framing without a radio or cryptographic implementation.
 #define ISLER_BLE_MESH_TRANSPORT_H
 #define MESH_TRANSPORT_MAX_ACCESS 380
+#define APP_KEY_INDEX_NONE 0xffff
 typedef struct {
     uint16_t src, dst, app_key_index, len;
     uint8_t ttl;
@@ -17,12 +18,13 @@ typedef struct {
 static uint8_t sent[MESH_TRANSPORT_MAX_ACCESS];
 static size_t sent_len;
 static uint16_t sent_dst;
-static uint8_t sent_ttl, sent_device_key;
+static uint8_t sent_ttl;
+static uint16_t sent_app_key_index;
 static mesh_access_message incoming;
 static int incoming_ready;
 
 static int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
-                                         uint8_t use_device_key,
+                                         uint16_t app_key_index,
                                          const uint8_t label[16],
                                          const uint8_t *data, size_t len) {
     (void)label;
@@ -30,7 +32,7 @@ static int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     sent_len = len;
     sent_dst = dst;
     sent_ttl = ttl;
-    sent_device_key = use_device_key;
+    sent_app_key_index = app_key_index;
     return 1;
 }
 
@@ -53,11 +55,12 @@ int main(void) {
     assert(ble_mesh_access_queue(0x1201, 5, 0, 0x01, params, 2) == 1);
     assert(sent_len == 3 && sent[0] == 0x01 &&
            memcmp(sent + 1, params, 2) == 0);
-    assert(sent_dst == 0x1201 && sent_ttl == 5 && !sent_device_key);
+    assert(sent_dst == 0x1201 && sent_ttl == 5 && sent_app_key_index == 0);
 
-    assert(ble_mesh_access_queue(0x1202, 3, 1, 0x8202, NULL, 0) == 1);
+    assert(ble_mesh_access_queue(0x1202, 3, APP_KEY_INDEX_NONE,
+                                 0x8202, NULL, 0) == 1);
     assert(sent_len == 2 && sent[0] == 0x82 && sent[1] == 0x02);
-    assert(sent_device_key == 1);
+    assert(sent_app_key_index == APP_KEY_INDEX_NONE);
 
     assert(ble_mesh_access_queue(0x1203, 2, 0, 0xe33601, params, 2) == 1);
     assert(sent_len == 5 && sent[0] == 0xe3 && sent[1] == 0x36 &&
@@ -69,7 +72,7 @@ int main(void) {
     assert(ble_mesh_access_queue(1, 0, 0, 0x8201, params,
                                 MESH_TRANSPORT_MAX_ACCESS) == 0);
     uint8_t label[16] = {1};
-    assert(ble_mesh_access_queue_virtual(label, 3, 0x8201, NULL, 0) == 1);
+    assert(ble_mesh_access_queue_virtual(label, 3, 0, 0x8201, NULL, 0) == 1);
     assert(sent_dst == 0x8001 && sent_len == 2);
 
     mesh_access_message message = {0};

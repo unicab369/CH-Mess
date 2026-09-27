@@ -13,9 +13,18 @@
 // This bounded RAM replay list does not survive reboot. Persist it before
 // relying on receive-side replay protection across power cycles.
 #define MESH_NETWORK_REPLAY_SLOTS 16
+#define MESH_MAX_APP_KEYS 4
 
 // The application loads this state from persistent storage after provisioning.
-// AppKey is absent until a Configuration Client installs one.
+// AppKeys are absent until a Configuration Client installs them.
+typedef struct {
+    uint8_t key[16];
+    uint8_t new_key[16];
+    uint16_t index;
+    uint8_t used;
+    uint8_t has_new_key;
+} mesh_app_key;
+
 typedef struct {
     uint8_t net_key[16];
     uint8_t new_net_key[16];
@@ -24,11 +33,7 @@ typedef struct {
     uint8_t phase2_provisioned; // provisioned during Phase 2 with no old key
     uint16_t net_key_index;
     uint8_t dev_key[16];
-    uint8_t app_key[16];
-    uint8_t new_app_key[16];
-    uint8_t has_new_app_key;
-    uint16_t app_key_index;
-    uint8_t has_app_key;
+    mesh_app_key app_keys[MESH_MAX_APP_KEYS];
     uint32_t iv_index;
     uint8_t iv_update;
     uint8_t iv_skip_min_time; // newly provisioned during IV Update
@@ -37,6 +42,24 @@ typedef struct {
     uint32_t next_seq;
     uint16_t unicast_address;
 } mesh_net_state;
+
+static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
+    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
+        if (state->app_keys[i].used && state->app_keys[i].index == index)
+            return i;
+    }
+    return -1;
+}
+
+static void mesh_promote_app_keys(mesh_net_state *state) {
+    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
+        mesh_app_key *app = &state->app_keys[i];
+        if (!app->used || !app->has_new_key) continue;
+        memcpy(app->key, app->new_key, 16);
+        memset(app->new_key, 0, 16);
+        app->has_new_key = 0;
+    }
+}
 
 typedef struct {
     uint8_t ctl;
@@ -129,9 +152,21 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         (state->phase2_provisioned &&
          (state->has_new_key || state->key_refresh_phase != 0)) ||
         (state->key_refresh_phase != 0 && !state->has_new_key) ||
-        (state->key_refresh_phase == 0 && state->has_new_key) ||
-        (state->has_app_key && state->app_key_index > 0x0fff)
+        (state->key_refresh_phase == 0 && state->has_new_key)
     ) return 0;
+
+    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
+        const mesh_app_key *app = &state->app_keys[i];
+        if (app->used > 1 || app->has_new_key > 1 ||
+            (app->used && app->index > 0x0fff) ||
+            (!app->used && app->has_new_key) ||
+            (app->has_new_key && state->key_refresh_phase == 0)) return 0;
+        if (!app->used) continue;
+        for (uint8_t j = 0; j < i; j++) {
+            if (state->app_keys[j].used &&
+                state->app_keys[j].index == app->index) return 0;
+        }
+    }
 
     memcpy(&mesh_network.state, state, sizeof(*state));
     mesh_derive_keys(state->net_key, &mesh_network.old_key);
@@ -180,20 +215,22 @@ static inline int ble_mesh_stage_net_key(const uint8_t new_net_key[16]) {
     return mesh_commit(&next);
 }
 
-// Config AppKey Update can stage an AppKey bound to this NetKey in Phase 1.
-static inline int ble_mesh_stage_app_key(const uint8_t new_app_key[16]) {
+// Config AppKey Update can stage one AppKey bound to this NetKey in Phase 1.
+static inline int ble_mesh_stage_app_key(uint16_t index,
+                                         const uint8_t new_app_key[16]) {
     if (!mesh_network.ready || !new_app_key ||
-        !mesh_network.state.has_app_key ||
         mesh_network.state.key_refresh_phase != 1) return 0;
-    if (mesh_network.state.has_new_app_key &&
-        memcmp(mesh_network.state.new_app_key, new_app_key, 16) == 0)
+    int slot = mesh_app_key_slot(&mesh_network.state, index);
+    if (slot < 0) return 0;
+    const mesh_app_key *app = &mesh_network.state.app_keys[slot];
+    if (app->has_new_key &&
+        memcmp(app->new_key, new_app_key, 16) == 0)
         return 1;
-    if (mesh_network.state.has_new_app_key ||
-        memcmp(mesh_network.state.app_key, new_app_key, 16) == 0) return 0;
+    if (app->has_new_key || memcmp(app->key, new_app_key, 16) == 0) return 0;
 
     mesh_net_state next = mesh_network.state;
-    memcpy(next.new_app_key, new_app_key, 16);
-    next.has_new_app_key = 1;
+    memcpy(next.app_keys[slot].new_key, new_app_key, 16);
+    next.app_keys[slot].has_new_key = 1;
     return mesh_commit(&next);
 }
 
@@ -220,11 +257,7 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
         memset(next.new_net_key, 0, 16);
         next.has_new_key = 0;
         next.key_refresh_phase = 0;
-        if (next.has_new_app_key) {
-            memcpy(next.app_key, next.new_app_key, 16);
-            memset(next.new_app_key, 0, 16);
-            next.has_new_app_key = 0;
-        }
+        mesh_promote_app_keys(&next);
     } else return 0;
 
     return mesh_commit(&next);
@@ -394,11 +427,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
             next.has_new_key = 0;
             next.key_refresh_phase = 0;
 
-            if (next.has_new_app_key) {
-                memcpy(next.app_key, next.new_app_key, 16);
-                memset(next.new_app_key, 0, 16);
-                next.has_new_app_key = 0;
-            }
+            mesh_promote_app_keys(&next);
         }
     }
     else if (next.phase2_provisioned) {

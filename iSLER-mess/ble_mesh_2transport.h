@@ -15,7 +15,6 @@
 #define MESH_TRANSPORT_MAX_LABELS 4
 
 // TODO for broadly usable Access-message transport:
-// - Allow multiple AppKeys and select the right key for outgoing messages.
 // - Send segmented messages with a 64-bit TransMIC when requested.
 // - Improve SAR for concurrent messages, configurable timing, and group retries.
 // - Coordinate replay checks with out-of-order segmented messages in the network layer.
@@ -129,34 +128,37 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
 
     if (akf) {
         const mesh_net_state *state = &mesh_network.state;
-        if (!state->has_app_key) return 0;
 
-        for (int i = 0; i < 2; i++) {
-            if (i && !state->has_new_app_key) break;
-            const uint8_t *app_key = i ? state->new_app_key : state->app_key;
-            if (transport_app_aid(app_key) != aid) continue;
+        for (uint8_t slot = 0; slot < MESH_MAX_APP_KEYS; slot++) {
+            const mesh_app_key *app = &state->app_keys[slot];
+            if (!app->used) continue;
+            for (uint8_t version = 0; version < 2; version++) {
+                if (version && !app->has_new_key) break;
+                const uint8_t *key = version ? app->new_key : app->key;
+                if (transport_app_aid(key) != aid) continue;
 
-            // 0x8000-0xBFFF is the Bluetooth Mesh virtual address range.
-            if (dst >= 0x8000 && dst < 0xc000) {
-                for (uint8_t j = 0; j < label_count; j++) {
-                    if (transport_labels[j].address != dst) continue;
-                    if (ccm_auth_decrypt(app_key, nonce, 13,
-                                         transport_labels[j].label, 16,
-                                         upper, len - mic_len,
-                                         upper + len - mic_len, mic_len,
-                                         out->data) == CCM_OK
-                    ) {
-                        out->app_key_index = state->app_key_index;
-                        out->has_label = 1;
-                        memcpy(out->label, transport_labels[j].label, 16);
-                        break;
+                // 0x8000-0xBFFF is the Bluetooth Mesh virtual address range.
+                if (dst >= 0x8000 && dst < 0xc000) {
+                    for (uint8_t j = 0; j < label_count; j++) {
+                        if (transport_labels[j].address != dst) continue;
+                        if (ccm_auth_decrypt(key, nonce, 13,
+                                             transport_labels[j].label, 16,
+                                             upper, len - mic_len,
+                                             upper + len - mic_len, mic_len,
+                                             out->data) == CCM_OK) {
+                            out->app_key_index = app->index;
+                            out->has_label = 1;
+                            memcpy(out->label, transport_labels[j].label, 16);
+                            break;
+                        }
                     }
+                } else if (ccm_auth_decrypt(key, nonce, 13, NULL, 0,
+                                            upper, len - mic_len,
+                                            upper + len - mic_len, mic_len,
+                                            out->data) == CCM_OK) {
+                    out->app_key_index = app->index;
                 }
-            } else if (ccm_auth_decrypt(app_key, nonce, 13, NULL, 0,
-                                        upper, len - mic_len,
-                                        upper + len - mic_len, mic_len,
-                                        out->data) == CCM_OK) {
-                out->app_key_index = state->app_key_index;
+                if (out->app_key_index != APP_KEY_INDEX_NONE) break;
             }
             if (out->app_key_index != APP_KEY_INDEX_NONE) break;
         }
@@ -226,29 +228,28 @@ static int transport_segment_queue(void) {
 // Sends a 32-bit TransMIC.
 // Only one segmented outgoing access message may be active at a time.
 static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
-                                                uint8_t use_device_key,
+                                                uint16_t app_key_index,
                                                 const uint8_t label[16],
                                                 const uint8_t *access, size_t len) {
     // A destination in the virtual address range requires its Label UUID.
     if (!mesh_network.ready || !access || len == 0 ||
         len > MESH_TRANSPORT_MAX_ACCESS || ttl > 0x7f || dst == 0 ||
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
-        (label && use_device_key) || transport_tx.active
+        (label && app_key_index == APP_KEY_INDEX_NONE) || transport_tx.active
     ) return 0;
 
     const mesh_net_state *state = &mesh_network.state;
-    uint8_t key[16], akf = !use_device_key, aid = 0;
+    uint8_t key[16], akf = app_key_index != APP_KEY_INDEX_NONE, aid = 0;
 
-    if (use_device_key) {
+    if (!akf) {
         if (dst > 0x7fff || BLE_MESH_TRANSPORT_GET_DEVICE_KEY(dst, key) != 1)
             return 0;
     } else {
-        if (!state->has_app_key ||
-            (state->key_refresh_phase == 2 && !state->has_new_app_key)) return 0;
-        const uint8_t *app_key = state->key_refresh_phase == 2 &&
-                                 state->has_new_app_key ?
-                                 state->new_app_key : state->app_key;
-        memcpy(key, app_key, 16);
+        int slot = mesh_app_key_slot(state, app_key_index);
+        if (slot < 0) return 0;
+        const mesh_app_key *app = &state->app_keys[slot];
+        memcpy(key, state->key_refresh_phase == 2 && app->has_new_key ?
+                    app->new_key : app->key, 16);
         aid = transport_app_aid(key);
     }
 
@@ -261,7 +262,7 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
     uint32_t iv = state->iv_index - (state->iv_update ? 1 : 0);
 
-    transport_nonce(nonce, use_device_key, 0, seq, state->unicast_address, dst, iv);
+    transport_nonce(nonce, !akf, 0, seq, state->unicast_address, dst, iv);
     if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16 : 0, access, len,
                             upper, upper + len, 4) != CCM_OK) return 0;
 

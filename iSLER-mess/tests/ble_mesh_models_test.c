@@ -21,10 +21,23 @@ typedef struct {
     uint8_t data[380];
 } mesh_access_message;
 
+#define MESH_MAX_APP_KEYS 4
 typedef struct {
-    uint16_t net_key_index, app_key_index, unicast_address;
-    uint8_t app_key[16], has_app_key;
+    uint8_t key[16], new_key[16];
+    uint16_t index;
+    uint8_t used, has_new_key;
+} mesh_app_key;
+typedef struct {
+    uint16_t net_key_index, unicast_address;
+    uint8_t key_refresh_phase;
+    mesh_app_key app_keys[MESH_MAX_APP_KEYS];
 } mesh_net_state;
+
+static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
+    for (int i = 0; i < MESH_MAX_APP_KEYS; i++)
+        if (state->app_keys[i].used && state->app_keys[i].index == index) return i;
+    return -1;
+}
 
 static struct {
     mesh_net_state state;
@@ -46,7 +59,8 @@ static int ble_mesh_label_add(const uint8_t label[16]) {
 static uint32_t now_ms;
 static uint32_t last_opcode;
 static uint16_t last_dst;
-static uint8_t last_params[32], last_device_key;
+static uint8_t last_params[32];
+static uint16_t last_app_key_index;
 static size_t last_len;
 static uint8_t applied_on, attention_seconds, reported_on;
 static int apply_count, report_count;
@@ -58,22 +72,31 @@ static int mesh_commit(const mesh_net_state *state) {
     mesh_network.state = *state;
     return 1;
 }
+static int ble_mesh_stage_app_key(uint16_t index, const uint8_t key[16]) {
+    int slot = mesh_app_key_slot(&mesh_network.state, index);
+    if (slot < 0 || mesh_network.state.key_refresh_phase != 1) return 0;
+    memcpy(mesh_network.state.app_keys[slot].new_key, key, 16);
+    mesh_network.state.app_keys[slot].has_new_key = 1;
+    return 1;
+}
 static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
-                                uint8_t use_device_key, uint32_t opcode,
+                                uint16_t app_key_index, uint32_t opcode,
                                 const uint8_t *params, size_t len) {
     (void)ttl;
     assert(len <= sizeof(last_params));
     last_dst = dst;
     last_opcode = opcode;
-    last_device_key = use_device_key;
+    last_app_key_index = app_key_index;
     last_len = len;
     if (len) memcpy(last_params, params, len);
     return 1;
 }
 static int ble_mesh_access_queue_virtual(const uint8_t label[16],
-                                         uint8_t ttl, uint32_t opcode,
+                                         uint8_t ttl, uint16_t app_key_index,
+                                         uint32_t opcode,
                                          const uint8_t *params, size_t len) {
-    return ble_mesh_access_queue(ble_mesh_virtual_address(label), ttl, 0,
+    return ble_mesh_access_queue(ble_mesh_virtual_address(label), ttl,
+                                 app_key_index,
                                  opcode, params, len);
 }
 static int ble_mesh_access_poll(mesh_access_message *message,
@@ -133,17 +156,36 @@ int main(void) {
         .params = add, .params_len = sizeof(add)
     };
     assert(poll_message(&message) == 1);
-    assert(mesh_network.state.has_app_key &&
-           mesh_network.state.app_key_index == 0x234);
-    assert(last_opcode == OP_CONFIG_APPKEY_STATUS && last_device_key &&
+    assert(mesh_network.state.app_keys[0].used &&
+           mesh_network.state.app_keys[0].index == 0x234);
+    assert(last_opcode == OP_CONFIG_APPKEY_STATUS &&
+           last_app_key_index == APP_KEY_INDEX_NONE &&
            last_params[0] == MESH_CONFIG_SUCCESS && last_dst == 0x1202);
+
+    uint8_t second[19] = {0x23, 0x51, 0x23}; // AppKey 0x235
+    memset(second + 3, 0x66, 16);
+    message.params = second;
+    assert(poll_message(&message) == 1);
+    assert(mesh_network.state.app_keys[1].used &&
+           mesh_network.state.app_keys[1].index == 0x235 &&
+           last_params[0] == MESH_CONFIG_SUCCESS);
+    uint8_t get_keys[2] = {0x23, 0x01};
+    message.opcode = OP_CONFIG_APPKEY_GET;
+    message.params = get_keys;
+    message.params_len = sizeof(get_keys);
+    assert(poll_message(&message) == 1);
+    assert(last_opcode == OP_CONFIG_APPKEY_LIST && last_len == 6 &&
+           last_params[0] == MESH_CONFIG_SUCCESS &&
+           last_params[3] == 0x34 && last_params[4] == 0x52 &&
+           last_params[5] == 0x23);
+    message.params = add;
 
     uint8_t bind[6] = {0x01, 0x12, 0x34, 0x02, 0x00, 0x10};
     message.opcode = OP_CONFIG_MODEL_APP_BIND;
     message.params = bind;
     message.params_len = sizeof(bind);
     assert(poll_message(&message) == 1);
-    assert(saved.onoff_server_bound &&
+    assert(saved.onoff_server_bindings == 1 &&
            last_opcode == OP_CONFIG_MODEL_APP_STATUS &&
            last_params[0] == MESH_CONFIG_SUCCESS);
 
@@ -155,7 +197,7 @@ int main(void) {
     assert(poll_message(&message) == 1);
     assert(applied_on == 1 && apply_count == 1 &&
            last_opcode == OP_ONOFF_STATUS && last_params[0] == 1 &&
-           !last_device_key);
+           last_app_key_index == 0x234);
     assert(poll_message(&message) == 1); // repeated TID
     assert(apply_count == 1);
     message.app_key_index = 0x235;
@@ -168,14 +210,14 @@ int main(void) {
     message.params = bind;
     message.params_len = sizeof(bind);
     assert(poll_message(&message) == 1);
-    assert(saved.onoff_client_bound);
-    assert(ble_mesh_onoff_set(0x1202, 0, 1) == 1);
+    assert(saved.onoff_client_bindings == 1);
+    assert(ble_mesh_onoff_set(0x1202, 0x234, 0, 1) == 1);
     assert(last_opcode == OP_ONOFF_SET && last_len == 2 &&
            last_params[0] == 0);
     uint8_t virtual_label[16] = {1};
-    assert(ble_mesh_onoff_get_virtual(virtual_label) == 1);
+    assert(ble_mesh_onoff_get_virtual(virtual_label, 0x234) == 1);
     assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_GET);
-    assert(ble_mesh_onoff_set_virtual(virtual_label, 1, 0) == 1);
+    assert(ble_mesh_onoff_set_virtual(virtual_label, 0x234, 1, 0) == 1);
     assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_SET_UNACK);
 
     uint8_t status = 1;
@@ -253,5 +295,100 @@ int main(void) {
     message.params_len = sizeof(sub);
     assert(poll_message(&message) == 1);
     assert(saved.virtual_count == 0 && registered_labels == 0);
+
+    // Bind the second key independently, then remove its permission.
+    uint8_t bind_second[6] = {0x01, 0x12, 0x35, 0x02, 0x00, 0x10};
+    message.opcode = OP_CONFIG_MODEL_APP_BIND;
+    message.params = bind_second;
+    message.params_len = sizeof(bind_second);
+    assert(poll_message(&message) == 1);
+    assert(saved.onoff_server_bindings == 3);
+    message.app_key_index = 0x235;
+    message.opcode = OP_ONOFF_SET;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 10;
+    assert(poll_message(&message) == 1);
+    assert(apply_count == 3 && last_app_key_index == 0x235);
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_APP_UNBIND;
+    message.params = bind_second;
+    message.params_len = sizeof(bind_second);
+    assert(poll_message(&message) == 1);
+    assert(saved.onoff_server_bindings == 1);
+    message.app_key_index = 0x235;
+    message.opcode = OP_ONOFF_SET;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 11;
+    assert(poll_message(&message) == 0);
+
+    bind_second[4] = 0x01; // Bind the second key to the OnOff Client.
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_APP_BIND;
+    message.params = bind_second;
+    message.params_len = sizeof(bind_second);
+    assert(poll_message(&message) == 1);
+    assert(saved.onoff_client_bindings == 3);
+    assert(ble_mesh_onoff_get(0x1202, 0x235) == 1);
+    assert(last_app_key_index == 0x235);
+    assert(ble_mesh_onoff_get(0x1202, 0x236) == 0);
+    uint8_t get_model_keys[4] = {0x01, 0x12, 0x01, 0x10};
+    message.opcode = OP_CONFIG_SIG_MODEL_APP_GET;
+    message.params = get_model_keys;
+    message.params_len = sizeof(get_model_keys);
+    assert(poll_message(&message) == 1);
+    assert(last_opcode == OP_CONFIG_SIG_MODEL_APP_LIST && last_len == 8 &&
+           last_params[0] == MESH_CONFIG_SUCCESS &&
+           last_params[5] == 0x34 && last_params[6] == 0x52 &&
+           last_params[7] == 0x23);
+
+    uint8_t remove[3] = {0x23, 0x51, 0x23};
+    message.opcode = OP_CONFIG_APPKEY_DELETE;
+    message.params = remove;
+    message.params_len = sizeof(remove);
+    assert(poll_message(&message) == 1);
+    assert(!mesh_network.state.app_keys[1].used &&
+           saved.onoff_client_bindings == 1 &&
+           last_params[0] == MESH_CONFIG_SUCCESS);
+    assert(ble_mesh_onoff_get(0x1202, 0x235) == 0);
+
+    // Reusing the slot must not restore the deleted key's model bindings.
+    message.opcode = OP_CONFIG_APPKEY_ADD;
+    message.params = second;
+    message.params_len = sizeof(second);
+    assert(poll_message(&message) == 1);
+    assert(mesh_network.state.app_keys[1].used &&
+           saved.onoff_client_bindings == 1);
+    assert(ble_mesh_onoff_get(0x1202, 0x235) == 0);
+
+    // AppKey Update is accepted for an existing key during refresh phase 1.
+    uint8_t update[19] = {0x23, 0x51, 0x23};
+    memset(update + 3, 0xaa, 16);
+    message.opcode = OP_CONFIG_APPKEY_UPDATE;
+    message.params = update;
+    message.params_len = sizeof(update);
+    assert(poll_message(&message) == 1);
+    assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
+    mesh_network.state.key_refresh_phase = 1;
+    assert(poll_message(&message) == 1);
+    assert(last_params[0] == MESH_CONFIG_SUCCESS &&
+           mesh_network.state.app_keys[1].has_new_key &&
+           memcmp(mesh_network.state.app_keys[1].new_key, update + 3, 16) == 0);
+
+    uint8_t extra[19] = {0x23, 0x61, 0x23};
+    memset(extra + 3, 0x77, 16);
+    message.opcode = OP_CONFIG_APPKEY_ADD;
+    message.params = extra;
+    assert(poll_message(&message) == 1);
+    assert(last_params[0] == MESH_CONFIG_SUCCESS);
+    extra[1] = 0x71;
+    extra[3] = 0x88;
+    assert(poll_message(&message) == 1);
+    assert(last_params[0] == MESH_CONFIG_SUCCESS);
+    extra[1] = 0x81;
+    extra[3] = 0x99;
+    assert(poll_message(&message) == 1);
+    assert(last_params[0] == MESH_CONFIG_INSUFFICIENT_RESOURCES);
     return 0;
 }

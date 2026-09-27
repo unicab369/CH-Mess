@@ -17,7 +17,7 @@ static size_t sent_len;
 static uint32_t stored_seq;
 static int storage_fails;
 static mesh_net_state saved_state;
-static uint32_t current_seconds;
+static uint64_t current_seconds;
 
 int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     memcpy(sent, ad, len);
@@ -42,7 +42,7 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     return 1;
 }
 
-int BLE_MESH_NETWORK_TIME_SECONDS(uint32_t *seconds) {
+int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
     *seconds = current_seconds;
     return 1;
 }
@@ -274,6 +274,31 @@ int main(void) {
                                            sizeof(phase3_beacon)) == 1);
     assert(mesh_network.state.key_refresh_phase == 0);
     assert(memcmp(mesh_network.state.net_key, new_net_key, 16) == 0);
+
+    // Multiple AppKeys keep their indexes and refresh independently.
+    mesh_net_state multi = state;
+    multi.phase2_provisioned = 0;
+    multi.app_keys[0].used = 1;
+    multi.app_keys[0].index = 0x234;
+    memset(multi.app_keys[0].key, 0x11, 16);
+    multi.app_keys[1].used = 1;
+    multi.app_keys[1].index = 0x235;
+    memset(multi.app_keys[1].key, 0x22, 16);
+    assert(ble_mesh_network_init(&multi) == 1);
+    multi.app_keys[1].index = 0x234;
+    assert(ble_mesh_network_init(&multi) == 0); // duplicate index
+    multi.app_keys[1].index = 0x235;
+    assert(ble_mesh_network_init(&multi) == 1);
+    assert(ble_mesh_stage_net_key(new_net_key) == 1);
+    uint8_t refreshed[16];
+    memset(refreshed, 0x33, 16);
+    assert(ble_mesh_stage_app_key(0x234, refreshed) == 1);
+    assert(ble_mesh_stage_app_key(0x236, refreshed) == 0);
+    assert(ble_mesh_key_refresh_transition(2) == 1);
+    assert(ble_mesh_key_refresh_transition(3) == 1);
+    assert(memcmp(mesh_network.state.app_keys[0].key, refreshed, 16) == 0);
+    assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
+    assert(!mesh_network.state.app_keys[0].has_new_key);
 
     puts("ble_mesh_network: PASS");
     return 0;
