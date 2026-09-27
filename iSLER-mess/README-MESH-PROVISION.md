@@ -1,25 +1,29 @@
-PB-ADV = Provisioning Bearer over Advertising
-PB-GATT = Provisioning Bearer over GATT
-OOB = Out of Band
-GPC = Generic Provisioning Control
-ADV = Advertising
-MIC = Message Integrity Check
-FCS = Frame Check Sequence
-ECDH = Elliptic Curve Diffie-Hellman
-IV = Initialization Vector
+## Abbreviations
 
-BLE Mesh device types
-| Type           | Role
-| Provisioner    | Adds devices to the Mesh
-| Provisionee    | Device being added
-| Relay Node     | Forwards messages to extend range
-| Proxy Node     | Bridges GATT - Mesh advertising bearer
-| Friend Node    | Caches messages for an LPN
-| Low Power Node | Sleepy node that polls its Friend
+| Abbreviation | Meaning |
+| --- | --- |
+| PB-ADV | Provisioning Bearer over Advertising |
+| PB-GATT | Provisioning Bearer over GATT |
+| OOB | Out of Band |
+| GPC | Generic Provisioning Control |
+| ADV | Advertising |
+| MIC | Message Integrity Check |
+| FCS | Frame Check Sequence |
+| ECDH | Elliptic Curve Diffie-Hellman |
+| IV | Initialization Vector |
 
-/* =========================================================================
- * BLE Mesh Provisioning
- * =========================================================================
+## BLE Mesh roles and features
+
+| Role or feature | What it does |
+| --- | --- |
+| Provisioner | Adds devices to the Mesh. |
+| Provisionee | Device being added. |
+| Relay | Forwards messages to extend range. |
+| Proxy | Bridges GATT and the Mesh advertising bearer. |
+| Friend | Caches messages for a Low Power Node. |
+| Low Power Node | Sleeps and polls its Friend for messages. |
+
+## BLE Mesh Provisioning
  *  1. Bearer establishment (link up)
  *  2. Provisioning Invite
  *  3. Provisioning Capabilities
@@ -29,13 +33,50 @@ BLE Mesh device types
  *  7. Provisioning Data
  *  8. Provisioning Complete
  *  9. Bearer closure (link down)
- * ========================================================================= */
 
-unicast address ranges
-0x0001-0x7FFF (32,767 addresses) - Unicast addresses
-0x8000-0xBFFF (16,384 count) - Virtual addresses
-0xC000-0xFEFF (16,128 count) - Group addresses
-0xFF00-0xFFFF (256 count) - Fixed (all-proxies, all-friends, etc.)
+## BLE Mesh address ranges
+
+| Range | Type | Number of values |
+| --- | --- | ---: |
+| 0x0000 | Unassigned | 1 |
+| 0x0001–0x7FFF | Unicast | 32,767 |
+| 0x8000–0xBFFF | Virtual | 16,384 |
+| 0xC000–0xFEFF | Group | 16,128 |
+| 0xFF00–0xFFFF | Fixed group (all-proxies, all-friends, etc.) | 256 |
+
+## Bluetooth Mesh message kinds
+The advertising bearer uses these Mesh advertising data (AD) types:
+
+| AD type | Name | Carries |
+| --- | --- | --- |
+| 0x29 | PB-ADV | Provisioning bearer packets: link control, acknowledgments, and provisioning PDUs such as Invite, Capabilities, and Data. |
+| 0x2A | Mesh Message | A Mesh Network PDU. Its CTL bit identifies an Access or Transport Control message. |
+| 0x2B | Mesh Beacon | A beacon, not a Network PDU. Beacon types are 0x00 Unprovisioned Device, 0x01 Secure Network, and 0x02 Mesh Private. |
+
+Inside a Network PDU (AD type 0x2A), there are two transport message kinds:
+
+| CTL | Kind | Examples | Segmentation |
+| --- | --- | --- | --- |
+| 0 | Access | Generic OnOff, Health, Configuration Server messages, and other model messages. Configuration messages are Access messages, even when they use a DevKey. | May be segmented; unsegmented messages use a 32-bit TransMIC. |
+| 1 | Transport Control | Segment Acknowledgment, Heartbeat, and Friendship messages. These manage Mesh transport or network operation rather than a model. | May be segmented; these have no TransMIC. |
+
+The Network PDU uses a 32-bit NetMIC for Access and a 64-bit NetMIC for
+Transport Control. A TransMIC belongs to the Access message inside it; it is
+separate from the NetMIC.
+
+Over GATT, the Proxy protocol wraps one of four PDU types: 0x00 Network PDU,
+0x01 Mesh Beacon, 0x02 Proxy Configuration, or 0x03 Provisioning PDU. PB-GATT
+uses the Provisioning PDU type. Proxy Configuration controls the GATT proxy
+connection; it is different from Configuration Server model messages, which
+are Access messages. Separate BLE service advertisements announce Mesh
+Provisioning or Mesh Proxy services. An optional Solicitation PDU can request
+on-demand Private Proxy advertising. These are not Network PDUs.
+
+This project currently uses PB-ADV, Mesh Message, Unprovisioned Device and
+Secure Network beacons, Access messages, and Segment Acknowledgments. It does
+not implement the GATT proxy bearer or segmented Transport Control messages.
+
+
 
 Bluetooth Mesh provisioning procedure over the PB-ADV bearer.
 Provisioner                                                   Provisionee
@@ -127,7 +168,7 @@ BLE Link Layer Packet carrying a SIG Mesh message (advertising bearer)
 │               └─ AD Data = Mesh Network PDU (29 bytes max)
 │                   ├─ Network Header (9 B): IVI|NID, CTL|TTL, SEQ, SRC, DST
 │                   ├─ Transport PDU (encrypted)
-│                   └─ NetMIC (4 B)
+│                   └─ NetMIC (4 B Access / 8 B Control)
 └─ CRC (3 B)
 
 Example:
@@ -160,24 +201,18 @@ BLE advertising packet Payload
                └── Generic Provisioning PDU
 
 
-// BLE Mesh PDU used here (up to 34 bytes):
-// +--------+--------+--------+--------+--------+--------+--------+--------+
-// | IVI(1) | NID(1) | CTL(1) | TTL(1) | SEQ(3) | SRC(2) | ...             |
-// +--------+--------+--------+--------+--------+--------+--------+--------+
-// | Encrypted DST + Transport/Application Payload + NetMIC               |
-// +-----------------------------------------------------------------------+
-
-// Mesh Network PDU security layout:
-// Field             Protection                        Key/material
-// IVI/NID           transmitted as-is                 Network ID
-// CTL/TTL           obfuscated                        PrivacyKey
-// SEQ               obfuscated                        PrivacyKey
-// SRC               obfuscated                        PrivacyKey
-// DST               AES-CCM encrypted                 EncryptionKey
-// TransportPDU      AES-CCM encrypted                 EncryptionKey
-// NetMIC            AES-CCM authentication tag        EncryptionKey
-
-// BLE Mesh PDU Types
-// 0x2A: Mesh Message - Carries the Mesh Network PDU
-// 0x2B: Mesh Beacon - Carries Mesh Beacons (unprovisioned, secure network, etc.)
-// 0x29: Provisioning over advertising bearer
+BLE Mesh PDU used here (up to 34 bytes):
++--------+--------+--------+--------+--------+--------+--------+--------+
+| IVI(1) | NID(1) | CTL(1) | TTL(1) | SEQ(3) | SRC(2) | ...             |
++--------+--------+--------+--------+--------+--------+--------+--------+
+| Encrypted DST + Transport/Application Payload + NetMIC               |
++-----------------------------------------------------------------------+
+Mesh Network PDU security layout:
+Field             Protection                        Key/material
+IVI/NID           transmitted as-is                 Network ID
+CTL/TTL           obfuscated                        PrivacyKey
+SEQ               obfuscated                        PrivacyKey
+SRC               obfuscated                        PrivacyKey
+DST               AES-CCM encrypted                 EncryptionKey
+TransportPDU      AES-CCM encrypted                 EncryptionKey
+NetMIC            AES-CCM authentication tag        EncryptionKey
