@@ -5,6 +5,8 @@
 #include "ble_mesh_provisioning.h"
 #include "ble_mesh_network.h"
 #include "ble_mesh_transport.h"
+#include "ble_mesh_access.h"
+#include "ble_mesh_models.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
 #include "ch5xx_flash.h"
@@ -208,7 +210,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 2
+#define MESH_STATE_VERSION 3
 #define PROVISIONER_MAX_NODES 8
 #define PROVISIONER_LOCAL_ELEMENTS 1
 
@@ -226,24 +228,54 @@ typedef struct {
     uint16_t next_unicast_address;
     uint8_t node_count;
     mesh_node_record nodes[PROVISIONER_MAX_NODES];
+    mesh_models_state models;
     uint32_t checksum;
 } mesh_state_record;
 
+// Version 2 did not store model bindings. Keep its layout for flash migration.
+typedef struct {
+    uint16_t magic;
+    uint8_t version;
+    uint8_t generation;
+    mesh_net_state state;
+    uint16_t next_unicast_address;
+    uint8_t node_count;
+    mesh_node_record nodes[PROVISIONER_MAX_NODES];
+    uint32_t checksum;
+} mesh_state_record_v2;
+
 // FNV-1a over the stored record bytes before the checksum field.
-static uint32_t mesh_state_checksum(const mesh_state_record *record) {
-    const uint8_t *bytes = (const uint8_t *)record;
+static uint32_t mesh_state_checksum(const void *data, size_t len) {
+    const uint8_t *bytes = (const uint8_t *)data;
     uint32_t hash = 0x811C9DC5;
-    for (size_t i = 0; i < offsetof(mesh_state_record, checksum); i++) {
+    for (size_t i = 0; i < len; i++) {
         hash = (hash ^ bytes[i]) * 16777619;
     }
     return hash;
 }
 
 static int mesh_state_read(uint32_t addr, mesh_state_record *record) {
-    return flash_read_data(addr, (uint8_t *)record, sizeof(*record)) &&
-           record->magic == MESH_STATE_MAGIC &&
-           record->version == MESH_STATE_VERSION &&
-           record->checksum == mesh_state_checksum(record);
+    if (flash_read_data(addr, (uint8_t *)record, sizeof(*record)) &&
+        record->magic == MESH_STATE_MAGIC &&
+        record->version == MESH_STATE_VERSION &&
+        record->checksum == mesh_state_checksum(
+            record, offsetof(mesh_state_record, checksum))) return 1;
+
+    mesh_state_record_v2 old;
+    if (!flash_read_data(addr, (uint8_t *)&old, sizeof(old)) ||
+        old.magic != MESH_STATE_MAGIC || old.version != 2 ||
+        old.checksum != mesh_state_checksum(
+            &old, offsetof(mesh_state_record_v2, checksum))) return 0;
+
+    memset(record, 0, sizeof(*record));
+    record->magic = old.magic;
+    record->version = old.version;
+    record->generation = old.generation;
+    record->state = old.state;
+    record->next_unicast_address = old.next_unicast_address;
+    record->node_count = old.node_count;
+    memcpy(record->nodes, old.nodes, sizeof(old.nodes));
+    return 1;
 }
 
 static int mesh_state_load_record(mesh_state_record *record) {
@@ -282,7 +314,8 @@ static int mesh_state_save_record(mesh_state_record *record) {
     record->magic = MESH_STATE_MAGIC;
     record->version = MESH_STATE_VERSION;
     record->generation = generation;
-    record->checksum = mesh_state_checksum(record);
+    record->checksum = mesh_state_checksum(
+        record, offsetof(mesh_state_record, checksum));
 
     if (!flash_erase_data(addr, SECTOR_SIZE) ||
         !flash_write_data(addr, (uint8_t *)record, sizeof(*record)) ||
@@ -303,6 +336,22 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     mesh_state_record record = {0};
     mesh_state_load_record(&record);
     record.state = *state;
+    return mesh_state_save_record(&record);
+}
+
+int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
+    if (!state) return 0;
+    mesh_state_record record;
+    if (!mesh_state_load_record(&record)) return 0;
+    *state = record.models;
+    return 1;
+}
+
+int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
+    if (!state) return 0;
+    mesh_state_record record;
+    if (!mesh_state_load_record(&record)) return 0;
+    record.models = *state;
     return mesh_state_save_record(&record);
 }
 
@@ -328,7 +377,9 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     mesh_state_record record = {0};
     record.state = state;
     if (!mesh_state_save_record(&record)) return -1;
-    return ble_mesh_network_init(&state) ? 0 : -1;
+    if (!ble_mesh_network_init(&state)) return -1;
+    memset(&mesh_models, 0, sizeof(mesh_models));
+    return ble_mesh_models_init() ? 0 : -1;
 }
 
 int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
@@ -405,6 +456,32 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
         }
     }
     return 0;
+}
+
+int BLE_MESH_ACCESS_HANDLE(const mesh_access_pdu *message) {
+    if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
+    return ble_mesh_models_receive(message);
+}
+
+void BLE_MESH_ONOFF_CHANGED(uint8_t on) {
+    (void)on;
+}
+
+void BLE_MESH_ONOFF_STATUS(uint16_t src, uint8_t present) {
+    (void)src;
+    (void)present;
+}
+
+void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len) {
+    (void)src;
+    (void)opcode;
+    (void)params;
+    (void)len;
+}
+
+void BLE_MESH_HEALTH_ATTENTION(uint8_t seconds) {
+    (void)seconds;
 }
 
 // Persist the next sequence number in the same state loaded by
