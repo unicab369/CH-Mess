@@ -17,7 +17,7 @@ static size_t sent_len;
 static uint32_t stored_seq;
 static int storage_fails;
 static mesh_net_state saved_state;
-static uint64_t current_seconds;
+static uint32_t current_seconds;
 
 int BLE_MESH_TX(const uint8_t *ad, size_t len) {
     memcpy(sent, ad, len);
@@ -42,7 +42,7 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     return 1;
 }
 
-int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
+int BLE_MESH_NETWORK_TIME_SECONDS(uint32_t *seconds) {
     *seconds = current_seconds;
     return 1;
 }
@@ -113,7 +113,7 @@ int main(void) {
     assert(mesh_network.old_key.nid == 0x68);
     assert(memcmp(mesh_network.old_key.encryption_key, encryption_key, 16) == 0);
     assert(memcmp(mesh_network.old_key.privacy_key, privacy_key, 16) == 0);
-    assert(ble_mesh_send_net_beacon() == 1);
+    assert(ble_mesh_net_send_beacon() == 1);
     assert(sent_len == sizeof(normal_beacon));
     assert(memcmp(sent, normal_beacon, sizeof(normal_beacon)) == 0);
     assert(ble_mesh_net_send(0xfffd, 1, 0, transport, sizeof(transport)) == 1);
@@ -152,10 +152,10 @@ int main(void) {
     assert(sent_len == 0 && mesh_network.state.next_seq == 1);
 
     storage_fails = 0;
-    current_seconds = 95ull * 3600u;
+    current_seconds = 95 * 3600;
     assert(ble_mesh_handle_net_beacon(updating_beacon,
                                            sizeof(updating_beacon)) == 0);
-    current_seconds = 96ull * 3600u;
+    current_seconds = 96 * 3600;
     assert(ble_mesh_handle_net_beacon(updating_beacon,
                                            sizeof(updating_beacon)) == 1);
     assert(mesh_network.state.iv_update == 1);
@@ -168,10 +168,10 @@ int main(void) {
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     active.unicast_address = 0x1201;
     assert(ble_mesh_network_init(&active) == 1);
-    current_seconds = 191ull * 3600u;
+    current_seconds = 191 * 3600;
     assert(ble_mesh_handle_net_beacon(complete_beacon,
                                            sizeof(complete_beacon)) == 0);
-    current_seconds = 192ull * 3600u;
+    current_seconds = 192 * 3600;
     assert(ble_mesh_handle_net_beacon(complete_beacon,
                                            sizeof(complete_beacon)) == 1);
     assert(mesh_network.state.iv_update == 0);
@@ -185,7 +185,7 @@ int main(void) {
     assert(ble_mesh_network_init(&normal) == 1);
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     assert(ble_mesh_network_restore() == 1);
-    assert(ble_mesh_send_net_beacon() == 1);
+    assert(ble_mesh_net_send_beacon() == 1);
     assert(memcmp(sent, complete_beacon, sizeof(complete_beacon)) == 0);
 
     // Authentication failure and a failed durable write cannot change IV state.
@@ -218,7 +218,7 @@ int main(void) {
     assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
     assert(ble_mesh_key_refresh_transition(2) == 1);
-    assert(ble_mesh_send_net_beacon() == 1);
+    assert(ble_mesh_net_send_beacon() == 1);
     uint8_t phase2_beacon[24];
     memcpy(phase2_beacon, sent, sizeof(phase2_beacon));
     assert(ble_mesh_network_init(&phase1) == 1);
@@ -241,7 +241,7 @@ int main(void) {
 
     assert(ble_mesh_network_init(&new_sender) == 1);
     assert(ble_mesh_key_refresh_transition(3) == 1);
-    assert(ble_mesh_send_net_beacon() == 1);
+    assert(ble_mesh_net_send_beacon() == 1);
     uint8_t phase3_beacon[24];
     memcpy(phase3_beacon, sent, sizeof(phase3_beacon));
     mesh_net_state phase2 = phase1;
@@ -261,8 +261,8 @@ int main(void) {
     // A node provisioned during Phase 2 starts with only the new NetKey.
     state.phase2_provisioned = 1;
     assert(ble_mesh_network_init(&state) == 1);
-    assert(ble_mesh_send_net_beacon() == 1);
-    assert((sent[3] & 1u) == 1u);
+    assert(ble_mesh_net_send_beacon() == 1);
+    assert((sent[3] & 1) == 1);
     assert(ble_mesh_handle_net_beacon(normal_beacon,
                                            sizeof(normal_beacon)) == 1);
     assert(mesh_network.state.phase2_provisioned == 0);

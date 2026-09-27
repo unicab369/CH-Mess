@@ -25,14 +25,14 @@ static int flash_data_range_valid(uint32_t addr, int len) {
 __HIGH_CODE
 int flash_erase_data(uint32_t addr, int len) {
     if (!flash_data_range_valid(addr, len) ||
-        (addr & (SECTOR_SIZE - 1u))) return 0;
+        (addr & (SECTOR_SIZE - 1))) return 0;
     return ch5xx_flash_cmd_erase(addr, len) == 0;
 }
 
 __HIGH_CODE
 int flash_read_data(uint32_t addr, uint8_t *out, int len) {
     if (!out || !flash_data_range_valid(addr, len) ||
-        (addr & 3u) || (len & 3u) || ((uintptr_t)out & 3u)
+        (addr & 3) || (len & 3) || ((uintptr_t)out & 3)
     ) return 0;
 
     ch5xx_flash_cmd_read(addr, out, len);
@@ -42,7 +42,7 @@ int flash_read_data(uint32_t addr, uint8_t *out, int len) {
 __HIGH_CODE
 int flash_write_data(uint32_t addr, uint8_t *data, int len) {
     if (!data || !flash_data_range_valid(addr, len) ||
-        (addr & 3u) || (len & 3u) || ((uintptr_t)data & 3u)
+        (addr & 3) || (len & 3) || ((uintptr_t)data & 3)
     ) return 0;
 
     return ch5xx_flash_cmd_write(addr, data, len) == 0;
@@ -51,41 +51,37 @@ int flash_write_data(uint32_t addr, uint8_t *data, int len) {
 // The radio sends a complete advertising PDU, while provisioning supplies an
 // AD structure. Keep queued AD structures in order, including delayed ACKs.
 #define BLE_MESH_RADIO_QUEUE_SIZE 8
-#define BLE_MESH_ADV_ACCESS_ADDRESS 0x8E89BED6u
+#define BLE_MESH_ADV_ACCESS_ADDRESS 0x8E89BED6
 static struct {
     uint8_t data[PB_MAX_AD_SIZE];
     uint8_t len;
-    uint32_t due_ms;
-} ble_mesh_radio_queue[BLE_MESH_RADIO_QUEUE_SIZE];
+    uint32_t send_at_ms;
+} radio_queue[BLE_MESH_RADIO_QUEUE_SIZE];
 
-static uint8_t ble_mesh_radio_head, ble_mesh_radio_count;
-static uint8_t ble_mesh_radio_ready, BLE_MESH_ADV_POLL_armed, BLE_MESH_ADV_POLL_channel;
+static uint8_t radio_head, radio_count;
+static uint8_t BLE_MESH_ADV_POLL_armed, BLE_MESH_ADV_POLL_channel;
 static uint32_t BLE_MESH_ADV_POLL_started_ms;
 static ISLER_BUF_ATTR uint8_t ble_mesh_radio_frame[8 + PB_MAX_AD_SIZE];
 
 static void ble_mesh_radio_init(void) {
-    if (ble_mesh_radio_ready) return;
     iSLERInit(LL_TX_POWER_0_DBM);
-    ble_mesh_radio_ready = 1;
 }
 
-static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t due_ms) {
+static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t send_at_ms) {
     if (!adv_data || len < 2 || len > PB_MAX_AD_SIZE ||
         (size_t)adv_data[0] + 1 != len ||
-        ble_mesh_radio_count == BLE_MESH_RADIO_QUEUE_SIZE
+        radio_count == BLE_MESH_RADIO_QUEUE_SIZE
     ) return -1;
 
-    uint8_t slot = (ble_mesh_radio_head + ble_mesh_radio_count) %
-                   BLE_MESH_RADIO_QUEUE_SIZE;
-    memcpy(ble_mesh_radio_queue[slot].data, adv_data, len);
-    ble_mesh_radio_queue[slot].len = (uint8_t)len;
-    ble_mesh_radio_queue[slot].due_ms = due_ms;
-    ble_mesh_radio_count++;
+    uint8_t slot = (radio_head + radio_count) % BLE_MESH_RADIO_QUEUE_SIZE;
+    memcpy(radio_queue[slot].data, adv_data, len);
+    radio_queue[slot].len = (uint8_t)len;
+    radio_queue[slot].send_at_ms = send_at_ms;
+    radio_count++;
     return 0;
 }
 
 int BLE_MESH_TX(const uint8_t *adv_data, size_t len) {
-    ble_mesh_radio_init();
     return ble_mesh_queue_ad(adv_data, len, GET_MILLIS());
 }
 
@@ -94,19 +90,17 @@ int BLE_MESH_TX_DELAYED(
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
     uint8_t random_byte;
-    if (min_delay_ms > max_delay_ms ||
-        GET_RANDOM_BYTES(&random_byte, 1) != 1
-    ) return -1;
+    if (min_delay_ms > max_delay_ms || GET_RANDOM_BYTES(&random_byte, 1) != 1) {
+        return -1;
+    }
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
     uint32_t delay_ms = min_delay_ms + random_byte % range;
-    ble_mesh_radio_init();
     return ble_mesh_queue_ad(adv_data, len, GET_MILLIS() + delay_ms);
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
     if (!adv_data || !len) return -1;
-    ble_mesh_radio_init();
     uint32_t now = GET_MILLIS();
     int received = 0;
 
@@ -139,8 +133,8 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
         }
     }
 
-    if (ble_mesh_radio_count &&
-        (int32_t)(now - ble_mesh_radio_queue[ble_mesh_radio_head].due_ms) >= 0
+    if (radio_count &&
+        (int32_t)(now - radio_queue[radio_head].send_at_ms) >= 0
     ) {
         // The factory MAC is stored most-significant byte first in ROM.
         const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
@@ -148,11 +142,11 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
         ble_mesh_radio_frame[1] = 0;
         for (uint8_t i = 0; i < 6; i++) ble_mesh_radio_frame[7 - i] = mac[i];
         memcpy(ble_mesh_radio_frame + 8,
-               ble_mesh_radio_queue[ble_mesh_radio_head].data,
-               ble_mesh_radio_queue[ble_mesh_radio_head].len);
-        size_t frame_len = 8 + ble_mesh_radio_queue[ble_mesh_radio_head].len;
-        ble_mesh_radio_head = (ble_mesh_radio_head + 1) % BLE_MESH_RADIO_QUEUE_SIZE;
-        ble_mesh_radio_count--;
+               radio_queue[radio_head].data,
+               radio_queue[radio_head].len);
+        size_t frame_len = 8 + radio_queue[radio_head].len;
+        radio_head = (radio_head + 1) % BLE_MESH_RADIO_QUEUE_SIZE;
+        radio_count--;
         BLE_MESH_ADV_POLL_armed = 0;
 
         for (uint8_t channel = 37; channel <= 39; channel++) {
@@ -162,7 +156,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
         }
     }
 
-    if (!BLE_MESH_ADV_POLL_armed || (uint32_t)(now - BLE_MESH_ADV_POLL_started_ms) >= 20u) {
+    if (!BLE_MESH_ADV_POLL_armed || (uint32_t)(now - BLE_MESH_ADV_POLL_started_ms) >= 20) {
         uint8_t channel = 37 + BLE_MESH_ADV_POLL_channel;
         BLE_MESH_ADV_POLL_channel = (BLE_MESH_ADV_POLL_channel + 1) % 3;
         iSLERRX(BLE_MESH_ADV_ACCESS_ADDRESS, channel, PHY_1M);
@@ -210,12 +204,12 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     state.net_key_index = data->net_key_index;
     memcpy(state.dev_key, device_key, 16);
     state.iv_index = data->iv_index;
-    state.phase2_provisioned = (data->flags & 1u) != 0;
-    state.iv_update = (data->flags & 2u) != 0;
+    state.phase2_provisioned = (data->flags & 1) != 0;
+    state.iv_update = (data->flags & 2) != 0;
     state.iv_skip_min_time = state.iv_update;
     state.unicast_address = data->unicast_address;
 
-    uint64_t seconds;
+    uint32_t seconds;
     if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 1) {
         state.iv_time_valid = 1;
         state.iv_state_start_time = seconds;
@@ -224,13 +218,13 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     return ble_mesh_network_init(&state) ? 0 : -1;
 }
 
-#define MESH_STATE_MAGIC 0x4d455348u
-#define MESH_STATE_VERSION 1u
+#define MESH_STATE_MAGIC 0x4d53
+#define MESH_STATE_VERSION 4
 
 typedef struct {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t generation;
+    uint16_t magic;
+    uint8_t version;
+    uint8_t generation; // wraps after 255 saves
     mesh_net_state state;
     uint32_t checksum;
 } mesh_state_record;
@@ -239,7 +233,7 @@ static uint32_t mesh_state_checksum(const mesh_state_record *record) {
     const uint8_t *bytes = (const uint8_t *)record;
     uint32_t hash = 2166136261u;
     for (size_t i = 0; i < offsetof(mesh_state_record, checksum); i++) {
-        hash = (hash ^ bytes[i]) * 16777619u;
+        hash = (hash ^ bytes[i]) * 16777619;
     }
     return hash;
 }
@@ -261,7 +255,7 @@ int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
 
     // get the latest valid state
     if (!has_first || (has_second &&
-         (int32_t)(second.generation - first.generation) >= 0)) {
+         (uint8_t)(second.generation - first.generation) < 0x80)) {
         *state = second.state;
     } else {
         *state = first.state;
@@ -275,10 +269,11 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     int has_first = mesh_state_read(BLE_MESH_DATA_ADDR, &first);
     int has_second = mesh_state_read(BLE_MESH_DATA_ADDR + SECTOR_SIZE, &second);
     uint32_t addr = BLE_MESH_DATA_ADDR;
-    uint32_t generation = 1;
+    uint8_t generation = 1;
 
     if (has_second &&
-        (!has_first || (int32_t)(second.generation - first.generation) >= 0)
+        (!has_first ||
+         (uint8_t)(second.generation - first.generation) < 0x80)
     ) {
         generation = second.generation + 1;
     } else if (has_first) {
@@ -286,7 +281,7 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
         generation = first.generation + 1;
     }
 
-    mesh_state_record record = {0}, check;
+    mesh_state_record check, record = {0};
     record.magic = MESH_STATE_MAGIC;
     record.version = MESH_STATE_VERSION;
     record.generation = generation;
@@ -310,7 +305,7 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its
 // required minimum durations.
-int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
+int BLE_MESH_NETWORK_TIME_SECONDS(uint32_t *seconds) {
     (void)seconds;
     return 0;
 }

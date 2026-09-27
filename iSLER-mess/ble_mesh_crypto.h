@@ -142,7 +142,7 @@ static int compute_mac(
             lenbuf[0] = (uint8_t)(aad_len >> 8);
             lenbuf[1] = (uint8_t)(aad_len & 0xFF);
             lenlen = 2;
-        } else if (aad_len <= 0xFFFFFFFFu) {
+        } else if (aad_len <= 0xFFFFFFFF) {
             lenbuf[0] = 0xFF; lenbuf[1] = 0xFE;
             lenbuf[2] = (uint8_t)(aad_len >> 24);
             lenbuf[3] = (uint8_t)(aad_len >> 16);

@@ -34,11 +34,11 @@
 #define PB_MAX_PROV_PDU        65
 #define PB_MAX_TX_SEGMENTS     3
 #define PB_MAX_AD_SIZE         31
-#define PB_RETRANSMIT_MS       500u
-#define PB_TRANSACTION_MS      30000u
-#define PB_LINK_OPEN_MS        60000u
-#define PB_LINK_CLOSE_MS       3000u
-#define PROV_PROTOCOL_MS       60000u
+#define PB_RETRANSMIT_MS       500
+#define PB_TRANSACTION_MS      30000
+#define PB_LINK_OPEN_MS        60000
+#define PB_LINK_CLOSE_MS       3000
+#define PROV_PROTOCOL_MS       60000
 
 /* --- Provisioning PDU opcodes (Mesh Profile 5.4.1) --- */
 #define PROV_OP_INVITE              0x00
@@ -222,13 +222,13 @@ static int PROVISIONER_CHOOSE_PARAMS(const prov_caps *caps, prov_start *out);
 
 static int prov_caps_valid(const prov_caps *caps) {
     if (!caps || caps->num_elements == 0 ||
-        (caps->algorithms & 0x0003u) == 0 ||
-        (caps->algorithms & 0xFFFCu) != 0 ||
-        (caps->pubkey_oob & 0xFEu) != 0 ||
-        (caps->static_oob & 0xFEu) != 0 ||
+        (caps->algorithms & 0x0003) == 0 ||
+        (caps->algorithms & 0xFFFC) != 0 ||
+        (caps->pubkey_oob & 0xFE) != 0 ||
+        (caps->static_oob & 0xFE) != 0 ||
         caps->output_oob_size > 8 || caps->input_oob_size > 8 ||
-        (caps->output_oob_action & 0xFFE0u) != 0 ||
-        (caps->input_oob_action & 0xFFF0u) != 0
+        (caps->output_oob_action & 0xFFE0) != 0 ||
+        (caps->input_oob_action & 0xFFF0) != 0
     ) {
         return 0;
     }
@@ -244,7 +244,7 @@ static int PROVISIONER_CHOOSE_PARAMS(
     const prov_caps *caps, prov_start *out
 ) {
     if (!out || !prov_caps_valid(caps) ||
-        !(caps->algorithms & (1u << PROV_ALG_FIPS_P256))
+        !(caps->algorithms & (1 << PROV_ALG_FIPS_P256))
     ) {
         return -1;
     }
@@ -1283,7 +1283,7 @@ static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
 
     /* Validate the selected algorithm and public-key method. */
     if (start->algorithm >= 16 ||
-        !(caps->algorithms & (uint16_t)(1u << start->algorithm)) ||
+        !(caps->algorithms & (uint16_t)(1 << start->algorithm)) ||
         start->public_key_oob > 1 ||
         (start->public_key_oob && !(caps->pubkey_oob & PROV_PUBKEY_OOB_AVAILABLE))
     ) {
@@ -1301,7 +1301,7 @@ static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
         case PROV_OOB_OUTPUT:
             return start->auth_action < 8 &&
                    (caps->output_oob_action &
-                    (uint16_t)(1u << start->auth_action)) != 0 &&
+                    (uint16_t)(1 << start->auth_action)) != 0 &&
                    start->auth_size != 0 &&
                    start->auth_size <= 8 &&
                    start->auth_size <= caps->output_oob_size;
@@ -1309,7 +1309,7 @@ static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
         case PROV_OOB_INPUT:
             return start->auth_action < 8 &&
                    (caps->input_oob_action &
-                    (uint16_t)(1u << start->auth_action)) != 0 &&
+                    (uint16_t)(1 << start->auth_action)) != 0 &&
                    start->auth_size != 0 &&
                    start->auth_size <= 8 &&
                    start->auth_size <= caps->input_oob_size;
@@ -1338,7 +1338,7 @@ int provisionee_start(void) {
     bearer.tx_num = 0xFF;
     provisionee.state = WAITING_FOR_LINK_OPEN;
     bearer.role = PB_ROLE_PROVISIONEE;
-    last_beacon_ms = GET_MILLIS() - 1000u;
+    last_beacon_ms = GET_MILLIS() - 1000;
     return 0;
 }
 
@@ -1352,7 +1352,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
     prov_caps supported_caps = {0};
     supported_caps.num_elements = caps->num_elements;
-    supported_caps.algorithms = caps->algorithms & (uint16_t)(1u << PROV_ALG_FIPS_P256);
+    supported_caps.algorithms = caps->algorithms & (uint16_t)(1 << PROV_ALG_FIPS_P256);
     caps = &supported_caps;
 
     if (caps->num_elements == 0 || caps->algorithms == 0) {
@@ -1905,7 +1905,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
     /* Only the unprovisioned state needs periodic beacon retransmission. */
     if (provisionee.state == WAITING_FOR_LINK_OPEN) {
-        if ((uint32_t)(now - last_beacon_ms) >= 1000u) {
+        if ((uint32_t)(now - last_beacon_ms) >= 1000) {
             //! Provisionee Send STEP_1: MESH_BEACON_UNPROVISIONED advertisement
             uint8_t beacon[MESH_BEACON_UNPROVISIONED_AD_LEN + 1];
             beacon[0] = MESH_BEACON_UNPROVISIONED_AD_LEN;
