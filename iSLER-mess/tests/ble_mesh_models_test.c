@@ -81,8 +81,10 @@ static int ble_mesh_stage_app_key(uint16_t index, const uint8_t key[16]) {
 }
 static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
                                 uint16_t app_key_index, uint32_t opcode,
-                                const uint8_t *params, size_t len) {
+                                const uint8_t *params, size_t len,
+                                uint8_t mic_64) {
     (void)ttl;
+    assert(mic_64 == 0);
     assert(len <= sizeof(last_params));
     last_dst = dst;
     last_opcode = opcode;
@@ -94,10 +96,11 @@ static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
 static int ble_mesh_access_queue_virtual(const uint8_t label[16],
                                          uint8_t ttl, uint16_t app_key_index,
                                          uint32_t opcode,
-                                         const uint8_t *params, size_t len) {
+                                         const uint8_t *params, size_t len,
+                                         uint8_t mic_64) {
     return ble_mesh_access_queue(ble_mesh_virtual_address(label), ttl,
                                  app_key_index,
-                                 opcode, params, len);
+                                 opcode, params, len, mic_64);
 }
 static int ble_mesh_access_poll(mesh_access_message *message,
                                 mesh_access_pdu *access) {

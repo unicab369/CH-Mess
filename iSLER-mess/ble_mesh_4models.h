@@ -189,7 +189,7 @@ static inline int ble_mesh_config_virtual_sub(
 
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
         add ? OP_CONFIG_MODEL_SUB_VIRTUAL_ADD :
-              OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE, params, sizeof(params));
+              OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE, params, sizeof(params), 0);
 }
 
 static uint8_t *mesh_model_bindings(mesh_models_state *state, uint16_t model) {
@@ -269,7 +269,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         }
         size_t reply_len = 3 + mesh_pack_app_indexes(reply + 3, indexes, count);
         ble_mesh_access_queue(message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
-                              OP_CONFIG_APPKEY_LIST, reply, reply_len);
+                              OP_CONFIG_APPKEY_LIST, reply, reply_len, 0);
         return 1;
     }
 
@@ -292,7 +292,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         }
         size_t reply_len = 5 + mesh_pack_app_indexes(reply + 5, indexes, count);
         ble_mesh_access_queue(message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
-                              OP_CONFIG_SIG_MODEL_APP_LIST, reply, reply_len);
+                              OP_CONFIG_SIG_MODEL_APP_LIST, reply, reply_len, 0);
         return 1;
     }
 
@@ -346,7 +346,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
 
         uint8_t reply[4] = {status, p[0], p[1], p[2]};
         ble_mesh_access_queue(message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
-                              OP_CONFIG_APPKEY_STATUS, reply, 4);
+                              OP_CONFIG_APPKEY_STATUS, reply, 4, 0);
         return 1;
     }
 
@@ -383,7 +383,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
 
         uint8_t reply[7] = {status, p[0], p[1], p[2], p[3], p[4], p[5]};
         ble_mesh_access_queue(message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
-                              OP_CONFIG_MODEL_APP_STATUS, reply, 7);
+                              OP_CONFIG_MODEL_APP_STATUS, reply, 7, 0);
         return 1;
     }
 
@@ -403,7 +403,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             p[18], p[19]
         };
         ble_mesh_access_queue(message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
-                              OP_CONFIG_MODEL_SUB_STATUS, reply, sizeof(reply));
+                              OP_CONFIG_MODEL_SUB_STATUS, reply, sizeof(reply), 0);
         return 1;
     }
 
@@ -424,7 +424,7 @@ static inline int ble_mesh_add_app_key(
     memcpy(params + 3, key, 16);
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
                                 OP_CONFIG_APPKEY_ADD,
-                                params, sizeof(params));
+                                params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_update_app_key(
@@ -438,7 +438,7 @@ static inline int ble_mesh_update_app_key(
     };
     memcpy(params + 3, key, 16);
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_APPKEY_UPDATE, params, sizeof(params));
+                                 OP_CONFIG_APPKEY_UPDATE, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_delete_app_key(
@@ -451,7 +451,7 @@ static inline int ble_mesh_delete_app_key(
         (uint8_t)(app_idx >> 4)
     };
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_APPKEY_DELETE, params, sizeof(params));
+                                 OP_CONFIG_APPKEY_DELETE, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_get_app_keys(uint16_t dst,
@@ -459,7 +459,7 @@ static inline int ble_mesh_get_app_keys(uint16_t dst,
     if (net_idx > 0x0fff) return 0;
     uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_APPKEY_GET, params, sizeof(params));
+                                 OP_CONFIG_APPKEY_GET, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_bind_model(
@@ -474,7 +474,7 @@ static inline int ble_mesh_bind_model(
     };
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
                                 OP_CONFIG_MODEL_APP_BIND,
-                                params, sizeof(params));
+                                params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_unbind_model(
@@ -487,7 +487,7 @@ static inline int ble_mesh_unbind_model(
         (uint8_t)model, (uint8_t)(model >> 8)
     };
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_MODEL_APP_UNBIND, params, sizeof(params));
+                                 OP_CONFIG_MODEL_APP_UNBIND, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_get_bindings(uint16_t dst,
@@ -500,7 +500,7 @@ static inline int ble_mesh_get_bindings(uint16_t dst,
     };
     return ble_mesh_access_queue(dst, MODEL_TTL, APP_KEY_INDEX_NONE,
                                  OP_CONFIG_SIG_MODEL_APP_GET,
-                                 params, sizeof(params));
+                                 params, sizeof(params), 0);
 }
 
 // Health Server: attention support for a node with no reported faults.
@@ -523,14 +523,14 @@ static int server_health_receive(const mesh_access_pdu *message) {
     uint8_t remaining = mesh_health_attention_remaining();
     return ble_mesh_access_queue(message->src, MODEL_TTL,
                                  message->app_key_index,
-                                 OP_HEALTH_ATTENTION_STATUS, &remaining, 1);
+                                 OP_HEALTH_ATTENTION_STATUS, &remaining, 1, 0);
 }
 
 static inline int ble_mesh_onoff_get(uint16_t dst, uint16_t app_idx) {
     if (!mesh_models.ready ||
         !app_key_allowed(MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
     return ble_mesh_access_queue(dst, MODEL_TTL, app_idx,
-                                 OP_ONOFF_GET, NULL, 0);
+                                 OP_ONOFF_GET, NULL, 0, 0);
 }
 
 static inline int ble_mesh_onoff_get_virtual(const uint8_t label[16],
@@ -538,7 +538,7 @@ static inline int ble_mesh_onoff_get_virtual(const uint8_t label[16],
     if (!mesh_models.ready ||
         !app_key_allowed(MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
     return ble_mesh_access_queue_virtual(label, MODEL_TTL, app_idx,
-                                         OP_ONOFF_GET, NULL, 0);
+                                         OP_ONOFF_GET, NULL, 0, 0);
 }
 
 static inline int ble_mesh_onoff_set(
@@ -551,7 +551,7 @@ static inline int ble_mesh_onoff_set(
     uint8_t params[2] = {on, mesh_models.onoff_client.tid++};
     uint32_t opcode = acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK;
     return ble_mesh_access_queue(dst, MODEL_TTL, app_idx,
-                                 opcode, params, sizeof(params));
+                                 opcode, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_onoff_set_virtual(
@@ -564,7 +564,7 @@ static inline int ble_mesh_onoff_set_virtual(
     uint8_t params[2] = {on, mesh_models.onoff_client.tid++};
     return ble_mesh_access_queue_virtual(label, MODEL_TTL, app_idx,
         acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK,
-        params, sizeof(params));
+        params, sizeof(params), 0);
 }
 
 static int server_onoff_receive(const mesh_access_pdu *message) {
@@ -600,7 +600,7 @@ static int server_onoff_receive(const mesh_access_pdu *message) {
     uint8_t present = server->onoff;
     return ble_mesh_access_queue(message->src, MODEL_TTL,
                                  message->app_key_index,
-                                 OP_ONOFF_STATUS, &present, 1);
+                                 OP_ONOFF_STATUS, &present, 1, 0);
 }
 
 static inline int ble_mesh_models_poll(void) {

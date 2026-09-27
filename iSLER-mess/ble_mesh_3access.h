@@ -25,17 +25,20 @@ typedef struct {
 
 // Queue an Access message using an opcode in transmission byte order.
 // Returns 1 if accepted by transport, or 0 for invalid input/queue failure.
+// Set mic_64 to 1 for a segmented message with an 8-byte TransMIC.
 static inline int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
                                        uint16_t app_key_index, uint32_t opcode,
-                                       const uint8_t *params, size_t params_len) {
+                                       const uint8_t *params, size_t params_len,
+                                       uint8_t mic_64) {
     size_t opcode_len;
     if (opcode <= 0x7e) opcode_len = 1;
     else if (opcode >= 0x8000 && opcode <= 0xbfff) opcode_len = 2;
     else if (opcode >= 0xc00000 && opcode <= 0xffffff) opcode_len = 3;
     else return 0;
 
-    if ((!params && params_len) ||
-        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len) return 0;
+    if ((!params && params_len) || mic_64 > 1 ||
+        params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
+                     opcode_len) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
@@ -44,21 +47,23 @@ static inline int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
     return ble_mesh_transport_queue(dst, ttl, app_key_index, NULL,
-                                         data, opcode_len + params_len);
+                                         data, opcode_len + params_len, mic_64);
 }
 
 // Send an AppKey Access message to the virtual address derived from label.
 static inline int ble_mesh_access_queue_virtual(
     const uint8_t label[16], uint8_t ttl, uint16_t app_key_index,
     uint32_t opcode,
-    const uint8_t *params, size_t params_len
+    const uint8_t *params, size_t params_len, uint8_t mic_64
 ) {
     size_t opcode_len = opcode <= 0x7e ? 1 :
                         opcode >= 0x8000 && opcode <= 0xbfff ? 2 :
                         opcode >= 0xc00000 && opcode <= 0xffffff ? 3 : 0;
     if (!label || app_key_index == APP_KEY_INDEX_NONE || !opcode_len ||
+        mic_64 > 1 ||
         (!params && params_len) ||
-        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len) return 0;
+        params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
+                     opcode_len) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
@@ -68,7 +73,7 @@ static inline int ble_mesh_access_queue_virtual(
     if (params_len) memcpy(data + opcode_len, params, params_len);
     return ble_mesh_transport_queue(ble_mesh_virtual_address(label), ttl,
                                      app_key_index, label, data,
-                                     opcode_len + params_len);
+                                     opcode_len + params_len, mic_64);
 }
 
 // Poll transport and decode one Access message. The decoded params point into

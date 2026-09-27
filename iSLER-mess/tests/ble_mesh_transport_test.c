@@ -83,7 +83,7 @@ int main(void) {
 
     assert(ble_mesh_network_init(&a) == 1);
     assert(ble_mesh_transport_queue(b.unicast_address, 5, 0, NULL,
-                                         short_access, sizeof(short_access)) == 1);
+                                         short_access, sizeof(short_access), 0) == 1);
     assert(sent_count == 1);
     a = mesh_network.state;
     assert(ble_mesh_network_init(&b) == 1);
@@ -97,7 +97,7 @@ int main(void) {
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
     assert(ble_mesh_transport_queue(b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
-                                         long_access, sizeof(long_access)) == 1);
+                                         long_access, sizeof(long_access), 0) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
@@ -119,7 +119,7 @@ int main(void) {
     // A partial acknowledgment causes only the missing segment to be resent.
     sent_count = 0;
     assert(ble_mesh_transport_queue(b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
-                                         long_access, sizeof(long_access)) == 1);
+                                         long_access, sizeof(long_access), 0) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
@@ -158,9 +158,9 @@ int main(void) {
     assert(virtual_dst >= 0x8000 && virtual_dst <= 0xbfff);
     sent_count = 0;
     assert(ble_mesh_transport_queue(virtual_dst, 5, 0, NULL,
-                                         short_access, sizeof(short_access)) == 0);
+                                         short_access, sizeof(short_access), 0) == 0);
     assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
-                                         short_access, sizeof(short_access)) == 1);
+                                         short_access, sizeof(short_access), 0) == 1);
     a = mesh_network.state;
     assert(ble_mesh_network_init(&b) == 1);
     ble_mesh_transport_clear_labels();
@@ -186,7 +186,7 @@ int main(void) {
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
     assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
-                                         long_access, sizeof(long_access)) == 1);
+                                         long_access, sizeof(long_access), 0) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
@@ -209,7 +209,7 @@ int main(void) {
     memset(b.app_keys[1].key, 0x99, 16);
     assert(ble_mesh_network_init(&a) == 1);
     assert(ble_mesh_transport_queue(b.unicast_address, 5, 0x235, NULL,
-                                    short_access, sizeof(short_access)) == 1);
+                                    short_access, sizeof(short_access), 0) == 1);
     a = mesh_network.state;
     assert(ble_mesh_network_init(&b) == 1);
     assert(receive_frame(0, &received) == 1);
@@ -237,9 +237,48 @@ int main(void) {
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
     assert(ble_mesh_transport_queue(b.unicast_address, 5, 0x235, NULL,
-                                    short_access, sizeof(short_access)) == 1);
+                                    short_access, sizeof(short_access), 0) == 1);
     assert(ble_mesh_network_init(&b) == 1);
     assert(receive_frame(0, &received) == 1);
     assert(received.app_key_index == 0x235);
+
+    // An 8-byte TransMIC uses segmented transport even for a short message.
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0, NULL,
+                                    short_access, sizeof(short_access), 1) == 1);
+    assert(sent_count == 1 && transport_tx.active &&
+           transport_tx.seg_n == 0);
+    a = mesh_network.state;
+    assert(ble_mesh_network_init(&b) == 1);
+    mesh_net_message net;
+    assert(ble_mesh_net_receive(sent[0] + 2, sent_len[0] - 2, &net) == 1);
+    assert((net.transport[0] & 0x80) && (net.transport[1] & 0x80));
+    assert(ble_mesh_transport_receive(&net, &received) == 1);
+    assert(received.len == sizeof(short_access) &&
+           memcmp(received.data, short_access, sizeof(short_access)) == 0);
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(sent_count == 2);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(receive_frame(1, &received) == 0 && !transport_tx.active);
+
+    // 376 bytes plus an 8-byte TransMIC fills all 32 segments.
+    uint8_t max_access[376];
+    for (size_t i = 0; i < sizeof(max_access); i++) max_access[i] = (uint8_t)i;
+    sent_count = 0;
+    assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
+                                    max_access, sizeof(max_access) + 1, 1) == 0);
+    assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
+                                    max_access, sizeof(max_access), 1) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 32 && transport_tx.seg_n == 31);
+    assert(ble_mesh_network_init(&b) == 1);
+    ble_mesh_transport_clear_labels();
+    assert(ble_mesh_label_add(label) == 1);
+    for (int i = 0; i < 31; i++) assert(receive_frame(i, &received) == 0);
+    assert(receive_frame(31, &received) == 1);
+    assert(received.len == sizeof(max_access) &&
+           memcmp(received.data, max_access, sizeof(max_access)) == 0);
     return 0;
 }

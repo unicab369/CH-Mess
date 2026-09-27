@@ -15,7 +15,6 @@
 #define MESH_TRANSPORT_MAX_LABELS 4
 
 // TODO for broadly usable Access-message transport:
-// - Send segmented messages with a 64-bit TransMIC when requested.
 // - Improve SAR for concurrent messages, configurable timing, and group retries.
 // - Coordinate replay checks with out-of-order segmented messages in the network layer.
 
@@ -73,7 +72,7 @@ static inline void ble_mesh_transport_clear_labels(void) {
 
 static struct {
     uint8_t active;
-    uint8_t akf, aid, ttl, seg_n, next_seg, retries;
+    uint8_t akf, aid, ttl, seg_n, next_seg, retries, mic_64;
     uint16_t src, dst, seq_zero, upper_len;
     uint32_t seq_auth, iv_index, acked, last_tx_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
@@ -210,7 +209,8 @@ static int transport_segment_queue(void) {
     uint8_t lower[16];
 
     lower[0] = 0x80 | (transport_tx.akf << 6) | transport_tx.aid;
-    lower[1] = (uint8_t)(transport_tx.seq_zero >> 6);
+    lower[1] = (uint8_t)((transport_tx.mic_64 << 7) |
+                         (transport_tx.seq_zero >> 6));
     lower[2] = (uint8_t)(((transport_tx.seq_zero & 0x3f) << 2) | (seg_o >> 3));
     lower[3] = (uint8_t)((seg_o << 5) | transport_tx.seg_n);
 
@@ -225,15 +225,17 @@ static int transport_segment_queue(void) {
 }
 
 // Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
-// Sends a 32-bit TransMIC.
+// Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
 // Only one segmented outgoing access message may be active at a time.
 static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
                                                 uint16_t app_key_index,
                                                 const uint8_t label[16],
-                                                const uint8_t *access, size_t len) {
+                                                const uint8_t *access, size_t len,
+                                                uint8_t mic_64) {
     // A destination in the virtual address range requires its Label UUID.
-    if (!mesh_network.ready || !access || len == 0 ||
-        len > MESH_TRANSPORT_MAX_ACCESS || ttl > 0x7f || dst == 0 ||
+    if (!mesh_network.ready || !access || len == 0 || mic_64 > 1 ||
+        len > MESH_TRANSPORT_MAX_UPPER - (mic_64 ? 8u : 4u) ||
+        ttl > 0x7f || dst == 0 ||
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
         (label && app_key_index == APP_KEY_INDEX_NONE) || transport_tx.active
     ) return 0;
@@ -253,7 +255,8 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
         aid = transport_app_aid(key);
     }
 
-    size_t upper_len = len + 4;
+    size_t mic_len = mic_64 ? 8 : 4;
+    size_t upper_len = len + mic_len;
     uint8_t seg_n = upper_len > 15 ? (uint8_t)((upper_len - 1) / 12) : 0;
     uint32_t seq = state->next_seq;
     if (seq > 0xffffff || seq + seg_n > 0xffffff) return 0;
@@ -262,11 +265,11 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
     uint32_t iv = state->iv_index - (state->iv_update ? 1 : 0);
 
-    transport_nonce(nonce, !akf, 0, seq, state->unicast_address, dst, iv);
+    transport_nonce(nonce, !akf, mic_64, seq, state->unicast_address, dst, iv);
     if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16 : 0, access, len,
-                            upper, upper + len, 4) != CCM_OK) return 0;
+                            upper, upper + len, mic_len) != CCM_OK) return 0;
 
-    if (upper_len <= 15) {
+    if (!mic_64 && upper_len <= 15) {
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
@@ -276,6 +279,7 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     transport_tx.active = 1;
     transport_tx.akf = akf;
     transport_tx.aid = aid;
+    transport_tx.mic_64 = mic_64;
     transport_tx.ttl = ttl;
     transport_tx.src = state->unicast_address;
     transport_tx.dst = dst;
