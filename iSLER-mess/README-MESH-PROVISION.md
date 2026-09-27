@@ -24,15 +24,15 @@
 | Low Power Node | Sleeps and polls its Friend for messages. |
 
 ## BLE Mesh Provisioning
- *  1. Bearer establishment (link up)
- *  2. Provisioning Invite
- *  3. Provisioning Capabilities
- *  4. Provisioning Start
- *  5. Public-key exchange
- *  6. Authentication (Confirmation and Random)
- *  7. Provisioning Data
- *  8. Provisioning Complete
- *  9. Bearer closure (link down)
+ * Bearer establishment (link up)
+ * Provisioning Invite
+ * Provisioning Capabilities
+ * Provisioning Start
+ * Public-key exchange
+ * Authentication (Confirmation and Random)
+ * Provisioning Data
+ * Provisioning Complete
+ * Bearer closure (link down)
 
 ## BLE Mesh address ranges
 
@@ -76,9 +76,9 @@ This project currently uses PB-ADV, Mesh Message, Unprovisioned Device and
 Secure Network beacons, Access messages, and Segment Acknowledgments. It does
 not implement the GATT proxy bearer or segmented Transport Control messages.
 
+## PB-ADV provisioning procedure
 
-
-Bluetooth Mesh provisioning procedure over the PB-ADV bearer.
+```text
 Provisioner                                                   Provisionee
         |                                                              |
 STEP_1  |<<< MESH_BEACON_AD_TYPE (0x2B) -------------------------------|
@@ -142,77 +142,77 @@ STEP_15 |<<< PROV_OP_COMPLETE (0x08) ----------------------------------|
         |                                                              |
 STEP_16 |--- MESH_PROV_AD_TYPE (0x29) ------------------------------>>>|
         |    PB_LINK_CLOSE (0x0B): Link ID + close reason              |
+```
 
 The provisionee sends the Capabilities message. The provisioner reads
 those capabilities and chooses the parameters for the Start message.
 
 
-Advertising PDU
-| Preamble | Access Address | LL Header | Payload      | CRC     |
-| 1 byte   | 4 bytes        | 2 bytes   | 0-37 bytes   | 3 bytes |
+## Advertising packet layout
 
+| Field | Size |
+| --- | ---: |
+| Preamble | 1 byte |
+| Advertising access address | 4 bytes |
+| Link Layer header | 2 bytes |
+| Payload: AdvA (6 bytes) and AdvData (up to 31 bytes) | 6–37 bytes |
+| CRC | 3 bytes |
 
-BLE Link Layer Packet carrying a SIG Mesh message (advertising bearer)
-├─ Preamble: AA
-├─ Access Address (0x8E89BED6, advertising channels only)
-├─ Advertising Physical Channel PDU
-│   ├─ LL Header (2 B)
-│   │   ├─ Byte 0: PDU Type (4) | RFU (1) | TxAdd (1) | RxAdd (1) | RFU (1)
-│   │   └─ Byte 1: Length (8 bits) — length of the LL payload in bytes
-│   └─ Payload (0-37 B)
-│       ├─ AdvA (6 B)
-│       └─ AdvData (0-31 B)
-│           └─ AD Structure
-│               ├─ AD Length (1 B)
-│               ├─ AD Type = 0x2A  ← Mesh Message
-│               └─ AD Data = Mesh Network PDU (29 bytes max)
-│                   ├─ Network Header (9 B): IVI|NID, CTL|TTL, SEQ, SRC, DST
-│                   ├─ Transport PDU (encrypted)
-│                   └─ NetMIC (4 B Access / 8 B Control)
-└─ CRC (3 B)
+A Mesh Message on the advertising bearer is carried inside AdvData:
 
-Example:
-| Offset | Byte | Field              | Value
-| 0      | 4    | Preamble           | 0xAA
-| 1-4    | 4    | Access Addr        | D6 BE B9 8E
-| 5      | 1    | LL Header byte0    | 0x20 (ADV_NONCONN_IND in bits 7-4, TxAdd=0, RxAdd=0)
-| 6      | 1    | LL Header byte1    | 0x14 (Length = 20)
-| 7-12   | 6    | AdvA               | FF EE DD CC BB AA
-Starting AD structures
-| 13     | 1    | AD Length          | 0x0E (14 = 1 AD type + 12 mesh PDU)
-| 14     | 1    | AD Type            | 0x2A (Mesh Message)
-|15-27   | 13   | AD Data = Mesh Network PDU
-                   ├─ Network header (9 B)      IVI|NID, CTL|TTL, SEQ, SRC, DST
-                   ├─ Transport PDU (0 B)       (empty in this minimal example)
-                   └─ NetMIC (4 B)              XX XX XX XX
-|28-30   | 3    | CRC                  XX XX XX
+```text
+BLE advertising packet
+├── Preamble
+├── Advertising access address (0x8E89BED6)
+├── Link Layer header
+├── Payload
+│   ├── AdvA (6 bytes)
+│   └── AdvData (up to 31 bytes)
+│       └── AD structure
+│           ├── Length (1 byte)
+│           ├── Type: Mesh Message (0x2A, 1 byte)
+│           └── Mesh Network PDU (up to 29 bytes)
+│               ├── Network header (9 bytes)
+│               ├── Lower Transport PDU
+│               └── NetMIC (4 bytes for Access; 8 for Control)
+└── CRC
+```
 
+For example, a one-byte Access message with a 32-bit TransMIC has a 19-byte
+Network PDU: 9 bytes of network header, 6 bytes of lower transport data
+(1-byte transport header, 1-byte Access message, 4-byte TransMIC), and a
+4-byte NetMIC. Its AD structure is 21 bytes: Length = 20 (one type byte plus
+19 Network PDU bytes), Type = 0x2A, and the Network PDU. With a 6-byte AdvA,
+the Link Layer payload length is 27 bytes. Encrypted fields are not shown as
+fixed byte values.
 
-For PB-ADV, the layers are:
-BLE advertising packet Payload
-└── AdvA (6 B)
-└── AdvData (0-31 B)
-      └── AD Structure
-           ├── AD Length (1 B)
-           ├── AD Type = 0x29          // Mesh Provisioning
-           └── PB-ADV PDU
-               ├── Link ID             // 4 bytes
-               ├── Transaction Number  // 1 byte
-               └── Generic Provisioning PDU
+PB-ADV uses a different AD type in the same advertising payload:
 
+```text
+BLE advertising packet payload
+├── AdvA (6 bytes)
+└── AdvData
+    └── AD structure
+        ├── Length (1 byte)
+        ├── Type: PB-ADV (0x29, 1 byte)
+        └── PB-ADV PDU
+            ├── Link ID (4 bytes)
+            ├── Transaction Number (1 byte)
+            └── Generic Provisioning Control PDU (link control, ack, or data)
+```
 
-BLE Mesh PDU used here (up to 34 bytes):
-+--------+--------+--------+--------+--------+--------+--------+--------+
-| IVI(1) | NID(1) | CTL(1) | TTL(1) | SEQ(3) | SRC(2) | ...             |
-+--------+--------+--------+--------+--------+--------+--------+--------+
-| Encrypted DST + Transport/Application Payload + NetMIC               |
-+-----------------------------------------------------------------------+
-Mesh Network PDU security layout:
-Field             Protection                        Key/material
-IVI/NID           transmitted as-is                 Network ID
-CTL/TTL           obfuscated                        PrivacyKey
-SEQ               obfuscated                        PrivacyKey
-SRC               obfuscated                        PrivacyKey
-DST               AES-CCM encrypted                 EncryptionKey
-TransportPDU      AES-CCM encrypted                 EncryptionKey
-NetMIC            AES-CCM authentication tag        EncryptionKey
+## Mesh Network PDU fields
+
+The Network PDU is at most 29 bytes on the advertising bearer. Its header
+contains IVI/NID, CTL/TTL, SEQ, SRC, and DST; DST is encrypted with the
+transport payload.
+
+| Field | Protection | Key material |
+| --- | --- | --- |
+| IVI/NID | Sent in clear | NID derived from NetKey |
+| CTL/TTL | Obfuscated | PrivacyKey |
+| SEQ | Obfuscated | PrivacyKey |
+| SRC | Obfuscated | PrivacyKey |
+| DST | AES-CCM encrypted | EncryptionKey |
+| TransportPDU | AES-CCM encrypted | EncryptionKey |
+| NetMIC | AES-CCM authentication tag | EncryptionKey |
