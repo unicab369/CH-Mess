@@ -215,8 +215,13 @@ typedef struct {
 static const uint8_t no_oob_auth[16] = {0};
 
 /* Application-owned provisioning data and persistent storage interfaces. */
-int PROVISIONER_GET_DATA(prov_data *data);
-int PROVISIONER_STORE_NODE_DEVKEY(const uint8_t device_key[16], uint16_t unicast_address);
+// Reserve num_elements unicast addresses before sending Provisioning Data.
+int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements);
+// Persist the new node's Device Key after Provisioning Complete.
+int PROVISIONER_STORE_NODE_DEVKEY(
+    const uint8_t device_key[16], uint16_t unicast_address,
+    uint8_t num_elements
+);
 int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]);
 static int PROVISIONER_CHOOSE_PARAMS(const prov_caps *caps, prov_start *out);
 
@@ -1122,7 +1127,7 @@ void provisioner_poll(void) {
                                 session.random, session.peer_random,
                                 session.session_key, session.session_nonce,
                                 session.device_key) != 0 ||
-            PROVISIONER_GET_DATA(&data) != 0 ||
+            PROVISIONER_GET_DATA(&data, provisioner.num_elements) != 0 ||
             data.net_key_index > 0x0FFF || (data.flags & 0xFC) != 0 ||
             data.unicast_address == 0 || data.unicast_address > 0x7FFF ||
             provisioner.num_elements == 0 ||
@@ -1218,7 +1223,7 @@ void provisioner_poll(void) {
         adv_data[11] == PROV_OP_COMPLETE
     ) {
         int success = PROVISIONER_STORE_NODE_DEVKEY(session.device_key,
-                                                provisioner.unicast_address) == 0 &&
+                        provisioner.unicast_address, provisioner.num_elements) == 0 &&
                       pb_ack_rx(adv_data[6]) == 1 &&
                       pb_send_link_close(PB_CLOSE_SUCCESS) == 0;
         provisioner.state = success ? PROVISIONER_COMPLETE
