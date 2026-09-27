@@ -81,7 +81,7 @@ int main(void) {
     const uint8_t short_access[] = {0x82, 0x01, 0x01};
 
     assert(ble_mesh_network_init(&a) == 1);
-    assert(ble_mesh_transport_send(b.unicast_address, 5, 0,
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0,
                                    short_access, sizeof(short_access)) == 1);
     assert(sent_count == 1);
     a = mesh_network.state;
@@ -95,10 +95,10 @@ int main(void) {
     for (int i = 0; i < 40; i++) long_access[i] = (uint8_t)i;
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
-    assert(ble_mesh_transport_send(b.unicast_address, 5, 1,
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1,
                                    long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
-        assert(transport_send_segment() == 1);
+        assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
     a = mesh_network.state;
 
@@ -117,10 +117,10 @@ int main(void) {
 
     // A partial acknowledgment causes only the missing segment to be resent.
     sent_count = 0;
-    assert(ble_mesh_transport_send(b.unicast_address, 5, 1,
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1,
                                    long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
-        assert(transport_send_segment() == 1);
+        assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
     a = mesh_network.state;
 
@@ -135,7 +135,7 @@ int main(void) {
     assert(ble_mesh_network_init(&a) == 1);
     assert(receive_frame(4, &received) == 0);
     assert(transport_tx.acked == 0x0b);
-    assert(transport_send_segment() == 1);
+    assert(transport_segment_queue() == 1);
     assert(sent_count == 6);
     a = mesh_network.state;
 

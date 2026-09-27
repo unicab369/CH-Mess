@@ -19,7 +19,7 @@ static uint8_t sent_ttl, sent_device_key;
 static mesh_access_message incoming;
 static int incoming_ready;
 
-static int ble_mesh_transport_send(uint16_t dst, uint8_t ttl,
+static int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
                                    uint8_t use_device_key,
                                    const uint8_t *data, size_t len) {
     memcpy(sent, data, len);
@@ -87,20 +87,27 @@ int main(void) {
     const uint8_t payload[] = {0xe3, 0x36, 0x01, 0x12, 0x34};
     memcpy(message.data, payload, sizeof(payload));
     handled = 1;
-    assert(ble_mesh_access_receive(&message) == 1);
+    incoming = message;
+    incoming_ready = 1;
+    assert(ble_mesh_access_poll() == 1);
     assert(received_opcode == 0xe33601 && received_src == 0x1201 &&
            received_dst == 0x1202 && received_key == 0x0123 &&
            received_ttl == 4 && received_params_len == 2 &&
            memcmp(received_params, params, 2) == 0);
 
     handled = 0;
-    assert(ble_mesh_access_receive(&message) == 0);
+    incoming = message;
+    incoming_ready = 1;
+    assert(ble_mesh_access_poll() == 0);
     handled = 1;
     message.len = 1;
-    assert(ble_mesh_access_receive(&message) == 0); // truncated vendor opcode
+    incoming = message;
+    incoming_ready = 1;
+    assert(ble_mesh_access_poll() == 0); // truncated vendor opcode
     message.data[0] = 0x7f;
-    assert(ble_mesh_access_receive(&message) == 0); // reserved opcode
-    assert(ble_mesh_access_receive(NULL) == -1);
+    incoming = message;
+    incoming_ready = 1;
+    assert(ble_mesh_access_poll() == 0); // reserved opcode
 
     incoming = message;
     incoming.data[0] = 0x01;

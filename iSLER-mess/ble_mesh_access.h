@@ -20,33 +20,6 @@ typedef struct {
 // and is bound to the AppKey (or uses the Device Key). Return 1 if handled.
 int BLE_MESH_ACCESS_HANDLE(const mesh_access_pdu *message);
 
-// Parse a decrypted Access message and offer it to the model handler.
-// Returns 1 if handled, 0 if malformed or ignored, and -1 for a null argument.
-static inline int ble_mesh_access_receive(const mesh_access_message *message) {
-    if (!message) return -1;
-    if (!message->len || message->len > sizeof(message->data)) return 0;
-
-    uint8_t first = message->data[0];
-    size_t opcode_len = (first & 0x80) == 0 ? 1 :
-                        (first & 0xc0) == 0x80 ? 2 : 3;
-    if (first == 0x7f || message->len < opcode_len) return 0;
-
-    uint32_t opcode = first;
-    for (size_t i = 1; i < opcode_len; i++)
-        opcode = (opcode << 8) | message->data[i];
-
-    mesh_access_pdu access = {
-        .src = message->src,
-        .dst = message->dst,
-        .app_key_index = message->app_key_index,
-        .ttl = message->ttl,
-        .opcode = opcode,
-        .params = message->data + opcode_len,
-        .params_len = message->len - opcode_len
-    };
-    return BLE_MESH_ACCESS_HANDLE(&access) == 1;
-}
-
 // Queue an Access message using an opcode in transmission byte order.
 // Returns 1 if accepted by transport, or 0 for invalid input/send failure.
 static inline int ble_mesh_access_send(uint16_t dst, uint8_t ttl,
@@ -67,7 +40,7 @@ static inline int ble_mesh_access_send(uint16_t dst, uint8_t ttl,
     }
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
-    return ble_mesh_transport_send(dst, ttl, use_device_key,
+    return ble_mesh_transport_queue(dst, ttl, use_device_key,
                                    data, opcode_len + params_len);
 }
 
@@ -77,7 +50,27 @@ static inline int ble_mesh_access_poll(void) {
     mesh_access_message message;
     int result = ble_mesh_transport_poll(&message);
     if (result <= 0) return result;
-    return ble_mesh_access_receive(&message);
+    if (!message.len || message.len > sizeof(message.data)) return 0;
+
+    uint8_t first = message.data[0];
+    size_t opcode_len = (first & 0x80) == 0 ? 1 :
+                        (first & 0xc0) == 0x80 ? 2 : 3;
+    if (first == 0x7f || message.len < opcode_len) return 0;
+
+    uint32_t opcode = first;
+    for (size_t i = 1; i < opcode_len; i++)
+        opcode = (opcode << 8) | message.data[i];
+
+    mesh_access_pdu access = {
+        .src = message.src,
+        .dst = message.dst,
+        .app_key_index = message.app_key_index,
+        .ttl = message.ttl,
+        .opcode = opcode,
+        .params = message.data + opcode_len,
+        .params_len = message.len - opcode_len
+    };
+    return BLE_MESH_ACCESS_HANDLE(&access) == 1;
 }
 
 #endif

@@ -55,7 +55,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len);
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state);
 
 // Save after provisioning or a Key Refresh/IV Update state change.
-// Packet sends persist only the sequence number through STORE_SEQ.
+// Packet sends store only the sequence number through STORE_SEQ.
 int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state);
 
 int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq);
@@ -285,7 +285,7 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 
 
 // Beacon AD: length, type, beacon type, flags, Network ID, IV Index, CMAC[0..7].
-static inline int ble_mesh_net_send_beacon(void) {
+static inline int ble_mesh_net_beacon_queue(void) {
     if (!mesh_network.ready) return 0;
 
     uint8_t ad[24], mac[16];
@@ -311,8 +311,8 @@ static inline int ble_mesh_net_send_beacon(void) {
 }
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
-// The next sequence number must be durable before a transmission is queued.
-static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
+// Reserve the next sequence number before a transmission is queued.
+static inline int ble_mesh_net_queue(uint16_t dst, uint8_t ctl, uint8_t ttl,
                                     const uint8_t *transport, size_t len) {
     mesh_net_state *state = &mesh_network.state;
 

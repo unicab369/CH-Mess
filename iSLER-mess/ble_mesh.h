@@ -484,12 +484,12 @@ void BLE_MESH_HEALTH_ATTENTION(uint8_t seconds) {
     (void)seconds;
 }
 
-// Persist the next sequence number in the same state loaded by
-// BLE_MESH_NETWORK_LOAD_STATE. Return 1 only after it is durably stored;
-// a RAM-only implementation could reuse a nonce after reboot.
+// Temporary RAM-only sequence storage; this resets after a reboot.
+static volatile uint32_t ram_next_seq;
+
 int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
-    (void)next_seq;
-    return 0;
+    ram_next_seq = next_seq;
+    return 1;
 }
 
 

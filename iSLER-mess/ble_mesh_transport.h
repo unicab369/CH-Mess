@@ -119,7 +119,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
     return 1;
 }
 
-static int transport_send_segment(void) {
+static int transport_segment_queue(void) {
     if (!transport_tx.active) return 0;
 
     while (transport_tx.next_seg <= transport_tx.seg_n &&
@@ -152,7 +152,7 @@ static int transport_send_segment(void) {
     if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
     memcpy(lower + 4, transport_tx.upper + offset, count);
 
-    if (!ble_mesh_net_send(transport_tx.dst, 0, transport_tx.ttl,
+    if (!ble_mesh_net_queue(transport_tx.dst, 0, transport_tx.ttl,
                            lower, count + 4)) return 0;
     transport_tx.next_seg++;
     transport_tx.last_tx_ms = GET_MILLIS();
@@ -162,7 +162,7 @@ static int transport_send_segment(void) {
 // Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
 // Sends a 32-bit TransMIC; virtual addresses are not supported yet.
 // Only one segmented outgoing access message may be active at a time.
-static inline int ble_mesh_transport_send(uint16_t dst, uint8_t ttl,
+static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
                                            uint8_t use_device_key,
                                            const uint8_t *access, size_t len) {
     if (!mesh_network.ready || !access || len == 0 ||
@@ -203,7 +203,7 @@ static inline int ble_mesh_transport_send(uint16_t dst, uint8_t ttl,
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
-        return ble_mesh_net_send(dst, 0, ttl, lower, upper_len + 1);
+        return ble_mesh_net_queue(dst, 0, ttl, lower, upper_len + 1);
     }
 
     transport_tx.active = 1;
@@ -222,7 +222,7 @@ static inline int ble_mesh_transport_send(uint16_t dst, uint8_t ttl,
     transport_tx.acked = 0;
     memcpy(transport_tx.upper, upper, upper_len);
 
-    if (transport_send_segment() != 1) {
+    if (transport_segment_queue() != 1) {
         transport_tx.active = 0;
         return 0;
     }
@@ -242,7 +242,7 @@ static int transport_send_ack(void) {
         (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
         (uint8_t)(mask >> 8), (uint8_t)mask
     };
-    if (!ble_mesh_net_send(transport_rx.src, 1, transport_rx.ttl,
+    if (!ble_mesh_net_queue(transport_rx.src, 1, transport_rx.ttl,
                            pdu, sizeof(pdu))) return -1;
     transport_rx.ack_pending = 0;
     return 1;
@@ -391,7 +391,7 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
 
     if (transport_tx.active) {
         if (transport_tx.next_seg <= transport_tx.seg_n) {
-            if (transport_send_segment() < 0) return -1;
+            if (transport_segment_queue() < 0) return -1;
         }
         else if (transport_tx.dst >= 0xc000) {
             // Group destinations do not send Segment Acknowledgments.
