@@ -4,7 +4,7 @@
 #ifndef ISLER_BLE_MESH_ACCESS_H
 #define ISLER_BLE_MESH_ACCESS_H
 
-#include "ble_mesh_transport.h"
+#include "ble_mesh_2transport.h"
 
 // TODO for a broadly usable Access layer:
 // - Route messages to models on multiple elements and subscribed group addresses.

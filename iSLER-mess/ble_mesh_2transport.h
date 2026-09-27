@@ -4,7 +4,7 @@
 #ifndef ISLER_BLE_MESH_TRANSPORT_H
 #define ISLER_BLE_MESH_TRANSPORT_H
 
-#include "ble_mesh_network.h"
+#include "ble_mesh_1network.h"
 
 #define MESH_TRANSPORT_MAX_ACCESS 380
 #define MESH_TRANSPORT_MAX_UPPER 384

@@ -1,7 +1,7 @@
 #ifndef ISLER_BLE_MESH_MODELS_H
 #define ISLER_BLE_MESH_MODELS_H
 
-#include "ble_mesh_access.h"
+#include "ble_mesh_3access.h"
 
 #define MESH_MODEL_CONFIG_SERVER 0x0000
 #define MESH_MODEL_HEALTH_SERVER 0x0002

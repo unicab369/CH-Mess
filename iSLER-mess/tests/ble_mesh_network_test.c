@@ -10,7 +10,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     AES_encrypt(in, out, &aes);
 }
 
-#include "../ble_mesh_network.h"
+#include "../ble_mesh_1network.h"
 
 static uint8_t sent[31];
 static size_t sent_len;

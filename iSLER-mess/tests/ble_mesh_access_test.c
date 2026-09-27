@@ -46,7 +46,7 @@ static int ble_mesh_transport_poll(mesh_access_message *out) {
     return 1;
 }
 
-#include "../ble_mesh_access.h"
+#include "../ble_mesh_3access.h"
 
 int main(void) {
     const uint8_t params[] = {0x12, 0x34};

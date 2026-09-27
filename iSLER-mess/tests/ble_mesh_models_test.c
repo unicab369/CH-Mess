@@ -85,7 +85,7 @@ static int ble_mesh_access_poll(mesh_access_message *message,
     return 1;
 }
 
-#include "../ble_mesh_models.h"
+#include "../ble_mesh_4models.h"
 
 static mesh_models_state saved;
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
