@@ -16,7 +16,7 @@ static uint8_t sent[32][31];
 static size_t sent_len[32];
 static int sent_count;
 
-int BLE_MESH_TX(const uint8_t *ad, size_t len) {
+int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     assert(sent_count < 32 && len <= sizeof(sent[0]));
     memcpy(sent[sent_count], ad, len);
     sent_len[sent_count++] = len;
@@ -69,7 +69,7 @@ static mesh_net_state node(uint16_t address) {
 }
 
 static int receive_frame(int index, mesh_access_message *access) {
-    mesh_network_message network;
+    mesh_net_message network;
     assert(ble_mesh_net_receive(sent[index] + 2, sent_len[index] - 2,
                                 &network) == 1);
     return ble_mesh_transport_receive(&network, access);

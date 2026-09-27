@@ -91,13 +91,13 @@
 
 // Queue a copy of a complete AD structure, including its length byte and AD
 // type. Return 0 if queued, or -1 if the radio queue cannot accept it.
-int BLE_MESH_TX(const uint8_t *adv_data, size_t len);
+int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len);
 
 // Queue a copy of an AD structure for transmission after a random delay in
 // the inclusive range. PB-ADV Transaction Acknowledgments use 20-50 ms.
-// Later BLE_MESH_TX calls must remain behind this item in transmit order.
+// Later BLE_MESH_QUEUE_TX calls must remain behind this item in transmit order.
 // Return 0 if queued, or -1 if the radio queue cannot accept it.
-int BLE_MESH_TX_DELAYED(
+int BLE_MESH_QUEUE_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 );
@@ -333,7 +333,7 @@ static int pb_tx_start(
     tx.active = 1;
 
     for (uint8_t i = 0; i < tx.count; ++i) {
-        if (BLE_MESH_TX(tx.adv[i], tx.len[i]) != 0) {
+        if (BLE_MESH_QUEUE_TX(tx.adv[i], tx.len[i]) != 0) {
             tx.active = 0;
             return -1;
         }
@@ -362,7 +362,7 @@ static int pb_tx_poll(uint32_t now) {
     if ((uint32_t)(now - tx.last_tx_ms) < PB_RETRANSMIT_MS) return 0;
 
     for (uint8_t i = 0; i < tx.count; ++i) {
-        if (BLE_MESH_TX(tx.adv[i], tx.len[i]) != 0) return -1;
+        if (BLE_MESH_QUEUE_TX(tx.adv[i], tx.len[i]) != 0) return -1;
     }
     tx.last_tx_ms = now;
     return 0;
@@ -382,7 +382,7 @@ static int pb_queue_gpc_ack(uint8_t tx_num) {
         PB_GPC_ACK
     };
 
-    return BLE_MESH_TX_DELAYED(ack, sizeof(ack), 20, 50) == 0;
+    return BLE_MESH_QUEUE_TX_DELAYED(ack, sizeof(ack), 20, 50) == 0;
 }
 
 // Returns 1 after queueing the ACK and recording the received transaction,
@@ -1919,7 +1919,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             memcpy(&beacon[3], provisionee.device_uuid, sizeof(provisionee.device_uuid));
             memcpy(&beacon[19], oob_info, 2);
 
-            if (BLE_MESH_TX(beacon, sizeof(beacon)) != 0) {
+            if (BLE_MESH_QUEUE_TX(beacon, sizeof(beacon)) != 0) {
                 provisionee.state = PROVISIONEE_FAILED;
             } else {
                 last_beacon_ms = now;

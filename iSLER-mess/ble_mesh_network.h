@@ -47,10 +47,10 @@ typedef struct {
     uint16_t dst;
     uint8_t transport_len;
     uint8_t transport[16];
-} mesh_network_message;
+} mesh_net_message;
 
-// BLE_MESH_TX queues a complete AD structure; success is 0.
-int BLE_MESH_TX(const uint8_t *adv_data, size_t len);
+// Queue a complete AD structure; success is 0.
+int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len);
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len);
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state);
 
@@ -307,7 +307,7 @@ static inline int ble_mesh_net_send_beacon(void) {
 
     aes_cmac(key->beacon_key, ad + 3, 13, mac);
     memcpy(ad + 16, mac, 8);
-    return BLE_MESH_TX(ad, sizeof(ad)) == 0;
+    return BLE_MESH_QUEUE_TX(ad, sizeof(ad)) == 0;
 }
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
@@ -351,7 +351,7 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
 
     if (BLE_MESH_NETWORK_STORE_SEQ(seq + 1) != 1) return 0;
     state->next_seq = seq + 1;
-    return BLE_MESH_TX(ad, (size_t)ad[0] + 1) == 0;
+    return BLE_MESH_QUEUE_TX(ad, (size_t)ad[0] + 1) == 0;
 }
 
 
@@ -449,7 +449,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 // lower-transport bytes. Returns 1 if accepted, 0 if ignored, or -1 for bad
 // arguments. A full replay list rejects new sources until reinitialized.
 static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
-                                        mesh_network_message *message) {
+                                        mesh_net_message *message) {
     if (!pdu || !message) return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
         return 0;
@@ -532,7 +532,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
 
 // Poll the shared advertising bearer and accept only Mesh Message AD data.
-static inline int ble_mesh_net_poll(mesh_network_message *message) {
+static inline int ble_mesh_net_poll(mesh_net_message *message) {
     int tick_result = 0;
     uint64_t now;
 

@@ -19,7 +19,7 @@ static int storage_fails;
 static mesh_net_state saved_state;
 static uint32_t current_seconds;
 
-int BLE_MESH_TX(const uint8_t *ad, size_t len) {
+int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     memcpy(sent, ad, len);
     sent_len = len;
     return 0;
@@ -123,7 +123,7 @@ int main(void) {
 
     state.unicast_address = 0x0003;
     assert(ble_mesh_network_init(&state) == 1);
-    mesh_network_message message;
+    mesh_net_message message;
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     assert(message.ctl == 1 && message.ttl == 0 && message.seq == 1);
     assert(message.src == 0x1201 && message.dst == 0xfffd);

@@ -10,7 +10,7 @@
 #define MESH_TRANSPORT_MAX_UPPER 384
 #define MESH_TRANSPORT_SEGMENT_SIZE 12
 #define MESH_TRANSPORT_RETRY_MS 1000
-#define MESH_TRANSPORT_RX_TIMEOUT_MS 10000
+#define MESH_TRANSPORT_RX_TIMEOUT_MS 5000
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -142,12 +142,11 @@ static int transport_send_segment(void) {
     uint8_t seg_o = transport_tx.next_seg;
     size_t offset = (size_t)seg_o * MESH_TRANSPORT_SEGMENT_SIZE;
     size_t count = transport_tx.upper_len - offset;
-    uint16_t seq_zero = transport_tx.seq_zero;
     uint8_t lower[16];
 
     lower[0] = 0x80 | (transport_tx.akf << 6) | transport_tx.aid;
-    lower[1] = (uint8_t)(seq_zero >> 6);
-    lower[2] = (uint8_t)(((seq_zero & 0x3f) << 2) | (seg_o >> 3));
+    lower[1] = (uint8_t)(transport_tx.seq_zero >> 6);
+    lower[2] = (uint8_t)(((transport_tx.seq_zero & 0x3f) << 2) | (seg_o >> 3));
     lower[3] = (uint8_t)((seg_o << 5) | transport_tx.seg_n);
 
     if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
@@ -251,7 +250,7 @@ static int transport_send_ack(void) {
 
 // Consume one authenticated Network message. Returns 1 for an Access message,
 // 0 for an incomplete/ignored message, or -1 for bad arguments.
-static inline int ble_mesh_transport_receive(const mesh_network_message *net,
+static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                                               mesh_access_message *out) {
     if (!net || !out) return -1;
     if (!net->transport_len || net->transport_len > sizeof(net->transport)) return 0;
@@ -374,7 +373,7 @@ static inline int ble_mesh_transport_receive(const mesh_network_message *net,
 // Returns 1 with an Access message, 0 if none, or -1 for a send/radio error.
 static inline int ble_mesh_transport_poll(mesh_access_message *out) {
     if (!out) return -1;
-    mesh_network_message net;
+    mesh_net_message net;
     int received = ble_mesh_net_poll(&net);
     if (received < 0) return -1;
     int result = received ? ble_mesh_transport_receive(&net, out) : 0;

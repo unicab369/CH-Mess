@@ -108,11 +108,11 @@ static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t send_
     return 0;
 }
 
-int BLE_MESH_TX(const uint8_t *adv_data, size_t len) {
+int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
     return ble_mesh_queue_ad(adv_data, len, GET_MILLIS());
 }
 
-int BLE_MESH_TX_DELAYED(
+int BLE_MESH_QUEUE_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
