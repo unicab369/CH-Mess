@@ -9,7 +9,7 @@
 #define MESH_NETWORK_AD_TYPE 0x2A
 #define MESH_NETWORK_BEACON_AD_TYPE 0x2B
 #define MESH_NETWORK_MAX_PDU 29
-#define MESH_NETWORK_IV_MIN_SECONDS (96 * 60 * 60)
+#define MESH_NETWORK_IV_MIN_SECONDS (96ull * 60u * 60u)
 // This bounded RAM replay list does not survive reboot. Persist it before
 // relying on receive-side replay protection across power cycles.
 #define MESH_NETWORK_REPLAY_SLOTS 16
@@ -33,7 +33,7 @@ typedef struct {
     uint8_t iv_update;
     uint8_t iv_skip_min_time; // newly provisioned during IV Update
     uint8_t iv_time_valid;
-    uint32_t iv_state_start_time;
+    uint64_t iv_state_start_time;
     uint32_t next_seq;
     uint16_t unicast_address;
 } mesh_net_state;
@@ -42,6 +42,7 @@ typedef struct {
     uint8_t ctl;
     uint8_t ttl;
     uint32_t seq;
+    uint32_t iv_index;
     uint16_t src;
     uint16_t dst;
     uint8_t transport_len;
@@ -61,7 +62,7 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq);
 
 // Network storage and time interfaces return 1 on success, 0 on failure.
 // Return durable monotonic seconds across reboots, or 0 if unavailable.
-int BLE_MESH_NETWORK_TIME_SECONDS(uint32_t *seconds);
+int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds);
 
 typedef struct {
     uint8_t nid;
@@ -118,7 +119,7 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
     if (!state || state->unicast_address == 0 ||
         state->unicast_address > 0x7fff ||
         state->net_key_index > 0x0fff ||
-        state->next_seq > 0x1000000 ||
+        state->next_seq > 0x1000000u ||
         state->iv_update > 1 ||
         state->iv_skip_min_time > 1 ||
         (state->iv_update && state->iv_index == 0) ||
@@ -229,7 +230,7 @@ static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
     return mesh_commit(&next);
 }
 
-static int iv_time_ready(uint32_t *now) {
+static int iv_time_ready(uint64_t *now) {
     const mesh_net_state *state = &mesh_network.state;
 
     return state->iv_time_valid &&
@@ -241,7 +242,7 @@ static int iv_time_ready(uint32_t *now) {
 
 // Enter IV Update in Progress. Transmit continues with the previous IV Index.
 static inline int ble_mesh_start_iv_update(void) {
-    uint32_t now;
+    uint64_t now;
     if (!mesh_network.ready || mesh_network.state.iv_update ||
         mesh_network.state.iv_index == UINT32_MAX ||
         !iv_time_ready(&now)) return 0;
@@ -253,6 +254,7 @@ static inline int ble_mesh_start_iv_update(void) {
     next.iv_state_start_time = now;
     return mesh_commit(&next);
 }
+
 
 // The 13-byte network nonce authenticates CTL/TTL, SEQ, SRC, and IV Index.
 static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
@@ -308,7 +310,6 @@ static inline int ble_mesh_net_send_beacon(void) {
     return BLE_MESH_TX(ad, sizeof(ad)) == 0;
 }
 
-
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // The next sequence number must be durable before a transmission is queued.
 static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
@@ -316,20 +317,20 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
     mesh_net_state *state = &mesh_network.state;
 
     if (!mesh_network.ready || !transport || dst == 0 || ctl > 1 ||
-        ttl > 0x7f || len < 1 || len > (ctl ? 12 : 16) ||
-        state->next_seq > 0xffffff
+        ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
+        state->next_seq > 0xffffffu
     ) return 0;
 
     uint8_t ad[31], *pdu = ad + 2;
     uint32_t seq = state->next_seq;
-    uint32_t iv = state->iv_index - (state->iv_update ? 1 : 0);
-    size_t mic_len = ctl ? 8 : 4;
+    uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
+    size_t mic_len = ctl ? 8u : 4u;
     const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
                                 &mesh_network.new_key : &mesh_network.old_key;
 
     ad[0] = (uint8_t)(1 + 7 + 2 + len + mic_len);
     ad[1] = MESH_NETWORK_AD_TYPE;
-    pdu[0] = (uint8_t)(((iv & 1) << 7) | key->nid);
+    pdu[0] = (uint8_t)(((iv & 1u) << 7) | key->nid);
     pdu[1] = (uint8_t)((ctl << 7) | ttl);
     pdu[2] = (uint8_t)(seq >> 16);
     pdu[3] = (uint8_t)(seq >> 8);
@@ -360,7 +361,7 @@ static inline int ble_mesh_net_send(uint16_t dst, uint8_t ctl, uint8_t ttl,
 static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
-        (ad[3] & 0xfc) != 0 || !mesh_network.ready
+        (ad[3] & 0xfcu) != 0 || !mesh_network.ready
     ) return 0;
 
     const mesh_network_credentials *key = NULL;
@@ -382,7 +383,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 
     mesh_net_state next = mesh_network.state;
     if (used_new) {
-        if (ad[3] & 1) {
+        if (ad[3] & 1u) {
             if (next.key_refresh_phase == 1) {
                 next.key_refresh_phase = 2;
             }
@@ -401,18 +402,18 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         }
     }
     else if (next.phase2_provisioned) {
-        if (!(ad[3] & 1)) next.phase2_provisioned = 0;
+        if (!(ad[3] & 1u)) next.phase2_provisioned = 0;
     }
-    else if (ad[3] & 1) return 0;
+    else if (ad[3] & 1u) return 0;
 
-    uint32_t now;
+    uint64_t now;
     uint32_t observed_iv = ((uint32_t)ad[12] << 24) |
                            ((uint32_t)ad[13] << 16) |
                            ((uint32_t)ad[14] << 8) | ad[15];
 
     if (next.iv_index != UINT32_MAX &&
         observed_iv == next.iv_index + 1 &&
-        (ad[3] & 2) && !next.iv_update &&
+        (ad[3] & 2u) && !next.iv_update &&
         iv_time_ready(&now)
     ) {
         next.iv_index = observed_iv;
@@ -422,7 +423,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     }
     else if (
         observed_iv == next.iv_index &&
-        !(ad[3] & 2) && next.iv_update &&
+        !(ad[3] & 2u) && next.iv_update &&
         iv_time_ready(&now)
     ) {
         next.iv_update = 0;
@@ -432,7 +433,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     }
     else if (
         observed_iv != next.iv_index ||
-        ((ad[3] & 2) != 0) != (next.iv_update != 0)
+        ((ad[3] & 2u) != 0) != (next.iv_update != 0)
     ) {
         return 0;
     }
@@ -454,7 +455,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
         return 0;
 
     uint32_t iv = mesh_network.state.iv_index;
-    if ((pdu[0] >> 7) != (iv & 1)) {
+    if ((pdu[0] >> 7) != (iv & 1u)) {
         if (iv == 0) return 0;
         iv--;
     }
@@ -475,12 +476,12 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
         memcpy(clear, pdu, len);
         mesh_obfuscate(key, clear, iv);
         ctl = clear[1] >> 7;
-        size_t mic_len = ctl ? 8 : 4;
+        size_t mic_len = ctl ? 8u : 4u;
 
         if (len < 9 + 1 + mic_len) continue;
         transport_len = len - 9 - mic_len;
 
-        if (transport_len > (ctl ? 12 : 16)) continue;
+        if (transport_len > (ctl ? 12u : 16u)) continue;
         src = (uint16_t)((clear[5] << 8) | clear[6]);
 
         if (src == 0 || src > 0x7fff ||
@@ -521,6 +522,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     message->ctl = ctl;
     message->ttl = clear[1] & 0x7f;
     message->seq = seq;
+    message->iv_index = iv;
     message->src = src;
     message->dst = dst;
     message->transport_len = (uint8_t)transport_len;
@@ -532,7 +534,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 // Poll the shared advertising bearer and accept only Mesh Message AD data.
 static inline int ble_mesh_net_poll(mesh_network_message *message) {
     int tick_result = 0;
-    uint32_t now;
+    uint64_t now;
 
     if (mesh_network.ready && mesh_network.state.iv_update &&
         !mesh_network.state.iv_skip_min_time &&

@@ -10,6 +10,7 @@
 #define FUNCONF_USE_CLK_SEC       0
 #define FUNCONF_INIT_ANALOG       0 // ADC is not implemented yet
 #define FUNCONF_USE_DEBUGPRINTF   1
+#define RANDOM_STRENGTH           2
 
 
 #endif

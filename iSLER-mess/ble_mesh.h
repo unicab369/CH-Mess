@@ -4,9 +4,11 @@
 #include "aes_cmm.h"
 #include "ble_mesh_provisioning.h"
 #include "ble_mesh_network.h"
+#include "ble_mesh_transport.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
 #include "ch5xx_flash.h"
+#include "lib_rand.h"
 
 #define SECTOR_SIZE         4096 // 4kB
 #define BLE_MESH_DATA_ADDR  110 * SECTOR_SIZE // 0x6E000 = 440K of 448K
@@ -56,6 +58,26 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
+// Supply a trusted monotonic second count that survives reboot. Until a clock
+// is available, IV Update timing remains disabled rather than skipping its
+// required minimum durations.
+int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
+    (void)seconds;
+    return 0;
+}
+
+int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
+    if (!out && len) return 0;
+
+    for (unsigned i = 0; i < len;) {
+        uint32_t value = rand();
+        for (unsigned j = 0; j < 4 && i < len; j++, i++) {
+            out[i] = (uint8_t)(value >> (8 * j));
+        }
+    }
+    return 1;
+}
+
 static struct {
     uint8_t data[PB_MAX_AD_SIZE];
     uint8_t len;
@@ -69,6 +91,8 @@ static ISLER_BUF_ATTR uint8_t adv_frame[8 + PB_MAX_AD_SIZE];
 
 static void ble_mesh_radio_init(void) {
     iSLERInit(LL_TX_POWER_0_DBM);
+    uint32_t value = (uint32_t)funSysTick64();
+    seed(value ? value : 0x747AA32F);
 }
 
 static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t send_at_ms) {
@@ -92,13 +116,10 @@ int BLE_MESH_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
-    uint8_t random_byte;
-    if (min_delay_ms > max_delay_ms || GET_RANDOM_BYTES(&random_byte, 1) != 1) {
-        return -1;
-    }
+    if (min_delay_ms > max_delay_ms) return -1;
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
-    uint32_t delay_ms = min_delay_ms + random_byte % range;
+    uint32_t delay_ms = min_delay_ms + rand() % range;
     return ble_mesh_queue_ad(adv_data, len, GET_MILLIS() + delay_ms);
 }
 
@@ -297,7 +318,7 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     state.iv_skip_min_time = state.iv_update;
     state.unicast_address = data->unicast_address;
 
-    uint32_t seconds;
+    uint64_t seconds;
     if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 1) {
         state.iv_time_valid = 1;
         state.iv_state_start_time = seconds;
@@ -365,6 +386,27 @@ int PROVISIONER_STORE_NODE_DEVKEY(
     return mesh_state_save_record(&record) ? 0 : -1;
 }
 
+int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
+    if (!key || address == 0 || address > 0x7fff) return 0;
+    mesh_state_record record;
+    if (!mesh_state_load_record(&record) ||
+        record.node_count > PROVISIONER_MAX_NODES) return 0;
+
+    if (address == record.state.unicast_address) {
+        memcpy(key, record.state.dev_key, 16);
+        return 1;
+    }
+    for (uint8_t i = 0; i < record.node_count; i++) {
+        const mesh_node_record *node = &record.nodes[i];
+        if (address >= node->unicast_address &&
+            (uint32_t)address < (uint32_t)node->unicast_address + node->num_elements) {
+            memcpy(key, node->device_key, 16);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // Persist the next sequence number in the same state loaded by
 // BLE_MESH_NETWORK_LOAD_STATE. Return 1 only after it is durably stored;
 // a RAM-only implementation could reuse a nonce after reboot.
@@ -373,19 +415,6 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
     return 0;
 }
 
-// Supply a trusted monotonic second count that survives reboot. Until a clock
-// is available, IV Update timing remains disabled rather than skipping its
-// required minimum durations.
-int BLE_MESH_NETWORK_TIME_SECONDS(uint32_t *seconds) {
-    (void)seconds;
-    return 0;
-}
-
-// Temporary test stub: replace before using provisioning with real devices.
-int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
-    memset(out, 22, len);
-    return 1;
-}
 
 int ECDH_GENERATE_KPAIR(uint8_t private_key[32], uint8_t public_key[64]) {
     // micro-ecc needs an RNG callback before it can generate a private key.
