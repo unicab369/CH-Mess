@@ -13,6 +13,9 @@
 #define OP_CONFIG_APPKEY_STATUS 0x8003
 #define OP_CONFIG_MODEL_APP_BIND 0x803d
 #define OP_CONFIG_MODEL_APP_STATUS 0x803e
+#define OP_CONFIG_MODEL_SUB_VIRTUAL_ADD 0x8020
+#define OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE 0x8021
+#define OP_CONFIG_MODEL_SUB_STATUS 0x801f
 #define OP_HEALTH_ATTENTION_GET 0x8004
 #define OP_HEALTH_ATTENTION_SET 0x8005
 #define OP_HEALTH_ATTENTION_SET_UNACK 0x8006
@@ -30,12 +33,21 @@
 #define MESH_CONFIG_INSUFFICIENT_RESOURCES 0x05
 #define MESH_CONFIG_KEY_ALREADY_STORED 0x06
 #define MESH_CONFIG_STORAGE_FAILURE 0x09
+#define MESH_MODEL_VIRTUAL_SLOTS MESH_TRANSPORT_MAX_LABELS
 
-// This implementation has one element and one AppKey. Bindings survive reboot.
+// This implementation has one element and one AppKey. Bindings and virtual
+// subscriptions survive reboot. A slot belongs to one SIG model.
+typedef struct {
+    uint16_t model;
+    uint8_t label[16];
+} mesh_model_label;
+
 typedef struct {
     uint8_t onoff_server_bound;
     uint8_t onoff_client_bound;
     uint8_t health_server_bound;
+    uint8_t virtual_count;
+    mesh_model_label virtual[MESH_MODEL_VIRTUAL_SLOTS];
 } mesh_models_state;
 
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state);
@@ -68,8 +80,102 @@ static inline int ble_mesh_models_init(void) {
         BLE_MESH_MODELS_LOAD_STATE(&mesh_models.state) != 1
     ) return 0;
 
+    if (mesh_models.state.virtual_count > MESH_MODEL_VIRTUAL_SLOTS) return 0;
+    ble_mesh_transport_clear_labels();
+
+    for (uint8_t i = 0; i < mesh_models.state.virtual_count; i++) {
+        if (!ble_mesh_label_add(mesh_models.state.virtual[i].label))
+            return 0;
+    }
+
     mesh_models.ready = 1;
     return 1;
+}
+
+static int mesh_virtual_model_valid(uint16_t model) {
+    return model == MESH_MODEL_ONOFF_SERVER ||
+           model == MESH_MODEL_ONOFF_CLIENT ||
+           model == MESH_MODEL_HEALTH_SERVER;
+}
+
+// Local subscription interface; returns a Mesh Configuration status code.
+static inline uint8_t ble_mesh_model_label_add(
+    uint16_t model, const uint8_t label[16]
+) {
+    if (!mesh_models.ready || !label) return MESH_CONFIG_INVALID_ADDRESS;
+    if (!mesh_virtual_model_valid(model)) return MESH_CONFIG_INVALID_MODEL;
+
+    mesh_models_state next = mesh_models.state;
+    for (uint8_t i = 0; i < next.virtual_count; i++) {
+        if (next.virtual[i].model == model &&
+            memcmp(next.virtual[i].label, label, 16) == 0) return MESH_CONFIG_SUCCESS;
+    }
+    if (next.virtual_count == MESH_MODEL_VIRTUAL_SLOTS)
+        return MESH_CONFIG_INSUFFICIENT_RESOURCES;
+
+    uint8_t i = next.virtual_count++;
+    next.virtual[i].model = model;
+    memcpy(next.virtual[i].label, label, 16);
+    if (BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return MESH_CONFIG_STORAGE_FAILURE;
+
+    mesh_models.state = next;
+    ble_mesh_label_add(label);
+    return MESH_CONFIG_SUCCESS;
+}
+
+static inline uint8_t ble_mesh_model_label_remove(uint16_t model,
+                                                         const uint8_t label[16]) {
+    if (!mesh_models.ready || !label) return MESH_CONFIG_INVALID_ADDRESS;
+    if (!mesh_virtual_model_valid(model)) return MESH_CONFIG_INVALID_MODEL;
+
+    mesh_models_state next = mesh_models.state;
+    for (uint8_t i = 0; i < next.virtual_count; i++) {
+        if (next.virtual[i].model != model ||
+            memcmp(next.virtual[i].label, label, 16) != 0) continue;
+
+        for (uint8_t j = i + 1; j < next.virtual_count; j++) {
+            next.virtual[j - 1] = next.virtual[j];
+        }
+
+        memset(&next.virtual[--next.virtual_count], 0, sizeof(next.virtual[0]));
+        if (BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return MESH_CONFIG_STORAGE_FAILURE;
+
+        mesh_models.state = next;
+        ble_mesh_transport_clear_labels();
+
+        for (uint8_t j = 0; j < next.virtual_count; j++) {
+            ble_mesh_label_add(next.virtual[j].label);
+        }
+
+        break;
+    }
+    return MESH_CONFIG_SUCCESS;
+}
+
+static int mesh_model_has_label(uint16_t model, const uint8_t label[16]) {
+    for (uint8_t i = 0; i < mesh_models.state.virtual_count; i++) {
+        if (mesh_models.state.virtual[i].model == model &&
+            memcmp(mesh_models.state.virtual[i].label, label, 16) == 0) return 1;
+    }
+
+    return 0;
+}
+
+static inline int ble_mesh_config_virtual_sub(
+    uint16_t dst, uint16_t element,
+    uint16_t model, const uint8_t label[16], uint8_t add
+) {
+    if (!label || !element || element > 0x7fff ||
+        !mesh_virtual_model_valid(model)) return 0;
+
+    uint8_t params[20] = {(uint8_t)element, (uint8_t)(element >> 8)};
+    memcpy(params + 2, label, 16);
+    params[18] = (uint8_t)model;
+    params[19] = (uint8_t)(model >> 8);
+
+    return ble_mesh_access_queue(dst, MODEL_TTL, 1,
+        add ? OP_CONFIG_MODEL_SUB_VIRTUAL_ADD :
+              OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE, params, sizeof(params));
 }
 
 static int app_key_allowed(
@@ -162,6 +268,26 @@ static int server_config_receive(const mesh_access_pdu *message) {
         return 1;
     }
 
+    if (message->opcode == OP_CONFIG_MODEL_SUB_VIRTUAL_ADD ||
+        message->opcode == OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE) {
+        if (len != 20) return 0;
+        uint16_t element = p[0] | ((uint16_t)p[1] << 8);
+        uint16_t model = p[18] | ((uint16_t)p[19] << 8);
+        uint16_t address = ble_mesh_virtual_address(p + 2);
+        uint8_t status = element != state->unicast_address ?
+            MESH_CONFIG_INVALID_ADDRESS :
+            message->opcode == OP_CONFIG_MODEL_SUB_VIRTUAL_ADD ?
+            ble_mesh_model_label_add(model, p + 2) :
+            ble_mesh_model_label_remove(model, p + 2);
+        uint8_t reply[7] = {
+            status, p[0], p[1], (uint8_t)address, (uint8_t)(address >> 8),
+            p[18], p[19]
+        };
+        ble_mesh_access_queue(message->src, MODEL_TTL, 1,
+                              OP_CONFIG_MODEL_SUB_STATUS, reply, sizeof(reply));
+        return 1;
+    }
+
     return 0;
 }
 
@@ -224,6 +350,12 @@ static inline int ble_mesh_onoff_get(uint16_t dst) {
     return ble_mesh_access_queue(dst, MODEL_TTL, 0, OP_ONOFF_GET, NULL, 0);
 }
 
+static inline int ble_mesh_onoff_get_virtual(const uint8_t label[16]) {
+    if (!mesh_models.ready || !mesh_models.state.onoff_client_bound) return 0;
+    return ble_mesh_access_queue_virtual(label, MODEL_TTL,
+                                         OP_ONOFF_GET, NULL, 0);
+}
+
 static inline int ble_mesh_onoff_set(
     uint16_t dst, uint8_t on, uint8_t acknowledged
 ) {
@@ -234,6 +366,18 @@ static inline int ble_mesh_onoff_set(
     uint8_t params[2] = {on, mesh_models.onoff_client.tid++};
     uint32_t opcode = acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK;
     return ble_mesh_access_queue(dst, MODEL_TTL, 0, opcode, params, sizeof(params));
+}
+
+static inline int ble_mesh_onoff_set_virtual(
+    const uint8_t label[16], uint8_t on, uint8_t acknowledged
+) {
+    if (!mesh_models.ready || !label || on > 1 ||
+        !mesh_models.state.onoff_client_bound) return 0;
+
+    uint8_t params[2] = {on, mesh_models.onoff_client.tid++};
+    return ble_mesh_access_queue_virtual(label, MODEL_TTL,
+        acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK,
+        params, sizeof(params));
 }
 
 static int server_onoff_receive(const mesh_access_pdu *message) {
@@ -273,23 +417,26 @@ static int server_onoff_receive(const mesh_access_pdu *message) {
 
 static inline int ble_mesh_models_poll(void) {
     if (mesh_models.ready) mesh_health_attention_remaining();
+    if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
     mesh_access_message raw;
     mesh_access_pdu access;
     int result = ble_mesh_access_poll(&raw, &access);
     if (result <= 0) return result;
-    if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
 
-    // Dispatch by opcode. This one-element version accepts only local unicast
-    // destinations. AppKey messages must be bound to the receiving model.
+    // Dispatch by opcode and the receiving model's virtual subscription.
     const mesh_access_pdu *message = &access;
     uint32_t opcode = message->opcode;
-    if (message->dst != mesh_network.state.unicast_address) return 0;
+    if (message->dst != mesh_network.state.unicast_address &&
+        !(message->has_label && message->dst ==
+          ble_mesh_virtual_address(message->label))) return 0;
 
     if (message->app_key_index == APP_KEY_INDEX_NONE) {
+        if (message->has_label) return 0;
         if (server_config_receive(message)) return 1;
 
         if (opcode == OP_CONFIG_APPKEY_STATUS ||
-            opcode == OP_CONFIG_MODEL_APP_STATUS
+            opcode == OP_CONFIG_MODEL_APP_STATUS ||
+            opcode == OP_CONFIG_MODEL_SUB_STATUS
         ) {
             BLE_MESH_CONFIG_STATUS(message->src, opcode,
                                     message->params, message->params_len);
@@ -302,11 +449,15 @@ static inline int ble_mesh_models_poll(void) {
         opcode == OP_ONOFF_SET ||
         opcode == OP_ONOFF_SET_UNACK
     ) {
+        if (message->has_label &&
+            !mesh_model_has_label(MESH_MODEL_ONOFF_SERVER, message->label)) return 0;
         if (!app_key_allowed(message, mesh_models.state.onoff_server_bound)) return 0;
         return server_onoff_receive(message);
     }
 
     if (opcode == OP_ONOFF_STATUS) {
+        if (message->has_label &&
+            !mesh_model_has_label(MESH_MODEL_ONOFF_CLIENT, message->label)) return 0;
         if (!app_key_allowed(message, mesh_models.state.onoff_client_bound) ||
             message->params_len != 1 || message->params[0] > 1
         ) return 0;
@@ -319,6 +470,8 @@ static inline int ble_mesh_models_poll(void) {
         opcode == OP_HEALTH_ATTENTION_SET ||
         opcode == OP_HEALTH_ATTENTION_SET_UNACK
     ) {
+        if (message->has_label &&
+            !mesh_model_has_label(MESH_MODEL_HEALTH_SERVER, message->label)) return 0;
         if (!app_key_allowed(message, mesh_models.state.health_server_bound)
     ) return 0;
         return server_health_receive(message);

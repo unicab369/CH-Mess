@@ -9,6 +9,8 @@
 typedef struct {
     uint16_t src, dst, app_key_index, len;
     uint8_t ttl;
+    uint8_t has_label;
+    uint8_t label[16];
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
 } mesh_access_message;
 
@@ -20,14 +22,21 @@ static mesh_access_message incoming;
 static int incoming_ready;
 
 static int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
-                                   uint8_t use_device_key,
-                                   const uint8_t *data, size_t len) {
+                                         uint8_t use_device_key,
+                                         const uint8_t label[16],
+                                         const uint8_t *data, size_t len) {
+    (void)label;
     memcpy(sent, data, len);
     sent_len = len;
     sent_dst = dst;
     sent_ttl = ttl;
     sent_device_key = use_device_key;
     return 1;
+}
+
+static uint16_t ble_mesh_virtual_address(const uint8_t label[16]) {
+    assert(label);
+    return 0x8001;
 }
 
 static int ble_mesh_transport_poll(mesh_access_message *out) {
@@ -59,12 +68,17 @@ int main(void) {
     assert(ble_mesh_access_queue(1, 0, 0, 0x8201, NULL, 1) == 0);
     assert(ble_mesh_access_queue(1, 0, 0, 0x8201, params,
                                 MESH_TRANSPORT_MAX_ACCESS) == 0);
+    uint8_t label[16] = {1};
+    assert(ble_mesh_access_queue_virtual(label, 3, 0x8201, NULL, 0) == 1);
+    assert(sent_dst == 0x8001 && sent_len == 2);
 
     mesh_access_message message = {0};
     message.src = 0x1201;
     message.dst = 0x1202;
     message.app_key_index = 0x0123;
     message.ttl = 4;
+    message.has_label = 1;
+    memcpy(message.label, label, 16);
     message.len = 5;
     const uint8_t payload[] = {0xe3, 0x36, 0x01, 0x12, 0x34};
     memcpy(message.data, payload, sizeof(payload));
@@ -77,6 +91,7 @@ int main(void) {
            access.dst == 0x1202 && access.app_key_index == 0x0123 &&
            access.ttl == 4 && access.params_len == 2 &&
            memcmp(access.params, params, 2) == 0);
+    assert(access.has_label && memcmp(access.label, label, 16) == 0);
 
     message.len = 1;
     incoming = message;

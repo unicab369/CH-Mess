@@ -8,6 +8,8 @@
 typedef struct {
     uint16_t src, dst, app_key_index;
     uint8_t ttl;
+    uint8_t has_label;
+    uint8_t label[16];
     uint32_t opcode;
     const uint8_t *params;
     size_t params_len;
@@ -28,6 +30,18 @@ static struct {
     mesh_net_state state;
     uint8_t ready;
 } mesh_network;
+
+#define MESH_TRANSPORT_MAX_LABELS 4
+static uint8_t registered_labels;
+static uint16_t ble_mesh_virtual_address(const uint8_t label[16]) {
+    return (uint16_t)(0x8000 | label[0]);
+}
+static void ble_mesh_transport_clear_labels(void) { registered_labels = 0; }
+static int ble_mesh_label_add(const uint8_t label[16]) {
+    (void)label;
+    registered_labels++;
+    return 1;
+}
 
 static uint32_t now_ms;
 static uint32_t last_opcode;
@@ -55,6 +69,12 @@ static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
     last_len = len;
     if (len) memcpy(last_params, params, len);
     return 1;
+}
+static int ble_mesh_access_queue_virtual(const uint8_t label[16],
+                                         uint8_t ttl, uint32_t opcode,
+                                         const uint8_t *params, size_t len) {
+    return ble_mesh_access_queue(ble_mesh_virtual_address(label), ttl, 0,
+                                 opcode, params, len);
 }
 static int ble_mesh_access_poll(mesh_access_message *message,
                                 mesh_access_pdu *access) {
@@ -152,6 +172,11 @@ int main(void) {
     assert(ble_mesh_onoff_set(0x1202, 0, 1) == 1);
     assert(last_opcode == OP_ONOFF_SET && last_len == 2 &&
            last_params[0] == 0);
+    uint8_t virtual_label[16] = {1};
+    assert(ble_mesh_onoff_get_virtual(virtual_label) == 1);
+    assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_GET);
+    assert(ble_mesh_onoff_set_virtual(virtual_label, 1, 0) == 1);
+    assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_SET_UNACK);
 
     uint8_t status = 1;
     message.app_key_index = 0x234;
@@ -187,5 +212,46 @@ int main(void) {
     poll_ready = 1;
     assert(ble_mesh_models_poll() == 1);
     assert(report_count == 2);
+
+    uint8_t label[16] = {1};
+    uint8_t sub[20] = {0x01, 0x12};
+    memcpy(sub + 2, label, 16);
+    sub[18] = 0x00;
+    sub[19] = 0x10; // Generic OnOff Server
+    message.dst = 0x1201;
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_SUB_VIRTUAL_ADD;
+    message.params = sub;
+    message.params_len = sizeof(sub);
+    assert(poll_message(&message) == 1);
+    assert(saved.virtual_count == 1 && registered_labels == 1 &&
+           last_opcode == OP_CONFIG_MODEL_SUB_STATUS &&
+           last_params[0] == MESH_CONFIG_SUCCESS &&
+           last_params[3] == 0x01 && last_params[4] == 0x80);
+
+    message.dst = 0x8001;
+    message.has_label = 1;
+    memcpy(message.label, label, 16);
+    message.app_key_index = 0x234;
+    message.opcode = OP_ONOFF_SET;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 8;
+    assert(poll_message(&message) == 1);
+    assert(apply_count == 2);
+    message.label[0] = 2;
+    message.dst = 0x8002;
+    on[1] = 9;
+    assert(poll_message(&message) == 0);
+    assert(apply_count == 2);
+
+    message.dst = 0x1201;
+    message.has_label = 0;
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE;
+    message.params = sub;
+    message.params_len = sizeof(sub);
+    assert(poll_message(&message) == 1);
+    assert(saved.virtual_count == 0 && registered_labels == 0);
     return 0;
 }

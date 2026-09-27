@@ -82,8 +82,8 @@ int main(void) {
     const uint8_t short_access[] = {0x82, 0x01, 0x01};
 
     assert(ble_mesh_network_init(&a) == 1);
-    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0,
-                                   short_access, sizeof(short_access)) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 0, NULL,
+                                         short_access, sizeof(short_access)) == 1);
     assert(sent_count == 1);
     a = mesh_network.state;
     assert(ble_mesh_network_init(&b) == 1);
@@ -96,8 +96,8 @@ int main(void) {
     for (int i = 0; i < 40; i++) long_access[i] = (uint8_t)i;
     sent_count = 0;
     assert(ble_mesh_network_init(&a) == 1);
-    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1,
-                                   long_access, sizeof(long_access)) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1, NULL,
+                                         long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
@@ -118,8 +118,8 @@ int main(void) {
 
     // A partial acknowledgment causes only the missing segment to be resent.
     sent_count = 0;
-    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1,
-                                   long_access, sizeof(long_access)) == 1);
+    assert(ble_mesh_transport_queue(b.unicast_address, 5, 1, NULL,
+                                         long_access, sizeof(long_access)) == 1);
     while (transport_tx.next_seg <= transport_tx.seg_n)
         assert(transport_segment_queue() == 1);
     assert(sent_count == 4);
@@ -150,5 +150,55 @@ int main(void) {
     assert(ble_mesh_network_init(&a) == 1);
     assert(receive_frame(6, &received) == 0);
     assert(transport_tx.active == 0);
+
+    // A virtual destination needs the matching Label UUID as CCM AAD.
+    uint8_t label[16] = {1, 2, 3, 4};
+    uint8_t wrong[16] = {5, 6, 7, 8};
+    uint16_t virtual_dst = ble_mesh_virtual_address(label);
+    assert(virtual_dst >= 0x8000 && virtual_dst <= 0xbfff);
+    sent_count = 0;
+    assert(ble_mesh_transport_queue(virtual_dst, 5, 0, NULL,
+                                         short_access, sizeof(short_access)) == 0);
+    assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
+                                         short_access, sizeof(short_access)) == 1);
+    a = mesh_network.state;
+    assert(ble_mesh_network_init(&b) == 1);
+    ble_mesh_transport_clear_labels();
+    assert(receive_frame(0, &received) == 0);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(ble_mesh_label_add(wrong) == 1);
+    assert(receive_frame(0, &received) == 0);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(ble_mesh_label_add(label) == 1);
+    assert(receive_frame(0, &received) == 1);
+    assert(received.dst == virtual_dst && received.has_label &&
+           memcmp(received.label, label, 16) == 0 &&
+           memcmp(received.data, short_access, sizeof(short_access)) == 0);
+
+    // A matching 16-bit hash alone is insufficient: authenticate the UUID.
+    ble_mesh_transport_clear_labels();
+    assert(ble_mesh_label_add(wrong) == 1);
+    transport_labels[0].address = virtual_dst;
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 0);
+
+    // Segmented virtual messages use the same label and need no segment ACK.
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(virtual_dst, 5, 0, label,
+                                         long_access, sizeof(long_access)) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 4);
+    a = mesh_network.state;
+    assert(ble_mesh_network_init(&b) == 1);
+    ble_mesh_transport_clear_labels();
+    assert(ble_mesh_label_add(label) == 1);
+    for (int i = 0; i < 3; i++) assert(receive_frame(i, &received) == 0);
+    assert(receive_frame(3, &received) == 1);
+    assert(received.has_label && received.len == sizeof(long_access) &&
+           memcmp(received.data, long_access, sizeof(long_access)) == 0);
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(transport_tx.active == 0 && sent_count == 4);
     return 0;
 }

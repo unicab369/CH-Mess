@@ -33,9 +33,17 @@ BLE Mesh device types
 
 unicast address ranges
 0x0001-0x7FFF (32,767 addresses) - Unicast addresses
-0x8000-0xBFFF (16,384 count) - Group addresses
-0xC000-0xFEFF (16,128 count) - Virtual addresses
+0x8000-0xBFFF (16,384 count) - Virtual addresses
+0xC000-0xFEFF (16,128 count) - Group addresses
 0xFF00-0xFFFF (256 count) - Fixed (all-proxies, all-friends, etc.)
+
+Virtual address interfaces (one element, one AppKey):
+- `ble_mesh_virtual_address(label)` derives the 16-bit address from a 16-byte Label UUID.
+- `ble_mesh_access_queue_virtual(label, ttl, opcode, params, len)` sends an AppKey message.
+- `ble_mesh_onoff_get_virtual(label)` and `ble_mesh_onoff_set_virtual(label, on, acknowledged)` send Generic OnOff messages.
+- `ble_mesh_model_label_add(model, label)` and `ble_mesh_model_label_remove(model, label)` change local, persistent subscriptions. Their return value is a Mesh Configuration status code.
+- `ble_mesh_config_virtual_sub(dst, element, model, label, add)` sends a Config Model Subscription Virtual Address Add or Delete message to another node.
+- Up to four model/Label UUID subscriptions are stored. Supported models are Generic OnOff Server, Generic OnOff Client, and Health Server. Virtual messages require the matching Label UUID; a 16-bit address alone cannot send one.
 
 Bluetooth Mesh provisioning procedure over the PB-ADV bearer.
 Provisioner                                                   Provisionee
