@@ -11,6 +11,7 @@
 #define MESH_TRANSPORT_SEGMENT_SIZE 12
 #define MESH_TRANSPORT_RETRY_MS 1000
 #define MESH_TRANSPORT_RX_TIMEOUT_MS 5000
+#define APP_KEY_INDEX_NONE 0xffff
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -19,7 +20,7 @@ uint32_t GET_MILLIS(void);
 typedef struct {
     uint16_t src;
     uint16_t dst;
-    uint16_t app_key_index; // 0xffff means the Device Key was used
+    uint16_t app_key_index; // APP_KEY_INDEX_NONE means the Device Key was used
     uint16_t len;
     uint8_t ttl;
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
@@ -78,7 +79,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
 
     uint8_t nonce[13], key[16];
     transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv_index);
-    out->app_key_index = 0xffff;
+    out->app_key_index = APP_KEY_INDEX_NONE;
 
     if (akf) {
         const mesh_net_state *state = &mesh_network.state;
@@ -97,7 +98,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
                 break;
             }
         }
-        if (out->app_key_index == 0xffff) return 0;
+        if (out->app_key_index == APP_KEY_INDEX_NONE) return 0;
     } else {
         if (aid != 0 || dst != mesh_network.state.unicast_address) return 0;
         int ok = 0;
@@ -226,25 +227,6 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
         transport_tx.active = 0;
         return 0;
     }
-    return 1;
-}
-
-static int transport_send_ack(void) {
-    if (!transport_rx.active || !transport_rx.ack_pending ||
-        transport_rx.dst != mesh_network.state.unicast_address) return 0;
-
-    uint16_t seq_zero = transport_rx.seq_zero;
-    uint32_t mask = transport_rx.received;
-    uint8_t pdu[7] = {
-        0,
-        (uint8_t)(seq_zero >> 6),
-        (uint8_t)((seq_zero & 0x3f) << 2),
-        (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
-        (uint8_t)(mask >> 8), (uint8_t)mask
-    };
-    if (!ble_mesh_net_queue(transport_rx.src, 1, transport_rx.ttl,
-                           pdu, sizeof(pdu))) return -1;
-    transport_rx.ack_pending = 0;
     return 1;
 }
 
@@ -385,9 +367,23 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
         transport_rx.active = 0;
         transport_rx.ack_pending = 0;
     }
-    if (transport_rx.ack_pending &&
-        (int32_t)(now - transport_rx.ack_at_ms) >= 0 &&
-        transport_send_ack() < 0) return -1;
+    // Queue a Segment Acknowledgment for received unicast segments when due.
+    if (transport_rx.active && transport_rx.ack_pending &&
+        transport_rx.dst == mesh_network.state.unicast_address &&
+        (int32_t)(now - transport_rx.ack_at_ms) >= 0) {
+        uint16_t seq_zero = transport_rx.seq_zero;
+        uint32_t mask = transport_rx.received;
+        uint8_t pdu[7] = {
+            0,
+            (uint8_t)(seq_zero >> 6),
+            (uint8_t)((seq_zero & 0x3f) << 2),
+            (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
+            (uint8_t)(mask >> 8), (uint8_t)mask
+        };
+        if (!ble_mesh_net_queue(transport_rx.src, 1, transport_rx.ttl,
+                                pdu, sizeof(pdu))) return -1;
+        transport_rx.ack_pending = 0;
+    }
 
     if (transport_tx.active) {
         if (transport_tx.next_seg <= transport_tx.seg_n) {

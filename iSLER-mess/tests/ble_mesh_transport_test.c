@@ -49,8 +49,9 @@ int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
     return 0;
 }
 
+static uint32_t current_ms = 1000;
 uint32_t GET_MILLIS(void) {
-    return 1000;
+    return current_ms;
 }
 
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
@@ -107,8 +108,8 @@ int main(void) {
     assert(receive_frame(3, &received) == 1);
     assert(received.len == sizeof(long_access));
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
-    assert(received.app_key_index == 0xffff);
-    assert(transport_send_ack() == 1);
+    assert(received.app_key_index == APP_KEY_INDEX_NONE);
+    assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
 
     assert(ble_mesh_network_init(&a) == 1);
@@ -128,7 +129,8 @@ int main(void) {
     assert(receive_frame(0, &received) == 0);
     assert(receive_frame(1, &received) == 0);
     assert(receive_frame(3, &received) == 0);
-    assert(transport_send_ack() == 1);
+    current_ms += 200;
+    assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
     b = mesh_network.state;
 
@@ -142,7 +144,7 @@ int main(void) {
     assert(ble_mesh_network_init(&b) == 1);
     assert(receive_frame(5, &received) == 1);
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
-    assert(transport_send_ack() == 1);
+    assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 7);
 
     assert(ble_mesh_network_init(&a) == 1);

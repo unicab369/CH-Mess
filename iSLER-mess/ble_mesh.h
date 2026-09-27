@@ -458,11 +458,6 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
     return 0;
 }
 
-int BLE_MESH_ACCESS_HANDLE(const mesh_access_pdu *message) {
-    if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
-    return ble_mesh_models_receive(message);
-}
-
 void BLE_MESH_ONOFF_CHANGED(uint8_t on) {
     (void)on;
 }
