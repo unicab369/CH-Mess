@@ -191,7 +191,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 9
+#define MESH_STATE_VERSION 10
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -567,6 +567,16 @@ void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
     (void)element;
     (void)seconds;
+}
+
+int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len) {
+    int index = mesh_element_index(element);
+    if (test_id || index < 0 || !faults || !len ||
+        *len < mesh_models.health_server[index].current_count) return 0;
+    // The default standard test returns the latest application-reported faults.
+    *len = mesh_models.health_server[index].current_count;
+    memcpy(faults, mesh_models.health_server[index].current, *len);
+    return 1;
 }
 
 // Temporary RAM-only sequence storage; this resets after a reboot.

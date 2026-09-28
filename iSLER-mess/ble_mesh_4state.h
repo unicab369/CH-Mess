@@ -26,7 +26,13 @@
 #define MESH_MODEL_VIRTUAL_SLOTS MESH_TRANSPORT_MAX_LABELS
 #define MESH_MODEL_GROUP_SLOTS 8
 #define MESH_PUBLICATION_MODELS 3
-#define MESH_PUBLICATION_MAX_PARAMS 8
+#ifndef MESH_HEALTH_MAX_FAULTS
+#define MESH_HEALTH_MAX_FAULTS 5
+#endif
+#if MESH_HEALTH_MAX_FAULTS < 1 || MESH_HEALTH_MAX_FAULTS > 32
+#error MESH_HEALTH_MAX_FAULTS must be between 1 and 32
+#endif
+#define MESH_PUBLICATION_MAX_PARAMS (3 + MESH_HEALTH_MAX_FAULTS)
 
 typedef struct {
     uint8_t element;
@@ -64,6 +70,7 @@ typedef struct {
     mesh_model_group groups[MESH_MODEL_GROUP_SLOTS];
     uint8_t default_ttl;
     mesh_publication publications[MESH_MAX_ELEMENTS][MESH_PUBLICATION_MODELS];
+    uint8_t health_period[MESH_MAX_ELEMENTS];
 } mesh_models_state;
 
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state);
@@ -84,6 +91,8 @@ static struct {
     struct {
         uint8_t attention;
         uint32_t attention_started_ms;
+        uint8_t test_id, current_count, registered_count, publish_pending;
+        uint8_t current[MESH_HEALTH_MAX_FAULTS], registered[MESH_HEALTH_MAX_FAULTS];
     } health_server[MESH_MAX_ELEMENTS];
     struct {
         uint32_t period_at_ms, retransmit_at_ms, opcode;
@@ -106,6 +115,15 @@ static int mesh_publication_slot(uint16_t model) {
 static uint32_t mesh_publication_period(uint8_t period) {
     const uint32_t resolution[] = {100, 1000, 10000, 600000};
     return (period & 0x3f) * resolution[period >> 6];
+}
+
+static uint32_t mesh_health_period(uint8_t element) {
+    uint32_t period = mesh_publication_period(mesh_models.state.publications[element][2].period);
+    if (period && mesh_models.health_server[element].current_count) {
+        period >>= mesh_models.state.health_period[element];
+        if (period < 100) period = 100;
+    }
+    return period;
 }
 
 static int mesh_element_index(uint16_t address) {
@@ -171,6 +189,14 @@ static inline int ble_mesh_models_init(void) {
     }
 
     uint32_t now = GET_MILLIS();
+    for (uint8_t i = 0; i < MESH_MAX_ELEMENTS; i++)
+        if (mesh_models.state.health_period[i] > 15) return 0;
+    for (uint8_t i = 0; i < MESH_MAX_ELEMENTS; i++) {
+        mesh_models.health_server[i].test_id = mesh_models.health_server[i].current_count =
+            mesh_models.health_server[i].registered_count = mesh_models.health_server[i].publish_pending = 0;
+        memset(mesh_models.health_server[i].current, 0, sizeof(mesh_models.health_server[i].current));
+        memset(mesh_models.health_server[i].registered, 0, sizeof(mesh_models.health_server[i].registered));
+    }
     memset(mesh_models.publications, 0, sizeof(mesh_models.publications));
     mesh_models.local.pending = 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++) {

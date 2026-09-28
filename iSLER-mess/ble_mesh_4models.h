@@ -124,16 +124,21 @@ static void mesh_publications_poll(void) {
                 mesh_models.publications[i][j].remaining = 0;
                 continue;
             }
-            uint32_t period = mesh_publication_period(pub->period);
-            if (period && (int32_t)(now - mesh_models.publications[i][j].period_at_ms) >= 0) {
+            uint32_t period = j == 2 ? mesh_health_period(i) : mesh_publication_period(pub->period);
+            if ((j == 2 && mesh_models.health_server[i].publish_pending) ||
+                (period && (int32_t)(now - mesh_models.publications[i][j].period_at_ms) >= 0)) {
                 mesh_models.publications[i][j].period_at_ms = now + period;
                 if (j == 0) mesh_publication_begin(i, models[j], OP_ONOFF_STATUS,
                     &mesh_models.onoff_server[i].onoff, 1);
                 else if (j == 2) {
-                    uint8_t params[] = {0, (uint8_t)MESH_COMPANY_ID,
-                                          (uint8_t)(MESH_COMPANY_ID >> 8)};
+                    uint8_t params[3 + MESH_HEALTH_MAX_FAULTS] = {
+                        mesh_models.health_server[i].test_id, (uint8_t)MESH_COMPANY_ID,
+                        (uint8_t)(MESH_COMPANY_ID >> 8)};
+                    uint8_t count = mesh_models.health_server[i].current_count;
+                    memcpy(params + 3, mesh_models.health_server[i].current, count);
                     mesh_publication_begin(i, models[j], OP_HEALTH_CURRENT_STATUS,
-                                           params, sizeof(params));
+                                           params, 3u + count);
+                    mesh_models.health_server[i].publish_pending = 0;
                 } else if (mesh_models.publications[i][j].opcode) {
                     // Each periodic Set is a new transaction; retries keep its TID.
                     mesh_models.publications[i][j].params[1] = mesh_models.onoff_client[i].tid++;
@@ -234,7 +239,11 @@ static inline int ble_mesh_models_poll(void) {
         else if (opcode == OP_ONOFF_STATUS) model = MESH_MODEL_ONOFF_CLIENT;
         else if (opcode == OP_HEALTH_ATTENTION_GET ||
                  opcode == OP_HEALTH_ATTENTION_SET ||
-                 opcode == OP_HEALTH_ATTENTION_SET_UNACK)
+                 opcode == OP_HEALTH_ATTENTION_SET_UNACK ||
+                 opcode == OP_HEALTH_FAULT_GET || opcode == OP_HEALTH_FAULT_CLEAR ||
+                 opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST ||
+                 opcode == OP_HEALTH_FAULT_TEST_UNACK || opcode == OP_HEALTH_PERIOD_GET ||
+                 opcode == OP_HEALTH_PERIOD_SET || opcode == OP_HEALTH_PERIOD_SET_UNACK)
             model = MESH_MODEL_HEALTH_SERVER;
         else continue;
 

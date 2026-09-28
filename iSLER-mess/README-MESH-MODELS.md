@@ -3,7 +3,6 @@
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
 // - SAR Configuration model: expose transport timing settings (separate model).
-// - Health fault get/clear/test and Health period settings.
 
 ## Foundation models
 
@@ -48,7 +47,7 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 9 requires reprovisioning older records.
+credentials. Stored state version 10 requires reprovisioning older records.
 
 `ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
 destination, NetKey index, count log, period log, TTL, and feature-change triggers.
@@ -106,13 +105,37 @@ during Phase 2 reports phase 2 even though it has only the new NetKey.
 | Foundation model | Opcode macros | Supported |
 | --- | --- | --- |
 | `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_ATTENTION_GET`, `OP_HEALTH_ATTENTION_SET`, `OP_HEALTH_ATTENTION_SET_UNACK`, `OP_HEALTH_ATTENTION_STATUS` | Get/set the attention timer. |
-| `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_CURRENT_STATUS` | Publish an empty current-fault list. |
+| `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_CURRENT_STATUS` | Publish current faults and the last test ID. |
+| `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_FAULT_GET`, `OP_HEALTH_FAULT_CLEAR`, `OP_HEALTH_FAULT_CLEAR_UNACK`, `OP_HEALTH_FAULT_STATUS` | Read or clear recorded fault history; clearing does not remove active faults. |
+| `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_FAULT_TEST`, `OP_HEALTH_FAULT_TEST_UNACK` | Run a supported application self-test and update faults. |
+| `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_PERIOD_GET`, `OP_HEALTH_PERIOD_SET`, `OP_HEALTH_PERIOD_SET_UNACK`, `OP_HEALTH_PERIOD_STATUS` | Get/set the saved Fast Period Divisor (0–15), per element. |
+
+`ble_mesh_health_faults(element, test_id, faults, count)` reports the element's
+current faults. Pass `NULL, 0` when recovered. Nonzero fault codes are deduplicated
+and added to registered history. The default capacity is five distinct current
+faults and five registered faults per element; override `MESH_HEALTH_MAX_FAULTS`
+(1–32) before including the headers. Invalid input or full history returns 0
+without changing state. Current faults and history are RAM data and clear on
+reboot or Node Reset. Health Fault Clear clears only history.
+
+`BLE_MESH_HEALTH_TEST(element, test_id, faults, &count)` is the synchronous
+application self-test interface: count is buffer capacity on input and result
+length on output. Return 1 after a supported test, or 0 for an unsupported test
+or failure. The default in `ble_mesh.h` supports standard test 0 by returning the
+latest application-reported faults; add hardware diagnostics or vendor tests
+there. Requests for another Company ID or an unsupported test are ignored.
+
+Health requests use a bound AppKey. Fault changes publish Current Status through
+the configured Health publication, including when the periodic interval is zero.
+While faults are active, periodic reports use `Publish Period / 2^divisor`, with
+a 100 ms minimum; recovery restores the normal period. The divisor is saved to
+flash. Publication retransmissions retain the original fault snapshot.
 
 Call `ble_mesh_models_poll()` regularly to service publications. OnOff Servers
 publish status on a state change and at the configured period. OnOff Clients use
 `ble_mesh_onoff_publish()`; a configured period repeats the last published Set with
 a new transaction ID. Retransmissions keep the original transaction ID. Health
-Servers periodically publish an empty current-fault list. TTL 1 publications stay
+Servers periodically publish their current-fault list. TTL 1 publications stay
 on this node; TTL 0xFF uses Default TTL. Friendship credentials are unsupported.
 
 Set `MESH_COMPANY_ID`, `MESH_PRODUCT_ID`, and `MESH_PRODUCT_VERSION` for your product;

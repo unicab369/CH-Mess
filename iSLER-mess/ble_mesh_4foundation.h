@@ -57,6 +57,16 @@
 #define OP_CONFIG_SIG_SUB_GET 0x8029
 #define OP_CONFIG_SIG_MODEL_SUB_LIST 0x802a
 #define OP_HEALTH_CURRENT_STATUS 0x04
+#define OP_HEALTH_FAULT_STATUS 0x05
+#define OP_HEALTH_FAULT_CLEAR 0x802f
+#define OP_HEALTH_FAULT_CLEAR_UNACK 0x8030
+#define OP_HEALTH_FAULT_GET 0x8031
+#define OP_HEALTH_FAULT_TEST 0x8032
+#define OP_HEALTH_FAULT_TEST_UNACK 0x8033
+#define OP_HEALTH_PERIOD_GET 0x8034
+#define OP_HEALTH_PERIOD_SET 0x8035
+#define OP_HEALTH_PERIOD_SET_UNACK 0x8036
+#define OP_HEALTH_PERIOD_STATUS 0x8037
 #define OP_CONFIG_NETKEY_ADD 0x8040
 #define OP_CONFIG_NETKEY_DELETE 0x8041
 #define OP_CONFIG_NETKEY_GET 0x8042
@@ -93,6 +103,9 @@
 void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len);
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds);
+// Run a supported self-test and fill faults; *len is capacity on input/count on output.
+// Return 1 for a completed test, 0 for an unsupported test or failure.
+int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len);
 
 static inline int ble_mesh_config_virtual_sub(
     uint16_t dst, uint16_t element,
@@ -566,7 +579,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     memset(&mesh_models.publications[index][slot], 0,
                            sizeof(mesh_models.publications[index][slot]));
                     mesh_models.publications[index][slot].period_at_ms =
-                        GET_MILLIS() + mesh_publication_period(next.period);
+                        GET_MILLIS() + (model == MESH_MODEL_HEALTH_SERVER ?
+                        mesh_health_period((uint8_t)index) : mesh_publication_period(next.period));
                 }
             }
         }
@@ -1109,8 +1123,92 @@ static inline int ble_mesh_replace_subscription(uint16_t dst, uint16_t element,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, opcode, params, offset, 0);
 }
 
-// Health Server: attention support for a node with no reported faults.
+// Replace active faults and retain their history until Fault Clear or reboot.
+static inline int ble_mesh_health_faults(uint16_t element, uint8_t test_id,
+                                        const uint8_t *faults, size_t len) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        len > MESH_HEALTH_MAX_FAULTS || (!faults && len)) return 0;
+    uint8_t current[MESH_HEALTH_MAX_FAULTS] = {0}, registered[MESH_HEALTH_MAX_FAULTS];
+    uint8_t current_count = 0, registered_count = mesh_models.health_server[index].registered_count;
+    memcpy(registered, mesh_models.health_server[index].registered, sizeof(registered));
+    for (size_t i = 0; i < len; i++) {
+        if (!faults[i]) return 0; // An empty list means no faults.
+        uint8_t found = 0;
+        for (uint8_t j = 0; j < current_count; j++) if (current[j] == faults[i]) found = 1;
+        if (!found) current[current_count++] = faults[i];
+        found = 0;
+        for (uint8_t j = 0; j < registered_count; j++) if (registered[j] == faults[i]) found = 1;
+        if (!found) {
+            if (registered_count == MESH_HEALTH_MAX_FAULTS) return 0;
+            registered[registered_count++] = faults[i];
+        }
+    }
+    uint8_t changed = mesh_models.health_server[index].test_id != test_id ||
+        mesh_models.health_server[index].current_count != current_count ||
+        memcmp(mesh_models.health_server[index].current, current, sizeof(current));
+    mesh_models.health_server[index].test_id = test_id;
+    mesh_models.health_server[index].current_count = current_count;
+    mesh_models.health_server[index].registered_count = registered_count;
+    memcpy(mesh_models.health_server[index].current, current, sizeof(current));
+    memcpy(mesh_models.health_server[index].registered, registered, sizeof(registered));
+    if (changed) {
+        mesh_models.health_server[index].publish_pending = 1;
+        mesh_models.publications[index][2].period_at_ms = GET_MILLIS() + mesh_health_period((uint8_t)index);
+    }
+    return 1;
+}
+
+// Health Server: AppKey-protected diagnostics, publication cadence, and attention.
 static int server_health_receive(const mesh_access_pdu *message, uint8_t element) {
+    const uint8_t *p = message->params;
+    size_t len = message->params_len;
+    uint32_t opcode = message->opcode;
+    if (opcode == OP_HEALTH_PERIOD_GET || opcode == OP_HEALTH_PERIOD_SET ||
+        opcode == OP_HEALTH_PERIOD_SET_UNACK) {
+        uint8_t set = opcode != OP_HEALTH_PERIOD_GET;
+        if (len != (set ? 1u : 0u) || (set && p[0] > 15)) return 0;
+        if (set) {
+            mesh_models_state next = mesh_models.state;
+            next.health_period[element] = p[0];
+            if (memcmp(&next, &mesh_models.state, sizeof(next)) &&
+                BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return 0;
+            mesh_models.state = next;
+            mesh_models.publications[element][2].period_at_ms = GET_MILLIS() + mesh_health_period(element);
+            if (opcode == OP_HEALTH_PERIOD_SET_UNACK) return 1;
+        }
+        return ble_mesh_access_queue(mesh_network.state.unicast_address + element,
+            message->src, mesh_models.state.default_ttl, message->app_key_index,
+            OP_HEALTH_PERIOD_STATUS, &mesh_models.state.health_period[element], 1, 0);
+    }
+    if (opcode == OP_HEALTH_FAULT_GET || opcode == OP_HEALTH_FAULT_CLEAR ||
+        opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST ||
+        opcode == OP_HEALTH_FAULT_TEST_UNACK) {
+        uint8_t test = opcode == OP_HEALTH_FAULT_TEST || opcode == OP_HEALTH_FAULT_TEST_UNACK;
+        if (len != (test ? 3u : 2u) ||
+            (uint16_t)(p[test] | (uint16_t)p[test + 1] << 8) != MESH_COMPANY_ID) return 0;
+        if (test) {
+            uint8_t faults[MESH_HEALTH_MAX_FAULTS];
+            size_t count = sizeof(faults);
+            if (BLE_MESH_HEALTH_TEST(mesh_network.state.unicast_address + element,
+                                    p[0], faults, &count) != 1 ||
+                !ble_mesh_health_faults(mesh_network.state.unicast_address + element,
+                                        p[0], faults, count)) return 0;
+        } else if (opcode != OP_HEALTH_FAULT_GET) {
+            mesh_models.health_server[element].registered_count = 0;
+            memset(mesh_models.health_server[element].registered, 0,
+                   sizeof(mesh_models.health_server[element].registered));
+        }
+        if (opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST_UNACK) return 1;
+        uint8_t reply[3 + MESH_HEALTH_MAX_FAULTS] = {
+            mesh_models.health_server[element].test_id,
+            (uint8_t)MESH_COMPANY_ID, (uint8_t)(MESH_COMPANY_ID >> 8)};
+        uint8_t count = mesh_models.health_server[element].registered_count;
+        memcpy(reply + 3, mesh_models.health_server[element].registered, count);
+        return ble_mesh_access_queue(mesh_network.state.unicast_address + element,
+            message->src, mesh_models.state.default_ttl, message->app_key_index,
+            OP_HEALTH_FAULT_STATUS, reply, 3u + count, 0);
+    }
     if (message->opcode == OP_HEALTH_ATTENTION_GET) {
         if (message->params_len != 0) return 0;
     }

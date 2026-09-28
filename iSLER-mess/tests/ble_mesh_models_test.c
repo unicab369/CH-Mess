@@ -167,6 +167,21 @@ void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
     attention_seconds = seconds;
 }
 
+static int health_test_calls, health_test_fail;
+static uint16_t health_test_element;
+static uint8_t health_test_faults[MESH_HEALTH_MAX_FAULTS];
+static size_t health_test_count;
+int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len) {
+    if (test_id != 0 && test_id != 1) return 0;
+    health_test_calls++;
+    health_test_element = element;
+    if (health_test_fail) return 0;
+    assert(*len >= health_test_count);
+    memcpy(faults, health_test_faults, health_test_count);
+    *len = health_test_count;
+    return 1;
+}
+
 static int poll_message(const mesh_access_pdu *message) {
     polled_access = *message;
     poll_ready = 1;
@@ -737,6 +752,112 @@ static void receive_heartbeat(const mesh_net_message *hb) {
     assert(ble_mesh_net_receive(pdu, sizeof(pdu), &received) == 0);
 }
 
+static void test_health(void) {
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2};
+    state.app_keys[0].used = 1; state.app_keys[0].index = 0x234;
+    state.app_keys[1].used = 1; state.app_keys[1].index = 0x235;
+    assert(ble_mesh_network_init(&state));
+    memset(&saved, 0, sizeof(saved)); memset(&mesh_models, 0, sizeof(mesh_models));
+    saved.default_ttl = 5; saved.health_server_bindings = 1; saved.other[0].health_server_bindings = 1;
+    assert(ble_mesh_models_init());
+    now_ms = UINT32_MAX - 199;
+    uint8_t company[] = {(uint8_t)MESH_COMPANY_ID, (uint8_t)(MESH_COMPANY_ID >> 8)};
+    mesh_access_pdu request = {.src = 0x1301, .dst = 0x1201, .app_key_index = 0x234,
+        .opcode = OP_HEALTH_FAULT_GET, .params = company, .params_len = 2};
+    assert(poll_message(&request) && last_opcode == OP_HEALTH_FAULT_STATUS && last_len == 3);
+    assert(last_params[0] == 0 && !memcmp(last_params + 1, company, 2));
+    const uint8_t faults[] = {1, 2, 1};
+    assert(ble_mesh_health_faults(0x1201, 0, faults, sizeof(faults)));
+    assert(mesh_models.health_server[0].current_count == 2 && mesh_models.health_server[0].registered_count == 2);
+    assert(poll_message(&request) && last_len == 5 && last_params[3] == 1 && last_params[4] == 2);
+    assert(ble_mesh_health_faults(0x1201, 1, NULL, 0));
+    assert(poll_message(&request) && last_len == 5 && last_params[0] == 1);
+    assert(mesh_models.health_server[0].current_count == 0); // History survives recovery.
+    const uint8_t active[] = {3};
+    assert(ble_mesh_health_faults(0x1201, 1, active, 1));
+    request.opcode = OP_HEALTH_FAULT_CLEAR;
+    assert(poll_message(&request) && last_len == 3 && last_params[0] == 1);
+    assert(mesh_models.health_server[0].registered_count == 0 && mesh_models.health_server[0].current_count == 1);
+    assert(ble_mesh_health_faults(0x1201, 1, active, 1));
+    request.opcode = OP_HEALTH_FAULT_CLEAR_UNACK;
+    int count = send_count;
+    assert(poll_message(&request) && send_count == count && mesh_models.health_server[0].registered_count == 0);
+
+    uint8_t test[] = {1, (uint8_t)MESH_COMPANY_ID, (uint8_t)(MESH_COMPANY_ID >> 8)};
+    health_test_faults[0] = 4; health_test_count = 1;
+    request.opcode = OP_HEALTH_FAULT_TEST; request.params = test; request.params_len = 3;
+    assert(poll_message(&request) && health_test_calls == 1 && health_test_element == 0x1201);
+    assert(last_len == 4 && last_params[0] == 1 && last_params[3] == 4);
+    request.dst = 0x1202; test[0] = 0; health_test_faults[0] = 5;
+    assert(poll_message(&request) && last_src == 0x1202 && health_test_element == 0x1202);
+    assert(mesh_models.health_server[0].current[0] == 4 && mesh_models.health_server[1].current[0] == 5);
+    request.opcode = OP_HEALTH_FAULT_TEST_UNACK;
+    count = send_count; assert(poll_message(&request) && send_count == count);
+    test[0] = 2; int calls = health_test_calls;
+    assert(!poll_message(&request) && health_test_calls == calls);
+    test[0] = 1; test[1] ^= 1;
+    assert(!poll_message(&request) && health_test_calls == calls);
+    test[1] ^= 1; health_test_fail = 1;
+    assert(!poll_message(&request) && mesh_models.health_server[1].current[0] == 5);
+    health_test_fail = 0;
+    request.params_len = 2; assert(!poll_message(&request));
+    request.opcode = OP_HEALTH_FAULT_GET; request.params = test + 1; request.params_len = 2;
+    request.app_key_index = 0x235;
+    assert(!poll_message(&request)); // Key exists but is not bound to this Health Server.
+    request.app_key_index = APP_KEY_INDEX_NONE; request.device_key_owner = 0x1202;
+    assert(!poll_message(&request));
+    request.app_key_index = 0x234; request.device_key_owner = 0;
+    test[1] ^= 1; assert(!poll_message(&request)); test[1] ^= 1;
+
+    uint8_t divisor = 2;
+    request.opcode = OP_HEALTH_PERIOD_SET; request.params = &divisor; request.params_len = 1;
+    save_fail = 1; assert(!poll_message(&request) && saved.health_period[1] == 0);
+    save_fail = 0; assert(poll_message(&request) && last_opcode == OP_HEALTH_PERIOD_STATUS && last_params[0] == 2);
+    assert(saved.health_period[0] == 0 && saved.health_period[1] == 2);
+    divisor = 16; assert(!poll_message(&request) && saved.health_period[1] == 2);
+    divisor = 15; request.opcode = OP_HEALTH_PERIOD_SET_UNACK;
+    count = send_count; assert(poll_message(&request) && send_count == count && saved.health_period[1] == 15);
+    request.opcode = OP_HEALTH_PERIOD_GET; request.params = NULL; request.params_len = 0;
+    assert(poll_message(&request) && last_params[0] == 15);
+    request.dst = 0x1201; assert(poll_message(&request) && last_params[0] == 0);
+    saved.health_period[0] = 16; mesh_models.ready = 0; assert(!ble_mesh_models_init());
+    saved.health_period[0] = 2; assert(ble_mesh_models_init());
+    assert(mesh_models.state.health_period[1] == 15 && mesh_models.health_server[1].current_count == 0);
+    assert(mesh_models.health_server[0].registered_count == 0); // Faults are runtime data.
+
+    mesh_publication pub = {.address = 0xc001, .app_idx = 0x234, .ttl = 5, .period = 0x48, .retransmit = 1};
+    assert(ble_mesh_set_publication(0x1201, 0x1201, MESH_MODEL_HEALTH_SERVER, &pub) && config_request());
+    const uint8_t full[] = {1, 2, 3, 4, 5};
+    assert(ble_mesh_health_faults(0x1201, 1, full, sizeof(full)));
+    count = send_count; assert(!ble_mesh_models_poll() && send_count == count + 1);
+    assert(last_opcode == OP_HEALTH_CURRENT_STATUS && last_len == 8 && last_params[0] == 1);
+    assert(!memcmp(last_params + 3, full, sizeof(full)) && mesh_health_period(0) == 2000);
+    now_ms += 50; count = send_count; ble_mesh_models_poll(); assert(send_count == count + 1 && last_len == 8);
+    now_ms += 1949; count = send_count; ble_mesh_models_poll(); assert(send_count == count);
+    now_ms++; ble_mesh_models_poll(); assert(send_count == count + 1 && last_len == 8);
+    uint8_t zero = 0, extra = 6;
+    assert(!ble_mesh_health_faults(0x1201, 1, &zero, 1));
+    assert(!ble_mesh_health_faults(0x1201, 1, &extra, 1)); // Full history rejects atomically.
+    assert(mesh_models.health_server[0].current_count == 5 && mesh_models.health_server[0].current[0] == 1);
+    assert(!ble_mesh_health_faults(0x1203, 0, NULL, 0));
+    assert(!ble_mesh_health_faults(0x1201, 0, NULL, 1));
+    uint8_t too_many[MESH_HEALTH_MAX_FAULTS + 1] = {1};
+    assert(!ble_mesh_health_faults(0x1201, 0, too_many, sizeof(too_many)));
+    assert(ble_mesh_health_faults(0x1201, 1, NULL, 0));
+    count = send_count; ble_mesh_models_poll(); assert(send_count == count + 1 && last_len == 3);
+    assert(mesh_health_period(0) == 8000);
+    now_ms += 50; ble_mesh_models_poll();
+    now_ms += 7949; count = send_count; ble_mesh_models_poll(); assert(send_count == count);
+    now_ms++; ble_mesh_models_poll(); assert(send_count == count + 1 && last_len == 3);
+    mesh_models.state.health_period[0] = 15;
+    assert(ble_mesh_health_faults(0x1201, 1, full, sizeof(full)) && mesh_health_period(0) == 100);
+    pub.period = 0;
+    assert(ble_mesh_set_publication(0x1201, 0x1201, MESH_MODEL_HEALTH_SERVER, &pub) && config_request());
+    count = send_count; ble_mesh_models_poll(); assert(send_count == count + 1); // Changes publish even without a period.
+    now_ms += 50; ble_mesh_models_poll();
+    now_ms += 1000; count = send_count; ble_mesh_models_poll(); assert(send_count == count);
+}
+
 static void test_heartbeat_configuration(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .net_key_index = 0x123};
     now_ms = 0;
@@ -1205,6 +1326,7 @@ int main(void) {
     test_foundation_configuration();
     test_key_configuration();
     test_node_settings();
+    test_health();
     test_heartbeat_configuration();
     return 0;
 }
