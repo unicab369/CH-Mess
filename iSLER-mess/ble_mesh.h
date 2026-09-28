@@ -6,6 +6,7 @@
 #include "ble_mesh_1network.h"
 #include "ble_mesh_2transport.h"
 #include "ble_mesh_3access.h"
+#include "ble_mesh_4foundation.h"
 #include "ble_mesh_4models.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
@@ -210,7 +211,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 6
+#define MESH_STATE_VERSION 7
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -351,6 +352,7 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
     // New provisioning replaces this device's network and clears old node keys.
     mesh_state_record record = {0};
     record.state = state;
+    record.models.default_ttl = MODEL_TTL;
     if (!mesh_state_save_record(&record)) return -1;
     if (!ble_mesh_network_init(&state)) return -1;
     memset(&mesh_models, 0, sizeof(mesh_models));

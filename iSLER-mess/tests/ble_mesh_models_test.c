@@ -25,6 +25,7 @@ typedef struct {
 
 #define MESH_MAX_APP_KEYS 4
 #define MESH_MAX_ELEMENTS 2
+#define MESH_NETWORK_REPLAY_SLOTS 16
 typedef struct {
     uint8_t key[16], new_key[16];
     uint16_t index;
@@ -69,9 +70,11 @@ static uint32_t now_ms;
 static uint32_t last_opcode;
 static uint16_t last_dst;
 static uint16_t last_src;
-static uint8_t last_params[32];
+static uint8_t last_params[128];
 static uint16_t last_app_key_index;
 static size_t last_len;
+static uint8_t last_ttl;
+static int send_count, send_fail, save_fail;
 static uint8_t applied_on, attention_seconds, reported_on;
 static uint16_t applied_element, reported_element;
 static int apply_count, report_count;
@@ -95,8 +98,10 @@ static int ble_mesh_access_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                 uint16_t app_key_index, uint32_t opcode,
                                 const uint8_t *params, size_t len,
                                 uint8_t mic_64) {
+    if (send_fail) return 0;
+    send_count++;
     last_src = src;
-    (void)ttl;
+    last_ttl = ttl;
     assert(mic_64 == 0);
     assert(len <= sizeof(last_params));
     last_dst = dst;
@@ -133,6 +138,7 @@ int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
     return 1;
 }
 int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
+    if (save_fail) return 0;
     saved = *state;
     return 1;
 }
@@ -161,6 +167,209 @@ static int poll_message(const mesh_access_pdu *message) {
     polled_access = *message;
     poll_ready = 1;
     return ble_mesh_models_poll();
+}
+
+static int config_message(uint32_t opcode, const uint8_t *params, size_t len) {
+    mesh_access_pdu message = {.src = 0x1202, .dst = 0x1201,
+        .app_key_index = APP_KEY_INDEX_NONE, .device_key_owner = 0x1201,
+        .opcode = opcode, .params = params, .params_len = len};
+    return poll_message(&message);
+}
+
+// Round-trip the client's wire encoding through the server and dispatcher.
+static int config_request(void) {
+    uint32_t opcode = last_opcode;
+    size_t len = last_len;
+    uint8_t params[128];
+    memcpy(params, last_params, len);
+    return config_message(opcode, params, len);
+}
+
+static void test_foundation_configuration(void) {
+    memset(&saved, 0, sizeof(saved));
+    memset(&mesh_models, 0, sizeof(mesh_models));
+    memset(&mesh_network.state.app_keys, 0, sizeof(mesh_network.state.app_keys));
+    saved.default_ttl = MODEL_TTL;
+    saved.onoff_server_bindings = saved.onoff_client_bindings = saved.health_server_bindings = 1;
+    saved.other[0] = (mesh_element_bindings){1, 1, 1};
+    mesh_network.state.app_keys[0].used = 1;
+    mesh_network.state.app_keys[0].index = 0x234;
+    mesh_network.state.app_keys[1].used = 1;
+    mesh_network.state.app_keys[1].index = 0x235;
+    now_ms = 0;
+    assert(ble_mesh_models_init());
+
+    assert(ble_mesh_get_composition(0x1201, 0xff) && config_request());
+    assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 35);
+    assert(last_params[0] == 0 && last_params[7] == MESH_NETWORK_REPLAY_SLOTS);
+    assert(last_params[9] == 0 && last_params[13] == 5 && last_params[27] == 3);
+    assert(last_params[15] == 0 && last_params[17] == 1 && last_params[19] == 2);
+    assert(last_params[21] == 0 && last_params[22] == 0x10);
+    assert(last_app_key_index == DEVICE_KEY_LOCAL);
+    mesh_network.state.element_count = 1;
+    assert(ble_mesh_get_composition(0x1201, 0) && config_request() && last_len == 25);
+    mesh_network.state.element_count = 2;
+    assert(config_message(OP_CONFIG_COMPOSITION_GET, NULL, 0) == 0);
+
+    assert(!ble_mesh_set_default_ttl(0x1201, 1));
+    assert(!ble_mesh_set_default_ttl(0x1201, 128));
+    uint8_t ttl = 1;
+    assert(!config_message(OP_CONFIG_DEFAULT_TTL_SET, &ttl, 1));
+    assert(ble_mesh_set_default_ttl(0x1201, 7) && config_request());
+    assert(last_opcode == OP_CONFIG_DEFAULT_TTL_STATUS && last_params[0] == 7 && last_ttl == 7);
+    save_fail = 1; ttl = 3;
+    assert(!config_message(OP_CONFIG_DEFAULT_TTL_SET, &ttl, 1));
+    assert(saved.default_ttl == 7 && mesh_models.state.default_ttl == 7);
+    save_fail = 0;
+    assert(ble_mesh_get_default_ttl(0x1201) && config_request() && last_params[0] == 7);
+    assert(ble_mesh_onoff_get(0x1201, 0x1202, 0x234) && last_ttl == 7);
+    assert(ble_mesh_set_default_ttl(0x1201, 0) && config_request() && last_ttl == 0);
+    assert(ble_mesh_set_default_ttl(0x1201, 7) && config_request());
+
+    uint8_t label[16] = {9}, collision[16] = {9, 1};
+    assert(mesh_model_group_change(0x1201, MESH_MODEL_ONOFF_SERVER, 0xc001, 1) == 0);
+    assert(mesh_model_group_change(0x1202, MESH_MODEL_ONOFF_SERVER, 0xc002, 1) == 0);
+    assert(ble_mesh_model_label_add(0x1201, MESH_MODEL_ONOFF_SERVER, label) == 0);
+    assert(ble_mesh_model_label_add(0x1201, MESH_MODEL_ONOFF_SERVER, collision) == 0);
+    assert(ble_mesh_get_subscriptions(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER) && config_request());
+    assert(last_opcode == OP_CONFIG_SIG_MODEL_SUB_LIST && last_len == 9);
+    assert(last_params[5] == 1 && last_params[6] == 0xc0 && last_params[7] == 9 && last_params[8] == 0x80);
+    mesh_models_state before = saved;
+    save_fail = 1;
+    assert(ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0xc003, NULL));
+    assert(config_request() && last_params[0] == MESH_CONFIG_STORAGE_FAILURE);
+    assert(!memcmp(&before, &saved, sizeof(saved)) && registered_labels == 2);
+    save_fail = 0;
+    assert(ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0xc003, NULL) && config_request());
+    assert(saved.group_count == 2 && saved.virtual_count == 0 && registered_labels == 0);
+    assert(saved.groups[0].element == 1 && saved.groups[0].address == 0xc002);
+    assert(ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0, label) && config_request());
+    assert(saved.group_count == 1 && saved.virtual_count == 1 && registered_labels == 1);
+    assert(last_params[3] == 9 && last_params[4] == 0x80);
+    assert(ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0, NULL) && config_request());
+    assert(saved.group_count == 1 && saved.virtual_count == 0);
+    assert(ble_mesh_get_subscriptions(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER) && config_request() && last_len == 5);
+    uint8_t invalid_model[] = {1, 0x12, 0xff, 0x7f};
+    assert(config_message(OP_CONFIG_SIG_MODEL_SUB_GET, invalid_model, 4));
+    assert(last_params[0] == MESH_CONFIG_INVALID_MODEL && last_len == 5);
+    invalid_model[0] = 0;
+    assert(config_message(OP_CONFIG_SIG_MODEL_SUB_GET, invalid_model, 4));
+    assert(last_params[0] == MESH_CONFIG_INVALID_ADDRESS);
+    assert(!ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0x8001, NULL));
+
+    mesh_publication pub = {.address = 0xc010, .app_idx = 0x234,
+        .ttl = 0xff, .period = 0x41, .retransmit = 10}; // 1 s; 2 retries, 100 ms apart.
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(last_opcode == OP_CONFIG_MODEL_PUB_STATUS && last_len == 12 && last_params[0] == 0);
+    assert(last_params[3] == 0x10 && last_params[4] == 0xc0 && last_params[7] == 0xff);
+    assert(ble_mesh_get_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER) && config_request());
+    pub.app_idx = 0x235;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_BINDING && saved.publications[1][0].app_idx == 0x234);
+    pub.app_idx = 0x236;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_APPKEY);
+    pub.app_idx = 0x234;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub));
+    uint8_t wire[25]; memcpy(wire, last_params, last_len);
+    wire[5] |= 0x10;
+    assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_INVALID_PUBLICATION);
+    wire[5] &= ~0x10; wire[6] = 128;
+    assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_INVALID_PUBLICATION);
+    wire[6] = 0xff; wire[5] |= 0x80;
+    assert(!config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11));
+    wire[5] &= ~0x80; wire[3] = 0x80;
+    assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_INVALID_ADDRESS);
+    wire[3] = 0xc0;
+    assert(!config_message(OP_CONFIG_MODEL_PUB_SET, wire, 10));
+    pub.address = 0xc011;
+    save_fail = 1;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && saved.publications[1][0].address == 0xc010);
+    save_fail = 0;
+    assert(ble_mesh_models_init()); // Persisted settings restore the periodic timer.
+    int count = send_count;
+    now_ms = 999; ble_mesh_models_poll(); assert(send_count == count);
+    send_fail = 1; now_ms = 1000; ble_mesh_models_poll();
+    assert(send_count == count && mesh_models.publications[1][0].remaining == 3);
+    send_fail = 0; now_ms = 1001; ble_mesh_models_poll();
+    assert(send_count == count + 1 && last_src == 0x1202 && last_dst == 0xc010 && last_ttl == 7);
+    assert(last_opcode == OP_ONOFF_STATUS && last_params[0] == 0 && last_app_key_index == 0x234);
+    now_ms = 1100; ble_mesh_models_poll(); assert(send_count == count + 1);
+    now_ms = 1101; ble_mesh_models_poll(); assert(send_count == count + 2);
+    now_ms = 1201; ble_mesh_models_poll(); assert(send_count == count + 3);
+    now_ms = 1301; ble_mesh_models_poll(); assert(send_count == count + 3);
+    // State changes publish once, and duplicate transactions do not start a new publication.
+    uint8_t on[] = {1, 42};
+    mesh_access_pdu message = {.src = 0x1301, .dst = 0x1202, .app_key_index = 0x234,
+        .opcode = OP_ONOFF_SET_UNACK, .params = on, .params_len = 2};
+    assert(poll_message(&message));
+    ble_mesh_models_poll();
+    assert(last_opcode == OP_ONOFF_STATUS && last_params[0] == 1);
+    uint32_t retry_at = mesh_models.publications[1][0].retransmit_at_ms;
+    assert(poll_message(&message));
+    assert(mesh_models.publications[1][0].retransmit_at_ms == retry_at);
+    // Disabling publication cancels retries and ignores other fields.
+    pub.address = 0; pub.app_idx = 0xffff; pub.ttl = 0xfe;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(saved.publications[1][0].address == 0 && last_params[5] == 0 && last_params[7] == 0);
+    count = send_count; now_ms += 2000; ble_mesh_models_poll(); assert(send_count == count);
+
+    // Virtual publication uses its UUID rather than relying on a subscription.
+    pub = (mesh_publication){.app_idx = 0x234, .ttl = 4, .has_label = 1};
+    memcpy(pub.label, label, 16);
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
+    assert(saved.publications[1][0].address == 0x8009 && saved.publications[1][0].has_label);
+    uint8_t present = 1;
+    assert(mesh_publication_begin(1, MESH_MODEL_ONOFF_SERVER, OP_ONOFF_STATUS, &present, 1));
+    ble_mesh_models_poll(); assert(last_dst == 0x8009 && last_ttl == 4);
+    uint8_t unbind[] = {2, 0x12, 0x34, 2, 0, 0x10};
+    assert(config_message(OP_CONFIG_MODEL_APP_UNBIND, unbind, 6));
+    assert(saved.publications[1][0].address == 0);
+
+    // TTL 1 is local delivery, with no Mesh advertising packet.
+    pub = (mesh_publication){.address = 0x1201, .app_idx = 0x234, .ttl = 1, .retransmit = 1};
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_CLIENT, &pub) && config_request());
+    assert(ble_mesh_onoff_publish(0x1202, 1, 0));
+    count = send_count;
+    assert(ble_mesh_models_poll());
+    assert(send_count == count && mesh_models.onoff_server[0].onoff == 1);
+    int prior = apply_count;
+    now_ms += 50;
+    assert(ble_mesh_models_poll());
+    assert(send_count == count && apply_count == prior); // Retry uses the same TID.
+    assert(!ble_mesh_onoff_publish(0x1203, 1, 0));
+    assert(!ble_mesh_onoff_publish(0x1202, 2, 0));
+    pub.address = 0;
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_CLIENT, &pub) && config_request());
+
+    // Health publishes an empty current-fault list; timers survive clock wrap.
+    now_ms = UINT32_MAX - 50;
+    pub = (mesh_publication){.address = 0xc100, .app_idx = 0x234, .ttl = 0xff, .period = 1};
+    assert(ble_mesh_set_publication(0x1201, 0x1201, MESH_MODEL_HEALTH_SERVER, &pub) && config_request());
+    count = send_count;
+    now_ms = 48; ble_mesh_models_poll(); assert(send_count == count);
+    now_ms = 49; ble_mesh_models_poll();
+    assert(send_count == count + 1 && last_opcode == OP_HEALTH_CURRENT_STATUS && last_len == 3);
+    assert(last_params[0] == 0 && last_params[1] == (uint8_t)MESH_COMPANY_ID);
+    uint8_t delete_key[] = {0x23, 0x41, 0x23};
+    assert(config_message(OP_CONFIG_APPKEY_DELETE, delete_key, 3));
+    assert(saved.publications[0][2].address == 0 && saved.health_server_bindings == 0);
+    count = send_count; now_ms += 1000; ble_mesh_models_poll(); assert(send_count == count);
+
+    // New status types reach the Config Client only with the sender's Device Key.
+    const uint32_t statuses[] = {OP_CONFIG_COMPOSITION_STATUS, OP_CONFIG_DEFAULT_TTL_STATUS,
+        OP_CONFIG_MODEL_PUB_STATUS, OP_CONFIG_SIG_MODEL_SUB_LIST};
+    message = (mesh_access_pdu){.src = 0x1202, .dst = 0x1201,
+        .app_key_index = APP_KEY_INDEX_NONE, .device_key_owner = 0x1202};
+    for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
+        message.opcode = statuses[i];
+        prior = config_report_count;
+        assert(poll_message(&message) && config_report_count == prior + 1);
+        message.device_key_owner = 0x1301;
+        assert(!poll_message(&message));
+        message.device_key_owner = 0x1202;
+    }
 }
 
 int main(void) {
@@ -502,5 +711,6 @@ int main(void) {
     assert(poll_message(&message) == 1 && config_report_count == 1);
     message.app_key_index = 0x234;
     assert(poll_message(&message) == 0); // AppKey cannot authorize configuration.
+    test_foundation_configuration();
     return 0;
 }

@@ -7,7 +7,6 @@
 #include "ble_mesh_2transport.h"
 
 // TODO for a broadly usable Access layer:
-// - Use configured publication address, AppKey, TTL, period, and retransmit settings.
 
 typedef struct {
     uint16_t src;
