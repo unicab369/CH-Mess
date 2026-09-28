@@ -177,6 +177,11 @@ int main(void) {
     assert(last_opcode == OP_CONFIG_APPKEY_UPDATE && last_len == 19);
     assert(ble_mesh_add_or_update_app_key(0x1202, 0x123, 0x234, client_key, 2) == 0);
 
+    assert(ble_mesh_model_binding(0x1202, 0x1202, 0x234, MESH_MODEL_ONOFF_SERVER, 1) == 1);
+    assert(last_opcode == OP_CONFIG_MODEL_APP_BIND && last_len == 6);
+    assert(ble_mesh_model_binding(0x1202, 0x1202, 0x234, MESH_MODEL_ONOFF_SERVER, 0) == 1);
+    assert(last_opcode == OP_CONFIG_MODEL_APP_UNBIND && last_len == 6);
+
     uint8_t add[19] = {0x23, 0x41, 0x23}; // NetKey 0x123, AppKey 0x234
     memset(add + 3, 0x55, 16);
     mesh_access_pdu message = {

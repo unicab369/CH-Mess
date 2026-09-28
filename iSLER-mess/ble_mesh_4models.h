@@ -123,7 +123,11 @@ static uint8_t *mesh_model_bindings(mesh_models_state *state,
     return NULL;
 }
 
-static int mesh_virtual_model_valid(uint16_t model);
+static int mesh_virtual_model_valid(uint16_t model) {
+    return model == MESH_MODEL_ONOFF_SERVER ||
+           model == MESH_MODEL_ONOFF_CLIENT ||
+           model == MESH_MODEL_HEALTH_SERVER;
+}
 
 static inline int ble_mesh_models_init(void) {
     if (!mesh_network.ready ||
@@ -161,11 +165,6 @@ static inline int ble_mesh_models_init(void) {
     return 1;
 }
 
-static int mesh_virtual_model_valid(uint16_t model) {
-    return model == MESH_MODEL_ONOFF_SERVER ||
-           model == MESH_MODEL_ONOFF_CLIENT ||
-           model == MESH_MODEL_HEALTH_SERVER;
-}
 
 // Local subscription interface; returns a Mesh Configuration status code.
 static inline uint8_t ble_mesh_model_label_add(
@@ -554,32 +553,20 @@ static inline int ble_mesh_get_app_keys(uint16_t dst,
                                  OP_CONFIG_APPKEY_GET, params, sizeof(params), 0);
 }
 
-static inline int ble_mesh_bind_model(
+// Set bind to 1 to bind the AppKey to the model, or 0 to unbind it.
+static inline int ble_mesh_model_binding(
     uint16_t dst, uint16_t element,
-    uint16_t app_idx, uint16_t model
+    uint16_t app_idx, uint16_t model, uint8_t bind
 ) {
-    if (!element || element > 0x7fff || app_idx > 0x0fff) return 0;
+    if (!element || element > 0x7fff || app_idx > 0x0fff || bind > 1) return 0;
     uint8_t params[6] = {
         (uint8_t)element, (uint8_t)(element >> 8),
         (uint8_t)app_idx, (uint8_t)(app_idx >> 8),
         (uint8_t)model, (uint8_t)(model >> 8)
     };
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                OP_CONFIG_MODEL_APP_BIND,
-                                params, sizeof(params), 0);
-}
-
-static inline int ble_mesh_unbind_model(
-    uint16_t dst, uint16_t element, uint16_t app_idx, uint16_t model
-) {
-    if (!element || element > 0x7fff || app_idx > 0x0fff) return 0;
-    uint8_t params[6] = {
-        (uint8_t)element, (uint8_t)(element >> 8),
-        (uint8_t)app_idx, (uint8_t)(app_idx >> 8),
-        (uint8_t)model, (uint8_t)(model >> 8)
-    };
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst, MODEL_TTL, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_MODEL_APP_UNBIND, params, sizeof(params), 0);
+                                 bind ? OP_CONFIG_MODEL_APP_BIND : OP_CONFIG_MODEL_APP_UNBIND,
+                                 params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_get_bindings(uint16_t dst,
