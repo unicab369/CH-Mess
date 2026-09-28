@@ -1,5 +1,5 @@
 // TODO for foundation support:
-// - Health Client: configured publication and outgoing virtual requests.
+// - Health Client: configured publication for requests.
 // - Multiple subnets: store and route using additional NetKeys.
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
@@ -118,8 +118,9 @@ Use `ble_mesh_health_fault_get/clear/test()`, `ble_mesh_health_period_get/set()`
 and `ble_mesh_health_attention_get/set()` with a local element, destination, and
 bound AppKey index. Fault requests also take a Company ID; Test takes a Test ID.
 Clear, Test, and Set take `acknowledged` (1 requests a reply, 0 does not).
-Requests use explicit unicast/group destinations; configured Health Client
-publication and outgoing virtual requests are not implemented.
+Use the matching `_virtual` helper with a 16-byte Label UUID to send a request
+to a virtual address. Requests can target unicast, group, or virtual addresses.
+Configured Health Client publication is not implemented.
 
 `BLE_MESH_HEALTH_STATUS(element, src, opcode, params, len)` receives validated
 replies and published current faults. Fault parameters are Test ID (1 byte),

@@ -110,78 +110,140 @@ void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds);
 // Return 1 for a completed test, 0 for an unsupported test or failure.
 int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len);
 
+// Queue to a unicast/group address, or to a Label UUID when label is set.
+static int mesh_health_queue(uint16_t element, uint16_t dst,
+                             const uint8_t *label, uint16_t app_idx,
+                             uint32_t opcode, const uint8_t *params, size_t len) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    if (label)
+        return ble_mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
+            app_idx, opcode, params, len, 0);
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl,
+        app_idx, opcode, params, len, 0);
+}
+
 // Health Client requests use a bound AppKey; acknowledged sets request a status reply.
 static inline int ble_mesh_health_fault_get(
     uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
     uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        OP_HEALTH_FAULT_GET, params, sizeof(params), 0);
+    return mesh_health_queue(element, dst, NULL, app_idx, OP_HEALTH_FAULT_GET, params, sizeof(params));
+}
+
+static inline int ble_mesh_health_fault_get_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx, uint16_t company
+) {
+    if (!label) return 0;
+    uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
+    return mesh_health_queue(element, 0, label, app_idx, OP_HEALTH_FAULT_GET, params, sizeof(params));
 }
 
 static inline int ble_mesh_health_fault_clear(
     uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company, uint8_t acknowledged
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
     uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        acknowledged ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK, params, sizeof(params), 0);
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, dst, NULL, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK,
+        params, sizeof(params));
+}
+
+static inline int ble_mesh_health_fault_clear_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx, uint16_t company, uint8_t acknowledged
+) {
+    if (!label) return 0;
+    uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, 0, label, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK,
+        params, sizeof(params));
 }
 
 static inline int ble_mesh_health_fault_test(
     uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company, uint8_t test_id, uint8_t acknowledged
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
     uint8_t params[3] = {test_id, (uint8_t)company, (uint8_t)(company >> 8)};
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        acknowledged ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK, params, sizeof(params), 0);
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, dst, NULL, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK,
+        params, sizeof(params));
+}
+
+static inline int ble_mesh_health_fault_test_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx, uint16_t company, uint8_t test_id, uint8_t acknowledged
+) {
+    if (!label) return 0;
+    uint8_t params[3] = {test_id, (uint8_t)company, (uint8_t)(company >> 8)};
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, 0, label, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK,
+        params, sizeof(params));
 }
 
 static inline int ble_mesh_health_period_get(
     uint16_t element, uint16_t dst, uint16_t app_idx
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        OP_HEALTH_PERIOD_GET, NULL, 0, 0);
+    return mesh_health_queue(element, dst, NULL, app_idx, OP_HEALTH_PERIOD_GET, NULL, 0);
+}
+
+static inline int ble_mesh_health_period_get_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx
+) {
+    if (!label) return 0;
+    return mesh_health_queue(element, 0, label, app_idx, OP_HEALTH_PERIOD_GET, NULL, 0);
 }
 
 static inline int ble_mesh_health_period_set(
     uint16_t element, uint16_t dst, uint16_t app_idx, uint8_t divisor, uint8_t acknowledged
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 || divisor > 15 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        acknowledged ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK, &divisor, 1, 0);
+    if (divisor > 15 || acknowledged > 1) return 0;
+    return mesh_health_queue(element, dst, NULL, app_idx,
+        acknowledged ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK,
+        &divisor, 1);
+}
+
+static inline int ble_mesh_health_period_set_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx, uint8_t divisor, uint8_t acknowledged
+) {
+    if (!label) return 0;
+    if (divisor > 15 || acknowledged > 1) return 0;
+    return mesh_health_queue(element, 0, label, app_idx,
+        acknowledged ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK,
+        &divisor, 1);
 }
 
 static inline int ble_mesh_health_attention_get(
     uint16_t element, uint16_t dst, uint16_t app_idx
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        OP_HEALTH_ATTENTION_GET, NULL, 0, 0);
+    return mesh_health_queue(element, dst, NULL, app_idx, OP_HEALTH_ATTENTION_GET, NULL, 0);
+}
+
+static inline int ble_mesh_health_attention_get_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx
+) {
+    if (!label) return 0;
+    return mesh_health_queue(element, 0, label, app_idx, OP_HEALTH_ATTENTION_GET, NULL, 0);
 }
 
 static inline int ble_mesh_health_attention_set(
     uint16_t element, uint16_t dst, uint16_t app_idx, uint8_t seconds, uint8_t acknowledged
 ) {
-    int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-        acknowledged ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK, &seconds, 1, 0);
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, dst, NULL, app_idx,
+        acknowledged ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK,
+        &seconds, 1);
+}
+
+static inline int ble_mesh_health_attention_set_virtual(
+    uint16_t element, const uint8_t label[16], uint16_t app_idx, uint8_t seconds, uint8_t acknowledged
+) {
+    if (!label) return 0;
+    if (acknowledged > 1) return 0;
+    return mesh_health_queue(element, 0, label, app_idx,
+        acknowledged ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK,
+        &seconds, 1);
 }
 
 static inline int ble_mesh_config_virtual_sub(
