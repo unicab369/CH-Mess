@@ -31,6 +31,15 @@
 #define OP_CONFIG_SIG_SUB_GET 0x8029
 #define OP_CONFIG_SIG_MODEL_SUB_LIST 0x802a
 #define OP_HEALTH_CURRENT_STATUS 0x04
+#define OP_CONFIG_NETKEY_ADD 0x8040
+#define OP_CONFIG_NETKEY_DELETE 0x8041
+#define OP_CONFIG_NETKEY_GET 0x8042
+#define OP_CONFIG_NETKEY_LIST 0x8043
+#define OP_CONFIG_NETKEY_STATUS 0x8044
+#define OP_CONFIG_NETKEY_UPDATE 0x8045
+#define OP_CONFIG_KEY_PHASE_GET 0x8015
+#define OP_CONFIG_KEY_PHASE_SET 0x8016
+#define OP_CONFIG_KEY_PHASE_STATUS 0x8017
 
 #define OP_CONFIG_APPKEY_ADD 0x00
 #define OP_CONFIG_APPKEY_UPDATE 0x01
@@ -141,15 +150,6 @@ static uint8_t mesh_health_attention_remaining(uint8_t element) {
     return (uint8_t)((total - elapsed + 999) / 1000);
 }
 
-// TODO for configuration support:
-// - NetKeys: add, update, delete, and list network keys.
-// - Key Refresh: get and set the refresh phase.
-// - Relay and network retransmission settings.
-// - Secure Network Beacon, Proxy, Friend, and Node Identity settings.
-// - Heartbeat publication and subscription settings.
-// - Node Reset: clear provisioning and configuration state.
-// - SAR Configuration model: expose transport timing settings (separate model).
-
 // Replace or clear all subscriptions of one model in a single saved update.
 static uint8_t mesh_subscription_replace(uint16_t element, uint16_t model,
                                           uint16_t address, const uint8_t *label) {
@@ -198,6 +198,70 @@ static int server_config_receive(const mesh_access_pdu *message) {
     const mesh_net_state *state = &mesh_network.state;
     const uint8_t *p = message->params;
     size_t len = message->params_len;
+
+    if (message->opcode == OP_CONFIG_NETKEY_GET) {
+        if (len != 0) return 0;
+        uint8_t reply[2] = {(uint8_t)state->net_key_index,
+                            (uint8_t)(state->net_key_index >> 8)};
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_NETKEY_LIST, reply, sizeof(reply), 0);
+    }
+
+    if (message->opcode == OP_CONFIG_NETKEY_ADD ||
+        message->opcode == OP_CONFIG_NETKEY_UPDATE ||
+        message->opcode == OP_CONFIG_NETKEY_DELETE) {
+        uint8_t remove = message->opcode == OP_CONFIG_NETKEY_DELETE;
+        if (len != (remove ? 2u : 18u) || (p[1] & 0xf0)) return 0;
+        uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
+        uint8_t status = MESH_CONFIG_SUCCESS;
+        if (message->opcode == OP_CONFIG_NETKEY_ADD) {
+            // This node has one subnet, installed during provisioning.
+            if (net_idx != state->net_key_index)
+                status = MESH_CONFIG_INSUFFICIENT_RESOURCES;
+            else if (memcmp(state->net_key, p + 2, 16))
+                status = MESH_CONFIG_KEY_ALREADY_STORED;
+        } else if (remove) {
+            // Deleting an absent key is redundant; the last key cannot be removed.
+            if (net_idx == state->net_key_index) status = MESH_CONFIG_CANNOT_REMOVE;
+        } else if (net_idx != state->net_key_index)
+            status = MESH_CONFIG_INVALID_NETKEY;
+        else if (!state->phase2_provisioned && state->key_refresh_phase == 0 &&
+                 !memcmp(state->net_key, p + 2, 16))
+            status = MESH_CONFIG_KEY_ALREADY_STORED;
+        else if (state->phase2_provisioned || state->key_refresh_phase == 2 ||
+                 (state->key_refresh_phase == 1 && memcmp(state->new_net_key, p + 2, 16)))
+            status = MESH_CONFIG_CANNOT_UPDATE;
+        else if (!ble_mesh_stage_net_key(p + 2))
+            status = MESH_CONFIG_STORAGE_FAILURE;
+
+        uint8_t reply[3] = {status, p[0], p[1]};
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_NETKEY_STATUS, reply, sizeof(reply), 0);
+    }
+
+    if (message->opcode == OP_CONFIG_KEY_PHASE_GET ||
+        message->opcode == OP_CONFIG_KEY_PHASE_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_KEY_PHASE_SET;
+        if (len != (set ? 3u : 2u) || (p[1] & 0xf0) ||
+            (set && p[2] != 2 && p[2] != 3)) return 0;
+        uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
+        uint8_t phase = state->phase2_provisioned ? 2 : state->key_refresh_phase;
+        uint8_t status = net_idx != state->net_key_index ?
+            MESH_CONFIG_INVALID_NETKEY : MESH_CONFIG_SUCCESS;
+        if (set && status == MESH_CONFIG_SUCCESS) {
+            if (p[2] == 2 && phase == 0) status = MESH_CONFIG_CANNOT_UPDATE;
+            else if (!ble_mesh_key_refresh_transition(p[2]))
+                status = MESH_CONFIG_STORAGE_FAILURE;
+            phase = state->phase2_provisioned ? 2 : state->key_refresh_phase;
+        }
+        uint8_t reply[4] = {status, p[0], p[1],
+                            net_idx == state->net_key_index ? phase : 0};
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_KEY_PHASE_STATUS, reply, sizeof(reply), 0);
+    }
 
     if (message->opcode == OP_CONFIG_COMPOSITION_GET) {
         if (len != 1) return 0;
@@ -433,8 +497,13 @@ static int server_config_receive(const mesh_access_pdu *message) {
             status = MESH_CONFIG_INVALID_APPKEY;
         else if (slot < 0) status = MESH_CONFIG_SUCCESS;
         else if (message->opcode == OP_CONFIG_APPKEY_UPDATE) {
-            if (!ble_mesh_stage_app_key(app_idx, p + 3))
+            const mesh_app_key *app = &state->app_keys[slot];
+            if (state->key_refresh_phase != 1 ||
+                (app->has_new_key && memcmp(app->new_key, p + 3, 16)) ||
+                (!app->has_new_key && !memcmp(app->key, p + 3, 16)))
                 status = MESH_CONFIG_CANNOT_UPDATE;
+            else if (!ble_mesh_stage_app_key(app_idx, p + 3))
+                status = MESH_CONFIG_STORAGE_FAILURE;
         } else {
             // Remove bindings first so a reused slot cannot inherit permissions.
             if (!mesh_unbind_slot((uint8_t)slot))
@@ -540,6 +609,50 @@ static int server_config_receive(const mesh_access_pdu *message) {
 }
 
 // Config Client helpers for a provisioner configuring another node.
+// Set update to 1 to start Key Refresh, or 0 to add a subnet key.
+static inline int ble_mesh_add_or_update_net_key(uint16_t dst, uint16_t net_idx,
+    const uint8_t key[16], uint8_t update) {
+    if (!key || net_idx > 0x0fff || update > 1) return 0;
+    uint8_t params[18] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
+    memcpy(params + 2, key, 16);
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        update ? OP_CONFIG_NETKEY_UPDATE : OP_CONFIG_NETKEY_ADD,
+        params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_get_net_keys(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_NETKEY_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_delete_net_key(uint16_t dst, uint16_t net_idx) {
+    if (net_idx > 0x0fff) return 0;
+    uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_NETKEY_DELETE, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_get_key_phase(uint16_t dst, uint16_t net_idx) {
+    if (net_idx > 0x0fff) return 0;
+    uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_KEY_PHASE_GET, params, sizeof(params), 0);
+}
+
+// Transition 2 starts sending with new keys; 3 revokes old keys and returns to 0.
+static inline int ble_mesh_set_key_phase(uint16_t dst, uint16_t net_idx,
+                                         uint8_t transition) {
+    if (net_idx > 0x0fff || (transition != 2 && transition != 3)) return 0;
+    uint8_t params[3] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8), transition};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_KEY_PHASE_SET, params, sizeof(params), 0);
+}
+
 // Set update to 0 to add a key, or 1 to stage a replacement during Key Refresh.
 static inline int ble_mesh_add_or_update_app_key(
     uint16_t dst, uint16_t net_idx,

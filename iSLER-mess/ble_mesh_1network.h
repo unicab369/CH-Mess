@@ -212,7 +212,7 @@ static int mesh_commit(const mesh_net_state *next) {
     return 1;
 }
 
-// Called by a future Configuration Server when Config NetKey Update succeeds.
+// Stage the replacement NetKey when Config NetKey Update succeeds.
 static inline int ble_mesh_stage_net_key(const uint8_t new_net_key[16]) {
     if (!mesh_network.ready || !new_net_key) return 0;
     if (mesh_network.state.key_refresh_phase == 1 &&
@@ -250,6 +250,8 @@ static inline int ble_mesh_stage_app_key(uint16_t index,
 // Transition 2 selects new keys for TX; transition 3 revokes old keys.
 static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
     if (!mesh_network.ready) return 0;
+    // A node provisioned during Phase 2 already sends with its only (new) key.
+    if (transition == 2 && mesh_network.state.phase2_provisioned) return 1;
     if (transition == 3 && !mesh_network.state.has_new_key) {
         if (!mesh_network.state.phase2_provisioned) return 1;
         mesh_net_state next = mesh_network.state;

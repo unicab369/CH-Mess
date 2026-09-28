@@ -23,35 +23,42 @@ typedef struct {
     uint8_t data[380];
 } mesh_access_message;
 
-#define MESH_MAX_APP_KEYS 4
-#define MESH_MAX_ELEMENTS 2
-#define MESH_NETWORK_REPLAY_SLOTS 16
-typedef struct {
-    uint8_t key[16], new_key[16];
-    uint16_t index;
-    uint8_t used, has_new_key;
-} mesh_app_key;
-typedef struct {
-    uint16_t net_key_index, unicast_address;
-    uint8_t element_count;
-    uint8_t key_refresh_phase;
-    mesh_app_key app_keys[MESH_MAX_APP_KEYS];
-} mesh_net_state;
+// Use the real network key state machine; access/radio delivery stays mocked.
+#include "../ble_mesh_1network.h"
 
-static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
-    for (int i = 0; i < MESH_MAX_APP_KEYS; i++)
-        if (state->app_keys[i].used && state->app_keys[i].index == index) return i;
-    return -1;
+void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
+    uint8_t block[16];
+    for (int i = 0; i < 16; i++) block[i] = in[i] ^ key[i] ^ (uint8_t)(i * 13);
+    memcpy(out, block, 16);
 }
 
-static struct {
-    mesh_net_state state;
-    uint8_t ready;
-} mesh_network;
-static int mesh_local_element(uint16_t address) {
-    return address >= mesh_network.state.unicast_address &&
-           address - mesh_network.state.unicast_address <
-               mesh_network.state.element_count;
+static mesh_net_state saved_network;
+static int network_save_fail, network_save_count;
+int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
+    *state = saved_network;
+    return 1;
+}
+int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
+    if (network_save_fail) return 0;
+    saved_network = *state;
+    network_save_count++;
+    return 1;
+}
+int BLE_MESH_NETWORK_STORE_SEQ(uint32_t seq) {
+    (void)seq;
+    return 1;
+}
+int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
+    (void)seconds;
+    return 0;
+}
+int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
+    (void)ad; (void)len;
+    return 0;
+}
+int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len) {
+    (void)ad; (void)len;
+    return 0;
 }
 
 #define MESH_TRANSPORT_MAX_LABELS 4
@@ -83,17 +90,6 @@ static mesh_access_pdu polled_access;
 static int poll_ready;
 
 static uint32_t GET_MILLIS(void) { return now_ms; }
-static int mesh_commit(const mesh_net_state *state) {
-    mesh_network.state = *state;
-    return 1;
-}
-static int ble_mesh_stage_app_key(uint16_t index, const uint8_t key[16]) {
-    int slot = mesh_app_key_slot(&mesh_network.state, index);
-    if (slot < 0 || mesh_network.state.key_refresh_phase != 1) return 0;
-    memcpy(mesh_network.state.app_keys[slot].new_key, key, 16);
-    mesh_network.state.app_keys[slot].has_new_key = 1;
-    return 1;
-}
 static int ble_mesh_access_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                 uint16_t app_key_index, uint32_t opcode,
                                 const uint8_t *params, size_t len,
@@ -394,6 +390,199 @@ static void test_foundation_configuration(void) {
         prior = config_report_count;
         assert(poll_message(&message) && config_report_count == prior + 1);
         message.device_key_owner = 0x1301;
+        assert(!poll_message(&message));
+        message.device_key_owner = 0x1202;
+    }
+}
+
+static void test_key_configuration(void) {
+    mesh_net_state initial = {.net_key_index = 0xabc, .unicast_address = 0x1201,
+                              .element_count = 2};
+    memset(initial.net_key, 0x11, 16);
+    initial.app_keys[0].used = initial.app_keys[1].used = 1;
+    initial.app_keys[0].index = 0x234;
+    initial.app_keys[1].index = 0x235;
+    memset(initial.app_keys[0].key, 0x22, 16);
+    memset(initial.app_keys[1].key, 0x33, 16);
+    assert(ble_mesh_network_init(&initial));
+    saved_network = initial;
+    memset(&saved, 0, sizeof(saved));
+    memset(&mesh_models, 0, sizeof(mesh_models));
+    saved.default_ttl = 5;
+    saved.onoff_server_bindings = 1;
+    saved.publications[0][0] = (mesh_publication){.address = 0xc001, .app_idx = 0x234};
+    assert(ble_mesh_models_init());
+    mesh_models_state models_before = saved;
+    uint8_t new_key[16], new_app[16], third_key[16];
+    memset(new_key, 0x44, 16); memset(new_app, 0x55, 16); memset(third_key, 0x66, 16);
+
+    assert(ble_mesh_get_net_keys(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_NETKEY_LIST && last_len == 2);
+    assert(last_params[0] == 0xbc && last_params[1] == 0x0a);
+    assert(last_src == 0x1201 && last_dst == 0x1202 && last_app_key_index == DEVICE_KEY_LOCAL);
+    assert(!ble_mesh_add_or_update_net_key(0x1201, 0x1000, new_key, 1));
+    assert(!ble_mesh_add_or_update_net_key(0x1201, 0xabc, NULL, 0));
+    assert(!ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 2));
+    assert(!ble_mesh_delete_net_key(0x1201, 0x1000));
+    assert(!ble_mesh_get_key_phase(0x1201, 0x1000));
+    assert(!ble_mesh_set_key_phase(0x1201, 0xabc, 1));
+    assert(!ble_mesh_set_key_phase(0x1201, 0xabc, 4));
+    assert(!ble_mesh_set_key_phase(0x1201, 0x1000, 2));
+
+    int writes = network_save_count;
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, initial.net_key, 0) && config_request());
+    assert(last_opcode == OP_CONFIG_NETKEY_STATUS && last_len == 3 && last_params[0] == 0);
+    assert(network_save_count == writes);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 0) && config_request());
+    assert(last_params[0] == MESH_CONFIG_KEY_ALREADY_STORED);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabd, new_key, 0) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INSUFFICIENT_RESOURCES);
+    assert(ble_mesh_delete_net_key(0x1201, 0xabc) && config_request());
+    assert(last_params[0] == MESH_CONFIG_CANNOT_REMOVE);
+    assert(ble_mesh_delete_net_key(0x1201, 0xabd) && config_request());
+    assert(last_params[0] == MESH_CONFIG_SUCCESS);
+    assert(network_save_count == writes && !memcmp(&mesh_network.state, &initial, sizeof(initial)));
+
+    uint8_t malformed[18] = {0xbc, 0x1a};
+    assert(!config_message(OP_CONFIG_NETKEY_ADD, malformed, sizeof(malformed)));
+    assert(!config_message(OP_CONFIG_NETKEY_UPDATE, malformed, sizeof(malformed)));
+    assert(!config_message(OP_CONFIG_NETKEY_DELETE, malformed, 2));
+    malformed[1] = 0x0a;
+    assert(!config_message(OP_CONFIG_NETKEY_ADD, malformed, 17));
+    assert(!config_message(OP_CONFIG_NETKEY_GET, malformed, 1));
+    assert(!config_message(OP_CONFIG_NETKEY_DELETE, malformed, 3));
+    uint8_t bad_phase[] = {0xbc, 0x0a, 0};
+    assert(!config_message(OP_CONFIG_KEY_PHASE_SET, bad_phase, 3));
+    bad_phase[2] = 4; assert(!config_message(OP_CONFIG_KEY_PHASE_SET, bad_phase, 3));
+    bad_phase[2] = 2; bad_phase[1] = 0x1a;
+    assert(!config_message(OP_CONFIG_KEY_PHASE_GET, bad_phase, 2));
+    assert(!config_message(OP_CONFIG_KEY_PHASE_SET, bad_phase, 3));
+    bad_phase[1] = 0x0a;
+    assert(!config_message(OP_CONFIG_KEY_PHASE_GET, bad_phase, 3));
+    assert(!config_message(OP_CONFIG_KEY_PHASE_SET, bad_phase, 2));
+    assert(network_save_count == writes);
+
+    assert(ble_mesh_get_key_phase(0x1201, 0xabc) && config_request());
+    assert(last_opcode == OP_CONFIG_KEY_PHASE_STATUS && last_len == 4 && last_params[3] == 0);
+    assert(ble_mesh_get_key_phase(0x1201, 0xabd) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY && last_params[3] == 0);
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 2) && config_request());
+    assert(last_params[0] == 0x0b && last_params[3] == 0); // Cannot Update wire status.
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == MESH_CONFIG_SUCCESS && network_save_count == writes);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabd, new_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, initial.net_key, 1) && config_request());
+    assert(last_params[0] == 0x06); // Key Index Already Stored wire status.
+
+    // Persist before exposing the new keys, and report storage failures separately.
+    network_save_fail = 1;
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE);
+    assert(!memcmp(&saved_network, &initial, sizeof(initial)));
+    assert(!memcmp(&mesh_network.state, &initial, sizeof(initial)));
+    network_save_fail = 0;
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_SUCCESS && mesh_network.state.key_refresh_phase == 1);
+    assert(mesh_network.state.has_new_key && !memcmp(saved_network.new_net_key, new_key, 16));
+    assert(!memcmp(mesh_network.state.net_key, initial.net_key, 16));
+    writes = network_save_count;
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 0) && config_request());
+    assert(last_params[0] == MESH_CONFIG_KEY_ALREADY_STORED);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, initial.net_key, 0) && config_request());
+    assert(last_params[0] == 0 && network_save_count == writes);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 1) && config_request());
+    assert(last_params[0] == 0 && network_save_count == writes); // Same Phase 1 update is redundant.
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, third_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
+    assert(ble_mesh_get_key_phase(0x1201, 0xabc) && config_request() && last_params[3] == 1);
+
+    network_save_fail = 1;
+    assert(ble_mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, new_app, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && !mesh_network.state.app_keys[0].has_new_key);
+    network_save_fail = 0;
+    assert(ble_mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, new_app, 1) && config_request());
+    assert(last_params[0] == 0 && mesh_network.state.app_keys[0].has_new_key);
+    writes = network_save_count;
+    assert(ble_mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, new_app, 1) && config_request());
+    assert(last_params[0] == 0 && network_save_count == writes);
+    assert(ble_mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, third_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
+    assert(ble_mesh_network_restore() && ble_mesh_models_init());
+    assert(ble_mesh_get_key_phase(0x1201, 0xabc) && config_request() && last_params[3] == 1);
+
+    network_save_fail = 1;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 2) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && last_params[3] == 1);
+    network_save_fail = 0;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 2) && config_request());
+    assert(last_params[0] == 0 && last_params[3] == 2 && saved_network.key_refresh_phase == 2);
+    writes = network_save_count;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 2) && config_request());
+    assert(last_params[0] == 0 && network_save_count == writes);
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, new_key, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
+    assert(ble_mesh_add_or_update_app_key(0x1201, 0xabc, 0x234, new_app, 1) && config_request());
+    assert(last_params[0] == MESH_CONFIG_CANNOT_UPDATE);
+    assert(ble_mesh_set_key_phase(0x1201, 0xabd, 3) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY && mesh_network.state.key_refresh_phase == 2);
+    network_save_fail = 1;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && last_params[3] == 2);
+    network_save_fail = 0;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == 0 && last_params[3] == 0 && !mesh_network.state.has_new_key);
+    assert(!memcmp(mesh_network.state.net_key, new_key, 16));
+    assert(!memcmp(mesh_network.state.app_keys[0].key, new_app, 16));
+    assert(!memcmp(mesh_network.state.app_keys[1].key, initial.app_keys[1].key, 16));
+    assert(!mesh_network.state.app_keys[0].has_new_key);
+    uint8_t zero[16] = {0};
+    assert(!memcmp(mesh_network.state.new_net_key, zero, 16));
+    assert(!memcmp(mesh_network.state.app_keys[0].new_key, zero, 16));
+    assert(!memcmp(&saved, &models_before, sizeof(saved))); // Bindings/publication indexes remain usable.
+    writes = network_save_count;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == 0 && network_save_count == writes);
+
+    // Transition 3 may skip Phase 2; a Phase 2 provisionee already has only the new key.
+    assert(ble_mesh_add_or_update_net_key(0x1201, 0xabc, third_key, 1) && config_request());
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[3] == 0 && !memcmp(mesh_network.state.net_key, third_key, 16));
+    initial = mesh_network.state;
+    initial.phase2_provisioned = 1;
+    assert(ble_mesh_network_init(&initial)); saved_network = initial;
+    assert(ble_mesh_get_key_phase(0x1201, 0xabc) && config_request());
+    assert(last_params[3] == 2);
+    writes = network_save_count;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 2) && config_request());
+    assert(last_params[0] == 0 && last_params[3] == 2 && network_save_count == writes);
+    network_save_fail = 1;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && last_params[3] == 2);
+    network_save_fail = 0;
+    assert(ble_mesh_set_key_phase(0x1201, 0xabc, 3) && config_request());
+    assert(last_params[0] == 0 && last_params[3] == 0 && !mesh_network.state.phase2_provisioned);
+    assert(!memcmp(mesh_network.state.net_key, third_key, 16));
+
+    // Incoming key-management requests need this node's DevKey and the primary element.
+    uint8_t update[18] = {0xbc, 0x0a}; memcpy(update + 2, new_key, 16);
+    mesh_access_pdu message = {.src = 0x1202, .dst = 0x1201,
+        .device_key_owner = 0x1202, .app_key_index = APP_KEY_INDEX_NONE,
+        .opcode = OP_CONFIG_NETKEY_UPDATE, .params = update, .params_len = sizeof(update)};
+    assert(!poll_message(&message));
+    message.device_key_owner = 0x1201; message.app_key_index = 0x234;
+    assert(!poll_message(&message));
+    message.app_key_index = APP_KEY_INDEX_NONE; message.dst = 0x1202;
+    message.device_key_owner = 0x1202;
+    assert(!poll_message(&message));
+    assert(mesh_network.state.key_refresh_phase == 0);
+    const uint32_t statuses[] = {OP_CONFIG_NETKEY_STATUS, OP_CONFIG_NETKEY_LIST, OP_CONFIG_KEY_PHASE_STATUS};
+    message.dst = 0x1201; message.params = NULL; message.params_len = 0;
+    for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
+        message.opcode = statuses[i];
+        int reports = config_report_count;
+        assert(poll_message(&message) && config_report_count == reports + 1);
+        message.device_key_owner = 0x1201;
         assert(!poll_message(&message));
         message.device_key_owner = 0x1202;
     }
@@ -739,5 +928,6 @@ int main(void) {
     message.app_key_index = 0x234;
     assert(poll_message(&message) == 0); // AppKey cannot authorize configuration.
     test_foundation_configuration();
+    test_key_configuration();
     return 0;
 }

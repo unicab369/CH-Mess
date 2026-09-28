@@ -267,6 +267,8 @@ int main(void) {
     // A node provisioned during Phase 2 starts with only the new NetKey.
     state.phase2_provisioned = 1;
     assert(ble_mesh_network_init(&state) == 1);
+    assert(ble_mesh_key_refresh_transition(2) == 1);
+    assert(mesh_network.state.phase2_provisioned == 1 && !mesh_network.state.has_new_key);
     assert(ble_mesh_net_beacon_queue() == 1);
     assert((sent[3] & 1) == 1);
     assert(ble_mesh_handle_net_beacon(normal_beacon,
