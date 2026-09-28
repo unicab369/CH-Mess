@@ -12,6 +12,8 @@
 #define MESH_TRANSPORT_RETRY_MS 1000
 #define MESH_TRANSPORT_RX_TIMEOUT_MS 5000
 #define APP_KEY_INDEX_NONE 0xffff
+// Outgoing Configuration Server replies use this node's Device Key.
+#define DEVICE_KEY_LOCAL 0xfffe
 #define MESH_TRANSPORT_MAX_LABELS 4
 
 // TODO for broadly usable Access-message transport:
@@ -26,6 +28,7 @@ typedef struct {
     uint16_t src;
     uint16_t dst;
     uint16_t app_key_index; // APP_KEY_INDEX_NONE means the Device Key was used
+    uint16_t device_key_owner; // 0 for AppKey; owner of the authenticating Device Key
     uint16_t len;
     uint8_t ttl;
     uint8_t has_label;
@@ -123,6 +126,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
     uint8_t nonce[13], key[16];
     transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv_index);
     out->app_key_index = APP_KEY_INDEX_NONE;
+    out->device_key_owner = 0;
     out->has_label = 0;
 
     if (akf) {
@@ -167,12 +171,16 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
         int ok = 0;
         if (BLE_MESH_TRANSPORT_GET_DEVICE_KEY(dst, key) == 1 &&
             ccm_auth_decrypt(key, nonce, 13, NULL, 0, upper, len - mic_len,
-                             upper + len - mic_len, mic_len, out->data) == CCM_OK)
+                             upper + len - mic_len, mic_len, out->data) == CCM_OK) {
             ok = 1;
+            out->device_key_owner = dst;
+        }
         if (!ok && BLE_MESH_TRANSPORT_GET_DEVICE_KEY(src, key) == 1 &&
             ccm_auth_decrypt(key, nonce, 13, NULL, 0, upper, len - mic_len,
-                             upper + len - mic_len, mic_len, out->data) == CCM_OK)
+                             upper + len - mic_len, mic_len, out->data) == CCM_OK) {
             ok = 1;
+            out->device_key_owner = src;
+        }
         if (!ok) return 0;
     }
 
@@ -226,6 +234,7 @@ static int transport_segment_queue(void) {
 }
 
 // Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
+// APP_KEY_INDEX_NONE uses the destination's Device Key; DEVICE_KEY_LOCAL uses ours.
 // Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
 // Only one segmented outgoing access message may be active at a time.
 static inline int ble_mesh_transport_queue(uint16_t src,
@@ -240,14 +249,17 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         len > MESH_TRANSPORT_MAX_UPPER - (mic_64 ? 8u : 4u) ||
         ttl > 0x7f || dst == 0 ||
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
-        (label && app_key_index == APP_KEY_INDEX_NONE) || transport_tx.active
+        (label && (app_key_index == APP_KEY_INDEX_NONE ||
+                   app_key_index == DEVICE_KEY_LOCAL)) || transport_tx.active
     ) return 0;
 
     const mesh_net_state *state = &mesh_network.state;
-    uint8_t key[16], akf = app_key_index != APP_KEY_INDEX_NONE, aid = 0;
+    uint8_t key[16], akf = app_key_index != APP_KEY_INDEX_NONE &&
+                           app_key_index != DEVICE_KEY_LOCAL, aid = 0;
 
     if (!akf) {
-        if (dst > 0x7fff || BLE_MESH_TRANSPORT_GET_DEVICE_KEY(dst, key) != 1)
+        uint16_t owner = app_key_index == DEVICE_KEY_LOCAL ? src : dst;
+        if (dst > 0x7fff || BLE_MESH_TRANSPORT_GET_DEVICE_KEY(owner, key) != 1)
             return 0;
     } else {
         int slot = mesh_app_key_slot(state, app_key_index);

@@ -7,13 +7,13 @@
 #include "ble_mesh_2transport.h"
 
 // TODO for a broadly usable Access layer:
-// - Check each receiving model's AppKey binding or Device Key permission.
 // - Use configured publication address, AppKey, TTL, period, and retransmit settings.
 
 typedef struct {
     uint16_t src;
     uint16_t dst;
     uint16_t app_key_index; // APP_KEY_INDEX_NONE means the Device Key was used
+    uint16_t device_key_owner;
     uint8_t ttl;
     uint8_t has_label;
     uint8_t label[16];
@@ -23,6 +23,7 @@ typedef struct {
 } mesh_access_pdu;
 
 // Queue an Access message using an opcode in transmission byte order.
+// Use APP_KEY_INDEX_NONE for remote Device Key requests, DEVICE_KEY_LOCAL for replies.
 // Returns 1 if accepted by transport, or 0 for invalid input/queue failure.
 // Set mic_64 to 1 for a segmented message with an 8-byte TransMIC.
 static inline int ble_mesh_access_queue(uint16_t src, uint16_t dst,
@@ -59,7 +60,8 @@ static inline int ble_mesh_access_queue_virtual(
     size_t opcode_len = opcode <= 0x7e ? 1 :
                         opcode >= 0x8000 && opcode <= 0xbfff ? 2 :
                         opcode >= 0xc00000 && opcode <= 0xffffff ? 3 : 0;
-    if (!label || app_key_index == APP_KEY_INDEX_NONE || !opcode_len ||
+    if (!label || app_key_index == APP_KEY_INDEX_NONE ||
+        app_key_index == DEVICE_KEY_LOCAL || !opcode_len ||
         mic_64 > 1 ||
         (!params && params_len) ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
@@ -99,6 +101,7 @@ static inline int ble_mesh_access_poll(mesh_access_message *message,
         .src = message->src,
         .dst = message->dst,
         .app_key_index = message->app_key_index,
+        .device_key_owner = message->device_key_owner,
         .ttl = message->ttl,
         .has_label = message->has_label,
         .opcode = opcode,

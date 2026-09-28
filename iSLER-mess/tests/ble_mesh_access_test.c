@@ -7,8 +7,10 @@
 #define ISLER_BLE_MESH_TRANSPORT_H
 #define MESH_TRANSPORT_MAX_ACCESS 380
 #define APP_KEY_INDEX_NONE 0xffff
+#define DEVICE_KEY_LOCAL 0xfffe
 typedef struct {
     uint16_t src, dst, app_key_index, len;
+    uint16_t device_key_owner;
     uint8_t ttl;
     uint8_t has_label;
     uint8_t label[16];
@@ -23,8 +25,6 @@ static uint16_t sent_app_key_index;
 static uint8_t sent_mic_64;
 static mesh_access_message incoming;
 static int incoming_ready;
-static struct { struct { uint16_t unicast_address; } state; } mesh_network =
-    {{0x1200}};
 
 static int ble_mesh_transport_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                          uint16_t app_key_index,
@@ -109,6 +109,14 @@ int main(void) {
            access.ttl == 4 && access.params_len == 2 &&
            memcmp(access.params, params, 2) == 0);
     assert(access.has_label && memcmp(access.label, label, 16) == 0);
+
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.device_key_owner = message.src;
+    message.has_label = 0;
+    incoming = message;
+    incoming_ready = 1;
+    assert(ble_mesh_access_poll(&raw, &access) == 1);
+    assert(access.device_key_owner == message.src);
 
     message.len = 1;
     incoming = message;

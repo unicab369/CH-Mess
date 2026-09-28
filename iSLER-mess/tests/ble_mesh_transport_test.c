@@ -92,6 +92,7 @@ int main(void) {
     assert(received.len == sizeof(short_access));
     assert(memcmp(received.data, short_access, sizeof(short_access)) == 0);
     assert(received.app_key_index == 0);
+    assert(received.device_key_owner == 0);
 
     uint8_t long_access[40];
     for (int i = 0; i < 40; i++) long_access[i] = (uint8_t)i;
@@ -110,6 +111,7 @@ int main(void) {
     assert(received.len == sizeof(long_access));
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(received.app_key_index == APP_KEY_INDEX_NONE);
+    assert(received.device_key_owner == b.unicast_address);
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
 
@@ -297,5 +299,22 @@ int main(void) {
                                          short_access, sizeof(short_access), 0) == 1);
     assert(ble_mesh_network_init(&c) == 1);
     assert(receive_frame(0, &received) == 1 && received.src == 0x1202);
+
+    // Requests use the target's key; server replies use the server's own key.
+    a = node(0x1201);
+    b = node(0x1202);
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, APP_KEY_INDEX_NONE, NULL,
+                                    short_access, sizeof(short_access), 0) == 1);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 1 &&
+           received.device_key_owner == received.dst);
+    sent_count = 0;
+    assert(ble_mesh_transport_queue(0x1202, 0x1201, 5, DEVICE_KEY_LOCAL, NULL,
+                                    short_access, sizeof(short_access), 0) == 1);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(receive_frame(0, &received) == 1 &&
+           received.device_key_owner == received.src);
     return 0;
 }

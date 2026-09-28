@@ -356,7 +356,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     indexes[count++] = state->app_keys[i].index;
         }
         size_t reply_len = 3 + mesh_pack_app_indexes(reply + 3, indexes, count);
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_APPKEY_LIST, reply, reply_len, 0);
         return 1;
     }
@@ -381,7 +381,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     indexes[count++] = state->app_keys[i].index;
         }
         size_t reply_len = 5 + mesh_pack_app_indexes(reply + 5, indexes, count);
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_SIG_MODEL_APP_LIST, reply, reply_len, 0);
         return 1;
     }
@@ -435,7 +435,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         }
 
         uint8_t reply[4] = {status, p[0], p[1], p[2]};
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_APPKEY_STATUS, reply, 4, 0);
         return 1;
     }
@@ -473,7 +473,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             mesh_models.state = next;
 
         uint8_t reply[7] = {status, p[0], p[1], p[2], p[3], p[4], p[5]};
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_MODEL_APP_STATUS, reply, 7, 0);
         return 1;
     }
@@ -493,7 +493,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             status, p[0], p[1], (uint8_t)address, (uint8_t)(address >> 8),
             p[18], p[19]
         };
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_MODEL_SUB_STATUS, reply, sizeof(reply), 0);
         return 1;
     }
@@ -507,7 +507,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint8_t status = mesh_model_group_change(element, model, address,
             message->opcode == OP_CONFIG_MODEL_SUB_ADD);
         uint8_t reply[7] = {status, p[0], p[1], p[2], p[3], p[4], p[5]};
-        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, APP_KEY_INDEX_NONE,
+        ble_mesh_access_queue(mesh_network.state.unicast_address, message->src, MODEL_TTL, DEVICE_KEY_LOCAL,
                               OP_CONFIG_MODEL_SUB_STATUS, reply, sizeof(reply), 0);
         return 1;
     }
@@ -726,7 +726,10 @@ static inline int ble_mesh_models_poll(void) {
 
     if (message->app_key_index == APP_KEY_INDEX_NONE) {
         if (unicast != 0 || message->has_label) return 0;
-        if (server_config_receive(message)) return 1;
+        // Server requests use our key; client replies use the sending node's key.
+        if (message->device_key_owner == message->dst &&
+            server_config_receive(message)) return 1;
+        if (message->device_key_owner != message->src) return 0;
 
         if (opcode == OP_CONFIG_APPKEY_STATUS ||
             opcode == OP_CONFIG_APPKEY_LIST ||

@@ -5,8 +5,10 @@
 
 #define ISLER_BLE_MESH_ACCESS_H
 #define APP_KEY_INDEX_NONE 0xffff
+#define DEVICE_KEY_LOCAL 0xfffe
 typedef struct {
     uint16_t src, dst, app_key_index;
+    uint16_t device_key_owner;
     uint8_t ttl;
     uint8_t has_label;
     uint8_t label[16];
@@ -73,6 +75,7 @@ static size_t last_len;
 static uint8_t applied_on, attention_seconds, reported_on;
 static uint16_t applied_element, reported_element;
 static int apply_count, report_count;
+static int config_report_count;
 static mesh_access_pdu polled_access;
 static int poll_ready;
 
@@ -147,6 +150,7 @@ void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present) {
 void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len) {
     (void)src; (void)opcode; (void)params; (void)len;
+    config_report_count++;
 }
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
     (void)element;
@@ -177,14 +181,19 @@ int main(void) {
     memset(add + 3, 0x55, 16);
     mesh_access_pdu message = {
         .src = 0x1202, .dst = 0x1201, .app_key_index = APP_KEY_INDEX_NONE,
+        .device_key_owner = 0x1201,
         .ttl = 5, .opcode = OP_CONFIG_APPKEY_ADD,
         .params = add, .params_len = sizeof(add)
     };
+    message.device_key_owner = message.src;
+    assert(poll_message(&message) == 0); // Remote key cannot configure this node.
+    assert(!mesh_network.state.app_keys[0].used);
+    message.device_key_owner = message.dst;
     assert(poll_message(&message) == 1);
     assert(mesh_network.state.app_keys[0].used &&
            mesh_network.state.app_keys[0].index == 0x234);
     assert(last_opcode == OP_CONFIG_APPKEY_STATUS &&
-           last_app_key_index == APP_KEY_INDEX_NONE &&
+           last_app_key_index == DEVICE_KEY_LOCAL &&
            last_params[0] == MESH_CONFIG_SUCCESS && last_dst == 0x1202);
 
     uint8_t second[19] = {0x23, 0x51, 0x23}; // AppKey 0x235
@@ -475,5 +484,18 @@ int main(void) {
     prior_count = apply_count;
     assert(poll_message(&message) == 1);
     assert(apply_count == prior_count + 1 && applied_element == 0x1201);
+
+    message.dst = 0x1201;
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_APPKEY_STATUS;
+    message.params = last_params;
+    message.params_len = 4;
+    message.device_key_owner = message.dst;
+    assert(poll_message(&message) == 0); // Client replies cannot use our key.
+    assert(config_report_count == 0);
+    message.device_key_owner = message.src;
+    assert(poll_message(&message) == 1 && config_report_count == 1);
+    message.app_key_index = 0x234;
+    assert(poll_message(&message) == 0); // AppKey cannot authorize configuration.
     return 0;
 }
