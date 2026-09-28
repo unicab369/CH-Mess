@@ -89,7 +89,7 @@ static int config_report_count;
 static mesh_access_pdu polled_access;
 static int poll_ready;
 
-static uint32_t GET_MILLIS(void) { return now_ms; }
+uint32_t GET_MILLIS(void) { return now_ms; }
 static int ble_mesh_access_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                 uint16_t app_key_index, uint32_t opcode,
                                 const uint8_t *params, size_t len,
@@ -588,6 +588,128 @@ static void test_key_configuration(void) {
     }
 }
 
+static void test_node_settings(void) {
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2,
+                            .net_key_index = 0x123, .beacon = 1};
+    assert(ble_mesh_network_init(&state));
+    saved_network = state;
+    memset(&saved, 0, sizeof(saved));
+    memset(&mesh_models, 0, sizeof(mesh_models));
+    saved.default_ttl = 5;
+    assert(ble_mesh_models_init());
+    assert(ble_mesh_get_beacon(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_BEACON_STATUS && last_len == 1 && last_params[0] == 1);
+    assert(!ble_mesh_set_beacon(0x1201, 2));
+    uint8_t params[] = {2, 0xff, 1};
+    assert(!config_message(OP_CONFIG_BEACON_SET, params, 1));
+    assert(!config_message(OP_CONFIG_BEACON_GET, params, 1));
+    assert(!config_message(OP_CONFIG_BEACON_SET, NULL, 0));
+    network_save_fail = 1;
+    assert(ble_mesh_set_beacon(0x1201, 0) && !config_request());
+    assert(saved_network.beacon == 1 && mesh_network.state.beacon == 1);
+    network_save_fail = 0;
+    now_ms += 100;
+    assert(ble_mesh_set_beacon(0x1201, 0) && config_request());
+    assert(last_params[0] == 0 && saved_network.beacon == 0);
+    assert(mesh_network.beacon.last_sent_ms == now_ms);
+    assert(ble_mesh_network_restore() && ble_mesh_get_beacon(0x1201) && config_request());
+    assert(last_params[0] == 0);
+    assert(ble_mesh_set_beacon(0x1201, 1) && config_request());
+    assert(last_params[0] == 1 && saved_network.beacon == 1);
+    int writes = network_save_count;
+    assert(ble_mesh_set_beacon(0x1201, 1) && config_request());
+    assert(network_save_count == writes);
+
+    assert(ble_mesh_get_net_transmit(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_NET_TRANSMIT_STATUS && last_len == 1 && last_params[0] == 0);
+    assert(!ble_mesh_set_net_transmit(0x1201, 8, 0));
+    assert(!ble_mesh_set_net_transmit(0x1201, 0, 32));
+    assert(!config_message(OP_CONFIG_NET_TRANSMIT_GET, params, 1));
+    assert(!config_message(OP_CONFIG_NET_TRANSMIT_SET, NULL, 0));
+    assert(!config_message(OP_CONFIG_NET_TRANSMIT_SET, params, 2));
+    network_save_fail = 1;
+    assert(ble_mesh_set_net_transmit(0x1201, 7, 31) && !config_request());
+    assert(mesh_network.state.network_transmit == 0 && saved_network.network_transmit == 0);
+    network_save_fail = 0;
+    assert(ble_mesh_set_net_transmit(0x1201, 7, 31) && config_request());
+    assert(last_params[0] == 0xff && saved_network.network_transmit == 0xff);
+    assert(ble_mesh_network_restore() && ble_mesh_get_net_transmit(0x1201) && config_request());
+    assert(last_params[0] == 0xff);
+    writes = network_save_count;
+    assert(ble_mesh_set_net_transmit(0x1201, 7, 31) && config_request());
+    assert(network_save_count == writes);
+    assert(ble_mesh_set_net_transmit(0x1201, 2, 4) && config_request());
+    assert(last_params[0] == 34 && saved_network.network_transmit == 34);
+    assert(last_app_key_index == DEVICE_KEY_LOCAL && last_src == 0x1201 && last_dst == 0x1202);
+
+    // Unsupported feature settings report the capability without changing state.
+    writes = network_save_count;
+    assert(ble_mesh_get_relay(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_RELAY_STATUS && last_len == 2 && last_params[0] == 2 && last_params[1] == 0);
+    params[0] = 1;
+    assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
+    assert(last_params[0] == 2 && last_params[1] == 0);
+    params[0] = 0; assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
+    params[0] = 2; assert(!config_message(OP_CONFIG_RELAY_SET, params, 2));
+    assert(!config_message(OP_CONFIG_RELAY_SET, params, 1));
+    assert(!config_message(OP_CONFIG_RELAY_GET, params, 1));
+    assert(ble_mesh_get_proxy(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_PROXY_STATUS && last_len == 1 && last_params[0] == 2);
+    assert(ble_mesh_get_friend(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_FRIEND_STATUS && last_len == 1 && last_params[0] == 2);
+    const uint32_t feature_sets[] = {OP_CONFIG_PROXY_SET, OP_CONFIG_FRIEND_SET};
+    for (size_t i = 0; i < sizeof(feature_sets) / sizeof(feature_sets[0]); i++) {
+        params[0] = 1; assert(config_message(feature_sets[i], params, 1) && last_params[0] == 2);
+        params[0] = 0; assert(config_message(feature_sets[i], params, 1) && last_params[0] == 2);
+        params[0] = 2; assert(!config_message(feature_sets[i], params, 1));
+        assert(!config_message(feature_sets[i], NULL, 0));
+    }
+    assert(network_save_count == writes && saved_network.network_transmit == 34 && saved_network.beacon == 1);
+
+    assert(!ble_mesh_get_node_identity(0x1201, 0x1000));
+    assert(ble_mesh_get_node_identity(0x1201, 0x123) && config_request());
+    assert(last_opcode == OP_CONFIG_NODE_IDENTITY_STATUS && last_len == 4);
+    assert(last_params[0] == 0 && last_params[1] == 0x23 && last_params[2] == 1 && last_params[3] == 2);
+    assert(ble_mesh_get_node_identity(0x1201, 0x124) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY && last_params[3] == 0);
+    uint8_t identity[] = {0x23, 1, 1};
+    assert(config_message(OP_CONFIG_NODE_IDENTITY_SET, identity, 3));
+    assert(last_params[0] == MESH_CONFIG_FEATURE_NOT_SUPPORTED && last_params[3] == 2);
+    identity[0] = 0x24;
+    assert(config_message(OP_CONFIG_NODE_IDENTITY_SET, identity, 3));
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY && last_params[3] == 1);
+    identity[2] = 2;
+    assert(!config_message(OP_CONFIG_NODE_IDENTITY_SET, identity, 3));
+    identity[2] = 0xff;
+    assert(!config_message(OP_CONFIG_NODE_IDENTITY_SET, identity, 3));
+    identity[1] = 0xf1;
+    assert(!config_message(OP_CONFIG_NODE_IDENTITY_GET, identity, 2));
+    assert(!config_message(OP_CONFIG_NODE_IDENTITY_SET, identity, 2));
+    assert(network_save_count == writes);
+
+    uint8_t disable = 0;
+    mesh_access_pdu message = {.src = 0x1202, .dst = 0x1201,
+        .device_key_owner = 0x1202, .app_key_index = APP_KEY_INDEX_NONE,
+        .opcode = OP_CONFIG_BEACON_SET, .params = &disable, .params_len = 1};
+    assert(!poll_message(&message));
+    message.device_key_owner = 0x1201; message.app_key_index = 0x234;
+    assert(!poll_message(&message));
+    message.app_key_index = APP_KEY_INDEX_NONE; message.dst = 0x1202; message.device_key_owner = 0x1202;
+    assert(!poll_message(&message));
+    assert(saved_network.beacon == 1);
+    const uint32_t statuses[] = {OP_CONFIG_BEACON_STATUS, OP_CONFIG_NET_TRANSMIT_STATUS,
+        OP_CONFIG_RELAY_STATUS, OP_CONFIG_PROXY_STATUS, OP_CONFIG_FRIEND_STATUS, OP_CONFIG_NODE_IDENTITY_STATUS};
+    message.dst = 0x1201;
+    for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
+        message.opcode = statuses[i];
+        int reports = config_report_count;
+        assert(poll_message(&message) && config_report_count == reports + 1);
+        message.device_key_owner = 0x1201;
+        assert(!poll_message(&message));
+        message.device_key_owner = 0x1202;
+    }
+}
+
 int main(void) {
     mesh_network.ready = 1;
     mesh_network.state.unicast_address = 0x1201;
@@ -929,5 +1051,6 @@ int main(void) {
     assert(poll_message(&message) == 0); // AppKey cannot authorize configuration.
     test_foundation_configuration();
     test_key_configuration();
+    test_node_settings();
     return 0;
 }

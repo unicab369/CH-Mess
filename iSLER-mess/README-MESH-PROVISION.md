@@ -47,7 +47,7 @@
 
 This implementation supports up to two local elements. Set `prov_caps.num_elements`
 to the number used; their unicast addresses are consecutive. AppKey bindings and
-group or virtual subscriptions are stored per element. Stored state version 7
+group or virtual subscriptions are stored per element. Stored state version 8
 requires reprovisioning devices that have older records.
 
 ## Bluetooth Mesh message kinds
@@ -65,7 +65,7 @@ Mesh Beacon types:
 | Beacon type | Name | Use | How often | Segmented? |
 | --- | --- | --- | --- | --- |
 | 0x00 | Unprovisioned Device | Announces a device ready to join. | Every 1 s while waiting for provisioning in this code. | No |
-| 0x01 | Secure Network | Announces subnet, IV Index, and Key Refresh state. | Adaptive; network target is about one per subnet every 10 s. This code sends only when requested. | No |
+| 0x01 | Secure Network | Announces subnet, IV Index, and Key Refresh state. | Adaptive, 10–600 s in this code; network target is about one per subnet every 10 s. Config Beacon Set controls broadcasts. | No |
 | 0x02 | Mesh Private | Announces the same state with obfuscated flags and IV Index. | Adaptive; same network target when enabled. Not implemented here. | No |
 
 Inside a Network PDU (AD type 0x2A), there are two transport message kinds:

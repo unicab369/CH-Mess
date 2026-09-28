@@ -191,7 +191,13 @@ static inline int ble_mesh_models_poll(void) {
             server_config_receive(message)) return 1;
         if (message->device_key_owner != message->src) return 0;
 
-        if (opcode == OP_CONFIG_NETKEY_STATUS ||
+        if (opcode == OP_CONFIG_BEACON_STATUS ||
+            opcode == OP_CONFIG_NET_TRANSMIT_STATUS ||
+            opcode == OP_CONFIG_RELAY_STATUS ||
+            opcode == OP_CONFIG_PROXY_STATUS ||
+            opcode == OP_CONFIG_FRIEND_STATUS ||
+            opcode == OP_CONFIG_NODE_IDENTITY_STATUS ||
+            opcode == OP_CONFIG_NETKEY_STATUS ||
             opcode == OP_CONFIG_NETKEY_LIST ||
             opcode == OP_CONFIG_KEY_PHASE_STATUS ||
             opcode == OP_CONFIG_APPKEY_STATUS ||

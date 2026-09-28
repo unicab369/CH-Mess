@@ -45,6 +45,7 @@ typedef struct {
     uint32_t next_seq;
     uint16_t unicast_address;
     uint8_t element_count;
+    uint8_t beacon, network_transmit;
 } mesh_net_state;
 
 
@@ -91,6 +92,7 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq);
 // Network storage and time interfaces return 1 on success, 0 on failure.
 // Return durable monotonic seconds across reboots, or 0 if unavailable.
 int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds);
+uint32_t GET_MILLIS(void);
 
 typedef struct {
     uint8_t nid;
@@ -109,6 +111,10 @@ static struct {
         uint32_t iv_index;
         uint32_t seq;
     } replay[MESH_NETWORK_REPLAY_SLOTS];
+    struct {
+        uint32_t observed_at_ms, last_sent_ms;
+        uint8_t observed[2], bucket;
+    } beacon;
     uint8_t replay_count;
     uint8_t ready;
 } mesh_network;
@@ -156,6 +162,7 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         (uint32_t)state->unicast_address + state->element_count - 1 > 0x7fff ||
         state->net_key_index > 0x0fff ||
         state->next_seq > 0x1000000u ||
+        state->beacon > 1 ||
         state->iv_update > 1 ||
         state->iv_skip_min_time > 1 ||
         (state->iv_update && state->iv_index == 0) ||
@@ -188,6 +195,8 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         mesh_derive_keys(state->new_net_key, &mesh_network.new_key);
     }
 
+    memset(&mesh_network.beacon, 0, sizeof(mesh_network.beacon));
+    mesh_network.beacon.observed_at_ms = mesh_network.beacon.last_sent_ms = GET_MILLIS();
     mesh_network.replay_count = 0;
     mesh_network.ready = 1;
     return 1;
@@ -202,6 +211,8 @@ static inline int ble_mesh_network_restore(void) {
 // Save first, then make a key or IV transition visible to packet processing.
 static int mesh_commit(const mesh_net_state *next) {
     if (BLE_MESH_NETWORK_SAVE_STATE(next) != 1) return 0;
+    if (mesh_network.state.beacon != next->beacon)
+        mesh_network.beacon.last_sent_ms = GET_MILLIS();
     mesh_network.state = *next;
     mesh_derive_keys(next->net_key, &mesh_network.old_key);
 
@@ -334,7 +345,7 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 
 // Beacon AD: length, type, beacon type, flags, Network ID, IV Index, CMAC[0..7].
 static inline int ble_mesh_net_beacon_queue(void) {
-    if (!mesh_network.ready) return 0;
+    if (!mesh_network.ready || !mesh_network.state.beacon) return 0;
 
     uint8_t ad[24], mac[16];
     const mesh_net_state *state = &mesh_network.state;
@@ -355,7 +366,9 @@ static inline int ble_mesh_net_beacon_queue(void) {
 
     aes_cmac(key->beacon_key, ad + 3, 13, mac);
     memcpy(ad + 16, mac, 8);
-    return BLE_MESH_QUEUE_TX(ad, sizeof(ad)) == 0;
+    if (BLE_MESH_QUEUE_TX(ad, sizeof(ad)) != 0) return 0;
+    mesh_network.beacon.last_sent_ms = GET_MILLIS();
+    return 1;
 }
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
@@ -405,6 +418,16 @@ static inline int ble_mesh_net_queue(uint16_t src, uint16_t dst,
 }
 
 
+// Count authenticated subnet beacons in two rolling 10-second buckets.
+static void mesh_beacon_observations(uint32_t now) {
+    uint32_t steps = (uint32_t)(now - mesh_network.beacon.observed_at_ms) / 10000u;
+    if (!steps) return;
+    if (steps >= 2) memset(mesh_network.beacon.observed, 0, sizeof(mesh_network.beacon.observed));
+    mesh_network.beacon.bucket ^= steps & 1u;
+    mesh_network.beacon.observed[mesh_network.beacon.bucket] = 0;
+    mesh_network.beacon.observed_at_ms += steps * 10000u;
+}
+
 // Check the complete beacon AD format, flags, known Network ID, and CMAC.
 // Only an authenticated beacon may change Key Refresh or IV Update state.
 // Returns 1 if accepted, 0 if ignored, or -1 if saving state fails.
@@ -430,6 +453,9 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         if (diff == 0) { key = candidate; used_new = i; break; }
     }
     if (!key) return 0;
+    mesh_beacon_observations(GET_MILLIS());
+    uint8_t *observed = &mesh_network.beacon.observed[mesh_network.beacon.bucket];
+    if (*observed < 59) (*observed)++;
 
     mesh_net_state next = mesh_network.state;
     if (used_new) {
@@ -599,15 +625,24 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
     size_t len = sizeof(ad);
     int received = BLE_MESH_ADV_POLL(ad, &len);
 
-    if (received <= 0 || len < 2 || (size_t)ad[0] + 1 != len)
-        return received < 0 || tick_result < 0 ? -1 : 0;
-    if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
-        int processed = ble_mesh_handle_net_beacon(ad, len);
-        return processed < 0 || tick_result < 0 ? -1 : 0;
+    int result = received < 0 ? -1 : 0;
+    if (received > 0 && len >= 2 && (size_t)ad[0] + 1 == len) {
+        if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
+            if (ble_mesh_handle_net_beacon(ad, len) < 0) result = -1;
+        } else if (ad[1] == MESH_NETWORK_AD_TYPE)
+            result = ble_mesh_net_receive(ad + 2, len - 2, message);
     }
 
-    if (ad[1] != MESH_NETWORK_AD_TYPE) return tick_result < 0 ? -1 : 0;
-    int result = ble_mesh_net_receive(ad + 2, len - 2, message);
+    if (mesh_network.ready && mesh_network.state.beacon) {
+        uint32_t millis = GET_MILLIS();
+        mesh_beacon_observations(millis);
+        // (20 s observation period / 2 expected beacons) * (observed + 1).
+        uint32_t count = mesh_network.beacon.observed[0] + mesh_network.beacon.observed[1];
+        uint32_t interval = (count + 1u) * 10000u;
+        if (interval > 600000u) interval = 600000u;
+        if ((uint32_t)(millis - mesh_network.beacon.last_sent_ms) >= interval &&
+            ble_mesh_net_beacon_queue()) mesh_network.beacon.last_sent_ms = millis;
+    }
     return result == 0 && tick_result < 0 ? -1 : result;
 }
 

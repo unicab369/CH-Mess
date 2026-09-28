@@ -1,7 +1,7 @@
 // TODO for configuration support:
 // - Multiple subnets: store and route using additional NetKeys.
-// - Relay and network retransmission settings.
-// - Secure Network Beacon, Proxy, Friend, and Node Identity settings.
+// - Relay, Proxy, Friend, and Node Identity feature implementations.
+// - Mesh Private Beacon support.
 // - Heartbeat publication and subscription settings.
 // - Node Reset: clear provisioning and configuration state.
 // - SAR Configuration model: expose transport timing settings (separate model).
@@ -23,8 +23,35 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Group subscriptions | `OP_CONFIG_MODEL_SUB_ADD`, `OP_CONFIG_MODEL_SUB_DELETE`, `OP_CONFIG_MODEL_SUB_OVERWRITE` | Add/delete/replace group subscriptions per model. |
 | Virtual subscriptions | `OP_CONFIG_MODEL_SUB_VIRTUAL_ADD`, `OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE`, `OP_CONFIG_MODEL_SUB_VIRTUAL_OVERWRITE` | Add/delete/replace Label UUID subscriptions per model. |
 | Subscription lists and clearing | `OP_CONFIG_SIG_SUB_GET`, `OP_CONFIG_SIG_MODEL_SUB_LIST`, `OP_CONFIG_MODEL_SUB_DELETE_ALL`, `OP_CONFIG_MODEL_SUB_STATUS` | List subscribed addresses, clear all subscriptions, and report changes. |
+| Secure Network Beacon | `OP_CONFIG_BEACON_GET`, `OP_CONFIG_BEACON_SET`, `OP_CONFIG_BEACON_STATUS` | Get/set automatic beacon broadcasts. |
+| Network Transmit | `OP_CONFIG_NET_TRANSMIT_GET`, `OP_CONFIG_NET_TRANSMIT_SET`, `OP_CONFIG_NET_TRANSMIT_STATUS` | Get/set packet repetitions and their interval. |
+| Relay | `OP_CONFIG_RELAY_GET`, `OP_CONFIG_RELAY_SET`, `OP_CONFIG_RELAY_STATUS` | Report Not Supported (2); Relay Retransmit is 0. |
+| GATT Proxy | `OP_CONFIG_PROXY_GET`, `OP_CONFIG_PROXY_SET`, `OP_CONFIG_PROXY_STATUS` | Report Not Supported (2). |
+| Friend | `OP_CONFIG_FRIEND_GET`, `OP_CONFIG_FRIEND_SET`, `OP_CONFIG_FRIEND_STATUS` | Report Not Supported (2). |
+| Node Identity | `OP_CONFIG_NODE_IDENTITY_GET`, `OP_CONFIG_NODE_IDENTITY_SET`, `OP_CONFIG_NODE_IDENTITY_STATUS` | Report Not Supported (2); setting it returns Feature Not Supported. |
 | Default TTL | `OP_CONFIG_DEFAULT_TTL_GET`, `OP_CONFIG_DEFAULT_TTL_SET`, `OP_CONFIG_DEFAULT_TTL_STATUS` | Get/set; used by model helpers and replies. |
 | Model publication | `OP_CONFIG_MODEL_PUB_GET`, `OP_CONFIG_MODEL_PUB_SET`, `OP_CONFIG_MODEL_PUB_VIRTUAL_SET`, `OP_CONFIG_MODEL_PUB_STATUS` | Get/set address or Label UUID, AppKey, TTL, period, and retransmissions. |
+
+`ble_mesh_set_beacon(dst, enabled)` controls Secure Network Beacon broadcasts;
+they are enabled after provisioning. The network poll schedules them with a
+10–600 second interval, adjusted using authenticated subnet beacons heard over
+two rolling 10-second windows. Disabling broadcasts still allows receiving
+beacons for Key Refresh and IV Update. Manual beacon sends also obey this setting.
+
+`ble_mesh_set_net_transmit(dst, count, interval_steps)` sets 0–7 extra sends and
+0–31 interval steps. Each packet is sent `count + 1` times, with
+`(interval_steps + 1) * 10` milliseconds plus 0–10 milliseconds of jitter between
+completed advertising events. The default count is 0 (one send). Repetitions keep
+the same encrypted Network PDU and sequence number; beacons and provisioning
+packets do not use this setting. The existing eight-slot advertising queue holds
+the repetitions and rejects new packets when full. New settings apply to newly
+queued packets. Credential changes discard queued network packets that use old
+credentials. Stored state version 8 requires reprovisioning older records.
+
+Use `ble_mesh_get_relay()`, `ble_mesh_get_proxy()`, `ble_mesh_get_friend()`, and
+`ble_mesh_get_node_identity()` to query capabilities. Relay, Proxy, and Friend Set
+requests report Not Supported without changing state. Node Identity queries use
+a NetKey index; an unknown index returns Invalid NetKey.
 
 The node stores one NetKey index, installed during provisioning. Adding the same
 index and current key succeeds; a different key at that index returns

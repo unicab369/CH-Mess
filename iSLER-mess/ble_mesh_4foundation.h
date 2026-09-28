@@ -16,6 +16,24 @@
 #define MESH_PRODUCT_VERSION 1
 #endif
 
+#define OP_CONFIG_BEACON_GET 0x8009
+#define OP_CONFIG_BEACON_SET 0x800a
+#define OP_CONFIG_BEACON_STATUS 0x800b
+#define OP_CONFIG_FRIEND_GET 0x800f
+#define OP_CONFIG_FRIEND_SET 0x8010
+#define OP_CONFIG_FRIEND_STATUS 0x8011
+#define OP_CONFIG_PROXY_GET 0x8012
+#define OP_CONFIG_PROXY_SET 0x8013
+#define OP_CONFIG_PROXY_STATUS 0x8014
+#define OP_CONFIG_NET_TRANSMIT_GET 0x8023
+#define OP_CONFIG_NET_TRANSMIT_SET 0x8024
+#define OP_CONFIG_NET_TRANSMIT_STATUS 0x8025
+#define OP_CONFIG_RELAY_GET 0x8026
+#define OP_CONFIG_RELAY_SET 0x8027
+#define OP_CONFIG_RELAY_STATUS 0x8028
+#define OP_CONFIG_NODE_IDENTITY_GET 0x8046
+#define OP_CONFIG_NODE_IDENTITY_SET 0x8047
+#define OP_CONFIG_NODE_IDENTITY_STATUS 0x8048
 #define OP_CONFIG_COMPOSITION_GET 0x8008
 #define OP_CONFIG_COMPOSITION_STATUS 0x02
 #define OP_CONFIG_DEFAULT_TTL_GET 0x800c
@@ -198,6 +216,63 @@ static int server_config_receive(const mesh_access_pdu *message) {
     const mesh_net_state *state = &mesh_network.state;
     const uint8_t *p = message->params;
     size_t len = message->params_len;
+
+    if (message->opcode == OP_CONFIG_BEACON_GET ||
+        message->opcode == OP_CONFIG_BEACON_SET ||
+        message->opcode == OP_CONFIG_NET_TRANSMIT_GET ||
+        message->opcode == OP_CONFIG_NET_TRANSMIT_SET) {
+        uint8_t beacon = message->opcode == OP_CONFIG_BEACON_GET ||
+                         message->opcode == OP_CONFIG_BEACON_SET;
+        uint8_t set = message->opcode == OP_CONFIG_BEACON_SET ||
+                      message->opcode == OP_CONFIG_NET_TRANSMIT_SET;
+        if (len != (set ? 1u : 0u) || (set && beacon && p[0] > 1)) return 0;
+        if (set) {
+            mesh_net_state next = *state;
+            if (beacon) next.beacon = p[0];
+            else next.network_transmit = p[0];
+            if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next)) return 0;
+        }
+        uint8_t reply = beacon ? state->beacon : state->network_transmit;
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            beacon ? OP_CONFIG_BEACON_STATUS : OP_CONFIG_NET_TRANSMIT_STATUS,
+            &reply, 1, 0);
+    }
+
+    if (message->opcode == OP_CONFIG_RELAY_GET ||
+        message->opcode == OP_CONFIG_RELAY_SET ||
+        message->opcode == OP_CONFIG_PROXY_GET ||
+        message->opcode == OP_CONFIG_PROXY_SET ||
+        message->opcode == OP_CONFIG_FRIEND_GET ||
+        message->opcode == OP_CONFIG_FRIEND_SET) {
+        uint8_t relay = message->opcode == OP_CONFIG_RELAY_GET ||
+                        message->opcode == OP_CONFIG_RELAY_SET;
+        uint8_t proxy = message->opcode == OP_CONFIG_PROXY_GET ||
+                        message->opcode == OP_CONFIG_PROXY_SET;
+        uint8_t set = message->opcode == OP_CONFIG_RELAY_SET ||
+                      message->opcode == OP_CONFIG_PROXY_SET ||
+                      message->opcode == OP_CONFIG_FRIEND_SET;
+        if (len != (set ? relay ? 2u : 1u : 0u) || (set && p[0] > 1)) return 0;
+        uint8_t reply[2] = {2, 0}; // Feature not supported; Relay Retransmit is unused.
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            relay ? OP_CONFIG_RELAY_STATUS : proxy ? OP_CONFIG_PROXY_STATUS : OP_CONFIG_FRIEND_STATUS,
+            reply, relay ? 2 : 1, 0);
+    }
+
+    if (message->opcode == OP_CONFIG_NODE_IDENTITY_GET ||
+        message->opcode == OP_CONFIG_NODE_IDENTITY_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_NODE_IDENTITY_SET;
+        if (len != (set ? 3u : 2u) || (p[1] & 0xf0) || (set && p[2] > 1)) return 0;
+        uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
+        uint8_t known = net_idx == state->net_key_index;
+        uint8_t reply[4] = {known ? set ? MESH_CONFIG_FEATURE_NOT_SUPPORTED : MESH_CONFIG_SUCCESS :
+                            MESH_CONFIG_INVALID_NETKEY, p[0], p[1],
+                            known ? 2 : set ? p[2] : 0};
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_NODE_IDENTITY_STATUS, reply, sizeof(reply), 0);
+    }
 
     if (message->opcode == OP_CONFIG_NETKEY_GET) {
         if (len != 0) return 0;
@@ -609,6 +684,54 @@ static int server_config_receive(const mesh_access_pdu *message) {
 }
 
 // Config Client helpers for a provisioner configuring another node.
+static inline int ble_mesh_get_beacon(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_BEACON_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_set_beacon(uint16_t dst, uint8_t enabled) {
+    if (enabled > 1) return 0;
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_BEACON_SET, &enabled, 1, 0);
+}
+
+static inline int ble_mesh_get_net_transmit(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NET_TRANSMIT_GET, NULL, 0, 0);
+}
+
+// count is 0..7 extra sends; interval_steps is 0..31 in units of 10 ms.
+static inline int ble_mesh_set_net_transmit(uint16_t dst, uint8_t count,
+                                           uint8_t interval_steps) {
+    if (count > 7 || interval_steps > 31) return 0;
+    uint8_t params = count | (interval_steps << 3);
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NET_TRANSMIT_SET, &params, 1, 0);
+}
+
+static inline int ble_mesh_get_relay(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_RELAY_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_get_proxy(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_PROXY_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_get_friend(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_FRIEND_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_get_node_identity(uint16_t dst, uint16_t net_idx) {
+    if (net_idx > 0x0fff) return 0;
+    uint8_t params[] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NODE_IDENTITY_GET,
+        params, sizeof(params), 0);
+}
+
 // Set update to 1 to start Key Refresh, or 0 to add a subnet key.
 static inline int ble_mesh_add_or_update_net_key(uint16_t dst, uint16_t net_idx,
     const uint8_t key[16], uint8_t update) {

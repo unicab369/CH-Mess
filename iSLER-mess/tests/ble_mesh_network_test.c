@@ -14,12 +14,17 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 
 static uint8_t sent[31];
 static size_t sent_len;
+static int sent_count, queue_fails;
 static uint32_t stored_seq;
 static int storage_fails;
 static mesh_net_state saved_state;
 static uint64_t current_seconds;
+static uint32_t current_ms;
+uint32_t GET_MILLIS(void) { return current_ms; }
 
 int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
+    if (queue_fails) return -1;
+    sent_count++;
     memcpy(sent, ad, len);
     sent_len = len;
     return 0;
@@ -52,6 +57,63 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
     stored_seq = next_seq;
     saved_state.next_seq = next_seq;
     return 1;
+}
+
+static void test_beacon_schedule(void) {
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .beacon = 1};
+    memset(state.net_key, 0x33, 16);
+    current_ms = 0;
+    assert(ble_mesh_network_init(&state));
+    mesh_net_message message;
+    int count = sent_count;
+    current_ms = 9999; assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    current_ms = 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    assert(sent_len == 24 && sent[1] == MESH_NETWORK_BEACON_AD_TYPE && sent[2] == 1);
+    assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 20000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
+    uint8_t beacon[24]; memcpy(beacon, sent, sizeof(beacon));
+    current_ms = 20001;
+    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
+    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
+    current_ms = 30000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
+    current_ms = 39999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
+    current_ms = 40000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 3);
+
+    queue_fails = 1;
+    current_ms = 50000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 3);
+    assert(mesh_network.beacon.last_sent_ms == 40000);
+    queue_fails = 0;
+    current_ms = 50001; assert(!ble_mesh_net_poll(&message) && sent_count == count + 4);
+    beacon[23] ^= 1;
+    assert(!ble_mesh_handle_net_beacon(beacon, sizeof(beacon)));
+    assert(mesh_network.beacon.observed[0] == 0 && mesh_network.beacon.observed[1] == 0);
+    beacon[23] ^= 1;
+
+    // Manual sends also postpone automatic sends by the minimum interval.
+    current_ms = 59999; assert(ble_mesh_net_beacon_queue());
+    count = sent_count;
+    current_ms = 60001; assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    current_ms = 69999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    state = mesh_network.state; state.beacon = 0;
+    assert(mesh_commit(&state));
+    count = sent_count;
+    assert(!ble_mesh_net_beacon_queue());
+    current_ms += 1000000; assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1); // Disabled TX still authenticates RX.
+    state.beacon = 1; assert(mesh_commit(&state));
+    count = sent_count;
+    assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    current_ms += 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    current_ms += 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+
+    // Timers use unsigned elapsed time across the millisecond counter wrap.
+    current_ms = UINT32_MAX - 5000;
+    assert(ble_mesh_network_init(&state));
+    count = sent_count;
+    current_ms = 4998; assert(!ble_mesh_net_poll(&message) && sent_count == count);
+    current_ms = 4999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    state.beacon = 2;
+    assert(!ble_mesh_network_init(&state));
 }
 
 int main(void) {
@@ -102,7 +164,7 @@ int main(void) {
         0x2f,0x67,0x33,0x70,0x12,0x34,0x56,0x79,
         0xc6,0x2f,0x09,0xe4,0xc9,0x57,0xf5,0x9d
     };
-    mesh_net_state state = {0};
+    mesh_net_state state = {.beacon = 1};
     memcpy(state.net_key, net_key, sizeof(net_key));
     state.iv_index = 0x12345678;
     state.next_seq = 1;
@@ -308,6 +370,7 @@ int main(void) {
     assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
     assert(!mesh_network.state.app_keys[0].has_new_key);
 
+    test_beacon_schedule();
     puts("ble_mesh_network: PASS");
     return 0;
 }

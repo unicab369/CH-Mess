@@ -19,7 +19,6 @@
 
 // The radio sends a complete advertising PDU, while provisioning supplies an
 // AD structure. Keep queued AD structures in order, including delayed ACKs.
-#define RADIO_QUEUE_SIZE        8
 #define BLE_ADV_ACCESS_ADDRESS  0x8E89BED6
 #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
 
@@ -81,13 +80,68 @@ int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
     return 1;
 }
 
-static struct {
-    uint8_t data[PB_MAX_AD_SIZE];
-    uint8_t len;
-    uint32_t send_at_ms;
-} radio_queue[RADIO_QUEUE_SIZE];
+#define RADIO_QUEUE_SIZE 8
+#define MESH_ADV_MAX_SIZE 31
 
-static uint8_t radio_head, radio_count;
+// One slot holds the original AD data and all of its advertising repetitions.
+static struct {
+    uint8_t data[MESH_ADV_MAX_SIZE], len;
+    uint32_t send_at_ms, order;
+    uint16_t interval_ms;
+    uint8_t remaining, started;
+} radio_queue[RADIO_QUEUE_SIZE];
+static uint32_t radio_order;
+
+static int mesh_adv_queue_add(const uint8_t *ad, size_t len,
+                              uint32_t send_at_ms, uint8_t transmit) {
+    if (!ad || len < 2 || len > MESH_ADV_MAX_SIZE || (size_t)ad[0] + 1 != len)
+        return -1;
+    for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
+        if (radio_queue[i].remaining) continue;
+        memcpy(radio_queue[i].data, ad, len);
+        radio_queue[i].len = (uint8_t)len;
+        radio_queue[i].send_at_ms = send_at_ms;
+        radio_queue[i].order = radio_order++;
+        radio_queue[i].interval_ms = ((transmit >> 3) + 1u) * 10u;
+        radio_queue[i].remaining = (transmit & 7) + 1;
+        radio_queue[i].started = 0;
+        return 0;
+    }
+    return -1;
+}
+
+static int mesh_adv_queue_next(uint32_t now) {
+    int first = -1, next = -1;
+    for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
+        if (!radio_queue[i].remaining) continue;
+        if (!radio_queue[i].started && (first < 0 ||
+            (int32_t)(radio_queue[i].order - radio_queue[first].order) < 0)) first = i;
+        if (radio_queue[i].started && (int32_t)(now - radio_queue[i].send_at_ms) >= 0 &&
+            (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0)) next = i;
+    }
+    // Keep initial packets in order; a waiting retry does not block new packets.
+    if (first >= 0 && (int32_t)(now - radio_queue[first].send_at_ms) >= 0 &&
+        (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0)) next = first;
+    return next;
+}
+
+// Call after a complete advertising event; jitter is 0..10 milliseconds.
+static void mesh_adv_queue_sent(uint8_t slot, uint32_t now, uint8_t jitter) {
+    if (!radio_queue[slot].remaining) return;
+    if (--radio_queue[slot].remaining) {
+        radio_queue[slot].started = 1;
+        radio_queue[slot].order = radio_order++;
+        radio_queue[slot].send_at_ms = now + radio_queue[slot].interval_ms + jitter % 11;
+    }
+}
+
+static void mesh_adv_queue_clear(uint8_t ad_type) {
+    for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
+        if (radio_queue[i].remaining && radio_queue[i].data[1] == ad_type)
+            radio_queue[i].remaining = 0;
+}
+
+
 static uint8_t rx_armed, rx_channel_index;
 static uint32_t rx_started_ms;
 static ISLER_BUF_ATTR uint8_t adv_frame[8 + PB_MAX_AD_SIZE];
@@ -98,21 +152,10 @@ static void ble_mesh_radio_init(void) {
     seed(value ? value : 0x747AA32F);
 }
 
-static int ble_mesh_queue_ad(const uint8_t *adv_data, size_t len, uint32_t send_at_ms) {
-    if (!adv_data || len < 2 || len > PB_MAX_AD_SIZE ||
-        (size_t)adv_data[0] + 1 != len || radio_count == RADIO_QUEUE_SIZE
-    ) return -1;
-
-    uint8_t slot = (radio_head + radio_count) % RADIO_QUEUE_SIZE;
-    memcpy(radio_queue[slot].data, adv_data, len);
-    radio_queue[slot].len = (uint8_t)len;
-    radio_queue[slot].send_at_ms = send_at_ms;
-    radio_count++;
-    return 0;
-}
-
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
-    return ble_mesh_queue_ad(adv_data, len, GET_MILLIS());
+    uint8_t transmit = len >= 2 && adv_data && adv_data[1] == MESH_NETWORK_AD_TYPE ?
+        mesh_network.state.network_transmit : 0;
+    return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
 }
 
 int BLE_MESH_QUEUE_TX_DELAYED(
@@ -123,7 +166,7 @@ int BLE_MESH_QUEUE_TX_DELAYED(
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
     uint32_t delay_ms = min_delay_ms + rand() % range;
-    return ble_mesh_queue_ad(adv_data, len, GET_MILLIS() + delay_ms);
+    return mesh_adv_queue_add(adv_data, len, GET_MILLIS() + delay_ms, 0);
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
@@ -160,7 +203,8 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
         }
     }
 
-    if (radio_count && (int32_t)(now - radio_queue[radio_head].send_at_ms) >= 0) {
+    int slot = mesh_adv_queue_next(now);
+    if (slot >= 0) {
         // The factory MAC is stored most-significant byte first in ROM.
         const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
         adv_frame[0] = 0x02;
@@ -169,16 +213,15 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
         for (uint8_t i = 0; i < 6; i++) {
             adv_frame[7 - i] = mac[i];
         }
-        memcpy(adv_frame + 8, radio_queue[radio_head].data, radio_queue[radio_head].len);
-        size_t frame_len = 8 + radio_queue[radio_head].len;
-        radio_head = (radio_head + 1) % RADIO_QUEUE_SIZE;
-        radio_count--;
+        memcpy(adv_frame + 8, radio_queue[slot].data, radio_queue[slot].len);
+        size_t frame_len = 8 + radio_queue[slot].len;
         rx_armed = 0;
 
         for (uint8_t channel = 37; channel <= 39; channel++) {
             iSLERTX(BLE_ADV_ACCESS_ADDRESS, adv_frame, frame_len, channel, PHY_1M);
             if (!tx_done) return -1;
         }
+        mesh_adv_queue_sent((uint8_t)slot, GET_MILLIS(), (uint8_t)(rand() % 11));
     }
 
     // Rotate reception through advertising channels 37, 38, and 39 every 20 ms.
@@ -211,7 +254,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 7
+#define MESH_STATE_VERSION 8
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -308,7 +351,18 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     mesh_state_record record = {0};
     if (!mesh_state_load_record(&record)) record.models.default_ttl = MODEL_TTL;
     record.state = *state;
-    return mesh_state_save_record(&record);
+    if (!mesh_state_save_record(&record)) return 0;
+    // Cached packets cannot outlive a change in the transmitting credentials.
+    if (mesh_network.ready &&
+        (memcmp(state->net_key, mesh_network.state.net_key, 16) ||
+         (state->key_refresh_phase == 2) != (mesh_network.state.key_refresh_phase == 2) ||
+         state->iv_index != mesh_network.state.iv_index ||
+         state->iv_update != mesh_network.state.iv_update)) {
+        mesh_adv_queue_clear(MESH_NETWORK_AD_TYPE);
+        mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
+    }
+    if (!state->beacon) mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
+    return 1;
 }
 
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
@@ -342,6 +396,7 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
     state.iv_skip_min_time = state.iv_update;
     state.unicast_address = data->unicast_address;
     state.element_count = num_elements;
+    state.beacon = 1;
 
     uint64_t seconds;
     if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 1) {
