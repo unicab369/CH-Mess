@@ -210,9 +210,8 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 5
+#define MESH_STATE_VERSION 6
 #define PROVISIONER_MAX_NODES 8
-#define PROVISIONER_LOCAL_ELEMENTS 1
 
 typedef struct {
     uint8_t device_key[16];
@@ -327,8 +326,11 @@ int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
     return mesh_state_save_record(&record);
 }
 
-int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) {
+int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
+                           uint8_t num_elements) {
     if (!data || !device_key) return -1;
+    if (!num_elements || num_elements > MESH_MAX_ELEMENTS ||
+        (uint32_t)data->unicast_address + num_elements - 1 > 0x7fff) return -1;
     mesh_net_state state = {0};
     memcpy(state.net_key, data->net_key, 16);
     state.net_key_index = data->net_key_index;
@@ -338,6 +340,7 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]) 
     state.iv_update = (data->flags & 2) != 0;
     state.iv_skip_min_time = state.iv_update;
     state.unicast_address = data->unicast_address;
+    state.element_count = num_elements;
 
     uint64_t seconds;
     if (BLE_MESH_NETWORK_TIME_SECONDS(&seconds) == 1) {
@@ -360,6 +363,8 @@ int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
     if (!mesh_state_load_record(&record) ||
         record.state.unicast_address == 0 ||
         record.state.unicast_address > 0x7FFF ||
+        record.state.element_count == 0 ||
+        record.state.element_count > MESH_MAX_ELEMENTS ||
         record.state.net_key_index > 0x0FFF ||
         record.node_count >= PROVISIONER_MAX_NODES ||
         (record.state.key_refresh_phase == 2 && !record.state.has_new_key)
@@ -367,7 +372,7 @@ int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
 
     uint16_t next_address = record.next_unicast_address;
     if (!next_address) {
-        next_address = record.state.unicast_address + PROVISIONER_LOCAL_ELEMENTS;
+        next_address = record.state.unicast_address + record.state.element_count;
     }
     if (next_address > 0x7FFF ||
         (uint32_t)next_address + num_elements - 1 > 0x7FFF) return -1;
@@ -415,7 +420,9 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
     if (!mesh_state_load_record(&record) ||
         record.node_count > PROVISIONER_MAX_NODES) return 0;
 
-    if (address == record.state.unicast_address) {
+    if (address >= record.state.unicast_address &&
+        (uint32_t)address < (uint32_t)record.state.unicast_address +
+                            record.state.element_count) {
         memcpy(key, record.state.dev_key, 16);
         return 1;
     }
@@ -430,11 +437,13 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
     return 0;
 }
 
-void BLE_MESH_ONOFF_CHANGED(uint8_t on) {
+void BLE_MESH_ONOFF_CHANGED(uint16_t element, uint8_t on) {
+    (void)element;
     (void)on;
 }
 
-void BLE_MESH_ONOFF_STATUS(uint16_t src, uint8_t present) {
+void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present) {
+    (void)element;
     (void)src;
     (void)present;
 }
@@ -447,7 +456,8 @@ void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
     (void)len;
 }
 
-void BLE_MESH_HEALTH_ATTENTION(uint8_t seconds) {
+void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
+    (void)element;
     (void)seconds;
 }
 

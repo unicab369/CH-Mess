@@ -222,7 +222,8 @@ int PROVISIONER_STORE_NODE_DEVKEY(
     const uint8_t device_key[16], uint16_t unicast_address,
     uint8_t num_elements
 );
-int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16]);
+int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
+                           uint8_t num_elements);
 static int PROVISIONER_CHOOSE_PARAMS(const prov_caps *caps, prov_start *out);
 
 static int prov_caps_valid(const prov_caps *caps) {
@@ -1844,7 +1845,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
-                if (PROVISIONEE_STORE_DATA(&data, session.device_key) != 0) {
+                if (PROVISIONEE_STORE_DATA(&data, session.device_key,
+                                           caps->num_elements) != 0) {
                     provisionee_fail(PROV_ERR_UNEXPECTED_ERROR);
                     return;
                 }

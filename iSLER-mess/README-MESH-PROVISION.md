@@ -45,6 +45,11 @@
 | 0xC000–0xFEFF | Group | 16,128 |
 | 0xFF00–0xFFFF | Fixed group (all-proxies, all-friends, etc.) | 256 |
 
+This implementation supports up to two local elements. Set `prov_caps.num_elements`
+to the number used; their unicast addresses are consecutive. AppKey bindings and
+group or virtual subscriptions are stored per element. Stored state version 6
+requires reprovisioning devices that have version 5 records.
+
 ## Bluetooth Mesh message kinds
 
 The advertising bearer uses these Mesh advertising data (AD) types:
@@ -223,6 +228,48 @@ Network PDU field is carried on the advertising bearer.
 | DST | 2 | Destination address. | AES-CCM encrypted | EncryptionKey |
 | TransportPDU | 1–16 for Access; 1–12 for Control | Lower Transport PDU. | AES-CCM encrypted | EncryptionKey |
 | NetMIC | 4 for Access; 8 for Control | Network authentication tag. | AES-CCM authentication tag | EncryptionKey |
+
+
+<br>
+
+# Beacon Types (AD Type `0x2B`)
+
+| Beacon Type | Name | Purpose |
+| :--- | :--- | :--- |
+| `0x00` | **Unprovisioned Device Beacon** | Broadcast by devices not yet in a mesh network, allowing a Provisioner to discover them |
+| `0x01` | **Secure Network Beacon** | Broadcast by provisioned nodes to share network state (IV Index, flags) |
+| `0x02` | **Mesh Private Beacon** | Privacy-enhanced version of the Secure Network Beacon (Mesh 1.1) |
+
+## 📡 Beacon Data Details
+
+### `0x00` — Unprovisioned Device Beacon
+
+- **16-byte UUID**
+- **OOB capabilities** (how authentication can be done)
+- Optionally a **URI hash** for out-of-band provisioning
+
+### `0x01` — Secure Network Beacon
+
+- **Flags** (1 byte): Key Refresh Flag and IV Update Flag
+- **Network ID** (8 bytes): Identifies the mesh network (derived from the NetKey)
+- **IV Index** (4 bytes): Used for replay protection
+- **Authentication Value** (8 bytes): Authenticates the beacon
+
+### `0x02` — Mesh Private Beacon
+
+Same logical content as the Secure Network Beacon, but with **obfuscated data**:
+
+- The IV Index and flags are encrypted using a **PrivateBeaconKey** derived from the network key
+- The beacon uses a **non-resolvable random address** that rotates periodically to prevent tracking
+
+### ⚙️ How the Choice is Made between 0x01 and 0x02
+*   **Feature Enablement**: The node must be configured to support the Private Beacon feature at the application level (e.g., by enabling the appropriate build option) .
+*   **State Control**: The **Private Beacon state** (enabled or disabled) is set via the **Private Beacon Client** model. A Provisioner or configuration app sends a message to the node to enable or disable this state .
+*   **Mutual Exclusivity**: The specification is clear that the states are mutually exclusive. A node will send **either** a Secure Network Beacon **or** a Private Beacon, but **never both** .
+
+
+<br>
+<br>
 
 A Mesh Message on the advertising bearer is carried inside AdvData:
 

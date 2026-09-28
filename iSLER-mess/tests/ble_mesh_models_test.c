@@ -22,6 +22,7 @@ typedef struct {
 } mesh_access_message;
 
 #define MESH_MAX_APP_KEYS 4
+#define MESH_MAX_ELEMENTS 2
 typedef struct {
     uint8_t key[16], new_key[16];
     uint16_t index;
@@ -29,6 +30,7 @@ typedef struct {
 } mesh_app_key;
 typedef struct {
     uint16_t net_key_index, unicast_address;
+    uint8_t element_count;
     uint8_t key_refresh_phase;
     mesh_app_key app_keys[MESH_MAX_APP_KEYS];
 } mesh_net_state;
@@ -43,6 +45,11 @@ static struct {
     mesh_net_state state;
     uint8_t ready;
 } mesh_network;
+static int mesh_local_element(uint16_t address) {
+    return address >= mesh_network.state.unicast_address &&
+           address - mesh_network.state.unicast_address <
+               mesh_network.state.element_count;
+}
 
 #define MESH_TRANSPORT_MAX_LABELS 4
 static uint8_t registered_labels;
@@ -59,10 +66,12 @@ static int ble_mesh_label_add(const uint8_t label[16]) {
 static uint32_t now_ms;
 static uint32_t last_opcode;
 static uint16_t last_dst;
+static uint16_t last_src;
 static uint8_t last_params[32];
 static uint16_t last_app_key_index;
 static size_t last_len;
 static uint8_t applied_on, attention_seconds, reported_on;
+static uint16_t applied_element, reported_element;
 static int apply_count, report_count;
 static mesh_access_pdu polled_access;
 static int poll_ready;
@@ -79,10 +88,11 @@ static int ble_mesh_stage_app_key(uint16_t index, const uint8_t key[16]) {
     mesh_network.state.app_keys[slot].has_new_key = 1;
     return 1;
 }
-static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
+static int ble_mesh_access_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                 uint16_t app_key_index, uint32_t opcode,
                                 const uint8_t *params, size_t len,
                                 uint8_t mic_64) {
+    last_src = src;
     (void)ttl;
     assert(mic_64 == 0);
     assert(len <= sizeof(last_params));
@@ -93,14 +103,15 @@ static int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
     if (len) memcpy(last_params, params, len);
     return 1;
 }
-static int ble_mesh_access_queue_virtual(const uint8_t label[16],
-                                         uint8_t ttl, uint16_t app_key_index,
-                                         uint32_t opcode,
-                                         const uint8_t *params, size_t len,
-                                         uint8_t mic_64) {
-    return ble_mesh_access_queue(ble_mesh_virtual_address(label), ttl,
-                                 app_key_index,
-                                 opcode, params, len, mic_64);
+static int ble_mesh_access_queue_virtual(uint16_t src,
+                                              const uint8_t label[16],
+                                              uint8_t ttl, uint16_t app_key_index,
+                                              uint32_t opcode,
+                                              const uint8_t *params, size_t len,
+                                              uint8_t mic_64) {
+    last_src = src;
+    return ble_mesh_access_queue(src, ble_mesh_virtual_address(label), ttl,
+                                 app_key_index, opcode, params, len, mic_64);
 }
 static int ble_mesh_access_poll(mesh_access_message *message,
                                 mesh_access_pdu *access) {
@@ -122,11 +133,13 @@ int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
     saved = *state;
     return 1;
 }
-void BLE_MESH_ONOFF_CHANGED(uint8_t on) {
+void BLE_MESH_ONOFF_CHANGED(uint16_t element, uint8_t on) {
+    applied_element = element;
     applied_on = on;
     apply_count++;
 }
-void BLE_MESH_ONOFF_STATUS(uint16_t src, uint8_t present) {
+void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present) {
+    reported_element = element;
     assert(src == 0x1202);
     reported_on = present;
     report_count++;
@@ -135,7 +148,8 @@ void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len) {
     (void)src; (void)opcode; (void)params; (void)len;
 }
-void BLE_MESH_HEALTH_ATTENTION(uint8_t seconds) {
+void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
+    (void)element;
     attention_seconds = seconds;
 }
 
@@ -148,8 +162,16 @@ static int poll_message(const mesh_access_pdu *message) {
 int main(void) {
     mesh_network.ready = 1;
     mesh_network.state.unicast_address = 0x1201;
+    mesh_network.state.element_count = 2;
     mesh_network.state.net_key_index = 0x123;
     assert(ble_mesh_models_init() == 1);
+
+    uint8_t client_key[16] = {0x55};
+    assert(ble_mesh_add_or_update_app_key(0x1202, 0x123, 0x234, client_key, 0) == 1);
+    assert(last_opcode == OP_CONFIG_APPKEY_ADD && last_len == 19);
+    assert(ble_mesh_add_or_update_app_key(0x1202, 0x123, 0x234, client_key, 1) == 1);
+    assert(last_opcode == OP_CONFIG_APPKEY_UPDATE && last_len == 19);
+    assert(ble_mesh_add_or_update_app_key(0x1202, 0x123, 0x234, client_key, 2) == 0);
 
     uint8_t add[19] = {0x23, 0x41, 0x23}; // NetKey 0x123, AppKey 0x234
     memset(add + 3, 0x55, 16);
@@ -214,13 +236,13 @@ int main(void) {
     message.params_len = sizeof(bind);
     assert(poll_message(&message) == 1);
     assert(saved.onoff_client_bindings == 1);
-    assert(ble_mesh_onoff_set(0x1202, 0x234, 0, 1) == 1);
+    assert(ble_mesh_onoff_set(0x1201, 0x1202, 0x234, 0, 1) == 1);
     assert(last_opcode == OP_ONOFF_SET && last_len == 2 &&
            last_params[0] == 0);
     uint8_t virtual_label[16] = {1};
-    assert(ble_mesh_onoff_get_virtual(virtual_label, 0x234) == 1);
+    assert(ble_mesh_onoff_get_virtual(0x1201, virtual_label, 0x234) == 1);
     assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_GET);
-    assert(ble_mesh_onoff_set_virtual(virtual_label, 0x234, 1, 0) == 1);
+    assert(ble_mesh_onoff_set_virtual(0x1201, virtual_label, 0x234, 1, 0) == 1);
     assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_SET_UNACK);
 
     uint8_t status = 1;
@@ -333,9 +355,9 @@ int main(void) {
     message.params_len = sizeof(bind_second);
     assert(poll_message(&message) == 1);
     assert(saved.onoff_client_bindings == 3);
-    assert(ble_mesh_onoff_get(0x1202, 0x235) == 1);
+    assert(ble_mesh_onoff_get(0x1201, 0x1202, 0x235) == 1);
     assert(last_app_key_index == 0x235);
-    assert(ble_mesh_onoff_get(0x1202, 0x236) == 0);
+    assert(ble_mesh_onoff_get(0x1201, 0x1202, 0x236) == 0);
     uint8_t get_model_keys[4] = {0x01, 0x12, 0x01, 0x10};
     message.opcode = OP_CONFIG_SIG_MODEL_APP_GET;
     message.params = get_model_keys;
@@ -354,7 +376,7 @@ int main(void) {
     assert(!mesh_network.state.app_keys[1].used &&
            saved.onoff_client_bindings == 1 &&
            last_params[0] == MESH_CONFIG_SUCCESS);
-    assert(ble_mesh_onoff_get(0x1202, 0x235) == 0);
+    assert(ble_mesh_onoff_get(0x1201, 0x1202, 0x235) == 0);
 
     // Reusing the slot must not restore the deleted key's model bindings.
     message.opcode = OP_CONFIG_APPKEY_ADD;
@@ -363,7 +385,7 @@ int main(void) {
     assert(poll_message(&message) == 1);
     assert(mesh_network.state.app_keys[1].used &&
            saved.onoff_client_bindings == 1);
-    assert(ble_mesh_onoff_get(0x1202, 0x235) == 0);
+    assert(ble_mesh_onoff_get(0x1201, 0x1202, 0x235) == 0);
 
     // AppKey Update is accepted for an existing key during refresh phase 1.
     uint8_t update[19] = {0x23, 0x51, 0x23};
@@ -393,5 +415,65 @@ int main(void) {
     extra[3] = 0x99;
     assert(poll_message(&message) == 1);
     assert(last_params[0] == MESH_CONFIG_INSUFFICIENT_RESOURCES);
+
+    // The second element has its own binding and state.
+    uint8_t bind_element2[6] = {0x02, 0x12, 0x34, 0x02, 0x00, 0x10};
+    message.opcode = OP_CONFIG_MODEL_APP_BIND;
+    message.params = bind_element2;
+    message.params_len = sizeof(bind_element2);
+    assert(poll_message(&message) == 1);
+    assert(saved.other[0].onoff_server_bindings == 1);
+    bind_element2[4] = 0x01; // Client model on the second element.
+    assert(poll_message(&message) == 1);
+    assert(ble_mesh_onoff_set(0x1202, 0x1300, 0x234, 1, 0) == 1);
+    assert(last_src == 0x1202 && last_opcode == OP_ONOFF_SET_UNACK);
+    bind_element2[4] = 0x00;
+    message.dst = 0x1202;
+    message.app_key_index = 0x234;
+    message.opcode = OP_ONOFF_SET;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 12;
+    assert(poll_message(&message) == 1);
+    assert(applied_element == 0x1202 && last_src == 0x1202);
+
+    // One group message reaches both subscribed element instances.
+    uint8_t group[6] = {0x01, 0x12, 0x01, 0xc0, 0x00, 0x10};
+    message.dst = 0x1201;
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_SUB_ADD;
+    message.params = group;
+    message.params_len = sizeof(group);
+    assert(poll_message(&message) == 1);
+    group[0] = 0x02;
+    assert(poll_message(&message) == 1);
+    assert(saved.group_count == 2);
+    int prior_count = apply_count;
+    message.dst = 0xc001;
+    message.app_key_index = 0x234;
+    message.opcode = OP_ONOFF_SET_UNACK;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 13;
+    assert(poll_message(&message) == 1);
+    assert(apply_count == prior_count + 2);
+
+    // Removing one subscription leaves the other element subscribed.
+    message.dst = 0x1201;
+    message.app_key_index = APP_KEY_INDEX_NONE;
+    message.opcode = OP_CONFIG_MODEL_SUB_DELETE;
+    message.params = group;
+    message.params_len = sizeof(group);
+    assert(poll_message(&message) == 1);
+    assert(saved.group_count == 1);
+    message.dst = 0xc001;
+    message.app_key_index = 0x234;
+    message.opcode = OP_ONOFF_SET_UNACK;
+    message.params = on;
+    message.params_len = sizeof(on);
+    on[1] = 14;
+    prior_count = apply_count;
+    assert(poll_message(&message) == 1);
+    assert(apply_count == prior_count + 1 && applied_element == 0x1201);
     return 0;
 }

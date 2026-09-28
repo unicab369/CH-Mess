@@ -163,7 +163,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
         }
         if (out->app_key_index == APP_KEY_INDEX_NONE) return 0;
     } else {
-        if (aid != 0 || dst != mesh_network.state.unicast_address) return 0;
+        if (aid != 0 || !mesh_local_element(dst)) return 0;
         int ok = 0;
         if (BLE_MESH_TRANSPORT_GET_DEVICE_KEY(dst, key) == 1 &&
             ccm_auth_decrypt(key, nonce, 13, NULL, 0, upper, len - mic_len,
@@ -194,7 +194,7 @@ static int transport_segment_queue(void) {
 
     uint32_t iv = mesh_network.state.iv_index - (mesh_network.state.iv_update ? 1 : 0);
     if (iv != transport_tx.iv_index ||
-        mesh_network.state.unicast_address != transport_tx.src ||
+        !mesh_local_element(transport_tx.src) ||
         mesh_network.state.next_seq < transport_tx.seq_auth ||
         mesh_network.state.next_seq > 0xffffff ||
         mesh_network.state.next_seq - transport_tx.seq_auth >= 8192
@@ -217,7 +217,8 @@ static int transport_segment_queue(void) {
     if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
     memcpy(lower + 4, transport_tx.upper + offset, count);
 
-    if (!ble_mesh_net_queue(transport_tx.dst, 0, transport_tx.ttl,
+    if (!ble_mesh_net_queue(transport_tx.src, transport_tx.dst,
+                           0, transport_tx.ttl,
                            lower, count + 4)) return 0;
     transport_tx.next_seg++;
     transport_tx.last_tx_ms = GET_MILLIS();
@@ -227,13 +228,15 @@ static int transport_segment_queue(void) {
 // Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
 // Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
 // Only one segmented outgoing access message may be active at a time.
-static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
+static inline int ble_mesh_transport_queue(uint16_t src,
+                                                uint16_t dst, uint8_t ttl,
                                                 uint16_t app_key_index,
                                                 const uint8_t label[16],
                                                 const uint8_t *access, size_t len,
                                                 uint8_t mic_64) {
     // A destination in the virtual address range requires its Label UUID.
-    if (!mesh_network.ready || !access || len == 0 || mic_64 > 1 ||
+    if (!mesh_network.ready || !mesh_local_element(src) ||
+        !access || len == 0 || mic_64 > 1 ||
         len > MESH_TRANSPORT_MAX_UPPER - (mic_64 ? 8u : 4u) ||
         ttl > 0x7f || dst == 0 ||
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
@@ -265,7 +268,7 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
     uint32_t iv = state->iv_index - (state->iv_update ? 1 : 0);
 
-    transport_nonce(nonce, !akf, mic_64, seq, state->unicast_address, dst, iv);
+    transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv);
     if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16 : 0, access, len,
                             upper, upper + len, mic_len) != CCM_OK) return 0;
 
@@ -273,7 +276,7 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
-        return ble_mesh_net_queue(dst, 0, ttl, lower, upper_len + 1);
+        return ble_mesh_net_queue(src, dst, 0, ttl, lower, upper_len + 1);
     }
 
     transport_tx.active = 1;
@@ -281,7 +284,7 @@ static inline int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
     transport_tx.aid = aid;
     transport_tx.mic_64 = mic_64;
     transport_tx.ttl = ttl;
-    transport_tx.src = state->unicast_address;
+    transport_tx.src = src;
     transport_tx.dst = dst;
     transport_tx.seq_zero = seq & 0x1fff;
     transport_tx.seq_auth = seq;
@@ -312,7 +315,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         if (net->transport_len != 7 || pdu[0] != 0 || (pdu[1] & 0x80) ||
             (pdu[2] & 3) || !transport_tx.active ||
             net->src != transport_tx.dst ||
-            net->dst != mesh_network.state.unicast_address
+            net->dst != transport_tx.src
         ) return 0;
 
         uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) | (pdu[2] >> 2));
@@ -335,7 +338,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         return 0;
     }
 
-    if (net->dst <= 0x7fff && net->dst != mesh_network.state.unicast_address) return 0;
+    if (net->dst <= 0x7fff && !mesh_local_element(net->dst)) return 0;
 
     uint8_t akf = (pdu[0] >> 6) & 1;
     uint8_t aid = pdu[0] & 0x3f;
@@ -394,7 +397,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     if (transport_rx.akf != akf || transport_rx.aid != aid ||
         transport_rx.seg_n != seg_n || transport_rx.mic_64 != mic_64) return 0;
     if (transport_rx.complete) {
-        transport_rx.ack_pending = net->dst == mesh_network.state.unicast_address;
+        transport_rx.ack_pending = mesh_local_element(net->dst);
         transport_rx.ack_at_ms = now;
         return 0;
     }
@@ -406,7 +409,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         transport_rx.started_ms = now;
         if (seg_o == seg_n) transport_rx.last_len = (uint8_t)segment_len;
     }
-    transport_rx.ack_pending = net->dst == mesh_network.state.unicast_address;
+    transport_rx.ack_pending = mesh_local_element(net->dst);
     transport_rx.ack_at_ms = now + 200;
     uint32_t segment_mask = (seg_n == 31) ? UINT32_MAX : ((uint32_t)1 << (seg_n + 1)) - 1;
     if (transport_rx.received != segment_mask) return 0;
@@ -439,7 +442,7 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
     }
     // Queue a Segment Acknowledgment for received unicast segments when due.
     if (transport_rx.active && transport_rx.ack_pending &&
-        transport_rx.dst == mesh_network.state.unicast_address &&
+        mesh_local_element(transport_rx.dst) &&
         (int32_t)(now - transport_rx.ack_at_ms) >= 0) {
         uint16_t seq_zero = transport_rx.seq_zero;
         uint32_t mask = transport_rx.received;
@@ -450,7 +453,8 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
             (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
             (uint8_t)(mask >> 8), (uint8_t)mask
         };
-        if (!ble_mesh_net_queue(transport_rx.src, 1, transport_rx.ttl,
+        if (!ble_mesh_net_queue(transport_rx.dst, transport_rx.src,
+                                1, transport_rx.ttl,
                                 pdu, sizeof(pdu))) return -1;
         transport_rx.ack_pending = 0;
     }

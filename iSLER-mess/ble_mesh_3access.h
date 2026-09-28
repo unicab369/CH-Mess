@@ -7,7 +7,6 @@
 #include "ble_mesh_2transport.h"
 
 // TODO for a broadly usable Access layer:
-// - Route messages to models on multiple elements and subscribed group addresses.
 // - Check each receiving model's AppKey binding or Device Key permission.
 // - Use configured publication address, AppKey, TTL, period, and retransmit settings.
 
@@ -26,7 +25,8 @@ typedef struct {
 // Queue an Access message using an opcode in transmission byte order.
 // Returns 1 if accepted by transport, or 0 for invalid input/queue failure.
 // Set mic_64 to 1 for a segmented message with an 8-byte TransMIC.
-static inline int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
+static inline int ble_mesh_access_queue(uint16_t src, uint16_t dst,
+                                       uint8_t ttl,
                                        uint16_t app_key_index, uint32_t opcode,
                                        const uint8_t *params, size_t params_len,
                                        uint8_t mic_64) {
@@ -46,13 +46,13 @@ static inline int ble_mesh_access_queue(uint16_t dst, uint8_t ttl,
     }
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
-    return ble_mesh_transport_queue(dst, ttl, app_key_index, NULL,
+    return ble_mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
                                          data, opcode_len + params_len, mic_64);
 }
 
 // Send an AppKey Access message to the virtual address derived from label.
 static inline int ble_mesh_access_queue_virtual(
-    const uint8_t label[16], uint8_t ttl, uint16_t app_key_index,
+    uint16_t src, const uint8_t label[16], uint8_t ttl, uint16_t app_key_index,
     uint32_t opcode,
     const uint8_t *params, size_t params_len, uint8_t mic_64
 ) {
@@ -71,7 +71,7 @@ static inline int ble_mesh_access_queue_virtual(
     }
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
-    return ble_mesh_transport_queue(ble_mesh_virtual_address(label), ttl,
+    return ble_mesh_transport_queue(src, ble_mesh_virtual_address(label), ttl,
                                      app_key_index, label, data,
                                      opcode_len + params_len, mic_64);
 }

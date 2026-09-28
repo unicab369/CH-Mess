@@ -107,6 +107,7 @@ int main(void) {
     state.iv_index = 0x12345678;
     state.next_seq = 1;
     state.unicast_address = 0x1201;
+    state.element_count = 1;
     state.iv_time_valid = 1;
 
     assert(ble_mesh_network_init(&state) == 1);
@@ -116,7 +117,8 @@ int main(void) {
     assert(ble_mesh_net_beacon_queue() == 1);
     assert(sent_len == sizeof(normal_beacon));
     assert(memcmp(sent, normal_beacon, sizeof(normal_beacon)) == 0);
-    assert(ble_mesh_net_queue(0xfffd, 1, 0, transport, sizeof(transport)) == 1);
+    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+                                   0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(stored_seq == 2);
     assert(sent_len == 30 && sent[0] == 29 && sent[1] == MESH_NETWORK_AD_TYPE);
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
@@ -148,7 +150,8 @@ int main(void) {
     assert(ble_mesh_network_init(&state) == 1);
     storage_fails = 1;
     sent_len = 0;
-    assert(ble_mesh_net_queue(0xfffd, 1, 0, transport, sizeof(transport)) == 0);
+    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+                                   0xfffd, 1, 0, transport, sizeof(transport)) == 0);
     assert(sent_len == 0 && mesh_network.state.next_seq == 1);
 
     storage_fails = 0;
@@ -160,7 +163,8 @@ int main(void) {
                                            sizeof(updating_beacon)) == 1);
     assert(mesh_network.state.iv_update == 1);
     assert(mesh_network.state.iv_index == 0x12345679);
-    assert(ble_mesh_net_queue(0xfffd, 1, 0, transport, sizeof(transport)) == 1);
+    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+                                   0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
     mesh_net_state active = mesh_network.state;
     active.unicast_address = 0x0003;
@@ -211,7 +215,8 @@ int main(void) {
     old_sender.unicast_address = 0x0003;
     old_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&old_sender) == 1);
-    assert(ble_mesh_net_queue(0x1201, 0, 4, access_transport,
+    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+                                   0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     assert(memcmp(sent + 2, access_pdu, sizeof(access_pdu)) == 0);
     assert(ble_mesh_network_init(&phase1) == 1);
@@ -231,7 +236,8 @@ int main(void) {
     new_sender.unicast_address = 0x0003;
     new_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&new_sender) == 1);
-    assert(ble_mesh_net_queue(0x1201, 0, 4, access_transport,
+    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+                                   0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     uint8_t new_pdu[29];
     memcpy(new_pdu, sent + 2, sizeof(new_pdu));

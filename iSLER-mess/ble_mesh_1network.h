@@ -6,6 +6,9 @@
 #include <string.h>
 #include "ble_mesh_crypto.h"
 
+// Provisioning capabilities may advertise up to this many local elements.
+#define MESH_MAX_ELEMENTS 2
+
 #define MESH_NETWORK_AD_TYPE 0x2A
 #define MESH_NETWORK_BEACON_AD_TYPE 0x2B
 #define MESH_NETWORK_MAX_PDU 29
@@ -41,7 +44,9 @@ typedef struct {
     uint64_t iv_state_start_time;
     uint32_t next_seq;
     uint16_t unicast_address;
+    uint8_t element_count;
 } mesh_net_state;
+
 
 static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
     for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
@@ -108,6 +113,12 @@ static struct {
     uint8_t ready;
 } mesh_network;
 
+static inline int mesh_local_element(uint16_t address) {
+    uint16_t base = mesh_network.state.unicast_address;
+    uint8_t count = mesh_network.state.element_count;
+    return count && address >= base && (uint32_t)address - base < count;
+}
+
 // k2, k3, and k1 derive managed-flooding and Secure Network Beacon keys.
 static void mesh_derive_keys(const uint8_t net_key[16],
                             mesh_network_credentials *out) {
@@ -141,6 +152,8 @@ static void mesh_derive_keys(const uint8_t net_key[16],
 static inline int ble_mesh_network_init(const mesh_net_state *state) {
     if (!state || state->unicast_address == 0 ||
         state->unicast_address > 0x7fff ||
+        state->element_count == 0 || state->element_count > MESH_MAX_ELEMENTS ||
+        (uint32_t)state->unicast_address + state->element_count - 1 > 0x7fff ||
         state->net_key_index > 0x0fff ||
         state->next_seq > 0x1000000u ||
         state->iv_update > 1 ||
@@ -345,11 +358,13 @@ static inline int ble_mesh_net_beacon_queue(void) {
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // Reserve the next sequence number before a transmission is queued.
-static inline int ble_mesh_net_queue(uint16_t dst, uint8_t ctl, uint8_t ttl,
-                                    const uint8_t *transport, size_t len) {
+static inline int ble_mesh_net_queue(uint16_t src, uint16_t dst,
+                                          uint8_t ctl, uint8_t ttl,
+                                          const uint8_t *transport, size_t len) {
     mesh_net_state *state = &mesh_network.state;
 
-    if (!mesh_network.ready || !transport || dst == 0 || ctl > 1 ||
+    if (!mesh_network.ready || !mesh_local_element(src) || !transport ||
+        dst == 0 || ctl > 1 ||
         ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
         state->next_seq > 0xffffffu
     ) return 0;
@@ -368,8 +383,8 @@ static inline int ble_mesh_net_queue(uint16_t dst, uint8_t ctl, uint8_t ttl,
     pdu[2] = (uint8_t)(seq >> 16);
     pdu[3] = (uint8_t)(seq >> 8);
     pdu[4] = (uint8_t)seq;
-    pdu[5] = (uint8_t)(state->unicast_address >> 8);
-    pdu[6] = (uint8_t)state->unicast_address;
+    pdu[5] = (uint8_t)(src >> 8);
+    pdu[6] = (uint8_t)src;
 
     uint8_t plain[18], nonce[13];
     plain[0] = (uint8_t)(dst >> 8);
@@ -514,7 +529,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
         src = (uint16_t)((clear[5] << 8) | clear[6]);
 
         if (src == 0 || src > 0x7fff ||
-            src == mesh_network.state.unicast_address) continue;
+            mesh_local_element(src)) continue;
         seq = ((uint32_t)clear[2] << 16) | ((uint32_t)clear[3] << 8) | clear[4];
         mesh_nonce(nonce, clear + 1, iv);
 

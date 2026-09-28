@@ -23,12 +23,15 @@ static uint16_t sent_app_key_index;
 static uint8_t sent_mic_64;
 static mesh_access_message incoming;
 static int incoming_ready;
+static struct { struct { uint16_t unicast_address; } state; } mesh_network =
+    {{0x1200}};
 
-static int ble_mesh_transport_queue(uint16_t dst, uint8_t ttl,
+static int ble_mesh_transport_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                          uint16_t app_key_index,
                                          const uint8_t label[16],
                                          const uint8_t *data, size_t len,
                                          uint8_t mic_64) {
+    (void)src;
     (void)label;
     memcpy(sent, data, len);
     sent_len = len;
@@ -55,33 +58,35 @@ static int ble_mesh_transport_poll(mesh_access_message *out) {
 
 int main(void) {
     const uint8_t params[] = {0x12, 0x34};
-    assert(ble_mesh_access_queue(0x1201, 5, 0, 0x01, params, 2, 0) == 1);
+    assert(ble_mesh_access_queue(0x1200, 0x1201, 5, 0, 0x01, params, 2, 0) == 1);
     assert(sent_len == 3 && sent[0] == 0x01 &&
            memcmp(sent + 1, params, 2) == 0);
     assert(sent_dst == 0x1201 && sent_ttl == 5 && sent_app_key_index == 0);
     assert(sent_mic_64 == 0);
-    assert(ble_mesh_access_queue(0x1201, 5, 0, 0x01, params, 2, 1) == 1);
+    assert(ble_mesh_access_queue(0x1200, 0x1201, 5, 0, 0x01, params, 2, 1) == 1);
     assert(sent_mic_64 == 1);
-    assert(ble_mesh_access_queue(0x1201, 5, 0, 0x01, params, 2, 2) == 0);
+    assert(ble_mesh_access_queue(0x1200, 0x1201, 5, 0, 0x01, params, 2, 2) == 0);
 
-    assert(ble_mesh_access_queue(0x1202, 3, APP_KEY_INDEX_NONE,
+    assert(ble_mesh_access_queue(0x1200, 0x1202, 3, APP_KEY_INDEX_NONE,
                                  0x8202, NULL, 0, 0) == 1);
     assert(sent_len == 2 && sent[0] == 0x82 && sent[1] == 0x02);
     assert(sent_app_key_index == APP_KEY_INDEX_NONE);
 
-    assert(ble_mesh_access_queue(0x1203, 2, 0, 0xe33601, params, 2, 0) == 1);
+    assert(ble_mesh_access_queue(0x1200, 0x1203, 2, 0, 0xe33601, params, 2, 0) == 1);
     assert(sent_len == 5 && sent[0] == 0xe3 && sent[1] == 0x36 &&
            sent[2] == 0x01 && memcmp(sent + 3, params, 2) == 0);
 
-    assert(ble_mesh_access_queue(1, 0, 0, 0x7f, NULL, 0, 0) == 0);
-    assert(ble_mesh_access_queue(1, 0, 0, 0x1234, NULL, 0, 0) == 0);
-    assert(ble_mesh_access_queue(1, 0, 0, 0x8201, NULL, 1, 0) == 0);
-    assert(ble_mesh_access_queue(1, 0, 0, 0x8201, params,
+    assert(ble_mesh_access_queue(0x1200, 1, 0, 0, 0x7f, NULL, 0, 0) == 0);
+    assert(ble_mesh_access_queue(0x1200, 1, 0, 0, 0x1234, NULL, 0, 0) == 0);
+    assert(ble_mesh_access_queue(0x1200, 1, 0, 0, 0x8201, NULL, 1, 0) == 0);
+    assert(ble_mesh_access_queue(0x1200, 1, 0, 0, 0x8201, params,
                                 MESH_TRANSPORT_MAX_ACCESS, 0) == 0);
     uint8_t label[16] = {1};
-    assert(ble_mesh_access_queue_virtual(label, 3, 0, 0x8201, NULL, 0, 0) == 1);
+    assert(ble_mesh_access_queue_virtual(0x1200, label, 3, 0,
+                                              0x8201, NULL, 0, 0) == 1);
     assert(sent_dst == 0x8001 && sent_len == 2);
-    assert(ble_mesh_access_queue_virtual(label, 3, 0, 0x8201, NULL, 0, 1) == 1);
+    assert(ble_mesh_access_queue_virtual(0x1200, label, 3, 0,
+                                              0x8201, NULL, 0, 1) == 1);
     assert(sent_mic_64 == 1);
 
     mesh_access_message message = {0};
