@@ -28,7 +28,7 @@
 #define OP_CONFIG_MODEL_SUB_DELETE_ALL 0x801d
 #define OP_CONFIG_MODEL_SUB_OVERWRITE 0x801e
 #define OP_CONFIG_MODEL_SUB_VIRTUAL_OVERWRITE 0x8022
-#define OP_CONFIG_SIG_MODEL_SUB_GET 0x8029
+#define OP_CONFIG_SIG_SUB_GET 0x8029
 #define OP_CONFIG_SIG_MODEL_SUB_LIST 0x802a
 #define OP_HEALTH_CURRENT_STATUS 0x04
 
@@ -251,7 +251,10 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint16_t model = p[len - 2] | ((uint16_t)p[len - 1] << 8);
         int index = mesh_element_index(element), slot = mesh_publication_slot(model);
         uint8_t status = index < 0 ? MESH_CONFIG_INVALID_ADDRESS :
-            slot < 0 ? MESH_CONFIG_INVALID_MODEL : MESH_CONFIG_SUCCESS;
+            slot < 0 ? (index == 0 && (model == MESH_MODEL_CONFIG_SERVER ||
+                         model == MESH_MODEL_CONFIG_CLIENT) ?
+                         MESH_CONFIG_INVALID_PUBLICATION : MESH_CONFIG_INVALID_MODEL) :
+                         MESH_CONFIG_SUCCESS;
         mesh_publication pub = {0};
         if (status == MESH_CONFIG_SUCCESS) pub = mesh_models.state.publications[index][slot];
         if (!get && status == MESH_CONFIG_SUCCESS) {
@@ -268,10 +271,13 @@ static int server_config_receive(const mesh_access_pdu *message) {
             next.has_label = virtual;
             if (virtual) memcpy(next.label, p + 2, 16);
             if (!next.address) memset(&next, 0, sizeof(next));
-            else if (!virtual && next.address >= 0x8000 && next.address < 0xc000)
+            else if (!virtual && ((next.address >= 0x8000 && next.address < 0xc000) ||
+                                  (next.address >= 0xff00 && next.address < 0xfffc)))
                 status = MESH_CONFIG_INVALID_ADDRESS;
-            else if ((next.ttl > 0x7f && next.ttl != 0xff) || (flags & 0x1000))
+            else if (next.ttl > 0x7f && next.ttl != 0xff)
                 status = MESH_CONFIG_INVALID_PUBLICATION;
+            else if (flags & 0x1000)
+                status = MESH_CONFIG_FEATURE_NOT_SUPPORTED;
             else if (mesh_app_key_slot(state, next.app_idx) < 0)
                 status = MESH_CONFIG_INVALID_APPKEY;
             else if (!app_key_allowed((uint8_t)index, model, next.app_idx))
@@ -302,7 +308,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             OP_CONFIG_MODEL_PUB_STATUS, reply, sizeof(reply), 0);
     }
 
-    if (message->opcode == OP_CONFIG_SIG_MODEL_SUB_GET) {
+    if (message->opcode == OP_CONFIG_SIG_SUB_GET) {
         if (len != 4) return 0;
         uint16_t element = p[0] | ((uint16_t)p[1] << 8);
         uint16_t model = p[2] | ((uint16_t)p[3] << 8);
@@ -636,7 +642,8 @@ static inline int ble_mesh_set_publication(uint16_t dst, uint16_t element,
     if (!pub || !element || element > 0x7fff || mesh_publication_slot(model) < 0 ||
         pub->has_label > 1 || ((pub->address || pub->has_label) &&
         (pub->app_idx > 0x0fff || (pub->ttl > 0x7f && pub->ttl != 0xff)))) return 0;
-    if (!pub->has_label && pub->address >= 0x8000 && pub->address < 0xc000) return 0;
+    if (!pub->has_label && ((pub->address >= 0x8000 && pub->address < 0xc000) ||
+                           (pub->address >= 0xff00 && pub->address < 0xfffc))) return 0;
     uint8_t params[25] = {(uint8_t)element, (uint8_t)(element >> 8)};
     size_t offset = 4;
     if (pub->has_label) {
@@ -667,7 +674,7 @@ static inline int ble_mesh_get_subscriptions(uint16_t dst, uint16_t element,
                         (uint8_t)model, (uint8_t)(model >> 8)};
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        OP_CONFIG_SIG_MODEL_SUB_GET, params, sizeof(params), 0);
+        OP_CONFIG_SIG_SUB_GET, params, sizeof(params), 0);
 }
 
 // A label replaces all subscriptions with that label; address 0 clears them.

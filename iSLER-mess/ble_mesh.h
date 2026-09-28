@@ -306,7 +306,7 @@ int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
 int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
     if (!state) return 0;
     mesh_state_record record = {0};
-    mesh_state_load_record(&record);
+    if (!mesh_state_load_record(&record)) record.models.default_ttl = MODEL_TTL;
     record.state = *state;
     return mesh_state_save_record(&record);
 }

@@ -175,6 +175,7 @@ static inline int ble_mesh_models_init(void) {
             mesh_publication *pub = &mesh_models.state.publications[i][j];
             if ((pub->ttl > 0x7f && pub->ttl != 0xff) || pub->has_label > 1 ||
                 (pub->address && pub->app_idx > 0x0fff) ||
+                (pub->address >= 0xff00 && pub->address < 0xfffc) ||
                 ((pub->address >= 0x8000 && pub->address < 0xc000) !=
                  (pub->has_label != 0)) ||
                 (pub->has_label && pub->address != ble_mesh_virtual_address(pub->label)))
@@ -290,7 +291,7 @@ static int mesh_publication_begin(uint8_t element, uint16_t model,
     if (!pub->address || !app_key_allowed(element, model, pub->app_idx)) return 0;
     mesh_models.publications[element][slot].opcode = opcode;
     mesh_models.publications[element][slot].len = (uint8_t)len;
-    if (len) memcpy(mesh_models.publications[element][slot].params, params, len);
+    if (len) memmove(mesh_models.publications[element][slot].params, params, len);
     mesh_models.publications[element][slot].remaining = (pub->retransmit & 7) + 1;
     mesh_models.publications[element][slot].retransmit_at_ms = GET_MILLIS();
     return 1;

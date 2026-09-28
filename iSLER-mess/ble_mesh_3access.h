@@ -6,8 +6,6 @@
 
 #include "ble_mesh_2transport.h"
 
-// TODO for a broadly usable Access layer:
-
 typedef struct {
     uint16_t src;
     uint16_t dst;

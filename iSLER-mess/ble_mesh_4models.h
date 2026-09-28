@@ -158,13 +158,21 @@ static inline int ble_mesh_models_poll(void) {
         mesh_health_attention_remaining(i);
     mesh_access_message raw;
     mesh_access_pdu access;
-    mesh_publications_poll();
     int result;
     if (mesh_models.local.pending) {
         access = mesh_models.local.access;
         mesh_models.local.pending = 0;
         result = 1;
     } else result = ble_mesh_access_poll(&raw, &access);
+    // Handle received requests first so publications do not occupy their reply slot.
+    if (result <= 0) {
+        mesh_publications_poll();
+        if (mesh_models.local.pending) {
+            access = mesh_models.local.access;
+            mesh_models.local.pending = 0;
+            result = 1;
+        }
+    }
     if (result <= 0) return result;
 
     // Decode once, then deliver to each subscribed model instance.

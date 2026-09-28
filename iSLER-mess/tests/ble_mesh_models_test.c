@@ -250,10 +250,10 @@ static void test_foundation_configuration(void) {
     assert(saved.group_count == 1 && saved.virtual_count == 0);
     assert(ble_mesh_get_subscriptions(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER) && config_request() && last_len == 5);
     uint8_t invalid_model[] = {1, 0x12, 0xff, 0x7f};
-    assert(config_message(OP_CONFIG_SIG_MODEL_SUB_GET, invalid_model, 4));
+    assert(config_message(OP_CONFIG_SIG_SUB_GET, invalid_model, 4));
     assert(last_params[0] == MESH_CONFIG_INVALID_MODEL && last_len == 5);
     invalid_model[0] = 0;
-    assert(config_message(OP_CONFIG_SIG_MODEL_SUB_GET, invalid_model, 4));
+    assert(config_message(OP_CONFIG_SIG_SUB_GET, invalid_model, 4));
     assert(last_params[0] == MESH_CONFIG_INVALID_ADDRESS);
     assert(!ble_mesh_replace_subscription(0x1201, 0x1201, MESH_MODEL_ONOFF_SERVER, 0x8001, NULL));
 
@@ -263,6 +263,12 @@ static void test_foundation_configuration(void) {
     assert(last_opcode == OP_CONFIG_MODEL_PUB_STATUS && last_len == 12 && last_params[0] == 0);
     assert(last_params[3] == 0x10 && last_params[4] == 0xc0 && last_params[7] == 0xff);
     assert(ble_mesh_get_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER) && config_request());
+    uint8_t config_model[] = {1, 0x12, 0, 0};
+    assert(config_message(OP_CONFIG_MODEL_PUB_GET, config_model, 4));
+    assert(last_params[0] == MESH_CONFIG_INVALID_PUBLICATION);
+    config_model[0] = 2;
+    assert(config_message(OP_CONFIG_MODEL_PUB_GET, config_model, 4));
+    assert(last_params[0] == MESH_CONFIG_INVALID_MODEL);
     pub.app_idx = 0x235;
     assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub) && config_request());
     assert(last_params[0] == MESH_CONFIG_INVALID_BINDING && saved.publications[1][0].app_idx == 0x234);
@@ -273,7 +279,7 @@ static void test_foundation_configuration(void) {
     assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_SERVER, &pub));
     uint8_t wire[25]; memcpy(wire, last_params, last_len);
     wire[5] |= 0x10;
-    assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_INVALID_PUBLICATION);
+    assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_FEATURE_NOT_SUPPORTED);
     wire[5] &= ~0x10; wire[6] = 128;
     assert(config_message(OP_CONFIG_MODEL_PUB_SET, wire, 11) && last_params[0] == MESH_CONFIG_INVALID_PUBLICATION);
     wire[6] = 0xff; wire[5] |= 0x80;
@@ -326,6 +332,27 @@ static void test_foundation_configuration(void) {
     uint8_t unbind[] = {2, 0x12, 0x34, 2, 0, 0x10};
     assert(config_message(OP_CONFIG_MODEL_APP_UNBIND, unbind, 6));
     assert(saved.publications[1][0].address == 0);
+
+    // Client periodic messages start only after the application publishes.
+    pub = (mesh_publication){.address = 0xc100, .app_idx = 0x234, .ttl = 4,
+                             .period = 0x41, .retransmit = 1};
+    assert(ble_mesh_set_publication(0x1201, 0x1202, MESH_MODEL_ONOFF_CLIENT, &pub) && config_request());
+    count = send_count; now_ms += 1000; ble_mesh_models_poll();
+    assert(send_count == count);
+    assert(ble_mesh_onoff_publish(0x1202, 0, 0));
+    ble_mesh_models_poll();
+    uint8_t tid = last_params[1];
+    now_ms += 50; ble_mesh_models_poll();
+    assert(last_opcode == OP_ONOFF_SET_UNACK && last_params[1] == tid);
+    now_ms += 950; ble_mesh_models_poll();
+    assert(last_params[1] != tid && last_params[0] == 0);
+    tid = last_params[1];
+    // A received configuration request gets the TX slot before a due publication.
+    now_ms += 50;
+    assert(config_message(OP_CONFIG_DEFAULT_TTL_GET, NULL, 0));
+    assert(last_opcode == OP_CONFIG_DEFAULT_TTL_STATUS);
+    ble_mesh_models_poll();
+    assert(last_opcode == OP_ONOFF_SET_UNACK && last_params[1] == tid);
 
     // TTL 1 is local delivery, with no Mesh advertising packet.
     pub = (mesh_publication){.address = 0x1201, .app_idx = 0x234, .ttl = 1, .retransmit = 1};

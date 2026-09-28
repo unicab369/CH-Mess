@@ -47,8 +47,8 @@
 
 This implementation supports up to two local elements. Set `prov_caps.num_elements`
 to the number used; their unicast addresses are consecutive. AppKey bindings and
-group or virtual subscriptions are stored per element. Stored state version 6
-requires reprovisioning devices that have version 5 records.
+group or virtual subscriptions are stored per element. Stored state version 7
+requires reprovisioning devices that have older records.
 
 ## Bluetooth Mesh message kinds
 
@@ -313,5 +313,4 @@ BLE advertising packet payload
             ├── Transaction Number (1B)
             └── Generic Provisioning Control PDU (link control, ack, or data)
 ```
-
 
