@@ -91,6 +91,7 @@ static struct {
     uint8_t remaining, started;
 } radio_queue[RADIO_QUEUE_SIZE];
 static uint32_t radio_order;
+static int reset_slot = -1;
 
 static int mesh_adv_queue_add(const uint8_t *ad, size_t len,
                               uint32_t send_at_ms, uint8_t transmit) {
@@ -153,6 +154,7 @@ static void ble_mesh_radio_init(void) {
 }
 
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
+    if (reset_slot >= 0) return -1;
     uint8_t transmit = len >= 2 && adv_data && adv_data[1] == MESH_NETWORK_AD_TYPE ?
         mesh_network.state.network_transmit : 0;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
@@ -162,78 +164,13 @@ int BLE_MESH_QUEUE_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
-    if (min_delay_ms > max_delay_ms) return -1;
+    if (reset_slot >= 0 || min_delay_ms > max_delay_ms) return -1;
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
     uint32_t delay_ms = min_delay_ms + rand() % range;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS() + delay_ms, 0);
 }
 
-int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
-    if (!adv_data || !len) return -1;
-    uint32_t now = GET_MILLIS();
-    int received = 0;
-
-    if (rx_ready) {
-        const uint8_t *frame = (const uint8_t *)LLE_BUF;
-        uint8_t payload_len = frame[1];
-        rx_armed = 0;
-        rx_ready = 0;
-
-        // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
-        if ((frame[0] & 0x0F) == 0x02 && payload_len >= 8 &&
-            payload_len <= 37
-        ) {
-            size_t end = (size_t)payload_len + 2;
-            for (size_t offset = 8; offset < end;) {
-                uint8_t ad_len = frame[offset];
-                if (ad_len == 0 || offset + ad_len + 1 > end) break;
-                if (frame[offset + 1] == MESH_PROV_AD_TYPE ||
-                    frame[offset + 1] == MESH_BEACON_AD_TYPE ||
-                    frame[offset + 1] == MESH_NETWORK_AD_TYPE
-                ) {
-                    if ((size_t)ad_len + 1 > *len) return -1;
-                    memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
-                    *len = (size_t)ad_len + 1;
-                    received = 1;
-                    break;
-                }
-                offset += (size_t)ad_len + 1;
-            }
-        }
-    }
-
-    int slot = mesh_adv_queue_next(now);
-    if (slot >= 0) {
-        // The factory MAC is stored most-significant byte first in ROM.
-        const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
-        adv_frame[0] = 0x02;
-        adv_frame[1] = 0;
-
-        for (uint8_t i = 0; i < 6; i++) {
-            adv_frame[7 - i] = mac[i];
-        }
-        memcpy(adv_frame + 8, radio_queue[slot].data, radio_queue[slot].len);
-        size_t frame_len = 8 + radio_queue[slot].len;
-        rx_armed = 0;
-
-        for (uint8_t channel = 37; channel <= 39; channel++) {
-            iSLERTX(BLE_ADV_ACCESS_ADDRESS, adv_frame, frame_len, channel, PHY_1M);
-            if (!tx_done) return -1;
-        }
-        mesh_adv_queue_sent((uint8_t)slot, GET_MILLIS(), (uint8_t)(rand() % 11));
-    }
-
-    // Rotate reception through advertising channels 37, 38, and 39 every 20 ms.
-    if (!rx_armed || (uint32_t)(now - rx_started_ms) >= 20) {
-        uint8_t channel = 37 + rx_channel_index;
-        rx_channel_index = (rx_channel_index + 1) % 3;
-        iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
-        rx_started_ms = GET_MILLIS();
-        rx_armed = 1;
-    }
-    return received;
-}
 
 int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
     if (!device_uuid) return -1;
@@ -254,7 +191,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 8
+#define MESH_STATE_VERSION 9
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -338,6 +275,101 @@ static int mesh_state_save_record(mesh_state_record *record) {
     return memcmp(record, &check, sizeof(*record)) == 0;
 }
 
+int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
+    if (!adv_data || !len) return -1;
+    uint32_t now = GET_MILLIS();
+    int received = 0;
+
+    if (rx_ready) {
+        const uint8_t *frame = (const uint8_t *)LLE_BUF;
+        uint8_t payload_len = frame[1];
+        rx_armed = 0;
+        rx_ready = 0;
+
+        // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
+        if ((frame[0] & 0x0F) == 0x02 && payload_len >= 8 &&
+            payload_len <= 37
+        ) {
+            size_t end = (size_t)payload_len + 2;
+            for (size_t offset = 8; offset < end;) {
+                uint8_t ad_len = frame[offset];
+                if (ad_len == 0 || offset + ad_len + 1 > end) break;
+                if (frame[offset + 1] == MESH_PROV_AD_TYPE ||
+                    frame[offset + 1] == MESH_BEACON_AD_TYPE ||
+                    frame[offset + 1] == MESH_NETWORK_AD_TYPE
+                ) {
+                    if ((size_t)ad_len + 1 > *len) return -1;
+                    memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
+                    *len = (size_t)ad_len + 1;
+                    received = 1;
+                    break;
+                }
+                offset += (size_t)ad_len + 1;
+            }
+        }
+    }
+
+    int slot = mesh_adv_queue_next(now);
+    if (slot >= 0) {
+        // The factory MAC is stored most-significant byte first in ROM.
+        const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
+        adv_frame[0] = 0x02;
+        adv_frame[1] = 0;
+
+        for (uint8_t i = 0; i < 6; i++) {
+            adv_frame[7 - i] = mac[i];
+        }
+        memcpy(adv_frame + 8, radio_queue[slot].data, radio_queue[slot].len);
+        size_t frame_len = 8 + radio_queue[slot].len;
+        rx_armed = 0;
+
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            iSLERTX(BLE_ADV_ACCESS_ADDRESS, adv_frame, frame_len, channel, PHY_1M);
+            if (!tx_done) return -1;
+        }
+        mesh_adv_queue_sent((uint8_t)slot, GET_MILLIS(), (uint8_t)(rand() % 11));
+    }
+    // Finish Node Reset after its reply is sent; retry failed flash operations.
+    if (reset_slot >= 0 && !radio_queue[reset_slot].remaining) {
+        mesh_state_record empty = {0};
+        // Write an empty record first so a reboot cannot restore the old copy.
+        if (mesh_state_save_record(&empty)) {
+            mesh_state_record first;
+            uint32_t old_addr = mesh_state_read(BLE_MESH_DATA_ADDR, &first) &&
+                first.generation == empty.generation ? BLE_MESH_DATA_ADDR + SECTOR_SIZE : BLE_MESH_DATA_ADDR;
+            if (flash_erase_data(old_addr, SECTOR_SIZE)) {
+                memset(radio_queue, 0, sizeof(radio_queue));
+                for (uint8_t i = 0; i < MESH_MAX_ELEMENTS; i++)
+                    if (mesh_models.health_server[i].attention)
+                        BLE_MESH_HEALTH_ATTENTION(mesh_network.state.unicast_address + i, 0);
+                memset(&mesh_network, 0, sizeof(mesh_network));
+                memset(&mesh_models, 0, sizeof(mesh_models));
+                memset(&transport_tx, 0, sizeof(transport_tx));
+                memset(&transport_rx, 0, sizeof(transport_rx));
+                memset(transport_labels, 0, sizeof(transport_labels));
+                ble_mesh_transport_clear_labels();
+                memset(&session, 0, sizeof(session));
+                memset(&provisioner, 0, sizeof(provisioner));
+                memset(&provisionee, 0, sizeof(provisionee));
+                memset(&prov_rx, 0, sizeof(prov_rx));
+                memset(&bearer, 0, sizeof(bearer));
+                memset(&tx, 0, sizeof(tx));
+                reset_slot = -1;
+            }
+        }
+    }
+
+    // Rotate reception through advertising channels 37, 38, and 39 every 20 ms.
+    if (!rx_armed || (uint32_t)(now - rx_started_ms) >= 20) {
+        uint8_t channel = 37 + rx_channel_index;
+        rx_channel_index = (rx_channel_index + 1) % 3;
+        iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+        rx_started_ms = GET_MILLIS();
+        rx_armed = 1;
+    }
+    return received;
+}
+
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
     if (!state) return 0;
     mesh_state_record record;
@@ -380,6 +412,25 @@ int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
     record.models = *state;
     return mesh_state_save_record(&record);
 }
+
+int BLE_MESH_NODE_RESET(uint16_t dst) {
+    mesh_state_record record;
+    if (reset_slot >= 0 || !mesh_state_load_record(&record) || record.node_count ||
+        bearer.role != PB_ROLE_NONE) return 0;
+    if (!ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+        OP_CONFIG_NODE_RESET_STATUS, NULL, 0, 0)) return 0;
+    // The immediately preceding queue operation added the Reset Status packet.
+    for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
+        if (radio_queue[i].remaining && radio_queue[i].order == radio_order - 1u)
+            reset_slot = i;
+    if (reset_slot < 0) return 0;
+    for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
+        if (i != reset_slot) radio_queue[i].remaining = 0;
+    mesh_network.ready = 0;
+    return 1;
+}
+
 
 int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
                            uint8_t num_elements) {

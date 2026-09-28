@@ -21,6 +21,7 @@
 #define MESH_CONFIG_FEATURE_NOT_SUPPORTED 0x0a
 #define MESH_CONFIG_CANNOT_UPDATE 0x0b
 #define MESH_CONFIG_CANNOT_REMOVE 0x0c
+#define MESH_CONFIG_CANNOT_SET 0x0f
 #define MESH_CONFIG_INVALID_BINDING 0x11
 #define MESH_MODEL_VIRTUAL_SLOTS MESH_TRANSPORT_MAX_LABELS
 #define MESH_MODEL_GROUP_SLOTS 8
@@ -71,6 +72,7 @@ int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state);
 static struct {
     mesh_models_state state;
     uint8_t ready;
+    uint8_t reset_pending;
     struct mesh_onoff_server_state {
         uint8_t onoff, last_tid, has_tid;
         uint16_t last_src, last_dst;

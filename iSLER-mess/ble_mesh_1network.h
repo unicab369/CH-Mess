@@ -29,6 +29,11 @@ typedef struct {
 } mesh_app_key;
 
 typedef struct {
+    uint16_t dst, net_idx, features;
+    uint8_t count_log, period_log, ttl;
+} mesh_heartbeat_publication;
+
+typedef struct {
     uint8_t net_key[16];
     uint8_t new_net_key[16];
     uint8_t has_new_key;
@@ -46,6 +51,7 @@ typedef struct {
     uint16_t unicast_address;
     uint8_t element_count;
     uint8_t beacon, network_transmit;
+    mesh_heartbeat_publication heartbeat;
 } mesh_net_state;
 
 
@@ -115,6 +121,11 @@ static struct {
         uint32_t observed_at_ms, last_sent_ms;
         uint8_t observed[2], bucket;
     } beacon;
+    struct {
+        uint32_t publish_at_ms, expires_at_ms;
+        uint16_t remaining, src, dst, count;
+        uint8_t min_hops, max_hops, subscribed;
+    } heartbeat;
     uint8_t replay_count;
     uint8_t ready;
 } mesh_network;
@@ -163,6 +174,12 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         state->net_key_index > 0x0fff ||
         state->next_seq > 0x1000000u ||
         state->beacon > 1 ||
+        state->heartbeat.period_log > 0x11 ||
+        (state->heartbeat.count_log > 0x11 && state->heartbeat.count_log != 0xff) ||
+        state->heartbeat.ttl > 0x7f || state->heartbeat.features ||
+        (state->heartbeat.dst >= 0x8000 && state->heartbeat.dst < 0xc000) ||
+        (state->heartbeat.dst >= 0xff00 && state->heartbeat.dst < 0xfffc) ||
+        (state->heartbeat.dst && state->heartbeat.net_idx != state->net_key_index) ||
         state->iv_update > 1 ||
         state->iv_skip_min_time > 1 ||
         (state->iv_update && state->iv_index == 0) ||
@@ -197,6 +214,10 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
 
     memset(&mesh_network.beacon, 0, sizeof(mesh_network.beacon));
     mesh_network.beacon.observed_at_ms = mesh_network.beacon.last_sent_ms = GET_MILLIS();
+    memset(&mesh_network.heartbeat, 0, sizeof(mesh_network.heartbeat));
+    // Finite publication counts and subscription timers restart disabled.
+    if (state->heartbeat.count_log == 0xff) mesh_network.heartbeat.remaining = 0xffff;
+    mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
     mesh_network.replay_count = 0;
     mesh_network.ready = 1;
     return 1;
@@ -599,6 +620,23 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     message->dst = dst;
     message->transport_len = (uint8_t)transport_len;
     memcpy(message->transport, plain + 2, transport_len);
+    // Count subscribed Heartbeats and track hops after authentication and replay checks.
+    if (message->ctl && message->transport[0] == 0x0a) {
+        if (mesh_network.heartbeat.subscribed &&
+            (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS()) <= 0)
+            mesh_network.heartbeat.subscribed = 0;
+        if (message->transport_len != 4 || (message->transport[1] & 0x80) ||
+            message->transport[1] < message->ttl ||
+            (unsigned)message->transport[1] - message->ttl >= 0x7f ||
+            !mesh_network.heartbeat.subscribed ||
+            message->src != mesh_network.heartbeat.src ||
+            message->dst != mesh_network.heartbeat.dst) return 0;
+        uint8_t hops = message->transport[1] - message->ttl + 1;
+        if (mesh_network.heartbeat.count != 0xffff) mesh_network.heartbeat.count++;
+        if (hops < mesh_network.heartbeat.min_hops) mesh_network.heartbeat.min_hops = hops;
+        if (hops > mesh_network.heartbeat.max_hops) mesh_network.heartbeat.max_hops = hops;
+        return 0;
+    }
     return 1;
 }
 
@@ -642,6 +680,22 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
         if (interval > 600000u) interval = 600000u;
         if ((uint32_t)(millis - mesh_network.beacon.last_sent_ms) >= interval &&
             ble_mesh_net_beacon_queue()) mesh_network.beacon.last_sent_ms = millis;
+    }
+    // Expire subscriptions and send due Heartbeats as unsegmented Control PDUs.
+    const mesh_heartbeat_publication *pub = &mesh_network.state.heartbeat;
+    uint32_t millis = GET_MILLIS();
+    if (mesh_network.heartbeat.subscribed &&
+        (int32_t)(mesh_network.heartbeat.expires_at_ms - millis) <= 0)
+        mesh_network.heartbeat.subscribed = 0;
+    if (mesh_network.ready && pub->dst && pub->period_log &&
+        mesh_network.heartbeat.remaining &&
+        (int32_t)(millis - mesh_network.heartbeat.publish_at_ms) >= 0) {
+        uint8_t control[] = {0x0a, pub->ttl, 0, 0}; // No optional features are enabled.
+        if (ble_mesh_net_queue(mesh_network.state.unicast_address, pub->dst, 1,
+                               pub->ttl, control, sizeof(control))) {
+            if (mesh_network.heartbeat.remaining != 0xffff) mesh_network.heartbeat.remaining--;
+            mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;
+        }
     }
     return result == 0 && tick_result < 0 ? -1 : result;
 }

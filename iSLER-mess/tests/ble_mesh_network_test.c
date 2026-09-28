@@ -59,6 +59,75 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
     return 1;
 }
 
+static void test_heartbeat(void) {
+    mesh_net_message message;
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1,
+        .net_key_index = 0x123, .heartbeat = {.dst = 0xc001, .net_idx = 0x123,
+        .ttl = 5, .period_log = 2, .count_log = 0xff}};
+    memset(state.net_key, 0x33, 16);
+    current_ms = UINT32_MAX - 999;
+    assert(ble_mesh_network_init(&state));
+    assert(mesh_network.heartbeat.remaining == 0xffff);
+    mesh_network.heartbeat.remaining = 2;
+    int count = sent_count;
+    queue_fails = 1;
+    ble_mesh_net_poll(&message); assert(sent_count == count && mesh_network.heartbeat.remaining == 2);
+    queue_fails = 0;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 1);
+    assert(sent_len == 23 && sent[1] == MESH_NETWORK_AD_TYPE);
+    uint8_t packet[31]; size_t packet_len = sent_len;
+    memcpy(packet, sent, packet_len);
+    current_ms = 999;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 1);
+    current_ms = 1000;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0);
+    current_ms = 3000;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 2);
+
+    state.unicast_address = 0x1202;
+    memset(&state.heartbeat, 0, sizeof(state.heartbeat));
+    assert(ble_mesh_network_init(&state));
+    mesh_network.heartbeat.src = 0x1201;
+    mesh_network.heartbeat.dst = 0xc001;
+    mesh_network.heartbeat.expires_at_ms = current_ms + 10000;
+    mesh_network.heartbeat.subscribed = 1;
+    mesh_network.heartbeat.min_hops = 0x7f;
+    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message));
+    assert(message.ctl == 1 && message.ttl == 5 && message.src == 0x1201 && message.dst == 0xc001);
+    assert(message.transport_len == 4 && !memcmp(message.transport, (uint8_t[]){0x0a, 5, 0, 0}, 4));
+    assert(mesh_network.heartbeat.count == 1 && mesh_network.heartbeat.min_hops == 1 && mesh_network.heartbeat.max_hops == 1);
+    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message));
+    assert(mesh_network.heartbeat.count == 1); // Network repetitions are replay filtered.
+    packet[packet_len - 1] ^= 1;
+    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 1);
+    packet[packet_len - 1] ^= 1;
+    assert(ble_mesh_network_init(&state));
+    mesh_network.heartbeat.src = 0x1201; mesh_network.heartbeat.dst = 0xc002;
+    mesh_network.heartbeat.subscribed = 1;
+    mesh_network.heartbeat.expires_at_ms = current_ms + 10000;
+    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
+    assert(ble_mesh_network_init(&state));
+    mesh_network.heartbeat.src = 0x1201; mesh_network.heartbeat.dst = 0xc001;
+    mesh_network.heartbeat.subscribed = 1;
+    mesh_network.heartbeat.expires_at_ms = current_ms;
+    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
+
+    state.heartbeat = (mesh_heartbeat_publication){.dst = 0xc001, .net_idx = 0x123,
+        .ttl = 1, .period_log = 0x11, .count_log = 0xff};
+    assert(ble_mesh_network_init(&state));
+    count = sent_count;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 0xffff);
+    current_ms += 65535999;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 1);
+    current_ms++;
+    ble_mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0xffff);
+    state.heartbeat.dst = 0x8000; assert(!ble_mesh_network_init(&state));
+    state.heartbeat.dst = 0xc001; state.heartbeat.period_log = 0x12; assert(!ble_mesh_network_init(&state));
+    state.heartbeat.period_log = 1; state.heartbeat.count_log = 0x12; assert(!ble_mesh_network_init(&state));
+    state.heartbeat.count_log = 1; state.heartbeat.net_idx = 0x124; assert(!ble_mesh_network_init(&state));
+    state.heartbeat.net_idx = 0x123; state.heartbeat.ttl = 0x80; assert(!ble_mesh_network_init(&state));
+}
+
 static void test_beacon_schedule(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .beacon = 1};
     memset(state.net_key, 0x33, 16);
@@ -371,6 +440,7 @@ int main(void) {
     assert(!mesh_network.state.app_keys[0].has_new_key);
 
     test_beacon_schedule();
+    test_heartbeat();
     puts("ble_mesh_network: PASS");
     return 0;
 }

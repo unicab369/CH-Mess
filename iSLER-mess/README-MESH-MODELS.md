@@ -2,9 +2,8 @@
 // - Multiple subnets: store and route using additional NetKeys.
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
-// - Heartbeat publication and subscription settings.
-// - Node Reset: clear provisioning and configuration state.
 // - SAR Configuration model: expose transport timing settings (separate model).
+// - Health fault get/clear/test and Health period settings.
 
 ## Foundation models
 
@@ -29,6 +28,9 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | GATT Proxy | `OP_CONFIG_PROXY_GET`, `OP_CONFIG_PROXY_SET`, `OP_CONFIG_PROXY_STATUS` | Report Not Supported (2). |
 | Friend | `OP_CONFIG_FRIEND_GET`, `OP_CONFIG_FRIEND_SET`, `OP_CONFIG_FRIEND_STATUS` | Report Not Supported (2). |
 | Node Identity | `OP_CONFIG_NODE_IDENTITY_GET`, `OP_CONFIG_NODE_IDENTITY_SET`, `OP_CONFIG_NODE_IDENTITY_STATUS` | Report Not Supported (2); setting it returns Feature Not Supported. |
+| Node Reset | `OP_CONFIG_NODE_RESET`, `OP_CONFIG_NODE_RESET_STATUS` | Reply, then clear provisioning, keys, configuration, and queued traffic. |
+| Heartbeat publication | `OP_CONFIG_HEARTBEAT_PUB_GET`, `OP_CONFIG_HEARTBEAT_PUB_SET`, `OP_CONFIG_HEARTBEAT_PUB_STATUS` | Configure periodic Control messages using the provisioned NetKey. |
+| Heartbeat subscription | `OP_CONFIG_HEARTBEAT_SUB_GET`, `OP_CONFIG_HEARTBEAT_SUB_SET`, `OP_CONFIG_HEARTBEAT_SUB_STATUS` | Monitor one source/destination pair, received count, and minimum/maximum hops. |
 | Default TTL | `OP_CONFIG_DEFAULT_TTL_GET`, `OP_CONFIG_DEFAULT_TTL_SET`, `OP_CONFIG_DEFAULT_TTL_STATUS` | Get/set; used by model helpers and replies. |
 | Model publication | `OP_CONFIG_MODEL_PUB_GET`, `OP_CONFIG_MODEL_PUB_SET`, `OP_CONFIG_MODEL_PUB_VIRTUAL_SET`, `OP_CONFIG_MODEL_PUB_STATUS` | Get/set address or Label UUID, AppKey, TTL, period, and retransmissions. |
 
@@ -46,7 +48,30 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 8 requires reprovisioning older records.
+credentials. Stored state version 9 requires reprovisioning older records.
+
+`ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
+destination, NetKey index, count log, period log, TTL, and feature-change triggers.
+Logs 1–17 represent powers of two (`2^(log - 1)`); 0 disables periodic sends.
+Count log 17 selects 65,534 sends; 255 sends indefinitely. The first Heartbeat is
+queued immediately on the next network poll. Feature-change triggers are zero
+because Relay, Proxy, Friend, and LPN are unsupported. Heartbeats are unsegmented
+Control messages and use Network Transmit repetitions.
+
+`ble_mesh_set_heartbeat_sub(dst, src, address, period_log)` monitors one source
+at the node's primary address or a group address. A zero source/destination clears
+the subscription; a zero period stops monitoring. Status reports the remaining
+period, received count, and minimum/maximum hops (`initial TTL - received TTL + 1`).
+Use `ble_mesh_get_heartbeat_pub()` and `ble_mesh_get_heartbeat_sub()` to query them.
+Publication settings are saved; only indefinite publications resume after reboot.
+Finite remaining counts and subscription sessions are RAM data and restart disabled.
+
+`ble_mesh_reset_node(dst)` sends an authenticated Node Reset request. The node
+finishes advertising Reset Status before writing an empty flash record, erasing
+the old copy, and clearing runtime state. Flash failures leave reset pending for
+retry. Reset is rejected while PB-ADV is active or when provisioner node records
+are stored. After reset, the application can call `provisionee_start()` and resume
+`provisionee_poll()` to accept provisioning again.
 
 Use `ble_mesh_get_relay()`, `ble_mesh_get_proxy()`, `ble_mesh_get_friend()`, and
 `ble_mesh_get_node_identity()` to query capabilities. Relay, Proxy, and Friend Set

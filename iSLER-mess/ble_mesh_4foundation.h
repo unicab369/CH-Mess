@@ -34,6 +34,14 @@
 #define OP_CONFIG_NODE_IDENTITY_GET 0x8046
 #define OP_CONFIG_NODE_IDENTITY_SET 0x8047
 #define OP_CONFIG_NODE_IDENTITY_STATUS 0x8048
+#define OP_CONFIG_NODE_RESET 0x8049
+#define OP_CONFIG_NODE_RESET_STATUS 0x804a
+#define OP_CONFIG_HEARTBEAT_PUB_GET 0x8038
+#define OP_CONFIG_HEARTBEAT_PUB_SET 0x8039
+#define OP_CONFIG_HEARTBEAT_PUB_STATUS 0x06
+#define OP_CONFIG_HEARTBEAT_SUB_GET 0x803a
+#define OP_CONFIG_HEARTBEAT_SUB_SET 0x803b
+#define OP_CONFIG_HEARTBEAT_SUB_STATUS 0x803c
 #define OP_CONFIG_COMPOSITION_GET 0x8008
 #define OP_CONFIG_COMPOSITION_STATUS 0x02
 #define OP_CONFIG_DEFAULT_TTL_GET 0x800c
@@ -210,12 +218,137 @@ static uint8_t mesh_subscription_replace(uint16_t element, uint16_t model,
     return MESH_CONFIG_SUCCESS;
 }
 
+// Queue Node Reset Status, then clear the node after it finishes advertising.
+// Return 1 on success, 0 if reset cannot be scheduled.
+int BLE_MESH_NODE_RESET(uint16_t dst);
+
+// Publication counts round up; subscription counts and periods round down.
+static uint8_t mesh_heartbeat_log(uint32_t value, uint8_t round_up) {
+    if (!value) return 0;
+    uint8_t log = 1;
+    if (round_up) {
+        value--;
+        while (value) { log++; value >>= 1; }
+        return log;
+    }
+    while (value >>= 1) log++;
+    return log;
+}
+
 // Config Server: persisted node and model configuration.
 
 static int server_config_receive(const mesh_access_pdu *message) {
     const mesh_net_state *state = &mesh_network.state;
     const uint8_t *p = message->params;
     size_t len = message->params_len;
+
+    if (message->opcode == OP_CONFIG_NODE_RESET) {
+        if (len) return 0;
+        mesh_models.reset_pending = BLE_MESH_NODE_RESET(message->src) == 1;
+        return mesh_models.reset_pending;
+    }
+
+    if (message->opcode == OP_CONFIG_HEARTBEAT_PUB_GET ||
+        message->opcode == OP_CONFIG_HEARTBEAT_PUB_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_HEARTBEAT_PUB_SET;
+        if (len != (set ? 9u : 0u)) return 0;
+        mesh_heartbeat_publication pub = state->heartbeat;
+        uint8_t status = MESH_CONFIG_SUCCESS;
+        uint16_t count = mesh_network.heartbeat.remaining;
+        if (set) {
+            pub = (mesh_heartbeat_publication){
+                .dst = p[0] | (uint16_t)p[1] << 8,
+                .count_log = p[2], .period_log = p[3], .ttl = p[4],
+                .features = p[5] | (uint16_t)p[6] << 8,
+                .net_idx = p[7] | (uint16_t)p[8] << 8};
+            if (pub.ttl > 0x7f || pub.net_idx > 0x0fff) return 0;
+            if ((pub.dst >= 0x8000 && pub.dst < 0xc000) ||
+                (pub.dst >= 0xff00 && pub.dst < 0xfffc))
+                status = MESH_CONFIG_INVALID_ADDRESS;
+            else if ((pub.count_log > 0x11 && pub.count_log != 0xff) || pub.period_log > 0x11)
+                status = MESH_CONFIG_CANNOT_SET;
+            else if (pub.dst && pub.net_idx != state->net_key_index)
+                status = MESH_CONFIG_INVALID_NETKEY;
+            if (status == MESH_CONFIG_SUCCESS) {
+                if (!pub.dst) memset(&pub, 0, sizeof(pub));
+                pub.features = 0; // Relay, Proxy, Friend, and LPN are unsupported.
+                mesh_net_state next = *state;
+                next.heartbeat = pub;
+                if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next))
+                    status = MESH_CONFIG_STORAGE_FAILURE;
+                else {
+                    count = pub.count_log == 0xff ? 0xffff :
+                            pub.count_log == 0x11 ? 0xfffe :
+                            pub.count_log ? (uint16_t)(1u << (pub.count_log - 1)) : 0;
+                    mesh_network.heartbeat.remaining = count;
+                    mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
+                }
+            }
+            if (status != MESH_CONFIG_SUCCESS) {
+                count = pub.count_log == 0xff ? 0xffff :
+                        pub.count_log <= 0x11 && pub.count_log ?
+                        (uint16_t)(pub.count_log == 0x11 ? 0xfffe : 1u << (pub.count_log - 1)) : 0;
+            }
+        }
+        uint8_t reply[10] = {status, (uint8_t)pub.dst, (uint8_t)(pub.dst >> 8)};
+        if (pub.dst) {
+            reply[3] = count == 0xffff ? 0xff : mesh_heartbeat_log(count, 1);
+            if (set && (pub.count_log > 0x11 && pub.count_log != 0xff)) reply[3] = pub.count_log;
+            reply[4] = pub.period_log;
+            reply[5] = pub.ttl;
+            reply[6] = (uint8_t)pub.features; reply[7] = (uint8_t)(pub.features >> 8);
+            reply[8] = (uint8_t)pub.net_idx; reply[9] = (uint8_t)(pub.net_idx >> 8);
+        }
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_HEARTBEAT_PUB_STATUS, reply, sizeof(reply), 0);
+    }
+
+    if (message->opcode == OP_CONFIG_HEARTBEAT_SUB_GET ||
+        message->opcode == OP_CONFIG_HEARTBEAT_SUB_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_HEARTBEAT_SUB_SET;
+        if (len != (set ? 5u : 0u)) return 0;
+        uint8_t stopped = 0;
+        if (set) {
+            uint16_t src = p[0] | (uint16_t)p[1] << 8;
+            uint16_t dst = p[2] | (uint16_t)p[3] << 8;
+            if (src > 0x7fff || p[4] > 0x11 ||
+                (dst && dst != state->unicast_address && dst < 0xc000) ||
+                (dst >= 0xff00 && dst < 0xfffc)) return 0;
+            if (!src || !dst) {
+                mesh_network.heartbeat.src = mesh_network.heartbeat.dst = 0;
+                mesh_network.heartbeat.count = 0;
+                mesh_network.heartbeat.min_hops = mesh_network.heartbeat.max_hops = 0;
+                mesh_network.heartbeat.expires_at_ms = GET_MILLIS();
+                mesh_network.heartbeat.subscribed = 0;
+            } else if (p[4]) {
+                mesh_network.heartbeat.src = src; mesh_network.heartbeat.dst = dst;
+                mesh_network.heartbeat.count = 0;
+                mesh_network.heartbeat.min_hops = 0x7f; mesh_network.heartbeat.max_hops = 0;
+                mesh_network.heartbeat.expires_at_ms = GET_MILLIS() + (1u << (p[4] - 1)) * 1000u;
+                mesh_network.heartbeat.subscribed = 1;
+            } else {
+                mesh_network.heartbeat.expires_at_ms = GET_MILLIS();
+                mesh_network.heartbeat.subscribed = 0;
+                stopped = 1;
+            }
+        }
+        int32_t ms = (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS());
+        if (ms <= 0) mesh_network.heartbeat.subscribed = 0;
+        uint32_t seconds = mesh_network.heartbeat.subscribed ? (uint32_t)ms / 1000u : 0;
+        uint16_t src = mesh_network.heartbeat.src, dst = mesh_network.heartbeat.dst;
+        uint16_t count = mesh_network.heartbeat.count;
+        uint8_t reply[] = {MESH_CONFIG_SUCCESS, (uint8_t)src, (uint8_t)(src >> 8),
+            (uint8_t)dst, (uint8_t)(dst >> 8), mesh_heartbeat_log(seconds, 0),
+            count == 0xffff ? 0xff : mesh_heartbeat_log(count, 0),
+            set && (!src || stopped) ? 0x7f : mesh_network.heartbeat.min_hops,
+            mesh_network.heartbeat.max_hops};
+        int result = ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_HEARTBEAT_SUB_STATUS, reply, sizeof(reply), 0);
+        if (stopped) mesh_network.heartbeat.count = 0;
+        return result;
+    }
 
     if (message->opcode == OP_CONFIG_BEACON_GET ||
         message->opcode == OP_CONFIG_BEACON_SET ||
@@ -684,6 +817,46 @@ static int server_config_receive(const mesh_access_pdu *message) {
 }
 
 // Config Client helpers for a provisioner configuring another node.
+static inline int ble_mesh_reset_node(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NODE_RESET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_get_heartbeat_pub(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_HEARTBEAT_PUB_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_set_heartbeat_pub(uint16_t dst, const mesh_heartbeat_publication *pub) {
+    if (!pub || pub->ttl > 0x7f || pub->net_idx > 0x0fff ||
+        pub->period_log > 0x11 || (pub->count_log > 0x11 && pub->count_log != 0xff) ||
+        (pub->dst >= 0x8000 && pub->dst < 0xc000) ||
+        (pub->dst >= 0xff00 && pub->dst < 0xfffc)) return 0;
+    uint8_t params[] = {(uint8_t)pub->dst, (uint8_t)(pub->dst >> 8), pub->count_log,
+        pub->period_log, pub->ttl, (uint8_t)pub->features, (uint8_t)(pub->features >> 8),
+        (uint8_t)pub->net_idx, (uint8_t)(pub->net_idx >> 8)};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_HEARTBEAT_PUB_SET, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_get_heartbeat_sub(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_HEARTBEAT_SUB_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_set_heartbeat_sub(uint16_t dst, uint16_t src,
+                                            uint16_t address, uint8_t period_log) {
+    if (src > 0x7fff || period_log > 0x11 ||
+        (address && address != dst && address < 0xc000) ||
+        (address >= 0xff00 && address < 0xfffc)) return 0;
+    uint8_t params[] = {(uint8_t)src, (uint8_t)(src >> 8),
+        (uint8_t)address, (uint8_t)(address >> 8), period_log};
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_HEARTBEAT_SUB_SET, params, sizeof(params), 0);
+}
+
 static inline int ble_mesh_get_beacon(uint16_t dst) {
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_BEACON_GET, NULL, 0, 0);

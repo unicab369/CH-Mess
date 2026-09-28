@@ -153,6 +153,11 @@ static void mesh_publications_poll(void) {
 }
 
 static inline int ble_mesh_models_poll(void) {
+    if (mesh_models.reset_pending) {
+        uint8_t ad[31]; size_t len = sizeof(ad);
+        BLE_MESH_ADV_POLL(ad, &len);
+        return 0;
+    }
     if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
         mesh_health_attention_remaining(i);
@@ -192,6 +197,9 @@ static inline int ble_mesh_models_poll(void) {
         if (message->device_key_owner != message->src) return 0;
 
         if (opcode == OP_CONFIG_BEACON_STATUS ||
+            opcode == OP_CONFIG_NODE_RESET_STATUS ||
+            opcode == OP_CONFIG_HEARTBEAT_PUB_STATUS ||
+            opcode == OP_CONFIG_HEARTBEAT_SUB_STATUS ||
             opcode == OP_CONFIG_NET_TRANSMIT_STATUS ||
             opcode == OP_CONFIG_RELAY_STATUS ||
             opcode == OP_CONFIG_PROXY_STATUS ||

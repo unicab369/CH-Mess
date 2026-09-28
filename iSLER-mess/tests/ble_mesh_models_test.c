@@ -129,6 +129,14 @@ static int ble_mesh_access_poll(mesh_access_message *message,
 #include "../ble_mesh_4models.h"
 
 static mesh_models_state saved;
+static int reset_calls, reset_fail;
+int BLE_MESH_NODE_RESET(uint16_t dst) {
+    if (reset_fail || !ble_mesh_access_queue(mesh_network.state.unicast_address,
+        dst, mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+        OP_CONFIG_NODE_RESET_STATUS, NULL, 0, 0)) return 0;
+    reset_calls++;
+    return 1;
+}
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
     *state = saved;
     return 1;
@@ -710,6 +718,151 @@ static void test_node_settings(void) {
     }
 }
 
+// Exercise Heartbeat reception through the authenticated network receive path.
+static void receive_heartbeat(const mesh_net_message *hb) {
+    static uint32_t sequence;
+    uint32_t seq = sequence++;
+    uint32_t iv = mesh_network.state.iv_index;
+    uint8_t pdu[21] = {mesh_network.old_key.nid, (uint8_t)(0x80 | hb->ttl),
+        (uint8_t)(seq >> 16), (uint8_t)(seq >> 8), (uint8_t)seq,
+        (uint8_t)(hb->src >> 8), (uint8_t)hb->src};
+    uint8_t plain[6] = {(uint8_t)(hb->dst >> 8), (uint8_t)hb->dst};
+    memcpy(plain + 2, hb->transport, 4);
+    uint8_t nonce[13];
+    mesh_nonce(nonce, pdu + 1, iv);
+    assert(ccm_encrypt_and_tag(mesh_network.old_key.encryption_key, nonce, 13,
+        NULL, 0, plain, sizeof(plain), pdu + 7, pdu + 13, 8) == CCM_OK);
+    mesh_obfuscate(&mesh_network.old_key, pdu, iv);
+    mesh_net_message received;
+    assert(ble_mesh_net_receive(pdu, sizeof(pdu), &received) == 0);
+}
+
+static void test_heartbeat_configuration(void) {
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .net_key_index = 0x123};
+    now_ms = 0;
+    assert(ble_mesh_network_init(&state));
+    saved_network = state;
+    memset(&saved, 0, sizeof(saved));
+    memset(&mesh_models, 0, sizeof(mesh_models));
+    saved.default_ttl = 5;
+    assert(ble_mesh_models_init());
+    assert(ble_mesh_get_heartbeat_pub(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_HEARTBEAT_PUB_STATUS && last_len == 10);
+    for (unsigned i = 0; i < last_len; i++) assert(last_params[i] == 0);
+    mesh_heartbeat_publication pub = {.dst = 0xc001, .net_idx = 0x123,
+        .count_log = 3, .period_log = 2, .ttl = 5, .features = 0xffff};
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && last_len == 9 && config_request());
+    assert(last_params[0] == 0 && last_params[1] == 1 && last_params[2] == 0xc0);
+    assert(last_params[3] == 3 && last_params[4] == 2 && last_params[5] == 5);
+    assert(last_params[6] == 0 && last_params[7] == 0 && last_params[8] == 0x23 && last_params[9] == 1);
+    assert(saved_network.heartbeat.dst == 0xc001 && saved_network.heartbeat.features == 0);
+    assert(mesh_network.heartbeat.remaining == 4);
+    mesh_net_message net;
+    ble_mesh_net_poll(&net); assert(mesh_network.heartbeat.remaining == 3);
+    assert(ble_mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 3);
+    mesh_network.heartbeat.remaining = 2;
+    assert(ble_mesh_get_heartbeat_pub(0x1201) && config_request() && last_params[3] == 2);
+    assert(ble_mesh_network_restore() && mesh_network.state.heartbeat.dst == 0xc001);
+    assert(mesh_network.heartbeat.remaining == 0); // Finite counts do not resume after reboot.
+    pub.count_log = 0xff;
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
+    assert(ble_mesh_network_restore() && mesh_network.heartbeat.remaining == 0xffff);
+    pub.count_log = 0x11;
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
+    assert(last_params[3] == 0x11 && mesh_network.heartbeat.remaining == 0xfffe);
+    pub.dst = 0xc002; network_save_fail = 1;
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && mesh_network.state.heartbeat.dst == 0xc001);
+    network_save_fail = 0;
+    pub.net_idx = 0x124;
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
+    assert(last_params[0] == MESH_CONFIG_INVALID_NETKEY && mesh_network.state.heartbeat.dst == 0xc001);
+    uint8_t invalid[] = {0, 0x80, 1, 1, 5, 0, 0, 0x23, 1};
+    assert(config_message(OP_CONFIG_HEARTBEAT_PUB_SET, invalid, sizeof(invalid)));
+    assert(last_params[0] == MESH_CONFIG_INVALID_ADDRESS);
+    invalid[1] = 0xc0; invalid[2] = 0x12;
+    assert(config_message(OP_CONFIG_HEARTBEAT_PUB_SET, invalid, sizeof(invalid)));
+    assert(last_params[0] == MESH_CONFIG_CANNOT_SET);
+    invalid[2] = 1; invalid[3] = 0x12;
+    assert(config_message(OP_CONFIG_HEARTBEAT_PUB_SET, invalid, sizeof(invalid)));
+    assert(last_params[0] == MESH_CONFIG_CANNOT_SET);
+    invalid[3] = 1; invalid[4] = 0x80;
+    assert(!config_message(OP_CONFIG_HEARTBEAT_PUB_SET, invalid, sizeof(invalid)));
+    assert(!config_message(OP_CONFIG_HEARTBEAT_PUB_GET, invalid, 1));
+    assert(!config_message(OP_CONFIG_HEARTBEAT_PUB_SET, invalid, 8));
+    pub = (mesh_heartbeat_publication){0};
+    assert(ble_mesh_set_heartbeat_pub(0x1201, &pub) && config_request());
+    assert(mesh_network.state.heartbeat.dst == 0 && mesh_network.heartbeat.remaining == 0);
+
+    assert(ble_mesh_get_heartbeat_sub(0x1201) && config_request() && last_len == 9);
+    for (unsigned i = 0; i < last_len; i++) assert(last_params[i] == 0);
+    now_ms = UINT32_MAX - 499;
+    assert(ble_mesh_set_heartbeat_sub(0x1201, 0x1202, 0xc001, 3) && config_request());
+    assert(last_params[5] == 3 && last_params[6] == 0 && last_params[7] == 0x7f && last_params[8] == 0);
+    mesh_net_message hb = {.ctl = 1, .src = 0x1202, .dst = 0xc001,
+        .ttl = 3, .transport_len = 4, .transport = {0x0a, 5, 0, 1}};
+    receive_heartbeat(&hb);
+    assert(mesh_network.heartbeat.count == 1 && mesh_network.heartbeat.min_hops == 3);
+    hb.ttl = 5; receive_heartbeat(&hb);
+    hb.ttl = 1; receive_heartbeat(&hb);
+    assert(mesh_network.heartbeat.count == 3 && mesh_network.heartbeat.min_hops == 1 && mesh_network.heartbeat.max_hops == 5);
+    now_ms = 501;
+    assert(ble_mesh_get_heartbeat_sub(0x1201) && config_request());
+    assert(last_params[5] == 2 && last_params[6] == 2 && last_params[7] == 1 && last_params[8] == 5);
+    hb.src = 0x1203; receive_heartbeat(&hb); assert(mesh_network.heartbeat.count == 3);
+    hb.src = 0x1202; hb.dst = 0xc002; receive_heartbeat(&hb); assert(mesh_network.heartbeat.count == 3);
+    hb.dst = 0xc001; hb.ttl = 6; receive_heartbeat(&hb); assert(mesh_network.heartbeat.count == 3);
+    hb.ttl = 1; mesh_network.heartbeat.count = 0xfffe;
+    receive_heartbeat(&hb); receive_heartbeat(&hb); assert(mesh_network.heartbeat.count == 0xffff);
+    assert(ble_mesh_get_heartbeat_sub(0x1201) && config_request() && last_params[6] == 0xff);
+    now_ms = 3500;
+    receive_heartbeat(&hb); assert(mesh_network.heartbeat.count == 0xffff);
+    assert(ble_mesh_get_heartbeat_sub(0x1201) && config_request() && last_params[5] == 0);
+    assert(ble_mesh_set_heartbeat_sub(0x1201, 0x1202, 0xc001, 0) && config_request());
+    assert(last_params[5] == 0 && last_params[6] == 0xff && last_params[7] == 0x7f);
+    assert(mesh_network.heartbeat.count == 0 && mesh_network.heartbeat.src == 0x1202);
+    assert(ble_mesh_set_heartbeat_sub(0x1201, 0, 0xc001, 2) && config_request());
+    assert(last_params[1] == 0 && last_params[3] == 0 && last_params[5] == 0 && last_params[7] == 0x7f);
+    assert(ble_mesh_get_heartbeat_sub(0x1201) && config_request() && last_params[7] == 0);
+    assert(!ble_mesh_set_heartbeat_sub(0x1201, 0xc001, 0xc001, 2));
+    assert(!ble_mesh_set_heartbeat_sub(0x1201, 0x1202, 0x1202, 2));
+    uint8_t bad_sub[] = {2, 0x12, 2, 0x12, 2};
+    assert(!config_message(OP_CONFIG_HEARTBEAT_SUB_SET, bad_sub, sizeof(bad_sub)));
+    bad_sub[2] = 1; bad_sub[3] = 0xc0; bad_sub[4] = 0x12;
+    assert(!config_message(OP_CONFIG_HEARTBEAT_SUB_SET, bad_sub, sizeof(bad_sub)));
+    assert(!config_message(OP_CONFIG_HEARTBEAT_SUB_SET, NULL, 0));
+    assert(ble_mesh_set_heartbeat_sub(0x1201, 0x1202, 0x1201, 0x11) && config_request());
+    assert(last_params[5] == 0x11);
+    assert(ble_mesh_network_restore() && mesh_network.heartbeat.src == 0);
+
+    const uint32_t statuses[] = {OP_CONFIG_NODE_RESET_STATUS, OP_CONFIG_HEARTBEAT_PUB_STATUS,
+        OP_CONFIG_HEARTBEAT_SUB_STATUS};
+    mesh_access_pdu message = {.src = 0x1202, .dst = 0x1201,
+        .app_key_index = APP_KEY_INDEX_NONE, .device_key_owner = 0x1202};
+    for (unsigned i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
+        message.opcode = statuses[i];
+        int reports = config_report_count;
+        assert(poll_message(&message) && config_report_count == reports + 1);
+        message.device_key_owner = 0x1201; assert(!poll_message(&message));
+        message.device_key_owner = 0x1202;
+    }
+    message.opcode = OP_CONFIG_NODE_RESET;
+    assert(!poll_message(&message) && reset_calls == 0);
+    message.device_key_owner = 0x1201; message.app_key_index = 0x234;
+    assert(!poll_message(&message) && reset_calls == 0);
+    message.app_key_index = APP_KEY_INDEX_NONE; message.dst = 0x1202; message.device_key_owner = 0x1202;
+    assert(!poll_message(&message) && reset_calls == 0);
+    assert(!config_message(OP_CONFIG_NODE_RESET, bad_sub, 1));
+    send_fail = 1; assert(!config_message(OP_CONFIG_NODE_RESET, NULL, 0) && reset_calls == 0);
+    send_fail = 0; reset_fail = 1;
+    assert(!config_message(OP_CONFIG_NODE_RESET, NULL, 0) && reset_calls == 0);
+    reset_fail = 0;
+    assert(ble_mesh_reset_node(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_NODE_RESET_STATUS && last_len == 0 && last_app_key_index == DEVICE_KEY_LOCAL);
+    assert(reset_calls == 1 && mesh_models.reset_pending);
+    assert(!ble_mesh_models_poll()); // Pause model traffic while the reply drains.
+}
+
 int main(void) {
     mesh_network.ready = 1;
     mesh_network.state.unicast_address = 0x1201;
@@ -1052,5 +1205,6 @@ int main(void) {
     test_foundation_configuration();
     test_key_configuration();
     test_node_settings();
+    test_heartbeat_configuration();
     return 0;
 }
