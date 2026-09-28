@@ -102,10 +102,87 @@
 
 void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len);
+// Health Client status parameters are valid only during this callback.
+void BLE_MESH_HEALTH_STATUS(uint16_t element, uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len);
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds);
 // Run a supported self-test and fill faults; *len is capacity on input/count on output.
 // Return 1 for a completed test, 0 for an unsupported test or failure.
 int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len);
+
+// Health Client requests use a bound AppKey; acknowledged sets request a status reply.
+static inline int ble_mesh_health_fault_get(
+    uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        OP_HEALTH_FAULT_GET, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_health_fault_clear(
+    uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company, uint8_t acknowledged
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    uint8_t params[2] = {(uint8_t)company, (uint8_t)(company >> 8)};
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_health_fault_test(
+    uint16_t element, uint16_t dst, uint16_t app_idx, uint16_t company, uint8_t test_id, uint8_t acknowledged
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    uint8_t params[3] = {test_id, (uint8_t)company, (uint8_t)(company >> 8)};
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        acknowledged ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_health_period_get(
+    uint16_t element, uint16_t dst, uint16_t app_idx
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        OP_HEALTH_PERIOD_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_health_period_set(
+    uint16_t element, uint16_t dst, uint16_t app_idx, uint8_t divisor, uint8_t acknowledged
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 || divisor > 15 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        acknowledged ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK, &divisor, 1, 0);
+}
+
+static inline int ble_mesh_health_attention_get(
+    uint16_t element, uint16_t dst, uint16_t app_idx
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        OP_HEALTH_ATTENTION_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_health_attention_set(
+    uint16_t element, uint16_t dst, uint16_t app_idx, uint8_t seconds, uint8_t acknowledged
+) {
+    int index = mesh_element_index(element);
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
+        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+        acknowledged ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK, &seconds, 1, 0);
+}
 
 static inline int ble_mesh_config_virtual_sub(
     uint16_t dst, uint16_t element,
@@ -145,10 +222,12 @@ static int mesh_unbind_slot(uint8_t slot) {
     next.onoff_server_bindings &= bit;
     next.onoff_client_bindings &= bit;
     next.health_server_bindings &= bit;
+    next.health_client_bindings &= bit;
     for (uint8_t i = 1; i < mesh_network.state.element_count; i++) {
         next.other[i - 1].onoff_server_bindings &= bit;
         next.other[i - 1].onoff_client_bindings &= bit;
         next.other[i - 1].health_server_bindings &= bit;
+        next.other[i - 1].health_client_bindings &= bit;
     }
     uint16_t app_idx = mesh_network.state.app_keys[slot].index;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
@@ -487,7 +566,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
     if (message->opcode == OP_CONFIG_COMPOSITION_GET) {
         if (len != 1) return 0;
         // Page 0 is the highest supported page, including for unknown requests.
-        uint8_t reply[11 + 14 + (MESH_MAX_ELEMENTS - 1) * 10] = {
+        uint8_t reply[11 + 16 + (MESH_MAX_ELEMENTS - 1) * 12] = {
             0, (uint8_t)MESH_COMPANY_ID, (uint8_t)(MESH_COMPANY_ID >> 8),
             (uint8_t)MESH_PRODUCT_ID, (uint8_t)(MESH_PRODUCT_ID >> 8),
             (uint8_t)MESH_PRODUCT_VERSION, (uint8_t)(MESH_PRODUCT_VERSION >> 8),
@@ -497,11 +576,12 @@ static int server_config_receive(const mesh_access_pdu *message) {
         size_t size = 11;
         for (uint8_t i = 0; i < state->element_count; i++) {
             reply[size++] = 0; reply[size++] = 0; // Unknown element location.
-            reply[size++] = i ? 3 : 5;
+            reply[size++] = i ? 4 : 6;
             reply[size++] = 0; // No vendor models.
             const uint16_t models[] = {MESH_MODEL_CONFIG_SERVER, MESH_MODEL_CONFIG_CLIENT,
-                MESH_MODEL_HEALTH_SERVER, MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT};
-            for (uint8_t j = i ? 2 : 0; j < 5; j++) {
+                MESH_MODEL_HEALTH_SERVER, MESH_MODEL_HEALTH_CLIENT,
+                MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT};
+            for (uint8_t j = i ? 2 : 0; j < 6; j++) {
                 reply[size++] = (uint8_t)models[j];
                 reply[size++] = (uint8_t)(models[j] >> 8);
             }
@@ -536,8 +616,9 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint16_t model = p[len - 2] | ((uint16_t)p[len - 1] << 8);
         int index = mesh_element_index(element), slot = mesh_publication_slot(model);
         uint8_t status = index < 0 ? MESH_CONFIG_INVALID_ADDRESS :
-            slot < 0 ? (index == 0 && (model == MESH_MODEL_CONFIG_SERVER ||
-                         model == MESH_MODEL_CONFIG_CLIENT) ?
+            slot < 0 ? (model == MESH_MODEL_HEALTH_CLIENT ||
+                         (index == 0 && (model == MESH_MODEL_CONFIG_SERVER ||
+                          model == MESH_MODEL_CONFIG_CLIENT)) ?
                          MESH_CONFIG_INVALID_PUBLICATION : MESH_CONFIG_INVALID_MODEL) :
                          MESH_CONFIG_SUCCESS;
         mesh_publication pub = {0};

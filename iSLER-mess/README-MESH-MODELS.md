@@ -1,4 +1,5 @@
-// TODO for configuration support:
+// TODO for foundation support:
+// - Health Client: configured publication and outgoing virtual requests.
 // - Multiple subnets: store and route using additional NetKeys.
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
@@ -6,7 +7,7 @@
 
 ## Foundation models
 
-Configuration support lives in `ble_mesh_4foundation.h`; remaining TODOs are listed above.
+Configuration and Health support live in `ble_mesh_4foundation.h`; remaining TODOs are listed above.
 
 Configuration requests use `MESH_MODEL_CONFIG_SERVER`; their replies are handled
 by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
@@ -47,7 +48,7 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 10 requires reprovisioning older records.
+credentials. Stored state version 11 requires reprovisioning older records.
 
 `ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
 destination, NetKey index, count log, period log, TTL, and feature-change triggers.
@@ -109,6 +110,25 @@ during Phase 2 reports phase 2 even though it has only the new NetKey.
 | `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_FAULT_GET`, `OP_HEALTH_FAULT_CLEAR`, `OP_HEALTH_FAULT_CLEAR_UNACK`, `OP_HEALTH_FAULT_STATUS` | Read or clear recorded fault history; clearing does not remove active faults. |
 | `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_FAULT_TEST`, `OP_HEALTH_FAULT_TEST_UNACK` | Run a supported application self-test and update faults. |
 | `MESH_MODEL_HEALTH_SERVER` | `OP_HEALTH_PERIOD_GET`, `OP_HEALTH_PERIOD_SET`, `OP_HEALTH_PERIOD_SET_UNACK`, `OP_HEALTH_PERIOD_STATUS` | Get/set the saved Fast Period Divisor (0–15), per element. |
+| `MESH_MODEL_HEALTH_CLIENT` | `OP_HEALTH_FAULT_GET`, `OP_HEALTH_FAULT_CLEAR`, `OP_HEALTH_FAULT_CLEAR_UNACK`, `OP_HEALTH_FAULT_TEST`, `OP_HEALTH_FAULT_TEST_UNACK` | Query/clear remote fault history or run a remote self-test. |
+| `MESH_MODEL_HEALTH_CLIENT` | `OP_HEALTH_PERIOD_GET`, `OP_HEALTH_PERIOD_SET`, `OP_HEALTH_PERIOD_SET_UNACK`, `OP_HEALTH_ATTENTION_GET`, `OP_HEALTH_ATTENTION_SET`, `OP_HEALTH_ATTENTION_SET_UNACK` | Query/set remote publication divisor and attention timer. |
+| `MESH_MODEL_HEALTH_CLIENT` | `OP_HEALTH_CURRENT_STATUS`, `OP_HEALTH_FAULT_STATUS`, `OP_HEALTH_PERIOD_STATUS`, `OP_HEALTH_ATTENTION_STATUS` | Deliver replies and subscribed current faults to the application. |
+
+Use `ble_mesh_health_fault_get/clear/test()`, `ble_mesh_health_period_get/set()`,
+and `ble_mesh_health_attention_get/set()` with a local element, destination, and
+bound AppKey index. Fault requests also take a Company ID; Test takes a Test ID.
+Clear, Test, and Set take `acknowledged` (1 requests a reply, 0 does not).
+Requests use explicit unicast/group destinations; configured Health Client
+publication and outgoing virtual requests are not implemented.
+
+`BLE_MESH_HEALTH_STATUS(element, src, opcode, params, len)` receives validated
+replies and published current faults. Fault parameters are Test ID (1 byte),
+Company ID (2 bytes, little endian), then fault codes; Period and Attention
+contain one byte. Copy parameters during the callback if retaining them.
+Health Clients appear on every element in Composition Data; bindings and
+subscriptions are saved per element. Group/virtual reports reach only subscribed
+Health Clients with the receiving AppKey bound. Remote fault lists are not limited
+to the local server's fault capacity. The default callback in `ble_mesh.h` is empty.
 
 `ble_mesh_health_faults(element, test_id, faults, count)` reports the element's
 current faults. Pass `NULL, 0` when recovered. Nonzero fault codes are deduplicated
@@ -123,7 +143,7 @@ application self-test interface: count is buffer capacity on input and result
 length on output. Return 1 after a supported test, or 0 for an unsupported test
 or failure. The default in `ble_mesh.h` supports standard test 0 by returning the
 latest application-reported faults; add hardware diagnostics or vendor tests
-there. Requests for another Company ID or an unsupported test are ignored.
+there. Server requests for another Company ID or an unsupported test are ignored.
 
 Health requests use a bound AppKey. Fault changes publish Current Status through
 the configured Health publication, including when the periodic interval is zero.

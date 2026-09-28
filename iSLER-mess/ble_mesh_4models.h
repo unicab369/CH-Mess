@@ -245,6 +245,9 @@ static inline int ble_mesh_models_poll(void) {
                  opcode == OP_HEALTH_FAULT_TEST_UNACK || opcode == OP_HEALTH_PERIOD_GET ||
                  opcode == OP_HEALTH_PERIOD_SET || opcode == OP_HEALTH_PERIOD_SET_UNACK)
             model = MESH_MODEL_HEALTH_SERVER;
+        else if (opcode == OP_HEALTH_CURRENT_STATUS || opcode == OP_HEALTH_FAULT_STATUS ||
+                 opcode == OP_HEALTH_PERIOD_STATUS || opcode == OP_HEALTH_ATTENTION_STATUS)
+            model = MESH_MODEL_HEALTH_CLIENT;
         else continue;
 
         if (virtual) {
@@ -281,6 +284,16 @@ static inline int ble_mesh_models_poll(void) {
             if (message->params_len != 1 || message->params[0] > 1) continue;
             BLE_MESH_ONOFF_STATUS(mesh_network.state.unicast_address + i,
                                   message->src, message->params[0]);
+            handled = 1;
+        } else if (model == MESH_MODEL_HEALTH_CLIENT) {
+            // Validate Health statuses before delivering replies or subscribed fault reports.
+            size_t len = message->params_len;
+            if (opcode == OP_HEALTH_CURRENT_STATUS || opcode == OP_HEALTH_FAULT_STATUS) {
+                if (len < 3) continue; // Test ID, Company ID, then zero or more faults.
+            } else if (len != 1 ||
+                       (opcode == OP_HEALTH_PERIOD_STATUS && message->params[0] > 15)) continue;
+            BLE_MESH_HEALTH_STATUS(mesh_network.state.unicast_address + i,
+                                   message->src, opcode, message->params, len);
             handled = 1;
         } else handled |= server_health_receive(message, i);
     }

@@ -162,6 +162,22 @@ void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
     (void)src; (void)opcode; (void)params; (void)len;
     config_report_count++;
 }
+static unsigned health_status_count;
+static uint16_t health_status_element, health_status_src;
+static uint32_t health_status_opcode;
+static size_t health_status_len;
+static uint8_t health_status_params[128];
+void BLE_MESH_HEALTH_STATUS(uint16_t element, uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len) {
+    health_status_count++;
+    health_status_element = element;
+    health_status_src = src;
+    health_status_opcode = opcode;
+    health_status_len = len;
+    assert(len <= sizeof(health_status_params));
+    memcpy(health_status_params, params, len);
+}
+
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
     (void)element;
     attention_seconds = seconds;
@@ -210,7 +226,7 @@ static void test_foundation_configuration(void) {
     memset(&mesh_network.state.app_keys, 0, sizeof(mesh_network.state.app_keys));
     saved.default_ttl = MODEL_TTL;
     saved.onoff_server_bindings = saved.onoff_client_bindings = saved.health_server_bindings = 1;
-    saved.other[0] = (mesh_element_bindings){1, 1, 1};
+    saved.other[0] = (mesh_element_bindings){1, 1, 1, 0};
     mesh_network.state.app_keys[0].used = 1;
     mesh_network.state.app_keys[0].index = 0x234;
     mesh_network.state.app_keys[1].used = 1;
@@ -219,14 +235,17 @@ static void test_foundation_configuration(void) {
     assert(ble_mesh_models_init());
 
     assert(ble_mesh_get_composition(0x1201, 0xff) && config_request());
-    assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 35);
+    assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 39);
     assert(last_params[0] == 0 && last_params[7] == MESH_NETWORK_REPLAY_SLOTS);
-    assert(last_params[9] == 0 && last_params[13] == 5 && last_params[27] == 3);
+    assert(last_params[9] == 0 && last_params[13] == 6 && last_params[29] == 4);
     assert(last_params[15] == 0 && last_params[17] == 1 && last_params[19] == 2);
-    assert(last_params[21] == 0 && last_params[22] == 0x10);
+    assert(last_params[21] == MESH_MODEL_HEALTH_CLIENT && last_params[22] == 0);
+    assert(last_params[23] == 0 && last_params[24] == 0x10);
+    assert(last_params[31] == MESH_MODEL_HEALTH_SERVER &&
+           last_params[33] == MESH_MODEL_HEALTH_CLIENT);
     assert(last_app_key_index == DEVICE_KEY_LOCAL);
     mesh_network.state.element_count = 1;
-    assert(ble_mesh_get_composition(0x1201, 0) && config_request() && last_len == 25);
+    assert(ble_mesh_get_composition(0x1201, 0) && config_request() && last_len == 27);
     mesh_network.state.element_count = 2;
     assert(config_message(OP_CONFIG_COMPOSITION_GET, NULL, 0) == 0);
 
@@ -858,6 +877,112 @@ static void test_health(void) {
     now_ms += 1000; count = send_count; ble_mesh_models_poll(); assert(send_count == count);
 }
 
+static void test_health_client(void) {
+    mesh_net_state state = {.unicast_address = 0x1201, .element_count = 2};
+    state.app_keys[0].used = 1; state.app_keys[0].index = 0x234;
+    state.app_keys[1].used = 1; state.app_keys[1].index = 0x235;
+    assert(ble_mesh_network_init(&state));
+    memset(&saved, 0, sizeof(saved)); memset(&mesh_models, 0, sizeof(mesh_models));
+    saved.default_ttl = 5;
+    saved.health_server_bindings = 1; // A server binding cannot authorize the client.
+    assert(ble_mesh_models_init());
+    assert(!ble_mesh_health_fault_get(0x1201, 0x1301, 0x234, 0x1234));
+    for (uint16_t element = 0x1201; element <= 0x1202; element++) {
+        assert(ble_mesh_model_binding(0x1201, element, 0x234, MESH_MODEL_HEALTH_CLIENT, 1) && config_request());
+        assert(last_opcode == OP_CONFIG_MODEL_APP_STATUS && last_params[0] == MESH_CONFIG_SUCCESS);
+        assert(ble_mesh_get_bindings(0x1201, element, MESH_MODEL_HEALTH_CLIENT) && config_request());
+        assert(last_opcode == OP_CONFIG_SIG_MODEL_APP_LIST && last_len == 7);
+        assert(last_params[5] == 0x34 && last_params[6] == 2);
+    }
+    assert(saved.health_client_bindings == 1 && saved.other[0].health_client_bindings == 1);
+    mesh_models.ready = 0;
+    assert(ble_mesh_models_init()); // Restore both persisted client bindings.
+    assert(ble_mesh_health_fault_get(0x1202, 0x1301, 0x234, 0x1234));
+    assert(last_src == 0x1202 && last_dst == 0x1301 && last_app_key_index == 0x234 && last_ttl == 5);
+    assert(last_opcode == OP_HEALTH_FAULT_GET && last_len == 2 && last_params[0] == 0x34 && last_params[1] == 0x12);
+    assert(!ble_mesh_health_fault_get(0x1203, 0x1301, 0x234, 0x1234));
+    assert(!ble_mesh_health_fault_get(0x1201, 0x1301, 0x235, 0x1234));
+    assert(!ble_mesh_health_fault_get(0x1201, 0x1301, APP_KEY_INDEX_NONE, 0x1234));
+    for (uint8_t ack = 0; ack < 2; ack++) {
+        assert(ble_mesh_health_fault_clear(0x1201, 0x1301, 0x234, 0x1234, ack));
+        assert(last_opcode == (ack ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK) && last_len == 2);
+        assert(last_params[0] == 0x34 && last_params[1] == 0x12);
+        assert(ble_mesh_health_fault_test(0x1201, 0x1301, 0x234, 0x1234, 7, ack));
+        assert(last_opcode == (ack ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK) && last_len == 3);
+        assert(last_params[0] == 7 && last_params[1] == 0x34 && last_params[2] == 0x12);
+        assert(ble_mesh_health_period_set(0x1201, 0xc001, 0x234, 15, ack));
+        assert(last_opcode == (ack ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK) && last_len == 1 && last_params[0] == 15);
+        assert(ble_mesh_health_attention_set(0x1201, 0x1301, 0x234, 255, ack));
+        assert(last_opcode == (ack ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK) && last_len == 1 && last_params[0] == 255);
+    }
+    assert(!ble_mesh_health_period_set(0x1201, 0x1301, 0x234, 16, 1));
+    assert(ble_mesh_health_period_get(0x1201, 0x1301, 0x234) && last_opcode == OP_HEALTH_PERIOD_GET && !last_len);
+    assert(ble_mesh_health_attention_get(0x1201, 0x1301, 0x234) && last_opcode == OP_HEALTH_ATTENTION_GET && !last_len);
+    send_fail = 1;
+    assert(!ble_mesh_health_fault_get(0x1201, 0x1301, 0x234, 0x1234));
+    send_fail = 0;
+
+    uint8_t faults[3 + MESH_HEALTH_MAX_FAULTS + 1] = {7, 0x34, 0x12};
+    for (size_t i = 3; i < sizeof(faults); i++) faults[i] = (uint8_t)(i - 2);
+    mesh_access_pdu message = {.src = 0x1301, .dst = 0x1202, .app_key_index = 0x234,
+        .opcode = OP_HEALTH_CURRENT_STATUS, .params = faults, .params_len = sizeof(faults)};
+    health_status_count = 0;
+    assert(poll_message(&message) && health_status_count == 1);
+    assert(health_status_element == 0x1202 && health_status_src == 0x1301 && health_status_opcode == OP_HEALTH_CURRENT_STATUS);
+    assert(health_status_len == sizeof(faults) && !memcmp(health_status_params, faults, sizeof(faults)));
+    message.opcode = OP_HEALTH_FAULT_STATUS; message.params_len = 3;
+    assert(poll_message(&message) && health_status_count == 2); // Empty remote history is valid.
+    message.params_len = 2;
+    assert(!poll_message(&message));
+    uint8_t value = 15;
+    message.opcode = OP_HEALTH_PERIOD_STATUS; message.params = &value; message.params_len = 1;
+    assert(poll_message(&message) && health_status_params[0] == 15);
+    value = 16; assert(!poll_message(&message));
+    message.opcode = OP_HEALTH_ATTENTION_STATUS; value = 255;
+    assert(poll_message(&message) && health_status_params[0] == 255);
+    message.params_len = 0; assert(!poll_message(&message));
+    message.params = faults; message.params_len = 2; assert(!poll_message(&message));
+    message.opcode = OP_HEALTH_CURRENT_STATUS; message.params_len = sizeof(faults);
+    message.app_key_index = 0x235; assert(!poll_message(&message));
+    message.app_key_index = APP_KEY_INDEX_NONE; message.device_key_owner = message.src;
+    message.dst = 0x1201; assert(!poll_message(&message));
+    message.device_key_owner = message.dst; assert(!poll_message(&message));
+    message.app_key_index = 0x234; message.device_key_owner = 0;
+    assert(poll_message(&message) && health_status_element == 0x1201);
+
+    for (uint16_t element = 0x1201; element <= 0x1202; element++)
+        assert(ble_mesh_group_subscription(0x1201, element, MESH_MODEL_HEALTH_CLIENT, 0xc001, 1) && config_request());
+    message.dst = 0xc001;
+    unsigned count = health_status_count;
+    assert(poll_message(&message) && health_status_count == count + 2);
+    message.dst = 0xc002; assert(!poll_message(&message));
+    uint8_t label[16] = {0x81, 0x82};
+    assert(ble_mesh_config_virtual_sub(0x1201, 0x1202, MESH_MODEL_HEALTH_CLIENT, label, 1) && config_request());
+    message.dst = ble_mesh_virtual_address(label); message.has_label = 1;
+    memcpy(message.label, label, 16);
+    count = health_status_count;
+    assert(poll_message(&message) && health_status_count == count + 1 && health_status_element == 0x1202);
+    message.label[0] ^= 1; message.dst = ble_mesh_virtual_address(message.label);
+    assert(!poll_message(&message));
+    save_fail = 1;
+    assert(ble_mesh_model_binding(0x1201, 0x1202, 0x234, MESH_MODEL_HEALTH_CLIENT, 0) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && saved.other[0].health_client_bindings == 1);
+    save_fail = 0;
+    assert(ble_mesh_model_binding(0x1201, 0x1202, 0x234, MESH_MODEL_HEALTH_CLIENT, 0) && config_request());
+    assert(!ble_mesh_health_attention_get(0x1202, 0x1301, 0x234));
+    assert(ble_mesh_model_binding(0x1201, 0x1202, 0x234, MESH_MODEL_HEALTH_CLIENT, 1) && config_request());
+    assert(ble_mesh_delete_app_key(0x1201, 0, 0x234) && config_request());
+    assert(last_params[0] == MESH_CONFIG_SUCCESS);
+    assert(!saved.health_client_bindings && !saved.other[0].health_client_bindings);
+    assert(!ble_mesh_health_fault_get(0x1201, 0x1301, 0x234, 0x1234));
+    saved.health_client_bindings = 0x80;
+    assert(!ble_mesh_models_init()); // Reject bindings outside the key-slot mask.
+    saved.health_client_bindings = 0; saved.other[0].health_client_bindings = 0x80;
+    assert(!ble_mesh_models_init());
+    saved.other[0].health_client_bindings = 0;
+    assert(ble_mesh_models_init());
+}
+
 static void test_heartbeat_configuration(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .net_key_index = 0x123};
     now_ms = 0;
@@ -1327,6 +1452,7 @@ int main(void) {
     test_key_configuration();
     test_node_settings();
     test_health();
+    test_health_client();
     test_heartbeat_configuration();
     return 0;
 }

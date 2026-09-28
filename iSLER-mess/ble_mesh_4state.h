@@ -5,6 +5,7 @@
 
 // Shared model identifiers, runtime state, bindings, and subscriptions.
 #define MESH_MODEL_HEALTH_SERVER 0x0002
+#define MESH_MODEL_HEALTH_CLIENT 0x0003
 #define MESH_MODEL_ONOFF_SERVER 0x1000
 #define MESH_MODEL_ONOFF_CLIENT 0x1001
 #define MODEL_TTL 5
@@ -50,6 +51,7 @@ typedef struct {
     uint8_t onoff_server_bindings;
     uint8_t onoff_client_bindings;
     uint8_t health_server_bindings;
+    uint8_t health_client_bindings;
 } mesh_element_bindings;
 
 typedef struct {
@@ -63,6 +65,7 @@ typedef struct {
     uint8_t onoff_server_bindings;
     uint8_t onoff_client_bindings;
     uint8_t health_server_bindings;
+    uint8_t health_client_bindings;
     uint8_t virtual_count;
     mesh_model_label virtual[MESH_MODEL_VIRTUAL_SLOTS];
     mesh_element_bindings other[MESH_MAX_ELEMENTS - 1];
@@ -138,11 +141,13 @@ static uint8_t *mesh_model_bindings(mesh_models_state *state,
         if (model == MESH_MODEL_ONOFF_SERVER) return &state->onoff_server_bindings;
         if (model == MESH_MODEL_ONOFF_CLIENT) return &state->onoff_client_bindings;
         if (model == MESH_MODEL_HEALTH_SERVER) return &state->health_server_bindings;
+        if (model == MESH_MODEL_HEALTH_CLIENT) return &state->health_client_bindings;
     } else {
         mesh_element_bindings *bindings = &state->other[element - 1];
         if (model == MESH_MODEL_ONOFF_SERVER) return &bindings->onoff_server_bindings;
         if (model == MESH_MODEL_ONOFF_CLIENT) return &bindings->onoff_client_bindings;
         if (model == MESH_MODEL_HEALTH_SERVER) return &bindings->health_server_bindings;
+        if (model == MESH_MODEL_HEALTH_CLIENT) return &bindings->health_client_bindings;
     }
     return NULL;
 }
@@ -150,7 +155,8 @@ static uint8_t *mesh_model_bindings(mesh_models_state *state,
 static int mesh_virtual_model_valid(uint16_t model) {
     return model == MESH_MODEL_ONOFF_SERVER ||
            model == MESH_MODEL_ONOFF_CLIENT ||
-           model == MESH_MODEL_HEALTH_SERVER;
+           model == MESH_MODEL_HEALTH_SERVER ||
+           model == MESH_MODEL_HEALTH_CLIENT;
 }
 
 static inline int ble_mesh_models_init(void) {
@@ -165,12 +171,14 @@ static inline int ble_mesh_models_init(void) {
     uint8_t valid_mask = (1u << MESH_MAX_APP_KEYS) - 1u;
     if ((mesh_models.state.onoff_server_bindings & ~valid_mask) ||
         (mesh_models.state.onoff_client_bindings & ~valid_mask) ||
-        (mesh_models.state.health_server_bindings & ~valid_mask)) return 0;
+        (mesh_models.state.health_server_bindings & ~valid_mask) ||
+        (mesh_models.state.health_client_bindings & ~valid_mask)) return 0;
     for (uint8_t i = 1; i < mesh_network.state.element_count; i++) {
         mesh_element_bindings *b = &mesh_models.state.other[i - 1];
         if ((b->onoff_server_bindings & ~valid_mask) ||
             (b->onoff_client_bindings & ~valid_mask) ||
-            (b->health_server_bindings & ~valid_mask)) return 0;
+            (b->health_server_bindings & ~valid_mask) ||
+            (b->health_client_bindings & ~valid_mask)) return 0;
     }
     ble_mesh_transport_clear_labels();
 

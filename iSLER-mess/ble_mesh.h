@@ -191,7 +191,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 10
+#define MESH_STATE_VERSION 11
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -558,6 +558,15 @@ void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present) {
 
 void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len) {
+    (void)src;
+    (void)opcode;
+    (void)params;
+    (void)len;
+}
+
+void BLE_MESH_HEALTH_STATUS(uint16_t element, uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len) {
+    (void)element;
     (void)src;
     (void)opcode;
     (void)params;
