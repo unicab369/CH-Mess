@@ -191,7 +191,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION 11
+#define MESH_STATE_VERSION 12
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {

@@ -26,7 +26,7 @@
 #define MESH_CONFIG_INVALID_BINDING 0x11
 #define MESH_MODEL_VIRTUAL_SLOTS MESH_TRANSPORT_MAX_LABELS
 #define MESH_MODEL_GROUP_SLOTS 8
-#define MESH_PUBLICATION_MODELS 3
+#define MESH_PUBLICATION_MODELS 4
 #ifndef MESH_HEALTH_MAX_FAULTS
 #define MESH_HEALTH_MAX_FAULTS 5
 #endif
@@ -112,7 +112,8 @@ static struct {
 static int mesh_publication_slot(uint16_t model) {
     return model == MESH_MODEL_ONOFF_SERVER ? 0 :
            model == MESH_MODEL_ONOFF_CLIENT ? 1 :
-           model == MESH_MODEL_HEALTH_SERVER ? 2 : -1;
+           model == MESH_MODEL_HEALTH_SERVER ? 2 :
+           model == MESH_MODEL_HEALTH_CLIENT ? 3 : -1;
 }
 
 static uint32_t mesh_publication_period(uint8_t period) {

@@ -116,7 +116,7 @@ static inline int ble_mesh_onoff_publish(uint16_t element, uint8_t on,
 static void mesh_publications_poll(void) {
     uint32_t now = GET_MILLIS();
     const uint16_t models[] = {MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT,
-                              MESH_MODEL_HEALTH_SERVER};
+                              MESH_MODEL_HEALTH_SERVER, MESH_MODEL_HEALTH_CLIENT};
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++) {
         for (uint8_t j = 0; j < MESH_PUBLICATION_MODELS; j++) {
             mesh_publication *pub = &mesh_models.state.publications[i][j];
@@ -124,7 +124,8 @@ static void mesh_publications_poll(void) {
                 mesh_models.publications[i][j].remaining = 0;
                 continue;
             }
-            uint32_t period = j == 2 ? mesh_health_period(i) : mesh_publication_period(pub->period);
+            uint32_t period = j == 2 ? mesh_health_period(i) :
+                j == 3 ? 0 : mesh_publication_period(pub->period);
             if ((j == 2 && mesh_models.health_server[i].publish_pending) ||
                 (period && (int32_t)(now - mesh_models.publications[i][j].period_at_ms) >= 0)) {
                 mesh_models.publications[i][j].period_at_ms = now + period;

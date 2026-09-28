@@ -115,11 +115,18 @@ static int mesh_health_queue(uint16_t element, uint16_t dst,
                              const uint8_t *label, uint16_t app_idx,
                              uint32_t opcode, const uint8_t *params, size_t len) {
     int index = mesh_element_index(element);
-    if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    if (!mesh_models.ready || mesh_models.reset_pending || index < 0) return 0;
     if (label)
-        return ble_mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
-            app_idx, opcode, params, len, 0);
+        return app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx) &&
+            ble_mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
+                app_idx, opcode, params, len, 0);
+    if (dst == 0) {
+        mesh_publication *pub = &mesh_models.state.publications[index][3];
+        if (!pub->address || pub->app_idx != app_idx) return 0;
+        return mesh_publication_begin((uint8_t)index, MESH_MODEL_HEALTH_CLIENT,
+            opcode, params, len);
+    }
+    if (!app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
     return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl,
         app_idx, opcode, params, len, 0);
 }
@@ -678,9 +685,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint16_t model = p[len - 2] | ((uint16_t)p[len - 1] << 8);
         int index = mesh_element_index(element), slot = mesh_publication_slot(model);
         uint8_t status = index < 0 ? MESH_CONFIG_INVALID_ADDRESS :
-            slot < 0 ? (model == MESH_MODEL_HEALTH_CLIENT ||
-                         (index == 0 && (model == MESH_MODEL_CONFIG_SERVER ||
-                          model == MESH_MODEL_CONFIG_CLIENT)) ?
+            slot < 0 ? (index == 0 && (model == MESH_MODEL_CONFIG_SERVER ||
+                         model == MESH_MODEL_CONFIG_CLIENT) ?
                          MESH_CONFIG_INVALID_PUBLICATION : MESH_CONFIG_INVALID_MODEL) :
                          MESH_CONFIG_SUCCESS;
         mesh_publication pub = {0};

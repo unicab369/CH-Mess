@@ -1,5 +1,4 @@
 // TODO for foundation support:
-// - Health Client: configured publication for requests.
 // - Multiple subnets: store and route using additional NetKeys.
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
@@ -48,7 +47,7 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 11 requires reprovisioning older records.
+credentials. Stored state version 12 requires reprovisioning older records.
 
 `ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
 destination, NetKey index, count log, period log, TTL, and feature-change triggers.
@@ -120,7 +119,10 @@ bound AppKey index. Fault requests also take a Company ID; Test takes a Test ID.
 Clear, Test, and Set take `acknowledged` (1 requests a reply, 0 does not).
 Use the matching `_virtual` helper with a 16-byte Label UUID to send a request
 to a virtual address. Requests can target unicast, group, or virtual addresses.
-Configured Health Client publication is not implemented.
+Set `dst` to 0 to send through the Health Client publication configured with
+`ble_mesh_set_publication()`. The helper AppKey index must match that publication.
+Health Client publication retransmits a request but does not send periodic requests;
+the model configuration Publish Period is ignored for this client model.
 
 `BLE_MESH_HEALTH_STATUS(element, src, opcode, params, len)` receives validated
 replies and published current faults. Fault parameters are Test ID (1 byte),
