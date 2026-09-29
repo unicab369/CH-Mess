@@ -15,6 +15,13 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 static uint8_t sent[32][31];
 static size_t sent_len[32];
 static int sent_count;
+static mesh_transport_control_message control_event;
+static int control_event_count;
+
+static void receive_control_event(const mesh_transport_control_message *message) {
+    control_event = *message;
+    control_event_count++;
+}
 
 int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     assert(sent_count < 32 && len <= sizeof(sent[0]));
@@ -198,6 +205,56 @@ int main(void) {
     assert(ble_mesh_network_init(&a) == 1);
     assert(receive_frame(6, &received) == 0);
     assert(transport_tx.active == 0);
+
+    // Segmented Control messages use 8-byte chunks and can arrive out of order.
+    const uint8_t control_params[17] = {
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20
+    };
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    uint16_t control_seq_zero = (uint16_t)(mesh_network.state.next_seq & 0x1fff);
+    for (uint8_t seg_o = 0; seg_o < 3; seg_o++) {
+        uint8_t lower[12];
+        size_t offset = (size_t)seg_o * MESH_TRANSPORT_CONTROL_SEGMENT_SIZE;
+        size_t count = sizeof(control_params) - offset;
+        if (count > MESH_TRANSPORT_CONTROL_SEGMENT_SIZE)
+            count = MESH_TRANSPORT_CONTROL_SEGMENT_SIZE;
+        lower[0] = 0x80 | 0x02; // Segmented Control, opcode 0x02.
+        lower[1] = (uint8_t)(control_seq_zero >> 6);
+        lower[2] = (uint8_t)((control_seq_zero & 0x3f) << 2);
+        lower[3] = (uint8_t)((seg_o << 5) | 2);
+        memcpy(lower + 4, control_params + offset, count);
+        assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+            mesh_network.state.unicast_address, b.unicast_address, 1, 5,
+            lower, count + 4) == 1);
+    }
+    assert(sent_count == 3);
+    a = mesh_network.state;
+    control_event_count = 0;
+    ble_mesh_transport_set_control_handler(receive_control_event);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(1, &received) == 0);
+    assert(receive_frame(0, &received) == 0);
+    assert(receive_frame(2, &received) == 0);
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(control_event_count == 1);
+    assert(control_event.opcode == 0x02 &&
+           control_event.len == sizeof(control_params));
+    assert(control_event.src == a.unicast_address &&
+           control_event.dst == b.unicast_address);
+    assert(memcmp(control_event.params, control_params,
+                  sizeof(control_params)) == 0);
+    assert(ble_mesh_transport_take_control(&control_event) == 0);
+    ble_mesh_transport_set_control_handler(NULL);
+    assert(sent_count == 4); // The receiver ACKs all three Control segments.
+    b = mesh_network.state;
+    assert(ble_mesh_network_init(&a) == 1);
+    mesh_net_message control_ack;
+    assert(ble_mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
+                                &control_ack) == 1);
+    assert(control_ack.ctl && control_ack.transport_len == 7 &&
+           control_ack.transport[0] == 0 && control_ack.transport[6] == 0x07);
 
     // A virtual destination needs the matching Label UUID as CCM AAD.
     uint8_t label[16] = {1, 2, 3, 4};
