@@ -349,5 +349,55 @@ int main(void) {
     assert(receive_frame(0, &received) == 1);
     assert(received.net_key_index == 0x222 &&
            received.device_key_owner == received.dst);
+
+    // Two segmented messages from different sources can be reassembled at once.
+    uint8_t stream_a[4][31], stream_c[4][31];
+    size_t stream_a_len[4], stream_c_len[4];
+    sent_count = 0;
+    a = node(0x1201);
+    b = node(0x1202);
+    c = node(0x1300);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 4);
+    for (int i = 0; i < 4; i++) {
+        memcpy(stream_a[i], sent[i], sent_len[i]);
+        stream_a_len[i] = sent_len[i];
+    }
+    transport_tx.active = 0;
+    sent_count = 0;
+    assert(ble_mesh_network_init(&c) == 1);
+    assert(ble_mesh_transport_queue(0x1300, 0x1202, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 4);
+    for (int i = 0; i < 4; i++) {
+        memcpy(stream_c[i], sent[i], sent_len[i]);
+        stream_c_len[i] = sent_len[i];
+    }
+    assert(ble_mesh_network_init(&b) == 1);
+    memset(transport_rx, 0, sizeof(transport_rx));
+    for (int i = 0; i < 4; i++) {
+        memcpy(sent[0], stream_a[i], stream_a_len[i]);
+        sent_len[0] = stream_a_len[i];
+        int result_a = receive_frame(0, &received);
+        uint16_t src_a = received.src;
+        uint8_t data_a[sizeof(long_access)];
+        memcpy(data_a, received.data, sizeof(data_a));
+        memcpy(sent[0], stream_c[i], stream_c_len[i]);
+        sent_len[0] = stream_c_len[i];
+        int result_c = receive_frame(0, &received);
+        if (i < 3) assert(result_a == 0 && result_c == 0);
+        else {
+            assert(result_a == 1 && src_a == 0x1201 &&
+                   memcmp(data_a, long_access, sizeof(long_access)) == 0);
+            assert(result_c == 1 && received.src == 0x1300 &&
+                   memcmp(received.data, long_access, sizeof(long_access)) == 0);
+        }
+    }
     return 0;
 }

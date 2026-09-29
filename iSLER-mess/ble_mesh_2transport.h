@@ -15,10 +15,17 @@
 // Outgoing Configuration Server replies use this node's Device Key.
 #define DEVICE_KEY_LOCAL 0xfffe
 #define MESH_TRANSPORT_MAX_LABELS 4
+#ifndef MESH_TRANSPORT_RX_SLOTS
+#define MESH_TRANSPORT_RX_SLOTS 2
+#endif
+#if MESH_TRANSPORT_RX_SLOTS < 1 || MESH_TRANSPORT_RX_SLOTS > 8
+#error MESH_TRANSPORT_RX_SLOTS must be between 1 and 8
+#endif
 
 // TODO for broadly usable Access-message transport:
-// - Improve SAR for concurrent messages, configurable timing, and group retries.
-// - Coordinate replay checks with out-of-order segmented messages in the network layer.
+// - Add concurrent segmented TX contexts.
+// - Add configurable SAR timing and group retransmissions.
+// - Coordinate network replay checks with out-of-order segmented messages.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -82,13 +89,15 @@ static struct {
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
 } transport_tx;
 
-static struct {
+struct transport_rx {
     uint8_t active, complete, ack_pending;
     uint8_t akf, aid, ttl, seg_n, mic_64, last_len;
     uint16_t src, dst, seq_zero, net_idx;
     uint32_t seq_auth, iv_index, received, started_ms, ack_at_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
-} transport_rx;
+};
+
+static struct transport_rx transport_rx[MESH_TRANSPORT_RX_SLOTS];
 
 static uint8_t transport_app_aid(const uint8_t app_key[16]) {
     const uint8_t zero[16] = {0};
@@ -389,58 +398,72 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     }
 
     uint32_t now = GET_MILLIS();
-    if (transport_rx.active &&
-        (transport_rx.src != net->src ||
-        transport_rx.dst != net->dst ||
-        transport_rx.seq_auth != seq_auth ||
-        transport_rx.iv_index != net->iv_index)
-    ) {
-        if (!transport_rx.complete && (uint32_t)(now - transport_rx.started_ms) <
-            MESH_TRANSPORT_RX_TIMEOUT_MS
-        ) return 0;
-        transport_rx.active = 0;
+    struct transport_rx *rx = NULL, *free_rx = NULL, *completed_rx = NULL;
+    uint32_t oldest_complete_age = 0;
+    for (uint8_t i = 0; i < MESH_TRANSPORT_RX_SLOTS; i++) {
+        struct transport_rx *candidate = &transport_rx[i];
+        if (candidate->active &&
+            (uint32_t)(now - candidate->started_ms) >= MESH_TRANSPORT_RX_TIMEOUT_MS) {
+            candidate->active = candidate->ack_pending = 0;
+        }
+        if (candidate->active && candidate->net_idx == net->net_key_index &&
+            candidate->src == net->src &&
+            candidate->dst == net->dst && candidate->seq_auth == seq_auth &&
+            candidate->iv_index == net->iv_index) rx = candidate;
+        if (!candidate->active && !free_rx) free_rx = candidate;
+        if (candidate->active && candidate->complete) {
+            uint32_t age = (uint32_t)(now - candidate->started_ms);
+            if (!completed_rx || age > oldest_complete_age) {
+                completed_rx = candidate;
+                oldest_complete_age = age;
+            }
+        }
     }
-    if (!transport_rx.active) {
-        memset(&transport_rx, 0, sizeof(transport_rx));
-        transport_rx.active = 1;
-        transport_rx.akf = akf;
-        transport_rx.aid = aid;
-        transport_rx.ttl = net->ttl;
-        transport_rx.seg_n = seg_n;
-        transport_rx.mic_64 = mic_64;
-        transport_rx.src = net->src;
-        transport_rx.net_idx = net->net_key_index;
-        transport_rx.dst = net->dst;
-        transport_rx.seq_zero = seq_zero;
-        transport_rx.seq_auth = seq_auth;
-        transport_rx.iv_index = net->iv_index;
-        transport_rx.started_ms = now;
+    if (!rx) {
+        if (!free_rx) free_rx = completed_rx;
+        if (!free_rx) return 0;
+        rx = free_rx;
+        memset(rx, 0, sizeof(*rx));
+        rx->active = 1;
+        rx->akf = akf;
+        rx->aid = aid;
+        rx->ttl = net->ttl;
+        rx->seg_n = seg_n;
+        rx->mic_64 = mic_64;
+        rx->src = net->src;
+        rx->net_idx = net->net_key_index;
+        rx->dst = net->dst;
+        rx->seq_zero = seq_zero;
+        rx->seq_auth = seq_auth;
+        rx->iv_index = net->iv_index;
+        rx->started_ms = now;
     }
-    if (transport_rx.akf != akf || transport_rx.aid != aid ||
-        transport_rx.seg_n != seg_n || transport_rx.mic_64 != mic_64) return 0;
-    if (transport_rx.complete) {
-        transport_rx.ack_pending = mesh_local_element(net->dst);
-        transport_rx.ack_at_ms = now;
+    if (rx->net_idx != net->net_key_index || rx->akf != akf || rx->aid != aid ||
+        rx->seq_zero != seq_zero || rx->seg_n != seg_n || rx->mic_64 != mic_64)
+        return 0;
+    if (rx->complete) {
+        rx->ack_pending = mesh_local_element(net->dst);
+        rx->ack_at_ms = now;
         return 0;
     }
 
     uint32_t bit = (uint32_t)1 << seg_o;
-    if (!(transport_rx.received & bit)) {
-        memcpy(transport_rx.upper + (size_t)seg_o * 12, pdu + 4, segment_len);
-        transport_rx.received |= bit;
-        transport_rx.started_ms = now;
-        if (seg_o == seg_n) transport_rx.last_len = (uint8_t)segment_len;
+    if (!(rx->received & bit)) {
+        memcpy(rx->upper + (size_t)seg_o * 12, pdu + 4, segment_len);
+        rx->received |= bit;
+        rx->started_ms = now;
+        if (seg_o == seg_n) rx->last_len = (uint8_t)segment_len;
     }
-    transport_rx.ack_pending = mesh_local_element(net->dst);
-    transport_rx.ack_at_ms = now + 200;
+    rx->ack_pending = mesh_local_element(net->dst);
+    rx->ack_at_ms = now + 200;
     uint32_t segment_mask = (seg_n == 31) ? UINT32_MAX : ((uint32_t)1 << (seg_n + 1)) - 1;
-    if (transport_rx.received != segment_mask) return 0;
+    if (rx->received != segment_mask) return 0;
 
-    transport_rx.complete = 1;
-    transport_rx.ack_at_ms = now;
-    size_t upper_len = (size_t)seg_n * 12 + transport_rx.last_len;
+    rx->complete = 1;
+    rx->ack_at_ms = now;
+    size_t upper_len = (size_t)seg_n * 12 + rx->last_len;
     int result = transport_decrypt(akf, aid, mic_64, seq_auth, net->iv_index,
-                                   net->net_key_index, net->src, net->dst, transport_rx.upper,
+                                   net->net_key_index, net->src, net->dst, rx->upper,
                                    upper_len, out);
     if (result) out->ttl = net->ttl;
     return result;
@@ -457,17 +480,17 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
     if (result < 0) return -1;
 
     uint32_t now = GET_MILLIS();
-    if (transport_rx.active &&
-        (uint32_t)(now - transport_rx.started_ms) >= MESH_TRANSPORT_RX_TIMEOUT_MS) {
-        transport_rx.active = 0;
-        transport_rx.ack_pending = 0;
-    }
-    // Queue a Segment Acknowledgment for received unicast segments when due.
-    if (transport_rx.active && transport_rx.ack_pending &&
-        mesh_local_element(transport_rx.dst) &&
-        (int32_t)(now - transport_rx.ack_at_ms) >= 0) {
-        uint16_t seq_zero = transport_rx.seq_zero;
-        uint32_t mask = transport_rx.received;
+    // Expire stale reassemblies and service one due Segment Acknowledgment.
+    for (uint8_t i = 0; i < MESH_TRANSPORT_RX_SLOTS; i++) {
+        struct transport_rx *rx = &transport_rx[i];
+        if (rx->active &&
+            (uint32_t)(now - rx->started_ms) >= MESH_TRANSPORT_RX_TIMEOUT_MS) {
+            rx->active = rx->ack_pending = 0;
+        }
+        if (!rx->active || !rx->ack_pending || !mesh_local_element(rx->dst) ||
+            (int32_t)(now - rx->ack_at_ms) < 0) continue;
+        uint16_t seq_zero = rx->seq_zero;
+        uint32_t mask = rx->received;
         uint8_t pdu[7] = {
             0,
             (uint8_t)(seq_zero >> 6),
@@ -475,10 +498,11 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
             (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
             (uint8_t)(mask >> 8), (uint8_t)mask
         };
-        if (!ble_mesh_net_queue(transport_rx.net_idx, transport_rx.dst, transport_rx.src,
-                                1, transport_rx.ttl,
+        if (!ble_mesh_net_queue(rx->net_idx, rx->dst, rx->src,
+                                1, rx->ttl,
                                 pdu, sizeof(pdu))) return -1;
-        transport_rx.ack_pending = 0;
+        rx->ack_pending = 0;
+        break;
     }
 
     if (transport_tx.active) {
