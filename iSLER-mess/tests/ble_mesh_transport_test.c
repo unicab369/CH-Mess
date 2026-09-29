@@ -130,7 +130,41 @@ int main(void) {
     assert(receive_frame(4, &received) == 0);
     assert(transport_tx.active == 0);
 
-    // A partial acknowledgment causes only the missing segment to be resent.
+    // Reordered segments are stored and reassembled; replay protection checks
+    // the completed message using the final segment's SEQ.
+    sent_count = 0;
+    assert(ble_mesh_transport_queue(mesh_network.state.unicast_address, b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
+                                         long_access, sizeof(long_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 4);
+    a = mesh_network.state;
+
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(1, &received) == 0);
+    assert(mesh_network.replay_count == 0);
+    assert(receive_frame(0, &received) == 0);
+    mesh_net_message reordered;
+    assert(ble_mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
+                                &reordered) == 1);
+    uint32_t final_segment_seq = reordered.seq;
+    assert(ble_mesh_transport_receive(&reordered, &received) == 0);
+    assert(mesh_network.replay_count == 0);
+    assert(receive_frame(2, &received) == 1);
+    assert(received.len == sizeof(long_access));
+    assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
+    assert(mesh_network.replay_count == 1 &&
+           mesh_network.replay[0].seq == final_segment_seq);
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(sent_count == 5);
+    b = mesh_network.state;
+
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(receive_frame(4, &received) == 0);
+    assert(transport_tx.active == 0);
+    a = mesh_network.state;
+
+    // Missing segments are reported by a partial ACK and retransmitted.
     sent_count = 0;
     assert(ble_mesh_transport_queue(mesh_network.state.unicast_address, b.unicast_address, 5, APP_KEY_INDEX_NONE, NULL,
                                          long_access, sizeof(long_access), 0) == 1);

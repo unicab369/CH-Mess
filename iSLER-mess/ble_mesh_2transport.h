@@ -26,7 +26,6 @@
 // TODO for broadly usable Access-message transport:
 // - Add concurrent segmented TX contexts.
 // - Add configurable SAR timing and group retransmissions.
-// - Coordinate network replay checks with out-of-order segmented messages.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -93,7 +92,7 @@ static struct {
 struct transport_rx {
     uint8_t active, ack_pending, ttl, transport_len;
     uint16_t src, dst, net_idx;
-    uint32_t seq_auth, iv_index, updated_ms, ack_at_ms;
+    uint32_t seq_auth, seq, iv_index, updated_ms, ack_at_ms;
     uint8_t transport[16];
 };
 
@@ -503,6 +502,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         free_rx->dst = net->dst;
         free_rx->net_idx = net->net_key_index;
         free_rx->seq_auth = seq_auth;
+        free_rx->seq = net->seq;
         free_rx->iv_index = net->iv_index;
         free_rx->transport_len = (uint8_t)net->transport_len;
         memcpy(free_rx->transport, pdu, net->transport_len);
@@ -515,6 +515,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     if (mask != segment_mask) return 0;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
     uint8_t last_len = 0;
+    uint32_t last_seq = 0;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         const struct transport_rx *rx = &transport_rx[i];
         if (!transport_rx_matches(rx, net->net_key_index, net->src, net->dst,
@@ -524,7 +525,10 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         size_t part_len = rx->transport_len - 4;
         memcpy(upper + (size_t)part * MESH_TRANSPORT_SEGMENT_SIZE,
                rx->transport + 4, part_len);
-        if (part == seg_n) last_len = (uint8_t)part_len;
+        if (part == seg_n) {
+            last_len = (uint8_t)part_len;
+            last_seq = rx->seq;
+        }
     }
     transport_rx_ack(net->net_key_index, net->src, net->dst, seq_auth,
         net->iv_index, mesh_local_element(net->dst), now, now);
@@ -532,6 +536,9 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     int result = transport_decrypt(akf, aid, mic_64, seq_auth, net->iv_index,
                                    net->net_key_index, net->src, net->dst, upper,
                                    upper_len, out);
+    if (result && !ble_mesh_net_replay_update(net->src, net->net_key_index,
+                                               net->iv_index, last_seq))
+        return 0;
     if (result) out->ttl = net->ttl;
     return result;
 }

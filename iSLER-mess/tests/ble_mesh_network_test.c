@@ -380,7 +380,8 @@ int main(void) {
     memcpy(new_pdu, sent + 2, sizeof(new_pdu));
     assert(ble_mesh_network_init(&phase1) == 1);
     assert(ble_mesh_net_receive(new_pdu, sizeof(new_pdu), &message) == 1);
-    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 0);
+    // Segmented-packet replay is decided after transport reassembly.
+    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
     assert(ble_mesh_network_init(&new_sender) == 1);
     assert(ble_mesh_key_refresh_transition(state.net_key_index, 3) == 1);

@@ -180,6 +180,31 @@ static struct {
     uint8_t ready;
 } mesh_network;
 
+// Update replay protection only after a segmented message is reassembled.
+static inline int ble_mesh_net_replay_update(uint16_t src, uint16_t net_idx,
+                                              uint32_t iv, uint32_t seq) {
+    uint8_t slot = 0;
+    while (slot < mesh_network.replay_count &&
+           (mesh_network.replay[slot].src != src ||
+            mesh_network.replay[slot].net_key_index != net_idx))
+        slot++;
+
+    if (slot == mesh_network.replay_count) {
+        if (slot == MESH_NETWORK_REPLAY_SLOTS) return 0;
+        mesh_network.replay[slot].src = src;
+        mesh_network.replay[slot].net_key_index = net_idx;
+        mesh_network.replay_count++;
+    } else if (mesh_network.replay[slot].iv_index > iv ||
+               (mesh_network.replay[slot].iv_index == iv &&
+                mesh_network.replay[slot].seq >= seq)) {
+        return 0;
+    }
+
+    mesh_network.replay[slot].iv_index = iv;
+    mesh_network.replay[slot].seq = seq;
+    return 1;
+}
+
 static inline int mesh_local_element(uint16_t address) {
     uint16_t base = mesh_network.state.unicast_address;
     uint8_t count = mesh_network.state.element_count;
@@ -724,10 +749,10 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 }
 
 
-// Check a raw Network PDU's length and IVI/NID, deobfuscate its header, then
-// verify its addresses, AES-CCM NetMIC, and replay sequence before delivering
-// lower-transport bytes. Returns 1 if accepted, 0 if ignored, or -1 for bad
-// arguments. A full replay list rejects new sources until reinitialized.
+// Check a raw Network PDU's length, IVI/NID, addresses, and AES-CCM NetMIC.
+// Unsegmented messages get replay-checked here; segmented messages defer the
+// replay update until lower-transport reassembly completes. Returns 1 if
+// accepted, 0 if ignored, or -1 for bad arguments.
 static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
                                         mesh_net_message *message) {
     if (!pdu || !message) return -1;
@@ -791,26 +816,11 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     uint16_t dst = (uint16_t)((plain[0] << 8) | plain[1]);
     if (dst == 0) return 0;
 
-    uint8_t slot = 0;
-    while (slot < mesh_network.replay_count &&
-           (mesh_network.replay[slot].src != src ||
-            mesh_network.replay[slot].net_key_index != net_idx)
-    ) slot++;
-
-    if (slot == mesh_network.replay_count) {
-        if (slot == MESH_NETWORK_REPLAY_SLOTS) return 0;
-        mesh_network.replay[slot].src = src;
-        mesh_network.replay[slot].net_key_index = net_idx;
-        mesh_network.replay_count++;
-    }
-    else if (
-        mesh_network.replay[slot].iv_index > iv ||
-        (mesh_network.replay[slot].iv_index == iv &&
-        mesh_network.replay[slot].seq >= seq)
-    ) return 0;
-
-    mesh_network.replay[slot].iv_index = iv;
-    mesh_network.replay[slot].seq = seq;
+    // A segmented message is checked when reassembly completes. Checking its
+    // individual segment SEQs here would reject valid segments arriving late.
+    uint8_t segmented = transport_len > 0 && (plain[2] & 0x80);
+    if (!segmented && !ble_mesh_net_replay_update(src, net_idx, iv, seq))
+        return 0;
     message->ctl = ctl;
     message->ttl = clear[1] & 0x7f;
     message->seq = seq;
