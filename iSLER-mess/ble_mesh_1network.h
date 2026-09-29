@@ -17,6 +17,18 @@
 // relying on receive-side replay protection across power cycles.
 #define MESH_NETWORK_REPLAY_SLOTS 16
 #define MESH_MAX_APP_KEYS 4
+#ifndef MESH_MAX_SUBNETS
+#define MESH_MAX_SUBNETS 4
+#endif
+#if MESH_MAX_SUBNETS < 2 || MESH_MAX_SUBNETS > 16
+#error MESH_MAX_SUBNETS must be between 2 and 16
+#endif
+
+typedef struct {
+    uint16_t index;
+    uint8_t key[16], new_key[16];
+    uint8_t used, has_new_key, key_refresh_phase, phase2_provisioned;
+} mesh_additional_subnet;
 
 // The application loads this state from persistent storage after provisioning.
 // AppKeys are absent until a Configuration Client installs them.
@@ -26,6 +38,7 @@ typedef struct {
     uint16_t index;
     uint8_t used;
     uint8_t has_new_key;
+    uint16_t net_idx;
 } mesh_app_key;
 
 typedef struct {
@@ -52,7 +65,23 @@ typedef struct {
     uint8_t element_count;
     uint8_t beacon, network_transmit;
     mesh_heartbeat_publication heartbeat;
+    mesh_additional_subnet additional_subnets[MESH_MAX_SUBNETS - 1];
 } mesh_net_state;
+
+static int mesh_subnet_slot(const mesh_net_state *state, uint16_t index) {
+    if (state->net_key_index == index) return 0;
+    for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
+        if (state->additional_subnets[i].used &&
+            state->additional_subnets[i].index == index) return (int)i + 1;
+    return -1;
+}
+
+static uint16_t mesh_app_net_idx(const mesh_net_state *state,
+                                 const mesh_app_key *app) {
+    // A zero-initialized legacy AppKey belongs to the provisioned subnet.
+    return app->net_idx == 0 && mesh_subnet_slot(state, 0) < 0 ?
+        state->net_key_index : app->net_idx;
+}
 
 
 static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
@@ -63,10 +92,26 @@ static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
     return -1;
 }
 
-static void mesh_promote_app_keys(mesh_net_state *state) {
+static int mesh_subnet_key(const mesh_net_state *state, uint16_t index,
+                           uint8_t key[16], uint8_t use_new) {
+    int slot = mesh_subnet_slot(state, index);
+    if (slot < 0) return 0;
+    if (slot == 0) {
+        if (use_new && !state->has_new_key) return 0;
+        memcpy(key, use_new ? state->new_net_key : state->net_key, 16);
+    } else {
+        const mesh_additional_subnet *sub = &state->additional_subnets[slot - 1];
+        if (use_new && !sub->has_new_key) return 0;
+        memcpy(key, use_new ? sub->new_key : sub->key, 16);
+    }
+    return 1;
+}
+
+static void mesh_promote_app_keys(mesh_net_state *state, uint16_t net_idx) {
     for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
         mesh_app_key *app = &state->app_keys[i];
-        if (!app->used || !app->has_new_key) continue;
+        if (!app->used || !app->has_new_key ||
+            mesh_app_net_idx(state, app) != net_idx) continue;
         memcpy(app->key, app->new_key, 16);
         memset(app->new_key, 0, 16);
         app->has_new_key = 0;
@@ -80,6 +125,7 @@ typedef struct {
     uint32_t iv_index;
     uint16_t src;
     uint16_t dst;
+    uint16_t net_key_index;
     uint8_t transport_len;
     uint8_t transport[16];
 } mesh_net_message;
@@ -112,8 +158,11 @@ static struct {
     mesh_net_state state;
     mesh_network_credentials old_key;
     mesh_network_credentials new_key;
+    mesh_network_credentials additional_old[MESH_MAX_SUBNETS - 1];
+    mesh_network_credentials additional_new[MESH_MAX_SUBNETS - 1];
     struct {
         uint16_t src;
+        uint16_t net_key_index;
         uint32_t iv_index;
         uint32_t seq;
     } replay[MESH_NETWORK_REPLAY_SLOTS];
@@ -127,6 +176,7 @@ static struct {
         uint8_t min_hops, max_hops, subscribed;
     } heartbeat;
     uint8_t replay_count;
+    uint16_t reply_net_idx;
     uint8_t ready;
 } mesh_network;
 
@@ -165,6 +215,27 @@ static void mesh_derive_keys(const uint8_t net_key[16],
     aes_cmac(t, (const uint8_t *)"id128\x01", 6, out->beacon_key);
 }
 
+static const mesh_network_credentials *mesh_runtime_netkey(
+    const mesh_net_state *state, uint16_t index, uint8_t use_new) {
+    int slot = mesh_subnet_slot(state, index);
+    if (slot < 0) return NULL;
+    if (slot == 0) {
+        if (use_new && !state->has_new_key) return NULL;
+        return use_new ? &mesh_network.new_key : &mesh_network.old_key;
+    }
+    const mesh_additional_subnet *sub = &state->additional_subnets[slot - 1];
+    if (use_new && !sub->has_new_key) return NULL;
+    return use_new ? &mesh_network.additional_new[slot - 1] :
+                     &mesh_network.additional_old[slot - 1];
+}
+
+static uint8_t mesh_subnet_phase(const mesh_net_state *state, uint16_t index) {
+    int slot = mesh_subnet_slot(state, index);
+    return slot == 0 ? (state->phase2_provisioned ? 2 : state->key_refresh_phase) :
+        slot > 0 ? (state->additional_subnets[slot - 1].phase2_provisioned ? 2 :
+                    state->additional_subnets[slot - 1].key_refresh_phase) : 0xff;
+}
+
 // Call after loading provisioned state. Reinitialize after an IV Update.
 static inline int ble_mesh_network_init(const mesh_net_state *state) {
     if (!state || state->unicast_address == 0 ||
@@ -179,7 +250,7 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         state->heartbeat.ttl > 0x7f || state->heartbeat.features ||
         (state->heartbeat.dst >= 0x8000 && state->heartbeat.dst < 0xc000) ||
         (state->heartbeat.dst >= 0xff00 && state->heartbeat.dst < 0xfffc) ||
-        (state->heartbeat.dst && state->heartbeat.net_idx != state->net_key_index) ||
+        (state->heartbeat.dst && mesh_subnet_slot(state, state->heartbeat.net_idx) < 0) ||
         state->iv_update > 1 ||
         state->iv_skip_min_time > 1 ||
         (state->iv_update && state->iv_index == 0) ||
@@ -196,8 +267,11 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         const mesh_app_key *app = &state->app_keys[i];
         if (app->used > 1 || app->has_new_key > 1 ||
             (app->used && app->index > 0x0fff) ||
+            (app->used && mesh_subnet_slot(state,
+                mesh_app_net_idx(state, app)) < 0) ||
             (!app->used && app->has_new_key) ||
-            (app->has_new_key && state->key_refresh_phase == 0)) return 0;
+            (app->has_new_key && mesh_subnet_phase(state,
+                mesh_app_net_idx(state, app)) == 0)) return 0;
         if (!app->used) continue;
         for (uint8_t j = 0; j < i; j++) {
             if (state->app_keys[j].used &&
@@ -205,11 +279,46 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
         }
     }
 
+    for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++) {
+        const mesh_additional_subnet *sub = &state->additional_subnets[i];
+        if (sub->used > 1 || sub->has_new_key > 1 ||
+            sub->key_refresh_phase > 2 || sub->phase2_provisioned > 1 ||
+            (sub->used && sub->index > 0x0fff) ||
+            (sub->used && sub->index == state->net_key_index) ||
+            (sub->used && sub->phase2_provisioned &&
+             (sub->has_new_key || sub->key_refresh_phase != 0)) ||
+            (sub->used && sub->key_refresh_phase != 0 && !sub->has_new_key) ||
+            (sub->used && sub->key_refresh_phase == 0 && sub->has_new_key) ||
+            (!sub->used && (sub->has_new_key || sub->key_refresh_phase ||
+                            sub->phase2_provisioned))) return 0;
+        if (!sub->used) continue;
+        for (uint8_t j = 0; j < i; j++)
+            if (state->additional_subnets[j].used &&
+                state->additional_subnets[j].index == sub->index) return 0;
+    }
+
     memcpy(&mesh_network.state, state, sizeof(*state));
+    mesh_network.reply_net_idx = state->net_key_index;
+    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
+        mesh_app_key *app = &mesh_network.state.app_keys[i];
+        if (app->used && app->net_idx == 0 && mesh_subnet_slot(state, 0) < 0)
+            app->net_idx = state->net_key_index;
+    }
     mesh_derive_keys(state->net_key, &mesh_network.old_key);
 
     if (state->has_new_key) {
         mesh_derive_keys(state->new_net_key, &mesh_network.new_key);
+    }
+    for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++) {
+        const mesh_additional_subnet *sub = &state->additional_subnets[i];
+        memset(&mesh_network.additional_old[i], 0,
+               sizeof(mesh_network.additional_old[i]));
+        memset(&mesh_network.additional_new[i], 0,
+               sizeof(mesh_network.additional_new[i]));
+        if (!sub->used) continue;
+        mesh_derive_keys(sub->key, &mesh_network.additional_old[i]);
+        if (sub->has_new_key)
+            mesh_derive_keys(sub->new_key, &mesh_network.additional_new[i]);
     }
 
     memset(&mesh_network.beacon, 0, sizeof(mesh_network.beacon));
@@ -241,72 +350,112 @@ static int mesh_commit(const mesh_net_state *next) {
         mesh_derive_keys(next->new_net_key, &mesh_network.new_key);
     else
         memset(&mesh_network.new_key, 0, sizeof(mesh_network.new_key));
+    for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++) {
+        const mesh_additional_subnet *sub = &next->additional_subnets[i];
+        memset(&mesh_network.additional_old[i], 0, sizeof(mesh_network.additional_old[i]));
+        memset(&mesh_network.additional_new[i], 0, sizeof(mesh_network.additional_new[i]));
+        if (!sub->used) continue;
+        mesh_derive_keys(sub->key, &mesh_network.additional_old[i]);
+        if (sub->has_new_key) mesh_derive_keys(sub->new_key, &mesh_network.additional_new[i]);
+    }
     return 1;
 }
 
-// Stage the replacement NetKey when Config NetKey Update succeeds.
-static inline int ble_mesh_stage_net_key(const uint8_t new_net_key[16]) {
+// Stage or rotate a NetKey by its subnet index.
+static inline int ble_mesh_stage_net_key(uint16_t net_idx,
+                                         const uint8_t new_net_key[16]) {
     if (!mesh_network.ready || !new_net_key) return 0;
-    if (mesh_network.state.key_refresh_phase == 1 &&
-        memcmp(mesh_network.state.new_net_key, new_net_key, 16) == 0) return 1;
-    if (mesh_network.state.key_refresh_phase != 0 ||
-        mesh_network.state.phase2_provisioned ||
-        memcmp(mesh_network.state.net_key, new_net_key, 16) == 0) return 0;
-
+    int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
+    if (slot < 0) return 0;
+    if (slot == 0) {
+        if (mesh_network.state.key_refresh_phase == 1 &&
+            memcmp(mesh_network.state.new_net_key, new_net_key, 16) == 0) return 1;
+        if (mesh_network.state.key_refresh_phase != 0 ||
+            mesh_network.state.phase2_provisioned ||
+            memcmp(mesh_network.state.net_key, new_net_key, 16) == 0) return 0;
+        mesh_net_state next = mesh_network.state;
+        memcpy(next.new_net_key, new_net_key, 16);
+        next.has_new_key = 1;
+        next.key_refresh_phase = 1;
+        return mesh_commit(&next);
+    }
+    mesh_additional_subnet *sub = &mesh_network.state.additional_subnets[slot - 1];
+    if (sub->key_refresh_phase == 1 &&
+        memcmp(sub->new_key, new_net_key, 16) == 0) return 1;
+    if (sub->key_refresh_phase != 0 || sub->phase2_provisioned ||
+        memcmp(sub->key, new_net_key, 16) == 0) return 0;
     mesh_net_state next = mesh_network.state;
-    memcpy(next.new_net_key, new_net_key, 16);
-    next.has_new_key = 1;
-    next.key_refresh_phase = 1;
+    memcpy(next.additional_subnets[slot - 1].new_key, new_net_key, 16);
+    next.additional_subnets[slot - 1].has_new_key = 1;
+    next.additional_subnets[slot - 1].key_refresh_phase = 1;
     return mesh_commit(&next);
 }
 
-// Config AppKey Update can stage one AppKey bound to this NetKey in Phase 1.
-static inline int ble_mesh_stage_app_key(uint16_t index,
-                                         const uint8_t new_app_key[16]) {
+// Config AppKey Update can stage a key only on its parent subnet in Phase 1.
+static inline int ble_mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
+                                              const uint8_t new_app_key[16]) {
     if (!mesh_network.ready || !new_app_key ||
-        mesh_network.state.key_refresh_phase != 1) return 0;
+        mesh_subnet_phase(&mesh_network.state, net_idx) != 1) return 0;
     int slot = mesh_app_key_slot(&mesh_network.state, index);
     if (slot < 0) return 0;
     const mesh_app_key *app = &mesh_network.state.app_keys[slot];
-    if (app->has_new_key &&
-        memcmp(app->new_key, new_app_key, 16) == 0)
-        return 1;
+    if (mesh_app_net_idx(&mesh_network.state, app) != net_idx) return 0;
+    if (app->has_new_key && memcmp(app->new_key, new_app_key, 16) == 0) return 1;
     if (app->has_new_key || memcmp(app->key, new_app_key, 16) == 0) return 0;
-
     mesh_net_state next = mesh_network.state;
     memcpy(next.app_keys[slot].new_key, new_app_key, 16);
     next.app_keys[slot].has_new_key = 1;
     return mesh_commit(&next);
 }
 
+static inline int ble_mesh_stage_app_key(uint16_t index,
+                                         const uint8_t new_app_key[16]) {
+    int slot = mesh_app_key_slot(&mesh_network.state, index);
+    if (slot < 0) return 0;
+    return ble_mesh_stage_app_key_for(
+        mesh_app_net_idx(&mesh_network.state, &mesh_network.state.app_keys[slot]),
+        index, new_app_key);
+}
+
 // Transition 2 selects new keys for TX; transition 3 revokes old keys.
-static inline int ble_mesh_key_refresh_transition(uint8_t transition) {
+static inline int ble_mesh_key_refresh_transition(uint16_t net_idx,
+                                                   uint8_t transition) {
     if (!mesh_network.ready) return 0;
-    // A node provisioned during Phase 2 already sends with its only (new) key.
-    if (transition == 2 && mesh_network.state.phase2_provisioned) return 1;
-    if (transition == 3 && !mesh_network.state.has_new_key) {
-        if (!mesh_network.state.phase2_provisioned) return 1;
+    int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
+    if (slot < 0) return 0;
+    uint8_t phase = mesh_subnet_phase(&mesh_network.state, net_idx);
+    uint8_t has_new = slot == 0 ? mesh_network.state.has_new_key :
+        mesh_network.state.additional_subnets[slot - 1].has_new_key;
+    uint8_t phase2 = slot == 0 ? mesh_network.state.phase2_provisioned :
+        mesh_network.state.additional_subnets[slot - 1].phase2_provisioned;
+    if (transition == 2 && phase2) return 1;
+    if (transition == 3 && !has_new) {
+        if (!phase2) return 1;
         mesh_net_state next = mesh_network.state;
-        next.phase2_provisioned = 0;
+        if (slot == 0) next.phase2_provisioned = 0;
+        else next.additional_subnets[slot - 1].phase2_provisioned = 0;
         return mesh_commit(&next);
     }
-    if (!mesh_network.state.has_new_key) return 0;
-
+    if (!has_new) return 0;
     mesh_net_state next = mesh_network.state;
     if (transition == 2) {
-        if (next.key_refresh_phase != 1 && next.key_refresh_phase != 2)
-            return 0;
-        if (next.key_refresh_phase == 2) return 1;
-        next.key_refresh_phase = 2;
-    }
-    else if (transition == 3) {
-        memcpy(next.net_key, next.new_net_key, 16);
-        memset(next.new_net_key, 0, 16);
-        next.has_new_key = 0;
-        next.key_refresh_phase = 0;
-        mesh_promote_app_keys(&next);
+        if (phase != 1 && phase != 2) return 0;
+        if (phase == 2) return 1;
+        if (slot == 0) next.key_refresh_phase = 2;
+        else next.additional_subnets[slot - 1].key_refresh_phase = 2;
+    } else if (transition == 3) {
+        if (slot == 0) {
+            memcpy(next.net_key, next.new_net_key, 16);
+            memset(next.new_net_key, 0, 16);
+            next.has_new_key = next.key_refresh_phase = 0;
+        } else {
+            mesh_additional_subnet *sub = &next.additional_subnets[slot - 1];
+            memcpy(sub->key, sub->new_key, 16);
+            memset(sub->new_key, 0, 16);
+            sub->has_new_key = sub->key_refresh_phase = 0;
+        }
+        mesh_promote_app_keys(&next, net_idx);
     } else return 0;
-
     return mesh_commit(&next);
 }
 
@@ -364,37 +513,46 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 }
 
 
-// Beacon AD: length, type, beacon type, flags, Network ID, IV Index, CMAC[0..7].
+// Queue one authenticated Secure Network Beacon for each installed subnet.
 static inline int ble_mesh_net_beacon_queue(void) {
     if (!mesh_network.ready || !mesh_network.state.beacon) return 0;
-
-    uint8_t ad[24], mac[16];
     const mesh_net_state *state = &mesh_network.state;
-    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
-                                    &mesh_network.new_key : &mesh_network.old_key;
-    ad[0] = 23;
-    ad[1] = MESH_NETWORK_BEACON_AD_TYPE;
-    ad[2] = 0x01;
-    ad[3] = (state->key_refresh_phase == 2 ||
-             state->phase2_provisioned ? 1 : 0) | (state->iv_update ? 2 : 0);
-
-    uint32_t iv = state->iv_index;
-    memcpy(ad + 4, key->network_id, 8);
-    ad[12] = (uint8_t)(iv >> 24);
-    ad[13] = (uint8_t)(iv >> 16);
-    ad[14] = (uint8_t)(iv >> 8);
-    ad[15] = (uint8_t)iv;
-
-    aes_cmac(key->beacon_key, ad + 3, 13, mac);
-    memcpy(ad + 16, mac, 8);
-    if (BLE_MESH_QUEUE_TX(ad, sizeof(ad)) != 0) return 0;
-    mesh_network.beacon.last_sent_ms = GET_MILLIS();
-    return 1;
+    uint8_t sent = 0;
+    for (uint8_t i = 0; i < MESH_MAX_SUBNETS; i++) {
+        uint16_t net_idx;
+        uint8_t phase, phase2;
+        if (!i) {
+            net_idx = state->net_key_index;
+            phase = state->key_refresh_phase;
+            phase2 = state->phase2_provisioned;
+        } else {
+            const mesh_additional_subnet *sub = &state->additional_subnets[i - 1];
+            if (!sub->used) continue;
+            net_idx = sub->index;
+            phase = sub->key_refresh_phase;
+            phase2 = sub->phase2_provisioned;
+        }
+        const mesh_network_credentials *key = mesh_runtime_netkey(
+            state, net_idx, phase == 2);
+        if (!key) continue;
+        uint8_t ad[24], mac[16];
+        ad[0] = 23; ad[1] = MESH_NETWORK_BEACON_AD_TYPE; ad[2] = 0x01;
+        ad[3] = (phase == 2 || phase2 ? 1 : 0) | (state->iv_update ? 2 : 0);
+        uint32_t iv = state->iv_index;
+        memcpy(ad + 4, key->network_id, 8);
+        ad[12] = (uint8_t)(iv >> 24); ad[13] = (uint8_t)(iv >> 16);
+        ad[14] = (uint8_t)(iv >> 8); ad[15] = (uint8_t)iv;
+        aes_cmac(key->beacon_key, ad + 3, 13, mac);
+        memcpy(ad + 16, mac, 8);
+        if (BLE_MESH_QUEUE_TX(ad, sizeof(ad)) == 0) sent++;
+    }
+    if (sent) mesh_network.beacon.last_sent_ms = GET_MILLIS();
+    return sent != 0;
 }
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // Reserve the next sequence number before a transmission is queued.
-static inline int ble_mesh_net_queue(uint16_t src, uint16_t dst,
+static inline int ble_mesh_net_queue(uint16_t net_idx, uint16_t src, uint16_t dst,
                                           uint8_t ctl, uint8_t ttl,
                                           const uint8_t *transport, size_t len) {
     mesh_net_state *state = &mesh_network.state;
@@ -409,8 +567,13 @@ static inline int ble_mesh_net_queue(uint16_t src, uint16_t dst,
     uint32_t seq = state->next_seq;
     uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
     size_t mic_len = ctl ? 8u : 4u;
-    const mesh_network_credentials *key = state->key_refresh_phase == 2 ?
-                                &mesh_network.new_key : &mesh_network.old_key;
+    int subnet_slot = mesh_subnet_slot(state, net_idx);
+    uint8_t use_new_key = subnet_slot == 0 ? state->key_refresh_phase == 2 :
+        subnet_slot > 0 &&
+        state->additional_subnets[subnet_slot - 1].key_refresh_phase == 2;
+    const mesh_network_credentials *key = mesh_runtime_netkey(
+        state, net_idx, use_new_key);
+    if (!key) return 0;
 
     ad[0] = (uint8_t)(1 + 7 + 2 + len + mic_len);
     ad[1] = MESH_NETWORK_AD_TYPE;
@@ -460,18 +623,31 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 
     const mesh_network_credentials *key = NULL;
     uint8_t used_new = 0;
+    uint16_t net_idx = 0;
 
-    for (uint8_t i = 0; i < 2; i++) {
-        if (i && !mesh_network.state.has_new_key) break;
-        if (!i && mesh_network.state.key_refresh_phase == 2) continue;
-
-        const mesh_network_credentials *candidate = i ?
-            &mesh_network.new_key : &mesh_network.old_key;
-        if (memcmp(ad + 4, candidate->network_id, 8) != 0) continue;
-        uint8_t mac[16], diff = 0;
-        aes_cmac(candidate->beacon_key, ad + 3, 13, mac);
-        for (uint8_t j = 0; j < 8; j++) diff |= mac[j] ^ ad[16 + j];
-        if (diff == 0) { key = candidate; used_new = i; break; }
+    for (uint8_t subnet = 0; subnet < MESH_MAX_SUBNETS && !key; subnet++) {
+        uint16_t candidate_idx;
+        uint8_t phase;
+        if (!subnet) {
+            candidate_idx = mesh_network.state.net_key_index;
+            phase = mesh_network.state.key_refresh_phase;
+        } else {
+            const mesh_additional_subnet *sub =
+                &mesh_network.state.additional_subnets[subnet - 1];
+            if (!sub->used) continue;
+            candidate_idx = sub->index;
+            phase = sub->key_refresh_phase;
+        }
+        for (uint8_t version = 0; version < 2; version++) {
+            if (!version && phase == 2) continue;
+            const mesh_network_credentials *candidate =
+                mesh_runtime_netkey(&mesh_network.state, candidate_idx, version);
+            if (!candidate || memcmp(ad + 4, candidate->network_id, 8)) continue;
+            uint8_t mac[16], diff = 0;
+            aes_cmac(candidate->beacon_key, ad + 3, 13, mac);
+            for (uint8_t j = 0; j < 8; j++) diff |= mac[j] ^ ad[16 + j];
+            if (!diff) { key = candidate; used_new = version; net_idx = candidate_idx; break; }
+        }
     }
     if (!key) return 0;
     mesh_beacon_observations(GET_MILLIS());
@@ -479,25 +655,36 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     if (*observed < 59) (*observed)++;
 
     mesh_net_state next = mesh_network.state;
+    int subnet_slot = mesh_subnet_slot(&next, net_idx);
+    if (subnet_slot < 0) return 0;
+    uint8_t phase = mesh_subnet_phase(&next, net_idx);
+    uint8_t phase2 = subnet_slot == 0 ? next.phase2_provisioned :
+        next.additional_subnets[subnet_slot - 1].phase2_provisioned;
     if (used_new) {
         if (ad[3] & 1u) {
-            if (next.key_refresh_phase == 1) {
-                next.key_refresh_phase = 2;
+            if (phase == 1) {
+                if (subnet_slot == 0) next.key_refresh_phase = 2;
+                else next.additional_subnets[subnet_slot - 1].key_refresh_phase = 2;
             }
+        } else if (phase == 1 || phase == 2) {
+            if (subnet_slot == 0) {
+                memcpy(next.net_key, next.new_net_key, 16);
+                memset(next.new_net_key, 0, 16);
+                next.has_new_key = next.key_refresh_phase = 0;
+            } else {
+                mesh_additional_subnet *sub = &next.additional_subnets[subnet_slot - 1];
+                memcpy(sub->key, sub->new_key, 16);
+                memset(sub->new_key, 0, 16);
+                sub->has_new_key = sub->key_refresh_phase = 0;
+            }
+            mesh_promote_app_keys(&next, net_idx);
         }
-        else if (next.key_refresh_phase == 1 || next.key_refresh_phase == 2) {
-            memcpy(next.net_key, next.new_net_key, 16);
-            memset(next.new_net_key, 0, 16);
-            next.has_new_key = 0;
-            next.key_refresh_phase = 0;
-
-            mesh_promote_app_keys(&next);
+    } else if (phase2) {
+        if (!(ad[3] & 1u)) {
+            if (subnet_slot == 0) next.phase2_provisioned = 0;
+            else next.additional_subnets[subnet_slot - 1].phase2_provisioned = 0;
         }
-    }
-    else if (next.phase2_provisioned) {
-        if (!(ad[3] & 1u)) next.phase2_provisioned = 0;
-    }
-    else if (ad[3] & 1u) return 0;
+    } else if (ad[3] & 1u) return 0;
 
     uint64_t now;
     uint32_t observed_iv = ((uint32_t)ad[12] << 24) |
@@ -560,11 +747,19 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     uint32_t seq = 0;
     uint8_t authenticated = 0;
 
-    for (uint8_t i = 0; i < 2; i++) {
-        if (i && !mesh_network.state.has_new_key) break;
-        const mesh_network_credentials *key = i ? &mesh_network.new_key
-                                                : &mesh_network.old_key;
-        if ((pdu[0] & 0x7f) != key->nid) continue;
+    uint16_t net_idx = 0;
+    for (uint8_t subnet = 0; subnet < MESH_MAX_SUBNETS && !authenticated; subnet++) {
+        uint16_t candidate_idx;
+        if (!subnet) candidate_idx = mesh_network.state.net_key_index;
+        else {
+            const mesh_additional_subnet *sub = &mesh_network.state.additional_subnets[subnet - 1];
+            if (!sub->used) continue;
+            candidate_idx = sub->index;
+        }
+        for (uint8_t version = 0; version < 2; version++) {
+            const mesh_network_credentials *key = mesh_runtime_netkey(
+                &mesh_network.state, candidate_idx, version);
+            if (!key || (pdu[0] & 0x7f) != key->nid) continue;
 
         memcpy(clear, pdu, len);
         mesh_obfuscate(key, clear, iv);
@@ -587,7 +782,9 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
                              clear + 9 + transport_len, mic_len, plain) == CCM_OK
         ) {
             authenticated = 1;
+            net_idx = candidate_idx;
             break;
+        }
         }
     }
     if (!authenticated) return 0;
@@ -596,12 +793,14 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
     uint8_t slot = 0;
     while (slot < mesh_network.replay_count &&
-           mesh_network.replay[slot].src != src
+           (mesh_network.replay[slot].src != src ||
+            mesh_network.replay[slot].net_key_index != net_idx)
     ) slot++;
 
     if (slot == mesh_network.replay_count) {
         if (slot == MESH_NETWORK_REPLAY_SLOTS) return 0;
         mesh_network.replay[slot].src = src;
+        mesh_network.replay[slot].net_key_index = net_idx;
         mesh_network.replay_count++;
     }
     else if (
@@ -618,6 +817,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     message->iv_index = iv;
     message->src = src;
     message->dst = dst;
+    message->net_key_index = net_idx;
     message->transport_len = (uint8_t)transport_len;
     memcpy(message->transport, plain + 2, transport_len);
     // Count subscribed Heartbeats and track hops after authentication and replay checks.
@@ -691,7 +891,7 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
         mesh_network.heartbeat.remaining &&
         (int32_t)(millis - mesh_network.heartbeat.publish_at_ms) >= 0) {
         uint8_t control[] = {0x0a, pub->ttl, 0, 0}; // No optional features are enabled.
-        if (ble_mesh_net_queue(mesh_network.state.unicast_address, pub->dst, 1,
+        if (ble_mesh_net_queue(pub->net_idx, mesh_network.state.unicast_address, pub->dst, 1,
                                pub->ttl, control, sizeof(control))) {
             if (mesh_network.heartbeat.remaining != 0xffff) mesh_network.heartbeat.remaining--;
             mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;

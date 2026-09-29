@@ -11,6 +11,7 @@ typedef struct {
     uint16_t dst;
     uint16_t app_key_index; // APP_KEY_INDEX_NONE means the Device Key was used
     uint16_t device_key_owner;
+    uint16_t net_key_index;
     uint8_t ttl;
     uint8_t has_label;
     uint8_t label[16];
@@ -23,11 +24,13 @@ typedef struct {
 // Use APP_KEY_INDEX_NONE for remote Device Key requests, DEVICE_KEY_LOCAL for replies.
 // Returns 1 if accepted by transport, or 0 for invalid input/queue failure.
 // Set mic_64 to 1 for a segmented message with an 8-byte TransMIC.
-static inline int ble_mesh_access_queue(uint16_t src, uint16_t dst,
-                                       uint8_t ttl,
-                                       uint16_t app_key_index, uint32_t opcode,
-                                       const uint8_t *params, size_t params_len,
-                                       uint8_t mic_64) {
+static inline int ble_mesh_access_queue(
+    uint16_t src, uint16_t dst,
+    uint8_t ttl,
+    uint16_t app_key_index, uint32_t opcode,
+    const uint8_t *params, size_t params_len,
+    uint8_t mic_64
+) {
     size_t opcode_len;
     if (opcode <= 0x7e) opcode_len = 1;
     else if (opcode >= 0x8000 && opcode <= 0xbfff) opcode_len = 2;
@@ -48,6 +51,36 @@ static inline int ble_mesh_access_queue(uint16_t src, uint16_t dst,
                                          data, opcode_len + params_len, mic_64);
 }
 
+// Queue a Device Key configuration message over the specified subnet.
+static inline int ble_mesh_access_queue_on_net(
+    uint16_t net_idx,
+    uint16_t dst, uint8_t ttl, uint32_t opcode,
+    const uint8_t *params, size_t params_len
+) {
+    size_t opcode_len;
+    if (opcode <= 0x7e) opcode_len = 1;
+    else if (opcode >= 0x8000 && opcode <= 0xbfff) opcode_len = 2;
+    else if (opcode >= 0xc00000 && opcode <= 0xffffff) opcode_len = 3;
+    else return 0;
+
+    if ((!params && params_len) ||
+        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len) return 0;
+
+    uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
+    for (size_t i = 0; i < opcode_len; i++) {
+        data[i] = (uint8_t)(opcode >> (8 * (opcode_len - 1 - i)));
+    }
+
+    if (params_len) memcpy(data + opcode_len, params, params_len);
+    uint16_t previous_net_idx = mesh_network.reply_net_idx;
+    mesh_network.reply_net_idx = net_idx;
+
+    int result = ble_mesh_transport_queue(mesh_network.state.unicast_address,
+        dst, ttl, APP_KEY_INDEX_NONE, NULL, data, opcode_len + params_len, 0);
+    mesh_network.reply_net_idx = previous_net_idx;
+    return result;
+}
+
 // Send an AppKey Access message to the virtual address derived from label.
 static inline int ble_mesh_access_queue_virtual(
     uint16_t src, const uint8_t label[16], uint8_t ttl, uint16_t app_key_index,
@@ -57,6 +90,7 @@ static inline int ble_mesh_access_queue_virtual(
     size_t opcode_len = opcode <= 0x7e ? 1 :
                         opcode >= 0x8000 && opcode <= 0xbfff ? 2 :
                         opcode >= 0xc00000 && opcode <= 0xffffff ? 3 : 0;
+
     if (!label || app_key_index == APP_KEY_INDEX_NONE ||
         app_key_index == DEVICE_KEY_LOCAL || !opcode_len ||
         mic_64 > 1 ||
@@ -99,6 +133,7 @@ static inline int ble_mesh_access_poll(mesh_access_message *message,
         .dst = message->dst,
         .app_key_index = message->app_key_index,
         .device_key_owner = message->device_key_owner,
+        .net_key_index = message->net_key_index,
         .ttl = message->ttl,
         .has_label = message->has_label,
         .opcode = opcode,

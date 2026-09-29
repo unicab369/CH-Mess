@@ -29,6 +29,7 @@ typedef struct {
     uint16_t dst;
     uint16_t app_key_index; // APP_KEY_INDEX_NONE means the Device Key was used
     uint16_t device_key_owner; // 0 for AppKey; owner of the authenticating Device Key
+    uint16_t net_key_index;
     uint16_t len;
     uint8_t ttl;
     uint8_t has_label;
@@ -76,7 +77,7 @@ static inline void ble_mesh_transport_clear_labels(void) {
 static struct {
     uint8_t active;
     uint8_t akf, aid, ttl, seg_n, next_seg, retries, mic_64;
-    uint16_t src, dst, seq_zero, upper_len;
+    uint16_t src, dst, seq_zero, upper_len, net_idx;
     uint32_t seq_auth, iv_index, acked, last_tx_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
 } transport_tx;
@@ -84,7 +85,7 @@ static struct {
 static struct {
     uint8_t active, complete, ack_pending;
     uint8_t akf, aid, ttl, seg_n, mic_64, last_len;
-    uint16_t src, dst, seq_zero;
+    uint16_t src, dst, seq_zero, net_idx;
     uint32_t seq_auth, iv_index, received, started_ms, ack_at_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
 } transport_rx;
@@ -117,7 +118,8 @@ static void transport_nonce(uint8_t nonce[13], uint8_t device_key,
 }
 
 static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
-                             uint32_t seq, uint32_t iv_index, uint16_t src,
+                             uint32_t seq, uint32_t iv_index, uint16_t net_idx,
+                             uint16_t src,
                              uint16_t dst, const uint8_t *upper, size_t len,
                              mesh_access_message *out) {
     size_t mic_len = mic_64 ? 8 : 4;
@@ -134,7 +136,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
 
         for (uint8_t slot = 0; slot < MESH_MAX_APP_KEYS; slot++) {
             const mesh_app_key *app = &state->app_keys[slot];
-            if (!app->used) continue;
+            if (!app->used || mesh_app_net_idx(state, app) != net_idx) continue;
             for (uint8_t version = 0; version < 2; version++) {
                 if (version && !app->has_new_key) break;
                 const uint8_t *key = version ? app->new_key : app->key;
@@ -186,6 +188,7 @@ static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
 
     out->src = src;
     out->dst = dst;
+    out->net_key_index = net_idx;
     out->ttl = 0;
     out->len = (uint16_t)(len - mic_len);
     return 1;
@@ -225,7 +228,7 @@ static int transport_segment_queue(void) {
     if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
     memcpy(lower + 4, transport_tx.upper + offset, count);
 
-    if (!ble_mesh_net_queue(transport_tx.src, transport_tx.dst,
+    if (!ble_mesh_net_queue(transport_tx.net_idx, transport_tx.src, transport_tx.dst,
                            0, transport_tx.ttl,
                            lower, count + 4)) return 0;
     transport_tx.next_seg++;
@@ -256,6 +259,9 @@ static inline int ble_mesh_transport_queue(uint16_t src,
     const mesh_net_state *state = &mesh_network.state;
     uint8_t key[16], akf = app_key_index != APP_KEY_INDEX_NONE &&
                            app_key_index != DEVICE_KEY_LOCAL, aid = 0;
+    uint16_t net_idx = !akf ? mesh_network.reply_net_idx : state->net_key_index;
+    if (!akf && mesh_subnet_slot(state, net_idx) < 0)
+        net_idx = state->net_key_index;
 
     if (!akf) {
         uint16_t owner = app_key_index == DEVICE_KEY_LOCAL ? src : dst;
@@ -265,7 +271,8 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         int slot = mesh_app_key_slot(state, app_key_index);
         if (slot < 0) return 0;
         const mesh_app_key *app = &state->app_keys[slot];
-        memcpy(key, state->key_refresh_phase == 2 && app->has_new_key ?
+        net_idx = mesh_app_net_idx(state, app);
+        memcpy(key, mesh_subnet_phase(state, net_idx) == 2 && app->has_new_key ?
                     app->new_key : app->key, 16);
         aid = transport_app_aid(key);
     }
@@ -288,7 +295,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
-        return ble_mesh_net_queue(src, dst, 0, ttl, lower, upper_len + 1);
+        return ble_mesh_net_queue(net_idx, src, dst, 0, ttl, lower, upper_len + 1);
     }
 
     transport_tx.active = 1;
@@ -297,6 +304,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
     transport_tx.mic_64 = mic_64;
     transport_tx.ttl = ttl;
     transport_tx.src = src;
+    transport_tx.net_idx = net_idx;
     transport_tx.dst = dst;
     transport_tx.seq_zero = seq & 0x1fff;
     transport_tx.seq_auth = seq;
@@ -326,6 +334,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     if (net->ctl) {
         if (net->transport_len != 7 || pdu[0] != 0 || (pdu[1] & 0x80) ||
             (pdu[2] & 3) || !transport_tx.active ||
+            net->net_key_index != transport_tx.net_idx ||
             net->src != transport_tx.dst ||
             net->dst != transport_tx.src
         ) return 0;
@@ -358,7 +367,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     if (!(pdu[0] & 0x80)) {
         if (net->transport_len < 6) return 0;
         int result = transport_decrypt(akf, aid, 0, net->seq, net->iv_index,
-                                       net->src, net->dst, pdu + 1,
+                                       net->net_key_index, net->src, net->dst, pdu + 1,
                                        net->transport_len - 1, out);
         if (result) out->ttl = net->ttl;
         return result;
@@ -400,6 +409,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         transport_rx.seg_n = seg_n;
         transport_rx.mic_64 = mic_64;
         transport_rx.src = net->src;
+        transport_rx.net_idx = net->net_key_index;
         transport_rx.dst = net->dst;
         transport_rx.seq_zero = seq_zero;
         transport_rx.seq_auth = seq_auth;
@@ -430,7 +440,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     transport_rx.ack_at_ms = now;
     size_t upper_len = (size_t)seg_n * 12 + transport_rx.last_len;
     int result = transport_decrypt(akf, aid, mic_64, seq_auth, net->iv_index,
-                                   net->src, net->dst, transport_rx.upper,
+                                   net->net_key_index, net->src, net->dst, transport_rx.upper,
                                    upper_len, out);
     if (result) out->ttl = net->ttl;
     return result;
@@ -465,7 +475,7 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
             (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
             (uint8_t)(mask >> 8), (uint8_t)mask
         };
-        if (!ble_mesh_net_queue(transport_rx.dst, transport_rx.src,
+        if (!ble_mesh_net_queue(transport_rx.net_idx, transport_rx.dst, transport_rx.src,
                                 1, transport_rx.ttl,
                                 pdu, sizeof(pdu))) return -1;
         transport_rx.ack_pending = 0;

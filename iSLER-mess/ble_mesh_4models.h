@@ -198,8 +198,13 @@ static inline int ble_mesh_models_poll(void) {
     if (message->app_key_index == APP_KEY_INDEX_NONE) {
         if (unicast != 0 || message->has_label) return 0;
         // Server requests use our key; client replies use the sending node's key.
-        if (message->device_key_owner == message->dst &&
-            server_config_receive(message)) return 1;
+        if (message->device_key_owner == message->dst) {
+            uint16_t primary_net_idx = mesh_network.state.net_key_index;
+            mesh_network.reply_net_idx = message->net_key_index;
+            int handled = server_config_receive(message);
+            mesh_network.reply_net_idx = primary_net_idx;
+            if (handled) return 1;
+        }
         if (message->device_key_owner != message->src) return 0;
 
         if (opcode == OP_CONFIG_BEACON_STATUS ||

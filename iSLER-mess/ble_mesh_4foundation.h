@@ -400,6 +400,7 @@ static uint8_t mesh_heartbeat_log(uint32_t value, uint8_t round_up) {
 
 static int server_config_receive(const mesh_access_pdu *message) {
     const mesh_net_state *state = &mesh_network.state;
+    mesh_network.reply_net_idx = message->net_key_index;
     const uint8_t *p = message->params;
     size_t len = message->params_len;
 
@@ -428,7 +429,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 status = MESH_CONFIG_INVALID_ADDRESS;
             else if ((pub.count_log > 0x11 && pub.count_log != 0xff) || pub.period_log > 0x11)
                 status = MESH_CONFIG_CANNOT_SET;
-            else if (pub.dst && pub.net_idx != state->net_key_index)
+            else if (pub.dst && mesh_subnet_slot(state, pub.net_idx) < 0)
                 status = MESH_CONFIG_INVALID_NETKEY;
             if (status == MESH_CONFIG_SUCCESS) {
                 if (!pub.dst) memset(&pub, 0, sizeof(pub));
@@ -559,7 +560,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint8_t set = message->opcode == OP_CONFIG_NODE_IDENTITY_SET;
         if (len != (set ? 3u : 2u) || (p[1] & 0xf0) || (set && p[2] > 1)) return 0;
         uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
-        uint8_t known = net_idx == state->net_key_index;
+        uint8_t known = mesh_subnet_slot(state, net_idx) >= 0;
         uint8_t reply[4] = {known ? set ? MESH_CONFIG_FEATURE_NOT_SUPPORTED : MESH_CONFIG_SUCCESS :
                             MESH_CONFIG_INVALID_NETKEY, p[0], p[1],
                             known ? 2 : set ? p[2] : 0};
@@ -570,11 +571,17 @@ static int server_config_receive(const mesh_access_pdu *message) {
 
     if (message->opcode == OP_CONFIG_NETKEY_GET) {
         if (len != 0) return 0;
-        uint8_t reply[2] = {(uint8_t)state->net_key_index,
-                            (uint8_t)(state->net_key_index >> 8)};
+        uint8_t reply[2 + 2 * (MESH_MAX_SUBNETS - 1)] = {0};
+        uint16_t indexes[MESH_MAX_SUBNETS];
+        uint8_t count = 0;
+        indexes[count++] = state->net_key_index;
+        for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
+            if (state->additional_subnets[i].used)
+                indexes[count++] = state->additional_subnets[i].index;
+        size_t reply_len = mesh_pack_app_indexes(reply, indexes, count);
         return ble_mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
-            OP_CONFIG_NETKEY_LIST, reply, sizeof(reply), 0);
+            OP_CONFIG_NETKEY_LIST, reply, reply_len, 0);
     }
 
     if (message->opcode == OP_CONFIG_NETKEY_ADD ||
@@ -585,24 +592,96 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
         uint8_t status = MESH_CONFIG_SUCCESS;
         if (message->opcode == OP_CONFIG_NETKEY_ADD) {
-            // This node has one subnet, installed during provisioning.
-            if (net_idx != state->net_key_index)
-                status = MESH_CONFIG_INSUFFICIENT_RESOURCES;
-            else if (memcmp(state->net_key, p + 2, 16))
-                status = MESH_CONFIG_KEY_ALREADY_STORED;
+            int subnet = mesh_subnet_slot(state, net_idx);
+            if (subnet >= 0) {
+                uint8_t current[16];
+                mesh_subnet_key(state, net_idx, current, 0);
+                if (memcmp(current, p + 2, 16)) status = MESH_CONFIG_KEY_ALREADY_STORED;
+            } else {
+                int free_slot = -1;
+                for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
+                    if (!state->additional_subnets[i].used) { free_slot = i; break; }
+                if (free_slot < 0) status = MESH_CONFIG_INSUFFICIENT_RESOURCES;
+                else {
+                    mesh_net_state next = *state;
+                    mesh_additional_subnet *sub = &next.additional_subnets[free_slot];
+                    memset(sub, 0, sizeof(*sub));
+                    sub->used = 1;
+                    sub->index = net_idx;
+                    memcpy(sub->key, p + 2, 16);
+                    if (!mesh_commit(&next)) status = MESH_CONFIG_STORAGE_FAILURE;
+                }
+            }
         } else if (remove) {
-            // Deleting an absent key is redundant; the last key cannot be removed.
-            if (net_idx == state->net_key_index) status = MESH_CONFIG_CANNOT_REMOVE;
-        } else if (net_idx != state->net_key_index)
-            status = MESH_CONFIG_INVALID_NETKEY;
-        else if (!state->phase2_provisioned && state->key_refresh_phase == 0 &&
-                 !memcmp(state->net_key, p + 2, 16))
-            status = MESH_CONFIG_KEY_ALREADY_STORED;
-        else if (state->phase2_provisioned || state->key_refresh_phase == 2 ||
-                 (state->key_refresh_phase == 1 && memcmp(state->new_net_key, p + 2, 16)))
-            status = MESH_CONFIG_CANNOT_UPDATE;
-        else if (!ble_mesh_stage_net_key(p + 2))
-            status = MESH_CONFIG_STORAGE_FAILURE;
+            int subnet = mesh_subnet_slot(state, net_idx);
+            if (subnet == 0 || subnet > 0) {
+                uint8_t subnet_count = 1;
+                for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
+                    subnet_count += state->additional_subnets[i].used != 0;
+                if (subnet_count == 1) status = MESH_CONFIG_CANNOT_REMOVE;
+            }
+            if (status == MESH_CONFIG_SUCCESS && subnet > 0) {
+                for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
+                    const mesh_app_key *app = &state->app_keys[i];
+                    if (app->used && mesh_app_net_idx(state, app) == net_idx &&
+                        !mesh_unbind_slot(i)) { status = MESH_CONFIG_STORAGE_FAILURE; break; }
+                }
+                if (status == MESH_CONFIG_SUCCESS) {
+                    mesh_net_state next = *state;
+                    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++)
+                        if (next.app_keys[i].used && next.app_keys[i].net_idx == net_idx)
+                            memset(&next.app_keys[i], 0, sizeof(next.app_keys[i]));
+                    if (next.heartbeat.dst && next.heartbeat.net_idx == net_idx)
+                        memset(&next.heartbeat, 0, sizeof(next.heartbeat));
+                    memset(&next.additional_subnets[subnet - 1], 0,
+                           sizeof(next.additional_subnets[subnet - 1]));
+                    if (!mesh_commit(&next)) status = MESH_CONFIG_STORAGE_FAILURE;
+                }
+            } else if (status == MESH_CONFIG_SUCCESS && subnet == 0) {
+                int promote = -1;
+                for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
+                    if (state->additional_subnets[i].used) { promote = i; break; }
+                if (promote < 0) status = MESH_CONFIG_CANNOT_REMOVE;
+                for (uint8_t i = 0; status == MESH_CONFIG_SUCCESS && i < MESH_MAX_APP_KEYS; i++) {
+                    const mesh_app_key *app = &state->app_keys[i];
+                    if (app->used && mesh_app_net_idx(state, app) == net_idx &&
+                        !mesh_unbind_slot(i)) status = MESH_CONFIG_STORAGE_FAILURE;
+                }
+                if (status == MESH_CONFIG_SUCCESS) {
+                    mesh_net_state next = *state;
+                    mesh_additional_subnet *sub = &next.additional_subnets[promote];
+                    memcpy(next.net_key, sub->key, 16);
+                    memcpy(next.new_net_key, sub->new_key, 16);
+                    next.net_key_index = sub->index;
+                    next.has_new_key = sub->has_new_key;
+                    next.key_refresh_phase = sub->key_refresh_phase;
+                    next.phase2_provisioned = sub->phase2_provisioned;
+                    memset(sub, 0, sizeof(*sub));
+                    for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++)
+                        if (next.app_keys[i].used && next.app_keys[i].net_idx == net_idx)
+                            memset(&next.app_keys[i], 0, sizeof(next.app_keys[i]));
+                    if (next.heartbeat.dst && next.heartbeat.net_idx == net_idx)
+                        memset(&next.heartbeat, 0, sizeof(next.heartbeat));
+                    if (!mesh_commit(&next)) status = MESH_CONFIG_STORAGE_FAILURE;
+                }
+            }
+        } else {
+            uint8_t current_key[16], staged_key[16];
+            uint8_t phase = mesh_subnet_phase(state, net_idx);
+            if (phase == 0xff) status = MESH_CONFIG_INVALID_NETKEY;
+            else {
+                mesh_subnet_key(state, net_idx, current_key, 0);
+                if (phase == 0 && !memcmp(current_key, p + 2, 16))
+                    status = MESH_CONFIG_KEY_ALREADY_STORED;
+                else if (phase == 2 ||
+                         (phase == 1 &&
+                          (!mesh_subnet_key(state, net_idx, staged_key, 1) ||
+                           memcmp(staged_key, p + 2, 16))))
+                    status = MESH_CONFIG_CANNOT_UPDATE;
+                else if (!ble_mesh_stage_net_key(net_idx, p + 2))
+                    status = MESH_CONFIG_STORAGE_FAILURE;
+            }
+        }
 
         uint8_t reply[3] = {status, p[0], p[1]};
         return ble_mesh_access_queue(state->unicast_address, message->src,
@@ -616,17 +695,17 @@ static int server_config_receive(const mesh_access_pdu *message) {
         if (len != (set ? 3u : 2u) || (p[1] & 0xf0) ||
             (set && p[2] != 2 && p[2] != 3)) return 0;
         uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
-        uint8_t phase = state->phase2_provisioned ? 2 : state->key_refresh_phase;
-        uint8_t status = net_idx != state->net_key_index ?
+        uint8_t phase = mesh_subnet_phase(state, net_idx);
+        uint8_t status = phase == 0xff ?
             MESH_CONFIG_INVALID_NETKEY : MESH_CONFIG_SUCCESS;
         if (set && status == MESH_CONFIG_SUCCESS) {
             if (p[2] == 2 && phase == 0) status = MESH_CONFIG_CANNOT_UPDATE;
-            else if (!ble_mesh_key_refresh_transition(p[2]))
+            else if (!ble_mesh_key_refresh_transition(net_idx, p[2]))
                 status = MESH_CONFIG_STORAGE_FAILURE;
-            phase = state->phase2_provisioned ? 2 : state->key_refresh_phase;
+            phase = mesh_subnet_phase(&mesh_network.state, net_idx);
         }
         uint8_t reply[4] = {status, p[0], p[1],
-                            net_idx == state->net_key_index ? phase : 0};
+                            phase != 0xff ? phase : 0};
         return ble_mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
             OP_CONFIG_KEY_PHASE_STATUS, reply, sizeof(reply), 0);
@@ -791,7 +870,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
         if (len != 2 || (p[1] & 0xf0)) return 0;
         uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
         uint8_t reply[3 + MESH_APP_INDEX_BYTES] = {
-            net_idx == state->net_key_index ? MESH_CONFIG_SUCCESS :
+            mesh_subnet_slot(state, net_idx) >= 0 ? MESH_CONFIG_SUCCESS :
                                                MESH_CONFIG_INVALID_NETKEY,
             p[0], p[1]
         };
@@ -799,7 +878,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint8_t count = 0;
         if (reply[0] == MESH_CONFIG_SUCCESS) {
             for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++)
-                if (state->app_keys[i].used)
+                if (state->app_keys[i].used &&
+                    mesh_app_net_idx(state, &state->app_keys[i]) == net_idx)
                     indexes[count++] = state->app_keys[i].index;
         }
         size_t reply_len = 3 + mesh_pack_app_indexes(reply + 3, indexes, count);
@@ -843,11 +923,13 @@ static int server_config_receive(const mesh_access_pdu *message) {
         uint8_t status = MESH_CONFIG_SUCCESS;
         int slot = mesh_app_key_slot(state, app_idx);
 
-        if (net_idx != state->net_key_index)
+        if (mesh_subnet_slot(state, net_idx) < 0)
             status = MESH_CONFIG_INVALID_NETKEY;
         else if (message->opcode == OP_CONFIG_APPKEY_ADD) {
             if (slot >= 0) {
-                if (memcmp(state->app_keys[slot].key, p + 3, 16) != 0)
+                if (mesh_app_net_idx(state, &state->app_keys[slot]) != net_idx)
+                    status = MESH_CONFIG_INVALID_APPKEY;
+                else if (memcmp(state->app_keys[slot].key, p + 3, 16) != 0)
                     status = MESH_CONFIG_KEY_ALREADY_STORED;
             } else {
                 for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
@@ -859,6 +941,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     mesh_app_key *app = &next.app_keys[slot];
                     memset(app, 0, sizeof(*app));
                     app->index = app_idx;
+                    app->net_idx = net_idx;
                     app->used = 1;
                     memcpy(app->key, p + 3, 16);
                     if (!mesh_commit(&next)) status = MESH_CONFIG_STORAGE_FAILURE;
@@ -869,13 +952,18 @@ static int server_config_receive(const mesh_access_pdu *message) {
         else if (slot < 0) status = MESH_CONFIG_SUCCESS;
         else if (message->opcode == OP_CONFIG_APPKEY_UPDATE) {
             const mesh_app_key *app = &state->app_keys[slot];
-            if (state->key_refresh_phase != 1 ||
+            if (mesh_app_net_idx(state, app) != net_idx)
+                status = MESH_CONFIG_INVALID_APPKEY;
+            else if (mesh_subnet_phase(state, net_idx) != 1 ||
                 (app->has_new_key && memcmp(app->new_key, p + 3, 16)) ||
                 (!app->has_new_key && !memcmp(app->key, p + 3, 16)))
                 status = MESH_CONFIG_CANNOT_UPDATE;
-            else if (!ble_mesh_stage_app_key(app_idx, p + 3))
+            else if (!ble_mesh_stage_app_key_for(net_idx, app_idx, p + 3))
                 status = MESH_CONFIG_STORAGE_FAILURE;
         } else {
+            if (mesh_app_net_idx(state, &state->app_keys[slot]) != net_idx) {
+                status = MESH_CONFIG_INVALID_APPKEY;
+            } else {
             // Remove bindings first so a reused slot cannot inherit permissions.
             if (!mesh_unbind_slot((uint8_t)slot))
                 status = MESH_CONFIG_STORAGE_FAILURE;
@@ -883,6 +971,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 mesh_net_state next = *state;
                 memset(&next.app_keys[slot], 0, sizeof(next.app_keys[slot]));
                 if (!mesh_commit(&next)) status = MESH_CONFIG_STORAGE_FAILURE;
+            }
             }
         }
 
@@ -998,9 +1087,9 @@ static inline int ble_mesh_set_heartbeat_pub(uint16_t dst, const mesh_heartbeat_
     uint8_t params[] = {(uint8_t)pub->dst, (uint8_t)(pub->dst >> 8), pub->count_log,
         pub->period_log, pub->ttl, (uint8_t)pub->features, (uint8_t)(pub->features >> 8),
         (uint8_t)pub->net_idx, (uint8_t)(pub->net_idx >> 8)};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
-        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        OP_CONFIG_HEARTBEAT_PUB_SET, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(pub->net_idx,
+        dst, mesh_models.state.default_ttl,
+        OP_CONFIG_HEARTBEAT_PUB_SET, params, sizeof(params));
 }
 
 static inline int ble_mesh_get_heartbeat_sub(uint16_t dst) {
@@ -1063,55 +1152,59 @@ static inline int ble_mesh_get_friend(uint16_t dst) {
 static inline int ble_mesh_get_node_identity(uint16_t dst, uint16_t net_idx) {
     if (net_idx > 0x0fff) return 0;
     uint8_t params[] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
-        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NODE_IDENTITY_GET,
-        params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_NODE_IDENTITY_GET,
+        params, sizeof(params));
 }
 
+//! Net key
 // Set update to 1 to start Key Refresh, or 0 to add a subnet key.
-static inline int ble_mesh_add_or_update_net_key(uint16_t dst, uint16_t net_idx,
+static inline int mesh_netkey_add_or_update(uint16_t dst, uint16_t net_idx,
     const uint8_t key[16], uint8_t update) {
     if (!key || net_idx > 0x0fff || update > 1) return 0;
     uint8_t params[18] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
     memcpy(params + 2, key, 16);
+    if (update)
+        return ble_mesh_access_queue_on_net(net_idx,
+            dst, mesh_models.state.default_ttl,
+            OP_CONFIG_NETKEY_UPDATE, params, sizeof(params));
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        update ? OP_CONFIG_NETKEY_UPDATE : OP_CONFIG_NETKEY_ADD,
-        params, sizeof(params), 0);
+        OP_CONFIG_NETKEY_ADD, params, sizeof(params), 0);
 }
 
-static inline int ble_mesh_get_net_keys(uint16_t dst) {
+static inline int mesh_netkey_get(uint16_t dst) {
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
         OP_CONFIG_NETKEY_GET, NULL, 0, 0);
 }
 
-static inline int ble_mesh_delete_net_key(uint16_t dst, uint16_t net_idx) {
+static inline int mesh_netkey_delete(uint16_t dst, uint16_t net_idx) {
     if (net_idx > 0x0fff) return 0;
     uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
-        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        OP_CONFIG_NETKEY_DELETE, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_NETKEY_DELETE, params, sizeof(params));
 }
 
-static inline int ble_mesh_get_key_phase(uint16_t dst, uint16_t net_idx) {
+static inline int mesh_netkey_get_phase(uint16_t dst, uint16_t net_idx) {
     if (net_idx > 0x0fff) return 0;
     uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
-        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        OP_CONFIG_KEY_PHASE_GET, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_KEY_PHASE_GET,
+        params, sizeof(params));
 }
 
 // Transition 2 starts sending with new keys; 3 revokes old keys and returns to 0.
-static inline int ble_mesh_set_key_phase(uint16_t dst, uint16_t net_idx,
+static inline int mesh_netkey_set_phase(uint16_t dst, uint16_t net_idx,
                                          uint8_t transition) {
     if (net_idx > 0x0fff || (transition != 2 && transition != 3)) return 0;
     uint8_t params[3] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8), transition};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
-        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-        OP_CONFIG_KEY_PHASE_SET, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_KEY_PHASE_SET,
+        params, sizeof(params));
 }
 
+//! App Key
 // Set update to 0 to add a key, or 1 to stage a replacement during Key Refresh.
 static inline int ble_mesh_add_or_update_app_key(
     uint16_t dst, uint16_t net_idx,
@@ -1124,9 +1217,9 @@ static inline int ble_mesh_add_or_update_app_key(
         (uint8_t)(app_idx >> 4)
     };
     memcpy(params + 3, key, 16);
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst, mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-                                 update ? OP_CONFIG_APPKEY_UPDATE : OP_CONFIG_APPKEY_ADD,
-                                 params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        update ? OP_CONFIG_APPKEY_UPDATE : OP_CONFIG_APPKEY_ADD,
+        params, sizeof(params));
 }
 
 static inline int ble_mesh_delete_app_key(
@@ -1138,16 +1231,18 @@ static inline int ble_mesh_delete_app_key(
         (uint8_t)((net_idx >> 8) | (app_idx << 4)),
         (uint8_t)(app_idx >> 4)
     };
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst, mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_APPKEY_DELETE, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_APPKEY_DELETE,
+        params, sizeof(params));
 }
 
 static inline int ble_mesh_get_app_keys(uint16_t dst,
                                                 uint16_t net_idx) {
     if (net_idx > 0x0fff) return 0;
     uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
-    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst, mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
-                                 OP_CONFIG_APPKEY_GET, params, sizeof(params), 0);
+    return ble_mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
+        OP_CONFIG_APPKEY_GET,
+        params, sizeof(params));
 }
 
 // Set bind to 1 to bind the AppKey to the model, or 0 to unbind it.

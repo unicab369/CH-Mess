@@ -1,5 +1,4 @@
 // TODO for foundation support:
-// - Multiple subnets: store and route using additional NetKeys.
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
 // - SAR Configuration model: expose transport timing settings (separate model).
@@ -14,7 +13,7 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Configuration | Opcode macros | Supported |
 | --- | --- | --- |
 | Composition Data | `OP_CONFIG_COMPOSITION_GET`, `OP_CONFIG_COMPOSITION_STATUS` | Page 0: elements, SIG models, and supported features. |
-| NetKeys | `OP_CONFIG_NETKEY_ADD`, `OP_CONFIG_NETKEY_UPDATE`, `OP_CONFIG_NETKEY_DELETE`, `OP_CONFIG_NETKEY_GET`, `OP_CONFIG_NETKEY_LIST`, `OP_CONFIG_NETKEY_STATUS` | List/update the provisioned subnet key; report duplicate adds and rejected additions/deletions. |
+| NetKeys | `OP_CONFIG_NETKEY_ADD`, `OP_CONFIG_NETKEY_UPDATE`, `OP_CONFIG_NETKEY_DELETE`, `OP_CONFIG_NETKEY_GET`, `OP_CONFIG_NETKEY_LIST`, `OP_CONFIG_NETKEY_STATUS` | Add, list, update, and delete subnet keys; transmit and receive on the matching subnet. |
 | Key Refresh | `OP_CONFIG_KEY_PHASE_GET`, `OP_CONFIG_KEY_PHASE_SET`, `OP_CONFIG_KEY_PHASE_STATUS` | Get the phase; select new keys with transition 2 or revoke old keys with transition 3. |
 | AppKeys | `OP_CONFIG_APPKEY_ADD`, `OP_CONFIG_APPKEY_UPDATE`, `OP_CONFIG_APPKEY_DELETE`, `OP_CONFIG_APPKEY_GET`, `OP_CONFIG_APPKEY_LIST`, `OP_CONFIG_APPKEY_STATUS` | Add/update/delete/list application keys. |
 | Model bindings | `OP_CONFIG_MODEL_APP_BIND`, `OP_CONFIG_MODEL_APP_UNBIND`, `OP_CONFIG_MODEL_APP_STATUS`, `OP_CONFIG_SIG_MODEL_APP_GET`, `OP_CONFIG_SIG_MODEL_APP_LIST` | Bind/unbind/list model keys. |
@@ -28,7 +27,7 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Friend | `OP_CONFIG_FRIEND_GET`, `OP_CONFIG_FRIEND_SET`, `OP_CONFIG_FRIEND_STATUS` | Report Not Supported (2). |
 | Node Identity | `OP_CONFIG_NODE_IDENTITY_GET`, `OP_CONFIG_NODE_IDENTITY_SET`, `OP_CONFIG_NODE_IDENTITY_STATUS` | Report Not Supported (2); setting it returns Feature Not Supported. |
 | Node Reset | `OP_CONFIG_NODE_RESET`, `OP_CONFIG_NODE_RESET_STATUS` | Reply, then clear provisioning, keys, configuration, and queued traffic. |
-| Heartbeat publication | `OP_CONFIG_HEARTBEAT_PUB_GET`, `OP_CONFIG_HEARTBEAT_PUB_SET`, `OP_CONFIG_HEARTBEAT_PUB_STATUS` | Configure periodic Control messages using the provisioned NetKey. |
+| Heartbeat publication | `OP_CONFIG_HEARTBEAT_PUB_GET`, `OP_CONFIG_HEARTBEAT_PUB_SET`, `OP_CONFIG_HEARTBEAT_PUB_STATUS` | Configure periodic Control messages using the selected NetKey. |
 | Heartbeat subscription | `OP_CONFIG_HEARTBEAT_SUB_GET`, `OP_CONFIG_HEARTBEAT_SUB_SET`, `OP_CONFIG_HEARTBEAT_SUB_STATUS` | Monitor one source/destination pair, received count, and minimum/maximum hops. |
 | Default TTL | `OP_CONFIG_DEFAULT_TTL_GET`, `OP_CONFIG_DEFAULT_TTL_SET`, `OP_CONFIG_DEFAULT_TTL_STATUS` | Get/set; used by model helpers and replies. |
 | Model publication | `OP_CONFIG_MODEL_PUB_GET`, `OP_CONFIG_MODEL_PUB_SET`, `OP_CONFIG_MODEL_PUB_VIRTUAL_SET`, `OP_CONFIG_MODEL_PUB_STATUS` | Get/set address or Label UUID, AppKey, TTL, period, and retransmissions. |
@@ -47,7 +46,14 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 12 requires reprovisioning older records.
+credentials. Stored state version 16 requires reprovisioning older records
+when using the default four-subnet limit.
+
+The node supports up to `MESH_MAX_SUBNETS` NetKeys, with a default of four.
+Set this compile-time limit from 2 through 16 to trade RAM for subnet capacity;
+the state version changes with this value, so changing it requires reprovisioning.
+AppKeys retain their owning NetKey index; AppKey traffic uses that subnet, while
+Device Key configuration requests can select a subnet through their NetKey index.
 
 `ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
 destination, NetKey index, count log, period log, TTL, and feature-change triggers.
@@ -77,27 +83,27 @@ Use `ble_mesh_get_relay()`, `ble_mesh_get_proxy()`, `ble_mesh_get_friend()`, and
 requests report Not Supported without changing state. Node Identity queries use
 a NetKey index; an unknown index returns Invalid NetKey.
 
-The node stores one NetKey index, installed during provisioning. Adding the same
-index and current key succeeds; a different key at that index returns
-`MESH_CONFIG_KEY_ALREADY_STORED`. Adding another index returns
-`MESH_CONFIG_INSUFFICIENT_RESOURCES`. Deleting the only NetKey returns
-`MESH_CONFIG_CANNOT_REMOVE`; deleting an absent index succeeds without changes.
+Provisioning installs the primary NetKey. Configuration can add further NetKeys
+up to `MESH_MAX_SUBNETS`; adding an existing index with the same key succeeds,
+while a different key at that index returns `MESH_CONFIG_KEY_ALREADY_STORED`.
+Deleting the final NetKey returns `MESH_CONFIG_CANNOT_REMOVE`; deleting an absent
+index succeeds without changes. Deleting the primary promotes an installed subnet.
 
 To rotate keys from a controller (the [Bluetooth Mesh Key Refresh procedure](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/MshPRT_v1.1/out/en/index-en.html)):
 
-1. Call `ble_mesh_add_or_update_net_key(dst, net_idx, new_key, 1)` on each node.
+1. Call `mesh_netkey_add_or_update(dst, net_idx, new_key, 1)` on each node.
    This starts Phase 1: send with old keys, receive with old or new keys.
 2. Update any AppKeys that also need rotation with
    `ble_mesh_add_or_update_app_key(dst, net_idx, app_idx, new_key, 1)`.
-3. Call `ble_mesh_set_key_phase(dst, net_idx, 2)` after the selected nodes have
+3. Call `mesh_netkey_set_phase(dst, net_idx, 2)` after the selected nodes have
    their new keys. Phase 2 sends with new keys and receives with either set.
-4. Call `ble_mesh_set_key_phase(dst, net_idx, 3)` after the selected nodes reach
+4. Call `mesh_netkey_set_phase(dst, net_idx, 3)` after the selected nodes reach
    Phase 2. Old keys are removed and the reported phase returns to 0.
 
 Check each reply through `BLE_MESH_CONFIG_STATUS()` before advancing. Use
-`ble_mesh_get_key_phase()` to query progress. The controller must also switch its
-own network keys using `ble_mesh_stage_net_key()`, `ble_mesh_stage_app_key()`, and
-`ble_mesh_key_refresh_transition()` at the corresponding steps. AppKeys that were
+`mesh_netkey_get_phase()` to query progress. The controller must also switch its
+own network keys using `ble_mesh_stage_net_key(net_idx, key)`, `ble_mesh_stage_app_key()`, and
+`ble_mesh_key_refresh_transition(net_idx, transition)` at the corresponding steps. AppKeys that were
 not updated keep their values; bindings and publication settings keep their indexes.
 Updates and transitions are saved before becoming active. A node provisioned
 during Phase 2 reports phase 2 even though it has only the new NetKey.

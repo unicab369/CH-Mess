@@ -11,17 +11,24 @@
 typedef struct {
     uint16_t src, dst, app_key_index, len;
     uint16_t device_key_owner;
+    uint16_t net_key_index;
     uint8_t ttl;
     uint8_t has_label;
     uint8_t label[16];
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
 } mesh_access_message;
 
+static struct {
+    struct { uint16_t unicast_address; } state;
+    uint16_t reply_net_idx;
+} mesh_network;
+
 static uint8_t sent[MESH_TRANSPORT_MAX_ACCESS];
 static size_t sent_len;
 static uint16_t sent_dst;
 static uint8_t sent_ttl;
 static uint16_t sent_app_key_index;
+static uint16_t sent_net_key_index;
 static uint8_t sent_mic_64;
 static mesh_access_message incoming;
 static int incoming_ready;
@@ -33,6 +40,7 @@ static int ble_mesh_transport_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                          uint8_t mic_64) {
     (void)src;
     (void)label;
+    sent_net_key_index = mesh_network.reply_net_idx;
     memcpy(sent, data, len);
     sent_len = len;
     sent_dst = dst;
@@ -71,6 +79,12 @@ int main(void) {
                                  0x8202, NULL, 0, 0) == 1);
     assert(sent_len == 2 && sent[0] == 0x82 && sent[1] == 0x02);
     assert(sent_app_key_index == APP_KEY_INDEX_NONE);
+
+    mesh_network.reply_net_idx = 0x123;
+    mesh_network.state.unicast_address = 0x1200;
+    assert(ble_mesh_access_queue_on_net(0x234, 0x1202, 3,
+                                        0x8202, NULL, 0));
+    assert(sent_net_key_index == 0x234 && mesh_network.reply_net_idx == 0x123);
 
     assert(ble_mesh_access_queue(0x1200, 0x1203, 2, 0, 0xe33601, params, 2, 0) == 1);
     assert(sent_len == 5 && sent[0] == 0xe3 && sent[1] == 0x36 &&

@@ -47,8 +47,8 @@
 
 This implementation supports up to two local elements. Set `prov_caps.num_elements`
 to the number used; their unicast addresses are consecutive. AppKey bindings and
-group or virtual subscriptions are stored per element. Stored state version 12
-requires reprovisioning devices that have older records.
+group or virtual subscriptions are stored per element. Stored state version 16
+(the default four-subnet build) requires reprovisioning devices that have older records.
 
 ## Bluetooth Mesh message kinds
 

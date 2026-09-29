@@ -70,6 +70,17 @@ static mesh_net_state node(uint16_t address) {
     return state;
 }
 
+static mesh_net_state node_with_secondary_subnet(uint16_t address) {
+    mesh_net_state state = node(address);
+    state.net_key_index = 0x100;
+    state.additional_subnets[0].used = 1;
+    state.additional_subnets[0].index = 0x222;
+    memset(state.additional_subnets[0].key, 0x53, 16);
+    state.app_keys[0].index = 0x031;
+    state.app_keys[0].net_idx = 0x222;
+    return state;
+}
+
 static int receive_frame(int index, mesh_access_message *access) {
     mesh_net_message network;
     assert(ble_mesh_net_receive(sent[index] + 2, sent_len[index] - 2,
@@ -316,5 +327,27 @@ int main(void) {
     assert(ble_mesh_network_init(&a) == 1);
     assert(receive_frame(0, &received) == 1 &&
            received.device_key_owner == received.src);
+    // AppKey traffic uses its owning subnet; Device Key traffic can select one.
+    a = node_with_secondary_subnet(0x1201);
+    b = node_with_secondary_subnet(0x1202);
+    sent_count = 0;
+    transport_tx.active = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, 0x031, NULL,
+                                    short_access, sizeof(short_access), 0) == 1);
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 1);
+    assert(received.net_key_index == 0x222 && received.app_key_index == 0x031);
+
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    mesh_network.reply_net_idx = 0x222;
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, APP_KEY_INDEX_NONE,
+        NULL, short_access, sizeof(short_access), 0) == 1);
+    mesh_network.reply_net_idx = mesh_network.state.net_key_index;
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 1);
+    assert(received.net_key_index == 0x222 &&
+           received.device_key_owner == received.dst);
     return 0;
 }

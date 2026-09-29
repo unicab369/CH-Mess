@@ -248,7 +248,8 @@ int main(void) {
     assert(ble_mesh_net_beacon_queue() == 1);
     assert(sent_len == sizeof(normal_beacon));
     assert(memcmp(sent, normal_beacon, sizeof(normal_beacon)) == 0);
-    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+                                   mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(stored_seq == 2);
     assert(sent_len == 30 && sent[0] == 29 && sent[1] == MESH_NETWORK_AD_TYPE);
@@ -260,6 +261,7 @@ int main(void) {
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     assert(message.ctl == 1 && message.ttl == 0 && message.seq == 1);
     assert(message.src == 0x1201 && message.dst == 0xfffd);
+    assert(message.net_key_index == state.net_key_index);
     assert(message.transport_len == sizeof(transport));
     assert(memcmp(message.transport, transport, sizeof(transport)) == 0);
     assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 0);
@@ -281,7 +283,8 @@ int main(void) {
     assert(ble_mesh_network_init(&state) == 1);
     storage_fails = 1;
     sent_len = 0;
-    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+                                   mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 0);
     assert(sent_len == 0 && mesh_network.state.next_seq == 1);
 
@@ -294,7 +297,8 @@ int main(void) {
                                            sizeof(updating_beacon)) == 1);
     assert(mesh_network.state.iv_update == 1);
     assert(mesh_network.state.iv_index == 0x12345679);
-    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+                                   mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
     mesh_net_state active = mesh_network.state;
@@ -339,21 +343,22 @@ int main(void) {
     // A key update is staged before a new-key beacon selects it for TX.
     assert(ble_mesh_network_init(&state) == 1);
     uint8_t new_net_key[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
-    assert(ble_mesh_stage_net_key(new_net_key) == 1);
+    assert(ble_mesh_stage_net_key(mesh_network.state.net_key_index, new_net_key) == 1);
     mesh_net_state phase1 = mesh_network.state;
     state.unicast_address = 0x0003;
     mesh_net_state old_sender = phase1;
     old_sender.unicast_address = 0x0003;
     old_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&old_sender) == 1);
-    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+                                   mesh_network.state.unicast_address,
                                    0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     assert(memcmp(sent + 2, access_pdu, sizeof(access_pdu)) == 0);
     assert(ble_mesh_network_init(&phase1) == 1);
     assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
-    assert(ble_mesh_key_refresh_transition(2) == 1);
+    assert(ble_mesh_key_refresh_transition(state.net_key_index, 2) == 1);
     assert(ble_mesh_net_beacon_queue() == 1);
     uint8_t phase2_beacon[24];
     memcpy(phase2_beacon, sent, sizeof(phase2_beacon));
@@ -367,7 +372,8 @@ int main(void) {
     new_sender.unicast_address = 0x0003;
     new_sender.next_seq = 0x3129ab;
     assert(ble_mesh_network_init(&new_sender) == 1);
-    assert(ble_mesh_net_queue(mesh_network.state.unicast_address,
+    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+                                   mesh_network.state.unicast_address,
                                    0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     uint8_t new_pdu[29];
@@ -377,7 +383,7 @@ int main(void) {
     assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 0);
 
     assert(ble_mesh_network_init(&new_sender) == 1);
-    assert(ble_mesh_key_refresh_transition(3) == 1);
+    assert(ble_mesh_key_refresh_transition(state.net_key_index, 3) == 1);
     assert(ble_mesh_net_beacon_queue() == 1);
     uint8_t phase3_beacon[24];
     memcpy(phase3_beacon, sent, sizeof(phase3_beacon));
@@ -398,14 +404,14 @@ int main(void) {
     // A node provisioned during Phase 2 starts with only the new NetKey.
     state.phase2_provisioned = 1;
     assert(ble_mesh_network_init(&state) == 1);
-    assert(ble_mesh_key_refresh_transition(2) == 1);
+    assert(ble_mesh_key_refresh_transition(state.net_key_index, 2) == 1);
     assert(mesh_network.state.phase2_provisioned == 1 && !mesh_network.state.has_new_key);
     assert(ble_mesh_net_beacon_queue() == 1);
     assert((sent[3] & 1) == 1);
     assert(ble_mesh_handle_net_beacon(normal_beacon,
                                            sizeof(normal_beacon)) == 1);
     assert(mesh_network.state.phase2_provisioned == 0);
-    assert(ble_mesh_key_refresh_transition(3) == 1);
+    assert(ble_mesh_key_refresh_transition(state.net_key_index, 3) == 1);
 
     // A new-key beacon with the KR flag clear can skip Phase 2.
     assert(ble_mesh_network_init(&phase1) == 1);
@@ -428,13 +434,15 @@ int main(void) {
     assert(ble_mesh_network_init(&multi) == 0); // duplicate index
     multi.app_keys[1].index = 0x235;
     assert(ble_mesh_network_init(&multi) == 1);
-    assert(ble_mesh_stage_net_key(new_net_key) == 1);
+    uint8_t multi_new_net_key[16];
+    memset(multi_new_net_key, 0x44, sizeof(multi_new_net_key));
+    assert(ble_mesh_stage_net_key(multi.net_key_index, multi_new_net_key) == 1);
     uint8_t refreshed[16];
     memset(refreshed, 0x33, 16);
     assert(ble_mesh_stage_app_key(0x234, refreshed) == 1);
     assert(ble_mesh_stage_app_key(0x236, refreshed) == 0);
-    assert(ble_mesh_key_refresh_transition(2) == 1);
-    assert(ble_mesh_key_refresh_transition(3) == 1);
+    assert(ble_mesh_key_refresh_transition(multi.net_key_index, 2) == 1);
+    assert(ble_mesh_key_refresh_transition(multi.net_key_index, 3) == 1);
     assert(memcmp(mesh_network.state.app_keys[0].key, refreshed, 16) == 0);
     assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
     assert(!mesh_network.state.app_keys[0].has_new_key);
