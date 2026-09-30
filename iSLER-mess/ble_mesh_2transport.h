@@ -38,8 +38,8 @@
 // - Increase RX SAR capacity if more than one maximum-size message must be
 //   reassembled concurrently; the default pool holds 32 segments total.
 // - Verify SAR behavior against an independent Mesh implementation.
-// - Implement Friend/LPN establishment, Friend Queue, polling, subscription
-//   updates, and friendship termination using the network friendship-key API.
+// - Implement Friend-node offers/queues, recurring LPN polling, subscription
+//   updates, Friend Update IV-state handling, and friendship termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -67,6 +67,27 @@ typedef struct {
     uint8_t params[MESH_TRANSPORT_MAX_CONTROL];
 } mesh_transport_control_message;
 
+#define MESH_CONTROL_FRIEND_POLL 0x01
+#define MESH_CONTROL_FRIEND_UPDATE 0x02
+#define MESH_CONTROL_FRIEND_REQUEST 0x03
+#define MESH_CONTROL_FRIEND_OFFER 0x04
+#define MESH_FRIENDS_ADDRESS 0xfffd
+
+enum {
+    MESH_LPN_IDLE,
+    MESH_LPN_REQUESTING,
+    MESH_LPN_WAITING_FOR_UPDATE,
+    MESH_LPN_ESTABLISHED
+};
+
+static struct {
+    uint16_t net_key_index, lpn_counter, next_lpn_counter, previous_friend;
+    uint16_t friend_counter, friend_address;
+    uint32_t last_tx_ms;
+    uint32_t poll_timeout_ms;
+    uint8_t criteria, receive_delay, num_elements, state, fsn, poll_attempts;
+} transport_lpn;
+
 typedef void (*mesh_transport_control_handler)(
     const mesh_transport_control_message *message);
 static mesh_transport_control_handler transport_control_handler;
@@ -85,6 +106,118 @@ static inline mesh_sar_tx_state mesh_transport_get_sar_transmitter(void) {
 static inline void mesh_transport_set_control_handler(
     mesh_transport_control_handler handler) {
     transport_control_handler = handler;
+}
+
+// Queue the next Friend Request using the caller-maintained LPN counter.
+static inline int mesh_lpn_send_request(void) {
+    uint16_t primary = mesh_network.state.unicast_address;
+    uint16_t request_counter = transport_lpn.next_lpn_counter;
+    uint8_t request[11] = {
+        MESH_CONTROL_FRIEND_REQUEST, transport_lpn.criteria,
+        transport_lpn.receive_delay,
+        (uint8_t)(transport_lpn.poll_timeout_ms / 100u >> 16),
+        (uint8_t)(transport_lpn.poll_timeout_ms / 100u >> 8),
+        (uint8_t)(transport_lpn.poll_timeout_ms / 100u),
+        (uint8_t)(transport_lpn.previous_friend >> 8),
+        (uint8_t)transport_lpn.previous_friend,
+        transport_lpn.num_elements,
+        (uint8_t)(request_counter >> 8), (uint8_t)request_counter
+    };
+    if (!mesh_net_queue(transport_lpn.net_key_index, primary,
+            MESH_FRIENDS_ADDRESS, 1, 0, request, sizeof(request))) return 0;
+    transport_lpn.lpn_counter = request_counter;
+    transport_lpn.next_lpn_counter++;
+    transport_lpn.last_tx_ms = GET_MILLIS();
+    transport_lpn.state = MESH_LPN_REQUESTING;
+    return 1;
+}
+
+// Begin LPN friendship discovery. poll_timeout_ms must be 1,000–345,599,900 ms;
+// next_lpn_counter is caller-owned persistent state initialized to zero.
+static inline int mesh_lpn_start(uint16_t net_key_index, uint8_t criteria,
+        uint8_t receive_delay, uint32_t poll_timeout_ms,
+        uint16_t previous_friend, uint16_t next_lpn_counter) {
+    uint8_t elements = mesh_network.state.element_count;
+    if (!mesh_network.ready || transport_lpn.state != MESH_LPN_IDLE ||
+        !elements || elements > MESH_MAX_ELEMENTS ||
+        (criteria & 0x80) || !(criteria & 0x07) || receive_delay < 10 ||
+        poll_timeout_ms < 1000 || poll_timeout_ms > 0x34bbffu * 100u ||
+        poll_timeout_ms % 100u ||
+        previous_friend > 0x7fff ||
+        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0) return 0;
+
+    memset(&transport_lpn, 0, sizeof(transport_lpn));
+    transport_lpn.net_key_index = net_key_index;
+    transport_lpn.criteria = criteria;
+    transport_lpn.receive_delay = receive_delay;
+    transport_lpn.num_elements = elements;
+    transport_lpn.poll_timeout_ms = poll_timeout_ms;
+    transport_lpn.next_lpn_counter = next_lpn_counter;
+    transport_lpn.previous_friend = previous_friend;
+    if (mesh_lpn_send_request()) return 1;
+    memset(&transport_lpn, 0, sizeof(transport_lpn));
+    return 0;
+}
+
+static inline uint16_t mesh_lpn_friend_address(void) {
+    return transport_lpn.state == MESH_LPN_ESTABLISHED ?
+        transport_lpn.friend_address : 0;
+}
+
+// Read the next LPNCounter so the application can persist it between boots.
+static inline uint16_t mesh_lpn_next_counter(void) {
+    return transport_lpn.next_lpn_counter;
+}
+
+// Complete the LPN side of Friend Offer -> friendship-key Friend Poll -> Update.
+static inline void mesh_lpn_control_receive(
+        const mesh_transport_control_message *message) {
+    if (!message || message->net_key_index != transport_lpn.net_key_index ||
+        !mesh_network.ready) return;
+
+    if (transport_lpn.state == MESH_LPN_REQUESTING &&
+        message->opcode == MESH_CONTROL_FRIEND_OFFER && !message->friendship &&
+        message->len == 6 && message->dst == mesh_network.state.unicast_address &&
+        message->src && message->src <= 0x7fff && message->params[0] &&
+        message->params[1] >= (1u << (transport_lpn.criteria & 0x07))) {
+        uint16_t friend_counter = (uint16_t)((message->params[4] << 8) |
+                                              message->params[5]);
+        if (!mesh_friendship_add(message->net_key_index,
+                mesh_network.state.unicast_address, message->src,
+                transport_lpn.lpn_counter, friend_counter)) return;
+
+        uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, 0};
+        if (!mesh_net_queue_friend(message->net_key_index,
+                mesh_network.state.unicast_address, message->src, 1, 0,
+                poll, sizeof(poll))) {
+            mesh_friendship_clear(message->net_key_index,
+                mesh_network.state.unicast_address, message->src);
+            return;
+        }
+        transport_lpn.friend_address = message->src;
+        transport_lpn.friend_counter = friend_counter;
+        transport_lpn.fsn = 0;
+        transport_lpn.poll_attempts = 1;
+        transport_lpn.last_tx_ms = GET_MILLIS();
+        transport_lpn.state = MESH_LPN_WAITING_FOR_UPDATE;
+        return;
+    }
+
+    if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
+        message->opcode == MESH_CONTROL_FRIEND_UPDATE && message->friendship &&
+        message->len == 6 && message->src == transport_lpn.friend_address &&
+        message->dst == mesh_network.state.unicast_address &&
+        !(message->params[0] & 0xfc) && message->params[5] <= 1) {
+        uint8_t phase = mesh_subnet_phase(&mesh_network.state,
+                                          transport_lpn.net_key_index);
+        if (message->params[0] & 1u) {
+            if (phase == 1 && !mesh_key_refresh_transition(
+                    transport_lpn.net_key_index, 2)) return;
+            if (phase != 1 && phase != 2) return;
+        } else if (phase == 2 && !mesh_key_refresh_transition(
+                       transport_lpn.net_key_index, 3)) return;
+        transport_lpn.state = MESH_LPN_ESTABLISHED;
+    }
 }
 
 static struct {
@@ -531,8 +664,8 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
 
         // Friendship control messages are unsegmented; deliver them to the
         // control handler just like reassembled segmented Control messages.
-        if (transport_control_handler &&
-            (net->dst > 0x7fff || mesh_local_element(net->dst))) {
+        if ((net->dst > 0x7fff || mesh_local_element(net->dst)) &&
+            (transport_control_handler || net->transport_len > 1)) {
             mesh_transport_control_message control = {0};
             control.src = net->src;
             control.dst = net->dst;
@@ -543,7 +676,9 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             control.len = (uint16_t)(net->transport_len - 1);
             if (control.len)
                 memcpy(control.params, pdu + 1, control.len);
-            transport_control_handler(&control);
+            mesh_lpn_control_receive(&control);
+            if (transport_control_handler)
+                transport_control_handler(&control);
         }
         return 0;
     }
@@ -767,6 +902,28 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
     if (received < 0) return -1;
     int result = received ? mesh_transport_receive(&net, out) : 0;
     if (result < 0) return -1;
+    // Retry discovery every 1.1 seconds and resend Friend Poll while awaiting
+    // the initial Friend Update; discard a friendship after six unanswered polls.
+    if (transport_lpn.state == MESH_LPN_REQUESTING &&
+        (uint32_t)(GET_MILLIS() - transport_lpn.last_tx_ms) >= 1100u) {
+        mesh_lpn_send_request();
+    } else if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
+        (uint32_t)(GET_MILLIS() - transport_lpn.last_tx_ms) >= 1000u) {
+        if (transport_lpn.poll_attempts >= 6) {
+            mesh_friendship_clear(transport_lpn.net_key_index,
+                mesh_network.state.unicast_address, transport_lpn.friend_address);
+            transport_lpn.friend_address = 0;
+            transport_lpn.state = MESH_LPN_IDLE;
+        } else {
+            uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, transport_lpn.fsn};
+            if (mesh_net_queue_friend(transport_lpn.net_key_index,
+                    mesh_network.state.unicast_address,
+                    transport_lpn.friend_address, 1, 0, poll, sizeof(poll))) {
+                transport_lpn.poll_attempts++;
+                transport_lpn.last_tx_ms = GET_MILLIS();
+            }
+        }
+    }
 
     if (transport_control_handler) {
         // Deliver each complete Segmented Control message to the registered handler.

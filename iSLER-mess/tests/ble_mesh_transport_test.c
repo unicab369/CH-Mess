@@ -361,6 +361,48 @@ int main(void) {
     assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
     transport_sar_rx = MESH_SAR_RX_DEFAULT;
     assert(sent_count == 5); // Initial Segment ACK plus one configured repeat.
+
+    // Exercise the LPN-side Friend Request -> Offer -> Poll -> Update path.
+    memset(&transport_lpn, 0, sizeof(transport_lpn));
+    sent_count = 0;
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_lpn_start(mesh_network.state.net_key_index, 0x01, 10,
+                          10000, 0, 0) == 1);
+    assert(transport_lpn.state == MESH_LPN_REQUESTING && sent_count == 1);
+    mesh_net_message request;
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2, &request) == 1);
+    assert(request.ctl && request.dst == MESH_FRIENDS_ADDRESS &&
+           request.ttl == 0 && request.transport_len == 11 &&
+           request.transport[0] == MESH_CONTROL_FRIEND_REQUEST &&
+           request.transport[1] == 0x01 && request.transport[2] == 10 &&
+           request.transport[8] == 1);
+    assert(mesh_network_init(&b) == 1);
+    mesh_net_message offer = {
+        .ctl = 1,
+        .ttl = 0,
+        .src = a.unicast_address,
+        .dst = b.unicast_address,
+        .net_key_index = mesh_network.state.net_key_index,
+        .transport_len = 7,
+        .transport = {MESH_CONTROL_FRIEND_OFFER, 20, 2, 4, 0, 0, 7}
+    };
+    assert(mesh_transport_receive(&offer, &received) == 0);
+    assert(transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
+           transport_lpn.friend_address == a.unicast_address && sent_count == 2);
+    mesh_net_message update = {
+        .ctl = 1,
+        .ttl = 0,
+        .src = a.unicast_address,
+        .dst = b.unicast_address,
+        .net_key_index = mesh_network.state.net_key_index,
+        .friendship = 1,
+        .transport_len = 7,
+        .transport = {MESH_CONTROL_FRIEND_UPDATE, 0, 0, 0, 0, 0, 0}
+    };
+    assert(mesh_transport_receive(&update, &received) == 0);
+    assert(mesh_lpn_friend_address() == a.unicast_address);
+
     b = mesh_network.state;
     assert(mesh_network_init(&a) == 1);
     mesh_net_message control_ack;
