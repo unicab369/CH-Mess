@@ -361,6 +361,9 @@ int main(void) {
     assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
     transport_sar_rx = MESH_SAR_RX_DEFAULT;
     assert(sent_count == 5); // Initial Segment ACK plus one configured repeat.
+    uint8_t saved_control_ack[31];
+    size_t saved_control_ack_len = sent_len[3];
+    memcpy(saved_control_ack, sent[3], saved_control_ack_len);
 
     // Exercise the LPN-side Friend Request -> Offer -> Poll -> Update path.
     memset(&transport_lpn, 0, sizeof(transport_lpn));
@@ -401,12 +404,73 @@ int main(void) {
         .transport = {MESH_CONTROL_FRIEND_UPDATE, 0, 0, 0, 0, 0, 0}
     };
     assert(mesh_transport_receive(&update, &received) == 0);
-    assert(mesh_lpn_friend_address() == a.unicast_address);
+    assert(mesh_lpn_friend_address() == a.unicast_address &&
+           transport_lpn.fsn == 1 &&
+           transport_lpn.last_rx_ms == current_ms);
+
+    // Established LPNs poll every third of PollTimeout and keep the same
+    // FSN until a friendship response is received.
+    mesh_net_state lpn_state = mesh_network.state;
+    uint32_t first_poll_at = transport_lpn.last_tx_ms;
+    current_ms = first_poll_at + transport_lpn.poll_timeout_ms / 3 - 1;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    current_ms++;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 3);
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    mesh_net_message periodic_poll;
+    assert(mesh_net_receive(sent[2] + 2, sent_len[2] - 2,
+                            &periodic_poll) == 1);
+    assert(periodic_poll.friendship &&
+           periodic_poll.transport[0] == MESH_CONTROL_FRIEND_POLL &&
+           periodic_poll.transport[1] == 1);
+
+    assert(mesh_network_init(&lpn_state) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    // Without a response, the next Poll repeats the current FSN.
+    current_ms = transport_lpn.last_tx_ms +
+        transport_lpn.poll_timeout_ms / 3;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    assert(mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
+                            &periodic_poll) == 1);
+    assert(periodic_poll.transport[0] == MESH_CONTROL_FRIEND_POLL &&
+           periodic_poll.transport[1] == 1);
+
+    assert(mesh_network_init(&lpn_state) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    assert(mesh_transport_receive(&update, &received) == 0);
+    assert(transport_lpn.fsn == 0 &&
+           transport_lpn.last_rx_ms == current_ms);
+    current_ms = transport_lpn.last_tx_ms +
+        transport_lpn.poll_timeout_ms / 3;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 5);
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    assert(mesh_net_receive(sent[4] + 2, sent_len[4] - 2,
+                            &periodic_poll) == 1);
+    assert(periodic_poll.transport[0] == MESH_CONTROL_FRIEND_POLL &&
+           periodic_poll.transport[1] == 0);
+
+    assert(mesh_network_init(&lpn_state) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    current_ms = transport_lpn.last_rx_ms + transport_lpn.poll_timeout_ms;
+    assert(mesh_transport_poll(&received) == 0 &&
+           transport_lpn.state == MESH_LPN_IDLE &&
+           mesh_lpn_friend_address() == 0 && mesh_lpn_next_counter() == 1);
 
     b = mesh_network.state;
     assert(mesh_network_init(&a) == 1);
     mesh_net_message control_ack;
-    assert(mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
+    assert(mesh_net_receive(saved_control_ack + 2,
+                            saved_control_ack_len - 2,
                                 &control_ack) == 1);
     assert(control_ack.ctl && control_ack.transport_len == 7 &&
            control_ack.transport[0] == 0 && control_ack.transport[6] == 0x07);

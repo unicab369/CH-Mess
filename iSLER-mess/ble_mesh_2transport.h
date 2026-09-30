@@ -35,13 +35,10 @@
 #endif
 
 // TODO for broader Transport support:
-// - Increase RX SAR capacity if more than one maximum-size message must be
-//   reassembled concurrently; the default pool holds 32 segments total.
-// - Verify SAR behavior against an independent Mesh implementation.
 // - Extend Friend Queue to segmented and subscribed group/virtual traffic;
 //   unsegmented unicast delivery is implemented below.
-// - Add recurring LPN polling, subscription updates, Friend Update IV-state
-//   handling, RSSI-aware offer timing, and friendship termination.
+// - Add subscription updates, Friend Update IV-state handling, RSSI-aware
+//   offer timing, and friendship termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -87,7 +84,7 @@ enum {
 static struct {
     uint16_t net_key_index, lpn_counter, next_lpn_counter, previous_friend;
     uint16_t friend_counter, friend_address;
-    uint32_t last_tx_ms;
+    uint32_t last_tx_ms, last_rx_ms;
     uint32_t poll_timeout_ms;
     uint8_t criteria, receive_delay, num_elements, state, fsn, poll_attempts;
 } transport_lpn;
@@ -185,6 +182,20 @@ static inline uint16_t mesh_lpn_friend_address(void) {
 // Read the next LPNCounter so the application can persist it between boots.
 static inline uint16_t mesh_lpn_next_counter(void) {
     return transport_lpn.next_lpn_counter;
+}
+
+// Accept a Friend response, advance FSN, and restart the negotiated timeout.
+static inline void mesh_lpn_poll_response_received(
+        const mesh_net_message *message) {
+    if (!message || !message->friendship ||
+        transport_lpn.state != MESH_LPN_ESTABLISHED ||
+        message->dst < mesh_network.state.unicast_address ||
+        (uint32_t)message->dst >=
+            (uint32_t)mesh_network.state.unicast_address +
+                transport_lpn.num_elements) return;
+    transport_lpn.fsn ^= 1;
+    transport_lpn.last_rx_ms = GET_MILLIS();
+    transport_lpn.poll_attempts = 0;
 }
 
 // Enable Friend responses on one subnet. The caller persists the counter.
@@ -942,6 +953,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             mesh_friend_poll_receive(&control);
             if (transport_control_handler)
                 transport_control_handler(&control);
+            mesh_lpn_poll_response_received(net);
         }
         return 0;
     }
@@ -955,7 +967,10 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
         int result = transport_decrypt(akf, aid, 0, net->seq, net->iv_index,
                                        net->net_key_index, net->src, net->dst, pdu + 1,
                                        net->transport_len - 1, out);
-        if (result) out->ttl = net->ttl;
+        if (result) {
+            out->ttl = net->ttl;
+            mesh_lpn_poll_response_received(net);
+        }
         return result;
     }
 
@@ -1215,6 +1230,29 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     transport_lpn.friend_address, 1, 0, poll, sizeof(poll))) {
                 transport_lpn.poll_attempts++;
                 transport_lpn.last_tx_ms = GET_MILLIS();
+            }
+        }
+    } else if (transport_lpn.state == MESH_LPN_ESTABLISHED) {
+        uint32_t now = GET_MILLIS();
+        if ((uint32_t)(now - transport_lpn.last_rx_ms) >=
+                transport_lpn.poll_timeout_ms) {
+            mesh_friendship_clear(transport_lpn.net_key_index,
+                mesh_network.state.unicast_address,
+                transport_lpn.friend_address);
+            transport_lpn.friend_address = 0;
+            transport_lpn.state = MESH_LPN_IDLE;
+            transport_lpn.poll_attempts = 0;
+        } else {
+            // Poll every third of the negotiated timeout, leaving time for
+            // retries before expiring an unresponsive friendship.
+            uint32_t poll_interval_ms = transport_lpn.poll_timeout_ms / 3u;
+            if ((uint32_t)(now - transport_lpn.last_tx_ms) >= poll_interval_ms) {
+                uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, transport_lpn.fsn};
+                if (mesh_net_queue_friend(transport_lpn.net_key_index,
+                        mesh_network.state.unicast_address,
+                        transport_lpn.friend_address, 1, 0,
+                        poll, sizeof(poll)))
+                    transport_lpn.last_tx_ms = now;
             }
         }
     }
