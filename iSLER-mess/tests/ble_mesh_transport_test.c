@@ -294,7 +294,6 @@ int main(void) {
            control_event.dst == b.unicast_address);
     assert(memcmp(control_event.params, control_params,
                   sizeof(control_params)) == 0);
-    assert(ble_mesh_transport_take_control(&control_event) == 0);
     ble_mesh_transport_set_control_handler(NULL);
     current_ms += 24;
     assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 3);
@@ -629,5 +628,66 @@ int main(void) {
     assert(ble_mesh_transport_poll(&received) == 0 && transport_rx[0].active);
     current_ms++;
     assert(ble_mesh_transport_poll(&received) == 0 && !transport_rx[0].active);
+
+    // A full pool of incomplete reassemblies rejects a new unicast transfer
+    // with an empty Segment ACK instead of overwriting stored segments.
+    b = node(0x1202);
+    a = node(0x1201);
+    sent_count = 0;
+    memset(transport_rx, 0, sizeof(transport_rx));
+    assert(ble_mesh_network_init(&b) == 1);
+    for (uint32_t seq = 0; seq < MESH_TRANSPORT_RX_PACKET_SLOTS; seq++) {
+        mesh_net_message net = {
+            .ctl = 0,
+            .ttl = 5,
+            .seq = seq,
+            .iv_index = mesh_network.state.iv_index,
+            .src = a.unicast_address,
+            .dst = b.unicast_address,
+            .net_key_index = mesh_network.state.net_key_index,
+            .transport_len = 16,
+            .transport = {0x80, 0, 0, 31}
+        };
+        uint16_t seq_zero = (uint16_t)(seq & 0x1fff);
+        net.transport[1] = (uint8_t)(seq_zero >> 6);
+        net.transport[2] = (uint8_t)((seq_zero & 0x3f) << 2);
+        assert(ble_mesh_transport_receive(&net, &received) == 0);
+    }
+    size_t active_rx = 0;
+    for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
+        active_rx += transport_rx[i].active != 0;
+    assert(active_rx == MESH_TRANSPORT_RX_PACKET_SLOTS);
+
+    mesh_net_message overflow = {
+        .ctl = 0,
+        .ttl = 5,
+        .seq = MESH_TRANSPORT_RX_PACKET_SLOTS,
+        .iv_index = mesh_network.state.iv_index,
+        .src = a.unicast_address,
+        .dst = b.unicast_address,
+        .net_key_index = mesh_network.state.net_key_index,
+        .transport_len = 16,
+        .transport = {0x80, 0, 0, 31}
+    };
+    uint16_t overflow_seq_zero =
+        (uint16_t)(overflow.seq & 0x1fff);
+    overflow.transport[1] = (uint8_t)(overflow_seq_zero >> 6);
+    overflow.transport[2] = (uint8_t)((overflow_seq_zero & 0x3f) << 2);
+    assert(ble_mesh_transport_receive(&overflow, &received) == 0);
+    active_rx = 0;
+    for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
+        active_rx += transport_rx[i].active != 0;
+    assert(active_rx == MESH_TRANSPORT_RX_PACKET_SLOTS && sent_count == 1);
+
+    assert(ble_mesh_network_init(&a) == 1);
+    mesh_net_message rejected_ack;
+    assert(ble_mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
+                                &rejected_ack) == 1);
+    assert(rejected_ack.ctl && rejected_ack.transport_len == 7 &&
+           rejected_ack.transport[0] == 0 &&
+           rejected_ack.transport[3] == 0 &&
+           rejected_ack.transport[4] == 0 &&
+           rejected_ack.transport[5] == 0 &&
+           rejected_ack.transport[6] == 0);
     return 0;
 }

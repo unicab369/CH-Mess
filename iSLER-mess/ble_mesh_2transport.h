@@ -27,7 +27,7 @@
 #error MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE must be between 1 and MESH_TRANSPORT_SEGMENTED_TX_QUEUE_MAX
 #endif
 #ifndef MESH_TRANSPORT_RX_PACKET_SLOTS
-// One slot stores one received segment; 32 slots hold one maximum-size message.
+// One slot stores a segment; the default 32 slots hold one maximum-size message.
 #define MESH_TRANSPORT_RX_PACKET_SLOTS 32
 #endif
 #if MESH_TRANSPORT_RX_PACKET_SLOTS < 1
@@ -35,11 +35,11 @@
 #endif
 
 // TODO for broader Transport support:
-// - Support segmented TX contexts for different destinations concurrently;
-//   never start another segmented message to a destination before completion
-//   or cancellation of the previous one.
-// - Define RX SAR capacity so more than one large message can be reassembled
-//   without exceeding the configured packet-slot pool.
+// - Skipped for now: support concurrent segmented TX contexts for different
+//   destinations. One active context serializes segmented sends; the Mesh
+//   Protocol only prohibits overlapping segmented sends to the same destination.
+// - Increase RX SAR capacity if more than one maximum-size message must be
+//   reassembled concurrently; the default pool holds 32 segments total.
 // - Verify SAR ACK, retry, duplicate, and discard-timer behavior against the
 //   Mesh Protocol specification and an independent implementation.
 // - Add Friendship Transport Control messages when Friend/LPN roles are added.
@@ -477,7 +477,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
 // Consume one authenticated Network message. Returns 1 for an Access message,
 // 0 for an incomplete/ignored message, or -1 for bad arguments. Completed
 // segmented Control messages are dispatched during polling when a handler is
-// registered, or retrieved with ble_mesh_transport_take_control otherwise.
+// registered.
 static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                                               mesh_access_message *out) {
     if (!net || !out) return -1;
@@ -614,7 +614,22 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                 if (!oldest || (uint32_t)(now - candidate->updated_ms) >
                     (uint32_t)(now - oldest->updated_ms)) oldest = candidate;
             }
-            if (!oldest) return 0;
+            if (!oldest) {
+                // Reject a unicast transfer with an empty BlockAck when no
+                // segment slot can be reclaimed, as required by SAR behavior.
+                if (mesh_local_element(net->dst)) {
+                    uint16_t rejected_seq_zero = (uint16_t)(seq_auth & 0x1fff);
+                    uint8_t ack[7] = {
+                        0,
+                        (uint8_t)(rejected_seq_zero >> 6),
+                        (uint8_t)((rejected_seq_zero & 0x3f) << 2),
+                        0, 0, 0, 0
+                    };
+                    ble_mesh_net_queue(net->net_key_index, net->dst, net->src,
+                        1, net->ttl, ack, sizeof(ack));
+                }
+                return 0;
+            }
             // Free every stored segment belonging to the completed transaction.
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
@@ -694,47 +709,6 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     return result;
 }
 
-// Take the next fully reassembled Segmented Control message when no handler
-// is registered. Params are caller-owned; the opcode is carried separately.
-static inline int ble_mesh_transport_take_control(
-    mesh_transport_control_message *out) {
-    if (!out) return -1;
-    for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
-        struct transport_rx *first = &transport_rx[i];
-        if (!first->active || !first->ctl || first->delivered) continue;
-        uint8_t seg_n = first->transport[3] & 0x1f;
-        uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
-            ((uint32_t)1 << (seg_n + 1)) - 1;
-        if (transport_rx_received(1, first->net_idx, first->src, first->dst,
-                first->seq_auth, first->iv_index) != segment_mask) continue;
-
-        uint8_t last_len = 0;
-        memset(out, 0, sizeof(*out));
-        out->src = first->src;
-        out->dst = first->dst;
-        out->net_key_index = first->net_idx;
-        out->ttl = first->ttl;
-        out->opcode = first->transport[0] & 0x7f;
-        for (size_t j = 0; j < MESH_TRANSPORT_RX_PACKET_SLOTS; j++) {
-            struct transport_rx *rx = &transport_rx[j];
-            if (!transport_rx_matches(rx, 1, first->net_idx, first->src,
-                    first->dst, first->seq_auth, first->iv_index)) continue;
-            uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
-                                     (rx->transport[3] >> 5));
-            size_t part_len = rx->transport_len - 4;
-            memcpy(out->params + (size_t)part *
-                   MESH_TRANSPORT_CONTROL_SEGMENT_SIZE,
-                   rx->transport + 4, part_len);
-            if (part == seg_n) last_len = (uint8_t)part_len;
-            rx->delivered = 1;
-        }
-        out->len = (uint16_t)((size_t)seg_n *
-                    MESH_TRANSPORT_CONTROL_SEGMENT_SIZE + last_len);
-        return 1;
-    }
-    return 0;
-}
-
 // Poll the network, reassemble Access/Control messages, and service SAR.
 // Returns 1 with an Access message, 0 if none, or -1 for a send/radio error.
 static inline int ble_mesh_transport_poll(mesh_access_message *out) {
@@ -746,11 +720,50 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
     if (result < 0) return -1;
 
     if (transport_control_handler) {
-        mesh_transport_control_message control;
-        int control_ready;
-        while ((control_ready = ble_mesh_transport_take_control(&control)) == 1)
+        // Deliver each complete Segmented Control message to the registered handler.
+        for (;;) {
+            struct transport_rx *first = NULL;
+            for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
+                struct transport_rx *candidate = &transport_rx[i];
+                if (!candidate->active || !candidate->ctl || candidate->delivered)
+                    continue;
+                uint8_t seg_n = candidate->transport[3] & 0x1f;
+                uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
+                    ((uint32_t)1 << (seg_n + 1)) - 1;
+                if (transport_rx_received(1, candidate->net_idx, candidate->src,
+                        candidate->dst, candidate->seq_auth,
+                        candidate->iv_index) == segment_mask) {
+                    first = candidate;
+                    break;
+                }
+            }
+            if (!first) break;
+
+            mesh_transport_control_message control = {0};
+            uint8_t seg_n = first->transport[3] & 0x1f;
+            uint8_t last_len = 0;
+            control.src = first->src;
+            control.dst = first->dst;
+            control.net_key_index = first->net_idx;
+            control.ttl = first->ttl;
+            control.opcode = first->transport[0] & 0x7f;
+            for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
+                struct transport_rx *rx = &transport_rx[i];
+                if (!transport_rx_matches(rx, 1, first->net_idx, first->src,
+                        first->dst, first->seq_auth, first->iv_index)) continue;
+                uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
+                                         (rx->transport[3] >> 5));
+                size_t part_len = rx->transport_len - 4;
+                memcpy(control.params + (size_t)part *
+                       MESH_TRANSPORT_CONTROL_SEGMENT_SIZE,
+                       rx->transport + 4, part_len);
+                if (part == seg_n) last_len = (uint8_t)part_len;
+                rx->delivered = 1;
+            }
+            control.len = (uint16_t)((size_t)seg_n *
+                MESH_TRANSPORT_CONTROL_SEGMENT_SIZE + last_len);
             transport_control_handler(&control);
-        if (control_ready < 0) return -1;
+        }
     }
 
     uint32_t now = GET_MILLIS();

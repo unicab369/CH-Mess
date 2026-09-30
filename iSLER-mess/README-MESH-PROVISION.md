@@ -99,6 +99,14 @@ the GATT proxy bearer, or segmented Transport Control messages.
 * Max Capacity: A single unsegmented transport control PDU can carry a maximum of 11 bytes of useful payload .
 Segmented Capacity: If a control message needs more space (up to a maximum of 256 bytes), it is split into up to 32 segment
 
+The receiver stores one segment per `MESH_TRANSPORT_RX_PACKET_SLOTS` slot. The
+default pool has 32 slots, enough for one maximum-size segmented message or
+multiple smaller messages whose segments fit in the pool. When the pool is full,
+completed transactions may be reclaimed; if all slots belong to incomplete
+transactions, a new unicast transfer is rejected with an empty Segment ACK.
+Group and virtual-address transfers do not receive Segment ACKs and are ignored
+when no slot is available.
+
 <br>
 
 # PB-ADV provisioning procedure
