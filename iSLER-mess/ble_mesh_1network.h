@@ -1058,7 +1058,8 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
         !((src == friendship_lpn && dst == friendship_friend) ||
           (src == friendship_friend && dst == friendship_lpn) ||
           (mesh_network.state.unicast_address == friendship_lpn &&
-           mesh_local_element(dst)))) return 0;
+           (mesh_local_element(dst) ||
+            (dst >= 0x8000 && dst < 0xff00))))) return 0;
 
     // A segmented message is checked when reassembly completes. Checking its
     // individual segment SEQs here would reject valid segments arriving late.

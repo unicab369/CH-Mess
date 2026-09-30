@@ -35,10 +35,10 @@
 #endif
 
 // TODO for broader Transport support:
-// - Extend Friend Queue to segmented and subscribed group/virtual traffic;
-//   unsegmented unicast delivery is implemented below.
-// - Add subscription updates, Friend Update IV-state handling, RSSI-aware
-//   offer timing, and friendship termination.
+// - Extend Friend Queue to segmented traffic; unsegmented unicast and
+//   subscribed group/virtual delivery are implemented below.
+// - Add Friend Update IV-state handling, RSSI-aware offer timing, and
+//   friendship termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -70,9 +70,20 @@ typedef struct {
 #define MESH_CONTROL_FRIEND_UPDATE 0x02
 #define MESH_CONTROL_FRIEND_REQUEST 0x03
 #define MESH_CONTROL_FRIEND_OFFER 0x04
+#define MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD 0x07
+#define MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE 0x08
+#define MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM 0x09
 #define MESH_FRIENDS_ADDRESS 0xfffd
 // Fixed Friend Queue depth advertised in Friend Offers.
 #define MESH_FRIEND_QUEUE_CAPACITY 2
+#ifndef MESH_FRIEND_SUBSCRIPTION_CAPACITY
+#define MESH_FRIEND_SUBSCRIPTION_CAPACITY 16
+#endif
+#if MESH_FRIEND_SUBSCRIPTION_CAPACITY < 1 || \
+    MESH_FRIEND_SUBSCRIPTION_CAPACITY > 255
+#error MESH_FRIEND_SUBSCRIPTION_CAPACITY must be between 1 and 255
+#endif
+#define MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX 5
 
 enum {
     MESH_LPN_IDLE,
@@ -87,6 +98,10 @@ static struct {
     uint32_t last_tx_ms, last_rx_ms;
     uint32_t poll_timeout_ms;
     uint8_t criteria, receive_delay, num_elements, state, fsn, poll_attempts;
+    uint8_t subscription_list_size, subscription_transaction;
+    uint8_t subscription_pending, subscription_opcode, subscription_count;
+    uint8_t subscription_pending_transaction;
+    uint16_t subscription_addresses[MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX];
 } transport_lpn;
 
 static struct {
@@ -97,8 +112,14 @@ static struct {
 typedef struct {
     uint16_t net_key_index, lpn_address, lpn_counter, friend_counter;
     uint32_t poll_timeout_ms, offer_at_ms, expires_at_ms;
+    uint32_t subscription_confirm_at_ms, subscription_confirm_deadline_ms;
+    uint8_t receive_delay_ms, subscription_confirm_pending;
+    uint8_t subscription_confirm_transaction;
     uint8_t num_elements, used, offered, queue_count, has_poll_fsn;
     uint8_t last_poll_fsn, last_response_queued;
+    uint8_t subscription_count, has_subscription_transaction;
+    uint8_t last_subscription_transaction, last_subscription_opcode;
+    uint16_t subscriptions[MESH_FRIEND_SUBSCRIPTION_CAPACITY];
     mesh_net_message queue[MESH_FRIEND_QUEUE_CAPACITY];
 } mesh_friend_offer;
 static mesh_friend_offer transport_friend_offers[MESH_NETWORK_MAX_FRIENDSHIPS];
@@ -198,11 +219,49 @@ static inline void mesh_lpn_poll_response_received(
     transport_lpn.poll_attempts = 0;
 }
 
+static inline int mesh_friend_subscription_address(uint16_t address) {
+    return (address >= 0x8000 && address <= 0xbfff) ||
+           (address >= 0xc000 && address <= 0xfeff);
+}
+
+// Send one unsegmented Friend Subscription List transaction. An unconfirmed
+// transaction is repeated with the same number during later Friend Polls.
+static inline int mesh_lpn_subscription_update(uint8_t opcode,
+        const uint16_t *addresses, uint8_t count) {
+    if (transport_lpn.state != MESH_LPN_ESTABLISHED || !addresses || !count ||
+        count > MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX ||
+        count > transport_lpn.subscription_list_size ||
+        transport_lpn.subscription_pending ||
+        (opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
+         opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE)) return 0;
+    uint8_t message[2 + MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2];
+    message[0] = opcode;
+    message[1] = transport_lpn.subscription_transaction;
+    for (uint8_t i = 0; i < count; i++) {
+        if (!mesh_friend_subscription_address(addresses[i])) return 0;
+        message[2 + i * 2] = (uint8_t)(addresses[i] >> 8);
+        message[3 + i * 2] = (uint8_t)addresses[i];
+    }
+    if (!mesh_net_queue_friend(transport_lpn.net_key_index,
+            mesh_network.state.unicast_address, transport_lpn.friend_address,
+            1, 0, message, 2 + count * 2)) return 0;
+    transport_lpn.subscription_opcode = opcode;
+    transport_lpn.subscription_count = count;
+    transport_lpn.subscription_pending_transaction =
+        transport_lpn.subscription_transaction;
+    memcpy(transport_lpn.subscription_addresses, addresses,
+           count * sizeof(addresses[0]));
+    transport_lpn.subscription_pending = 1;
+    transport_lpn.subscription_transaction++;
+    return 1;
+}
+
 // Enable Friend responses on one subnet. The caller persists the counter.
 static inline int mesh_friend_enable(uint16_t net_key_index,
         uint8_t receive_window, uint8_t subscription_size,
         uint16_t next_friend_counter) {
     if (!mesh_network.ready || !receive_window ||
+        subscription_size > MESH_FRIEND_SUBSCRIPTION_CAPACITY ||
         mesh_subnet_slot(&mesh_network.state, net_key_index) < 0) return 0;
     transport_friend.net_key_index = net_key_index;
     transport_friend.receive_window = receive_window;
@@ -267,12 +326,15 @@ static inline void mesh_friend_request_receive(
     uint16_t friend_counter = transport_friend.next_counter++;
     if (!mesh_friendship_add(message->net_key_index, message->src,
             mesh_network.state.unicast_address, lpn_counter, friend_counter)) return;
+    memset(&transport_friend_offers[slot], 0,
+           sizeof(transport_friend_offers[slot]));
     transport_friend_offers[slot].used = 1;
     transport_friend_offers[slot].net_key_index = message->net_key_index;
     transport_friend_offers[slot].lpn_address = message->src;
     transport_friend_offers[slot].lpn_counter = lpn_counter;
     transport_friend_offers[slot].friend_counter = friend_counter;
     transport_friend_offers[slot].num_elements = elements;
+    transport_friend_offers[slot].receive_delay_ms = message->params[1];
     transport_friend_offers[slot].poll_timeout_ms = poll_timeout * 100u;
     transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + 100u;
     transport_friend_offers[slot].expires_at_ms = GET_MILLIS() + poll_timeout * 100u;
@@ -280,22 +342,98 @@ static inline void mesh_friend_request_receive(
     transport_friend_offers[slot].has_poll_fsn = 0;
 }
 
-// Store eligible unicast Network PDUs for an established LPN. Group and
-// virtual subscription tracking is not available yet, so those destinations
-// are deliberately skipped until Friend Subscription List handling is added.
+// Update one LPN's group/virtual list and confirm each new or repeated
+// transaction using the friendship credentials.
+static inline void mesh_friend_subscription_receive(
+        const mesh_transport_control_message *message) {
+    if (!message || !message->friendship || message->ttl != 0 ||
+        message->dst != mesh_network.state.unicast_address ||
+        (message->opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
+         message->opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE) ||
+        message->len < 3 || message->len > 1 +
+            MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2 ||
+        (message->len & 1) == 0) return;
+    uint8_t slot = 0;
+    while (slot < MESH_NETWORK_MAX_FRIENDSHIPS &&
+        (!transport_friend_offers[slot].used ||
+         !transport_friend_offers[slot].offered ||
+         transport_friend_offers[slot].net_key_index != message->net_key_index ||
+         transport_friend_offers[slot].lpn_address != message->src)) slot++;
+    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+
+    uint8_t transaction = message->params[0];
+    uint8_t count = (uint8_t)((message->len - 1) / 2);
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t address = (uint16_t)((message->params[1 + i * 2] << 8) |
+                                       message->params[2 + i * 2]);
+        if (!mesh_friend_subscription_address(address)) return;
+    }
+
+    mesh_friend_offer *friendship = &transport_friend_offers[slot];
+    if (friendship->has_subscription_transaction &&
+        friendship->last_subscription_transaction == transaction) {
+        if (friendship->last_subscription_opcode != message->opcode) return;
+    } else {
+        for (uint8_t i = 0; i < count; i++) {
+            uint16_t address = (uint16_t)((message->params[1 + i * 2] << 8) |
+                                           message->params[2 + i * 2]);
+            uint8_t found = friendship->subscription_count;
+            for (uint8_t j = 0; j < friendship->subscription_count; j++)
+                if (friendship->subscriptions[j] == address) {
+                    found = j;
+                    break;
+                }
+            if (message->opcode == MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD) {
+                if (found == friendship->subscription_count &&
+                    friendship->subscription_count < transport_friend.subscription_size)
+                    friendship->subscriptions[friendship->subscription_count++] = address;
+            } else if (found < friendship->subscription_count) {
+                memmove(&friendship->subscriptions[found],
+                    &friendship->subscriptions[found + 1],
+                    (friendship->subscription_count - found - 1) *
+                        sizeof(friendship->subscriptions[0]));
+                friendship->subscription_count--;
+            }
+        }
+        friendship->has_subscription_transaction = 1;
+        friendship->last_subscription_transaction = transaction;
+        friendship->last_subscription_opcode = message->opcode;
+    }
+
+    friendship->subscription_confirm_pending = 1;
+    friendship->subscription_confirm_transaction = transaction;
+    friendship->subscription_confirm_at_ms = GET_MILLIS() +
+        friendship->receive_delay_ms;
+    friendship->subscription_confirm_deadline_ms =
+        friendship->subscription_confirm_at_ms + transport_friend.receive_window;
+}
+
+// Store unicast messages for LPN elements and multicast messages explicitly
+// present in that LPN's Friend Subscription List.
 static inline int mesh_friend_queue_receive(const mesh_net_message *message) {
-    if (!message || message->ttl < 2 || message->dst > 0x7fff) return 0;
+    if (!message || message->ttl < 2 || !message->dst ||
+        message->dst >= 0xff00) return 0;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         mesh_friend_offer *friendship = &transport_friend_offers[i];
         if (!friendship->used || !friendship->offered ||
-            friendship->net_key_index != message->net_key_index ||
-            message->dst < friendship->lpn_address ||
-            (uint32_t)message->dst >=
-                (uint32_t)friendship->lpn_address + friendship->num_elements ||
-            (message->src >= friendship->lpn_address &&
-             (uint32_t)message->src <
-                (uint32_t)friendship->lpn_address + friendship->num_elements))
-            continue;
+            friendship->net_key_index != message->net_key_index) continue;
+        if (message->dst <= 0x7fff) {
+            if (message->dst < friendship->lpn_address ||
+                (uint32_t)message->dst >=
+                    (uint32_t)friendship->lpn_address + friendship->num_elements ||
+                (message->src >= friendship->lpn_address &&
+                 (uint32_t)message->src <
+                    (uint32_t)friendship->lpn_address + friendship->num_elements))
+                continue;
+        } else {
+            uint8_t subscribed = 0;
+            for (uint8_t j = 0; j < friendship->subscription_count; j++)
+                if (friendship->subscriptions[j] == message->dst) {
+                    subscribed = 1;
+                    break;
+                }
+            if (!subscribed) continue;
+        }
         for (uint8_t j = 0; j < friendship->queue_count; j++) {
             if (friendship->queue[j].src == message->src &&
                 friendship->queue[j].seq == message->seq &&
@@ -465,6 +603,7 @@ static inline void mesh_lpn_control_receive(
         }
         transport_lpn.friend_address = message->src;
         transport_lpn.friend_counter = friend_counter;
+        transport_lpn.subscription_list_size = message->params[2];
         transport_lpn.fsn = 0;
         transport_lpn.poll_attempts = 1;
         transport_lpn.last_tx_ms = GET_MILLIS();
@@ -486,6 +625,18 @@ static inline void mesh_lpn_control_receive(
         } else if (phase == 2 && !mesh_key_refresh_transition(
                        transport_lpn.net_key_index, 3)) return;
         transport_lpn.state = MESH_LPN_ESTABLISHED;
+        return;
+    }
+
+    if (transport_lpn.state == MESH_LPN_ESTABLISHED &&
+        message->opcode == MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM &&
+        message->friendship && message->len == 1 &&
+        message->src == transport_lpn.friend_address &&
+        message->dst == mesh_network.state.unicast_address &&
+        transport_lpn.subscription_pending &&
+        message->params[0] == transport_lpn.subscription_pending_transaction) {
+        transport_lpn.subscription_pending = 0;
+        transport_lpn.subscription_count = 0;
     }
 }
 
@@ -950,6 +1101,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
                 memcpy(control.params, pdu + 1, control.len);
             mesh_lpn_control_receive(&control);
             mesh_friend_request_receive(&control);
+            mesh_friend_subscription_receive(&control);
             mesh_friend_poll_receive(&control);
             if (transport_control_handler)
                 transport_control_handler(&control);
@@ -1184,6 +1336,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
     // maintain their friendship before the negotiated Poll Timeout.
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         if (!transport_friend_offers[i].used) continue;
+        uint32_t now = GET_MILLIS();
         if ((int32_t)(GET_MILLIS() -
                 transport_friend_offers[i].expires_at_ms) >= 0) {
             mesh_friendship_clear(transport_friend_offers[i].net_key_index,
@@ -1192,6 +1345,24 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             memset(&transport_friend_offers[i], 0,
                    sizeof(transport_friend_offers[i]));
             continue;
+        }
+        if (transport_friend_offers[i].subscription_confirm_pending &&
+            (int32_t)(now -
+                transport_friend_offers[i].subscription_confirm_at_ms) >= 0) {
+            uint8_t confirm[2] = {
+                MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM,
+                transport_friend_offers[i].subscription_confirm_transaction
+            };
+            if (mesh_net_queue_friend(
+                    transport_friend_offers[i].net_key_index,
+                    mesh_network.state.unicast_address,
+                    transport_friend_offers[i].lpn_address, 1, 0,
+                    confirm, sizeof(confirm))) {
+                transport_friend_offers[i].subscription_confirm_pending = 0;
+            } else if ((int32_t)(now -
+                    transport_friend_offers[i].subscription_confirm_deadline_ms) >= 0) {
+                transport_friend_offers[i].subscription_confirm_pending = 0;
+            }
         }
         if (!transport_friend.enabled || transport_friend_offers[i].offered ||
             (int32_t)(GET_MILLIS() -
@@ -1247,6 +1418,23 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             // retries before expiring an unresponsive friendship.
             uint32_t poll_interval_ms = transport_lpn.poll_timeout_ms / 3u;
             if ((uint32_t)(now - transport_lpn.last_tx_ms) >= poll_interval_ms) {
+                if (transport_lpn.subscription_pending) {
+                    uint8_t subscription[2 +
+                        MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2];
+                    subscription[0] = transport_lpn.subscription_opcode;
+                    subscription[1] =
+                        transport_lpn.subscription_pending_transaction;
+                    for (uint8_t i = 0; i < transport_lpn.subscription_count; i++) {
+                        subscription[2 + i * 2] = (uint8_t)(
+                            transport_lpn.subscription_addresses[i] >> 8);
+                        subscription[3 + i * 2] = (uint8_t)
+                            transport_lpn.subscription_addresses[i];
+                    }
+                    mesh_net_queue_friend(transport_lpn.net_key_index,
+                        mesh_network.state.unicast_address,
+                        transport_lpn.friend_address, 1, 0, subscription,
+                        2 + transport_lpn.subscription_count * 2);
+                }
                 uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, transport_lpn.fsn};
                 if (mesh_net_queue_friend(transport_lpn.net_key_index,
                         mesh_network.state.unicast_address,

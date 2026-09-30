@@ -461,6 +461,61 @@ int main(void) {
     assert(mesh_network_init(&lpn_state) == 1);
     assert(mesh_friendship_add(lpn_state.net_key_index,
         lpn_state.unicast_address, a.unicast_address, 0, 7));
+    const uint16_t subscription_addresses[2] = {0xc001, 0x8002};
+    assert(mesh_lpn_subscription_update(
+        MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD, subscription_addresses, 2));
+    assert(transport_lpn.subscription_pending &&
+           transport_lpn.subscription_pending_transaction == 0 &&
+           transport_lpn.subscription_transaction == 1 && sent_count == 6);
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    mesh_net_message subscription_request;
+    assert(mesh_net_receive(sent[5] + 2, sent_len[5] - 2,
+                            &subscription_request) == 1);
+    assert(subscription_request.friendship && subscription_request.ttl == 0 &&
+           subscription_request.transport_len == 6 &&
+           subscription_request.transport[0] ==
+                MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
+           subscription_request.transport[1] == 0 &&
+           subscription_request.transport[2] == 0xc0 &&
+           subscription_request.transport[3] == 0x01 &&
+           subscription_request.transport[4] == 0x80 &&
+           subscription_request.transport[5] == 0x02);
+    assert(mesh_network_init(&lpn_state) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    current_ms = transport_lpn.last_tx_ms +
+        transport_lpn.poll_timeout_ms / 3;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 8);
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    assert(mesh_net_receive(sent[6] + 2, sent_len[6] - 2,
+                            &subscription_request) == 1);
+    assert(subscription_request.transport[0] ==
+                MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
+           subscription_request.transport[1] == 0);
+    assert(mesh_network_init(&lpn_state) == 1);
+    assert(mesh_friendship_add(lpn_state.net_key_index,
+        lpn_state.unicast_address, a.unicast_address, 0, 7));
+    mesh_net_message subscription_confirm = {
+        .ctl = 1, .ttl = 0, .src = a.unicast_address,
+        .dst = lpn_state.unicast_address,
+        .net_key_index = lpn_state.net_key_index, .friendship = 1,
+        .transport_len = 2,
+        .transport = {MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM, 0}
+    };
+    assert(mesh_transport_receive(&subscription_confirm, &received) == 0 &&
+           !transport_lpn.subscription_pending && transport_lpn.fsn == 1);
+    assert(mesh_lpn_subscription_update(
+        MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE, subscription_addresses, 1));
+    assert(transport_lpn.subscription_pending_transaction == 1 &&
+           sent_count == 9);
+    subscription_confirm.transport[1] = 1;
+    assert(mesh_transport_receive(&subscription_confirm, &received) == 0 &&
+           !transport_lpn.subscription_pending && transport_lpn.fsn == 0);
+
     current_ms = transport_lpn.last_rx_ms + transport_lpn.poll_timeout_ms;
     assert(mesh_transport_poll(&received) == 0 &&
            transport_lpn.state == MESH_LPN_IDLE &&
@@ -865,7 +920,7 @@ int main(void) {
     memset(transport_rx, 0, sizeof(transport_rx));
     memset(&transport_lpn, 0, sizeof(transport_lpn));
     sent_count = 0;
-    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 0, 0));
+    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 4, 0));
     mesh_transport_control_message friend_request = {
         .src = b.unicast_address,
         .dst = MESH_FRIENDS_ADDRESS,
@@ -934,7 +989,7 @@ int main(void) {
 
     // An unchanged FSN repeats the same queued PDU; a changed FSN consumes it.
     assert(mesh_network_init(&friend_state) == 1);
-    assert(mesh_friend_enable(friend_request.net_key_index, 10, 0, 0));
+    assert(mesh_friend_enable(friend_request.net_key_index, 10, 4, 0));
     assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
         friend_state.unicast_address, 7, offered_counter));
     transport_friend_offers[0].used = 1;
@@ -942,6 +997,7 @@ int main(void) {
     transport_friend_offers[0].lpn_address = b.unicast_address;
     transport_friend_offers[0].friend_counter = offered_counter;
     transport_friend_offers[0].poll_timeout_ms = 10000;
+    transport_friend_offers[0].receive_delay_ms = 10;
     transport_friend_offers[0].expires_at_ms = current_ms + 10000;
     transport_friend_offers[0].offered = 1;
     transport_friend_offers[0].queue[0] = queued_for_lpn;
@@ -974,6 +1030,77 @@ int main(void) {
     friend_poll_control.params[0] = 1;
     mesh_friend_poll_receive(&friend_poll_control);
     assert(sent_count == 3 && transport_friend_offers[0].queue_count == 0);
+
+    // Subscription List Add is idempotent for a repeated transaction and
+    // enables Friend Queue storage for matching group/virtual destinations.
+    mesh_transport_control_message subscription_add = {
+        .src = b.unicast_address, .dst = friend_state.unicast_address,
+        .net_key_index = friend_request.net_key_index, .ttl = 0,
+        .opcode = MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD,
+        .friendship = 1, .len = 5,
+        .params = {12, 0xc0, 0x01, 0x80, 0x02}
+    };
+    mesh_friend_subscription_receive(&subscription_add);
+    assert(transport_friend_offers[0].subscription_count == 2 &&
+           transport_friend_offers[0].subscriptions[0] == 0xc001 &&
+           transport_friend_offers[0].subscriptions[1] == 0x8002 &&
+           transport_friend_offers[0].subscription_confirm_pending &&
+           sent_count == 3);
+    mesh_friend_subscription_receive(&subscription_add);
+    assert(transport_friend_offers[0].subscription_count == 2 &&
+           sent_count == 3);
+    mesh_net_message queued_group = {
+        .ctl = 0, .ttl = 5, .seq = 0x12346,
+        .iv_index = friend_state.iv_index,
+        .src = 0x1300, .dst = 0xc001,
+        .net_key_index = friend_request.net_key_index,
+        .transport_len = 3, .transport = {0x00, 0xbb, 0x66}
+    };
+    assert(mesh_transport_receive(&queued_group, &received) == 0 &&
+           transport_friend_offers[0].queue_count == 1 &&
+           transport_friend_offers[0].queue[0].ttl == 4);
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 4);
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    assert(mesh_net_receive(sent[3] + 2, sent_len[3] - 2,
+                            &friend_update) == 1);
+    assert(friend_update.friendship && friend_update.src == queued_group.src &&
+           friend_update.dst == queued_group.dst && friend_update.ttl == 4 &&
+           friend_update.seq == queued_group.seq);
+
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    current_ms += 10;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 5 &&
+           !transport_friend_offers[0].subscription_confirm_pending);
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    mesh_transport_control_message subscription_remove = {
+        .src = b.unicast_address, .dst = friend_state.unicast_address,
+        .net_key_index = friend_request.net_key_index, .ttl = 0,
+        .opcode = MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE,
+        .friendship = 1, .len = 3, .params = {13, 0xc0, 0x01}
+    };
+    mesh_friend_subscription_receive(&subscription_remove);
+    assert(transport_friend_offers[0].subscription_count == 1 &&
+           transport_friend_offers[0].subscriptions[0] == 0x8002 &&
+           sent_count == 5 &&
+           transport_friend_offers[0].subscription_confirm_pending);
+    current_ms += 10;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 6);
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    assert(mesh_net_receive(sent[5] + 2, sent_len[5] - 2,
+                            &friend_update) == 1);
+    assert(friend_update.friendship &&
+           friend_update.transport[0] ==
+                MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM &&
+           friend_update.transport[1] == 13);
     mesh_friend_disable();
     return 0;
 }
