@@ -17,6 +17,15 @@
 // Outgoing Configuration Server replies use this node's Device Key.
 #define DEVICE_KEY_LOCAL 0xfffe
 #define MESH_TRANSPORT_MAX_LABELS 4
+#define MESH_TRANSPORT_SEGMENTED_TX_QUEUE_MAX 4
+#ifndef MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE
+// Number of complete segmented Access messages that may wait behind active SAR.
+#define MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE 1
+#endif
+#if MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE < 1 || \
+    MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE > MESH_TRANSPORT_SEGMENTED_TX_QUEUE_MAX
+#error MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE must be between 1 and MESH_TRANSPORT_SEGMENTED_TX_QUEUE_MAX
+#endif
 #ifndef MESH_TRANSPORT_RX_PACKET_SLOTS
 // One slot stores one received segment; 32 slots hold one maximum-size message.
 #define MESH_TRANSPORT_RX_PACKET_SLOTS 32
@@ -25,8 +34,15 @@
 #error MESH_TRANSPORT_RX_PACKET_SLOTS must be at least 1
 #endif
 
-// TODO for broadly usable Access-message transport:
-// - Add concurrent segmented TX contexts.
+// TODO for broader Transport support:
+// - Support segmented TX contexts for different destinations concurrently;
+//   never start another segmented message to a destination before completion
+//   or cancellation of the previous one.
+// - Define RX SAR capacity so more than one large message can be reassembled
+//   without exceeding the configured packet-slot pool.
+// - Verify SAR ACK, retry, duplicate, and discard-timer behavior against the
+//   Mesh Protocol specification and an independent implementation.
+// - Add Friendship Transport Control messages when Friend/LPN roles are added.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -115,6 +131,17 @@ static struct {
     uint32_t seq_auth, iv_index, acked, last_tx_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
 } transport_tx;
+
+struct transport_tx_pending {
+    uint16_t src, dst, net_idx, access_len;
+    uint8_t akf, aid, ttl, mic_64, has_label;
+    uint8_t key[16], label[16];
+    uint8_t access[MESH_TRANSPORT_MAX_ACCESS];
+};
+
+static struct transport_tx_pending
+    segmented_tx_queue[MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE];
+static uint8_t segmented_tx_queue_head, segmented_tx_queue_count;
 
 struct transport_rx {
     uint8_t active, ack_pending, ctl, delivered, ttl, transport_len;
@@ -272,6 +299,44 @@ static int transport_segment_queue(void) {
     return 1;
 }
 
+// Start a queued Access message only when it owns the active SAR context.
+static int transport_tx_start(const struct transport_tx_pending *pending) {
+    if (!pending || transport_tx.active) return 0;
+    const mesh_net_state *state = &mesh_network.state;
+    size_t mic_len = pending->mic_64 ? 8u : 4u;
+    size_t upper_len = pending->access_len + mic_len;
+    uint8_t upper[MESH_TRANSPORT_MAX_UPPER], nonce[13];
+    uint32_t seq = state->next_seq;
+    uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
+    uint8_t *label = pending->has_label ? (uint8_t *)pending->label : NULL;
+
+    if (seq > 0xffffff || seq + (upper_len - 1) / MESH_TRANSPORT_SEGMENT_SIZE >
+            0xffffff || !mesh_local_element(pending->src)) return -1;
+    transport_nonce(nonce, !pending->akf, pending->mic_64, seq,
+                    pending->src, pending->dst, iv);
+    if (ccm_encrypt_and_tag(pending->key, nonce, 13, label,
+            pending->has_label ? 16u : 0u, pending->access,
+            pending->access_len, upper, upper + pending->access_len,
+            mic_len) != CCM_OK) return -1;
+
+    memset(&transport_tx, 0, sizeof(transport_tx));
+    transport_tx.active = 1;
+    transport_tx.akf = pending->akf;
+    transport_tx.aid = pending->aid;
+    transport_tx.mic_64 = pending->mic_64;
+    transport_tx.ttl = pending->ttl;
+    transport_tx.src = pending->src;
+    transport_tx.net_idx = pending->net_idx;
+    transport_tx.dst = pending->dst;
+    transport_tx.seq_zero = seq & 0x1fff;
+    transport_tx.seq_auth = seq;
+    transport_tx.iv_index = iv;
+    transport_tx.upper_len = (uint16_t)upper_len;
+    transport_tx.seg_n = (uint8_t)((upper_len - 1) / MESH_TRANSPORT_SEGMENT_SIZE);
+    memcpy(transport_tx.upper, upper, upper_len);
+    return transport_segment_queue();
+}
+
 static int transport_rx_matches(const struct transport_rx *rx, uint8_t ctl,
                                 uint16_t net_idx, uint16_t src, uint16_t dst,
                                 uint32_t seq_auth, uint32_t iv_index) {
@@ -322,10 +387,9 @@ static uint32_t transport_sar_rx_ack_delay_ms(uint8_t seg_n) {
     return half_steps * interval_ms / 2;
 }
 
-// Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
+// Queue an encrypted Access message. Returns 1 if accepted, 0 on failure.
 // APP_KEY_INDEX_NONE uses the destination's Device Key; DEVICE_KEY_LOCAL uses ours.
 // Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
-// Only one segmented outgoing access message may be active at a time.
 static inline int ble_mesh_transport_queue(uint16_t src,
                                                 uint16_t dst, uint8_t ttl,
                                                 uint16_t app_key_index,
@@ -339,7 +403,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         ttl > 0x7f || dst == 0 ||
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
         (label && (app_key_index == APP_KEY_INDEX_NONE ||
-                   app_key_index == DEVICE_KEY_LOCAL)) || transport_tx.active
+                   app_key_index == DEVICE_KEY_LOCAL))
     ) return 0;
 
     const mesh_net_state *state = &mesh_network.state;
@@ -363,51 +427,51 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         aid = transport_app_aid(key);
     }
 
-    size_t mic_len = mic_64 ? 8 : 4;
+    size_t mic_len = mic_64 ? 8u : 4u;
     size_t upper_len = len + mic_len;
-    uint8_t seg_n = upper_len > 15 ? (uint8_t)((upper_len - 1) / 12) : 0;
-    uint32_t seq = state->next_seq;
-    if (seq > 0xffffff || seq + seg_n > 0xffffff) return 0;
-
-    uint8_t nonce[13];
-    uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
-    uint32_t iv = state->iv_index - (state->iv_update ? 1 : 0);
-
-    transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv);
-    if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16 : 0, access, len,
-                            upper, upper + len, mic_len) != CCM_OK) return 0;
-
     if (!mic_64 && upper_len <= 15) {
+        uint32_t seq = state->next_seq;
+        if (seq > 0xffffff) return 0;
+        uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
+        uint8_t nonce[13], upper[MESH_TRANSPORT_MAX_UPPER];
+        transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv);
+        if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16u : 0u,
+                access, len, upper, upper + len, mic_len) != CCM_OK) return 0;
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
         return ble_mesh_net_queue(net_idx, src, dst, 0, ttl, lower, upper_len + 1);
     }
 
-    transport_tx.active = 1;
-    transport_tx.akf = akf;
-    transport_tx.aid = aid;
-    transport_tx.mic_64 = mic_64;
-    transport_tx.ttl = ttl;
-    transport_tx.src = src;
-    transport_tx.net_idx = net_idx;
-    transport_tx.dst = dst;
-    transport_tx.seq_zero = seq & 0x1fff;
-    transport_tx.seq_auth = seq;
-    transport_tx.iv_index = iv;
-    transport_tx.upper_len = (uint16_t)upper_len;
-    transport_tx.seg_n = seg_n;
-    transport_tx.next_seg = 0;
-    transport_tx.retries = 0;
-    transport_tx.retries_without_progress = 0;
-    transport_tx.acked = 0;
-    memcpy(transport_tx.upper, upper, upper_len);
+    struct transport_tx_pending pending = {
+        .src = src,
+        .dst = dst,
+        .net_idx = net_idx,
+        .access_len = (uint16_t)len,
+        .akf = akf,
+        .aid = aid,
+        .ttl = ttl,
+        .mic_64 = mic_64,
+        .has_label = label != NULL
+    };
+    memcpy(pending.key, key, sizeof(pending.key));
+    if (label) memcpy(pending.label, label, sizeof(pending.label));
+    memcpy(pending.access, access, len);
 
-    if (transport_segment_queue() != 1) {
-        transport_tx.active = 0;
-        return 0;
+    if (transport_tx.active || segmented_tx_queue_count) {
+        if (segmented_tx_queue_count == MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE)
+            return 0;
+        uint8_t tail = (uint8_t)((segmented_tx_queue_head +
+                                  segmented_tx_queue_count) %
+                                 MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE);
+        segmented_tx_queue[tail] = pending;
+        segmented_tx_queue_count++;
+        return 1;
     }
-    return 1;
+
+    int result = transport_tx_start(&pending);
+    if (result != 1) memset(&transport_tx, 0, sizeof(transport_tx));
+    return result == 1;
 }
 
 // Consume one authenticated Network message. Returns 1 for an Access message,
@@ -724,6 +788,29 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
             retransmit ? now + ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10 : 0,
             rx->updated_ms, retrans_left);
         break;
+    }
+
+    // Start the oldest queued segmented message after active SAR completes.
+    if (!transport_tx.active && segmented_tx_queue_count) {
+        struct transport_tx_pending *pending =
+            &segmented_tx_queue[segmented_tx_queue_head];
+        int started = transport_tx_start(pending);
+        if (started == 1) {
+            memset(pending, 0, sizeof(*pending));
+            segmented_tx_queue_head = (uint8_t)((segmented_tx_queue_head + 1) %
+                                                 MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE);
+            segmented_tx_queue_count--;
+        } else {
+            memset(&transport_tx, 0, sizeof(transport_tx));
+            if (started < 0) {
+                // Discard a saved message that cannot use the current sequence state.
+                memset(pending, 0, sizeof(*pending));
+                segmented_tx_queue_head = (uint8_t)((segmented_tx_queue_head + 1) %
+                                                     MESH_TRANSPORT_SEGMENTED_TX_QUEUE_SIZE);
+                segmented_tx_queue_count--;
+                return -1;
+            }
+        }
     }
 
     if (transport_tx.active) {

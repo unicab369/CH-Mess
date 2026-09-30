@@ -6,6 +6,11 @@
 
 #include "ble_mesh_2transport.h"
 
+// TODO for broader Access support:
+// - Add model-level acknowledged-message transactions with response matching,
+//   timeout, and retry handling.
+// - Add Mesh 1.1 Access Message Aggregation for efficient configuration.
+
 typedef struct {
     uint16_t src;
     uint16_t dst;

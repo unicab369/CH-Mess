@@ -138,6 +138,51 @@ int main(void) {
     assert(receive_frame(4, &received) == 0);
     assert(transport_tx.active == 0);
 
+    // Unsegmented traffic bypasses the active SAR transfer, while another
+    // segmented message waits in the bounded transport queue.
+    memset(transport_rx, 0, sizeof(transport_rx));
+    sent_count = 0;
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, APP_KEY_INDEX_NONE,
+        NULL, long_access, sizeof(long_access), 0) == 1);
+    assert(transport_tx.active && sent_count == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, 0, NULL,
+        short_access, sizeof(short_access), 0) == 1);
+    assert(sent_count == 2 && transport_tx.active);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, APP_KEY_INDEX_NONE,
+        NULL, long_access, sizeof(long_access), 0) == 1);
+    assert(segmented_tx_queue_count == 1 && sent_count == 2);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, APP_KEY_INDEX_NONE,
+        NULL, long_access, sizeof(long_access), 0) == 0);
+    assert(segmented_tx_queue_count == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 5);
+    a = mesh_network.state;
+
+    assert(ble_mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 0);
+    assert(receive_frame(1, &received) == 1 &&
+           received.len == sizeof(short_access) &&
+           memcmp(received.data, short_access, sizeof(short_access)) == 0);
+    assert(receive_frame(2, &received) == 0);
+    assert(receive_frame(3, &received) == 0);
+    assert(receive_frame(4, &received) == 1 &&
+           received.len == sizeof(long_access) &&
+           memcmp(received.data, long_access, sizeof(long_access)) == 0);
+    current_ms += 150;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 6);
+    b = mesh_network.state;
+
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(receive_frame(5, &received) == 0 && !transport_tx.active);
+    assert(segmented_tx_queue_count == 1);
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(transport_tx.active && segmented_tx_queue_count == 0 &&
+           sent_count == 7);
+    transport_tx.active = 0;
+    a = mesh_network.state;
+
     // Reordered segments are stored and reassembled; replay protection checks
     // the completed message using the final segment's SEQ.
     sent_count = 0;

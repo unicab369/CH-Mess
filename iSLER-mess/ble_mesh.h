@@ -345,6 +345,8 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
                 memset(&mesh_network, 0, sizeof(mesh_network));
                 memset(&mesh_models, 0, sizeof(mesh_models));
                 memset(&transport_tx, 0, sizeof(transport_tx));
+                memset(segmented_tx_queue, 0, sizeof(segmented_tx_queue));
+                segmented_tx_queue_head = segmented_tx_queue_count = 0;
                 memset(&transport_rx, 0, sizeof(transport_rx));
                 memset(transport_labels, 0, sizeof(transport_labels));
                 ble_mesh_transport_clear_labels();
