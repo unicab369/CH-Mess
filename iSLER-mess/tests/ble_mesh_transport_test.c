@@ -137,6 +137,49 @@ int main(void) {
     assert(receive_frame(4, &received) == 0);
     assert(transport_tx.active == 0);
 
+    // Different sources can have segmented messages reassembling concurrently.
+    uint8_t concurrent_access[sizeof(long_access)];
+    for (size_t i = 0; i < sizeof(concurrent_access); i++)
+        concurrent_access[i] = (uint8_t)(255 - i);
+    mesh_net_state sender_c = node(0x1203);
+    sent_count = 0;
+    assert(mesh_network_init(&a) == 1);
+    assert(mesh_transport_queue(0x1201, 0x1202, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    transport_tx.active = 0;
+    assert(sent_count == 4);
+    assert(mesh_network_init(&sender_c) == 1);
+    assert(mesh_transport_queue(0x1203, 0x1202, 5, 0, NULL,
+        concurrent_access, sizeof(concurrent_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    transport_tx.active = 0;
+    assert(sent_count == 8);
+
+    memset(transport_rx, 0, sizeof(transport_rx));
+    assert(mesh_network_init(&b) == 1);
+    assert(receive_frame(0, &received) == 0);
+    assert(receive_frame(4, &received) == 0);
+    assert(receive_frame(2, &received) == 0);
+    assert(receive_frame(6, &received) == 0);
+    assert(receive_frame(1, &received) == 0);
+    assert(receive_frame(5, &received) == 0);
+    size_t active_rx = 0;
+    for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
+        active_rx += transport_rx[i].active != 0;
+    assert(active_rx == 6);
+    assert(receive_frame(7, &received) == 1 &&
+           received.src == sender_c.unicast_address &&
+           received.len == sizeof(concurrent_access) &&
+           memcmp(received.data, concurrent_access,
+                  sizeof(concurrent_access)) == 0);
+    assert(receive_frame(3, &received) == 1 &&
+           received.src == a.unicast_address &&
+           received.len == sizeof(long_access) &&
+           memcmp(received.data, long_access, sizeof(long_access)) == 0);
+
     // Unsegmented traffic bypasses the active SAR transfer, while another
     // segmented message waits in the bounded transport queue.
     memset(transport_rx, 0, sizeof(transport_rx));
@@ -280,6 +323,23 @@ int main(void) {
     mesh_transport_set_control_handler(receive_control_event);
     transport_sar_rx = (mesh_sar_rx_state){1, 1, 1, 0, 1};
     assert(mesh_network_init(&b) == 1);
+    mesh_net_message friend_poll = {
+        .ctl = 1,
+        .ttl = 0,
+        .src = a.unicast_address,
+        .dst = b.unicast_address,
+        .net_key_index = mesh_network.state.net_key_index,
+        .friendship = 1,
+        .transport_len = 2,
+        .transport = {0x01, 0x01}
+    };
+    assert(mesh_transport_receive(&friend_poll, &received) == 0);
+    assert(control_event_count == 1 && control_event.opcode == 0x01 &&
+           control_event.len == 1 && control_event.params[0] == 1 &&
+           control_event.friendship &&
+           control_event.src == a.unicast_address &&
+           control_event.dst == b.unicast_address);
+    control_event_count = 0;
     assert(receive_frame(1, &received) == 0);
     assert(receive_frame(0, &received) == 0);
     assert(receive_frame(2, &received) == 0);
@@ -658,7 +718,7 @@ int main(void) {
         net.transport[2] = (uint8_t)((seq_zero & 0x3f) << 2);
         assert(mesh_transport_receive(&net, &received) == 0);
     }
-    size_t active_rx = 0;
+    active_rx = 0;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
         active_rx += transport_rx[i].active != 0;
     assert(active_rx == MESH_TRANSPORT_RX_PACKET_SLOTS);

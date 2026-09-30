@@ -38,7 +38,8 @@
 // - Increase RX SAR capacity if more than one maximum-size message must be
 //   reassembled concurrently; the default pool holds 32 segments total.
 // - Verify SAR behavior against an independent Mesh implementation.
-// - Add Friendship Transport Control messages when Friend/LPN roles are added.
+// - Implement Friend/LPN establishment, Friend Queue, polling, subscription
+//   updates, and friendship termination using the network friendship-key API.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -62,7 +63,7 @@ typedef struct {
 
 typedef struct {
     uint16_t src, dst, net_key_index, len;
-    uint8_t ttl, opcode;
+    uint8_t ttl, opcode, friendship;
     uint8_t params[MESH_TRANSPORT_MAX_CONTROL];
 } mesh_transport_control_message;
 
@@ -80,7 +81,7 @@ static inline mesh_sar_tx_state mesh_transport_get_sar_transmitter(void) {
     return transport_sar_tx;
 }
 
-// Register the upper-transport handler used by mesh_transport_poll.
+// Register a handler for unsegmented and reassembled segmented Control PDUs.
 static inline void mesh_transport_set_control_handler(
     mesh_transport_control_handler handler) {
     transport_control_handler = handler;
@@ -487,40 +488,62 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
 
     uint8_t segmented = pdu[0] & 0x80;
     if (net->ctl && !segmented) {
-        if (net->transport_len != 7 || pdu[0] != 0 || (pdu[1] & 0x80) ||
-            (pdu[2] & 3) || !transport_tx.active ||
-            net->net_key_index != transport_tx.net_idx ||
-            net->src != transport_tx.dst ||
-            net->dst != transport_tx.src
-        ) return 0;
+        if (!net->transport_len) return 0;
+        if (pdu[0] == 0) {
+            if (net->transport_len != 7 || (pdu[1] & 0x80) ||
+                (pdu[2] & 3) || !transport_tx.active ||
+                net->net_key_index != transport_tx.net_idx ||
+                net->src != transport_tx.dst ||
+                net->dst != transport_tx.src
+            ) return 0;
 
-        uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) | (pdu[2] >> 2));
-        if (seq_zero != transport_tx.seq_zero) return 0;
-        uint32_t acked = ((uint32_t)pdu[3] << 24) |
-                        ((uint32_t)pdu[4] << 16) |
-                        ((uint32_t)pdu[5] << 8) | pdu[6];
-        if (!acked) {
-            transport_tx.active = 0;
-            return 0;
-        }
-        uint32_t segment_mask = transport_tx.seg_n == 31 ? UINT32_MAX :
-                                ((uint32_t)1 << (transport_tx.seg_n + 1)) - 1;
-        uint32_t new_acked = (acked & segment_mask) & ~transport_tx.acked;
-        transport_tx.acked |= acked & segment_mask;
-
-        if (transport_tx.acked == segment_mask)
-            transport_tx.active = 0;
-        else if (transport_tx.next_seg > transport_tx.seg_n) {
-            if (transport_tx.retries >= transport_sar_tx.unicast_retrans_count ||
-                (!new_acked && transport_tx.retries_without_progress >=
-                                   transport_sar_tx.unicast_retrans_wo_progress_count)) {
+            uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) |
+                                            (pdu[2] >> 2));
+            if (seq_zero != transport_tx.seq_zero) return 0;
+            uint32_t acked = ((uint32_t)pdu[3] << 24) |
+                            ((uint32_t)pdu[4] << 16) |
+                            ((uint32_t)pdu[5] << 8) | pdu[6];
+            if (!acked) {
                 transport_tx.active = 0;
                 return 0;
             }
-            transport_tx.retries++;
-            if (new_acked) transport_tx.retries_without_progress = 0;
-            else transport_tx.retries_without_progress++;
-            transport_tx.next_seg = 0;
+            uint32_t segment_mask = transport_tx.seg_n == 31 ? UINT32_MAX :
+                                    ((uint32_t)1 << (transport_tx.seg_n + 1)) - 1;
+            uint32_t new_acked = (acked & segment_mask) & ~transport_tx.acked;
+            transport_tx.acked |= acked & segment_mask;
+
+            if (transport_tx.acked == segment_mask)
+                transport_tx.active = 0;
+            else if (transport_tx.next_seg > transport_tx.seg_n) {
+                if (transport_tx.retries >= transport_sar_tx.unicast_retrans_count ||
+                    (!new_acked && transport_tx.retries_without_progress >=
+                                       transport_sar_tx.unicast_retrans_wo_progress_count)) {
+                    transport_tx.active = 0;
+                    return 0;
+                }
+                transport_tx.retries++;
+                if (new_acked) transport_tx.retries_without_progress = 0;
+                else transport_tx.retries_without_progress++;
+                transport_tx.next_seg = 0;
+            }
+            return 0;
+        }
+
+        // Friendship control messages are unsegmented; deliver them to the
+        // control handler just like reassembled segmented Control messages.
+        if (transport_control_handler &&
+            (net->dst > 0x7fff || mesh_local_element(net->dst))) {
+            mesh_transport_control_message control = {0};
+            control.src = net->src;
+            control.dst = net->dst;
+            control.net_key_index = net->net_key_index;
+            control.ttl = net->ttl;
+            control.opcode = pdu[0];
+            control.friendship = net->friendship;
+            control.len = (uint16_t)(net->transport_len - 1);
+            if (control.len)
+                memcpy(control.params, pdu + 1, control.len);
+            transport_control_handler(&control);
         }
         return 0;
     }

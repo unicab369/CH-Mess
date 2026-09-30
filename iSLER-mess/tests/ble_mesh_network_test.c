@@ -448,6 +448,70 @@ int main(void) {
     assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
     assert(!mesh_network.state.app_keys[0].has_new_key);
 
+    // Friendship credentials secure direct Friend/LPN Network PDUs separately
+    // from the managed-flooding NetKey credentials.
+    mesh_net_state lpn = {.unicast_address = 0x1201, .element_count = 1,
+        .net_key_index = 0x123};
+    mesh_net_state friend_node = {.unicast_address = 0x1202, .element_count = 1,
+        .net_key_index = 0x123};
+    mesh_net_state unrelated = {.unicast_address = 0x1203, .element_count = 1,
+        .net_key_index = 0x123};
+    memcpy(lpn.net_key, net_key, 16);
+    memcpy(friend_node.net_key, net_key, 16);
+    memcpy(unrelated.net_key, net_key, 16);
+    const uint8_t friend_poll[] = {0x01, 0x00};
+    assert(mesh_network_init(&lpn) == 1);
+    assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
+        0x1234, 0x5678) == 1);
+    sent_count = 0;
+    assert(mesh_net_queue_friend(0x123, 0x1201, 0x1202, 1, 0,
+        friend_poll, sizeof(friend_poll)) == 1);
+    uint8_t friendship_pdu[29];
+    size_t friendship_pdu_len = sent_len - 2;
+    memcpy(friendship_pdu, sent + 2, friendship_pdu_len);
+
+    mesh_net_message friendship_message;
+    assert(mesh_network_init(&friend_node) == 1);
+    assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
+        0x1234, 0x5679) == 1);
+    assert(mesh_net_receive(friendship_pdu, friendship_pdu_len,
+        &friendship_message) == 0);
+    assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
+        0x1234, 0x5678) == 1);
+    assert(mesh_net_receive(friendship_pdu, friendship_pdu_len,
+        &friendship_message) == 1);
+    assert(friendship_message.friendship && friendship_message.ctl &&
+        friendship_message.src == 0x1201 && friendship_message.dst == 0x1202 &&
+        friendship_message.net_key_index == 0x123 &&
+        memcmp(friendship_message.transport, friend_poll,
+            sizeof(friend_poll)) == 0);
+
+    assert(mesh_network_init(&unrelated) == 1);
+    assert(mesh_net_receive(friendship_pdu, friendship_pdu_len,
+        &friendship_message) == 0);
+
+    // During Key Refresh both friendship credential versions are accepted;
+    // Phase 2 sends with the new version.
+    mesh_net_state lpn_kr = lpn, friend_kr = friend_node;
+    lpn_kr.has_new_key = friend_kr.has_new_key = 1;
+    lpn_kr.key_refresh_phase = friend_kr.key_refresh_phase = 1;
+    memset(lpn_kr.new_net_key, 0x91, 16);
+    memcpy(friend_kr.new_net_key, lpn_kr.new_net_key, 16);
+    assert(mesh_network_init(&lpn_kr) == 1);
+    assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
+        0x1234, 0x5678) == 1);
+    assert(mesh_key_refresh_transition(0x123, 2) == 1);
+    sent_count = 0;
+    assert(mesh_net_queue_friend(0x123, 0x1201, 0x1202, 1, 0,
+        friend_poll, sizeof(friend_poll)) == 1);
+    friendship_pdu_len = sent_len - 2;
+    memcpy(friendship_pdu, sent + 2, friendship_pdu_len);
+    assert(mesh_network_init(&friend_kr) == 1);
+    assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
+        0x1234, 0x5678) == 1);
+    assert(mesh_net_receive(friendship_pdu, friendship_pdu_len,
+        &friendship_message) == 1 && friendship_message.friendship);
+
     test_beacon_schedule();
     test_heartbeat();
     puts("ble_mesh_network: PASS");
