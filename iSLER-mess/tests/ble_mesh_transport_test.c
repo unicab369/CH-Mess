@@ -796,5 +796,63 @@ int main(void) {
            rejected_ack.transport[4] == 0 &&
            rejected_ack.transport[5] == 0 &&
            rejected_ack.transport[6] == 0);
+
+    // Exercise the Friend side of Request -> Offer -> Poll -> Update.
+    memset(transport_rx, 0, sizeof(transport_rx));
+    memset(&transport_lpn, 0, sizeof(transport_lpn));
+    sent_count = 0;
+    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 0, 0));
+    mesh_transport_control_message friend_request = {
+        .src = b.unicast_address,
+        .dst = MESH_FRIENDS_ADDRESS,
+        .net_key_index = mesh_network.state.net_key_index,
+        .ttl = 0,
+        .opcode = MESH_CONTROL_FRIEND_REQUEST,
+        .len = 10,
+        .params = {0x01, 10, 0, 0, 100, 0, 0, 1, 0, 7}
+    };
+    mesh_friend_request_receive(&friend_request);
+    assert(transport_friend_offers[0].used &&
+           mesh_friend_next_counter() == 1);
+    uint16_t offered_counter = transport_friend_offers[0].friend_counter;
+    mesh_net_state friend_state = mesh_network.state;
+    current_ms += 100;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    assert(mesh_network_init(&b) == 1);
+    mesh_net_message friend_offer;
+    assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
+                            &friend_offer) == 1);
+    assert(friend_offer.transport[0] == MESH_CONTROL_FRIEND_OFFER &&
+           friend_offer.dst == b.unicast_address &&
+           friend_offer.transport[2] == MESH_FRIEND_QUEUE_CAPACITY &&
+           friend_offer.transport[5] == 0);
+
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7,
+        offered_counter));
+    mesh_transport_control_message friend_poll_control = {
+        .src = b.unicast_address,
+        .dst = friend_state.unicast_address,
+        .net_key_index = friend_request.net_key_index,
+        .ttl = 0,
+        .opcode = MESH_CONTROL_FRIEND_POLL,
+        .friendship = 1,
+        .len = 1,
+        .params = {0}
+    };
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 2);
+    mesh_friend_disable();
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index,
+        b.unicast_address, friend_state.unicast_address, 7,
+        offered_counter));
+    mesh_net_message friend_update;
+    assert(mesh_net_receive(sent[1] + 2, sent_len[1] - 2,
+                            &friend_update) == 1);
+    assert(friend_update.friendship &&
+           friend_update.transport[0] == MESH_CONTROL_FRIEND_UPDATE &&
+           friend_update.transport[6] == 0);
     return 0;
 }

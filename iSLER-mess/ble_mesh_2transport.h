@@ -38,8 +38,9 @@
 // - Increase RX SAR capacity if more than one maximum-size message must be
 //   reassembled concurrently; the default pool holds 32 segments total.
 // - Verify SAR behavior against an independent Mesh implementation.
-// - Implement Friend-node offers/queues, recurring LPN polling, subscription
-//   updates, Friend Update IV-state handling, and friendship termination.
+// - Implement the Friend Queue, recurring LPN polling, subscription updates,
+//   Friend Update IV-state handling, RSSI-aware offer timing, and friendship
+//   termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -72,6 +73,8 @@ typedef struct {
 #define MESH_CONTROL_FRIEND_REQUEST 0x03
 #define MESH_CONTROL_FRIEND_OFFER 0x04
 #define MESH_FRIENDS_ADDRESS 0xfffd
+// Current offer capability; Friend Queue storage remains on the TODO above.
+#define MESH_FRIEND_QUEUE_CAPACITY 2
 
 enum {
     MESH_LPN_IDLE,
@@ -87,6 +90,17 @@ static struct {
     uint32_t poll_timeout_ms;
     uint8_t criteria, receive_delay, num_elements, state, fsn, poll_attempts;
 } transport_lpn;
+
+static struct {
+    uint16_t net_key_index, next_counter;
+    uint8_t enabled, receive_window, subscription_size;
+} transport_friend;
+
+static struct {
+    uint16_t net_key_index, lpn_address, lpn_counter, friend_counter;
+    uint32_t poll_timeout_ms, offer_at_ms, expires_at_ms;
+    uint8_t used, offered;
+} transport_friend_offers[MESH_NETWORK_MAX_FRIENDSHIPS];
 
 typedef void (*mesh_transport_control_handler)(
     const mesh_transport_control_message *message);
@@ -167,6 +181,130 @@ static inline uint16_t mesh_lpn_friend_address(void) {
 // Read the next LPNCounter so the application can persist it between boots.
 static inline uint16_t mesh_lpn_next_counter(void) {
     return transport_lpn.next_lpn_counter;
+}
+
+// Enable Friend responses on one subnet. The caller persists the counter.
+static inline int mesh_friend_enable(uint16_t net_key_index,
+        uint8_t receive_window, uint8_t subscription_size,
+        uint16_t next_friend_counter) {
+    if (!mesh_network.ready || !receive_window ||
+        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0) return 0;
+    transport_friend.net_key_index = net_key_index;
+    transport_friend.receive_window = receive_window;
+    transport_friend.subscription_size = subscription_size;
+    transport_friend.next_counter = next_friend_counter;
+    transport_friend.enabled = 1;
+    memset(transport_friend_offers, 0, sizeof(transport_friend_offers));
+    return 1;
+}
+
+static inline void mesh_friend_disable(void) {
+    transport_friend.enabled = 0;
+    for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
+        if (!transport_friend_offers[i].used) continue;
+        mesh_friendship_clear(transport_friend_offers[i].net_key_index,
+            transport_friend_offers[i].lpn_address,
+            mesh_network.state.unicast_address);
+    }
+    memset(transport_friend_offers, 0, sizeof(transport_friend_offers));
+}
+
+static inline uint16_t mesh_friend_next_counter(void) {
+    return transport_friend.next_counter;
+}
+
+// Cache a qualifying request until its delayed Friend Offer can be sent.
+static inline void mesh_friend_request_receive(
+        const mesh_transport_control_message *message) {
+    if (!transport_friend.enabled || !message ||
+        message->opcode != MESH_CONTROL_FRIEND_REQUEST || message->friendship ||
+        message->net_key_index != transport_friend.net_key_index ||
+        message->dst != MESH_FRIENDS_ADDRESS || message->ttl != 0 ||
+        message->len != 10 || !message->src || message->src > 0x7fff ||
+        (message->params[0] & 0x80) || !(message->params[0] & 0x07) ||
+        message->params[1] < 10) return;
+    uint32_t poll_timeout = ((uint32_t)message->params[2] << 16) |
+        ((uint32_t)message->params[3] << 8) | message->params[4];
+    uint16_t previous_friend = (uint16_t)((message->params[5] << 8) |
+                                           message->params[6]);
+    uint8_t elements = message->params[7];
+    if (poll_timeout < 10 || poll_timeout > 0x34bbff || !elements ||
+        previous_friend > 0x7fff ||
+        (uint32_t)message->src + elements - 1 > 0x7fff ||
+        MESH_FRIEND_QUEUE_CAPACITY < (1u << (message->params[0] & 0x07))) return;
+
+    uint16_t lpn_counter = (uint16_t)((message->params[8] << 8) |
+                                       message->params[9]);
+    uint8_t slot = 0;
+    while (slot < MESH_NETWORK_MAX_FRIENDSHIPS &&
+        (!transport_friend_offers[slot].used ||
+         transport_friend_offers[slot].lpn_address != message->src ||
+         transport_friend_offers[slot].net_key_index != message->net_key_index))
+        slot++;
+    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) {
+        for (slot = 0; slot < MESH_NETWORK_MAX_FRIENDSHIPS; slot++)
+            if (!transport_friend_offers[slot].used) break;
+        if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+    } else if (transport_friend_offers[slot].lpn_counter == lpn_counter) {
+        return;
+    }
+
+    uint16_t friend_counter = transport_friend.next_counter++;
+    if (!mesh_friendship_add(message->net_key_index, message->src,
+            mesh_network.state.unicast_address, lpn_counter, friend_counter)) return;
+    transport_friend_offers[slot].used = 1;
+    transport_friend_offers[slot].net_key_index = message->net_key_index;
+    transport_friend_offers[slot].lpn_address = message->src;
+    transport_friend_offers[slot].lpn_counter = lpn_counter;
+    transport_friend_offers[slot].friend_counter = friend_counter;
+    transport_friend_offers[slot].poll_timeout_ms = poll_timeout * 100u;
+    transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + 100u;
+    transport_friend_offers[slot].expires_at_ms = GET_MILLIS() + poll_timeout * 100u;
+}
+
+// Reply to a friendship-key Friend Poll with the current Friend Update.
+static inline void mesh_friend_poll_receive(
+        const mesh_transport_control_message *message) {
+    if (!transport_friend.enabled || !message ||
+        message->opcode != MESH_CONTROL_FRIEND_POLL || !message->friendship ||
+        message->net_key_index != transport_friend.net_key_index ||
+        message->dst != mesh_network.state.unicast_address || message->ttl != 0 ||
+        message->len != 1 ||
+        (message->params[0] & 0xfe)) return;
+    uint8_t slot = 0;
+    while (slot < MESH_NETWORK_MAX_FRIENDSHIPS &&
+        (!transport_friend_offers[slot].used ||
+         transport_friend_offers[slot].net_key_index != message->net_key_index ||
+         transport_friend_offers[slot].lpn_address != message->src ||
+         !transport_friend_offers[slot].offered)) slot++;
+    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+    if ((int32_t)(GET_MILLIS() -
+            transport_friend_offers[slot].expires_at_ms) >= 0) {
+        mesh_friendship_clear(message->net_key_index, message->src,
+            mesh_network.state.unicast_address);
+        memset(&transport_friend_offers[slot], 0,
+               sizeof(transport_friend_offers[slot]));
+        return;
+    }
+
+    uint8_t phase = mesh_subnet_phase(&mesh_network.state, message->net_key_index);
+    uint8_t update[7] = {
+        MESH_CONTROL_FRIEND_UPDATE,
+        (uint8_t)((phase == 2 ? 1u : 0u) |
+                  (mesh_network.state.iv_update ? 2u : 0u)),
+        (uint8_t)(mesh_network.state.iv_index >> 24),
+        (uint8_t)(mesh_network.state.iv_index >> 16),
+        (uint8_t)(mesh_network.state.iv_index >> 8),
+        (uint8_t)mesh_network.state.iv_index,
+        0
+    };
+    if (mesh_net_queue_friend(message->net_key_index,
+        mesh_network.state.unicast_address, message->src, 1, 0,
+        update, sizeof(update))) {
+        transport_friend_offers[slot].offered = 1;
+        transport_friend_offers[slot].expires_at_ms = GET_MILLIS() +
+            transport_friend_offers[slot].poll_timeout_ms;
+    }
 }
 
 // Complete the LPN side of Friend Offer -> friendship-key Friend Poll -> Update.
@@ -677,6 +815,8 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             if (control.len)
                 memcpy(control.params, pdu + 1, control.len);
             mesh_lpn_control_receive(&control);
+            mesh_friend_request_receive(&control);
+            mesh_friend_poll_receive(&control);
             if (transport_control_handler)
                 transport_control_handler(&control);
         }
@@ -902,6 +1042,37 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
     if (received < 0) return -1;
     int result = received ? mesh_transport_receive(&net, out) : 0;
     if (result < 0) return -1;
+    // Send delayed Friend Offers and expire LPNs that did not establish or
+    // maintain their friendship before the negotiated Poll Timeout.
+    for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
+        if (!transport_friend_offers[i].used) continue;
+        if ((int32_t)(GET_MILLIS() -
+                transport_friend_offers[i].expires_at_ms) >= 0) {
+            mesh_friendship_clear(transport_friend_offers[i].net_key_index,
+                transport_friend_offers[i].lpn_address,
+                mesh_network.state.unicast_address);
+            memset(&transport_friend_offers[i], 0,
+                   sizeof(transport_friend_offers[i]));
+            continue;
+        }
+        if (!transport_friend.enabled || transport_friend_offers[i].offered ||
+            (int32_t)(GET_MILLIS() -
+                transport_friend_offers[i].offer_at_ms) < 0) continue;
+        uint8_t offer[7] = {
+            MESH_CONTROL_FRIEND_OFFER,
+            transport_friend.receive_window,
+            MESH_FRIEND_QUEUE_CAPACITY,
+            transport_friend.subscription_size,
+            0, // The advertising bearer API currently does not report received RSSI.
+            (uint8_t)(transport_friend_offers[i].friend_counter >> 8),
+            (uint8_t)transport_friend_offers[i].friend_counter
+        };
+        if (mesh_net_queue(transport_friend_offers[i].net_key_index,
+                mesh_network.state.unicast_address,
+                transport_friend_offers[i].lpn_address, 1, 0,
+                offer, sizeof(offer)))
+            transport_friend_offers[i].offered = 1;
+    }
     // Retry discovery every 1.1 seconds and resend Friend Poll while awaiting
     // the initial Friend Update; discard a friendship after six unanswered polls.
     if (transport_lpn.state == MESH_LPN_REQUESTING &&
