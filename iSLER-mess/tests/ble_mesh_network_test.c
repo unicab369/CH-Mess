@@ -66,123 +66,123 @@ static void test_heartbeat(void) {
         .ttl = 5, .period_log = 2, .count_log = 0xff}};
     memset(state.net_key, 0x33, 16);
     current_ms = UINT32_MAX - 999;
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     assert(mesh_network.heartbeat.remaining == 0xffff);
     mesh_network.heartbeat.remaining = 2;
     int count = sent_count;
     queue_fails = 1;
-    ble_mesh_net_poll(&message); assert(sent_count == count && mesh_network.heartbeat.remaining == 2);
+    mesh_net_poll(&message); assert(sent_count == count && mesh_network.heartbeat.remaining == 2);
     queue_fails = 0;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 1);
+    mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 1);
     assert(sent_len == 23 && sent[1] == MESH_NETWORK_AD_TYPE);
     uint8_t packet[31]; size_t packet_len = sent_len;
     memcpy(packet, sent, packet_len);
     current_ms = 999;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 1);
+    mesh_net_poll(&message); assert(sent_count == count + 1);
     current_ms = 1000;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0);
+    mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0);
     current_ms = 3000;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 2);
+    mesh_net_poll(&message); assert(sent_count == count + 2);
 
     state.unicast_address = 0x1202;
     memset(&state.heartbeat, 0, sizeof(state.heartbeat));
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     mesh_network.heartbeat.src = 0x1201;
     mesh_network.heartbeat.dst = 0xc001;
     mesh_network.heartbeat.expires_at_ms = current_ms + 10000;
     mesh_network.heartbeat.subscribed = 1;
     mesh_network.heartbeat.min_hops = 0x7f;
-    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message));
+    assert(!mesh_net_receive(packet + 2, packet_len - 2, &message));
     assert(message.ctl == 1 && message.ttl == 5 && message.src == 0x1201 && message.dst == 0xc001);
     assert(message.transport_len == 4 && !memcmp(message.transport, (uint8_t[]){0x0a, 5, 0, 0}, 4));
     assert(mesh_network.heartbeat.count == 1 && mesh_network.heartbeat.min_hops == 1 && mesh_network.heartbeat.max_hops == 1);
-    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message));
+    assert(!mesh_net_receive(packet + 2, packet_len - 2, &message));
     assert(mesh_network.heartbeat.count == 1); // Network repetitions are replay filtered.
     packet[packet_len - 1] ^= 1;
-    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 1);
+    assert(!mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 1);
     packet[packet_len - 1] ^= 1;
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     mesh_network.heartbeat.src = 0x1201; mesh_network.heartbeat.dst = 0xc002;
     mesh_network.heartbeat.subscribed = 1;
     mesh_network.heartbeat.expires_at_ms = current_ms + 10000;
-    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
-    assert(ble_mesh_network_init(&state));
+    assert(!mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
+    assert(mesh_network_init(&state));
     mesh_network.heartbeat.src = 0x1201; mesh_network.heartbeat.dst = 0xc001;
     mesh_network.heartbeat.subscribed = 1;
     mesh_network.heartbeat.expires_at_ms = current_ms;
-    assert(!ble_mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
+    assert(!mesh_net_receive(packet + 2, packet_len - 2, &message) && mesh_network.heartbeat.count == 0);
 
     state.heartbeat = (mesh_heartbeat_publication){.dst = 0xc001, .net_idx = 0x123,
         .ttl = 1, .period_log = 0x11, .count_log = 0xff};
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     count = sent_count;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 0xffff);
+    mesh_net_poll(&message); assert(sent_count == count + 1 && mesh_network.heartbeat.remaining == 0xffff);
     current_ms += 65535999;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 1);
+    mesh_net_poll(&message); assert(sent_count == count + 1);
     current_ms++;
-    ble_mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0xffff);
-    state.heartbeat.dst = 0x8000; assert(!ble_mesh_network_init(&state));
-    state.heartbeat.dst = 0xc001; state.heartbeat.period_log = 0x12; assert(!ble_mesh_network_init(&state));
-    state.heartbeat.period_log = 1; state.heartbeat.count_log = 0x12; assert(!ble_mesh_network_init(&state));
-    state.heartbeat.count_log = 1; state.heartbeat.net_idx = 0x124; assert(!ble_mesh_network_init(&state));
-    state.heartbeat.net_idx = 0x123; state.heartbeat.ttl = 0x80; assert(!ble_mesh_network_init(&state));
+    mesh_net_poll(&message); assert(sent_count == count + 2 && mesh_network.heartbeat.remaining == 0xffff);
+    state.heartbeat.dst = 0x8000; assert(!mesh_network_init(&state));
+    state.heartbeat.dst = 0xc001; state.heartbeat.period_log = 0x12; assert(!mesh_network_init(&state));
+    state.heartbeat.period_log = 1; state.heartbeat.count_log = 0x12; assert(!mesh_network_init(&state));
+    state.heartbeat.count_log = 1; state.heartbeat.net_idx = 0x124; assert(!mesh_network_init(&state));
+    state.heartbeat.net_idx = 0x123; state.heartbeat.ttl = 0x80; assert(!mesh_network_init(&state));
 }
 
 static void test_beacon_schedule(void) {
     mesh_net_state state = {.unicast_address = 0x1201, .element_count = 1, .beacon = 1};
     memset(state.net_key, 0x33, 16);
     current_ms = 0;
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     mesh_net_message message;
     int count = sent_count;
-    current_ms = 9999; assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    current_ms = 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 9999; assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms = 10000; assert(!mesh_net_poll(&message) && sent_count == count + 1);
     assert(sent_len == 24 && sent[1] == MESH_NETWORK_BEACON_AD_TYPE && sent[2] == 1);
-    assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
-    current_ms = 20000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
+    assert(!mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 20000; assert(!mesh_net_poll(&message) && sent_count == count + 2);
     uint8_t beacon[24]; memcpy(beacon, sent, sizeof(beacon));
     current_ms = 20001;
-    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
-    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
-    current_ms = 30000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
-    current_ms = 39999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 2);
-    current_ms = 40000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 3);
+    assert(mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
+    assert(mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1);
+    current_ms = 30000; assert(!mesh_net_poll(&message) && sent_count == count + 2);
+    current_ms = 39999; assert(!mesh_net_poll(&message) && sent_count == count + 2);
+    current_ms = 40000; assert(!mesh_net_poll(&message) && sent_count == count + 3);
 
     queue_fails = 1;
-    current_ms = 50000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 3);
+    current_ms = 50000; assert(!mesh_net_poll(&message) && sent_count == count + 3);
     assert(mesh_network.beacon.last_sent_ms == 40000);
     queue_fails = 0;
-    current_ms = 50001; assert(!ble_mesh_net_poll(&message) && sent_count == count + 4);
+    current_ms = 50001; assert(!mesh_net_poll(&message) && sent_count == count + 4);
     beacon[23] ^= 1;
-    assert(!ble_mesh_handle_net_beacon(beacon, sizeof(beacon)));
+    assert(!mesh_handle_net_beacon(beacon, sizeof(beacon)));
     assert(mesh_network.beacon.observed[0] == 0 && mesh_network.beacon.observed[1] == 0);
     beacon[23] ^= 1;
 
     // Manual sends also postpone automatic sends by the minimum interval.
-    current_ms = 59999; assert(ble_mesh_net_beacon_queue());
+    current_ms = 59999; assert(mesh_net_beacon_queue());
     count = sent_count;
-    current_ms = 60001; assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    current_ms = 69999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 60001; assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms = 69999; assert(!mesh_net_poll(&message) && sent_count == count + 1);
     state = mesh_network.state; state.beacon = 0;
     assert(mesh_commit(&state));
     count = sent_count;
-    assert(!ble_mesh_net_beacon_queue());
-    current_ms += 1000000; assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    assert(ble_mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1); // Disabled TX still authenticates RX.
+    assert(!mesh_net_beacon_queue());
+    current_ms += 1000000; assert(!mesh_net_poll(&message) && sent_count == count);
+    assert(mesh_handle_net_beacon(beacon, sizeof(beacon)) == 1); // Disabled TX still authenticates RX.
     state.beacon = 1; assert(mesh_commit(&state));
     count = sent_count;
-    assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    current_ms += 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    current_ms += 10000; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms += 10000; assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms += 10000; assert(!mesh_net_poll(&message) && sent_count == count + 1);
 
     // Timers use unsigned elapsed time across the millisecond counter wrap.
     current_ms = UINT32_MAX - 5000;
-    assert(ble_mesh_network_init(&state));
+    assert(mesh_network_init(&state));
     count = sent_count;
-    current_ms = 4998; assert(!ble_mesh_net_poll(&message) && sent_count == count);
-    current_ms = 4999; assert(!ble_mesh_net_poll(&message) && sent_count == count + 1);
+    current_ms = 4998; assert(!mesh_net_poll(&message) && sent_count == count);
+    current_ms = 4999; assert(!mesh_net_poll(&message) && sent_count == count + 1);
     state.beacon = 2;
-    assert(!ble_mesh_network_init(&state));
+    assert(!mesh_network_init(&state));
 }
 
 int main(void) {
@@ -241,14 +241,14 @@ int main(void) {
     state.element_count = 1;
     state.iv_time_valid = 1;
 
-    assert(ble_mesh_network_init(&state) == 1);
+    assert(mesh_network_init(&state) == 1);
     assert(mesh_network.old_key.nid == 0x68);
     assert(memcmp(mesh_network.old_key.encryption_key, encryption_key, 16) == 0);
     assert(memcmp(mesh_network.old_key.privacy_key, privacy_key, 16) == 0);
-    assert(ble_mesh_net_beacon_queue() == 1);
+    assert(mesh_net_beacon_queue() == 1);
     assert(sent_len == sizeof(normal_beacon));
     assert(memcmp(sent, normal_beacon, sizeof(normal_beacon)) == 0);
-    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+    assert(mesh_net_queue(mesh_network.state.net_key_index,
                                    mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(stored_seq == 2);
@@ -256,114 +256,114 @@ int main(void) {
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
 
     state.unicast_address = 0x0003;
-    assert(ble_mesh_network_init(&state) == 1);
+    assert(mesh_network_init(&state) == 1);
     mesh_net_message message;
-    assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
+    assert(mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     assert(message.ctl == 1 && message.ttl == 0 && message.seq == 1);
     assert(message.src == 0x1201 && message.dst == 0xfffd);
     assert(message.net_key_index == state.net_key_index);
     assert(message.transport_len == sizeof(transport));
     assert(memcmp(message.transport, transport, sizeof(transport)) == 0);
-    assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 0);
+    assert(mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 0);
 
     uint8_t tampered[sizeof(network_pdu)];
     memcpy(tampered, network_pdu, sizeof(tampered));
     tampered[sizeof(tampered) - 1] ^= 1;
-    assert(ble_mesh_network_init(&state) == 1);
-    assert(ble_mesh_net_receive(tampered, sizeof(tampered), &message) == 0);
+    assert(mesh_network_init(&state) == 1);
+    assert(mesh_net_receive(tampered, sizeof(tampered), &message) == 0);
 
     state.unicast_address = 0x1201;
-    assert(ble_mesh_network_init(&state) == 1);
-    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
+    assert(mesh_network_init(&state) == 1);
+    assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
     assert(message.ctl == 0 && message.ttl == 4 && message.seq == 0x3129ab);
     assert(message.src == 0x0003 && message.dst == 0x1201);
     assert(message.transport_len == sizeof(access_transport));
     assert(memcmp(message.transport, access_transport, sizeof(access_transport)) == 0);
 
-    assert(ble_mesh_network_init(&state) == 1);
+    assert(mesh_network_init(&state) == 1);
     storage_fails = 1;
     sent_len = 0;
-    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+    assert(mesh_net_queue(mesh_network.state.net_key_index,
                                    mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 0);
     assert(sent_len == 0 && mesh_network.state.next_seq == 1);
 
     storage_fails = 0;
     current_seconds = 95 * 3600;
-    assert(ble_mesh_handle_net_beacon(updating_beacon,
+    assert(mesh_handle_net_beacon(updating_beacon,
                                            sizeof(updating_beacon)) == 0);
     current_seconds = 96 * 3600;
-    assert(ble_mesh_handle_net_beacon(updating_beacon,
+    assert(mesh_handle_net_beacon(updating_beacon,
                                            sizeof(updating_beacon)) == 1);
     assert(mesh_network.state.iv_update == 1);
     assert(mesh_network.state.iv_index == 0x12345679);
-    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+    assert(mesh_net_queue(mesh_network.state.net_key_index,
                                    mesh_network.state.unicast_address,
                                    0xfffd, 1, 0, transport, sizeof(transport)) == 1);
     assert(memcmp(sent + 2, network_pdu, sizeof(network_pdu)) == 0);
     mesh_net_state active = mesh_network.state;
     active.unicast_address = 0x0003;
-    assert(ble_mesh_network_init(&active) == 1);
-    assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
+    assert(mesh_network_init(&active) == 1);
+    assert(mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
     active.unicast_address = 0x1201;
-    assert(ble_mesh_network_init(&active) == 1);
+    assert(mesh_network_init(&active) == 1);
     current_seconds = 191 * 3600;
-    assert(ble_mesh_handle_net_beacon(complete_beacon,
+    assert(mesh_handle_net_beacon(complete_beacon,
                                            sizeof(complete_beacon)) == 0);
     current_seconds = 192 * 3600;
-    assert(ble_mesh_handle_net_beacon(complete_beacon,
+    assert(mesh_handle_net_beacon(complete_beacon,
                                            sizeof(complete_beacon)) == 1);
     assert(mesh_network.state.iv_update == 0);
     assert(mesh_network.state.next_seq == 0);
     assert(saved_state.iv_index == 0x12345679);
-    assert(ble_mesh_network_restore() == 1);
+    assert(mesh_network_restore() == 1);
     assert(mesh_network.state.iv_index == 0x12345679);
     assert(mesh_network.state.next_seq == 0);
     mesh_net_state normal = mesh_network.state;
     normal.unicast_address = 0x0003;
-    assert(ble_mesh_network_init(&normal) == 1);
-    assert(ble_mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
-    assert(ble_mesh_network_restore() == 1);
-    assert(ble_mesh_net_beacon_queue() == 1);
+    assert(mesh_network_init(&normal) == 1);
+    assert(mesh_net_receive(network_pdu, sizeof(network_pdu), &message) == 1);
+    assert(mesh_network_restore() == 1);
+    assert(mesh_net_beacon_queue() == 1);
     assert(memcmp(sent, complete_beacon, sizeof(complete_beacon)) == 0);
 
     // Authentication failure and a failed durable write cannot change IV state.
-    assert(ble_mesh_network_init(&state) == 1);
+    assert(mesh_network_init(&state) == 1);
     uint8_t bad_beacon[24];
     memcpy(bad_beacon, updating_beacon, sizeof(bad_beacon));
     bad_beacon[23] ^= 1;
-    assert(ble_mesh_handle_net_beacon(bad_beacon, sizeof(bad_beacon)) == 0);
+    assert(mesh_handle_net_beacon(bad_beacon, sizeof(bad_beacon)) == 0);
     assert(mesh_network.state.iv_index == state.iv_index);
     storage_fails = 1;
-    assert(ble_mesh_handle_net_beacon(updating_beacon,
+    assert(mesh_handle_net_beacon(updating_beacon,
                                            sizeof(updating_beacon)) == -1);
     assert(mesh_network.state.iv_index == state.iv_index);
     storage_fails = 0;
 
     // A key update is staged before a new-key beacon selects it for TX.
-    assert(ble_mesh_network_init(&state) == 1);
+    assert(mesh_network_init(&state) == 1);
     uint8_t new_net_key[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
-    assert(ble_mesh_stage_net_key(mesh_network.state.net_key_index, new_net_key) == 1);
+    assert(mesh_stage_net_key(mesh_network.state.net_key_index, new_net_key) == 1);
     mesh_net_state phase1 = mesh_network.state;
     state.unicast_address = 0x0003;
     mesh_net_state old_sender = phase1;
     old_sender.unicast_address = 0x0003;
     old_sender.next_seq = 0x3129ab;
-    assert(ble_mesh_network_init(&old_sender) == 1);
-    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+    assert(mesh_network_init(&old_sender) == 1);
+    assert(mesh_net_queue(mesh_network.state.net_key_index,
                                    mesh_network.state.unicast_address,
                                    0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     assert(memcmp(sent + 2, access_pdu, sizeof(access_pdu)) == 0);
-    assert(ble_mesh_network_init(&phase1) == 1);
-    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
+    assert(mesh_network_init(&phase1) == 1);
+    assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
-    assert(ble_mesh_key_refresh_transition(state.net_key_index, 2) == 1);
-    assert(ble_mesh_net_beacon_queue() == 1);
+    assert(mesh_key_refresh_transition(state.net_key_index, 2) == 1);
+    assert(mesh_net_beacon_queue() == 1);
     uint8_t phase2_beacon[24];
     memcpy(phase2_beacon, sent, sizeof(phase2_beacon));
-    assert(ble_mesh_network_init(&phase1) == 1);
-    assert(ble_mesh_handle_net_beacon(phase2_beacon,
+    assert(mesh_network_init(&phase1) == 1);
+    assert(mesh_handle_net_beacon(phase2_beacon,
                                            sizeof(phase2_beacon)) == 1);
     assert(mesh_network.state.key_refresh_phase == 2);
 
@@ -371,27 +371,27 @@ int main(void) {
     mesh_net_state new_sender = mesh_network.state;
     new_sender.unicast_address = 0x0003;
     new_sender.next_seq = 0x3129ab;
-    assert(ble_mesh_network_init(&new_sender) == 1);
-    assert(ble_mesh_net_queue(mesh_network.state.net_key_index,
+    assert(mesh_network_init(&new_sender) == 1);
+    assert(mesh_net_queue(mesh_network.state.net_key_index,
                                    mesh_network.state.unicast_address,
                                    0x1201, 0, 4, access_transport,
                                  sizeof(access_transport)) == 1);
     uint8_t new_pdu[29];
     memcpy(new_pdu, sent + 2, sizeof(new_pdu));
-    assert(ble_mesh_network_init(&phase1) == 1);
-    assert(ble_mesh_net_receive(new_pdu, sizeof(new_pdu), &message) == 1);
+    assert(mesh_network_init(&phase1) == 1);
+    assert(mesh_net_receive(new_pdu, sizeof(new_pdu), &message) == 1);
     // Segmented-packet replay is decided after transport reassembly.
-    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
+    assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
-    assert(ble_mesh_network_init(&new_sender) == 1);
-    assert(ble_mesh_key_refresh_transition(state.net_key_index, 3) == 1);
-    assert(ble_mesh_net_beacon_queue() == 1);
+    assert(mesh_network_init(&new_sender) == 1);
+    assert(mesh_key_refresh_transition(state.net_key_index, 3) == 1);
+    assert(mesh_net_beacon_queue() == 1);
     uint8_t phase3_beacon[24];
     memcpy(phase3_beacon, sent, sizeof(phase3_beacon));
     mesh_net_state phase2 = phase1;
     phase2.key_refresh_phase = 2;
-    assert(ble_mesh_network_init(&phase2) == 1);
-    assert(ble_mesh_handle_net_beacon(phase3_beacon,
+    assert(mesh_network_init(&phase2) == 1);
+    assert(mesh_handle_net_beacon(phase3_beacon,
                                            sizeof(phase3_beacon)) == 1);
     assert(mesh_network.state.key_refresh_phase == 0);
     assert(memcmp(mesh_network.state.net_key, new_net_key, 16) == 0);
@@ -399,24 +399,24 @@ int main(void) {
     assert(mesh_network.state.has_new_key == 0);
     mesh_net_state receiver = mesh_network.state;
     receiver.unicast_address = 0x1201;
-    assert(ble_mesh_network_init(&receiver) == 1);
-    assert(ble_mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 0);
+    assert(mesh_network_init(&receiver) == 1);
+    assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 0);
 
     // A node provisioned during Phase 2 starts with only the new NetKey.
     state.phase2_provisioned = 1;
-    assert(ble_mesh_network_init(&state) == 1);
-    assert(ble_mesh_key_refresh_transition(state.net_key_index, 2) == 1);
+    assert(mesh_network_init(&state) == 1);
+    assert(mesh_key_refresh_transition(state.net_key_index, 2) == 1);
     assert(mesh_network.state.phase2_provisioned == 1 && !mesh_network.state.has_new_key);
-    assert(ble_mesh_net_beacon_queue() == 1);
+    assert(mesh_net_beacon_queue() == 1);
     assert((sent[3] & 1) == 1);
-    assert(ble_mesh_handle_net_beacon(normal_beacon,
+    assert(mesh_handle_net_beacon(normal_beacon,
                                            sizeof(normal_beacon)) == 1);
     assert(mesh_network.state.phase2_provisioned == 0);
-    assert(ble_mesh_key_refresh_transition(state.net_key_index, 3) == 1);
+    assert(mesh_key_refresh_transition(state.net_key_index, 3) == 1);
 
     // A new-key beacon with the KR flag clear can skip Phase 2.
-    assert(ble_mesh_network_init(&phase1) == 1);
-    assert(ble_mesh_handle_net_beacon(phase3_beacon,
+    assert(mesh_network_init(&phase1) == 1);
+    assert(mesh_handle_net_beacon(phase3_beacon,
                                            sizeof(phase3_beacon)) == 1);
     assert(mesh_network.state.key_refresh_phase == 0);
     assert(memcmp(mesh_network.state.net_key, new_net_key, 16) == 0);
@@ -430,20 +430,20 @@ int main(void) {
     multi.app_keys[1].used = 1;
     multi.app_keys[1].index = 0x235;
     memset(multi.app_keys[1].key, 0x22, 16);
-    assert(ble_mesh_network_init(&multi) == 1);
+    assert(mesh_network_init(&multi) == 1);
     multi.app_keys[1].index = 0x234;
-    assert(ble_mesh_network_init(&multi) == 0); // duplicate index
+    assert(mesh_network_init(&multi) == 0); // duplicate index
     multi.app_keys[1].index = 0x235;
-    assert(ble_mesh_network_init(&multi) == 1);
+    assert(mesh_network_init(&multi) == 1);
     uint8_t multi_new_net_key[16];
     memset(multi_new_net_key, 0x44, sizeof(multi_new_net_key));
-    assert(ble_mesh_stage_net_key(multi.net_key_index, multi_new_net_key) == 1);
+    assert(mesh_stage_net_key(multi.net_key_index, multi_new_net_key) == 1);
     uint8_t refreshed[16];
     memset(refreshed, 0x33, 16);
-    assert(ble_mesh_stage_app_key(0x234, refreshed) == 1);
-    assert(ble_mesh_stage_app_key(0x236, refreshed) == 0);
-    assert(ble_mesh_key_refresh_transition(multi.net_key_index, 2) == 1);
-    assert(ble_mesh_key_refresh_transition(multi.net_key_index, 3) == 1);
+    assert(mesh_stage_app_key(0x234, refreshed) == 1);
+    assert(mesh_stage_app_key(0x236, refreshed) == 0);
+    assert(mesh_key_refresh_transition(multi.net_key_index, 2) == 1);
+    assert(mesh_key_refresh_transition(multi.net_key_index, 3) == 1);
     assert(memcmp(mesh_network.state.app_keys[0].key, refreshed, 16) == 0);
     assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
     assert(!mesh_network.state.app_keys[0].has_new_key);

@@ -84,12 +84,12 @@ int main()
 	funGpioInitAll();
 	funPinMode( LED, GPIO_CFGLR_OUT_2Mhz_PP );
 
-	ble_mesh_radio_init();
+	mesh_radio_init();
 	memcpy(adv, adv_data, sizeof(adv_data));
 
 	blink(5);
 	printf(".~ ch32fun iSLER ~.\n");
-	printf("micro-ecc self-test: %s\n", ble_mesh_test_ecc() == 0 ? "PASS" : "FAIL");
+	printf("micro-ecc self-test: %s\n", mesh_test_ecc() == 0 ? "PASS" : "FAIL");
 	printf("AES-CMAC self-test: %s\n", aes_cmac_test() == 0 ? "PASS" : "FAIL");
 
     funPinMode(INPUT1_PIN, GPIO_CFGLR_IN_PUPD);

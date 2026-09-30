@@ -29,7 +29,7 @@ typedef struct {
 // Use APP_KEY_INDEX_NONE for remote Device Key requests, DEVICE_KEY_LOCAL for replies.
 // Returns 1 if accepted by transport, or 0 for invalid input/queue failure.
 // Set mic_64 to 1 for a segmented message with an 8-byte TransMIC.
-static inline int ble_mesh_access_queue(
+static inline int mesh_access_queue(
     uint16_t src, uint16_t dst,
     uint8_t ttl,
     uint16_t app_key_index, uint32_t opcode,
@@ -52,12 +52,12 @@ static inline int ble_mesh_access_queue(
     }
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
-    return ble_mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
+    return mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
                                          data, opcode_len + params_len, mic_64);
 }
 
 // Queue a Device Key configuration message over the specified subnet.
-static inline int ble_mesh_access_queue_on_net(
+static inline int mesh_access_queue_on_net(
     uint16_t net_idx,
     uint16_t dst, uint8_t ttl, uint32_t opcode,
     const uint8_t *params, size_t params_len
@@ -80,14 +80,14 @@ static inline int ble_mesh_access_queue_on_net(
     uint16_t previous_net_idx = mesh_network.reply_net_idx;
     mesh_network.reply_net_idx = net_idx;
 
-    int result = ble_mesh_transport_queue(mesh_network.state.unicast_address,
+    int result = mesh_transport_queue(mesh_network.state.unicast_address,
         dst, ttl, APP_KEY_INDEX_NONE, NULL, data, opcode_len + params_len, 0);
     mesh_network.reply_net_idx = previous_net_idx;
     return result;
 }
 
 // Send an AppKey Access message to the virtual address derived from label.
-static inline int ble_mesh_access_queue_virtual(
+static inline int mesh_access_queue_virtual(
     uint16_t src, const uint8_t label[16], uint8_t ttl, uint16_t app_key_index,
     uint32_t opcode,
     const uint8_t *params, size_t params_len, uint8_t mic_64
@@ -108,7 +108,7 @@ static inline int ble_mesh_access_queue_virtual(
     }
 
     if (params_len) memcpy(data + opcode_len, params, params_len);
-    return ble_mesh_transport_queue(src, ble_mesh_virtual_address(label), ttl,
+    return mesh_transport_queue(src, mesh_virtual_address(label), ttl,
                                      app_key_index, label, data,
                                      opcode_len + params_len, mic_64);
 }
@@ -116,10 +116,10 @@ static inline int ble_mesh_access_queue_virtual(
 // Poll transport and decode one Access message. The decoded params point into
 // message, so keep it alive until the model handles the result.
 // Returns 1 if decoded, 0 if none/malformed, or -1 on a transport error.
-static inline int ble_mesh_access_poll(mesh_access_message *message,
+static inline int mesh_access_poll(mesh_access_message *message,
                                        mesh_access_pdu *access) {
     if (!message || !access) return -1;
-    int result = ble_mesh_transport_poll(message);
+    int result = mesh_transport_poll(message);
     if (result <= 0) return result;
     if (!message->len || message->len > sizeof(message->data)) return 0;
 

@@ -163,7 +163,7 @@ static int mesh_virtual_model_valid(uint16_t model) {
            model == MESH_MODEL_HEALTH_CLIENT;
 }
 
-static inline int ble_mesh_models_init(void) {
+static inline int mesh_models_init(void) {
     if (!mesh_network.ready ||
         BLE_MESH_MODELS_LOAD_STATE(&mesh_models.state) != 1
     ) return 0;
@@ -188,13 +188,13 @@ static inline int ble_mesh_models_init(void) {
             (b->health_server_bindings & ~valid_mask) ||
             (b->health_client_bindings & ~valid_mask)) return 0;
     }
-    ble_mesh_transport_clear_labels();
+    mesh_transport_clear_labels();
 
     for (uint8_t i = 0; i < mesh_models.state.virtual_count; i++) {
         if (mesh_models.state.virtual[i].element >=
             mesh_network.state.element_count ||
             !mesh_virtual_model_valid(mesh_models.state.virtual[i].model)) return 0;
-        if (!ble_mesh_label_add(mesh_models.state.virtual[i].label))
+        if (!mesh_label_add(mesh_models.state.virtual[i].label))
             return 0;
     }
     for (uint8_t i = 0; i < mesh_models.state.group_count; i++) {
@@ -223,7 +223,7 @@ static inline int ble_mesh_models_init(void) {
                 (pub->address >= 0xff00 && pub->address < 0xfffc) ||
                 ((pub->address >= 0x8000 && pub->address < 0xc000) !=
                  (pub->has_label != 0)) ||
-                (pub->has_label && pub->address != ble_mesh_virtual_address(pub->label)))
+                (pub->has_label && pub->address != mesh_virtual_address(pub->label)))
                 return 0;
             mesh_models.publications[i][j].period_at_ms =
                 now + mesh_publication_period(pub->period);
@@ -236,7 +236,7 @@ static inline int ble_mesh_models_init(void) {
 
 
 // Local subscription interface; returns a Mesh Configuration status code.
-static inline uint8_t ble_mesh_model_label_add(
+static inline uint8_t mesh_model_label_add(
     uint16_t element, uint16_t model, const uint8_t label[16]
 ) {
     int index = mesh_element_index(element);
@@ -258,11 +258,11 @@ static inline uint8_t ble_mesh_model_label_add(
     if (BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return MESH_CONFIG_STORAGE_FAILURE;
 
     mesh_models.state = next;
-    ble_mesh_label_add(label);
+    mesh_label_add(label);
     return MESH_CONFIG_SUCCESS;
 }
 
-static inline uint8_t ble_mesh_model_label_remove(uint16_t element, uint16_t model,
+static inline uint8_t mesh_model_label_remove(uint16_t element, uint16_t model,
                                                          const uint8_t label[16]) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || !label || index < 0) return MESH_CONFIG_INVALID_ADDRESS;
@@ -281,10 +281,10 @@ static inline uint8_t ble_mesh_model_label_remove(uint16_t element, uint16_t mod
         if (BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return MESH_CONFIG_STORAGE_FAILURE;
 
         mesh_models.state = next;
-        ble_mesh_transport_clear_labels();
+        mesh_transport_clear_labels();
 
         for (uint8_t j = 0; j < next.virtual_count; j++) {
-            ble_mesh_label_add(next.virtual[j].label);
+            mesh_label_add(next.virtual[j].label);
         }
 
         break;
@@ -363,9 +363,9 @@ static int mesh_publication_send(uint8_t element, uint8_t slot) {
         return 1;
     }
     return pub->has_label ?
-        ble_mesh_access_queue_virtual(src, pub->label, ttl, pub->app_idx,
+        mesh_access_queue_virtual(src, pub->label, ttl, pub->app_idx,
                                        opcode, params, len, 0) :
-        ble_mesh_access_queue(src, pub->address, ttl, pub->app_idx,
+        mesh_access_queue(src, pub->address, ttl, pub->app_idx,
                               opcode, params, len, 0);
 }
 

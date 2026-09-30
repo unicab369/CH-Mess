@@ -33,13 +33,13 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Default TTL | `OP_CONFIG_DEFAULT_TTL_GET`, `OP_CONFIG_DEFAULT_TTL_SET`, `OP_CONFIG_DEFAULT_TTL_STATUS` | Get/set; used by model helpers and replies. |
 | Model publication | `OP_CONFIG_MODEL_PUB_GET`, `OP_CONFIG_MODEL_PUB_SET`, `OP_CONFIG_MODEL_PUB_VIRTUAL_SET`, `OP_CONFIG_MODEL_PUB_STATUS` | Get/set address or Label UUID, AppKey, TTL, period, and retransmissions. |
 
-`ble_mesh_set_beacon(dst, enabled)` controls Secure Network Beacon broadcasts;
+`mesh_set_beacon(dst, enabled)` controls Secure Network Beacon broadcasts;
 they are enabled after provisioning. The network poll schedules them with a
 10–600 second interval, adjusted using authenticated subnet beacons heard over
 two rolling 10-second windows. Disabling broadcasts still allows receiving
 beacons for Key Refresh and IV Update. Manual beacon sends also obey this setting.
 
-`ble_mesh_set_net_transmit(dst, count, interval_steps)` sets 0–7 extra sends and
+`mesh_set_net_transmit(dst, count, interval_steps)` sets 0–7 extra sends and
 0–31 interval steps. Each packet is sent `count + 1` times, with
 `(interval_steps + 1) * 10` milliseconds plus 0–10 milliseconds of jitter between
 completed advertising events. The default count is 0 (one send). Repetitions keep
@@ -56,7 +56,7 @@ the state version changes with this value, so changing it requires reprovisionin
 AppKeys retain their owning NetKey index; AppKey traffic uses that subnet, while
 Device Key configuration requests can select a subnet through their NetKey index.
 
-`ble_mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
+`mesh_set_heartbeat_pub(dst, &pub)` configures a `mesh_heartbeat_publication`:
 destination, NetKey index, count log, period log, TTL, and feature-change triggers.
 Logs 1–17 represent powers of two (`2^(log - 1)`); 0 disables periodic sends.
 Count log 17 selects 65,534 sends; 255 sends indefinitely. The first Heartbeat is
@@ -64,23 +64,23 @@ queued immediately on the next network poll. Feature-change triggers are zero
 because Relay, Proxy, Friend, and LPN are unsupported. Heartbeats are unsegmented
 Control messages and use Network Transmit repetitions.
 
-`ble_mesh_set_heartbeat_sub(dst, src, address, period_log)` monitors one source
+`mesh_set_heartbeat_sub(dst, src, address, period_log)` monitors one source
 at the node's primary address or a group address. A zero source/destination clears
 the subscription; a zero period stops monitoring. Status reports the remaining
 period, received count, and minimum/maximum hops (`initial TTL - received TTL + 1`).
-Use `ble_mesh_get_heartbeat_pub()` and `ble_mesh_get_heartbeat_sub()` to query them.
+Use `mesh_get_heartbeat_pub()` and `mesh_get_heartbeat_sub()` to query them.
 Publication settings are saved; only indefinite publications resume after reboot.
 Finite remaining counts and subscription sessions are RAM data and restart disabled.
 
-`ble_mesh_reset_node(dst)` sends an authenticated Node Reset request. The node
+`mesh_reset_node(dst)` sends an authenticated Node Reset request. The node
 finishes advertising Reset Status before writing an empty flash record, erasing
 the old copy, and clearing runtime state. Flash failures leave reset pending for
 retry. Reset is rejected while PB-ADV is active or when provisioner node records
 are stored. After reset, the application can call `provisionee_start()` and resume
 `provisionee_poll()` to accept provisioning again.
 
-Use `ble_mesh_get_relay()`, `ble_mesh_get_proxy()`, `ble_mesh_get_friend()`, and
-`ble_mesh_get_node_identity()` to query capabilities. Relay, Proxy, and Friend Set
+Use `mesh_get_relay()`, `mesh_get_proxy()`, `mesh_get_friend()`, and
+`mesh_get_node_identity()` to query capabilities. Relay, Proxy, and Friend Set
 requests report Not Supported without changing state. Node Identity queries use
 a NetKey index; an unknown index returns Invalid NetKey.
 
@@ -95,7 +95,7 @@ To rotate keys from a controller (the [Bluetooth Mesh Key Refresh procedure](htt
 1. Call `mesh_netkey_add_or_update(dst, net_idx, new_key, 1)` on each node.
    This starts Phase 1: send with old keys, receive with old or new keys.
 2. Update any AppKeys that also need rotation with
-   `ble_mesh_add_or_update_app_key(dst, net_idx, app_idx, new_key, 1)`.
+   `mesh_add_or_update_app_key(dst, net_idx, app_idx, new_key, 1)`.
 3. Call `mesh_netkey_set_phase(dst, net_idx, 2)` after the selected nodes have
    their new keys. Phase 2 sends with new keys and receives with either set.
 4. Call `mesh_netkey_set_phase(dst, net_idx, 3)` after the selected nodes reach
@@ -103,8 +103,8 @@ To rotate keys from a controller (the [Bluetooth Mesh Key Refresh procedure](htt
 
 Check each reply through `BLE_MESH_CONFIG_STATUS()` before advancing. Use
 `mesh_netkey_get_phase()` to query progress. The controller must also switch its
-own network keys using `ble_mesh_stage_net_key(net_idx, key)`, `ble_mesh_stage_app_key()`, and
-`ble_mesh_key_refresh_transition(net_idx, transition)` at the corresponding steps. AppKeys that were
+own network keys using `mesh_stage_net_key(net_idx, key)`, `mesh_stage_app_key()`, and
+`mesh_key_refresh_transition(net_idx, transition)` at the corresponding steps. AppKeys that were
 not updated keep their values; bindings and publication settings keep their indexes.
 Updates and transitions are saved before becoming active. A node provisioned
 during Phase 2 reports phase 2 even though it has only the new NetKey.
@@ -120,14 +120,14 @@ during Phase 2 reports phase 2 even though it has only the new NetKey.
 | `MESH_MODEL_HEALTH_CLIENT` | `OP_HEALTH_PERIOD_GET`, `OP_HEALTH_PERIOD_SET`, `OP_HEALTH_PERIOD_SET_UNACK`, `OP_HEALTH_ATTENTION_GET`, `OP_HEALTH_ATTENTION_SET`, `OP_HEALTH_ATTENTION_SET_UNACK` | Query/set remote publication divisor and attention timer. |
 | `MESH_MODEL_HEALTH_CLIENT` | `OP_HEALTH_CURRENT_STATUS`, `OP_HEALTH_FAULT_STATUS`, `OP_HEALTH_PERIOD_STATUS`, `OP_HEALTH_ATTENTION_STATUS` | Deliver replies and subscribed current faults to the application. |
 
-Use `ble_mesh_health_fault_get/clear/test()`, `ble_mesh_health_period_get/set()`,
-and `ble_mesh_health_attention_get/set()` with a local element, destination, and
+Use `mesh_health_fault_get/clear/test()`, `mesh_health_period_get/set()`,
+and `mesh_health_attention_get/set()` with a local element, destination, and
 bound AppKey index. Fault requests also take a Company ID; Test takes a Test ID.
 Clear, Test, and Set take `acknowledged` (1 requests a reply, 0 does not).
 Use the matching `_virtual` helper with a 16-byte Label UUID to send a request
 to a virtual address. Requests can target unicast, group, or virtual addresses.
 Set `dst` to 0 to send through the Health Client publication configured with
-`ble_mesh_set_publication()`. The helper AppKey index must match that publication.
+`mesh_set_publication()`. The helper AppKey index must match that publication.
 Health Client publication retransmits a request but does not send periodic requests;
 the model configuration Publish Period is ignored for this client model.
 
@@ -140,7 +140,7 @@ subscriptions are saved per element. Group/virtual reports reach only subscribed
 Health Clients with the receiving AppKey bound. Remote fault lists are not limited
 to the local server's fault capacity. The default callback in `ble_mesh.h` is empty.
 
-`ble_mesh_health_faults(element, test_id, faults, count)` reports the element's
+`mesh_health_faults(element, test_id, faults, count)` reports the element's
 current faults. Pass `NULL, 0` when recovered. Nonzero fault codes are deduplicated
 and added to registered history. The default capacity is five distinct current
 faults and five registered faults per element; override `MESH_HEALTH_MAX_FAULTS`
@@ -161,9 +161,9 @@ While faults are active, periodic reports use `Publish Period / 2^divisor`, with
 a 100 ms minimum; recovery restores the normal period. The divisor is saved to
 flash. Publication retransmissions retain the original fault snapshot.
 
-Call `ble_mesh_models_poll()` regularly to service publications. OnOff Servers
+Call `mesh_models_poll()` regularly to service publications. OnOff Servers
 publish status on a state change and at the configured period. OnOff Clients use
-`ble_mesh_onoff_publish()`; a configured period repeats the last published Set with
+`mesh_onoff_publish()`; a configured period repeats the last published Set with
 a new transaction ID. Retransmissions keep the original transaction ID. Health
 Servers periodically publish their current-fault list. TTL 1 publications stay
 on this node; TTL 0xFF uses Default TTL. Friendship credentials are unsupported.

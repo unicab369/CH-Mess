@@ -22,7 +22,7 @@
 #define BLE_ADV_ACCESS_ADDRESS  0x8E89BED6
 #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
 
-void ble_mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
+void mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
 
 static int flash_data_range_valid(uint32_t addr, int len) {
     return len > 0 && addr >= BLE_MESH_DATA_ADDR &&
@@ -147,7 +147,7 @@ static uint8_t rx_armed, rx_channel_index;
 static uint32_t rx_started_ms;
 static ISLER_BUF_ATTR uint8_t adv_frame[8 + PB_MAX_AD_SIZE];
 
-static void ble_mesh_radio_init(void) {
+static void mesh_radio_init(void) {
     iSLERInit(LL_TX_POWER_0_DBM);
     uint32_t value = (uint32_t)funSysTick64();
     seed(value ? value : 0x747AA32F);
@@ -349,7 +349,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
                 segmented_tx_queue_head = segmented_tx_queue_count = 0;
                 memset(&transport_rx, 0, sizeof(transport_rx));
                 memset(transport_labels, 0, sizeof(transport_labels));
-                ble_mesh_transport_clear_labels();
+                mesh_transport_clear_labels();
                 memset(&session, 0, sizeof(session));
                 memset(&provisioner, 0, sizeof(provisioner));
                 memset(&provisionee, 0, sizeof(provisionee));
@@ -419,7 +419,7 @@ int BLE_MESH_NODE_RESET(uint16_t dst) {
     mesh_state_record record;
     if (reset_slot >= 0 || !mesh_state_load_record(&record) || record.node_count ||
         bearer.role != PB_ROLE_NONE) return 0;
-    if (!ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+    if (!mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
         OP_CONFIG_NODE_RESET_STATUS, NULL, 0, 0)) return 0;
     // The immediately preceding queue operation added the Reset Status packet.
@@ -464,9 +464,9 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
     record.models.sar_transmitter = MESH_SAR_TRANSMITTER_DEFAULT;
     record.models.sar_receiver = MESH_SAR_RX_DEFAULT;
     if (!mesh_state_save_record(&record)) return -1;
-    if (!ble_mesh_network_init(&state)) return -1;
+    if (!mesh_network_init(&state)) return -1;
     memset(&mesh_models, 0, sizeof(mesh_models));
-    return ble_mesh_models_init() ? 0 : -1;
+    return mesh_models_init() ? 0 : -1;
 }
 
 int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {

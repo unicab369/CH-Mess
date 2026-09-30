@@ -77,12 +77,12 @@ static mesh_sar_tx_state transport_sar_tx = {
 };
 static mesh_sar_rx_state transport_sar_rx = {3, 1, 1, 5, 0};
 
-static inline mesh_sar_tx_state ble_mesh_transport_get_sar_transmitter(void) {
+static inline mesh_sar_tx_state mesh_transport_get_sar_transmitter(void) {
     return transport_sar_tx;
 }
 
-// Register the upper-transport handler used by ble_mesh_transport_poll.
-static inline void ble_mesh_transport_set_control_handler(
+// Register the upper-transport handler used by mesh_transport_poll.
+static inline void mesh_transport_set_control_handler(
     mesh_transport_control_handler handler) {
     transport_control_handler = handler;
 }
@@ -95,7 +95,7 @@ static uint8_t label_count;
 
 // Bluetooth Mesh virtual address = 0x8000 | low 14 bits of
 // AES-CMAC(s1("vtad"), Label UUID).
-static inline uint16_t ble_mesh_virtual_address(const uint8_t label[16]) {
+static inline uint16_t mesh_virtual_address(const uint8_t label[16]) {
     if (!label) return 0;
     const uint8_t zero[16] = {0};
     uint8_t salt[16], hash[16];
@@ -105,7 +105,7 @@ static inline uint16_t ble_mesh_virtual_address(const uint8_t label[16]) {
 }
 
 // Register receive labels. Colliding virtual addresses remain distinct.
-static inline int ble_mesh_label_add(const uint8_t label[16]) {
+static inline int mesh_label_add(const uint8_t label[16]) {
     if (!label) return 0;
     for (uint8_t i = 0; i < label_count; i++) {
         if (memcmp(transport_labels[i].label, label, 16) == 0) return 1;
@@ -114,11 +114,11 @@ static inline int ble_mesh_label_add(const uint8_t label[16]) {
     if (label_count == MESH_TRANSPORT_MAX_LABELS) return 0;
     uint8_t i = label_count++;
     memcpy(transport_labels[i].label, label, 16);
-    transport_labels[i].address = ble_mesh_virtual_address(label);
+    transport_labels[i].address = mesh_virtual_address(label);
     return 1;
 }
 
-static inline void ble_mesh_transport_clear_labels(void) {
+static inline void mesh_transport_clear_labels(void) {
     label_count = 0;
 }
 
@@ -291,7 +291,7 @@ static int transport_segment_queue(void) {
     if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
     memcpy(lower + 4, transport_tx.upper + offset, count);
 
-    if (!ble_mesh_net_queue(transport_tx.net_idx, transport_tx.src, transport_tx.dst,
+    if (!mesh_net_queue(transport_tx.net_idx, transport_tx.src, transport_tx.dst,
                            0, transport_tx.ttl,
                            lower, count + 4)) return 0;
     transport_tx.next_seg++;
@@ -390,7 +390,7 @@ static uint32_t transport_sar_rx_ack_delay_ms(uint8_t seg_n) {
 // Queue an encrypted Access message. Returns 1 if accepted, 0 on failure.
 // APP_KEY_INDEX_NONE uses the destination's Device Key; DEVICE_KEY_LOCAL uses ours.
 // Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
-static inline int ble_mesh_transport_queue(uint16_t src,
+static inline int mesh_transport_queue(uint16_t src,
                                                 uint16_t dst, uint8_t ttl,
                                                 uint16_t app_key_index,
                                                 const uint8_t label[16],
@@ -440,7 +440,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
-        return ble_mesh_net_queue(net_idx, src, dst, 0, ttl, lower, upper_len + 1);
+        return mesh_net_queue(net_idx, src, dst, 0, ttl, lower, upper_len + 1);
     }
 
     struct transport_tx_pending pending = {
@@ -478,7 +478,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
 // 0 for an incomplete/ignored message, or -1 for bad arguments. Completed
 // segmented Control messages are dispatched during polling when a handler is
 // registered.
-static inline int ble_mesh_transport_receive(const mesh_net_message *net,
+static inline int mesh_transport_receive(const mesh_net_message *net,
                                               mesh_access_message *out) {
     if (!net || !out) return -1;
     if (!net->transport_len || net->transport_len > sizeof(net->transport)) return 0;
@@ -625,7 +625,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                         (uint8_t)((rejected_seq_zero & 0x3f) << 2),
                         0, 0, 0, 0
                     };
-                    ble_mesh_net_queue(net->net_key_index, net->dst, net->src,
+                    mesh_net_queue(net->net_key_index, net->dst, net->src,
                         1, net->ttl, ack, sizeof(ack));
                 }
                 return 0;
@@ -670,7 +670,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                                      (rx->transport[3] >> 5));
             if (part == seg_n) last_seq = rx->seq;
         }
-        if (!ble_mesh_net_replay_update(net->src, net->net_key_index,
+        if (!mesh_net_replay_update(net->src, net->net_key_index,
                                         net->iv_index, last_seq)) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
@@ -702,7 +702,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     int result = transport_decrypt(akf, aid, mic_64, seq_auth, net->iv_index,
                                    net->net_key_index, net->src, net->dst, upper,
                                    upper_len, out);
-    if (result && !ble_mesh_net_replay_update(net->src, net->net_key_index,
+    if (result && !mesh_net_replay_update(net->src, net->net_key_index,
                                                net->iv_index, last_seq))
         return 0;
     if (result) out->ttl = net->ttl;
@@ -711,12 +711,12 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
 
 // Poll the network, reassemble Access/Control messages, and service SAR.
 // Returns 1 with an Access message, 0 if none, or -1 for a send/radio error.
-static inline int ble_mesh_transport_poll(mesh_access_message *out) {
+static inline int mesh_transport_poll(mesh_access_message *out) {
     if (!out) return -1;
     mesh_net_message net;
-    int received = ble_mesh_net_poll(&net);
+    int received = mesh_net_poll(&net);
     if (received < 0) return -1;
-    int result = received ? ble_mesh_transport_receive(&net, out) : 0;
+    int result = received ? mesh_transport_receive(&net, out) : 0;
     if (result < 0) return -1;
 
     if (transport_control_handler) {
@@ -788,7 +788,7 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
             (uint8_t)(mask >> 24), (uint8_t)(mask >> 16),
             (uint8_t)(mask >> 8), (uint8_t)mask
         };
-        if (!ble_mesh_net_queue(rx->net_idx, rx->dst, rx->src,
+        if (!mesh_net_queue(rx->net_idx, rx->dst, rx->src,
                                 1, rx->ttl,
                                 pdu, sizeof(pdu))) return -1;
         uint8_t seg_n = rx->transport[3] & 0x1f;

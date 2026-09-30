@@ -5,7 +5,7 @@
 #include "../ble_mesh_crypto.h"
 #include "../micro-ecc/uECC.h"
 
-static int ble_mesh_test_ecc(void) {
+static int mesh_test_ecc(void) {
     uint8_t private_a[32], public_a[64], secret_a[32];
     uint8_t private_b[32], public_b[64], secret_b[32];
     uECC_RNG_Function previous_rng = uECC_get_rng();

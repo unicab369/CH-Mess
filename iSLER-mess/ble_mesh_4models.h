@@ -11,26 +11,26 @@
 void BLE_MESH_ONOFF_CHANGED(uint16_t element, uint8_t on);
 void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present);
 
-static inline int ble_mesh_onoff_get(uint16_t element, uint16_t dst,
+static inline int mesh_onoff_get(uint16_t element, uint16_t dst,
                                           uint16_t app_idx) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+    return mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
                                       OP_ONOFF_GET, NULL, 0, 0);
 }
 
-static inline int ble_mesh_onoff_get_virtual(uint16_t element,
+static inline int mesh_onoff_get_virtual(uint16_t element,
                                                   const uint8_t label[16],
                                                   uint16_t app_idx) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
-    return ble_mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
+    return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
         app_idx, OP_ONOFF_GET, NULL, 0, 0);
 }
 
-static inline int ble_mesh_onoff_set(
+static inline int mesh_onoff_set(
     uint16_t element, uint16_t dst, uint16_t app_idx,
     uint8_t on, uint8_t acknowledged
 ) {
@@ -41,11 +41,11 @@ static inline int ble_mesh_onoff_set(
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
     uint32_t opcode = acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK;
-    return ble_mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
+    return mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
                                       opcode, params, sizeof(params), 0);
 }
 
-static inline int ble_mesh_onoff_set_virtual(
+static inline int mesh_onoff_set_virtual(
     uint16_t element, const uint8_t label[16], uint16_t app_idx,
     uint8_t on, uint8_t acknowledged
 ) {
@@ -54,7 +54,7 @@ static inline int ble_mesh_onoff_set_virtual(
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
-    return ble_mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl, app_idx,
+    return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl, app_idx,
         acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK,
         params, sizeof(params), 0);
 }
@@ -94,14 +94,14 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
     } else return 0;
 
     uint8_t present = server->onoff;
-    return ble_mesh_access_queue(mesh_network.state.unicast_address + element,
+    return mesh_access_queue(mesh_network.state.unicast_address + element,
                                  message->src, mesh_models.state.default_ttl,
                                  message->app_key_index,
                                  OP_ONOFF_STATUS, &present, 1, 0);
 }
 
 // Publish through the OnOff Client's configured address and AppKey.
-static inline int ble_mesh_onoff_publish(uint16_t element, uint8_t on,
+static inline int mesh_onoff_publish(uint16_t element, uint8_t on,
                                          uint8_t acknowledged) {
     int index = mesh_element_index(element);
     if (index < 0 || on > 1 || acknowledged > 1) return 0;
@@ -158,13 +158,13 @@ static void mesh_publications_poll(void) {
     }
 }
 
-static inline int ble_mesh_models_poll(void) {
+static inline int mesh_models_poll(void) {
     if (mesh_models.reset_pending) {
         uint8_t ad[31]; size_t len = sizeof(ad);
         BLE_MESH_ADV_POLL(ad, &len);
         return 0;
     }
-    if (!mesh_models.ready && !ble_mesh_models_init()) return 0;
+    if (!mesh_models.ready && !mesh_models_init()) return 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
         mesh_health_attention_remaining(i);
     mesh_access_message raw;
@@ -174,7 +174,7 @@ static inline int ble_mesh_models_poll(void) {
         access = mesh_models.local.access;
         mesh_models.local.pending = 0;
         result = 1;
-    } else result = ble_mesh_access_poll(&raw, &access);
+    } else result = mesh_access_poll(&raw, &access);
     // Handle received requests first so publications do not occupy their reply slot.
     if (result <= 0) {
         mesh_publications_poll();
@@ -191,7 +191,7 @@ static inline int ble_mesh_models_poll(void) {
     uint32_t opcode = message->opcode;
     int unicast = mesh_element_index(message->dst);
     uint8_t virtual = message->has_label &&
-        message->dst == ble_mesh_virtual_address(message->label);
+        message->dst == mesh_virtual_address(message->label);
     uint8_t group = message->dst >= 0xc000 && message->dst <= 0xfeff;
     if (unicast < 0 && !virtual && !group) return 0;
 

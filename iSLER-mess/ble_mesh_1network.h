@@ -221,7 +221,7 @@ static struct {
 } mesh_network;
 
 // Update replay protection only after a segmented message is reassembled.
-static inline int ble_mesh_net_replay_update(uint16_t src, uint16_t net_idx,
+static inline int mesh_net_replay_update(uint16_t src, uint16_t net_idx,
                                               uint32_t iv, uint32_t seq) {
     uint8_t slot = 0;
     while (slot < mesh_network.replay_count &&
@@ -302,7 +302,7 @@ static uint8_t mesh_subnet_phase(const mesh_net_state *state, uint16_t index) {
 }
 
 // Call after loading provisioned state. Reinitialize after an IV Update.
-static inline int ble_mesh_network_init(const mesh_net_state *state) {
+static inline int mesh_network_init(const mesh_net_state *state) {
     if (!state || state->unicast_address == 0 ||
         state->unicast_address > 0x7fff ||
         state->element_count == 0 || state->element_count > MESH_MAX_ELEMENTS ||
@@ -397,10 +397,10 @@ static inline int ble_mesh_network_init(const mesh_net_state *state) {
     return 1;
 }
 
-static inline int ble_mesh_network_restore(void) {
+static inline int mesh_network_restore(void) {
     mesh_net_state state;
     if (BLE_MESH_NETWORK_LOAD_STATE(&state) != 1) return 0;
-    return ble_mesh_network_init(&state);
+    return mesh_network_init(&state);
 }
 
 // Save first, then make a key or IV transition visible to packet processing.
@@ -427,7 +427,7 @@ static int mesh_commit(const mesh_net_state *next) {
 }
 
 // Stage or rotate a NetKey by its subnet index.
-static inline int ble_mesh_stage_net_key(uint16_t net_idx,
+static inline int mesh_stage_net_key(uint16_t net_idx,
                                          const uint8_t new_net_key[16]) {
     if (!mesh_network.ready || !new_net_key) return 0;
     int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
@@ -457,7 +457,7 @@ static inline int ble_mesh_stage_net_key(uint16_t net_idx,
 }
 
 // Config AppKey Update can stage a key only on its parent subnet in Phase 1.
-static inline int ble_mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
+static inline int mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
                                               const uint8_t new_app_key[16]) {
     if (!mesh_network.ready || !new_app_key ||
         mesh_subnet_phase(&mesh_network.state, net_idx) != 1) return 0;
@@ -473,17 +473,17 @@ static inline int ble_mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
     return mesh_commit(&next);
 }
 
-static inline int ble_mesh_stage_app_key(uint16_t index,
+static inline int mesh_stage_app_key(uint16_t index,
                                          const uint8_t new_app_key[16]) {
     int slot = mesh_app_key_slot(&mesh_network.state, index);
     if (slot < 0) return 0;
-    return ble_mesh_stage_app_key_for(
+    return mesh_stage_app_key_for(
         mesh_app_net_idx(&mesh_network.state, &mesh_network.state.app_keys[slot]),
         index, new_app_key);
 }
 
 // Transition 2 selects new keys for TX; transition 3 revokes old keys.
-static inline int ble_mesh_key_refresh_transition(uint16_t net_idx,
+static inline int mesh_key_refresh_transition(uint16_t net_idx,
                                                    uint8_t transition) {
     if (!mesh_network.ready) return 0;
     int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
@@ -535,7 +535,7 @@ static int iv_time_ready(uint64_t *now) {
 }
 
 // Enter IV Update in Progress. Transmit continues with the previous IV Index.
-static inline int ble_mesh_start_iv_update(void) {
+static inline int mesh_start_iv_update(void) {
     uint64_t now;
     if (!mesh_network.ready || mesh_network.state.iv_update ||
         mesh_network.state.iv_index == UINT32_MAX ||
@@ -579,7 +579,7 @@ static void mesh_obfuscate(const mesh_network_credentials *key,
 
 
 // Queue one authenticated Secure Network Beacon for each installed subnet.
-static inline int ble_mesh_net_beacon_queue(void) {
+static inline int mesh_net_beacon_queue(void) {
     if (!mesh_network.ready || !mesh_network.state.beacon) return 0;
     const mesh_net_state *state = &mesh_network.state;
     uint8_t sent = 0;
@@ -617,7 +617,7 @@ static inline int ble_mesh_net_beacon_queue(void) {
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // Reserve the next sequence number before a transmission is queued.
-static inline int ble_mesh_net_queue(uint16_t net_idx, uint16_t src, uint16_t dst,
+static inline int mesh_net_queue(uint16_t net_idx, uint16_t src, uint16_t dst,
                                           uint8_t ctl, uint8_t ttl,
                                           const uint8_t *transport, size_t len) {
     mesh_net_state *state = &mesh_network.state;
@@ -680,7 +680,7 @@ static void mesh_beacon_observations(uint32_t now) {
 // Check the complete beacon AD format, flags, known Network ID, and CMAC.
 // Only an authenticated beacon may change Key Refresh or IV Update state.
 // Returns 1 if accepted, 0 if ignored, or -1 if saving state fails.
-static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
+static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
         (ad[3] & 0xfcu) != 0 || !mesh_network.ready
@@ -793,7 +793,7 @@ static inline int ble_mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 // Unsegmented messages get replay-checked here; segmented messages defer the
 // replay update until lower-transport reassembly completes. Returns 1 if
 // accepted, 0 if ignored, or -1 for bad arguments.
-static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
+static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
                                         mesh_net_message *message) {
     if (!pdu || !message) return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
@@ -859,7 +859,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
     // A segmented message is checked when reassembly completes. Checking its
     // individual segment SEQs here would reject valid segments arriving late.
     uint8_t segmented = transport_len > 0 && (plain[2] & 0x80);
-    if (!segmented && !ble_mesh_net_replay_update(src, net_idx, iv, seq))
+    if (!segmented && !mesh_net_replay_update(src, net_idx, iv, seq))
         return 0;
     message->ctl = ctl;
     message->ttl = clear[1] & 0x7f;
@@ -892,7 +892,7 @@ static inline int ble_mesh_net_receive(const uint8_t *pdu, size_t len,
 
 
 // Poll the shared advertising bearer and accept only Mesh Message AD data.
-static inline int ble_mesh_net_poll(mesh_net_message *message) {
+static inline int mesh_net_poll(mesh_net_message *message) {
     int tick_result = 0;
     uint64_t now;
 
@@ -916,9 +916,9 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
     int result = received < 0 ? -1 : 0;
     if (received > 0 && len >= 2 && (size_t)ad[0] + 1 == len) {
         if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
-            if (ble_mesh_handle_net_beacon(ad, len) < 0) result = -1;
+            if (mesh_handle_net_beacon(ad, len) < 0) result = -1;
         } else if (ad[1] == MESH_NETWORK_AD_TYPE)
-            result = ble_mesh_net_receive(ad + 2, len - 2, message);
+            result = mesh_net_receive(ad + 2, len - 2, message);
     }
 
     if (mesh_network.ready && mesh_network.state.beacon) {
@@ -929,7 +929,7 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
         uint32_t interval = (count + 1u) * 10000u;
         if (interval > 600000u) interval = 600000u;
         if ((uint32_t)(millis - mesh_network.beacon.last_sent_ms) >= interval &&
-            ble_mesh_net_beacon_queue()) mesh_network.beacon.last_sent_ms = millis;
+            mesh_net_beacon_queue()) mesh_network.beacon.last_sent_ms = millis;
     }
     // Expire subscriptions and send due Heartbeats as unsegmented Control PDUs.
     const mesh_heartbeat_publication *pub = &mesh_network.state.heartbeat;
@@ -941,7 +941,7 @@ static inline int ble_mesh_net_poll(mesh_net_message *message) {
         mesh_network.heartbeat.remaining &&
         (int32_t)(millis - mesh_network.heartbeat.publish_at_ms) >= 0) {
         uint8_t control[] = {0x0a, pub->ttl, 0, 0}; // No optional features are enabled.
-        if (ble_mesh_net_queue(pub->net_idx, mesh_network.state.unicast_address, pub->dst, 1,
+        if (mesh_net_queue(pub->net_idx, mesh_network.state.unicast_address, pub->dst, 1,
                                pub->ttl, control, sizeof(control))) {
             if (mesh_network.heartbeat.remaining != 0xffff) mesh_network.heartbeat.remaining--;
             mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;
