@@ -191,7 +191,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION (12 + MESH_MAX_SUBNETS)
+#define MESH_STATE_VERSION (14 + MESH_MAX_SUBNETS)
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {
@@ -459,6 +459,8 @@ int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
     mesh_state_record record = {0};
     record.state = state;
     record.models.default_ttl = MODEL_TTL;
+    record.models.sar_transmitter = MESH_SAR_TRANSMITTER_DEFAULT;
+    record.models.sar_receiver = MESH_SAR_RX_DEFAULT;
     if (!mesh_state_save_record(&record)) return -1;
     if (!ble_mesh_network_init(&state)) return -1;
     memset(&mesh_models, 0, sizeof(mesh_models));

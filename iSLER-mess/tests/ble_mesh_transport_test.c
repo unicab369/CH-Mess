@@ -130,6 +130,7 @@ int main(void) {
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(received.app_key_index == APP_KEY_INDEX_NONE);
     assert(received.device_key_owner == b.unicast_address);
+    current_ms += 150;
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
 
@@ -162,6 +163,7 @@ int main(void) {
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(mesh_network.replay_count == 1 &&
            mesh_network.replay[0].seq == final_segment_seq);
+    current_ms += 150;
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
     b = mesh_network.state;
@@ -199,6 +201,7 @@ int main(void) {
     assert(ble_mesh_network_init(&b) == 1);
     assert(receive_frame(5, &received) == 1);
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
+    current_ms += 150;
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 7);
 
@@ -233,6 +236,7 @@ int main(void) {
     a = mesh_network.state;
     control_event_count = 0;
     ble_mesh_transport_set_control_handler(receive_control_event);
+    transport_sar_rx = (mesh_sar_rx_state){1, 1, 1, 0, 1};
     assert(ble_mesh_network_init(&b) == 1);
     assert(receive_frame(1, &received) == 0);
     assert(receive_frame(0, &received) == 0);
@@ -247,7 +251,18 @@ int main(void) {
                   sizeof(control_params)) == 0);
     assert(ble_mesh_transport_take_control(&control_event) == 0);
     ble_mesh_transport_set_control_handler(NULL);
-    assert(sent_count == 4); // The receiver ACKs all three Control segments.
+    current_ms += 24;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 3);
+    current_ms++;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 4);
+    current_ms += 9;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 4);
+    current_ms++;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 5);
+    current_ms += 10;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 5);
+    transport_sar_rx = MESH_SAR_RX_DEFAULT;
+    assert(sent_count == 5); // Initial Segment ACK plus one configured repeat.
     b = mesh_network.state;
     assert(ble_mesh_network_init(&a) == 1);
     mesh_net_message control_ack;
@@ -304,7 +319,8 @@ int main(void) {
     assert(received.has_label && received.len == sizeof(long_access) &&
            memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(ble_mesh_transport_poll(&received) == 0);
-    assert(transport_tx.active == 0 && sent_count == 4);
+    assert(transport_tx.active && sent_count == 4);
+    transport_tx.active = 0; // The separate group-retry test covers retransmission.
 
     // A second AppKey is selected by index and identified after decryption.
     sent_count = 0;
@@ -362,6 +378,7 @@ int main(void) {
     assert(ble_mesh_transport_receive(&net, &received) == 1);
     assert(received.len == sizeof(short_access) &&
            memcmp(received.data, short_access, sizeof(short_access)) == 0);
+    current_ms += 30;
     assert(ble_mesh_transport_poll(&received) == 0);
     assert(sent_count == 2);
     assert(ble_mesh_network_init(&a) == 1);
@@ -490,5 +507,82 @@ int main(void) {
                    memcmp(received.data, long_access, sizeof(long_access)) == 0);
         }
     }
+
+    // Group segmented sends retransmit the whole message twice without ACKs.
+    sent_count = 0;
+    transport_tx.active = 0;
+    a = node(0x1201);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0xc001, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    while (transport_tx.next_seg <= transport_tx.seg_n)
+        assert(transport_segment_queue() == 1);
+    assert(sent_count == 4 && transport_tx.active);
+
+    current_ms += 249;
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(sent_count == 4);
+    current_ms++;
+    assert(ble_mesh_transport_poll(&received) == 0);
+    for (int i = 0; i < 4; i++) {
+        current_ms += 60;
+        assert(ble_mesh_transport_poll(&received) == 0);
+    }
+    assert(sent_count == 8 && transport_tx.retries == 1);
+
+    current_ms += 250;
+    assert(ble_mesh_transport_poll(&received) == 0);
+    for (int i = 0; i < 4; i++) {
+        current_ms += 60;
+        assert(ble_mesh_transport_poll(&received) == 0);
+    }
+    assert(sent_count == 12 && transport_tx.retries == 2);
+
+    current_ms += 250;
+    assert(ble_mesh_transport_poll(&received) == 0);
+    assert(!transport_tx.active && sent_count == 12);
+
+    // Segments are paced by the configurable SAR interval (default 60 ms).
+    mesh_sar_tx_state sar = ble_mesh_transport_get_sar_transmitter();
+    assert(sar.segment_interval_step == 5);
+    sar.segment_interval_step = 16;
+    assert(!mesh_sar_tx_valid(&sar));
+    sar.segment_interval_step = 5;
+    assert(mesh_sar_tx_valid(&sar));
+    transport_sar_tx = sar;
+    sent_count = 0;
+    a = node(0x1201);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0xc001, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    assert(sent_count == 1 && transport_tx.next_seg == 1);
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 1);
+    current_ms += 59;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 1);
+    current_ms++;
+    assert(ble_mesh_transport_poll(&received) == 0 && sent_count == 2);
+    while (transport_tx.next_seg <= transport_tx.seg_n) {
+        current_ms += 60;
+        assert(ble_mesh_transport_poll(&received) == 0);
+    }
+    assert(sent_count == 4);
+    transport_tx.active = 0;
+
+    // SAR Discard Timeout controls how long partial RX state is retained.
+    sent_count = 0;
+    a = node(0x1201);
+    assert(ble_mesh_network_init(&a) == 1);
+    assert(ble_mesh_transport_queue(0x1201, 0x1202, 5, 0, NULL,
+        long_access, sizeof(long_access), 0) == 1);
+    transport_tx.active = 0;
+    b = node(0x1202);
+    assert(ble_mesh_network_init(&b) == 1);
+    memset(transport_rx, 0, sizeof(transport_rx));
+    transport_sar_rx = (mesh_sar_rx_state){3, 1, 0, 5, 0};
+    assert(receive_frame(0, &received) == 0 && transport_rx[0].active);
+    current_ms += 4999;
+    assert(ble_mesh_transport_poll(&received) == 0 && transport_rx[0].active);
+    current_ms++;
+    assert(ble_mesh_transport_poll(&received) == 0 && !transport_rx[0].active);
     return 0;
 }

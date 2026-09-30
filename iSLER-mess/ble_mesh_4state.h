@@ -6,6 +6,7 @@
 // Shared model identifiers, runtime state, bindings, and subscriptions.
 #define MESH_MODEL_HEALTH_SERVER 0x0002
 #define MESH_MODEL_HEALTH_CLIENT 0x0003
+#define MESH_MODEL_SAR_CONFIG_SERVER 0x000e
 #define MESH_MODEL_ONOFF_SERVER 0x1000
 #define MESH_MODEL_ONOFF_CLIENT 0x1001
 #define MODEL_TTL 5
@@ -72,6 +73,8 @@ typedef struct {
     uint8_t group_count;
     mesh_model_group groups[MESH_MODEL_GROUP_SLOTS];
     uint8_t default_ttl;
+    mesh_sar_tx_state sar_transmitter;
+    mesh_sar_rx_state sar_receiver;
     mesh_publication publications[MESH_MAX_ELEMENTS][MESH_PUBLICATION_MODELS];
     uint8_t health_period[MESH_MAX_ELEMENTS];
 } mesh_models_state;
@@ -169,6 +172,10 @@ static inline int ble_mesh_models_init(void) {
         mesh_models.state.group_count > MESH_MODEL_GROUP_SLOTS ||
         mesh_models.state.default_ttl == 1 ||
         mesh_models.state.default_ttl > 0x7f) return 0;
+    if (!mesh_sar_tx_valid(&mesh_models.state.sar_transmitter)) return 0;
+    transport_sar_tx = mesh_models.state.sar_transmitter;
+    if (!mesh_sar_rx_valid(&mesh_models.state.sar_receiver)) return 0;
+    transport_sar_rx = mesh_models.state.sar_receiver;
     uint8_t valid_mask = (1u << MESH_MAX_APP_KEYS) - 1u;
     if ((mesh_models.state.onoff_server_bindings & ~valid_mask) ||
         (mesh_models.state.onoff_client_bindings & ~valid_mask) ||

@@ -75,6 +75,12 @@ static int ble_mesh_label_add(const uint8_t label[16]) {
     return 1;
 }
 
+static mesh_sar_tx_state transport_sar_tx = {5, 2, 2, 7, 1, 2, 9};
+static mesh_sar_rx_state transport_sar_rx = {3, 1, 1, 5, 0};
+static mesh_sar_tx_state ble_mesh_transport_get_sar_transmitter(void) {
+    return transport_sar_tx;
+}
+
 static uint32_t now_ms;
 static uint32_t last_opcode;
 static uint16_t last_dst;
@@ -234,6 +240,8 @@ static void test_foundation_configuration(void) {
     memset(&mesh_models, 0, sizeof(mesh_models));
     memset(&mesh_network.state.app_keys, 0, sizeof(mesh_network.state.app_keys));
     saved.default_ttl = MODEL_TTL;
+    saved.sar_transmitter = MESH_SAR_TRANSMITTER_DEFAULT;
+    saved.sar_receiver = MESH_SAR_RX_DEFAULT;
     saved.onoff_server_bindings = saved.onoff_client_bindings = saved.health_server_bindings = 1;
     saved.other[0] = (mesh_element_bindings){1, 1, 1, 0};
     mesh_network.state.app_keys[0].used = 1;
@@ -244,19 +252,69 @@ static void test_foundation_configuration(void) {
     assert(ble_mesh_models_init());
 
     assert(ble_mesh_get_composition(0x1201, 0xff) && config_request());
-    assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 39);
+    assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 41);
     assert(last_params[0] == 0 && last_params[7] == MESH_NETWORK_REPLAY_SLOTS);
-    assert(last_params[9] == 0 && last_params[13] == 6 && last_params[29] == 4);
-    assert(last_params[15] == 0 && last_params[17] == 1 && last_params[19] == 2);
-    assert(last_params[21] == MESH_MODEL_HEALTH_CLIENT && last_params[22] == 0);
-    assert(last_params[23] == 0 && last_params[24] == 0x10);
-    assert(last_params[31] == MESH_MODEL_HEALTH_SERVER &&
-           last_params[33] == MESH_MODEL_HEALTH_CLIENT);
+    assert(last_params[9] == 0 && last_params[13] == 7 && last_params[31] == 4);
+    assert(last_params[15] == 0 && last_params[17] == 1 &&
+           last_params[19] == MESH_MODEL_SAR_CONFIG_SERVER);
+    assert(last_params[21] == MESH_MODEL_HEALTH_SERVER &&
+           last_params[23] == MESH_MODEL_HEALTH_CLIENT);
+    assert(last_params[25] == 0 && last_params[26] == 0x10);
+    assert(last_params[33] == MESH_MODEL_HEALTH_SERVER &&
+           last_params[35] == MESH_MODEL_HEALTH_CLIENT);
     assert(last_app_key_index == DEVICE_KEY_LOCAL);
     mesh_network.state.element_count = 1;
-    assert(ble_mesh_get_composition(0x1201, 0) && config_request() && last_len == 27);
+    assert(ble_mesh_get_composition(0x1201, 0) && config_request() && last_len == 29);
     mesh_network.state.element_count = 2;
     assert(config_message(OP_CONFIG_COMPOSITION_GET, NULL, 0) == 0);
+
+    assert(ble_mesh_get_sar_transmitter(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_SAR_TRANSMITTER_STATUS && last_len == 5 &&
+           last_params[0] == MESH_CONFIG_SUCCESS && last_params[1] == 0x25 &&
+           last_params[2] == 0x72 && last_params[3] == 0x21 && last_params[4] == 9);
+    mesh_sar_tx_state sar = {3, 4, 5, 6, 7, 8, 9};
+    assert(ble_mesh_set_sar_transmitter(0x1201, &sar) && config_request());
+    assert(last_opcode == OP_CONFIG_SAR_TRANSMITTER_STATUS && last_params[0] == 0 &&
+           last_params[1] == 0x43 && last_params[2] == 0x65 &&
+           last_params[3] == 0x87 && last_params[4] == 9);
+    assert(saved.sar_transmitter.segment_interval_step == 3 &&
+           saved.sar_transmitter.unicast_retrans_count == 4 &&
+           ble_mesh_transport_get_sar_transmitter().segment_interval_step == 3);
+    uint8_t invalid_sar[4] = {0, 0, 0, 0xf0};
+    assert(!config_message(OP_CONFIG_SAR_TRANSMITTER_SET, invalid_sar, sizeof(invalid_sar)));
+    save_fail = 1;
+    sar.segment_interval_step = 7;
+    assert(ble_mesh_set_sar_transmitter(0x1201, &sar) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE && last_params[1] == 0x43);
+    assert(saved.sar_transmitter.segment_interval_step == 3 &&
+           ble_mesh_transport_get_sar_transmitter().segment_interval_step == 3);
+    save_fail = 0;
+    sar = MESH_SAR_TRANSMITTER_DEFAULT;
+    assert(ble_mesh_set_sar_transmitter(0x1201, &sar) && config_request());
+
+    assert(ble_mesh_get_sar_receiver(0x1201) && config_request());
+    assert(last_opcode == OP_CONFIG_SAR_RECEIVER_STATUS && last_len == 4 &&
+           last_params[0] == MESH_CONFIG_SUCCESS && last_params[1] == 0x23 &&
+           last_params[2] == 0x51 && last_params[3] == 0);
+    mesh_sar_rx_state sar_rx = {17, 6, 12, 9, 3};
+    assert(ble_mesh_set_sar_receiver(0x1201, &sar_rx) && config_request());
+    assert(last_opcode == OP_CONFIG_SAR_RECEIVER_STATUS && last_params[0] == 0 &&
+           last_params[1] == 0xd1 && last_params[2] == 0x9c &&
+           last_params[3] == 3);
+    assert(saved.sar_receiver.segments_threshold == 17 &&
+           transport_sar_rx.segment_interval_step == 9);
+    uint8_t invalid_sar_rx[3] = {0, 0, 0xfc};
+    assert(!config_message(OP_CONFIG_SAR_RECEIVER_SET, invalid_sar_rx,
+                           sizeof(invalid_sar_rx)));
+    save_fail = 1;
+    sar_rx.discard_timeout = 7;
+    assert(ble_mesh_set_sar_receiver(0x1201, &sar_rx) && config_request());
+    assert(last_params[0] == MESH_CONFIG_STORAGE_FAILURE &&
+           saved.sar_receiver.discard_timeout == 12 &&
+           transport_sar_rx.discard_timeout == 12);
+    save_fail = 0;
+    sar_rx = MESH_SAR_RX_DEFAULT;
+    assert(ble_mesh_set_sar_receiver(0x1201, &sar_rx) && config_request());
 
     assert(!ble_mesh_set_default_ttl(0x1201, 1));
     assert(!ble_mesh_set_default_ttl(0x1201, 128));
@@ -433,7 +491,8 @@ static void test_foundation_configuration(void) {
 
     // New status types reach the Config Client only with the sender's Device Key.
     const uint32_t statuses[] = {OP_CONFIG_COMPOSITION_STATUS, OP_CONFIG_DEFAULT_TTL_STATUS,
-        OP_CONFIG_MODEL_PUB_STATUS, OP_CONFIG_SIG_MODEL_SUB_LIST};
+        OP_CONFIG_MODEL_PUB_STATUS, OP_CONFIG_SIG_MODEL_SUB_LIST,
+        OP_CONFIG_SAR_TRANSMITTER_STATUS, OP_CONFIG_SAR_RECEIVER_STATUS};
     message = (mesh_access_pdu){.src = 0x1202, .dst = 0x1201,
         .app_key_index = APP_KEY_INDEX_NONE, .device_key_owner = 0x1202};
     for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {

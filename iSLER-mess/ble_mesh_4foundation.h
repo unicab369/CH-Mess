@@ -36,6 +36,12 @@
 #define OP_CONFIG_NODE_IDENTITY_STATUS 0x8048
 #define OP_CONFIG_NODE_RESET 0x8049
 #define OP_CONFIG_NODE_RESET_STATUS 0x804a
+#define OP_CONFIG_SAR_TRANSMITTER_GET 0x806c
+#define OP_CONFIG_SAR_TRANSMITTER_SET 0x806d
+#define OP_CONFIG_SAR_TRANSMITTER_STATUS 0x806e
+#define OP_CONFIG_SAR_RECEIVER_GET 0x806f
+#define OP_CONFIG_SAR_RECEIVER_SET 0x8070
+#define OP_CONFIG_SAR_RECEIVER_STATUS 0x8071
 #define OP_CONFIG_HEARTBEAT_PUB_GET 0x8038
 #define OP_CONFIG_HEARTBEAT_PUB_SET 0x8039
 #define OP_CONFIG_HEARTBEAT_PUB_STATUS 0x06
@@ -410,6 +416,79 @@ static int server_config_receive(const mesh_access_pdu *message) {
         return mesh_models.reset_pending;
     }
 
+    if (message->opcode == OP_CONFIG_SAR_TRANSMITTER_GET ||
+        message->opcode == OP_CONFIG_SAR_TRANSMITTER_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_SAR_TRANSMITTER_SET;
+        if (len != (set ? 4u : 0u) || (set && (p[3] & 0xf0))) return 0;
+        uint8_t status = MESH_CONFIG_SUCCESS;
+        if (set) {
+            mesh_sar_tx_state next = {
+                p[0] & 0x0f, p[0] >> 4,
+                p[1] & 0x0f, p[1] >> 4,
+                p[2] & 0x0f, p[2] >> 4,
+                p[3] & 0x0f
+            };
+            mesh_models_state saved = mesh_models.state;
+            saved.sar_transmitter = next;
+            if (memcmp(&saved, &mesh_models.state, sizeof(saved)) &&
+                BLE_MESH_MODELS_SAVE_STATE(&saved) != 1)
+                status = MESH_CONFIG_STORAGE_FAILURE;
+            else {
+                mesh_models.state = saved;
+                if (mesh_sar_tx_valid(&next)) transport_sar_tx = next;
+            }
+        }
+        const mesh_sar_tx_state *sar = &mesh_models.state.sar_transmitter;
+        uint8_t reply[5] = {
+            status,
+            (uint8_t)(sar->segment_interval_step |
+                      (sar->unicast_retrans_count << 4)),
+            (uint8_t)(sar->unicast_retrans_wo_progress_count |
+                      (sar->unicast_retrans_interval_step << 4)),
+            (uint8_t)(sar->unicast_retrans_interval_increment |
+                      (sar->multicast_retrans_count << 4)),
+            sar->multicast_retrans_interval_step
+        };
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_SAR_TRANSMITTER_STATUS, reply, sizeof(reply), 0);
+    }
+
+    if (message->opcode == OP_CONFIG_SAR_RECEIVER_GET ||
+        message->opcode == OP_CONFIG_SAR_RECEIVER_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_SAR_RECEIVER_SET;
+        if (len != (set ? 3u : 0u) || (set && (p[2] & 0xfc))) return 0;
+        uint8_t status = MESH_CONFIG_SUCCESS;
+        if (set) {
+            mesh_sar_rx_state next = {
+                p[0] & 0x1f, p[0] >> 5,
+                p[1] & 0x0f, p[1] >> 4,
+                p[2] & 0x03
+            };
+            mesh_models_state saved = mesh_models.state;
+            saved.sar_receiver = next;
+            if (memcmp(&saved, &mesh_models.state, sizeof(saved)) &&
+                BLE_MESH_MODELS_SAVE_STATE(&saved) != 1)
+                status = MESH_CONFIG_STORAGE_FAILURE;
+            else {
+                mesh_models.state = saved;
+                if (mesh_sar_rx_valid(&next)) transport_sar_rx = next;
+            }
+        }
+        const mesh_sar_rx_state *sar = &mesh_models.state.sar_receiver;
+        uint8_t reply[4] = {
+            status,
+            (uint8_t)(sar->segments_threshold |
+                      (sar->ack_delay_increment << 5)),
+            (uint8_t)(sar->discard_timeout |
+                      (sar->segment_interval_step << 4)),
+            sar->ack_retrans_count
+        };
+        return ble_mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_SAR_RECEIVER_STATUS, reply, sizeof(reply), 0);
+    }
+
     if (message->opcode == OP_CONFIG_HEARTBEAT_PUB_GET ||
         message->opcode == OP_CONFIG_HEARTBEAT_PUB_SET) {
         uint8_t set = message->opcode == OP_CONFIG_HEARTBEAT_PUB_SET;
@@ -714,7 +793,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
     if (message->opcode == OP_CONFIG_COMPOSITION_GET) {
         if (len != 1) return 0;
         // Page 0 is the highest supported page, including for unknown requests.
-        uint8_t reply[11 + 16 + (MESH_MAX_ELEMENTS - 1) * 12] = {
+        uint8_t reply[11 + 18 + (MESH_MAX_ELEMENTS - 1) * 12] = {
             0, (uint8_t)MESH_COMPANY_ID, (uint8_t)(MESH_COMPANY_ID >> 8),
             (uint8_t)MESH_PRODUCT_ID, (uint8_t)(MESH_PRODUCT_ID >> 8),
             (uint8_t)MESH_PRODUCT_VERSION, (uint8_t)(MESH_PRODUCT_VERSION >> 8),
@@ -724,12 +803,12 @@ static int server_config_receive(const mesh_access_pdu *message) {
         size_t size = 11;
         for (uint8_t i = 0; i < state->element_count; i++) {
             reply[size++] = 0; reply[size++] = 0; // Unknown element location.
-            reply[size++] = i ? 4 : 6;
+            reply[size++] = i ? 4 : 7;
             reply[size++] = 0; // No vendor models.
             const uint16_t models[] = {MESH_MODEL_CONFIG_SERVER, MESH_MODEL_CONFIG_CLIENT,
-                MESH_MODEL_HEALTH_SERVER, MESH_MODEL_HEALTH_CLIENT,
-                MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT};
-            for (uint8_t j = i ? 2 : 0; j < 6; j++) {
+                MESH_MODEL_SAR_CONFIG_SERVER, MESH_MODEL_HEALTH_SERVER,
+                MESH_MODEL_HEALTH_CLIENT, MESH_MODEL_ONOFF_SERVER, MESH_MODEL_ONOFF_CLIENT};
+            for (uint8_t j = i ? 3 : 0; j < 7; j++) {
                 reply[size++] = (uint8_t)models[j];
                 reply[size++] = (uint8_t)(models[j] >> 8);
             }
@@ -1132,6 +1211,47 @@ static inline int ble_mesh_set_net_transmit(uint16_t dst, uint8_t count,
     uint8_t params = count | (interval_steps << 3);
     return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_NET_TRANSMIT_SET, &params, 1, 0);
+}
+
+static inline int ble_mesh_get_sar_transmitter(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_SAR_TRANSMITTER_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_set_sar_transmitter(
+    uint16_t dst, const mesh_sar_tx_state *sar) {
+    if (!mesh_sar_tx_valid(sar)) return 0;
+    uint8_t params[4] = {
+        (uint8_t)(sar->segment_interval_step | (sar->unicast_retrans_count << 4)),
+        (uint8_t)(sar->unicast_retrans_wo_progress_count |
+                  (sar->unicast_retrans_interval_step << 4)),
+        (uint8_t)(sar->unicast_retrans_interval_increment |
+                  (sar->multicast_retrans_count << 4)),
+        sar->multicast_retrans_interval_step
+    };
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_SAR_TRANSMITTER_SET, params, sizeof(params), 0);
+}
+
+static inline int ble_mesh_get_sar_receiver(uint16_t dst) {
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_SAR_RECEIVER_GET, NULL, 0, 0);
+}
+
+static inline int ble_mesh_set_sar_receiver(
+    uint16_t dst, const mesh_sar_rx_state *sar) {
+    if (!mesh_sar_rx_valid(sar)) return 0;
+    uint8_t params[3] = {
+        (uint8_t)(sar->segments_threshold | (sar->ack_delay_increment << 5)),
+        (uint8_t)(sar->discard_timeout | (sar->segment_interval_step << 4)),
+        sar->ack_retrans_count
+    };
+    return ble_mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_SAR_RECEIVER_SET, params, sizeof(params), 0);
 }
 
 static inline int ble_mesh_get_relay(uint16_t dst) {

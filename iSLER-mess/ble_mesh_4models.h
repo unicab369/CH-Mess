@@ -216,6 +216,8 @@ static inline int ble_mesh_models_poll(void) {
             opcode == OP_CONFIG_PROXY_STATUS ||
             opcode == OP_CONFIG_FRIEND_STATUS ||
             opcode == OP_CONFIG_NODE_IDENTITY_STATUS ||
+            opcode == OP_CONFIG_SAR_TRANSMITTER_STATUS ||
+            opcode == OP_CONFIG_SAR_RECEIVER_STATUS ||
             opcode == OP_CONFIG_NETKEY_STATUS ||
             opcode == OP_CONFIG_NETKEY_LIST ||
             opcode == OP_CONFIG_KEY_PHASE_STATUS ||

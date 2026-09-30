@@ -13,6 +13,46 @@
 #define MESH_NETWORK_BEACON_AD_TYPE 0x2B
 #define MESH_NETWORK_MAX_PDU 29
 #define MESH_NETWORK_IV_MIN_SECONDS (96ull * 60u * 60u)
+
+typedef struct {
+    uint8_t segment_interval_step;
+    uint8_t unicast_retrans_count;
+    uint8_t unicast_retrans_wo_progress_count;
+    uint8_t unicast_retrans_interval_step;
+    uint8_t unicast_retrans_interval_increment;
+    uint8_t multicast_retrans_count;
+    uint8_t multicast_retrans_interval_step;
+} mesh_sar_tx_state;
+
+static const mesh_sar_tx_state MESH_SAR_TRANSMITTER_DEFAULT = {
+    5, 2, 2, 7, 1, 2, 9
+};
+
+static inline int mesh_sar_tx_valid(const mesh_sar_tx_state *state) {
+    return state && state->segment_interval_step <= 15 &&
+        state->unicast_retrans_count <= 15 &&
+        state->unicast_retrans_wo_progress_count <= 15 &&
+        state->unicast_retrans_interval_step <= 15 &&
+        state->unicast_retrans_interval_increment <= 15 &&
+        state->multicast_retrans_count <= 15 &&
+        state->multicast_retrans_interval_step <= 15;
+}
+
+typedef struct {
+    uint8_t segments_threshold;
+    uint8_t ack_delay_increment;
+    uint8_t discard_timeout;
+    uint8_t segment_interval_step;
+    uint8_t ack_retrans_count;
+} mesh_sar_rx_state;
+
+static const mesh_sar_rx_state MESH_SAR_RX_DEFAULT = {3, 1, 1, 5, 0};
+
+static inline int mesh_sar_rx_valid(const mesh_sar_rx_state *state) {
+    return state && state->segments_threshold <= 31 &&
+        state->ack_delay_increment <= 7 && state->discard_timeout <= 15 &&
+        state->segment_interval_step <= 15 && state->ack_retrans_count <= 3;
+}
 // This bounded RAM replay list does not survive reboot. Persist it before
 // relying on receive-side replay protection across power cycles.
 #define MESH_NETWORK_REPLAY_SLOTS 16

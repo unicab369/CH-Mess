@@ -10,10 +10,9 @@
 #define MESH_TRANSPORT_MAX_UPPER 384
 #define MESH_TRANSPORT_SEGMENT_SIZE 12
 #define MESH_TRANSPORT_CONTROL_SEGMENT_SIZE 8
+#define MESH_TRANSPORT_SEGMENT_INTERVAL_STEP_DEFAULT 5
 // 32 Segmented Control packets can carry 32 * 8 parameter bytes.
 #define MESH_TRANSPORT_MAX_CONTROL 256
-#define MESH_TRANSPORT_RETRY_MS 1000
-#define MESH_TRANSPORT_RX_TIMEOUT_MS 5000
 #define APP_KEY_INDEX_NONE 0xffff
 // Outgoing Configuration Server replies use this node's Device Key.
 #define DEVICE_KEY_LOCAL 0xfffe
@@ -28,7 +27,6 @@
 
 // TODO for broadly usable Access-message transport:
 // - Add concurrent segmented TX contexts.
-// - Add configurable SAR timing and group retransmissions.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -56,6 +54,16 @@ typedef struct {
 typedef void (*mesh_transport_control_handler)(
     const mesh_transport_control_message *message);
 static mesh_transport_control_handler transport_control_handler;
+
+// Runtime copy of the persisted SAR Transmitter state used by transport.
+static mesh_sar_tx_state transport_sar_tx = {
+    5, 2, 2, 7, 1, 2, 9
+};
+static mesh_sar_rx_state transport_sar_rx = {3, 1, 1, 5, 0};
+
+static inline mesh_sar_tx_state ble_mesh_transport_get_sar_transmitter(void) {
+    return transport_sar_tx;
+}
 
 // Register the upper-transport handler used by ble_mesh_transport_poll.
 static inline void ble_mesh_transport_set_control_handler(
@@ -102,7 +110,7 @@ static inline void ble_mesh_transport_clear_labels(void) {
 
 static struct {
     uint8_t active;
-    uint8_t akf, aid, ttl, seg_n, next_seg, retries, mic_64;
+    uint8_t akf, aid, ttl, seg_n, next_seg, retries, retries_without_progress, mic_64;
     uint16_t src, dst, seq_zero, upper_len, net_idx;
     uint32_t seq_auth, iv_index, acked, last_tx_ms;
     uint8_t upper[MESH_TRANSPORT_MAX_UPPER];
@@ -110,6 +118,7 @@ static struct {
 
 struct transport_rx {
     uint8_t active, ack_pending, ctl, delivered, ttl, transport_len;
+    uint8_t ack_retrans_left;
     uint16_t src, dst, net_idx;
     uint32_t seq_auth, seq, iv_index, updated_ms, ack_at_ms;
     uint8_t transport[16];
@@ -289,7 +298,7 @@ static uint32_t transport_rx_received(uint8_t ctl, uint16_t net_idx, uint16_t sr
 static void transport_rx_ack(uint8_t ctl, uint16_t net_idx, uint16_t src, uint16_t dst,
                              uint32_t seq_auth, uint32_t iv_index,
                              uint8_t pending, uint32_t ack_at_ms,
-                             uint32_t updated_ms) {
+                             uint32_t updated_ms, uint8_t retrans_left) {
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (!transport_rx_matches(rx, ctl, net_idx, src, dst, seq_auth, iv_index))
@@ -297,7 +306,20 @@ static void transport_rx_ack(uint8_t ctl, uint16_t net_idx, uint16_t src, uint16
         rx->ack_pending = pending;
         rx->ack_at_ms = ack_at_ms;
         rx->updated_ms = updated_ms;
+        rx->ack_retrans_left = retrans_left;
     }
+}
+
+// SAR acknowledgment delay is bounded by both the message length and state.
+static uint32_t transport_sar_rx_ack_delay_ms(uint8_t seg_n) {
+    uint32_t by_length_half_steps = (uint32_t)seg_n * 2 + 1;
+    uint32_t by_state_half_steps =
+        (uint32_t)transport_sar_rx.ack_delay_increment * 2 + 3;
+    uint32_t half_steps = by_length_half_steps < by_state_half_steps ?
+        by_length_half_steps : by_state_half_steps;
+    uint32_t interval_ms =
+        ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10;
+    return half_steps * interval_ms / 2;
 }
 
 // Queue an encrypted access message. Returns 1 if accepted, 0 on failure.
@@ -377,6 +399,7 @@ static inline int ble_mesh_transport_queue(uint16_t src,
     transport_tx.seg_n = seg_n;
     transport_tx.next_seg = 0;
     transport_tx.retries = 0;
+    transport_tx.retries_without_progress = 0;
     transport_tx.acked = 0;
     memcpy(transport_tx.upper, upper, upper_len);
 
@@ -417,12 +440,23 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         }
         uint32_t segment_mask = transport_tx.seg_n == 31 ? UINT32_MAX :
                                 ((uint32_t)1 << (transport_tx.seg_n + 1)) - 1;
+        uint32_t new_acked = (acked & segment_mask) & ~transport_tx.acked;
         transport_tx.acked |= acked & segment_mask;
 
         if (transport_tx.acked == segment_mask)
             transport_tx.active = 0;
-        else if (transport_tx.next_seg > transport_tx.seg_n)
+        else if (transport_tx.next_seg > transport_tx.seg_n) {
+            if (transport_tx.retries >= transport_sar_tx.unicast_retrans_count ||
+                (!new_acked && transport_tx.retries_without_progress >=
+                                   transport_sar_tx.unicast_retrans_wo_progress_count)) {
+                transport_tx.active = 0;
+                return 0;
+            }
+            transport_tx.retries++;
+            if (new_acked) transport_tx.retries_without_progress = 0;
+            else transport_tx.retries_without_progress++;
             transport_tx.next_seg = 0;
+        }
         return 0;
     }
 
@@ -462,6 +496,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
 
     uint32_t now = GET_MILLIS();
     struct transport_rx *free_rx = NULL;
+    uint32_t context_updated_ms = now;
     uint32_t mask;
     uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
         ((uint32_t)1 << (seg_n + 1)) - 1;
@@ -469,7 +504,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active && (uint32_t)(now - rx->updated_ms) >=
-            MESH_TRANSPORT_RX_TIMEOUT_MS)
+            ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000)
             rx->active = rx->ack_pending = 0;
         if (!rx->active) {
             if (!free_rx) free_rx = rx;
@@ -477,6 +512,7 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         }
         if (!transport_rx_matches(rx, net->ctl, net->net_key_index, net->src, net->dst,
                                   seq_auth, net->iv_index)) continue;
+        context_updated_ms = rx->updated_ms;
         uint16_t old_seq_zero = (uint16_t)(((rx->transport[1] & 0x7f) << 6) |
                                             ((rx->transport[2] >> 2) & 0x3f));
         uint8_t old_seg_n = rx->transport[3] & 0x1f;
@@ -493,7 +529,9 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
     if (duplicate) {
         uint8_t ack_pending = mesh_local_element(net->dst);
         transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst, seq_auth,
-            net->iv_index, ack_pending, mask == segment_mask ? now : now + 200, now);
+            net->iv_index, ack_pending,
+            mask == segment_mask ? now : now + transport_sar_rx_ack_delay_ms(seg_n),
+            context_updated_ms, transport_sar_rx.ack_retrans_count);
         return 0;
     } else {
         if (!free_rx) {
@@ -535,7 +573,9 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
         free_rx->transport_len = (uint8_t)net->transport_len;
         memcpy(free_rx->transport, pdu, net->transport_len);
         transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst, seq_auth,
-            net->iv_index, mesh_local_element(net->dst), now + 200, now);
+            net->iv_index, mesh_local_element(net->dst),
+            now + transport_sar_rx_ack_delay_ms(seg_n), now,
+            transport_sar_rx.ack_retrans_count);
         mask = transport_rx_received(net->ctl, net->net_key_index, net->src, net->dst,
                                       seq_auth, net->iv_index);
     }
@@ -551,8 +591,6 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
                                      (rx->transport[3] >> 5));
             if (part == seg_n) last_seq = rx->seq;
         }
-        transport_rx_ack(1, net->net_key_index, net->src, net->dst, seq_auth,
-            net->iv_index, mesh_local_element(net->dst), now, now);
         if (!ble_mesh_net_replay_update(net->src, net->net_key_index,
                                         net->iv_index, last_seq)) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
@@ -581,8 +619,6 @@ static inline int ble_mesh_transport_receive(const mesh_net_message *net,
             last_seq = rx->seq;
         }
     }
-    transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst, seq_auth,
-        net->iv_index, mesh_local_element(net->dst), now, now);
     size_t upper_len = (size_t)seg_n * segment_size + last_len;
     int result = transport_decrypt(akf, aid, mic_64, seq_auth, net->iv_index,
                                    net->net_key_index, net->src, net->dst, upper,
@@ -658,7 +694,8 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active &&
-            (uint32_t)(now - rx->updated_ms) >= MESH_TRANSPORT_RX_TIMEOUT_MS) {
+            (uint32_t)(now - rx->updated_ms) >=
+                ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000) {
             rx->active = rx->ack_pending = 0;
         }
         if (!rx->active || !rx->ack_pending || !mesh_local_element(rx->dst) ||
@@ -677,24 +714,48 @@ static inline int ble_mesh_transport_poll(mesh_access_message *out) {
         if (!ble_mesh_net_queue(rx->net_idx, rx->dst, rx->src,
                                 1, rx->ttl,
                                 pdu, sizeof(pdu))) return -1;
+        uint8_t seg_n = rx->transport[3] & 0x1f;
+        uint8_t retrans_left = rx->ack_retrans_left;
+        uint8_t retransmit = seg_n > transport_sar_rx.segments_threshold &&
+                             retrans_left != 0;
+        if (retransmit) retrans_left--;
         transport_rx_ack(rx->ctl, rx->net_idx, rx->src, rx->dst, rx->seq_auth,
-                          rx->iv_index, 0, 0, now);
+            rx->iv_index, retransmit,
+            retransmit ? now + ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10 : 0,
+            rx->updated_ms, retrans_left);
         break;
     }
 
     if (transport_tx.active) {
         if (transport_tx.next_seg <= transport_tx.seg_n) {
-            if (transport_segment_queue() < 0) return -1;
+            uint32_t segment_interval_ms =
+                ((uint32_t)transport_sar_tx.segment_interval_step + 1) * 10;
+            if ((uint32_t)(now - transport_tx.last_tx_ms) >= segment_interval_ms &&
+                transport_segment_queue() < 0) return -1;
         }
-        else if (transport_tx.dst >= 0x8000) {
-            // Group and virtual destinations do not send Segment Acknowledgments.
-            transport_tx.active = 0;
+        else if (transport_tx.dst >= 0x8000 &&
+                 (uint32_t)(now - transport_tx.last_tx_ms) >=
+                     ((uint32_t)transport_sar_tx.multicast_retrans_interval_step + 1) * 25) {
+            // Multicast has no Segment ACK, so repeat the full segment set.
+            if (transport_tx.retries >= transport_sar_tx.multicast_retrans_count)
+                transport_tx.active = 0;
+            else {
+                transport_tx.retries++;
+                transport_tx.next_seg = 0;
+            }
         }
-        else if ((uint32_t)(now - transport_tx.last_tx_ms) >= MESH_TRANSPORT_RETRY_MS) {
-            if (transport_tx.retries++ >= 3) {
+        else if ((uint32_t)(now - transport_tx.last_tx_ms) >=
+                 (((uint32_t)transport_sar_tx.unicast_retrans_interval_step + 1) * 25) +
+                 (((uint32_t)transport_sar_tx.unicast_retrans_interval_increment + 1) * 25) *
+                     (transport_tx.ttl ? transport_tx.ttl - 1 : 0)) {
+            if (transport_tx.retries >= transport_sar_tx.unicast_retrans_count ||
+                transport_tx.retries_without_progress >=
+                    transport_sar_tx.unicast_retrans_wo_progress_count) {
                 transport_tx.active = 0;
                 return -1;
             }
+            transport_tx.retries++;
+            transport_tx.retries_without_progress++;
             transport_tx.next_seg = 0;
         }
     }

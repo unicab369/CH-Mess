@@ -1,7 +1,6 @@
 // TODO for foundation support:
 // - Relay, Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
-// - SAR Configuration model: expose transport timing settings (separate model).
 
 ## Foundation models
 
@@ -22,6 +21,8 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Subscription lists and clearing | `OP_CONFIG_SIG_SUB_GET`, `OP_CONFIG_SIG_MODEL_SUB_LIST`, `OP_CONFIG_MODEL_SUB_DELETE_ALL`, `OP_CONFIG_MODEL_SUB_STATUS` | List subscribed addresses, clear all subscriptions, and report changes. |
 | Secure Network Beacon | `OP_CONFIG_BEACON_GET`, `OP_CONFIG_BEACON_SET`, `OP_CONFIG_BEACON_STATUS` | Get/set automatic beacon broadcasts. |
 | Network Transmit | `OP_CONFIG_NET_TRANSMIT_GET`, `OP_CONFIG_NET_TRANSMIT_SET`, `OP_CONFIG_NET_TRANSMIT_STATUS` | Get/set packet repetitions and their interval. |
+| SAR Transmitter | `OP_CONFIG_SAR_TRANSMITTER_GET`, `OP_CONFIG_SAR_TRANSMITTER_SET`, `OP_CONFIG_SAR_TRANSMITTER_STATUS` | Get/set segment interval and segmented-message retransmission settings. |
+| SAR Receiver | `OP_CONFIG_SAR_RECEIVER_GET`, `OP_CONFIG_SAR_RECEIVER_SET`, `OP_CONFIG_SAR_RECEIVER_STATUS` | Get/set segment threshold, ACK timing/retries, and incomplete-message discard timeout. |
 | Relay | `OP_CONFIG_RELAY_GET`, `OP_CONFIG_RELAY_SET`, `OP_CONFIG_RELAY_STATUS` | Report Not Supported (2); Relay Retransmit is 0. |
 | GATT Proxy | `OP_CONFIG_PROXY_GET`, `OP_CONFIG_PROXY_SET`, `OP_CONFIG_PROXY_STATUS` | Report Not Supported (2). |
 | Friend | `OP_CONFIG_FRIEND_GET`, `OP_CONFIG_FRIEND_SET`, `OP_CONFIG_FRIEND_STATUS` | Report Not Supported (2). |

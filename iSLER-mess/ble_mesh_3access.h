@@ -93,8 +93,7 @@ static inline int ble_mesh_access_queue_virtual(
 
     if (!label || app_key_index == APP_KEY_INDEX_NONE ||
         app_key_index == DEVICE_KEY_LOCAL || !opcode_len ||
-        mic_64 > 1 ||
-        (!params && params_len) ||
+        mic_64 > 1 || (!params && params_len) ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
                      opcode_len) return 0;
 
