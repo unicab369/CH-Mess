@@ -38,9 +38,10 @@
 // - Increase RX SAR capacity if more than one maximum-size message must be
 //   reassembled concurrently; the default pool holds 32 segments total.
 // - Verify SAR behavior against an independent Mesh implementation.
-// - Implement the Friend Queue, recurring LPN polling, subscription updates,
-//   Friend Update IV-state handling, RSSI-aware offer timing, and friendship
-//   termination.
+// - Extend Friend Queue to segmented and subscribed group/virtual traffic;
+//   unsegmented unicast delivery is implemented below.
+// - Add recurring LPN polling, subscription updates, Friend Update IV-state
+//   handling, RSSI-aware offer timing, and friendship termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -73,7 +74,7 @@ typedef struct {
 #define MESH_CONTROL_FRIEND_REQUEST 0x03
 #define MESH_CONTROL_FRIEND_OFFER 0x04
 #define MESH_FRIENDS_ADDRESS 0xfffd
-// Current offer capability; Friend Queue storage remains on the TODO above.
+// Fixed Friend Queue depth advertised in Friend Offers.
 #define MESH_FRIEND_QUEUE_CAPACITY 2
 
 enum {
@@ -96,11 +97,14 @@ static struct {
     uint8_t enabled, receive_window, subscription_size;
 } transport_friend;
 
-static struct {
+typedef struct {
     uint16_t net_key_index, lpn_address, lpn_counter, friend_counter;
     uint32_t poll_timeout_ms, offer_at_ms, expires_at_ms;
-    uint8_t used, offered;
-} transport_friend_offers[MESH_NETWORK_MAX_FRIENDSHIPS];
+    uint8_t num_elements, used, offered, queue_count, has_poll_fsn;
+    uint8_t last_poll_fsn, last_response_queued;
+    mesh_net_message queue[MESH_FRIEND_QUEUE_CAPACITY];
+} mesh_friend_offer;
+static mesh_friend_offer transport_friend_offers[MESH_NETWORK_MAX_FRIENDSHIPS];
 
 typedef void (*mesh_transport_control_handler)(
     const mesh_transport_control_message *message);
@@ -257,9 +261,51 @@ static inline void mesh_friend_request_receive(
     transport_friend_offers[slot].lpn_address = message->src;
     transport_friend_offers[slot].lpn_counter = lpn_counter;
     transport_friend_offers[slot].friend_counter = friend_counter;
+    transport_friend_offers[slot].num_elements = elements;
     transport_friend_offers[slot].poll_timeout_ms = poll_timeout * 100u;
     transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + 100u;
     transport_friend_offers[slot].expires_at_ms = GET_MILLIS() + poll_timeout * 100u;
+    transport_friend_offers[slot].queue_count = 0;
+    transport_friend_offers[slot].has_poll_fsn = 0;
+}
+
+// Store eligible unicast Network PDUs for an established LPN. Group and
+// virtual subscription tracking is not available yet, so those destinations
+// are deliberately skipped until Friend Subscription List handling is added.
+static inline int mesh_friend_queue_receive(const mesh_net_message *message) {
+    if (!message || message->ttl < 2 || message->dst > 0x7fff) return 0;
+    for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
+        mesh_friend_offer *friendship = &transport_friend_offers[i];
+        if (!friendship->used || !friendship->offered ||
+            friendship->net_key_index != message->net_key_index ||
+            message->dst < friendship->lpn_address ||
+            (uint32_t)message->dst >=
+                (uint32_t)friendship->lpn_address + friendship->num_elements ||
+            (message->src >= friendship->lpn_address &&
+             (uint32_t)message->src <
+                (uint32_t)friendship->lpn_address + friendship->num_elements))
+            continue;
+        for (uint8_t j = 0; j < friendship->queue_count; j++) {
+            if (friendship->queue[j].src == message->src &&
+                friendship->queue[j].seq == message->seq &&
+                friendship->queue[j].iv_index == message->iv_index) return 1;
+        }
+        if (friendship->queue_count == MESH_FRIEND_QUEUE_CAPACITY) {
+            memmove(&friendship->queue[0], &friendship->queue[1],
+                (MESH_FRIEND_QUEUE_CAPACITY - 1) * sizeof(friendship->queue[0]));
+            friendship->queue_count--;
+            if (friendship->last_response_queued) {
+                friendship->last_response_queued = 0;
+                friendship->has_poll_fsn = 0;
+            }
+        }
+        mesh_net_message *cached =
+            &friendship->queue[friendship->queue_count++];
+        *cached = *message;
+        cached->ttl--;
+        return 1;
+    }
+    return 0;
 }
 
 // Reply to a friendship-key Friend Poll with the current Friend Update.
@@ -287,6 +333,79 @@ static inline void mesh_friend_poll_receive(
         return;
     }
 
+    uint8_t fsn = message->params[0] & 1;
+    if (transport_friend_offers[slot].has_poll_fsn &&
+        fsn != transport_friend_offers[slot].last_poll_fsn &&
+        transport_friend_offers[slot].last_response_queued) {
+        if (transport_friend_offers[slot].queue_count) {
+            memmove(&transport_friend_offers[slot].queue[0],
+                &transport_friend_offers[slot].queue[1],
+                (transport_friend_offers[slot].queue_count - 1) *
+                    sizeof(transport_friend_offers[slot].queue[0]));
+            transport_friend_offers[slot].queue_count--;
+        }
+        transport_friend_offers[slot].last_response_queued = 0;
+    }
+    transport_friend_offers[slot].last_poll_fsn = fsn;
+    transport_friend_offers[slot].has_poll_fsn = 1;
+
+    // An unchanged FSN means the LPN did not receive the prior response; retry
+    // that exact queued Network PDU. A changed FSN acknowledges it.
+    if (transport_friend_offers[slot].queue_count) {
+        const mesh_net_message *cached =
+            &transport_friend_offers[slot].queue[0];
+        // Rebuild the cached Network PDU with Friendship credentials while
+        // keeping its original SRC, SEQ, and IV Index; its TTL was reduced on
+        // enqueue. Reusing those fields lets the LPN recognize retransmissions.
+        int sent = 0;
+        if (mesh_network.ready && cached->transport_len &&
+            cached->transport_len <= sizeof(cached->transport) &&
+            cached->seq <= 0xffffffu) {
+            for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
+                const mesh_friendship *friendship =
+                    &mesh_network.friendships[i];
+                if (!friendship->used ||
+                    friendship->net_key_index != message->net_key_index ||
+                    friendship->lpn_address != message->src) continue;
+                const mesh_credentials *key =
+                    mesh_subnet_phase(&mesh_network.state,
+                        message->net_key_index) == 2 &&
+                    friendship->has_new_credentials ?
+                        &friendship->new_credentials : &friendship->credentials;
+                uint8_t ad[31], *pdu = ad + 2;
+                size_t mic_len = cached->ctl ? 8u : 4u;
+                ad[0] = (uint8_t)(1 + 7 + 2 + cached->transport_len + mic_len);
+                ad[1] = MESH_NETWORK_AD_TYPE;
+                uint32_t iv = cached->iv_index;
+                pdu[0] = (uint8_t)(((iv & 1u) << 7) | key->nid);
+                pdu[1] = (uint8_t)((cached->ctl << 7) | cached->ttl);
+                pdu[2] = (uint8_t)(cached->seq >> 16);
+                pdu[3] = (uint8_t)(cached->seq >> 8);
+                pdu[4] = (uint8_t)cached->seq;
+                pdu[5] = (uint8_t)(cached->src >> 8);
+                pdu[6] = (uint8_t)cached->src;
+                uint8_t plain[18], nonce[13];
+                plain[0] = (uint8_t)(cached->dst >> 8);
+                plain[1] = (uint8_t)cached->dst;
+                memcpy(plain + 2, cached->transport, cached->transport_len);
+                mesh_nonce(nonce, pdu + 1, iv);
+                if (ccm_encrypt_and_tag(key->encryption_key, nonce, 13,
+                        NULL, 0, plain, cached->transport_len + 2, pdu + 7,
+                        pdu + 9 + cached->transport_len, mic_len) == CCM_OK) {
+                    mesh_obfuscate(key, pdu, iv);
+                    sent = BLE_MESH_QUEUE_TX(ad, (size_t)ad[0] + 1) == 0;
+                }
+                break;
+            }
+        }
+        if (sent) {
+            transport_friend_offers[slot].last_response_queued = 1;
+            transport_friend_offers[slot].expires_at_ms = GET_MILLIS() +
+                transport_friend_offers[slot].poll_timeout_ms;
+        }
+        return;
+    }
+
     uint8_t phase = mesh_subnet_phase(&mesh_network.state, message->net_key_index);
     uint8_t update[7] = {
         MESH_CONTROL_FRIEND_UPDATE,
@@ -302,6 +421,7 @@ static inline void mesh_friend_poll_receive(
         mesh_network.state.unicast_address, message->src, 1, 0,
         update, sizeof(update))) {
         transport_friend_offers[slot].offered = 1;
+        transport_friend_offers[slot].last_response_queued = 0;
         transport_friend_offers[slot].expires_at_ms = GET_MILLIS() +
             transport_friend_offers[slot].poll_timeout_ms;
     }
@@ -758,6 +878,9 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
     const uint8_t *pdu = net->transport;
 
     uint8_t segmented = pdu[0] & 0x80;
+    // Friend Queue currently retains complete unsegmented messages. Segmented
+    // traffic is skipped until reassembly and OBO acknowledgement are handled.
+    if (!segmented && mesh_friend_queue_receive(net)) return 0;
     if (net->ctl && !segmented) {
         if (!net->transport_len) return 0;
         if (pdu[0] == 0) {

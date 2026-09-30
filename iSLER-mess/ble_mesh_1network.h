@@ -830,7 +830,6 @@ static inline int mesh_net_queue_friend(uint16_t net_idx, uint16_t src,
     return 0;
 }
 
-
 // Count authenticated subnet beacons in two rolling 10-second buckets.
 static void mesh_beacon_observations(uint32_t now) {
     uint32_t steps = (uint32_t)(now - mesh_network.beacon.observed_at_ms) / 10000u;
@@ -1058,7 +1057,8 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
     if (friendship_credential &&
         !((src == friendship_lpn && dst == friendship_friend) ||
           (src == friendship_friend && dst == friendship_lpn) ||
-          (dst == friendship_lpn && mesh_local_element(dst)))) return 0;
+          (mesh_network.state.unicast_address == friendship_lpn &&
+           mesh_local_element(dst)))) return 0;
 
     // A segmented message is checked when reassembly completes. Checking its
     // individual segment SEQs here would reject valid segments arriving late.

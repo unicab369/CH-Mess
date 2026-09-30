@@ -841,6 +841,16 @@ int main(void) {
         .len = 1,
         .params = {0}
     };
+    mesh_net_message queued_for_lpn = {
+        .ctl = 0, .ttl = 5, .seq = 0x12345,
+        .iv_index = friend_state.iv_index,
+        .src = 0x1300, .dst = b.unicast_address,
+        .net_key_index = friend_request.net_key_index,
+        .transport_len = 3, .transport = {0x00, 0xaa, 0x55}
+    };
+    assert(mesh_transport_receive(&queued_for_lpn, &received) == 0);
+    assert(transport_friend_offers[0].queue_count == 1 &&
+           transport_friend_offers[0].queue[0].ttl == 4);
     mesh_friend_poll_receive(&friend_poll_control);
     assert(sent_count == 2);
     mesh_friend_disable();
@@ -851,8 +861,55 @@ int main(void) {
     mesh_net_message friend_update;
     assert(mesh_net_receive(sent[1] + 2, sent_len[1] - 2,
                             &friend_update) == 1);
-    assert(friend_update.friendship &&
-           friend_update.transport[0] == MESH_CONTROL_FRIEND_UPDATE &&
-           friend_update.transport[6] == 0);
+    assert(friend_update.friendship && friend_update.src == queued_for_lpn.src &&
+           friend_update.dst == queued_for_lpn.dst &&
+           friend_update.seq == queued_for_lpn.seq && friend_update.ttl == 4 &&
+           friend_update.transport_len == queued_for_lpn.transport_len &&
+           memcmp(friend_update.transport, queued_for_lpn.transport,
+                  queued_for_lpn.transport_len) == 0);
+
+    // An unchanged FSN repeats the same queued PDU; a changed FSN consumes it.
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friend_enable(friend_request.net_key_index, 10, 0, 0));
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    transport_friend_offers[0].used = 1;
+    transport_friend_offers[0].net_key_index = friend_request.net_key_index;
+    transport_friend_offers[0].lpn_address = b.unicast_address;
+    transport_friend_offers[0].friend_counter = offered_counter;
+    transport_friend_offers[0].poll_timeout_ms = 10000;
+    transport_friend_offers[0].expires_at_ms = current_ms + 10000;
+    transport_friend_offers[0].offered = 1;
+    transport_friend_offers[0].queue[0] = queued_for_lpn;
+    transport_friend_offers[0].queue[0].ttl--;
+    transport_friend_offers[0].queue_count = 1;
+    transport_friend_offers[0].has_poll_fsn = 1;
+    transport_friend_offers[0].last_poll_fsn = 0;
+    transport_friend_offers[0].last_response_queued = 1;
+    sent_count = 0;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 1 && transport_friend_offers[0].queue_count == 1);
+    uint8_t first_friend_response[31];
+    size_t first_friend_response_len = sent_len[0];
+    memcpy(first_friend_response, sent[0], first_friend_response_len);
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    int cached_receive_result = mesh_net_receive(sent[0] + 2,
+        sent_len[0] - 2, &friend_update);
+    assert(cached_receive_result == 1);
+    assert(friend_update.seq == queued_for_lpn.seq);
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 2 && sent_len[1] == first_friend_response_len &&
+           memcmp(sent[1], first_friend_response,
+                  first_friend_response_len) == 0 &&
+           transport_friend_offers[0].queue_count == 1);
+    friend_poll_control.params[0] = 1;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 3 && transport_friend_offers[0].queue_count == 0);
+    mesh_friend_disable();
     return 0;
 }
