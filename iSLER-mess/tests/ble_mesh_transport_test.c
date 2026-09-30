@@ -130,7 +130,6 @@ int main(void) {
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(received.app_key_index == APP_KEY_INDEX_NONE);
     assert(received.device_key_owner == b.unicast_address);
-    current_ms += 150;
     assert(mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
 
@@ -170,7 +169,6 @@ int main(void) {
     assert(receive_frame(4, &received) == 1 &&
            received.len == sizeof(long_access) &&
            memcmp(received.data, long_access, sizeof(long_access)) == 0);
-    current_ms += 150;
     assert(mesh_transport_poll(&received) == 0 && sent_count == 6);
     b = mesh_network.state;
 
@@ -208,7 +206,6 @@ int main(void) {
     assert(memcmp(received.data, long_access, sizeof(long_access)) == 0);
     assert(mesh_network.replay_count == 1 &&
            mesh_network.replay[0].seq == final_segment_seq);
-    current_ms += 150;
     assert(mesh_transport_poll(&received) == 0);
     assert(sent_count == 5);
     b = mesh_network.state;
@@ -295,9 +292,6 @@ int main(void) {
     assert(memcmp(control_event.params, control_params,
                   sizeof(control_params)) == 0);
     mesh_transport_set_control_handler(NULL);
-    current_ms += 24;
-    assert(mesh_transport_poll(&received) == 0 && sent_count == 3);
-    current_ms++;
     assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
     current_ms += 9;
     assert(mesh_transport_poll(&received) == 0 && sent_count == 4);
@@ -422,9 +416,14 @@ int main(void) {
     assert(mesh_transport_receive(&net, &received) == 1);
     assert(received.len == sizeof(short_access) &&
            memcmp(received.data, short_access, sizeof(short_access)) == 0);
-    current_ms += 30;
     assert(mesh_transport_poll(&received) == 0);
     assert(sent_count == 2);
+    assert(mesh_transport_receive(&net, &received) == 0); // Completed duplicate.
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    current_ms += 149;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 2);
+    current_ms++;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 3);
     assert(mesh_network_init(&a) == 1);
     assert(receive_frame(1, &received) == 0 && !transport_tx.active);
 
@@ -619,12 +618,18 @@ int main(void) {
     assert(mesh_transport_queue(0x1201, 0x1202, 5, 0, NULL,
         long_access, sizeof(long_access), 0) == 1);
     transport_tx.active = 0;
+    sent_count = 0;
     b = node(0x1202);
     assert(mesh_network_init(&b) == 1);
     memset(transport_rx, 0, sizeof(transport_rx));
-    transport_sar_rx = (mesh_sar_rx_state){3, 1, 0, 5, 0};
+    transport_sar_rx = (mesh_sar_rx_state){31, 1, 0, 5, 0};
     assert(receive_frame(0, &received) == 0 && transport_rx[0].active);
-    current_ms += 4999;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 0);
+    current_ms += 149;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 0);
+    current_ms++;
+    assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
+    current_ms += 4849;
     assert(mesh_transport_poll(&received) == 0 && transport_rx[0].active);
     current_ms++;
     assert(mesh_transport_poll(&received) == 0 && !transport_rx[0].active);

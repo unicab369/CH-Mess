@@ -35,14 +35,13 @@
 #endif
 
 // TODO for broader Transport support:
+// - Increase RX SAR capacity if more than one maximum-size message must be
+//   reassembled concurrently; the default pool holds 32 segments total.
+// - Verify SAR behavior against an independent Mesh implementation.
+// - Add Friendship Transport Control messages when Friend/LPN roles are added.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
-// - Increase RX SAR capacity if more than one maximum-size message must be
-//   reassembled concurrently; the default pool holds 32 segments total.
-// - Verify SAR ACK, retry, duplicate, and discard-timer behavior against the
-//   Mesh Protocol specification and an independent implementation.
-// - Add Friendship Transport Control messages when Friend/LPN roles are added.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -145,9 +144,9 @@ static uint8_t segmented_tx_queue_head, segmented_tx_queue_count;
 
 struct transport_rx {
     uint8_t active, ack_pending, ctl, delivered, ttl, transport_len;
-    uint8_t ack_retrans_left;
+    uint8_t ack_retrans_left, ack_sent;
     uint16_t src, dst, net_idx;
-    uint32_t seq_auth, seq, iv_index, updated_ms, ack_at_ms;
+    uint32_t seq_auth, seq, iv_index, updated_ms, ack_at_ms, ack_sent_ms;
     uint8_t transport[16];
 };
 
@@ -375,7 +374,9 @@ static void transport_rx_ack(uint8_t ctl, uint16_t net_idx, uint16_t src, uint16
     }
 }
 
-// SAR acknowledgment delay is bounded by both the message length and state.
+// For an incomplete message, wait before ACKing the segments received so far;
+// this gives more segments time to arrive and avoids frequent partial ACKs.
+// The final missing segment is ACKed immediately.
 static uint32_t transport_sar_rx_ack_delay_ms(uint8_t seg_n) {
     uint32_t by_length_half_steps = (uint32_t)seg_n * 2 + 1;
     uint32_t by_state_half_steps =
@@ -562,6 +563,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
     struct transport_rx *free_rx = NULL;
     uint32_t context_updated_ms = now;
     uint32_t mask;
+    struct transport_rx *matched_rx = NULL;
     uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
         ((uint32_t)1 << (seg_n + 1)) - 1;
     uint8_t duplicate = 0;
@@ -576,6 +578,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
         }
         if (!transport_rx_matches(rx, net->ctl, net->net_key_index, net->src, net->dst,
                                   seq_auth, net->iv_index)) continue;
+        matched_rx = rx;
         context_updated_ms = rx->updated_ms;
         uint16_t old_seq_zero = (uint16_t)(((rx->transport[1] & 0x7f) << 6) |
                                             ((rx->transport[2] >> 2) & 0x3f));
@@ -592,10 +595,27 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
 
     if (duplicate) {
         uint8_t ack_pending = mesh_local_element(net->dst);
+        uint32_t ack_at_ms = now;
+        if (mask == segment_mask) {
+            // A repeated segment from a completed message gets an ACK, subject
+            // to the SAR acknowledgment retransmission interval.
+            if (matched_rx && matched_rx->ack_sent) {
+                // Bound duplicate ACKs by (Ack Delay Increment + 1.5) times
+                // the receiver segment interval.
+                uint32_t ack_delay_half_steps =
+                    (uint32_t)transport_sar_rx.ack_delay_increment * 2 + 3;
+                uint32_t segment_interval_ms =
+                    ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10;
+                uint32_t next_ack = matched_rx->ack_sent_ms +
+                    ack_delay_half_steps * segment_interval_ms / 2;
+                if ((int32_t)(next_ack - now) > 0) ack_at_ms = next_ack;
+            }
+        } else {
+            ack_at_ms += transport_sar_rx_ack_delay_ms(seg_n);
+        }
         transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst, seq_auth,
-            net->iv_index, ack_pending,
-            mask == segment_mask ? now : now + transport_sar_rx_ack_delay_ms(seg_n),
-            context_updated_ms, transport_sar_rx.ack_retrans_count);
+            net->iv_index, ack_pending, ack_at_ms, context_updated_ms,
+            transport_sar_rx.ack_retrans_count);
         return 0;
     } else {
         if (!free_rx) {
@@ -657,6 +677,12 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             transport_sar_rx.ack_retrans_count);
         mask = transport_rx_received(net->ctl, net->net_key_index, net->src, net->dst,
                                       seq_auth, net->iv_index);
+        if (mask == segment_mask) {
+            // Last Segment completes reassembly and is acknowledged immediately.
+            transport_rx_ack(net->ctl, net->net_key_index, net->src, net->dst,
+                seq_auth, net->iv_index, mesh_local_element(net->dst), now, now,
+                transport_sar_rx.ack_retrans_count);
+        }
     }
 
     if (mask != segment_mask) return 0;
@@ -791,6 +817,13 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         if (!mesh_net_queue(rx->net_idx, rx->dst, rx->src,
                                 1, rx->ttl,
                                 pdu, sizeof(pdu))) return -1;
+        for (size_t j = 0; j < MESH_TRANSPORT_RX_PACKET_SLOTS; j++) {
+            struct transport_rx *sent_rx = &transport_rx[j];
+            if (!transport_rx_matches(sent_rx, rx->ctl, rx->net_idx, rx->src,
+                    rx->dst, rx->seq_auth, rx->iv_index)) continue;
+            sent_rx->ack_sent = 1;
+            sent_rx->ack_sent_ms = now;
+        }
         uint8_t seg_n = rx->transport[3] & 0x1f;
         uint8_t retrans_left = rx->ack_retrans_left;
         uint8_t retransmit = seg_n > transport_sar_rx.segments_threshold &&
