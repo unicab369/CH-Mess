@@ -6,8 +6,6 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Share a BLE Link Layer advertising/scanning interface with the Mesh bearer;
-//   keep Mesh AD filtering, queueing, and retransmission policy in the Mesh layer.
 // - Add configurable connectable, scannable, and directed legacy advertising,
 //   including scan-response data and address selection.
 // - Add active scanning, scan requests/responses, scan windows/intervals,
@@ -35,6 +33,17 @@ typedef struct {
     uint8_t data_len;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
 } mesh_gap_scan_report;
+
+typedef struct {
+    const uint8_t *frame;
+    uint8_t payload_len;
+    int8_t rssi;
+} mesh_gap_radio_packet;
+
+void BLE_GAP_RADIO_INIT(void);
+int BLE_GAP_RADIO_TRANSMIT(const uint8_t *data, uint8_t len);
+int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet);
+void BLE_GAP_RADIO_SCAN_POLL(void);
 
 static struct {
     uint8_t enabled, data_len;
@@ -94,27 +103,27 @@ int mesh_gap_scan_poll(mesh_gap_scan_report *report) {
 }
 
 // Radio adapter hooks used by the Mesh advertising poller.
-static inline int mesh_gap_radio_advertising_due(uint32_t now) {
+static inline int BLE_GAP_RADIO_ADVERTISING_DUE(uint32_t now) {
     return gap_advertising.enabled &&
         (int32_t)(now - gap_advertising.next_event_ms) >= 0;
 }
 
-static inline const uint8_t *mesh_gap_radio_advertising_data(void) {
+static inline const uint8_t *BLE_GAP_RADIO_ADVERTISING_DATA(void) {
     return gap_advertising.data;
 }
 
-static inline uint8_t mesh_gap_radio_advertising_data_len(void) {
+static inline uint8_t BLE_GAP_RADIO_ADVERTISING_DATA_LEN(void) {
     return gap_advertising.data_len;
 }
 
-static inline void mesh_gap_radio_advertising_sent(uint32_t now, uint8_t jitter) {
+static inline void BLE_GAP_RADIO_ADVERTISING_SENT(uint32_t now, uint8_t jitter) {
     gap_advertising.next_event_ms =
         now + gap_advertising.interval_ms + jitter % 11;
 }
 
 // Keep the newest advertising observation when the application falls behind.
-static inline void mesh_gap_radio_receive(const uint8_t *frame,
-                                          uint8_t payload_len, int8_t rssi) {
+static inline void BLE_GAP_RADIO_RECEIVE(const uint8_t *frame,
+                                         uint8_t payload_len, int8_t rssi) {
     if (!gap_scanning || payload_len < 6 || payload_len > 37) return;
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
