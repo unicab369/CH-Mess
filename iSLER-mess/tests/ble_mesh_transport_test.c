@@ -31,9 +31,10 @@ int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     return 0;
 }
 
-int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len) {
+int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len, int8_t *rssi) {
     (void)ad;
     (void)len;
+    if (rssi) *rssi = 127;
     return 0;
 }
 
@@ -930,14 +931,16 @@ int main(void) {
         .ttl = 0,
         .opcode = MESH_CONTROL_FRIEND_REQUEST,
         .len = 10,
-        .params = {0x01, 10, 0, 0, 100, 0, 0, 1, 0, 7}
+        .rssi = -40,
+        .params = {0x79, 10, 0, 0, 100, 0, 0, 1, 0, 7}
     };
     mesh_friend_request_receive(&friend_request);
     assert(transport_friend_offers[0].used &&
-           mesh_friend_next_counter() == 1);
+           mesh_friend_next_counter() == 1 &&
+           transport_friend_offers[0].offer_at_ms == current_ms + 125);
     uint16_t offered_counter = transport_friend_offers[0].friend_counter;
     mesh_net_state friend_state = mesh_network.state;
-    current_ms += 100;
+    current_ms += 125;
     assert(mesh_transport_poll(&received) == 0 && sent_count == 1);
     assert(mesh_network_init(&b) == 1);
     mesh_net_message friend_offer;
@@ -946,6 +949,7 @@ int main(void) {
     assert(friend_offer.transport[0] == MESH_CONTROL_FRIEND_OFFER &&
            friend_offer.dst == b.unicast_address &&
            friend_offer.transport[2] == MESH_FRIEND_QUEUE_CAPACITY &&
+           friend_offer.transport[4] == (uint8_t)-40 &&
            friend_offer.transport[5] == 0);
 
     assert(mesh_network_init(&friend_state) == 1);

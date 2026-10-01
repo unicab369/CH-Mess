@@ -161,7 +161,7 @@ static void mesh_publications_poll(void) {
 static inline int mesh_models_poll(void) {
     if (mesh_models.reset_pending) {
         uint8_t ad[31]; size_t len = sizeof(ad);
-        BLE_MESH_ADV_POLL(ad, &len);
+        BLE_MESH_ADV_POLL(ad, &len, NULL);
         return 0;
     }
     if (!mesh_models.ready && !mesh_models_init()) return 0;

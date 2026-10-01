@@ -34,11 +34,8 @@
 #error MESH_TRANSPORT_RX_PACKET_SLOTS must be at least 1
 #endif
 
-// TODO for broader Transport support:
-// - Add RSSI-aware Friend Offer timing.
-// - Skipped for now: support concurrent segmented TX contexts for different
-//   destinations. One active context serializes segmented sends; the Mesh
-//   Protocol only prohibits overlapping segmented sends to the same destination.
+// Concurrent segmented TX contexts are skipped for now. Keep one active
+// context; other messages wait in the queue until it completes or fails.
 
 // Return 1 when a Device Key is known for this unicast address, or 0 otherwise.
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]);
@@ -67,6 +64,7 @@ typedef struct {
 typedef struct {
     uint16_t src, dst, net_key_index, len;
     uint8_t ttl, opcode, friendship;
+    int8_t rssi;
     uint8_t params[MESH_TRANSPORT_MAX_CONTROL];
 } mesh_transport_control_message;
 
@@ -123,6 +121,7 @@ typedef struct {
     uint32_t clear_started_ms, clear_next_ms, clear_interval_ms;
     uint32_t subscription_confirm_at_ms, subscription_confirm_deadline_ms;
     uint8_t receive_delay_ms, subscription_confirm_pending;
+    int8_t rssi;
     uint8_t subscription_confirm_transaction;
     uint8_t num_elements, used, offered, queue_count, has_poll_fsn;
     uint8_t clear_pending, clear_done;
@@ -400,7 +399,20 @@ static inline void mesh_friend_request_receive(
     transport_friend_offers[slot].num_elements = elements;
     transport_friend_offers[slot].receive_delay_ms = message->params[1];
     transport_friend_offers[slot].poll_timeout_ms = poll_timeout * 100u;
-    transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + 100u;
+    uint8_t receive_window_factor = (uint8_t)((message->params[0] >> 3) & 0x03);
+    uint8_t rssi_factor = (uint8_t)((message->params[0] >> 5) & 0x03);
+    int16_t measured_rssi = message->rssi == 127 ? 0 : message->rssi;
+    // Factors are 1, 1.5, 2, and 2.5. Keep them in half-units to avoid floats.
+    uint8_t receive_factor_half = (uint8_t)(2u + receive_window_factor);
+    uint8_t rssi_factor_half = (uint8_t)(2u + rssi_factor);
+    int32_t delay_half_ms =
+        (int32_t)receive_factor_half * transport_friend.receive_window -
+        (int32_t)rssi_factor_half * measured_rssi;
+    uint32_t offer_delay_ms = delay_half_ms > 0 ?
+        (uint32_t)(delay_half_ms + 1) / 2u : 0u;
+    if (offer_delay_ms < 100u) offer_delay_ms = 100u;
+    transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + offer_delay_ms;
+    transport_friend_offers[slot].rssi = message->rssi;
     transport_friend_offers[slot].expires_at_ms = GET_MILLIS() + poll_timeout * 100u;
     transport_friend_offers[slot].queue_count = 0;
     transport_friend_offers[slot].has_poll_fsn = 0;
@@ -1352,6 +1364,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             control.ttl = net->ttl;
             control.opcode = pdu[0];
             control.friendship = net->friendship;
+            control.rssi = net->rssi;
             control.len = (uint16_t)(net->transport_len - 1);
             if (control.len)
                 memcpy(control.params, pdu + 1, control.len);
@@ -1723,7 +1736,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             transport_friend.receive_window,
             MESH_FRIEND_QUEUE_CAPACITY,
             transport_friend.subscription_size,
-            0, // The advertising bearer API currently does not report received RSSI.
+            (uint8_t)transport_friend_offers[i].rssi,
             (uint8_t)(transport_friend_offers[i].friend_counter >> 8),
             (uint8_t)transport_friend_offers[i].friend_counter
         };

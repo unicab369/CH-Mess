@@ -58,8 +58,9 @@ int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     (void)ad; (void)len;
     return 0;
 }
-int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len) {
+int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len, int8_t *rssi) {
     (void)ad; (void)len;
+    if (rssi) *rssi = 127;
     return 0;
 }
 

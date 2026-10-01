@@ -172,6 +172,7 @@ typedef struct {
     uint16_t src;
     uint16_t dst;
     uint16_t net_key_index;
+    int8_t rssi;
     uint8_t friendship;
     uint8_t transport_len;
     uint8_t transport[16];
@@ -179,7 +180,8 @@ typedef struct {
 
 // Queue a complete AD structure; success is 0.
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len);
-int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len);
+// RSSI is signed dBm, or 127 when unavailable; pass NULL when not needed.
+int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi);
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state);
 
 // Save after provisioning or a Key Refresh/IV Update state change.
@@ -1071,6 +1073,7 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
     message->src = src;
     message->dst = dst;
     message->net_key_index = net_idx;
+    message->rssi = 127;
     message->friendship = friendship_credential;
     message->transport_len = (uint8_t)transport_len;
     memcpy(message->transport, plain + 2, transport_len);
@@ -1115,14 +1118,17 @@ static inline int mesh_net_poll(mesh_net_message *message) {
 
     uint8_t ad[31];
     size_t len = sizeof(ad);
-    int received = BLE_MESH_ADV_POLL(ad, &len);
+    int8_t rssi = 127;
+    int received = BLE_MESH_ADV_POLL(ad, &len, &rssi);
 
     int result = received < 0 ? -1 : 0;
     if (received > 0 && len >= 2 && (size_t)ad[0] + 1 == len) {
         if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
             if (mesh_handle_net_beacon(ad, len) < 0) result = -1;
-        } else if (ad[1] == MESH_NETWORK_AD_TYPE)
+        } else if (ad[1] == MESH_NETWORK_AD_TYPE) {
             result = mesh_net_receive(ad + 2, len - 2, message);
+            if (result == 1) message->rssi = rssi;
+        }
     }
 
     if (mesh_network.ready && mesh_network.state.beacon) {

@@ -275,8 +275,9 @@ static int mesh_state_save_record(mesh_state_record *record) {
     return memcmp(record, &check, sizeof(*record)) == 0;
 }
 
-int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
+int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
+    if (rssi) *rssi = 127;
     uint32_t now = GET_MILLIS();
     int received = 0;
 
@@ -301,6 +302,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len) {
                     if ((size_t)ad_len + 1 > *len) return -1;
                     memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
                     *len = (size_t)ad_len + 1;
+                    if (rssi) *rssi = (int8_t)iSLERRSSI();
                     received = 1;
                     break;
                 }
