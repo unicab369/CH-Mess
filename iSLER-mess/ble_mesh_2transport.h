@@ -35,8 +35,7 @@
 #endif
 
 // TODO for broader Transport support:
-// - Add Friend Update IV-state handling, RSSI-aware offer timing, and
-//   friendship termination.
+// - Add RSSI-aware offer timing and friendship termination.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -659,7 +658,7 @@ static inline void mesh_friend_poll_receive(
     }
 }
 
-// Complete the LPN side of Friend Offer -> friendship-key Friend Poll -> Update.
+// Process LPN Friend Offers and apply security state from Friend Updates.
 static inline void mesh_lpn_control_receive(
         const mesh_transport_control_message *message) {
     if (!message || message->net_key_index != transport_lpn.net_key_index ||
@@ -694,20 +693,37 @@ static inline void mesh_lpn_control_receive(
         return;
     }
 
-    if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE &&
+    if ((transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE ||
+         transport_lpn.state == MESH_LPN_ESTABLISHED) &&
         message->opcode == MESH_CONTROL_FRIEND_UPDATE && message->friendship &&
         message->len == 6 && message->src == transport_lpn.friend_address &&
-        message->dst == mesh_network.state.unicast_address &&
         !(message->params[0] & 0xfc) && message->params[5] <= 1) {
+        uint16_t primary = mesh_network.state.unicast_address;
+        if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE) {
+            if (message->dst != primary) return;
+        } else if (message->dst < primary ||
+            (uint32_t)message->dst >=
+                (uint32_t)primary + transport_lpn.num_elements) return;
+
         uint8_t phase = mesh_subnet_phase(&mesh_network.state,
                                           transport_lpn.net_key_index);
+        mesh_net_state next = mesh_network.state;
         if (message->params[0] & 1u) {
-            if (phase == 1 && !mesh_key_refresh_transition(
+            if ((phase != 1 && phase != 2) ||
+                !mesh_key_refresh_transition_apply(&next,
                     transport_lpn.net_key_index, 2)) return;
-            if (phase != 1 && phase != 2) return;
-        } else if (phase == 2 && !mesh_key_refresh_transition(
+        } else if (phase == 2 && !mesh_key_refresh_transition_apply(&next,
                        transport_lpn.net_key_index, 3)) return;
-        transport_lpn.state = MESH_LPN_ESTABLISHED;
+
+        uint32_t friend_iv_index = ((uint32_t)message->params[1] << 24) |
+            ((uint32_t)message->params[2] << 16) |
+            ((uint32_t)message->params[3] << 8) | message->params[4];
+        if (!mesh_iv_state_update(&next, friend_iv_index,
+                                  (message->params[0] >> 1) & 1u)) return;
+        if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
+            !mesh_commit(&next)) return;
+        if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE)
+            transport_lpn.state = MESH_LPN_ESTABLISHED;
         return;
     }
 

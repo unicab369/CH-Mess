@@ -779,8 +779,14 @@ static int server_config_receive(const mesh_access_pdu *message) {
             MESH_CONFIG_INVALID_NETKEY : MESH_CONFIG_SUCCESS;
         if (set && status == MESH_CONFIG_SUCCESS) {
             if (p[2] == 2 && phase == 0) status = MESH_CONFIG_CANNOT_UPDATE;
-            else if (!mesh_key_refresh_transition(net_idx, p[2]))
-                status = MESH_CONFIG_STORAGE_FAILURE;
+            else {
+                mesh_net_state next = mesh_network.state;
+                if (!mesh_key_refresh_transition_apply(&next, net_idx, p[2]))
+                    status = MESH_CONFIG_STORAGE_FAILURE;
+                else if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
+                         !mesh_commit(&next))
+                    status = MESH_CONFIG_STORAGE_FAILURE;
+            }
             phase = mesh_subnet_phase(&mesh_network.state, net_idx);
         }
         uint8_t reply[4] = {status, p[0], p[1],

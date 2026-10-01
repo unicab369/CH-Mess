@@ -619,46 +619,44 @@ static inline int mesh_stage_app_key(uint16_t index,
         index, new_app_key);
 }
 
-// Transition 2 selects new keys for TX; transition 3 revokes old keys.
-static inline int mesh_key_refresh_transition(uint16_t net_idx,
-                                                   uint8_t transition) {
-    if (!mesh_network.ready) return 0;
-    int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
+// Update Key Refresh fields in a state copy; transition 2 selects new TX keys.
+static int mesh_key_refresh_transition_apply(mesh_net_state *next,
+        uint16_t net_idx, uint8_t transition) {
+    if (!next) return 0;
+    int slot = mesh_subnet_slot(next, net_idx);
     if (slot < 0) return 0;
-    uint8_t phase = mesh_subnet_phase(&mesh_network.state, net_idx);
-    uint8_t has_new = slot == 0 ? mesh_network.state.has_new_key :
-        mesh_network.state.additional_subnets[slot - 1].has_new_key;
-    uint8_t phase2 = slot == 0 ? mesh_network.state.phase2_provisioned :
-        mesh_network.state.additional_subnets[slot - 1].phase2_provisioned;
+    uint8_t phase = mesh_subnet_phase(next, net_idx);
+    uint8_t has_new = slot == 0 ? next->has_new_key :
+        next->additional_subnets[slot - 1].has_new_key;
+    uint8_t phase2 = slot == 0 ? next->phase2_provisioned :
+        next->additional_subnets[slot - 1].phase2_provisioned;
     if (transition == 2 && phase2) return 1;
     if (transition == 3 && !has_new) {
         if (!phase2) return 1;
-        mesh_net_state next = mesh_network.state;
-        if (slot == 0) next.phase2_provisioned = 0;
-        else next.additional_subnets[slot - 1].phase2_provisioned = 0;
-        return mesh_commit(&next);
+        if (slot == 0) next->phase2_provisioned = 0;
+        else next->additional_subnets[slot - 1].phase2_provisioned = 0;
+        return 1;
     }
     if (!has_new) return 0;
-    mesh_net_state next = mesh_network.state;
     if (transition == 2) {
         if (phase != 1 && phase != 2) return 0;
         if (phase == 2) return 1;
-        if (slot == 0) next.key_refresh_phase = 2;
-        else next.additional_subnets[slot - 1].key_refresh_phase = 2;
+        if (slot == 0) next->key_refresh_phase = 2;
+        else next->additional_subnets[slot - 1].key_refresh_phase = 2;
     } else if (transition == 3) {
         if (slot == 0) {
-            memcpy(next.net_key, next.new_net_key, 16);
-            memset(next.new_net_key, 0, 16);
-            next.has_new_key = next.key_refresh_phase = 0;
+            memcpy(next->net_key, next->new_net_key, 16);
+            memset(next->new_net_key, 0, 16);
+            next->has_new_key = next->key_refresh_phase = 0;
         } else {
-            mesh_additional_subnet *sub = &next.additional_subnets[slot - 1];
+            mesh_additional_subnet *sub = &next->additional_subnets[slot - 1];
             memcpy(sub->key, sub->new_key, 16);
             memset(sub->new_key, 0, 16);
             sub->has_new_key = sub->key_refresh_phase = 0;
         }
-        mesh_promote_app_keys(&next, net_idx);
+        mesh_promote_app_keys(next, net_idx);
     } else return 0;
-    return mesh_commit(&next);
+    return 1;
 }
 
 static int iv_time_ready(uint64_t *now) {
@@ -669,6 +667,32 @@ static int iv_time_ready(uint64_t *now) {
         state->iv_state_start_time <= *now &&
         ((state->iv_update && state->iv_skip_min_time) ||
          *now - state->iv_state_start_time >= MESH_NETWORK_IV_MIN_SECONDS);
+}
+
+// Apply the same IV Index transition rules for Secure Network beacons and
+// Friend Updates. Return 1 when the advertised state is valid.
+static int mesh_iv_state_update(mesh_net_state *next, uint32_t observed_iv,
+                                uint8_t observed_update) {
+    if (!next || observed_update > 1) return 0;
+    uint64_t now;
+    if (next->iv_index != UINT32_MAX &&
+        observed_iv == next->iv_index + 1 && observed_update &&
+        !next->iv_update && iv_time_ready(&now)) {
+        next->iv_index = observed_iv;
+        next->iv_update = 1;
+        next->iv_skip_min_time = 0;
+        next->iv_state_start_time = now;
+    } else if (observed_iv == next->iv_index && !observed_update &&
+        next->iv_update && iv_time_ready(&now)) {
+        next->iv_update = 0;
+        next->iv_skip_min_time = 0;
+        next->iv_state_start_time = now;
+        next->next_seq = 0;
+    } else if (observed_iv != next->iv_index ||
+               observed_update != next->iv_update) {
+        return 0;
+    }
+    return 1;
 }
 
 // Enter IV Update in Progress. Transmit continues with the previous IV Index.
@@ -914,37 +938,11 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         }
     } else if (ad[3] & 1u) return 0;
 
-    uint64_t now;
     uint32_t observed_iv = ((uint32_t)ad[12] << 24) |
                            ((uint32_t)ad[13] << 16) |
                            ((uint32_t)ad[14] << 8) | ad[15];
-
-    if (next.iv_index != UINT32_MAX &&
-        observed_iv == next.iv_index + 1 &&
-        (ad[3] & 2u) && !next.iv_update &&
-        iv_time_ready(&now)
-    ) {
-        next.iv_index = observed_iv;
-        next.iv_update = 1;
-        next.iv_skip_min_time = 0;
-        next.iv_state_start_time = now;
-    }
-    else if (
-        observed_iv == next.iv_index &&
-        !(ad[3] & 2u) && next.iv_update &&
-        iv_time_ready(&now)
-    ) {
-        next.iv_update = 0;
-        next.iv_skip_min_time = 0;
-        next.iv_state_start_time = now;
-        next.next_seq = 0;
-    }
-    else if (
-        observed_iv != next.iv_index ||
-        ((ad[3] & 2u) != 0) != (next.iv_update != 0)
-    ) {
+    if (!mesh_iv_state_update(&next, observed_iv, (ad[3] >> 1) & 1u))
         return 0;
-    }
 
     if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
         mesh_commit(&next) != 1) return -1;

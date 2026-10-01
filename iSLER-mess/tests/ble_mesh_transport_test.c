@@ -17,6 +17,7 @@ static size_t sent_len[32];
 static int sent_count;
 static mesh_transport_control_message control_event;
 static int control_event_count;
+static uint64_t current_seconds = 400000;
 
 static void receive_control_event(const mesh_transport_control_message *message) {
     control_event = *message;
@@ -52,8 +53,8 @@ int BLE_MESH_NETWORK_STORE_SEQ(uint32_t next_seq) {
 }
 
 int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
-    (void)seconds;
-    return 0;
+    *seconds = current_seconds;
+    return 1;
 }
 
 static uint32_t current_ms = 1000;
@@ -1206,6 +1207,42 @@ int main(void) {
                             &friend_obo_ack) == 1);
     assert(mesh_transport_receive(&friend_obo_ack, &received) == 0 &&
            !transport_tx.active);
+
+    // Friend Updates advance and complete IV Update using the same timing
+    // gates as authenticated Secure Network beacons.
+    mesh_net_state iv_lpn_state = node(b.unicast_address);
+    iv_lpn_state.iv_index = 10;
+    iv_lpn_state.iv_time_valid = 1;
+    iv_lpn_state.iv_state_start_time = 0;
+    iv_lpn_state.next_seq = 7;
+    assert(mesh_network_init(&iv_lpn_state) == 1);
+    memset(&transport_lpn, 0, sizeof(transport_lpn));
+    transport_lpn.net_key_index = iv_lpn_state.net_key_index;
+    transport_lpn.friend_address = 0x1201;
+    transport_lpn.num_elements = 1;
+    transport_lpn.state = MESH_LPN_WAITING_FOR_UPDATE;
+    mesh_transport_control_message friend_iv_update = {
+        .src = 0x1201, .dst = b.unicast_address,
+        .net_key_index = iv_lpn_state.net_key_index,
+        .opcode = MESH_CONTROL_FRIEND_UPDATE, .friendship = 1,
+        .len = 6, .params = {2, 0, 0, 0, 11, 0}
+    };
+    mesh_lpn_control_receive(&friend_iv_update);
+    assert(transport_lpn.state == MESH_LPN_ESTABLISHED &&
+           mesh_network.state.iv_index == 11 && mesh_network.state.iv_update);
+
+    friend_iv_update.params[0] = 2;
+    friend_iv_update.params[4] = 13;
+    mesh_lpn_control_receive(&friend_iv_update);
+    assert(mesh_network.state.iv_index == 11 && mesh_network.state.iv_update);
+
+    friend_iv_update.params[0] = 0;
+    friend_iv_update.params[4] = 11;
+    mesh_lpn_control_receive(&friend_iv_update);
+    assert(mesh_network.state.iv_update && mesh_network.state.next_seq == 7);
+    current_seconds += MESH_NETWORK_IV_MIN_SECONDS;
+    mesh_lpn_control_receive(&friend_iv_update);
+    assert(!mesh_network.state.iv_update && mesh_network.state.next_seq == 0);
     mesh_friend_disable();
     return 0;
 }

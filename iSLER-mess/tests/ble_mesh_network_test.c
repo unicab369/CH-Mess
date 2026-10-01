@@ -186,6 +186,7 @@ static void test_beacon_schedule(void) {
 }
 
 int main(void) {
+    mesh_net_state transition_state;
     // Mesh Profile sample: managed-flooding keys and a Friend Request PDU.
     const uint8_t net_key[16] = {
         0x7d,0xd7,0x36,0x4c,0xd8,0x42,0xad,0x18,
@@ -358,7 +359,10 @@ int main(void) {
     assert(mesh_network_init(&phase1) == 1);
     assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
-    assert(mesh_key_refresh_transition(state.net_key_index, 2) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        state.net_key_index, 2) == 1);
+    assert(mesh_commit(&transition_state) == 1);
     assert(mesh_net_beacon_queue() == 1);
     uint8_t phase2_beacon[24];
     memcpy(phase2_beacon, sent, sizeof(phase2_beacon));
@@ -384,7 +388,10 @@ int main(void) {
     assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
 
     assert(mesh_network_init(&new_sender) == 1);
-    assert(mesh_key_refresh_transition(state.net_key_index, 3) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        state.net_key_index, 3) == 1);
+    assert(mesh_commit(&transition_state) == 1);
     assert(mesh_net_beacon_queue() == 1);
     uint8_t phase3_beacon[24];
     memcpy(phase3_beacon, sent, sizeof(phase3_beacon));
@@ -405,14 +412,20 @@ int main(void) {
     // A node provisioned during Phase 2 starts with only the new NetKey.
     state.phase2_provisioned = 1;
     assert(mesh_network_init(&state) == 1);
-    assert(mesh_key_refresh_transition(state.net_key_index, 2) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        state.net_key_index, 2) == 1);
+    assert(mesh_commit(&transition_state) == 1);
     assert(mesh_network.state.phase2_provisioned == 1 && !mesh_network.state.has_new_key);
     assert(mesh_net_beacon_queue() == 1);
     assert((sent[3] & 1) == 1);
     assert(mesh_handle_net_beacon(normal_beacon,
                                            sizeof(normal_beacon)) == 1);
     assert(mesh_network.state.phase2_provisioned == 0);
-    assert(mesh_key_refresh_transition(state.net_key_index, 3) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        state.net_key_index, 3) == 1);
+    assert(mesh_commit(&transition_state) == 1);
 
     // A new-key beacon with the KR flag clear can skip Phase 2.
     assert(mesh_network_init(&phase1) == 1);
@@ -442,8 +455,14 @@ int main(void) {
     memset(refreshed, 0x33, 16);
     assert(mesh_stage_app_key(0x234, refreshed) == 1);
     assert(mesh_stage_app_key(0x236, refreshed) == 0);
-    assert(mesh_key_refresh_transition(multi.net_key_index, 2) == 1);
-    assert(mesh_key_refresh_transition(multi.net_key_index, 3) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        multi.net_key_index, 2) == 1);
+    assert(mesh_commit(&transition_state) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state,
+        multi.net_key_index, 3) == 1);
+    assert(mesh_commit(&transition_state) == 1);
     assert(memcmp(mesh_network.state.app_keys[0].key, refreshed, 16) == 0);
     assert(memcmp(mesh_network.state.app_keys[1].key, multi.app_keys[1].key, 16) == 0);
     assert(!mesh_network.state.app_keys[0].has_new_key);
@@ -500,7 +519,9 @@ int main(void) {
     assert(mesh_network_init(&lpn_kr) == 1);
     assert(mesh_friendship_add(0x123, 0x1201, 0x1202,
         0x1234, 0x5678) == 1);
-    assert(mesh_key_refresh_transition(0x123, 2) == 1);
+    transition_state = mesh_network.state;
+    assert(mesh_key_refresh_transition_apply(&transition_state, 0x123, 2) == 1);
+    assert(mesh_commit(&transition_state) == 1);
     sent_count = 0;
     assert(mesh_net_queue_friend(0x123, 0x1201, 0x1202, 1, 0,
         friend_poll, sizeof(friend_poll)) == 1);

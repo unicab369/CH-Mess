@@ -103,8 +103,9 @@ To rotate keys from a controller (the [Bluetooth Mesh Key Refresh procedure](htt
 
 Check each reply through `BLE_MESH_CONFIG_STATUS()` before advancing. Use
 `mesh_netkey_get_phase()` to query progress. The controller must also switch its
-own network keys using `mesh_stage_net_key(net_idx, key)`, `mesh_stage_app_key()`, and
-`mesh_key_refresh_transition(net_idx, transition)` at the corresponding steps. AppKeys that were
+own network keys with the same sequence, using `mesh_stage_net_key(net_idx, key)`,
+`mesh_stage_app_key()`, and the Config Key Phase Set operation addressed to itself.
+AppKeys that were
 not updated keep their values; bindings and publication settings keep their indexes.
 Updates and transitions are saved before becoming active. A node provisioned
 during Phase 2 reports phase 2 even though it has only the new NetKey.
