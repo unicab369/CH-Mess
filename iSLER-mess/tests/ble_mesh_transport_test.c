@@ -1243,6 +1243,54 @@ int main(void) {
     current_seconds += MESH_NETWORK_IV_MIN_SECONDS;
     mesh_lpn_control_receive(&friend_iv_update);
     assert(!mesh_network.state.iv_update && mesh_network.state.next_seq == 0);
+
+    // An LPN sends Friend Clear over friendship credentials and releases the
+    // friendship only after the matching confirmation arrives.
+    assert(mesh_friendship_add(mesh_network.state.net_key_index,
+        mesh_network.state.unicast_address, 0x1201, 12, 3));
+    transport_lpn.net_key_index = mesh_network.state.net_key_index;
+    transport_lpn.lpn_counter = 12;
+    transport_lpn.friend_address = 0x1201;
+    transport_lpn.poll_timeout_ms = 10000;
+    transport_lpn.state = MESH_LPN_ESTABLISHED;
+    int clear_frame_index = sent_count;
+    assert(mesh_lpn_clear() && transport_lpn.state == MESH_LPN_CLEARING);
+    assert(sent_count == clear_frame_index + 1 && sent_len[clear_frame_index]);
+    mesh_transport_control_message clear_confirm = {
+        .src = 0x1201, .dst = mesh_network.state.unicast_address,
+        .net_key_index = mesh_network.state.net_key_index,
+        .opcode = MESH_CONTROL_FRIEND_CLEAR_CONFIRM, .friendship = 1,
+        .len = 2,
+        .params = {(uint8_t)(mesh_network.state.unicast_address >> 8),
+                   (uint8_t)mesh_network.state.unicast_address}
+    };
+    mesh_lpn_control_receive(&clear_confirm);
+    assert(transport_lpn.state == MESH_LPN_IDLE &&
+           !mesh_network.friendships[0].used);
+
+    // A Friend validates an LPN's clear, sends confirmation, then frees its
+    // retained friendship queue and derived credentials.
+    mesh_net_state clear_friend_state = node(0x1201);
+    assert(mesh_network_init(&clear_friend_state) == 1);
+    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 4, 20));
+    mesh_friend_offer *clear_offer = &transport_friend_offers[0];
+    memset(clear_offer, 0, sizeof(*clear_offer));
+    clear_offer->used = 1;
+    clear_offer->net_key_index = mesh_network.state.net_key_index;
+    clear_offer->lpn_address = 0x1202;
+    clear_offer->lpn_counter = 31;
+    clear_offer->friend_counter = 9;
+    assert(mesh_friendship_add(clear_offer->net_key_index,
+        clear_offer->lpn_address, mesh_network.state.unicast_address, 31, 9));
+    mesh_transport_control_message lpn_clear_control = {
+        .src = 0x1202, .dst = mesh_network.state.unicast_address,
+        .net_key_index = clear_offer->net_key_index, .ttl = 0,
+        .opcode = MESH_CONTROL_FRIEND_CLEAR, .friendship = 1,
+        .len = 4, .params = {0x12, 0x02, 0, 31}
+    };
+    int clear_confirm_index = sent_count;
+    mesh_friend_clear_receive(&lpn_clear_control);
+    assert(!clear_offer->used && sent_count == clear_confirm_index + 1);
     mesh_friend_disable();
     return 0;
 }
