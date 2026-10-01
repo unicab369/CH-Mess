@@ -524,7 +524,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 status = MESH_CONFIG_INVALID_NETKEY;
             if (status == MESH_CONFIG_SUCCESS) {
                 if (!pub.dst) memset(&pub, 0, sizeof(pub));
-                pub.features = 0; // Relay, Proxy, Friend, and LPN are unsupported.
+                pub.features = 0; // Feature-change Heartbeat triggers are not tracked.
                 mesh_net_state next = *state;
                 next.heartbeat = pub;
                 if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next))
@@ -626,24 +626,35 @@ static int server_config_receive(const mesh_access_pdu *message) {
     }
 
     if (message->opcode == OP_CONFIG_RELAY_GET ||
-        message->opcode == OP_CONFIG_RELAY_SET ||
-        message->opcode == OP_CONFIG_PROXY_GET ||
+        message->opcode == OP_CONFIG_RELAY_SET) {
+        uint8_t set = message->opcode == OP_CONFIG_RELAY_SET;
+        if (len != (set ? 2u : 0u) || (set && p[0] > 1)) return 0;
+        if (set) {
+            mesh_net_state next = *state;
+            next.relay = p[0];
+            next.relay_retransmit = p[1];
+            if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next)) return 0;
+        }
+        uint8_t reply[2] = {state->relay, state->relay_retransmit};
+        return mesh_access_queue(state->unicast_address, message->src,
+            mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
+            OP_CONFIG_RELAY_STATUS, reply, sizeof(reply), 0);
+    }
+
+    if (message->opcode == OP_CONFIG_PROXY_GET ||
         message->opcode == OP_CONFIG_PROXY_SET ||
         message->opcode == OP_CONFIG_FRIEND_GET ||
         message->opcode == OP_CONFIG_FRIEND_SET) {
-        uint8_t relay = message->opcode == OP_CONFIG_RELAY_GET ||
-                        message->opcode == OP_CONFIG_RELAY_SET;
         uint8_t proxy = message->opcode == OP_CONFIG_PROXY_GET ||
                         message->opcode == OP_CONFIG_PROXY_SET;
-        uint8_t set = message->opcode == OP_CONFIG_RELAY_SET ||
-                      message->opcode == OP_CONFIG_PROXY_SET ||
+        uint8_t set = message->opcode == OP_CONFIG_PROXY_SET ||
                       message->opcode == OP_CONFIG_FRIEND_SET;
-        if (len != (set ? relay ? 2u : 1u : 0u) || (set && p[0] > 1)) return 0;
-        uint8_t reply[2] = {2, 0}; // Feature not supported; Relay Retransmit is unused.
+        if (len != (set ? 1u : 0u) || (set && p[0] > 1)) return 0;
+        uint8_t reply = 2; // Proxy and Friend are not supported.
         return mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
-            relay ? OP_CONFIG_RELAY_STATUS : proxy ? OP_CONFIG_PROXY_STATUS : OP_CONFIG_FRIEND_STATUS,
-            reply, relay ? 2 : 1, 0);
+            proxy ? OP_CONFIG_PROXY_STATUS : OP_CONFIG_FRIEND_STATUS,
+            &reply, 1, 0);
     }
 
     if (message->opcode == OP_CONFIG_NODE_IDENTITY_GET ||
@@ -816,7 +827,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             (uint8_t)MESH_PRODUCT_ID, (uint8_t)(MESH_PRODUCT_ID >> 8),
             (uint8_t)MESH_PRODUCT_VERSION, (uint8_t)(MESH_PRODUCT_VERSION >> 8),
             (uint8_t)MESH_NETWORK_REPLAY_SLOTS, (uint8_t)(MESH_NETWORK_REPLAY_SLOTS >> 8),
-            0, 0 // No Relay, Proxy, Friend, or Low Power feature.
+            1, 0 // Relay is supported; Proxy, Friend, and Low Power are not.
         };
         size_t size = 11;
         for (uint8_t i = 0; i < state->element_count; i++) {
@@ -1275,6 +1286,17 @@ static inline int mesh_set_sar_receiver(
 static inline int mesh_get_relay(uint16_t dst) {
     return mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_RELAY_GET, NULL, 0, 0);
+}
+
+static inline int mesh_set_relay(uint16_t dst, uint8_t enabled,
+        uint8_t retransmit_count, uint8_t retransmit_interval_steps) {
+    if (enabled > 1 || retransmit_count > 7 ||
+        retransmit_interval_steps > 31) return 0;
+    uint8_t params[2] = {enabled,
+        (uint8_t)((retransmit_interval_steps << 3) | retransmit_count)};
+    return mesh_access_queue(mesh_network.state.unicast_address, dst,
+        mesh_models.state.default_ttl, APP_KEY_INDEX_NONE,
+        OP_CONFIG_RELAY_SET, params, sizeof(params), 0);
 }
 
 static inline int mesh_get_proxy(uint16_t dst) {

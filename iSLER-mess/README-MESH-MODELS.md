@@ -1,5 +1,5 @@
 // TODO for foundation support:
-// - Relay, Proxy, Friend, and Node Identity feature implementations.
+// - Proxy, Friend, and Node Identity feature implementations.
 // - Mesh Private Beacon support.
 
 ## Foundation models
@@ -23,7 +23,7 @@ by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
 | Network Transmit | `OP_CONFIG_NET_TRANSMIT_GET`, `OP_CONFIG_NET_TRANSMIT_SET`, `OP_CONFIG_NET_TRANSMIT_STATUS` | Get/set packet repetitions and their interval. |
 | SAR Transmitter | `OP_CONFIG_SAR_TRANSMITTER_GET`, `OP_CONFIG_SAR_TRANSMITTER_SET`, `OP_CONFIG_SAR_TRANSMITTER_STATUS` | Get/set segment interval and segmented-message retransmission settings. |
 | SAR Receiver | `OP_CONFIG_SAR_RECEIVER_GET`, `OP_CONFIG_SAR_RECEIVER_SET`, `OP_CONFIG_SAR_RECEIVER_STATUS` | Get/set segment threshold, ACK timing/retries, and incomplete-message discard timeout. |
-| Relay | `OP_CONFIG_RELAY_GET`, `OP_CONFIG_RELAY_SET`, `OP_CONFIG_RELAY_STATUS` | Report Not Supported (2); Relay Retransmit is 0. |
+| Relay | `OP_CONFIG_RELAY_GET`, `OP_CONFIG_RELAY_SET`, `OP_CONFIG_RELAY_STATUS` | Get/set Relay enable state and retransmission count/interval; forward eligible advertising Network PDUs with TTL decremented. |
 | GATT Proxy | `OP_CONFIG_PROXY_GET`, `OP_CONFIG_PROXY_SET`, `OP_CONFIG_PROXY_STATUS` | Report Not Supported (2). |
 | Friend | `OP_CONFIG_FRIEND_GET`, `OP_CONFIG_FRIEND_SET`, `OP_CONFIG_FRIEND_STATUS` | Report Not Supported (2). |
 | Node Identity | `OP_CONFIG_NODE_IDENTITY_GET`, `OP_CONFIG_NODE_IDENTITY_SET`, `OP_CONFIG_NODE_IDENTITY_STATUS` | Report Not Supported (2); setting it returns Feature Not Supported. |
@@ -47,7 +47,7 @@ the same encrypted Network PDU and sequence number; beacons and provisioning
 packets do not use this setting. The existing eight-slot advertising queue holds
 the repetitions and rejects new packets when full. New settings apply to newly
 queued packets. Credential changes discard queued network packets that use old
-credentials. Stored state version 16 requires reprovisioning older records
+credentials. Stored state version 19 requires reprovisioning older records
 when using the default four-subnet limit.
 
 The node supports up to `MESH_MAX_SUBNETS` NetKeys, with a default of four.
@@ -61,8 +61,8 @@ destination, NetKey index, count log, period log, TTL, and feature-change trigge
 Logs 1–17 represent powers of two (`2^(log - 1)`); 0 disables periodic sends.
 Count log 17 selects 65,534 sends; 255 sends indefinitely. The first Heartbeat is
 queued immediately on the next network poll. Feature-change triggers are zero
-because Relay, Proxy, Friend, and LPN are unsupported. Heartbeats are unsegmented
-Control messages and use Network Transmit repetitions.
+because Relay, Proxy, Friend, and LPN changes do not trigger Heartbeats.
+Heartbeats are unsegmented Control messages and use Network Transmit repetitions.
 
 `mesh_set_heartbeat_sub(dst, src, address, period_log)` monitors one source
 at the node's primary address or a group address. A zero source/destination clears
@@ -80,9 +80,14 @@ are stored. After reset, the application can call `provisionee_start()` and resu
 `provisionee_poll()` to accept provisioning again.
 
 Use `mesh_get_relay()`, `mesh_get_proxy()`, `mesh_get_friend()`, and
-`mesh_get_node_identity()` to query capabilities. Relay, Proxy, and Friend Set
-requests report Not Supported without changing state. Node Identity queries use
-a NetKey index; an unknown index returns Invalid NetKey.
+`mesh_get_node_identity()` to query these features. `mesh_set_relay()` configures
+managed flooding retransmissions. Proxy and Friend Set requests report Not
+Supported without changing state. Node Identity queries use a NetKey index; an
+unknown index returns Invalid NetKey.
+
+`mesh_set_relay(dst, enabled, retransmit_count, retransmit_interval_steps)`
+sets the Relay state. The count is 0–7 extra transmissions; the interval is
+0–31 steps of 10 ms between transmissions.
 
 Provisioning installs the primary NetKey. Configuration can add further NetKeys
 up to `MESH_MAX_SUBNETS`; adding an existing index with the same key succeeds,

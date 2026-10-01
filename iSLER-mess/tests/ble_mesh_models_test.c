@@ -60,6 +60,10 @@ int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     (void)ad; (void)len;
     return 0;
 }
+int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *ad, size_t len, uint8_t retransmit) {
+    (void)ad; (void)len; (void)retransmit;
+    return 0;
+}
 int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len, int8_t *rssi) {
     (void)ad; (void)len;
     if (rssi) *rssi = 127;
@@ -268,7 +272,7 @@ static void test_foundation_configuration(void) {
     assert(mesh_get_composition(0x1201, 0xff) && config_request());
     assert(last_opcode == OP_CONFIG_COMPOSITION_STATUS && last_len == 41);
     assert(last_params[0] == 0 && last_params[7] == MESH_NETWORK_REPLAY_SLOTS);
-    assert(last_params[9] == 0 && last_params[13] == 7 && last_params[31] == 4);
+    assert(last_params[9] == 1 && last_params[13] == 7 && last_params[31] == 4);
     assert(last_params[15] == 0 && last_params[17] == 1 &&
            last_params[19] == MESH_MODEL_SAR_CONFIG_SERVER);
     assert(last_params[21] == MESH_MODEL_HEALTH_SERVER &&
@@ -790,14 +794,21 @@ static void test_node_settings(void) {
     assert(last_params[0] == 34 && saved_network.network_transmit == 34);
     assert(last_app_key_index == DEVICE_KEY_LOCAL && last_src == 0x1201 && last_dst == 0x1202);
 
-    // Unsupported feature settings report the capability without changing state.
+    // Relay settings are saved and reported; Proxy and Friend remain unsupported.
     writes = network_save_count;
     assert(mesh_get_relay(0x1201) && config_request());
-    assert(last_opcode == OP_CONFIG_RELAY_STATUS && last_len == 2 && last_params[0] == 2 && last_params[1] == 0);
-    params[0] = 1;
+    assert(last_opcode == OP_CONFIG_RELAY_STATUS && last_len == 2 &&
+           last_params[0] == 0 && last_params[1] == 0);
+    params[0] = 1; params[1] = 0x9a;
     assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
-    assert(last_params[0] == 2 && last_params[1] == 0);
-    params[0] = 0; assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
+    assert(last_params[0] == 1 && last_params[1] == 0x9a &&
+           saved_network.relay == 1 && saved_network.relay_retransmit == 0x9a);
+    assert(mesh_get_relay(0x1201) && config_request() &&
+           last_params[0] == 1 && last_params[1] == 0x9a);
+    params[0] = 0; params[1] = 0;
+    assert(config_message(OP_CONFIG_RELAY_SET, params, 2));
+    assert(mesh_network_restore() && mesh_network.state.relay == 0 &&
+           mesh_network.state.relay_retransmit == 0);
     params[0] = 2; assert(!config_message(OP_CONFIG_RELAY_SET, params, 2));
     assert(!config_message(OP_CONFIG_RELAY_SET, params, 1));
     assert(!config_message(OP_CONFIG_RELAY_GET, params, 1));
@@ -812,7 +823,15 @@ static void test_node_settings(void) {
         params[0] = 2; assert(!config_message(feature_sets[i], params, 1));
         assert(!config_message(feature_sets[i], NULL, 0));
     }
-    assert(network_save_count == writes && saved_network.network_transmit == 34 && saved_network.beacon == 1);
+    assert(network_save_count == writes + 2 && saved_network.network_transmit == 34 &&
+           saved_network.beacon == 1 && saved_network.relay == 0);
+    assert(mesh_set_relay(0x1201, 1, 7, 31) && config_request());
+    assert(last_opcode == OP_CONFIG_RELAY_STATUS && last_len == 2 &&
+           last_params[0] == 1 && last_params[1] == 0xff);
+    assert(!mesh_set_relay(0x1201, 2, 0, 0));
+    assert(!mesh_set_relay(0x1201, 1, 8, 0));
+    assert(!mesh_set_relay(0x1201, 1, 0, 32));
+    writes = network_save_count;
 
     assert(!mesh_get_node_identity(0x1201, 0x1000));
     assert(mesh_get_node_identity(0x1201, 0x123) && config_request());

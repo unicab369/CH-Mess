@@ -160,6 +160,12 @@ int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
 }
 
+int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *adv_data, size_t len,
+                            uint8_t relay_retransmit) {
+    if (reset_slot >= 0) return -1;
+    return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), relay_retransmit);
+}
+
 int BLE_MESH_QUEUE_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
@@ -191,7 +197,7 @@ void PROV_ATTENTION_STOP(void) {
 }
 
 #define MESH_STATE_MAGIC 0x4d53
-#define MESH_STATE_VERSION (14 + MESH_MAX_SUBNETS)
+#define MESH_STATE_VERSION (15 + MESH_MAX_SUBNETS)
 #define PROVISIONER_MAX_NODES 8
 
 typedef struct {

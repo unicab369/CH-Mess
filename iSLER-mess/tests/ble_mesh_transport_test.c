@@ -15,6 +15,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 static uint8_t sent[32][31];
 static size_t sent_len[32];
 static int sent_count;
+static uint8_t last_relay_retransmit;
 static mesh_transport_control_message control_event;
 static int control_event_count;
 static uint64_t current_seconds = 400000;
@@ -29,6 +30,11 @@ int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     memcpy(sent[sent_count], ad, len);
     sent_len[sent_count++] = len;
     return 0;
+}
+
+int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *ad, size_t len, uint8_t retransmit) {
+    last_relay_retransmit = retransmit;
+    return BLE_MESH_QUEUE_TX(ad, len);
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len, int8_t *rssi) {
@@ -97,7 +103,40 @@ static int receive_frame(int index, mesh_access_message *access) {
     return mesh_transport_receive(&network, access);
 }
 
+static void test_relay(void) {
+    mesh_net_state source = node(0x1201);
+    mesh_network_init(&source);
+    const uint8_t transport[] = {0x00, 1, 2, 3, 4, 5};
+    assert(mesh_net_queue(0, 0x1201, 0x1203, 0, 5,
+        transport, sizeof(transport)));
+    uint8_t original[31];
+    size_t original_len = sent_len[0];
+    memcpy(original, sent[0], original_len);
+
+    mesh_net_state relay = node(0x1202);
+    relay.relay = 1;
+    relay.relay_retransmit = 0xb3;
+    mesh_network_init(&relay);
+    mesh_net_message received;
+    assert(mesh_net_receive(original + 2, original_len - 2, &received) == 1);
+    assert(sent_count == 2 && last_relay_retransmit == 0xb3);
+    uint8_t forwarded[31];
+    size_t forwarded_len = sent_len[1];
+    memcpy(forwarded, sent[1], forwarded_len);
+    assert(mesh_net_receive(original + 2, original_len - 2, &received) == 0);
+    assert(sent_count == 2); // A repeated Network PDU is not relayed twice.
+
+    mesh_net_state destination = node(0x1204);
+    mesh_network_init(&destination);
+    assert(mesh_net_receive(forwarded + 2, forwarded_len - 2, &received) == 1);
+    assert(received.src == 0x1201 && received.dst == 0x1203 &&
+           received.ttl == 4 && received.seq == 0 && received.iv_index == 0);
+
+    sent_count = 0;
+}
+
 int main(void) {
+    test_relay();
     mesh_net_state a = node(0x1201), b = node(0x1202);
     mesh_access_message received;
     const uint8_t short_access[] = {0x82, 0x01, 0x01};

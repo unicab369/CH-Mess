@@ -7,7 +7,8 @@
 #include "ble_mesh_2transport.h"
 
 // TODO for broader Access support:
-// - Add Mesh 1.1 Access Message Aggregation for efficient configuration.
+// - Defer Mesh 1.1 Opcode Aggregation; implement it later with the Aggregator
+//   Client and Server model support.
 
 #ifndef MESH_ACCESS_ACK_TIMEOUT_MS
 #define MESH_ACCESS_ACK_TIMEOUT_MS 2000u

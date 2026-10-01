@@ -62,6 +62,13 @@ static inline int mesh_sar_rx_valid(const mesh_sar_rx_state *state) {
 // This bounded RAM replay list does not survive reboot. Persist it before
 // relying on receive-side replay protection across power cycles.
 #define MESH_NETWORK_REPLAY_SLOTS 16
+#ifndef MESH_NETWORK_RELAY_CACHE_SIZE
+// Remember segments from one maximum-size SAR message to suppress repeat relays.
+#define MESH_NETWORK_RELAY_CACHE_SIZE 32
+#endif
+#if MESH_NETWORK_RELAY_CACHE_SIZE < 1
+#error MESH_NETWORK_RELAY_CACHE_SIZE must be at least 1
+#endif
 #define MESH_MAX_APP_KEYS 4
 #ifndef MESH_MAX_SUBNETS
 #define MESH_MAX_SUBNETS 4
@@ -110,6 +117,7 @@ typedef struct {
     uint16_t unicast_address;
     uint8_t element_count;
     uint8_t beacon, network_transmit;
+    uint8_t relay, relay_retransmit;
     mesh_heartbeat_publication heartbeat;
     mesh_additional_subnet additional_subnets[MESH_MAX_SUBNETS - 1];
 } mesh_net_state;
@@ -173,13 +181,15 @@ typedef struct {
     uint16_t dst;
     uint16_t net_key_index;
     int8_t rssi;
-    uint8_t friendship;
+    uint8_t friendship, key_refresh_new;
     uint8_t transport_len;
     uint8_t transport[16];
 } mesh_net_message;
 
 // Queue a complete AD structure; success is 0.
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len);
+int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *adv_data, size_t len,
+                            uint8_t relay_retransmit);
 // RSSI is signed dBm, or 127 when unavailable; pass NULL when not needed.
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi);
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state);
@@ -235,6 +245,11 @@ static struct {
         uint8_t min_hops, max_hops, subscribed;
     } heartbeat;
     uint8_t replay_count;
+    struct {
+        uint16_t src, net_key_index;
+        uint32_t iv_index, seq;
+    } relay_cache[MESH_NETWORK_RELAY_CACHE_SIZE];
+    uint8_t relay_cache_next;
     uint16_t reply_net_idx;
     uint8_t ready;
 } mesh_network;
@@ -444,6 +459,7 @@ static inline int mesh_network_init(const mesh_net_state *state) {
         state->net_key_index > 0x0fff ||
         state->next_seq > 0x1000000u ||
         state->beacon > 1 ||
+        state->relay > 1 ||
         state->heartbeat.period_log > 0x11 ||
         (state->heartbeat.count_log > 0x11 && state->heartbeat.count_log != 0xff) ||
         state->heartbeat.ttl > 0x7f || state->heartbeat.features ||
@@ -531,6 +547,8 @@ static inline int mesh_network_init(const mesh_net_state *state) {
     if (state->heartbeat.count_log == 0xff) mesh_network.heartbeat.remaining = 0xffff;
     mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
     mesh_network.replay_count = 0;
+    memset(mesh_network.relay_cache, 0, sizeof(mesh_network.relay_cache));
+    mesh_network.relay_cache_next = 0;
     mesh_network.ready = 1;
     return 1;
 }
@@ -974,6 +992,7 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
     uint32_t seq = 0;
     uint8_t authenticated = 0;
     uint8_t friendship_credential = 0;
+    uint8_t authenticated_new_key = 0;
     uint16_t friendship_lpn = 0, friendship_friend = 0;
 
     uint16_t net_idx = 0;
@@ -1012,6 +1031,7 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
         ) {
             authenticated = 1;
             net_idx = candidate_idx;
+            authenticated_new_key = version;
             break;
         }
         }
@@ -1045,6 +1065,7 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
 
             authenticated = 1;
             friendship_credential = 1;
+            authenticated_new_key = version;
             net_idx = friendship->net_key_index;
             friendship_lpn = friendship->lpn_address;
             friendship_friend = friendship->friend_address;
@@ -1074,8 +1095,62 @@ static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
     message->net_key_index = net_idx;
     message->rssi = 127;
     message->friendship = friendship_credential;
+    message->key_refresh_new = authenticated_new_key;
     message->transport_len = (uint8_t)transport_len;
     memcpy(message->transport, plain + 2, transport_len);
+    // Relay eligible authenticated PDUs before upper-transport handling.
+    if (mesh_network.ready && mesh_network.state.relay && message->ttl >= 2 &&
+        !mesh_local_element(message->dst) && !message->friendship &&
+        message->transport_len && message->seq <= 0xffffffu) {
+        uint8_t duplicate = 0;
+        for (size_t i = 0; i < MESH_NETWORK_RELAY_CACHE_SIZE; i++) {
+            if (mesh_network.relay_cache[i].src == message->src &&
+                mesh_network.relay_cache[i].net_key_index == message->net_key_index &&
+                mesh_network.relay_cache[i].iv_index == message->iv_index &&
+                mesh_network.relay_cache[i].seq == message->seq) {
+                duplicate = 1;
+                break;
+            }
+        }
+        const mesh_credentials *key = duplicate ? NULL : mesh_runtime_netkey(
+            &mesh_network.state, message->net_key_index,
+            message->key_refresh_new);
+        if (key) {
+            uint8_t ad[31], *relay_pdu = ad + 2;
+            size_t mic_len = message->ctl ? 8u : 4u;
+            ad[0] = (uint8_t)(1 + 7 + 2 + message->transport_len + mic_len);
+            ad[1] = MESH_NETWORK_AD_TYPE;
+            relay_pdu[0] = (uint8_t)(((message->iv_index & 1u) << 7) | key->nid);
+            relay_pdu[1] = (uint8_t)((message->ctl << 7) | (message->ttl - 1));
+            relay_pdu[2] = (uint8_t)(message->seq >> 16);
+            relay_pdu[3] = (uint8_t)(message->seq >> 8);
+            relay_pdu[4] = (uint8_t)message->seq;
+            relay_pdu[5] = (uint8_t)(message->src >> 8);
+            relay_pdu[6] = (uint8_t)message->src;
+
+            uint8_t relay_plain[18], relay_nonce[13];
+            relay_plain[0] = (uint8_t)(message->dst >> 8);
+            relay_plain[1] = (uint8_t)message->dst;
+            memcpy(relay_plain + 2, message->transport, message->transport_len);
+            mesh_nonce(relay_nonce, relay_pdu + 1, message->iv_index);
+            if (ccm_encrypt_and_tag(key->encryption_key, relay_nonce, 13,
+                    NULL, 0, relay_plain, message->transport_len + 2,
+                    relay_pdu + 7,
+                    relay_pdu + 9 + message->transport_len, mic_len) == CCM_OK) {
+                mesh_obfuscate(key, relay_pdu, message->iv_index);
+                if (BLE_MESH_QUEUE_RELAY_TX(ad, (size_t)ad[0] + 1,
+                        mesh_network.state.relay_retransmit) == 0) {
+                    size_t cache_slot = mesh_network.relay_cache_next++ %
+                                        MESH_NETWORK_RELAY_CACHE_SIZE;
+                    mesh_network.relay_cache[cache_slot].src = message->src;
+                    mesh_network.relay_cache[cache_slot].net_key_index =
+                        message->net_key_index;
+                    mesh_network.relay_cache[cache_slot].iv_index = message->iv_index;
+                    mesh_network.relay_cache[cache_slot].seq = message->seq;
+                }
+            }
+        }
+    }
     // Count subscribed Heartbeats and track hops after authentication and replay checks.
     if (message->ctl && message->transport[0] == 0x0a) {
         if (mesh_network.heartbeat.subscribed &&

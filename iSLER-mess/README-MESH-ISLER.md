@@ -1,7 +1,5 @@
 # Bluetooth Mesh message security
 
-A Bluetooth Mesh Network PDU uses IVI/NID to help select the IV Index and network credentials, SEQ and SRC for replay protection, and a NetMIC to authenticate the Network PDU. NID and IVI do not authenticate a packet on their own. The Access message is additionally encrypted and authenticated at the Upper Transport layer with an AppKey or Device Key and a TransMIC.
-
 ## Bluetooth Mesh Network PDU security fields
 
 | Bytes | Field | Format | Protection status |
@@ -14,13 +12,24 @@ A Bluetooth Mesh Network PDU uses IVI/NID to help select the IV Index and networ
 | Final 4 or 8 bytes | NetMIC | 32 bits for an unsegmented Network PDU; 64 bits for a segmented Network PDU. | Unencrypted (MIC) |
 | Inside encrypted lower-transport payload | TransMIC | Additional MIC for Access messages; authenticates the Upper Transport message. | Encrypted |
 
+### Bluetooth Mesh routing
+
+Bluetooth Mesh primarily uses managed flooding rather than choosing and storing
+a single end-to-end route. The source sends a message, and configured Relay
+nodes retransmit it so it can travel across multiple hops. A TTL limits how far
+it can travel, while duplicate-message caches prevent relays from forwarding
+the same message repeatedly. Models can send to unicast, group, or virtual
+addresses, so a message may be intended for one node or for multiple
+subscribers. Bluetooth Mesh 1.1 also supports directed forwarding, which can
+limit forwarding to a selected path when that feature is configured.
+
+### IV Update and SEQ reset
+
 Each Bluetooth Mesh element increases SEQ for every Network PDU it sends. The
 receiver combines SEQ with the source address and full IV Index to reject
 replays. IVI is the low bit of the IV Index; the receiver uses its stored IV
 Index state to select the full value. The network advances the IV Index through
 the IV Update procedure before the 24-bit SEQ space is exhausted.
-
-### IV Update and SEQ reset
 
 The IV Index is shared by the mesh. When a node on the primary subnet sees that
 the network may run out of SEQ values, it starts IV Update and announces the
@@ -47,6 +56,19 @@ headers.
 | Secured payload | NWK or APS payload | Payload protected according to the selected security level. | Usually encrypted |
 | Final 0, 4, 8, or 16 | MIC | Length is selected by the security level. It authenticates the secured layer's frame. | Unencrypted (MIC) |
 
+### Zigbee routing
+
+Zigbee routers and the coordinator forward Network-layer packets toward their
+destination using next-hop routes. In mesh operation, a route can be discovered
+when needed: routers relay a route request, and the destination (or an
+intermediate router with a usable route) returns route information. Routers
+then keep route state to forward later packets; routes can be rediscovered if
+they fail. End devices generally send through their associated parent router
+or coordinator rather than forwarding traffic themselves. Zigbee also defines
+tree and source-routing mechanisms for applicable network configurations.
+
+### Frame counter and replay protection
+
 Each Zigbee device increments its 32-bit frame counter on secured frames it
 sends; the counter must not wrap to zero. Receivers track the latest counter
 from each sender and reject repeated or lower values. Unlike Bluetooth Mesh,
@@ -69,3 +91,23 @@ The 32-bit frame counter has `2^32` possible values (0 through 4,294,967,295).
 | 1 | 136 years |
 | 10 | 13.6 years |
 | 100 | 1.36 years |
+
+## Zigbee routing tables
+
+Zigbee coordinators and routers forward traffic; end devices send through
+their parent and do not route. A router uses on-demand, AODV-based route
+discovery when it has no route to a destination. The source broadcasts a Route
+Request (RREQ); routers rebroadcast it while recording the path and its cost.
+The destination replies along a lowest-cost discovered path, and routers use
+the reply to establish next hops. In Zigbee PRO, link cost reflects link
+quality and reliability, so the selected route need not have the fewest hops.
+Routes use finite table capacity and may need discovery again after a route
+fails.
+
+| Table | What it tracks |
+|---|---|
+| Routing | Destination and next hop for forwarding unicast messages. |
+| Route discovery | Temporary state while a route is being discovered. |
+| Neighbor | Directly reachable devices and link information. |
+| Child | End devices associated with this parent router/coordinator. |
+

@@ -15,6 +15,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 static uint8_t sent[31];
 static size_t sent_len;
 static int sent_count, queue_fails;
+static uint8_t relay_retransmit;
 static uint32_t stored_seq;
 static int storage_fails;
 static mesh_net_state saved_state;
@@ -28,6 +29,11 @@ int BLE_MESH_QUEUE_TX(const uint8_t *ad, size_t len) {
     memcpy(sent, ad, len);
     sent_len = len;
     return 0;
+}
+
+int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *ad, size_t len, uint8_t retransmit) {
+    relay_retransmit = retransmit;
+    return BLE_MESH_QUEUE_TX(ad, len);
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *ad, size_t *len, int8_t *rssi) {
@@ -281,6 +287,21 @@ int main(void) {
     assert(message.src == 0x0003 && message.dst == 0x1201);
     assert(message.transport_len == sizeof(access_transport));
     assert(memcmp(message.transport, access_transport, sizeof(access_transport)) == 0);
+
+    // A relay preserves SRC/SEQ/IV, decrements TTL, and uses Relay Retransmit.
+    state.unicast_address = 0x1204;
+    state.relay = 1;
+    state.relay_retransmit = 0x9a;
+    assert(mesh_network_init(&state) == 1);
+    int relay_sends = sent_count;
+    assert(mesh_net_receive(access_pdu, sizeof(access_pdu), &message) == 1);
+    assert(sent_count == relay_sends + 1 && relay_retransmit == 0x9a);
+    state.unicast_address = 0x1205;
+    state.relay = 0;
+    assert(mesh_network_init(&state) == 1);
+    assert(mesh_net_receive(sent + 2, sent_len - 2, &message) == 1);
+    assert(message.ttl == 3 && message.src == 0x0003 && message.dst == 0x1201 &&
+           message.seq == 0x3129ab && message.iv_index == state.iv_index);
 
     assert(mesh_network_init(&state) == 1);
     storage_fails = 1;
