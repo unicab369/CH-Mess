@@ -100,6 +100,7 @@ int main(void) {
     mesh_access_message received;
     const uint8_t short_access[] = {0x82, 0x01, 0x01};
 
+    mesh_net_state source_state = node(0x1300);
     assert(mesh_network_init(&a) == 1);
     assert(mesh_transport_queue(mesh_network.state.unicast_address, b.unicast_address, 5, 0, NULL,
                                          short_access, sizeof(short_access), 0) == 1);
@@ -969,7 +970,7 @@ int main(void) {
     };
     assert(mesh_transport_receive(&queued_for_lpn, &received) == 0);
     assert(transport_friend_offers[0].queue_count == 1 &&
-           transport_friend_offers[0].queue[0].ttl == 4);
+           transport_friend_offers[0].queue[0].message.ttl == 4);
     mesh_friend_poll_receive(&friend_poll_control);
     assert(sent_count == 2);
     mesh_friend_disable();
@@ -1000,8 +1001,8 @@ int main(void) {
     transport_friend_offers[0].receive_delay_ms = 10;
     transport_friend_offers[0].expires_at_ms = current_ms + 10000;
     transport_friend_offers[0].offered = 1;
-    transport_friend_offers[0].queue[0] = queued_for_lpn;
-    transport_friend_offers[0].queue[0].ttl--;
+    transport_friend_offers[0].queue[0].message = queued_for_lpn;
+    transport_friend_offers[0].queue[0].message.ttl--;
     transport_friend_offers[0].queue_count = 1;
     transport_friend_offers[0].has_poll_fsn = 1;
     transport_friend_offers[0].last_poll_fsn = 0;
@@ -1058,7 +1059,7 @@ int main(void) {
     };
     assert(mesh_transport_receive(&queued_group, &received) == 0 &&
            transport_friend_offers[0].queue_count == 1 &&
-           transport_friend_offers[0].queue[0].ttl == 4);
+           transport_friend_offers[0].queue[0].message.ttl == 4);
     mesh_friend_poll_receive(&friend_poll_control);
     assert(sent_count == 4);
     assert(mesh_network_init(&b) == 1);
@@ -1101,6 +1102,110 @@ int main(void) {
            friend_update.transport[0] ==
                 MESH_CONTROL_FRIEND_SUBSCRIPTION_CONFIRM &&
            friend_update.transport[1] == 13);
+
+    // A Friend retains a completed segmented message, acknowledges it OBO,
+    // and delivers one original segment for each acknowledged Friend Poll.
+    mesh_friend_offer *friend_offer_state = &transport_friend_offers[0];
+    mesh_friend_queue_clear(friend_offer_state);
+    friend_offer_state->queue_count = 0;
+    friend_offer_state->used = 1;
+    friend_offer_state->offered = 1;
+    friend_offer_state->net_key_index = friend_request.net_key_index;
+    friend_offer_state->lpn_address = b.unicast_address;
+    friend_offer_state->num_elements = 1;
+    friend_offer_state->expires_at_ms = current_ms + 10000;
+    friend_offer_state->has_poll_fsn = 0;
+    friend_offer_state->last_response_queued = 0;
+    memset(transport_rx, 0, sizeof(transport_rx));
+    sent_count = 0;
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    mesh_net_message friend_segment = {
+        .ctl = 0, .ttl = 5, .seq = 0x2345,
+        .iv_index = friend_state.iv_index, .src = 0x1300,
+        .dst = b.unicast_address,
+        .net_key_index = friend_request.net_key_index,
+        .transport_len = 16,
+        .transport = {0x80, 0x0d, 0x14, 0x01,
+                      0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+                      0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b}
+    };
+    assert(mesh_transport_receive(&friend_segment, &received) == 0 &&
+           friend_offer_state->queue_count == 0 && sent_count == 0);
+    friend_segment.seq = 0x2346;
+    friend_segment.transport_len = 9;
+    friend_segment.transport[1] = 0x0d;
+    friend_segment.transport[2] = 0x14;
+    friend_segment.transport[3] = 0x21;
+    friend_segment.transport[4] = 0x20;
+    friend_segment.transport[5] = 0x21;
+    friend_segment.transport[6] = 0x22;
+    friend_segment.transport[7] = 0x23;
+    friend_segment.transport[8] = 0x24;
+    assert(mesh_transport_receive(&friend_segment, &received) == 0 &&
+           friend_offer_state->queue_count == 1 && sent_count == 1);
+    assert(mesh_network_init(&source_state) == 1);
+    mesh_net_message friend_obo_ack;
+    assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
+                            &friend_obo_ack) == 1);
+    assert(friend_obo_ack.ctl && friend_obo_ack.src == friend_state.unicast_address &&
+           friend_obo_ack.dst == 0x1300 && friend_obo_ack.transport_len == 7 &&
+           friend_obo_ack.transport[0] == 0x80 &&
+           friend_obo_ack.transport[6] == 0x03);
+
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    friend_poll_control.params[0] = 0;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 2 && friend_offer_state->queue_count == 1);
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    mesh_net_message delivered_segment;
+    assert(mesh_net_receive(sent[1] + 2, sent_len[1] - 2,
+                            &delivered_segment) == 1);
+    assert(delivered_segment.friendship && delivered_segment.src == 0x1300 &&
+           delivered_segment.dst == b.unicast_address &&
+           delivered_segment.ttl == 4 && delivered_segment.transport[3] == 0x01);
+
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    friend_poll_control.params[0] = 1;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 3 && friend_offer_state->queue_count == 1);
+    assert(mesh_network_init(&b) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    assert(mesh_net_receive(sent[2] + 2, sent_len[2] - 2,
+                            &delivered_segment) == 1);
+    assert(delivered_segment.transport[3] == 0x21 &&
+           delivered_segment.transport_len == 9);
+
+    assert(mesh_network_init(&friend_state) == 1);
+    assert(mesh_friendship_add(friend_request.net_key_index, b.unicast_address,
+        friend_state.unicast_address, 7, offered_counter));
+    friend_poll_control.params[0] = 0;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == 4 && friend_offer_state->queue_count == 0);
+    for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++)
+        assert(!transport_rx[i].friend_queued);
+
+    // OBO Segment Acknowledgments complete the sender's active SAR transaction.
+    assert(mesh_network_init(&source_state) == 1);
+    memset(&transport_tx, 0, sizeof(transport_tx));
+    transport_tx.active = 1;
+    transport_tx.net_idx = friend_request.net_key_index;
+    transport_tx.src = 0x1300;
+    transport_tx.dst = b.unicast_address;
+    transport_tx.seq_zero = 0x0345;
+    transport_tx.seg_n = 1;
+    assert(mesh_net_receive(sent[0] + 2, sent_len[0] - 2,
+                            &friend_obo_ack) == 1);
+    assert(mesh_transport_receive(&friend_obo_ack, &received) == 0 &&
+           !transport_tx.active);
     mesh_friend_disable();
     return 0;
 }
