@@ -116,6 +116,7 @@ int main()
 	while(1) {
 		// now listen for frames on channel 37 on bed6. When the RF subsystem
 		// detects and finalizes one, "rx_ready" in iSLER.h is set true
+		rx_ready = 0;
 		iSLERRX(ACCESS_ADDRESS, 37, PHY_MODE);
 		while(!rx_ready);
 

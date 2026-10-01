@@ -1,5 +1,8 @@
 #include "ch32fun.h"
+void BLE_GAP_RADIO_RX_CALLBACK(void);
+#define ISLER_CALLBACK_RX BLE_GAP_RADIO_RX_CALLBACK
 #include "iSLER.h"
+volatile uint32_t rx_ready;
 #include "ble_mesh_crypto.h"
 #include "aes_cmm.h"
 #include "ble_mesh_provisioning.h"
@@ -148,36 +151,117 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
 static uint32_t gap_radio_rx_started_ms;
 static ISLER_BUF_ATTR uint8_t gap_radio_adv_frame[8 + MESH_GAP_ADV_DATA_MAX];
+static ISLER_BUF_ATTR uint8_t gap_radio_scan_response_frame[8 + MESH_GAP_ADV_DATA_MAX];
+static uint8_t gap_radio_rx_frame[2 + 37];
+static volatile uint8_t gap_radio_rx_ready;
+static volatile uint8_t gap_radio_scannable_event;
+static volatile uint8_t gap_radio_scan_response_started;
+static volatile int8_t gap_radio_rx_rssi;
+
+// Validate scan requests and start the response from the radio RX interrupt.
+void BLE_GAP_RADIO_RX_CALLBACK(void) {
+    const uint8_t *frame = (const uint8_t *)LLE_BUF;
+    if (gap_radio_scannable_event && frame[1] == 12 &&
+        (frame[0] & 0x0f) == 0x03 && !(frame[0] & 0x80) &&
+        memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0) {
+        uint8_t response_len = BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN();
+        gap_radio_scan_response_frame[0] = 0x04;
+        gap_radio_scan_response_frame[1] = 6 + response_len;
+        memcpy(gap_radio_scan_response_frame + 2, gap_radio_adv_frame + 2, 6);
+        if (response_len) memcpy(gap_radio_scan_response_frame + 8,
+            BLE_GAP_RADIO_SCAN_RESPONSE_DATA(), response_len);
+#ifdef CH571_CH573
+        DMA->TXBUF = (uint32_t)gap_radio_scan_response_frame;
+#else
+        LL->TXBUF = (uint32_t)gap_radio_scan_response_frame;
+#endif
+        gap_radio_scan_response_started = 1;
+        iSLERLinkTX();
+        return;
+    }
+    if (frame[1] <= 37) {
+        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
+        gap_radio_rx_rssi = (int8_t)iSLERRSSI();
+        gap_radio_rx_ready = 1;
+        rx_ready = 1;
+    }
+}
 
 void BLE_GAP_RADIO_INIT(void) {
     iSLERInit(LL_TX_POWER_0_DBM);
     gap_radio_rx_armed = 0;
     gap_radio_rx_channel_index = 0;
     gap_radio_rx_started_ms = 0;
+    gap_radio_rx_ready = 0;
+    gap_radio_rx_rssi = 127;
+    rx_ready = 0;
+    gap_radio_scannable_event = 0;
+    gap_radio_scan_response_started = 0;
 }
 
-int BLE_GAP_RADIO_TRANSMIT(const uint8_t *data, uint8_t len) {
-    if ((!data && len) || len > MESH_GAP_ADV_DATA_MAX) return 0;
+int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len) {
+    if ((pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
+        len > MESH_GAP_ADV_DATA_MAX ||
+        (pdu_type == 0x06 && !BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN())) return 0;
     const uint8_t *address = (const uint8_t *)ROM_CFG_MAC_ADDR;
-    gap_radio_adv_frame[0] = 0x02;
-    gap_radio_adv_frame[1] = 0;
+    gap_radio_adv_frame[0] = pdu_type;
+    gap_radio_adv_frame[1] = pdu_type == 0x06 ? 6 + len : 0;
     for (uint8_t i = 0; i < 6; i++) gap_radio_adv_frame[7 - i] = address[i];
     if (len) memcpy(gap_radio_adv_frame + 8, data, len);
     gap_radio_rx_armed = 0;
-    for (uint8_t channel = 37; channel <= 39; channel++) {
-        iSLERTX(BLE_ADV_ACCESS_ADDRESS, gap_radio_adv_frame, 8 + len,
-                channel, PHY_1M);
-        if (!tx_done) return 0;
+    if (pdu_type == 0x02) {
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            iSLERTX(BLE_ADV_ACCESS_ADDRESS, gap_radio_adv_frame, 8 + len,
+                    channel, PHY_1M);
+            if (!tx_done) return 0;
+        }
+        return 1;
     }
+
+    gap_radio_scannable_event = 1;
+    for (uint8_t channel = 37; channel <= 39; channel++) {
+        gap_radio_rx_ready = 0;
+        gap_radio_scan_response_started = 0;
+        iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M,
+                        gap_radio_adv_frame, 1);
+        iSLERLinkTX();
+        int timeout = Ticks_from_Us(1000);
+        while (!tx_done && timeout-- > 0) {}
+        if (!tx_done) {
+            iSLERStop();
+            gap_radio_scannable_event = 0;
+            gs_iSLERLink.is_open = 0;
+            return 0;
+        }
+        tx_done = 0;
+        timeout = Ticks_from_Us(800);
+        while (!gap_radio_scan_response_started && !gap_radio_rx_ready &&
+               timeout-- > 0) {}
+        if (gap_radio_scan_response_started) {
+            timeout = Ticks_from_Us(1000);
+            while (!tx_done && timeout-- > 0) {}
+            if (!tx_done) {
+                iSLERStop();
+                gap_radio_scannable_event = 0;
+                gs_iSLERLink.is_open = 0;
+                return 0;
+            }
+        }
+        iSLERStop();
+        gs_iSLERLink.is_open = 0;
+        if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
+    }
+    gap_radio_scannable_event = 0;
     return 1;
 }
 
 int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
-    if (!packet || !rx_ready) return 0;
-    packet->frame = (const uint8_t *)LLE_BUF;
+    if (!packet || !gap_radio_rx_ready) return 0;
+    packet->frame = gap_radio_rx_frame;
     packet->payload_len = packet->frame[1];
-    packet->rssi = (int8_t)iSLERRSSI();
+    packet->rssi = gap_radio_rx_rssi;
     gap_radio_rx_armed = 0;
+    gap_radio_rx_ready = 0;
     rx_ready = 0;
     BLE_GAP_RADIO_RECEIVE(packet->frame, packet->payload_len, packet->rssi);
     return 1;
@@ -372,7 +456,8 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
             radio_queue[slot].len;
         const uint8_t *ad_data = send_gap ? BLE_GAP_RADIO_ADVERTISING_DATA() :
             radio_queue[slot].data;
-        if (!BLE_GAP_RADIO_TRANSMIT(ad_data, ad_len)) return -1;
+        uint8_t pdu_type = send_gap ? BLE_GAP_RADIO_ADVERTISING_PDU_TYPE() : 0x02;
+        if (!BLE_GAP_RADIO_TRANSMIT(pdu_type, ad_data, ad_len)) return -1;
         uint32_t sent_at = GET_MILLIS();
         uint8_t jitter = (uint8_t)(rand() % 11);
         if (send_gap) BLE_GAP_RADIO_ADVERTISING_SENT(sent_at, jitter);

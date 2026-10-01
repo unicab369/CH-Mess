@@ -6,9 +6,8 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Add configurable connectable, scannable, and directed legacy advertising,
-//   including scan-response data and address selection.
-// - Add active scanning, scan requests/responses, scan windows/intervals,
+// - Add connectable and directed legacy advertising plus address selection.
+// - Add active scanning and SCAN_REQ transmission, scan windows/intervals,
 //   discovery filtering, and duplicate filtering.
 // - Add Central/Peripheral connection procedures and connection lifecycle
 //   management; this requires Link Layer connection-state and data-channel support.
@@ -41,27 +40,24 @@ typedef struct {
 } mesh_gap_radio_packet;
 
 void BLE_GAP_RADIO_INIT(void);
-int BLE_GAP_RADIO_TRANSMIT(const uint8_t *data, uint8_t len);
+int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len);
 int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet);
 void BLE_GAP_RADIO_SCAN_POLL(void);
 
 static struct {
-    uint8_t enabled, data_len;
+    uint8_t enabled, pdu_type, data_len, scan_response_len;
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
+    uint8_t scan_response[MESH_GAP_ADV_DATA_MAX];
 } gap_advertising;
 
 static uint8_t gap_scanning;
 static mesh_gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
 
-// Start non-connectable legacy advertising using the factory public address.
-// Bluetooth's interval range for this PDU is 100 ms through 10.24 seconds.
-int mesh_gap_advertising_start(const uint8_t *data, size_t len,
-                               uint16_t interval_ms) {
-    if ((!data && len) || len > MESH_GAP_ADV_DATA_MAX ||
-        interval_ms < 100 || interval_ms > 10240) return 0;
+static inline int BLE_GAP_AD_DATA_VALID(const uint8_t *data, size_t len) {
+    if ((!data && len) || len > MESH_GAP_ADV_DATA_MAX) return 0;
     for (size_t offset = 0; offset < len;) {
         uint8_t field_len = data[offset];
         if (!field_len) {
@@ -71,12 +67,42 @@ int mesh_gap_advertising_start(const uint8_t *data, size_t len,
         if (offset + (size_t)field_len + 1 > len) return 0;
         offset += (size_t)field_len + 1;
     }
+    return 1;
+}
+
+static inline int BLE_GAP_ADVERTISING_START(uint8_t pdu_type,
+    const uint8_t *data, size_t len, const uint8_t *scan_response,
+    size_t scan_response_len, uint16_t interval_ms) {
+    if ((pdu_type != 0x02 && pdu_type != 0x06) ||
+        !BLE_GAP_AD_DATA_VALID(data, len) ||
+        !BLE_GAP_AD_DATA_VALID(scan_response, scan_response_len) ||
+        interval_ms < 100 || interval_ms > 10240 ||
+        (pdu_type == 0x02 && scan_response_len)) return 0;
     if (len) memcpy(gap_advertising.data, data, len);
+    if (scan_response_len)
+        memcpy(gap_advertising.scan_response, scan_response, scan_response_len);
+    gap_advertising.pdu_type = pdu_type;
     gap_advertising.data_len = (uint8_t)len;
+    gap_advertising.scan_response_len = (uint8_t)scan_response_len;
     gap_advertising.interval_ms = interval_ms;
     gap_advertising.next_event_ms = GET_MILLIS();
     gap_advertising.enabled = 1;
     return 1;
+}
+
+// Start legacy non-connectable, non-scannable advertising.
+int mesh_gap_advertising_start(const uint8_t *data, size_t len,
+                               uint16_t interval_ms) {
+    return BLE_GAP_ADVERTISING_START(0x02, data, len, NULL, 0, interval_ms);
+}
+
+// Start legacy scannable advertising with the AD data returned in SCAN_RSP.
+int mesh_gap_scannable_advertising_start(const uint8_t *data, size_t len,
+    const uint8_t *scan_response, size_t scan_response_len,
+    uint16_t interval_ms) {
+    if (!scan_response || !scan_response_len) return 0;
+    return BLE_GAP_ADVERTISING_START(0x06, data, len, scan_response,
+                                     scan_response_len, interval_ms);
 }
 
 void mesh_gap_advertising_stop(void) {
@@ -112,8 +138,20 @@ static inline const uint8_t *BLE_GAP_RADIO_ADVERTISING_DATA(void) {
     return gap_advertising.data;
 }
 
+static inline uint8_t BLE_GAP_RADIO_ADVERTISING_PDU_TYPE(void) {
+    return gap_advertising.pdu_type;
+}
+
 static inline uint8_t BLE_GAP_RADIO_ADVERTISING_DATA_LEN(void) {
     return gap_advertising.data_len;
+}
+
+static inline const uint8_t *BLE_GAP_RADIO_SCAN_RESPONSE_DATA(void) {
+    return gap_advertising.scan_response;
+}
+
+static inline uint8_t BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN(void) {
+    return gap_advertising.scan_response_len;
 }
 
 static inline void BLE_GAP_RADIO_ADVERTISING_SENT(uint32_t now, uint8_t jitter) {
