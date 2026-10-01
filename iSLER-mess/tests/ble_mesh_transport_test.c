@@ -1291,6 +1291,88 @@ int main(void) {
     int clear_confirm_index = sent_count;
     mesh_friend_clear_receive(&lpn_clear_control);
     assert(!clear_offer->used && sent_count == clear_confirm_index + 1);
+
+    // A replacement Friend tells the LPN's previous Friend after the new
+    // friendship is established, retries with exponential delay, and stops
+    // when that previous Friend confirms.
+    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 4, 21));
+    clear_offer = &transport_friend_offers[0];
+    memset(clear_offer, 0, sizeof(*clear_offer));
+    clear_offer->used = clear_offer->offered = 1;
+    clear_offer->net_key_index = mesh_network.state.net_key_index;
+    clear_offer->lpn_address = 0x1202;
+    clear_offer->lpn_counter = 32;
+    clear_offer->friend_counter = 10;
+    clear_offer->previous_friend = 0x1203;
+    clear_offer->poll_timeout_ms = 5000;
+    clear_offer->expires_at_ms = current_ms + clear_offer->poll_timeout_ms;
+    assert(mesh_friendship_add(clear_offer->net_key_index, 0x1202,
+        mesh_network.state.unicast_address, 32, 10));
+    friend_poll_control.src = 0x1202;
+    friend_poll_control.dst = mesh_network.state.unicast_address;
+    friend_poll_control.net_key_index = clear_offer->net_key_index;
+    friend_poll_control.params[0] = 0;
+    int previous_clear_index = sent_count;
+    mesh_friend_poll_receive(&friend_poll_control);
+    assert(sent_count == previous_clear_index + 2);
+    assert(transport_friend_offers[0].clear_pending);
+    current_ms += 1000;
+    assert(mesh_transport_poll(&received) == 0 &&
+           sent_count == previous_clear_index + 3 &&
+           clear_offer->clear_interval_ms == 2000);
+    mesh_transport_control_message previous_clear_confirm = {
+        .src = 0x1203, .dst = mesh_network.state.unicast_address,
+        .net_key_index = clear_offer->net_key_index,
+        .opcode = MESH_CONTROL_FRIEND_CLEAR_CONFIRM, .len = 2,
+        .params = {0x12, 0x02}
+    };
+    previous_clear_confirm.params[0] = (uint8_t)(clear_offer->lpn_address >> 8);
+    previous_clear_confirm.params[1] = (uint8_t)clear_offer->lpn_address;
+    mesh_friend_clear_confirm_receive(&previous_clear_confirm);
+    assert(!clear_offer->clear_pending && clear_offer->clear_done);
+
+    // The previous Friend rejects an out-of-window LPNCounter delta, then
+    // confirms and deletes the old friendship for a valid delta of 255.
+    mesh_net_state previous_friend_state = node(0x1203);
+    assert(mesh_network_init(&previous_friend_state) == 1);
+    assert(mesh_friend_enable(mesh_network.state.net_key_index, 10, 4, 22));
+    mesh_friend_offer *previous_offer = &transport_friend_offers[0];
+    memset(previous_offer, 0, sizeof(*previous_offer));
+    previous_offer->used = 1;
+    previous_offer->net_key_index = mesh_network.state.net_key_index;
+    previous_offer->lpn_address = 0x1202;
+    previous_offer->lpn_counter = 31;
+    previous_offer->friend_counter = 11;
+    previous_offer->poll_timeout_ms = 5000;
+    assert(mesh_friendship_add(previous_offer->net_key_index, 0x1202,
+        mesh_network.state.unicast_address, 31, 11));
+    mesh_transport_control_message replacement_clear = {
+        .src = 0x1201, .dst = mesh_network.state.unicast_address,
+        .net_key_index = previous_offer->net_key_index, .ttl = 0x20,
+        .opcode = MESH_CONTROL_FRIEND_CLEAR, .len = 4,
+        .params = {0x12, 0x02, 0x01, 0x2f}
+    };
+    int old_friend_confirm_index = sent_count;
+    mesh_friend_clear_receive(&replacement_clear); // delta 0x012f is too large
+    assert(previous_offer->used && sent_count == old_friend_confirm_index);
+    replacement_clear.params[2] = 0x01;
+    replacement_clear.params[3] = 0x1e; // delta 255
+    mesh_friend_clear_receive(&replacement_clear);
+    assert(previous_offer->used && previous_offer->clear_done &&
+           previous_offer->clear_source == replacement_clear.src &&
+           sent_count == old_friend_confirm_index + 1);
+    mesh_friend_clear_receive(&replacement_clear);
+    assert(sent_count == old_friend_confirm_index + 2);
+
+    mesh_transport_control_message replacement_request = {
+        .src = 0x1202, .dst = MESH_FRIENDS_ADDRESS,
+        .net_key_index = mesh_network.state.net_key_index,
+        .opcode = MESH_CONTROL_FRIEND_REQUEST, .len = 10,
+        .params = {0x01, 10, 0, 0, 50, 0x12, 0x01, 1, 0, 33}
+    };
+    mesh_friend_request_receive(&replacement_request);
+    assert(transport_friend_offers[0].used &&
+           transport_friend_offers[0].previous_friend == 0x1201);
     mesh_friend_disable();
     return 0;
 }

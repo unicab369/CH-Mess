@@ -36,7 +36,6 @@
 
 // TODO for broader Transport support:
 // - Add RSSI-aware Friend Offer timing.
-// - Start the previous Friend Clear procedure after accepting a replacement Friend.
 // - Skipped for now: support concurrent segmented TX contexts for different
 //   destinations. One active context serializes segmented sends; the Mesh
 //   Protocol only prohibits overlapping segmented sends to the same destination.
@@ -119,11 +118,14 @@ static struct {
 
 typedef struct {
     uint16_t net_key_index, lpn_address, lpn_counter, friend_counter;
+    uint16_t previous_friend, clear_source;
     uint32_t poll_timeout_ms, offer_at_ms, expires_at_ms;
+    uint32_t clear_started_ms, clear_next_ms, clear_interval_ms;
     uint32_t subscription_confirm_at_ms, subscription_confirm_deadline_ms;
     uint8_t receive_delay_ms, subscription_confirm_pending;
     uint8_t subscription_confirm_transaction;
     uint8_t num_elements, used, offered, queue_count, has_poll_fsn;
+    uint8_t clear_pending, clear_done;
     uint8_t last_poll_fsn, last_response_queued;
     uint8_t subscription_count, has_subscription_transaction;
     uint8_t last_subscription_transaction, last_subscription_opcode;
@@ -394,6 +396,7 @@ static inline void mesh_friend_request_receive(
     transport_friend_offers[slot].lpn_address = message->src;
     transport_friend_offers[slot].lpn_counter = lpn_counter;
     transport_friend_offers[slot].friend_counter = friend_counter;
+    transport_friend_offers[slot].previous_friend = previous_friend;
     transport_friend_offers[slot].num_elements = elements;
     transport_friend_offers[slot].receive_delay_ms = message->params[1];
     transport_friend_offers[slot].poll_timeout_ms = poll_timeout * 100u;
@@ -678,11 +681,30 @@ static inline void mesh_friend_poll_receive(
         transport_friend_offers[slot].last_response_queued = 0;
         transport_friend_offers[slot].expires_at_ms = GET_MILLIS() +
             transport_friend_offers[slot].poll_timeout_ms;
+        mesh_friend_offer *offer = &transport_friend_offers[slot];
+        if (offer->previous_friend &&
+            offer->previous_friend != mesh_network.state.unicast_address &&
+            !offer->clear_pending && !offer->clear_done) {
+            uint8_t clear[5] = {MESH_CONTROL_FRIEND_CLEAR,
+                (uint8_t)(offer->lpn_address >> 8),
+                (uint8_t)offer->lpn_address,
+                (uint8_t)(offer->lpn_counter >> 8),
+                (uint8_t)offer->lpn_counter};
+            if (mesh_net_queue(message->net_key_index,
+                    mesh_network.state.unicast_address, offer->previous_friend,
+                    1, 0x7f, clear, sizeof(clear))) {
+                offer->clear_pending = 1;
+                offer->clear_started_ms = GET_MILLIS();
+                offer->clear_interval_ms = 1000u;
+                offer->clear_next_ms = offer->clear_started_ms +
+                                        offer->clear_interval_ms;
+            }
+        }
     }
 }
 
-// Validate Friend Clear, confirm it with the matching credentials, then
-// release the friendship and any messages retained for that LPN.
+// Validate either a current LPN's Clear or a replacement Friend's Clear,
+// confirm it with the matching credentials, then release the old friendship.
 static inline void mesh_friend_clear_receive(
         const mesh_transport_control_message *message) {
     if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR ||
@@ -696,23 +718,77 @@ static inline void mesh_friend_clear_receive(
         mesh_friend_offer *offer = &transport_friend_offers[i];
         if (!offer->used || offer->net_key_index != message->net_key_index ||
             offer->lpn_address != lpn) continue;
-        // A current LPN uses friendship credentials, TTL zero, and its own
-        // address as the source. Clear Confirm uses the same friendship.
-        if (!message->friendship || message->src != lpn || message->ttl != 0 ||
-            (uint16_t)(counter - offer->lpn_counter) > 255u ||
-            message->dst != mesh_network.state.unicast_address) return;
-        uint8_t confirm[3] = {
-            MESH_CONTROL_FRIEND_CLEAR_CONFIRM,
-            (uint8_t)(lpn >> 8), (uint8_t)lpn
-        };
-        if (!mesh_net_queue_friend(message->net_key_index,
-                mesh_network.state.unicast_address, lpn, 0, 0,
-                confirm, sizeof(confirm))) return;
+        if (!message->friendship && offer->clear_done &&
+            offer->clear_source == message->src && message->ttl != 0 &&
+            message->dst == mesh_network.state.unicast_address &&
+            (uint16_t)(counter - offer->lpn_counter) <= 255u) {
+            uint8_t confirm[3] = {MESH_CONTROL_FRIEND_CLEAR_CONFIRM,
+                (uint8_t)(lpn >> 8), (uint8_t)lpn};
+            mesh_net_queue(message->net_key_index,
+                mesh_network.state.unicast_address, message->src, 1, 0x7f,
+                confirm, sizeof(confirm));
+            return;
+        }
+        uint8_t confirm[3] = {MESH_CONTROL_FRIEND_CLEAR_CONFIRM,
+            (uint8_t)(lpn >> 8), (uint8_t)lpn};
+        uint8_t previous_friend_clear = !message->friendship;
+        if (!previous_friend_clear) {
+            // An LPN uses its friendship credentials, TTL zero, and its own
+            // address as source. Confirm it before deleting those credentials.
+            if (message->src != lpn || message->ttl != 0 ||
+                (uint16_t)(counter - offer->lpn_counter) > 255u ||
+                message->dst != mesh_network.state.unicast_address ||
+                !mesh_net_queue_friend(message->net_key_index,
+                    mesh_network.state.unicast_address, lpn, 0, 0,
+                    confirm, sizeof(confirm))) return;
+        } else {
+            // A replacement Friend uses managed-flooding credentials. Relays
+            // can reduce its TTL, so accept any nonzero received value.
+            if (!message->src || message->src > 0x7fff ||
+                message->src == mesh_network.state.unicast_address ||
+                message->ttl == 0 ||
+                message->dst != mesh_network.state.unicast_address ||
+                (uint16_t)(counter - offer->lpn_counter) > 255u ||
+                !mesh_net_queue(message->net_key_index,
+                    mesh_network.state.unicast_address, message->src, 1,
+                    0x7f, confirm, sizeof(confirm))) return;
+        }
         mesh_friendship_clear(message->net_key_index, lpn,
                               mesh_network.state.unicast_address);
         mesh_friend_queue_clear(offer);
-        memset(offer, 0, sizeof(*offer));
+        if (previous_friend_clear) {
+            // Keep a short tombstone so retransmitted Clear messages still
+            // receive confirmation if the first response was lost.
+            offer->clear_done = 1;
+            offer->clear_pending = 0;
+            offer->clear_source = message->src;
+            offer->offered = 1;
+            offer->expires_at_ms = GET_MILLIS() +
+                offer->poll_timeout_ms * 2u;
+        } else {
+            memset(offer, 0, sizeof(*offer));
+        }
         return;
+    }
+}
+
+// Stop retrying the PreviousAddress Clear after its matching confirmation.
+static inline void mesh_friend_clear_confirm_receive(
+        const mesh_transport_control_message *message) {
+    if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR_CONFIRM ||
+        message->friendship || message->len != 2 ||
+        message->dst != mesh_network.state.unicast_address) return;
+    uint16_t lpn = (uint16_t)((message->params[0] << 8) | message->params[1]);
+    for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
+        mesh_friend_offer *offer = &transport_friend_offers[i];
+        if (offer->used && offer->clear_pending &&
+            offer->net_key_index == message->net_key_index &&
+            offer->previous_friend == message->src &&
+            offer->lpn_address == lpn) {
+            offer->clear_pending = 0;
+            offer->clear_done = 1;
+            return;
+        }
     }
 }
 
@@ -1282,6 +1358,7 @@ static inline int mesh_transport_receive(const mesh_net_message *net,
             mesh_lpn_control_receive(&control);
             mesh_friend_request_receive(&control);
             mesh_friend_clear_receive(&control);
+            mesh_friend_clear_confirm_receive(&control);
             mesh_friend_subscription_receive(&control);
             mesh_friend_poll_receive(&control);
             if (transport_control_handler)
@@ -1614,6 +1691,28 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             } else if ((int32_t)(now -
                     transport_friend_offers[i].subscription_confirm_deadline_ms) >= 0) {
                 transport_friend_offers[i].subscription_confirm_pending = 0;
+            }
+        }
+        mesh_friend_offer *friend_offer = &transport_friend_offers[i];
+        if (friend_offer->clear_pending) {
+            if ((uint32_t)(now - friend_offer->clear_started_ms) >=
+                    friend_offer->poll_timeout_ms * 2u) {
+                friend_offer->clear_pending = 0;
+                friend_offer->clear_done = 1;
+            } else if ((int32_t)(now - friend_offer->clear_next_ms) >= 0) {
+                uint8_t clear[5] = {MESH_CONTROL_FRIEND_CLEAR,
+                    (uint8_t)(friend_offer->lpn_address >> 8),
+                    (uint8_t)friend_offer->lpn_address,
+                    (uint8_t)(friend_offer->lpn_counter >> 8),
+                    (uint8_t)friend_offer->lpn_counter};
+                if (mesh_net_queue(friend_offer->net_key_index,
+                        mesh_network.state.unicast_address,
+                        friend_offer->previous_friend, 1, 0x7f,
+                        clear, sizeof(clear))) {
+                    friend_offer->clear_interval_ms *= 2u;
+                    friend_offer->clear_next_ms = now +
+                                                  friend_offer->clear_interval_ms;
+                }
             }
         }
         if (!transport_friend.enabled || transport_friend_offers[i].offered ||
