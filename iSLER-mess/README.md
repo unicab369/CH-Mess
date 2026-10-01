@@ -5,7 +5,6 @@ usbipd list
 usbipd bind --busid <BUSID>
 usbipd attach --wsl --busid <BUSID>
 
-
 # Advertising PDU:
 | PDU Header | Payload |
 | 16 bits    | 1-bytes |
@@ -51,6 +50,3 @@ AD types:
 - Manufacturer Specific Data: 0xFF. Ex:
 | Length | AD Type | Company ID | Vendor Data
 | 0x07   | 0xFF    | 0x4C 0x00  | 0xAA 0xBB 0xCC 0xDD // 0x004C = Apple, Inc.
-
-
-

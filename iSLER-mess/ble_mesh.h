@@ -60,6 +60,8 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
+#include "ble_gap.h"
+
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its
 // required minimum durations.
@@ -290,8 +292,11 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (rx_ready) {
         const uint8_t *frame = (const uint8_t *)LLE_BUF;
         uint8_t payload_len = frame[1];
+        int8_t packet_rssi = (int8_t)iSLERRSSI();
         rx_armed = 0;
         rx_ready = 0;
+
+        mesh_gap_radio_receive(frame, payload_len, packet_rssi);
 
         // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
         if ((frame[0] & 0x0F) == 0x02 && payload_len >= 8 &&
@@ -308,7 +313,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
                     if ((size_t)ad_len + 1 > *len) return -1;
                     memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
                     *len = (size_t)ad_len + 1;
-                    if (rssi) *rssi = (int8_t)iSLERRSSI();
+                    if (rssi) *rssi = packet_rssi;
                     received = 1;
                     break;
                 }
@@ -318,7 +323,9 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     }
 
     int slot = mesh_adv_queue_next(now);
-    if (slot >= 0) {
+    int gap_due = mesh_gap_radio_advertising_due(now);
+    int send_gap = gap_due;
+    if (slot >= 0 || send_gap) {
         // The factory MAC is stored most-significant byte first in ROM.
         const uint8_t *mac = (const uint8_t *)ROM_CFG_MAC_ADDR;
         adv_frame[0] = 0x02;
@@ -327,15 +334,22 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         for (uint8_t i = 0; i < 6; i++) {
             adv_frame[7 - i] = mac[i];
         }
-        memcpy(adv_frame + 8, radio_queue[slot].data, radio_queue[slot].len);
-        size_t frame_len = 8 + radio_queue[slot].len;
+        uint8_t ad_len = send_gap ? mesh_gap_radio_advertising_data_len() :
+            radio_queue[slot].len;
+        const uint8_t *ad_data = send_gap ? mesh_gap_radio_advertising_data() :
+            radio_queue[slot].data;
+        if (ad_len) memcpy(adv_frame + 8, ad_data, ad_len);
+        size_t frame_len = 8 + ad_len;
         rx_armed = 0;
 
         for (uint8_t channel = 37; channel <= 39; channel++) {
             iSLERTX(BLE_ADV_ACCESS_ADDRESS, adv_frame, frame_len, channel, PHY_1M);
             if (!tx_done) return -1;
         }
-        mesh_adv_queue_sent((uint8_t)slot, GET_MILLIS(), (uint8_t)(rand() % 11));
+        uint32_t sent_at = GET_MILLIS();
+        uint8_t jitter = (uint8_t)(rand() % 11);
+        if (send_gap) mesh_gap_radio_advertising_sent(sent_at, jitter);
+        else mesh_adv_queue_sent((uint8_t)slot, sent_at, jitter);
     }
     // Finish Node Reset after its reply is sent; retry failed flash operations.
     if (reset_slot >= 0 && !radio_queue[reset_slot].remaining) {

@@ -40,6 +40,19 @@ transmissions then use the new IV Index and each element resets its SEQ to
 `0x000000`. The new IV Index makes those reset sequence numbers distinct from
 the old ones.
 
+## Bluetooth Mesh device roles
+
+Nodes can combine optional features. Provisioner is a commissioning role.
+
+| Type or role | Description |
+|---|---|
+| Node | Provisioned device that sends and receives Mesh messages. |
+| Relay | Retransmits eligible messages across the mesh. |
+| Friend | Stores messages for associated Low Power Nodes. |
+| Low Power Node (LPN) | Sleeps between polls and retrieves queued messages from its Friend. |
+| Proxy | Bridges Mesh messages between the advertising bearer and GATT clients. |
+| Provisioner | Adds unprovisioned devices to the Mesh network. |
+
 ## Zigbee security fields
 
 Zigbee applies security at the Network (NWK) and Application Support (APS)
@@ -111,3 +124,11 @@ fails.
 | Neighbor | Directly reachable devices and link information. |
 | Child | End devices associated with this parent router/coordinator. |
 
+## Zigbee device types
+
+| Type | Description |
+|---|---|
+| Coordinator | Forms and manages the network; one per network. |
+| Router | Forwards messages and can accept child devices. |
+| End Device | Communicates through its parent and does not forward other devices' traffic. |
+| Sleepy End Device | End Device that turns off its radio while idle and polls its parent for messages. |
