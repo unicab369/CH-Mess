@@ -133,6 +133,18 @@ static int mesh_health_queue(uint16_t element, uint16_t dst,
             opcode, params, len);
     }
     if (!app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx)) return 0;
+    uint32_t response_opcode =
+        opcode == OP_HEALTH_FAULT_GET || opcode == OP_HEALTH_FAULT_CLEAR ||
+        opcode == OP_HEALTH_FAULT_TEST ? OP_HEALTH_FAULT_STATUS :
+        opcode == OP_HEALTH_PERIOD_GET || opcode == OP_HEALTH_PERIOD_SET ?
+            OP_HEALTH_PERIOD_STATUS :
+        opcode == OP_HEALTH_ATTENTION_GET || opcode == OP_HEALTH_ATTENTION_SET ?
+            OP_HEALTH_ATTENTION_STATUS : 0;
+    if (response_opcode && dst > 0 && dst <= 0x7fff)
+        return mesh_access_queue_acknowledged(element, dst,
+            mesh_models.state.default_ttl, app_idx, opcode, response_opcode,
+            params, len, 0, MESH_ACCESS_ACK_TIMEOUT_MS,
+            MESH_ACCESS_ACK_RETRY_COUNT);
     return mesh_access_queue(element, dst, mesh_models.state.default_ttl,
         app_idx, opcode, params, len, 0);
 }

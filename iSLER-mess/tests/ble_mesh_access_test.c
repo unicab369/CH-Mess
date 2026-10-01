@@ -30,8 +30,12 @@ static uint8_t sent_ttl;
 static uint16_t sent_app_key_index;
 static uint16_t sent_net_key_index;
 static uint8_t sent_mic_64;
+static int send_count;
 static mesh_access_message incoming;
 static int incoming_ready;
+static uint32_t now_ms;
+
+uint32_t GET_MILLIS(void) { return now_ms; }
 
 static int mesh_transport_queue(uint16_t src, uint16_t dst, uint8_t ttl,
                                          uint16_t app_key_index,
@@ -47,6 +51,7 @@ static int mesh_transport_queue(uint16_t src, uint16_t dst, uint8_t ttl,
     sent_ttl = ttl;
     sent_app_key_index = app_key_index;
     sent_mic_64 = mic_64;
+    send_count++;
     return 1;
 }
 
@@ -148,5 +153,44 @@ int main(void) {
     assert(access.opcode == 0x01 && access.params_len == 0);
     assert(mesh_access_poll(&raw, &access) == 0);
     assert(mesh_access_poll(NULL, &access) == -1);
+
+    // Acknowledged requests retain their TID-bearing payload, retry on timeout,
+    // and stop retrying when the expected response matches the peer and key.
+    now_ms = 1000;
+    send_count = 0;
+    mesh_network.state.unicast_address = 0x1200;
+    assert(mesh_access_queue_acknowledged(0x1200, 0x1201, 5, 0x0123,
+        0x8202, 0x8204, params, sizeof(params), 0, 100, 2));
+    assert(mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING &&
+           send_count == 1 && sent[0] == 0x82 && sent[1] == 0x02);
+    now_ms += 100;
+    assert(mesh_access_poll(&raw, &access) == 0 && send_count == 2);
+    now_ms += 100;
+    assert(mesh_access_poll(&raw, &access) == 0 && send_count == 3);
+    now_ms += 100;
+    assert(mesh_access_poll(&raw, &access) == 0 &&
+           mesh_access_ack_status() == MESH_ACCESS_ACK_TIMED_OUT &&
+           send_count == 3);
+
+    assert(mesh_access_queue_acknowledged(0x1200, 0x1201, 5, 0x0123,
+        0x8201, 0x8204, NULL, 0, 0, 100, 1));
+    incoming = (mesh_access_message){
+        .src = 0x1202, .dst = 0x1200, .app_key_index = 0x0123,
+        .net_key_index = 0, .ttl = 4, .len = 3,
+        .data = {0x82, 0x04, 1}
+    };
+    incoming_ready = 1;
+    assert(mesh_access_poll(&raw, &access) == 1 &&
+           mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING);
+    incoming.src = 0x1201;
+    incoming.app_key_index = 0x0124;
+    incoming_ready = 1;
+    assert(mesh_access_poll(&raw, &access) == 1 &&
+           mesh_access_ack_status() == MESH_ACCESS_ACK_PENDING);
+    incoming.app_key_index = 0x0123;
+    incoming_ready = 1;
+    assert(mesh_access_poll(&raw, &access) == 1 &&
+           access.opcode == 0x8204 &&
+           mesh_access_ack_status() == MESH_ACCESS_ACK_COMPLETE);
     return 0;
 }

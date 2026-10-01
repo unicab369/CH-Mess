@@ -20,6 +20,17 @@ replays. IVI is the low bit of the IV Index; the receiver uses its stored IV
 Index state to select the full value. The network advances the IV Index through
 the IV Update procedure before the 24-bit SEQ space is exhausted.
 
+### IV Update and SEQ reset
+
+The IV Index is shared by the mesh. When a node on the primary subnet sees that
+the network may run out of SEQ values, it starts IV Update and announces the
+new state in Secure Network Beacons. Nodes increment their stored IV Index and
+enter IV Update in Progress, while continuing to transmit with the previous
+IV Index. After at least 96 hours, the network returns to Normal Operation;
+transmissions then use the new IV Index and each element resets its SEQ to
+`0x000000`. The new IV Index makes those reset sequence numbers distinct from
+the old ones.
+
 ## Zigbee security fields
 
 Zigbee applies security at the Network (NWK) and Application Support (APS)
@@ -37,9 +48,12 @@ headers.
 | Final 0, 4, 8, or 16 | MIC | Length is selected by the security level. It authenticates the secured layer's frame. | Unencrypted (MIC) |
 
 Each Zigbee device increments its 32-bit frame counter on secured frames it
-sends. Receivers track the latest counter from each sender and reject repeated
-or lower values. The separate key sequence number identifies the network-key
-version and changes when that key is updated.
+sends; the counter must not wrap to zero. Receivers track the latest counter
+from each sender and reject repeated or lower values. Unlike Bluetooth Mesh,
+Zigbee has no shared IV Index paired with a shorter sequence number. The key
+sequence number is separate: it identifies the network-key version and changes
+when that key is updated. The network key should be updated before the frame
+counter is exhausted.
 
 If only NWK or APS security is applied, there is one MIC for that secured layer. If both layers
 independently secure the frame, each layer contributes a MIC, so the packet can

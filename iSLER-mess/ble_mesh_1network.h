@@ -712,7 +712,6 @@ static inline int mesh_start_iv_update(void) {
     return mesh_commit(&next);
 }
 
-
 // The 13-byte network nonce authenticates CTL/TTL, SEQ, SRC, and IV Index.
 static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
                         uint32_t iv_index) {
@@ -1128,6 +1127,21 @@ static inline int mesh_net_poll(mesh_net_message *message) {
         } else if (ad[1] == MESH_NETWORK_AD_TYPE) {
             result = mesh_net_receive(ad + 2, len - 2, message);
             if (result == 1) message->rssi = rssi;
+        }
+    }
+
+    // The provisioned subnet is this node's primary subnet. Initiate IV
+    // Update when average SEQ use predicts exhaustion within 96 hours.
+    if (mesh_network.ready && !mesh_network.state.iv_update &&
+        mesh_network.state.iv_index != UINT32_MAX &&
+        mesh_network.state.next_seq && iv_time_ready(&now)) {
+        uint32_t remaining = 0x1000000u - mesh_network.state.next_seq;
+        uint64_t elapsed = now - mesh_network.state.iv_state_start_time;
+        uint64_t consumed_window = (uint64_t)mesh_network.state.next_seq *
+            MESH_NETWORK_IV_MIN_SECONDS;
+        if (!remaining || (elapsed && remaining <= UINT64_MAX / elapsed &&
+            consumed_window >= (uint64_t)remaining * elapsed)) {
+            if (!mesh_start_iv_update()) tick_result = -1;
         }
     }
 

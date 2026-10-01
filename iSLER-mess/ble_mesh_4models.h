@@ -16,8 +16,10 @@ static inline int mesh_onoff_get(uint16_t element, uint16_t dst,
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
-    return mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
-                                      OP_ONOFF_GET, NULL, 0, 0);
+    return mesh_access_queue_acknowledged(element, dst,
+        mesh_models.state.default_ttl, app_idx, OP_ONOFF_GET,
+        OP_ONOFF_STATUS, NULL, 0, 0, MESH_ACCESS_ACK_TIMEOUT_MS,
+        MESH_ACCESS_ACK_RETRY_COUNT);
 }
 
 static inline int mesh_onoff_get_virtual(uint16_t element,
@@ -35,11 +37,16 @@ static inline int mesh_onoff_set(
     uint8_t on, uint8_t acknowledged
 ) {
     int index = mesh_element_index(element);
-    if (!mesh_models.ready || index < 0 || on > 1 ||
+    if (!mesh_models.ready || index < 0 || on > 1 || acknowledged > 1 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
     ) return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
+    if (acknowledged && dst > 0 && dst <= 0x7fff)
+        return mesh_access_queue_acknowledged(element, dst,
+            mesh_models.state.default_ttl, app_idx, OP_ONOFF_SET,
+            OP_ONOFF_STATUS, params, sizeof(params), 0,
+            MESH_ACCESS_ACK_TIMEOUT_MS, MESH_ACCESS_ACK_RETRY_COUNT);
     uint32_t opcode = acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK;
     return mesh_access_queue(element, dst, mesh_models.state.default_ttl, app_idx,
                                       opcode, params, sizeof(params), 0);

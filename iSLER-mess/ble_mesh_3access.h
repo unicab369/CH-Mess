@@ -7,9 +7,21 @@
 #include "ble_mesh_2transport.h"
 
 // TODO for broader Access support:
-// - Add model-level acknowledged-message transactions with response matching,
-//   timeout, and retry handling.
 // - Add Mesh 1.1 Access Message Aggregation for efficient configuration.
+
+#ifndef MESH_ACCESS_ACK_TIMEOUT_MS
+#define MESH_ACCESS_ACK_TIMEOUT_MS 2000u
+#endif
+#ifndef MESH_ACCESS_ACK_RETRY_COUNT
+#define MESH_ACCESS_ACK_RETRY_COUNT 2u
+#endif
+
+enum {
+    MESH_ACCESS_ACK_IDLE,
+    MESH_ACCESS_ACK_PENDING,
+    MESH_ACCESS_ACK_COMPLETE,
+    MESH_ACCESS_ACK_TIMED_OUT
+};
 
 typedef struct {
     uint16_t src;
@@ -24,6 +36,16 @@ typedef struct {
     const uint8_t *params;
     size_t params_len;
 } mesh_access_pdu;
+
+// One acknowledged unicast transaction is active at a time. Its original
+// Access payload is retained so retries keep the same model transaction ID.
+static struct {
+    uint16_t src, dst, app_key_index, reply_net_idx;
+    uint8_t ttl, mic_64, retries_sent, retry_limit, state;
+    uint32_t response_opcode, timeout_ms, retry_at_ms;
+    size_t len;
+    uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
+} mesh_access_ack;
 
 // Queue an Access message using an opcode in transmission byte order.
 // Use APP_KEY_INDEX_NONE for remote Device Key requests, DEVICE_KEY_LOCAL for replies.
@@ -54,6 +76,82 @@ static inline int mesh_access_queue(
     if (params_len) memcpy(data + opcode_len, params, params_len);
     return mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
                                          data, opcode_len + params_len, mic_64);
+}
+
+// Queue an acknowledged unicast request and retain it for response matching
+// and bounded retries. The response is still returned by mesh_access_poll.
+static inline int mesh_access_queue_acknowledged(
+    uint16_t src, uint16_t dst, uint8_t ttl, uint16_t app_key_index,
+    uint32_t request_opcode, uint32_t response_opcode,
+    const uint8_t *params, size_t params_len, uint8_t mic_64,
+    uint32_t timeout_ms, uint8_t retry_count
+) {
+    size_t opcode_len = request_opcode <= 0x7e ? 1 :
+        request_opcode <= 0xbfff && request_opcode >= 0x8000 ? 2 :
+        request_opcode >= 0xc00000 && request_opcode <= 0xffffff ? 3 : 0;
+    size_t response_len = response_opcode <= 0x7e ? 1 :
+        response_opcode <= 0xbfff && response_opcode >= 0x8000 ? 2 :
+        response_opcode >= 0xc00000 && response_opcode <= 0xffffff ? 3 : 0;
+    if (mesh_access_ack.state == MESH_ACCESS_ACK_PENDING || !opcode_len ||
+        !response_len || !src || src > 0x7fff || !dst || dst > 0x7fff ||
+        (!params && params_len) || mic_64 > 1 || !timeout_ms ||
+        timeout_ms > 0x7fffffffu ||
+        params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) - opcode_len)
+        return 0;
+
+    uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
+    for (size_t i = 0; i < opcode_len; i++)
+        data[i] = (uint8_t)(request_opcode >> (8 * (opcode_len - 1 - i)));
+    if (params_len) memcpy(data + opcode_len, params, params_len);
+    size_t len = opcode_len + params_len;
+    if (!mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
+            data, len, mic_64)) return 0;
+
+    mesh_access_ack.src = src;
+    mesh_access_ack.dst = dst;
+    mesh_access_ack.app_key_index = app_key_index;
+    mesh_access_ack.reply_net_idx = mesh_network.reply_net_idx;
+    mesh_access_ack.ttl = ttl;
+    mesh_access_ack.mic_64 = mic_64;
+    mesh_access_ack.retries_sent = 0;
+    mesh_access_ack.retry_limit = retry_count;
+    mesh_access_ack.response_opcode = response_opcode;
+    mesh_access_ack.timeout_ms = timeout_ms;
+    mesh_access_ack.retry_at_ms = GET_MILLIS() + timeout_ms;
+    mesh_access_ack.len = len;
+    memcpy(mesh_access_ack.data, data, len);
+    mesh_access_ack.state = MESH_ACCESS_ACK_PENDING;
+    return 1;
+}
+
+// Read the most recent acknowledged transaction result.
+static inline uint8_t mesh_access_ack_status(void) {
+    return mesh_access_ack.state;
+}
+
+// Service the one outstanding transaction after checking for a reply.
+static inline void mesh_access_ack_poll(void) {
+    if (mesh_access_ack.state != MESH_ACCESS_ACK_PENDING ||
+        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0) return;
+    if (mesh_access_ack.retries_sent >= mesh_access_ack.retry_limit) {
+        mesh_access_ack.state = MESH_ACCESS_ACK_TIMED_OUT;
+        return;
+    }
+    uint16_t previous_net_idx = mesh_network.reply_net_idx;
+    mesh_network.reply_net_idx = mesh_access_ack.reply_net_idx;
+    int queued = mesh_transport_queue(mesh_access_ack.src, mesh_access_ack.dst,
+            mesh_access_ack.ttl, mesh_access_ack.app_key_index, NULL,
+            mesh_access_ack.data, mesh_access_ack.len,
+            mesh_access_ack.mic_64);
+    mesh_network.reply_net_idx = previous_net_idx;
+    if (queued) {
+        mesh_access_ack.retries_sent++;
+        mesh_access_ack.retry_at_ms = GET_MILLIS() + mesh_access_ack.timeout_ms;
+    } else {
+        // A full transport queue is not a lost response; try the same retry
+        // again shortly without consuming one of the bounded attempts.
+        mesh_access_ack.retry_at_ms = GET_MILLIS() + 100u;
+    }
 }
 
 // Queue a Device Key configuration message over the specified subnet.
@@ -120,13 +218,23 @@ static inline int mesh_access_poll(mesh_access_message *message,
                                        mesh_access_pdu *access) {
     if (!message || !access) return -1;
     int result = mesh_transport_poll(message);
-    if (result <= 0) return result;
-    if (!message->len || message->len > sizeof(message->data)) return 0;
+    if (result < 0) return result;
+    if (!result) {
+        mesh_access_ack_poll();
+        return 0;
+    }
+    if (!message->len || message->len > sizeof(message->data)) {
+        mesh_access_ack_poll();
+        return 0;
+    }
 
     uint8_t first = message->data[0];
     size_t opcode_len = (first & 0x80) == 0 ? 1 :
                         (first & 0xc0) == 0x80 ? 2 : 3;
-    if (first == 0x7f || message->len < opcode_len) return 0;
+    if (first == 0x7f || message->len < opcode_len) {
+        mesh_access_ack_poll();
+        return 0;
+    }
 
     uint32_t opcode = first;
     for (size_t i = 1; i < opcode_len; i++)
@@ -145,6 +253,12 @@ static inline int mesh_access_poll(mesh_access_message *message,
         .params_len = message->len - opcode_len
     };
     if (message->has_label) memcpy(access->label, message->label, 16);
+    if (mesh_access_ack.state == MESH_ACCESS_ACK_PENDING &&
+        access->src == mesh_access_ack.dst && access->dst == mesh_access_ack.src &&
+        access->app_key_index == mesh_access_ack.app_key_index &&
+        access->opcode == mesh_access_ack.response_opcode)
+        mesh_access_ack.state = MESH_ACCESS_ACK_COMPLETE;
+    mesh_access_ack_poll();
     return 1;
 }
 

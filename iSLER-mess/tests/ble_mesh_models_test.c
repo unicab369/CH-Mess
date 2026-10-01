@@ -6,6 +6,8 @@
 #define ISLER_BLE_MESH_ACCESS_H
 #define APP_KEY_INDEX_NONE 0xffff
 #define DEVICE_KEY_LOCAL 0xfffe
+#define MESH_ACCESS_ACK_TIMEOUT_MS 2000u
+#define MESH_ACCESS_ACK_RETRY_COUNT 2u
 typedef struct {
     uint16_t src, dst, app_key_index;
     uint16_t device_key_owner;
@@ -91,6 +93,7 @@ static uint16_t last_app_key_index;
 static size_t last_len;
 static uint8_t last_ttl;
 static int send_count, send_fail, save_fail;
+static uint32_t last_expected_response;
 static uint8_t applied_on, attention_seconds, reported_on;
 static uint16_t applied_element, reported_element;
 static int apply_count, report_count;
@@ -115,6 +118,16 @@ static int mesh_access_queue(uint16_t src, uint16_t dst, uint8_t ttl,
     last_len = len;
     if (len) memcpy(last_params, params, len);
     return 1;
+}
+static int mesh_access_queue_acknowledged(uint16_t src, uint16_t dst,
+    uint8_t ttl, uint16_t app_key_index, uint32_t request_opcode,
+    uint32_t response_opcode, const uint8_t *params, size_t len,
+    uint8_t mic_64, uint32_t timeout_ms, uint8_t retry_count) {
+    assert(timeout_ms == MESH_ACCESS_ACK_TIMEOUT_MS &&
+           retry_count == MESH_ACCESS_ACK_RETRY_COUNT);
+    last_expected_response = response_opcode;
+    return mesh_access_queue(src, dst, ttl, app_key_index, request_opcode,
+        params, len, mic_64);
 }
 static int mesh_access_queue_on_net(uint16_t net_idx, uint16_t dst,
     uint8_t ttl, uint32_t opcode, const uint8_t *params,
@@ -328,7 +341,8 @@ static void test_foundation_configuration(void) {
     assert(saved.default_ttl == 7 && mesh_models.state.default_ttl == 7);
     save_fail = 0;
     assert(mesh_get_default_ttl(0x1201) && config_request() && last_params[0] == 7);
-    assert(mesh_onoff_get(0x1201, 0x1202, 0x234) && last_ttl == 7);
+    assert(mesh_onoff_get(0x1201, 0x1202, 0x234) && last_ttl == 7 &&
+           last_expected_response == OP_ONOFF_STATUS);
     assert(mesh_set_default_ttl(0x1201, 0) && config_request() && last_ttl == 0);
     assert(mesh_set_default_ttl(0x1201, 7) && config_request());
 
@@ -991,6 +1005,7 @@ static void test_health_client(void) {
     assert(mesh_models_init()); // Restore both persisted client bindings.
     assert(mesh_health_fault_get(0x1202, 0x1301, 0x234, 0x1234));
     assert(last_src == 0x1202 && last_dst == 0x1301 && last_app_key_index == 0x234 && last_ttl == 5);
+    assert(last_expected_response == OP_HEALTH_FAULT_STATUS);
     assert(last_opcode == OP_HEALTH_FAULT_GET && last_len == 2 && last_params[0] == 0x34 && last_params[1] == 0x12);
     assert(!mesh_health_fault_get(0x1203, 0x1301, 0x234, 0x1234));
     assert(!mesh_health_fault_get(0x1201, 0x1301, 0x235, 0x1234));
@@ -998,14 +1013,17 @@ static void test_health_client(void) {
     for (uint8_t ack = 0; ack < 2; ack++) {
         assert(mesh_health_fault_clear(0x1201, 0x1301, 0x234, 0x1234, ack));
         assert(last_opcode == (ack ? OP_HEALTH_FAULT_CLEAR : OP_HEALTH_FAULT_CLEAR_UNACK) && last_len == 2);
+        if (ack) assert(last_expected_response == OP_HEALTH_FAULT_STATUS);
         assert(last_params[0] == 0x34 && last_params[1] == 0x12);
         assert(mesh_health_fault_test(0x1201, 0x1301, 0x234, 0x1234, 7, ack));
         assert(last_opcode == (ack ? OP_HEALTH_FAULT_TEST : OP_HEALTH_FAULT_TEST_UNACK) && last_len == 3);
+        if (ack) assert(last_expected_response == OP_HEALTH_FAULT_STATUS);
         assert(last_params[0] == 7 && last_params[1] == 0x34 && last_params[2] == 0x12);
         assert(mesh_health_period_set(0x1201, 0xc001, 0x234, 15, ack));
         assert(last_opcode == (ack ? OP_HEALTH_PERIOD_SET : OP_HEALTH_PERIOD_SET_UNACK) && last_len == 1 && last_params[0] == 15);
         assert(mesh_health_attention_set(0x1201, 0x1301, 0x234, 255, ack));
         assert(last_opcode == (ack ? OP_HEALTH_ATTENTION_SET : OP_HEALTH_ATTENTION_SET_UNACK) && last_len == 1 && last_params[0] == 255);
+        if (ack) assert(last_expected_response == OP_HEALTH_ATTENTION_STATUS);
     }
     assert(!mesh_health_period_set(0x1201, 0x1301, 0x234, 16, 1));
     assert(mesh_health_period_get(0x1201, 0x1301, 0x234) && last_opcode == OP_HEALTH_PERIOD_GET && !last_len);
@@ -1290,7 +1308,8 @@ int main(void) {
     assert(saved.onoff_client_bindings == 1);
     assert(mesh_onoff_set(0x1201, 0x1202, 0x234, 0, 1) == 1);
     assert(last_opcode == OP_ONOFF_SET && last_len == 2 &&
-           last_params[0] == 0);
+           last_params[0] == 0 &&
+           last_expected_response == OP_ONOFF_STATUS);
     uint8_t virtual_label[16] = {1};
     assert(mesh_onoff_get_virtual(0x1201, virtual_label, 0x234) == 1);
     assert(last_dst == 0x8001 && last_opcode == OP_ONOFF_GET);
