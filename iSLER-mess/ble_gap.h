@@ -79,7 +79,7 @@ static struct {
 // Connection state used by the GAP radio adapter.
 static struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
-    uint8_t terminate_after_reply;
+    uint8_t terminate_after_reply, version_ind_sent;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -150,6 +150,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
+    gap_conn.version_ind_sent = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -491,6 +492,7 @@ static void gap_connection_end(void) {
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
+    gap_conn.version_ind_sent = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -521,6 +523,8 @@ void gap_hw_mesh_received(void) {
         }
         uint8_t llid = frame[0] & 3;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
+        // A zero-length LL Control PDU is invalid; leave it unacknowledged.
+        if (new_packet && llid == 3 && !frame[1]) new_packet = 0;
         // Leave a new data PDU unacknowledged until its one receive slot is free.
         if (new_packet && (llid == 1 || llid == 2) && frame[1] &&
             gap_conn.rx_ready) new_packet = 0;
@@ -615,25 +619,79 @@ void gap_hw_mesh_received(void) {
                     gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
                     gap_conn_tx_frame[3] = 0x02;
                     break;
-                case 0x08: // LL_FEATURE_REQ
-                    gap_conn_tx_frame[1] = 9;
-                    gap_conn_tx_frame[2] = 0x09;
-                    memset(gap_conn_tx_frame + 3, 0, 8);
+                case 0x12: // LL_PING_REQ
+                    if (frame[1] == 1) {
+                        gap_conn_tx_frame[1] = 1;
+                        gap_conn_tx_frame[2] = 0x13; // LL_PING_RSP
+                        break;
+                    }
+                    gap_conn_tx_frame[1] = 2;
+                    gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                    gap_conn_tx_frame[3] = 0x12;
                     break;
+                case 0x13: // LL_PING_RSP
+                    if (frame[1] != 1) {
+                        gap_conn_tx_frame[1] = 2;
+                        gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                        gap_conn_tx_frame[3] = 0x13;
+                    }
+                    break;
+                case 0x0d: // LL_REJECT_IND
+                    if (frame[1] != 2) {
+                        gap_conn_tx_frame[1] = 2;
+                        gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                        gap_conn_tx_frame[3] = 0x0d;
+                    }
+                    break;
+                case 0x11: // LL_REJECT_EXT_IND
+                    if (frame[1] != 3) {
+                        gap_conn_tx_frame[1] = 2;
+                        gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                        gap_conn_tx_frame[3] = 0x11;
+                    }
+                    break;
+                case 0x08: // LL_FEATURE_REQ
+                    if (frame[1] == 9) {
+                        gap_conn_tx_frame[1] = 9;
+                        gap_conn_tx_frame[2] = 0x09;
+                        memset(gap_conn_tx_frame + 3, 0, 8);
+                        break;
+                    }
+                    goto unknown_control_pdu;
                 case 0x0c: // LL_VERSION_IND
-                    gap_conn_tx_frame[1] = 6;
-                    gap_conn_tx_frame[2] = 0x0c;
-                    gap_conn_tx_frame[3] = 0x06; // Bluetooth 4.0 LL
-                    gap_conn_tx_frame[4] = 0xd7; // WCH company ID 0x07d7
-                    gap_conn_tx_frame[5] = 0x07;
-                    gap_conn_tx_frame[6] = 0;
-                    gap_conn_tx_frame[7] = 0;
+                    if (frame[1] != 6) goto unknown_control_pdu;
+                    if (!gap_conn.version_ind_sent) {
+                        gap_conn_tx_frame[1] = 6;
+                        gap_conn_tx_frame[2] = 0x0c;
+                        gap_conn_tx_frame[3] = 0x06; // Bluetooth 4.0 LL
+                        gap_conn_tx_frame[4] = 0xd7; // WCH company ID 0x07d7
+                        gap_conn_tx_frame[5] = 0x07;
+                        gap_conn_tx_frame[6] = 0;
+                        gap_conn_tx_frame[7] = 0;
+                        gap_conn.version_ind_sent = 1;
+                    }
                     break;
                 case 0x07: // LL_UNKNOWN_RSP
-                case 0x09: // LL_FEATURE_RSP
-                    gap_conn_tx_frame[0] = 0x01;
+                    if (frame[1] != 2) goto unknown_control_pdu;
                     break;
+                case 0x09: // LL_FEATURE_RSP
+                    if (frame[1] != 9) goto unknown_control_pdu;
+                    break;
+                // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
+                // The advertised feature set is empty, so optional procedures
+                // such as encryption, data-length extension, and PHY updates
+                // are not negotiated by this Peripheral.
+                case 0x03: case 0x04: case 0x05: case 0x06:
+                case 0x0a: case 0x0b: case 0x0e: case 0x0f:
+                case 0x10: case 0x14: case 0x15: case 0x16:
+                case 0x17: case 0x18: case 0x19: case 0x1a:
+                case 0x1b: case 0x1c: case 0x1d: case 0x1e:
+                case 0x1f: case 0x20: case 0x21: case 0x22:
+                case 0x23: case 0x24: case 0x25: case 0x26:
+                case 0x27: case 0x28: case 0x29: case 0x2a:
+                    goto unknown_control_pdu;
                 default:
+unknown_control_pdu:
                     gap_conn_tx_frame[1] = 2;
                     gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
                     gap_conn_tx_frame[3] = frame[2];
