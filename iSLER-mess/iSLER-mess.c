@@ -9,7 +9,7 @@
 #include "modules/systick_irq.h"
 #include "modules/modWS2812.h"
 #include "modules/fun_button.h"
-#include "mesh.h"
+#include "ble_mesh.h"
 #include "tests/mesh_crypto_test.h"
 
 
