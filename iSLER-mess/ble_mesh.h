@@ -149,12 +149,16 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 
 
 static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
-static uint32_t gap_radio_rx_started_ms;
+static uint8_t gap_radio_scan_generation;
+static uint32_t gap_radio_scan_interval_start_ms;
 static volatile uint8_t gap_radio_active_scan_pending;
 static volatile uint8_t gap_radio_active_scan_address_type;
 static uint8_t gap_radio_active_scan_address[6];
 static uint32_t gap_radio_active_scan_deadline_ms;
 static ISLER_BUF_ATTR uint8_t gap_radio_scan_request[14];
+static uint8_t gap_radio_scan_adv_frame[2 + 37];
+static volatile uint8_t gap_radio_scan_adv_ready;
+static volatile int8_t gap_radio_scan_adv_rssi;
 static ISLER_BUF_ATTR uint8_t gap_radio_adv_frame[8 + MESH_GAP_ADV_DATA_MAX];
 static ISLER_BUF_ATTR uint8_t gap_radio_scan_response_frame[8 + MESH_GAP_ADV_DATA_MAX];
 static uint8_t gap_radio_rx_frame[2 + 37];
@@ -175,8 +179,10 @@ void BLE_GAP_RADIO_RX_CALLBACK(void) {
         gap_radio_active_scan_address_type = advertiser_type;
         gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
         gap_radio_active_scan_pending = 1;
-        // Preserve the advertisement report before the SCAN_RSP can arrive.
-        BLE_GAP_RADIO_RECEIVE(frame, frame[1], (int8_t)iSLERRSSI());
+        // Preserve the advertisement while sending SCAN_REQ promptly.
+        memcpy(gap_radio_scan_adv_frame, frame, (size_t)frame[1] + 2);
+        gap_radio_scan_adv_rssi = (int8_t)iSLERRSSI();
+        gap_radio_scan_adv_ready = 1;
         gap_radio_scan_request[0] = (uint8_t)(0x03 | (advertiser_type << 7));
         gap_radio_scan_request[1] = 12;
         const uint8_t *local_address = (const uint8_t *)ROM_CFG_MAC_ADDR;
@@ -233,10 +239,12 @@ void BLE_GAP_RADIO_INIT(void) {
     iSLERInit(LL_TX_POWER_0_DBM);
     gap_radio_rx_armed = 0;
     gap_radio_rx_channel_index = 0;
-    gap_radio_rx_started_ms = 0;
+    gap_radio_scan_generation = gap_scan_generation - 1;
+    gap_radio_scan_interval_start_ms = 0;
     gap_radio_rx_ready = 0;
     gap_radio_rx_rssi = 127;
     gap_radio_active_scan_pending = 0;
+    gap_radio_scan_adv_ready = 0;
     rx_ready = 0;
     gap_radio_scannable_event = 0;
     gap_radio_scan_response_started = 0;
@@ -299,6 +307,12 @@ int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len) {
 }
 
 int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
+    if (gap_radio_scan_adv_ready) {
+        BLE_GAP_RADIO_RECEIVE(gap_radio_scan_adv_frame,
+                              gap_radio_scan_adv_frame[1],
+                              gap_radio_scan_adv_rssi);
+        gap_radio_scan_adv_ready = 0;
+    }
     if (!packet || !gap_radio_rx_ready) return 0;
     packet->frame = gap_radio_rx_frame;
     packet->payload_len = packet->frame[1];
@@ -312,24 +326,48 @@ int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
 
 void BLE_GAP_RADIO_SCAN_POLL(void) {
     uint32_t now = GET_MILLIS();
+    if (gap_radio_scan_generation != gap_scan_generation) {
+        if (gap_radio_rx_armed) iSLERStop();
+        gap_radio_rx_armed = 0;
+        gap_radio_active_scan_pending = 0;
+        gap_radio_rx_channel_index = 0;
+        gap_radio_scan_interval_start_ms = now;
+        gap_radio_scan_generation = gap_scan_generation;
+    }
     if (gap_radio_active_scan_pending &&
         (int32_t)(now - gap_radio_active_scan_deadline_ms) >= 0) {
         gap_radio_active_scan_pending = 0;
-        gap_radio_rx_armed = 0;
     }
-    if (!gap_scanning || (gap_radio_active_scan_pending && gap_radio_rx_armed)) return;
-    if (!gap_radio_rx_armed || (uint32_t)(now - gap_radio_rx_started_ms) >= 20) {
-        if (gap_active_scanning && gap_radio_rx_armed)
-            gap_radio_rx_channel_index = (gap_radio_rx_channel_index + 1) % 3;
+    if (gap_radio_active_scan_pending) return;
+    uint16_t interval_ms = gap_scanning ? gap_scan_settings.interval_ms : 20;
+    uint16_t window_ms = gap_scanning ? gap_scan_settings.window_ms : 20;
+    uint32_t elapsed = now - gap_radio_scan_interval_start_ms;
+    if (elapsed >= interval_ms) {
+        uint32_t intervals = elapsed / interval_ms;
+        gap_radio_scan_interval_start_ms += intervals * interval_ms;
+        gap_radio_rx_channel_index =
+            (gap_radio_rx_channel_index + intervals % 3) % 3;
+        elapsed -= intervals * interval_ms;
+        if (gap_radio_rx_armed) {
+            iSLERStop();
+            gap_radio_rx_armed = 0;
+        }
+    }
+    if (elapsed >= window_ms) {
+        if (gap_radio_rx_armed) {
+            iSLERStop();
+            gap_radio_rx_armed = 0;
+        }
+        return;
+    }
+    if (!gap_radio_rx_armed) {
         uint8_t channel = 37 + gap_radio_rx_channel_index;
         if (gap_active_scanning) {
             iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 1);
             iSLERLinkRX();
         } else {
-            gap_radio_rx_channel_index = (gap_radio_rx_channel_index + 1) % 3;
             iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
         }
-        gap_radio_rx_started_ms = GET_MILLIS();
         gap_radio_rx_armed = 1;
     }
 }

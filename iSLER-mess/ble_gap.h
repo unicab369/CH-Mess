@@ -7,7 +7,6 @@
 
 // TODO for complete BLE GAP support:
 // - Add connectable and directed legacy advertising plus address selection.
-// - Add scan windows/intervals, discovery filtering, and duplicate filtering.
 // - Add Central/Peripheral connection procedures and connection lifecycle
 //   management; this requires Link Layer connection-state and data-channel support.
 // - Add identity/private address management, RPA resolution, and privacy filters.
@@ -17,6 +16,11 @@
 
 #define MESH_GAP_ADV_DATA_MAX 31
 #define GAP_SCAN_REPORT_COUNT 4
+#define GAP_SCAN_SEEN_COUNT 4
+
+#define MESH_GAP_DISCOVERY_ALL 0
+#define MESH_GAP_DISCOVERY_GENERAL 1
+#define MESH_GAP_DISCOVERY_LIMITED 2
 
 uint32_t GET_MILLIS(void);
 
@@ -53,8 +57,39 @@ static struct {
 
 static uint8_t gap_scanning;
 static uint8_t gap_active_scanning;
+static uint8_t gap_scan_generation;
+static struct {
+    uint16_t interval_ms, window_ms;
+    uint8_t discovery_mode, filter_duplicates;
+} gap_scan_settings = {20, 20, MESH_GAP_DISCOVERY_ALL, 0};
 static mesh_gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
+static struct {
+    uint8_t address_type, address[6], pdu_type, data_len;
+    uint8_t data[MESH_GAP_ADV_DATA_MAX];
+} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
+static uint8_t gap_scan_seen_count, gap_scan_seen_next;
+static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
+static uint8_t gap_scan_response_address[6];
+
+// Configure each scan window and the interval between window starts, in ms.
+// General discovery accepts general and limited devices; limited accepts only limited.
+int mesh_gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
+                            uint8_t discovery_mode, uint8_t filter_duplicates) {
+    if (interval_ms < 3 || interval_ms >= 40960 ||
+        window_ms < 3 || window_ms > interval_ms ||
+        discovery_mode > MESH_GAP_DISCOVERY_LIMITED ||
+        filter_duplicates > 1) return 0;
+    gap_scan_settings.interval_ms = interval_ms;
+    gap_scan_settings.window_ms = window_ms;
+    gap_scan_settings.discovery_mode = discovery_mode;
+    gap_scan_settings.filter_duplicates = filter_duplicates;
+    gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_response_accepted = 0;
+    gap_scan_generation++;
+    return 1;
+}
 
 static inline int BLE_GAP_AD_DATA_VALID(const uint8_t *data, size_t len) {
     if ((!data && len) || len > MESH_GAP_ADV_DATA_MAX) return 0;
@@ -112,20 +147,27 @@ void mesh_gap_advertising_stop(void) {
 // Enable passive scanning and discard reports collected before this call.
 void mesh_gap_scan_start(void) {
     gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_response_accepted = 0;
     gap_scanning = 1;
     gap_active_scanning = 0;
+    gap_scan_generation++;
 }
 
 // Scan actively and request the scan-response data from scannable advertisers.
 void mesh_gap_active_scan_start(void) {
     gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_response_accepted = 0;
     gap_scanning = 1;
     gap_active_scanning = 1;
+    gap_scan_generation++;
 }
 
 void mesh_gap_scan_stop(void) {
     gap_scanning = 0;
     gap_active_scanning = 0;
+    gap_scan_generation++;
 }
 
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
@@ -181,6 +223,60 @@ static inline void BLE_GAP_RADIO_RECEIVE(const uint8_t *frame,
     uint8_t data_len = payload_len - 6;
     if (pdu_type == 1) data_len = 0; // ADV_DIRECT_IND has a second address.
     if (data_len > MESH_GAP_ADV_DATA_MAX) return;
+    uint8_t address_type = (frame[0] >> 6) & 1;
+    if (gap_scan_settings.discovery_mode != MESH_GAP_DISCOVERY_ALL) {
+        if (pdu_type == 4) {
+            if (!gap_scan_response_accepted ||
+                address_type != gap_scan_response_address_type ||
+                memcmp(frame + 2, gap_scan_response_address, 6) != 0) return;
+        } else {
+            if (pdu_type == 0 || pdu_type == 6)
+                gap_scan_response_accepted = 0;
+            uint8_t flags = 0;
+            for (uint8_t offset = 0; offset < data_len;) {
+                uint8_t field_len = frame[8 + offset];
+                if (!field_len || (uint16_t)offset + field_len + 1 > data_len) break;
+                if (field_len >= 2 && frame[9 + offset] == 0x01)
+                    flags = frame[10 + offset];
+                offset += field_len + 1;
+            }
+            uint8_t mask = gap_scan_settings.discovery_mode ==
+                MESH_GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
+            if (!(flags & mask)) return;
+            if (pdu_type == 0 || pdu_type == 6) {
+                gap_scan_response_accepted = 1;
+                gap_scan_response_address_type = address_type;
+                memcpy(gap_scan_response_address, frame + 2, 6);
+            }
+        }
+    }
+    if (gap_scan_settings.filter_duplicates) {
+        // For directed advertising, compare the target address too.
+        uint8_t seen_len = pdu_type == 1 ? 6 : data_len;
+        uint8_t slot = gap_scan_seen_count;
+        for (uint8_t i = 0; i < gap_scan_seen_count; i++) {
+            if (gap_scan_seen[i].address_type == address_type &&
+                gap_scan_seen[i].pdu_type == pdu_type &&
+                memcmp(gap_scan_seen[i].address, frame + 2, 6) == 0) {
+                slot = i;
+                if (gap_scan_seen[i].data_len == seen_len &&
+                    memcmp(gap_scan_seen[i].data, frame + 8, seen_len) == 0)
+                    return;
+                break;
+            }
+        }
+        if (slot == GAP_SCAN_SEEN_COUNT) {
+            slot = gap_scan_seen_next;
+            gap_scan_seen_next = (gap_scan_seen_next + 1) % GAP_SCAN_SEEN_COUNT;
+        } else if (slot == gap_scan_seen_count) {
+            gap_scan_seen_count++;
+        }
+        gap_scan_seen[slot].address_type = address_type;
+        gap_scan_seen[slot].pdu_type = pdu_type;
+        gap_scan_seen[slot].data_len = seen_len;
+        memcpy(gap_scan_seen[slot].address, frame + 2, 6);
+        if (seen_len) memcpy(gap_scan_seen[slot].data, frame + 8, seen_len);
+    }
     if (gap_scan_count == GAP_SCAN_REPORT_COUNT) {
         gap_scan_head = (gap_scan_head + 1) % GAP_SCAN_REPORT_COUNT;
         gap_scan_count--;
@@ -188,7 +284,7 @@ static inline void BLE_GAP_RADIO_RECEIVE(const uint8_t *frame,
     uint8_t slot = (gap_scan_head + gap_scan_count) % GAP_SCAN_REPORT_COUNT;
     mesh_gap_scan_report *report = &gap_scan_reports[slot];
     report->pdu_type = pdu_type;
-    report->address_type = (frame[0] >> 6) & 1;
+    report->address_type = address_type;
     memcpy(report->address, frame + 2, 6);
     report->has_target = pdu_type == 1;
     report->target_address_type = (frame[0] >> 7) & 1;
