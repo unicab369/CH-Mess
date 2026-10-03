@@ -12,6 +12,28 @@
 | Final 4 or 8 bytes | NetMIC | 32 bits for an unsegmented Network PDU; 64 bits for a segmented Network PDU. | Unencrypted (MIC) |
 | Inside encrypted lower-transport payload | TransMIC | Additional MIC for Access messages; authenticates the Upper Transport message. | Encrypted |
 
+## Nonce comparison
+
+| Protocol | Nonce fields / state | Nonce method |
+|---|---|---|
+| Bluetooth Mesh | `(SEQ, SRC, IV Index; CTL/TTL for Network or DST for Access)` | 13-byte Network or Access nonce. |
+| Zigbee | `(Source IEEE address, frame counter, security control)` | 13-byte CCM* nonce. |
+| Z-Wave S2 | `(SPAN state synchronized between peers)` | 13-byte SPAN-based nonce. |
+| Z-Wave S0 | `(exchanged nonce, sender/receiver context)` | Fresh nonce exchanged for secure messaging. |
+
+Nonce construction protects encryption; relay duplicate detection is a separate
+job. For example, Bluetooth Mesh relays identify a Network PDU using its source,
+IV Index, and SEQ. An RTC timestamp alone is not a safe replacement for these
+uniqueness mechanisms because clocks can repeat or move backward.
+
+### Relay duplicate detection
+
+| Protocol | Duplicate-detection fields | How they are used |
+|---|---|---|
+| Bluetooth Mesh | `(SRC, full IV Index, SEQ)` | Network Message Cache prevents relaying the same Network PDU again. TTL and MIC are not cache-key fields. |
+| Zigbee | `(source address, NWK sequence number)` | Broadcast Transaction Table suppresses duplicate broadcast forwarding. The frame counter serves security replay protection separately. |
+| Z-Wave | No general flooding-cache key | Nodes forward along selected routes; Explorer frames support route discovery. |
+
 ### Bluetooth Mesh routing
 
 Bluetooth Mesh primarily uses managed flooding rather than choosing and storing

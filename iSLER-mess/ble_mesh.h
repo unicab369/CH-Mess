@@ -1,6 +1,6 @@
 #include "ch32fun.h"
-void BLE_GAP_RADIO_RX_CALLBACK(void);
-#define ISLER_CALLBACK_RX BLE_GAP_RADIO_RX_CALLBACK
+void gap_hw_mesh_received(void);
+#define ISLER_CALLBACK_RX gap_hw_mesh_received
 #include "iSLER.h"
 volatile uint32_t rx_ready;
 #include "ble_mesh_crypto.h"
@@ -22,7 +22,6 @@ volatile uint32_t rx_ready;
 
 // The radio sends a complete advertising PDU, while provisioning supplies an
 // AD structure. Keep queued AD structures in order, including delayed ACKs.
-#define BLE_ADV_ACCESS_ADDRESS  0x8E89BED6
 #define ROM_CFG_MAC_ADDR		((const u32*)0x0007F018)
 
 void mesh_advertise_bearer(uint8_t *wire, size_t wire_len);
@@ -63,6 +62,7 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
+#define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "ble_gap.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
@@ -131,16 +131,6 @@ static int mesh_adv_queue_next(uint32_t now) {
     return next;
 }
 
-// Call after a complete advertising event; jitter is 0..10 milliseconds.
-static void mesh_adv_queue_sent(uint8_t slot, uint32_t now, uint8_t jitter) {
-    if (!radio_queue[slot].remaining) return;
-    if (--radio_queue[slot].remaining) {
-        radio_queue[slot].started = 1;
-        radio_queue[slot].order = radio_order++;
-        radio_queue[slot].send_at_ms = now + radio_queue[slot].interval_ms + jitter % 11;
-    }
-}
-
 static void mesh_adv_queue_clear(uint8_t ad_type) {
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
         if (radio_queue[i].remaining && radio_queue[i].data[1] == ad_type)
@@ -148,241 +138,54 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 }
 
 
-static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
-static uint8_t gap_radio_scan_generation;
-static uint32_t gap_radio_scan_interval_start_ms;
-static volatile uint8_t gap_radio_active_scan_pending;
-static volatile uint8_t gap_radio_active_scan_address_type;
-static uint8_t gap_radio_active_scan_address[6];
-static uint32_t gap_radio_active_scan_deadline_ms;
-static ISLER_BUF_ATTR uint8_t gap_radio_scan_request[14];
-static uint8_t gap_radio_scan_adv_frame[2 + 37];
-static volatile uint8_t gap_radio_scan_adv_ready;
-static volatile int8_t gap_radio_scan_adv_rssi;
-static ISLER_BUF_ATTR uint8_t gap_radio_adv_frame[8 + MESH_GAP_ADV_DATA_MAX];
-static ISLER_BUF_ATTR uint8_t gap_radio_scan_response_frame[8 + MESH_GAP_ADV_DATA_MAX];
-static uint8_t gap_radio_rx_frame[2 + 37];
-static volatile uint8_t gap_radio_rx_ready;
-static volatile uint8_t gap_radio_scannable_event;
-static volatile uint8_t gap_radio_scan_response_started;
-static volatile int8_t gap_radio_rx_rssi;
-
-// Validate scan requests and start the response from the radio RX interrupt.
-void BLE_GAP_RADIO_RX_CALLBACK(void) {
-    const uint8_t *frame = (const uint8_t *)LLE_BUF;
-    uint8_t pdu_type = frame[0] & 0x0f;
-    if (gap_active_scanning && !gap_radio_scannable_event &&
-        !gap_radio_active_scan_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
-        frame[1] >= 6 && frame[1] <= 37) {
-        uint8_t advertiser_type = (frame[0] >> 6) & 1;
-        memcpy(gap_radio_active_scan_address, frame + 2, 6);
-        gap_radio_active_scan_address_type = advertiser_type;
-        gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
-        gap_radio_active_scan_pending = 1;
-        // Preserve the advertisement while sending SCAN_REQ promptly.
-        memcpy(gap_radio_scan_adv_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_scan_adv_rssi = (int8_t)iSLERRSSI();
-        gap_radio_scan_adv_ready = 1;
-        gap_radio_scan_request[0] = (uint8_t)(0x03 |
-            (gap_own_address_type << 6) | (advertiser_type << 7));
-        gap_radio_scan_request[1] = 12;
-        const uint8_t *local_address = (const uint8_t *)ROM_CFG_MAC_ADDR;
-        for (uint8_t i = 0; i < 6; i++) {
-            if (gap_own_address_type)
-                gap_radio_scan_request[2 + i] = gap_random_address[i];
-            else gap_radio_scan_request[7 - i] = local_address[i];
-            gap_radio_scan_request[8 + i] = frame[2 + i];
-        }
+// iSLER adapter for the generic GAP radio interfaces in ble_gap.h.
+const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return (const uint8_t *)LLE_BUF; }
+int8_t BLE_GAP_HW_RSSI(void) { return (int8_t)iSLERRSSI(); }
+void BLE_GAP_HW_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
+void BLE_GAP_HW_STOP(void) {
+    iSLERStop();
+    gs_iSLERLink.is_open = 0;
+}
+int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
+    iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, PHY_1M);
+    return tx_done != 0;
+}
+void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
+                             uint8_t *tx_frame, uint8_t receive_after_tx) {
+    iSLERLinkConfig(access_address, channel, PHY_1M, tx_frame, receive_after_tx);
+}
+void BLE_GAP_HW_LINK_TX(void) { iSLERLinkTX(); }
+void BLE_GAP_HW_LINK_RX(void) { iSLERLinkRX(); }
+void BLE_GAP_HW_SCAN_RX(uint8_t channel) {
+    iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+}
+void BLE_GAP_HW_TX_BUFFER(const uint8_t *frame) {
 #ifdef CH571_CH573
-        DMA->TXBUF = (uint32_t)gap_radio_scan_request;
+    DMA->TXBUF = (uint32_t)frame;
 #else
-        LL->TXBUF = (uint32_t)gap_radio_scan_request;
+    LL->TXBUF = (uint32_t)frame;
 #endif
-        iSLERLinkTX();
-        return;
-    }
-    if (gap_active_scanning && gap_radio_active_scan_pending && pdu_type == 0x04 &&
-        frame[1] >= 6 && frame[1] <= 37 &&
-        ((frame[0] >> 6) & 1) == gap_radio_active_scan_address_type &&
-        memcmp(frame + 2, gap_radio_active_scan_address, 6) == 0) {
-        gap_radio_active_scan_pending = 0;
-        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx_rssi = (int8_t)iSLERRSSI();
-        gap_radio_rx_ready = 1;
-        rx_ready = 1;
-        return;
-    }
-    if (gap_radio_scannable_event && frame[1] == 12 &&
-        (frame[0] & 0x0f) == 0x03 &&
-        ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
-        memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0) {
-        uint8_t response_len = BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN();
-        gap_radio_scan_response_frame[0] = 0x04 | (gap_radio_adv_frame[0] & 0x40);
-        gap_radio_scan_response_frame[1] = 6 + response_len;
-        memcpy(gap_radio_scan_response_frame + 2, gap_radio_adv_frame + 2, 6);
-        if (response_len) memcpy(gap_radio_scan_response_frame + 8,
-            BLE_GAP_RADIO_SCAN_RESPONSE_DATA(), response_len);
-#ifdef CH571_CH573
-        DMA->TXBUF = (uint32_t)gap_radio_scan_response_frame;
-#else
-        LL->TXBUF = (uint32_t)gap_radio_scan_response_frame;
+}
+void BLE_GAP_HW_CRC_INIT(uint32_t crc_init) {
+    BB->CRCINIT1 = crc_init;
+#ifdef CH570_CH572
+    BB->CRCINIT2 = crc_init;
 #endif
-        gap_radio_scan_response_started = 1;
-        iSLERLinkTX();
-        return;
-    }
-    if (frame[1] <= 37) {
-        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx_rssi = (int8_t)iSLERRSSI();
-        gap_radio_rx_ready = 1;
-        rx_ready = 1;
-    }
 }
-
-void BLE_GAP_RADIO_INIT(void) {
-    iSLERInit(LL_TX_POWER_0_DBM);
-    gap_radio_rx_armed = 0;
-    gap_radio_rx_channel_index = 0;
-    gap_radio_scan_generation = gap_scan_generation - 1;
-    gap_radio_scan_interval_start_ms = 0;
-    gap_radio_rx_ready = 0;
-    gap_radio_rx_rssi = 127;
-    gap_radio_active_scan_pending = 0;
-    gap_radio_scan_adv_ready = 0;
-    rx_ready = 0;
-    gap_radio_scannable_event = 0;
-    gap_radio_scan_response_started = 0;
+int BLE_GAP_HW_TX_DONE(void) { return tx_done != 0; }
+void BLE_GAP_HW_TX_CLEAR_DONE(void) { tx_done = 0; }
+uint64_t BLE_GAP_HW_TICKS(void) { return funSysTick64(); }
+uint64_t BLE_GAP_HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
+void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
+    const uint8_t *stored = (const uint8_t *)ROM_CFG_MAC_ADDR;
+    for (uint8_t i = 0; i < 6; i++) address[i] = stored[5 - i];
 }
-
-int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len,
-                           const uint8_t *random_address) {
-    if ((pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
-        len > MESH_GAP_ADV_DATA_MAX ||
-        (pdu_type == 0x06 && !BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN())) return 0;
-    const uint8_t *address = (const uint8_t *)ROM_CFG_MAC_ADDR;
-    gap_radio_adv_frame[0] = pdu_type | (random_address ? 0x40 : 0);
-    gap_radio_adv_frame[1] = pdu_type == 0x06 ? 6 + len : 0;
-    for (uint8_t i = 0; i < 6; i++) {
-        if (random_address)
-            gap_radio_adv_frame[2 + i] = random_address[i];
-        else gap_radio_adv_frame[7 - i] = address[i];
-    }
-    if (len) memcpy(gap_radio_adv_frame + 8, data, len);
-    gap_radio_rx_armed = 0;
-    if (pdu_type == 0x02) {
-        for (uint8_t channel = 37; channel <= 39; channel++) {
-            iSLERTX(BLE_ADV_ACCESS_ADDRESS, gap_radio_adv_frame, 8 + len,
-                    channel, PHY_1M);
-            if (!tx_done) return 0;
-        }
-        return 1;
-    }
-
-    gap_radio_scannable_event = 1;
-    for (uint8_t channel = 37; channel <= 39; channel++) {
-        gap_radio_rx_ready = 0;
-        gap_radio_scan_response_started = 0;
-        iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M,
-                        gap_radio_adv_frame, 1);
-        iSLERLinkTX();
-        int timeout = Ticks_from_Us(1000);
-        while (!tx_done && timeout-- > 0) {}
-        if (!tx_done) {
-            iSLERStop();
-            gap_radio_scannable_event = 0;
-            gs_iSLERLink.is_open = 0;
-            return 0;
-        }
-        tx_done = 0;
-        timeout = Ticks_from_Us(800);
-        while (!gap_radio_scan_response_started && !gap_radio_rx_ready &&
-               timeout-- > 0) {}
-        if (gap_radio_scan_response_started) {
-            timeout = Ticks_from_Us(1000);
-            while (!tx_done && timeout-- > 0) {}
-            if (!tx_done) {
-                iSLERStop();
-                gap_radio_scannable_event = 0;
-                gs_iSLERLink.is_open = 0;
-                return 0;
-            }
-        }
-        iSLERStop();
-        gs_iSLERLink.is_open = 0;
-        if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
-    }
-    gap_radio_scannable_event = 0;
-    return 1;
-}
-
-int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
-    if (gap_radio_scan_adv_ready) {
-        BLE_GAP_RADIO_RECEIVE(gap_radio_scan_adv_frame,
-                              gap_radio_scan_adv_frame[1],
-                              gap_radio_scan_adv_rssi);
-        gap_radio_scan_adv_ready = 0;
-    }
-    if (!packet || !gap_radio_rx_ready) return 0;
-    packet->frame = gap_radio_rx_frame;
-    packet->payload_len = packet->frame[1];
-    packet->rssi = gap_radio_rx_rssi;
-    if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
-    gap_radio_rx_ready = 0;
-    rx_ready = 0;
-    BLE_GAP_RADIO_RECEIVE(packet->frame, packet->payload_len, packet->rssi);
-    return 1;
-}
-
-void BLE_GAP_RADIO_SCAN_POLL(void) {
-    uint32_t now = GET_MILLIS();
-    if (gap_radio_scan_generation != gap_scan_generation) {
-        if (gap_radio_rx_armed) iSLERStop();
-        gap_radio_rx_armed = 0;
-        gap_radio_active_scan_pending = 0;
-        gap_radio_rx_channel_index = 0;
-        gap_radio_scan_interval_start_ms = now;
-        gap_radio_scan_generation = gap_scan_generation;
-    }
-    if (gap_radio_active_scan_pending &&
-        (int32_t)(now - gap_radio_active_scan_deadline_ms) >= 0) {
-        gap_radio_active_scan_pending = 0;
-    }
-    if (gap_radio_active_scan_pending) return;
-    uint16_t interval_ms = gap_scanning ? gap_scan_settings.interval_ms : 20;
-    uint16_t window_ms = gap_scanning ? gap_scan_settings.window_ms : 20;
-    uint32_t elapsed = now - gap_radio_scan_interval_start_ms;
-    if (elapsed >= interval_ms) {
-        uint32_t intervals = elapsed / interval_ms;
-        gap_radio_scan_interval_start_ms += intervals * interval_ms;
-        gap_radio_rx_channel_index =
-            (gap_radio_rx_channel_index + intervals % 3) % 3;
-        elapsed -= intervals * interval_ms;
-        if (gap_radio_rx_armed) {
-            iSLERStop();
-            gap_radio_rx_armed = 0;
-        }
-    }
-    if (elapsed >= window_ms) {
-        if (gap_radio_rx_armed) {
-            iSLERStop();
-            gap_radio_rx_armed = 0;
-        }
-        return;
-    }
-    if (!gap_radio_rx_armed) {
-        uint8_t channel = 37 + gap_radio_rx_channel_index;
-        if (gap_active_scanning) {
-            iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 1);
-            iSLERLinkRX();
-        } else {
-            iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
-        }
-        gap_radio_rx_armed = 1;
-    }
-}
+void BLE_GAP_HW_PACKET_READY(void) { rx_ready = 1; }
+void BLE_GAP_HW_PACKET_CLEAR(void) { rx_ready = 0; }
+uint8_t BLE_GAP_HW_RANDOM_JITTER(void) { return (uint8_t)(rand() % 11); }
 
 static void mesh_radio_init(void) {
-    BLE_GAP_RADIO_INIT();
+    gap_hw_mesh_init();
     uint32_t value = (uint32_t)funSysTick64();
     seed(value ? value : 0x747AA32F);
 }
@@ -518,56 +321,34 @@ static int mesh_state_save_record(mesh_state_record *record) {
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
-    uint32_t now = GET_MILLIS();
-    int received = 0;
-
-    mesh_gap_radio_packet packet;
-    if (BLE_GAP_RADIO_TAKE_PACKET(&packet)) {
-        const uint8_t *frame = packet.frame;
-        uint8_t payload_len = packet.payload_len;
-        int8_t packet_rssi = packet.rssi;
-
-        // An ADV_NONCONN_IND payload is AdvA (6 bytes) followed by AD data.
-        if ((frame[0] & 0x0F) == 0x02 && payload_len >= 8 &&
-            payload_len <= 37
-        ) {
-            size_t end = (size_t)payload_len + 2;
-            for (size_t offset = 8; offset < end;) {
-                uint8_t ad_len = frame[offset];
-                if (ad_len == 0 || offset + ad_len + 1 > end) break;
-                if (frame[offset + 1] == MESH_PROV_AD_TYPE ||
-                    frame[offset + 1] == MESH_BEACON_AD_TYPE ||
-                    frame[offset + 1] == MESH_NETWORK_AD_TYPE
-                ) {
-                    if ((size_t)ad_len + 1 > *len) return -1;
-                    memcpy(adv_data, frame + offset, (size_t)ad_len + 1);
-                    *len = (size_t)ad_len + 1;
-                    if (rssi) *rssi = packet_rssi;
-                    received = 1;
-                    break;
-                }
-                offset += (size_t)ad_len + 1;
-            }
-        }
+    if (mesh_gap_conn_busy()) {
+        // One radio: connection windows take priority over Mesh advertising.
+        mesh_gap_conn_poll();
+        return 0;
     }
+    uint32_t now = GET_MILLIS();
+    const uint8_t mesh_ad_types[] = {
+        MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
+    };
+    int received = gap_hw_mesh_take_ad(mesh_ad_types,
+        sizeof(mesh_ad_types), adv_data, len, rssi);
+    if (received < 0) return -1;
 
     int slot = mesh_adv_queue_next(now);
-    int gap_due = BLE_GAP_RADIO_ADVERTISING_DUE(now);
-    int send_gap = gap_due;
-    if (slot >= 0 || send_gap) {
-        uint8_t ad_len = send_gap ? BLE_GAP_RADIO_ADVERTISING_DATA_LEN() :
-            radio_queue[slot].len;
-        const uint8_t *ad_data = send_gap ? BLE_GAP_RADIO_ADVERTISING_DATA() :
-            radio_queue[slot].data;
-        uint8_t pdu_type = send_gap ? BLE_GAP_RADIO_ADVERTISING_PDU_TYPE() : 0x02;
-        const uint8_t *random_address = send_gap ?
-            BLE_GAP_RADIO_ADVERTISING_RANDOM_ADDRESS() : NULL;
-        if (!BLE_GAP_RADIO_TRANSMIT(pdu_type, ad_data, ad_len,
-                                     random_address)) return -1;
-        uint32_t sent_at = GET_MILLIS();
-        uint8_t jitter = (uint8_t)(rand() % 11);
-        if (send_gap) BLE_GAP_RADIO_ADVERTISING_SENT(sent_at, jitter);
-        else mesh_adv_queue_sent((uint8_t)slot, sent_at, jitter);
+    uint32_t sent_at;
+    uint8_t jitter;
+    int send_result = gap_hw_mesh_send_due(
+        slot >= 0 ? radio_queue[slot].data : NULL,
+        slot >= 0 ? radio_queue[slot].len : 0,
+        now, &sent_at, &jitter);
+    if (send_result < 0) return -1;
+    if (send_result == 2) return 0;
+    if (send_result == 1 && radio_queue[slot].remaining &&
+        --radio_queue[slot].remaining) {
+        radio_queue[slot].started = 1;
+        radio_queue[slot].order = radio_order++;
+        radio_queue[slot].send_at_ms = sent_at +
+            radio_queue[slot].interval_ms + jitter;
     }
     // Finish Node Reset after its reply is sent; retry failed flash operations.
     if (reset_slot >= 0 && !radio_queue[reset_slot].remaining) {
@@ -601,7 +382,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         }
     }
 
-    BLE_GAP_RADIO_SCAN_POLL();
+    gap_hw_mesh_scan_poll();
     return received;
 }
 
