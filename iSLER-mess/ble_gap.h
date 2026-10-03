@@ -7,8 +7,7 @@
 
 // TODO for complete BLE GAP support:
 // - Add connectable and directed legacy advertising plus address selection.
-// - Add active scanning and SCAN_REQ transmission, scan windows/intervals,
-//   discovery filtering, and duplicate filtering.
+// - Add scan windows/intervals, discovery filtering, and duplicate filtering.
 // - Add Central/Peripheral connection procedures and connection lifecycle
 //   management; this requires Link Layer connection-state and data-channel support.
 // - Add identity/private address management, RPA resolution, and privacy filters.
@@ -21,7 +20,7 @@
 
 uint32_t GET_MILLIS(void);
 
-// A legacy advertising or scan response report from the passive observer.
+// A legacy advertising or scan response report from GAP scanning.
 typedef struct {
     uint8_t pdu_type;
     uint8_t address_type;
@@ -53,6 +52,7 @@ static struct {
 } gap_advertising;
 
 static uint8_t gap_scanning;
+static uint8_t gap_active_scanning;
 static mesh_gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
 
@@ -113,10 +113,19 @@ void mesh_gap_advertising_stop(void) {
 void mesh_gap_scan_start(void) {
     gap_scan_head = gap_scan_count = 0;
     gap_scanning = 1;
+    gap_active_scanning = 0;
+}
+
+// Scan actively and request the scan-response data from scannable advertisers.
+void mesh_gap_active_scan_start(void) {
+    gap_scan_head = gap_scan_count = 0;
+    gap_scanning = 1;
+    gap_active_scanning = 1;
 }
 
 void mesh_gap_scan_stop(void) {
     gap_scanning = 0;
+    gap_active_scanning = 0;
 }
 
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.

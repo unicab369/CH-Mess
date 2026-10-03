@@ -150,6 +150,11 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 
 static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
 static uint32_t gap_radio_rx_started_ms;
+static volatile uint8_t gap_radio_active_scan_pending;
+static volatile uint8_t gap_radio_active_scan_address_type;
+static uint8_t gap_radio_active_scan_address[6];
+static uint32_t gap_radio_active_scan_deadline_ms;
+static ISLER_BUF_ATTR uint8_t gap_radio_scan_request[14];
 static ISLER_BUF_ATTR uint8_t gap_radio_adv_frame[8 + MESH_GAP_ADV_DATA_MAX];
 static ISLER_BUF_ATTR uint8_t gap_radio_scan_response_frame[8 + MESH_GAP_ADV_DATA_MAX];
 static uint8_t gap_radio_rx_frame[2 + 37];
@@ -161,6 +166,43 @@ static volatile int8_t gap_radio_rx_rssi;
 // Validate scan requests and start the response from the radio RX interrupt.
 void BLE_GAP_RADIO_RX_CALLBACK(void) {
     const uint8_t *frame = (const uint8_t *)LLE_BUF;
+    uint8_t pdu_type = frame[0] & 0x0f;
+    if (gap_active_scanning && !gap_radio_scannable_event &&
+        !gap_radio_active_scan_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
+        frame[1] >= 6 && frame[1] <= 37) {
+        uint8_t advertiser_type = (frame[0] >> 6) & 1;
+        memcpy(gap_radio_active_scan_address, frame + 2, 6);
+        gap_radio_active_scan_address_type = advertiser_type;
+        gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
+        gap_radio_active_scan_pending = 1;
+        // Preserve the advertisement report before the SCAN_RSP can arrive.
+        BLE_GAP_RADIO_RECEIVE(frame, frame[1], (int8_t)iSLERRSSI());
+        gap_radio_scan_request[0] = (uint8_t)(0x03 | (advertiser_type << 7));
+        gap_radio_scan_request[1] = 12;
+        const uint8_t *local_address = (const uint8_t *)ROM_CFG_MAC_ADDR;
+        for (uint8_t i = 0; i < 6; i++) {
+            gap_radio_scan_request[7 - i] = local_address[i];
+            gap_radio_scan_request[8 + i] = frame[2 + i];
+        }
+#ifdef CH571_CH573
+        DMA->TXBUF = (uint32_t)gap_radio_scan_request;
+#else
+        LL->TXBUF = (uint32_t)gap_radio_scan_request;
+#endif
+        iSLERLinkTX();
+        return;
+    }
+    if (gap_active_scanning && gap_radio_active_scan_pending && pdu_type == 0x04 &&
+        frame[1] >= 6 && frame[1] <= 37 &&
+        ((frame[0] >> 6) & 1) == gap_radio_active_scan_address_type &&
+        memcmp(frame + 2, gap_radio_active_scan_address, 6) == 0) {
+        gap_radio_active_scan_pending = 0;
+        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
+        gap_radio_rx_rssi = (int8_t)iSLERRSSI();
+        gap_radio_rx_ready = 1;
+        rx_ready = 1;
+        return;
+    }
     if (gap_radio_scannable_event && frame[1] == 12 &&
         (frame[0] & 0x0f) == 0x03 && !(frame[0] & 0x80) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0) {
@@ -194,6 +236,7 @@ void BLE_GAP_RADIO_INIT(void) {
     gap_radio_rx_started_ms = 0;
     gap_radio_rx_ready = 0;
     gap_radio_rx_rssi = 127;
+    gap_radio_active_scan_pending = 0;
     rx_ready = 0;
     gap_radio_scannable_event = 0;
     gap_radio_scan_response_started = 0;
@@ -260,7 +303,7 @@ int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
     packet->frame = gap_radio_rx_frame;
     packet->payload_len = packet->frame[1];
     packet->rssi = gap_radio_rx_rssi;
-    gap_radio_rx_armed = 0;
+    if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
     gap_radio_rx_ready = 0;
     rx_ready = 0;
     BLE_GAP_RADIO_RECEIVE(packet->frame, packet->payload_len, packet->rssi);
@@ -269,10 +312,23 @@ int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet) {
 
 void BLE_GAP_RADIO_SCAN_POLL(void) {
     uint32_t now = GET_MILLIS();
+    if (gap_radio_active_scan_pending &&
+        (int32_t)(now - gap_radio_active_scan_deadline_ms) >= 0) {
+        gap_radio_active_scan_pending = 0;
+        gap_radio_rx_armed = 0;
+    }
+    if (!gap_scanning || (gap_radio_active_scan_pending && gap_radio_rx_armed)) return;
     if (!gap_radio_rx_armed || (uint32_t)(now - gap_radio_rx_started_ms) >= 20) {
+        if (gap_active_scanning && gap_radio_rx_armed)
+            gap_radio_rx_channel_index = (gap_radio_rx_channel_index + 1) % 3;
         uint8_t channel = 37 + gap_radio_rx_channel_index;
-        gap_radio_rx_channel_index = (gap_radio_rx_channel_index + 1) % 3;
-        iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+        if (gap_active_scanning) {
+            iSLERLinkConfig(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M, NULL, 1);
+            iSLERLinkRX();
+        } else {
+            gap_radio_rx_channel_index = (gap_radio_rx_channel_index + 1) % 3;
+            iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
+        }
         gap_radio_rx_started_ms = GET_MILLIS();
         gap_radio_rx_armed = 1;
     }
