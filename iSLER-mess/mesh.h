@@ -3,14 +3,14 @@ void gap_hw_mesh_received(void);
 #define ISLER_CALLBACK_RX gap_hw_mesh_received
 #include "iSLER.h"
 volatile uint32_t rx_ready;
-#include "ble_mesh_crypto.h"
+#include "mesh_crypto.h"
 #include "aes_cmm.h"
-#include "ble_mesh_provisioning.h"
-#include "ble_mesh_1network.h"
-#include "ble_mesh_2transport.h"
-#include "ble_mesh_3access.h"
-#include "ble_mesh_4foundation.h"
-#include "ble_mesh_4models.h"
+#include "mesh_provisioning.h"
+#include "mesh_1network.h"
+#include "mesh_2transport.h"
+#include "mesh_3access.h"
+#include "mesh_4foundation.h"
+#include "mesh_4models.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
 #include "ch5xx_flash.h"

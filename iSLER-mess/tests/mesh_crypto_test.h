@@ -1,8 +1,8 @@
-#ifndef ISLER_BLE_MESH_CRYPTO_TEST_H
-#define ISLER_BLE_MESH_CRYPTO_TEST_H
+#ifndef ISLER_MESH_CRYPTO_TEST_H
+#define ISLER_MESH_CRYPTO_TEST_H
 
 #include <stdio.h>
-#include "../ble_mesh_crypto.h"
+#include "../mesh_crypto.h"
 #include "../micro-ecc/uECC.h"
 
 static int mesh_test_ecc(void) {
@@ -45,4 +45,4 @@ static int aes_cmac_test(void) {
     return memcmp(actual, expected, sizeof(expected)) == 0 ? 0 : -1;
 }
 
-#endif // ISLER_BLE_MESH_CRYPTO_TEST_H
+#endif // ISLER_MESH_CRYPTO_TEST_H

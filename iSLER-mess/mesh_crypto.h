@@ -1,7 +1,7 @@
 // AES-CCM (RFC 3610 / NIST SP 800-38C) and AES-CMAC (NIST SP 800-38B)
 
-#ifndef ISLER_BLE_MESH_CRYPTO_H
-#define ISLER_BLE_MESH_CRYPTO_H
+#ifndef ISLER_MESH_CRYPTO_H
+#define ISLER_MESH_CRYPTO_H
 
 #include <stdint.h>
 #include <string.h>
@@ -289,4 +289,4 @@ static void aes_cmac(
     AES_ENCRYPT_BLOCK(key, block, mac);
 }
 
-#endif // ISLER_BLE_MESH_CRYPTO_H
+#endif // ISLER_MESH_CRYPTO_H

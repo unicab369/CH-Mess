@@ -4,7 +4,7 @@
 #include <string.h>
 
 // Exercise Access framing without a radio or cryptographic implementation.
-#define ISLER_BLE_MESH_TRANSPORT_H
+#define ISLER_MESH_TRANSPORT_H
 #define MESH_TRANSPORT_MAX_ACCESS 380
 #define APP_KEY_INDEX_NONE 0xffff
 #define DEVICE_KEY_LOCAL 0xfffe
@@ -67,7 +67,7 @@ static int mesh_transport_poll(mesh_access_message *out) {
     return 1;
 }
 
-#include "../ble_mesh_3access.h"
+#include "../mesh_3access.h"
 
 int main(void) {
     const uint8_t params[] = {0x12, 0x34};

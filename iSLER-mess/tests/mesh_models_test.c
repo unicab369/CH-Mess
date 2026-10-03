@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define ISLER_BLE_MESH_ACCESS_H
+#define ISLER_MESH_ACCESS_H
 #define APP_KEY_INDEX_NONE 0xffff
 #define DEVICE_KEY_LOCAL 0xfffe
 #define MESH_ACCESS_ACK_TIMEOUT_MS 2000u
@@ -28,7 +28,7 @@ typedef struct {
 } mesh_access_message;
 
 // Use the real network key state machine; access/radio delivery stays mocked.
-#include "../ble_mesh_1network.h"
+#include "../mesh_1network.h"
 
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     uint8_t block[16];
@@ -159,7 +159,7 @@ static int mesh_access_poll(mesh_access_message *message,
     return 1;
 }
 
-#include "../ble_mesh_4models.h"
+#include "../mesh_4models.h"
 
 static mesh_models_state saved;
 static int reset_calls, reset_fail;

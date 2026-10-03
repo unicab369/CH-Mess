@@ -1,7 +1,7 @@
-#ifndef ISLER_BLE_MESH_MODELS_H
-#define ISLER_BLE_MESH_MODELS_H
+#ifndef ISLER_MESH_MODELS_H
+#define ISLER_MESH_MODELS_H
 
-#include "ble_mesh_4foundation.h"
+#include "mesh_4foundation.h"
 
 #define OP_ONOFF_GET 0x8201
 #define OP_ONOFF_SET 0x8202

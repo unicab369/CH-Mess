@@ -1,10 +1,10 @@
-#ifndef ISLER_BLE_MESH_NETWORK_H
-#define ISLER_BLE_MESH_NETWORK_H
+#ifndef ISLER_MESH_NETWORK_H
+#define ISLER_MESH_NETWORK_H
 
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "ble_mesh_crypto.h"
+#include "mesh_crypto.h"
 
 // Provisioning capabilities may advertise up to this many local elements.
 #define MESH_MAX_ELEMENTS 2
@@ -1249,4 +1249,4 @@ static inline int mesh_net_poll(mesh_net_message *message) {
     return result == 0 && tick_result < 0 ? -1 : result;
 }
 
-#endif // ISLER_BLE_MESH_NETWORK_H
+#endif // ISLER_MESH_NETWORK_H

@@ -1,7 +1,7 @@
-#ifndef ISLER_BLE_MESH_MODEL_STATE_H
-#define ISLER_BLE_MESH_MODEL_STATE_H
+#ifndef ISLER_MESH_MODEL_STATE_H
+#define ISLER_MESH_MODEL_STATE_H
 
-#include "ble_mesh_3access.h"
+#include "mesh_3access.h"
 
 // Shared model identifiers, runtime state, bindings, and subscriptions.
 #define MESH_MODEL_HEALTH_SERVER 0x0002

@@ -1,7 +1,7 @@
-#ifndef ISLER_BLE_MESH_FOUNDATION_H
-#define ISLER_BLE_MESH_FOUNDATION_H
+#ifndef ISLER_MESH_FOUNDATION_H
+#define ISLER_MESH_FOUNDATION_H
 
-#include "ble_mesh_4state.h"
+#include "mesh_4state.h"
 
 #define MESH_MODEL_CONFIG_SERVER 0x0000
 #define MESH_MODEL_CONFIG_CLIENT 0x0001

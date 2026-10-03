@@ -4,7 +4,7 @@
 
 ## Foundation models
 
-Configuration and Health support live in `ble_mesh_4foundation.h`; remaining TODOs are listed above.
+Configuration and Health support live in `mesh_4foundation.h`; remaining TODOs are listed above.
 
 Configuration requests use `MESH_MODEL_CONFIG_SERVER`; their replies are handled
 by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.
@@ -144,7 +144,7 @@ contain one byte. Copy parameters during the callback if retaining them.
 Health Clients appear on every element in Composition Data; bindings and
 subscriptions are saved per element. Group/virtual reports reach only subscribed
 Health Clients with the receiving AppKey bound. Remote fault lists are not limited
-to the local server's fault capacity. The default callback in `ble_mesh.h` is empty.
+to the local server's fault capacity. The default callback in `mesh.h` is empty.
 
 `mesh_health_faults(element, test_id, faults, count)` reports the element's
 current faults. Pass `NULL, 0` when recovered. Nonzero fault codes are deduplicated
@@ -157,7 +157,7 @@ reboot or Node Reset. Health Fault Clear clears only history.
 `BLE_MESH_HEALTH_TEST(element, test_id, faults, &count)` is the synchronous
 application self-test interface: count is buffer capacity on input and result
 length on output. Return 1 after a supported test, or 0 for an unsupported test
-or failure. The default in `ble_mesh.h` supports standard test 0 by returning the
+or failure. The default in `mesh.h` supports standard test 0 by returning the
 latest application-reported faults; add hardware diagnostics or vendor tests
 there. Server requests for another Company ID or an unsupported test are ignored.
 

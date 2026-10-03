@@ -6,8 +6,8 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Verify Peripheral connection timing on hardware and add connection data,
-//   parameter updates, channel-map updates, and remaining Link Layer control.
+// - Verify Peripheral connection timing on hardware and add parameter updates,
+//   channel-map updates, and remaining Link Layer control.
 // - Add Central connection initiation and connection lifecycle management.
 // - Add identity/private address management, RPA resolution, and privacy filters.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
@@ -15,6 +15,7 @@
 //   the target controller, with tests for each implemented procedure.
 
 #define MESH_GAP_ADV_DATA_MAX 31
+#define MESH_GAP_CONN_DATA_MAX 27
 #define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
 #define GAP_SCAN_REPORT_COUNT 4
 #define GAP_SCAN_SEEN_COUNT 4
@@ -80,6 +81,9 @@ static struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
+    volatile uint8_t tx_queued, rx_ready;
+    uint8_t tx_llid, tx_len, tx_data[MESH_GAP_CONN_DATA_MAX];
+    uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t window_size;
     uint16_t interval, supervision_timeout, peer_sca_ppm;
     uint32_t access_address, crc_init, last_rx_ms;
@@ -133,6 +137,8 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.expected_rx_sn = 0;
     gap_conn.tx_sn = 0;
     gap_conn.tx_pending = 0;
+    gap_conn.tx_queued = 0;
+    gap_conn.rx_ready = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -431,6 +437,8 @@ static void gap_connection_end(void) {
     gap_conn.rx_armed = 0;
     gap_conn.event_replied = 0;
     gap_conn.channel_selected = 0;
+    gap_conn.tx_queued = 0;
+    gap_conn.rx_ready = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -458,10 +466,20 @@ void gap_hw_mesh_received(void) {
             gap_conn.tx_sn ^= 1;
             gap_conn.tx_pending = 0;
         }
+        uint8_t llid = frame[0] & 3;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
+        // Leave a new data PDU unacknowledged until its one receive slot is free.
+        if (new_packet && (llid == 1 || llid == 2) && frame[1] &&
+            gap_conn.rx_ready) new_packet = 0;
         if (new_packet) {
+            if ((llid == 1 || llid == 2) && frame[1]) {
+                gap_conn.rx_llid = llid;
+                gap_conn.rx_len = frame[1];
+                memcpy(gap_conn.rx_data, frame + 2, frame[1]);
+                gap_conn.rx_ready = 1;
+            }
             gap_conn.expected_rx_sn ^= 1;
-            if ((frame[0] & 3) == 3 && frame[1] && frame[2] == 0x02) {
+            if (llid == 3 && frame[1] && frame[2] == 0x02) {
                 gap_connection_end();
                 return;
             }
@@ -496,6 +514,12 @@ void gap_hw_mesh_received(void) {
                     gap_conn_tx_frame[3] = frame[2];
                     break;
                 }
+            }
+            if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued) {
+                gap_conn_tx_frame[0] = gap_conn.tx_llid;
+                gap_conn_tx_frame[1] = gap_conn.tx_len;
+                memcpy(gap_conn_tx_frame + 2, gap_conn.tx_data, gap_conn.tx_len);
+                gap_conn.tx_queued = 0;
             }
         }
         gap_conn_tx_frame[0] =
@@ -793,6 +817,29 @@ static void mesh_gap_conn_poll(void) {
 // True after the first data-channel packet has established a Peripheral link.
 int mesh_gap_connected(void) {
     return gap_conn.active && !gap_conn.first_event;
+}
+
+// Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
+int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
+    if (!mesh_gap_connected() || gap_conn.tx_queued || !data ||
+        (llid != 1 && llid != 2) || !len ||
+        len > MESH_GAP_CONN_DATA_MAX || (llid == 2 && len < 4)) return 0;
+    gap_conn.tx_llid = llid;
+    gap_conn.tx_len = (uint8_t)len;
+    memcpy(gap_conn.tx_data, data, len);
+    gap_conn.tx_queued = 1;
+    return 1;
+}
+
+// Copy one received LL data fragment; leave it queued if the output is too small.
+int mesh_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
+    if (!data || !len || !gap_conn.rx_ready) return 0;
+    if (*len < gap_conn.rx_len) return -1;
+    if (llid) *llid = gap_conn.rx_llid;
+    *len = gap_conn.rx_len;
+    memcpy(data, gap_conn.rx_data, gap_conn.rx_len);
+    gap_conn.rx_ready = 0;
+    return 1;
 }
 
 int mesh_gap_conn_busy(void) {

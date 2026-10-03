@@ -1,10 +1,10 @@
 // akf = Application Key Flag
 // aid = Application Key Identifier
 
-#ifndef ISLER_BLE_MESH_TRANSPORT_H
-#define ISLER_BLE_MESH_TRANSPORT_H
+#ifndef ISLER_MESH_TRANSPORT_H
+#define ISLER_MESH_TRANSPORT_H
 
-#include "ble_mesh_1network.h"
+#include "mesh_1network.h"
 
 #define MESH_TRANSPORT_MAX_ACCESS 380
 #define MESH_TRANSPORT_MAX_UPPER 384

@@ -1,10 +1,10 @@
 // Mesh Model Identifiers 4.1:
 // https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Assigned_Numbers/out/en/Assigned_Numbers.pdf?v=1706604193002
 
-#ifndef ISLER_BLE_MESH_ACCESS_H
-#define ISLER_BLE_MESH_ACCESS_H
+#ifndef ISLER_MESH_ACCESS_H
+#define ISLER_MESH_ACCESS_H
 
-#include "ble_mesh_2transport.h"
+#include "mesh_2transport.h"
 
 // TODO for broader Access support:
 // - Defer Mesh 1.1 Opcode Aggregation; implement it later with the Aggregator

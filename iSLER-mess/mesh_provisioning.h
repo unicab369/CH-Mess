@@ -1,5 +1,5 @@
-#ifndef ISLER_BLE_MESH_PROVISIONING_H
-#define ISLER_BLE_MESH_PROVISIONING_H
+#ifndef ISLER_MESH_PROVISIONING_H
+#define ISLER_MESH_PROVISIONING_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -1936,4 +1936,4 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
     }
 }
 
-#endif /* ISLER_BLE_MESH_PROVISIONING_H */
+#endif /* ISLER_MESH_PROVISIONING_H */
