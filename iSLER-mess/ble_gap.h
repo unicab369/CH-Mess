@@ -79,6 +79,7 @@ static struct {
 // Connection state used by the GAP radio adapter.
 static struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
+    uint8_t terminate_after_reply;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -148,6 +149,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.update_pending = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
+    gap_conn.terminate_after_reply = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -488,6 +490,7 @@ static void gap_connection_end(void) {
     gap_conn.update_pending = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
+    gap_conn.terminate_after_reply = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -518,10 +521,6 @@ void gap_hw_mesh_received(void) {
         }
         uint8_t llid = frame[0] & 3;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
-        if (new_packet && llid == 3 && frame[1] && frame[2] == 0x02) {
-            gap_connection_end();
-            return;
-        }
         // Leave a new data PDU unacknowledged until its one receive slot is free.
         if (new_packet && (llid == 1 || llid == 2) && frame[1] &&
             gap_conn.rx_ready) new_packet = 0;
@@ -605,6 +604,17 @@ void gap_hw_mesh_received(void) {
                     gap_conn_tx_frame[3] = 0x01;
                     break;
                 }
+                case 0x02: // LL_TERMINATE_IND
+                    if (frame[1] == 2) {
+                        // The empty response acknowledges termination in NESN.
+                        gap_conn.terminate_after_reply = 1;
+                        gap_conn_tx_frame[0] = 0x01;
+                        break;
+                    }
+                    gap_conn_tx_frame[1] = 2;
+                    gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                    gap_conn_tx_frame[3] = 0x02;
+                    break;
                 case 0x08: // LL_FEATURE_REQ
                     gap_conn_tx_frame[1] = 9;
                     gap_conn_tx_frame[2] = 0x09;
@@ -630,7 +640,8 @@ void gap_hw_mesh_received(void) {
                     break;
                 }
             }
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued) {
+            if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued &&
+                !gap_conn.terminate_after_reply) {
                 gap_conn_tx_frame[0] = gap_conn.tx_llid;
                 gap_conn_tx_frame[1] = gap_conn.tx_len;
                 memcpy(gap_conn_tx_frame + 2, gap_conn.tx_data, gap_conn.tx_len);
@@ -886,6 +897,10 @@ static void mesh_gap_conn_poll(void) {
         }
         BLE_GAP_HW_STOP();
         gap_conn.event_replied = 0;
+        if (gap_conn.terminate_after_reply) {
+            gap_connection_end();
+            return;
+        }
         return;
     }
     uint64_t close_ticks = gap_conn.next_event_ticks +
