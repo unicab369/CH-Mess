@@ -80,6 +80,8 @@ static struct {
 static struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
+    uint8_t local_terminate_queued, local_terminate_pending;
+    uint8_t local_terminate_reason;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -151,6 +153,8 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
+    gap_conn.local_terminate_queued = 0;
+    gap_conn.local_terminate_pending = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -493,6 +497,8 @@ static void gap_connection_end(void) {
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
+    gap_conn.local_terminate_queued = 0;
+    gap_conn.local_terminate_pending = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -520,6 +526,14 @@ void gap_hw_mesh_received(void) {
             remote_nesn != gap_conn.tx_sn) {
             gap_conn.tx_sn ^= 1;
             gap_conn.tx_pending = 0;
+            if (gap_conn.local_terminate_pending) {
+                if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
+                    gap_connection_end();
+                    return;
+                }
+                // Process a simultaneous peer termination so it gets ACKed.
+                gap_conn.local_terminate_pending = 0;
+            }
         }
         uint8_t llid = frame[0] & 3;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
@@ -697,6 +711,17 @@ unknown_control_pdu:
                     gap_conn_tx_frame[3] = frame[2];
                     break;
                 }
+            }
+            if (gap_conn_tx_frame[1] == 0 &&
+                gap_conn.local_terminate_queued &&
+                !gap_conn.terminate_after_reply) {
+                gap_conn_tx_frame[0] = 0x03;
+                gap_conn_tx_frame[1] = 2;
+                gap_conn_tx_frame[2] = 0x02; // LL_TERMINATE_IND
+                gap_conn_tx_frame[3] = gap_conn.local_terminate_reason;
+                gap_conn.local_terminate_queued = 0;
+                gap_conn.local_terminate_pending = 1;
+                gap_conn.tx_queued = 0;
             }
             if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued &&
                 !gap_conn.terminate_after_reply) {
@@ -1013,13 +1038,26 @@ int mesh_gap_connected(void) {
 
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    if (!mesh_gap_connected() || gap_conn.tx_queued || !data ||
+    if (!mesh_gap_connected() || gap_conn.tx_queued ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_after_reply || !data ||
         (llid != 1 && llid != 2) || !len ||
         len > MESH_GAP_CONN_DATA_MAX || (llid == 2 && len < 4)) return 0;
     gap_conn.tx_llid = llid;
     gap_conn.tx_len = (uint8_t)len;
     memcpy(gap_conn.tx_data, data, len);
     gap_conn.tx_queued = 1;
+    return 1;
+}
+
+// Gracefully terminate the active Peripheral connection after sending the
+// reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
+int mesh_gap_disconnect(uint8_t reason) {
+    if (!mesh_gap_connected() || !reason || gap_conn.terminate_after_reply ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending)
+        return 0;
+    gap_conn.local_terminate_reason = reason;
+    gap_conn.local_terminate_queued = 1;
     return 1;
 }
 
