@@ -175,7 +175,7 @@ void BLE_GAP_HW_CRC_INIT(uint32_t crc_init) {
 int BLE_GAP_HW_TX_DONE(void) { return tx_done != 0; }
 void BLE_GAP_HW_TX_CLEAR_DONE(void) { tx_done = 0; }
 uint64_t BLE_GAP_HW_TICKS(void) { return funSysTick64(); }
-uint64_t BLE_GAP_HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
+uint64_t HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
 void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
     const uint8_t *stored = (const uint8_t *)ROM_CFG_MAC_ADDR;
     for (uint8_t i = 0; i < 6; i++) address[i] = stored[5 - i];

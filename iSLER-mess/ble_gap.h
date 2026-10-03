@@ -6,8 +6,8 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Verify Peripheral connection timing on hardware and add parameter updates,
-//   channel-map updates, and remaining Link Layer control.
+// - Verify Peripheral connection timing on hardware and add channel-map
+//   updates and remaining Link Layer control.
 // - Add Central connection initiation and connection lifecycle management.
 // - Add identity/private address management, RPA resolution, and privacy filters.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
@@ -46,7 +46,7 @@ void BLE_GAP_HW_CRC_INIT(uint32_t crc_init);
 int BLE_GAP_HW_TX_DONE(void);
 void BLE_GAP_HW_TX_CLEAR_DONE(void);
 uint64_t BLE_GAP_HW_TICKS(void);
-uint64_t BLE_GAP_HW_TICKS_FROM_US(uint32_t us);
+uint64_t HW_TICKS_FROM_US(uint32_t us);
 void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
 void BLE_GAP_HW_PACKET_READY(void);
 void BLE_GAP_HW_PACKET_CLEAR(void);
@@ -84,8 +84,10 @@ static struct {
     volatile uint8_t tx_queued, rx_ready;
     uint8_t tx_llid, tx_len, tx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
-    uint8_t window_size;
-    uint16_t interval, supervision_timeout, peer_sca_ppm;
+    uint8_t window_size, update_pending, update_window_active, update_window_size;
+    uint16_t interval, latency, supervision_timeout, peer_sca_ppm;
+    uint16_t event_counter, update_instant, update_win_offset;
+    uint16_t update_interval, update_latency, update_timeout;
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_event_ticks;
 } gap_conn;
@@ -123,6 +125,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.hop = hop;
     gap_conn.unmapped_channel = 0;
     gap_conn.interval = interval;
+    gap_conn.latency = latency;
     gap_conn.supervision_timeout = timeout;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];
@@ -139,9 +142,37 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.tx_pending = 0;
     gap_conn.tx_queued = 0;
     gap_conn.rx_ready = 0;
+    gap_conn.event_counter = 0;
+    gap_conn.update_pending = 0;
+    gap_conn.update_window_active = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
+}
+
+// Apply connection settings sent by the peer in LL_CONNECTION_UPDATE_IND at
+// its specified event. The interval, latency, timeout, and window size control
+// when this device wakes to receive and exchange packets with the peer.
+// The instant event follows the old interval, then uses the new transmit window.
+static void gap_connection_update_apply(uint8_t instant_packet_received) {
+    uint64_t old_interval_ticks =
+        (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+    if (instant_packet_received) {
+        // The packet already fixed the new anchor; ignore WinOffset and WinSize.
+        gap_conn.next_event_ticks = gap_conn.next_event_ticks -
+            old_interval_ticks +
+            (uint64_t)gap_conn.update_interval * HW_TICKS_FROM_US(1250);
+    } else {
+        gap_conn.next_event_ticks +=
+            (uint64_t)gap_conn.update_win_offset * HW_TICKS_FROM_US(1250);
+    }
+    gap_conn.interval = gap_conn.update_interval;
+    gap_conn.latency = gap_conn.update_latency;
+    gap_conn.supervision_timeout = gap_conn.update_timeout;
+    gap_conn.window_size = gap_conn.update_window_size;
+    gap_conn.last_rx_ms = GET_MILLIS();
+    gap_conn.update_window_active = !instant_packet_received;
+    gap_conn.update_pending = 0;
 }
 
 static uint8_t gap_own_address_type;
@@ -439,6 +470,8 @@ static void gap_connection_end(void) {
     gap_conn.channel_selected = 0;
     gap_conn.tx_queued = 0;
     gap_conn.rx_ready = 0;
+    gap_conn.update_pending = 0;
+    gap_conn.update_window_active = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -455,9 +488,10 @@ void gap_hw_mesh_received(void) {
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.rx_armed = 0;
         gap_conn.next_event_ticks = received_ticks -
-            BLE_GAP_HW_TICKS_FROM_US(((uint32_t)frame[1] + 10) * 8) +
-            (uint64_t)gap_conn.interval * BLE_GAP_HW_TICKS_FROM_US(1250);
+            HW_TICKS_FROM_US(((uint32_t)frame[1] + 10) * 8) +
+            (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
         gap_conn.first_event = 0;
+        gap_conn.update_window_active = 0;
         gap_conn.channel_selected = 0;
         uint8_t remote_sn = (frame[0] >> 3) & 1;
         uint8_t remote_nesn = (frame[0] >> 2) & 1;
@@ -468,9 +502,15 @@ void gap_hw_mesh_received(void) {
         }
         uint8_t llid = frame[0] & 3;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
+        if (new_packet && llid == 3 && frame[1] && frame[2] == 0x02) {
+            gap_connection_end();
+            return;
+        }
         // Leave a new data PDU unacknowledged until its one receive slot is free.
         if (new_packet && (llid == 1 || llid == 2) && frame[1] &&
             gap_conn.rx_ready) new_packet = 0;
+        // A control PDU needs its reply slot before it can be acknowledged.
+        if (new_packet && llid == 3 && gap_conn.tx_pending) new_packet = 0;
         if (new_packet) {
             if ((llid == 1 || llid == 2) && frame[1]) {
                 gap_conn.rx_llid = llid;
@@ -479,10 +519,6 @@ void gap_hw_mesh_received(void) {
                 gap_conn.rx_ready = 1;
             }
             gap_conn.expected_rx_sn ^= 1;
-            if (llid == 3 && frame[1] && frame[2] == 0x02) {
-                gap_connection_end();
-                return;
-            }
         }
         if (!gap_conn.tx_pending) {
             gap_conn_tx_frame[0] = 0x01;
@@ -490,6 +526,46 @@ void gap_hw_mesh_received(void) {
             if (new_packet && (frame[0] & 3) == 3 && frame[1]) {
                 gap_conn_tx_frame[0] = 0x03;
                 switch (frame[2]) {
+                case 0x00: { // LL_CONNECTION_UPDATE_IND
+                    if (frame[1] == 12 && !gap_conn.update_pending) {
+                        uint8_t win_size = frame[3];
+                        uint16_t win_offset = (uint16_t)frame[4] |
+                            (uint16_t)frame[5] << 8;
+                        uint16_t interval = (uint16_t)frame[6] |
+                            (uint16_t)frame[7] << 8;
+                        uint16_t latency = (uint16_t)frame[8] |
+                            (uint16_t)frame[9] << 8;
+                        uint16_t timeout = (uint16_t)frame[10] |
+                            (uint16_t)frame[11] << 8;
+                        uint16_t instant = (uint16_t)frame[12] |
+                            (uint16_t)frame[13] << 8;
+                        if (win_size && win_size <= 8 && interval >= 6 &&
+                            interval <= 3200 && win_size < interval &&
+                            win_offset <= interval && latency <= 499 &&
+                            timeout >= 10 && timeout <= 3200 &&
+                            (uint32_t)timeout * 8 >
+                                2u * (uint32_t)(latency + 1) * interval) {
+                            if ((uint16_t)(instant - gap_conn.event_counter) >=
+                                0x8000) {
+                                gap_connection_end();
+                                return;
+                            }
+                            gap_conn.update_window_size = win_size;
+                            gap_conn.update_win_offset = win_offset;
+                            gap_conn.update_interval = interval;
+                            gap_conn.update_latency = latency;
+                            gap_conn.update_timeout = timeout;
+                            gap_conn.update_instant = instant;
+                            gap_conn.update_pending = 1;
+                            gap_conn_tx_frame[0] = 0x01;
+                            break;
+                        }
+                    }
+                    gap_conn_tx_frame[1] = 2;
+                    gap_conn_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+                    gap_conn_tx_frame[3] = 0x00;
+                    break;
+                }
                 case 0x08: // LL_FEATURE_REQ
                     gap_conn_tx_frame[1] = 9;
                     gap_conn_tx_frame[2] = 0x09;
@@ -522,6 +598,13 @@ void gap_hw_mesh_received(void) {
                 gap_conn.tx_queued = 0;
             }
         }
+        if (gap_conn.update_pending &&
+            gap_conn.update_instant == gap_conn.event_counter)
+            gap_connection_update_apply(1);
+        gap_conn.event_counter++;
+        if (gap_conn.update_pending &&
+            gap_conn.update_instant == gap_conn.event_counter)
+            gap_connection_update_apply(0);
         gap_conn_tx_frame[0] =
             (gap_conn_tx_frame[0] & 0x03) |
             (gap_conn.expected_rx_sn << 2) |
@@ -667,7 +750,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
         BLE_GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
                                gap_radio_adv_frame, 1);
         BLE_GAP_HW_LINK_TX();
-        int timeout = BLE_GAP_HW_TICKS_FROM_US(1000);
+        int timeout = HW_TICKS_FROM_US(1000);
         while (!BLE_GAP_HW_TX_DONE() && timeout-- > 0) {}
         if (!BLE_GAP_HW_TX_DONE()) {
             BLE_GAP_HW_STOP();
@@ -675,7 +758,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
             return 0;
         }
         BLE_GAP_HW_TX_CLEAR_DONE();
-        timeout = BLE_GAP_HW_TICKS_FROM_US(800);
+        timeout = HW_TICKS_FROM_US(800);
         while (!gap_radio_scan_response_started && !gap_radio_connect_request_ready &&
                !gap_radio_rx_ready &&
                timeout-- > 0) {}
@@ -684,7 +767,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
             gap_radio_advertising_rx_event = 0;
             if (gap_connection_accept(
                     gap_radio_connect_request_frame,
-                    gap_radio_connect_request_ticks, BLE_GAP_HW_TICKS_FROM_US(1250))) {
+                    gap_radio_connect_request_ticks, HW_TICKS_FROM_US(1250))) {
                 gap_radio_connect_request_ready = 0;
                 gap_radio_rx_ready = 0;
                 gap_radio_scan_adv_ready = 0;
@@ -697,7 +780,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
             break;
         }
         if (gap_radio_scan_response_started) {
-            timeout = BLE_GAP_HW_TICKS_FROM_US(1000);
+            timeout = HW_TICKS_FROM_US(1000);
             while (!BLE_GAP_HW_TX_DONE() && timeout-- > 0) {}
             if (!BLE_GAP_HW_TX_DONE()) {
                 BLE_GAP_HW_STOP();
@@ -753,15 +836,13 @@ static void mesh_gap_conn_poll(void) {
         return;
     }
     uint64_t now = BLE_GAP_HW_TICKS();
-    uint64_t interval_ticks =
-        (uint64_t)gap_conn.interval * BLE_GAP_HW_TICKS_FROM_US(1250);
     uint32_t widening_us =
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
          (500u + gap_conn.peer_sca_ppm) + 999) / 1000;
     uint32_t widening_limit_us =
         (uint32_t)gap_conn.interval * 625;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
-    uint64_t widening_ticks = (uint64_t)widening_us * BLE_GAP_HW_TICKS_FROM_US(1);
+    uint64_t widening_ticks = (uint64_t)widening_us * HW_TICKS_FROM_US(1);
     if (gap_conn.event_replied) {
         if (!BLE_GAP_HW_TX_DONE()) {
             if (now > gap_conn.next_event_ticks)
@@ -773,20 +854,25 @@ static void mesh_gap_conn_poll(void) {
         return;
     }
     uint64_t close_ticks = gap_conn.next_event_ticks +
-        (uint64_t)(gap_conn.first_event ?
+        (uint64_t)(gap_conn.first_event || gap_conn.update_window_active ?
             gap_conn.window_size * 1250u : 1000u) *
-        BLE_GAP_HW_TICKS_FROM_US(1) + BLE_GAP_HW_TICKS_FROM_US(400) + widening_ticks;
+        HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400) + widening_ticks;
     if (now >= close_ticks) {
         if (gap_conn.rx_armed) BLE_GAP_HW_STOP();
         gap_conn.rx_armed = 0;
         uint32_t skipped = 0;
         do {
-            gap_conn.next_event_ticks += interval_ticks;
+            gap_conn.next_event_ticks +=
+                (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+            gap_conn.event_counter++;
+            if (gap_conn.update_pending &&
+                gap_conn.update_instant == gap_conn.event_counter)
+                gap_connection_update_apply(0);
             skipped++;
         } while (now >= gap_conn.next_event_ticks +
-                 (uint64_t)(gap_conn.first_event ?
+                 (uint64_t)(gap_conn.first_event || gap_conn.update_window_active ?
                      gap_conn.window_size * 1250u : 1000u) *
-                 BLE_GAP_HW_TICKS_FROM_US(1) + BLE_GAP_HW_TICKS_FROM_US(400) + widening_ticks);
+                 HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400) + widening_ticks);
         uint32_t extra_hops = skipped - gap_conn.channel_selected;
         gap_conn.unmapped_channel =
             (gap_conn.unmapped_channel +
@@ -794,7 +880,7 @@ static void mesh_gap_conn_poll(void) {
         gap_conn.channel_selected = 0;
     }
     uint64_t open_ticks = gap_conn.next_event_ticks;
-    uint64_t early_ticks = BLE_GAP_HW_TICKS_FROM_US(200) + widening_ticks;
+    uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
     if (open_ticks > early_ticks) open_ticks -= early_ticks;
     if (gap_conn.rx_armed || now < open_ticks) return;
 
