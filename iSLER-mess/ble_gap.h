@@ -6,7 +6,8 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Add connectable and directed legacy advertising plus address selection.
+// - Add connectable and directed legacy advertising with Link Layer connection
+//   support. Advertising cannot accept CONNECT_IND until that support exists.
 // - Add Central/Peripheral connection procedures and connection lifecycle
 //   management; this requires Link Layer connection-state and data-channel support.
 // - Add identity/private address management, RPA resolution, and privacy filters.
@@ -43,18 +44,23 @@ typedef struct {
 } mesh_gap_radio_packet;
 
 void BLE_GAP_RADIO_INIT(void);
-int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len);
+// A null random_address selects the controller's public address.
+int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len,
+                           const uint8_t *random_address);
 int BLE_GAP_RADIO_TAKE_PACKET(mesh_gap_radio_packet *packet);
 void BLE_GAP_RADIO_SCAN_POLL(void);
 
 static struct {
     uint8_t enabled, pdu_type, data_len, scan_response_len;
+    uint8_t address_type, address[6];
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
     uint8_t scan_response[MESH_GAP_ADV_DATA_MAX];
 } gap_advertising;
 
+static uint8_t gap_own_address_type;
+static uint8_t gap_random_address[6];
 static uint8_t gap_scanning;
 static uint8_t gap_active_scanning;
 static uint8_t gap_scan_generation;
@@ -71,6 +77,30 @@ static struct {
 static uint8_t gap_scan_seen_count, gap_scan_seen_next;
 static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
 static uint8_t gap_scan_response_address[6];
+
+// Select a static random address for GAP advertising and active scanning.
+// Address bytes are in advertising PDU order (least significant byte first).
+int mesh_gap_set_static_random_address(const uint8_t address[6]) {
+    if (!address || gap_advertising.enabled || gap_scanning ||
+        (address[5] & 0xc0) != 0xc0) return 0;
+    uint8_t all_zero = 1, all_one = 1;
+    for (uint8_t i = 0; i < 6; i++) {
+        uint8_t bits = i == 5 ? address[i] & 0x3f : address[i];
+        if (bits) all_zero = 0;
+        if (bits != (i == 5 ? 0x3f : 0xff)) all_one = 0;
+    }
+    if (all_zero || all_one) return 0;
+    memcpy(gap_random_address, address, 6);
+    gap_own_address_type = 1;
+    return 1;
+}
+
+// Use the controller's factory public address for GAP advertising and scanning.
+int mesh_gap_use_public_address(void) {
+    if (gap_advertising.enabled || gap_scanning) return 0;
+    gap_own_address_type = 0;
+    return 1;
+}
 
 // Configure each scan window and the interval between window starts, in ms.
 // General discovery accepts general and limited devices; limited accepts only limited.
@@ -117,6 +147,9 @@ static inline int BLE_GAP_ADVERTISING_START(uint8_t pdu_type,
     if (scan_response_len)
         memcpy(gap_advertising.scan_response, scan_response, scan_response_len);
     gap_advertising.pdu_type = pdu_type;
+    gap_advertising.address_type = gap_own_address_type;
+    if (gap_own_address_type)
+        memcpy(gap_advertising.address, gap_random_address, 6);
     gap_advertising.data_len = (uint8_t)len;
     gap_advertising.scan_response_len = (uint8_t)scan_response_len;
     gap_advertising.interval_ms = interval_ms;
@@ -191,6 +224,10 @@ static inline const uint8_t *BLE_GAP_RADIO_ADVERTISING_DATA(void) {
 
 static inline uint8_t BLE_GAP_RADIO_ADVERTISING_PDU_TYPE(void) {
     return gap_advertising.pdu_type;
+}
+
+static inline const uint8_t *BLE_GAP_RADIO_ADVERTISING_RANDOM_ADDRESS(void) {
+    return gap_advertising.address_type ? gap_advertising.address : NULL;
 }
 
 static inline uint8_t BLE_GAP_RADIO_ADVERTISING_DATA_LEN(void) {

@@ -183,11 +183,14 @@ void BLE_GAP_RADIO_RX_CALLBACK(void) {
         memcpy(gap_radio_scan_adv_frame, frame, (size_t)frame[1] + 2);
         gap_radio_scan_adv_rssi = (int8_t)iSLERRSSI();
         gap_radio_scan_adv_ready = 1;
-        gap_radio_scan_request[0] = (uint8_t)(0x03 | (advertiser_type << 7));
+        gap_radio_scan_request[0] = (uint8_t)(0x03 |
+            (gap_own_address_type << 6) | (advertiser_type << 7));
         gap_radio_scan_request[1] = 12;
         const uint8_t *local_address = (const uint8_t *)ROM_CFG_MAC_ADDR;
         for (uint8_t i = 0; i < 6; i++) {
-            gap_radio_scan_request[7 - i] = local_address[i];
+            if (gap_own_address_type)
+                gap_radio_scan_request[2 + i] = gap_random_address[i];
+            else gap_radio_scan_request[7 - i] = local_address[i];
             gap_radio_scan_request[8 + i] = frame[2 + i];
         }
 #ifdef CH571_CH573
@@ -210,10 +213,11 @@ void BLE_GAP_RADIO_RX_CALLBACK(void) {
         return;
     }
     if (gap_radio_scannable_event && frame[1] == 12 &&
-        (frame[0] & 0x0f) == 0x03 && !(frame[0] & 0x80) &&
+        (frame[0] & 0x0f) == 0x03 &&
+        ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0) {
         uint8_t response_len = BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN();
-        gap_radio_scan_response_frame[0] = 0x04;
+        gap_radio_scan_response_frame[0] = 0x04 | (gap_radio_adv_frame[0] & 0x40);
         gap_radio_scan_response_frame[1] = 6 + response_len;
         memcpy(gap_radio_scan_response_frame + 2, gap_radio_adv_frame + 2, 6);
         if (response_len) memcpy(gap_radio_scan_response_frame + 8,
@@ -250,14 +254,19 @@ void BLE_GAP_RADIO_INIT(void) {
     gap_radio_scan_response_started = 0;
 }
 
-int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len) {
+int BLE_GAP_RADIO_TRANSMIT(uint8_t pdu_type, const uint8_t *data, uint8_t len,
+                           const uint8_t *random_address) {
     if ((pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
         len > MESH_GAP_ADV_DATA_MAX ||
         (pdu_type == 0x06 && !BLE_GAP_RADIO_SCAN_RESPONSE_DATA_LEN())) return 0;
     const uint8_t *address = (const uint8_t *)ROM_CFG_MAC_ADDR;
-    gap_radio_adv_frame[0] = pdu_type;
+    gap_radio_adv_frame[0] = pdu_type | (random_address ? 0x40 : 0);
     gap_radio_adv_frame[1] = pdu_type == 0x06 ? 6 + len : 0;
-    for (uint8_t i = 0; i < 6; i++) gap_radio_adv_frame[7 - i] = address[i];
+    for (uint8_t i = 0; i < 6; i++) {
+        if (random_address)
+            gap_radio_adv_frame[2 + i] = random_address[i];
+        else gap_radio_adv_frame[7 - i] = address[i];
+    }
     if (len) memcpy(gap_radio_adv_frame + 8, data, len);
     gap_radio_rx_armed = 0;
     if (pdu_type == 0x02) {
@@ -551,7 +560,10 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         const uint8_t *ad_data = send_gap ? BLE_GAP_RADIO_ADVERTISING_DATA() :
             radio_queue[slot].data;
         uint8_t pdu_type = send_gap ? BLE_GAP_RADIO_ADVERTISING_PDU_TYPE() : 0x02;
-        if (!BLE_GAP_RADIO_TRANSMIT(pdu_type, ad_data, ad_len)) return -1;
+        const uint8_t *random_address = send_gap ?
+            BLE_GAP_RADIO_ADVERTISING_RANDOM_ADDRESS() : NULL;
+        if (!BLE_GAP_RADIO_TRANSMIT(pdu_type, ad_data, ad_len,
+                                     random_address)) return -1;
         uint32_t sent_at = GET_MILLIS();
         uint8_t jitter = (uint8_t)(rand() % 11);
         if (send_gap) BLE_GAP_RADIO_ADVERTISING_SENT(sent_at, jitter);
