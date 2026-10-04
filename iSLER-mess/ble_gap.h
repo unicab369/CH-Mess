@@ -8,8 +8,8 @@
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware and add remaining Link
 //   Layer control.
-// - Add Central connection initiation and connection lifecycle management.
-// - Add identity/private address management, RPA resolution, and privacy filters.
+// - Verify Central connection initiation and event timing on hardware; add
+//   identity/private address management, RPA resolution, and privacy filters.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
@@ -51,6 +51,7 @@ void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
 void BLE_GAP_HW_PACKET_READY(void);
 void BLE_GAP_HW_PACKET_CLEAR(void);
 uint8_t BLE_GAP_HW_RANDOM_JITTER(void);
+void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
 
 // A legacy advertising or scan response report from GAP scanning.
 typedef struct {
@@ -81,7 +82,7 @@ static struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t local_terminate_queued, local_terminate_pending;
-    uint8_t local_terminate_reason;
+    uint8_t local_terminate_reason, central_role, central_anchor_set;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -155,6 +156,8 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.version_ind_sent = 0;
     gap_conn.local_terminate_queued = 0;
     gap_conn.local_terminate_pending = 0;
+    gap_conn.central_role = 0;
+    gap_conn.central_anchor_set = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -215,6 +218,52 @@ static struct {
 static uint8_t gap_scan_seen_count, gap_scan_seen_next;
 static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
 static uint8_t gap_scan_response_address[6];
+static struct {
+    uint8_t active, peer_type, peer_address[6], request[36];
+    uint32_t deadline_ms;
+} gap_central_connect;
+
+static int gap_access_address_valid(uint32_t address) {
+    if (address == BLE_ADV_ACCESS_ADDRESS ||
+        (address ^ BLE_ADV_ACCESS_ADDRESS) == 0 ||
+        ((address ^ BLE_ADV_ACCESS_ADDRESS) &
+         ((address ^ BLE_ADV_ACCESS_ADDRESS) - 1)) == 0) return 0;
+    uint8_t bytes_equal = 1;
+    for (uint8_t i = 1; i < 4; i++)
+        if ((uint8_t)(address >> (8 * i)) != (uint8_t)address)
+            bytes_equal = 0;
+    if (bytes_equal) return 0;
+    uint8_t transitions = 0, msb_transitions = 0, run = 1;
+    uint8_t previous = address & 1;
+    for (uint8_t bit = 1; bit < 32; bit++) {
+        uint8_t value = (address >> bit) & 1;
+        if (value != previous) {
+            transitions++;
+            run = 1;
+            if (bit >= 27) msb_transitions++;
+        } else if (++run > 6) {
+            return 0;
+        }
+        previous = value;
+    }
+    return transitions <= 24 && msb_transitions >= 2;
+}
+
+static int gap_access_address_generate(uint32_t *address) {
+    if (!address) return 0;
+    for (uint8_t attempt = 0; attempt < 32; attempt++) {
+        uint8_t bytes[4];
+        BLE_GAP_HW_RANDOM_BYTES(bytes, sizeof(bytes));
+        uint32_t candidate = (uint32_t)bytes[0] |
+            (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 |
+            (uint32_t)bytes[3] << 24;
+        if (gap_access_address_valid(candidate)) {
+            *address = candidate;
+            return 1;
+        }
+    }
+    return 0;
+}
 
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
@@ -277,7 +326,7 @@ static inline int gap_advertising_start(uint8_t pdu_type,
     const uint8_t *data, size_t len, const uint8_t *scan_response,
     size_t scan_response_len, const uint8_t *target_address,
     uint8_t target_type, uint16_t interval_ms) {
-    if (mesh_gap_conn_busy() ||
+    if (mesh_gap_conn_busy() || gap_central_connect.active ||
         (pdu_type != 0x00 && pdu_type != 0x01 &&
          pdu_type != 0x02 && pdu_type != 0x06) ||
         !gap_ad_data_valid(data, len) ||
@@ -345,6 +394,7 @@ static void gap_scan_start(uint8_t active) {
     gap_scan_head = gap_scan_count = 0;
     gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
+    gap_central_connect.active = 0;
     gap_scanning = 1;
     gap_active_scanning = active;
     gap_scan_generation++;
@@ -363,7 +413,58 @@ void mesh_gap_active_scan_start(void) {
 void mesh_gap_scan_stop(void) {
     gap_scanning = 0;
     gap_active_scanning = 0;
+    gap_central_connect.active = 0;
     gap_scan_generation++;
+}
+
+// Initiate a legacy LE connection to a public or random-address advertiser.
+// Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
+int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
+    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
+        gap_advertising.enabled) return 0;
+    uint32_t access_address;
+    if (!gap_access_address_generate(&access_address)) return 0;
+    memset(gap_central_connect.request, 0,
+           sizeof(gap_central_connect.request));
+    gap_central_connect.request[0] = 0x05 |
+        (gap_own_address_type << 6) | (peer_type << 7); // CONNECT_IND
+    gap_central_connect.request[1] = 34;
+    uint8_t public_address[6];
+    BLE_GAP_HW_PUBLIC_ADDRESS(public_address);
+    memcpy(gap_central_connect.request + 2,
+           gap_own_address_type ? gap_random_address : public_address, 6);
+    memcpy(gap_central_connect.request + 8, peer_address, 6);
+    gap_central_connect.request[14] = (uint8_t)access_address;
+    gap_central_connect.request[15] = (uint8_t)(access_address >> 8);
+    gap_central_connect.request[16] = (uint8_t)(access_address >> 16);
+    gap_central_connect.request[17] = (uint8_t)(access_address >> 24);
+    uint8_t crc_init[3];
+    BLE_GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
+    memcpy(gap_central_connect.request + 18, crc_init, sizeof(crc_init));
+    gap_central_connect.request[21] = 1; // transmit window size: 1.25 ms
+    gap_central_connect.request[24] = 24; // interval: 30 ms
+    gap_central_connect.request[28] = 200; // supervision timeout: 2 s
+    memset(gap_central_connect.request + 30, 0xff, 4);
+    gap_central_connect.request[34] = 0x1f; // data channels 0 through 36
+    gap_central_connect.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+    gap_central_connect.peer_type = peer_type;
+    memcpy(gap_central_connect.peer_address, peer_address, 6);
+    gap_central_connect.active = 1;
+    gap_central_connect.deadline_ms = GET_MILLIS() + 10000;
+    gap_scanning = 1;
+    gap_active_scanning = 0;
+    gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_generation++;
+    return 1;
+}
+
+int mesh_gap_connecting(void) {
+    return gap_central_connect.active;
+}
+
+void mesh_gap_connect_cancel(void) {
+    if (gap_central_connect.active) mesh_gap_scan_stop();
 }
 
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
@@ -499,6 +600,8 @@ static void gap_connection_end(void) {
     gap_conn.version_ind_sent = 0;
     gap_conn.local_terminate_queued = 0;
     gap_conn.local_terminate_pending = 0;
+    gap_conn.central_role = 0;
+    gap_conn.central_anchor_set = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
 }
 
@@ -514,9 +617,14 @@ void gap_hw_mesh_received(void) {
         }
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.rx_armed = 0;
-        gap_conn.next_event_ticks = received_ticks -
-            HW_TICKS_FROM_US(((uint32_t)frame[1] + 10) * 8) +
-            (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+        if (gap_conn.central_role) {
+            gap_conn.next_event_ticks +=
+                (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+        } else {
+            gap_conn.next_event_ticks = received_ticks -
+                HW_TICKS_FROM_US(((uint32_t)frame[1] + 10) * 8) +
+                (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+        }
         gap_conn.first_event = 0;
         gap_conn.update_window_active = 0;
         gap_conn.channel_selected = 0;
@@ -745,6 +853,34 @@ unknown_control_pdu:
         return;
     }
     uint8_t pdu_type = frame[0] & 0x0f;
+    if (gap_central_connect.active &&
+        (pdu_type == 0x00 || pdu_type == 0x01) &&
+        frame[1] >= 6 && frame[1] <= 37 &&
+        ((frame[0] >> 6) & 1) == gap_central_connect.peer_type &&
+        memcmp(frame + 2, gap_central_connect.peer_address, 6) == 0 &&
+        (pdu_type != 0x01 || (frame[1] == 12 &&
+         ((frame[0] >> 7) & 1) == gap_own_address_type &&
+         memcmp(frame + 8, gap_central_connect.request + 2, 6) == 0))) {
+        uint8_t channel = 37 + gap_radio_rx_channel_index;
+        BLE_GAP_HW_STOP();
+        gap_radio_rx_armed = 0;
+        if (BLE_GAP_HW_ADV_TX(gap_central_connect.request,
+                              sizeof(gap_central_connect.request), channel) &&
+            gap_connection_accept(gap_central_connect.request,
+                                  BLE_GAP_HW_TICKS(),
+                                  HW_TICKS_FROM_US(1250))) {
+            gap_conn.central_role = 1;
+            gap_conn.central_anchor_set = 0;
+            gap_conn.peer_sca_ppm = 500; // conservative until clock data exists
+            gap_central_connect.active = 0;
+            gap_scanning = 0;
+            gap_active_scanning = 0;
+            gap_scan_generation++;
+            gap_radio_rx_ready = 0;
+            BLE_GAP_HW_PACKET_CLEAR();
+        }
+        return;
+    }
     if (gap_active_scanning && !gap_radio_advertising_rx_event &&
         !gap_radio_active_scan_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
         frame[1] >= 6 && frame[1] <= 37) {
@@ -1023,17 +1159,36 @@ static void mesh_gap_conn_poll(void) {
         gap_conn.channel_map[unmapped / 8] & (1u << (unmapped % 8)) ?
         unmapped : gap_conn.used_channels[unmapped %
                                                    gap_conn.used_count];
-    BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
-                           NULL, 0);
     BLE_GAP_HW_CRC_INIT(gap_conn.crc_init);
+    if (gap_conn.central_role) {
+        if (!gap_conn.central_anchor_set) {
+            gap_conn.next_event_ticks = now;
+            gap_conn.central_anchor_set = 1;
+        }
+        if (!gap_conn.tx_pending) {
+            gap_conn_tx_frame[0] = 0x01;
+            gap_conn_tx_frame[1] = 0;
+            gap_conn.tx_pending = 1;
+        }
+        gap_conn_tx_frame[0] = (gap_conn_tx_frame[0] & 0x03) |
+            (gap_conn.expected_rx_sn << 2) | (gap_conn.tx_sn << 3);
+        BLE_GAP_HW_TX_CLEAR_DONE();
+        BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
+                               gap_conn_tx_frame, 1);
+        BLE_GAP_HW_LINK_TX();
+        gap_conn.rx_armed = 1;
+        gap_conn.channel_selected = 1;
+        return;
+    }
+    BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0);
     BLE_GAP_HW_LINK_RX();
     gap_conn.rx_armed = 1;
     gap_conn.channel_selected = 1;
 }
 
-// True after the first data-channel packet has established a Peripheral link.
+// True after Central initiation or the first received Peripheral data packet.
 int mesh_gap_connected(void) {
-    return gap_conn.active && !gap_conn.first_event;
+    return gap_conn.active && (gap_conn.central_role || !gap_conn.first_event);
 }
 
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
@@ -1116,6 +1271,12 @@ int gap_hw_mesh_take_ad(const uint8_t *types, size_t type_count,
 
 void gap_hw_mesh_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+    if (gap_central_connect.active &&
+        (int32_t)(now - gap_central_connect.deadline_ms) >= 0) {
+        gap_central_connect.active = 0;
+        gap_scanning = 0;
+        gap_scan_generation++;
+    }
     if (gap_radio_scan_generation != gap_scan_generation) {
         if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
         gap_radio_rx_armed = 0;

@@ -183,6 +183,13 @@ void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
 void BLE_GAP_HW_PACKET_READY(void) { rx_ready = 1; }
 void BLE_GAP_HW_PACKET_CLEAR(void) { rx_ready = 0; }
 uint8_t BLE_GAP_HW_RANDOM_JITTER(void) { return (uint8_t)(rand() % 11); }
+void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
+    for (size_t i = 0; i < len;) {
+        uint32_t value = (uint32_t)rand();
+        for (uint8_t byte = 0; byte < 4 && i < len; byte++, i++)
+            out[i] = (uint8_t)(value >> (8 * byte));
+    }
+}
 
 static void mesh_radio_init(void) {
     gap_hw_mesh_init();
