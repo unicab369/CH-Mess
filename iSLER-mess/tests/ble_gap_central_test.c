@@ -638,6 +638,131 @@ static void test_connection_timing_updates(void) {
     gap_connection_end();
 }
 
+static void receive_test_control(uint8_t opcode, const uint8_t *data, uint8_t len) {
+    gap_conn.rx_armed = 1;
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 3 | (gap_conn.expected_rx_sn << 3) | ((gap_conn.tx_sn ^ 1) << 2);
+    rx_frame[1] = len + 1;
+    rx_frame[2] = opcode;
+    if (len) memcpy(rx_frame + 3, data, len);
+    gap_hw_mesh_received();
+}
+
+static void test_connection_parameter_requests(void) {
+    const uint8_t features[8] = {0x0e};
+    uint8_t parameters[23] = {48, 0, 60, 0, 1, 0, 44, 1, 10, 0, 0};
+    memset(parameters + 11, 0xff, 12);
+    assert(!mesh_gap_connection_request(48, 60, 1, 300));
+    start_test_central_link();
+    assert(!mesh_gap_connection_request(5, 60, 1, 300));
+    assert(!mesh_gap_connection_request(61, 60, 1, 300));
+    assert(!mesh_gap_connection_request(48, 3201, 1, 300));
+    assert(!mesh_gap_connection_request(48, 60, 500, 300));
+    assert(!mesh_gap_connection_request(48, 60, 1, 9));
+    assert(!mesh_gap_connection_request(48, 60, 1, 3201));
+    assert(!mesh_gap_connection_request(40, 40, 0, 10));
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    assert(mesh_gap_connection_status() == MESH_GAP_CONNECTION_PENDING);
+    assert(!mesh_gap_connection_update(48, 1, 300));
+    assert(!mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    assert(gap_conn.feature_request_pending && gap_conn_tx_frame[2] == 0x08);
+    receive_test_control(0x09, features, sizeof(features));
+    assert(gap_conn.features_known && gap_conn.params_pending);
+    assert(gap_conn_tx_frame[2] == 0x0f && gap_conn_tx_frame[1] == 24);
+    assert(memcmp(gap_conn_tx_frame + 3, parameters, 8) == 0);
+    for (uint8_t i = 14; i < 26; i++) assert(gap_conn_tx_frame[i] == 0xff);
+    receive_test_control(0x10, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0 && gap_conn.update_pending);
+    assert(gap_conn.update_interval == 50); // Honor preferred periodicity.
+    uint16_t instant = gap_conn.update_instant;
+    while (gap_conn.event_counter != instant) receive_test_link_packet(1);
+    assert(gap_conn.interval == 50 && mesh_gap_connection_status() == 0);
+    gap_connection_end();
+
+    // A Peripheral may initiate the request but waits for the Central's update.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x0e);
+    receive_test_control(0x09, features, sizeof(features));
+    assert(gap_conn_tx_frame[2] == 0x0f && gap_conn.params_pending);
+    receive_test_control(0x11, (uint8_t[]){0x08, 0x20}, 2);
+    assert(gap_conn.params_pending); // Unrelated rejection cannot cancel it.
+    receive_test_control(0x11, (uint8_t[]){0x0f, 0x20}, 2);
+    assert(!gap_conn.params_pending && mesh_gap_connection_status() == 0x20);
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    uint8_t update[11] = {1, 0, 0, 54, 0, 1, 0, 44, 1, 0, 0};
+    instant = gap_conn.event_counter + 7;
+    update[9] = (uint8_t)instant;
+    update[10] = (uint8_t)(instant >> 8);
+    receive_test_control(0x00, update, sizeof(update));
+    assert(!gap_conn.params_pending && gap_conn.update_pending);
+    while (gap_conn.event_counter != instant) receive_test_link_packet(1);
+    assert(gap_conn.interval == 54 && mesh_gap_connection_status() == 0);
+    gap_connection_end();
+
+    // Responding to a Central request sends PARAM_RSP, never UPDATE_IND.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    receive_test_control(0x08, features, sizeof(features));
+    assert(gap_conn_tx_frame[2] == 9 && gap_conn_tx_frame[3] == 0x0e);
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    receive_test_control(0x0f, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0x10);
+    assert(memcmp(gap_conn_tx_frame + 3, parameters, sizeof(parameters)) == 0);
+    assert(gap_conn.params_pending && !gap_conn.params_local);
+    assert(mesh_gap_connection_status() == 0x23); // Central wins the collision.
+    gap_connection_end();
+
+    // A Central accepts a Peripheral request directly with UPDATE_IND.
+    start_test_central_link();
+    receive_test_control(0x0e, features, sizeof(features));
+    assert(gap_conn_tx_frame[2] == 9 && gap_conn_tx_frame[3] == 0x0e);
+    parameters[0] = 5;
+    receive_test_control(0x0f, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    parameters[0] = 48;
+    parameters[11] = 1; parameters[12] = 0;
+    parameters[13] = 1; parameters[14] = 0; // Duplicate offset hints.
+    receive_test_control(0x0f, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    memset(parameters + 11, 0xff, 12);
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    receive_test_control(0x0f, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x23);
+    assert(gap_conn.params_pending && gap_conn.params_local);
+    receive_test_control(0x07, (uint8_t[]){0x0f}, 1);
+    assert(!gap_conn.params_pending && mesh_gap_connection_status() == 0x1a);
+    gap_connection_end();
+    start_test_central_link();
+    receive_test_control(0x0f, parameters, sizeof(parameters));
+    assert(gap_conn_tx_frame[2] == 0 && gap_conn.update_pending);
+    gap_connection_end();
+
+    start_test_central_link();
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    receive_test_control(0x09, (uint8_t[8]){0}, 8);
+    assert(!gap_conn.local_params_queued && mesh_gap_connection_status() == 0x1a);
+    assert(!mesh_gap_connection_request(48, 60, 1, 300));
+    gap_connection_end();
+
+    // A responsive link with a stalled procedure still has a 40-second timeout.
+    start_test_central_link();
+    gap_conn.features_known = 1; gap_conn.peer_features = 0x0e;
+    assert(mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    now_ms = gap_conn.params_started_ms + 40000;
+    gap_conn.last_rx_ms = now_ms;
+    mesh_gap_conn_poll();
+    assert(!gap_conn.active && mesh_gap_connection_status() == 0x22);
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -651,5 +776,6 @@ int main(void) {
     test_peer_local_keys();
     test_nonresolvable_private_addresses();
     test_connection_timing_updates();
+    test_connection_parameter_requests();
     return 0;
 }
