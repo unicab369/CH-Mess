@@ -884,6 +884,90 @@ static void test_data_length(void) {
     radio_data_max = MESH_GAP_CONN_DATA_MAX;
 }
 
+static void test_channel_map_updates(void) {
+    const uint8_t channels[5] = {3, 0, 0, 0, 0};
+    const uint8_t invalid[5] = {3, 0, 0, 0, 0x20};
+    assert(!mesh_gap_channel_map_set(channels));
+    start_test_central_link();
+    assert(!mesh_gap_channel_map_set(NULL));
+    assert(!mesh_gap_channel_map_set((uint8_t[5]){0}));
+    assert(!mesh_gap_channel_map_set((uint8_t[5]){1}));
+    assert(!mesh_gap_channel_map_set(invalid));
+    assert(mesh_gap_channel_map_set(gap_conn.channel_map));
+    assert(!gap_conn.local_map_queued && mesh_gap_connection_status() == 0);
+    uint8_t old_map[5];
+    memcpy(old_map, gap_conn.channel_map, 5);
+    assert(mesh_gap_channel_map_set(channels));
+    assert(mesh_gap_connection_status() == MESH_GAP_CONNECTION_PENDING);
+    assert(!mesh_gap_channel_map_set(channels));
+    assert(!mesh_gap_connection_update(48, 0, 200));
+    assert(!mesh_gap_connection_request(48, 60, 0, 200));
+    assert(!mesh_gap_data_length_set(27));
+    // Earlier unacknowledged packets delay construction of the map PDU.
+    receive_test_link_packet(0);
+    assert(gap_conn.local_map_queued && !gap_conn.channel_map_update_pending);
+    gap_conn.event_counter = 0xfffe;
+    gap_conn.latency = 3;
+    receive_test_link_packet(1);
+    assert(!gap_conn.local_map_queued && gap_conn.channel_map_update_pending);
+    assert(gap_conn_tx_frame[2] == 0x01 && gap_conn_tx_frame[1] == 8);
+    assert(memcmp(gap_conn_tx_frame + 3, channels, 5) == 0);
+    uint16_t instant = (uint16_t)gap_conn_tx_frame[8] |
+        (uint16_t)gap_conn_tx_frame[9] << 8;
+    assert(instant == 23); // The Instant wraps safely through event zero.
+    assert(memcmp(gap_conn.channel_map, old_map, 5) == 0);
+    uint8_t pending_frame[10];
+    memcpy(pending_frame, gap_conn_tx_frame, sizeof(pending_frame));
+    receive_test_link_packet(0);
+    assert(memcmp(pending_frame + 1, gap_conn_tx_frame + 1, 9) == 0);
+    while (gap_conn.event_counter != instant) {
+        assert(memcmp(gap_conn.channel_map, old_map, 5) == 0);
+        receive_test_link_packet(1);
+    }
+    assert(!gap_conn.channel_map_update_pending && mesh_gap_connection_status() == 0);
+    assert(memcmp(gap_conn.channel_map, channels, 5) == 0);
+    assert(gap_conn.used_count == 2 && gap_conn.used_channels[0] == 0 &&
+        gap_conn.used_channels[1] == 1);
+    gap_connection_end();
+
+    // A peer timing request must not start a second procedure before our map is sent.
+    start_test_central_link();
+    assert(mesh_gap_channel_map_set(channels));
+    uint8_t timing[23] = {48, 0, 60, 0, 0, 0, 200, 0};
+    memset(timing + 11, 0xff, 12);
+    receive_test_control(0x0f, timing, sizeof(timing));
+    assert(gap_conn_tx_frame[2] == 0x11 && !gap_conn.update_pending);
+    assert(gap_conn.local_map_queued && mesh_gap_connection_status() == MESH_GAP_CONNECTION_PENDING);
+    gap_connection_end();
+
+    // The Central foreground send path also builds a queued map update.
+    start_test_central_link();
+    assert(mesh_gap_channel_map_set(channels));
+    gap_conn.tx_pending = gap_conn.event_replied = gap_conn.rx_armed = 0;
+    now_ms = (uint32_t)((gap_conn.next_event_ticks + 999) / 1000);
+    mesh_gap_conn_poll();
+    assert(gap_conn_tx_frame[2] == 0x01 && gap_conn.channel_map_update_pending);
+    // Reaching the Instant without an ACK must close the link.
+    gap_conn.event_counter = gap_conn.channel_map_update_instant;
+    gap_connection_update_apply(0);
+    assert(!gap_conn.active && mesh_gap_connection_status() == 0x28);
+    assert(!gap_conn.local_map_queued && !gap_conn.channel_map_update_pending);
+
+    // Only the Central may initiate; a Peripheral applies a received update.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    assert(!mesh_gap_channel_map_set(channels));
+    uint8_t parameters[7] = {3, 0, 0, 0, 0, 0, 0};
+    instant = gap_conn.event_counter + 7;
+    parameters[5] = (uint8_t)instant;
+    parameters[6] = (uint8_t)(instant >> 8);
+    receive_test_control(0x01, parameters, sizeof(parameters));
+    assert(gap_conn.channel_map_update_pending);
+    while (gap_conn.event_counter != instant) receive_test_link_packet(1);
+    assert(memcmp(gap_conn.channel_map, channels, 5) == 0);
+    gap_connection_end();
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -899,5 +983,6 @@ int main(void) {
     test_connection_timing_updates();
     test_connection_parameter_requests();
     test_data_length();
+    test_channel_map_updates();
     return 0;
 }

@@ -9,47 +9,55 @@ The Generic Access Profile (GAP) defines how a BLE device advertises, discovers 
 | Peripheral | Advertises and accepts a connection initiated by a Central. |
 | Central | Scans and initiates a connection to a Peripheral. |
 
-## Broadcaster features
+The checklists below describe a practical legacy-feature target for this project. `[x]` means code exists; it still may need hardware qualification. `[ ] TODO` marks work that remains. Extended and periodic advertising are optional additions, not required for the legacy target.
 
-| Feature | Description |
+## Broadcaster
+
+| Feature | Status / remaining work |
 | --- | --- |
-| Non-connectable advertising | Sends data without allowing a connection. |
-| Scannable advertising | Allows an Observer to request extra scan response data. |
-| Extended advertising | Sends larger advertising data using secondary advertising channels. |
-| Periodic advertising | Sends advertisements at a regular interval for synchronized reception. |
-| Private address | Uses a changeable address to reduce tracking. |
+| Non-connectable advertising | [x] Legacy advertising with application data. |
+| Scannable advertising | [x] Scan response support. |
+| Advertising data validation | [x] Legacy payload size and structure checks. |
+| Advertising timing and channel behavior | [ ] TODO: Verify event timing and channel rotation on hardware. |
+| Private address use and rotation | [x] Address generation and rotation; [ ] TODO: Verify rotation and peer compatibility on hardware. |
+| Extended advertising | [ ] TODO: Add only if the target controller and product need it. |
+| Periodic advertising | [ ] TODO: Add only if synchronized broadcasts are needed. |
 
-## Observer features
+## Observer
 
-| Feature | Description |
+| Feature | Status / remaining work |
 | --- | --- |
-| Passive scanning | Receives advertising packets without transmitting requests. |
-| Active scanning | Requests and receives scan response data. |
-| Filtering | Limits which advertising devices are reported. |
-| Extended scanning | Receives extended advertisements on primary and secondary channels. |
-| Periodic synchronization | Synchronizes reception to a periodic advertising train. |
-| Private address resolution | Recognizes a peer that uses a resolvable private address. |
+| Passive scanning | [x] Legacy advertising reception and reports. |
+| Active scanning | [x] Scan request and scan response handling. |
+| Scan configuration | [x] Interval, window, discovery mode, and duplicate filtering. |
+| Identity and privacy filtering | [x] Identity lookup, resolvable private address handling, and configurable filters; [ ] TODO: Verify on hardware. |
+| Scan timing and channel behavior | [ ] TODO: Verify scan windows and channel rotation on hardware. |
+| Extended scanning and periodic synchronization | [ ] TODO: Optional features for a controller that supports them. |
 
-## Peripheral features
+## Peripheral
 
-| Feature | Description |
+| Feature | Status / remaining work |
 | --- | --- |
-| Connectable advertising | Announces availability for a Central to connect. |
-| Directed advertising | Advertises specifically to a known Central. |
-| Connection acceptance | Enters a connection when a Central initiates one. |
-| Connection data | Exchanges data over the established link. |
-| Pairing and bonding | Establishes security and can save keys for later connections. |
-| Connection parameter updates | Requests changes to connection timing or related link settings. |
+| Connectable and directed legacy advertising | [x] Advertising procedures are implemented. |
+| Private address and peer privacy | [x] Address selection and peer filtering; [ ] TODO: Verify rotation and filtering on hardware. |
+| Connection acceptance and data exchange | [x] Single-link connection state and data path. |
+| Link control and connection updates | [x] Basic control procedures and parameter updates. |
+| Connection event timing | [ ] TODO: Verify timing and recovery on hardware. |
+| Pairing, bonding, and link encryption | [ ] TODO: Integrate SMP and the required Link Layer encryption procedures. |
+| PHY updates | [ ] TODO: Add if supported by the radio and required by the product. |
+| Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
-## Central features
+## Central
 
-| Feature | Description |
+| Feature | Status / remaining work |
 | --- | --- |
-| Scanning | Finds advertising devices. |
-| Peer filtering | Selects which advertising devices may be considered. |
-| Connection initiation | Requests a connection to a connectable Peripheral. |
-| Connection management | Maintains the link and can request parameter changes. |
-| Pairing and bonding | Establishes security and can save keys for later connections. |
-| Private address resolution | Recognizes a peer that uses a resolvable private address. |
+| Scan for and select a peer | [x] Legacy scanning, peer matching, and privacy filtering. |
+| Private address use and peer resolution | [x] Local address selection and peer identity resolution; [ ] TODO: Verify on hardware. |
+| Initiate a connection | [x] Legacy connection request construction and scan-to-link transition. |
+| Connection data and control | [x] Uses the shared single-link connection engine. |
+| Connection event timing and lifecycle | [ ] TODO: Verify connection timing, failures, and recovery on hardware. |
+| Pairing, bonding, and link encryption | [ ] TODO: Integrate SMP and the required Link Layer encryption procedures. |
+| PHY updates | [ ] TODO: Add if supported by the radio and required by the product. |
+| Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
-Features shared by connected roles, such as pairing, use other parts of the BLE stack too. The features a device needs depend on its application; supporting a role does not require every optional feature in its row.
+Privacy procedures and pairing span roles and other BLE layers. Full product support also depends on the controller radio hooks and hardware timing; the checkmarks above describe code present in this project, not Bluetooth qualification.

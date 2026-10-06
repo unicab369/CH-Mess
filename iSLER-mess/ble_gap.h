@@ -13,7 +13,8 @@
 // - Add Link Layer encryption and PHY updates
 //   where supported.
 // - Later: Verify Central connection initiation and event timing on hardware;
-//   verify private address rotation and identity filters on hardware.
+//   verify private address rotation, identity filters, and negotiated larger
+//   data packets and Central channel-map updates on hardware.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
@@ -122,7 +123,7 @@ static struct {
     uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t window_size, update_pending, update_window_active, update_window_size;
     uint8_t channel_map_update_pending, pending_channel_map[5];
-    volatile uint8_t local_update_queued, local_params_queued;
+    volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
     uint8_t params_pending, params_local, connection_status;
     uint8_t features_known, peer_features, feature_request_pending;
     uint16_t params_min, params_max, params_latency, params_timeout;
@@ -197,7 +198,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.features_known = gap_conn.peer_features = 0;
     gap_conn.feature_request_pending = gap_conn.connection_status = 0;
     gap_conn.update_window_active = 0;
-    gap_conn.channel_map_update_pending = 0;
+    gap_conn.channel_map_update_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
     gap_conn.local_terminate_queued = 0;
@@ -863,7 +864,7 @@ static void gap_connection_end(void) {
     if (gap_conn.length_status == MESH_GAP_CONNECTION_PENDING)
         gap_conn.length_status = 0x08;
     gap_conn.update_window_active = 0;
-    gap_conn.channel_map_update_pending = 0;
+    gap_conn.channel_map_update_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
     gap_conn.local_terminate_queued = 0;
@@ -910,6 +911,15 @@ static void gap_connection_update_apply(uint8_t instant_packet_received) {
     }
     if (gap_conn.channel_map_update_pending &&
         gap_conn.channel_map_update_instant == gap_conn.event_counter) {
+        // An unacknowledged map change cannot be retried after its Instant;
+        // disconnect rather than let the two devices hop on different maps.
+        if (gap_conn.central_role && gap_conn.tx_pending &&
+            (gap_conn_tx_frame[0] & 3) == 3 && gap_conn_tx_frame[1] == 8 &&
+            gap_conn_tx_frame[2] == 0x01) {
+            gap_conn.connection_status = 0x28; // Instant passed.
+            gap_connection_end();
+            return;
+        }
         memcpy(gap_conn.channel_map, gap_conn.pending_channel_map,
                sizeof(gap_conn.channel_map));
         gap_conn.used_count = 0;
@@ -917,6 +927,8 @@ static void gap_connection_update_apply(uint8_t instant_packet_received) {
             if (gap_conn.channel_map[channel / 8] & (1u << (channel % 8)))
                 gap_conn.used_channels[gap_conn.used_count++] = channel;
         gap_conn.channel_map_update_pending = 0;
+        if (gap_conn.central_role && gap_conn.connection_status == MESH_GAP_CONNECTION_PENDING)
+            gap_conn.connection_status = 0;
     }
 }
 
@@ -943,6 +955,21 @@ static void gap_connection_update_send(void) {
     gap_conn.update_pending = 1;
     gap_conn.local_update_queued = 0;
     gap_conn.params_pending = gap_conn.params_local = 0;
+}
+
+// Build a Central channel-map update when the TX slot becomes available.
+// Choosing the Instant here keeps it ahead of retries of earlier packets.
+static void gap_channel_map_send(void) {
+    gap_conn.channel_map_update_instant = (uint16_t)(gap_conn.event_counter +
+        6u * (gap_conn.latency + 1) + 1);
+    gap_conn_tx_frame[0] = 3;
+    gap_conn_tx_frame[1] = 8;
+    gap_conn_tx_frame[2] = 0x01; // LL_CHANNEL_MAP_IND
+    memcpy(gap_conn_tx_frame + 3, gap_conn.pending_channel_map, 5);
+    gap_conn_tx_frame[8] = (uint8_t)gap_conn.channel_map_update_instant;
+    gap_conn_tx_frame[9] = (uint8_t)(gap_conn.channel_map_update_instant >> 8);
+    gap_conn.channel_map_update_pending = 1;
+    gap_conn.local_map_queued = 0;
 }
 
 // Start feature exchange if needed, then send the application's timing range.
@@ -1198,7 +1225,7 @@ void gap_hw_mesh_received(void) {
                         goto reject_parameters;
                     error = 0x23; // LL procedure collision.
                     if (gap_conn.update_pending || gap_conn.local_update_queued ||
-                        gap_conn.channel_map_update_pending ||
+                        gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
                         (frame[2] == 0x0f &&
                          ((gap_conn.params_pending && !gap_conn.params_local) ||
                           (gap_conn.central_role &&
@@ -1445,6 +1472,9 @@ unknown_control_pdu:
             if (gap_conn_tx_frame[1] == 0 && gap_conn.local_update_queued &&
                 !gap_conn.terminate_after_reply)
                 gap_connection_update_send();
+            if (gap_conn_tx_frame[1] == 0 && gap_conn.local_map_queued &&
+                !gap_conn.terminate_after_reply)
+                gap_channel_map_send();
             if (gap_conn_tx_frame[1] == 0 && gap_conn.local_params_queued &&
                 !gap_conn.feature_request_pending && !gap_conn.terminate_after_reply)
                 gap_connection_request_send();
@@ -1845,6 +1875,9 @@ static void mesh_gap_conn_poll(void) {
             if (gap_conn.local_update_queued && !gap_conn.local_terminate_queued &&
                 !gap_conn.local_terminate_pending)
                 gap_connection_update_send();
+            else if (gap_conn.local_map_queued && !gap_conn.local_terminate_queued &&
+                !gap_conn.local_terminate_pending)
+                gap_channel_map_send();
             else if (gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_connection_request_send();
@@ -1883,7 +1916,8 @@ int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.length_queued || gap_conn.length_pending ||
-        gap_conn.channel_map_update_pending || gap_conn.terminate_after_reply ||
+        gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
+        gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         interval < 6 || interval > 3200 || latency > 499 ||
         timeout < 10 || timeout > 3200 ||
@@ -1905,7 +1939,8 @@ int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.length_queued || gap_conn.length_pending ||
-        gap_conn.channel_map_update_pending || gap_conn.terminate_after_reply ||
+        gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
+        gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         minimum < 6 || maximum > 3200 || minimum > maximum || latency > 499 ||
         timeout < 10 || timeout > 3200 || (uint32_t)timeout * 8 <=
@@ -1923,9 +1958,34 @@ int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
     return 1;
 }
 
-// Last local timing operation: 0 means success, 0xff pending, otherwise a BLE error.
+// Last local timing or channel-map operation: 0 means success, 0xff pending, otherwise a BLE error.
 uint8_t mesh_gap_connection_status(void) {
     return gap_conn.connection_status;
+}
+
+// Queue a Central data-channel map: bits 0..36 select channels, at least two
+// must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
+// The live map changes only at the shared Instant; status uses connection_status.
+int mesh_gap_channel_map_set(const uint8_t channels[5]) {
+    if (!channels || !mesh_gap_connected() || !gap_conn.central_role ||
+        gap_conn.first_event || gap_conn.local_map_queued ||
+        gap_conn.channel_map_update_pending || gap_conn.local_update_queued ||
+        gap_conn.update_pending || gap_conn.local_params_queued || gap_conn.params_pending ||
+        gap_conn.length_queued || gap_conn.length_pending || gap_conn.terminate_after_reply ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        (channels[4] & 0xe0)) return 0;
+    uint8_t count = 0;
+    for (uint8_t channel = 0; channel < 37; channel++)
+        if (channels[channel / 8] & (1u << (channel % 8))) count++;
+    if (count < 2) return 0;
+    if (memcmp(channels, gap_conn.channel_map, 5) == 0) {
+        gap_conn.connection_status = 0;
+        return 1;
+    }
+    memcpy(gap_conn.pending_channel_map, channels, 5);
+    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.local_map_queued = 1;
+    return 1;
 }
 
 // Request a transmit payload limit in either role; packet time is derived for
@@ -1936,6 +1996,7 @@ int mesh_gap_data_length_set(uint16_t octets) {
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
         gap_conn.terminate_after_reply || octets < 27 ||
         octets > gap_conn.data_capacity) return 0;
     if (gap_conn.features_known && !(gap_conn.peer_features & 0x20)) {
