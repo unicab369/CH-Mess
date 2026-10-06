@@ -66,7 +66,7 @@ typedef int (*mesh_gatt_proxy_rx_fn)(uint8_t type, const uint8_t *pdu,
                                       size_t len, void *context);
 
 static struct {
-    uint8_t connected, cccd, rx_active, rx_att_pending;
+    uint8_t connected, cccd, mtu_exchanged, rx_active, rx_att_pending;
     uint8_t proxy_rx_active, proxy_rx_type, filter_type, filter_count;
     uint16_t mtu, filter[MESH_GATT_PROXY_FILTER_SIZE];
     uint16_t l2cap_expected, l2cap_used, att_rx_len;
@@ -264,8 +264,11 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
     if (op == 0x02) { // Exchange MTU
         if (len != 3 || mesh_gatt_u16(p + 1) < 23)
             return mesh_gatt_error(op, 0, 0x04);
+        if (mesh_gatt.mtu_exchanged)
+            return mesh_gatt_error(op, 0, 0x06);
         uint16_t peer = mesh_gatt_u16(p + 1);
         mesh_gatt.mtu = peer < MESH_GATT_ATT_MTU_MAX ? peer : MESH_GATT_ATT_MTU_MAX;
+        mesh_gatt.mtu_exchanged = 1;
         out[0] = 0x03; out[1] = MESH_GATT_ATT_MTU_MAX;
         out[2] = MESH_GATT_ATT_MTU_MAX >> 8;
         return mesh_gatt_tx_att(out, 3);
@@ -277,6 +280,17 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         if (mesh_gatt_u16(p + 5) != 0x2800 || first > 1 || last < 1)
             return mesh_gatt_error(op, first, 0x0a);
         const uint8_t rsp[8] = {0x11, 6, 1, 0, 6, 0, 0x28, 0x18};
+        return mesh_gatt_tx_att(rsp, sizeof(rsp));
+    }
+    if (op == 0x06) { // Find By Type Value: Mesh Proxy primary service.
+        if (len != 9) return mesh_gatt_error(op, 0, 0x04);
+        uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
+        if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
+        if (mesh_gatt_u16(p + 5) != 0x2800 ||
+            mesh_gatt_u16(p + 7) != MESH_GATT_PROXY_SERVICE_UUID ||
+            first > 1 || last < 1)
+            return mesh_gatt_error(op, first, 0x0a);
+        const uint8_t rsp[5] = {0x07, 1, 0, 6, 0};
         return mesh_gatt_tx_att(rsp, sizeof(rsp));
     }
     if (op == 0x08) { // Read By Type: Characteristic declarations only.
@@ -335,8 +349,10 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         uint16_t h = mesh_gatt_u16(p + 1);
         if (h != 6)
             return mesh_gatt_error(op, h, h >= 1 && h <= 5 ? 3 : 1);
-        if (len != 5 || (mesh_gatt_u16(p + 3) & ~1u))
+        if (len != 5)
             return mesh_gatt_error(op, h, 0x0d);
+        if (mesh_gatt_u16(p + 3) & ~1u)
+            return mesh_gatt_error(op, h, 0x13);
         mesh_gatt.cccd = p[3] & 1;
         out[0] = 0x13;
         return mesh_gatt_tx_att(out, 1);
@@ -406,38 +422,31 @@ static void mesh_gatt_notify_poll(void) {
 
 // Call once per application poll. It consumes/reassembles ATT L2CAP data and
 // queues ATT responses or one Proxy Data Out notification for the GAP link.
+static void mesh_gatt_link_reset(void) {
+    mesh_gatt.connected = 0;
+    mesh_gatt.cccd = 0;
+    mesh_gatt.mtu = 23;
+    mesh_gatt.mtu_exchanged = 0;
+    mesh_gatt.rx_active = 0;
+    mesh_gatt.rx_att_pending = 0;
+    mesh_gatt.proxy_rx_active = 0;
+    mesh_gatt.proxy_rx_len = 0;
+    mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
+    mesh_gatt.att_rx_len = 0;
+    mesh_gatt.tx_active = 0;
+    mesh_gatt.tx_len = mesh_gatt.tx_offset = 0;
+    mesh_gatt.filter_type = mesh_gatt.filter_count = 0;
+    mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
+}
+
 void mesh_gatt_poll(void) {
     if (!mesh_gap_connected()) {
-        if (mesh_gatt.connected) {
-            mesh_gatt.connected = 0;
-            mesh_gatt.cccd = 0;
-            mesh_gatt.mtu = 23;
-            mesh_gatt.rx_active = 0;
-            mesh_gatt.rx_att_pending = 0;
-            mesh_gatt.proxy_rx_active = 0;
-            mesh_gatt.proxy_rx_len = 0;
-            mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
-            mesh_gatt.att_rx_len = 0;
-            mesh_gatt.tx_active = 0;
-            mesh_gatt.tx_len = mesh_gatt.tx_offset = 0;
-            mesh_gatt.filter_type = mesh_gatt.filter_count = 0;
-            mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
-        }
+        if (mesh_gatt.connected) mesh_gatt_link_reset();
         return;
     }
     if (!mesh_gatt.connected) {
+        mesh_gatt_link_reset();
         mesh_gatt.connected = 1;
-        mesh_gatt.mtu = 23;
-        mesh_gatt.cccd = 0;
-        mesh_gatt.rx_active = mesh_gatt.rx_att_pending = 0;
-        mesh_gatt.proxy_rx_active = 0;
-        mesh_gatt.proxy_rx_len = 0;
-        mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
-        mesh_gatt.att_rx_len = 0;
-        mesh_gatt.tx_active = 0;
-        mesh_gatt.tx_len = mesh_gatt.tx_offset = 0;
-        mesh_gatt.filter_type = mesh_gatt.filter_count = 0;
-        mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
     }
     if (mesh_gatt.rx_att_pending && !mesh_gatt.tx_active) {
         mesh_gatt_att_request(mesh_gatt.att_rx, mesh_gatt.att_rx_len);
