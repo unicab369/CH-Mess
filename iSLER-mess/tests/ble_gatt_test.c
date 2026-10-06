@@ -388,17 +388,42 @@ static void test_pb_gatt_service(void) {
     assert(mesh_gatt.tx_l2cap[6] == 1 && mesh_gatt.tx_l2cap[12] == 7);
     clear_tx();
 
+    const uint8_t find_pb_service[] = {
+        0x06, 1, 0, 12, 0, 0, 0x28, 0x27, 0x18
+    };
+    assert(mesh_gatt_att_request(find_pb_service, sizeof(find_pb_service)));
+    assert(mesh_gatt.tx_l2cap[4] == 0x07);
+    assert(mesh_gatt_u16(mesh_gatt.tx_l2cap + 5) == 7);
+    assert(mesh_gatt_u16(mesh_gatt.tx_l2cap + 7) == 12);
+    clear_tx();
+
+    const uint8_t find_pb_characteristics[] = {
+        0x08, 7, 0, 12, 0, 3, 0x28
+    };
+    assert(mesh_gatt_att_request(find_pb_characteristics,
+                                 sizeof(find_pb_characteristics)));
+    assert(mesh_gatt.tx_l2cap[4] == 0x09 && mesh_gatt.tx_l2cap[5] == 7);
+    assert(mesh_gatt_u16(mesh_gatt.tx_l2cap + 6) == 8);
+    assert(mesh_gatt_u16(mesh_gatt.tx_l2cap + 13) == 10);
+    clear_tx();
+
+    const uint8_t read_pb_cccd[] = {0x0a, 12, 0};
+    assert(mesh_gatt_att_request(read_pb_cccd, sizeof(read_pb_cccd)));
+    assert(mesh_gatt.tx_l2cap[4] == 0x0b && mesh_gatt.tx_l2cap[5] == 0 &&
+           mesh_gatt.tx_l2cap[6] == 0);
+    clear_tx();
+
     const uint8_t enable_pb_notifications[] = {0x12, 12, 0, 1, 0};
     assert(mesh_gatt_att_request(enable_pb_notifications,
                                  sizeof(enable_pb_notifications)));
     assert(mesh_gatt.provisioning_cccd && !mesh_gatt.cccd);
     clear_tx();
 
-    const uint8_t start[] = {0x43, 0xaa, 0xbb};
-    const uint8_t complete[] = {0xc3, 0xcc};
-    mesh_gatt_proxy_input(start, sizeof(start), 1);
+    const uint8_t start[] = {0x52, 9, 0, 0x43, 0xaa, 0xbb};
+    const uint8_t complete[] = {0x52, 9, 0, 0xc3, 0xcc};
+    assert(mesh_gatt_att_request(start, sizeof(start)));
     assert(!provisioning_received_len && mesh_gatt.proxy_rx_active);
-    mesh_gatt_proxy_input(complete, sizeof(complete), 1);
+    assert(mesh_gatt_att_request(complete, sizeof(complete)));
     assert(provisioning_received_len == 3);
     assert(!memcmp(provisioning_received, (uint8_t[]){0xaa,0xbb,0xcc}, 3));
 

@@ -187,6 +187,24 @@ static void gap_sc_derive_keys(void) {
     for (size_t i = 0; i < sizeof(gap_smp.sc.dhkey); i++) wipe[i] = 0;
 }
 
+static uint32_t gap_sc_numeric_value(void) {
+    uint8_t na[16], nb[16];
+    const uint8_t *central_key = gap_conn.central_role ?
+        gap_smp.sc.public_key : gap_smp.sc.peer_public_key;
+    const uint8_t *peripheral_key = gap_conn.central_role ?
+        gap_smp.sc.peer_public_key : gap_smp.sc.public_key;
+    gap_sc_reverse(na, gap_conn.central_role ? gap_smp.random :
+                   gap_smp.sc.peer_random, 16);
+    gap_sc_reverse(nb, gap_conn.central_role ? gap_smp.sc.peer_random :
+                   gap_smp.random, 16);
+    uint32_t value = gap_sc_g2(central_key, peripheral_key, na, nb);
+    volatile uint8_t *wipe = na;
+    for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
+    wipe = nb;
+    for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
+    return value;
+}
+
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     uint8_t na[16], nb[16], a1[7], a2[7], check[16];
     const uint8_t zero[16] = {0};
@@ -505,7 +523,9 @@ int mesh_gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_siz
     if (io > MESH_GAP_IO_KEYBOARD_DISPLAY || authenticated > 1 ||
         min_key_size < 7 || min_key_size > 16 || gap_smp.phase ||
         (authenticated && io == MESH_GAP_IO_NONE) ||
-        (gap_pairing_policy.secure_connections && authenticated)) return 0;
+        (gap_pairing_policy.secure_connections && authenticated &&
+         io != MESH_GAP_IO_DISPLAY_YES_NO &&
+         io != MESH_GAP_IO_KEYBOARD_DISPLAY)) return 0;
     gap_pairing_policy.io = io;
     gap_pairing_policy.authenticated = authenticated;
     gap_pairing_policy.min_key_size = min_key_size;
@@ -532,10 +552,13 @@ int mesh_gap_bonding_set(uint8_t enabled) {
     return 1;
 }
 
-// This stage supports unauthenticated, nonbonding Secure Connections pairing.
+// Secure Connections supports Just Works and Numeric Comparison without bonding.
 int mesh_gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.phase ||
-        (enabled && (gap_pairing_policy.authenticated || gap_pairing_policy.bonding)))
+        (enabled && (gap_pairing_policy.bonding ||
+         (gap_pairing_policy.authenticated &&
+          gap_pairing_policy.io != MESH_GAP_IO_DISPLAY_YES_NO &&
+          gap_pairing_policy.io != MESH_GAP_IO_KEYBOARD_DISPLAY))))
         return 0;
     gap_pairing_policy.secure_connections = enabled;
     return 1;
@@ -564,9 +587,29 @@ int mesh_gap_passkey_reply(uint32_t value) {
     return 1;
 }
 
+// Show all six digits on both devices and ask the user whether they match.
+int mesh_gap_numeric_comparison(uint32_t *value) {
+    if (!value || gap_smp.phase != GAP_SMP_SC_USER || gap_smp.sc.numeric_reply)
+        return 0;
+    *value = gap_smp.sc.numeric_value;
+    return 1;
+}
+
+int mesh_gap_numeric_comparison_reply(uint8_t accept) {
+    uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
+    if (!mesh_gap_connected() || gap_smp.phase != GAP_SMP_SC_USER ||
+        gap_smp.sc.numeric_reply || accept > 1) {
+        BLE_GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
+    gap_smp.sc.numeric_reply = accept ? 1 : 2;
+    BLE_GAP_CRITICAL_EXIT(irq_state);
+    return 1;
+}
+
 int mesh_gap_pair_cancel(void) {
     if (!gap_smp.phase || gap_smp.blocked) return 0;
-    gap_smp_finish(1, 1); // Passkey Entry Failed, including user cancellation.
+    gap_smp_finish(gap_smp.phase == GAP_SMP_SC_USER ? 0x0c : 1, 1);
     return 1;
 }
 
@@ -745,6 +788,30 @@ static void mesh_gap_smp_poll(void) {
         gap_smp_finish(0x08, 0);
         gap_smp.blocked = 1; // SMP cannot restart until a new physical link.
     }
+    if (gap_smp.phase == GAP_SMP_SC_USER && gap_smp.sc.numeric_reply) {
+        if (gap_smp.sc.numeric_reply == 2) {
+            gap_smp_finish(0x0c, 1); // Numeric Comparison Failed.
+        } else {
+            gap_smp.authenticated = 1;
+            gap_smp.phase = GAP_SMP_SC_DHKEY;
+            if (gap_conn.central_role) {
+                uint8_t check[16];
+                gap_sc_dhkey_check(1, check);
+                gap_smp_queue(13, check, sizeof(check));
+            } else if (gap_smp.sc.peer_check_received) {
+                uint8_t check[16], difference = 0;
+                gap_sc_dhkey_check(1, check);
+                for (uint8_t i = 0; i < 16; i++)
+                    difference |= check[i] ^ gap_smp.sc.peer_check[i];
+                if (difference) gap_smp_finish(0x0b, 1);
+                else {
+                    gap_sc_dhkey_check(0, check);
+                    gap_smp_queue(13, check, sizeof(check));
+                    gap_smp.phase = GAP_SMP_SC_ENCRYPT;
+                }
+            }
+        }
+    }
     if ((gap_smp.phase == GAP_SMP_BOND_TX) && gap_smp.bond_tx_waiting) {
         if (gap_conn.tx_pending || gap_conn.tx_queued) return;
         gap_smp.bond_tx_waiting = 0;
@@ -814,7 +881,7 @@ static void mesh_gap_smp_poll(void) {
     }
     if (gap_smp.phase == GAP_SMP_SC_ENCRYPT) {
         if (mesh_gap_encrypted()) {
-            gap_conn.authenticated = 0; // Just Works does not authenticate the peer.
+            gap_conn.authenticated = gap_smp.authenticated;
             gap_conn.encryption_key_size = 16;
             gap_smp_finish(0, 0);
             return;
@@ -1039,14 +1106,26 @@ static void mesh_gap_smp_poll(void) {
             error = 3; goto failed;
         }
         if (gap_smp.sc_active && p[4] != 16) { error = 6; goto failed; }
-        if (gap_smp.sc_active && (p[2] || (p[3] & 7) || p[5] || p[6])) {
-            error = 3; goto failed; // SC OOB, MITM, and key distribution follow later.
+        if (gap_smp.sc_active && (p[2] || (p[3] & 3) || p[5] || p[6])) {
+            error = 3; goto failed; // SC OOB and key distribution follow later.
+        }
+        uint8_t local_io = gap_pairing_policy.io, peer_io = p[1];
+        if (gap_smp.sc_active) {
+            uint8_t mitm = ((p[3] | gap_smp.request[3]) & 4) ||
+                gap_pairing_policy.authenticated;
+            uint8_t local_numeric = local_io == MESH_GAP_IO_DISPLAY_YES_NO ||
+                local_io == MESH_GAP_IO_KEYBOARD_DISPLAY;
+            uint8_t peer_numeric = peer_io == MESH_GAP_IO_DISPLAY_YES_NO ||
+                peer_io == MESH_GAP_IO_KEYBOARD_DISPLAY;
+            if (mitm && (!local_numeric || !peer_numeric)) {
+                error = 3; goto failed;
+            }
+            gap_smp.sc.numeric_required = !!mitm;
         }
         if (p[4] < gap_pairing_policy.min_key_size) { error = 6; goto failed; }
         gap_smp.key_size = p[4];
         memset(gap_smp.tk, 0, sizeof(gap_smp.tk));
         gap_smp.confirm_received = gap_smp.passkey_action = gap_smp.authenticated = 0;
-        uint8_t local_io = gap_pairing_policy.io, peer_io = p[1];
         if (!gap_smp.sc_active && ((p[3] & 4) ||
             (gap_conn.central_role && (gap_smp.request[3] & 4)) ||
             gap_pairing_policy.authenticated)) {
@@ -1154,12 +1233,23 @@ static void mesh_gap_smp_poll(void) {
         }
         memcpy(gap_smp.sc.peer_random, p + 1, 16);
         gap_sc_derive_keys();
-        if (gap_conn.central_role) {
+        if (gap_smp.sc.numeric_required) {
+            gap_smp.sc.numeric_value = gap_sc_numeric_value();
+            if (!gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
+            gap_smp.phase = GAP_SMP_SC_USER;
+        } else if (gap_conn.central_role) {
             uint8_t check[16];
             gap_sc_dhkey_check(1, check);
             gap_smp_queue(13, check, sizeof(check));
         } else gap_smp_queue(4, gap_smp.random, 16);
-        gap_smp.phase = GAP_SMP_SC_DHKEY;
+        if (!gap_smp.sc.numeric_required) gap_smp.phase = GAP_SMP_SC_DHKEY;
+        return;
+    }
+    if (gap_smp.sc_active && op == 13 && n == 17 &&
+        gap_smp.phase == GAP_SMP_SC_USER && !gap_conn.central_role &&
+        !gap_smp.sc.peer_check_received) {
+        memcpy(gap_smp.sc.peer_check, p + 1, 16);
+        gap_smp.sc.peer_check_received = 1;
         return;
     }
     if (gap_smp.sc_active && op == 13 && n == 17 &&

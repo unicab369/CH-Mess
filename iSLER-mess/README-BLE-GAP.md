@@ -9,7 +9,7 @@ The Generic Access Profile (GAP) defines how a BLE device advertises, discovers 
 | Peripheral | Advertises and accepts a connection initiated by a Central. |
 | Central | Scans and initiates a connection to a Peripheral. |
 
-The checklists below describe a practical legacy-feature target for this project. `[x]` means code exists; it still may need hardware qualification. `[ ] TODO` marks work that remains. Extended and periodic advertising are optional additions, not required for the legacy target.
+The checklists below describe the GAP features in this project. `[x]` means code exists; it still may need hardware qualification. `[ ] TODO` marks work that remains. Extended and periodic advertising are optional additions, not required for the legacy target.
 
 ## Broadcaster
 
@@ -43,7 +43,10 @@ The checklists below describe a practical legacy-feature target for this project
 | Connection acceptance and data exchange | [x] Single-link connection state and data path. |
 | Link control and connection updates | [x] Basic control procedures and parameter updates. |
 | Connection event timing | [ ] TODO: Verify timing and recovery on hardware. |
-| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, opt-in nonbonding legacy Just Works/Passkey Entry SMP pairing, and application authentication/key-size requirements; [ ] TODO: Add LE Secure Connections/OOB pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Verify encrypted links on hardware. |
+| Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
+| LE Secure Connections | [x] Opt-in nonbonding Just Works and Numeric Comparison with P-256 public-key exchange, DHKey checks, and user approval; [ ] TODO: Add Secure Connections Passkey Entry, OOB pairing, and bonding. |
+| Bond storage and secure randomness | [x] Bond load/save/delete and secure random interfaces, with pairing failing when required support is unavailable; [ ] TODO: Provide durable platform bond storage and a cryptographic random source. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
@@ -56,7 +59,10 @@ The checklists below describe a practical legacy-feature target for this project
 | Initiate a connection | [x] Legacy connection request construction and scan-to-link transition. |
 | Connection data and control | [x] Uses the shared single-link connection engine. |
 | Connection event timing and lifecycle | [ ] TODO: Verify connection timing, failures, and recovery on hardware. |
-| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, opt-in nonbonding legacy Just Works/Passkey Entry SMP pairing, and application authentication/key-size requirements; [ ] TODO: Add LE Secure Connections/OOB pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Verify encrypted links on hardware. |
+| Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
+| LE Secure Connections | [x] Opt-in nonbonding Just Works and Numeric Comparison with P-256 public-key exchange, DHKey checks, and user approval; [ ] TODO: Add Secure Connections Passkey Entry, OOB pairing, and bonding. |
+| Bond storage and secure randomness | [x] Bond load/save/delete and secure random interfaces, with pairing failing when required support is unavailable; [ ] TODO: Provide durable platform bond storage and a cryptographic random source. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 

@@ -16,8 +16,8 @@
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Add durable platform bond storage and verify restored bonds on hardware.
-// - Add LE Secure Connections/OOB pairing. Legacy Just Works/Passkey Entry are
-//   opt-in and nonbonding.
+// - Complete Secure Connections Passkey Entry, OOB pairing, and bonding;
+//   Just Works and Numeric Comparison are opt-in.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -237,12 +237,12 @@ static void gap_security_derive(void);
 static uint8_t *gap_security_tx_frame(void);
 static void gap_security_send(void);
 
-// Opt-in legacy pairing. Just Works has no authentication; bonding is optional.
-// Passkey Entry uses a fresh six-digit passkey supplied through the UI interfaces.
+// Opt-in pairing. Just Works has no authentication; bonding is optional for legacy.
+// Legacy Passkey Entry and SC Numeric Comparison use application UI interfaces.
 enum { GAP_SMP_IDLE, GAP_SMP_RESPONSE, GAP_SMP_CONFIRM, GAP_SMP_RANDOM,
        GAP_SMP_ENCRYPT, GAP_SMP_SECURITY_REQUEST, GAP_SMP_PASSKEY,
        GAP_SMP_BOND_TX, GAP_SMP_BOND_RX, GAP_SMP_SC_PUBLIC_KEY,
-       GAP_SMP_SC_CONFIRM, GAP_SMP_SC_RANDOM, GAP_SMP_SC_DHKEY,
+       GAP_SMP_SC_CONFIRM, GAP_SMP_SC_RANDOM, GAP_SMP_SC_USER, GAP_SMP_SC_DHKEY,
        GAP_SMP_SC_ENCRYPT };
 #define MESH_GAP_IO_DISPLAY_ONLY 0
 #define MESH_GAP_IO_DISPLAY_YES_NO 1
@@ -264,6 +264,8 @@ static struct {
     struct {
         uint8_t private_key[32], public_key[64], peer_public_key[64];
         uint8_t dhkey[32], mac_key[16], ltk[16], peer_random[16];
+        uint8_t numeric_required, numeric_reply, peer_check_received, peer_check[16];
+        uint32_t numeric_value;
     } sc;
     uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
     uint8_t tx[69], tx_len, tx_offset, rx[69], rx_len, rx_expected;
