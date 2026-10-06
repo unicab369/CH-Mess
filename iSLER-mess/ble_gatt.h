@@ -10,7 +10,7 @@
 // - Call BLE_MESH_GATT_PROXY_OFFER after Network PDU authentication and
 //   destination decoding so Proxy Filter rules are applied correctly.
 // - Complete and harden ATT request validation, discovery, errors, and MTU
-//   handling; add long reads/writes, prepared writes, and indications if needed.
+//   handling; add prepared writes and indications if needed.
 // - Enforce attribute permissions and security through SMP and Link Layer
 //   encryption before exposing protected attributes.
 // - Add PB-GATT provisioning as a separate service if GATT provisioning is
@@ -156,6 +156,30 @@ static int mesh_gatt_error(uint8_t request, uint16_t handle, uint8_t error) {
     return mesh_gatt_tx_att(rsp, sizeof(rsp));
 }
 
+// Return a readable attribute's complete value; distinguish missing handles
+// from known attributes that are not readable.
+static uint8_t mesh_gatt_read_value(uint16_t handle, uint8_t *value,
+                                    size_t *len) {
+    static const uint8_t service[] = {0x28, 0x18};
+    static const uint8_t data_in[] = {4, 3, 0, 0xdd, 0x2a};
+    static const uint8_t data_out[] = {0x10, 5, 0, 0xde, 0x2a};
+    if (!handle || handle > 6) return 1;
+    const uint8_t *src;
+    size_t size;
+    if (handle == 1) { src = service; size = sizeof(service); }
+    else if (handle == 2) { src = data_in; size = sizeof(data_in); }
+    else if (handle == 4) { src = data_out; size = sizeof(data_out); }
+    else if (handle == 6) {
+        value[0] = mesh_gatt.cccd;
+        value[1] = 0;
+        *len = 2;
+        return 0;
+    } else return 2;
+    memcpy(value, src, size);
+    *len = size;
+    return 0;
+}
+
 static int mesh_gatt_proxy_queue(uint8_t type, const uint8_t *data,
                                  size_t len) {
     if (!data || !len || len > MESH_GATT_PROXY_PDU_MAX ||
@@ -289,21 +313,28 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         if (n == 2) return mesh_gatt_error(op, first, 0x0a);
         return mesh_gatt_tx_att(out, n);
     }
-    if (op == 0x0a) { // Read
-        if (len != 3) return mesh_gatt_error(op, 0, 0x04);
+    if (op == 0x0a || op == 0x0c) { // Read / Read Blob.
+        size_t request_len = op == 0x0a ? 3 : 5;
+        if (len != request_len) return mesh_gatt_error(op, 0, 0x04);
         uint16_t h = mesh_gatt_u16(p + 1);
-        out[0] = 0x0b;
-        if (h == 1) { out[1] = 0x28; out[2] = 0x18; n = 3; }
-        else if (h == 2) { const uint8_t v[5] = {4,3,0,0xdd,0x2a}; memcpy(out+1,v,5); n=6; }
-        else if (h == 4) { const uint8_t v[5] = {0x10,5,0,0xde,0x2a}; memcpy(out+1,v,5); n=6; }
-        else if (h == 6) { out[1] = mesh_gatt.cccd; out[2] = 0; n = 3; }
-        else return mesh_gatt_error(op, h, h > 6 ? 1 : 2);
+        uint8_t value[MESH_GATT_ATT_MTU_MAX];
+        size_t value_len = 0;
+        uint8_t status = mesh_gatt_read_value(h, value, &value_len);
+        if (status) return mesh_gatt_error(op, h, status);
+        size_t offset = op == 0x0c ? mesh_gatt_u16(p + 3) : 0;
+        if (offset > value_len) return mesh_gatt_error(op, h, 0x07);
+        out[0] = op == 0x0a ? 0x0b : 0x0d;
+        size_t remaining = value_len - offset;
+        if (remaining > mesh_gatt.mtu - 1) remaining = mesh_gatt.mtu - 1;
+        if (remaining) memcpy(out + 1, value + offset, remaining);
+        n = remaining + 1;
         return mesh_gatt_tx_att(out, n);
     }
     if (op == 0x12) { // Write Request: CCCD only.
         if (len < 3) return mesh_gatt_error(op, 0, 0x04);
         uint16_t h = mesh_gatt_u16(p + 1);
-        if (h != 6) return mesh_gatt_error(op, h, h == 3 ? 3 : 1);
+        if (h != 6)
+            return mesh_gatt_error(op, h, h >= 1 && h <= 5 ? 3 : 1);
         if (len != 5 || (mesh_gatt_u16(p + 3) & ~1u))
             return mesh_gatt_error(op, h, 0x0d);
         mesh_gatt.cccd = p[3] & 1;
