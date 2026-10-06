@@ -235,31 +235,40 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         out[2] = MESH_GATT_ATT_MTU_MAX >> 8;
         return mesh_gatt_tx_att(out, 3);
     }
-    if (op == 0x10 && len == 7 && mesh_gatt_u16(p + 5) == 0x2800) {
+    if (op == 0x10) { // Read By Group Type: Primary Service only.
+        if (len != 7) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
-        if (!first || first > last || first > 1) return mesh_gatt_error(op, first, 0x0a);
+        if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
+        if (mesh_gatt_u16(p + 5) != 0x2800 || first > 1 || last < 1)
+            return mesh_gatt_error(op, first, 0x0a);
         const uint8_t rsp[8] = {0x11, 6, 1, 0, 6, 0, 0x28, 0x18};
         return mesh_gatt_tx_att(rsp, sizeof(rsp));
     }
-    if (op == 0x08 && len == 7 && mesh_gatt_u16(p + 5) == 0x2803) {
+    if (op == 0x08) { // Read By Type: Characteristic declarations only.
+        if (len != 7) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
+        if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
         out[0] = 0x09; out[1] = 7; n = 2;
-        if (first <= 2 && last >= 2) {
+        if (mesh_gatt_u16(p + 5) == 0x2803 && first <= 2 && last >= 2) {
             const uint8_t e[7] = {2,0,4,3,0,0xdd,0x2a};
             memcpy(out + n, e, sizeof(e)); n += sizeof(e);
         }
-        if (first <= 4 && last >= 4) {
+        if (mesh_gatt_u16(p + 5) == 0x2803 && first <= 4 && last >= 4) {
             const uint8_t e[7] = {4,0,0x10,5,0,0xde,0x2a};
             memcpy(out + n, e, sizeof(e)); n += sizeof(e);
         }
         if (n == 2) return mesh_gatt_error(op, first, 0x0a);
         return mesh_gatt_tx_att(out, n);
     }
-    if (op == 0x04 && len == 5) { // Find Information
+    if (op == 0x04) { // Find Information
+        if (len != 5) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
-        if (!first || first > last || first > 6) return mesh_gatt_error(op, first, 0x0a);
+        if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
+        if (first > 6) return mesh_gatt_error(op, first, 0x0a);
         out[0] = 0x05; out[1] = 1; n = 2;
-        for (uint16_t h = first; h <= last && h <= 6; h++) {
+        size_t max_entries = (mesh_gatt.mtu - 2) / 4;
+        for (uint16_t h = first; h <= last && h <= 6 && n + 4 <= mesh_gatt.mtu &&
+             (n - 2) / 4 < max_entries; h++) {
             uint16_t uuid = h == 1 ? 0x2800 : (h == 2 || h == 4) ? 0x2803 :
                 h == 3 ? MESH_GATT_PROXY_DATA_IN_UUID :
                 h == 5 ? MESH_GATT_PROXY_DATA_OUT_UUID : 0x2902;
@@ -269,7 +278,8 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         if (n == 2) return mesh_gatt_error(op, first, 0x0a);
         return mesh_gatt_tx_att(out, n);
     }
-    if (op == 0x0a && len == 3) { // Read
+    if (op == 0x0a) { // Read
+        if (len != 3) return mesh_gatt_error(op, 0, 0x04);
         uint16_t h = mesh_gatt_u16(p + 1);
         out[0] = 0x0b;
         if (h == 1) { out[1] = 0x28; out[2] = 0x18; n = 3; }
@@ -279,7 +289,8 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         else return mesh_gatt_error(op, h, h > 6 ? 1 : 2);
         return mesh_gatt_tx_att(out, n);
     }
-    if (op == 0x12 && len >= 3) { // Write Request: CCCD only
+    if (op == 0x12) { // Write Request: CCCD only.
+        if (len < 3) return mesh_gatt_error(op, 0, 0x04);
         uint16_t h = mesh_gatt_u16(p + 1);
         if (h != 6) return mesh_gatt_error(op, h, h == 3 ? 3 : 1);
         if (len != 5 || (mesh_gatt_u16(p + 3) & ~1u))
@@ -356,9 +367,19 @@ static void mesh_gatt_notify_poll(void) {
 void mesh_gatt_poll(void) {
     if (!mesh_gap_connected()) {
         if (mesh_gatt.connected) {
-            mesh_gatt.connected = mesh_gatt.cccd = 0;
-            mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
+            mesh_gatt.connected = 0;
+            mesh_gatt.cccd = 0;
+            mesh_gatt.mtu = 23;
+            mesh_gatt.rx_active = 0;
+            mesh_gatt.rx_att_pending = 0;
             mesh_gatt.proxy_rx_active = 0;
+            mesh_gatt.proxy_rx_len = 0;
+            mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
+            mesh_gatt.att_rx_len = 0;
+            mesh_gatt.tx_active = 0;
+            mesh_gatt.tx_len = mesh_gatt.tx_offset = 0;
+            mesh_gatt.filter_type = mesh_gatt.filter_count = 0;
+            mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
         }
         return;
     }
@@ -366,6 +387,13 @@ void mesh_gatt_poll(void) {
         mesh_gatt.connected = 1;
         mesh_gatt.mtu = 23;
         mesh_gatt.cccd = 0;
+        mesh_gatt.rx_active = mesh_gatt.rx_att_pending = 0;
+        mesh_gatt.proxy_rx_active = 0;
+        mesh_gatt.proxy_rx_len = 0;
+        mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
+        mesh_gatt.att_rx_len = 0;
+        mesh_gatt.tx_active = 0;
+        mesh_gatt.tx_len = mesh_gatt.tx_offset = 0;
         mesh_gatt.filter_type = mesh_gatt.filter_count = 0;
         mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
     }

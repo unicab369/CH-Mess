@@ -15,12 +15,15 @@
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Add LE Secure Connections/OOB pairing and persistent bond storage.
-//   Legacy Just Works/Passkey Entry are opt-in and nonbonding.
+// - Add SMP bond key distribution/reconnect and a platform store for bond records.
+// - Add LE Secure Connections/OOB pairing. Legacy Just Works/Passkey Entry are
+//   opt-in and nonbonding.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
 #define MESH_GAP_ADV_DATA_MAX 31
+#define MESH_GAP_BOND_SLOTS 4
+#define MESH_GAP_BOND_VERSION 1
 #ifndef MESH_GAP_CONN_DATA_MAX
 #define MESH_GAP_CONN_DATA_MAX 27
 #endif
@@ -113,6 +116,23 @@ typedef struct {
 typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;
 } mesh_gap_data_length;
+
+// One peer's persistent LE bond data. Addresses and key identifiers use
+// Bluetooth little-endian byte order; unused keys and reserved bytes are zero.
+typedef struct {
+    uint8_t version, valid, peer_address_type, peer_address[6];
+    uint8_t ltk[16], rand[8], ediv[2];
+    uint8_t peer_irk[16], local_irk[16];
+    uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
+} mesh_gap_bond;
+
+// Implement these in the platform adapter. Reads and writes address whole
+// records; a write must leave either the old or new valid record after reset.
+// LOAD returns 1 for a record, 0 for an empty slot, or -1 on storage failure.
+// SAVE and DELETE return nonzero only after the operation is durable.
+int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond);
+int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond);
+int BLE_GAP_BOND_DELETE(uint8_t slot);
 
 int mesh_gap_conn_busy(void);
 
@@ -2922,6 +2942,113 @@ int mesh_gap_pair(void) {
 }
 
 uint8_t mesh_gap_pairing_status(void) { return gap_smp.status; }
+
+// Load a bond by the peer's stable identity address, not its rotating address.
+int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
+                      mesh_gap_bond *out) {
+    if (!peer_address || !out || address_type > 1 ||
+        (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+    mesh_gap_bond bond;
+    for (uint8_t slot = 0; slot < MESH_GAP_BOND_SLOTS; slot++) {
+        memset(&bond, 0, sizeof(bond));
+        int loaded = BLE_GAP_BOND_LOAD(slot, &bond);
+        if (loaded < 0) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            memset(out, 0, sizeof(*out)); return 0;
+        }
+        if (!loaded || bond.version != MESH_GAP_BOND_VERSION || !bond.valid) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            continue;
+        }
+        if (bond.peer_address_type == address_type &&
+            memcmp(bond.peer_address, peer_address, 6) == 0) {
+            *out = bond;
+            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            return 1;
+        }
+        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+    }
+    memset(out, 0, sizeof(*out));
+    return 0;
+}
+
+// Add or replace a bond using its peer identity address. Returns 0 if full or
+// storage is unavailable; the platform owns eviction and flash allocation.
+int mesh_gap_bond_set(const mesh_gap_bond *bond) {
+    if (!bond || bond->version != MESH_GAP_BOND_VERSION || !bond->valid ||
+        bond->peer_address_type > 1 ||
+        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
+        bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1) return 0;
+    mesh_gap_bond record = *bond;
+    for (uint8_t i = record.key_size; i < sizeof(record.ltk); i++) record.ltk[i] = 0;
+    if (!record.has_peer_irk) memset(record.peer_irk, 0, sizeof(record.peer_irk));
+    if (!record.has_local_irk) memset(record.local_irk, 0, sizeof(record.local_irk));
+    mesh_gap_bond current;
+    int free_slot = -1;
+    for (uint8_t slot = 0; slot < MESH_GAP_BOND_SLOTS; slot++) {
+        memset(&current, 0, sizeof(current));
+        int loaded = BLE_GAP_BOND_LOAD(slot, &current);
+        if (loaded < 0) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&current;
+            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+            wipe = (volatile uint8_t *)&record;
+            for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+            return 0;
+        }
+        if (!loaded || current.version != MESH_GAP_BOND_VERSION || !current.valid) {
+            if (free_slot < 0) free_slot = slot;
+            volatile uint8_t *wipe = (volatile uint8_t *)&current;
+            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+            continue;
+        }
+        if (current.peer_address_type == record.peer_address_type &&
+            memcmp(current.peer_address, record.peer_address, 6) == 0) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&current;
+            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+            int saved = BLE_GAP_BOND_SAVE(slot, &record);
+            wipe = (volatile uint8_t *)&record;
+            for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+            return saved;
+        }
+        volatile uint8_t *wipe = (volatile uint8_t *)&current;
+        for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+    }
+    int saved = free_slot >= 0 && BLE_GAP_BOND_SAVE((uint8_t)free_slot, &record);
+    volatile uint8_t *wipe = (volatile uint8_t *)&record;
+    for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+    return saved;
+}
+
+int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
+    if (!peer_address || address_type > 1 ||
+        (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+    mesh_gap_bond bond;
+    for (uint8_t slot = 0; slot < MESH_GAP_BOND_SLOTS; slot++) {
+        memset(&bond, 0, sizeof(bond));
+        int loaded = BLE_GAP_BOND_LOAD(slot, &bond);
+        if (loaded < 0) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            return 0;
+        }
+        if (loaded && bond.valid &&
+            bond.version == MESH_GAP_BOND_VERSION &&
+            bond.peer_address_type == address_type &&
+            memcmp(bond.peer_address, peer_address, 6) == 0) {
+            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            return BLE_GAP_BOND_DELETE(slot);
+        }
+        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+    }
+    return 0;
+}
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.

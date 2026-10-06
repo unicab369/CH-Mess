@@ -153,6 +153,21 @@ __attribute__((weak)) int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) 
     (void)out; (void)len;
     return 0;
 }
+// Bond storage is application-owned until a reserved persistent region is
+// assigned. The generic GAP bond API safely reports storage as unavailable.
+__attribute__((weak)) int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) {
+    (void)slot;
+    if (bond) memset(bond, 0, sizeof(*bond));
+    return -1;
+}
+__attribute__((weak)) int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond) {
+    (void)slot; (void)bond;
+    return 0;
+}
+__attribute__((weak)) int BLE_GAP_BOND_DELETE(uint8_t slot) {
+    (void)slot;
+    return 0;
+}
 uint32_t BLE_GAP_CRITICAL_ENTER(void) {
     uint32_t state = __get_MSTATUS();
     __disable_irq();
