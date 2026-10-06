@@ -8,9 +8,11 @@
 static uint32_t now_ms;
 static uint8_t rx_frame[40], random_seed;
 static const uint8_t *tx_buffer;
-static int link_tx_count;
+static int link_tx_count, aes_count;
+static uint8_t forced_random[6], force_random;
 uint32_t GET_MILLIS(void) { return now_ms; }
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
+    aes_count++;
     AES_KEY aes;
     assert(AES_set_encrypt_key(key, 128, &aes) == 0);
     AES_encrypt(in, out, &aes);
@@ -33,6 +35,10 @@ void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
     memcpy(address, value, sizeof(value));
 }
 void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
+    if (force_random) {
+        for (size_t i = 0; i < len; i++) out[i] = forced_random[i % 6];
+        return;
+    }
     static const uint8_t value[4] = {0x78, 0x56, 0x34, 0x12};
     for (size_t i = 0; i < len; i++) out[i] = value[i % sizeof(value)] + (len == 4 ? 0 : random_seed);
 }
@@ -459,6 +465,75 @@ static void test_peer_local_keys(void) {
     assert(mesh_gap_privacy_set(NULL, 0));
 }
 
+static void test_nonresolvable_private_addresses(void) {
+    uint8_t first[6], identity[6], type;
+    assert(mesh_gap_use_public_address());
+    assert(mesh_gap_identity_local_key(test_identity, 0, test_irk));
+    int before = aes_count;
+    assert(!mesh_gap_privacy_set(NULL, 41401));
+    random_seed++;
+    assert(mesh_gap_privacy_set(NULL, 1));
+    assert(gap_privacy.enabled && !gap_privacy.resolvable);
+    assert((gap_random_address[5] & 0xc0) == 0);
+    assert(aes_count == before);
+    assert(!mesh_gap_resolve(gap_random_address, 1, identity, &type));
+    assert(!mesh_gap_directed_advertising_start(test_identity, 0, 100));
+    assert(mesh_gap_advertising_start(NULL, 0, 100));
+    memcpy(first, gap_random_address, 6);
+    now_ms = gap_privacy.next_rotation_ms - 1;
+    random_seed++;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_random_address, 6) == 0);
+    now_ms++;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_random_address, 6) != 0);
+    assert(memcmp(gap_advertising.address, gap_random_address, 6) == 0);
+    assert(aes_count == before);
+    mesh_gap_advertising_stop();
+    // Local peer keys cannot replace a selected NRPA when initiating.
+    assert(mesh_gap_connect_start(test_identity, 0));
+    assert((gap_central_connect.request[7] & 0xc0) == 0);
+    assert(memcmp(gap_central_connect.request + 2, gap_random_address, 6) == 0);
+    mesh_gap_connect_cancel();
+    // Outstanding active scan exchanges retain their NRPA through timeout.
+    mesh_gap_active_scan_start();
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0x40; rx_frame[1] = 6;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_radio_active_scan_pending);
+    assert(memcmp(gap_radio_scan_request + 2, gap_random_address, 6) == 0);
+    memcpy(first, gap_random_address, 6);
+    now_ms = gap_privacy.next_rotation_ms;
+    random_seed++;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_random_address, 6) == 0);
+    mesh_gap_scan_stop();
+    gap_radio_active_scan_pending = 0;
+    before = aes_count;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_random_address, 6) != 0 && aes_count == before);
+    memcpy(first, gap_random_address, 6);
+    // Reject degenerate random values and equality with the public/old address.
+    force_random = 1;
+    memset(forced_random, 0, 6);
+    assert(!mesh_gap_privacy_set(NULL, 1));
+    memset(forced_random, 0xff, 6);
+    assert(!mesh_gap_privacy_set(NULL, 1));
+    BLE_GAP_HW_PUBLIC_ADDRESS(forced_random);
+    assert(!mesh_gap_privacy_set(NULL, 1));
+    memcpy(forced_random, first, 6);
+    assert(!mesh_gap_privacy_set(NULL, 1));
+    assert(memcmp(first, gap_random_address, 6) == 0);
+    assert(aes_count == before);
+    force_random = 0;
+    // RPA selection still works after NRPA mode, and zero timeout disables it.
+    assert(mesh_gap_privacy_set(test_irk, 1));
+    assert(gap_privacy.resolvable && (gap_random_address[5] & 0xc0) == 0x40);
+    assert(mesh_gap_privacy_set(NULL, 0));
+    assert(!gap_privacy.enabled && !gap_own_address_type);
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -470,5 +545,6 @@ int main(void) {
     test_directed_connect_target();
     test_peer_privacy_modes();
     test_peer_local_keys();
+    test_nonresolvable_private_addresses();
     return 0;
 }

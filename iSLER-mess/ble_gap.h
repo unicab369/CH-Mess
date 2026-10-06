@@ -13,7 +13,6 @@
 //   Layer control.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation and identity filters on hardware.
-// - Add non-resolvable private addresses.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
@@ -249,7 +248,7 @@ static struct {
     uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
 } gap_identities[GAP_IDENTITY_COUNT];
 static struct {
-    uint8_t enabled, irk[16], scan_filter, connection_filter;
+    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
     uint16_t timeout_s;
     uint32_t next_rotation_ms;
 } gap_privacy;
@@ -354,12 +353,26 @@ static int gap_private_address_generate(const uint8_t irk[16],
                                          uint8_t address[6],
                                          const uint8_t previous[6]) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
-        BLE_GAP_HW_RANDOM_BYTES(address + 3, 3);
-        address[5] = (address[5] & 0x3f) | 0x40;
-        uint32_t random = (uint32_t)address[3] |
-            (uint32_t)address[4] << 8 | (uint32_t)(address[5] & 0x3f) << 16;
-        if (!random || random == 0x3fffff) continue;
-        gap_address_hash(irk, address + 3, address);
+        if (irk) {
+            BLE_GAP_HW_RANDOM_BYTES(address + 3, 3);
+            address[5] = (address[5] & 0x3f) | 0x40;
+            uint32_t random = (uint32_t)address[3] |
+                (uint32_t)address[4] << 8 | (uint32_t)(address[5] & 0x3f) << 16;
+            if (!random || random == 0x3fffff) continue;
+            gap_address_hash(irk, address + 3, address);
+        } else {
+            // NRPA: 46 random bits with address bits 47:46 cleared; no AES.
+            BLE_GAP_HW_RANDOM_BYTES(address, 6);
+            address[5] &= 0x3f;
+            uint8_t all_zero = 1, all_one = 1, public_address[6];
+            for (uint8_t i = 0; i < 6; i++) {
+                if (address[i]) all_zero = 0;
+                if (address[i] != (i == 5 ? 0x3f : 0xff)) all_one = 0;
+            }
+            BLE_GAP_HW_PUBLIC_ADDRESS(public_address);
+            if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
+                continue;
+        }
         if (!previous || memcmp(address, previous, 6) != 0) return 1;
     }
     return 0;
@@ -389,7 +402,8 @@ int mesh_gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
 // Select the peer's cached local RPA, our identity for its zero local IRK,
 // or the global address when that peer has no local key override.
 static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type) {
-    if (gap_privacy.enabled && slot >= 0 && gap_identities[slot].local_key_set) {
+    if (gap_privacy.enabled && gap_privacy.resolvable && slot >= 0 &&
+        gap_identities[slot].local_key_set) {
         if (gap_identities[slot].has_local_irk) {
             *type = 1;
             memcpy(address, gap_identities[slot].local_address, 6);
@@ -405,21 +419,24 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
     else BLE_GAP_HW_PUBLIC_ADDRESS(address);
 }
 
-// Enable local RPAs with a rotation timeout in seconds; null IRK disables them
-// and selects the public address. Configure only while advertising/scanning idle.
+// Set rotating private addresses while GAP is idle: an IRK selects RPAs,
+// null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
+// Timeout is in seconds. NRPA generation uses randomness without AES.
 int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_advertising.enabled || gap_scanning || gap_conn.active ||
-        gap_central_connect.active || (irk && (!timeout_s || timeout_s > 41400)))
+        gap_central_connect.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
-    if (!irk) {
+    if (!irk && !timeout_s) {
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
-        gap_privacy.enabled = 0;
+        gap_privacy.enabled = gap_privacy.resolvable = 0;
         gap_own_address_type = 0;
         return 1;
     }
     uint8_t address[6];
     if (!gap_private_address_generate(irk, address, gap_random_address)) return 0;
-    memcpy(gap_privacy.irk, irk, 16);
+    if (irk) memcpy(gap_privacy.irk, irk, 16);
+    else memset(gap_privacy.irk, 0, 16);
+    gap_privacy.resolvable = irk != NULL;
     memcpy(gap_random_address, address, 6);
     gap_privacy.enabled = gap_own_address_type = 1;
     gap_privacy.timeout_s = timeout_s;
@@ -556,12 +573,14 @@ static inline int gap_advertising_start(uint8_t pdu_type,
         ((pdu_type == 0x01) != (target_address != NULL)) ||
         target_type > 1 ||
         ((pdu_type == 0x01 || pdu_type == 0x02) && scan_response_len) ||
-        (pdu_type == 0x01 && len)) return 0;
+        (pdu_type == 0x01 && (len ||
+         (gap_privacy.enabled && !gap_privacy.resolvable)))) return 0;
     int slot = target_address ? gap_identity_find(target_address, target_type) : -1;
     uint8_t target[6];
     if (target_address) {
         memcpy(target, target_address, 6);
-        if (gap_privacy.enabled && slot >= 0 && gap_identities[slot].has_irk) {
+        if (gap_privacy.enabled && gap_privacy.resolvable &&
+            slot >= 0 && gap_identities[slot].has_irk) {
             if (!gap_private_address_generate(gap_identities[slot].irk, target,
                                               target_address)) return 0;
             target_type = 1;
@@ -857,11 +876,13 @@ static void gap_privacy_poll(uint32_t now) {
         gap_radio_rx_armed = 0;
     }
     uint8_t address[6];
-    if (!gap_private_address_generate(gap_privacy.irk, address, gap_random_address)) return;
+    if (!gap_private_address_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
+                                      address, gap_random_address)) return;
     memcpy(gap_random_address, address, 6);
     // Refresh cached local RPAs outside the RX interrupt, between exchanges.
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
-        if (gap_identities[i].used && gap_identities[i].local_key_set &&
+        if (gap_privacy.resolvable && gap_identities[i].used &&
+            gap_identities[i].local_key_set &&
             gap_identities[i].has_local_irk &&
             gap_private_address_generate(gap_identities[i].local_irk, address,
                                           gap_identities[i].local_address))
@@ -871,7 +892,7 @@ static void gap_privacy_poll(uint32_t now) {
         gap_local_address_select(gap_advertising.peer_slot, gap_advertising.address,
                                  &gap_advertising.address_type);
         int slot = gap_advertising.peer_slot;
-        if (slot >= 0 && gap_identities[slot].has_irk &&
+        if (gap_privacy.resolvable && slot >= 0 && gap_identities[slot].has_irk &&
             gap_private_address_generate(gap_identities[slot].irk, address,
                                           gap_advertising.target_address))
             memcpy(gap_advertising.target_address, address, 6);
@@ -1151,7 +1172,8 @@ unknown_control_pdu:
             int target_matches = target_type ==
                 ((gap_central_connect.request[0] >> 6) & 1) &&
                 memcmp(frame + 8, gap_central_connect.request + 2, 6) == 0;
-            if (!target_matches && gap_privacy.enabled && target_type == 1 &&
+            if (!target_matches && gap_privacy.enabled && gap_privacy.resolvable &&
+                target_type == 1 &&
                 (frame[13] & 0xc0) == 0x40) {
                 const uint8_t *irk = gap_privacy.irk;
                 if (peer_slot >= 0 && gap_identities[peer_slot].local_key_set)
