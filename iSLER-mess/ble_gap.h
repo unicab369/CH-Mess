@@ -15,7 +15,7 @@
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Add SMP bond key distribution/reconnect and a platform store for bond records.
+// - Add SMP bond key distribution/creation and a platform store for bond records.
 // - Add LE Secure Connections/OOB pairing. Legacy Just Works/Passkey Entry are
 //   opt-in and nonbonding.
 // - Add extended/periodic advertising and synchronization where supported by
@@ -126,13 +126,35 @@ typedef struct {
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
 } mesh_gap_bond;
 
+static int mesh_gap_bond_valid(const mesh_gap_bond *bond) {
+    if (!bond || bond->version != MESH_GAP_BOND_VERSION || !bond->valid ||
+        bond->peer_address_type > 1 ||
+        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
+        bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1) return 0;
+    for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
+        if (bond->ltk[i]) return 0;
+    return 1;
+}
+
 // Implement these in the platform adapter. Reads and writes address whole
 // records; a write must leave either the old or new valid record after reset.
 // LOAD returns 1 for a record, 0 for an empty slot, or -1 on storage failure.
 // SAVE and DELETE return nonzero only after the operation is durable.
+// Weak references let a GAP-only build omit bond storage and fail closed.
+#if defined(__GNUC__)
+int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) __attribute__((weak));
+int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond) __attribute__((weak));
+int BLE_GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
+#else
 int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond);
 int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond);
 int BLE_GAP_BOND_DELETE(uint8_t slot);
+#endif
+int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
+                      mesh_gap_bond *out);
+int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
+int mesh_gap_encrypted(void);
 
 int mesh_gap_conn_busy(void);
 
@@ -155,6 +177,9 @@ static struct {
     uint8_t local_terminate_reason, central_role, central_anchor_set;
     uint8_t initiator_type, responder_type, initiator[6], responder[6];
     uint8_t authenticated, encryption_key_size;
+    uint8_t peer_identity_type, peer_identity_address[6];
+    uint8_t bond_lookup_pending, bonded, bond_restore_started, bond_restore_attempted;
+    mesh_gap_bond bond;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -320,6 +345,11 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.responder_type = (frame[0] >> 7) & 1;
     memcpy(gap_conn.initiator, frame + 2, 6);
     memcpy(gap_conn.responder, frame + 8, 6);
+    gap_conn.peer_identity_type = gap_conn.initiator_type;
+    memcpy(gap_conn.peer_identity_address, gap_conn.initiator, 6);
+    gap_conn.bond_lookup_pending = 1;
+    gap_conn.bonded = gap_conn.bond_restore_started = gap_conn.bond_restore_attempted = 0;
+    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
     gap_security_generation++;
     gap_conn.active = 1;
@@ -1002,6 +1032,12 @@ static void gap_connection_end(void) {
         while (wipe_len--) *wipe_bytes++ = 0;
     }
     gap_conn.active = 0;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_conn.bond;
+        size_t wipe_len = sizeof(gap_conn.bond);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_conn.bonded = gap_conn.bond_restore_started = 0;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending = 0;
     if (gap_conn.phy_status == MESH_GAP_CONNECTION_PENDING) gap_conn.phy_status = 0x08;
     gap_conn.rx_armed = 0;
@@ -2164,6 +2200,15 @@ unknown_control_pdu:
             gap_conn.central_role = 1;
             gap_conn.central_anchor_set = 0;
             gap_conn.peer_sca_ppm = 500; // conservative until clock data exists
+            if (peer_slot >= 0) {
+                gap_conn.peer_identity_type = gap_identities[peer_slot].address_type;
+                memcpy(gap_conn.peer_identity_address,
+                       gap_identities[peer_slot].address, 6);
+            } else {
+                gap_conn.peer_identity_type = gap_central_connect.peer_type;
+                memcpy(gap_conn.peer_identity_address,
+                       gap_central_connect.peer_address, 6);
+            }
             gap_central_connect.active = 0;
             gap_scanning = 0;
             gap_active_scanning = 0;
@@ -2386,6 +2431,34 @@ int gap_hw_mesh_send_due(const uint8_t *mesh_ad, uint8_t mesh_len,
 // Give an established Peripheral connection its data-channel receive window.
 static void mesh_gap_conn_poll(void) {
     if (!gap_conn.active) return;
+    if (gap_conn.bond_lookup_pending) {
+        gap_conn.bond_lookup_pending = 0;
+        if (!gap_conn.central_role) {
+            int peer_slot = gap_identity_find(gap_conn.initiator,
+                                              gap_conn.initiator_type);
+            if (peer_slot >= 0) {
+                gap_conn.peer_identity_type = gap_identities[peer_slot].address_type;
+                memcpy(gap_conn.peer_identity_address,
+                       gap_identities[peer_slot].address, 6);
+            }
+        }
+        if (mesh_gap_bond_get(gap_conn.peer_identity_address,
+                              gap_conn.peer_identity_type, &gap_conn.bond))
+            gap_conn.bonded = 1;
+    }
+    if (gap_conn.bond_restore_started && mesh_gap_encrypted()) {
+        gap_conn.authenticated = gap_conn.bond.authenticated;
+        gap_conn.encryption_key_size = gap_conn.bond.key_size;
+        gap_conn.bond_restore_started = 0;
+    }
+    if (gap_conn.bonded && gap_conn.central_role && !gap_conn.first_event &&
+        !gap_conn.bond_restore_attempted && !gap_security.phase && !gap_smp.phase) {
+        gap_conn.bond_restore_attempted = 1;
+        uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
+            (uint16_t)gap_conn.bond.ediv[1] << 8;
+        if (mesh_gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
+            gap_conn.bond_restore_started = 1;
+    }
     mesh_gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
@@ -2948,6 +3021,7 @@ int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
                       mesh_gap_bond *out) {
     if (!peer_address || !out || address_type > 1 ||
         (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+    if (!BLE_GAP_BOND_LOAD) { memset(out, 0, sizeof(*out)); return 0; }
     mesh_gap_bond bond;
     for (uint8_t slot = 0; slot < MESH_GAP_BOND_SLOTS; slot++) {
         memset(&bond, 0, sizeof(bond));
@@ -2957,7 +3031,7 @@ int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             memset(out, 0, sizeof(*out)); return 0;
         }
-        if (!loaded || bond.version != MESH_GAP_BOND_VERSION || !bond.valid) {
+        if (!loaded || !mesh_gap_bond_valid(&bond)) {
             volatile uint8_t *wipe = (volatile uint8_t *)&bond;
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             continue;
@@ -2977,13 +3051,10 @@ int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
 }
 
 // Add or replace a bond using its peer identity address. Returns 0 if full or
-// storage is unavailable; the platform owns eviction and flash allocation.
+// storage is unavailable; the application chooses which record to evict.
 int mesh_gap_bond_set(const mesh_gap_bond *bond) {
-    if (!bond || bond->version != MESH_GAP_BOND_VERSION || !bond->valid ||
-        bond->peer_address_type > 1 ||
-        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
-        bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
-        bond->has_peer_irk > 1 || bond->has_local_irk > 1) return 0;
+    if (!mesh_gap_bond_valid(bond)) return 0;
+    if (!BLE_GAP_BOND_LOAD || !BLE_GAP_BOND_SAVE) return 0;
     mesh_gap_bond record = *bond;
     for (uint8_t i = record.key_size; i < sizeof(record.ltk); i++) record.ltk[i] = 0;
     if (!record.has_peer_irk) memset(record.peer_irk, 0, sizeof(record.peer_irk));
@@ -3000,7 +3071,7 @@ int mesh_gap_bond_set(const mesh_gap_bond *bond) {
             for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
             return 0;
         }
-        if (!loaded || current.version != MESH_GAP_BOND_VERSION || !current.valid) {
+        if (!loaded || !mesh_gap_bond_valid(&current)) {
             if (free_slot < 0) free_slot = slot;
             volatile uint8_t *wipe = (volatile uint8_t *)&current;
             for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
@@ -3027,6 +3098,7 @@ int mesh_gap_bond_set(const mesh_gap_bond *bond) {
 int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     if (!peer_address || address_type > 1 ||
         (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+    if (!BLE_GAP_BOND_LOAD || !BLE_GAP_BOND_DELETE) return 0;
     mesh_gap_bond bond;
     for (uint8_t slot = 0; slot < MESH_GAP_BOND_SLOTS; slot++) {
         memset(&bond, 0, sizeof(bond));
@@ -3036,8 +3108,7 @@ int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             return 0;
         }
-        if (loaded && bond.valid &&
-            bond.version == MESH_GAP_BOND_VERSION &&
+        if (loaded && mesh_gap_bond_valid(&bond) &&
             bond.peer_address_type == address_type &&
             memcmp(bond.peer_address, peer_address, 6) == 0) {
             volatile uint8_t *wipe = (volatile uint8_t *)&bond;
@@ -3098,6 +3169,18 @@ static void mesh_gap_smp_poll(void) {
             gap_smp.encryption_started = 1;
             if (zero) { gap_smp_finish(0x08, 0); return; }
         }
+    }
+    // A saved Peripheral LTK is selected only when both legacy identifiers
+    // match the peer's request; otherwise leave the request for the host hook.
+    if (!gap_conn.central_role && gap_conn.bonded && !gap_smp.phase &&
+        !gap_conn.bond_restore_attempted &&
+        gap_security.phase == GAP_ENC_KEY_REQUEST) {
+        gap_conn.bond_restore_attempted = 1;
+        uint8_t id_match = !memcmp(gap_security.random, gap_conn.bond.rand, 8) &&
+            gap_security.ediv == ((uint16_t)gap_conn.bond.ediv[0] |
+                                  (uint16_t)gap_conn.bond.ediv[1] << 8);
+        if (id_match && mesh_gap_key_reply(gap_conn.bond.ltk))
+            gap_conn.bond_restore_started = 1;
     }
     if (!gap_conn.rx_ready) return;
     if (gap_conn.rx_llid == 2) {

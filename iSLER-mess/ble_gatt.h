@@ -34,6 +34,9 @@
 #ifndef MESH_GATT_PROXY_FILTER_SIZE
 #define MESH_GATT_PROXY_FILTER_SIZE 16
 #endif
+#define MESH_GATT_PROXY_NETWORK_PDU_MIN 14
+#define MESH_GATT_PROXY_NETWORK_PDU_MAX 29
+#define MESH_GATT_PROXY_BEACON_PDU_LEN 22
 #if MESH_GATT_ATT_MTU_MAX < 23 || MESH_GATT_ATT_MTU_MAX > 517
 #error "MESH_GATT_ATT_MTU_MAX must be between 23 and 517"
 #endif
@@ -111,6 +114,11 @@ int mesh_gatt_proxy_offer(uint8_t type, const uint8_t *pdu, size_t len,
     if (!pdu || !len || len > MESH_GATT_PROXY_PDU_MAX || type > 3 ||
         !mesh_gatt.connected || !mesh_gatt.cccd ||
         mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE) return 0;
+    if ((type == MESH_GATT_PROXY_NETWORK &&
+         (len < MESH_GATT_PROXY_NETWORK_PDU_MIN ||
+          len > MESH_GATT_PROXY_NETWORK_PDU_MAX)) ||
+        (type == MESH_GATT_PROXY_BEACON &&
+         len != MESH_GATT_PROXY_BEACON_PDU_LEN)) return 0;
     if (type == MESH_GATT_PROXY_NETWORK) {
         uint8_t listed = 0;
         for (uint8_t i = 0; i < mesh_gatt.filter_count; i++)
@@ -164,7 +172,7 @@ static int mesh_gatt_proxy_queue(uint8_t type, const uint8_t *data,
 }
 
 static void mesh_gatt_proxy_configuration(const uint8_t *p, size_t len) {
-    if (!mesh_gatt.cccd || !len) return;
+    if (!len) return;
     uint8_t opcode = p[0];
     if (opcode == 0 && len == 2 && p[1] <= 1) {
         mesh_gatt.filter_type = p[1];
@@ -202,14 +210,17 @@ static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
     p++; len--;
     if (!sar) {
         mesh_gatt.proxy_rx_active = 0;
-        mesh_gatt_proxy_deliver(type, p, len);
+        mesh_gatt.proxy_rx_len = 0;
+        if (len) mesh_gatt_proxy_deliver(type, p, len);
     } else if (sar == 1) {
-        if (len > sizeof(mesh_gatt.proxy_rx)) return;
+        mesh_gatt.proxy_rx_active = 0;
+        mesh_gatt.proxy_rx_len = 0;
+        if (!len || len > sizeof(mesh_gatt.proxy_rx)) return;
         memcpy(mesh_gatt.proxy_rx, p, len);
         mesh_gatt.proxy_rx_len = (uint16_t)len;
         mesh_gatt.proxy_rx_type = type;
         mesh_gatt.proxy_rx_active = 1;
-    } else if (!mesh_gatt.proxy_rx_active || type != mesh_gatt.proxy_rx_type ||
+    } else if (!len || !mesh_gatt.proxy_rx_active || type != mesh_gatt.proxy_rx_type ||
                len > sizeof(mesh_gatt.proxy_rx) - mesh_gatt.proxy_rx_len) {
         mesh_gatt.proxy_rx_active = 0;
     } else {
@@ -300,7 +311,7 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         return mesh_gatt_tx_att(out, 1);
     }
     if (op == 0x52) { // Write Command: Mesh Proxy Data In
-        if (len >= 3 && mesh_gatt_u16(p + 1) == 3 && mesh_gatt.cccd)
+        if (len >= 3 && mesh_gatt_u16(p + 1) == 3)
             mesh_gatt_proxy_input(p + 3, len - 3);
         return 1;
     }
