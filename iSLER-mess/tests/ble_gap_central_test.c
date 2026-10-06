@@ -26,6 +26,15 @@ void BLE_GAP_HW_PACKET_CLEAR(void) {}
 void BLE_GAP_HW_PACKET_READY(void) {}
 void BLE_GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void BLE_GAP_HW_LINK_TX(void) { link_tx_count++; }
+int BLE_GAP_HW_TX_DONE(void) { return 1; }
+void BLE_GAP_HW_TX_CLEAR_DONE(void) {}
+void BLE_GAP_HW_CRC_INIT(uint32_t crc_init) { (void)crc_init; }
+void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
+                            uint8_t *frame, uint8_t receive_after_tx) {
+    (void)access_address; (void)channel; (void)receive_after_tx;
+    tx_buffer = frame;
+}
+void BLE_GAP_HW_LINK_RX(void) {}
 int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     (void)frame; (void)len; (void)channel;
     return 1;
@@ -534,6 +543,101 @@ static void test_nonresolvable_private_addresses(void) {
     assert(!gap_privacy.enabled && !gap_own_address_type);
 }
 
+static void start_test_central_link(void) {
+    assert(mesh_gap_connect_start(test_identity, 0));
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0x40; rx_frame[1] = 6;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_conn.active && gap_conn.central_role);
+    now_ms += 2;
+    mesh_gap_conn_poll();
+    assert(gap_conn.rx_armed);
+    rx_frame[0] = 0x05; rx_frame[1] = 0; // ACK the first empty Central packet.
+    gap_hw_mesh_received();
+    assert(!gap_conn.first_event);
+    mesh_gap_conn_poll(); // Complete the reply before the next event.
+}
+
+static void receive_test_link_packet(uint8_t acknowledged) {
+    gap_conn.rx_armed = 1;
+    rx_frame[0] = 1 | (gap_conn.expected_rx_sn << 3) |
+        ((gap_conn.tx_sn ^ acknowledged) << 2);
+    rx_frame[1] = 0;
+    gap_hw_mesh_received();
+}
+
+static void test_connection_timing_updates(void) {
+    assert(!mesh_gap_connection_update(48, 0, 300));
+    start_test_central_link();
+    assert(!mesh_gap_connection_update(5, 0, 300));
+    assert(!mesh_gap_connection_update(3201, 0, 300));
+    assert(!mesh_gap_connection_update(48, 500, 300));
+    assert(!mesh_gap_connection_update(48, 0, 9));
+    assert(!mesh_gap_connection_update(48, 0, 3201));
+    assert(!mesh_gap_connection_update(40, 0, 10)); // Timeout equals 2 intervals.
+    gap_conn.central_role = 0;
+    assert(!mesh_gap_connection_update(48, 0, 300));
+    gap_conn.central_role = 1;
+    gap_conn.channel_map_update_pending = 1;
+    assert(!mesh_gap_connection_update(48, 0, 300));
+    gap_conn.channel_map_update_pending = 0;
+    assert(mesh_gap_connection_update(48, 1, 300));
+    assert(!mesh_gap_connection_update(48, 1, 300));
+    assert(gap_conn.local_update_queued && !gap_conn.update_pending);
+    // Do not overwrite a previous packet while it waits for acknowledgement.
+    receive_test_link_packet(0);
+    assert(gap_conn.local_update_queued && !gap_conn.update_pending);
+    receive_test_link_packet(1);
+    assert(!gap_conn.local_update_queued && gap_conn.update_pending);
+    assert((gap_conn_tx_frame[0] & 3) == 3 && gap_conn_tx_frame[1] == 12);
+    assert(memcmp(gap_conn_tx_frame + 2,
+        (uint8_t[]){0, 1, 0, 0, 48, 0, 1, 0, 44, 1}, 10) == 0);
+    uint16_t instant = gap_conn.update_instant;
+    assert((uint16_t)(instant - gap_conn.event_counter) >= 6);
+    uint8_t payload[12];
+    memcpy(payload, gap_conn_tx_frame + 2, 12);
+    receive_test_link_packet(0);
+    assert(memcmp(payload, gap_conn_tx_frame + 2, 12) == 0);
+    receive_test_link_packet(1);
+    while (gap_conn.event_counter != instant) {
+        assert(gap_conn.interval == 24);
+        receive_test_link_packet(1);
+    }
+    assert(gap_conn.active && gap_conn.interval == 48 && gap_conn.latency == 1);
+    assert(gap_conn.supervision_timeout == 300 && !gap_conn.update_pending);
+    uint64_t next_tick = gap_conn.next_event_ticks;
+    receive_test_link_packet(1);
+    assert(gap_conn.next_event_ticks == next_tick + 48u * 1250);
+    gap_connection_end();
+
+    // Generate a fresh Instant when polling sends the first queued update;
+    // preserve its lead time across event counter wrap and Peripheral latency.
+    start_test_central_link();
+    gap_conn.event_counter = 0xfffe;
+    gap_conn.latency = 3;
+    gap_conn.tx_pending = 0;
+    gap_conn.event_replied = 0;
+    gap_conn.rx_armed = 0;
+    gap_conn.next_event_ticks = (uint64_t)now_ms * 1000;
+    assert(mesh_gap_connection_update(72, 0, 300));
+    mesh_gap_conn_poll();
+    assert(gap_conn.update_pending && !gap_conn.local_update_queued);
+    assert((uint16_t)(gap_conn.update_instant - gap_conn.event_counter) == 25);
+    assert(gap_conn.update_instant < 0xfffe);
+    // Lost acknowledgements must not let the Central apply an unsynchronized
+    // update or keep retransmitting an indication with an expired Instant.
+    instant = gap_conn.update_instant;
+    while (gap_conn.active) receive_test_link_packet(0);
+    assert(gap_conn.event_counter == instant);
+    assert(!gap_conn.update_pending && !gap_conn.local_update_queued);
+
+    start_test_central_link();
+    assert(mesh_gap_disconnect(0x13));
+    assert(!mesh_gap_connection_update(48, 0, 300));
+    gap_connection_end();
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -546,5 +650,6 @@ int main(void) {
     test_peer_privacy_modes();
     test_peer_local_keys();
     test_nonresolvable_private_addresses();
+    test_connection_timing_updates();
     return 0;
 }

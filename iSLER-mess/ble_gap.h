@@ -9,8 +9,9 @@
 #include <string.h>
 
 // TODO for complete BLE GAP support:
-// - Verify Peripheral connection timing on hardware and add remaining Link
-//   Layer control.
+// - Verify Peripheral connection timing on hardware.
+// - Add connection parameter request/response, Link Layer encryption,
+//   data length negotiation, and PHY updates where supported.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation and identity filters on hardware.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
@@ -106,6 +107,7 @@ static struct {
     uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t window_size, update_pending, update_window_active, update_window_size;
     uint8_t channel_map_update_pending, pending_channel_map[5];
+    volatile uint8_t local_update_queued;
     uint16_t interval, latency, supervision_timeout, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
@@ -166,6 +168,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.rx_ready = 0;
     gap_conn.event_counter = 0;
     gap_conn.update_pending = 0;
+    gap_conn.local_update_queued = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
@@ -177,43 +180,6 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
-}
-
-// Apply peer-sent connection or channel-map settings when their Instant event
-// arrives. Connection timing controls when this device wakes to exchange data;
-// the instant event follows the old interval, then uses the new transmit window.
-static void gap_connection_update_apply(uint8_t instant_packet_received) {
-    if (gap_conn.update_pending &&
-        gap_conn.update_instant == gap_conn.event_counter) {
-        uint64_t old_interval_ticks =
-            (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
-        if (instant_packet_received) {
-            // The packet already fixed the new anchor; ignore WinOffset and WinSize.
-            gap_conn.next_event_ticks = gap_conn.next_event_ticks -
-                old_interval_ticks +
-                (uint64_t)gap_conn.update_interval * HW_TICKS_FROM_US(1250);
-        } else {
-            gap_conn.next_event_ticks +=
-                (uint64_t)gap_conn.update_win_offset * HW_TICKS_FROM_US(1250);
-        }
-        gap_conn.interval = gap_conn.update_interval;
-        gap_conn.latency = gap_conn.update_latency;
-        gap_conn.supervision_timeout = gap_conn.update_timeout;
-        gap_conn.window_size = gap_conn.update_window_size;
-        gap_conn.last_rx_ms = GET_MILLIS();
-        gap_conn.update_window_active = !instant_packet_received;
-        gap_conn.update_pending = 0;
-    }
-    if (gap_conn.channel_map_update_pending &&
-        gap_conn.channel_map_update_instant == gap_conn.event_counter) {
-        memcpy(gap_conn.channel_map, gap_conn.pending_channel_map,
-               sizeof(gap_conn.channel_map));
-        gap_conn.used_count = 0;
-        for (uint8_t channel = 0; channel < 37; channel++)
-            if (gap_conn.channel_map[channel / 8] & (1u << (channel % 8)))
-                gap_conn.used_channels[gap_conn.used_count++] = channel;
-        gap_conn.channel_map_update_pending = 0;
-    }
 }
 
 static uint8_t gap_own_address_type;
@@ -854,6 +820,7 @@ static void gap_connection_end(void) {
     gap_conn.tx_queued = 0;
     gap_conn.rx_ready = 0;
     gap_conn.update_pending = 0;
+    gap_conn.local_update_queued = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
@@ -863,6 +830,75 @@ static void gap_connection_end(void) {
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
+}
+
+// Apply connection or channel-map settings when their Instant event
+// arrives. Connection timing controls when this device wakes to exchange data;
+// the instant event follows the old interval, then uses the new transmit window.
+static void gap_connection_update_apply(uint8_t instant_packet_received) {
+    if (gap_conn.update_pending &&
+        gap_conn.update_instant == gap_conn.event_counter) {
+        // Close an unsynchronized Central link instead of retransmitting an
+        // unacknowledged timing update once its Instant is no longer in the future.
+        if (gap_conn.central_role && gap_conn.tx_pending &&
+            (gap_conn_tx_frame[0] & 3) == 3 && gap_conn_tx_frame[1] == 12 &&
+            gap_conn_tx_frame[2] == 0x00) {
+            gap_connection_end();
+            return;
+        }
+        uint64_t old_interval_ticks =
+            (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
+        if (instant_packet_received) {
+            // The packet already fixed the new anchor; ignore WinOffset and WinSize.
+            gap_conn.next_event_ticks = gap_conn.next_event_ticks -
+                old_interval_ticks +
+                (uint64_t)gap_conn.update_interval * HW_TICKS_FROM_US(1250);
+        } else {
+            gap_conn.next_event_ticks +=
+                (uint64_t)gap_conn.update_win_offset * HW_TICKS_FROM_US(1250);
+        }
+        gap_conn.interval = gap_conn.update_interval;
+        gap_conn.latency = gap_conn.update_latency;
+        gap_conn.supervision_timeout = gap_conn.update_timeout;
+        gap_conn.window_size = gap_conn.update_window_size;
+        gap_conn.last_rx_ms = GET_MILLIS();
+        gap_conn.update_window_active = !instant_packet_received;
+        gap_conn.update_pending = 0;
+    }
+    if (gap_conn.channel_map_update_pending &&
+        gap_conn.channel_map_update_instant == gap_conn.event_counter) {
+        memcpy(gap_conn.channel_map, gap_conn.pending_channel_map,
+               sizeof(gap_conn.channel_map));
+        gap_conn.used_count = 0;
+        for (uint8_t channel = 0; channel < 37; channel++)
+            if (gap_conn.channel_map[channel / 8] & (1u << (channel % 8)))
+                gap_conn.used_channels[gap_conn.used_count++] = channel;
+        gap_conn.channel_map_update_pending = 0;
+    }
+}
+
+// Build the queued Central update only when its TX slot is free, so the
+// Instant stays in the future while earlier packets wait for acknowledgement.
+static void gap_connection_update_send(void) {
+    gap_conn.update_window_size = 1;
+    gap_conn.update_win_offset = 0;
+    gap_conn.update_instant = (uint16_t)(gap_conn.event_counter +
+        6u * (gap_conn.latency + 1) + 1);
+    gap_conn_tx_frame[0] = 0x03;
+    gap_conn_tx_frame[1] = 12;
+    gap_conn_tx_frame[2] = 0x00; // LL_CONNECTION_UPDATE_IND
+    gap_conn_tx_frame[3] = gap_conn.update_window_size;
+    gap_conn_tx_frame[4] = gap_conn_tx_frame[5] = 0; // WinOffset
+    gap_conn_tx_frame[6] = (uint8_t)gap_conn.update_interval;
+    gap_conn_tx_frame[7] = (uint8_t)(gap_conn.update_interval >> 8);
+    gap_conn_tx_frame[8] = (uint8_t)gap_conn.update_latency;
+    gap_conn_tx_frame[9] = (uint8_t)(gap_conn.update_latency >> 8);
+    gap_conn_tx_frame[10] = (uint8_t)gap_conn.update_timeout;
+    gap_conn_tx_frame[11] = (uint8_t)(gap_conn.update_timeout >> 8);
+    gap_conn_tx_frame[12] = (uint8_t)gap_conn.update_instant;
+    gap_conn_tx_frame[13] = (uint8_t)(gap_conn.update_instant >> 8);
+    gap_conn.update_pending = 1;
+    gap_conn.local_update_queued = 0;
 }
 
 // Rotate between radio exchanges; preserve addresses throughout initiation,
@@ -963,7 +999,7 @@ void gap_hw_mesh_received(void) {
                 gap_conn_tx_frame[0] = 0x03;
                 switch (frame[2]) {
                 case 0x00: { // LL_CONNECTION_UPDATE_IND
-                    if (frame[1] == 12 && !gap_conn.update_pending) {
+                    if (!gap_conn.central_role && frame[1] == 12 && !gap_conn.update_pending) {
                         uint8_t win_size = frame[3];
                         uint16_t win_offset = (uint16_t)frame[4] |
                             (uint16_t)frame[5] << 8;
@@ -1003,7 +1039,8 @@ void gap_hw_mesh_received(void) {
                     break;
                 }
                 case 0x01: { // LL_CHANNEL_MAP_IND
-                    if (frame[1] == 8 && !gap_conn.channel_map_update_pending) {
+                    if (!gap_conn.central_role && frame[1] == 8 &&
+                        !gap_conn.channel_map_update_pending) {
                         uint8_t used_count = 0;
                         for (uint8_t channel = 0; channel < 37; channel++)
                             if (frame[3 + channel / 8] &
@@ -1126,6 +1163,9 @@ unknown_control_pdu:
                 gap_conn.local_terminate_pending = 1;
                 gap_conn.tx_queued = 0;
             }
+            if (gap_conn_tx_frame[1] == 0 && gap_conn.local_update_queued &&
+                !gap_conn.terminate_after_reply)
+                gap_connection_update_send();
             if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued &&
                 !gap_conn.terminate_after_reply) {
                 gap_conn_tx_frame[0] = gap_conn.tx_llid;
@@ -1135,8 +1175,10 @@ unknown_control_pdu:
             }
         }
         gap_connection_update_apply(1);
+        if (!gap_conn.active) return;
         gap_conn.event_counter++;
         gap_connection_update_apply(0);
+        if (!gap_conn.active) return;
         gap_conn_tx_frame[0] =
             (gap_conn_tx_frame[0] & 0x03) |
             (gap_conn.expected_rx_sn << 2) |
@@ -1464,6 +1506,7 @@ static void mesh_gap_conn_poll(void) {
                 (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
             gap_conn.event_counter++;
             gap_connection_update_apply(0);
+            if (!gap_conn.active) return;
             skipped++;
         } while (now >= gap_conn.next_event_ticks +
                  (uint64_t)(gap_conn.first_event || gap_conn.update_window_active ?
@@ -1497,6 +1540,9 @@ static void mesh_gap_conn_poll(void) {
         if (!gap_conn.tx_pending) {
             gap_conn_tx_frame[0] = 0x01;
             gap_conn_tx_frame[1] = 0;
+            if (gap_conn.local_update_queued && !gap_conn.local_terminate_queued &&
+                !gap_conn.local_terminate_pending)
+                gap_connection_update_send();
             gap_conn.tx_pending = 1;
         }
         gap_conn_tx_frame[0] = (gap_conn_tx_frame[0] & 0x03) |
@@ -1518,6 +1564,25 @@ static void mesh_gap_conn_poll(void) {
 // True after Central initiation or the first received Peripheral data packet.
 int mesh_gap_connected(void) {
     return gap_conn.active && (gap_conn.central_role || !gap_conn.first_event);
+}
+
+// Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
+// latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
+// Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
+int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
+                                 uint16_t timeout) {
+    if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+        gap_conn.local_update_queued || gap_conn.update_pending ||
+        gap_conn.channel_map_update_pending || gap_conn.terminate_after_reply ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        interval < 6 || interval > 3200 || latency > 499 ||
+        timeout < 10 || timeout > 3200 ||
+        (uint32_t)timeout * 8 <= 2u * (uint32_t)(latency + 1) * interval) return 0;
+    gap_conn.update_interval = interval;
+    gap_conn.update_latency = latency;
+    gap_conn.update_timeout = timeout;
+    gap_conn.local_update_queued = 1;
+    return 1;
 }
 
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
