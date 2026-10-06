@@ -16,8 +16,8 @@
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Add durable platform bond storage and verify restored bonds on hardware.
-// - Add Secure Connections OOB pairing; Just Works, Numeric Comparison,
-//   Passkey Entry, and LTK bonding are opt-in.
+// - Verify Secure Connections OOB exchange and restored bonds on hardware.
+//   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -125,6 +125,13 @@ typedef struct {
     uint8_t peer_irk[16], local_irk[16];
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
 } mesh_gap_bond;
+
+// LE Secure Connections OOB authentication data. Exchange both fields through
+// an authenticated OOB channel before calling mesh_gap_pair(). Values use SMP
+// byte order.
+typedef struct {
+    uint8_t random[16], confirm[16];
+} mesh_gap_sc_oob_data;
 
 static int mesh_gap_bond_valid(const mesh_gap_bond *bond) {
     if (!bond || bond->version != MESH_GAP_BOND_VERSION || !bond->valid ||
@@ -265,6 +272,9 @@ static struct {
     struct {
         uint8_t private_key[32], public_key[64], peer_public_key[64];
         uint8_t dhkey[32], mac_key[16], ltk[16], peer_random[16];
+        uint8_t oob_active, oob_peer_present;
+        uint8_t oob_local_random[16], oob_peer_random[16];
+        uint8_t oob_peer_confirm[16];
         uint8_t numeric_required, numeric_reply, passkey_required, passkey_round;
         uint8_t peer_check_received, peer_check[16];
         uint32_t numeric_value;
@@ -273,6 +283,14 @@ static struct {
     uint8_t tx[69], tx_len, tx_offset, rx[69], rx_len, rx_expected;
     uint32_t started_ms;
 } gap_smp;
+static struct {
+    uint8_t valid, private_key[32], public_key[64];
+    mesh_gap_sc_oob_data data;
+} gap_sc_oob_local;
+static struct {
+    uint8_t valid;
+    mesh_gap_sc_oob_data data;
+} gap_sc_oob_peer;
 static void mesh_gap_smp_poll(void);
 static void mesh_gap_smp_bond_abort(void);
 static uint8_t gap_bond_repair_pending;

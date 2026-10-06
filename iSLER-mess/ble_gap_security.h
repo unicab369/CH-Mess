@@ -41,6 +41,14 @@ static int gap_sc_generate_key(void) {
     return generated;
 }
 
+// Erase OOB values and the matching private key after one pairing attempt.
+static void gap_sc_oob_clear(void) {
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
+    for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
+    wipe = (volatile uint8_t *)&gap_sc_oob_peer;
+    for (size_t i = 0; i < sizeof(gap_sc_oob_peer); i++) wipe[i] = 0;
+}
+
 static int gap_sc_accept_key(const uint8_t on_air[64]) {
     for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
         gap_sc_reverse(gap_smp.sc.peer_public_key + 32 * coordinate,
@@ -196,7 +204,11 @@ static uint32_t gap_sc_numeric_value(void) {
 
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     uint8_t na[16], nb[16], a1[7], a2[7], check[16], r[16] = {0};
-    if (gap_smp.sc.passkey_required) {
+    if (gap_smp.sc.oob_active) {
+        const uint8_t *oob_random = from_central == gap_conn.central_role ?
+            gap_smp.sc.oob_local_random : gap_smp.sc.oob_peer_random;
+        gap_sc_reverse(r, oob_random, 16);
+    } else if (gap_smp.sc.passkey_required) {
         r[12] = gap_smp.tk[3]; r[13] = gap_smp.tk[2];
         r[14] = gap_smp.tk[1]; r[15] = gap_smp.tk[0];
     }
@@ -495,6 +507,7 @@ static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
     gap_smp.tx_len = gap_smp.tx_offset = gap_smp.rx_len = gap_smp.rx_expected = 0;
     wipe = (volatile uint8_t *)&gap_smp.sc;
     for (size_t i = 0; i < sizeof(gap_smp.sc); i++) wipe[i] = 0;
+    gap_sc_oob_clear();
     gap_smp.sc_active = 0;
     volatile uint8_t *previous_wipe = (volatile uint8_t *)&gap_smp.previous_bond;
     for (size_t i = 0; i < sizeof(gap_smp.previous_bond); i++) previous_wipe[i] = 0;
@@ -547,6 +560,58 @@ int mesh_gap_bonding_set(uint8_t enabled) {
 int mesh_gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.phase) return 0;
     gap_pairing_policy.secure_connections = enabled;
+    if (!enabled) gap_sc_oob_clear();
+    return 1;
+}
+
+// Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
+// The application must deliver both values to the peer over its OOB channel.
+int mesh_gap_sc_oob_get(mesh_gap_sc_oob_data *out) {
+    if (!out || !gap_pairing_enabled || !gap_pairing_policy.secure_connections ||
+        !mesh_gap_connected() || mesh_gap_encrypted() || gap_smp.phase ||
+        gap_security.phase) return 0;
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
+    for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
+    memset(&gap_smp.sc, 0, sizeof(gap_smp.sc));
+    uint8_t random[16] = {0}, confirm[16] = {0};
+    uint32_t generation = gap_security_generation;
+    if (!gap_sc_generate_key() ||
+        !BLE_GAP_RANDOM_SECURE_BYTES(random, sizeof(random)) ||
+        !gap_conn.active || generation != gap_security_generation) {
+        volatile uint8_t *secret = (volatile uint8_t *)&gap_smp.sc;
+        for (size_t i = 0; i < sizeof(gap_smp.sc); i++) secret[i] = 0;
+        wipe = random;
+        for (size_t i = 0; i < sizeof(random); i++) wipe[i] = 0;
+        wipe = confirm;
+        for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+        return 0;
+    }
+    gap_sc_confirm_value(gap_smp.sc.public_key, gap_smp.sc.public_key,
+                         random, 0, confirm);
+    gap_sc_oob_local.valid = 1;
+    memcpy(gap_sc_oob_local.private_key, gap_smp.sc.private_key, 32);
+    memcpy(gap_sc_oob_local.public_key, gap_smp.sc.public_key, 64);
+    memcpy(gap_sc_oob_local.data.random, random, 16);
+    memcpy(gap_sc_oob_local.data.confirm, confirm, 16);
+    *out = gap_sc_oob_local.data;
+    wipe = (volatile uint8_t *)&gap_smp.sc;
+    for (size_t i = 0; i < sizeof(gap_smp.sc); i++) wipe[i] = 0;
+    wipe = random;
+    for (size_t i = 0; i < sizeof(random); i++) wipe[i] = 0;
+    wipe = confirm;
+    for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+    return 1;
+}
+
+// Provide the peer's OOB commitment and random value. Pass NULL to clear it.
+int mesh_gap_sc_oob_set_peer(const mesh_gap_sc_oob_data *peer) {
+    if (!gap_pairing_policy.secure_connections || gap_smp.phase) return 0;
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_peer;
+    for (size_t i = 0; i < sizeof(gap_sc_oob_peer); i++) wipe[i] = 0;
+    if (peer) {
+        gap_sc_oob_peer.valid = 1;
+        memcpy(&gap_sc_oob_peer.data, peer, sizeof(*peer));
+    }
     return 1;
 }
 
@@ -626,7 +691,8 @@ int mesh_gap_pair(void) {
     else
         memset(&gap_smp.previous_bond, 0, sizeof(gap_smp.previous_bond));
     if (gap_conn.central_role) {
-        uint8_t request[7] = {1, gap_pairing_policy.io, 0,
+        uint8_t request[7] = {1, gap_pairing_policy.io,
+            gap_pairing_policy.secure_connections && gap_sc_oob_peer.valid,
             (gap_pairing_policy.authenticated ? 4 : 0) |
                 (gap_pairing_policy.bonding ? 1 : 0) |
                 (gap_pairing_policy.secure_connections ? 8 : 0),
@@ -1111,7 +1177,6 @@ static void mesh_gap_smp_poll(void) {
         }
         if (n != 7 || p[1] > 4 || p[2] > 1 || (p[3] & 3) > 1 ||
             p[4] < 7 || p[4] > 16) goto failed;
-        if (p[2]) { error = 2; goto failed; }
         if (op == 2 && ((p[5] & (uint8_t)~1u) || (p[6] & (uint8_t)~1u) ||
             (p[5] & (uint8_t)~gap_smp.request[5]) ||
             (p[6] & (uint8_t)~gap_smp.request[6]))) goto failed;
@@ -1120,8 +1185,18 @@ static void mesh_gap_smp_poll(void) {
             error = 3; goto failed;
         }
         if (gap_smp.sc_active && p[4] != 16) { error = 6; goto failed; }
-        if (gap_smp.sc_active && (p[2] || (p[3] & 2) || p[5] || p[6])) {
-            error = 3; goto failed; // OOB and SC key distribution remain unsupported.
+        if (!gap_smp.sc_active && p[2]) { error = 2; goto failed; }
+        if (gap_smp.sc_active && ((p[3] & 2) || p[5] || p[6])) {
+            error = 3; goto failed; // SC key distribution remains unsupported.
+        }
+        // The local flag means we have the peer's data; p[2] means the peer
+        // has ours. The latter determines whether our own f6 R is nonzero.
+        uint8_t local_oob_flag = op == 1 ? gap_sc_oob_peer.valid :
+            gap_smp.request[2];
+        gap_smp.sc.oob_active = gap_smp.sc_active &&
+            (local_oob_flag || p[2]);
+        if (gap_smp.sc.oob_active && p[2] && !gap_sc_oob_local.valid) {
+            error = 2; goto failed;
         }
         if (op == 1 && gap_pairing_policy.bonding &&
             (!(p[3] & 1) || (!gap_smp.sc_active && !(p[5] & 1)))) {
@@ -1140,7 +1215,9 @@ static void mesh_gap_smp_poll(void) {
         }
         uint8_t local_io = gap_pairing_policy.io, peer_io = p[1];
         gap_smp.confirm_received = gap_smp.passkey_action = gap_smp.authenticated = 0;
-        if (gap_smp.sc_active) {
+        if (gap_smp.sc_active && gap_smp.sc.oob_active) {
+            gap_smp.authenticated = 1;
+        } else if (gap_smp.sc_active) {
             uint8_t mitm = (p[3] & 4) ||
                 (gap_conn.central_role && (gap_smp.request[3] & 4)) ||
                 gap_pairing_policy.authenticated;
@@ -1190,9 +1267,34 @@ static void mesh_gap_smp_poll(void) {
         for (unsigned i = 0; i < 16; i++) random_wipe[i] = 0;
         if (!same_link) return;
         if (!entropy_ready) { error = 8; goto failed; }
-        if (gap_smp.sc_active && !gap_sc_generate_key()) {
-            if (!gap_conn.active || generation != gap_security_generation) return;
-            error = 8; goto failed;
+        if (gap_smp.sc_active) {
+            if (gap_smp.sc.oob_active) {
+                gap_smp.sc.oob_peer_present = local_oob_flag;
+                if (gap_sc_oob_local.valid) {
+                    memcpy(gap_smp.sc.private_key,
+                           gap_sc_oob_local.private_key, 32);
+                    memcpy(gap_smp.sc.public_key,
+                           gap_sc_oob_local.public_key, 64);
+                } else if (!gap_sc_generate_key()) {
+                    if (!gap_conn.active || generation != gap_security_generation)
+                        return;
+                    error = 8; goto failed;
+                }
+                if (p[2])
+                    memcpy(gap_smp.sc.oob_local_random,
+                           gap_sc_oob_local.data.random, 16);
+                if (local_oob_flag) {
+                    memcpy(gap_smp.sc.oob_peer_random,
+                           gap_sc_oob_peer.data.random, 16);
+                    memcpy(gap_smp.sc.oob_peer_confirm,
+                           gap_sc_oob_peer.data.confirm, 16);
+                }
+                gap_sc_oob_clear();
+            } else if (!gap_sc_generate_key()) {
+                if (!gap_conn.active || generation != gap_security_generation)
+                    return;
+                error = 8; goto failed;
+            }
         }
         if (gap_smp.passkey_action == MESH_GAP_PASSKEY_DISPLAY) {
             // Rejection sampling avoids modulo bias in the six-digit passkey.
@@ -1216,7 +1318,7 @@ static void mesh_gap_smp_poll(void) {
             memcpy(gap_smp.request, p, 7);
             gap_smp.response[0] = 2;
             gap_smp.response[1] = local_io;
-            gap_smp.response[2] = 0;
+            gap_smp.response[2] = gap_smp.sc.oob_active ? local_oob_flag : 0;
             gap_smp.response[3] = ((gap_smp.authenticated ||
                 gap_pairing_policy.authenticated) ? 4 : 0) |
                 (gap_smp.bond_requested ? 1 : 0) |
@@ -1249,6 +1351,17 @@ static void mesh_gap_smp_poll(void) {
         if (!gap_sc_accept_key(p + 1)) {
             if (!gap_conn.active || generation != gap_security_generation) return;
             error = 0x0b; goto failed; // Invalid P-256 point or reflected key.
+        }
+        if (gap_smp.sc.oob_active && gap_smp.sc.oob_peer_present) {
+            uint8_t confirm[16], difference = 0;
+            gap_sc_confirm_value(gap_smp.sc.peer_public_key,
+                                 gap_smp.sc.peer_public_key,
+                                 gap_smp.sc.oob_peer_random, 0, confirm);
+            for (uint8_t i = 0; i < 16; i++)
+                difference |= confirm[i] ^ gap_smp.sc.oob_peer_confirm[i];
+            volatile uint8_t *wipe = confirm;
+            for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+            if (difference) { error = 4; goto failed; }
         }
         if (!gap_conn.central_role) {
             uint8_t public_key[64];

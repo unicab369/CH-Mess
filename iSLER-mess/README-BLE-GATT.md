@@ -22,8 +22,12 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 ### 2. Complete the generic GATT server
 
-- [ ] Add Prepare Write and Execute Write, including queued-write bounds,
-  offset validation, cancellation, and atomic commit behavior.
+- [x] Add Prepare Write and Execute Write for server-owned values, with bounded
+  queueing, offset/gap validation, cancellation, and all-or-nothing commit.
+- [x] Define transactional prepare/execute callbacks for application-owned
+  dynamic values; callbacks stage during Prepare Write, then commit once after
+  whole-batch validation or discard on cancel/error. Commit callbacks must not
+  fail.
 - [x] Add Read Multiple and Read Multiple Variable Length procedures.
 - [x] Add notification and indication APIs, CCCD subscription checks, and
   indication confirmation tracking.

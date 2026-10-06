@@ -17,6 +17,12 @@
 #ifndef BLE_GATT_SERVER_VALUE_POOL_SIZE
 #define BLE_GATT_SERVER_VALUE_POOL_SIZE 512
 #endif
+#ifndef BLE_GATT_SERVER_PREPARE_QUEUE_SIZE
+#define BLE_GATT_SERVER_PREPARE_QUEUE_SIZE 8
+#endif
+#ifndef BLE_GATT_SERVER_PREPARE_BYTES
+#define BLE_GATT_SERVER_PREPARE_BYTES 256
+#endif
 #ifndef BLE_GATT_SERVER_MTU_MAX
 #define BLE_GATT_SERVER_MTU_MAX 517
 #endif
@@ -64,6 +70,7 @@ enum {
     BLE_GATT_ATT_ERR_ATTRIBUTE_NOT_FOUND = 0x0a,
     BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH = 0x0d,
     BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES = 0x11,
+    BLE_GATT_ATT_ERR_UNLIKELY_ERROR = 0x0e,
     BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION = 0x0f,
     BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION = 0x05,
     BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED = 0x13
@@ -77,9 +84,15 @@ typedef struct {
 struct ble_gatt_attribute;
 typedef uint8_t (*ble_gatt_read_fn)(void *context, uint16_t offset,
                                     uint8_t *out, uint16_t *inout_len);
+// `command` is nonzero for an ATT Write Command.
 typedef uint8_t (*ble_gatt_write_fn)(void *context, uint16_t offset,
                                     const uint8_t *value, uint16_t len,
                                     uint8_t command);
+// Prepare validates and stages one fragment without publishing it. Execute is
+// called once at commit (commit=1) or cancel (commit=0); commit must not fail.
+typedef uint8_t (*ble_gatt_prepare_fn)(void *context, uint16_t offset,
+                                      const uint8_t *value, uint16_t len);
+typedef void (*ble_gatt_execute_fn)(void *context, uint8_t commit);
 
 typedef struct ble_gatt_attribute {
     uint16_t handle;
@@ -93,17 +106,29 @@ typedef struct ble_gatt_attribute {
     uint16_t cccd;
     ble_gatt_read_fn read;
     ble_gatt_write_fn write;
+    ble_gatt_prepare_fn prepare;
+    ble_gatt_execute_fn execute;
     void *context;
 } ble_gatt_attribute;
+
+typedef struct {
+    uint16_t handle, offset, len, data_offset;
+} ble_gatt_prepared_write;
 
 typedef struct {
     ble_gatt_attribute attributes[BLE_GATT_SERVER_MAX_ATTRIBUTES];
     uint16_t count, next_handle, mtu, local_mtu;
     uint16_t value_used;
     uint8_t value_pool[BLE_GATT_SERVER_VALUE_POOL_SIZE];
+    ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
+    uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
+    uint16_t prepare_count, prepare_used;
     uint8_t mtu_exchanged, encrypted, authenticated, indication_pending;
     uint16_t indication_handle;
 } ble_gatt_server;
+
+static void ble_gatt_server_prepare_cancel_all(ble_gatt_server *server,
+                                                uint16_t extra_handle);
 
 static uint16_t ble_gatt_server_u16(const uint8_t *p) {
     return (uint16_t)p[0] | (uint16_t)p[1] << 8;
@@ -146,11 +171,14 @@ static inline void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_
 
 static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
     if (!server) return;
+    ble_gatt_server_prepare_cancel_all(server, 0);
     server->mtu = 23;
     server->mtu_exchanged = 0;
     server->encrypted = server->authenticated = 0;
     server->indication_pending = 0;
     server->indication_handle = 0;
+    memset(server->prepare_data, 0, sizeof(server->prepare_data));
+    server->prepare_count = server->prepare_used = 0;
     for (uint16_t i = 0; i < server->count; i++)
         if (server->attributes[i].flags & BLE_GATT_ATTRIBUTE_CCCD)
             server->attributes[i].cccd = 0;
@@ -170,6 +198,40 @@ static ble_gatt_attribute *ble_gatt_server_find(ble_gatt_server *server,
         if (server->attributes[i].handle == handle)
             return &server->attributes[i];
     return NULL;
+}
+
+static inline int ble_gatt_server_set_transaction_callbacks(
+    ble_gatt_server *server, uint16_t handle,
+    ble_gatt_prepare_fn prepare, ble_gatt_execute_fn execute) {
+    if (!server) return 0;
+    ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+    if (!a || !prepare || !execute || server->prepare_count ||
+        !(a->permissions & (BLE_GATT_PERM_WRITE |
+                            BLE_GATT_PERM_WRITE_ENCRYPTED |
+                            BLE_GATT_PERM_WRITE_AUTHENTICATED))) return 0;
+    a->prepare = prepare;
+    a->execute = execute;
+    return 1;
+}
+
+static void ble_gatt_server_prepare_cancel_all(ble_gatt_server *server,
+                                                uint16_t extra_handle) {
+    if (!server) return;
+    uint8_t extra_seen = 0;
+    for (uint16_t i = 0; i < server->prepare_count; i++) {
+        uint16_t handle = server->prepared[i].handle;
+        uint8_t first = 1;
+        for (uint16_t j = 0; j < i; j++)
+            if (server->prepared[j].handle == handle) first = 0;
+        if (!first) continue;
+        if (handle == extra_handle) extra_seen = 1;
+        ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+        if (a && a->execute) a->execute(a->context, 0);
+    }
+    if (extra_handle && !extra_seen) {
+        ble_gatt_attribute *a = ble_gatt_server_find(server, extra_handle);
+        if (a && a->execute) a->execute(a->context, 0);
+    }
 }
 
 static int ble_gatt_server_add(ble_gatt_server *server,
@@ -451,6 +513,88 @@ static inline int ble_gatt_server_indicate(ble_gatt_server *server,
     return 1;
 }
 
+static void ble_gatt_server_prepare_clear(ble_gatt_server *server) {
+    memset(server->prepare_data, 0, server->prepare_used);
+    server->prepare_count = 0;
+    server->prepare_used = 0;
+}
+
+static uint8_t ble_gatt_server_prepare_validate(ble_gatt_server *server,
+    ble_gatt_attribute *a, uint16_t offset, uint16_t len) {
+    if (!(a->permissions & (BLE_GATT_PERM_WRITE |
+                            BLE_GATT_PERM_WRITE_ENCRYPTED |
+                            BLE_GATT_PERM_WRITE_AUTHENTICATED)))
+        return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
+    uint8_t security = ble_gatt_server_security_error(server, a->permissions, 1);
+    if (security) return security;
+    if (a->prepare || a->execute)
+        return (a->prepare && a->execute) ? 0 :
+            BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (a->write) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (offset > a->value_capacity || len > a->value_capacity - offset)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    return 0;
+}
+
+static uint8_t ble_gatt_server_prepare_execute(ble_gatt_server *server) {
+    // Validate the full batch before changing any attribute.
+    for (uint16_t i = 0; i < server->prepare_count; i++) {
+        ble_gatt_prepared_write *p = &server->prepared[i];
+        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        if (!a) return BLE_GATT_ATT_ERR_INVALID_HANDLE;
+        uint8_t error = ble_gatt_server_prepare_validate(server, a,
+                                                          p->offset, p->len);
+        if (error) return error;
+        if (a->execute) continue;
+    }
+    // New bytes must be covered continuously from the old value length; this
+    // prevents stale bytes from becoming visible through gaps in queued writes.
+    for (uint16_t i = 0; i < server->prepare_count; i++) {
+        ble_gatt_prepared_write *p = &server->prepared[i];
+        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        if (a->execute) continue;
+        uint16_t end = a->value_len;
+        for (uint16_t j = 0; j < server->prepare_count; j++)
+            if (server->prepared[j].handle == p->handle &&
+                server->prepared[j].offset + server->prepared[j].len > end)
+                end = server->prepared[j].offset + server->prepared[j].len;
+        uint16_t covered = a->value_len;
+        while (covered < end) {
+            uint16_t next = covered;
+            for (uint16_t j = 0; j < server->prepare_count; j++) {
+                ble_gatt_prepared_write *part = &server->prepared[j];
+                uint16_t part_end = part->offset + part->len;
+                if (part->handle == p->handle && part->offset <= covered &&
+                    part_end > next) next = part_end;
+            }
+            if (next == covered) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+            covered = next;
+        }
+    }
+    // Callback commits are contractually infallible after their prepare phase.
+    for (uint16_t i = 0; i < server->prepare_count; i++) {
+        uint16_t handle = server->prepared[i].handle;
+        uint8_t first = 1;
+        for (uint16_t j = 0; j < i; j++)
+            if (server->prepared[j].handle == handle) first = 0;
+        if (!first) continue;
+        ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+        if (a && a->execute) a->execute(a->context, 1);
+    }
+    // Static commits are bounded copies into registered storage.
+    for (uint16_t i = 0; i < server->prepare_count; i++) {
+        ble_gatt_prepared_write *p = &server->prepared[i];
+        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        if (a->execute) continue;
+        uint8_t *value = ble_gatt_attribute_value(server, a);
+        if (p->len) memcpy(value + p->offset,
+                           server->prepare_data + p->data_offset, p->len);
+        if (p->offset + p->len > a->value_len)
+            a->value_len = p->offset + p->len;
+    }
+    return 0;
+}
+
 // Process one complete ATT request PDU. Returns 1 when a response is present,
 // 0 for commands/notifications that require no response, and -1 on bad args.
 static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
@@ -651,6 +795,64 @@ static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *re
         if (n == 1) return ble_gatt_server_error_rsp(op, 0,
             BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES, rsp, rsp_capacity, rsp_len);
         *rsp_len = n;
+        return 1;
+    }
+    if (op == 0x16) { // Prepare Write Request
+        if (req_len < 5) goto invalid_pdu;
+        if (rsp_capacity < req_len) return 0;
+        uint16_t h = ble_gatt_server_u16(req + 1);
+        uint16_t offset = ble_gatt_server_u16(req + 3);
+        uint16_t value_len = req_len - 5;
+        ble_gatt_attribute *a = ble_gatt_server_find(server, h);
+        if (!a) return ble_gatt_server_error_rsp(op, h,
+            BLE_GATT_ATT_ERR_INVALID_HANDLE, rsp, rsp_capacity, rsp_len);
+        uint8_t error = ble_gatt_server_prepare_validate(server, a, offset,
+                                                          value_len);
+        if (error) return ble_gatt_server_error_rsp(op, h, error, rsp,
+                                                     rsp_capacity, rsp_len);
+        if (server->prepare_count >= BLE_GATT_SERVER_PREPARE_QUEUE_SIZE ||
+            value_len > BLE_GATT_SERVER_PREPARE_BYTES - server->prepare_used)
+            return ble_gatt_server_error_rsp(op, h,
+                BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES, rsp,
+                rsp_capacity, rsp_len);
+        if (a->prepare) {
+            error = a->prepare(a->context, offset, req + 5, value_len);
+            if (error) {
+                ble_gatt_server_prepare_cancel_all(server, h);
+                ble_gatt_server_prepare_clear(server);
+                return ble_gatt_server_error_rsp(op, h, error, rsp,
+                                                  rsp_capacity, rsp_len);
+            }
+        }
+        ble_gatt_prepared_write *queued =
+            &server->prepared[server->prepare_count++];
+        queued->handle = h;
+        queued->offset = offset;
+        queued->len = value_len;
+        queued->data_offset = server->prepare_used;
+        if (value_len) memcpy(server->prepare_data + server->prepare_used,
+                              req + 5, value_len);
+        server->prepare_used += value_len;
+        memcpy(rsp, req, req_len);
+        rsp[0] = 0x17;
+        *rsp_len = req_len;
+        return 1;
+    }
+    if (op == 0x18) { // Execute Write Request
+        if (req_len != 2 || req[1] > 1) goto invalid_pdu;
+        if (rsp_capacity < 1) return 0;
+        if (req[1]) {
+            uint8_t error = ble_gatt_server_prepare_execute(server);
+            if (error) {
+                ble_gatt_server_prepare_cancel_all(server, 0);
+                ble_gatt_server_prepare_clear(server);
+                return ble_gatt_server_error_rsp(op, 0, error, rsp,
+                                                  rsp_capacity, rsp_len);
+            }
+        } else ble_gatt_server_prepare_cancel_all(server, 0);
+        ble_gatt_server_prepare_clear(server);
+        rsp[0] = 0x19;
+        *rsp_len = 1;
         return 1;
     }
     if (op == 0x12 || op == 0x52) { // Write Request / Write Command
