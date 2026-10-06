@@ -45,7 +45,7 @@ The checklists below describe the GAP features in this project. `[x]` means code
 | Connection event timing | [ ] TODO: Verify timing and recovery on hardware. |
 | Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Verify encrypted links on hardware. |
 | Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
-| LE Secure Connections | [x] Opt-in nonbonding Just Works and Numeric Comparison with P-256 public-key exchange, DHKey checks, and user approval; [ ] TODO: Add Secure Connections Passkey Entry, OOB pairing, and bonding. |
+| LE Secure Connections | [x] Opt-in nonbonding Just Works, Numeric Comparison, and 20-round Passkey Entry with P-256 public-key exchange and DHKey checks; [ ] TODO: Add OOB pairing and Secure Connections bonding. |
 | Bond storage and secure randomness | [x] Bond load/save/delete and secure random interfaces, with pairing failing when required support is unavailable; [ ] TODO: Provide durable platform bond storage and a cryptographic random source. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
@@ -61,7 +61,7 @@ The checklists below describe the GAP features in this project. `[x]` means code
 | Connection event timing and lifecycle | [ ] TODO: Verify connection timing, failures, and recovery on hardware. |
 | Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Verify encrypted links on hardware. |
 | Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
-| LE Secure Connections | [x] Opt-in nonbonding Just Works and Numeric Comparison with P-256 public-key exchange, DHKey checks, and user approval; [ ] TODO: Add Secure Connections Passkey Entry, OOB pairing, and bonding. |
+| LE Secure Connections | [x] Opt-in nonbonding Just Works, Numeric Comparison, and 20-round Passkey Entry with P-256 public-key exchange and DHKey checks; [ ] TODO: Add OOB pairing and Secure Connections bonding. |
 | Bond storage and secure randomness | [x] Bond load/save/delete and secure random interfaces, with pairing failing when required support is unavailable; [ ] TODO: Provide durable platform bond storage and a cryptographic random source. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |

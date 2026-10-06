@@ -150,10 +150,11 @@ static inline uint32_t gap_sc_g2(const uint8_t u[32], const uint8_t v[32],
 static void gap_sc_confirm_value(const uint8_t first_x[32],
                                  const uint8_t second_x[32],
                                  const uint8_t nonce_air[16],
+                                 uint8_t z,
                                  uint8_t confirm_air[16]) {
     uint8_t nonce[16], confirm[16];
     gap_sc_reverse(nonce, nonce_air, 16);
-    gap_sc_f4(first_x, second_x, nonce, 0, confirm);
+    gap_sc_f4(first_x, second_x, nonce, z, confirm);
     gap_sc_reverse(confirm_air, confirm, 16);
     volatile uint8_t *wipe = nonce;
     for (size_t i = 0; i < sizeof(nonce); i++) wipe[i] = 0;
@@ -161,30 +162,18 @@ static void gap_sc_confirm_value(const uint8_t first_x[32],
     for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
 }
 
+static uint8_t gap_sc_passkey_z(void) {
+    uint32_t passkey = (uint32_t)gap_smp.tk[0] |
+        (uint32_t)gap_smp.tk[1] << 8 |
+        (uint32_t)gap_smp.tk[2] << 16 |
+        (uint32_t)gap_smp.tk[3] << 24;
+    return 0x80 | ((passkey >> gap_smp.sc.passkey_round) & 1);
+}
+
 static void gap_sc_typed_address(uint8_t out[7], uint8_t type,
                                  const uint8_t address_air[6]) {
     out[0] = type;
     gap_sc_reverse(out + 1, address_air, 6);
-}
-
-static void gap_sc_derive_keys(void) {
-    uint8_t na[16], nb[16], a1[7], a2[7], ltk[16];
-    gap_sc_reverse(na, gap_conn.central_role ? gap_smp.random :
-                   gap_smp.sc.peer_random, 16);
-    gap_sc_reverse(nb, gap_conn.central_role ? gap_smp.sc.peer_random :
-                   gap_smp.random, 16);
-    gap_sc_typed_address(a1, gap_conn.initiator_type, gap_conn.initiator);
-    gap_sc_typed_address(a2, gap_conn.responder_type, gap_conn.responder);
-    gap_sc_f5(gap_smp.sc.dhkey, na, nb, a1, a2, gap_smp.sc.mac_key, ltk);
-    gap_sc_reverse(gap_smp.sc.ltk, ltk, 16);
-    volatile uint8_t *wipe = na;
-    for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
-    wipe = nb;
-    for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
-    wipe = ltk;
-    for (size_t i = 0; i < sizeof(ltk); i++) wipe[i] = 0;
-    wipe = gap_smp.sc.dhkey;
-    for (size_t i = 0; i < sizeof(gap_smp.sc.dhkey); i++) wipe[i] = 0;
 }
 
 static uint32_t gap_sc_numeric_value(void) {
@@ -206,8 +195,11 @@ static uint32_t gap_sc_numeric_value(void) {
 }
 
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
-    uint8_t na[16], nb[16], a1[7], a2[7], check[16];
-    const uint8_t zero[16] = {0};
+    uint8_t na[16], nb[16], a1[7], a2[7], check[16], r[16] = {0};
+    if (gap_smp.sc.passkey_required) {
+        r[12] = gap_smp.tk[3]; r[13] = gap_smp.tk[2];
+        r[14] = gap_smp.tk[1]; r[15] = gap_smp.tk[0];
+    }
     gap_sc_reverse(na, gap_conn.central_role ? gap_smp.random :
                    gap_smp.sc.peer_random, 16);
     gap_sc_reverse(nb, gap_conn.central_role ? gap_smp.sc.peer_random :
@@ -217,7 +209,7 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     const uint8_t *iocap = from_central ? gap_smp.request + 1 :
         gap_smp.response + 1;
     gap_sc_f6(gap_smp.sc.mac_key, from_central ? na : nb,
-              from_central ? nb : na, zero, iocap,
+              from_central ? nb : na, r, iocap,
               from_central ? a1 : a2, from_central ? a2 : a1, check);
     gap_sc_reverse(out_air, check, 16);
     volatile uint8_t *wipe = na;
@@ -226,6 +218,8 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
     wipe = check;
     for (size_t i = 0; i < sizeof(check); i++) wipe[i] = 0;
+    wipe = r;
+    for (size_t i = 0; i < sizeof(r); i++) wipe[i] = 0;
 }
 
 // Bluetooth nonce: little-endian 39-bit counter, Central direction bit, then IV.
@@ -522,10 +516,7 @@ void mesh_gap_pairing_set(uint8_t enabled) {
 int mesh_gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
     if (io > MESH_GAP_IO_KEYBOARD_DISPLAY || authenticated > 1 ||
         min_key_size < 7 || min_key_size > 16 || gap_smp.phase ||
-        (authenticated && io == MESH_GAP_IO_NONE) ||
-        (gap_pairing_policy.secure_connections && authenticated &&
-         io != MESH_GAP_IO_DISPLAY_YES_NO &&
-         io != MESH_GAP_IO_KEYBOARD_DISPLAY)) return 0;
+        (authenticated && io == MESH_GAP_IO_NONE)) return 0;
     gap_pairing_policy.io = io;
     gap_pairing_policy.authenticated = authenticated;
     gap_pairing_policy.min_key_size = min_key_size;
@@ -552,13 +543,10 @@ int mesh_gap_bonding_set(uint8_t enabled) {
     return 1;
 }
 
-// Secure Connections supports Just Works and Numeric Comparison without bonding.
+// Secure Connections supports Just Works, Numeric Comparison, and Passkey Entry.
 int mesh_gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.phase ||
-        (enabled && (gap_pairing_policy.bonding ||
-         (gap_pairing_policy.authenticated &&
-          gap_pairing_policy.io != MESH_GAP_IO_DISPLAY_YES_NO &&
-          gap_pairing_policy.io != MESH_GAP_IO_KEYBOARD_DISPLAY))))
+        (enabled && gap_pairing_policy.bonding))
         return 0;
     gap_pairing_policy.secure_connections = enabled;
     return 1;
@@ -576,7 +564,11 @@ uint8_t mesh_gap_passkey(uint32_t *value) {
 // Submit the passkey entered by the user. Confirm exchange resumes on polling.
 int mesh_gap_passkey_reply(uint32_t value) {
     uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
-    if (!mesh_gap_connected() || gap_smp.phase != GAP_SMP_PASSKEY ||
+    if (!mesh_gap_connected() ||
+        (gap_smp.phase != GAP_SMP_PASSKEY &&
+         !(gap_smp.sc_active && gap_smp.sc.passkey_required &&
+           (gap_smp.phase == GAP_SMP_SC_PUBLIC_KEY ||
+            gap_smp.phase == GAP_SMP_SC_PASSKEY))) ||
         gap_smp.passkey_action != MESH_GAP_PASSKEY_INPUT || value > 999999) {
         BLE_GAP_CRITICAL_EXIT(irq_state);
         return 0;
@@ -869,13 +861,28 @@ static void mesh_gap_smp_poll(void) {
             for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
         }
     }
+    if (gap_smp.phase == GAP_SMP_SC_PASSKEY &&
+        gap_smp.passkey_action != MESH_GAP_PASSKEY_INPUT &&
+        (gap_conn.central_role || gap_smp.confirm_received) &&
+        !gap_smp.tx_len && !gap_conn.tx_l2cap_remaining &&
+        !gap_conn.tx_pending && !gap_conn.tx_queued) {
+        // The initiator commits first; the responder waits for its confirm.
+        uint8_t confirm[16];
+        gap_sc_confirm_value(gap_smp.sc.public_key,
+                             gap_smp.sc.peer_public_key,
+                             gap_smp.random, gap_sc_passkey_z(), confirm);
+        gap_smp_queue(3, confirm, sizeof(confirm));
+        gap_smp.confirm_received = 0;
+        gap_smp.phase = gap_conn.central_role ? GAP_SMP_SC_CONFIRM :
+            GAP_SMP_SC_RANDOM;
+    }
     if (gap_smp.phase == GAP_SMP_SC_CONFIRM && !gap_conn.central_role &&
         !gap_smp.tx_len && !gap_conn.tx_l2cap_remaining) {
         // In SC Just Works, the responder commits to Nb after sending its key.
         uint8_t confirm[16];
         gap_sc_confirm_value(gap_smp.sc.public_key,
                              gap_smp.sc.peer_public_key,
-                             gap_smp.random, confirm);
+                             gap_smp.random, 0, confirm);
         gap_smp_queue(3, confirm, sizeof(confirm));
         gap_smp.phase = GAP_SMP_SC_RANDOM;
     }
@@ -1110,22 +1117,35 @@ static void mesh_gap_smp_poll(void) {
             error = 3; goto failed; // SC OOB and key distribution follow later.
         }
         uint8_t local_io = gap_pairing_policy.io, peer_io = p[1];
+        gap_smp.confirm_received = gap_smp.passkey_action = gap_smp.authenticated = 0;
         if (gap_smp.sc_active) {
-            uint8_t mitm = ((p[3] | gap_smp.request[3]) & 4) ||
+            uint8_t mitm = (p[3] & 4) ||
+                (gap_conn.central_role && (gap_smp.request[3] & 4)) ||
                 gap_pairing_policy.authenticated;
             uint8_t local_numeric = local_io == MESH_GAP_IO_DISPLAY_YES_NO ||
                 local_io == MESH_GAP_IO_KEYBOARD_DISPLAY;
             uint8_t peer_numeric = peer_io == MESH_GAP_IO_DISPLAY_YES_NO ||
                 peer_io == MESH_GAP_IO_KEYBOARD_DISPLAY;
-            if (mitm && (!local_numeric || !peer_numeric)) {
-                error = 3; goto failed;
+            if (mitm) {
+                if (local_numeric && peer_numeric)
+                    gap_smp.sc.numeric_required = 1;
+                else {
+                    if (local_io == MESH_GAP_IO_NONE ||
+                        peer_io == MESH_GAP_IO_NONE ||
+                        (local_io < 2 && peer_io < 2)) {
+                        error = 3; goto failed;
+                    }
+                    uint8_t input = local_io == MESH_GAP_IO_KEYBOARD_ONLY ||
+                        (local_io == MESH_GAP_IO_KEYBOARD_DISPLAY && peer_io < 2);
+                    gap_smp.sc.passkey_required = 1;
+                    gap_smp.passkey_action = input ? MESH_GAP_PASSKEY_INPUT :
+                        MESH_GAP_PASSKEY_DISPLAY;
+                }
             }
-            gap_smp.sc.numeric_required = !!mitm;
         }
         if (p[4] < gap_pairing_policy.min_key_size) { error = 6; goto failed; }
         gap_smp.key_size = p[4];
         memset(gap_smp.tk, 0, sizeof(gap_smp.tk));
-        gap_smp.confirm_received = gap_smp.passkey_action = gap_smp.authenticated = 0;
         if (!gap_smp.sc_active && ((p[3] & 4) ||
             (gap_conn.central_role && (gap_smp.request[3] & 4)) ||
             gap_pairing_policy.authenticated)) {
@@ -1175,7 +1195,8 @@ static void mesh_gap_smp_poll(void) {
             gap_smp.response[0] = 2;
             gap_smp.response[1] = local_io;
             gap_smp.response[2] = 0;
-            gap_smp.response[3] = (gap_smp.authenticated ? 4 : 0) |
+            gap_smp.response[3] = ((gap_smp.authenticated ||
+                gap_pairing_policy.authenticated) ? 4 : 0) |
                 (gap_smp.bond_requested ? 1 : 0) |
                 (gap_smp.sc_active ? 8 : 0);
             gap_smp.response[4] = 16;
@@ -1211,7 +1232,15 @@ static void mesh_gap_smp_poll(void) {
             gap_sc_public_key_pdu(public_key);
             gap_smp_queue(12, public_key, sizeof(public_key));
         }
-        gap_smp.phase = GAP_SMP_SC_CONFIRM;
+        gap_smp.phase = gap_smp.sc.passkey_required ? GAP_SMP_SC_PASSKEY :
+            GAP_SMP_SC_CONFIRM;
+        return;
+    }
+    if (gap_smp.sc_active && gap_smp.sc.passkey_required &&
+        op == 3 && n == 17 && gap_smp.phase == GAP_SMP_SC_PASSKEY &&
+        !gap_conn.central_role && !gap_smp.confirm_received) {
+        memcpy(gap_smp.peer_confirm, p + 1, 16);
+        gap_smp.confirm_received = 1;
         return;
     }
     if (gap_smp.sc_active && op == 3 && n == 17 &&
@@ -1223,16 +1252,67 @@ static void mesh_gap_smp_poll(void) {
     }
     if (gap_smp.sc_active && op == 4 && n == 17 &&
         gap_smp.phase == GAP_SMP_SC_RANDOM) {
-        if (gap_conn.central_role) {
+        if (gap_conn.central_role || gap_smp.sc.passkey_required) {
             uint8_t confirm[16], difference = 0;
             gap_sc_confirm_value(gap_smp.sc.peer_public_key,
-                                 gap_smp.sc.public_key, p + 1, confirm);
+                                 gap_smp.sc.public_key, p + 1,
+                                 gap_smp.sc.passkey_required ?
+                                     gap_sc_passkey_z() : 0, confirm);
             for (uint8_t i = 0; i < 16; i++)
                 difference |= confirm[i] ^ gap_smp.peer_confirm[i];
             if (difference) { error = 4; goto failed; }
         }
         memcpy(gap_smp.sc.peer_random, p + 1, 16);
-        gap_sc_derive_keys();
+        if (gap_smp.sc.passkey_required && gap_smp.sc.passkey_round < 19) {
+            if (!gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
+            // Each passkey bit needs a fresh nonce. Commit it only if entropy
+            // generation completes for this same connection.
+            uint8_t next_nonce[16];
+            uint32_t generation = gap_security_generation;
+            int entropy_ready = BLE_GAP_RANDOM_SECURE_BYTES(next_nonce,
+                                                             sizeof(next_nonce));
+            int same_link = gap_conn.active &&
+                generation == gap_security_generation;
+            if (entropy_ready && same_link)
+                memcpy(gap_smp.random, next_nonce, sizeof(next_nonce));
+            volatile uint8_t *nonce_wipe = next_nonce;
+            for (size_t i = 0; i < sizeof(next_nonce); i++) nonce_wipe[i] = 0;
+            if (!same_link) return;
+            if (!entropy_ready) {
+                error = 8; goto failed;
+            }
+            gap_smp.sc.passkey_round++;
+            if (gap_conn.central_role) {
+                uint8_t confirm[16];
+                gap_sc_confirm_value(gap_smp.sc.public_key,
+                                     gap_smp.sc.peer_public_key,
+                                     gap_smp.random, gap_sc_passkey_z(),
+                                     confirm);
+                gap_smp_queue(3, confirm, sizeof(confirm));
+                gap_smp.phase = GAP_SMP_SC_CONFIRM;
+            } else gap_smp.phase = GAP_SMP_SC_PASSKEY;
+            return;
+        }
+        // Derive MacKey and LTK from the final round's nonces and DHKey.
+        uint8_t na[16], nb[16], a1[7], a2[7], ltk[16];
+        gap_sc_reverse(na, gap_conn.central_role ? gap_smp.random :
+                       gap_smp.sc.peer_random, 16);
+        gap_sc_reverse(nb, gap_conn.central_role ? gap_smp.sc.peer_random :
+                       gap_smp.random, 16);
+        gap_sc_typed_address(a1, gap_conn.initiator_type, gap_conn.initiator);
+        gap_sc_typed_address(a2, gap_conn.responder_type, gap_conn.responder);
+        gap_sc_f5(gap_smp.sc.dhkey, na, nb, a1, a2,
+                  gap_smp.sc.mac_key, ltk);
+        gap_sc_reverse(gap_smp.sc.ltk, ltk, 16);
+        volatile uint8_t *wipe = na;
+        for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
+        wipe = nb;
+        for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
+        wipe = ltk;
+        for (size_t i = 0; i < sizeof(ltk); i++) wipe[i] = 0;
+        wipe = gap_smp.sc.dhkey;
+        for (size_t i = 0; i < sizeof(gap_smp.sc.dhkey); i++) wipe[i] = 0;
+        if (gap_smp.sc.passkey_required) gap_smp.authenticated = 1;
         if (gap_smp.sc.numeric_required) {
             gap_smp.sc.numeric_value = gap_sc_numeric_value();
             if (!gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);

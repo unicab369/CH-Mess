@@ -1693,7 +1693,7 @@ static void test_secure_connections_just_works(void) {
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 70;
     gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
-                         peer_nonce + 1, peer_confirm + 1);
+                         peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(gap_smp.phase == GAP_SMP_SC_RANDOM);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
@@ -1797,7 +1797,7 @@ static void test_secure_connections_numeric_comparison(void) {
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 90;
         gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
-                             peer_nonce + 1, peer_confirm + 1);
+                             peer_nonce + 1, 0, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
@@ -1883,6 +1883,178 @@ static void test_secure_connections_numeric_comparison(void) {
     mesh_gap_pairing_set(0);
 }
 
+static void test_secure_connections_passkey(void) {
+    assert(mesh_gap_security_set(MESH_GAP_IO_KEYBOARD_ONLY, 1, 16));
+    assert(mesh_gap_secure_connections_set(1));
+    start_test_central_link();
+    mesh_gap_pairing_set(1);
+    assert(mesh_gap_pair());
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    const uint8_t response[7] = {
+        2, MESH_GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
+    };
+    receive_test_smp(response, sizeof(response), 0);
+    assert(gap_smp.sc.passkey_required &&
+           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    assert(mesh_gap_passkey_reply(123456));
+    for (uint8_t fragment = 0; fragment < 3; fragment++) {
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+    }
+    uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
+    peer_private[31] = 13;
+    assert(uECC_compute_public_key(peer_private, peer_public, uECC_secp256r1()));
+    gap_sc_reverse(public_pdu + 1, peer_public, 32);
+    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    receive_test_smp(public_pdu, sizeof(public_pdu), 0);
+    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    uint8_t previous_nonce[16] = {0};
+    for (uint8_t round = 0; round < 20; round++) {
+        uint8_t z = 0x80 | ((123456u >> round) & 1);
+        uint8_t local_confirm[16];
+        gap_sc_confirm_value(gap_smp.sc.public_key, peer_public,
+                             gap_smp.random, z, local_confirm);
+        assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_smp.tx[4] == 3 &&
+               !memcmp(gap_smp.tx + 5, local_confirm, 16));
+        if (round) assert(memcmp(previous_nonce, gap_smp.random, 16));
+        memcpy(previous_nonce, gap_smp.random, 16);
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+        uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
+        for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
+            peer_nonce[i] = (uint8_t)(round * 7 + i);
+        gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
+                             peer_nonce + 1, z, peer_confirm + 1);
+        receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
+        assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 4);
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+        receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
+        assert(gap_smp.sc.passkey_round == (round < 19 ? round + 1 : round));
+    }
+    assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_smp.tx[4] == 13);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    uint8_t peer_check[17] = {13};
+    gap_sc_dhkey_check(0, peer_check + 1);
+    receive_test_smp(peer_check, sizeof(peer_check), 0);
+    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    assert(gap_security.phase == GAP_ENC_QUEUED);
+    gap_security.phase = 0; gap_security.status = 0;
+    gap_security.tx_enabled = gap_security.rx_enabled = 1;
+    mesh_gap_smp_poll();
+    assert(mesh_gap_pairing_status() == 0 && mesh_gap_authenticated());
+    gap_connection_end();
+    assert(mesh_gap_security_set(MESH_GAP_IO_DISPLAY_ONLY, 1, 16));
+    start_test_central_link(); gap_conn.central_role = 0;
+    assert(mesh_gap_pair());
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    const uint8_t request[7] = {
+        1, MESH_GAP_IO_KEYBOARD_ONLY, 0, 12, 16, 0, 0
+    };
+    receive_test_smp(request, sizeof(request), 0);
+    uint32_t passkey;
+    assert(gap_smp.sc.passkey_required &&
+           mesh_gap_passkey(&passkey) == MESH_GAP_PASSKEY_DISPLAY &&
+           passkey < 1000000);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    uint8_t central_private[32] = {0}, central_public[64], central_pdu[65] = {12};
+    central_private[31] = 15;
+    assert(uECC_compute_public_key(central_private, central_public, uECC_secp256r1()));
+    gap_sc_reverse(central_pdu + 1, central_public, 32);
+    gap_sc_reverse(central_pdu + 33, central_public + 32, 32);
+    receive_test_smp(central_pdu, sizeof(central_pdu), 0);
+    for (uint8_t fragment = 0; fragment < 3; fragment++) {
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+    }
+    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY);
+    for (uint8_t round = 0; round < 20; round++) {
+        uint8_t z = 0x80 | ((passkey >> round) & 1);
+        uint8_t central_nonce[17] = {4}, central_confirm[17] = {3};
+        for (uint8_t i = 1; i < sizeof(central_nonce); i++)
+            central_nonce[i] = (uint8_t)(round * 9 + i);
+        gap_sc_confirm_value(central_public, gap_smp.sc.public_key,
+                             central_nonce + 1, z, central_confirm + 1);
+        receive_test_smp(central_confirm, sizeof(central_confirm), 0);
+        assert(gap_smp.confirm_received && gap_smp.phase == GAP_SMP_SC_PASSKEY);
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+        uint8_t expected_confirm[16];
+        gap_sc_confirm_value(gap_smp.sc.public_key, central_public,
+                             gap_smp.random, z, expected_confirm);
+        assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3 &&
+               !memcmp(gap_smp.tx + 5, expected_confirm, 16));
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+        receive_test_smp(central_nonce, sizeof(central_nonce), 0);
+        assert(gap_smp.tx[4] == 4);
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+    }
+    assert(gap_smp.phase == GAP_SMP_SC_DHKEY);
+    uint8_t central_check[17] = {13};
+    gap_sc_dhkey_check(1, central_check + 1);
+    receive_test_smp(central_check, sizeof(central_check), 0);
+    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT && gap_smp.tx[4] == 13);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    gap_security.phase = GAP_ENC_KEY_REQUEST;
+    memset(gap_security.random, 0, 8); gap_security.ediv = 0;
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    assert(gap_security.phase == GAP_ENC_START_QUEUED);
+    gap_security.phase = 0; gap_security.status = 0;
+    gap_security.tx_enabled = gap_security.rx_enabled = 1;
+    mesh_gap_smp_poll();
+    assert(mesh_gap_pairing_status() == 0 && mesh_gap_authenticated());
+    gap_connection_end();
+    assert(mesh_gap_security_set(MESH_GAP_IO_KEYBOARD_ONLY, 1, 16));
+    start_test_central_link(); gap_conn.central_role = 0;
+    assert(mesh_gap_pair());
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    const uint8_t input_request[7] = {
+        1, MESH_GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
+    };
+    receive_test_smp(input_request, sizeof(input_request), 0);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    receive_test_smp(central_pdu, sizeof(central_pdu), 0);
+    for (uint8_t fragment = 0; fragment < 3; fragment++) {
+        gap_conn.tx_queued = gap_conn.tx_pending = 0;
+        mesh_gap_smp_poll();
+    }
+    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY &&
+           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    uint8_t input_nonce[17] = {4}, input_confirm[17] = {3};
+    for (uint8_t i = 1; i < sizeof(input_nonce); i++) input_nonce[i] = i + 40;
+    gap_sc_confirm_value(central_public, gap_smp.sc.public_key,
+                         input_nonce + 1, 0x80, input_confirm + 1);
+    receive_test_smp(input_confirm, sizeof(input_confirm), 0);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    assert(gap_smp.confirm_received && !gap_smp.tx_len);
+    assert(mesh_gap_passkey_reply(654321)); // Different low bit from the peer.
+    mesh_gap_smp_poll();
+    assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    receive_test_smp(input_nonce, sizeof(input_nonce), 0);
+    assert(mesh_gap_pairing_status() == 4 && !mesh_gap_authenticated());
+    gap_connection_end();
+    assert(mesh_gap_secure_connections_set(0));
+    assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
+    mesh_gap_pairing_set(0);
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -1905,5 +2077,6 @@ int main(void) {
     test_passkey_pairing();
     test_secure_connections_just_works();
     test_secure_connections_numeric_comparison();
+    test_secure_connections_passkey();
     return 0;
 }
