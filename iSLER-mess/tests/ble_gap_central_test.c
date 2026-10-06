@@ -34,7 +34,7 @@ void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
 }
 void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
     static const uint8_t value[4] = {0x78, 0x56, 0x34, 0x12};
-    for (size_t i = 0; i < len; i++) out[i] = value[i % sizeof(value)] + random_seed;
+    for (size_t i = 0; i < len; i++) out[i] = value[i % sizeof(value)] + (len == 4 ? 0 : random_seed);
 }
 
 static void test_access_address_rules(void) {
@@ -357,6 +357,108 @@ static void test_peer_privacy_modes(void) {
     gap_connection_end();
 }
 
+static void test_peer_local_keys(void) {
+    uint8_t local_irk[16], hash[3], first[6];
+    memcpy(local_irk, test_irk, 16);
+    local_irk[0] ^= 1;
+    int slot = gap_identity_find(test_identity, 0);
+    assert(mesh_gap_use_public_address());
+    assert(!mesh_gap_identity_local_key(NULL, 0, local_irk));
+    assert(!mesh_gap_identity_local_key(test_identity, 2, local_irk));
+    assert(!mesh_gap_identity_local_key(test_rpa, 1, local_irk));
+    assert(mesh_gap_identity_local_key(test_identity, 0, local_irk));
+    assert(mesh_gap_identity_set(test_identity, 0, test_irk));
+    assert(memcmp(gap_identities[slot].local_irk, local_irk, 16) == 0);
+    random_seed++;
+    assert(mesh_gap_privacy_set(test_irk, 1));
+    assert(mesh_gap_connect_start(test_identity, 0));
+    assert(gap_central_connect.request[0] & 0x40);
+    gap_address_hash(local_irk, gap_central_connect.request + 5, hash);
+    assert(memcmp(hash, gap_central_connect.request + 2, 3) == 0);
+    assert(!mesh_gap_identity_local_key(test_identity, 0, NULL));
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0xc1; rx_frame[1] = 12;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    memcpy(rx_frame + 8, test_rpa, 6); // Target from global key must fail.
+    gap_hw_mesh_received();
+    assert(gap_central_connect.active && !gap_conn.active);
+    gap_address_hash(local_irk, rx_frame + 11, rx_frame + 8);
+    gap_hw_mesh_received();
+    assert(gap_conn.active && !gap_central_connect.active);
+    gap_connection_end();
+
+    mesh_gap_active_scan_start();
+    rx_frame[0] = 0x40; rx_frame[1] = 6;
+    gap_hw_mesh_received();
+    assert(gap_radio_active_scan_pending);
+    gap_address_hash(local_irk, gap_radio_scan_request + 5, hash);
+    assert(memcmp(hash, gap_radio_scan_request + 2, 3) == 0);
+    memcpy(first, gap_identities[slot].local_address, 6);
+    now_ms = gap_privacy.next_rotation_ms;
+    random_seed++;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_identities[slot].local_address, 6) == 0);
+    mesh_gap_scan_stop();
+    gap_radio_active_scan_pending = 0;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
+
+    assert(mesh_gap_directed_advertising_start(test_identity, 0, 100));
+    assert(gap_advertising.peer_slot == slot && gap_advertising.address_type == 1);
+    gap_address_hash(local_irk, gap_advertising.address + 3, hash);
+    assert(memcmp(hash, gap_advertising.address, 3) == 0);
+    gap_address_hash(test_irk, gap_advertising.target_address + 3, hash);
+    assert(gap_advertising.target_type == 1);
+    assert(memcmp(hash, gap_advertising.target_address, 3) == 0);
+    memcpy(first, gap_advertising.address, 6);
+    random_seed++;
+    now_ms = gap_privacy.next_rotation_ms;
+    gap_privacy_poll(now_ms);
+    assert(memcmp(first, gap_advertising.address, 6) != 0);
+    gap_address_hash(local_irk, gap_advertising.address + 3, hash);
+    assert(memcmp(hash, gap_advertising.address, 3) == 0);
+    // The peer may initiate with a different RPA from the directed TargetA.
+    gap_radio_advertising_rx_event = 1;
+    gap_radio_adv_frame[0] = 0xc1;
+    memcpy(gap_radio_adv_frame + 2, gap_advertising.address, 6);
+    memcpy(gap_radio_adv_frame + 8, gap_advertising.target_address, 6);
+    rx_frame[0] = 0xc5; rx_frame[1] = 34;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    memcpy(rx_frame + 8, gap_advertising.address, 6);
+    gap_radio_connect_request_ready = 0;
+    gap_hw_mesh_received();
+    assert(gap_radio_connect_request_ready);
+    gap_radio_advertising_rx_event = 0;
+    gap_radio_connect_request_ready = 0;
+    mesh_gap_advertising_stop();
+
+    // An explicit zero key uses the configured local identity, never an RPA.
+    assert(mesh_gap_identity_local_key(test_identity, 0, (uint8_t[16]){0}));
+    assert(mesh_gap_connect_start(test_identity, 0));
+    assert(!(gap_central_connect.request[0] & 0x40));
+    assert(memcmp(gap_central_connect.request + 2, test_identity, 6) == 0);
+    rx_frame[0] = 0xc1; rx_frame[1] = 12;
+    memcpy(rx_frame + 8, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_central_connect.active && !gap_conn.active);
+    mesh_gap_connect_cancel();
+    assert(mesh_gap_privacy_set(NULL, 0));
+    uint8_t static_identity[6] = {9, 8, 7, 6, 5, 0xc4};
+    assert(mesh_gap_set_static_random_address(static_identity));
+    random_seed++;
+    assert(mesh_gap_privacy_set(test_irk, 1));
+    assert(mesh_gap_connect_start(test_identity, 0));
+    assert(gap_central_connect.request[0] & 0x40);
+    assert(memcmp(gap_central_connect.request + 2, static_identity, 6) == 0);
+    mesh_gap_connect_cancel();
+    // Null removes the override and restores the global RPA.
+    assert(mesh_gap_identity_local_key(test_identity, 0, NULL));
+    assert(mesh_gap_connect_start(test_identity, 0));
+    assert(memcmp(gap_central_connect.request + 2, gap_random_address, 6) == 0);
+    mesh_gap_connect_cancel();
+    assert(mesh_gap_privacy_set(NULL, 0));
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -367,5 +469,6 @@ int main(void) {
     test_connect_by_identity();
     test_directed_connect_target();
     test_peer_privacy_modes();
+    test_peer_local_keys();
     return 0;
 }

@@ -1,3 +1,6 @@
+// IRK - Identity Resolving Key
+// SMP - Security Manager  Protocol
+
 #ifndef BLE_GAP_H
 #define BLE_GAP_H
 
@@ -10,7 +13,7 @@
 //   Layer control.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation and identity filters on hardware.
-// - Add per-peer local IRKs and non-resolvable private addresses.
+// - Add non-resolvable private addresses.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
@@ -84,6 +87,7 @@ static struct {
     uint8_t enabled, pdu_type, data_len, scan_response_len;
     uint8_t address_type, address[6];
     uint8_t target_type, target_address[6];
+    int8_t peer_slot;
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
@@ -215,6 +219,7 @@ static void gap_connection_update_apply(uint8_t instant_packet_received) {
 
 static uint8_t gap_own_address_type;
 static uint8_t gap_random_address[6];
+static uint8_t gap_identity_address_type, gap_identity_address[6];
 static uint8_t gap_scanning;
 static uint8_t gap_active_scanning;
 static uint8_t gap_scan_generation;
@@ -241,6 +246,7 @@ static struct {
 static struct {
     uint8_t used, address_type, address[6], irk[16];
     uint8_t privacy_mode, has_irk;
+    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
 } gap_identities[GAP_IDENTITY_COUNT];
 static struct {
     uint8_t enabled, irk[16], scan_filter, connection_filter;
@@ -345,7 +351,8 @@ int mesh_gap_resolve(const uint8_t address[6], uint8_t address_type,
 }
 
 static int gap_private_address_generate(const uint8_t irk[16],
-                                         uint8_t address[6]) {
+                                         uint8_t address[6],
+                                         const uint8_t previous[6]) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         BLE_GAP_HW_RANDOM_BYTES(address + 3, 3);
         address[5] = (address[5] & 0x3f) | 0x40;
@@ -353,9 +360,49 @@ static int gap_private_address_generate(const uint8_t irk[16],
             (uint32_t)address[4] << 8 | (uint32_t)(address[5] & 0x3f) << 16;
         if (!random || random == 0x3fffff) continue;
         gap_address_hash(irk, address + 3, address);
-        if (memcmp(address, gap_random_address, 6) != 0) return 1;
+        if (!previous || memcmp(address, previous, 6) != 0) return 1;
     }
     return 0;
+}
+
+// Configure the local IRK distributed to this peer while GAP is idle.
+// A zero key selects our identity address; null restores the global local IRK.
+int mesh_gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
+                                 const uint8_t irk[16]) {
+    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        gap_conn.active || gap_central_connect.active) return 0;
+    int slot = gap_identity_find(address, address_type);
+    if (slot < 0 || gap_identities[slot].address_type != address_type ||
+        memcmp(address, gap_identities[slot].address, 6) != 0) return 0;
+    uint8_t key_bits = 0, local[6] = {0};
+    if (irk) for (uint8_t i = 0; i < 16; i++) key_bits |= irk[i];
+    if (key_bits && !gap_private_address_generate(irk, local,
+            gap_identities[slot].local_address)) return 0;
+    if (irk) memcpy(gap_identities[slot].local_irk, irk, 16);
+    else memset(gap_identities[slot].local_irk, 0, 16);
+    memcpy(gap_identities[slot].local_address, local, 6);
+    gap_identities[slot].local_key_set = irk != NULL;
+    gap_identities[slot].has_local_irk = key_bits != 0;
+    return 1;
+}
+
+// Select the peer's cached local RPA, our identity for its zero local IRK,
+// or the global address when that peer has no local key override.
+static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type) {
+    if (gap_privacy.enabled && slot >= 0 && gap_identities[slot].local_key_set) {
+        if (gap_identities[slot].has_local_irk) {
+            *type = 1;
+            memcpy(address, gap_identities[slot].local_address, 6);
+        } else {
+            *type = gap_identity_address_type;
+            if (*type) memcpy(address, gap_identity_address, 6);
+            else BLE_GAP_HW_PUBLIC_ADDRESS(address);
+        }
+        return;
+    }
+    *type = gap_own_address_type;
+    if (*type) memcpy(address, gap_random_address, 6);
+    else BLE_GAP_HW_PUBLIC_ADDRESS(address);
 }
 
 // Enable local RPAs with a rotation timeout in seconds; null IRK disables them
@@ -371,7 +418,7 @@ int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
         return 1;
     }
     uint8_t address[6];
-    if (!gap_private_address_generate(irk, address)) return 0;
+    if (!gap_private_address_generate(irk, address, gap_random_address)) return 0;
     memcpy(gap_privacy.irk, irk, 16);
     memcpy(gap_random_address, address, 6);
     gap_privacy.enabled = gap_own_address_type = 1;
@@ -447,6 +494,8 @@ int mesh_gap_set_static_random_address(const uint8_t address[6]) {
     }
     if (all_zero || all_one) return 0;
     memcpy(gap_random_address, address, 6);
+    memcpy(gap_identity_address, address, 6);
+    gap_identity_address_type = 1;
     gap_privacy.enabled = 0;
     gap_own_address_type = 1;
     return 1;
@@ -457,7 +506,7 @@ int mesh_gap_use_public_address(void) {
     if (gap_advertising.enabled || gap_scanning || gap_conn.active ||
         gap_central_connect.active) return 0;
     gap_privacy.enabled = 0;
-    gap_own_address_type = 0;
+    gap_identity_address_type = gap_own_address_type = 0;
     return 1;
 }
 
@@ -508,16 +557,25 @@ static inline int gap_advertising_start(uint8_t pdu_type,
         target_type > 1 ||
         ((pdu_type == 0x01 || pdu_type == 0x02) && scan_response_len) ||
         (pdu_type == 0x01 && len)) return 0;
+    int slot = target_address ? gap_identity_find(target_address, target_type) : -1;
+    uint8_t target[6];
+    if (target_address) {
+        memcpy(target, target_address, 6);
+        if (gap_privacy.enabled && slot >= 0 && gap_identities[slot].has_irk) {
+            if (!gap_private_address_generate(gap_identities[slot].irk, target,
+                                              target_address)) return 0;
+            target_type = 1;
+        }
+    }
     if (len) memcpy(gap_advertising.data, data, len);
     if (scan_response_len)
         memcpy(gap_advertising.scan_response, scan_response, scan_response_len);
     gap_advertising.pdu_type = pdu_type;
-    gap_advertising.address_type = gap_own_address_type;
-    if (gap_own_address_type)
-        memcpy(gap_advertising.address, gap_random_address, 6);
+    gap_advertising.peer_slot = slot;
+    gap_local_address_select(slot, gap_advertising.address,
+                             &gap_advertising.address_type);
     gap_advertising.target_type = target_type;
-    if (target_address)
-        memcpy(gap_advertising.target_address, target_address, 6);
+    if (target_address) memcpy(gap_advertising.target_address, target, 6);
     gap_advertising.data_len = (uint8_t)len;
     gap_advertising.scan_response_len = (uint8_t)scan_response_len;
     gap_advertising.interval_ms = interval_ms;
@@ -598,13 +656,12 @@ int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
     if (!gap_access_address_generate(&access_address)) return 0;
     memset(gap_central_connect.request, 0,
            sizeof(gap_central_connect.request));
+    uint8_t local_type;
+    gap_local_address_select(gap_identity_find(peer_address, peer_type),
+                             gap_central_connect.request + 2, &local_type);
     gap_central_connect.request[0] = 0x05 |
-        (gap_own_address_type << 6) | (peer_type << 7); // CONNECT_IND
+        (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central_connect.request[1] = 34;
-    uint8_t public_address[6];
-    BLE_GAP_HW_PUBLIC_ADDRESS(public_address);
-    memcpy(gap_central_connect.request + 2,
-           gap_own_address_type ? gap_random_address : public_address, 6);
     memcpy(gap_central_connect.request + 8, peer_address, 6);
     gap_central_connect.request[14] = (uint8_t)access_address;
     gap_central_connect.request[15] = (uint8_t)(access_address >> 8);
@@ -800,9 +857,25 @@ static void gap_privacy_poll(uint32_t now) {
         gap_radio_rx_armed = 0;
     }
     uint8_t address[6];
-    if (!gap_private_address_generate(gap_privacy.irk, address)) return;
+    if (!gap_private_address_generate(gap_privacy.irk, address, gap_random_address)) return;
     memcpy(gap_random_address, address, 6);
-    if (gap_advertising.enabled) memcpy(gap_advertising.address, address, 6);
+    // Refresh cached local RPAs outside the RX interrupt, between exchanges.
+    for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
+        if (gap_identities[i].used && gap_identities[i].local_key_set &&
+            gap_identities[i].has_local_irk &&
+            gap_private_address_generate(gap_identities[i].local_irk, address,
+                                          gap_identities[i].local_address))
+            memcpy(gap_identities[i].local_address, address, 6);
+    }
+    if (gap_advertising.enabled) {
+        gap_local_address_select(gap_advertising.peer_slot, gap_advertising.address,
+                                 &gap_advertising.address_type);
+        int slot = gap_advertising.peer_slot;
+        if (slot >= 0 && gap_identities[slot].has_irk &&
+            gap_private_address_generate(gap_identities[slot].irk, address,
+                                          gap_advertising.target_address))
+            memcpy(gap_advertising.target_address, address, 6);
+    }
     gap_privacy.next_rotation_ms = now + (uint32_t)gap_privacy.timeout_s * 1000;
 }
 
@@ -1075,13 +1148,20 @@ unknown_control_pdu:
         if (pdu_type == 0x01) {
             if (frame[1] != 12) return;
             uint8_t target_type = (frame[0] >> 7) & 1;
-            int target_matches = target_type == gap_own_address_type &&
+            int target_matches = target_type ==
+                ((gap_central_connect.request[0] >> 6) & 1) &&
                 memcmp(frame + 8, gap_central_connect.request + 2, 6) == 0;
             if (!target_matches && gap_privacy.enabled && target_type == 1 &&
                 (frame[13] & 0xc0) == 0x40) {
-                uint8_t hash[3];
-                gap_address_hash(gap_privacy.irk, frame + 11, hash);
-                target_matches = memcmp(frame + 8, hash, 3) == 0;
+                const uint8_t *irk = gap_privacy.irk;
+                if (peer_slot >= 0 && gap_identities[peer_slot].local_key_set)
+                    irk = gap_identities[peer_slot].has_local_irk ?
+                        gap_identities[peer_slot].local_irk : NULL;
+                if (irk) {
+                    uint8_t hash[3];
+                    gap_address_hash(irk, frame + 11, hash);
+                    target_matches = memcmp(frame + 8, hash, 3) == 0;
+                }
             }
             if (!target_matches) return;
         }
@@ -1121,17 +1201,12 @@ unknown_control_pdu:
         memcpy(gap_radio_scan_adv_frame, frame, (size_t)frame[1] + 2);
         gap_radio_scan_adv_rssi = rssi;
         gap_radio_scan_adv_ready = 1;
+        uint8_t local_type;
+        gap_local_address_select(peer_slot, gap_radio_scan_request + 2, &local_type);
         gap_radio_scan_request[0] = (uint8_t)(0x03 |
-            (gap_own_address_type << 6) | (advertiser_type << 7));
+            (local_type << 6) | (advertiser_type << 7));
         gap_radio_scan_request[1] = 12;
-        uint8_t public_address[6];
-        BLE_GAP_HW_PUBLIC_ADDRESS(public_address);
-        for (uint8_t i = 0; i < 6; i++) {
-            if (gap_own_address_type)
-                gap_radio_scan_request[2 + i] = gap_random_address[i];
-            else gap_radio_scan_request[2 + i] = public_address[i];
-            gap_radio_scan_request[8 + i] = frame[2 + i];
-        }
+        memcpy(gap_radio_scan_request + 8, frame + 2, 6);
         BLE_GAP_HW_TX_BUFFER(gap_radio_scan_request);
         BLE_GAP_HW_LINK_TX();
         return;
@@ -1173,6 +1248,7 @@ unknown_control_pdu:
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
         ((gap_radio_adv_frame[0] & 0x0f) != 0x01 ||
+         (peer_slot >= 0 && peer_slot == gap_advertising.peer_slot) ||
          (((frame[0] >> 6) & 1) == ((gap_radio_adv_frame[0] >> 7) & 1) &&
           memcmp(frame + 2, gap_radio_adv_frame + 8, 6) == 0))) {
         memcpy(gap_radio_connect_request_frame, frame, 36);
