@@ -975,7 +975,7 @@ static inline void gap_receive_report(const uint8_t *frame,
     gap_scan_count++;
 }
 
-#include "ble_gap_link.h"
+#include "ble_gap_connection.h"
 
 #include "ble_gap_security.h"
 

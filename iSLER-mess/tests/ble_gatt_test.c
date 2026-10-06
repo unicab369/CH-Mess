@@ -2,11 +2,12 @@
 #include <stdint.h>
 #include <string.h>
 
-// ble_gap_link.h is included before ble_gap_security.h in the current GAP
+// ble_gap_connection.h is included before ble_gap_security.h in the current GAP
 // header, so declare these cross-header hooks before including the stack.
 int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
 int mesh_gap_pair(void);
 
+#include "../mesh_crypto.h"
 #include "../ble_gatt.h"
 
 static uint8_t received_type;
@@ -311,6 +312,49 @@ static void test_proxy_sar_timeout_disconnect(void) {
            gap_conn.local_terminate_reason == 0x13);
 }
 
+static void test_proxy_client_flow(void) {
+    memset(&mesh_gatt, 0, sizeof(mesh_gatt));
+    mesh_gatt.connected = 1;
+    mesh_gatt.mtu = 23;
+
+    const uint8_t discover_service[] = {0x10, 1, 0, 6, 0, 0, 0x28};
+    assert(mesh_gatt_att_request(discover_service, sizeof(discover_service)));
+    assert(mesh_gatt.tx_l2cap[4] == 0x11);
+    clear_tx();
+
+    const uint8_t enable_notifications[] = {0x12, 6, 0, 1, 0};
+    assert(mesh_gatt_att_request(enable_notifications,
+                                 sizeof(enable_notifications)));
+    assert(mesh_gatt.cccd && mesh_gatt.tx_l2cap[4] == 0x13);
+    clear_tx();
+
+    const uint8_t set_whitelist[] = {0, 0};
+    send_proxy_configuration(set_whitelist, sizeof(set_whitelist));
+    assert(mesh_gatt.filter_type == 0 && mesh_gatt.filter_count == 0);
+    mesh_gatt_notify_poll();
+    assert(mesh_gatt.tx_l2cap[4] == 0x1b);
+    assert(mesh_gatt.tx_l2cap[7] == MESH_GATT_PROXY_CONFIGURATION);
+    assert(mesh_gatt.tx_l2cap[8] == 3); // Filter Status opcode.
+    clear_tx();
+
+    const uint8_t add_client_address[] = {1, 0x01, 0x12};
+    send_proxy_configuration(add_client_address, sizeof(add_client_address));
+    mesh_gatt_notify_poll();
+    assert(mesh_gatt.tx_l2cap[7] == MESH_GATT_PROXY_CONFIGURATION);
+    assert(mesh_gatt.tx_l2cap[8] == 3);
+    clear_tx();
+
+    const uint8_t network_pdu[MESH_GATT_PROXY_NETWORK_PDU_MIN] = {0x5a};
+    assert(mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, network_pdu,
+                                 sizeof(network_pdu), 0x1201));
+    assert(!mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, network_pdu,
+                                  sizeof(network_pdu), 0x1202));
+    mesh_gatt_notify_poll();
+    assert(mesh_gatt.tx_l2cap[4] == 0x1b);
+    assert(mesh_gatt.tx_l2cap[7] == MESH_GATT_PROXY_NETWORK);
+    assert(mesh_gatt.tx_l2cap[8] == 0x5a);
+}
+
 int main(void) {
     test_att_mtu_and_blob();
     test_att_discovery();
@@ -321,5 +365,6 @@ int main(void) {
     test_proxy_data_out_sar();
     test_disconnect_reset();
     test_proxy_sar_timeout_disconnect();
+    test_proxy_client_flow();
     return 0;
 }

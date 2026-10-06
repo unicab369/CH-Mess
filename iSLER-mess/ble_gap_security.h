@@ -5,6 +5,84 @@
 #error "Include ble_gap_security.h through ble_gap.h"
 #endif
 
+#include "mesh_crypto.h"
+
+// LE Secure Connections crypto toolbox from the Bluetooth SMP specification.
+// All multi-octet cryptographic values use the byte order defined by SMP.
+static inline void gap_sc_f4(const uint8_t u[32], const uint8_t v[32],
+                      const uint8_t x[16], uint8_t z, uint8_t out[16]) {
+    uint8_t message[65];
+    memcpy(message, u, 32);
+    memcpy(message + 32, v, 32);
+    message[64] = z;
+    aes_cmac(x, message, sizeof(message), out);
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+}
+
+// Derive MacKey and LTK from the DHKey, nonces, and typed device addresses.
+static inline void gap_sc_f5(const uint8_t w[32], const uint8_t n1[16],
+                      const uint8_t n2[16], const uint8_t a1[7],
+                      const uint8_t a2[7], uint8_t mac_key[16],
+                      uint8_t ltk[16]) {
+    static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
+    const uint8_t zero[16] = {0};
+    uint8_t salt[16], t[16], message[53];
+    aes_cmac(zero, key_id, sizeof(key_id), salt);
+    aes_cmac(salt, w, 32, t);
+    for (uint8_t counter = 0; counter < 2; counter++) {
+        message[0] = counter;
+        memcpy(message + 1, key_id, sizeof(key_id));
+        memcpy(message + 5, n1, 16);
+        memcpy(message + 21, n2, 16);
+        memcpy(message + 37, a1, 7);
+        memcpy(message + 44, a2, 7);
+        message[51] = 1;
+        message[52] = 0; // 256-bit output length, big-endian.
+        aes_cmac(t, message, sizeof(message), counter ? ltk : mac_key);
+    }
+    volatile uint8_t *wipe = salt;
+    for (size_t i = 0; i < sizeof(salt); i++) wipe[i] = 0;
+    wipe = t;
+    for (size_t i = 0; i < sizeof(t); i++) wipe[i] = 0;
+    wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+}
+
+static inline void gap_sc_f6(const uint8_t w[16], const uint8_t n1[16],
+                      const uint8_t n2[16], const uint8_t r[16],
+                      const uint8_t iocap[3], const uint8_t a1[7],
+                      const uint8_t a2[7], uint8_t out[16]) {
+    uint8_t message[65];
+    memcpy(message, n1, 16);
+    memcpy(message + 16, n2, 16);
+    memcpy(message + 32, r, 16);
+    memcpy(message + 48, iocap, 3);
+    memcpy(message + 51, a1, 7);
+    memcpy(message + 58, a2, 7);
+    aes_cmac(w, message, sizeof(message), out);
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+}
+
+// Return the six-digit Numeric Comparison value from the least-significant
+// 32 bits of the CMAC result, as specified for g2.
+static inline uint32_t gap_sc_g2(const uint8_t u[32], const uint8_t v[32],
+                          const uint8_t x[16], const uint8_t y[16]) {
+    uint8_t message[80], mac[16];
+    memcpy(message, u, 32);
+    memcpy(message + 32, v, 32);
+    memcpy(message + 64, y, 16);
+    aes_cmac(x, message, sizeof(message), mac);
+    uint32_t value = (uint32_t)mac[12] << 24 | (uint32_t)mac[13] << 16 |
+        (uint32_t)mac[14] << 8 | mac[15];
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+    wipe = mac;
+    for (size_t i = 0; i < sizeof(mac); i++) wipe[i] = 0;
+    return value % 1000000;
+}
+
 // Bluetooth nonce: little-endian 39-bit counter, Central direction bit, then IV.
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central) {
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));

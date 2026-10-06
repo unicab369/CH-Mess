@@ -7,14 +7,11 @@
 #include "ble_gap.h"
 
 // TODO for complete BLE GATT support:
-// - Call BLE_MESH_GATT_PROXY_OFFER after Network PDU authentication and
-//   destination decoding so Proxy Filter rules are applied correctly.
-// - Complete and harden ATT request validation, discovery, errors, and MTU
-//   handling; add prepared writes and indications if needed.
-// - Enforce attribute permissions and security through SMP and Link Layer
-//   encryption before exposing protected attributes.
-// - Add PB-GATT provisioning as a separate service if GATT provisioning is
-//   required; it is not provided by the Mesh Proxy Service.
+// - Integrate BLE_MESH_GATT_PROXY_OFFER at the network receive call site after
+//   authentication and destination decoding, so Proxy Filter rules apply.
+// - Add link-security checks only for attributes whose policy requires them;
+//   the current Mesh Proxy attribute set has no protected attributes.
+// - Add PB-GATT as a separate service only if GATT provisioning is required.
 // - Add a GATT client only if this device must discover or use peer services.
 // - Verify Proxy filtering, SAR, notifications, disconnect cleanup, and ATT
 //   procedures against an independent BLE/GATT implementation and hardware.

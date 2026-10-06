@@ -1,8 +1,8 @@
-// Link-layer radio and connection implementation included by ble_gap.h.
-#ifndef BLE_GAP_LINK_H
-#define BLE_GAP_LINK_H
+// Radio packet handling and connection procedures included by ble_gap.h.
+#ifndef BLE_GAP_CONNECTION_H
+#define BLE_GAP_CONNECTION_H
 #ifndef BLE_GAP_H
-#error "Include ble_gap_link.h through ble_gap.h"
+#error "Include ble_gap_connection.h through ble_gap.h"
 #endif
 
 static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
@@ -1862,4 +1862,4 @@ void gap_hw_mesh_scan_poll(void) {
         gap_radio_rx_armed = 1;
     }
 }
-#endif // BLE_GAP_LINK_H
+#endif // BLE_GAP_CONNECTION_H
