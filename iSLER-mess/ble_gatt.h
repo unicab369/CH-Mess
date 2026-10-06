@@ -17,9 +17,9 @@
 // - Verify Proxy filtering, SAR, notifications, disconnect cleanup, and ATT
 //   procedures against an independent BLE/GATT implementation and hardware.
 
-// Single-link ATT server for the Bluetooth Mesh Proxy Service. The application
-// must call mesh_gatt_poll() while servicing BLE connection events, register a
-// receive callback, and offer received advertising-bearer PDUs for forwarding.
+// Single-link ATT server for Bluetooth Mesh Proxy and Provisioning services.
+// The application must call mesh_gatt_poll() while servicing BLE connection
+// events, register receive callbacks, and offer received bearer PDUs as needed.
 #ifndef MESH_GATT_ATT_MTU_MAX
 #define MESH_GATT_ATT_MTU_MAX 247
 #endif
@@ -76,6 +76,7 @@ typedef int (*mesh_gatt_proxy_rx_fn)(uint8_t type, const uint8_t *pdu,
                                       size_t len, void *context);
 typedef int (*mesh_gatt_provisioning_rx_fn)(const uint8_t *pdu, size_t len,
                                              void *context);
+typedef void (*mesh_gatt_provisioning_link_fn)(uint8_t open, void *context);
 
 static struct {
     uint8_t connected, cccd, provisioning_cccd, mtu_exchanged;
@@ -103,6 +104,8 @@ static struct {
     void *proxy_rx_context;
     mesh_gatt_provisioning_rx_fn provisioning_rx_callback;
     void *provisioning_rx_context;
+    mesh_gatt_provisioning_link_fn provisioning_link_callback;
+    void *provisioning_link_context;
 } mesh_gatt;
 
 static uint16_t mesh_gatt_u16(const uint8_t *p) {
@@ -153,6 +156,21 @@ void mesh_gatt_provisioning_set_rx_callback(
     mesh_gatt_provisioning_rx_fn callback, void *context) {
     mesh_gatt.provisioning_rx_callback = callback;
     mesh_gatt.provisioning_rx_context = context;
+}
+
+// Register PB-GATT bearer link lifecycle notifications. `open` is nonzero
+// after the GATT connection is established and zero before link state is reset
+// on disconnect, allowing the provisioning adapter to start or abort a link.
+void mesh_gatt_provisioning_set_link_callback(
+    mesh_gatt_provisioning_link_fn callback, void *context) {
+    mesh_gatt.provisioning_link_callback = callback;
+    mesh_gatt.provisioning_link_context = context;
+}
+
+static void mesh_gatt_provisioning_link_notify(uint8_t open) {
+    if (mesh_gatt.provisioning_link_callback)
+        mesh_gatt.provisioning_link_callback(open,
+            mesh_gatt.provisioning_link_context);
 }
 
 // Advertise PB-GATT using Mesh Provisioning Service Data.
@@ -592,12 +610,16 @@ static void mesh_gatt_link_reset(void) {
 
 void mesh_gatt_poll(void) {
     if (!mesh_gap_connected()) {
-        if (mesh_gatt.connected) mesh_gatt_link_reset();
+        if (mesh_gatt.connected) {
+            mesh_gatt_provisioning_link_notify(0);
+            mesh_gatt_link_reset();
+        }
         return;
     }
     if (!mesh_gatt.connected) {
         mesh_gatt_link_reset();
         mesh_gatt.connected = 1;
+        mesh_gatt_provisioning_link_notify(1);
     }
     if (mesh_gatt_proxy_sar_timeout_poll()) return;
     if (mesh_gatt.rx_att_pending && !mesh_gatt.tx_active) {

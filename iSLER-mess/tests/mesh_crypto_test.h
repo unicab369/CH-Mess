@@ -99,10 +99,10 @@ static int ble_sc_crypto_test(void) {
     gap_sc_f4(u, v, x, 0, actual);
     if (memcmp(actual, expected_f4, 16)) return -1;
     gap_sc_f5(w, n1, n2, a1, a2, mac_key, ltk);
-    if (memcmp(mac_key, expected_mac_key, 16) || memcmp(ltk, expected_ltk, 16)) return -1;
+    if (memcmp(mac_key, expected_mac_key, 16) || memcmp(ltk, expected_ltk, 16)) return -2;
     gap_sc_f6(check_key, n1, n2, r, iocap, a1, a2, actual);
-    if (memcmp(actual, expected_f6, 16)) return -1;
-    if (gap_sc_g2(u, v, expected_g2_x, expected_g2) != 938554) return -1;
+    if (memcmp(actual, expected_f6, 16)) return -3;
+    if (gap_sc_g2(u, v, expected_g2_x, expected_g2) != 938554) return -4;
     return 0;
 }
 

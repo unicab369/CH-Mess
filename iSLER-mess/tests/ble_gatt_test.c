@@ -16,6 +16,8 @@ static size_t received_len;
 static uint32_t fake_now_ms;
 static uint8_t provisioning_received[16];
 static size_t provisioning_received_len;
+static uint8_t provisioning_link_events[2];
+static size_t provisioning_link_event_count;
 
 uint32_t GET_MILLIS(void) {
     return fake_now_ms;
@@ -38,6 +40,13 @@ static int capture_provisioning_pdu(const uint8_t *pdu, size_t len,
     memcpy(provisioning_received, pdu, len);
     provisioning_received_len = len;
     return 1;
+}
+
+static void capture_provisioning_link(uint8_t open, void *context) {
+    (void)context;
+    assert(provisioning_link_event_count <
+           sizeof(provisioning_link_events));
+    provisioning_link_events[provisioning_link_event_count++] = open;
 }
 
 static void clear_tx(void) {
@@ -371,6 +380,7 @@ static void test_pb_gatt_service(void) {
     mesh_gatt.connected = 1;
     mesh_gatt.mtu = 23;
     mesh_gatt_provisioning_set_rx_callback(capture_provisioning_pdu, NULL);
+    mesh_gatt_provisioning_set_link_callback(capture_provisioning_link, NULL);
 
     const uint8_t discover[] = {0x10, 1, 0, 12, 0, 0, 0x28};
     assert(mesh_gatt_att_request(discover, sizeof(discover)));
@@ -403,6 +413,13 @@ static void test_pb_gatt_service(void) {
     clear_tx();
     mesh_gatt.provisioning_cccd = 0;
     assert(!mesh_gatt_provisioning_offer(pdu, sizeof(pdu)));
+
+    provisioning_link_event_count = 0;
+    mesh_gatt_provisioning_link_notify(1);
+    mesh_gatt_provisioning_link_notify(0);
+    assert(provisioning_link_event_count == 2 &&
+           provisioning_link_events[0] == 1 &&
+           provisioning_link_events[1] == 0);
 }
 
 int main(void) {
