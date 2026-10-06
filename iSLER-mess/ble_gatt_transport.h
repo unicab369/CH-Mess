@@ -22,6 +22,9 @@ typedef struct {
     int (*send)(void *context, uint8_t llid, const uint8_t *data, size_t len);
     uint16_t (*max_tx_payload)(void *context);
     void *context;
+    // Optional per-link security snapshot, refreshed before ATT processing.
+    void (*security_state)(void *context, uint8_t *encrypted,
+                           uint8_t *authenticated);
 } ble_gatt_transport_ops;
 
 typedef struct {
@@ -51,44 +54,6 @@ static inline int ble_gatt_transport_init(ble_gatt_transport *transport,
     transport->ops = *ops;
     return 1;
 }
-
-// Convenience binding for the repository's GAP connection API. Include
-// ble_gap.h before this header to make this initializer available.
-#ifdef BLE_GAP_H
-static inline int ble_gatt_transport_gap_connected(void *context) {
-    (void)context;
-    return mesh_gap_connected();
-}
-
-static inline int ble_gatt_transport_gap_receive(void *context, uint8_t *llid,
-    uint8_t *data, size_t *len) {
-    (void)context;
-    return mesh_gap_receive_data(llid, data, len);
-}
-
-static inline int ble_gatt_transport_gap_send(void *context, uint8_t llid,
-    const uint8_t *data, size_t len) {
-    (void)context;
-    return mesh_gap_send_data(llid, data, len);
-}
-
-static inline uint16_t ble_gatt_transport_gap_max_payload(void *context) {
-    (void)context;
-    return mesh_gap_data_length_get().tx_octets;
-}
-
-static inline int ble_gatt_transport_init_gap(ble_gatt_transport *transport,
-                                               ble_gatt_server *server) {
-    const ble_gatt_transport_ops ops = {
-        ble_gatt_transport_gap_connected,
-        ble_gatt_transport_gap_receive,
-        ble_gatt_transport_gap_send,
-        ble_gatt_transport_gap_max_payload,
-        NULL
-    };
-    return ble_gatt_transport_init(transport, server, &ops);
-}
-#endif
 
 static inline void ble_gatt_transport_send_att(ble_gatt_transport *transport,
                                                 const uint8_t *att,
@@ -166,6 +131,13 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
         ble_gatt_server_link_reset(transport->server);
     }
     if (!connected) return 0;
+    if (transport->ops.security_state) {
+        uint8_t encrypted = 0, authenticated = 0;
+        transport->ops.security_state(transport->ops.context, &encrypted,
+                                      &authenticated);
+        ble_gatt_server_set_security(transport->server, encrypted,
+                                     authenticated);
+    }
 
     if (transport->tx_len) {
         uint16_t max_len = transport->ops.max_tx_payload(transport->ops.context);

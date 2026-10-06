@@ -7,6 +7,7 @@
 #define FAKE_RX_COUNT 16
 typedef struct {
     uint8_t connected;
+    uint8_t encrypted, authenticated;
     uint16_t max_payload;
     struct { uint8_t llid, len, data[BLE_GATT_TRANSPORT_LL_MAX]; }
         rx[FAKE_RX_COUNT];
@@ -46,6 +47,13 @@ static int fake_send(void *context, uint8_t llid, const uint8_t *data,
 
 static uint16_t fake_max_payload(void *context) {
     return ((fake_link *)context)->max_payload;
+}
+
+static void fake_security_state(void *context, uint8_t *encrypted,
+                                uint8_t *authenticated) {
+    fake_link *link = context;
+    *encrypted = link->encrypted;
+    *authenticated = link->authenticated;
 }
 
 static void enqueue_l2cap(fake_link *link, uint16_t cid,
@@ -96,17 +104,25 @@ int main(void) {
         BLE_GATT_PERM_READ, value, sizeof(value), sizeof(value), NULL, NULL,
         NULL, &value_handle));
     ble_gatt_transport_ops ops = {
-        fake_connected, fake_receive, fake_send, fake_max_payload, &link
+        fake_connected, fake_receive, fake_send, fake_max_payload, &link,
+        fake_security_state
     };
     assert(ble_gatt_transport_init(&transport, &server, &ops));
 
     link.connected = 1;
     assert(ble_gatt_transport_poll(&transport, 1) == 0);
+    assert(!server.encrypted && !server.authenticated);
+    link.encrypted = 1;
+    assert(ble_gatt_transport_poll(&transport, 2) == 0);
+    assert(server.encrypted && !server.authenticated);
+    link.authenticated = 1;
+    assert(ble_gatt_transport_poll(&transport, 3) == 0);
+    assert(server.encrypted && server.authenticated);
     uint8_t read_req[] = {0x0a, (uint8_t)value_handle, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, read_req,
                   sizeof(read_req), 5);
-    assert(ble_gatt_transport_poll(&transport, 2) == 0);
-    assert(ble_gatt_transport_poll(&transport, 3) == 1);
+    assert(ble_gatt_transport_poll(&transport, 4) == 0);
+    assert(ble_gatt_transport_poll(&transport, 5) == 1);
     assert(transport.tx_len == sizeof(value) + 5);
     while (transport.tx_len)
         assert(ble_gatt_transport_poll(&transport, 4) == 1);

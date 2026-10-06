@@ -4,6 +4,9 @@ The goal is a reusable GATT stack that applications can use to define their own
 services. Mesh Proxy and PB-GATT are consumers of that stack; they should not
 define the generic ATT/GATT behavior.
 
+`ble_gatt.h` is the generic include for the server and transport. Mesh service
+registration and Proxy/provisioning behavior are isolated in `ble_gatt_mesh.h`.
+
 ## Implementation chunks
 
 ### 1. Generic server database and ATT core — in progress
@@ -35,7 +38,9 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
   applications poll it with a monotonic millisecond tick from their connection
   event loop. Queue limits and timeout are configurable.
 - [x] Enforce configured encryption/authentication permissions in the core.
-- [ ] Feed the active GAP link's security state into the core.
+- [x] Feed the active link's encryption and authentication state through an
+  optional transport callback; the Mesh adapter supplies this project's GAP
+  security state.
 - [ ] Add service changed/database change handling if services can change
   while clients are connected; otherwise require a static database per boot.
 
@@ -43,9 +48,10 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 - [x] Add a single-link L2CAP/ATT transport adapter. It reassembles CID 4,
   dispatches complete ATT PDUs, and fragments responses through platform
-  send/receive callbacks; a convenience initializer binds the existing GAP API.
-- [ ] Call the transport poller from the application connection event loop and
-  verify it with the actual GAP radio path.
+  send/receive callbacks. It has no dependency on a particular GAP or Mesh API;
+  the Mesh adapter supplies callbacks for this project's GAP connection layer.
+- [x] Call the transport poller from the existing application connection
+  polling path. Hardware verification remains listed below.
 - [x] Keep transport state (connection, L2CAP reassembly, and TX fragments)
   separate from the attribute database and application service state.
 - [x] Test disconnect/reconnect cleanup and multiple sequential ATT requests
@@ -53,12 +59,12 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 ### 4. Move Mesh services onto the generic server
 
-- [ ] Register Mesh Proxy and PB-GATT services as ordinary attributes.
-- [ ] Keep Mesh Proxy filtering, Proxy SAR, PB-GATT SAR, and provisioning
-  callbacks in a separate Mesh service adapter.
-- [ ] Support the 65-byte Mesh Provisioning Public Key PDU; generic GATT values
-  must not inherit the current Mesh-specific 64-byte limit.
-- [ ] Keep Mesh network and provisioning state-machine integration outside the
+- [x] Register Mesh Proxy and PB-GATT services as ordinary attributes.
+- [x] Keep Mesh Proxy filtering, Proxy SAR, PB-GATT SAR, and provisioning
+  callbacks in the Mesh service adapter.
+- [x] Support the 65-byte Mesh Provisioning Public Key PDU in the Mesh bearer
+  adapter; the generic GATT value limit remains independently configurable.
+- [x] Keep Mesh network and provisioning state-machine integration outside the
   generic GATT core.
 
 ### 5. Add the GATT client role

@@ -9,76 +9,31 @@ The Generic Access Profile (GAP) defines how a BLE device advertises, discovers 
 | Peripheral | Advertises and accepts a connection initiated by a Central. |
 | Central | Scans and initiates a connection to a Peripheral. |
 
+## BLE GAP feature areas
+
+This table summarizes the feature areas in LE GAP. Support requirements depend
+on the roles and optional controller features a device declares. See the
+[Bluetooth Core Specification 6.2, Generic Access Profile](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-62/out/en/host/generic-access-profile.html)
+and the [GAP test suite](https://files.bluetooth.com/wp-content/uploads/dlm_uploads/2025/05/GAP.TS_.p48.pdf)
+for the normative requirements and test cases.
+
+| Feature area | Features included |
+| --- | --- |
+| Roles and modes | Broadcaster, Observer, Peripheral, Central; discoverable and non-discoverable; connectable and non-connectable; bondable and non-bondable; combinations of supported roles. |
+| Advertising | Legacy and extended advertising; connectable, non-connectable, scannable, directed, and undirected advertising; advertising data and scan responses; data formatting and discoverability flags. |
+| Scanning and discovery | Passive and active scanning; general and limited discovery; scan configuration and filtering; duplicate handling; device and name discovery; extended scanning. |
+| Connections | Direct, general, selective, and automatic connection establishment; connection parameter updates; disconnect; simultaneous links; periodic advertising connection when supported. |
+| Privacy and addresses | Public and random addresses; static, non-resolvable private, and resolvable private addresses; address generation, rotation, and resolution; IRK exchange; privacy filtering and peer identity handling. |
+| Pairing, security, and bonding | Pairing and authentication; Just Works, Passkey, Numeric Comparison, and OOB methods where applicable; link encryption; authorization; bond creation, storage, restoration, and removal; signed data and encrypted advertising data where supported. |
+| GAP service data | Device Name and Appearance; Peripheral Preferred Connection Parameters; Central Address Resolution; Resolvable Private Address Only. Requirements depend on supported roles and privacy features. |
+| PHY and connection capabilities | LE 1M, LE 2M, and LE Coded PHY; data length and feature exchange; connection subrating when supported. |
+| Periodic advertising | Periodic advertising; synchronization establishment and termination; synchronization transfer (PAST); Periodic Advertising with Responses (PAwR). |
+| Isochronous links and broadcasts | Connected Isochronous Streams (CIS) and Broadcast Isochronous Streams (BIS), including establishment, synchronization, update, and termination procedures. |
+| Channel Sounding | Initiator and reflector procedures when supported by the Controller and radio. |
+
+This list covers LE GAP. BR/EDR GAP is outside this project’s BLE scope. Not
+every optional feature is required for every device; declare the supported
+roles and features, then apply the corresponding GAP requirements and tests.
+
 The checklists below describe the GAP features in this project. `[x]` means code exists. `[ ] TODO` marks implementation work; `[ ] Hardware TODO` marks device checks that require target hardware. Extended and periodic advertising are optional additions, not required for the legacy target.
 
-## Broadcaster
-
-| Feature | Status / remaining work |
-| --- | --- |
-| Non-connectable advertising | [x] Legacy advertising with application data. |
-| Scannable advertising | [x] Scan response support. |
-| Advertising data validation | [x] Legacy payload size and structure checks. |
-| Advertising timing and channel behavior | [ ] Hardware TODO: Verify event timing and channel rotation. |
-| Private address use and rotation | [x] Address generation and rotation; [ ] Hardware TODO: Verify rotation and peer compatibility. |
-| Extended advertising | [ ] TODO: Add only if the target controller and product need it. |
-| Periodic advertising | [ ] TODO: Add only if synchronized broadcasts are needed. |
-
-## Observer
-
-| Feature | Status / remaining work |
-| --- | --- |
-| Passive scanning | [x] Legacy advertising reception and reports. |
-| Active scanning | [x] Scan request and scan response handling. |
-| Scan configuration | [x] Interval, window, discovery mode, and duplicate filtering. |
-| Identity and privacy filtering | [x] Identity lookup, resolvable private address handling, and configurable filters; [ ] Hardware TODO: Verify identity resolution and filtering. |
-| Scan timing and channel behavior | [ ] Hardware TODO: Verify scan windows and channel rotation. |
-| Extended scanning and periodic synchronization | [ ] TODO: Optional features for a controller that supports them. |
-
-## Peripheral
-
-| Feature | Status / remaining work |
-| --- | --- |
-| Connectable and directed legacy advertising | [x] Advertising procedures are implemented. |
-| Private address and peer privacy | [x] Address selection and peer filtering; [ ] Hardware TODO: Verify rotation and filtering. |
-| Connection acceptance and data exchange | [x] Single-link connection state and data path. |
-| Link control and connection updates | [x] Basic control procedures and parameter updates. |
-| Connection event timing | [ ] Hardware TODO: Verify timing and recovery. |
-| Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] Hardware TODO: Verify encrypted links. |
-| Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
-| LE Secure Connections | [x] Opt-in Just Works, Numeric Comparison, 20-round Passkey Entry, OOB authentication data, and LTK bonding with P-256 public-key exchange and DHKey checks; [ ] Hardware TODO: Verify OOB exchange, pairing, and restored bonds. |
-| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. The application supplies the platform adapters when these features are enabled. |
-| PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] Hardware TODO: Verify switching. LE Coded PHY remains optional. |
-| Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
-
-## Central
-
-| Feature | Status / remaining work |
-| --- | --- |
-| Scan for and select a peer | [x] Legacy scanning, peer matching, and privacy filtering. |
-| Private address use and peer resolution | [x] Local address selection and peer identity resolution; [ ] Hardware TODO: Verify address resolution with target devices. |
-| Initiate a connection | [x] Legacy connection request construction and scan-to-link transition. |
-| Connection data and control | [x] Uses the shared single-link connection engine. |
-| Connection event timing and lifecycle | [ ] Hardware TODO: Verify connection timing, failures, and recovery. |
-| Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] Hardware TODO: Verify encrypted links. |
-| Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
-| LE Secure Connections | [x] Opt-in Just Works, Numeric Comparison, 20-round Passkey Entry, OOB authentication data, and LTK bonding with P-256 public-key exchange and DHKey checks; [ ] Hardware TODO: Verify OOB exchange, pairing, and restored bonds. |
-| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. The application supplies the platform adapters when these features are enabled. |
-| PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] Hardware TODO: Verify switching. LE Coded PHY remains optional. |
-| Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
-
-Privacy procedures and pairing span roles and other BLE layers. Hardware TODOs remain for target-device verification; completed code is not a Bluetooth qualification.
-
-## Platform adapter interfaces
-
-The platform implements `BLE_GAP_RANDOM_SECURE_BYTES` to provide cryptographic
-entropy, and `BLE_GAP_BOND_LOAD`, `BLE_GAP_BOND_SAVE`, and
-`BLE_GAP_BOND_DELETE` to operate on whole `mesh_gap_bond` records. The platform
-chooses storage reserved for bonds and separate from other persistent data.
-Missing hooks fail closed.
-
-The current CH32 adapter has no cryptographic random source, and its two flash
-sectors are used as alternating Mesh state records. Do not use `rand()` for
-security or place bonds in those sectors. Pairing, encrypted links, and bond
-restoration still need hardware verification. Optional extended/periodic
-advertising and multiple simultaneous links remain product-dependent features,
-not requirements for the current single-link legacy target.

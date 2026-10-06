@@ -66,7 +66,7 @@ uint32_t GET_MILLIS(void) {
 
 #define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "ble_gap.h"
-#include "ble_gatt.h"
+#include "ble_gatt_mesh.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its
