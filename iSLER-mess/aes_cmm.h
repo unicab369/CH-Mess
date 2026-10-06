@@ -21,6 +21,9 @@ typedef struct {
 #define AES ((AES_Type *) AES_BASE)
 
 void doAES(uint32_t * key, uint32_t * in, uint32_t * out, uint8_t enc) {
+	// Serialize shared AES hardware against GAP address resolution in the RX ISR.
+	uint32_t irq_state = __get_MSTATUS();
+	__disable_irq();
 	AES->CFG = 0x100; // Don't know what it does, maybe enables the peripheral or clock for it
 	AES->CFG = enc?0:2; // Type of operation
 	AES->key[0] = key[0];
@@ -41,6 +44,7 @@ void doAES(uint32_t * key, uint32_t * in, uint32_t * out, uint8_t enc) {
 	out[1] = AES->data[1];
 	out[2] = AES->data[2];
 	out[3] = AES->data[3];
+	__set_MSTATUS(irq_state);
 }
 
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
