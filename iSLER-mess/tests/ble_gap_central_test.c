@@ -252,6 +252,111 @@ static void test_directed_connect_target(void) {
     gap_connection_end();
 }
 
+static void test_peer_privacy_modes(void) {
+    uint8_t identity[6], type;
+    assert(gap_identities[gap_identity_find(test_identity, 0)].privacy_mode ==
+           MESH_GAP_PRIVACY_NETWORK);
+    assert(!mesh_gap_identity_privacy(NULL, 0, MESH_GAP_PRIVACY_DEVICE));
+    assert(!mesh_gap_identity_privacy(test_identity, 2, MESH_GAP_PRIVACY_DEVICE));
+    assert(!mesh_gap_identity_privacy(test_identity, 0, 2));
+    assert(!mesh_gap_identity_privacy(test_rpa, 1, MESH_GAP_PRIVACY_DEVICE));
+    assert(!mesh_gap_identity_privacy((uint8_t[]){99, 0, 0, 0, 0, 0}, 0, 1));
+    // Resolution identifies host-selected peers independently of RX policy.
+    assert(mesh_gap_resolve(test_identity, 0, identity, &type));
+    assert(mesh_gap_privacy_filter(0, 0));
+    mesh_gap_scan_start();
+    uint8_t frame[8] = {2, 6};
+    memcpy(frame + 2, test_identity, 6);
+    mesh_gap_scan_report report;
+    gap_receive_report(frame, 6, -40);
+    assert(!mesh_gap_scan_poll(&report));
+    assert(!mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_DEVICE));
+    frame[0] = 0x42;
+    memcpy(frame + 2, test_rpa, 6);
+    gap_receive_report(frame, 6, -40);
+    assert(mesh_gap_scan_poll(&report) && report.resolved);
+    // Unlisted peers continue to obey the optional filter setting.
+    frame[2] ^= 1;
+    gap_receive_report(frame, 6, -40);
+    assert(mesh_gap_scan_poll(&report) && !report.resolved);
+    mesh_gap_scan_stop();
+    assert(mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_DEVICE));
+    assert(mesh_gap_identity_set(test_identity, 0, test_irk)); // Preserve mode
+    mesh_gap_scan_start();
+    frame[0] = 2;
+    memcpy(frame + 2, test_identity, 6);
+    gap_receive_report(frame, 6, -40);
+    assert(mesh_gap_scan_poll(&report) && report.resolved);
+    mesh_gap_scan_stop();
+    assert(mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_NETWORK));
+    // All-zero IRKs still allow identity addresses in network mode.
+    assert(mesh_gap_identity_set(test_identity, 0, (uint8_t[16]){0}));
+    mesh_gap_scan_start();
+    gap_receive_report(frame, 6, -40);
+    assert(mesh_gap_scan_poll(&report));
+    mesh_gap_scan_stop();
+    assert(mesh_gap_identity_set(test_identity, 0, test_irk));
+
+    // An active scan must not send SCAN_REQ to the prohibited identity.
+    mesh_gap_active_scan_start();
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0; rx_frame[1] = 6;
+    memcpy(rx_frame + 2, test_identity, 6);
+    int before = link_tx_count;
+    gap_hw_mesh_received();
+    assert(link_tx_count == before && !gap_radio_active_scan_pending);
+    mesh_gap_scan_stop();
+
+    // Incoming SCAN_REQ and CONNECT_IND obey the peer mode without filters.
+    gap_radio_advertising_rx_event = 1;
+    gap_radio_adv_frame[0] = 0;
+    BLE_GAP_HW_PUBLIC_ADDRESS(gap_radio_adv_frame + 2);
+    rx_frame[0] = 3; rx_frame[1] = 12;
+    memcpy(rx_frame + 8, gap_radio_adv_frame + 2, 6);
+    gap_hw_mesh_received();
+    assert(link_tx_count == before);
+    rx_frame[0] = 5; rx_frame[1] = 34;
+    gap_radio_connect_request_ready = 0;
+    gap_hw_mesh_received();
+    assert(!gap_radio_connect_request_ready);
+    rx_frame[0] = 0x45;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_radio_connect_request_ready);
+    gap_radio_advertising_rx_event = 0;
+    gap_radio_connect_request_ready = 0;
+    assert(mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_DEVICE));
+    gap_radio_advertising_rx_event = 1;
+    rx_frame[0] = 3; rx_frame[1] = 12;
+    memcpy(rx_frame + 2, test_identity, 6);
+    gap_hw_mesh_received();
+    assert(link_tx_count == before + 1);
+    rx_frame[0] = 5; rx_frame[1] = 34;
+    gap_hw_mesh_received();
+    assert(gap_radio_connect_request_ready);
+    gap_radio_advertising_rx_event = 0;
+    gap_radio_connect_request_ready = 0;
+    assert(mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_NETWORK));
+
+    // Host requests use the identity; only an allowed on-air address connects.
+    assert(mesh_gap_connect_start(test_identity, 0));
+    rx_frame[0] = 0; rx_frame[1] = 6;
+    gap_hw_mesh_received();
+    assert(!gap_conn.active && gap_central_connect.active);
+    rx_frame[0] = 0x40;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_conn.active && !gap_central_connect.active);
+    gap_connection_end();
+    assert(mesh_gap_identity_privacy(test_identity, 0, MESH_GAP_PRIVACY_DEVICE));
+    assert(mesh_gap_connect_start(test_identity, 0));
+    rx_frame[0] = 0;
+    memcpy(rx_frame + 2, test_identity, 6);
+    gap_hw_mesh_received();
+    assert(gap_conn.active);
+    gap_connection_end();
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -261,5 +366,6 @@ int main(void) {
     test_radio_privacy_filter();
     test_connect_by_identity();
     test_directed_connect_target();
+    test_peer_privacy_modes();
     return 0;
 }

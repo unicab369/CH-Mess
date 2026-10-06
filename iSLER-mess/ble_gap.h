@@ -10,7 +10,7 @@
 //   Layer control.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation and identity filters on hardware.
-// - Add per-peer privacy modes/local IRKs and non-resolvable private addresses.
+// - Add per-peer local IRKs and non-resolvable private addresses.
 // - Integrate GAP security requirements with SMP pairing and bonding support.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
@@ -30,6 +30,9 @@
 #define MESH_GAP_DISCOVERY_ALL 0
 #define MESH_GAP_DISCOVERY_GENERAL 1
 #define MESH_GAP_DISCOVERY_LIMITED 2
+
+#define MESH_GAP_PRIVACY_NETWORK 0
+#define MESH_GAP_PRIVACY_DEVICE 1
 
 #ifndef BLE_GAP_RADIO_BUFFER_ATTR
 #define BLE_GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -237,6 +240,7 @@ static struct {
 // Addresses use PDU byte order; IRKs use standard AES byte order.
 static struct {
     uint8_t used, address_type, address[6], irk[16];
+    uint8_t privacy_mode, has_irk;
 } gap_identities[GAP_IDENTITY_COUNT];
 static struct {
     uint8_t enabled, irk[16], scan_filter, connection_filter;
@@ -260,9 +264,7 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
         if (address_type == gap_identities[i].address_type &&
             memcmp(address, gap_identities[i].address, 6) == 0) return i;
         if (address_type == 1 && (address[5] & 0xc0) == 0x40) {
-            uint8_t key_bits = 0;
-            for (uint8_t j = 0; j < 16; j++) key_bits |= gap_identities[i].irk[j];
-            if (!key_bits) continue; // Zero peer IRK means identity matching only.
+            if (!gap_identities[i].has_irk) continue; // Zero IRK: identity only.
             uint8_t hash[3];
             gap_address_hash(gap_identities[i].irk, address + 3, hash);
             if (memcmp(hash, address, 3) == 0) return i;
@@ -271,7 +273,17 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
     return -1;
 }
 
+// Network privacy rejects a known peer's identity address when it has an IRK.
+// Device privacy accepts it; unknown peers still follow the configured filters.
+static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
+    return slot < 0 || !gap_identities[slot].has_irk ||
+        gap_identities[slot].privacy_mode == MESH_GAP_PRIVACY_DEVICE ||
+        type != gap_identities[slot].address_type ||
+        memcmp(address, gap_identities[slot].address, 6) != 0;
+}
+
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
+// New entries default to network privacy; updating an IRK preserves the mode.
 int mesh_gap_identity_set(const uint8_t address[6], uint8_t address_type,
                            const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning ||
@@ -292,11 +304,33 @@ int mesh_gap_identity_set(const uint8_t address[6], uint8_t address_type,
         if (!gap_identities[i].used && slot < 0) slot = i;
     }
     if (!irk || slot < 0) return 0;
+    if (!gap_identities[slot].used)
+        gap_identities[slot].privacy_mode = MESH_GAP_PRIVACY_NETWORK;
     gap_identities[slot].used = 1;
+    gap_identities[slot].has_irk = 0;
+    for (uint8_t i = 0; i < 16; i++)
+        if (irk[i]) gap_identities[slot].has_irk = 1;
     gap_identities[slot].address_type = address_type;
     memcpy(gap_identities[slot].address, address, 6);
     memcpy(gap_identities[slot].irk, irk, 16);
     return 1;
+}
+
+// Set a listed peer's network/device privacy mode while GAP is idle.
+int mesh_gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
+                               uint8_t mode) {
+    if (!address || address_type > 1 || mode > MESH_GAP_PRIVACY_DEVICE ||
+        gap_scanning || gap_advertising.enabled || gap_conn.active ||
+        gap_central_connect.active) return 0;
+    for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
+        if (gap_identities[i].used &&
+            gap_identities[i].address_type == address_type &&
+            memcmp(gap_identities[i].address, address, 6) == 0) {
+            gap_identities[i].privacy_mode = mode;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 // Resolve without replacing the received address, which is needed on the air.
@@ -347,7 +381,7 @@ int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
 }
 
 // Optionally accept only listed identities for scanning and incoming requests.
-// Listed peers may use their identity address or an RPA matching their IRK.
+// Listed peers must also pass their individual network/device privacy mode.
 int mesh_gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanning ||
         gap_advertising.enabled || gap_conn.active || gap_central_connect.active)
@@ -629,6 +663,7 @@ static inline void gap_receive_report(const uint8_t *frame,
     if (data_len > MESH_GAP_ADV_DATA_MAX) return;
     uint8_t address_type = (frame[0] >> 6) & 1;
     int identity_slot = gap_identity_find(frame + 2, address_type);
+    if (!gap_peer_allowed(identity_slot, frame + 2, address_type)) return;
     if (gap_privacy.scan_filter && identity_slot < 0) return;
     if (gap_scan_settings.discovery_mode != MESH_GAP_DISCOVERY_ALL) {
         if (pdu_type == 4) {
@@ -1020,9 +1055,13 @@ unknown_control_pdu:
     }
     uint8_t pdu_type = frame[0] & 0x0f;
     int peer_slot = -1;
-    if (gap_central_connect.active && (pdu_type == 0 || pdu_type == 1) &&
-        frame[1] >= 6 && frame[1] <= 37)
-        peer_slot = gap_identity_find(frame + 2, (frame[0] >> 6) & 1);
+    if (pdu_type <= 0x06 && frame[1] >= 6 && frame[1] <= 37) {
+        uint8_t peer_type = (frame[0] >> 6) & 1;
+        peer_slot = gap_identity_find(frame + 2, peer_type);
+        // Enforce each peer's privacy mode before responding or connecting,
+        // even when the optional known-peer filters are disabled.
+        if (!gap_peer_allowed(peer_slot, frame + 2, peer_type)) return;
+    }
     if (gap_central_connect.active &&
         (pdu_type == 0x00 || pdu_type == 0x01) &&
         frame[1] >= 6 && frame[1] <= 37 &&
@@ -1073,8 +1112,7 @@ unknown_control_pdu:
         !gap_radio_active_scan_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
         frame[1] >= 6 && frame[1] <= 37) {
         uint8_t advertiser_type = (frame[0] >> 6) & 1;
-        if (gap_privacy.scan_filter &&
-            gap_identity_find(frame + 2, advertiser_type) < 0) return;
+        if (gap_privacy.scan_filter && peer_slot < 0) return;
         memcpy(gap_radio_active_scan_address, frame + 2, 6);
         gap_radio_active_scan_address_type = advertiser_type;
         gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
@@ -1115,8 +1153,7 @@ unknown_control_pdu:
         (frame[0] & 0x0f) == 0x03 &&
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
-        (!gap_privacy.connection_filter ||
-         gap_identity_find(frame + 2, (frame[0] >> 6) & 1) >= 0)) {
+        (!gap_privacy.connection_filter || peer_slot >= 0)) {
         uint8_t response_len = gap_advertising.scan_response_len;
         gap_radio_scan_response_frame[0] = 0x04 | (gap_radio_adv_frame[0] & 0x40);
         gap_radio_scan_response_frame[1] = 6 + response_len;
@@ -1134,8 +1171,7 @@ unknown_control_pdu:
         pdu_type == 0x05 && frame[1] == 34 && !(frame[0] & 0x20) &&
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
-        (!gap_privacy.connection_filter ||
-         gap_identity_find(frame + 2, (frame[0] >> 6) & 1) >= 0) &&
+        (!gap_privacy.connection_filter || peer_slot >= 0) &&
         ((gap_radio_adv_frame[0] & 0x0f) != 0x01 ||
          (((frame[0] >> 6) & 1) == ((gap_radio_adv_frame[0] >> 7) & 1) &&
           memcmp(frame + 2, gap_radio_adv_frame + 8, 6) == 0))) {
