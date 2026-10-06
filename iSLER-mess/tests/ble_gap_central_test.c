@@ -4,11 +4,13 @@
 #include <string.h>
 
 #include "../ble_gap.h"
+#include "../mesh_crypto.h"
+#include <openssl/evp.h>
 
 static uint32_t now_ms;
 static uint8_t radio_phy_mask = 3, configured_tx_phy, configured_rx_phy;
 static uint16_t radio_data_max = MESH_GAP_CONN_DATA_MAX;
-static uint8_t rx_frame[2 + (MESH_GAP_CONN_DATA_MAX > 37 ? MESH_GAP_CONN_DATA_MAX : 37)], random_seed;
+static uint8_t rx_frame[6 + (MESH_GAP_CONN_DATA_MAX > 37 ? MESH_GAP_CONN_DATA_MAX : 37)], random_seed;
 static const uint8_t *tx_buffer;
 static int link_tx_count, aes_count;
 static uint8_t forced_random[6], force_random;
@@ -18,6 +20,25 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     AES_KEY aes;
     assert(AES_set_encrypt_key(key, 128, &aes) == 0);
     AES_encrypt(in, out, &aes);
+}
+static uint8_t secure_random_available = 1, secure_random_seed, secure_random_disconnect;
+uint32_t BLE_GAP_CRITICAL_ENTER(void) { return 0; }
+void BLE_GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
+static uint8_t secure_random_forced[12], secure_random_force;
+int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+    if (!secure_random_available) return 0;
+    if (secure_random_disconnect) gap_connection_end();
+    if (secure_random_force) { assert(len == 12); memcpy(out, secure_random_forced, 12); return 1; }
+    for (size_t i = 0; i < len; i++) out[i] = secure_random_seed++;
+    return 1;
+}
+int BLE_GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]) {
+    return ccm_encrypt_and_tag(key, nonce, 13, &aad, 1, data, len, data, mic, 4) == CCM_OK;
+}
+int BLE_GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]) {
+    return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
 }
 const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return rx_frame; }
 uint16_t BLE_GAP_HW_DATA_MAX(void) { return radio_data_max; }
@@ -1108,6 +1129,244 @@ static void test_phy_updates(void) {
     radio_phy_mask = 3;
 }
 
+// Core Vol 6 Part C, section 1: encryption-start and data packet sample vectors.
+static const uint8_t encryption_ltk[16] = {
+    0xbf, 0x01, 0xfb, 0x9d, 0x4e, 0xf3, 0xbc, 0x36,
+    0xd8, 0x74, 0xf5, 0x39, 0x41, 0x38, 0x68, 0x4c
+};
+static const uint8_t encryption_random[8] = {0x90, 0x78, 0x56, 0x34, 0x12, 0xef, 0xcd, 0xab};
+static const uint8_t central_entropy[12] = {
+    0x13, 0x02, 0xf1, 0xe0, 0xdf, 0xce, 0xbd, 0xac, 0x24, 0xab, 0xdc, 0xba
+};
+static const uint8_t peripheral_entropy[12] = {
+    0x79, 0x68, 0x57, 0x46, 0x35, 0x24, 0x13, 0x02, 0xbe, 0xba, 0xaf, 0xde
+};
+
+// Independently encrypt peer packets with OpenSSL to check the project's CCM
+// against a second implementation, including AAD, direction and counter layout.
+static void receive_secure_test_pdu(uint8_t llid, const uint8_t *payload,
+                                     size_t len, uint64_t counter, uint8_t duplicate,
+                                     uint8_t acknowledged, uint8_t tampered) {
+    uint8_t nonce[13], aad;
+    rx_frame[0] = llid | ((gap_conn.expected_rx_sn ^ duplicate) << 3) |
+        ((gap_conn.tx_sn ^ acknowledged) << 2);
+    rx_frame[1] = (uint8_t)(len + 4);
+    for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (8 * i));
+    if (!gap_conn.central_role) nonce[4] |= 0x80;
+    memcpy(nonce + 5, gap_security.iv, 8);
+    aad = rx_frame[0] & 0xe3;
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    assert(ctx);
+    int produced;
+    assert(EVP_EncryptInit_ex(ctx, EVP_aes_128_ccm(), NULL, NULL, NULL));
+    assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, 13, NULL));
+    assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, 4, NULL));
+    assert(EVP_EncryptInit_ex(ctx, NULL, NULL, gap_security.session_key, nonce));
+    assert(EVP_EncryptUpdate(ctx, NULL, &produced, NULL, (int)len));
+    assert(EVP_EncryptUpdate(ctx, NULL, &produced, &aad, 1));
+    assert(EVP_EncryptUpdate(ctx, rx_frame + 2, &produced, payload, (int)len));
+    assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, 4, rx_frame + 2 + len));
+    EVP_CIPHER_CTX_free(ctx);
+    if (tampered) rx_frame[2 + len] ^= 1;
+    gap_conn.rx_armed = 1;
+    gap_hw_mesh_received();
+}
+
+static void start_test_encrypted_central(void) {
+    start_test_central_link();
+    memcpy(secure_random_forced, central_entropy, 12);
+    secure_random_force = 1;
+    assert(mesh_gap_encrypt(encryption_ltk, encryption_random, 0x2474));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x03 && gap_conn_tx_frame[1] == 23);
+    assert(memcmp(gap_conn_tx_frame + 3, encryption_random, 8) == 0);
+    assert(gap_conn_tx_frame[11] == 0x74 && gap_conn_tx_frame[12] == 0x24);
+    receive_test_control(0x04, peripheral_entropy, 12);
+    const uint8_t session[16] = {
+        0x99, 0xad, 0x1b, 0x52, 0x26, 0xa3, 0x7e, 0x3e,
+        0x05, 0x8e, 0x3b, 0x8e, 0x27, 0xc2, 0xc6, 0x66
+    };
+    assert(memcmp(gap_security.session_key, session, 16) == 0);
+    receive_test_control(0x05, NULL, 0);
+    assert(tx_buffer[1] == 5);
+    assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
+    assert(!mesh_gap_encrypted() && gap_security.tx_counter == 1);
+    // An unacknowledged plaintext START request retries the same encrypted response.
+    rx_frame[0] = 3 | ((gap_conn.expected_rx_sn ^ 1) << 3) | (gap_conn.tx_sn << 2);
+    rx_frame[1] = 1; rx_frame[2] = 0x05; gap_conn.rx_armed = 1;
+    gap_hw_mesh_received();
+    assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
+    assert(gap_security.tx_counter == 1);
+    receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
+    assert(mesh_gap_encrypted() && mesh_gap_security_status() == 0);
+    assert(gap_security.rx_counter == 1 && gap_security.tx_counter == 1);
+    secure_random_force = 0;
+}
+
+static void test_link_encryption(void) {
+    assert(!mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    assert(!mesh_gap_key_request(NULL, NULL) && !mesh_gap_key_reply(encryption_ltk));
+    start_test_encrypted_central();
+    const uint8_t central_data[27] = {
+        0x17, 0x00, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c,
+        0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+        0x38, 0x39, 0x30
+    };
+    const uint8_t encrypted_data[31] = {
+        0x7a, 0x70, 0xd6, 0x64, 0x15, 0x22, 0x6d, 0xf2, 0x6b, 0x17, 0x83, 0x9a,
+        0x06, 0x04, 0x05, 0x59, 0x6b, 0xd6, 0x56, 0x4f, 0x79, 0x6b, 0x5b, 0x9c,
+        0xe6, 0xff, 0x32, 0xf7, 0x5a, 0x6d, 0x33
+    };
+    assert(mesh_gap_send_data(2, central_data, sizeof(central_data)));
+    receive_test_link_packet(1);
+    assert(tx_buffer[1] == 31 && memcmp(tx_buffer + 2, encrypted_data, 31) == 0);
+    assert(gap_security.tx_counter == 2);
+    receive_test_link_packet(0);
+    assert(gap_security.tx_counter == 2 && memcmp(tx_buffer + 2, encrypted_data, 31) == 0);
+    receive_secure_test_pdu(2, central_data, 27, 1, 0, 1, 0);
+    assert(gap_conn.rx_ready && gap_security.rx_counter == 2);
+    receive_secure_test_pdu(2, central_data, 27, 1, 1, 1, 0);
+    assert(gap_security.rx_counter == 2);
+    // A full RX slot does not consume the next packet counter; retry after draining.
+    receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
+    assert(gap_security.rx_counter == 2);
+    uint8_t output[27], llid; size_t len = sizeof(output);
+    assert(mesh_gap_receive_data(&llid, output, &len) == 1 && llid == 2 && len == 27);
+    assert(memcmp(output, central_data, 27) == 0);
+    receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
+    assert(gap_security.rx_counter == 3 && gap_conn.rx_ready);
+    receive_secure_test_pdu(3, (uint8_t[]){0x12}, 1, 3, 0, 1, 0);
+    assert(gap_conn_tx_frame[2] == 0x13 && tx_buffer[1] == 5);
+    // Authentication failure disconnects before a packet reaches the application.
+    receive_secure_test_pdu(1, central_data, 27, 4, 0, 1, 1);
+    assert(!gap_conn.active && mesh_gap_security_status() == 0x3d);
+    assert(memcmp(gap_security.session_key, (uint8_t[16]){0}, 16) == 0);
+    assert(memcmp(gap_conn.rx_data, (uint8_t[MESH_GAP_CONN_DATA_MAX]){0}, MESH_GAP_CONN_DATA_MAX) == 0);
+
+    // Refresh uses the old key and IV through the pause exchange, then resets counters.
+    start_test_encrypted_central();
+    uint8_t old_iv[8]; memcpy(old_iv, gap_security.iv, 8);
+    assert(mesh_gap_encrypt(encryption_ltk, encryption_random, 0x1234));
+    assert(!mesh_gap_send_data(1, central_data, 1));
+    assert(memcmp(gap_security.iv, old_iv, 8) == 0);
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x0a && tx_buffer[1] == 5);
+    receive_secure_test_pdu(3, (uint8_t[]){0x0b}, 1, 1, 0, 1, 0);
+    assert(gap_conn_tx_frame[2] == 0x0b && tx_buffer[1] == 1);
+    assert(!gap_security.tx_enabled && !gap_security.rx_enabled);
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x03 && gap_conn_tx_frame[11] == 0x34);
+    receive_test_control(0x04, peripheral_entropy, 12);
+    receive_test_control(0x05, NULL, 0);
+    assert(gap_security.tx_counter == 1);
+    receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
+    assert(mesh_gap_encrypted() && gap_security.rx_counter == 1);
+    gap_connection_end();
+
+    // Peripheral host key lookup, start response and refresh rejection.
+    start_test_central_link(); gap_conn.central_role = 0;
+    memcpy(secure_random_forced, peripheral_entropy, 12); secure_random_force = 1;
+    uint8_t request[22];
+    memcpy(request, encryption_random, 8); request[8] = 0x74; request[9] = 0x24;
+    memcpy(request + 10, central_entropy, 12);
+    receive_test_control(0x03, request, sizeof(request));
+    assert(gap_conn_tx_frame[2] == 0x04 && gap_conn_tx_frame[1] == 13);
+    uint8_t requested_random[8]; uint16_t ediv;
+    assert(mesh_gap_key_request(requested_random, &ediv));
+    assert(ediv == 0x2474 && memcmp(requested_random, encryption_random, 8) == 0);
+    assert(mesh_gap_key_reply(encryption_ltk));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x05 && tx_buffer[1] == 1);
+    receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
+    assert(mesh_gap_encrypted() && tx_buffer[1] == 5);
+    assert(memcmp(tx_buffer + 2, (uint8_t[]){0xa3, 0x4c, 0x13, 0xa4, 0x15}, 5) == 0);
+    receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 0, 1, 0);
+    assert(gap_conn_tx_frame[2] == 0x0b && !gap_security.rx_enabled);
+    uint64_t transmitted = gap_security.tx_counter;
+    receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 1, 0, 0);
+    assert(gap_security.tx_counter == transmitted);
+    receive_test_control(0x0b, NULL, 0);
+    assert(gap_security.phase == GAP_ENC_PERIPHERAL_RESTART);
+    receive_test_control(0x03, request, sizeof(request));
+    assert(mesh_gap_key_reply(NULL));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x02 && gap_conn_tx_frame[3] == 0x06);
+    receive_test_link_packet(1);
+    assert(!gap_conn.active && mesh_gap_security_status() == 0x06);
+    secure_random_force = 0;
+
+    // Missing key during an initial start rejects without marking the link encrypted.
+    start_test_central_link(); gap_conn.central_role = 0;
+    receive_test_control(0x03, request, sizeof(request));
+    assert(mesh_gap_key_reply(NULL));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x06);
+    assert(!mesh_gap_encrypted() && !mesh_gap_key_request(NULL, NULL));
+    gap_connection_end();
+    start_test_central_link();
+    assert(mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    receive_test_link_packet(1);
+    receive_test_control(0x04, peripheral_entropy, 12);
+    receive_test_control(0x11, (uint8_t[]){0x03, 0x06}, 2);
+    assert(mesh_gap_security_status() == 0x06 && !gap_security.phase && gap_conn.active);
+    gap_connection_end();
+
+    // An unexpected data PDU during the handshake is never delivered.
+    start_test_central_link();
+    assert(mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    receive_test_link_packet(1);
+    rx_frame[0] = 1 | (gap_conn.expected_rx_sn << 3) | ((gap_conn.tx_sn ^ 1) << 2);
+    rx_frame[1] = 1; rx_frame[2] = 0x55; gap_conn.rx_armed = 1;
+    gap_hw_mesh_received();
+    assert(!gap_conn.active && mesh_gap_security_status() == 0x3d);
+
+    // Negotiated larger payloads retain room for all four MIC bytes on the wire.
+    start_test_encrypted_central();
+    assert(mesh_gap_data_length_set(MESH_GAP_CONN_DATA_MAX));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x14);
+    receive_secure_test_pdu(3, (uint8_t[]){0x15, 251, 0, 0x48, 0x08, 251, 0, 0x48, 0x08},
+                            9, 1, 0, 1, 0);
+    uint8_t large[MESH_GAP_CONN_DATA_MAX]; memset(large, 0xab, sizeof(large));
+    assert(mesh_gap_send_data(1, large, sizeof(large)));
+    receive_test_link_packet(1);
+    assert(tx_buffer[1] == MESH_GAP_CONN_DATA_MAX + 4);
+    receive_secure_test_pdu(1, large, sizeof(large), 2, 0, 1, 0);
+    size_t large_len = sizeof(large);
+    assert(mesh_gap_receive_data(NULL, large, &large_len) == 1 && large_len == sizeof(large));
+    gap_connection_end();
+
+    // A disconnect during entropy collection must not commit the key afterwards.
+    start_test_central_link();
+    secure_random_disconnect = 1;
+    assert(!mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    secure_random_disconnect = 0;
+    assert(!gap_conn.active && !gap_security.phase);
+    assert(memcmp(gap_security.ltk, (uint8_t[16]){0}, 16) == 0);
+
+    // Resource failure and timeout never fall back to predictable randomness.
+    start_test_central_link(); secure_random_available = 0;
+    assert(!mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    assert(mesh_gap_security_status() == 0x1f && !gap_security.phase);
+    gap_conn.central_role = 0;
+    receive_test_control(0x03, request, sizeof(request));
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1f);
+    secure_random_available = 1;
+    gap_connection_end();
+    start_test_central_link();
+    assert(mesh_gap_encrypt(encryption_ltk, encryption_random, 0));
+    receive_test_link_packet(1);
+    now_ms = gap_security.started_ms + 40000;
+    gap_conn.last_rx_ms = now_ms;
+    mesh_gap_conn_poll();
+    assert(!gap_conn.active && mesh_gap_security_status() == 0x22);
+    start_test_encrypted_central();
+    gap_security.tx_counter = UINT64_C(1) << 39;
+    assert(mesh_gap_send_data(1, central_data, 1));
+    receive_test_link_packet(1);
+    assert(!gap_conn.active && mesh_gap_security_status() == 0x3d);
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -1125,5 +1384,6 @@ int main(void) {
     test_data_length();
     test_channel_map_updates();
     test_phy_updates();
+    test_link_encryption();
     return 0;
 }

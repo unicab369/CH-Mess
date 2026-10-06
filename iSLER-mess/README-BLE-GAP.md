@@ -43,8 +43,8 @@ The checklists below describe a practical legacy-feature target for this project
 | Connection acceptance and data exchange | [x] Single-link connection state and data path. |
 | Link control and connection updates | [x] Basic control procedures and parameter updates. |
 | Connection event timing | [ ] TODO: Verify timing and recovery on hardware. |
-| Pairing, bonding, and link encryption | [ ] TODO: Integrate SMP and the required Link Layer encryption procedures. |
-| PHY updates | [ ] TODO: Add if supported by the radio and required by the product. |
+| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Add SMP pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
 ## Central
@@ -56,8 +56,8 @@ The checklists below describe a practical legacy-feature target for this project
 | Initiate a connection | [x] Legacy connection request construction and scan-to-link transition. |
 | Connection data and control | [x] Uses the shared single-link connection engine. |
 | Connection event timing and lifecycle | [ ] TODO: Verify connection timing, failures, and recovery on hardware. |
-| Pairing, bonding, and link encryption | [ ] TODO: Integrate SMP and the required Link Layer encryption procedures. |
-| PHY updates | [ ] TODO: Add if supported by the radio and required by the product. |
+| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] TODO: Add SMP pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
 Privacy procedures and pairing span roles and other BLE layers. Full product support also depends on the controller radio hooks and hardware timing; the checkmarks above describe code present in this project, not Bluetooth qualification.

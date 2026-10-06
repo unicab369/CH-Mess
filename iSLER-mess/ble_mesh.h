@@ -140,6 +140,27 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 }
 
 
+// Application must override this with a cryptographic entropy source before
+// using link encryption. The advertising LFSR cannot safely generate session IVs.
+__attribute__((weak)) int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
+    (void)out; (void)len;
+    return 0;
+}
+uint32_t BLE_GAP_CRITICAL_ENTER(void) {
+    uint32_t state = __get_MSTATUS();
+    __disable_irq();
+    return state;
+}
+void BLE_GAP_CRITICAL_EXIT(uint32_t state) { __set_MSTATUS(state); }
+int BLE_GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]) {
+    return ccm_encrypt_and_tag(key, nonce, 13, &aad, 1, data, len, data, mic, 4) == CCM_OK;
+}
+int BLE_GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]) {
+    return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
+}
+
 // iSLER adapter for the generic GAP radio interfaces in ble_gap.h.
 static struct {
     uint32_t access_address;

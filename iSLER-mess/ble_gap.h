@@ -10,12 +10,13 @@
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
-// - Add Link Layer encryption.
+// - Provide a cryptographic random source and verify encrypted links on hardware.
 // - Later: Add LE Coded PHY where supported by the radio adapter.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Integrate GAP security requirements with SMP pairing and bonding support.
+// - Integrate SMP pairing, GAP security requirements, and persistent bond storage
+//   with mesh_gap_encrypt / mesh_gap_key_request / mesh_gap_key_reply.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -45,8 +46,8 @@
 #define MESH_GAP_CONNECTION_PENDING 0xff
 #define MESH_GAP_PHY_1M 1
 #define MESH_GAP_PHY_2M 2
-// Connection parameter requests, extended reject, Peripheral feature exchange, DLE.
-#define GAP_LL_FEATURES 0x2e
+// Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
+#define GAP_LL_FEATURES 0x2f
 
 #ifndef BLE_GAP_RADIO_BUFFER_ATTR
 #define BLE_GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -83,6 +84,17 @@ void BLE_GAP_HW_PACKET_READY(void);
 void BLE_GAP_HW_PACKET_CLEAR(void);
 uint8_t BLE_GAP_HW_RANDOM_JITTER(void);
 void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
+// Security randomness must be cryptographic; return 0 if unavailable. Never use
+// the advertising jitter PRNG here. These hooks may run in the RX interrupt.
+int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
+// Save/restore interrupt state around foreground key-state updates.
+uint32_t BLE_GAP_CRITICAL_ENTER(void);
+void BLE_GAP_CRITICAL_EXIT(uint32_t state);
+// Standard AES key/nonce byte order, in-place CCM, one AAD byte, four-byte MIC.
+int BLE_GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]);
+int BLE_GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
 // A legacy advertising or scan response report from GAP scanning.
 typedef struct {
@@ -151,6 +163,25 @@ static struct {
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_event_ticks;
 } gap_conn;
+
+// Encryption procedure state; application/SMP code supplies keys in PDU byte order.
+enum {
+    GAP_ENC_IDLE, GAP_ENC_QUEUED, GAP_ENC_WAIT_RSP, GAP_ENC_WAIT_START,
+    GAP_ENC_WAIT_FINAL, GAP_ENC_KEY_REQUEST, GAP_ENC_START_QUEUED,
+    GAP_ENC_PERIPHERAL_START, GAP_ENC_PAUSE_QUEUED, GAP_ENC_WAIT_PAUSE,
+    GAP_ENC_PERIPHERAL_PAUSE, GAP_ENC_RESTART_QUEUED, GAP_ENC_PERIPHERAL_RESTART
+};
+static struct {
+    volatile uint8_t phase;
+    uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
+    uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
+    uint8_t next_skd[8], next_iv[4];
+    uint16_t ediv;
+    uint64_t tx_counter, rx_counter;
+    uint32_t started_ms;
+} gap_security;
+static uint32_t gap_security_generation;
+
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_connection_accept(const uint8_t frame[36],
@@ -227,6 +258,12 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.data_length = gap_conn.remote_data_length =
         (mesh_gap_data_length){27, 328, 27, 328};
     gap_conn.length_queued = gap_conn.length_pending = gap_conn.length_status = 0;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
+        size_t wipe_len = sizeof(gap_security);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_security_generation++;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -858,11 +895,46 @@ static volatile uint8_t gap_radio_connect_request_ready;
 static uint8_t gap_radio_connect_request_frame[36];
 static uint64_t gap_radio_connect_request_ticks;
 static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_conn_tx_frame[2 + MESH_GAP_CONN_DATA_MAX];
+static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_conn_cipher_frame[2 + MESH_GAP_CONN_DATA_MAX + 4];
+static uint8_t gap_conn_plain_frame[2 + MESH_GAP_CONN_DATA_MAX];
 static volatile int8_t gap_radio_rx_rssi;
 
 static void gap_connection_end(void) {
     if (!gap_conn.active) return;
     BLE_GAP_HW_STOP();
+    uint8_t security_status = gap_security.status == MESH_GAP_CONNECTION_PENDING ?
+        0x08 : gap_security.status;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
+        size_t wipe_len = sizeof(gap_security);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_security.status = security_status;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn_tx_frame);
+        size_t wipe_len = sizeof(gap_conn_tx_frame);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn_cipher_frame);
+        size_t wipe_len = sizeof(gap_conn_cipher_frame);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn_plain_frame);
+        size_t wipe_len = sizeof(gap_conn_plain_frame);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn.tx_data);
+        size_t wipe_len = sizeof(gap_conn.tx_data);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn.rx_data);
+        size_t wipe_len = sizeof(gap_conn.rx_data);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
     gap_conn.active = 0;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending = 0;
     if (gap_conn.phy_status == MESH_GAP_CONNECTION_PENDING) gap_conn.phy_status = 0x08;
@@ -888,6 +960,114 @@ static void gap_connection_end(void) {
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
+}
+
+// Bluetooth nonce: little-endian 39-bit counter, Central direction bit, then IV.
+static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central) {
+    for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));
+    nonce[4] |= central ? 0x80 : 0;
+    memcpy(nonce + 5, gap_security.iv, 8);
+}
+
+// Bluetooth e uses little-endian inputs; the AES/CCM hooks use standard byte order.
+static void gap_security_derive(void) {
+    uint8_t key[16], diversifier[16];
+    for (uint8_t i = 0; i < 16; i++) {
+        key[i] = gap_security.ltk[15 - i];
+        diversifier[i] = gap_security.skd[15 - i];
+    }
+    AES_ENCRYPT_BLOCK(key, diversifier, gap_security.session_key);
+    gap_security.tx_counter = gap_security.rx_counter = 0;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(key);
+        size_t wipe_len = sizeof(key);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(diversifier);
+        size_t wipe_len = sizeof(diversifier);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.ltk);
+        size_t wipe_len = sizeof(gap_security.ltk);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+}
+
+// Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
+// only SN/NESN/MD may change, and those bits are excluded from CCM authentication.
+static uint8_t *gap_security_tx_frame(void) {
+    if (gap_security.tx_sealed) {
+        gap_conn_cipher_frame[0] = gap_conn_tx_frame[0];
+        return gap_conn_cipher_frame;
+    }
+    if (!gap_security.tx_enabled || !gap_conn_tx_frame[1]) return gap_conn_tx_frame;
+    if (gap_security.tx_counter >= (UINT64_C(1) << 39)) {
+        gap_security.status = 0x3d;
+        gap_connection_end();
+        return NULL;
+    }
+    uint8_t nonce[13];
+    gap_security_nonce(nonce, gap_security.tx_counter, gap_conn.central_role);
+    memcpy(gap_conn_cipher_frame, gap_conn_tx_frame, gap_conn_tx_frame[1] + 2u);
+    if (!BLE_GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
+            gap_conn_tx_frame[0] & 0xe3, gap_conn_cipher_frame + 2,
+            gap_conn_tx_frame[1], gap_conn_cipher_frame + 2 + gap_conn_tx_frame[1])) {
+        gap_security.status = 0x3d;
+        gap_connection_end();
+        return NULL;
+    }
+    gap_conn_cipher_frame[1] += 4;
+    gap_security.tx_counter++;
+    gap_security.tx_sealed = 1;
+    return gap_conn_cipher_frame;
+}
+
+// Serialize encryption PDUs after earlier TX is acknowledged. Other data and
+// local control procedures stay queued until the start/pause handshake completes.
+static void gap_security_send(void) {
+    uint8_t phase = gap_security.phase;
+    if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
+        memcpy(gap_security.skd, gap_security.next_skd, 8);
+        memcpy(gap_security.iv, gap_security.next_iv, 4);
+        gap_conn_tx_frame[0] = 3;
+        gap_conn_tx_frame[1] = 23;
+        gap_conn_tx_frame[2] = 0x03; // LL_ENC_REQ
+        memcpy(gap_conn_tx_frame + 3, gap_security.random, 8);
+        gap_conn_tx_frame[11] = (uint8_t)gap_security.ediv;
+        gap_conn_tx_frame[12] = (uint8_t)(gap_security.ediv >> 8);
+        memcpy(gap_conn_tx_frame + 13, gap_security.skd, 8);
+        memcpy(gap_conn_tx_frame + 21, gap_security.iv, 4);
+        gap_security.phase = GAP_ENC_WAIT_RSP;
+        gap_security.started_ms = GET_MILLIS();
+    } else if (phase == GAP_ENC_START_QUEUED && gap_security.status == 0x06) {
+        gap_conn_tx_frame[0] = 3;
+        if (gap_security.refreshing) {
+            gap_conn_tx_frame[1] = 2;
+            gap_conn_tx_frame[2] = 0x02;
+            gap_conn_tx_frame[3] = 0x06;
+            gap_conn.local_terminate_pending = 1;
+        } else {
+            gap_conn_tx_frame[1] = 3;
+            gap_conn_tx_frame[2] = 0x11;
+            gap_conn_tx_frame[3] = 0x03;
+            gap_conn_tx_frame[4] = 0x06;
+        }
+        gap_security.phase = GAP_ENC_IDLE;
+    } else if (phase == GAP_ENC_START_QUEUED) {
+        gap_conn_tx_frame[0] = 3;
+        gap_conn_tx_frame[1] = 1;
+        gap_conn_tx_frame[2] = 0x05; // LL_START_ENC_REQ is unencrypted.
+        gap_security.rx_enabled = 1;
+        gap_security.phase = GAP_ENC_PERIPHERAL_START;
+    } else if (phase == GAP_ENC_PAUSE_QUEUED) {
+        gap_conn_tx_frame[0] = 3;
+        gap_conn_tx_frame[1] = 1;
+        gap_conn_tx_frame[2] = 0x0a; // LL_PAUSE_ENC_REQ uses the old session.
+        gap_security.phase = GAP_ENC_WAIT_PAUSE;
+        gap_security.started_ms = GET_MILLIS();
+    }
 }
 
 // Apply connection or channel-map settings when their Instant event
@@ -1136,6 +1316,36 @@ void gap_hw_mesh_received(void) {
     int8_t rssi = BLE_GAP_HW_RSSI();
     uint64_t received_ticks = BLE_GAP_HW_TICKS();
     if (gap_conn.active && gap_conn.rx_armed) {
+        uint8_t wire_len = frame[1], authenticated = 0;
+        uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
+        // During the handshake an unacknowledged START_ENC_REQ is still plaintext.
+        uint8_t plain_start_retry = duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL &&
+            frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == 0x05;
+        uint8_t pause_retry = duplicate && gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+            frame[1] == 5 && (frame[0] & 3) == 3;
+        if (frame[1] && ((gap_security.rx_enabled && !plain_start_retry) || pause_retry)) {
+            uint64_t counter = gap_security.rx_counter;
+            if (duplicate && counter) counter--;
+            if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4u ||
+                counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security.rx_counter)) {
+                gap_security.status = 0x3d;
+                gap_connection_end();
+                return;
+            }
+            memcpy(gap_conn_plain_frame, frame, frame[1] - 4u + 2);
+            gap_conn_plain_frame[1] -= 4;
+            uint8_t nonce[13];
+            gap_security_nonce(nonce, counter, !gap_conn.central_role);
+            if (!BLE_GAP_CCM_DECRYPT(gap_security.session_key, nonce, frame[0] & 0xe3,
+                    gap_conn_plain_frame + 2, gap_conn_plain_frame[1],
+                    frame + 2 + gap_conn_plain_frame[1])) {
+                gap_security.status = 0x3d;
+                gap_connection_end();
+                return;
+            }
+            frame = gap_conn_plain_frame;
+            authenticated = 1;
+        }
         if (frame[1] > gap_conn.data_capacity ||
             ((frame[0] & 3) == 3 && frame[1] > 27)) {
             gap_connection_end();
@@ -1149,7 +1359,7 @@ void gap_hw_mesh_received(void) {
         } else {
             gap_conn.next_event_ticks = received_ticks -
                 HW_TICKS_FROM_US(gap_conn.rx_phy == 2 ?
-                    ((uint32_t)frame[1] + 11) * 4 : ((uint32_t)frame[1] + 10) * 8) +
+                    ((uint32_t)wire_len + 11) * 4 : ((uint32_t)wire_len + 10) * 8) +
                 (uint64_t)gap_conn.interval * HW_TICKS_FROM_US(1250);
         }
         gap_conn.first_event = 0;
@@ -1161,6 +1371,7 @@ void gap_hw_mesh_received(void) {
             remote_nesn != gap_conn.tx_sn) {
             gap_conn.tx_sn ^= 1;
             gap_conn.tx_pending = 0;
+            gap_security.tx_sealed = 0;
             if (gap_conn.local_terminate_pending) {
                 if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
                     gap_connection_end();
@@ -1179,7 +1390,32 @@ void gap_hw_mesh_received(void) {
             gap_conn.rx_ready) new_packet = 0;
         // A control PDU needs its reply slot before it can be acknowledged.
         if (new_packet && llid == 3 && gap_conn.tx_pending) new_packet = 0;
+        if (new_packet && frame[1] && gap_security.phase &&
+            gap_security.phase != GAP_ENC_QUEUED && gap_security.phase != GAP_ENC_PAUSE_QUEUED) {
+            uint8_t opcode = llid == 3 ? frame[2] : 0xff;
+            uint8_t allowed = opcode == 0x02;
+            switch (gap_security.phase) {
+            case GAP_ENC_WAIT_RSP: allowed |= opcode == 0x04; // Fall through for rejection.
+            case GAP_ENC_WAIT_START:
+                allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
+                    (gap_security.phase == GAP_ENC_WAIT_START && opcode == 0x05);
+                break;
+            case GAP_ENC_KEY_REQUEST: allowed |= opcode == 0x07; break;
+            case GAP_ENC_WAIT_FINAL:
+            case GAP_ENC_PERIPHERAL_START: allowed |= opcode == 0x06; break;
+            case GAP_ENC_WAIT_PAUSE:
+            case GAP_ENC_PERIPHERAL_PAUSE: allowed |= opcode == 0x0b; break;
+            case GAP_ENC_PERIPHERAL_RESTART: allowed |= opcode == 0x03; break;
+            default: break;
+            }
+            if (!allowed) {
+                gap_security.status = 0x3d;
+                gap_connection_end();
+                return;
+            }
+        }
         if (new_packet) {
+            if (authenticated) gap_security.rx_counter++;
             if ((llid == 1 || llid == 2) && frame[1]) {
                 gap_conn.rx_llid = llid;
                 gap_conn.rx_len = frame[1];
@@ -1194,6 +1430,102 @@ void gap_hw_mesh_received(void) {
             if (new_packet && (frame[0] & 3) == 3 && frame[1]) {
                 gap_conn_tx_frame[0] = 0x03;
                 switch (frame[2]) {
+                case 0x03: { // LL_ENC_REQ (Central to Peripheral)
+                    if (gap_conn.central_role || frame[1] != 23) goto unknown_control_pdu;
+                    uint8_t restart = gap_security.phase == GAP_ENC_PERIPHERAL_RESTART;
+                    if ((!restart && (gap_security.phase || gap_security.rx_enabled)) ||
+                        gap_conn.update_pending || gap_conn.channel_map_update_pending ||
+                        gap_conn.phy_update_pending) goto unknown_control_pdu;
+                    uint8_t entropy[12];
+                    if (!BLE_GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+                        gap_conn_tx_frame[1] = 3;
+                        gap_conn_tx_frame[2] = 0x11;
+                        gap_conn_tx_frame[3] = 0x03;
+                        gap_conn_tx_frame[4] = gap_security.status = 0x1f;
+                        if (restart) {
+                            gap_conn.terminate_after_reply = 1;
+                            gap_conn_tx_frame[1] = 2;
+                            gap_conn_tx_frame[2] = 0x02;
+                            gap_conn_tx_frame[3] = 0x1f;
+                        }
+                        break;
+                    }
+                    gap_security.refreshing = restart;
+                    memcpy(gap_security.random, frame + 3, 8);
+                    gap_security.ediv = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
+                    memcpy(gap_security.skd, frame + 13, 8);
+                    memcpy(gap_security.skd + 8, entropy, 8);
+                    memcpy(gap_security.iv, frame + 21, 4);
+                    memcpy(gap_security.iv + 4, entropy + 8, 4);
+                    gap_conn_tx_frame[1] = 13;
+                    gap_conn_tx_frame[2] = 0x04; // LL_ENC_RSP
+                    memcpy(gap_conn_tx_frame + 3, entropy, 12);
+                    {
+                        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
+                        size_t wipe_len = sizeof(entropy);
+                        while (wipe_len--) *wipe_bytes++ = 0;
+                    }
+                    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+                    gap_security.started_ms = GET_MILLIS();
+                    gap_security.phase = GAP_ENC_KEY_REQUEST;
+                    break;
+                }
+                case 0x04: // LL_ENC_RSP
+                    if (!gap_conn.central_role || frame[1] != 13 ||
+                        gap_security.phase != GAP_ENC_WAIT_RSP) goto unknown_control_pdu;
+                    memcpy(gap_security.skd + 8, frame + 3, 8);
+                    memcpy(gap_security.iv + 4, frame + 11, 4);
+                    gap_security_derive();
+                    gap_security.phase = GAP_ENC_WAIT_START;
+                    break;
+                case 0x05: // LL_START_ENC_REQ
+                    if (!gap_conn.central_role || frame[1] != 1 ||
+                        gap_security.phase != GAP_ENC_WAIT_START) goto unknown_control_pdu;
+                    gap_security.tx_enabled = gap_security.rx_enabled = 1;
+                    gap_security.phase = GAP_ENC_WAIT_FINAL;
+                    gap_conn_tx_frame[1] = 1;
+                    gap_conn_tx_frame[2] = 0x06; // Encrypted LL_START_ENC_RSP.
+                    break;
+                case 0x06: // LL_START_ENC_RSP
+                    if (frame[1] != 1 || !authenticated ||
+                        (gap_security.phase != GAP_ENC_WAIT_FINAL &&
+                         gap_security.phase != GAP_ENC_PERIPHERAL_START)) goto unknown_control_pdu;
+                    if (!gap_conn.central_role) {
+                        gap_conn_tx_frame[1] = 1;
+                        gap_conn_tx_frame[2] = 0x06;
+                    }
+                    gap_security.tx_enabled = gap_security.rx_enabled = 1;
+                    gap_security.phase = GAP_ENC_IDLE;
+                    gap_security.status = 0;
+                    break;
+                case 0x0a: // LL_PAUSE_ENC_REQ uses the old encrypted session.
+                    if (gap_conn.central_role || frame[1] != 1 || !authenticated ||
+                        gap_security.phase) goto unknown_control_pdu;
+                    gap_conn_tx_frame[1] = 1;
+                    gap_conn_tx_frame[2] = 0x0b;
+                    gap_security.rx_enabled = 0;
+                    gap_security.phase = GAP_ENC_PERIPHERAL_PAUSE;
+                    gap_security.started_ms = GET_MILLIS();
+                    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+                    break;
+                case 0x0b: // LL_PAUSE_ENC_RSP
+                    if (frame[1] != 1) goto unknown_control_pdu;
+                    if (gap_conn.central_role && gap_security.phase == GAP_ENC_WAIT_PAUSE && authenticated) {
+                        gap_security.tx_enabled = gap_security.rx_enabled = 0;
+                        gap_conn_tx_frame[1] = 1;
+                        gap_conn_tx_frame[2] = 0x0b; // Central's final response is plaintext.
+                        gap_security.phase = GAP_ENC_RESTART_QUEUED;
+                    } else if (!gap_conn.central_role && gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+                               !authenticated) {
+                        gap_security.tx_enabled = gap_security.rx_enabled = 0;
+                        gap_security.phase = GAP_ENC_PERIPHERAL_RESTART;
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.session_key);
+                            size_t wipe_len = sizeof(gap_security.session_key);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                    } else goto unknown_control_pdu;
+                    break;
                 case 0x00: { // LL_CONNECTION_UPDATE_IND
                     if (!gap_conn.central_role && frame[1] == 12 && !gap_conn.update_pending) {
                         uint8_t win_size = frame[3];
@@ -1296,7 +1628,7 @@ void gap_hw_mesh_received(void) {
                     if (has_offset && minimum != maximum && !frame[11])
                         goto reject_parameters;
                     error = 0x23; // LL procedure collision.
-                    if (gap_conn.update_pending || gap_conn.local_update_queued ||
+                    if (gap_security.phase || gap_conn.update_pending || gap_conn.local_update_queued ||
                         gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
                         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
                         (frame[2] == 0x0f &&
@@ -1377,6 +1709,22 @@ reject_parameters:
                     }
                     break;
                 case 0x0d: // LL_REJECT_IND
+                    if (frame[1] == 2 && (gap_security.phase == GAP_ENC_WAIT_RSP ||
+                        gap_security.phase == GAP_ENC_WAIT_START)) {
+                        gap_security.status = frame[3];
+                        if (gap_security.refreshing) { gap_connection_end(); return; }
+                        gap_security.phase = GAP_ENC_IDLE;
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.ltk);
+                            size_t wipe_len = sizeof(gap_security.ltk);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.session_key);
+                            size_t wipe_len = sizeof(gap_security.session_key);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                    }
                     if (frame[1] == 2 && gap_conn.phy_pending) {
                         gap_conn.phy_pending = 0;
                         gap_conn.phy_status = frame[3];
@@ -1398,6 +1746,22 @@ reject_parameters:
                     }
                     break;
                 case 0x11: // LL_REJECT_EXT_IND
+                    if (frame[1] == 3 && frame[3] == 0x03 && (gap_security.phase == GAP_ENC_WAIT_RSP ||
+                        gap_security.phase == GAP_ENC_WAIT_START)) {
+                        gap_security.status = frame[4];
+                        if (gap_security.refreshing) { gap_connection_end(); return; }
+                        gap_security.phase = GAP_ENC_IDLE;
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.ltk);
+                            size_t wipe_len = sizeof(gap_security.ltk);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.session_key);
+                            size_t wipe_len = sizeof(gap_security.session_key);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                    }
                     if (frame[1] == 3 && frame[3] == 0x16 && gap_conn.phy_pending) {
                         gap_conn.phy_pending = 0;
                         gap_conn.phy_status = frame[4];
@@ -1451,6 +1815,22 @@ reject_parameters:
                     break;
                 case 0x07: // LL_UNKNOWN_RSP
                     if (frame[1] != 2) goto unknown_control_pdu;
+                    if (frame[3] == 0x03 && (gap_security.phase == GAP_ENC_WAIT_RSP ||
+                        gap_security.phase == GAP_ENC_WAIT_START)) {
+                        gap_security.status = 0x1a;
+                        if (gap_security.refreshing) { gap_connection_end(); return; }
+                        gap_security.phase = GAP_ENC_IDLE;
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.ltk);
+                            size_t wipe_len = sizeof(gap_security.ltk);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                        {
+                            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security.session_key);
+                            size_t wipe_len = sizeof(gap_security.session_key);
+                            while (wipe_len--) *wipe_bytes++ = 0;
+                        }
+                    }
                     if (frame[3] == 0x16 && gap_conn.phy_pending) {
                         gap_conn.phy_pending = 0;
                         gap_conn.phy_status = 0x1a;
@@ -1542,7 +1922,7 @@ reject_parameters:
                         gap_phy_update_send(frame[3], frame[4]);
                         break;
                     }
-                    if (gap_conn.update_pending || gap_conn.local_update_queued ||
+                    if (gap_security.phase || gap_conn.update_pending || gap_conn.local_update_queued ||
                         gap_conn.params_pending || gap_conn.local_params_queued ||
                         gap_conn.channel_map_update_pending || gap_conn.local_map_queued ||
                         gap_conn.phy_update_pending ||
@@ -1593,10 +1973,7 @@ reject_parameters:
                     break;
                 }
                 // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
-                // Encryption and Coded PHY are
-                // omitted from the advertised feature set.
-                case 0x03: case 0x04: case 0x05: case 0x06:
-                case 0x0a: case 0x0b:
+                // Coded PHY and optional newer control procedures are not advertised.
                 case 0x19: case 0x1a:
                 case 0x1b: case 0x1c: case 0x1d: case 0x1e:
                 case 0x1f: case 0x20: case 0x21: case 0x22:
@@ -1622,22 +1999,24 @@ unknown_control_pdu:
                 gap_conn.local_terminate_pending = 1;
                 gap_conn.tx_queued = 0;
             }
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.local_update_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_conn.terminate_after_reply)
+                gap_security_send();
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_update_queued &&
                 !gap_conn.terminate_after_reply)
                 gap_connection_update_send();
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.local_map_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_map_queued &&
                 !gap_conn.terminate_after_reply)
                 gap_channel_map_send();
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.local_params_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_params_queued &&
                 !gap_conn.feature_request_pending && !gap_conn.terminate_after_reply)
                 gap_connection_request_send();
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.length_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.length_queued &&
                 !gap_conn.terminate_after_reply)
                 gap_data_length_send(0x14);
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.phy_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.terminate_after_reply)
                 gap_phy_request_send();
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.tx_queued &&
                 !gap_conn.terminate_after_reply) {
                 gap_conn_tx_frame[0] = gap_conn.tx_llid;
                 gap_conn_tx_frame[1] = gap_conn.tx_len;
@@ -1658,7 +2037,9 @@ unknown_control_pdu:
             (gap_conn.expected_rx_sn << 2) |
             (gap_conn.tx_sn << 3);
         gap_conn.tx_pending = 1;
-        BLE_GAP_HW_TX_BUFFER(gap_conn_tx_frame);
+        uint8_t *transmit = gap_security_tx_frame();
+        if (!transmit) return;
+        BLE_GAP_HW_TX_BUFFER(transmit);
         gap_conn.event_replied = 1;
         BLE_GAP_HW_LINK_TX();
         return;
@@ -1940,6 +2321,13 @@ int gap_hw_mesh_send_due(const uint8_t *mesh_ad, uint8_t mesh_len,
 static void mesh_gap_conn_poll(void) {
     if (!gap_conn.active) return;
     uint32_t now_ms = GET_MILLIS();
+    if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
+        gap_security.phase != GAP_ENC_PAUSE_QUEUED && gap_security.phase != GAP_ENC_RESTART_QUEUED &&
+        (uint32_t)(now_ms - gap_security.started_ms) >= 40000) {
+        gap_security.status = 0x22;
+        gap_connection_end();
+        return;
+    }
     if (gap_conn.phy_pending &&
         (uint32_t)(now_ms - gap_conn.phy_started_ms) >= 40000) {
         gap_conn.phy_status = 0x22;
@@ -2034,19 +2422,21 @@ static void mesh_gap_conn_poll(void) {
         if (!gap_conn.tx_pending) {
             gap_conn_tx_frame[0] = 0x01;
             gap_conn_tx_frame[1] = 0;
-            if (gap_conn.local_update_queued && !gap_conn.local_terminate_queued &&
+            if (!gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
+                gap_security_send();
+            if (!gap_security.phase && gap_conn.local_update_queued && !gap_conn.local_terminate_queued &&
                 !gap_conn.local_terminate_pending)
                 gap_connection_update_send();
-            else if (gap_conn.local_map_queued && !gap_conn.local_terminate_queued &&
+            else if (!gap_security.phase && gap_conn.local_map_queued && !gap_conn.local_terminate_queued &&
                 !gap_conn.local_terminate_pending)
                 gap_channel_map_send();
-            else if (gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
+            else if (!gap_security.phase && gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_connection_request_send();
-            else if (gap_conn.length_queued && !gap_conn.local_terminate_queued &&
+            else if (!gap_security.phase && gap_conn.length_queued && !gap_conn.local_terminate_queued &&
                 !gap_conn.local_terminate_pending)
                 gap_data_length_send(0x14);
-            if (gap_conn_tx_frame[1] == 0 && gap_conn.phy_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_phy_request_send();
             gap_conn.tx_pending = 1;
@@ -2054,8 +2444,10 @@ static void mesh_gap_conn_poll(void) {
         gap_conn_tx_frame[0] = (gap_conn_tx_frame[0] & 0x03) |
             (gap_conn.expected_rx_sn << 2) | (gap_conn.tx_sn << 3);
         BLE_GAP_HW_TX_CLEAR_DONE();
+        uint8_t *transmit = gap_security_tx_frame();
+        if (!transmit) return;
         BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
-                               gap_conn_tx_frame, 1, gap_conn.tx_phy, gap_conn.rx_phy);
+                               transmit, 1, gap_conn.tx_phy, gap_conn.rx_phy);
         BLE_GAP_HW_LINK_TX();
         gap_conn.rx_armed = 1;
         gap_conn.channel_selected = 1;
@@ -2077,7 +2469,7 @@ int mesh_gap_connected(void) {
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
 int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
                                  uint16_t timeout) {
-    if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!mesh_gap_connected() || gap_security.phase || !gap_conn.central_role || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.length_queued || gap_conn.length_pending ||
@@ -2101,7 +2493,7 @@ int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
 // Feature exchange runs first; the Central ultimately selects the new timing.
 int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
                                   uint16_t latency, uint16_t timeout) {
-    if (!mesh_gap_connected() || gap_conn.first_event ||
+    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.length_queued || gap_conn.length_pending ||
@@ -2134,7 +2526,7 @@ uint8_t mesh_gap_connection_status(void) {
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
 int mesh_gap_channel_map_set(const uint8_t channels[5]) {
-    if (!channels || !mesh_gap_connected() || !gap_conn.central_role ||
+    if (!channels || !mesh_gap_connected() || gap_security.phase || !gap_conn.central_role ||
         gap_conn.first_event || gap_conn.phy_queued || gap_conn.phy_pending ||
         gap_conn.phy_update_pending || gap_conn.local_map_queued ||
         gap_conn.channel_map_update_pending || gap_conn.local_update_queued ||
@@ -2159,7 +2551,7 @@ int mesh_gap_channel_map_set(const uint8_t channels[5]) {
 // Request a transmit payload limit in either role; packet time is derived for
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int mesh_gap_data_length_set(uint16_t octets) {
-    if (!mesh_gap_connected() || gap_conn.first_event ||
+    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -2191,7 +2583,7 @@ uint8_t mesh_gap_data_length_status(void) {
 // The Central chooses the final rates; the connection switches at a shared Instant.
 int mesh_gap_phy_set(uint8_t tx, uint8_t rx) {
     uint8_t supported = BLE_GAP_HW_PHY_MASK() & 3;
-    if (!mesh_gap_connected() || gap_conn.first_event || !(supported & 2) ||
+    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event || !(supported & 2) ||
         !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
@@ -2221,16 +2613,110 @@ uint8_t mesh_gap_phy_status(void) {
     return gap_conn.phy_status;
 }
 
+// Start encryption (or refresh an encrypted link) as Central. LTK and Rand
+// use Bluetooth little-endian byte order; EDIV is the host's numeric value.
+// Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
+int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
+    if (!ltk || !random || !mesh_gap_connected() || !gap_conn.central_role ||
+        gap_conn.first_event || gap_security.phase || gap_conn.update_pending ||
+        gap_conn.local_update_queued || gap_conn.local_map_queued || gap_conn.channel_map_update_pending ||
+        gap_conn.local_params_queued || gap_conn.params_pending || gap_conn.feature_request_pending ||
+        gap_conn.length_queued || gap_conn.length_pending || gap_conn.phy_queued ||
+        gap_conn.phy_pending || gap_conn.phy_update_pending || gap_conn.local_terminate_queued ||
+        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply) return 0;
+    if (gap_conn.features_known && !(gap_conn.peer_features & 1)) {
+        gap_security.status = 0x1a;
+        return 0;
+    }
+    uint32_t generation = gap_security_generation;
+    uint8_t entropy[12];
+    if (!BLE_GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+        gap_security.status = 0x1f;
+        return 0;
+    }
+    uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
+    // Entropy collection may take time: recheck the link and procedures before
+    // committing a key, so a disconnect/reconnect cannot apply it to another peer.
+    if (!gap_conn.active || gap_security_generation != generation || gap_security.phase ||
+        gap_conn.update_pending || gap_conn.local_update_queued || gap_conn.local_map_queued ||
+        gap_conn.channel_map_update_pending || gap_conn.local_params_queued || gap_conn.params_pending ||
+        gap_conn.feature_request_pending || gap_conn.length_queued || gap_conn.length_pending ||
+        gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending || gap_conn.terminate_after_reply) {
+        {
+            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
+            size_t wipe_len = sizeof(entropy);
+            while (wipe_len--) *wipe_bytes++ = 0;
+        }
+        BLE_GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
+    memcpy(gap_security.ltk, ltk, 16);
+    memcpy(gap_security.random, random, 8);
+    gap_security.ediv = ediv;
+    memcpy(gap_security.next_skd, entropy, 8);
+    memcpy(gap_security.next_iv, entropy + 8, 4);
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
+        size_t wipe_len = sizeof(entropy);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_security.refreshing = gap_security.tx_enabled;
+    gap_security.started_ms = GET_MILLIS();
+    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+    gap_security.phase = gap_security.refreshing ? GAP_ENC_PAUSE_QUEUED : GAP_ENC_QUEUED;
+    BLE_GAP_CRITICAL_EXIT(irq_state);
+    return 1;
+}
+
+// Pending Peripheral key lookup for SMP or a bond store; the application must
+// reply with that peer's matching key, or NULL if none is available.
+int mesh_gap_key_request(uint8_t random[8], uint16_t *ediv) {
+    if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) return 0;
+    if (random) memcpy(random, gap_security.random, 8);
+    if (ediv) *ediv = gap_security.ediv;
+    return 1;
+}
+
+int mesh_gap_key_reply(const uint8_t ltk[16]) {
+    uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
+    if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) {
+        BLE_GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
+    if (ltk) {
+        memcpy(gap_security.ltk, ltk, 16);
+        gap_security_derive();
+        gap_security.phase = GAP_ENC_START_QUEUED;
+    } else {
+        // Send the rejection after ENC_RSP has been acknowledged. A refresh
+        // cannot resume the link in plaintext, so it terminates instead.
+        gap_security.status = 0x06;
+        gap_security.phase = GAP_ENC_START_QUEUED;
+    }
+    BLE_GAP_CRITICAL_EXIT(irq_state);
+    return 1;
+}
+
+int mesh_gap_encrypted(void) {
+    return mesh_gap_connected() && !gap_security.phase &&
+        gap_security.tx_enabled && gap_security.rx_enabled;
+}
+
+uint8_t mesh_gap_security_status(void) {
+    return gap_security.status;
+}
+
 // Keep data fragments within LE 1M time limits even at 2M, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    if (!mesh_gap_connected() || gap_conn.tx_queued ||
+    if (!mesh_gap_connected() || gap_security.phase || gap_conn.tx_queued ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         gap_conn.terminate_after_reply || !data ||
         (llid != 1 && llid != 2) || !len ||
         len > gap_conn.data_length.tx_octets ||
-        (len + 10) * 8 > gap_conn.data_length.tx_time || (llid == 2 && len < 4)) return 0;
+        (len + 10 + (gap_security.tx_enabled ? 4 : 0)) * 8 > gap_conn.data_length.tx_time || (llid == 2 && len < 4)) return 0;
     gap_conn.tx_llid = llid;
     gap_conn.tx_len = (uint8_t)len;
     memcpy(gap_conn.tx_data, data, len);
