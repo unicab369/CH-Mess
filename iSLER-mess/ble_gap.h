@@ -153,6 +153,8 @@ int BLE_GAP_BOND_DELETE(uint8_t slot);
 #endif
 int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
                       mesh_gap_bond *out);
+int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
+int mesh_gap_pair(void);
 int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
 int mesh_gap_encrypted(void);
 
@@ -255,11 +257,15 @@ static struct {
     uint8_t phase, status, blocked, key_size, encryption_started;
     uint8_t authenticated, passkey_action, confirm_received, tk[16];
     uint8_t bond_requested, bond_tx_step, bond_tx_waiting, bond_rx_step;
+    uint8_t previous_bond_valid;
+    mesh_gap_bond previous_bond;
     uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
     uint8_t tx[21], tx_len, rx[27], rx_len, rx_expected;
     uint32_t started_ms;
 } gap_smp;
 static void mesh_gap_smp_poll(void);
+static void mesh_gap_smp_bond_abort(void);
+static uint8_t gap_bond_repair_pending;
 
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.

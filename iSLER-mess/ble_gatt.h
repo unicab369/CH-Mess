@@ -34,6 +34,9 @@
 #ifndef MESH_GATT_PROXY_FILTER_SIZE
 #define MESH_GATT_PROXY_FILTER_SIZE 16
 #endif
+#ifndef MESH_GATT_PROXY_SAR_TIMEOUT_MS
+#define MESH_GATT_PROXY_SAR_TIMEOUT_MS 20000u
+#endif
 #define MESH_GATT_PROXY_NETWORK_PDU_MIN 14
 #define MESH_GATT_PROXY_NETWORK_PDU_MAX 29
 #define MESH_GATT_PROXY_BEACON_PDU_LEN 22
@@ -70,6 +73,8 @@ static struct {
     uint8_t proxy_rx_active, proxy_rx_type, filter_type, filter_count;
     uint16_t mtu, filter[MESH_GATT_PROXY_FILTER_SIZE];
     uint16_t l2cap_expected, l2cap_used, att_rx_len;
+    uint32_t proxy_rx_started_ms, proxy_tx_started_ms;
+    uint8_t proxy_tx_sar_active, proxy_sar_disconnect_pending;
     uint8_t l2cap_rx[4 + MESH_GATT_ATT_MTU_MAX];
     uint8_t att_rx[MESH_GATT_ATT_MTU_MAX];
     uint8_t tx_active;
@@ -89,6 +94,38 @@ static struct {
 
 static uint16_t mesh_gatt_u16(const uint8_t *p) {
     return (uint16_t)p[0] | (uint16_t)p[1] << 8;
+}
+
+static void mesh_gatt_proxy_sar_cancel(void) {
+    mesh_gatt.proxy_rx_active = 0;
+    mesh_gatt.proxy_rx_len = 0;
+    mesh_gatt.proxy_rx_started_ms = 0;
+    mesh_gatt.proxy_tx_sar_active = 0;
+    mesh_gatt.proxy_tx_started_ms = 0;
+    mesh_gatt.proxy_sar_disconnect_pending = 0;
+}
+
+// Mesh Proxy SAR transfers have a fixed 20-second deadline. Expiry requires
+// the Proxy Server to disconnect; reason 0x13 is Remote User Terminated.
+static int mesh_gatt_proxy_sar_timeout_poll(void) {
+    if (mesh_gatt.proxy_sar_disconnect_pending) {
+        mesh_gap_disconnect(0x13);
+        return 1;
+    }
+    uint32_t now = GET_MILLIS();
+    if ((mesh_gatt.proxy_rx_active &&
+         (uint32_t)(now - mesh_gatt.proxy_rx_started_ms) >=
+             MESH_GATT_PROXY_SAR_TIMEOUT_MS) ||
+        (mesh_gatt.proxy_tx_sar_active &&
+         (uint32_t)(now - mesh_gatt.proxy_tx_started_ms) >=
+             MESH_GATT_PROXY_SAR_TIMEOUT_MS)) {
+        mesh_gatt_proxy_sar_cancel();
+        mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
+        mesh_gatt.proxy_sar_disconnect_pending = 1;
+        mesh_gap_disconnect(0x13);
+        return 1;
+    }
+    return 0;
 }
 
 void mesh_gatt_proxy_set_rx_callback(mesh_gatt_proxy_rx_fn callback,
@@ -229,30 +266,43 @@ static void mesh_gatt_proxy_deliver(uint8_t type, const uint8_t *pdu, size_t len
 
 static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
     if (!len) return;
+    if (mesh_gatt_proxy_sar_timeout_poll()) return;
     uint8_t header = p[0], sar = header >> 6, type = header & 0x0f;
-    if ((header & 0x30) || type > 3) { mesh_gatt.proxy_rx_active = 0; return; }
+    if ((header & 0x30) || type > 3) {
+        mesh_gatt.proxy_rx_active = 0;
+        mesh_gatt.proxy_rx_len = 0;
+        mesh_gatt.proxy_rx_started_ms = 0;
+        return;
+    }
     p++; len--;
     if (!sar) {
         mesh_gatt.proxy_rx_active = 0;
         mesh_gatt.proxy_rx_len = 0;
+        mesh_gatt.proxy_rx_started_ms = 0;
         if (len) mesh_gatt_proxy_deliver(type, p, len);
     } else if (sar == 1) {
         mesh_gatt.proxy_rx_active = 0;
         mesh_gatt.proxy_rx_len = 0;
+        mesh_gatt.proxy_rx_started_ms = 0;
         if (!len || len > sizeof(mesh_gatt.proxy_rx)) return;
         memcpy(mesh_gatt.proxy_rx, p, len);
         mesh_gatt.proxy_rx_len = (uint16_t)len;
         mesh_gatt.proxy_rx_type = type;
         mesh_gatt.proxy_rx_active = 1;
+        mesh_gatt.proxy_rx_started_ms = GET_MILLIS();
     } else if (!len || !mesh_gatt.proxy_rx_active || type != mesh_gatt.proxy_rx_type ||
                len > sizeof(mesh_gatt.proxy_rx) - mesh_gatt.proxy_rx_len) {
         mesh_gatt.proxy_rx_active = 0;
+        mesh_gatt.proxy_rx_len = 0;
+        mesh_gatt.proxy_rx_started_ms = 0;
     } else {
         memcpy(mesh_gatt.proxy_rx + mesh_gatt.proxy_rx_len, p, len);
         mesh_gatt.proxy_rx_len += (uint16_t)len;
         if (sar == 3) {
             mesh_gatt_proxy_deliver(type, mesh_gatt.proxy_rx, mesh_gatt.proxy_rx_len);
             mesh_gatt.proxy_rx_active = 0;
+            mesh_gatt.proxy_rx_len = 0;
+            mesh_gatt.proxy_rx_started_ms = 0;
         }
     }
 }
@@ -413,8 +463,14 @@ static void mesh_gatt_notify_poll(void) {
     att[3] = (uint8_t)((sar << 6) | mesh_gatt.proxy_tx[slot].type);
     memcpy(att + 4, mesh_gatt.proxy_tx[slot].data + mesh_gatt.proxy_tx[slot].offset, chunk);
     if (!mesh_gatt_tx_att(att, chunk + 4)) return;
+    if (sar == 1) {
+        mesh_gatt.proxy_tx_sar_active = 1;
+        mesh_gatt.proxy_tx_started_ms = GET_MILLIS();
+    }
     mesh_gatt.proxy_tx[slot].offset += (uint8_t)chunk;
     if (!sar || sar == 3) {
+        mesh_gatt.proxy_tx_sar_active = 0;
+        mesh_gatt.proxy_tx_started_ms = 0;
         mesh_gatt.proxy_tx_head = (slot + 1) % MESH_GATT_PROXY_QUEUE_SIZE;
         mesh_gatt.proxy_tx_count--;
     }
@@ -429,8 +485,7 @@ static void mesh_gatt_link_reset(void) {
     mesh_gatt.mtu_exchanged = 0;
     mesh_gatt.rx_active = 0;
     mesh_gatt.rx_att_pending = 0;
-    mesh_gatt.proxy_rx_active = 0;
-    mesh_gatt.proxy_rx_len = 0;
+    mesh_gatt_proxy_sar_cancel();
     mesh_gatt.l2cap_expected = mesh_gatt.l2cap_used = 0;
     mesh_gatt.att_rx_len = 0;
     mesh_gatt.tx_active = 0;
@@ -448,6 +503,7 @@ void mesh_gatt_poll(void) {
         mesh_gatt_link_reset();
         mesh_gatt.connected = 1;
     }
+    if (mesh_gatt_proxy_sar_timeout_poll()) return;
     if (mesh_gatt.rx_att_pending && !mesh_gatt.tx_active) {
         mesh_gatt_att_request(mesh_gatt.att_rx, mesh_gatt.att_rx_len);
         mesh_gatt.rx_att_pending = 0;

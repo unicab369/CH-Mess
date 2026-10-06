@@ -1,11 +1,22 @@
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
+
+// ble_gap_link.h is included before ble_gap_security.h in the current GAP
+// header, so declare these cross-header hooks before including the stack.
+int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
+int mesh_gap_pair(void);
 
 #include "../ble_gatt.h"
 
 static uint8_t received_type;
 static uint8_t received_pdu[8];
 static size_t received_len;
+static uint32_t fake_now_ms;
+
+uint32_t GET_MILLIS(void) {
+    return fake_now_ms;
+}
 
 static int capture_proxy_pdu(uint8_t type, const uint8_t *pdu, size_t len,
                              void *context) {
@@ -271,6 +282,35 @@ static void test_disconnect_reset(void) {
     assert(mesh_gatt.proxy_rx_callback == capture_proxy_pdu);
 }
 
+static void test_proxy_sar_timeout_disconnect(void) {
+    memset(&mesh_gatt, 0, sizeof(mesh_gatt));
+    memset(&gap_conn, 0, sizeof(gap_conn));
+    gap_conn.active = 1;
+    gap_conn.first_event = 0;
+    mesh_gatt.proxy_rx_active = 1;
+    mesh_gatt.proxy_rx_started_ms = 100;
+    fake_now_ms = 100 + MESH_GATT_PROXY_SAR_TIMEOUT_MS - 1;
+    assert(!mesh_gatt_proxy_sar_timeout_poll());
+    assert(mesh_gatt.proxy_rx_active);
+
+    fake_now_ms++;
+    assert(mesh_gatt_proxy_sar_timeout_poll());
+    assert(!mesh_gatt.proxy_rx_active && mesh_gatt.proxy_sar_disconnect_pending);
+    assert(gap_conn.local_terminate_queued &&
+           gap_conn.local_terminate_reason == 0x13);
+
+    mesh_gatt_link_reset();
+    memset(&gap_conn, 0, sizeof(gap_conn));
+    gap_conn.active = 1;
+    mesh_gatt.proxy_tx_sar_active = 1;
+    mesh_gatt.proxy_tx_started_ms = fake_now_ms;
+    fake_now_ms += MESH_GATT_PROXY_SAR_TIMEOUT_MS;
+    assert(mesh_gatt_proxy_sar_timeout_poll());
+    assert(!mesh_gatt.proxy_tx_sar_active && mesh_gatt.proxy_sar_disconnect_pending);
+    assert(gap_conn.local_terminate_queued &&
+           gap_conn.local_terminate_reason == 0x13);
+}
+
 int main(void) {
     test_att_mtu_and_blob();
     test_att_discovery();
@@ -280,5 +320,6 @@ int main(void) {
     test_proxy_configuration_and_filter();
     test_proxy_data_out_sar();
     test_disconnect_reset();
+    test_proxy_sar_timeout_disconnect();
     return 0;
 }

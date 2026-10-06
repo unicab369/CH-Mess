@@ -256,6 +256,7 @@ static void gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
 
 // Stop the procedure and erase temporary secrets on every success/failure path.
 static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
+    if (status) mesh_gap_smp_bond_abort();
     uint8_t discard_bond = status && !gap_conn.bonded &&
         (gap_smp.phase == GAP_SMP_BOND_TX || gap_smp.phase == GAP_SMP_BOND_RX);
     volatile uint8_t *wipe = gap_smp.tk;
@@ -273,6 +274,9 @@ static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
     gap_smp.encryption_started = 0;
     gap_smp.passkey_action = gap_smp.confirm_received = gap_smp.authenticated = 0;
     gap_smp.tx_len = gap_smp.rx_len = gap_smp.rx_expected = 0;
+    volatile uint8_t *previous_wipe = (volatile uint8_t *)&gap_smp.previous_bond;
+    for (size_t i = 0; i < sizeof(gap_smp.previous_bond); i++) previous_wipe[i] = 0;
+    gap_smp.previous_bond_valid = 0;
     if (discard_bond) {
         volatile uint8_t *bond_wipe = (volatile uint8_t *)&gap_conn.bond;
         for (size_t i = 0; i < sizeof(gap_conn.bond); i++) bond_wipe[i] = 0;
@@ -361,6 +365,11 @@ int mesh_gap_pair(void) {
     gap_smp.status = MESH_GAP_CONNECTION_PENDING;
     gap_smp.bond_requested = gap_smp.bond_tx_step = gap_smp.bond_tx_waiting =
         gap_smp.bond_rx_step = 0;
+    gap_smp.previous_bond_valid = gap_conn.central_role && gap_conn.bonded;
+    if (gap_smp.previous_bond_valid)
+        memcpy(&gap_smp.previous_bond, &gap_conn.bond, sizeof(gap_conn.bond));
+    else
+        memset(&gap_smp.previous_bond, 0, sizeof(gap_smp.previous_bond));
     if (gap_conn.central_role) {
         const uint8_t request[7] = {1, gap_pairing_policy.io, 0,
             (gap_pairing_policy.authenticated ? 4 : 0) |
@@ -483,6 +492,25 @@ int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
         for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
     }
     return 0;
+}
+
+// Restore the old Central bond if a replacement was saved but pairing failed
+// before the peer acknowledged Master Identification.
+static void mesh_gap_smp_bond_abort(void) {
+    if (gap_conn.central_role && gap_smp.phase == GAP_SMP_BOND_TX &&
+        gap_smp.bond_tx_step == 2) {
+        if (gap_smp.previous_bond_valid) {
+            mesh_gap_bond_set(&gap_smp.previous_bond);
+            memcpy(&gap_conn.bond, &gap_smp.previous_bond, sizeof(gap_conn.bond));
+            gap_conn.bonded = 1;
+        } else {
+            mesh_gap_bond_remove(gap_conn.bond.peer_address,
+                                 gap_conn.bond.peer_address_type);
+            memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
+            gap_conn.bonded = 0;
+        }
+        gap_smp.bond_tx_step = 0;
+    }
 }
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
@@ -626,6 +654,8 @@ static void mesh_gap_smp_poll(void) {
                                   (uint16_t)gap_conn.bond.ediv[1] << 8);
         if (id_match && mesh_gap_key_reply(gap_conn.bond.ltk))
             gap_conn.bond_restore_started = 1;
+        else
+            mesh_gap_key_reply(NULL);
     }
     if (!gap_conn.rx_ready) return;
     if (gap_conn.rx_llid == 2) {

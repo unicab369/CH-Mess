@@ -33,6 +33,19 @@ static volatile int8_t gap_radio_rx_rssi;
 static void gap_connection_end(void) {
     if (!gap_conn.active) return;
     BLE_GAP_HW_STOP();
+    if (gap_conn.central_role && gap_smp.phase == GAP_SMP_BOND_TX &&
+        gap_smp.bond_tx_step == 2) {
+        // The peer may or may not have received Master Identification; retry
+        // pairing on the next link to reconcile whichever bond was committed.
+        mesh_gap_smp_bond_abort();
+        gap_bond_repair_pending = 1;
+    }
+    if (gap_conn.central_role && gap_conn.bond_restore_started &&
+        gap_security.status == 0x3d) {
+        mesh_gap_bond_remove(gap_conn.bond.peer_address,
+                             gap_conn.bond.peer_address_type);
+        gap_bond_repair_pending = 1;
+    }
     uint8_t security_status = gap_security.status == MESH_GAP_CONNECTION_PENDING ?
         0x08 : gap_security.status;
     {
@@ -1386,7 +1399,23 @@ static void mesh_gap_conn_poll(void) {
         gap_conn.encryption_key_size = gap_conn.bond.key_size;
         gap_conn.bond_restore_started = 0;
     }
-    if (gap_conn.bonded && gap_conn.central_role && !gap_conn.first_event &&
+    if (gap_conn.bond_restore_started && gap_conn.central_role &&
+        !gap_security.phase && gap_security.status &&
+        gap_security.status != MESH_GAP_CONNECTION_PENDING) {
+        mesh_gap_bond_remove(gap_conn.bond.peer_address,
+                             gap_conn.bond.peer_address_type);
+        memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
+        gap_conn.bonded = gap_conn.bond_restore_started = 0;
+        gap_bond_repair_pending = 1;
+    }
+    if (gap_conn.central_role && gap_bond_repair_pending &&
+        !gap_conn.first_event && !gap_security.phase && !gap_smp.phase &&
+        !gap_conn.tx_pending && !gap_conn.tx_queued &&
+        !gap_conn.tx_l2cap_remaining && mesh_gap_pair()) {
+        gap_bond_repair_pending = 0;
+    }
+    if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
+        !gap_conn.first_event &&
         !gap_conn.bond_restore_attempted && !gap_security.phase && !gap_smp.phase) {
         gap_conn.bond_restore_attempted = 1;
         uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
