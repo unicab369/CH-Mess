@@ -523,10 +523,9 @@ int mesh_gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_siz
     return 1;
 }
 
-// Request bonded legacy pairing; it fails if bond storage cannot commit the key.
+// Request bonded pairing; it fails if bond storage cannot commit the key.
 int mesh_gap_bonding_set(uint8_t enabled) {
-    if (enabled > 1 || gap_smp.phase ||
-        (enabled && gap_pairing_policy.secure_connections)) return 0;
+    if (enabled > 1 || gap_smp.phase) return 0;
     if (enabled) {
         if (!BLE_GAP_BOND_LOAD || !BLE_GAP_BOND_SAVE || !BLE_GAP_BOND_DELETE)
             return 0;
@@ -543,11 +542,10 @@ int mesh_gap_bonding_set(uint8_t enabled) {
     return 1;
 }
 
-// Secure Connections supports Just Works, Numeric Comparison, and Passkey Entry.
+// Secure Connections supports Just Works, Numeric Comparison, Passkey Entry,
+// and bonding. OOB pairing remains unsupported.
 int mesh_gap_secure_connections_set(uint8_t enabled) {
-    if (enabled > 1 || gap_smp.phase ||
-        (enabled && gap_pairing_policy.bonding))
-        return 0;
+    if (enabled > 1 || gap_smp.phase) return 0;
     gap_pairing_policy.secure_connections = enabled;
     return 1;
 }
@@ -628,11 +626,12 @@ int mesh_gap_pair(void) {
     else
         memset(&gap_smp.previous_bond, 0, sizeof(gap_smp.previous_bond));
     if (gap_conn.central_role) {
-        const uint8_t request[7] = {1, gap_pairing_policy.io, 0,
+        uint8_t request[7] = {1, gap_pairing_policy.io, 0,
             (gap_pairing_policy.authenticated ? 4 : 0) |
                 (gap_pairing_policy.bonding ? 1 : 0) |
                 (gap_pairing_policy.secure_connections ? 8 : 0),
-            16, gap_pairing_policy.bonding ? 1 : 0, 0};
+            16, gap_pairing_policy.bonding &&
+                !gap_pairing_policy.secure_connections ? 1 : 0, 0};
         memcpy(gap_smp.request, request, 7);
         gap_smp_queue(1, request + 1, 6);
         gap_smp.phase = GAP_SMP_RESPONSE;
@@ -890,6 +889,28 @@ static void mesh_gap_smp_poll(void) {
         if (mesh_gap_encrypted()) {
             gap_conn.authenticated = gap_smp.authenticated;
             gap_conn.encryption_key_size = 16;
+            if (gap_smp.bond_requested) {
+                // SC bonds store the f5 LTK and use zero EDIV and Rand.
+                mesh_gap_bond bond = {0};
+                bond.version = MESH_GAP_BOND_VERSION;
+                bond.valid = 1;
+                bond.peer_address_type = gap_conn.peer_identity_type;
+                memcpy(bond.peer_address,
+                       gap_conn.peer_identity_address, 6);
+                memcpy(bond.ltk, gap_smp.sc.ltk, 16);
+                bond.key_size = 16;
+                bond.authenticated = gap_smp.authenticated;
+                if (!mesh_gap_bond_set(&bond)) {
+                    gap_smp_finish(8, 0);
+                    volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+                    for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                    return;
+                }
+                memcpy(&gap_conn.bond, &bond, sizeof(bond));
+                gap_conn.bonded = 1;
+                volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+                for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            }
             gap_smp_finish(0, 0);
             return;
         }
@@ -1094,27 +1115,28 @@ static void mesh_gap_smp_poll(void) {
         if (op == 2 && ((p[5] & (uint8_t)~1u) || (p[6] & (uint8_t)~1u) ||
             (p[5] & (uint8_t)~gap_smp.request[5]) ||
             (p[6] & (uint8_t)~gap_smp.request[6]))) goto failed;
-        if (op == 1 && gap_pairing_policy.bonding &&
-            (!(p[3] & 1) || !(p[5] & 1))) {
-            error = 3; goto failed;
-        }
-        if (op == 2) {
-            gap_smp.bond_requested = gap_pairing_policy.bonding &&
-                (gap_smp.request[3] & 1) && (p[3] & 1) && (p[5] & 1);
-            if (gap_pairing_policy.bonding && !gap_smp.bond_requested) {
-                error = 3; goto failed;
-            }
-        } else {
-            gap_smp.bond_requested = gap_pairing_policy.bonding &&
-                (p[3] & 1) && (p[5] & 1);
-        }
         gap_smp.sc_active = gap_pairing_policy.secure_connections && (p[3] & 8);
         if (gap_pairing_policy.secure_connections && !gap_smp.sc_active) {
             error = 3; goto failed;
         }
         if (gap_smp.sc_active && p[4] != 16) { error = 6; goto failed; }
-        if (gap_smp.sc_active && (p[2] || (p[3] & 3) || p[5] || p[6])) {
-            error = 3; goto failed; // SC OOB and key distribution follow later.
+        if (gap_smp.sc_active && (p[2] || (p[3] & 2) || p[5] || p[6])) {
+            error = 3; goto failed; // OOB and SC key distribution remain unsupported.
+        }
+        if (op == 1 && gap_pairing_policy.bonding &&
+            (!(p[3] & 1) || (!gap_smp.sc_active && !(p[5] & 1)))) {
+            error = 3; goto failed;
+        }
+        if (op == 2) {
+            gap_smp.bond_requested = gap_pairing_policy.bonding &&
+                (gap_smp.request[3] & 1) && (p[3] & 1) &&
+                (gap_smp.sc_active || (p[5] & 1));
+            if (gap_pairing_policy.bonding && !gap_smp.bond_requested) {
+                error = 3; goto failed;
+            }
+        } else {
+            gap_smp.bond_requested = gap_pairing_policy.bonding &&
+                (p[3] & 1) && (gap_smp.sc_active || (p[5] & 1));
         }
         uint8_t local_io = gap_pairing_policy.io, peer_io = p[1];
         gap_smp.confirm_received = gap_smp.passkey_action = gap_smp.authenticated = 0;
@@ -1200,7 +1222,8 @@ static void mesh_gap_smp_poll(void) {
                 (gap_smp.bond_requested ? 1 : 0) |
                 (gap_smp.sc_active ? 8 : 0);
             gap_smp.response[4] = 16;
-            gap_smp.response[5] = gap_smp.bond_requested ? (p[5] & 1) : 0;
+            gap_smp.response[5] = gap_smp.bond_requested &&
+                !gap_smp.sc_active ? (p[5] & 1) : 0;
             gap_smp.response[6] = 0;
             gap_smp_queue(2, gap_smp.response + 1, 6);
         } else {

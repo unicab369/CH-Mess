@@ -63,6 +63,7 @@ enum {
     BLE_GATT_ATT_ERR_INVALID_OFFSET = 0x07,
     BLE_GATT_ATT_ERR_ATTRIBUTE_NOT_FOUND = 0x0a,
     BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH = 0x0d,
+    BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES = 0x11,
     BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION = 0x0f,
     BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION = 0x05,
     BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED = 0x13
@@ -88,6 +89,7 @@ typedef struct ble_gatt_attribute {
     uint8_t flags;
     uint16_t value_len, value_capacity;
     uint16_t value_offset;
+    uint16_t parent_handle;
     uint16_t cccd;
     ble_gatt_read_fn read;
     ble_gatt_write_fn write;
@@ -99,7 +101,8 @@ typedef struct {
     uint16_t count, next_handle, mtu, local_mtu;
     uint16_t value_used;
     uint8_t value_pool[BLE_GATT_SERVER_VALUE_POOL_SIZE];
-    uint8_t mtu_exchanged, encrypted, authenticated;
+    uint8_t mtu_exchanged, encrypted, authenticated, indication_pending;
+    uint16_t indication_handle;
 } ble_gatt_server;
 
 static uint16_t ble_gatt_server_u16(const uint8_t *p) {
@@ -146,6 +149,8 @@ static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
     server->mtu = 23;
     server->mtu_exchanged = 0;
     server->encrypted = server->authenticated = 0;
+    server->indication_pending = 0;
+    server->indication_handle = 0;
     for (uint16_t i = 0; i < server->count; i++)
         if (server->attributes[i].flags & BLE_GATT_ATTRIBUTE_CCCD)
             server->attributes[i].cccd = 0;
@@ -284,9 +289,12 @@ static inline int ble_gatt_server_add_descriptor(ble_gatt_server *server,
             permissions | BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, 0,
             BLE_GATT_ATTRIBUTE_CCCD, zero, 2, 2, NULL, NULL, context,
             handle_out);
-        if (added)
+        if (added) {
             server->attributes[server->count - 1].properties =
                 server->attributes[server->count - 2].properties;
+            server->attributes[server->count - 1].parent_handle =
+                server->attributes[server->count - 2].handle;
+        }
         return added;
     }
     return ble_gatt_server_add_attribute(server, uuid, permissions, value,
@@ -388,6 +396,61 @@ static int ble_gatt_server_uuid_from_wire(const uint8_t *p, uint8_t len,
     return 1;
 }
 
+static ble_gatt_attribute *ble_gatt_server_cccd_for(
+    ble_gatt_server *server, uint16_t value_handle) {
+    for (uint16_t i = 0; i < server->count; i++) {
+        ble_gatt_attribute *a = &server->attributes[i];
+        if ((a->flags & BLE_GATT_ATTRIBUTE_CCCD) &&
+            a->parent_handle == value_handle) return a;
+    }
+    return NULL;
+}
+
+// Build one Handle Value Notification. The application supplies the current
+// value; notifications are unacknowledged and limited to ATT_MTU - 3 bytes.
+static inline int ble_gatt_server_notify(ble_gatt_server *server,
+    uint16_t value_handle, const uint8_t *value, uint16_t value_len,
+    uint8_t *att, uint16_t att_capacity, uint16_t *att_len) {
+    if (!server || !att || !att_len || (value_len && !value)) return -1;
+    *att_len = 0;
+    ble_gatt_attribute *characteristic =
+        ble_gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+    if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
+        !cccd || !(cccd->cccd & 1)) return 0;
+    if (ble_gatt_server_security_error(server, characteristic->permissions, 0))
+        return 0;
+    if (value_len > server->mtu - 3 || att_capacity < value_len + 3) return 0;
+    att[0] = 0x1b;
+    ble_gatt_server_put_u16(att + 1, value_handle);
+    if (value_len) memcpy(att + 3, value, value_len);
+    *att_len = value_len + 3;
+    return 1;
+}
+
+// Build one Handle Value Indication. Only one indication may await confirmation.
+static inline int ble_gatt_server_indicate(ble_gatt_server *server,
+    uint16_t value_handle, const uint8_t *value, uint16_t value_len,
+    uint8_t *att, uint16_t att_capacity, uint16_t *att_len) {
+    if (!server || !att || !att_len || (value_len && !value)) return -1;
+    *att_len = 0;
+    ble_gatt_attribute *characteristic =
+        ble_gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+    if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_INDICATE) ||
+        !cccd || !(cccd->cccd & 2) || server->indication_pending) return 0;
+    if (ble_gatt_server_security_error(server, characteristic->permissions, 0))
+        return 0;
+    if (value_len > server->mtu - 3 || att_capacity < value_len + 3) return 0;
+    att[0] = 0x1d;
+    ble_gatt_server_put_u16(att + 1, value_handle);
+    if (value_len) memcpy(att + 3, value, value_len);
+    *att_len = value_len + 3;
+    server->indication_pending = 1;
+    server->indication_handle = value_handle;
+    return 1;
+}
+
 // Process one complete ATT request PDU. Returns 1 when a response is present,
 // 0 for commands/notifications that require no response, and -1 on bad args.
 static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
@@ -398,6 +461,12 @@ static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *re
     uint8_t op = req[0];
     uint16_t mtu = server->mtu;
     if (req_len > mtu) goto invalid_pdu;
+    if (op == 0x1e) { // Handle Value Confirmation
+        if (req_len != 1) goto invalid_pdu;
+        server->indication_pending = 0;
+        server->indication_handle = 0;
+        return 0;
+    }
     if (op == 0x02) { // Exchange MTU Request
         if (req_len != 3 || ble_gatt_server_u16(req + 1) < 23)
             return ble_gatt_server_error_rsp(op, 0, BLE_GATT_ATT_ERR_INVALID_PDU,
@@ -555,6 +624,34 @@ static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *re
                                                     rsp_capacity, rsp_len);
         rsp[0] = op == 0x0a ? 0x0b : 0x0d;
         *rsp_len = value_len + 1; return 1;
+    }
+    if (op == 0x0e || op == 0x20) { // Read Multiple / Read Multiple Variable
+        uint8_t variable = op == 0x20;
+        if (req_len < 5 || ((req_len - 1) & 1)) goto invalid_pdu;
+        uint16_t n = 1;
+        rsp[0] = variable ? 0x21 : 0x0f;
+        for (uint16_t offset = 1; offset < req_len; offset += 2) {
+            uint16_t h = ble_gatt_server_u16(req + offset);
+            ble_gatt_attribute *a = ble_gatt_server_find(server, h);
+            if (!a) return ble_gatt_server_error_rsp(op, h,
+                BLE_GATT_ATT_ERR_INVALID_HANDLE, rsp, rsp_capacity, rsp_len);
+            uint16_t fixed = variable ? 2 : 0;
+            if (n + fixed > mtu || n + fixed > rsp_capacity) break;
+            uint16_t len = (uint16_t)((mtu < rsp_capacity ? mtu : rsp_capacity) - n - fixed);
+            uint8_t error = ble_gatt_server_read(server, a, 0, rsp + n + fixed, &len);
+            if (error) return ble_gatt_server_error_rsp(op, h, error,
+                                                         rsp, rsp_capacity, rsp_len);
+            if (variable) {
+                ble_gatt_server_put_u16(rsp + n, len);
+                n += 2;
+            }
+            n += len;
+            if (n == mtu || n == rsp_capacity) break;
+        }
+        if (n == 1) return ble_gatt_server_error_rsp(op, 0,
+            BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES, rsp, rsp_capacity, rsp_len);
+        *rsp_len = n;
+        return 1;
     }
     if (op == 0x12 || op == 0x52) { // Write Request / Write Command
         uint8_t command = op == 0x52;

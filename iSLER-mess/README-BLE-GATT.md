@@ -15,20 +15,21 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 - [x] Add focused tests for database registration, handle assignment, UUID
   widths, callbacks, permission errors, and every implemented ATT procedure.
-- [ ] Validate malformed and boundary requests, response MTU limits, and
-  callback-provided values before treating this core as complete.
-- [ ] Decide and document the compile-time limits for attributes and value
-  storage for the target MCU.
+- [ ] Extend malformed/boundary testing, especially callbacks that report
+  invalid lengths and reads near configured limits.
+- [x] Set initial configurable limits: 64 attributes, 256 bytes per stored
+  value, and a 512-byte shared static-value pool.
 
 ### 2. Complete the generic GATT server
 
 - [ ] Add Prepare Write and Execute Write, including queued-write bounds,
   offset validation, cancellation, and atomic commit behavior.
-- [ ] Add Read Multiple and Read Multiple Variable Length procedures.
-- [ ] Add notification and indication APIs, per-connection subscriptions,
-  indication confirmation tracking, and outbound queue handling.
-- [ ] Complete attribute security enforcement using the active GAP link's
-  encryption and authentication state.
+- [x] Add Read Multiple and Read Multiple Variable Length procedures.
+- [x] Add notification and indication APIs, CCCD subscription checks, and
+  indication confirmation tracking.
+- [ ] Add an outbound event queue and indication timeout handling.
+- [x] Enforce configured encryption/authentication permissions in the core.
+- [ ] Feed the active GAP link's security state into the core.
 - [ ] Add service changed/database change handling if services can change
   while clients are connected; otherwise require a static database per boot.
 

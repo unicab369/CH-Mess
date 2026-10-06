@@ -16,8 +16,8 @@
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Add durable platform bond storage and verify restored bonds on hardware.
-// - Complete Secure Connections OOB pairing and bonding; Just Works,
-//   Numeric Comparison, and Passkey Entry are opt-in.
+// - Add Secure Connections OOB pairing; Just Works, Numeric Comparison,
+//   Passkey Entry, and LTK bonding are opt-in.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
