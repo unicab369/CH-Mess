@@ -1,5 +1,7 @@
 #include "ch32fun.h"
 void gap_hw_mesh_received(void);
+void gap_hw_radio_transmitted(void);
+#define ISLER_CALLBACK_TX gap_hw_radio_transmitted
 #define ISLER_CALLBACK_RX gap_hw_mesh_received
 #include "iSLER.h"
 volatile uint32_t rx_ready;
@@ -139,29 +141,70 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 
 
 // iSLER adapter for the generic GAP radio interfaces in ble_gap.h.
+static struct {
+    uint32_t access_address;
+    uint8_t channel, tx_phy, rx_phy, receive_after_tx;
+    const uint8_t *tx_frame;
+} gap_radio_link;
+
+// For different TX/RX rates, arm RX from TX completion instead of hardware
+// auto-switching at the TX rate. This must arm RX within the peer's 150 us IFS;
+// verify the adapter timing on hardware.
+void gap_hw_radio_transmitted(void) {
+    if (gap_radio_link.receive_after_tx && gap_radio_link.tx_phy != gap_radio_link.rx_phy) {
+        iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,
+                       gap_radio_link.rx_phy, NULL, 0);
+        iSLERLinkRX();
+    }
+}
 const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return (const uint8_t *)LLE_BUF; }
 int8_t BLE_GAP_HW_RSSI(void) { return (int8_t)iSLERRSSI(); }
 void BLE_GAP_HW_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
 void BLE_GAP_HW_STOP(void) {
+    gap_radio_link.receive_after_tx = 0;
     iSLERStop();
     gs_iSLERLink.is_open = 0;
 }
 int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
+    gap_radio_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, PHY_1M);
     return tx_done != 0;
 }
 void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
-                             uint8_t *tx_frame, uint8_t receive_after_tx) {
-    iSLERLinkConfig(access_address, channel, PHY_1M, tx_frame, receive_after_tx);
+                             uint8_t *tx_frame, uint8_t receive_after_tx,
+                             uint8_t tx_phy, uint8_t rx_phy) {
+    gap_radio_link.access_address = access_address;
+    gap_radio_link.channel = channel;
+    gap_radio_link.tx_frame = tx_frame;
+    gap_radio_link.tx_phy = tx_phy;
+    gap_radio_link.rx_phy = rx_phy;
+    gap_radio_link.receive_after_tx = receive_after_tx;
+    iSLERLinkConfig(access_address, channel, receive_after_tx ? tx_phy : rx_phy,
+                   tx_frame, receive_after_tx && tx_phy == rx_phy);
 }
 // The iSLER DMA buffers accommodate the maximum LE data payload.
 uint16_t BLE_GAP_HW_DATA_MAX(void) { return 251; }
-void BLE_GAP_HW_LINK_TX(void) { iSLERLinkTX(); }
+uint8_t BLE_GAP_HW_PHY_MASK(void) {
+#ifdef CH571_CH573
+    return MESH_GAP_PHY_1M;
+#else
+    return MESH_GAP_PHY_1M | MESH_GAP_PHY_2M;
+#endif
+}
+void BLE_GAP_HW_LINK_TX(void) {
+    if (gs_iSLERLink.phy_mode != gap_radio_link.tx_phy)
+        iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,
+                       gap_radio_link.tx_phy, (uint8_t *)gap_radio_link.tx_frame,
+                       gap_radio_link.receive_after_tx && gap_radio_link.tx_phy == gap_radio_link.rx_phy);
+    iSLERLinkTX();
+}
 void BLE_GAP_HW_LINK_RX(void) { iSLERLinkRX(); }
 void BLE_GAP_HW_SCAN_RX(uint8_t channel) {
+    gap_radio_link.receive_after_tx = 0;
     iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
 }
 void BLE_GAP_HW_TX_BUFFER(const uint8_t *frame) {
+    gap_radio_link.tx_frame = frame;
 #ifdef CH571_CH573
     DMA->TXBUF = (uint32_t)frame;
 #else

@@ -6,6 +6,7 @@
 #include "../ble_gap.h"
 
 static uint32_t now_ms;
+static uint8_t radio_phy_mask = 3, configured_tx_phy, configured_rx_phy;
 static uint16_t radio_data_max = MESH_GAP_CONN_DATA_MAX;
 static uint8_t rx_frame[2 + (MESH_GAP_CONN_DATA_MAX > 37 ? MESH_GAP_CONN_DATA_MAX : 37)], random_seed;
 static const uint8_t *tx_buffer;
@@ -20,6 +21,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
 }
 const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return rx_frame; }
 uint16_t BLE_GAP_HW_DATA_MAX(void) { return radio_data_max; }
+uint8_t BLE_GAP_HW_PHY_MASK(void) { return radio_phy_mask; }
 int8_t BLE_GAP_HW_RSSI(void) { return -40; }
 uint64_t BLE_GAP_HW_TICKS(void) { return (uint64_t)now_ms * 1000; }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
@@ -32,9 +34,11 @@ int BLE_GAP_HW_TX_DONE(void) { return 1; }
 void BLE_GAP_HW_TX_CLEAR_DONE(void) {}
 void BLE_GAP_HW_CRC_INIT(uint32_t crc_init) { (void)crc_init; }
 void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
-                            uint8_t *frame, uint8_t receive_after_tx) {
+                            uint8_t *frame, uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy) {
     (void)access_address; (void)channel; (void)receive_after_tx;
     tx_buffer = frame;
+    configured_tx_phy = tx_phy;
+    configured_rx_phy = rx_phy;
 }
 void BLE_GAP_HW_LINK_RX(void) {}
 int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
@@ -968,6 +972,142 @@ static void test_channel_map_updates(void) {
     gap_connection_end();
 }
 
+static void test_phy_updates(void) {
+    assert(!mesh_gap_phy_set(2, 2));
+    start_test_central_link();
+    uint8_t tx, rx;
+    mesh_gap_phy_get(&tx, &rx);
+    assert(tx == 1 && rx == 1);
+    assert(!mesh_gap_phy_set(0, 2) && !mesh_gap_phy_set(4, 4));
+    assert(mesh_gap_phy_set(2, 2));
+    assert(!mesh_gap_connection_update(48, 0, 200));
+    assert(!mesh_gap_channel_map_set((uint8_t[5]){3}));
+    assert(!mesh_gap_data_length_set(27));
+    receive_test_link_packet(0);
+    assert(gap_conn.phy_queued && !gap_conn.phy_pending);
+    gap_conn.event_counter = 0xfffd;
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x16 && gap_conn_tx_frame[3] == 2);
+    receive_test_link_packet(0);
+    assert(gap_conn_tx_frame[2] == 0x16 && mesh_gap_phy_status() == 0xff);
+    // Central wins a simultaneous PHY request and keeps its pending request.
+    receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x23);
+    assert(gap_conn.phy_pending);
+    receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 2 && gap_conn_tx_frame[4] == 2);
+    uint16_t instant = gap_conn.phy_instant;
+    assert(gap_conn.phy_update_pending && instant < 10);
+    while (gap_conn.event_counter != instant) {
+        assert(gap_conn.tx_phy == 1 && gap_conn.rx_phy == 1);
+        receive_test_link_packet(1);
+    }
+    mesh_gap_phy_get(&tx, &rx);
+    assert(tx == 2 && rx == 2 && mesh_gap_phy_status() == 0);
+    gap_conn.rx_armed = gap_conn.event_replied = 0;
+    now_ms = (uint32_t)((gap_conn.next_event_ticks + 999) / 1000);
+    mesh_gap_conn_poll();
+    assert(configured_tx_phy == 2 && configured_rx_phy == 2);
+    // A peer's asymmetric preference can change only one direction.
+    receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 0 && gap_conn_tx_frame[4] == 0);
+    // No shared preference: unchanged rates and immediate completion.
+    assert(!gap_conn.phy_update_pending);
+    gap_connection_end();
+
+    // The Central can select different supported rates in each direction.
+    start_test_central_link();
+    receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 2 && gap_conn_tx_frame[4] == 0);
+    instant = gap_conn.phy_instant;
+    while (gap_conn.event_counter != instant) receive_test_link_packet(1);
+    assert(gap_conn.tx_phy == 2 && gap_conn.rx_phy == 1);
+    gap_connection_end();
+
+    // A single identical peer preference cannot yield a new asymmetric link.
+    start_test_central_link();
+    assert(mesh_gap_phy_set(2, 1));
+    receive_test_link_packet(1);
+    receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn_tx_frame[3] == 0 && gap_conn_tx_frame[4] == 0);
+    assert(mesh_gap_phy_status() == 0 && !gap_conn.phy_update_pending);
+    gap_connection_end();
+
+    // The foreground Central send path also starts a queued PHY request.
+    start_test_central_link();
+    assert(mesh_gap_phy_set(2, 2));
+    gap_conn.tx_pending = gap_conn.event_replied = gap_conn.rx_armed = 0;
+    now_ms = (uint32_t)((gap_conn.next_event_ticks + 999) / 1000);
+    mesh_gap_conn_poll();
+    assert(gap_conn_tx_frame[2] == 0x16 && gap_conn.phy_pending);
+    gap_connection_end();
+
+    // Peripheral responds and applies independent directions at the Instant.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    assert(mesh_gap_phy_set(2, 2));
+    receive_test_link_packet(1);
+    receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x17 && gap_conn.phy_pending);
+    instant = gap_conn.event_counter + 7;
+    receive_test_control(0x18, (uint8_t[]){2, 1, (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
+    while (gap_conn.event_counter != instant) receive_test_link_packet(1);
+    mesh_gap_phy_get(&tx, &rx);
+    assert(tx == 1 && rx == 2);
+    assert(mesh_gap_phy_status() == 0);
+    gap_connection_end();
+
+    // Unsupported UPDATE fields leave that direction unchanged.
+    start_test_central_link(); gap_conn.central_role = 0;
+    receive_test_control(0x18, (uint8_t[]){4, 3, 0, 0}, 4);
+    assert(!gap_conn.phy_update_pending && gap_conn.tx_phy == 1 && gap_conn.rx_phy == 1);
+    // Past Instants and unacknowledged Central updates close the link.
+    receive_test_control(0x18, (uint8_t[]){2, 2, 0, 0}, 4);
+    assert(!gap_conn.active && mesh_gap_phy_status() == 0x28);
+    start_test_central_link();
+    receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn.phy_update_pending);
+    while (gap_conn.active) receive_test_link_packet(0);
+    assert(mesh_gap_phy_status() == 0x28);
+
+    start_test_central_link();
+    assert(mesh_gap_phy_set(2, 2));
+    receive_test_link_packet(1);
+    receive_test_control(0x07, (uint8_t[]){0x16}, 1);
+    assert(mesh_gap_phy_status() == 0x1a && !gap_conn.phy_pending);
+    assert(mesh_gap_phy_set(2, 2));
+    receive_test_link_packet(1);
+    receive_test_control(0x11, (uint8_t[]){0x16, 0x20}, 2);
+    assert(mesh_gap_phy_status() == 0x20);
+    assert(mesh_gap_phy_set(2, 2));
+    receive_test_link_packet(1);
+    now_ms = gap_conn.phy_started_ms + 40000;
+    gap_conn.last_rx_ms = now_ms;
+    mesh_gap_conn_poll();
+    assert(!gap_conn.active && mesh_gap_phy_status() == 0x22);
+
+    // Feature exchange advertises 2M in byte 1, and caches the peer's support.
+    start_test_central_link();
+    receive_test_control(0x0e, (uint8_t[]){0x2e, 1, 0, 0, 0, 0, 0, 0}, 8);
+    assert(gap_conn_tx_frame[2] == 0x09 && gap_conn_tx_frame[4] == 1);
+    assert(mesh_gap_phy_set(2, 2));
+    gap_connection_end();
+    start_test_central_link();
+    receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
+    assert(!mesh_gap_phy_set(2, 2) && mesh_gap_phy_status() == 0x1a);
+    gap_connection_end();
+
+    radio_phy_mask = 1;
+    start_test_central_link();
+    assert(!mesh_gap_phy_set(2, 2));
+    receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
+    assert(gap_conn_tx_frame[4] == 0);
+    receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
+    assert(gap_conn_tx_frame[2] == 0x07);
+    gap_connection_end();
+    radio_phy_mask = 3;
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -984,5 +1124,6 @@ int main(void) {
     test_connection_parameter_requests();
     test_data_length();
     test_channel_map_updates();
+    test_phy_updates();
     return 0;
 }
