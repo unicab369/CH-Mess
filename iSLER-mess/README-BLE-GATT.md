@@ -13,7 +13,7 @@ attribute storage, 16- and 128-bit UUIDs, service and characteristic
 registration, read/write callbacks, per-link CCCD state, basic security flags,
 and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
-- [ ] Add focused tests for database registration, handle assignment, UUID
+- [x] Add focused tests for database registration, handle assignment, UUID
   widths, callbacks, permission errors, and every implemented ATT procedure.
 - [ ] Validate malformed and boundary requests, response MTU limits, and
   callback-provided values before treating this core as complete.

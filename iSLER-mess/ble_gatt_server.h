@@ -14,8 +14,14 @@
 #ifndef BLE_GATT_SERVER_VALUE_MAX
 #define BLE_GATT_SERVER_VALUE_MAX 256
 #endif
+#ifndef BLE_GATT_SERVER_VALUE_POOL_SIZE
+#define BLE_GATT_SERVER_VALUE_POOL_SIZE 512
+#endif
 #ifndef BLE_GATT_SERVER_MTU_MAX
 #define BLE_GATT_SERVER_MTU_MAX 517
+#endif
+#if BLE_GATT_SERVER_VALUE_POOL_SIZE > 65535
+#error "BLE_GATT_SERVER_VALUE_POOL_SIZE must fit in uint16_t"
 #endif
 
 #define BLE_GATT_UUID16_LEN 2
@@ -81,7 +87,7 @@ typedef struct ble_gatt_attribute {
     uint8_t properties;
     uint8_t flags;
     uint16_t value_len, value_capacity;
-    uint8_t value[BLE_GATT_SERVER_VALUE_MAX];
+    uint16_t value_offset;
     uint16_t cccd;
     ble_gatt_read_fn read;
     ble_gatt_write_fn write;
@@ -91,6 +97,8 @@ typedef struct ble_gatt_attribute {
 typedef struct {
     ble_gatt_attribute attributes[BLE_GATT_SERVER_MAX_ATTRIBUTES];
     uint16_t count, next_handle, mtu, local_mtu;
+    uint16_t value_used;
+    uint8_t value_pool[BLE_GATT_SERVER_VALUE_POOL_SIZE];
     uint8_t mtu_exchanged, encrypted, authenticated;
 } ble_gatt_server;
 
@@ -113,7 +121,16 @@ static int ble_gatt_uuid_equal(const ble_gatt_uuid *a,
     return a->len == b->len && !memcmp(a->value, b->value, a->len);
 }
 
-void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
+static uint8_t *ble_gatt_attribute_value(ble_gatt_server *server,
+                                         ble_gatt_attribute *attribute) {
+    if (!attribute->value_capacity ||
+        attribute->value_offset > server->value_used ||
+        attribute->value_capacity > server->value_used - attribute->value_offset)
+        return NULL;
+    return server->value_pool + attribute->value_offset;
+}
+
+static inline void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
     if (!server) return;
     memset(server, 0, sizeof(*server));
     if (local_mtu < 23) local_mtu = 23;
@@ -124,7 +141,7 @@ void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
     server->next_handle = 1;
 }
 
-void ble_gatt_server_link_reset(ble_gatt_server *server) {
+static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
     if (!server) return;
     server->mtu = 23;
     server->mtu_exchanged = 0;
@@ -134,10 +151,10 @@ void ble_gatt_server_link_reset(ble_gatt_server *server) {
             server->attributes[i].cccd = 0;
 }
 
-void ble_gatt_server_set_security(ble_gatt_server *server, int encrypted,
+static inline void ble_gatt_server_set_security(ble_gatt_server *server, int encrypted,
                                   int authenticated) {
     if (!server) return;
-    server->encrypted = encrypted != 0;
+    server->encrypted = encrypted != 0 || authenticated != 0;
     server->authenticated = authenticated != 0;
 }
 
@@ -162,6 +179,7 @@ static int ble_gatt_server_add(ble_gatt_server *server,
         server->count >= BLE_GATT_SERVER_MAX_ATTRIBUTES ||
         server->next_handle == 0 || value_len > value_capacity ||
         value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        value_capacity > BLE_GATT_SERVER_VALUE_POOL_SIZE - server->value_used ||
         (value_len && !value)) return 0;
     ble_gatt_attribute *a = &server->attributes[server->count++];
     memset(a, 0, sizeof(*a));
@@ -172,15 +190,17 @@ static int ble_gatt_server_add(ble_gatt_server *server,
     a->flags = flags;
     a->value_len = value_len;
     a->value_capacity = value_capacity;
+    a->value_offset = server->value_used;
     a->read = read;
     a->write = write;
     a->context = context;
-    if (value_len) memcpy(a->value, value, value_len);
+    if (value_len) memcpy(server->value_pool + a->value_offset, value, value_len);
+    server->value_used += value_capacity;
     if (handle_out) *handle_out = a->handle;
     return 1;
 }
 
-int ble_gatt_server_add_attribute(ble_gatt_server *server,
+static inline int ble_gatt_server_add_attribute(ble_gatt_server *server,
                                   const ble_gatt_uuid *uuid,
                                   uint16_t permissions, const uint8_t *value,
                                   uint16_t value_len, uint16_t value_capacity,
@@ -196,7 +216,7 @@ static ble_gatt_uuid ble_gatt_uuid16(uint16_t value) {
     return uuid;
 }
 
-int ble_gatt_server_add_service(ble_gatt_server *server,
+static inline int ble_gatt_server_add_service(ble_gatt_server *server,
                                 const ble_gatt_uuid *service_uuid,
                                 int primary, uint16_t *service_handle) {
     if (!ble_gatt_uuid_valid(service_uuid)) return 0;
@@ -208,7 +228,7 @@ int ble_gatt_server_add_service(ble_gatt_server *server,
         NULL, NULL, NULL, service_handle);
 }
 
-int ble_gatt_server_add_characteristic(ble_gatt_server *server,
+static inline int ble_gatt_server_add_characteristic(ble_gatt_server *server,
                                        const ble_gatt_uuid *uuid,
                                        uint8_t properties,
                                        uint16_t permissions,
@@ -227,6 +247,7 @@ int ble_gatt_server_add_characteristic(ble_gatt_server *server,
         server->next_handle > 0xfffd) return 0;
     uint16_t decl_h = server->next_handle;
     uint16_t val_h = (uint16_t)(decl_h + 1);
+    uint16_t value_checkpoint = server->value_used;
     uint8_t decl[3 + BLE_GATT_UUID128_LEN];
     decl[0] = properties;
     ble_gatt_server_put_u16(decl + 1, val_h);
@@ -241,12 +262,13 @@ int ble_gatt_server_add_characteristic(ble_gatt_server *server,
             value_handle)) {
         server->count--;
         server->next_handle--;
+        server->value_used = value_checkpoint;
         return 0;
     }
     return 1;
 }
 
-int ble_gatt_server_add_descriptor(ble_gatt_server *server,
+static inline int ble_gatt_server_add_descriptor(ble_gatt_server *server,
                                    const ble_gatt_uuid *uuid,
                                    uint16_t permissions, const uint8_t *value,
                                    uint16_t value_len, uint16_t value_capacity,
@@ -254,11 +276,18 @@ int ble_gatt_server_add_descriptor(ble_gatt_server *server,
                                    ble_gatt_write_fn write, void *context,
                                    uint16_t *handle_out) {
     if (uuid && uuid->len == 2 && ble_gatt_server_u16(uuid->value) == 0x2902) {
+        if (!server || !server->count ||
+            !(server->attributes[server->count - 1].properties &
+              (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE))) return 0;
         uint8_t zero[2] = {0, 0};
-        return ble_gatt_server_add(server, uuid,
+        int added = ble_gatt_server_add(server, uuid,
             permissions | BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, 0,
             BLE_GATT_ATTRIBUTE_CCCD, zero, 2, 2, NULL, NULL, context,
             handle_out);
+        if (added)
+            server->attributes[server->count - 1].properties =
+                server->attributes[server->count - 2].properties;
+        return added;
     }
     return ble_gatt_server_add_attribute(server, uuid, permissions, value,
         value_len, value_capacity, read, write, context, handle_out);
@@ -297,11 +326,17 @@ static uint8_t ble_gatt_server_read(ble_gatt_server *server,
         *out_len = size;
         return 0;
     }
-    if (a->read) return a->read(a->context, offset, out, out_len);
+    if (a->read) {
+        uint16_t capacity = *out_len;
+        uint8_t error = a->read(a->context, offset, out, out_len);
+        if (!error && *out_len > capacity)
+            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return error;
+    }
     if (offset > a->value_len) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     uint16_t size = (uint16_t)(a->value_len - offset);
     if (size > *out_len) size = *out_len;
-    if (size) memcpy(out, a->value + offset, size);
+    if (size) memcpy(out, ble_gatt_attribute_value(server, a) + offset, size);
     *out_len = size;
     return 0;
 }
@@ -330,7 +365,7 @@ static uint8_t ble_gatt_server_write(ble_gatt_server *server,
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (offset && offset + len > a->value_len)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (len) memcpy(a->value + offset, value, len);
+    if (len) memcpy(ble_gatt_attribute_value(server, a) + offset, value, len);
     if (offset + len > a->value_len) a->value_len = offset + len;
     return 0;
 }
@@ -355,13 +390,14 @@ static int ble_gatt_server_uuid_from_wire(const uint8_t *p, uint8_t len,
 
 // Process one complete ATT request PDU. Returns 1 when a response is present,
 // 0 for commands/notifications that require no response, and -1 on bad args.
-int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
+static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
                         uint16_t req_len, uint8_t *rsp, uint16_t rsp_capacity,
                         uint16_t *rsp_len) {
     if (!server || !req || !req_len || !rsp || !rsp_len) return -1;
     *rsp_len = 0;
     uint8_t op = req[0];
     uint16_t mtu = server->mtu;
+    if (req_len > mtu) goto invalid_pdu;
     if (op == 0x02) { // Exchange MTU Request
         if (req_len != 3 || ble_gatt_server_u16(req + 1) < 23)
             return ble_gatt_server_error_rsp(op, 0, BLE_GATT_ATT_ERR_INVALID_PDU,
@@ -380,16 +416,17 @@ int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
     if (op == 0x10 || op == 0x06 || op == 0x08) {
         uint8_t group = op == 0x10;
         uint8_t find = op == 0x06;
-        uint16_t min_len = group ? 7 : find ? 7 : 7;
-        if (req_len < min_len) goto invalid_pdu;
+        if ((group && req_len != 7) || (find && req_len != 9 && req_len != 23) ||
+            (!group && !find && req_len != 7 && req_len != 21)) goto invalid_pdu;
         uint16_t first = ble_gatt_server_u16(req + 1);
         uint16_t last = ble_gatt_server_u16(req + 3);
         uint8_t uuid_len = group ? (uint8_t)(req_len - 5) :
                            find ? (uint8_t)(req_len - 7) :
                            (uint8_t)(req_len - 5);
-        if (first == 0 || first > last || !ble_gatt_uuid_valid(&(ble_gatt_uuid){uuid_len,{0}}))
+        if (first == 0 || first > last)
             return ble_gatt_server_error_rsp(op, first, 0x01, rsp,
                                               rsp_capacity, rsp_len);
+        if (!ble_gatt_uuid_valid(&(ble_gatt_uuid){uuid_len,{0}})) goto invalid_pdu;
         ble_gatt_uuid type;
         if (!ble_gatt_server_uuid_from_wire(req + (find ? 5 : 5), 2, &type))
             goto invalid_pdu;
@@ -410,7 +447,8 @@ int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
                 if (a->handle < first || a->handle > last ||
                     !ble_gatt_uuid_equal(&a->uuid, &type) ||
                     a->value_len != sought.len ||
-                    memcmp(a->value, sought.value, sought.len)) continue;
+                    memcmp(ble_gatt_attribute_value(server, a),
+                           sought.value, sought.len)) continue;
                 if (n + 4 > rsp_capacity || n + 4 > mtu) break;
                 ble_gatt_server_put_u16(rsp + n, a->handle); n += 2;
                 uint16_t end = a->handle;
@@ -445,13 +483,20 @@ int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *req,
                        (a->flags & BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)))) continue;
             } else if (!ble_gatt_uuid_equal(&a->uuid, &type)) continue;
             uint8_t value[BLE_GATT_SERVER_VALUE_MAX];
-            uint16_t value_len = a->value_len;
-            if (a->read) {
-                uint16_t capacity = sizeof(value);
-                if (ble_gatt_server_read(server, a, 0, value, &capacity)) continue;
-                value_len = capacity;
-            } else memcpy(value, a->value, value_len);
-            uint8_t this_len = (uint8_t)(group ? 4 + value_len : 2 + value_len);
+            uint16_t packet_limit = mtu < rsp_capacity ? mtu : rsp_capacity;
+            uint16_t fixed = group ? 6 : 4;
+            if (packet_limit <= fixed) break;
+            uint16_t value_len = packet_limit - fixed;
+            if (value_len > sizeof(value)) value_len = sizeof(value);
+            uint16_t entry_value_max = (uint16_t)(255 - (group ? 4 : 2));
+            if (value_len > entry_value_max) value_len = entry_value_max;
+            uint8_t error = ble_gatt_server_read(server, a, 0, value, &value_len);
+            if (error) {
+                if (n == 2) return ble_gatt_server_error_rsp(op, a->handle,
+                    error, rsp, rsp_capacity, rsp_len);
+                break;
+            }
+            uint16_t this_len = (uint16_t)(group ? 4 + value_len : 2 + value_len);
             if (!entry_len) { entry_len = this_len; rsp[1] = entry_len; }
             if (entry_len != this_len || n + this_len > mtu ||
                 n + this_len > rsp_capacity) break;
