@@ -7,8 +7,8 @@
 #include "ble_gap.h"
 
 // TODO for complete BLE GATT support:
-// - Wire mesh_gatt_poll(), the Proxy receive callback, and outgoing Proxy
-//   offers into the application and Mesh advertising bearer.
+// - Call BLE_MESH_GATT_PROXY_OFFER after Network PDU authentication and
+//   destination decoding so Proxy Filter rules are applied correctly.
 // - Complete and harden ATT request validation, discovery, errors, and MTU
 //   handling; add long reads/writes, prepared writes, and indications if needed.
 // - Enforce attribute permissions and security through SMP and Link Layer

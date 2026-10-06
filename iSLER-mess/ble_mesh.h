@@ -66,6 +66,7 @@ uint32_t GET_MILLIS(void) {
 
 #define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "ble_gap.h"
+#include "ble_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its
@@ -89,6 +90,12 @@ int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
 
 #define RADIO_QUEUE_SIZE 8
 #define MESH_ADV_MAX_SIZE 31
+#define MESH_GATT_RX_QUEUE_SIZE 2
+
+static struct {
+    uint8_t data[MESH_ADV_MAX_SIZE], len;
+} mesh_gatt_rx_queue[MESH_GATT_RX_QUEUE_SIZE];
+static uint8_t mesh_gatt_rx_head, mesh_gatt_rx_count;
 
 // One slot holds the original AD data and all of its advertising repetitions.
 static struct {
@@ -257,10 +264,45 @@ void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
     }
 }
 
+static int mesh_proxy_gatt_receive(uint8_t type, const uint8_t *pdu,
+                                   size_t len, void *context) {
+    (void)context;
+    if (!mesh_network.ready || !pdu || !len ||
+        (type == MESH_GATT_PROXY_NETWORK &&
+         (len < 14 || len > MESH_NETWORK_MAX_PDU)) ||
+        (type == MESH_GATT_PROXY_BEACON && len != 22) ||
+        (type != MESH_GATT_PROXY_NETWORK && type != MESH_GATT_PROXY_BEACON) ||
+        mesh_gatt_rx_count >= MESH_GATT_RX_QUEUE_SIZE) return 0;
+    uint8_t ad[MESH_ADV_MAX_SIZE];
+    ad[0] = (uint8_t)(len + 1);
+    ad[1] = type == MESH_GATT_PROXY_NETWORK ?
+            MESH_NETWORK_AD_TYPE : MESH_NETWORK_BEACON_AD_TYPE;
+    memcpy(ad + 2, pdu, len);
+    uint8_t slot = (mesh_gatt_rx_head + mesh_gatt_rx_count) %
+                   MESH_GATT_RX_QUEUE_SIZE;
+    memcpy(mesh_gatt_rx_queue[slot].data, ad, len + 2);
+    mesh_gatt_rx_queue[slot].len = (uint8_t)(len + 2);
+    mesh_gatt_rx_count++;
+    return 1;
+}
+
+// Call after a Network PDU has passed mesh authentication and its destination
+// is known, so the Proxy Filter can select the subscribed GATT clients.
+int BLE_MESH_GATT_PROXY_OFFER(const uint8_t *pdu, size_t len,
+                              uint16_t destination) {
+    return mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, pdu, len, destination);
+}
+
+int BLE_MESH_GATT_PROXY_OFFER_PDU(uint8_t type, const uint8_t *pdu,
+                                  size_t len, uint16_t destination) {
+    return mesh_gatt_proxy_offer(type, pdu, len, destination);
+}
+
 static void mesh_radio_init(void) {
     gap_hw_mesh_init();
     uint32_t value = (uint32_t)funSysTick64();
     seed(value ? value : 0x747AA32F);
+    mesh_gatt_proxy_set_rx_callback(mesh_proxy_gatt_receive, NULL);
 }
 
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
@@ -394,11 +436,19 @@ static int mesh_state_save_record(mesh_state_record *record) {
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
-    if (mesh_gap_conn_busy()) {
-        // One radio: connection windows take priority over Mesh advertising.
-        mesh_gap_conn_poll();
-        return 0;
+    mesh_gatt_poll();
+    int connection_busy = mesh_gap_conn_busy();
+    if (connection_busy) mesh_gap_conn_poll();
+    if (mesh_gatt_rx_count) {
+        uint8_t slot = mesh_gatt_rx_head;
+        if (*len < mesh_gatt_rx_queue[slot].len) return -1;
+        *len = mesh_gatt_rx_queue[slot].len;
+        memcpy(adv_data, mesh_gatt_rx_queue[slot].data, *len);
+        mesh_gatt_rx_head = (slot + 1) % MESH_GATT_RX_QUEUE_SIZE;
+        mesh_gatt_rx_count--;
+        return 1;
     }
+    if (connection_busy) return 0;
     uint32_t now = GET_MILLIS();
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE

@@ -43,7 +43,7 @@ The checklists below describe a practical legacy-feature target for this project
 | Connection acceptance and data exchange | [x] Single-link connection state and data path. |
 | Link control and connection updates | [x] Basic control procedures and parameter updates. |
 | Connection event timing | [ ] TODO: Verify timing and recovery on hardware. |
-| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, and opt-in nonbonding legacy Just Works SMP pairing; [ ] TODO: Add authenticated/LE Secure Connections pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, opt-in nonbonding legacy Just Works/Passkey Entry SMP pairing, and application authentication/key-size requirements; [ ] TODO: Add LE Secure Connections/OOB pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
@@ -56,7 +56,7 @@ The checklists below describe a practical legacy-feature target for this project
 | Initiate a connection | [x] Legacy connection request construction and scan-to-link transition. |
 | Connection data and control | [x] Uses the shared single-link connection engine. |
 | Connection event timing and lifecycle | [ ] TODO: Verify connection timing, failures, and recovery on hardware. |
-| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, and opt-in nonbonding legacy Just Works SMP pairing; [ ] TODO: Add authenticated/LE Secure Connections pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
+| Pairing, bonding, and link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, host key interfaces, opt-in nonbonding legacy Just Works/Passkey Entry SMP pairing, and application authentication/key-size requirements; [ ] TODO: Add LE Secure Connections/OOB pairing, persistent bond storage, a cryptographic random source, and hardware verification. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] TODO: Verify switching on hardware. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 

@@ -22,11 +22,13 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     AES_encrypt(in, out, &aes);
 }
 static uint8_t secure_random_available = 1, secure_random_seed, secure_random_disconnect;
+static uint8_t secure_random_passkey_fail, secure_random_passkey_reject;
 uint32_t BLE_GAP_CRITICAL_ENTER(void) { return 0; }
 void BLE_GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 static uint8_t secure_random_forced[12], secure_random_force;
 int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
-    if (!secure_random_available) return 0;
+    if (!secure_random_available || (len == 4 && secure_random_passkey_fail)) return 0;
+    if (len == 4 && secure_random_passkey_reject) { memset(out, 0xff, 4); return 1; }
     if (secure_random_disconnect) gap_connection_end();
     if (secure_random_force) { assert(len == 12); memcpy(out, secure_random_forced, 12); return 1; }
     for (size_t i = 0; i < len; i++) out[i] = secure_random_seed++;
@@ -1497,6 +1499,145 @@ static void test_smp_pairing(void) {
     gap_connection_end();
 }
 
+// Independent AES calculation with the user's TK, rather than assuming TK=0.
+static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uint8_t out[16]) {
+    uint8_t key[16] = {0}, p1[16], p2[16] = {0}, block[16], encrypted[16];
+    for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
+    p1[0] = gap_conn.initiator_type; p1[1] = gap_conn.responder_type;
+    memcpy(p1 + 2, gap_smp.request, 7); memcpy(p1 + 9, gap_smp.response, 7);
+    memcpy(p2, gap_conn.responder, 6); memcpy(p2 + 6, gap_conn.initiator, 6);
+    for (unsigned i = 0; i < 16; i++) block[15 - i] = random[i] ^ p1[i];
+    AES_KEY aes;
+    assert(AES_set_encrypt_key(key, 128, &aes) == 0);
+    AES_encrypt(block, encrypted, &aes);
+    for (unsigned i = 0; i < 16; i++) block[i] = encrypted[i] ^ p2[15 - i];
+    AES_encrypt(block, encrypted, &aes);
+    for (unsigned i = 0; i < 16; i++) out[i] = encrypted[15 - i];
+}
+
+static void test_passkey_pairing(void) {
+    assert(!mesh_gap_security_set(5, 0, 16));
+    assert(!mesh_gap_security_set(MESH_GAP_IO_NONE, 1, 16));
+    assert(!mesh_gap_security_set(2, 1, 6));
+    assert(!mesh_gap_passkey_reply(19655));
+    mesh_gap_pairing_set(1);
+    for (uint8_t central = 0; central < 2; central++) {
+        for (uint8_t local_io = 0; local_io < 5; local_io++) {
+            if (local_io == MESH_GAP_IO_NONE) continue;
+            for (uint8_t peer_io = 0; peer_io < 5; peer_io++) {
+                start_test_central_link(); gap_conn.central_role = central;
+                assert(mesh_gap_security_set(local_io, 1, 16));
+                assert(mesh_gap_pair());
+                uint8_t features[7] = {central ? 2 : 1, peer_io, 0, 4, 16, 0, 0};
+                receive_test_smp(features, 7, 0);
+                if (peer_io == MESH_GAP_IO_NONE || (local_io < 2 && peer_io < 2)) {
+                    assert(mesh_gap_pairing_status() == 3);
+                    gap_connection_end(); continue;
+                }
+                uint8_t input = local_io == 2 ||
+                    (local_io == 4 && (peer_io < 2 || (peer_io == 4 && !central)));
+                uint32_t passkey = 19655;
+                assert(mesh_gap_passkey(&passkey) == (input ? MESH_GAP_PASSKEY_INPUT : MESH_GAP_PASSKEY_DISPLAY));
+                assert(passkey <= 999999);
+                assert(!mesh_gap_authenticated() && !mesh_gap_key_size());
+                assert(!mesh_gap_security_set(0, 0, 7));
+                uint8_t peer_random[17] = {4}, confirm[17] = {3};
+                for (unsigned i = 1; i < 17; i++) peer_random[i] = (uint8_t)(0x80 + i);
+                test_passkey_confirm(passkey, peer_random + 1, confirm + 1);
+                // The Peripheral may receive a confirm while the user is typing.
+                if (input && !central) {
+                    receive_test_smp(confirm, 17, 0);
+                    assert(gap_smp.phase == GAP_SMP_PASSKEY && gap_smp.confirm_received);
+                }
+                if (input) {
+                    assert(!mesh_gap_passkey_reply(1000000));
+                    assert(mesh_gap_passkey_reply(passkey));
+                    mesh_gap_smp_poll();
+                    assert(!mesh_gap_passkey_reply(passkey));
+                }
+                if (!(input && !central)) receive_test_smp(confirm, 17, 0);
+                assert(gap_smp.phase == GAP_SMP_RANDOM);
+                uint8_t expected_key[16], s1_input[16], key[16] = {0};
+                memcpy(s1_input, central ? gap_smp.random : peer_random + 1, 8);
+                memcpy(s1_input + 8, central ? peer_random + 1 : gap_smp.random, 8);
+                for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
+                uint8_t be_input[16], be_key[16];
+                for (unsigned i = 0; i < 16; i++) be_input[i] = s1_input[15 - i];
+                AES_KEY aes; assert(AES_set_encrypt_key(key, 128, &aes) == 0);
+                AES_encrypt(be_input, be_key, &aes);
+                for (unsigned i = 0; i < 16; i++) expected_key[i] = be_key[15 - i];
+                receive_test_smp(peer_random, 17, 0);
+                assert(gap_smp.phase == GAP_SMP_ENCRYPT);
+                assert(!memcmp(expected_key, gap_smp.stk, 16));
+                for (unsigned i = 0; i < 16; i++) assert(!gap_smp.tk[i]);
+                gap_conn.tx_queued = 0;
+                mesh_gap_smp_poll();
+                if (!central) {
+                    gap_conn.tx_queued = 0;
+                    gap_security.phase = GAP_ENC_KEY_REQUEST;
+                    memset(gap_security.random, 0, 8); gap_security.ediv = 0;
+                    mesh_gap_smp_poll();
+                    assert(gap_smp.encryption_started);
+                }
+                gap_security.phase = 0; gap_security.status = 0;
+                gap_security.tx_enabled = gap_security.rx_enabled = 1;
+                mesh_gap_smp_poll();
+                assert(mesh_gap_authenticated() && mesh_gap_key_size() == 16);
+                assert(!mesh_gap_passkey(NULL));
+                gap_connection_end();
+                assert(!mesh_gap_authenticated() && !mesh_gap_key_size());
+            }
+        }
+    }
+    start_test_central_link(); gap_conn.central_role = 0;
+    assert(mesh_gap_security_set(2, 1, 16));
+    uint8_t features[7] = {1,0,0,4,8,0,0};
+    receive_test_smp(features, 7, 0); assert(gap_smp.status == 6);
+    gap_smp.tx_len = 0; features[4] = 16;
+    receive_test_smp(features, 7, 0);
+    assert(mesh_gap_pair_cancel() && gap_smp.status == 1 && !mesh_gap_passkey(NULL));
+    assert(!mesh_gap_pair_cancel());
+    gap_smp.tx_len = 0;
+    receive_test_smp(features, 7, 0);
+    assert(mesh_gap_passkey_reply(19655)); mesh_gap_smp_poll();
+    uint8_t wrong_confirm[17] = {3}, peer_random[17] = {4};
+    test_passkey_confirm(19656, peer_random + 1, wrong_confirm + 1);
+    receive_test_smp(wrong_confirm, 17, 0);
+    receive_test_smp(peer_random, 17, 0);
+    assert(gap_smp.status == 4 && !mesh_gap_authenticated());
+    gap_smp.tx_len = 0;
+    receive_test_smp(features, 7, 0);
+    now_ms = gap_smp.started_ms + 30000;
+    mesh_gap_smp_poll();
+    assert(gap_smp.blocked && !mesh_gap_passkey_reply(19655));
+    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.tk[i]);
+    gap_connection_end();
+    start_test_central_link(); gap_conn.central_role = 0;
+    assert(mesh_gap_security_set(0, 1, 16));
+    features[1] = 2;
+    secure_random_passkey_fail = 1;
+    receive_test_smp(features, 7, 0);
+    assert(gap_smp.status == 8 && !mesh_gap_passkey(NULL));
+    secure_random_passkey_fail = 0; gap_smp.tx_len = 0;
+    secure_random_passkey_reject = 1;
+    receive_test_smp(features, 7, 0);
+    assert(gap_smp.status == 8); // Bounded rejection sampling, no biased fallback.
+    secure_random_passkey_reject = 0; gap_smp.tx_len = 0;
+    secure_random_disconnect = 1;
+    receive_test_smp(features, 7, 0);
+    secure_random_disconnect = 0;
+    assert(!gap_conn.active);
+    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.random[i] && !gap_smp.tk[i]);
+    // A Peripheral's authentication request must also reach the Central's preq.
+    start_test_central_link(); assert(mesh_gap_security_set(0, 0, 7));
+    uint8_t request[2] = {11,4};
+    receive_test_smp(request, 2, 0);
+    assert(gap_smp.request[3] == 4 && gap_smp.tx[7] == 4);
+    gap_connection_end();
+    assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
+    mesh_gap_pairing_set(0);
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -1516,5 +1657,6 @@ int main(void) {
     test_phy_updates();
     test_link_encryption();
     test_smp_pairing();
+    test_passkey_pairing();
     return 0;
 }
