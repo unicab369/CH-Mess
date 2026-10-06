@@ -6,6 +6,19 @@
 #include <string.h>
 #include "ble_gap.h"
 
+// TODO for complete BLE GATT support:
+// - Wire mesh_gatt_poll(), the Proxy receive callback, and outgoing Proxy
+//   offers into the application and Mesh advertising bearer.
+// - Complete and harden ATT request validation, discovery, errors, and MTU
+//   handling; add long reads/writes, prepared writes, and indications if needed.
+// - Enforce attribute permissions and security through SMP and Link Layer
+//   encryption before exposing protected attributes.
+// - Add PB-GATT provisioning as a separate service if GATT provisioning is
+//   required; it is not provided by the Mesh Proxy Service.
+// - Add a GATT client only if this device must discover or use peer services.
+// - Verify Proxy filtering, SAR, notifications, disconnect cleanup, and ATT
+//   procedures against an independent BLE/GATT implementation and hardware.
+
 // Single-link ATT server for the Bluetooth Mesh Proxy Service. The application
 // must call mesh_gatt_poll() while servicing BLE connection events, register a
 // receive callback, and offer received advertising-bearer PDUs for forwarding.
@@ -79,6 +92,16 @@ void mesh_gatt_proxy_set_rx_callback(mesh_gatt_proxy_rx_fn callback,
                                       void *context) {
     mesh_gatt.proxy_rx_callback = callback;
     mesh_gatt.proxy_rx_context = context;
+}
+
+// Advertise the Mesh Proxy Service UUID as a connectable legacy Peripheral.
+int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
+    static const uint8_t data[] = {
+        2, 0x01, 0x06,             // General discoverable, BR/EDR not supported.
+        3, 0x03, 0x28, 0x18         // Complete 16-bit service UUID list: 0x1828.
+    };
+    return mesh_gap_connectable_advertising_start(data, sizeof(data),
+                                                   NULL, 0, interval_ms);
 }
 
 // Queue a Network/Beacon Proxy PDU for the subscribed client. Network PDUs

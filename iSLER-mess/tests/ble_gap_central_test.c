@@ -1367,6 +1367,136 @@ static void test_link_encryption(void) {
     assert(!gap_conn.active && mesh_gap_security_status() == 0x3d);
 }
 
+// Feed SMP through the shared RX slot, including fragmented L2CAP packets.
+static void receive_test_smp(const uint8_t *p, uint8_t len, uint8_t split) {
+    uint8_t frame[27] = {len, 0, 6, 0};
+    memcpy(frame + 4, p, len);
+    gap_conn.tx_queued = 0;
+    gap_conn.rx_llid = 2;
+    gap_conn.rx_len = split ? split : len + 4;
+    memcpy(gap_conn.rx_data, frame, gap_conn.rx_len);
+    gap_conn.rx_ready = 1;
+    mesh_gap_smp_poll();
+    if (split) {
+        assert(!gap_conn.rx_ready);
+        gap_conn.rx_llid = 1;
+        gap_conn.rx_len = len + 4 - split;
+        memcpy(gap_conn.rx_data, frame + split, gap_conn.rx_len);
+        gap_conn.rx_ready = 1;
+        mesh_gap_smp_poll();
+    }
+    assert(!gap_conn.rx_ready);
+}
+
+static void test_smp_pairing(void) {
+    start_test_central_link();
+    // Published Bluetooth c1 test vector, using exact on-air byte order.
+    uint8_t request[7] = {1,1,0,0,16,7,7}, response[7] = {2,3,0,0,8,0,5};
+    uint8_t ia[6] = {0xa6,0xa5,0xa4,0xa3,0xa2,0xa1};
+    uint8_t ra[6] = {0xb6,0xb5,0xb4,0xb3,0xb2,0xb1};
+    uint8_t random[16] = {0xe0,0x2e,0x70,0xc6,0x4e,0x27,0x88,0x63,
+                          0x0e,0x6f,0xad,0x56,0x21,0xd5,0x83,0x57};
+    uint8_t expected[16] = {0x86,0x3b,0xf1,0xbe,0xc5,0x4d,0xa7,0xd2,
+                            0xea,0x88,0x89,0x87,0xef,0x3f,0x1e,0x1e}, confirm[16];
+    memcpy(gap_smp.request, request, 7); memcpy(gap_smp.response, response, 7);
+    memcpy(gap_conn.initiator, ia, 6); memcpy(gap_conn.responder, ra, 6);
+    gap_conn.initiator_type = 1; gap_conn.responder_type = 0;
+    gap_smp_confirm(random, confirm);
+    assert(!memcmp(confirm, expected, 16));
+    uint8_t s1_input[16] = {0,0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,
+                            0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11};
+    uint8_t s1_expected[16] = {0x62,0xa0,0x6d,0x79,0xae,0x16,0x42,0x5b,
+                              0x9b,0xf4,0xb0,0xe8,0xf0,0xe1,0x1f,0x9a};
+    gap_smp_e(s1_input, confirm); assert(!memcmp(confirm, s1_expected, 16));
+    gap_connection_end();
+
+    for (uint8_t central = 0; central < 2; central++) {
+        start_test_central_link(); gap_conn.central_role = central;
+        mesh_gap_pairing_set(1);
+        assert(mesh_gap_pair());
+        uint8_t features[7] = {central ? 2 : 1, 3, 0, 0, central ? 16 : 7, 0, 0};
+        receive_test_smp(features, 7, 5);
+        assert(gap_smp.phase == GAP_SMP_CONFIRM);
+        uint8_t peer_random[17] = {4}, peer_confirm[17] = {3};
+        for (unsigned i = 1; i < 17; i++) peer_random[i] = (uint8_t)(0xb0 + i);
+        gap_smp_confirm(peer_random + 1, peer_confirm + 1);
+        receive_test_smp(peer_confirm, 17, 0);
+        assert(gap_smp.phase == GAP_SMP_RANDOM);
+        receive_test_smp(peer_random, 17, 9);
+        assert(gap_smp.phase == GAP_SMP_ENCRYPT);
+        for (unsigned i = gap_smp.key_size; i < 16; i++) assert(!gap_smp.stk[i]);
+        if (central) {
+            mesh_gap_smp_poll();
+            assert(gap_security.phase == GAP_ENC_QUEUED);
+            assert(!memcmp(gap_security.ltk, gap_smp.stk, 16));
+        } else {
+            gap_conn.tx_queued = 0;
+            mesh_gap_smp_poll(); // Queue our Pairing Random before ENC_REQ.
+            gap_conn.tx_queued = 0;
+            gap_security.phase = GAP_ENC_KEY_REQUEST;
+            memset(gap_security.random, 0, 8); gap_security.ediv = 0;
+            mesh_gap_smp_poll();
+            assert(gap_security.phase == GAP_ENC_START_QUEUED);
+        }
+        // The encryption engine is covered independently by test_link_encryption.
+        gap_security.phase = 0; gap_security.status = 0;
+        gap_security.tx_enabled = gap_security.rx_enabled = 1;
+        mesh_gap_smp_poll();
+        assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase);
+        for (unsigned i = 0; i < 16; i++) assert(!gap_smp.stk[i] && !gap_smp.random[i]);
+        gap_connection_end();
+    }
+    start_test_central_link(); gap_conn.central_role = 0;
+    mesh_gap_pairing_set(0);
+    uint8_t features[7] = {1,3,0,0,16,0,0};
+    receive_test_smp(features, 7, 0);
+    assert(gap_smp.status == 5 && gap_smp.tx[4] == 5);
+    gap_smp.tx_len = 0;
+    mesh_gap_pairing_set(1);
+    features[3] = 4;
+    receive_test_smp(features, 7, 0); assert(gap_smp.status == 3);
+    features[3] = 0; gap_smp.tx_len = 0;
+    secure_random_available = 0;
+    receive_test_smp(features, 7, 0); assert(gap_smp.status == 8);
+    secure_random_available = 1; gap_smp.tx_len = 0;
+    receive_test_smp(features, 7, 0);
+    uint8_t bad_confirm[17] = {3}, peer_random[17] = {4};
+    receive_test_smp(bad_confirm, 17, 0);
+    receive_test_smp(peer_random, 17, 0);
+    assert(gap_smp.status == 4 && gap_security.phase == GAP_ENC_IDLE);
+    gap_smp.tx_len = 0;
+    receive_test_smp(features, 7, 0);
+    now_ms = gap_smp.started_ms + 30000;
+    mesh_gap_smp_poll();
+    assert(gap_smp.blocked && !gap_smp.tx_len && !mesh_gap_pair());
+    receive_test_smp(features, 7, 0); assert(!gap_smp.tx_len);
+    gap_connection_end();
+    start_test_central_link();
+    assert(!gap_smp.blocked);
+    // ATT must remain available to the application/GATT consumer.
+    uint8_t att[5] = {1,0,4,0,0x0a}, out[27], llid;
+    gap_conn.rx_llid = 2; gap_conn.rx_len = 5;
+    memcpy(gap_conn.rx_data, att, 5); gap_conn.rx_ready = 1;
+    size_t len = sizeof(out);
+    assert(mesh_gap_receive_data(&llid, out, &len) == 1);
+    assert(llid == 2 && len == 5 && !memcmp(att, out, 5));
+    // SMP waits for all fragments of an application PDU to be queued.
+    mesh_gap_pairing_set(1);
+    uint8_t first[5] = {3,0,4,0,0x0a}, tail[2] = {0,0};
+    gap_conn.tx_queued = 0;
+    assert(mesh_gap_send_data(2, first, 5));
+    assert(mesh_gap_pair());
+    gap_conn.tx_queued = 0;
+    mesh_gap_smp_poll();
+    assert(gap_smp.tx_len && !gap_conn.tx_queued);
+    assert(mesh_gap_send_data(1, tail, 2));
+    gap_conn.tx_queued = 0;
+    mesh_gap_smp_poll();
+    assert(!gap_smp.tx_len && gap_conn.tx_queued && gap_conn.tx_data[2] == 6);
+    mesh_gap_pairing_set(0);
+    gap_connection_end();
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -1385,5 +1515,6 @@ int main(void) {
     test_channel_map_updates();
     test_phy_updates();
     test_link_encryption();
+    test_smp_pairing();
     return 0;
 }

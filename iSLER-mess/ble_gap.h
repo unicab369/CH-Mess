@@ -15,8 +15,8 @@
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Integrate SMP pairing, GAP security requirements, and persistent bond storage
-//   with mesh_gap_encrypt / mesh_gap_key_request / mesh_gap_key_reply.
+// - Add authenticated/LE Secure Connections pairing and persistent bond storage.
+//   Legacy Just Works is opt-in and nonbonding; add application security policy.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -133,9 +133,11 @@ static struct {
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t local_terminate_queued, local_terminate_pending;
     uint8_t local_terminate_reason, central_role, central_anchor_set;
+    uint8_t initiator_type, responder_type, initiator[6], responder[6];
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
+    uint16_t tx_l2cap_remaining;
     uint8_t tx_llid, tx_len, tx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t window_size, update_pending, update_window_active, update_window_size;
@@ -181,6 +183,19 @@ static struct {
     uint32_t started_ms;
 } gap_security;
 static uint32_t gap_security_generation;
+
+// Opt-in, nonbonding legacy Just Works pairing. It provides encryption without
+// MITM protection; applications requiring authentication must not enable it.
+enum { GAP_SMP_IDLE, GAP_SMP_RESPONSE, GAP_SMP_CONFIRM, GAP_SMP_RANDOM,
+       GAP_SMP_ENCRYPT, GAP_SMP_SECURITY_REQUEST };
+static uint8_t gap_pairing_enabled;
+static struct {
+    uint8_t phase, status, blocked, key_size, encryption_started;
+    uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
+    uint8_t tx[21], tx_len, rx[27], rx_len, rx_expected;
+    uint32_t started_ms;
+} gap_smp;
+static void mesh_gap_smp_poll(void);
 
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
@@ -232,6 +247,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.tx_sn = 0;
     gap_conn.tx_pending = 0;
     gap_conn.tx_queued = 0;
+    gap_conn.tx_l2cap_remaining = 0;
     gap_conn.rx_ready = 0;
     gap_conn.event_counter = 0;
     gap_conn.update_pending = 0;
@@ -263,6 +279,15 @@ static int gap_connection_accept(const uint8_t frame[36],
         size_t wipe_len = sizeof(gap_security);
         while (wipe_len--) *wipe_bytes++ = 0;
     }
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_smp;
+        size_t wipe_len = sizeof(gap_smp);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_conn.initiator_type = (frame[0] >> 6) & 1;
+    gap_conn.responder_type = (frame[0] >> 7) & 1;
+    memcpy(gap_conn.initiator, frame + 2, 6);
+    memcpy(gap_conn.responder, frame + 8, 6);
     gap_security_generation++;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
@@ -910,6 +935,13 @@ static void gap_connection_end(void) {
         while (wipe_len--) *wipe_bytes++ = 0;
     }
     gap_security.status = security_status;
+    uint8_t pairing_status = gap_smp.phase ? 0x08 : gap_smp.status;
+    {
+        volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_smp;
+        size_t wipe_len = sizeof(gap_smp);
+        while (wipe_len--) *wipe_bytes++ = 0;
+    }
+    gap_smp.status = pairing_status;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn_tx_frame);
         size_t wipe_len = sizeof(gap_conn_tx_frame);
@@ -2320,6 +2352,7 @@ int gap_hw_mesh_send_due(const uint8_t *mesh_ad, uint8_t mesh_len,
 // Give an established Peripheral connection its data-channel receive window.
 static void mesh_gap_conn_poll(void) {
     if (!gap_conn.active) return;
+    mesh_gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
         gap_security.phase != GAP_ENC_PAUSE_QUEUED && gap_security.phase != GAP_ENC_RESTART_QUEUED &&
@@ -2717,11 +2750,229 @@ int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         (llid != 1 && llid != 2) || !len ||
         len > gap_conn.data_length.tx_octets ||
         (len + 10 + (gap_security.tx_enabled ? 4 : 0)) * 8 > gap_conn.data_length.tx_time || (llid == 2 && len < 4)) return 0;
+    // SMP may only send between complete application L2CAP PDUs.
+    if (llid == 2) {
+        uint16_t pdu_len = (uint16_t)data[0] | (uint16_t)data[1] << 8;
+        gap_conn.tx_l2cap_remaining = (size_t)pdu_len + 4 > len ?
+            (uint16_t)((size_t)pdu_len + 4 - len) : 0;
+    } else {
+        gap_conn.tx_l2cap_remaining = len < gap_conn.tx_l2cap_remaining ?
+            (uint16_t)(gap_conn.tx_l2cap_remaining - len) : 0;
+    }
     gap_conn.tx_llid = llid;
     gap_conn.tx_len = (uint8_t)len;
     memcpy(gap_conn.tx_data, data, len);
     gap_conn.tx_queued = 1;
     return 1;
+}
+
+// SMP uses little-endian AES inputs/outputs, unlike the generic AES interface.
+static void gap_smp_e(const uint8_t input[16], uint8_t output[16]) {
+    uint8_t key[16] = {0}, block[16], encrypted[16];
+    for (unsigned i = 0; i < 16; i++) block[i] = input[15 - i];
+    AES_ENCRYPT_BLOCK(key, block, encrypted);
+    for (unsigned i = 0; i < 16; i++) output[i] = encrypted[15 - i];
+    volatile uint8_t *wipe = block;
+    for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+    wipe = encrypted;
+    for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+}
+
+// c1 authenticates the random against the exact on-air addresses and features.
+static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
+    uint8_t block[16];
+    block[0] = gap_conn.initiator_type;
+    block[1] = gap_conn.responder_type;
+    memcpy(block + 2, gap_smp.request, 7);
+    memcpy(block + 9, gap_smp.response, 7);
+    for (unsigned i = 0; i < 16; i++) block[i] ^= random[i];
+    gap_smp_e(block, confirm);
+    for (unsigned i = 0; i < 6; i++) {
+        confirm[i] ^= gap_conn.responder[i];
+        confirm[i + 6] ^= gap_conn.initiator[i];
+    }
+    gap_smp_e(confirm, confirm);
+    volatile uint8_t *wipe = block;
+    for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+}
+
+static void gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
+    gap_smp.tx[0] = len + 1; gap_smp.tx[1] = 0;
+    gap_smp.tx[2] = 6; gap_smp.tx[3] = 0;
+    gap_smp.tx[4] = opcode;
+    if (len) memcpy(gap_smp.tx + 5, data, len);
+    gap_smp.tx_len = len + 5;
+    gap_smp.started_ms = GET_MILLIS();
+}
+
+// Stop the procedure and erase temporary secrets on every success/failure path.
+static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
+    volatile uint8_t *wipe = gap_smp.random;
+    for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+    wipe = gap_smp.stk;
+    for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+    wipe = gap_smp.rx;
+    for (unsigned i = 0; i < sizeof(gap_smp.rx); i++) wipe[i] = 0;
+    wipe = gap_smp.tx;
+    for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
+    gap_smp.phase = GAP_SMP_IDLE;
+    gap_smp.status = status;
+    gap_smp.encryption_started = 0;
+    gap_smp.tx_len = gap_smp.rx_len = gap_smp.rx_expected = 0;
+    if (notify_peer) gap_smp_queue(5, &status, 1);
+}
+
+void mesh_gap_pairing_set(uint8_t enabled) {
+    gap_pairing_enabled = !!enabled;
+    if (!enabled && gap_smp.phase) gap_smp_finish(5, 1);
+}
+
+// Central starts pairing; Peripheral asks its Central to start it.
+int mesh_gap_pair(void) {
+    if (!gap_pairing_enabled || !mesh_gap_connected() || gap_smp.phase ||
+        gap_smp.blocked || gap_security.phase || mesh_gap_encrypted() || gap_smp.tx_len)
+        return 0;
+    gap_smp.status = MESH_GAP_CONNECTION_PENDING;
+    if (gap_conn.central_role) {
+        const uint8_t request[7] = {1, 3, 0, 0, 16, 0, 0};
+        memcpy(gap_smp.request, request, 7);
+        gap_smp_queue(1, request + 1, 6);
+        gap_smp.phase = GAP_SMP_RESPONSE;
+    } else {
+        uint8_t auth = 0;
+        gap_smp_queue(11, &auth, 1);
+        gap_smp.phase = GAP_SMP_SECURITY_REQUEST;
+    }
+    return 1;
+}
+
+uint8_t mesh_gap_pairing_status(void) { return gap_smp.status; }
+
+// Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
+// Called from connection polling and before an application takes an RX fragment.
+static void mesh_gap_smp_poll(void) {
+    if (!gap_conn.active) return;
+    if (gap_smp.phase && (uint32_t)(GET_MILLIS() - gap_smp.started_ms) >= 30000) {
+        gap_smp_finish(0x08, 0);
+        gap_smp.blocked = 1; // SMP cannot restart until a new physical link.
+    }
+    if (gap_smp.tx_len) {
+        if (gap_conn.tx_l2cap_remaining) return;
+        if (!mesh_gap_send_data(2, gap_smp.tx, gap_smp.tx_len)) return;
+        gap_smp.tx_len = 0;
+        volatile uint8_t *wipe = gap_smp.tx;
+        for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
+    }
+    if (gap_smp.phase == GAP_SMP_ENCRYPT) {
+        if (mesh_gap_encrypted()) { gap_smp_finish(0, 0); return; }
+        if (gap_smp.encryption_started && !gap_security.phase && gap_security.status) {
+            gap_smp_finish(8, 0); return;
+        }
+        if (gap_conn.central_role && !gap_smp.encryption_started && !gap_security.phase) {
+            uint8_t random[8] = {0};
+            if (!mesh_gap_encrypt(gap_smp.stk, random, 0)) {
+                gap_smp_finish(0x08, 1); return;
+            }
+            gap_smp.encryption_started = 1;
+        } else if (!gap_conn.central_role && mesh_gap_key_request(NULL, NULL)) {
+            uint8_t zero = (uint8_t)gap_security.ediv | (uint8_t)(gap_security.ediv >> 8);
+            for (unsigned i = 0; i < 8; i++) zero |= gap_security.random[i];
+            mesh_gap_key_reply(zero ? NULL : gap_smp.stk);
+            gap_smp.encryption_started = 1;
+            if (zero) { gap_smp_finish(0x08, 0); return; }
+        }
+    }
+    if (!gap_conn.rx_ready) return;
+    if (gap_conn.rx_llid == 2) {
+        gap_smp.rx_len = gap_smp.rx_expected = 0;
+        if (gap_conn.rx_len < 4 || gap_conn.rx_data[2] != 6 || gap_conn.rx_data[3]) return;
+        uint16_t len = (uint16_t)gap_conn.rx_data[0] | (uint16_t)gap_conn.rx_data[1] << 8;
+        if (!len || len > 23) {
+            gap_conn.rx_ready = 0;
+            if (!gap_smp.blocked) gap_smp_finish(0x0a, 1);
+            return;
+        }
+        gap_smp.rx_expected = (uint8_t)(len + 4);
+    } else if (!gap_smp.rx_expected) return;
+    uint8_t n = gap_conn.rx_len;
+    if ((unsigned)gap_smp.rx_len + n > gap_smp.rx_expected) {
+        gap_conn.rx_ready = 0;
+        if (!gap_smp.blocked) gap_smp_finish(0x0a, 1);
+        return;
+    }
+    memcpy(gap_smp.rx + gap_smp.rx_len, gap_conn.rx_data, n);
+    gap_smp.rx_len += n;
+    gap_conn.rx_ready = 0;
+    if (gap_smp.rx_len != gap_smp.rx_expected) return;
+    n = gap_smp.rx_len - 4;
+    gap_smp.rx_len = gap_smp.rx_expected = 0;
+    uint8_t *p = gap_smp.rx + 4, op = p[0];
+    if (gap_smp.blocked || !op || op > 14) return;
+    if (op == 5 && n == 2) { gap_smp_finish(p[1], 0); return; }
+    if (!gap_pairing_enabled) { gap_smp_finish(5, 1); return; }
+    if (op == 11 && n == 2 && gap_conn.central_role && !gap_smp.phase) {
+        if (p[1] & 4) gap_smp_finish(3, 1);
+        else mesh_gap_pair();
+        return;
+    }
+    uint8_t error = 0x0a;
+    if ((op == 1 && !gap_conn.central_role &&
+         (gap_smp.phase == GAP_SMP_IDLE || gap_smp.phase == GAP_SMP_SECURITY_REQUEST)) ||
+        (op == 2 && gap_conn.central_role && gap_smp.phase == GAP_SMP_RESPONSE)) {
+        if (n != 7 || p[1] > 4 || p[2] > 1 || (p[3] & 3) > 1 ||
+            p[4] < 7 || p[4] > 16) goto failed;
+        if (p[3] & 4) { error = 3; goto failed; }
+        if (p[2]) { error = 2; goto failed; }
+        if (op == 2 && (p[5] || p[6])) goto failed;
+        gap_smp.key_size = p[4];
+        uint32_t generation = gap_security_generation;
+        if (!BLE_GAP_RANDOM_SECURE_BYTES(gap_smp.random, 16)) { error = 8; goto failed; }
+        if (!gap_conn.active || generation != gap_security_generation) return;
+        gap_smp.status = MESH_GAP_CONNECTION_PENDING;
+        if (op == 1) {
+            memcpy(gap_smp.request, p, 7);
+            const uint8_t response[7] = {2, 3, 0, 0, 16, 0, 0};
+            memcpy(gap_smp.response, response, 7);
+            gap_smp_queue(2, response + 1, 6);
+        } else {
+            memcpy(gap_smp.response, p, 7);
+            uint8_t confirm[16];
+            gap_smp_confirm(gap_smp.random, confirm);
+            gap_smp_queue(3, confirm, 16);
+        }
+        gap_smp.phase = GAP_SMP_CONFIRM;
+        return;
+    }
+    if (op == 3 && n == 17 && gap_smp.phase == GAP_SMP_CONFIRM) {
+        memcpy(gap_smp.peer_confirm, p + 1, 16);
+        if (gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
+        else {
+            uint8_t confirm[16];
+            gap_smp_confirm(gap_smp.random, confirm);
+            gap_smp_queue(3, confirm, 16);
+        }
+        gap_smp.phase = GAP_SMP_RANDOM;
+        return;
+    }
+    if (op == 4 && n == 17 && gap_smp.phase == GAP_SMP_RANDOM) {
+        uint8_t confirm[16], block[16], difference = 0;
+        gap_smp_confirm(p + 1, confirm);
+        for (unsigned i = 0; i < 16; i++) difference |= confirm[i] ^ gap_smp.peer_confirm[i];
+        if (difference) { error = 4; goto failed; }
+        // s1 uses the low 64 bits of responder and initiator random values.
+        memcpy(block, gap_conn.central_role ? gap_smp.random : p + 1, 8);
+        memcpy(block + 8, gap_conn.central_role ? p + 1 : gap_smp.random, 8);
+        gap_smp_e(block, gap_smp.stk);
+        for (unsigned i = gap_smp.key_size; i < 16; i++) gap_smp.stk[i] = 0;
+        volatile uint8_t *wipe = block;
+        for (unsigned i = 0; i < 16; i++) wipe[i] = 0;
+        if (!gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
+        gap_smp.phase = GAP_SMP_ENCRYPT;
+        return;
+    }
+    if (op >= 6 && op != 11) error = 7; // Unsupported method/key distribution.
+failed:
+    gap_smp_finish(error, 1);
 }
 
 // Gracefully terminate the active Peripheral connection after sending the
@@ -2737,6 +2988,7 @@ int mesh_gap_disconnect(uint8_t reason) {
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
 int mesh_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
+    mesh_gap_smp_poll();
     if (!data || !len || !gap_conn.rx_ready) return 0;
     if (*len < gap_conn.rx_len) return -1;
     if (llid) *llid = gap_conn.rx_llid;
