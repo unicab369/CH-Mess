@@ -14,6 +14,8 @@ static uint8_t received_type;
 static uint8_t received_pdu[8];
 static size_t received_len;
 static uint32_t fake_now_ms;
+static uint8_t provisioning_received[16];
+static size_t provisioning_received_len;
 
 uint32_t GET_MILLIS(void) {
     return fake_now_ms;
@@ -26,6 +28,15 @@ static int capture_proxy_pdu(uint8_t type, const uint8_t *pdu, size_t len,
     received_len = len;
     assert(len <= sizeof(received_pdu));
     memcpy(received_pdu, pdu, len);
+    return 1;
+}
+
+static int capture_provisioning_pdu(const uint8_t *pdu, size_t len,
+                                    void *context) {
+    (void)context;
+    assert(len <= sizeof(provisioning_received));
+    memcpy(provisioning_received, pdu, len);
+    provisioning_received_len = len;
     return 1;
 }
 
@@ -172,15 +183,15 @@ static void test_proxy_sar(void) {
     mesh_gatt_proxy_set_rx_callback(capture_proxy_pdu, NULL);
     const uint8_t first[] = {0x40, 0xaa, 0xbb};
     const uint8_t last[] = {0xc0, 0xcc, 0xdd};
-    mesh_gatt_proxy_input(first, sizeof(first));
+    mesh_gatt_proxy_input(first, sizeof(first), 0);
     assert(mesh_gatt.proxy_rx_active && !received_len);
-    mesh_gatt_proxy_input(last, sizeof(last));
+    mesh_gatt_proxy_input(last, sizeof(last), 0);
     assert(!mesh_gatt.proxy_rx_active);
     assert(received_type == MESH_GATT_PROXY_NETWORK && received_len == 4);
     assert(!memcmp(received_pdu, (uint8_t[]){0xaa, 0xbb, 0xcc, 0xdd}, 4));
 
     uint8_t oversized[MESH_GATT_PROXY_PDU_MAX + 2] = {0x40};
-    mesh_gatt_proxy_input(oversized, sizeof(oversized));
+    mesh_gatt_proxy_input(oversized, sizeof(oversized), 0);
     assert(!mesh_gatt.proxy_rx_active && !mesh_gatt.proxy_rx_len);
 }
 
@@ -190,7 +201,7 @@ static void send_proxy_configuration(const uint8_t *configuration,
     assert(len <= MESH_GATT_PROXY_PDU_MAX);
     message[0] = MESH_GATT_PROXY_CONFIGURATION;
     memcpy(message + 1, configuration, len);
-    mesh_gatt_proxy_input(message, len + 1);
+    mesh_gatt_proxy_input(message, len + 1, 0);
 }
 
 static void test_proxy_configuration_and_filter(void) {
@@ -355,6 +366,45 @@ static void test_proxy_client_flow(void) {
     assert(mesh_gatt.tx_l2cap[8] == 0x5a);
 }
 
+static void test_pb_gatt_service(void) {
+    memset(&mesh_gatt, 0, sizeof(mesh_gatt));
+    mesh_gatt.connected = 1;
+    mesh_gatt.mtu = 23;
+    mesh_gatt_provisioning_set_rx_callback(capture_provisioning_pdu, NULL);
+
+    const uint8_t discover[] = {0x10, 1, 0, 12, 0, 0, 0x28};
+    assert(mesh_gatt_att_request(discover, sizeof(discover)));
+    assert(mesh_gatt.tx_l2cap[4] == 0x11 && mesh_gatt.tx_l2cap[5] == 6);
+    assert(mesh_gatt.tx_l2cap[6] == 1 && mesh_gatt.tx_l2cap[12] == 7);
+    clear_tx();
+
+    const uint8_t enable_pb_notifications[] = {0x12, 12, 0, 1, 0};
+    assert(mesh_gatt_att_request(enable_pb_notifications,
+                                 sizeof(enable_pb_notifications)));
+    assert(mesh_gatt.provisioning_cccd && !mesh_gatt.cccd);
+    clear_tx();
+
+    const uint8_t start[] = {0x43, 0xaa, 0xbb};
+    const uint8_t complete[] = {0xc3, 0xcc};
+    mesh_gatt_proxy_input(start, sizeof(start), 1);
+    assert(!provisioning_received_len && mesh_gatt.proxy_rx_active);
+    mesh_gatt_proxy_input(complete, sizeof(complete), 1);
+    assert(provisioning_received_len == 3);
+    assert(!memcmp(provisioning_received, (uint8_t[]){0xaa,0xbb,0xcc}, 3));
+
+    const uint8_t pdu[] = {1, 2, 3};
+    assert(mesh_gatt_provisioning_offer(pdu, sizeof(pdu)));
+    mesh_gatt_notify_poll();
+    assert(mesh_gatt.tx_l2cap[4] == 0x1b);
+    assert(mesh_gatt_u16(mesh_gatt.tx_l2cap + 5) ==
+           MESH_GATT_HANDLE_PROVISIONING_DATA_OUT);
+    assert(mesh_gatt.tx_l2cap[7] == MESH_GATT_PROXY_PROVISIONING);
+
+    clear_tx();
+    mesh_gatt.provisioning_cccd = 0;
+    assert(!mesh_gatt_provisioning_offer(pdu, sizeof(pdu)));
+}
+
 int main(void) {
     test_att_mtu_and_blob();
     test_att_discovery();
@@ -366,5 +416,6 @@ int main(void) {
     test_disconnect_reset();
     test_proxy_sar_timeout_disconnect();
     test_proxy_client_flow();
+    test_pb_gatt_service();
     return 0;
 }

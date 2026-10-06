@@ -11,7 +11,8 @@
 //   authentication and destination decoding, so Proxy Filter rules apply.
 // - Add link-security checks only for attributes whose policy requires them;
 //   the current Mesh Proxy attribute set has no protected attributes.
-// - Add PB-GATT as a separate service only if GATT provisioning is required.
+// - Connect the PB-GATT PDU callback to the provisioning state machine if
+//   provisioning over GATT is enabled by the application.
 // - Add a GATT client only if this device must discover or use peer services.
 // - Verify Proxy filtering, SAR, notifications, disconnect cleanup, and ATT
 //   procedures against an independent BLE/GATT implementation and hardware.
@@ -45,6 +46,9 @@
 #define MESH_GATT_PROXY_SERVICE_UUID 0x1828
 #define MESH_GATT_PROXY_DATA_IN_UUID 0x2ADD
 #define MESH_GATT_PROXY_DATA_OUT_UUID 0x2ADE
+#define MESH_GATT_PROVISIONING_SERVICE_UUID 0x1827
+#define MESH_GATT_PROVISIONING_DATA_IN_UUID 0x2ADB
+#define MESH_GATT_PROVISIONING_DATA_OUT_UUID 0x2ADC
 
 enum {
     MESH_GATT_PROXY_NETWORK = 0,
@@ -59,15 +63,25 @@ enum {
     MESH_GATT_HANDLE_DATA_IN = 3,
     MESH_GATT_HANDLE_DATA_OUT_DECL = 4,
     MESH_GATT_HANDLE_DATA_OUT = 5,
-    MESH_GATT_HANDLE_DATA_OUT_CCCD = 6
+    MESH_GATT_HANDLE_DATA_OUT_CCCD = 6,
+    MESH_GATT_HANDLE_PROVISIONING_SERVICE = 7,
+    MESH_GATT_HANDLE_PROVISIONING_DATA_IN_DECL = 8,
+    MESH_GATT_HANDLE_PROVISIONING_DATA_IN = 9,
+    MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_DECL = 10,
+    MESH_GATT_HANDLE_PROVISIONING_DATA_OUT = 11,
+    MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_CCCD = 12
 };
 
 typedef int (*mesh_gatt_proxy_rx_fn)(uint8_t type, const uint8_t *pdu,
                                       size_t len, void *context);
+typedef int (*mesh_gatt_provisioning_rx_fn)(const uint8_t *pdu, size_t len,
+                                             void *context);
 
 static struct {
-    uint8_t connected, cccd, mtu_exchanged, rx_active, rx_att_pending;
+    uint8_t connected, cccd, provisioning_cccd, mtu_exchanged;
+    uint8_t rx_active, rx_att_pending;
     uint8_t proxy_rx_active, proxy_rx_type, filter_type, filter_count;
+    uint8_t proxy_rx_service;
     uint16_t mtu, filter[MESH_GATT_PROXY_FILTER_SIZE];
     uint16_t l2cap_expected, l2cap_used, att_rx_len;
     uint32_t proxy_rx_started_ms, proxy_tx_started_ms;
@@ -87,6 +101,8 @@ static struct {
     uint8_t proxy_tx_head, proxy_tx_count;
     mesh_gatt_proxy_rx_fn proxy_rx_callback;
     void *proxy_rx_context;
+    mesh_gatt_provisioning_rx_fn provisioning_rx_callback;
+    void *provisioning_rx_context;
 } mesh_gatt;
 
 static uint16_t mesh_gatt_u16(const uint8_t *p) {
@@ -131,6 +147,27 @@ void mesh_gatt_proxy_set_rx_callback(mesh_gatt_proxy_rx_fn callback,
     mesh_gatt.proxy_rx_context = context;
 }
 
+// Register the application's PB-GATT receiver. The callback receives a full
+// reassembled Provisioning PDU, without the Proxy SAR/type header.
+void mesh_gatt_provisioning_set_rx_callback(
+    mesh_gatt_provisioning_rx_fn callback, void *context) {
+    mesh_gatt.provisioning_rx_callback = callback;
+    mesh_gatt.provisioning_rx_context = context;
+}
+
+// Advertise PB-GATT using Mesh Provisioning Service Data.
+int mesh_gatt_provisioning_advertising_start(const uint8_t device_uuid[16],
+                                             uint16_t oob_info,
+                                             uint16_t interval_ms) {
+    if (!device_uuid) return 0;
+    uint8_t data[25] = {2, 0x01, 0x06, 21, 0x16, 0x27, 0x18};
+    memcpy(data + 7, device_uuid, 16);
+    data[23] = (uint8_t)oob_info;
+    data[24] = (uint8_t)(oob_info >> 8);
+    return mesh_gap_connectable_advertising_start(data, sizeof(data),
+                                                   NULL, 0, interval_ms);
+}
+
 // Advertise the Mesh Proxy Service UUID as a connectable legacy Peripheral.
 int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
     static const uint8_t data[] = {
@@ -145,7 +182,8 @@ int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
 // pass the connection's whitelist or blacklist before they are queued.
 int mesh_gatt_proxy_offer(uint8_t type, const uint8_t *pdu, size_t len,
                           uint16_t destination) {
-    if (!pdu || !len || len > MESH_GATT_PROXY_PDU_MAX || type > 3 ||
+    if (!pdu || !len || len > MESH_GATT_PROXY_PDU_MAX ||
+        type > MESH_GATT_PROXY_CONFIGURATION ||
         !mesh_gatt.connected || !mesh_gatt.cccd ||
         mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE) return 0;
     if ((type == MESH_GATT_PROXY_NETWORK &&
@@ -197,7 +235,10 @@ static uint8_t mesh_gatt_read_value(uint16_t handle, uint8_t *value,
     static const uint8_t service[] = {0x28, 0x18};
     static const uint8_t data_in[] = {4, 3, 0, 0xdd, 0x2a};
     static const uint8_t data_out[] = {0x10, 5, 0, 0xde, 0x2a};
-    if (!handle || handle > 6) return 1;
+    static const uint8_t provisioning_service[] = {0x27, 0x18};
+    static const uint8_t provisioning_data_in[] = {4, 9, 0, 0xdb, 0x2a};
+    static const uint8_t provisioning_data_out[] = {0x10, 11, 0, 0xdc, 0x2a};
+    if (!handle || handle > MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_CCCD) return 1;
     const uint8_t *src;
     size_t size;
     if (handle == 1) { src = service; size = sizeof(service); }
@@ -205,6 +246,14 @@ static uint8_t mesh_gatt_read_value(uint16_t handle, uint8_t *value,
     else if (handle == 4) { src = data_out; size = sizeof(data_out); }
     else if (handle == 6) {
         value[0] = mesh_gatt.cccd;
+        value[1] = 0;
+        *len = 2;
+        return 0;
+    } else if (handle == 7) { src = provisioning_service; size = sizeof(provisioning_service); }
+    else if (handle == 8) { src = provisioning_data_in; size = sizeof(provisioning_data_in); }
+    else if (handle == 10) { src = provisioning_data_out; size = sizeof(provisioning_data_out); }
+    else if (handle == 12) {
+        value[0] = mesh_gatt.provisioning_cccd;
         value[1] = 0;
         *len = 2;
         return 0;
@@ -227,6 +276,12 @@ static int mesh_gatt_proxy_queue(uint8_t type, const uint8_t *data,
     memcpy(mesh_gatt.proxy_tx[slot].data, data, len);
     mesh_gatt.proxy_tx_count++;
     return 1;
+}
+
+// Queue a complete PB-GATT PDU for the subscribed provisioning client.
+int mesh_gatt_provisioning_offer(const uint8_t *pdu, size_t len) {
+    if (!mesh_gatt.connected || !mesh_gatt.provisioning_cccd) return 0;
+    return mesh_gatt_proxy_queue(MESH_GATT_PROXY_PROVISIONING, pdu, len);
 }
 
 static void mesh_gatt_proxy_configuration(const uint8_t *p, size_t len) {
@@ -261,11 +316,16 @@ static void mesh_gatt_proxy_deliver(uint8_t type, const uint8_t *pdu, size_t len
     }
 }
 
-static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
+static void mesh_gatt_proxy_input(const uint8_t *p, size_t len,
+                                  uint8_t provisioning_service) {
     if (!len) return;
     if (mesh_gatt_proxy_sar_timeout_poll()) return;
     uint8_t header = p[0], sar = header >> 6, type = header & 0x0f;
-    if ((header & 0x30) || type > 3) {
+    if ((header & 0x30) ||
+        (provisioning_service ? type != MESH_GATT_PROXY_PROVISIONING :
+                                type > MESH_GATT_PROXY_CONFIGURATION) ||
+        (mesh_gatt.proxy_rx_active &&
+         mesh_gatt.proxy_rx_service != provisioning_service)) {
         mesh_gatt.proxy_rx_active = 0;
         mesh_gatt.proxy_rx_len = 0;
         mesh_gatt.proxy_rx_started_ms = 0;
@@ -276,7 +336,13 @@ static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
         mesh_gatt.proxy_rx_active = 0;
         mesh_gatt.proxy_rx_len = 0;
         mesh_gatt.proxy_rx_started_ms = 0;
-        if (len) mesh_gatt_proxy_deliver(type, p, len);
+        if (len) {
+            if (provisioning_service) {
+                if (mesh_gatt.provisioning_rx_callback)
+                    mesh_gatt.provisioning_rx_callback(p, len,
+                        mesh_gatt.provisioning_rx_context);
+            } else mesh_gatt_proxy_deliver(type, p, len);
+        }
     } else if (sar == 1) {
         mesh_gatt.proxy_rx_active = 0;
         mesh_gatt.proxy_rx_len = 0;
@@ -285,6 +351,7 @@ static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
         memcpy(mesh_gatt.proxy_rx, p, len);
         mesh_gatt.proxy_rx_len = (uint16_t)len;
         mesh_gatt.proxy_rx_type = type;
+        mesh_gatt.proxy_rx_service = provisioning_service;
         mesh_gatt.proxy_rx_active = 1;
         mesh_gatt.proxy_rx_started_ms = GET_MILLIS();
     } else if (!len || !mesh_gatt.proxy_rx_active || type != mesh_gatt.proxy_rx_type ||
@@ -296,7 +363,12 @@ static void mesh_gatt_proxy_input(const uint8_t *p, size_t len) {
         memcpy(mesh_gatt.proxy_rx + mesh_gatt.proxy_rx_len, p, len);
         mesh_gatt.proxy_rx_len += (uint16_t)len;
         if (sar == 3) {
-            mesh_gatt_proxy_deliver(type, mesh_gatt.proxy_rx, mesh_gatt.proxy_rx_len);
+            if (provisioning_service) {
+                if (mesh_gatt.provisioning_rx_callback)
+                    mesh_gatt.provisioning_rx_callback(mesh_gatt.proxy_rx,
+                        mesh_gatt.proxy_rx_len, mesh_gatt.provisioning_rx_context);
+            } else mesh_gatt_proxy_deliver(type, mesh_gatt.proxy_rx,
+                                            mesh_gatt.proxy_rx_len);
             mesh_gatt.proxy_rx_active = 0;
             mesh_gatt.proxy_rx_len = 0;
             mesh_gatt.proxy_rx_started_ms = 0;
@@ -324,20 +396,33 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         if (len != 7) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
         if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
-        if (mesh_gatt_u16(p + 5) != 0x2800 || first > 1 || last < 1)
+        if (mesh_gatt_u16(p + 5) != 0x2800)
             return mesh_gatt_error(op, first, 0x0a);
-        const uint8_t rsp[8] = {0x11, 6, 1, 0, 6, 0, 0x28, 0x18};
-        return mesh_gatt_tx_att(rsp, sizeof(rsp));
+        out[0] = 0x11; out[1] = 6; n = 2;
+        const uint8_t services[][6] = {
+            {1,0,6,0,0x28,0x18}, {7,0,12,0,0x27,0x18}
+        };
+        for (size_t i = 0; i < 2 && n + 6 <= mesh_gatt.mtu; i++) {
+            uint16_t start = mesh_gatt_u16(services[i]);
+            if (start >= first && start <= last) {
+                memcpy(out + n, services[i], 6); n += 6;
+            }
+        }
+        if (n == 2) return mesh_gatt_error(op, first, 0x0a);
+        return mesh_gatt_tx_att(out, n);
     }
     if (op == 0x06) { // Find By Type Value: Mesh Proxy primary service.
         if (len != 9) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
         if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
-        if (mesh_gatt_u16(p + 5) != 0x2800 ||
-            mesh_gatt_u16(p + 7) != MESH_GATT_PROXY_SERVICE_UUID ||
-            first > 1 || last < 1)
+        uint16_t service = mesh_gatt_u16(p + 7);
+        uint16_t start = service == MESH_GATT_PROXY_SERVICE_UUID ? 1 :
+                         service == MESH_GATT_PROVISIONING_SERVICE_UUID ? 7 : 0;
+        if (mesh_gatt_u16(p + 5) != 0x2800 || !start ||
+            start < first || start > last)
             return mesh_gatt_error(op, first, 0x0a);
-        const uint8_t rsp[5] = {0x07, 1, 0, 6, 0};
+        uint8_t rsp[5] = {0x07, (uint8_t)start, (uint8_t)(start >> 8),
+                          (uint8_t)(start == 1 ? 6 : 12), 0};
         return mesh_gatt_tx_att(rsp, sizeof(rsp));
     }
     if (op == 0x08) { // Read By Type: Characteristic declarations only.
@@ -345,13 +430,15 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
         if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
         out[0] = 0x09; out[1] = 7; n = 2;
-        if (mesh_gatt_u16(p + 5) == 0x2803 && first <= 2 && last >= 2) {
-            const uint8_t e[7] = {2,0,4,3,0,0xdd,0x2a};
-            memcpy(out + n, e, sizeof(e)); n += sizeof(e);
-        }
-        if (mesh_gatt_u16(p + 5) == 0x2803 && first <= 4 && last >= 4) {
-            const uint8_t e[7] = {4,0,0x10,5,0,0xde,0x2a};
-            memcpy(out + n, e, sizeof(e)); n += sizeof(e);
+        static const uint8_t decls[][7] = {
+            {2,0,4,3,0,0xdd,0x2a}, {4,0,0x10,5,0,0xde,0x2a},
+            {8,0,4,9,0,0xdb,0x2a}, {10,0,0x10,11,0,0xdc,0x2a}
+        };
+        if (mesh_gatt_u16(p + 5) == 0x2803) for (size_t i = 0; i < 4; i++) {
+            uint16_t h = mesh_gatt_u16(decls[i]);
+            if (h >= first && h <= last && n + 7 <= mesh_gatt.mtu) {
+                memcpy(out + n, decls[i], 7); n += 7;
+            }
         }
         if (n == 2) return mesh_gatt_error(op, first, 0x0a);
         return mesh_gatt_tx_att(out, n);
@@ -360,14 +447,17 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
         if (len != 5) return mesh_gatt_error(op, 0, 0x04);
         uint16_t first = mesh_gatt_u16(p + 1), last = mesh_gatt_u16(p + 3);
         if (!first || first > last) return mesh_gatt_error(op, first, 0x01);
-        if (first > 6) return mesh_gatt_error(op, first, 0x0a);
+        if (first > 12) return mesh_gatt_error(op, first, 0x0a);
         out[0] = 0x05; out[1] = 1; n = 2;
         size_t max_entries = (mesh_gatt.mtu - 2) / 4;
-        for (uint16_t h = first; h <= last && h <= 6 && n + 4 <= mesh_gatt.mtu &&
+        for (uint16_t h = first; h <= last && h <= 12 && n + 4 <= mesh_gatt.mtu &&
              (n - 2) / 4 < max_entries; h++) {
-            uint16_t uuid = h == 1 ? 0x2800 : (h == 2 || h == 4) ? 0x2803 :
+            uint16_t uuid = (h == 1 || h == 7) ? 0x2800 :
+                (h == 2 || h == 4 || h == 8 || h == 10) ? 0x2803 :
                 h == 3 ? MESH_GATT_PROXY_DATA_IN_UUID :
-                h == 5 ? MESH_GATT_PROXY_DATA_OUT_UUID : 0x2902;
+                h == 5 ? MESH_GATT_PROXY_DATA_OUT_UUID :
+                h == 9 ? MESH_GATT_PROVISIONING_DATA_IN_UUID :
+                h == 11 ? MESH_GATT_PROVISIONING_DATA_OUT_UUID : 0x2902;
             out[n++] = (uint8_t)h; out[n++] = 0;
             out[n++] = (uint8_t)uuid; out[n++] = (uint8_t)(uuid >> 8);
         }
@@ -394,19 +484,22 @@ static int mesh_gatt_att_request(const uint8_t *p, size_t len) {
     if (op == 0x12) { // Write Request: CCCD only.
         if (len < 3) return mesh_gatt_error(op, 0, 0x04);
         uint16_t h = mesh_gatt_u16(p + 1);
-        if (h != 6)
-            return mesh_gatt_error(op, h, h >= 1 && h <= 5 ? 3 : 1);
+        if (h != 6 && h != 12)
+            return mesh_gatt_error(op, h, h >= 1 && h <= 11 ? 3 : 1);
         if (len != 5)
             return mesh_gatt_error(op, h, 0x0d);
         if (mesh_gatt_u16(p + 3) & ~1u)
             return mesh_gatt_error(op, h, 0x13);
-        mesh_gatt.cccd = p[3] & 1;
+        if (h == 6) mesh_gatt.cccd = p[3] & 1;
+        else mesh_gatt.provisioning_cccd = p[3] & 1;
         out[0] = 0x13;
         return mesh_gatt_tx_att(out, 1);
     }
-    if (op == 0x52) { // Write Command: Mesh Proxy Data In
-        if (len >= 3 && mesh_gatt_u16(p + 1) == 3)
-            mesh_gatt_proxy_input(p + 3, len - 3);
+    if (op == 0x52) { // Write Command: Proxy or PB-GATT Data In.
+        if (len >= 3 && (mesh_gatt_u16(p + 1) == 3 ||
+                         mesh_gatt_u16(p + 1) == 9))
+            mesh_gatt_proxy_input(p + 3, len - 3,
+                                  mesh_gatt_u16(p + 1) == 9);
         return 1;
     }
     if (op & 0x40) return 1;
@@ -441,8 +534,10 @@ static void mesh_gatt_receive_fragment(uint8_t llid, const uint8_t *p, size_t n)
 }
 
 static void mesh_gatt_notify_poll(void) {
-    if (!mesh_gatt.cccd || !mesh_gatt.proxy_tx_count || mesh_gatt.tx_active) return;
+    if (!mesh_gatt.proxy_tx_count || mesh_gatt.tx_active) return;
     uint8_t slot = mesh_gatt.proxy_tx_head;
+    uint8_t provisioning = mesh_gatt.proxy_tx[slot].type == MESH_GATT_PROXY_PROVISIONING;
+    if (provisioning ? !mesh_gatt.provisioning_cccd : !mesh_gatt.cccd) return;
     uint8_t att[MESH_GATT_ATT_MTU_MAX];
     size_t remaining = mesh_gatt.proxy_tx[slot].len - mesh_gatt.proxy_tx[slot].offset;
     size_t max_payload = mesh_gatt.mtu - 3, chunk;
@@ -456,7 +551,10 @@ static void mesh_gatt_notify_poll(void) {
     } else {
         sar = 2; chunk = max_payload - 1;
     }
-    att[0] = 0x1b; att[1] = 5; att[2] = 0;
+    uint16_t value_handle = provisioning ? MESH_GATT_HANDLE_PROVISIONING_DATA_OUT :
+                                           MESH_GATT_HANDLE_DATA_OUT;
+    att[0] = 0x1b; att[1] = (uint8_t)value_handle;
+    att[2] = (uint8_t)(value_handle >> 8);
     att[3] = (uint8_t)((sar << 6) | mesh_gatt.proxy_tx[slot].type);
     memcpy(att + 4, mesh_gatt.proxy_tx[slot].data + mesh_gatt.proxy_tx[slot].offset, chunk);
     if (!mesh_gatt_tx_att(att, chunk + 4)) return;
@@ -478,6 +576,7 @@ static void mesh_gatt_notify_poll(void) {
 static void mesh_gatt_link_reset(void) {
     mesh_gatt.connected = 0;
     mesh_gatt.cccd = 0;
+    mesh_gatt.provisioning_cccd = 0;
     mesh_gatt.mtu = 23;
     mesh_gatt.mtu_exchanged = 0;
     mesh_gatt.rx_active = 0;
