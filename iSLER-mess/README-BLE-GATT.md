@@ -31,7 +31,9 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 - [x] Add Read Multiple and Read Multiple Variable Length procedures.
 - [x] Add notification and indication APIs, CCCD subscription checks, and
   indication confirmation tracking.
-- [ ] Add an outbound event queue and indication timeout handling.
+- [x] Add a bounded outbound event queue and indication timeout handling;
+  applications poll it with a monotonic millisecond tick from their connection
+  event loop. Queue limits and timeout are configurable.
 - [x] Enforce configured encryption/authentication permissions in the core.
 - [ ] Feed the active GAP link's security state into the core.
 - [ ] Add service changed/database change handling if services can change

@@ -23,6 +23,15 @@
 #ifndef BLE_GATT_SERVER_PREPARE_BYTES
 #define BLE_GATT_SERVER_PREPARE_BYTES 256
 #endif
+#ifndef BLE_GATT_SERVER_EVENT_QUEUE_SIZE
+#define BLE_GATT_SERVER_EVENT_QUEUE_SIZE 8
+#endif
+#ifndef BLE_GATT_SERVER_EVENT_BYTES
+#define BLE_GATT_SERVER_EVENT_BYTES 512
+#endif
+#ifndef BLE_GATT_SERVER_INDICATION_TIMEOUT_MS
+#define BLE_GATT_SERVER_INDICATION_TIMEOUT_MS 30000u
+#endif
 #ifndef BLE_GATT_SERVER_MTU_MAX
 #define BLE_GATT_SERVER_MTU_MAX 517
 #endif
@@ -116,6 +125,11 @@ typedef struct {
 } ble_gatt_prepared_write;
 
 typedef struct {
+    uint16_t handle, len, data_offset;
+    uint8_t indication;
+} ble_gatt_server_event;
+
+typedef struct {
     ble_gatt_attribute attributes[BLE_GATT_SERVER_MAX_ATTRIBUTES];
     uint16_t count, next_handle, mtu, local_mtu;
     uint16_t value_used;
@@ -123,8 +137,12 @@ typedef struct {
     ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
     uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
     uint16_t prepare_count, prepare_used;
+    ble_gatt_server_event events[BLE_GATT_SERVER_EVENT_QUEUE_SIZE];
+    uint8_t event_data[BLE_GATT_SERVER_EVENT_BYTES];
+    uint16_t event_count, event_used;
     uint8_t mtu_exchanged, encrypted, authenticated, indication_pending;
     uint16_t indication_handle;
+    uint32_t indication_started_ms;
 } ble_gatt_server;
 
 static void ble_gatt_server_prepare_cancel_all(ble_gatt_server *server,
@@ -177,6 +195,9 @@ static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
     server->encrypted = server->authenticated = 0;
     server->indication_pending = 0;
     server->indication_handle = 0;
+    server->indication_started_ms = 0;
+    memset(server->event_data, 0, server->event_used);
+    server->event_count = server->event_used = 0;
     memset(server->prepare_data, 0, sizeof(server->prepare_data));
     server->prepare_count = server->prepare_used = 0;
     for (uint16_t i = 0; i < server->count; i++)
@@ -513,6 +534,70 @@ static inline int ble_gatt_server_indicate(ble_gatt_server *server,
     return 1;
 }
 
+// Queue an application value for asynchronous transmission. The application
+// calls poll_event from its connection event loop with a monotonic millisecond
+// tick; a timed-out indication is cleared and reported as -1.
+static inline int ble_gatt_server_queue_event(ble_gatt_server *server,
+    uint16_t value_handle, const uint8_t *value, uint16_t value_len,
+    int indication) {
+    if (!server || (value_len && !value)) return -1;
+    if (server->event_count >= BLE_GATT_SERVER_EVENT_QUEUE_SIZE ||
+        value_len > BLE_GATT_SERVER_EVENT_BYTES - server->event_used ||
+        value_len > BLE_GATT_SERVER_MTU_MAX - 3) return 0;
+    ble_gatt_attribute *characteristic =
+        ble_gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+    uint8_t bit = indication ? 2 : 1;
+    uint8_t property = indication ? BLE_GATT_PROP_INDICATE : BLE_GATT_PROP_NOTIFY;
+    if (!characteristic || !(characteristic->properties & property) ||
+        !cccd || !(cccd->cccd & bit) ||
+        ble_gatt_server_security_error(server, characteristic->permissions, 0))
+        return 0;
+    ble_gatt_server_event *event = &server->events[server->event_count++];
+    event->handle = value_handle;
+    event->len = value_len;
+    event->data_offset = server->event_used;
+    event->indication = indication != 0;
+    if (value_len) memcpy(server->event_data + server->event_used, value, value_len);
+    server->event_used += value_len;
+    return 1;
+}
+
+static inline int ble_gatt_server_poll_event(ble_gatt_server *server,
+    uint32_t now_ms, uint8_t *att, uint16_t att_capacity, uint16_t *att_len) {
+    if (!server || !att || !att_len) return -1;
+    *att_len = 0;
+    if (server->indication_pending) {
+        if ((uint32_t)(now_ms - server->indication_started_ms) <
+            BLE_GATT_SERVER_INDICATION_TIMEOUT_MS) return 0;
+        server->indication_pending = 0;
+        server->indication_handle = 0;
+        server->indication_started_ms = 0;
+        return -1;
+    }
+    if (!server->event_count) return 0;
+    ble_gatt_server_event event = server->events[0];
+    const uint8_t *value = server->event_data + event.data_offset;
+    int result = event.indication ?
+        ble_gatt_server_indicate(server, event.handle, value, event.len,
+                                  att, att_capacity, att_len) :
+        ble_gatt_server_notify(server, event.handle, value, event.len,
+                                att, att_capacity, att_len);
+    if (result <= 0) return result;
+    if (event.indication) server->indication_started_ms = now_ms;
+    server->event_count--;
+    if (event.len) {
+        memmove(server->event_data, server->event_data + event.len,
+                server->event_used - event.len);
+        server->event_used -= event.len;
+        for (uint16_t i = 0; i < server->event_count; i++)
+            server->events[i].data_offset -= event.len;
+    }
+    memmove(server->events, server->events + 1,
+            server->event_count * sizeof(server->events[0]));
+    return 1;
+}
+
 static void ble_gatt_server_prepare_clear(ble_gatt_server *server) {
     memset(server->prepare_data, 0, server->prepare_used);
     server->prepare_count = 0;
@@ -609,6 +694,7 @@ static inline int ble_gatt_server_att(ble_gatt_server *server, const uint8_t *re
         if (req_len != 1) goto invalid_pdu;
         server->indication_pending = 0;
         server->indication_handle = 0;
+        server->indication_started_ms = 0;
         return 0;
     }
     if (op == 0x02) { // Exchange MTU Request

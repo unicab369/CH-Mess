@@ -425,6 +425,30 @@ static void test_notifications_and_indications(void) {
     assert(att(&server, confirmation, sizeof(confirmation), response,
                &response_len) == 0);
     assert(!server.indication_pending);
+
+    assert(ble_gatt_server_queue_event(&server, notify, event, sizeof(event), 0));
+    assert(ble_gatt_server_poll_event(&server, 100, response, sizeof(response),
+        &response_len) == 1);
+    assert(response[0] == 0x1b && server.event_count == 0);
+    assert(ble_gatt_server_queue_event(&server, indicate, event,
+        sizeof(event), 1));
+    assert(ble_gatt_server_poll_event(&server, 0xfffffff0u, response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x1d && server.indication_pending);
+    assert(ble_gatt_server_poll_event(&server, 0xfffffff0u + 1000u, response,
+        sizeof(response), &response_len) == 0);
+    assert(server.indication_pending);
+    assert(ble_gatt_server_poll_event(&server,
+        0xfffffff0u + BLE_GATT_SERVER_INDICATION_TIMEOUT_MS, response,
+        sizeof(response), &response_len) == -1);
+    assert(!server.indication_pending);
+    assert(ble_gatt_server_queue_event(&server, indicate, event,
+        sizeof(event), 1));
+    assert(ble_gatt_server_poll_event(&server, 5000, response, sizeof(response),
+        &response_len) == 1);
+    assert(att(&server, confirmation, sizeof(confirmation), response,
+               &response_len) == 0);
+    assert(!server.indication_pending && server.indication_started_ms == 0);
 }
 
 static void test_prepare_execute_writes(void) {

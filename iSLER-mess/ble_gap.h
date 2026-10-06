@@ -10,12 +10,12 @@
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
-// - Provide a cryptographic random source and verify encrypted links on hardware.
+// - Platform integration: provide secure entropy and durable bond storage;
+//   verify encrypted links and restored bonds on hardware.
 // - Later: Add LE Coded PHY where supported by the radio adapter.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Add durable platform bond storage and verify restored bonds on hardware.
 // - Verify Secure Connections OOB exchange and restored bonds on hardware.
 //   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
 // - Add extended/periodic advertising and synchronization where supported by
