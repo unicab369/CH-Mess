@@ -46,7 +46,7 @@ The checklists below describe the GAP features in this project. `[x]` means code
 | Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] Hardware TODO: Verify encrypted links. |
 | Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
 | LE Secure Connections | [x] Opt-in Just Works, Numeric Comparison, 20-round Passkey Entry, OOB authentication data, and LTK bonding with P-256 public-key exchange and DHKey checks; [ ] Hardware TODO: Verify OOB exchange, pairing, and restored bonds. |
-| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. [ ] Platform TODO: connect these hooks to reserved persistent storage and a cryptographic entropy source. |
+| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. The application supplies the platform adapters when these features are enabled. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] Hardware TODO: Verify switching. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
@@ -62,24 +62,23 @@ The checklists below describe the GAP features in this project. `[x]` means code
 | Link encryption | [x] Link Layer encryption start, pause/key refresh, AES-CCM, and host key interfaces; [ ] Hardware TODO: Verify encrypted links. |
 | Legacy pairing | [x] Opt-in Just Works and Passkey Entry, application authentication/key-size requirements, and legacy bond exchange. |
 | LE Secure Connections | [x] Opt-in Just Works, Numeric Comparison, 20-round Passkey Entry, OOB authentication data, and LTK bonding with P-256 public-key exchange and DHKey checks; [ ] Hardware TODO: Verify OOB exchange, pairing, and restored bonds. |
-| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. [ ] Platform TODO: connect these hooks to reserved persistent storage and a cryptographic entropy source. |
+| Bond storage and secure randomness | [x] GAP bond load/save/delete and secure-random interfaces; pairing fails when required support is unavailable. The application supplies the platform adapters when these features are enabled. |
 | PHY updates | [x] LE 1M/2M negotiation with independent transmit/receive rates on supported radios; [ ] Hardware TODO: Verify switching. LE Coded PHY remains optional. |
 | Multiple simultaneous connections | [ ] TODO: Add if required; current implementation handles one link. |
 
 Privacy procedures and pairing span roles and other BLE layers. Hardware TODOs remain for target-device verification; completed code is not a Bluetooth qualification.
 
-## Platform integration still required
+## Platform adapter interfaces
 
-The GAP core exposes `BLE_GAP_RANDOM_SECURE_BYTES` and `BLE_GAP_BOND_LOAD`,
-`BLE_GAP_BOND_SAVE`, and `BLE_GAP_BOND_DELETE`. The default adapters deliberately
-report these services unavailable, so secure pairing and bonding stay disabled
-until the application supplies them. The current CH32 adapter has no cryptographic
-random source, and its two reserved flash sectors are already used as alternating
-Mesh state records. Do not store bonds in those sectors or use the general-purpose
-`rand()` output for security; choose a secure entropy source and a separate,
-reserved bond-storage region in the platform integration.
+The platform implements `BLE_GAP_RANDOM_SECURE_BYTES` to provide cryptographic
+entropy, and `BLE_GAP_BOND_LOAD`, `BLE_GAP_BOND_SAVE`, and
+`BLE_GAP_BOND_DELETE` to operate on whole `mesh_gap_bond` records. The platform
+chooses storage reserved for bonds and separate from other persistent data.
+Missing hooks fail closed.
 
-After that integration, verify pairing, encrypted links, and bond restoration on
-hardware. Optional extended/periodic advertising and multiple simultaneous links
-remain product-dependent features rather than requirements for the current
-single-link legacy target.
+The current CH32 adapter has no cryptographic random source, and its two flash
+sectors are used as alternating Mesh state records. Do not use `rand()` for
+security or place bonds in those sectors. Pairing, encrypted links, and bond
+restoration still need hardware verification. Optional extended/periodic
+advertising and multiple simultaneous links remain product-dependent features,
+not requirements for the current single-link legacy target.

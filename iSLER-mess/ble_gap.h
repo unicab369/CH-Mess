@@ -10,8 +10,7 @@
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
-// - Platform integration: provide secure entropy and durable bond storage;
-//   verify encrypted links and restored bonds on hardware.
+// - Verify encrypted links and restored bonds on hardware.
 // - Later: Add LE Coded PHY where supported by the radio adapter.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
@@ -87,8 +86,9 @@ void BLE_GAP_HW_PACKET_READY(void);
 void BLE_GAP_HW_PACKET_CLEAR(void);
 uint8_t BLE_GAP_HW_RANDOM_JITTER(void);
 void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
-// Security randomness must be cryptographic; return 0 if unavailable. Never use
-// the advertising jitter PRNG here. These hooks may run in the RX interrupt.
+// Platform secure-entropy interface: fill all requested bytes with
+// cryptographic randomness, or return 0 when unavailable. Never use the
+// advertising jitter PRNG here. This hook may run in the RX interrupt.
 int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 // Save/restore interrupt state around foreground key-state updates.
 uint32_t BLE_GAP_CRITICAL_ENTER(void);
@@ -144,10 +144,11 @@ static int mesh_gap_bond_valid(const mesh_gap_bond *bond) {
     return 1;
 }
 
-// Implement these in the platform adapter. Reads and writes address whole
-// records; a write must leave either the old or new valid record after reset.
-// LOAD returns 1 for a record, 0 for an empty slot, or -1 on storage failure.
-// SAVE and DELETE return nonzero only after the operation is durable.
+// Platform bond-storage interfaces. The platform chooses the reserved storage
+// region and implements these whole-record operations. SAVE must leave either
+// the old or new valid record after reset. LOAD returns 1 for a record, 0 for
+// an empty slot, or -1 on storage failure. SAVE and DELETE return nonzero only
+// after the operation is durable.
 // Weak references let a GAP-only build omit bond storage and fail closed.
 #if defined(__GNUC__)
 int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) __attribute__((weak));
@@ -158,6 +159,7 @@ int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond);
 int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond);
 int BLE_GAP_BOND_DELETE(uint8_t slot);
 #endif
+
 int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
                       mesh_gap_bond *out);
 int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);

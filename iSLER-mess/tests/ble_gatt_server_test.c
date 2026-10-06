@@ -46,6 +46,25 @@ typedef struct {
     unsigned commits, cancels;
 } transaction_state;
 
+typedef struct {
+    uint8_t value[22];
+    uint8_t over_report;
+} bounded_read_state;
+
+static uint8_t bounded_read(void *context, uint16_t offset, uint8_t *out,
+                            uint16_t *inout_len) {
+    bounded_read_state *state = context;
+    if (offset > sizeof(state->value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (state->over_report) {
+        *inout_len = (uint16_t)(*inout_len + 1);
+        return 0;
+    }
+    uint16_t available = (uint16_t)(sizeof(state->value) - offset);
+    if (*inout_len > available) *inout_len = available;
+    if (*inout_len) memcpy(out, state->value + offset, *inout_len);
+    return 0;
+}
+
 static uint8_t transaction_prepare(void *context, uint16_t offset,
                                   const uint8_t *value, uint16_t len) {
     transaction_state *state = context;
@@ -142,6 +161,44 @@ static void test_att_mtu_and_reads(void) {
     assert(att(&server, read_missing, sizeof(read_missing), response,
                &response_len) == 1);
     assert(response[0] == 0x01 && response[4] == BLE_GATT_ATT_ERR_INVALID_HANDLE);
+}
+
+static void test_read_callback_boundaries(void) {
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 23);
+    ble_gatt_uuid service_uuid = uuid16(0x180f), value_uuid = uuid16(0xfff3);
+    uint16_t service, value_handle;
+    bounded_read_state state = {{0}, 0};
+    for (uint8_t i = 0; i < sizeof(state.value); i++) state.value[i] = i;
+    assert(ble_gatt_server_add_service(&server, &service_uuid, 1, &service));
+    assert(ble_gatt_server_add_attribute(&server, &value_uuid,
+        BLE_GATT_PERM_READ, NULL, 0, 0, bounded_read, NULL, &state,
+        &value_handle));
+    uint8_t response[517];
+    uint16_t response_len;
+
+    const uint8_t read[] = {0x0a, (uint8_t)value_handle, 0};
+    assert(att(&server, read, sizeof(read), response, &response_len) == 1);
+    assert(response_len == 23 && response[0] == 0x0b);
+    assert(!memcmp(response + 1, state.value, sizeof(state.value)));
+
+    uint8_t at_end[] = {0x0c, (uint8_t)value_handle, 0, 22, 0};
+    assert(att(&server, at_end, sizeof(at_end), response, &response_len) == 1);
+    assert(response_len == 1 && response[0] == 0x0d);
+    uint8_t past_end[] = {0x0c, (uint8_t)value_handle, 0, 23, 0};
+    assert(att(&server, past_end, sizeof(past_end), response,
+               &response_len) == 1);
+    assert(response[0] == 0x01 &&
+           response[4] == BLE_GATT_ATT_ERR_INVALID_OFFSET);
+    const uint8_t malformed_blob[] = {0x0c, (uint8_t)value_handle, 0, 0};
+    assert(att(&server, malformed_blob, sizeof(malformed_blob), response,
+               &response_len) == 1);
+    assert(response[0] == 0x01 && response[4] == BLE_GATT_ATT_ERR_INVALID_PDU);
+
+    state.over_report = 1;
+    assert(att(&server, read, sizeof(read), response, &response_len) == 1);
+    assert(response[0] == 0x01 &&
+           response[4] == BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
 }
 
 static void test_discovery(void) {
@@ -588,6 +645,7 @@ static void test_transactional_prepare_callbacks(void) {
 int main(void) {
     test_database_registration_and_handles();
     test_att_mtu_and_reads();
+    test_read_callback_boundaries();
     test_discovery();
     test_128_bit_uuids();
     test_writes_cccd_and_permissions();

@@ -15,8 +15,8 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 - [x] Add focused tests for database registration, handle assignment, UUID
   widths, callbacks, permission errors, and every implemented ATT procedure.
-- [ ] Extend malformed/boundary testing, especially callbacks that report
-  invalid lengths and reads near configured limits.
+- [x] Extend malformed/boundary testing for callbacks that over-report output,
+  maximum-MTU reads, exact-end and past-end offsets, and malformed Read Blob.
 - [x] Set initial configurable limits: 64 attributes, 256 bytes per stored
   value, and a 512-byte shared static-value pool.
 
@@ -41,11 +41,15 @@ and ATT handling for MTU exchange, discovery, reads, writes, and errors.
 
 ### 3. Connect the generic server to the BLE transport
 
-- [ ] Route received ATT PDUs through the generic server core while preserving
-  the existing L2CAP and Link Layer fragment handling.
-- [ ] Keep transport state (connection, MTU, TX/RX fragments) separate from
-  attribute database and application service state.
-- [ ] Test disconnect/reconnect behavior and multiple sequential ATT requests.
+- [x] Add a single-link L2CAP/ATT transport adapter. It reassembles CID 4,
+  dispatches complete ATT PDUs, and fragments responses through platform
+  send/receive callbacks; a convenience initializer binds the existing GAP API.
+- [ ] Call the transport poller from the application connection event loop and
+  verify it with the actual GAP radio path.
+- [x] Keep transport state (connection, L2CAP reassembly, and TX fragments)
+  separate from the attribute database and application service state.
+- [x] Test disconnect/reconnect cleanup and multiple sequential ATT requests
+  through simulated Link Layer fragmentation.
 
 ### 4. Move Mesh services onto the generic server
 
