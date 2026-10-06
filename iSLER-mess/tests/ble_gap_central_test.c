@@ -6,7 +6,8 @@
 #include "../ble_gap.h"
 
 static uint32_t now_ms;
-static uint8_t rx_frame[40], random_seed;
+static uint16_t radio_data_max = MESH_GAP_CONN_DATA_MAX;
+static uint8_t rx_frame[2 + (MESH_GAP_CONN_DATA_MAX > 37 ? MESH_GAP_CONN_DATA_MAX : 37)], random_seed;
 static const uint8_t *tx_buffer;
 static int link_tx_count, aes_count;
 static uint8_t forced_random[6], force_random;
@@ -18,6 +19,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     AES_encrypt(in, out, &aes);
 }
 const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return rx_frame; }
+uint16_t BLE_GAP_HW_DATA_MAX(void) { return radio_data_max; }
 int8_t BLE_GAP_HW_RSSI(void) { return -40; }
 uint64_t BLE_GAP_HW_TICKS(void) { return (uint64_t)now_ms * 1000; }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
@@ -763,6 +765,125 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn.active && mesh_gap_connection_status() == 0x22);
 }
 
+// Test real wire fields, asymmetric peer limits, collisions and LL retries.
+static void test_data_length(void) {
+    const uint16_t capacity = MESH_GAP_CONN_DATA_MAX;
+    uint8_t limits[8] = {251, 0, 0x48, 0x08, 251, 0, 0x48, 0x08};
+    uint8_t data[MESH_GAP_CONN_DATA_MAX];
+    memset(data, 0xa5, sizeof(data));
+    start_test_central_link();
+    mesh_gap_data_length state = mesh_gap_data_length_get();
+    assert(state.tx_octets == 27 && state.rx_octets == 27 && state.tx_time == 328);
+    assert(!mesh_gap_data_length_set(26));
+    assert(!mesh_gap_data_length_set(capacity + 1));
+    assert(!mesh_gap_send_data(1, data, 28));
+    assert(mesh_gap_data_length_set(capacity));
+    assert(!mesh_gap_connection_request(48, 60, 1, 300));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x14 && gap_conn_tx_frame[1] == 9);
+    assert(gap_conn_tx_frame[3] == capacity && gap_conn_tx_frame[7] == capacity);
+    uint16_t duration = (uint16_t)gap_conn_tx_frame[4] << 8 | gap_conn_tx_frame[3];
+    assert(duration == capacity);
+    duration = (uint16_t)gap_conn_tx_frame[6] << 8 | gap_conn_tx_frame[5];
+    assert(duration == (capacity + 14) * 8);
+    receive_test_link_packet(0);
+    assert(gap_conn_tx_frame[2] == 0x14 && gap_conn.length_pending);
+    // Simultaneous requests are answered while our own response remains pending.
+    receive_test_control(0x14, limits, 8);
+    assert(gap_conn_tx_frame[2] == 0x15 && gap_conn.length_pending);
+    receive_test_control(0x15, limits, 8);
+    assert(mesh_gap_data_length_status() == 0);
+    state = mesh_gap_data_length_get();
+    assert(state.tx_octets == capacity && state.rx_octets == capacity);
+    assert(mesh_gap_send_data(1, data, capacity));
+    // A shrink leaves the already queued fragment intact.
+    limits[0] = 27; limits[1] = 0;
+    limits[2] = 0x48; limits[3] = 0x01;
+    receive_test_control(0x14, limits, 8);
+    assert(gap_conn.tx_queued && gap_conn.tx_len == capacity);
+    assert(mesh_gap_data_length_get().tx_octets == 27);
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[1] == capacity);
+    receive_test_link_packet(1);
+    assert(!mesh_gap_send_data(1, data, 28));
+    // Receive a full negotiated fragment, including >27-byte configured builds.
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 1 | (gap_conn.expected_rx_sn << 3) | ((gap_conn.tx_sn ^ 1) << 2);
+    rx_frame[1] = capacity;
+    memcpy(rx_frame + 2, data, capacity);
+    gap_conn.rx_armed = 1;
+    gap_hw_mesh_received();
+    uint8_t llid;
+    size_t received_len = sizeof(data);
+    assert(mesh_gap_receive_data(&llid, data, &received_len) == 1);
+    assert(received_len == capacity && llid == 1);
+    // Time limits constrain data even when the peer allows more octets.
+    limits[0] = 251;
+    receive_test_control(0x14, limits, 8);
+    assert(mesh_gap_data_length_get().tx_time == 328);
+    if (capacity > 31) {
+        assert(mesh_gap_send_data(1, data, 31));
+        receive_test_link_packet(1);
+        receive_test_link_packet(1);
+        assert(!mesh_gap_send_data(1, data, 32));
+    }
+    // An unsolicited response must not change the negotiated parameters.
+    limits[4] = 27;
+    receive_test_control(0x15, limits, 8);
+    assert(mesh_gap_data_length_get().rx_octets == capacity);
+    limits[0] = 26;
+    receive_test_control(0x14, limits, 8);
+    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    gap_connection_end();
+
+    start_test_central_link();
+    assert(mesh_gap_data_length_get().tx_octets == 27);
+    assert(mesh_gap_data_length_set(capacity));
+    receive_test_link_packet(1);
+    receive_test_control(0x07, (uint8_t[]){0x14}, 1);
+    assert(!gap_conn.length_pending && mesh_gap_data_length_status() == 0x1a);
+    assert(mesh_gap_data_length_set(capacity));
+    receive_test_link_packet(1);
+    receive_test_control(0x11, (uint8_t[]){0x14, 0x1e}, 2);
+    assert(mesh_gap_data_length_status() == 0x1e);
+    gap_connection_end();
+
+    // Peripheral receives and initiates the same data length procedure.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    limits[0] = limits[4] = 251;
+    limits[2] = limits[6] = 0x48; limits[3] = limits[7] = 0x08;
+    receive_test_control(0x14, limits, 8);
+    assert(gap_conn_tx_frame[2] == 0x15);
+    assert(mesh_gap_data_length_set(capacity));
+    receive_test_link_packet(1);
+    assert(gap_conn_tx_frame[2] == 0x14);
+    receive_test_control(0x15, limits, 8);
+    assert(mesh_gap_data_length_status() == 0);
+    gap_connection_end();
+
+    start_test_central_link();
+    gap_conn.features_known = 1; gap_conn.peer_features = 0x0e;
+    assert(!mesh_gap_data_length_set(capacity));
+    assert(mesh_gap_data_length_status() == 0x1a);
+    gap_conn.features_known = 0;
+    assert(mesh_gap_data_length_set(capacity));
+    receive_test_link_packet(1);
+    now_ms = gap_conn.length_started_ms + 40000;
+    gap_conn.last_rx_ms = now_ms;
+    mesh_gap_conn_poll();
+    assert(!gap_conn.active && mesh_gap_data_length_status() == 0x22);
+
+    // A smaller hardware capacity overrides a larger configured buffer.
+    radio_data_max = 27;
+    start_test_central_link();
+    assert(!mesh_gap_data_length_set(28));
+    receive_test_control(0x14, limits, 8);
+    assert(gap_conn_tx_frame[3] == 27 && mesh_gap_data_length_get().rx_octets == 27);
+    gap_connection_end();
+    radio_data_max = MESH_GAP_CONN_DATA_MAX;
+}
+
 int main(void) {
     test_access_address_rules();
     test_connect_request();
@@ -777,5 +898,6 @@ int main(void) {
     test_nonresolvable_private_addresses();
     test_connection_timing_updates();
     test_connection_parameter_requests();
+    test_data_length();
     return 0;
 }

@@ -10,7 +10,7 @@
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
-// - Add Link Layer encryption, data length negotiation, and PHY updates
+// - Add Link Layer encryption and PHY updates
 //   where supported.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation and identity filters on hardware.
@@ -19,7 +19,12 @@
 //   the target controller, with tests for each implemented procedure.
 
 #define MESH_GAP_ADV_DATA_MAX 31
+#ifndef MESH_GAP_CONN_DATA_MAX
 #define MESH_GAP_CONN_DATA_MAX 27
+#endif
+#if MESH_GAP_CONN_DATA_MAX < 27 || MESH_GAP_CONN_DATA_MAX > 251
+#error "MESH_GAP_CONN_DATA_MAX must be between 27 and 251"
+#endif
 #define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
 #define GAP_SCAN_REPORT_COUNT 4
 #define GAP_SCAN_SEEN_COUNT 4
@@ -37,8 +42,8 @@
 #define MESH_GAP_PRIVACY_NETWORK 0
 #define MESH_GAP_PRIVACY_DEVICE 1
 #define MESH_GAP_CONNECTION_PENDING 0xff
-// Connection parameter requests, extended reject, Peripheral feature exchange.
-#define GAP_LL_FEATURES 0x0e
+// Connection parameter requests, extended reject, Peripheral feature exchange, DLE.
+#define GAP_LL_FEATURES 0x2e
 
 #ifndef BLE_GAP_RADIO_BUFFER_ATTR
 #define BLE_GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -56,6 +61,8 @@ void BLE_GAP_HW_STOP(void);
 int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
 void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
                             uint8_t *tx_frame, uint8_t receive_after_tx);
+// Maximum unencrypted data payload supported by the radio (27..251 bytes).
+uint16_t BLE_GAP_HW_DATA_MAX(void);
 void BLE_GAP_HW_LINK_TX(void);
 void BLE_GAP_HW_LINK_RX(void);
 void BLE_GAP_HW_SCAN_RX(uint8_t channel);
@@ -83,6 +90,11 @@ typedef struct {
     uint8_t data_len;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
 } mesh_gap_scan_report;
+
+// Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
+typedef struct {
+    uint16_t tx_octets, tx_time, rx_octets, rx_time;
+} mesh_gap_data_length;
 
 int mesh_gap_conn_busy(void);
 
@@ -115,6 +127,11 @@ static struct {
     uint8_t features_known, peer_features, feature_request_pending;
     uint16_t params_min, params_max, params_latency, params_timeout;
     uint32_t params_started_ms;
+    uint16_t data_capacity, local_tx_octets;
+    mesh_gap_data_length data_length, remote_data_length;
+    volatile uint8_t length_queued;
+    uint8_t length_pending, length_status;
+    uint32_t length_started_ms;
     uint16_t interval, latency, supervision_timeout, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
@@ -187,6 +204,14 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.local_terminate_pending = 0;
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
+    uint16_t capacity = BLE_GAP_HW_DATA_MAX();
+    if (capacity < 27) return 0;
+    gap_conn.data_capacity = capacity < MESH_GAP_CONN_DATA_MAX ?
+        capacity : MESH_GAP_CONN_DATA_MAX;
+    gap_conn.local_tx_octets = 27;
+    gap_conn.data_length = gap_conn.remote_data_length =
+        (mesh_gap_data_length){27, 328, 27, 328};
+    gap_conn.length_queued = gap_conn.length_pending = gap_conn.length_status = 0;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
     return 1;
@@ -817,7 +842,7 @@ static volatile uint8_t gap_radio_scan_response_started;
 static volatile uint8_t gap_radio_connect_request_ready;
 static uint8_t gap_radio_connect_request_frame[36];
 static uint64_t gap_radio_connect_request_ticks;
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_conn_tx_frame[2 + 27];
+static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_conn_tx_frame[2 + MESH_GAP_CONN_DATA_MAX];
 static volatile int8_t gap_radio_rx_rssi;
 
 static void gap_connection_end(void) {
@@ -834,6 +859,9 @@ static void gap_connection_end(void) {
     gap_conn.params_pending = gap_conn.params_local = gap_conn.feature_request_pending = 0;
     if (gap_conn.connection_status == MESH_GAP_CONNECTION_PENDING)
         gap_conn.connection_status = 0x08; // Connection timeout/loss.
+    gap_conn.length_queued = gap_conn.length_pending = 0;
+    if (gap_conn.length_status == MESH_GAP_CONNECTION_PENDING)
+        gap_conn.length_status = 0x08;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = 0;
     gap_conn.terminate_after_reply = 0;
@@ -950,6 +978,25 @@ static void gap_connection_request_send(void) {
     gap_conn.params_pending = gap_conn.params_local = 1;
 }
 
+// Encode our LE 1M limits for both local requests and peer-request responses.
+static void gap_data_length_send(uint8_t opcode) {
+    const uint16_t values[4] = {gap_conn.data_capacity,
+        (uint16_t)((gap_conn.data_capacity + 14) * 8), gap_conn.local_tx_octets,
+        (uint16_t)((gap_conn.local_tx_octets + 14) * 8)};
+    gap_conn_tx_frame[0] = 3;
+    gap_conn_tx_frame[1] = 9;
+    gap_conn_tx_frame[2] = opcode;
+    for (uint8_t i = 0; i < 4; i++) {
+        gap_conn_tx_frame[3 + i * 2] = (uint8_t)values[i];
+        gap_conn_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
+    }
+    if (opcode == 0x14) {
+        gap_conn.length_queued = 0;
+        gap_conn.length_pending = 1;
+        gap_conn.length_started_ms = GET_MILLIS();
+    }
+}
+
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
@@ -991,7 +1038,8 @@ void gap_hw_mesh_received(void) {
     int8_t rssi = BLE_GAP_HW_RSSI();
     uint64_t received_ticks = BLE_GAP_HW_TICKS();
     if (gap_conn.active && gap_conn.rx_armed) {
-        if (frame[1] > 27) {
+        if (frame[1] > gap_conn.data_capacity ||
+            ((frame[0] & 3) == 3 && frame[1] > 27)) {
             gap_connection_end();
             return;
         }
@@ -1229,6 +1277,10 @@ reject_parameters:
                     }
                     break;
                 case 0x0d: // LL_REJECT_IND
+                    if (frame[1] == 2 && gap_conn.length_pending) {
+                        gap_conn.length_pending = 0;
+                        gap_conn.length_status = frame[3];
+                    }
                     if (frame[1] == 2 && ((gap_conn.params_pending && gap_conn.params_local) ||
                         gap_conn.feature_request_pending)) {
                         gap_conn.params_pending = gap_conn.params_local = gap_conn.local_params_queued = 0;
@@ -1242,6 +1294,10 @@ reject_parameters:
                     }
                     break;
                 case 0x11: // LL_REJECT_EXT_IND
+                    if (frame[1] == 3 && frame[3] == 0x14 && gap_conn.length_pending) {
+                        gap_conn.length_pending = 0;
+                        gap_conn.length_status = frame[4];
+                    }
                     if (frame[1] == 3 &&
                         ((frame[3] == 0x0f && gap_conn.params_pending && gap_conn.params_local) ||
                          ((frame[3] == 0x08 || frame[3] == 0x0e) &&
@@ -1275,7 +1331,7 @@ reject_parameters:
                     if (!gap_conn.version_ind_sent) {
                         gap_conn_tx_frame[1] = 6;
                         gap_conn_tx_frame[2] = 0x0c;
-                        gap_conn_tx_frame[3] = 0x07; // Bluetooth 4.1 LL
+                        gap_conn_tx_frame[3] = 0x08; // Bluetooth 4.2 LL
                         gap_conn_tx_frame[4] = 0xd7; // WCH company ID 0x07d7
                         gap_conn_tx_frame[5] = 0x07;
                         gap_conn_tx_frame[6] = 0;
@@ -1285,6 +1341,10 @@ reject_parameters:
                     break;
                 case 0x07: // LL_UNKNOWN_RSP
                     if (frame[1] != 2) goto unknown_control_pdu;
+                    if (frame[3] == 0x14 && gap_conn.length_pending) {
+                        gap_conn.length_pending = 0;
+                        gap_conn.length_status = 0x1a;
+                    }
                     if ((frame[3] == 0x0f && gap_conn.params_pending &&
                          gap_conn.params_local) ||
                         ((frame[3] == 0x08 || frame[3] == 0x0e) &&
@@ -1306,12 +1366,57 @@ reject_parameters:
                         gap_conn.connection_status = 0x1a;
                     }
                     break;
+                case 0x14: // LL_LENGTH_REQ
+                case 0x15: // LL_LENGTH_RSP
+                    if (frame[1] != 9) goto unknown_control_pdu;
+                    {
+                        uint16_t values[4];
+                        for (uint8_t i = 0; i < 4; i++)
+                            values[i] = (uint16_t)frame[3 + i * 2] |
+                                (uint16_t)frame[4 + i * 2] << 8;
+                        if (values[0] < 27 || values[0] > 251 ||
+                            values[2] < 27 || values[2] > 251 ||
+                            values[1] < 328 || values[1] > 2128 ||
+                            values[3] < 328 || values[3] > 2128) {
+                            gap_conn_tx_frame[1] = 3;
+                            gap_conn_tx_frame[2] = 0x11; // LL_REJECT_EXT_IND
+                            gap_conn_tx_frame[3] = frame[2];
+                            gap_conn_tx_frame[4] = 0x1e; // Invalid LL parameters.
+                            break;
+                        }
+                        if (frame[2] == 0x15 && !gap_conn.length_pending) break;
+                        gap_conn.remote_data_length = (mesh_gap_data_length){
+                            values[2], values[3], values[0], values[1]};
+                        // Combine sender and receiver limits for new fragments;
+                        // already queued fragments retain their original length.
+                        mesh_gap_data_length remote = gap_conn.remote_data_length;
+                        uint16_t tx_time = (uint16_t)((gap_conn.local_tx_octets + 14) * 8);
+                        uint16_t rx_time = (uint16_t)((gap_conn.data_capacity + 14) * 8);
+                        gap_conn.data_length.tx_octets = gap_conn.local_tx_octets < remote.rx_octets ?
+                            gap_conn.local_tx_octets : remote.rx_octets;
+                        gap_conn.data_length.tx_time = tx_time < remote.rx_time ? tx_time : remote.rx_time;
+                        gap_conn.data_length.rx_octets = gap_conn.data_capacity < remote.tx_octets ?
+                            gap_conn.data_capacity : remote.tx_octets;
+                        gap_conn.data_length.rx_time = rx_time < remote.tx_time ? rx_time : remote.tx_time;
+                        if (frame[2] == 0x14) {
+                            gap_data_length_send(0x15);
+                            // A queued local change is advertised in this response.
+                            if (gap_conn.length_queued) {
+                                gap_conn.length_queued = 0;
+                                gap_conn.length_status = 0;
+                            }
+                        } else {
+                            gap_conn.length_pending = 0;
+                            gap_conn.length_status = 0;
+                        }
+                    }
+                    break;
                 // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
-                // Encryption, data-length extension, and PHY updates are
+                // Encryption and PHY updates are
                 // omitted from the advertised feature set.
                 case 0x03: case 0x04: case 0x05: case 0x06:
                 case 0x0a: case 0x0b:
-                case 0x14: case 0x15: case 0x16:
+                case 0x16:
                 case 0x17: case 0x18: case 0x19: case 0x1a:
                 case 0x1b: case 0x1c: case 0x1d: case 0x1e:
                 case 0x1f: case 0x20: case 0x21: case 0x22:
@@ -1343,6 +1448,9 @@ unknown_control_pdu:
             if (gap_conn_tx_frame[1] == 0 && gap_conn.local_params_queued &&
                 !gap_conn.feature_request_pending && !gap_conn.terminate_after_reply)
                 gap_connection_request_send();
+            if (gap_conn_tx_frame[1] == 0 && gap_conn.length_queued &&
+                !gap_conn.terminate_after_reply)
+                gap_data_length_send(0x14);
             if (gap_conn_tx_frame[1] == 0 && gap_conn.tx_queued &&
                 !gap_conn.terminate_after_reply) {
                 gap_conn_tx_frame[0] = gap_conn.tx_llid;
@@ -1646,6 +1754,12 @@ int gap_hw_mesh_send_due(const uint8_t *mesh_ad, uint8_t mesh_len,
 static void mesh_gap_conn_poll(void) {
     if (!gap_conn.active) return;
     uint32_t now_ms = GET_MILLIS();
+    if (gap_conn.length_pending &&
+        (uint32_t)(now_ms - gap_conn.length_started_ms) >= 40000) {
+        gap_conn.length_status = 0x22; // LL response timeout.
+        gap_connection_end();
+        return;
+    }
     if ((gap_conn.params_pending || gap_conn.feature_request_pending) &&
         (uint32_t)(now_ms - gap_conn.params_started_ms) >= 40000) {
         gap_conn.connection_status = 0x22; // LL response timeout.
@@ -1682,7 +1796,8 @@ static void mesh_gap_conn_poll(void) {
     uint64_t close_ticks = gap_conn.next_event_ticks +
         (uint64_t)(gap_conn.first_event || gap_conn.update_window_active ?
             gap_conn.window_size * 1250u : 1000u) *
-        HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400) + widening_ticks;
+        HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400 +
+            2u * (gap_conn.data_capacity - 27) * 8) + widening_ticks;
     if (now >= close_ticks) {
         if (gap_conn.rx_armed) BLE_GAP_HW_STOP();
         gap_conn.rx_armed = 0;
@@ -1697,7 +1812,8 @@ static void mesh_gap_conn_poll(void) {
         } while (now >= gap_conn.next_event_ticks +
                  (uint64_t)(gap_conn.first_event || gap_conn.update_window_active ?
                      gap_conn.window_size * 1250u : 1000u) *
-                 HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400) + widening_ticks);
+                 HW_TICKS_FROM_US(1) + HW_TICKS_FROM_US(400 +
+            2u * (gap_conn.data_capacity - 27) * 8) + widening_ticks);
         uint32_t extra_hops = skipped - gap_conn.channel_selected;
         gap_conn.unmapped_channel =
             (gap_conn.unmapped_channel +
@@ -1732,6 +1848,9 @@ static void mesh_gap_conn_poll(void) {
             else if (gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_connection_request_send();
+            else if (gap_conn.length_queued && !gap_conn.local_terminate_queued &&
+                !gap_conn.local_terminate_pending)
+                gap_data_length_send(0x14);
             gap_conn.tx_pending = 1;
         }
         gap_conn_tx_frame[0] = (gap_conn_tx_frame[0] & 0x03) |
@@ -1763,6 +1882,7 @@ int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
     if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
+        gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.channel_map_update_pending || gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         interval < 6 || interval > 3200 || latency > 499 ||
@@ -1784,6 +1904,7 @@ int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
     if (!mesh_gap_connected() || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
+        gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.channel_map_update_pending || gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         minimum < 6 || maximum > 3200 || minimum > maximum || latency > 499 ||
@@ -1807,13 +1928,43 @@ uint8_t mesh_gap_connection_status(void) {
     return gap_conn.connection_status;
 }
 
+// Request a transmit payload limit in either role; packet time is derived for
+// LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
+int mesh_gap_data_length_set(uint16_t octets) {
+    if (!mesh_gap_connected() || gap_conn.first_event ||
+        gap_conn.length_queued || gap_conn.length_pending ||
+        gap_conn.local_update_queued || gap_conn.update_pending ||
+        gap_conn.local_params_queued || gap_conn.params_pending ||
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_after_reply || octets < 27 ||
+        octets > gap_conn.data_capacity) return 0;
+    if (gap_conn.features_known && !(gap_conn.peer_features & 0x20)) {
+        gap_conn.length_status = 0x1a;
+        return 0;
+    }
+    gap_conn.local_tx_octets = octets;
+    gap_conn.length_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.length_queued = 1;
+    return 1;
+}
+
+mesh_gap_data_length mesh_gap_data_length_get(void) {
+    return gap_conn.data_length;
+}
+
+// 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
+uint8_t mesh_gap_data_length_status(void) {
+    return gap_conn.length_status;
+}
+
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     if (!mesh_gap_connected() || gap_conn.tx_queued ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         gap_conn.terminate_after_reply || !data ||
         (llid != 1 && llid != 2) || !len ||
-        len > MESH_GAP_CONN_DATA_MAX || (llid == 2 && len < 4)) return 0;
+        len > gap_conn.data_length.tx_octets ||
+        (len + 10) * 8 > gap_conn.data_length.tx_time || (llid == 2 && len < 4)) return 0;
     gap_conn.tx_llid = llid;
     gap_conn.tx_len = (uint8_t)len;
     memcpy(gap_conn.tx_data, data, len);

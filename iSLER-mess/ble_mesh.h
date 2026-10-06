@@ -154,6 +154,8 @@ void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
                              uint8_t *tx_frame, uint8_t receive_after_tx) {
     iSLERLinkConfig(access_address, channel, PHY_1M, tx_frame, receive_after_tx);
 }
+// The iSLER DMA buffers accommodate the maximum LE data payload.
+uint16_t BLE_GAP_HW_DATA_MAX(void) { return 251; }
 void BLE_GAP_HW_LINK_TX(void) { iSLERLinkTX(); }
 void BLE_GAP_HW_LINK_RX(void) { iSLERLinkRX(); }
 void BLE_GAP_HW_SCAN_RX(uint8_t channel) {
