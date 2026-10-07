@@ -58,7 +58,7 @@ static void set_cccd(uint16_t handle, uint16_t value) {
 
 static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt_ensure_initialized());
-    assert(mesh_gatt.server.count == 12);
+    assert(mesh_gatt.server.count == 21);
     assert(mesh_gatt.server.attributes[0].handle ==
            MESH_GATT_HANDLE_PROXY_SERVICE);
     assert(ble_gatt_server_u16(ble_gatt_attribute_value(&mesh_gatt.server,
@@ -77,6 +77,53 @@ static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_PROVISIONING_DATA_IN - 1].write ==
            mesh_gatt_data_in_write);
+    assert(mesh_gatt.server.attributes[
+           MESH_GATT_HANDLE_GAP_SERVICE - 1].flags &
+           BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE);
+    assert(ble_gatt_server_u16(ble_gatt_attribute_value(&mesh_gatt.server,
+           &mesh_gatt.server.attributes[
+               MESH_GATT_HANDLE_GAP_SERVICE - 1])) ==
+           MESH_GATT_GAP_SERVICE_UUID);
+    assert(mesh_gatt.server.attributes[
+           MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
+           BLE_GATT_PERM_READ);
+    assert(mesh_gatt.server.attributes[
+           MESH_GATT_HANDLE_GAP_CAR - 1].permissions ==
+           BLE_GATT_PERM_READ);
+}
+
+static void test_gap_service_characteristics(void) {
+    assert(mesh_gatt_ensure_initialized());
+    uint8_t response[64];
+    uint16_t response_len;
+    const uint8_t read_name[] = {
+        0x0a, MESH_GATT_HANDLE_GAP_DEVICE_NAME, 0
+    };
+    assert(ble_gatt_server_att(&mesh_gatt.server, read_name,
+        sizeof(read_name), response, sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x0b);
+    assert(response_len == 1 + sizeof(MESH_GATT_DEVICE_NAME) - 1);
+    assert(!memcmp(response + 1, MESH_GATT_DEVICE_NAME,
+                   sizeof(MESH_GATT_DEVICE_NAME) - 1));
+
+    const uint8_t read_appearance[] = {
+        0x0a, MESH_GATT_HANDLE_GAP_APPEARANCE, 0
+    };
+    assert(ble_gatt_server_att(&mesh_gatt.server, read_appearance,
+        sizeof(read_appearance), response, sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x0b && response_len == 3);
+    assert(ble_gatt_server_u16(response + 1) == MESH_GATT_APPEARANCE);
+
+    const uint8_t read_ppcp[] = {0x0a, MESH_GATT_HANDLE_GAP_PPCP, 0};
+    assert(ble_gatt_server_att(&mesh_gatt.server, read_ppcp,
+        sizeof(read_ppcp), response, sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x0b && response_len == 9);
+    for (uint8_t i = 1; i < response_len; i++) assert(response[i] == 0xff);
+
+    const uint8_t read_car[] = {0x0a, MESH_GATT_HANDLE_GAP_CAR, 0};
+    assert(ble_gatt_server_att(&mesh_gatt.server, read_car,
+        sizeof(read_car), response, sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x0b && response_len == 2 && response[1] == 1);
 }
 
 static void test_generic_att_handles_mesh_attributes(void) {
@@ -90,7 +137,7 @@ static void test_generic_att_handles_mesh_attributes(void) {
            MESH_GATT_ATT_MTU_MAX);
     assert(mesh_gatt.server.mtu == 100);
 
-    const uint8_t discovery[] = {0x10, 1, 0, 12, 0, 0, 0x28};
+    const uint8_t discovery[] = {0x10, 1, 0, 21, 0, 0, 0x28};
     assert(ble_gatt_server_att(&mesh_gatt.server, discovery, sizeof(discovery),
         response, sizeof(response), &response_len) == 1);
     assert(response[0] == 0x11);
@@ -255,6 +302,7 @@ static void test_provisioning_link_callbacks(void) {
 
 int main(void) {
     test_mesh_services_registered_in_generic_database();
+    test_gap_service_characteristics();
     test_generic_att_handles_mesh_attributes();
     test_proxy_sar_and_configuration();
     test_mesh_notification_sar_uses_generic_queue();

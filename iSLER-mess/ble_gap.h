@@ -17,6 +17,7 @@
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Verify Secure Connections OOB exchange and restored bonds on hardware.
 //   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
+// - Add selective and automatic Central connection procedures using a peer list.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -420,7 +421,7 @@ static uint8_t gap_scan_seen_count, gap_scan_seen_next;
 static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
 static uint8_t gap_scan_response_address[6];
 static struct {
-    uint8_t active, peer_type, peer_address[6], request[36];
+    uint8_t active, any_peer, peer_type, peer_address[6], request[36];
     uint32_t deadline_ms;
 } gap_central_connect;
 
@@ -850,22 +851,24 @@ void mesh_gap_scan_stop(void) {
     gap_scan_generation++;
 }
 
-// Initiate a legacy LE connection to a public or random-address advertiser.
-// Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
-int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
+static int gap_connect_procedure_start(const uint8_t *peer_address,
+    uint8_t peer_type, uint8_t any_peer, uint8_t active_scan) {
+    if ((!any_peer && !peer_address) || peer_type > 1 || any_peer > 1 ||
+        active_scan > 1 || gap_conn.active || gap_scanning ||
         gap_advertising.enabled) return 0;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
     memset(gap_central_connect.request, 0,
            sizeof(gap_central_connect.request));
     uint8_t local_type;
-    gap_local_address_select(gap_identity_find(peer_address, peer_type),
-                             gap_central_connect.request + 2, &local_type);
+    int peer_slot = peer_address ? gap_identity_find(peer_address, peer_type) : -1;
+    gap_local_address_select(peer_slot, gap_central_connect.request + 2,
+                             &local_type);
     gap_central_connect.request[0] = 0x05 |
         (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central_connect.request[1] = 34;
-    memcpy(gap_central_connect.request + 8, peer_address, 6);
+    if (peer_address)
+        memcpy(gap_central_connect.request + 8, peer_address, 6);
     gap_central_connect.request[14] = (uint8_t)access_address;
     gap_central_connect.request[15] = (uint8_t)(access_address >> 8);
     gap_central_connect.request[16] = (uint8_t)(access_address >> 16);
@@ -879,16 +882,36 @@ int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
     memset(gap_central_connect.request + 30, 0xff, 4);
     gap_central_connect.request[34] = 0x1f; // data channels 0 through 36
     gap_central_connect.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+    gap_central_connect.any_peer = any_peer;
     gap_central_connect.peer_type = peer_type;
-    memcpy(gap_central_connect.peer_address, peer_address, 6);
+    if (peer_address) memcpy(gap_central_connect.peer_address, peer_address, 6);
+    else memset(gap_central_connect.peer_address, 0,
+                sizeof(gap_central_connect.peer_address));
+    // General establishment connects to the first acceptable connectable
+    // advertiser; direct establishment scans only for the requested peer.
+    if (any_peer) gap_scan_start(active_scan);
+    else gap_scanning = 1;
     gap_central_connect.active = 1;
     gap_central_connect.deadline_ms = GET_MILLIS() + 10000;
-    gap_scanning = 1;
-    gap_active_scanning = 0;
-    gap_scan_head = gap_scan_count = 0;
-    gap_scan_seen_count = gap_scan_seen_next = 0;
-    gap_scan_generation++;
+    if (!any_peer) {
+        gap_active_scanning = 0;
+        gap_scan_head = gap_scan_count = 0;
+        gap_scan_seen_count = gap_scan_seen_next = 0;
+        gap_scan_generation++;
+    }
     return 1;
+}
+
+// Initiate a legacy LE connection to one specified advertiser.
+// Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
+int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
+    return gap_connect_procedure_start(peer_address, peer_type, 0, 0);
+}
+
+// General Connection Establishment: scan and connect to the first acceptable
+// connectable advertiser. `active_scan` requests scan-response data as well.
+int mesh_gap_connect_general_start(uint8_t active_scan) {
+    return gap_connect_procedure_start(NULL, 0, 1, active_scan);
 }
 
 int mesh_gap_connecting(void) {

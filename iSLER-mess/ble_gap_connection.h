@@ -1103,14 +1103,17 @@ unknown_control_pdu:
         // even when the optional known-peer filters are disabled.
         if (!gap_peer_allowed(peer_slot, frame + 2, peer_type)) return;
     }
-    if (gap_central_connect.active &&
-        (pdu_type == 0x00 || pdu_type == 0x01) &&
-        frame[1] >= 6 && frame[1] <= 37 &&
-        ((((frame[0] >> 6) & 1) == gap_central_connect.peer_type &&
+    uint8_t advertiser_type = (frame[0] >> 6) & 1;
+    int peer_matches = gap_central_connect.any_peer ?
+        (!gap_privacy.scan_filter || peer_slot >= 0) :
+        ((advertiser_type == gap_central_connect.peer_type &&
           memcmp(frame + 2, gap_central_connect.peer_address, 6) == 0) ||
          (peer_slot >= 0 && peer_slot ==
-              gap_identity_find(gap_central_connect.peer_address,
-                                gap_central_connect.peer_type)))) {
+          gap_identity_find(gap_central_connect.peer_address,
+                            gap_central_connect.peer_type)));
+    if (gap_central_connect.active &&
+        (pdu_type == 0x00 || pdu_type == 0x01) &&
+        frame[1] >= 6 && frame[1] <= 37 && peer_matches) {
         // Directed advertising must target our current address or an RPA
         // generated with our IRK before we send CONNECT_IND.
         if (pdu_type == 0x01) {
@@ -1152,6 +1155,9 @@ unknown_control_pdu:
                 gap_conn.peer_identity_type = gap_identities[peer_slot].address_type;
                 memcpy(gap_conn.peer_identity_address,
                        gap_identities[peer_slot].address, 6);
+            } else if (gap_central_connect.any_peer) {
+                gap_conn.peer_identity_type = advertiser_type;
+                memcpy(gap_conn.peer_identity_address, frame + 2, 6);
             } else {
                 gap_conn.peer_identity_type = gap_central_connect.peer_type;
                 memcpy(gap_conn.peer_identity_address,
@@ -1814,7 +1820,9 @@ void gap_hw_mesh_scan_poll(void) {
     if (gap_central_connect.active &&
         (int32_t)(now - gap_central_connect.deadline_ms) >= 0) {
         gap_central_connect.active = 0;
+        gap_central_connect.any_peer = 0;
         gap_scanning = 0;
+        gap_active_scanning = 0;
         gap_scan_generation++;
     }
     if (gap_radio_scan_generation != gap_scan_generation) {

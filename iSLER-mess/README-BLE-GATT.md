@@ -1,90 +1,153 @@
 # BLE GATT implementation plan
 
-The goal is a reusable GATT stack that applications can use to define their own
-services. Mesh Proxy and PB-GATT are consumers of that stack; they should not
-define the generic ATT/GATT behavior.
+The goal is a reusable, Mesh-independent GATT stack for LE connections. It
+provides server and client roles over the LE fixed ATT bearer, and lets an
+application register its own services and attributes. It does not include
+Bluetooth SIG service profiles or EATT (which requires LE Credit Based
+Channels).
 
-`ble_gatt.h` is the generic include for the server and transport. Mesh service
-registration and Proxy/provisioning behavior are isolated in `ble_gatt_mesh.h`.
+`ble_gatt.h` is the generic include. The implementation is split between the
+ATT/GATT server in `ble_gatt_server.h`, the client in `ble_gatt_client.h`, and
+the callback-based L2CAP/ATT adapter in `ble_gatt_transport.h`. Protocol
+adapters and application services belong outside these generic modules.
 
-## Implementation chunks
+## Completion checklist
 
-### 1. Generic server database and ATT core — in progress
+### Generic server
 
-`ble_gatt_server.h` starts a transport-independent server core. It has fixed
-attribute storage, 16- and 128-bit UUIDs, service and characteristic
-registration, read/write callbacks, per-link CCCD state, basic security flags,
-and ATT handling for MTU exchange, discovery, reads, writes, and errors.
+- [x] Register 16- and 128-bit UUID attributes, services, characteristics,
+  descriptors, and application read/write callbacks.
+- [x] Support the ATT maximum 512-octet attribute value in the default server
+  configuration, subject to the configured aggregate value-pool capacity;
+  enforce the limit for values returned by dynamic read callbacks as well.
+- [x] Enforce the 512-octet ATT value limit at read, write, notification, and
+  indication boundaries; truncate outgoing values to the negotiated MTU.
+- [x] Handle MTU exchange, service/characteristic/descriptor discovery,
+  reads (including long and multiple reads), writes (including long/reliable
+  writes, with fixed-value bounds checked at Execute Write and rejected
+  prepare fragments leaving earlier queued writes intact), errors, CCCDs,
+  notifications, and indications.
+- [x] Enforce configured authentication and application authorization before
+  encryption, key-size, and value checks for reads and writes; enforce the
+  configured security for notifications and indications, and reset
+  per-connection state on disconnect.
+- [x] Enforce per-attribute minimum LE encryption key sizes; the platform can
+  supply the live key size through the optional transport callback, including
+  before notifications and indications are sent.
+- [x] Restore and store CCCD settings through application callbacks for bonded
+  peers; non-bonded peers start with the default disabled configuration.
+- [x] Drop queued notifications/indications when the peer disables their CCCD
+  bit or access authorization is revoked; apply MTU truncation at send time.
+- [x] Support included-service declarations and all primary ATT discovery
+  response formats.
+- [x] Audit mandatory GATT server discovery procedures against Core 6.2
+  Table 4.1: primary services (range and UUID), included services,
+  characteristics (range and UUID), descriptors, characteristic reads, and
+  reads by UUID are implemented and covered by local tests; common discovery
+  is also exercised against Bumble.
+- [x] Support Find By Type Value for readable 16-bit attribute types; return
+  Unsupported Group Type for unknown Read By Group Type requests.
+- [x] Match 16-bit UUIDs with equivalent Bluetooth Base UUID 128-bit forms in
+  Read By Type and Read By Group Type requests.
+- [x] Keep response-capacity failures side-effect-free and support large Find
+  Information responses without cursor overflow.
+- [x] Ignore over-MTU ATT commands without replying, including Write Command
+  and Signed Write Command, which must never receive an ATT response.
+- [x] Enforce an immutable attribute database after transport initialization;
+  clients may cache that per-boot database.
+- [x] Compute the Core GATT Database Hash over the specified attribute types,
+  auto-populate a registered 0x2B2A characteristic when sealing the database,
+  and validate the standalone AES-CMAC primitive against RFC 4493 vectors.
+- [x] Provide a standard Generic Attribute service builder with Service
+  Changed and Database Hash characteristics; queue inclusive handle-range
+  indications through the normal indication/CCCD path.
+- [x] Allow application callbacks to load/store the Database Hash per bonded
+  peer, compare it after CCCD restoration, queue a full-range Service Changed
+  indication on mismatch (including when indications are enabled later), and
+  store the new hash only after confirmation.
+  Runtime database mutation remains unsupported; changes are detected after a
+  reboot or firmware update.
+- [ ] Audit ATT command behavior, malformed requests, property/permission
+  consistency, and boundary cases against the Core ATT requirements.
+- [x] Add optional signed-write support through application sign/verify
+  callbacks; the application owns CSRKs and replay-resistant sign counters.
+- [x] Keep characteristic properties and read/write permissions consistent,
+  and enforce declared read/write command capabilities in ATT handling.
+- [x] Validate required CCCD, Extended Properties, and Server Characteristic
+  Configuration descriptors before sealing the attribute database; validate
+  standard descriptor value lengths, permissions, and reserved bits, keep
+  CCCD/SCCD reads unprotected, reject duplicate standard descriptors, and
+  reject incomplete characteristic declarations.
+- [x] Model fixed and variable server values with their ATT write and
+  truncation behavior.
+- [x] Preserve the full value length when a Read Multiple Variable tuple is
+  truncated at the ATT MTU, while checking access for every requested handle.
+- [x] Check every handle in fixed-length Read Multiple requests even when
+  earlier values already fill the response MTU.
 
-- [x] Add focused tests for database registration, handle assignment, UUID
-  widths, callbacks, permission errors, and every implemented ATT procedure.
-- [x] Extend malformed/boundary testing for callbacks that over-report output,
-  maximum-MTU reads, exact-end and past-end offsets, and malformed Read Blob.
-- [x] Set initial configurable limits: 64 attributes, 256 bytes per stored
-  value, and a 512-byte shared static-value pool.
+### Generic client
 
-### 2. Complete the generic GATT server
+- [x] Add one-outstanding-request transaction state per ATT bearer, response
+  and error matching (including the Error Handle field), timeout reporting,
+  and disconnect cancellation. Requests are not blindly retried because
+  delayed responses and writes make replay unsafe.
+- [x] Add exchange MTU; discover services by range and UUID; discover included
+  services, characteristics, and descriptors.
+- [x] Add read, read-by-UUID, read-blob, read-multiple, write request,
+  write command, and prepare/execute write primitives.
+- [x] Add higher-level helpers for chunked long reads and reliable writes.
+- [x] Add CCCD notification/indication subscription writes and enforce one
+  MTU exchange per bearer.
+- [x] Add optional signed-write command construction through an application
+  signer callback.
+- [x] Receive single- and multiple-handle notifications and indications, send
+  indication confirmations, discard zero-handle notification entries, confirm
+  and discard zero-handle indications, and expose valid-handle events to the
+  application.
+- [x] Validate response lengths and discovery entry formats before delivering
+  responses to the application, including ATT's permitted final tuple
+  truncation in Read Multiple Variable responses; reject out-of-range,
+  descending, and invalid group-handle entries, and reject attribute values
+  above ATT's 512-octet maximum.
+- [x] Test client/server transport routing and malformed client responses.
 
-- [x] Add Prepare Write and Execute Write for server-owned values, with bounded
-  queueing, offset/gap validation, cancellation, and all-or-nothing commit.
-- [x] Define transactional prepare/execute callbacks for application-owned
-  dynamic values; callbacks stage during Prepare Write, then commit once after
-  whole-batch validation or discard on cancel/error. Commit callbacks must not
-  fail.
-- [x] Add Read Multiple and Read Multiple Variable Length procedures.
-- [x] Add notification and indication APIs, CCCD subscription checks, and
-  indication confirmation tracking.
-- [x] Add a bounded outbound event queue and indication timeout handling;
-  applications poll it with a monotonic millisecond tick from their connection
-  event loop. Queue limits and timeout are configurable.
-- [x] Enforce configured encryption/authentication permissions in the core.
-- [x] Feed the active link's encryption and authentication state through an
-  optional transport callback; the Mesh adapter supplies this project's GAP
-  security state.
-- [ ] Add service changed/database change handling if services can change
-  while clients are connected; otherwise require a static database per boot.
+### Generic transport and validation
 
-### 3. Connect the generic server to the BLE transport
-
-- [x] Add a single-link L2CAP/ATT transport adapter. It reassembles CID 4,
-  dispatches complete ATT PDUs, and fragments responses through platform
-  send/receive callbacks. It has no dependency on a particular GAP or Mesh API;
-  the Mesh adapter supplies callbacks for this project's GAP connection layer.
-- [x] Call the transport poller from the existing application connection
-  polling path. Hardware verification remains listed below.
-- [x] Keep transport state (connection, L2CAP reassembly, and TX fragments)
-  separate from the attribute database and application service state.
-- [x] Test disconnect/reconnect cleanup and multiple sequential ATT requests
-  through simulated Link Layer fragmentation.
-
-### 4. Move Mesh services onto the generic server
-
-- [x] Register Mesh Proxy and PB-GATT services as ordinary attributes.
-- [x] Keep Mesh Proxy filtering, Proxy SAR, PB-GATT SAR, and provisioning
-  callbacks in the Mesh service adapter.
-- [x] Support the 65-byte Mesh Provisioning Public Key PDU in the Mesh bearer
-  adapter; the generic GATT value limit remains independently configurable.
-- [x] Keep Mesh network and provisioning state-machine integration outside the
-  generic GATT core.
-
-### 5. Add the GATT client role
-
-- [ ] Add client service/characteristic discovery, Read/Read Blob, Write
-  Request/Command, MTU exchange, and notification/indication reception.
-- [ ] Add client transaction matching, timeouts, and one outstanding request
-  at a time per ATT bearer.
-- [ ] Test the client against an independent GATT server.
-
-### 6. Interoperability and hardware validation
-
-- [ ] Verify server and client procedures against an independent BLE stack.
-- [ ] Exercise MTU exchange, long values, queued writes, notifications,
+- [x] Carry ATT CID 4 over platform-supplied LE link callbacks, with bounded
+  L2CAP reassembly and fragmentation.
+- [x] Allow client-only or server-only transport setups without requiring
+  storage for the opposite GATT role.
+- [x] Route both client and server ATT traffic so one connection may use both
+  roles concurrently.
+- [x] Keep client/server ATT MTU state symmetric on one bearer, reject a local
+  MTU request that differs from the server receive MTU, and defer queued events
+  until an outgoing MTU exchange completes.
+- [x] Stop ATT traffic after a client transaction or server indication
+  timeout; the transport marks the bearer failed and can notify the platform
+  to terminate the LE connection before another bearer is used.
+- [x] Fail the fixed bearer on malformed incoming ATT PDUs rejected by the
+  client or server, and invoke the optional link-termination callback.
+- [x] Verify common MTU, discovery, read, Write Request/Command, and
+  reliable-write behavior against Bumble in both directions, including long
+  reads/writes, Read By UUID, included-service discovery, and MTU-truncated
+  fixed and variable Read Multiple responses; verify CCCD subscription,
+  notification delivery, and indication confirmation with the C client and
+  Bumble server; verify Insufficient Encryption and Insufficient
+  Authentication errors in both directions with protected attributes on each
+  server, Insufficient Authorization from the C server to Bumble, and the
+  Read Blob value-end/Invalid Offset boundary on the C server.
+- [ ] Verify remaining procedures and security behavior against an independent
+  BLE implementation.
+- [ ] Exercise MTU exchange, long values, reliable writes, notifications,
   indications, disconnect cleanup, and security errors on hardware.
 
-## Scope boundary
+The optional independent tests use Bumble and a local C fixture (no Bluetooth
+radio is needed): from `iSLER-mess`, run
+`python -m pip install -r tests/requirements-ble-gatt-interop.txt`, then
+`python tests/ble_gatt_bumble_interop.py` and
+`python tests/ble_gatt_bumble_client_interop.py`.
 
-The generic core should not depend on Bluetooth Mesh headers or protocol types.
-Mesh integration belongs in a separate adapter that registers Mesh services
-and forwards their PDUs. The GATT client is included because this project now
-targets a general-purpose stack; applications may omit it at link time if the
-build is split into server and client modules.
+The stack is complete for this project when the checked procedures and
+validation above are finished. EATT, BR/EDR ATT, and SIG-defined service
+profiles are separate scope; applications can add profiles using the generic
+service database.

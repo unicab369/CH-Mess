@@ -290,6 +290,29 @@ static void test_connect_by_identity(void) {
     gap_connection_end();
 }
 
+static void test_general_connection_establishment(void) {
+    assert(!mesh_gap_connect_general_start(2));
+    assert(mesh_gap_connect_general_start(1));
+    assert(gap_central_connect.active && gap_central_connect.any_peer);
+    assert(gap_scanning && gap_active_scanning);
+
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0x42; // Non-connectable advertisement must be ignored.
+    rx_frame[1] = 6;
+    const uint8_t peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
+    memcpy(rx_frame + 2, peer, sizeof(peer));
+    gap_hw_mesh_received();
+    assert(gap_central_connect.active && !gap_conn.active);
+
+    rx_frame[0] = 0x00; // Connectable undirected advertisement.
+    gap_hw_mesh_received();
+    assert(gap_conn.active && gap_conn.central_role);
+    assert(!gap_central_connect.active && !gap_scanning);
+    assert(memcmp(gap_conn.peer_identity_address, peer, 6) == 0);
+    assert(memcmp(gap_central_connect.request + 8, peer, 6) == 0);
+    gap_connection_end();
+}
+
 static void test_directed_connect_target(void) {
     random_seed++;
     assert(mesh_gap_privacy_set(test_irk, 1));
@@ -2063,6 +2086,7 @@ int main(void) {
     test_scan_identity_filter();
     test_radio_privacy_filter();
     test_connect_by_identity();
+    test_general_connection_establishment();
     test_directed_connect_target();
     test_peer_privacy_modes();
     test_peer_local_keys();

@@ -58,7 +58,16 @@ enum {
     MESH_GATT_HANDLE_PROVISIONING_DATA_IN = 9,
     MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_DECL = 10,
     MESH_GATT_HANDLE_PROVISIONING_DATA_OUT = 11,
-    MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_CCCD = 12
+    MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_CCCD = 12,
+    MESH_GATT_HANDLE_GAP_SERVICE = 13,
+    MESH_GATT_HANDLE_GAP_DEVICE_NAME_DECL = 14,
+    MESH_GATT_HANDLE_GAP_DEVICE_NAME = 15,
+    MESH_GATT_HANDLE_GAP_APPEARANCE_DECL = 16,
+    MESH_GATT_HANDLE_GAP_APPEARANCE = 17,
+    MESH_GATT_HANDLE_GAP_PPCP_DECL = 18,
+    MESH_GATT_HANDLE_GAP_PPCP = 19,
+    MESH_GATT_HANDLE_GAP_CAR_DECL = 20,
+    MESH_GATT_HANDLE_GAP_CAR = 21
 };
 
 typedef int (*mesh_gatt_proxy_rx_fn)(uint8_t type, const uint8_t *pdu,
@@ -73,6 +82,17 @@ typedef void (*mesh_gatt_provisioning_link_fn)(uint8_t open, void *context);
 #define MESH_GATT_PROVISIONING_SERVICE_UUID 0x1827
 #define MESH_GATT_PROVISIONING_DATA_IN_UUID 0x2ADB
 #define MESH_GATT_PROVISIONING_DATA_OUT_UUID 0x2ADC
+#define MESH_GATT_GAP_SERVICE_UUID 0x1800
+#define MESH_GATT_GAP_DEVICE_NAME_UUID 0x2A00
+#define MESH_GATT_GAP_APPEARANCE_UUID 0x2A01
+#define MESH_GATT_GAP_PPCP_UUID 0x2A04
+#define MESH_GATT_GAP_CAR_UUID 0x2AA6
+#ifndef MESH_GATT_DEVICE_NAME
+#define MESH_GATT_DEVICE_NAME "CH-Mess"
+#endif
+#ifndef MESH_GATT_APPEARANCE
+#define MESH_GATT_APPEARANCE 0
+#endif
 
 static struct {
     ble_gatt_server server;
@@ -228,6 +248,13 @@ static int mesh_gatt_register_services(void) {
         mesh_gatt_uuid16(MESH_GATT_PROVISIONING_DATA_IN_UUID);
     ble_gatt_uuid provisioning_out =
         mesh_gatt_uuid16(MESH_GATT_PROVISIONING_DATA_OUT_UUID);
+    ble_gatt_uuid gap_service = mesh_gatt_uuid16(MESH_GATT_GAP_SERVICE_UUID);
+    ble_gatt_uuid gap_device_name =
+        mesh_gatt_uuid16(MESH_GATT_GAP_DEVICE_NAME_UUID);
+    ble_gatt_uuid gap_appearance =
+        mesh_gatt_uuid16(MESH_GATT_GAP_APPEARANCE_UUID);
+    ble_gatt_uuid gap_ppcp = mesh_gatt_uuid16(MESH_GATT_GAP_PPCP_UUID);
+    ble_gatt_uuid gap_car = mesh_gatt_uuid16(MESH_GATT_GAP_CAR_UUID);
     ble_gatt_uuid cccd = mesh_gatt_uuid16(0x2902);
     uint16_t service, decl, value, descriptor;
     if (!ble_gatt_server_add_service(&mesh_gatt.server, &proxy_service, 1,
@@ -252,9 +279,38 @@ static int mesh_gatt_register_services(void) {
             NULL, NULL, NULL, &decl, &value) ||
         !ble_gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
             0, NULL, 0, 0, NULL, NULL, NULL, &descriptor)) return 0;
+    uint8_t appearance[2] = {
+        (uint8_t)MESH_GATT_APPEARANCE,
+        (uint8_t)(MESH_GATT_APPEARANCE >> 8)
+    };
+    // 0xffff in each field means the device has no preferred connection value.
+    const uint8_t ppcp[8] = {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    const uint8_t central_address_resolution = 1;
+    if (!ble_gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
+            &service) ||
+        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+            &gap_device_name, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            (const uint8_t *)MESH_GATT_DEVICE_NAME,
+            sizeof(MESH_GATT_DEVICE_NAME) - 1,
+            sizeof(MESH_GATT_DEVICE_NAME) - 1, NULL, NULL, NULL,
+            &decl, &value) ||
+        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+            &gap_appearance, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            appearance, sizeof(appearance), sizeof(appearance), NULL, NULL,
+            NULL, &decl, &value) ||
+        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+            &gap_ppcp, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            ppcp, sizeof(ppcp), sizeof(ppcp), NULL, NULL, NULL,
+            &decl, &value) ||
+        !ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_car,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            &central_address_resolution, 1, 1, NULL, NULL, NULL,
+            &decl, &value)) return 0;
     if (!mesh_gatt_transport_init(&mesh_gatt.transport,
                                   &mesh_gatt.server)) return 0;
-    return mesh_gatt.server.next_handle == 13;
+    return mesh_gatt.server.next_handle == 22;
 }
 
 static int mesh_gatt_ensure_initialized(void) {
