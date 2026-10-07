@@ -1,130 +1,196 @@
-# BLE GAP roles and features
+# BLE GAP implementation checklist
 
-The Generic Access Profile (GAP) defines how a BLE device advertises, discovers other devices, and establishes connections. A device can support more than one role. GAP defines the procedures; the Link Layer handles the radio packets and connection timing.
+This checklist covers the **LE Generic Access Profile (GAP)** in Bluetooth Core
+Specification 6.3, including GAP procedures, role-dependent requirements, the
+GAP GATT service, and optional LE features. BR/EDR GAP is outside this library's
+scope. Features marked optional or conditional are only required when the
+library declares or uses the corresponding role or capability.
 
-| Role | What the device does |
-| --- | --- |
-| Broadcaster | Sends advertisements without accepting a connection. |
-| Observer | Scans for advertisements without initiating a connection. |
-| Peripheral | Advertises and accepts a connection initiated by a Central. |
-| Central | Scans and initiates a connection to a Peripheral. |
+The normative references are the [Bluetooth Core Specification 6.3, Generic
+Access Profile](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core_v6.3/out/en/host/generic-access-profile.html)
+and the [Core Specification 6.3 qualification documents](https://www.bluetooth.com/specifications/specs/core-specification-6-3/),
+which provide the current GAP ICS, test suite, and TCRL.
 
-## BLE GAP feature areas
+Status meanings:
 
-The tables below track LE GAP features implemented in this project and the
-remaining work. `[x]` means the software path exists. `[ ] TODO` means code is
-missing; `[ ] Hardware TODO` means device verification remains. Requirements
-depend on declared roles and supported controller features. See the
-[Bluetooth Core Specification 6.2, Generic Access Profile](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-62/out/en/host/generic-access-profile.html)
-and the [GAP test suite](https://files.bluetooth.com/wp-content/uploads/dlm_uploads/2025/05/GAP.TS_.p48.pdf)
-for normative requirements and tests. BR/EDR GAP is outside this BLE project's
-scope.
+- `[x]` Software implementation exists.
+- `[ ] TODO` Software work remains. Optional features are identified as such.
+- `[ ] Hardware TODO` Verify on the target radio and with independent peers.
 
-### Roles and modes
+An `[x]` is not evidence of Bluetooth qualification. The device owner will do
+target hardware verification.
 
-| Feature | Status | TODO / verification |
+## Roles, modes, and shared behavior
+
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Broadcaster role | [x] | Hardware TODO: Verify advertising event timing and channel rotation. |
-| Observer role | [x] | Hardware TODO: Verify scan windows and channel rotation. |
-| Peripheral role | [x] | Hardware TODO: Verify connection timing and recovery. |
-| Central role | [x] | Hardware TODO: Verify connection initiation, timing, and recovery. |
-| Simultaneous role operation | [ ] TODO | Add role coexistence and radio scheduling if required; the current radio state handles one procedure at a time. |
+| LE Broadcaster role | [x] | Hardware TODO: Verify advertising timing, channel use, and stop/restart behavior. |
+| LE Observer role | [x] | Hardware TODO: Verify scan timing, channel rotation, and report delivery. |
+| LE Peripheral role | [x] | Hardware TODO: Verify connection acceptance and recovery. |
+| LE Central role | [x] | Hardware TODO: Verify initiation and recovery. |
+| Connectable and non-connectable legacy advertising modes | [x] | Hardware TODO: Verify all supported PDU modes and peer compatibility. |
+| Scannable and non-scannable legacy advertising modes | [x] | Hardware TODO: Verify scan request/response behavior. |
+| Directed and undirected legacy advertising | [x] | Hardware TODO: Verify both address types and directed target matching. |
+| General and limited discoverable modes | [x] | Flags are recognized by discovery filtering; application supplies advertising data. |
+| Bondable and non-bondable modes | [x] | Hardware TODO: Verify pairing policy and bond creation behavior. |
+| Run multiple GAP roles/procedures concurrently | [ ] TODO | Add radio scheduling and coexistence state; current radio operation handles one procedure at a time. |
 
-### Advertising
+## Advertising and scan data
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Legacy connectable, non-connectable, scannable, and directed advertising | [x] | Hardware TODO: Verify timing, channel rotation, and peer compatibility. |
-| Advertising data and scan response validation | [x] | Legacy payload length and structure checks are implemented. |
-| Private address selection and rotation | [x] | Hardware TODO: Verify rotation and peer compatibility. |
-| Extended advertising | [ ] TODO | Add if required by the target controller and product. |
-| Periodic advertising and PAwR | [ ] TODO | Add if synchronized or response-based broadcasts are required. |
+| Legacy advertising start/stop and interval configuration | [x] | Hardware TODO: Verify interval accuracy and channel rotation. |
+| Advertising data and scan response length/AD-structure validation | [x] | Hardware TODO: Verify payloads with independent scanners. |
+| Common AD structure builder/parser | [x] | `mesh_gap_ad_builder` builds flags, local names, 16/32/128-bit UUID lists, service data, and TX power; `mesh_gap_ad_next()` validates and iterates structures. |
+| Extended advertising sets and chained advertising data | [ ] TODO (optional) | Requires controller/radio support for extended PDUs and fragment assembly. |
+| Multiple independent advertising sets | [ ] TODO (optional) | Add per-set state, filtering, and radio scheduling. |
+| Advertising accept-list policy for scan and connection requests | [x] | `mesh_gap_advertising_filter_policy()` independently filters scan and connection requests against the Filter Accept List, including resolved RPAs. |
+| Advertising privacy address selection and rotation | [x] | Hardware TODO: Verify public, static, NRPA, and RPA behavior with peers. |
+| LE Coded PHY advertising | [ ] TODO (optional) | Add only if the target radio supports coded PHY advertising. |
 
-### Scanning and discovery
+## Scanning and discovery procedures
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Passive and active legacy scanning | [x] | Hardware TODO: Verify scan windows, channel rotation, and scan responses. |
-| General/limited discovery, scan interval/window, and duplicate filtering | [x] | — |
-| Peer selection, configurable filters, and RPA resolution | [x] | Hardware TODO: Verify filtering and resolution with independent peers. |
-| Name discovery over GATT | [x] | The GATT client can discover the GAP service and Device Name characteristic, then read its value. |
-| Extended scanning and periodic synchronization | [ ] TODO | Requires extended/periodic advertising support in the controller and radio. |
+| Passive legacy scanning | [x] | Hardware TODO: Verify scan windows and channel rotation. |
+| Active legacy scanning and scan response capture | [x] | Hardware TODO: Verify request timing, responses, and duplicate behavior. |
+| Scan interval/window configuration | [x] | Hardware TODO: Verify configured values on air. |
+| General Discovery procedure | [x] | Hardware TODO: Verify discoverable flags and minimum scan behavior. |
+| Limited Discovery procedure | [x] | Hardware TODO: Verify limited-discoverable flag filtering. |
+| Scan report queue, duplicate filtering, and identity resolution | [x] | Hardware TODO: Verify queue behavior and reports from bonded peers. |
+| Configurable scanning filters | [x] | Hardware TODO: Verify address, privacy, and discovery-mode filtering. |
+| Name Discovery procedure | [x] | GATT client primitives support GAP service/characteristic discovery and Read Using Characteristic UUID; hardware TODO: verify the connect/read/optional-disconnect flow. |
+| Extended advertising scanning and report reassembly | [ ] TODO (optional) | Requires extended scanning and chained-PDU support. |
+| Periodic advertising synchronization | [ ] TODO (optional) | See the Periodic Advertising section. |
 
-### Connections
+## Connection establishment and management
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Peripheral connection acceptance | [x] | Hardware TODO: Verify establishment and recovery with independent peers. |
-| Connection data path, control procedures, parameter updates, channel-map updates, and disconnect | [x] | Hardware TODO: Verify timing, updates, and termination. |
-| Direct connection establishment | [x] | Initiates a connection to a specified peer. |
-| General connection establishment | [x] | Scans and connects to the first acceptable connectable advertiser. |
-| Selective connection establishment | [ ] TODO | Add a peer-list based scan-and-connect procedure. |
-| Automatic connection establishment | [ ] TODO | Add a peer-list based automatic connection procedure. |
-| Multiple simultaneous connections | [ ] TODO | Add per-link state and a radio event scheduler; current implementation supports one link. |
-| Periodic advertising connection | [ ] TODO | Depends on periodic advertising with responses. |
+| Direct Connection Establishment | [x] | Initiates to one supplied peer address. Hardware TODO: verify with public, random, and resolved addresses. |
+| General Connection Establishment | [x] | Scans and initiates to the first acceptable connectable advertiser. Hardware TODO: verify. |
+| Selective Connection Establishment | [x] | Uses the Filter Accept List and resolves listed peers' RPAs. Hardware TODO: verify with multiple peers and privacy enabled. |
+| Auto Connection Establishment | [x] | Background scans using the Filter Accept List until one peer connects or the application cancels; default low-duty timing is 1.28 s interval and 12 ms window. Hardware TODO: verify timing and peer filtering. |
+| Peripheral connection acceptance | [x] | Hardware TODO: Verify connection request validation and recovery. |
+| Initial connection parameters and connection-establishment timing controls | [x] | `mesh_gap_connection_timing_set()` configures the initial interval, latency, supervision timeout, finite attempt duration, and Auto background scan timing with BLE range/relation checks. Other scan interval/window values are configurable through `mesh_gap_scan_configure()`. Hardware TODO: verify timing on air. |
+| Connection data path and link-control procedures | [x] | Hardware TODO: Verify event timing, acknowledgments, and error recovery. |
+| Connection parameter update (Central and Peripheral paths) | [x] | Hardware TODO: Verify accepted/rejected updates and timing. |
+| Disconnect and link-loss handling | [x] | Hardware TODO: Verify local/remote termination and timeout recovery. |
+| Channel-map update | [x] | Hardware TODO: Verify instant handling with an independent peer. |
+| Multiple simultaneous connections | [ ] TODO (optional) | Add per-link state, radio scheduling, and per-peer security/GATT state. |
+| Periodic Advertising Connection | [ ] TODO (optional) | Depends on PAwR synchronization and response-slot support. |
 
-### Privacy and addresses
+## Addressing and privacy
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Public/static address selection and private address generation/rotation | [x] | Hardware TODO: Verify address rotation and peer compatibility. |
-| Peer identity list, privacy filtering, and RPA resolution | [x] | Hardware TODO: Verify with bonded peers and independent devices. |
-| Identity and IRK exchange during bonding | [x] | Hardware TODO: Verify restored identity resolution after reboot. |
-| GAP privacy service characteristic: Central Address Resolution | [x] | The GAP service reports support for address resolution. |
-| Resolvable Private Address Only | [ ] TODO | Add only if the device guarantees it uses RPAs as its local address after bonding. |
+| Public and static random addresses | [x] | Hardware TODO: Verify address type and byte order on air. |
+| Non-resolvable private address generation and rotation | [x] | Hardware TODO: Verify privacy timeout and rotation. |
+| Resolvable private address generation and rotation | [x] | Hardware TODO: Verify RPA generation and rotation with independent peers. |
+| Randomized RPA update timing (Core 6.1+) | [ ] TODO (controller-dependent) | Support controller-managed random timing within configured RPA update bounds when the controller exposes this capability. |
+| Peer identity list and IRK storage interfaces | [x] | Application supplies durable storage where needed. |
+| RPA resolution and peer identity matching | [x] | Hardware TODO: Verify bonded-peer resolution and filtering. |
+| Network and device privacy modes | [x] | Hardware TODO: Verify identity-address acceptance rules. |
+| Privacy filtering for scanning and incoming connections | [x] | Hardware TODO: Verify all filter combinations. |
+| Identity/IRK exchange during pairing and bond restoration | [x] | Hardware TODO: Verify across reboot and address rotation. |
+| Filter Accept List add/remove/clear and selective-connection filtering | [x] | Fixed capacity is configurable with `GAP_ACCEPT_LIST_COUNT`; entries are identity addresses and RPAs match through the identity list. Hardware TODO: verify peer filtering. |
+| Resolvable Private Address Only GAP characteristic | [ ] TODO (conditional/optional) | Add only if this device promises to use an RPA as its local address after bonding. |
 
-### Pairing, security, and bonding
+## Pairing, bonding, and security procedures
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Link encryption and key refresh | [x] | Hardware TODO: Verify encrypted links and key refresh. |
-| Legacy pairing: Just Works and Passkey Entry | [x] | Hardware TODO: Verify both roles and failure handling. |
+| Non-bondable and bondable pairing policy | [x] | Hardware TODO: Verify both policy settings with a peer. |
+| Legacy pairing: Just Works and Passkey Entry | [x] | Hardware TODO: Verify both roles, success, rejection, and timeout. |
 | LE Secure Connections: Just Works, Numeric Comparison, Passkey Entry, and OOB | [x] | Hardware TODO: Verify each enabled method with independent peers. |
-| Authentication requirements and GATT security permissions | [x] | Hardware TODO: Verify unauthorized and insufficient-security access behavior. |
-| Bond record load/save/delete interfaces | [x] | Application must provide durable storage before bonding is usable on the target. |
-| Cryptographic random interface | [x] | Application must provide cryptographic entropy before security is usable on the target. |
-| Data signing and encrypted advertising data | [ ] TODO | Add if these optional security procedures are in the supported feature target. |
-| Pairing, encryption, bond restoration, and OOB behavior | [ ] Hardware TODO | Verify with target hardware and independent BLE devices. |
+| Security Mode 1 encryption and authentication levels | [x] | Hardware TODO: Verify encrypted/authenticated access levels. |
+| Secure Connections Only policy | [x] | Hardware TODO: Verify rejection of legacy pairing. |
+| Bond creation, load, save, restoration, and removal interfaces | [x] | Application must provide durable storage; hardware TODO: verify persistence and recovery. |
+| Cryptographic entropy interface | [x] | Application must provide a secure entropy source before security is usable on hardware. |
+| GATT attribute security permissions | [x] | Hardware TODO: Verify insufficient encryption/authentication responses. |
+| Application authorization procedure/policy | [x] | GATT attributes can require application authorization for reads or writes; the server calls the configured authorizer and returns Insufficient Authorization when denied or unavailable. Unit tests cover allow/deny behavior and security-check ordering. |
+| Legacy connection data signing (Security Mode 2) | N/A | Removed in Core 6.3; excluded from this implementation target. |
+| Encrypted Advertising Data (EAD) | [x] | `mesh_gap_ead_encrypt()` and `mesh_gap_ead_decrypt()` encode/decode the 0x31 AD structure using CCM, secure randomizers, and application-provided session key/IV material. Set key material with `mesh_gap_ead_key_material_set()` before encrypting; the CSS sample vector is covered by a Central host test. |
+| Security Mode 3 / Broadcast_Code security | [ ] TODO (optional) | Required only if Broadcast Isochronous Streams are implemented. |
+| OOB exchange and restored-bond end-to-end behavior | [ ] Hardware TODO | Verify OOB data exchange, bonding, and reconnect behavior on target hardware. |
 
-### GAP service data
+## GAP GATT service
 
-| Feature | Status | TODO / verification |
+LE Central and Peripheral roles require one primary GAP service. A device with
+both roles exposes the union of the required characteristics.
+
+| Characteristic / behavior | Status | Remaining work / notes |
 | --- | --- | --- |
-| GAP service with Device Name and Appearance characteristics | [x] | Name defaults to `CH-Mess`; set `MESH_GATT_DEVICE_NAME` and `MESH_GATT_APPEARANCE` to customize it. |
-| Peripheral Preferred Connection Parameters | [x] | Advertises no preference (`0xffff` for each field); configure product-specific values if needed. |
-| Central Address Resolution | [x] | Reports address-resolution support. |
-| Resolvable Private Address Only | [ ] TODO | Add only if the device guarantees it uses RPAs as its local address after bonding. |
+| GAP primary service (UUID 0x1800) | [x] | Registered in the GATT server. |
+| Device Name (0x2A00) | [x] | Defaults to `CH-Mess`; configure `MESH_GATT_DEVICE_NAME`. Runtime updates accept UTF-8 names from 0 to 248 octets. |
+| Appearance (0x2A01) | [x] | Defaults to 0; configure `MESH_GATT_APPEARANCE`. |
+| Peripheral Preferred Connection Parameters (0x2A04) | [x] | Defaults to no preference (`0xffff` fields); set product-specific values if needed. |
+| Central Address Resolution (0x2AA6) | [x] | Reports address-resolution support when included. |
+| Resolvable Private Address Only (0x2AC9) | [ ] TODO (conditional/optional) | Include only when the device guarantees RPA use after bonding. |
+| Encrypted Data Key Material (0x2B88) | [x] | Opt in with `MESH_GATT_EAD_SUPPORT=1` and configure key material before clients read it; the read-only key/IV value requires an authenticated link and application authorization via `mesh_gatt_set_authorizer()`. |
+| LE GATT Security Levels (0x2BF5) | [x] | The GAP service reports its highest requirement as LE Security Mode 1, Level 3 (authenticated encryption); the value is readable without link security and remains static during a connection. |
+| Device Name runtime update and access policy | [x] | `mesh_gatt_gap_device_name_set()` validates UTF-8; unauthenticated reads are enabled only while advertising Flags mark the device discoverable, and authenticated access is required otherwise. Hardware TODO: verify policy with a peer. |
 
-### PHY and connection capabilities
+## PHY, data length, and Link Layer capabilities used by GAP
 
-| Feature | Status | TODO / verification |
+These are Link Layer capabilities that affect GAP procedures. They are listed
+here because the GAP host must configure or report the capabilities it uses.
+
+| Capability | Status | Remaining work / notes |
 | --- | --- | --- |
-| LE 1M PHY | [x] | Hardware TODO: Verify connection timing. |
-| LE 2M PHY negotiation | [x] | Hardware TODO: Verify independent TX/RX PHY switching. |
-| Data Length Extension and feature exchange | [x] | Hardware TODO: Verify with peers supporting larger data packets. |
-| LE Coded PHY | [ ] TODO | Add only if the target radio supports it. |
-| Connection subrating, channel classification, and advertising coding selection | [ ] TODO | Add if required by the selected Core feature set and supported by the controller. |
+| LE 1M PHY | [x] | Hardware TODO: verify advertising and connection operation. |
+| LE 2M PHY negotiation | [x] | Hardware TODO: verify independent TX/RX PHY switching. |
+| Data Length Extension and feature exchange | [x] | Hardware TODO: verify negotiation with peers. |
+| LE Coded PHY | [ ] TODO (optional) | Requires radio support and PHY negotiation/update procedures. |
+| Connection subrating / connection-rate procedures | [ ] TODO (optional) | Add when required by target Core version and controller. |
+| Channel classification and channel-map management beyond current update path | [ ] TODO (optional) | Add controller reporting and automatic map selection if required. |
+| Advertising coding selection | [ ] TODO (optional) | Depends on coded PHY advertising support. |
 
-### Periodic advertising
+## Extended and periodic advertising
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Periodic advertiser and periodic advertising data | [ ] TODO | Requires extended advertising support. |
-| Periodic synchronization establishment/termination and PAST | [ ] TODO | Requires periodic advertiser/scanner and connection support. |
-| Periodic Advertising with Responses (PAwR) | [ ] TODO | Add if the product needs scheduled broadcast responses. |
+| Extended advertising and scan response | [ ] TODO (optional) | Base dependency for the following periodic features. |
+| Periodic advertising mode and data | [ ] TODO (optional) | Implement advertiser scheduling and chained data handling. |
+| Periodic synchronization establishment and termination | [ ] TODO (optional) | Implement scanner synchronization state, loss handling, and cancellation. |
+| Periodic Advertising Sync Transfer (PAST) | [ ] TODO (optional) | Add transfer over an existing connection. |
+| Periodic Advertising with Responses (PAwR) | [ ] TODO (optional) | Add subevent timing, response slots, and advertiser/scanner procedures. |
+| Periodic Advertising Connection | [ ] TODO (optional) | Add connection initiation from a synchronized PAwR response procedure. |
 
-### Isochronous links and broadcasts
+## Isochronous procedures
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Connected Isochronous Streams (CIS) | [ ] TODO | Requires controller scheduling and isochronous radio support. |
-| Broadcast Isochronous Streams (BIS) | [ ] TODO | Requires BIG/BIS scheduling, periodic advertising, and isochronous radio support. |
+| Connected Isochronous Stream (CIS) establishment, update, and termination | [ ] TODO (optional) | Requires ISO scheduling, transport, and controller support. |
+| Broadcast Isochronous Synchronizability mode | [ ] TODO (optional) | Requires BIGInfo in periodic advertising. |
+| Broadcast Isochronous Broadcasting mode (BIG/BIS) | [ ] TODO (optional) | Add broadcast setup, data, security, and termination. |
+| Broadcast Isochronous Synchronization Establishment | [ ] TODO (optional) | Add BIG/BIS synchronization and loss handling. |
+| Broadcast Isochronous channel-map update and termination | [ ] TODO (optional) | Depends on BIS broadcast/synchronization. |
 
-### Channel Sounding
+## Channel Sounding
 
-| Feature | Status | TODO / verification |
+| Feature | Status | Remaining work / notes |
 | --- | --- | --- |
-| Channel Sounding initiator and reflector procedures | [ ] TODO | Requires a Channel Sounding-capable controller/radio and its security procedures. |
+| Channel Sounding security start and capability exchange | [ ] TODO (optional) | Requires a Channel Sounding-capable controller and secure connection. |
+| Channel Sounding configuration and start procedures | [ ] TODO (optional) | Implement initiator and reflector roles. |
+| Channel Sounding results, termination, and channel-map update | [ ] TODO (optional) | Requires radio measurements and controller result reporting. |
+| Channel Sounding Inline Phase Correction Term Transfer (Core 6.3) | [ ] TODO (optional) | Add when implementing Core 6.3 Channel Sounding support and the controller exposes it. |
+| PHY-specific Channel Sounding RTT accuracy (Core 6.3) | [ ] TODO (optional) | Apply the Core 6.3 accuracy requirements for each supported PHY. |
 
-Hardware verification remains for the device owner. Software marked `[x]` has
-not necessarily passed Bluetooth qualification testing.
+## Verification and release checklist
+
+| Check | Status | Remaining work / notes |
+| --- | --- | --- |
+| Unit tests for implemented GAP procedures | [ ] TODO | GATT tests cover AD building/parsing, Device Name policy, and EDKM authorization; central tests include the EAD CSS vector, Filter Accept List operations, Peripheral request filtering, and selective/automatic connection. Broaden coverage for remaining success, rejection, timeout, malformed-packet, and cancellation paths. |
+| Bumble interoperability for GAP GATT characteristics and ATT discovery/read | [x] | The GATT Bumble fixture checks GAP characteristic discovery/read, the updated Database Hash, and that Encrypted Data Key Material cannot be read without link authentication. Run `python3 iSLER-mess/tests/ble_gatt_bumble_interop.py` in an environment with Bumble installed. |
+| Bumble or independent-peer tests for advertising, scanning, and connections | [ ] TODO | Requires a usable radio/HCI test path; the current CH582 integration uses project-specific hardware hooks. |
+| Pairing, privacy, PHY, and connection timing on target hardware | [ ] Hardware TODO | Run the device-side checks after software implementation. |
+| GAP ICS/TCRL review and Bluetooth qualification | [ ] TODO | Select the supported roles/features, complete applicable test cases, and record qualification results. |
+
+## Suggested implementation order
+
+1. Implement conditional GAP characteristics and services for enabled features.
+2. Add extended advertising/scanning if the target radio supports it.
+3. Add periodic advertising and PAwR only if the product requires them.
+4. Add multiple links, isochronous procedures, or Channel Sounding only with the necessary radio/controller support.
+5. Complete software interoperability tests, then perform the hardware and qualification checks above.

@@ -42,13 +42,77 @@ static uint8_t secure_random_passkey_fail, secure_random_passkey_reject;
 uint32_t BLE_GAP_CRITICAL_ENTER(void) { return 0; }
 void BLE_GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 static uint8_t secure_random_forced[12], secure_random_force;
+static uint8_t ead_randomizer_forced[5], ead_randomizer_force;
 int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
     if (!secure_random_available || (len == 4 && secure_random_passkey_fail)) return 0;
     if (len == 4 && secure_random_passkey_reject) { memset(out, 0xff, 4); return 1; }
     if (secure_random_disconnect) gap_connection_end();
+    if (len == sizeof(ead_randomizer_forced) && ead_randomizer_force) {
+        memcpy(out, ead_randomizer_forced, sizeof(ead_randomizer_forced));
+        return 1;
+    }
     if (secure_random_force) { assert(len == 12); memcpy(out, secure_random_forced, 12); return 1; }
     for (size_t i = 0; i < len; i++) out[i] = secure_random_seed++;
     return 1;
+}
+
+static void test_encrypted_advertising_data(void) {
+    static const uint8_t key[16] = {
+        0x57, 0xa9, 0xda, 0x12, 0xd1, 0x2e, 0x6e, 0x13,
+        0x1e, 0x20, 0x61, 0x2a, 0xd1, 0x0a, 0x6a, 0x19
+    };
+    static const uint8_t iv[8] = {
+        0x9e, 0x7a, 0x00, 0xef, 0xb1, 0x7a, 0xe7, 0x46
+    };
+    static const uint8_t plaintext[] = {
+        0x0f, 0x09, 'S', 'h', 'o', 'r', 't', ' ', 'M', 'i', 'n', 'i',
+        '-', 'B', 'u', 's', 0x03, 0x19, 0x0a, 0x8c
+    };
+    static uint8_t vector[] = {
+        0x1e, 0x31, 0x18, 0xe1, 0x57, 0xca, 0xde,
+        0x74, 0xe4, 0xdc, 0xaf, 0xdc, 0x51, 0xc7, 0x28, 0x28,
+        0x10, 0xc2, 0x21, 0x7f, 0x0e, 0x4c, 0xef, 0x43, 0x43, 0x18, 0x1f,
+        0xba, 0x00, 0x69, 0xcc
+    };
+    uint8_t randomizer[5] = {0x18, 0xe1, 0x57, 0xca, 0xde};
+    uint8_t output[MESH_GAP_EAD_AD_STRUCTURE_MAX], clear[32];
+    size_t output_len = 0, clear_len = 0;
+    mesh_gap_ead_key_material_clear();
+    assert(!mesh_gap_ead_encrypt(plaintext, sizeof(plaintext), output,
+        sizeof(output), &output_len));
+    assert(mesh_gap_ead_key_material_set(key, iv));
+    assert(mesh_gap_ead_decrypt(vector, sizeof(vector), clear,
+        sizeof(clear), &clear_len));
+    assert(clear_len == sizeof(plaintext) &&
+           !memcmp(clear, plaintext, sizeof(plaintext)));
+    const uint8_t malformed_payload[] = {0x04, 0x09, 'x'};
+    assert(!mesh_gap_ead_encrypt(malformed_payload,
+        sizeof(malformed_payload), output, sizeof(output), &output_len));
+
+    memcpy(ead_randomizer_forced, randomizer, sizeof(randomizer));
+    ead_randomizer_force = 1;
+    assert(mesh_gap_ead_encrypt(plaintext, sizeof(plaintext), output,
+        sizeof(output), &output_len));
+    ead_randomizer_force = 0;
+    assert(output_len == sizeof(vector) &&
+           !memcmp(output, vector, sizeof(vector)));
+    secure_random_available = 0;
+    assert(!mesh_gap_ead_encrypt(plaintext, sizeof(plaintext), output,
+        sizeof(output), &output_len));
+    secure_random_available = 1;
+
+    vector[sizeof(vector) - 1] ^= 1;
+    assert(!mesh_gap_ead_decrypt(vector, sizeof(vector), clear,
+        sizeof(clear), &clear_len));
+    vector[sizeof(vector) - 1] ^= 1;
+    assert(!mesh_gap_ead_decrypt(vector, sizeof(vector) - 1, clear,
+        sizeof(clear), &clear_len));
+    assert(!mesh_gap_ead_encrypt(plaintext, sizeof(plaintext), output,
+        sizeof(output) - 1, &output_len));
+    mesh_gap_ead_key_material_clear();
+    assert(!mesh_gap_ead_key_material_get(clear));
+    assert(!mesh_gap_ead_decrypt(vector, sizeof(vector), clear,
+        sizeof(clear), &clear_len));
 }
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size) {
     return BLE_GAP_RANDOM_SECURE_BYTES(out, size);
@@ -135,6 +199,61 @@ static void test_connect_request(void) {
     assert(request[0] == 0xc5);
     assert(memcmp(request + 2, local_random, 6) == 0);
     mesh_gap_connect_cancel();
+}
+
+static void test_connection_timing_configuration(void) {
+    mesh_gap_connection_timing timing;
+    assert(mesh_gap_connection_timing_get(&timing));
+    assert(timing.interval == 24 && timing.latency == 0 &&
+           timing.supervision_timeout == 200 &&
+           timing.background_scan_interval_ms == 1280 &&
+           timing.background_scan_window_ms == 12 &&
+           timing.attempt_timeout_ms == 30720);
+    assert(!mesh_gap_connection_timing_get(NULL));
+    mesh_gap_connection_timing invalid = timing;
+    invalid.interval = 5;
+    assert(!mesh_gap_connection_timing_set(&invalid));
+    invalid = timing;
+    invalid.latency = 499;
+    invalid.supervision_timeout = 300; // Fails the supervision timeout relation.
+    assert(!mesh_gap_connection_timing_set(&invalid));
+    invalid = timing;
+    invalid.attempt_timeout_ms = 0;
+    assert(!mesh_gap_connection_timing_set(&invalid));
+    invalid = timing;
+    invalid.background_scan_window_ms =
+        invalid.background_scan_interval_ms + 1;
+    assert(!mesh_gap_connection_timing_set(&invalid));
+
+    timing.interval = 40;
+    timing.latency = 2;
+    timing.supervision_timeout = 400;
+    timing.attempt_timeout_ms = 45000;
+    assert(mesh_gap_connection_timing_set(&timing));
+    const uint8_t peer[6] = {9, 8, 7, 6, 5, 4};
+    assert(mesh_gap_connect_start(peer, 0));
+    assert(gap_central_connect.request[24] == 40 &&
+           gap_central_connect.request[26] == 2 &&
+           gap_central_connect.request[28] == 0x90 &&
+           gap_central_connect.request[29] == 1);
+    assert(gap_central_connect.deadline_ms == now_ms + 45000);
+    assert(!mesh_gap_connection_timing_set(&timing)); // Settings are locked while scanning.
+    mesh_gap_connect_cancel();
+
+    timing.attempt_timeout_ms = 250;
+    assert(mesh_gap_connection_timing_set(&timing));
+    assert(mesh_gap_connect_start(peer, 0));
+    now_ms += 251;
+    gap_hw_mesh_scan_poll();
+    assert(!gap_central_connect.active && !gap_scanning);
+
+    timing.interval = 24;
+    timing.latency = 0;
+    timing.supervision_timeout = 200;
+    timing.background_scan_interval_ms = 1280;
+    timing.background_scan_window_ms = 12;
+    timing.attempt_timeout_ms = 30720;
+    assert(mesh_gap_connection_timing_set(&timing));
 }
 
 // Core specification Vol 3 Part H, Appendix D.7; IRK is AES byte order.
@@ -237,6 +356,26 @@ static void test_scan_identity_filter(void) {
     assert(mesh_gap_scan_configure(20, 20, MESH_GAP_DISCOVERY_ALL, 0));
 }
 
+static void test_accept_list_capacity(void) {
+    uint8_t addresses[GAP_ACCEPT_LIST_COUNT + 1][6] = {{0}};
+    assert(mesh_gap_accept_list_clear());
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
+        addresses[i][0] = (uint8_t)(i + 1);
+        addresses[i][1] = 0x42;
+        addresses[i][5] = 0x20;
+        assert(mesh_gap_accept_list_add(addresses[i], 0));
+    }
+    addresses[GAP_ACCEPT_LIST_COUNT][0] = 0xfe;
+    addresses[GAP_ACCEPT_LIST_COUNT][1] = 0x42;
+    addresses[GAP_ACCEPT_LIST_COUNT][5] = 0x20;
+    assert(!mesh_gap_accept_list_add(addresses[GAP_ACCEPT_LIST_COUNT], 0));
+    assert(mesh_gap_accept_list_add(addresses[0], 0)); // Full duplicate is a no-op.
+    assert(mesh_gap_accept_list_remove(addresses[GAP_ACCEPT_LIST_COUNT / 2], 0));
+    assert(mesh_gap_accept_list_add(addresses[GAP_ACCEPT_LIST_COUNT], 0));
+    assert(mesh_gap_accept_list_remove(addresses[GAP_ACCEPT_LIST_COUNT], 0));
+    assert(mesh_gap_accept_list_clear());
+}
+
 static void test_radio_privacy_filter(void) {
     mesh_gap_active_scan_start();
     memset(rx_frame, 0, sizeof(rx_frame));
@@ -275,6 +414,41 @@ static void test_radio_privacy_filter(void) {
     gap_radio_advertising_rx_event = 0;
     gap_radio_connect_request_ready = 0;
     assert(mesh_gap_privacy_filter(0, 0));
+
+    assert(mesh_gap_accept_list_clear());
+    assert(mesh_gap_accept_list_add(test_identity, 0));
+    assert(!mesh_gap_advertising_filter_policy(2, 0));
+    assert(mesh_gap_advertising_filter_policy(1, 1));
+    gap_radio_advertising_rx_event = 1;
+    gap_radio_adv_frame[0] = 0; // Undirected connectable advertising.
+    BLE_GAP_HW_PUBLIC_ADDRESS(gap_radio_adv_frame + 2);
+    gap_radio_scan_response_started = 0;
+    rx_frame[0] = 0x43; rx_frame[1] = 12;
+    const uint8_t unknown_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
+    memcpy(rx_frame + 2, unknown_peer, 6);
+    memcpy(rx_frame + 8, gap_radio_adv_frame + 2, 6);
+    before = link_tx_count;
+    gap_hw_mesh_received();
+    assert(link_tx_count == before && !gap_radio_scan_response_started);
+
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_radio_rx_ready = 0;
+    gap_hw_mesh_received();
+    assert(link_tx_count == before + 1 && gap_radio_scan_response_started);
+    gap_radio_scan_response_started = 0;
+
+    rx_frame[0] = 0x45; rx_frame[1] = 34;
+    memcpy(rx_frame + 2, unknown_peer, 6);
+    gap_radio_connect_request_ready = 0;
+    gap_hw_mesh_received();
+    assert(!gap_radio_connect_request_ready);
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_radio_connect_request_ready);
+    gap_radio_advertising_rx_event = 0;
+    gap_radio_connect_request_ready = 0;
+    assert(mesh_gap_advertising_filter_policy(0, 0));
+    assert(mesh_gap_accept_list_clear());
 }
 
 static void test_connect_by_identity(void) {
@@ -311,6 +485,71 @@ static void test_general_connection_establishment(void) {
     assert(memcmp(gap_conn.peer_identity_address, peer, 6) == 0);
     assert(memcmp(gap_central_connect.request + 8, peer, 6) == 0);
     gap_connection_end();
+}
+
+static void test_selective_connection_establishment(void) {
+    const uint8_t other_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
+    assert(mesh_gap_accept_list_clear());
+    assert(!mesh_gap_accept_list_add(NULL, 0));
+    assert(!mesh_gap_accept_list_add(test_identity, 2));
+    assert(!mesh_gap_accept_list_add((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1));
+    assert(!mesh_gap_accept_list_add(
+        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1));
+    assert(!mesh_gap_identity_set((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1,
+                                  test_irk));
+    assert(!mesh_gap_identity_set(
+        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1, test_irk));
+    assert(mesh_gap_accept_list_add(test_identity, 0));
+    assert(mesh_gap_accept_list_add(test_identity, 0)); // Duplicate is harmless.
+    assert(mesh_gap_connect_selective_start(0));
+    assert(gap_central_connect.active && gap_central_connect.selective &&
+           !gap_central_connect.any_peer && gap_scanning && !gap_active_scanning);
+    assert(!mesh_gap_accept_list_remove(test_identity, 0)); // Frozen while scanning.
+    assert(!mesh_gap_accept_list_add(other_peer, 0));
+
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0x00;
+    rx_frame[1] = 6;
+    memcpy(rx_frame + 2, other_peer, 6);
+    gap_hw_mesh_received();
+    assert(gap_central_connect.active && !gap_conn.active);
+
+    // A listed identity also matches its resolvable private address.
+    rx_frame[0] = 0x40;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_conn.active && gap_conn.central_role && !gap_central_connect.active);
+    assert(memcmp(gap_conn.peer_identity_address, test_identity, 6) == 0);
+    assert(memcmp(gap_central_connect.request + 8, test_rpa, 6) == 0);
+    gap_connection_end();
+
+    assert(mesh_gap_accept_list_remove(test_identity, 0));
+    assert(!mesh_gap_connect_selective_start(0));
+    assert(mesh_gap_accept_list_clear());
+}
+
+static void test_auto_connection_establishment(void) {
+    assert(mesh_gap_accept_list_clear());
+    assert(mesh_gap_accept_list_add(test_identity, 0));
+    assert(mesh_gap_connect_auto_start());
+    assert(gap_central_connect.active && gap_central_connect.auto_connect &&
+           gap_scanning && !gap_active_scanning);
+    now_ms += 12000;
+    gap_hw_mesh_scan_poll();
+    assert(gap_central_connect.active && gap_scanning); // Background mode has no attempt timeout.
+    mesh_gap_connect_cancel();
+    assert(!gap_central_connect.active && !gap_central_connect.auto_connect &&
+           !gap_scanning);
+
+    assert(mesh_gap_connect_auto_start());
+    memset(rx_frame, 0, sizeof(rx_frame));
+    rx_frame[0] = 0x40; rx_frame[1] = 6;
+    memcpy(rx_frame + 2, test_rpa, 6);
+    gap_hw_mesh_received();
+    assert(gap_conn.active && gap_conn.central_role && !gap_central_connect.active);
+    assert(memcmp(gap_conn.peer_identity_address, test_identity, 6) == 0);
+    gap_connection_end();
+    assert(mesh_gap_accept_list_clear());
 }
 
 static void test_directed_connect_target(void) {
@@ -2079,14 +2318,19 @@ static void test_secure_connections_passkey(void) {
 }
 
 int main(void) {
+    test_encrypted_advertising_data();
     test_access_address_rules();
     test_connect_request();
+    test_connection_timing_configuration();
     test_address_resolution();
     test_private_rotation();
+    test_accept_list_capacity();
     test_scan_identity_filter();
     test_radio_privacy_filter();
     test_connect_by_identity();
     test_general_connection_establishment();
+    test_selective_connection_establishment();
+    test_auto_connection_establishment();
     test_directed_connect_target();
     test_peer_privacy_modes();
     test_peer_local_keys();

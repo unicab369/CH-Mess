@@ -133,6 +133,12 @@ int main(void) {
             started = ble_gatt_client_discover_included_services(&client,
                 11, 11, now_ms);
             break;
+        case 21: {
+            const uint16_t handles[] = {3, 4};
+            started = ble_gatt_client_read_multiple(&client, handles, 2, 1,
+                                                     now_ms);
+            break;
+        }
         default:
             return 2;
         }

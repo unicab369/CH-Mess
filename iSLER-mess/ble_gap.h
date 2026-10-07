@@ -17,7 +17,6 @@
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Verify Secure Connections OOB exchange and restored bonds on hardware.
 //   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
-// - Add selective and automatic Central connection procedures using a peer list.
 // - Add extended/periodic advertising and synchronization where supported by
 //   the target controller, with tests for each implemented procedure.
 
@@ -38,6 +37,12 @@
 #endif
 #if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
 #error "GAP_IDENTITY_COUNT must be between 1 and 32"
+#endif
+#ifndef GAP_ACCEPT_LIST_COUNT
+#define GAP_ACCEPT_LIST_COUNT 4
+#endif
+#if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
+#error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
 #endif
 
 #define MESH_GAP_DISCOVERY_ALL 0
@@ -118,6 +123,14 @@ typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;
 } mesh_gap_data_length;
 
+// Initial LE connection settings. Connection interval is in 1.25 ms units,
+// supervision timeout in 10 ms units, and attempt timeout in milliseconds.
+typedef struct {
+    uint16_t interval, latency, supervision_timeout;
+    uint16_t background_scan_interval_ms, background_scan_window_ms;
+    uint32_t attempt_timeout_ms;
+} mesh_gap_connection_timing;
+
 // One peer's persistent LE bond data. Addresses and key identifiers use
 // Bluetooth little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
@@ -175,6 +188,7 @@ static struct {
     uint8_t address_type, address[6];
     uint8_t target_type, target_address[6];
     int8_t peer_slot;
+    uint8_t scan_accept_list, connection_accept_list;
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
@@ -421,9 +435,16 @@ static uint8_t gap_scan_seen_count, gap_scan_seen_next;
 static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
 static uint8_t gap_scan_response_address[6];
 static struct {
-    uint8_t active, any_peer, peer_type, peer_address[6], request[36];
+    uint8_t active, any_peer, selective, auto_connect;
+    uint8_t peer_type, peer_address[6], request[36];
     uint32_t deadline_ms;
 } gap_central_connect;
+static mesh_gap_connection_timing gap_connection_timing = {
+    24, 0, 200, 1280, 12, 30720
+};
+static struct {
+    uint8_t used, address_type, address[6];
+} gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
 // Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
 // Addresses use PDU byte order; IRKs use standard AES byte order.
@@ -463,6 +484,83 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
     return -1;
 }
 
+// A static random address has 11 type bits and a nonzero, non-all-ones 46-bit
+// random part. Identity and Filter Accept List entries use the same rule.
+static int gap_static_random_address_valid(const uint8_t address[6]) {
+    if (!address || (address[5] & 0xc0) != 0xc0) return 0;
+    uint8_t all_zero = 1, all_one = 1;
+    for (uint8_t i = 0; i < 6; i++) {
+        uint8_t bits = i == 5 ? address[i] & 0x3f : address[i];
+        if (bits) all_zero = 0;
+        if (bits != (i == 5 ? 0x3f : 0xff)) all_one = 0;
+    }
+    return !all_zero && !all_one;
+}
+
+// Match an advertiser against the accept list, resolving RPAs to stored identities.
+static int gap_accept_list_match(const uint8_t address[6], uint8_t address_type,
+                                int identity_slot) {
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
+        if (!gap_accept_list[i].used) continue;
+        if (gap_accept_list[i].address_type == address_type &&
+            memcmp(gap_accept_list[i].address, address, 6) == 0) return 1;
+        if (identity_slot >= 0 &&
+            gap_identities[identity_slot].address_type ==
+                gap_accept_list[i].address_type &&
+            memcmp(gap_identities[identity_slot].address,
+                   gap_accept_list[i].address, 6) == 0) return 1;
+    }
+    return 0;
+}
+
+static int gap_accept_list_nonempty(void) {
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
+        if (gap_accept_list[i].used) return 1;
+    return 0;
+}
+
+// Add an identity address to the bounded Filter Accept List while GAP is idle.
+int mesh_gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
+    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        gap_conn.active || gap_central_connect.active ||
+        (address_type && !gap_static_random_address_valid(address))) return 0;
+    int free_slot = -1;
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
+        if (gap_accept_list[i].used &&
+            gap_accept_list[i].address_type == address_type &&
+            memcmp(gap_accept_list[i].address, address, 6) == 0) return 1;
+        if (!gap_accept_list[i].used && free_slot < 0) free_slot = i;
+    }
+    if (free_slot < 0) return 0;
+    gap_accept_list[free_slot].used = 1;
+    gap_accept_list[free_slot].address_type = address_type;
+    memcpy(gap_accept_list[free_slot].address, address, 6);
+    return 1;
+}
+
+// Remove an identity address from the Filter Accept List while GAP is idle.
+int mesh_gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
+    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        gap_conn.active || gap_central_connect.active) return 0;
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
+        if (gap_accept_list[i].used &&
+            gap_accept_list[i].address_type == address_type &&
+            memcmp(gap_accept_list[i].address, address, 6) == 0) {
+            memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Empty the Filter Accept List while GAP is idle.
+int mesh_gap_accept_list_clear(void) {
+    if (gap_scanning || gap_advertising.enabled || gap_conn.active ||
+        gap_central_connect.active) return 0;
+    memset(gap_accept_list, 0, sizeof(gap_accept_list));
+    return 1;
+}
+
 // Network privacy rejects a known peer's identity address when it has an IRK.
 // Device privacy accepts it; unknown peers still follow the configured filters.
 static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
@@ -478,7 +576,7 @@ int mesh_gap_identity_set(const uint8_t address[6], uint8_t address_type,
                            const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning ||
         gap_advertising.enabled || gap_conn.active || gap_central_connect.active ||
-        (address_type && (address[5] & 0xc0) != 0xc0)) return 0;
+        (address_type && !gap_static_random_address_valid(address))) return 0;
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -640,6 +738,18 @@ int mesh_gap_privacy_filter(uint8_t scan, uint8_t connection) {
     return 1;
 }
 
+// Restrict Peripheral scan and connection requests to peers in the Filter
+// Accept List. This is advertising policy, separate from privacy resolution.
+int mesh_gap_advertising_filter_policy(uint8_t scan_accept_list,
+                                       uint8_t connection_accept_list) {
+    if (scan_accept_list > 1 || connection_accept_list > 1 ||
+        gap_scanning || gap_advertising.enabled || gap_conn.active ||
+        gap_central_connect.active) return 0;
+    gap_advertising.scan_accept_list = scan_accept_list;
+    gap_advertising.connection_accept_list = connection_accept_list;
+    return 1;
+}
+
 static int gap_access_address_valid(uint32_t address) {
     if (address == BLE_ADV_ACCESS_ADDRESS ||
         (address ^ BLE_ADV_ACCESS_ADDRESS) == 0 ||
@@ -687,14 +797,7 @@ static int gap_access_address_generate(uint32_t *address) {
 int mesh_gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_advertising.enabled || gap_scanning ||
         gap_conn.active || gap_central_connect.active ||
-        (address[5] & 0xc0) != 0xc0) return 0;
-    uint8_t all_zero = 1, all_one = 1;
-    for (uint8_t i = 0; i < 6; i++) {
-        uint8_t bits = i == 5 ? address[i] & 0x3f : address[i];
-        if (bits) all_zero = 0;
-        if (bits != (i == 5 ? 0x3f : 0xff)) all_one = 0;
-    }
-    if (all_zero || all_one) return 0;
+        !gap_static_random_address_valid(address)) return 0;
     memcpy(gap_random_address, address, 6);
     memcpy(gap_identity_address, address, 6);
     gap_identity_address_type = 1;
@@ -731,6 +834,32 @@ int mesh_gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
     return 1;
 }
 
+// Configure initial Central connection parameters and the finite scan timeout
+// used by Direct, General, and Selective Connection Establishment.
+int mesh_gap_connection_timing_set(const mesh_gap_connection_timing *timing) {
+    if (!timing || timing->interval < 6 || timing->interval > 3200 ||
+        timing->latency > 499 || timing->supervision_timeout < 10 ||
+        timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
+        timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanning ||
+        gap_advertising.enabled || gap_conn.active ||
+        gap_central_connect.active || timing->background_scan_interval_ms < 3 ||
+        timing->background_scan_interval_ms >= 40960 ||
+        timing->background_scan_window_ms < 3 ||
+        timing->background_scan_window_ms > timing->background_scan_interval_ms)
+        return 0;
+    if ((uint32_t)timing->supervision_timeout * 4u <=
+        (uint32_t)(timing->latency + 1u) * timing->interval) return 0;
+    gap_connection_timing = *timing;
+    return 1;
+}
+
+// Read the current initial connection and attempt timing settings.
+int mesh_gap_connection_timing_get(mesh_gap_connection_timing *timing) {
+    if (!timing) return 0;
+    *timing = gap_connection_timing;
+    return 1;
+}
+
 static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
     if ((!data && len) || len > MESH_GAP_ADV_DATA_MAX) return 0;
     for (size_t offset = 0; offset < len;) {
@@ -743,6 +872,168 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
         offset += (size_t)field_len + 1;
     }
     return 1;
+}
+
+enum {
+    MESH_GAP_AD_FLAGS = 0x01,
+    MESH_GAP_AD_UUID16_INCOMPLETE = 0x02,
+    MESH_GAP_AD_UUID16_COMPLETE = 0x03,
+    MESH_GAP_AD_UUID32_INCOMPLETE = 0x04,
+    MESH_GAP_AD_UUID32_COMPLETE = 0x05,
+    MESH_GAP_AD_UUID128_INCOMPLETE = 0x06,
+    MESH_GAP_AD_UUID128_COMPLETE = 0x07,
+    MESH_GAP_AD_NAME_SHORT = 0x08,
+    MESH_GAP_AD_NAME_COMPLETE = 0x09,
+    MESH_GAP_AD_TX_POWER = 0x0a,
+    MESH_GAP_AD_SERVICE_DATA16 = 0x16,
+    MESH_GAP_AD_SERVICE_DATA32 = 0x20,
+    MESH_GAP_AD_SERVICE_DATA128 = 0x21,
+    MESH_GAP_AD_ENCRYPTED_DATA = 0x31
+};
+
+typedef struct {
+    uint8_t *data;
+    size_t capacity, len;
+} mesh_gap_ad_builder;
+
+// Start building AD structures in caller-owned storage.
+int mesh_gap_ad_builder_init(mesh_gap_ad_builder *builder, uint8_t *data,
+                             size_t capacity) {
+    if (!builder || (!data && capacity)) return 0;
+    builder->data = data;
+    builder->capacity = capacity;
+    builder->len = 0;
+    return 1;
+}
+
+// Append one length-type-value AD structure. Values are stored in BLE byte order.
+int mesh_gap_ad_append(mesh_gap_ad_builder *builder, uint8_t type,
+                       const uint8_t *value, size_t value_len) {
+    if (!builder || !builder->data || (!value && value_len) ||
+        value_len > 254 || builder->len > builder->capacity ||
+        value_len + 2 > builder->capacity - builder->len) return 0;
+    builder->data[builder->len] = (uint8_t)(value_len + 1);
+    builder->data[builder->len + 1] = type;
+    if (value_len) memcpy(builder->data + builder->len + 2, value, value_len);
+    builder->len += value_len + 2;
+    return 1;
+}
+
+int mesh_gap_ad_add_flags(mesh_gap_ad_builder *builder, uint8_t flags) {
+    if (flags & 0xe0) return 0;
+    return mesh_gap_ad_append(builder, MESH_GAP_AD_FLAGS, &flags, 1);
+}
+
+int mesh_gap_ad_add_local_name(mesh_gap_ad_builder *builder,
+                               const uint8_t *name, size_t len,
+                               uint8_t complete) {
+    if (complete > 1 || (!name && len)) return 0;
+    return mesh_gap_ad_append(builder,
+        complete ? MESH_GAP_AD_NAME_COMPLETE : MESH_GAP_AD_NAME_SHORT,
+        name, len);
+}
+
+int mesh_gap_ad_add_uuid16_list(mesh_gap_ad_builder *builder,
+    const uint16_t *uuids, size_t count, uint8_t complete) {
+    uint8_t value[254];
+    if (complete > 1 || (!uuids && count) || count > sizeof(value) / 2)
+        return 0;
+    for (size_t i = 0; i < count; i++) {
+        value[i * 2] = (uint8_t)uuids[i];
+        value[i * 2 + 1] = (uint8_t)(uuids[i] >> 8);
+    }
+    return mesh_gap_ad_append(builder, complete ? MESH_GAP_AD_UUID16_COMPLETE :
+        MESH_GAP_AD_UUID16_INCOMPLETE, value, count * 2);
+}
+
+int mesh_gap_ad_add_uuid32_list(mesh_gap_ad_builder *builder,
+    const uint32_t *uuids, size_t count, uint8_t complete) {
+    uint8_t value[252];
+    if (complete > 1 || (!uuids && count) || count > sizeof(value) / 4)
+        return 0;
+    for (size_t i = 0; i < count; i++)
+        for (uint8_t b = 0; b < 4; b++)
+            value[i * 4 + b] = (uint8_t)(uuids[i] >> (8 * b));
+    return mesh_gap_ad_append(builder, complete ? MESH_GAP_AD_UUID32_COMPLETE :
+        MESH_GAP_AD_UUID32_INCOMPLETE, value, count * 4);
+}
+
+int mesh_gap_ad_add_uuid128_list(mesh_gap_ad_builder *builder,
+    const uint8_t *uuids, size_t count, uint8_t complete) {
+    if (complete > 1 || (count && !uuids) || count > 254 / 16) return 0;
+    return mesh_gap_ad_append(builder, complete ? MESH_GAP_AD_UUID128_COMPLETE :
+        MESH_GAP_AD_UUID128_INCOMPLETE, uuids, count * 16);
+}
+
+int mesh_gap_ad_add_tx_power(mesh_gap_ad_builder *builder, int8_t dbm) {
+    uint8_t value = (uint8_t)dbm;
+    return mesh_gap_ad_append(builder, MESH_GAP_AD_TX_POWER, &value, 1);
+}
+
+int mesh_gap_ad_add_service_data16(mesh_gap_ad_builder *builder,
+    uint16_t uuid, const uint8_t *data, size_t len) {
+    uint8_t value[254];
+    if ((!data && len) || len > sizeof(value) - 2) return 0;
+    value[0] = (uint8_t)uuid;
+    value[1] = (uint8_t)(uuid >> 8);
+    if (len) memcpy(value + 2, data, len);
+    return mesh_gap_ad_append(builder, MESH_GAP_AD_SERVICE_DATA16,
+                              value, len + 2);
+}
+
+int mesh_gap_ad_add_service_data32(mesh_gap_ad_builder *builder,
+    uint32_t uuid, const uint8_t *data, size_t len) {
+    uint8_t value[254];
+    if ((!data && len) || len > sizeof(value) - 4) return 0;
+    for (uint8_t b = 0; b < 4; b++) value[b] = (uint8_t)(uuid >> (8 * b));
+    if (len) memcpy(value + 4, data, len);
+    return mesh_gap_ad_append(builder, MESH_GAP_AD_SERVICE_DATA32,
+                              value, len + 4);
+}
+
+int mesh_gap_ad_add_service_data128(mesh_gap_ad_builder *builder,
+    const uint8_t uuid[16], const uint8_t *data, size_t len) {
+    uint8_t value[254];
+    if (!uuid || (!data && len) || len > sizeof(value) - 16) return 0;
+    memcpy(value, uuid, 16);
+    if (len) memcpy(value + 16, data, len);
+    return mesh_gap_ad_append(builder, MESH_GAP_AD_SERVICE_DATA128,
+                              value, len + 16);
+}
+
+// Parse the next AD structure: 1 means a value was returned, 0 means end,
+// and -1 means malformed input. A zero length byte terminates padded data.
+int mesh_gap_ad_next(const uint8_t *data, size_t len, size_t *offset,
+    uint8_t *type, const uint8_t **value, size_t *value_len) {
+    if ((!data && len) || !offset || !type || !value || !value_len ||
+        *offset > len) return -1;
+    if (*offset == len) return 0;
+    uint8_t field_len = data[*offset];
+    if (!field_len) {
+        *offset = len;
+        return 0;
+    }
+    if ((size_t)field_len + 1 > len - *offset) return -1;
+    *type = data[*offset + 1];
+    *value = data + *offset + 2;
+    *value_len = (size_t)field_len - 1;
+    *offset += (size_t)field_len + 1;
+    return 1;
+}
+
+// GAP discoverability is advertised in the Flags AD structure. A stopped
+// advertiser, or one without a discoverable bit, is in non-discoverable mode.
+int mesh_gap_discoverable(void) {
+    if (!gap_advertising.enabled) return 0;
+    for (size_t offset = 0; offset < gap_advertising.data_len;) {
+        uint8_t field_len = gap_advertising.data[offset];
+        if (!field_len) break;
+        if (field_len >= 2 &&
+            gap_advertising.data[offset + 1] == 0x01)
+            return (gap_advertising.data[offset + 2] & 0x03) != 0;
+        offset += (size_t)field_len + 1;
+    }
+    return 0;
 }
 
 static inline int gap_advertising_start(uint8_t pdu_type,
@@ -848,14 +1139,22 @@ void mesh_gap_scan_stop(void) {
     gap_scanning = 0;
     gap_active_scanning = 0;
     gap_central_connect.active = 0;
+    gap_central_connect.any_peer = 0;
+    gap_central_connect.selective = 0;
+    gap_central_connect.auto_connect = 0;
     gap_scan_generation++;
 }
 
 static int gap_connect_procedure_start(const uint8_t *peer_address,
-    uint8_t peer_type, uint8_t any_peer, uint8_t active_scan) {
-    if ((!any_peer && !peer_address) || peer_type > 1 || any_peer > 1 ||
+    uint8_t peer_type, uint8_t any_peer, uint8_t selective,
+    uint8_t auto_connect, uint8_t active_scan) {
+    if ((!any_peer && !selective && !auto_connect && !peer_address) ||
+        peer_type > 1 || any_peer > 1 || selective > 1 || auto_connect > 1 ||
+        (any_peer && (selective || auto_connect)) || (selective && auto_connect) ||
         active_scan > 1 || gap_conn.active || gap_scanning ||
-        gap_advertising.enabled) return 0;
+        gap_advertising.enabled ||
+        ((selective || auto_connect) && !gap_accept_list_nonempty()))
+        return 0;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
     memset(gap_central_connect.request, 0,
@@ -877,23 +1176,34 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
     BLE_GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_central_connect.request + 18, crc_init, sizeof(crc_init));
     gap_central_connect.request[21] = 1; // transmit window size: 1.25 ms
-    gap_central_connect.request[24] = 24; // interval: 30 ms
-    gap_central_connect.request[28] = 200; // supervision timeout: 2 s
+    gap_central_connect.request[24] = (uint8_t)gap_connection_timing.interval;
+    gap_central_connect.request[25] =
+        (uint8_t)(gap_connection_timing.interval >> 8);
+    gap_central_connect.request[26] = (uint8_t)gap_connection_timing.latency;
+    gap_central_connect.request[27] =
+        (uint8_t)(gap_connection_timing.latency >> 8);
+    gap_central_connect.request[28] =
+        (uint8_t)gap_connection_timing.supervision_timeout;
+    gap_central_connect.request[29] =
+        (uint8_t)(gap_connection_timing.supervision_timeout >> 8);
     memset(gap_central_connect.request + 30, 0xff, 4);
     gap_central_connect.request[34] = 0x1f; // data channels 0 through 36
     gap_central_connect.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
     gap_central_connect.any_peer = any_peer;
+    gap_central_connect.selective = selective;
+    gap_central_connect.auto_connect = auto_connect;
     gap_central_connect.peer_type = peer_type;
     if (peer_address) memcpy(gap_central_connect.peer_address, peer_address, 6);
     else memset(gap_central_connect.peer_address, 0,
                 sizeof(gap_central_connect.peer_address));
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
-    if (any_peer) gap_scan_start(active_scan);
+    if (any_peer || auto_connect) gap_scan_start(active_scan);
     else gap_scanning = 1;
     gap_central_connect.active = 1;
-    gap_central_connect.deadline_ms = GET_MILLIS() + 10000;
-    if (!any_peer) {
+    gap_central_connect.deadline_ms = auto_connect ? 0 :
+        GET_MILLIS() + gap_connection_timing.attempt_timeout_ms;
+    if (!any_peer && !auto_connect) {
         gap_active_scanning = 0;
         gap_scan_head = gap_scan_count = 0;
         gap_scan_seen_count = gap_scan_seen_next = 0;
@@ -905,13 +1215,24 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int mesh_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    return gap_connect_procedure_start(peer_address, peer_type, 0, 0);
+    return gap_connect_procedure_start(peer_address, peer_type, 0, 0, 0, 0);
 }
 
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
 int mesh_gap_connect_general_start(uint8_t active_scan) {
-    return gap_connect_procedure_start(NULL, 0, 1, active_scan);
+    return gap_connect_procedure_start(NULL, 0, 1, 0, 0, active_scan);
+}
+
+// Selective Connection Establishment scans for an advertiser in the accept list.
+int mesh_gap_connect_selective_start(uint8_t active_scan) {
+    return gap_connect_procedure_start(NULL, 0, 0, 1, 0, active_scan);
+}
+
+// Auto Connection Establishment scans in the background until a listed peer
+// connects or the application cancels; it does not time out after one attempt.
+int mesh_gap_connect_auto_start(void) {
+    return gap_connect_procedure_start(NULL, 0, 0, 0, 1, 0);
 }
 
 int mesh_gap_connecting(void) {
@@ -1031,5 +1352,127 @@ static inline void gap_receive_report(const uint8_t *frame,
 #include "ble_gap_connection.h"
 
 #include "ble_gap_security.h"
+
+#define MESH_GAP_EAD_RANDOMIZER_LEN 5
+#define MESH_GAP_EAD_MIC_LEN 4
+#define MESH_GAP_EAD_KEY_LEN 16
+#define MESH_GAP_EAD_IV_LEN 8
+#define MESH_GAP_EAD_PLAINTEXT_MAX 245
+#define MESH_GAP_EAD_AD_STRUCTURE_MAX (MESH_GAP_EAD_PLAINTEXT_MAX + 11)
+
+static struct {
+    uint8_t session_key[MESH_GAP_EAD_KEY_LEN];
+    uint8_t iv[MESH_GAP_EAD_IV_LEN];
+    uint8_t set;
+} gap_ead_key_material;
+
+// Install the session key and IV shared with EAD receivers. The key must come
+// from a secure application source; key and IV are consumed as byte strings in
+// CCM key and nonce order, respectively.
+int mesh_gap_ead_key_material_set(const uint8_t session_key[16],
+                                  const uint8_t iv[8]) {
+    if (!session_key || !iv) return 0;
+    uint8_t key_bits = 0;
+    for (size_t i = 0; i < MESH_GAP_EAD_KEY_LEN; i++)
+        key_bits |= session_key[i];
+    if (!key_bits) return 0;
+    memcpy(gap_ead_key_material.session_key, session_key,
+           MESH_GAP_EAD_KEY_LEN);
+    memcpy(gap_ead_key_material.iv, iv, MESH_GAP_EAD_IV_LEN);
+    gap_ead_key_material.set = 1;
+    return 1;
+}
+
+// Copy the current EAD session key and IV for application key distribution.
+int mesh_gap_ead_key_material_get(uint8_t out[24]) {
+    if (!out || !gap_ead_key_material.set) return 0;
+    memcpy(out, gap_ead_key_material.session_key, MESH_GAP_EAD_KEY_LEN);
+    memcpy(out + MESH_GAP_EAD_KEY_LEN, gap_ead_key_material.iv,
+           MESH_GAP_EAD_IV_LEN);
+    return 1;
+}
+
+// Erase the EAD key material so encrypted advertising cannot be produced.
+void mesh_gap_ead_key_material_clear(void) {
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_ead_key_material;
+    for (size_t i = 0; i < sizeof(gap_ead_key_material); i++) wipe[i] = 0;
+}
+
+static int mesh_gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
+    if (!data || !len || len > MESH_GAP_EAD_PLAINTEXT_MAX) return 0;
+    size_t offset = 0;
+    size_t structures = 0;
+    while (offset < len) {
+        uint8_t type;
+        const uint8_t *value;
+        size_t value_len;
+        int result = mesh_gap_ad_next(data, len, &offset, &type, &value,
+                                      &value_len);
+        if (result < 0) return 0;
+        if (!result) break;
+        structures++;
+    }
+    return structures != 0;
+}
+
+// Encrypt concatenated AD structures into one Encrypted Data AD structure.
+// Output includes the length and 0x31 type bytes. Secure entropy supplies the
+// five-octet randomizer; output capacity must allow plaintext length + 11.
+int mesh_gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
+                         uint8_t *out, size_t out_capacity,
+                         size_t *out_len) {
+    if (!gap_ead_key_material.set || !out || !out_len ||
+        !mesh_gap_ead_plaintext_valid(plaintext, plaintext_len) ||
+        plaintext_len + 11 > out_capacity) return 0;
+
+    uint8_t randomizer[MESH_GAP_EAD_RANDOMIZER_LEN];
+    if (!BLE_GAP_RANDOM_SECURE_BYTES(randomizer, sizeof(randomizer))) return 0;
+    uint8_t nonce[13], aad = 0xea;
+    memcpy(nonce, randomizer, sizeof(randomizer));
+    memcpy(nonce + sizeof(randomizer), gap_ead_key_material.iv,
+           MESH_GAP_EAD_IV_LEN);
+    memmove(out + 7, plaintext, plaintext_len);
+    uint8_t *mic = out + 7 + plaintext_len;
+    if (ccm_encrypt_and_tag(gap_ead_key_material.session_key, nonce,
+            sizeof(nonce), &aad, sizeof(aad), out + 7, plaintext_len,
+            out + 7, mic, MESH_GAP_EAD_MIC_LEN) != CCM_OK) {
+        memset(out + 7, 0, plaintext_len + MESH_GAP_EAD_MIC_LEN);
+        return 0;
+    }
+    out[0] = (uint8_t)(plaintext_len + 10);
+    out[1] = MESH_GAP_AD_ENCRYPTED_DATA;
+    memcpy(out + 2, randomizer, sizeof(randomizer));
+    *out_len = plaintext_len + 11;
+    return 1;
+}
+
+// Authenticate and decrypt one complete Encrypted Data AD structure.
+int mesh_gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
+                         uint8_t *out, size_t out_capacity,
+                         size_t *out_len) {
+    if (!gap_ead_key_material.set || !ead || !out || !out_len ||
+        ead_len < 13 || ead[1] != MESH_GAP_AD_ENCRYPTED_DATA ||
+        (size_t)ead[0] + 1 != ead_len ||
+        ead_len > MESH_GAP_EAD_AD_STRUCTURE_MAX) return 0;
+    size_t plaintext_len = ead_len - 11;
+    if (plaintext_len > MESH_GAP_EAD_PLAINTEXT_MAX ||
+        plaintext_len > out_capacity) return 0;
+    uint8_t nonce[13], aad = 0xea;
+    memcpy(nonce, ead + 2, MESH_GAP_EAD_RANDOMIZER_LEN);
+    memcpy(nonce + MESH_GAP_EAD_RANDOMIZER_LEN, gap_ead_key_material.iv,
+           MESH_GAP_EAD_IV_LEN);
+    memmove(out, ead + 7, plaintext_len);
+    const uint8_t *mic = ead + 7 + plaintext_len;
+    if (ccm_auth_decrypt(gap_ead_key_material.session_key, nonce,
+            sizeof(nonce), &aad, sizeof(aad), out, plaintext_len, mic,
+            MESH_GAP_EAD_MIC_LEN, out) != CCM_OK ||
+        !mesh_gap_ead_plaintext_valid(out, plaintext_len)) {
+        volatile uint8_t *wipe = out;
+        for (size_t i = 0; i < plaintext_len; i++) wipe[i] = 0;
+        return 0;
+    }
+    *out_len = plaintext_len;
+    return 1;
+}
 
 #endif // BLE_GAP_H

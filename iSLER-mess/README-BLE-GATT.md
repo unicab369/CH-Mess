@@ -137,25 +137,31 @@ adapters and application services belong outside these generic modules.
 - [x] Verify common MTU, discovery, read, Write Request/Command, and
   reliable-write behavior against Bumble in both directions, including
   Find By Type Value, long reads/writes, Read By UUID, included-service
-  discovery, and MTU-truncated
-  fixed and variable Read Multiple responses; verify CCCD subscription,
+  discovery, and MTU-truncated fixed and variable Read Multiple responses in
+  both client/server directions; verify CCCD subscription,
   notification delivery, and indication confirmation with the C client and
   Bumble server; verify Insufficient Encryption and Insufficient
   Authentication errors in both directions with protected attributes on each
   server, Insufficient Authorization from the C server to Bumble, and the
-  Read Blob value-end/Invalid Offset boundary on the C server; independently
-  recompute the C server's Database Hash and receive/confirm Service Changed
-  through Bumble.
+  Read Blob value-end/Invalid Offset boundary on the C server; read and write
+  the User Description descriptor when Writable Auxiliaries is enabled;
+  independently recompute the C server's Database Hash and receive/confirm
+  Service Changed through Bumble.
 - [ ] Verify remaining procedures and security behavior against an independent
   BLE implementation.
 - [ ] Exercise MTU exchange, long values, reliable writes, notifications,
   indications, disconnect cleanup, and security errors on hardware.
 
 The optional independent tests use Bumble and a local C fixture (no Bluetooth
-radio is needed): from `iSLER-mess`, run
-`python -m pip install -r tests/requirements-ble-gatt-interop.txt`, then
-`python tests/ble_gatt_bumble_interop.py` and
-`python tests/ble_gatt_bumble_client_interop.py`.
+radio is needed). From `iSLER-mess`, create the test environment once, install
+the pinned requirements there, and run both interop directions:
+
+```sh
+python3 -m venv .venv-ble-gatt
+./.venv-ble-gatt/bin/python -m pip install -r tests/requirements-ble-gatt-interop.txt
+./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_interop.py
+./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_client_interop.py
+```
 
 The stack is complete for this project when the checked procedures and
 validation above are finished. EATT, BR/EDR ATT, and SIG-defined service

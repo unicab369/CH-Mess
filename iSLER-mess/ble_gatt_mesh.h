@@ -46,6 +46,10 @@ enum {
     MESH_GATT_PROXY_PROVISIONING = 3
 };
 
+#ifndef MESH_GATT_EAD_SUPPORT
+#define MESH_GATT_EAD_SUPPORT 0
+#endif
+
 enum {
     MESH_GATT_HANDLE_PROXY_SERVICE = 1,
     MESH_GATT_HANDLE_DATA_IN_DECL = 2,
@@ -67,7 +71,13 @@ enum {
     MESH_GATT_HANDLE_GAP_PPCP_DECL = 18,
     MESH_GATT_HANDLE_GAP_PPCP = 19,
     MESH_GATT_HANDLE_GAP_CAR_DECL = 20,
-    MESH_GATT_HANDLE_GAP_CAR = 21
+    MESH_GATT_HANDLE_GAP_CAR = 21,
+    MESH_GATT_HANDLE_GAP_SECURITY_LEVELS_DECL = 22,
+    MESH_GATT_HANDLE_GAP_SECURITY_LEVELS = 23,
+#if MESH_GATT_EAD_SUPPORT
+    MESH_GATT_HANDLE_GAP_EDKM_DECL = 24,
+    MESH_GATT_HANDLE_GAP_EDKM = 25
+#endif
 };
 
 typedef int (*mesh_gatt_proxy_rx_fn)(uint8_t type, const uint8_t *pdu,
@@ -87,6 +97,9 @@ typedef void (*mesh_gatt_provisioning_link_fn)(uint8_t open, void *context);
 #define MESH_GATT_GAP_APPEARANCE_UUID 0x2A01
 #define MESH_GATT_GAP_PPCP_UUID 0x2A04
 #define MESH_GATT_GAP_CAR_UUID 0x2AA6
+#define MESH_GATT_GAP_SECURITY_LEVELS_UUID 0x2BF5
+#define MESH_GATT_GAP_EDKM_UUID 0x2B88
+#define MESH_GATT_DEVICE_NAME_MAX 248
 #ifndef MESH_GATT_DEVICE_NAME
 #define MESH_GATT_DEVICE_NAME "CH-Mess"
 #endif
@@ -98,6 +111,8 @@ static struct {
     ble_gatt_server server;
     ble_gatt_transport transport;
     uint8_t initialized, connected;
+    uint8_t gap_device_name[MESH_GATT_DEVICE_NAME_MAX];
+    uint16_t gap_device_name_len;
     uint8_t proxy_rx_active, proxy_rx_type, proxy_rx_service;
     uint8_t filter_type, filter_count;
     uint16_t filter[MESH_GATT_PROXY_FILTER_SIZE];
@@ -127,6 +142,71 @@ static ble_gatt_uuid mesh_gatt_uuid16(uint16_t value) {
     ble_gatt_uuid uuid = {2, {(uint8_t)value, (uint8_t)(value >> 8)}};
     return uuid;
 }
+
+// Check UTF-8 without accepting overlong encodings, surrogate values, or
+// codepoints above U+10FFFF. GAP Device Name is limited to 248 octets.
+static int mesh_gatt_gap_device_name_valid(const uint8_t *name, size_t len) {
+    if ((!name && len) || len > MESH_GATT_DEVICE_NAME_MAX) return 0;
+    for (size_t i = 0; i < len;) {
+        uint8_t first = name[i++];
+        if (first <= 0x7f) continue;
+        uint8_t continuation_count;
+        uint8_t second_min = 0x80, second_max = 0xbf;
+        if (first >= 0xc2 && first <= 0xdf) continuation_count = 1;
+        else if (first >= 0xe0 && first <= 0xef) {
+            continuation_count = 2;
+            if (first == 0xe0) second_min = 0xa0;
+            if (first == 0xed) second_max = 0x9f;
+        } else if (first >= 0xf0 && first <= 0xf4) {
+            continuation_count = 3;
+            if (first == 0xf0) second_min = 0x90;
+            if (first == 0xf4) second_max = 0x8f;
+        } else return 0;
+        if (continuation_count > len - i || name[i] < second_min ||
+            name[i] > second_max) return 0;
+        for (uint8_t j = 0; j < continuation_count; j++)
+            if (name[i + j] < 0x80 || name[i + j] > 0xbf) return 0;
+        i += continuation_count;
+    }
+    return 1;
+}
+
+static uint8_t mesh_gatt_gap_device_name_read(void *context, uint16_t offset,
+    uint8_t *out, uint16_t *inout_len) {
+    (void)context;
+    if (!inout_len || (out == NULL && *inout_len))
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset > mesh_gatt.gap_device_name_len)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    uint16_t len = (uint16_t)(mesh_gatt.gap_device_name_len - offset);
+    if (len > *inout_len) len = *inout_len;
+    if (len) memcpy(out, mesh_gatt.gap_device_name + offset, len);
+    *inout_len = len;
+    return 0;
+}
+
+#if MESH_GATT_EAD_SUPPORT
+static uint8_t mesh_gatt_gap_edkm_read(void *context, uint16_t offset,
+    uint8_t *out, uint16_t *inout_len) {
+    (void)context;
+    uint8_t material[24];
+    if (!inout_len || (out == NULL && *inout_len))
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (!mesh_gap_ead_key_material_get(material))
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+    if (offset > sizeof(material)) {
+        memset(material, 0, sizeof(material));
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    }
+    uint16_t len = (uint16_t)(sizeof(material) - offset);
+    if (len > *inout_len) len = *inout_len;
+    if (len) memcpy(out, material + offset, len);
+    *inout_len = len;
+    volatile uint8_t *wipe = material;
+    for (size_t i = 0; i < sizeof(material); i++) wipe[i] = 0;
+    return 0;
+}
+#endif
 
 // Bind the generic L2CAP/ATT transport to this application's GAP API. The
 // generic transport itself depends only on the operations supplied here.
@@ -239,6 +319,11 @@ static uint8_t mesh_gatt_provisioning_write_context = 1;
 
 static int mesh_gatt_register_services(void) {
     ble_gatt_server_init(&mesh_gatt.server, MESH_GATT_ATT_MTU_MAX);
+    size_t device_name_len = sizeof(MESH_GATT_DEVICE_NAME) - 1;
+    if (!mesh_gatt_gap_device_name_valid(
+            (const uint8_t *)MESH_GATT_DEVICE_NAME, device_name_len)) return 0;
+    memcpy(mesh_gatt.gap_device_name, MESH_GATT_DEVICE_NAME, device_name_len);
+    mesh_gatt.gap_device_name_len = (uint16_t)device_name_len;
     ble_gatt_uuid proxy_service = mesh_gatt_uuid16(MESH_GATT_PROXY_SERVICE_UUID);
     ble_gatt_uuid provisioning_service =
         mesh_gatt_uuid16(MESH_GATT_PROVISIONING_SERVICE_UUID);
@@ -255,6 +340,11 @@ static int mesh_gatt_register_services(void) {
         mesh_gatt_uuid16(MESH_GATT_GAP_APPEARANCE_UUID);
     ble_gatt_uuid gap_ppcp = mesh_gatt_uuid16(MESH_GATT_GAP_PPCP_UUID);
     ble_gatt_uuid gap_car = mesh_gatt_uuid16(MESH_GATT_GAP_CAR_UUID);
+    ble_gatt_uuid gap_security_levels =
+        mesh_gatt_uuid16(MESH_GATT_GAP_SECURITY_LEVELS_UUID);
+#if MESH_GATT_EAD_SUPPORT
+    ble_gatt_uuid gap_edkm = mesh_gatt_uuid16(MESH_GATT_GAP_EDKM_UUID);
+#endif
     ble_gatt_uuid cccd = mesh_gatt_uuid16(0x2902);
     uint16_t service, decl, value, descriptor;
     if (!ble_gatt_server_add_service(&mesh_gatt.server, &proxy_service, 1,
@@ -288,13 +378,15 @@ static int mesh_gatt_register_services(void) {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
     };
     const uint8_t central_address_resolution = 1;
+    // The server's strongest attribute requirement is authenticated LE
+    // security mode 1, level 3 (Device Name when not discoverable).
+    const uint8_t gap_security_level_requirements[2] = {1, 3};
     if (!ble_gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
             &service) ||
         !ble_gatt_server_add_characteristic(&mesh_gatt.server,
-            &gap_device_name, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
-            (const uint8_t *)MESH_GATT_DEVICE_NAME,
-            sizeof(MESH_GATT_DEVICE_NAME) - 1,
-            sizeof(MESH_GATT_DEVICE_NAME) - 1, NULL, NULL, NULL,
+            &gap_device_name, BLE_GATT_PROP_READ,
+            BLE_GATT_PERM_READ_AUTHENTICATED,
+            NULL, 0, 0, mesh_gatt_gap_device_name_read, NULL, NULL,
             &decl, &value) ||
         !ble_gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_appearance, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
@@ -307,10 +399,27 @@ static int mesh_gatt_register_services(void) {
         !ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_car,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &central_address_resolution, 1, 1, NULL, NULL, NULL,
+            &decl, &value) ||
+        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+            &gap_security_levels, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            gap_security_level_requirements,
+            sizeof(gap_security_level_requirements),
+            sizeof(gap_security_level_requirements), NULL, NULL, NULL,
             &decl, &value)) return 0;
+#if MESH_GATT_EAD_SUPPORT
+    if (!ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
+            BLE_GATT_PROP_READ,
+            BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
+            NULL, 0, 24, mesh_gatt_gap_edkm_read, NULL, NULL,
+            &decl, &value)) return 0;
+#endif
     if (!mesh_gatt_transport_init(&mesh_gatt.transport,
                                   &mesh_gatt.server)) return 0;
-    return mesh_gatt.server.next_handle == 22;
+#if MESH_GATT_EAD_SUPPORT
+    return mesh_gatt.server.next_handle == 26;
+#else
+    return mesh_gatt.server.next_handle == 24;
+#endif
 }
 
 static int mesh_gatt_ensure_initialized(void) {
@@ -318,6 +427,36 @@ static int mesh_gatt_ensure_initialized(void) {
     if (!mesh_gatt_register_services()) return 0;
     mesh_gatt.initialized = 1;
     return 1;
+}
+
+// Configure application authorization for secured GAP characteristics such as
+// Encrypted Data Key Material. Without an authorizer, authorized reads fail.
+int mesh_gatt_set_authorizer(ble_gatt_authorize_fn authorize, void *context) {
+    if (!mesh_gatt_ensure_initialized()) return 0;
+    ble_gatt_server_set_authorizer(&mesh_gatt.server, authorize, context);
+    return 1;
+}
+
+// Set the UTF-8 Device Name value. Empty names are allowed by GAP.
+int mesh_gatt_gap_device_name_set(const uint8_t *name, size_t len) {
+    if (!mesh_gatt_gap_device_name_valid(name, len) ||
+        !mesh_gatt_ensure_initialized()) return 0;
+    if (len) memcpy(mesh_gatt.gap_device_name, name, len);
+    if (len < sizeof(mesh_gatt.gap_device_name))
+        memset(mesh_gatt.gap_device_name + len, 0,
+               sizeof(mesh_gatt.gap_device_name) - len);
+    mesh_gatt.gap_device_name_len = (uint16_t)len;
+    return 1;
+}
+
+// Refresh Device Name access permissions from the current GAP discoverability
+// mode immediately before the server handles incoming ATT requests.
+static void mesh_gatt_gap_policy_update(void) {
+    ble_gatt_attribute *name = ble_gatt_server_find(&mesh_gatt.server,
+        MESH_GATT_HANDLE_GAP_DEVICE_NAME);
+    if (!name) return;
+    name->permissions = mesh_gap_discoverable() ? BLE_GATT_PERM_READ :
+        BLE_GATT_PERM_READ_AUTHENTICATED;
 }
 
 void mesh_gatt_proxy_set_rx_callback(mesh_gatt_proxy_rx_fn callback,
@@ -563,6 +702,7 @@ static void mesh_gatt_link_reset(void) {
 // through the transport/server; this adapter only queues Mesh bearer values.
 void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized()) return;
+    mesh_gatt_gap_policy_update();
     uint8_t connected = mesh_gap_connected() != 0;
     if (!connected) {
         if (mesh_gatt.connected) {

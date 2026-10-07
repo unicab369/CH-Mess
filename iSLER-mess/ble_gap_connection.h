@@ -1106,11 +1106,13 @@ unknown_control_pdu:
     uint8_t advertiser_type = (frame[0] >> 6) & 1;
     int peer_matches = gap_central_connect.any_peer ?
         (!gap_privacy.scan_filter || peer_slot >= 0) :
+        ((gap_central_connect.selective || gap_central_connect.auto_connect) ?
+         gap_accept_list_match(frame + 2, advertiser_type, peer_slot) :
         ((advertiser_type == gap_central_connect.peer_type &&
           memcmp(frame + 2, gap_central_connect.peer_address, 6) == 0) ||
          (peer_slot >= 0 && peer_slot ==
           gap_identity_find(gap_central_connect.peer_address,
-                            gap_central_connect.peer_type)));
+                            gap_central_connect.peer_type))));
     if (gap_central_connect.active &&
         (pdu_type == 0x00 || pdu_type == 0x01) &&
         frame[1] >= 6 && frame[1] <= 37 && peer_matches) {
@@ -1155,7 +1157,9 @@ unknown_control_pdu:
                 gap_conn.peer_identity_type = gap_identities[peer_slot].address_type;
                 memcpy(gap_conn.peer_identity_address,
                        gap_identities[peer_slot].address, 6);
-            } else if (gap_central_connect.any_peer) {
+            } else if (gap_central_connect.any_peer ||
+                       gap_central_connect.selective ||
+                       gap_central_connect.auto_connect) {
                 gap_conn.peer_identity_type = advertiser_type;
                 memcpy(gap_conn.peer_identity_address, frame + 2, 6);
             } else {
@@ -1164,6 +1168,9 @@ unknown_control_pdu:
                        gap_central_connect.peer_address, 6);
             }
             gap_central_connect.active = 0;
+            gap_central_connect.any_peer = 0;
+            gap_central_connect.selective = 0;
+            gap_central_connect.auto_connect = 0;
             gap_scanning = 0;
             gap_active_scanning = 0;
             gap_scan_generation++;
@@ -1212,7 +1219,9 @@ unknown_control_pdu:
         (frame[0] & 0x0f) == 0x03 &&
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
-        (!gap_privacy.connection_filter || peer_slot >= 0)) {
+        (!gap_privacy.connection_filter || peer_slot >= 0) &&
+        (!gap_advertising.scan_accept_list ||
+         gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot))) {
         uint8_t response_len = gap_advertising.scan_response_len;
         gap_radio_scan_response_frame[0] = 0x04 | (gap_radio_adv_frame[0] & 0x40);
         gap_radio_scan_response_frame[1] = 6 + response_len;
@@ -1231,6 +1240,8 @@ unknown_control_pdu:
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
+        (!gap_advertising.connection_accept_list ||
+         gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot)) &&
         ((gap_radio_adv_frame[0] & 0x0f) != 0x01 ||
          (peer_slot >= 0 && peer_slot == gap_advertising.peer_slot) ||
          (((frame[0] >> 6) & 1) == ((gap_radio_adv_frame[0] >> 7) & 1) &&
@@ -1817,10 +1828,12 @@ int gap_hw_mesh_take_ad(const uint8_t *types, size_t type_count,
 void gap_hw_mesh_scan_poll(void) {
     uint32_t now = GET_MILLIS();
     gap_privacy_poll(now);
-    if (gap_central_connect.active &&
+    if (gap_central_connect.active && !gap_central_connect.auto_connect &&
         (int32_t)(now - gap_central_connect.deadline_ms) >= 0) {
         gap_central_connect.active = 0;
         gap_central_connect.any_peer = 0;
+        gap_central_connect.selective = 0;
+        gap_central_connect.auto_connect = 0;
         gap_scanning = 0;
         gap_active_scanning = 0;
         gap_scan_generation++;
@@ -1838,8 +1851,12 @@ void gap_hw_mesh_scan_poll(void) {
         gap_radio_active_scan_pending = 0;
     }
     if (gap_radio_active_scan_pending) return;
-    uint16_t interval_ms = gap_scanning ? gap_scan_settings.interval_ms : 20;
-    uint16_t window_ms = gap_scanning ? gap_scan_settings.window_ms : 20;
+    uint16_t interval_ms = gap_central_connect.auto_connect ?
+        gap_connection_timing.background_scan_interval_ms :
+        (gap_scanning ? gap_scan_settings.interval_ms : 20);
+    uint16_t window_ms = gap_central_connect.auto_connect ?
+        gap_connection_timing.background_scan_window_ms :
+        (gap_scanning ? gap_scan_settings.window_ms : 20);
     uint32_t elapsed = now - gap_radio_scan_interval_start_ms;
     if (elapsed >= interval_ms) {
         uint32_t intervals = elapsed / interval_ms;

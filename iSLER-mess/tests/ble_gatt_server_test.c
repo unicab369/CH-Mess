@@ -758,6 +758,36 @@ static void test_maximum_att_attribute_value(void) {
            !memcmp(response + 3, value, response_len - 3));
 }
 
+static void test_read_multiple_variable_request_order_and_truncation(void) {
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 23);
+    ble_gatt_uuid first_uuid = uuid16(0xfff6), second_uuid = uuid16(0xfff7);
+    uint8_t first_value[30], second_value[] = {'z'};
+    memset(first_value, 0x5a, sizeof(first_value));
+    uint16_t first_handle, second_handle;
+    assert(ble_gatt_server_add_attribute(&server, &first_uuid,
+        BLE_GATT_PERM_READ, first_value, sizeof(first_value),
+        sizeof(first_value), NULL, NULL, NULL, &first_handle));
+    assert(ble_gatt_server_add_attribute(&server, &second_uuid,
+        BLE_GATT_PERM_READ, second_value, sizeof(second_value),
+        sizeof(second_value), NULL, NULL, NULL, &second_handle));
+
+    // The request order is deliberately opposite to handle order. The first
+    // tuple fits; the second tuple is truncated at the MTU with its full value
+    // length retained in the tuple header.
+    uint8_t request[] = {0x20, (uint8_t)second_handle,
+        (uint8_t)(second_handle >> 8), (uint8_t)first_handle,
+        (uint8_t)(first_handle >> 8)};
+    uint8_t response[23];
+    uint16_t response_len;
+    assert(att(&server, request, sizeof(request), response, &response_len) == 1);
+    assert(response_len == sizeof(response) && response[0] == 0x21);
+    assert(ble_gatt_server_u16(response + 1) == sizeof(second_value));
+    assert(response[3] == 'z');
+    assert(ble_gatt_server_u16(response + 4) == sizeof(first_value));
+    assert(response[6] == 0x5a && response[22] == 0x5a);
+}
+
 static void test_read_multiple_checks_all_permissions(void) {
     ble_gatt_server server;
     ble_gatt_server_init(&server, 23);
@@ -1727,6 +1757,7 @@ int main(void) {
     test_minimum_encryption_key_size();
     test_fixed_and_variable_length_writes();
     test_maximum_att_attribute_value();
+    test_read_multiple_variable_request_order_and_truncation();
     test_read_multiple_checks_all_permissions();
     test_fixed_read_multiple_checks_after_mtu_boundary();
     test_response_capacity_and_large_find_information();

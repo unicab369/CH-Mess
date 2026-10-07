@@ -86,7 +86,7 @@ async def exercise(server):
     assert await client.request_mtu(64) == 64
     services = await client.discover_services()
     assert [service.uuid for service in services] == [
-        UUID(0x180F), UUID(0x1812), UUID(0x1801)
+        UUID(0x180F), UUID(0x1812), UUID(0x1801), UUID(0x1800)
     ]
 
     battery_service = services[0]
@@ -114,13 +114,40 @@ async def exercise(server):
         UUID(0x2B2A), None
     )
     hash_input = bytes.fromhex(
-        "010000280f18 020003280a0300192a 04000129 "
-        "050000281218 06000228010004000f18 0a0000280118 "
-        "0b000328200c00052a 0d000229 0e000328020f002a2b"
+        "010000280f18 020003288a0300192a 040000290200 05000129 "
+        "060000281218 07000228010005000f18 0b0000280118 "
+        "0c000328200d00052a 0e000229 0f0003280210002a2b "
+        "110000280018 12000328021300002a 14000328021500012a "
+        "16000328021700042a 18000328021900a62a "
+        "1a000328021b00f52b 1c000328021d00882b"
     )
     cmac = CMAC(algorithms.AES(bytes(16)))
     cmac.update(hash_input)
     assert database_hash_values == [cmac.finalize()]
+
+    gap_service = services[3]
+    gap_characteristics = await client.discover_characteristics([], gap_service)
+    gap_values = {}
+    edkm_characteristic = None
+    for characteristic in gap_characteristics:
+        if characteristic.uuid == UUID(0x2B88):
+            edkm_characteristic = characteristic
+            continue
+        gap_values[characteristic.uuid] = await characteristic.read_value()
+    assert gap_values == {
+        UUID(0x2A00): b"CH-Mess",
+        UUID(0x2A01): b"\x00\x00",
+        UUID(0x2A04): b"\xff" * 8,
+        UUID(0x2AA6): b"\x01",
+        UUID(0x2BF5): b"\x01\x03",
+    }
+    assert edkm_characteristic is not None
+    try:
+        await edkm_characteristic.read_value()
+    except att.ATT_Error as error:
+        assert error.error_code == att.ATT_INSUFFICIENT_AUTHENTICATION_ERROR
+    else:
+        raise AssertionError("Encrypted Data Key Material was readable in clear")
 
     gatt_service = services[2]
     gatt_characteristics = await client.discover_characteristics([], gatt_service)
@@ -136,18 +163,24 @@ async def exercise(server):
     assert characteristic.uuid == UUID(0x2A19)
 
     descriptors = await client.discover_descriptors(characteristic)
-    assert [descriptor.type for descriptor in descriptors] == [UUID(0x2901)]
+    assert [descriptor.type for descriptor in descriptors] == [
+        UUID(0x2900), UUID(0x2901)
+    ]
+    user_description = descriptors[1]
+    assert await user_description.read_value() == b"x"
+    await user_description.write_value(b"User label", with_response=True)
+    assert await user_description.read_value() == b"User label"
 
     original = await characteristic.read_value()
     assert original == bytes(range(70))
 
     fixed_multiple = await client.send_request(att.ATT_Read_Multiple_Request(
-        set_of_handles=[characteristic.handle, descriptors[0].handle]
+        set_of_handles=[characteristic.handle, descriptors[1].handle]
     ))
     assert fixed_multiple.set_of_values == bytes(range(63))
 
     multiple = await client.send_request(att.ATT_Read_Multiple_Variable_Request(
-        set_of_handles=[characteristic.handle, descriptors[0].handle]
+        set_of_handles=[characteristic.handle, descriptors[1].handle]
     ))
     assert multiple.length_value_tuple_list == [(70, bytes(range(61)))]
 
@@ -170,31 +203,31 @@ async def exercise(server):
     assert past_end.attribute_handle_in_error == characteristic.handle
 
     try:
-        await client.read_value(7)
+        await client.read_value(8)
     except att.ATT_Error as error:
         assert error.error_code == att.ATT_INSUFFICIENT_ENCRYPTION_ERROR
         assert error.message.request_opcode_in_error == att.Opcode.ATT_READ_REQUEST
-        assert error.message.attribute_handle_in_error == 7
+        assert error.message.attribute_handle_in_error == 8
     else:
         raise AssertionError("protected C attribute was readable without encryption")
 
     try:
-        await client.read_value(8)
+        await client.read_value(9)
     except att.ATT_Error as error:
         assert error.error_code == att.ATT_INSUFFICIENT_AUTHENTICATION_ERROR
         assert error.message.request_opcode_in_error == att.Opcode.ATT_READ_REQUEST
-        assert error.message.attribute_handle_in_error == 8
+        assert error.message.attribute_handle_in_error == 9
     else:
         raise AssertionError(
             "authenticated C attribute was readable without authentication"
         )
 
     try:
-        await client.read_value(9)
+        await client.read_value(10)
     except att.ATT_Error as error:
         assert error.error_code == att.ATT_INSUFFICIENT_AUTHORIZATION_ERROR
         assert error.message.request_opcode_in_error == att.Opcode.ATT_READ_REQUEST
-        assert error.message.attribute_handle_in_error == 9
+        assert error.message.attribute_handle_in_error == 10
     else:
         raise AssertionError("application-protected C attribute was readable")
 

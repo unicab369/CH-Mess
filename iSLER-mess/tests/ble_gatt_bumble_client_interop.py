@@ -263,6 +263,11 @@ async def exercise():
         assert response.op_code == att.Opcode.ATT_READ_MULTIPLE_RESPONSE
         assert response.set_of_values == bytes(range(63))
 
+        request, response = await client.transact(21, server, bearer)
+        assert request.op_code == att.Opcode.ATT_READ_MULTIPLE_VARIABLE_REQUEST
+        assert response.op_code == att.Opcode.ATT_READ_MULTIPLE_VARIABLE_RESPONSE
+        assert response.length_value_tuple_list == [(70, bytes(range(61)))]
+
         assert protected_characteristic.handle == 7
         request, response = await client.transact(
             16, server, bearer, expected_status=3
