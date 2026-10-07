@@ -274,6 +274,38 @@ static void test_malformed_att_closes_fixed_bearer(void) {
     assert(!transport.tx_len);
 }
 
+static void test_malformed_confirmation_closes_without_response(void) {
+    ble_gatt_transport transport;
+    ble_gatt_server server;
+    uint8_t oversized_confirmation[24] = {0x1e};
+    uint8_t response[BLE_GATT_SERVER_MTU_MAX];
+    uint16_t response_len;
+    ble_gatt_server_init(&server, 23);
+    assert(ble_gatt_server_att(&server, oversized_confirmation,
+        sizeof(oversized_confirmation), response, sizeof(response),
+        &response_len) == -1 && response_len == 0);
+
+    fake_link link = {0};
+    link.max_payload = 27;
+    ble_gatt_transport_ops ops = {
+        fake_connected, fake_receive, fake_send, fake_max_payload, &link,
+        fake_security_state
+    };
+    ble_gatt_server_init(&server, 23);
+    assert(ble_gatt_transport_init(&transport, &server, &ops));
+    ble_gatt_transport_set_terminate_callback(&transport,
+                                               fake_terminate_link);
+    link.connected = 1;
+    assert(ble_gatt_transport_poll(&transport, 1) == 0);
+
+    const uint8_t malformed_confirmation[] = {0x1e, 0};
+    enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID,
+                  malformed_confirmation, sizeof(malformed_confirmation), 27);
+    assert(ble_gatt_transport_poll(&transport, 2) == -1);
+    assert(transport.bearer_failed && link.termination_count == 1 &&
+           !link.connected && !link.tx_count && !transport.tx_len);
+}
+
 static void test_wrong_client_response_closes_fixed_bearer(void) {
     ble_gatt_transport transport;
     ble_gatt_client client;
@@ -600,6 +632,7 @@ int main(void) {
     test_client_timeout_terminates_fixed_bearer();
     test_client_only_transport();
     test_malformed_att_closes_fixed_bearer();
+    test_malformed_confirmation_closes_without_response();
     test_wrong_client_response_closes_fixed_bearer();
     test_transport_rejects_incomplete_gatt_database();
     test_simultaneous_client_and_server();

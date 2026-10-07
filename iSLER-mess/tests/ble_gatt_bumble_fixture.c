@@ -24,6 +24,7 @@ int main(void) {
     for (uint8_t i = 0; i < sizeof(initial); i++) initial[i] = i;
     uint16_t service, declaration, value, descriptor, aggregate;
     uint16_t protected_value, authenticated_value, authorized_value;
+    ble_gatt_standard_service_handles gatt_service;
     if (!ble_gatt_server_add_service(&server, &service_uuid, 1, &service) ||
         !ble_gatt_server_add_characteristic(&server, &characteristic_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE,
@@ -43,7 +44,9 @@ int main(void) {
             &authenticated_value) ||
         !ble_gatt_server_add_attribute(&server, &authorized_uuid,
             BLE_GATT_PERM_READ_AUTHORIZED, (const uint8_t *)"authorized",
-            10, 10, NULL, NULL, NULL, &authorized_value)) return 2;
+            10, 10, NULL, NULL, NULL, &authorized_value) ||
+        !ble_gatt_server_add_standard_gatt_service(&server, &gatt_service) ||
+        !ble_gatt_server_seal_database(&server)) return 2;
     ble_gatt_server_set_authorizer(&server, deny_application_access, NULL);
 
     uint8_t request[BLE_GATT_SERVER_MTU_MAX];
@@ -58,12 +61,27 @@ int main(void) {
         uint16_t response_len = 0;
         int has_response = ble_gatt_server_att(&server, request, request_len,
             response, sizeof(response), &response_len);
+        uint8_t event[BLE_GATT_SERVER_MTU_MAX];
+        uint16_t event_len = 0;
+        if (request[0] == 0x12 && request_len == 5 &&
+            ble_gatt_server_u16(request + 1) ==
+                gatt_service.service_changed_cccd_handle &&
+            ble_gatt_server_u16(request + 3) == 2) {
+            (void)ble_gatt_server_service_changed(&server, 1, 0xffff);
+            (void)ble_gatt_server_poll_event(&server, 1, event,
+                                             sizeof(event), &event_len);
+        }
         uint16_t output_len = has_response > 0 ? response_len : 0;
         uint8_t output_size[2] = {(uint8_t)output_len,
                                   (uint8_t)(output_len >> 8)};
         if (fwrite(output_size, 1, 2, stdout) != 2 ||
             (output_len && fwrite(response, 1, output_len, stdout) != output_len))
             return 4;
+        uint8_t event_size[2] = {(uint8_t)event_len,
+                                 (uint8_t)(event_len >> 8)};
+        if (fwrite(event_size, 1, 2, stdout) != 2 ||
+            (event_len && fwrite(event, 1, event_len, stdout) != event_len))
+            return 5;
         fflush(stdout);
     }
     return 0;

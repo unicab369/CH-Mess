@@ -61,6 +61,18 @@ typedef struct {
     uint8_t over_report;
 } bounded_read_state;
 
+typedef struct {
+    uint16_t handle, value;
+    uint8_t stores;
+} cccd_test_state;
+
+static void store_cccd(void *context, uint16_t handle, uint16_t value) {
+    cccd_test_state *state = context;
+    state->handle = handle;
+    state->value = value;
+    state->stores++;
+}
+
 static uint8_t bounded_read(void *context, uint16_t offset, uint8_t *out,
                             uint16_t *inout_len) {
     bounded_read_state *state = context;
@@ -282,6 +294,118 @@ static void test_database_seal_requires_property_descriptors(void) {
         NULL, 0, 0, NULL, NULL, NULL, &declaration, &value));
     ble_gatt_server_find(&server, value)->permissions |= BLE_GATT_PERM_WRITE;
     assert(!ble_gatt_server_seal_database(&server));
+}
+
+static void test_server_configuration_descriptor_writes(void) {
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 23);
+    ble_gatt_uuid service_uuid = uuid16(0x180f);
+    ble_gatt_uuid characteristic_uuid = uuid16(0xfff8);
+    ble_gatt_uuid sccd_uuid = uuid16(0x2903);
+    const uint8_t initial[2] = {0, 0};
+    uint16_t service, declaration, value, sccd;
+    assert(ble_gatt_server_add_service(&server, &service_uuid, 1, &service));
+    assert(ble_gatt_server_add_characteristic(&server, &characteristic_uuid,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_BROADCAST, BLE_GATT_PERM_READ,
+        NULL, 0, 0, NULL, NULL, NULL, &declaration, &value));
+    assert(ble_gatt_server_add_descriptor(&server, &sccd_uuid,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, initial, 2, 2, NULL, NULL,
+        NULL, &sccd));
+    assert(ble_gatt_server_seal_database(&server));
+
+    uint8_t response[23];
+    uint16_t response_len;
+    uint8_t enable[] = {0x12, (uint8_t)sccd, (uint8_t)(sccd >> 8), 1, 0};
+    assert(att(&server, enable, sizeof(enable), response, &response_len) == 1);
+    assert(response[0] == 0x13 &&
+           ble_gatt_server_u16(ble_gatt_attribute_value(&server,
+               ble_gatt_server_find(&server, sccd))) == 1);
+
+    uint8_t reserved[] = {0x12, (uint8_t)sccd, (uint8_t)(sccd >> 8), 2, 0};
+    assert(att(&server, reserved, sizeof(reserved), response,
+               &response_len) == 1);
+    assert(response[0] == 0x01 &&
+           response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED);
+
+    uint8_t prepare_reserved[] = {
+        0x16, (uint8_t)sccd, (uint8_t)(sccd >> 8), 0, 0, 2, 0
+    };
+    assert(att(&server, prepare_reserved, sizeof(prepare_reserved), response,
+               &response_len) == 1 && response[0] == 0x17);
+    const uint8_t execute[] = {0x18, 1};
+    assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
+    assert(response[0] == 0x01 && response[1] == 0x18 &&
+           ble_gatt_server_u16(response + 2) == sccd &&
+           response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED &&
+           ble_gatt_server_u16(ble_gatt_attribute_value(&server,
+               ble_gatt_server_find(&server, sccd))) == 1);
+
+    uint8_t prepare_disable[] = {
+        0x16, (uint8_t)sccd, (uint8_t)(sccd >> 8), 0, 0, 0, 0
+    };
+    assert(att(&server, prepare_disable, sizeof(prepare_disable), response,
+               &response_len) == 1 && response[0] == 0x17);
+    assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
+    assert(response[0] == 0x19 && ble_gatt_server_u16(
+        ble_gatt_attribute_value(&server, ble_gatt_server_find(&server, sccd)))
+        == 0);
+}
+
+static void test_user_description_writable_auxiliary(void) {
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 23);
+    ble_gatt_uuid service_uuid = uuid16(0x180f);
+    ble_gatt_uuid characteristic_uuid = uuid16(0xfffb);
+    ble_gatt_uuid extended_uuid = uuid16(0x2900);
+    ble_gatt_uuid description_uuid = uuid16(0x2901);
+    uint16_t service, declaration, value, description;
+    const uint8_t initial_description[] = {'x'};
+    assert(ble_gatt_server_add_service(&server, &service_uuid, 1, &service));
+    assert(ble_gatt_server_add_characteristic(&server, &characteristic_uuid,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE | BLE_GATT_PROP_EXTENDED,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, NULL, 0, 0, NULL, NULL,
+        NULL, &declaration, &value));
+    assert(ble_gatt_server_add_attribute(&server, &description_uuid,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, initial_description, 1, 8,
+        NULL, NULL, NULL, &description));
+    assert(!ble_gatt_server_seal_database(&server));
+
+    ble_gatt_server_init(&server, 23);
+    assert(ble_gatt_server_add_service(&server, &service_uuid, 1, &service));
+    assert(ble_gatt_server_add_characteristic(&server, &characteristic_uuid,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE | BLE_GATT_PROP_EXTENDED,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, NULL, 0, 0, NULL, NULL,
+        NULL, &declaration, &value));
+    const uint8_t writable_auxiliaries[] = {2, 0};
+    assert(ble_gatt_server_add_attribute(&server, &extended_uuid,
+        BLE_GATT_PERM_READ, writable_auxiliaries, 2, 2, NULL, NULL, NULL,
+        NULL));
+    assert(ble_gatt_server_add_attribute(&server, &description_uuid,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, initial_description, 1, 8,
+        NULL, NULL, NULL, &description));
+    assert(ble_gatt_server_seal_database(&server));
+
+    uint8_t response[23];
+    uint16_t response_len;
+    uint8_t write_request[] = {0x12, (uint8_t)description,
+        (uint8_t)(description >> 8), 'o', 'k'};
+    assert(att(&server, write_request, sizeof(write_request), response,
+               &response_len) == 1);
+    assert(response[0] == 0x13);
+    ble_gatt_attribute *attribute = ble_gatt_server_find(&server, description);
+    assert(attribute->value_len == 2 &&
+        !memcmp(ble_gatt_attribute_value(&server, attribute), "ok", 2));
+
+    uint8_t prepare_request[] = {0x16, (uint8_t)description,
+        (uint8_t)(description >> 8), 0, 0, 'a'};
+    assert(att(&server, prepare_request, sizeof(prepare_request), response,
+               &response_len) == 1);
+    assert(response[0] == 0x17);
+    uint8_t execute_request[] = {0x18, 1};
+    assert(att(&server, execute_request, sizeof(execute_request), response,
+               &response_len) == 1);
+    assert(response[0] == 0x19 && attribute->value_len == 2 &&
+        !memcmp(ble_gatt_attribute_value(&server, attribute), "ak", 2));
 }
 
 static void test_included_service_discovery(void) {
@@ -813,6 +937,19 @@ static void test_read_callback_boundaries(void) {
            response[4] == BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
 }
 
+static void test_mtu_below_default_keeps_default(void) {
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 100);
+    const uint8_t exchange[] = {0x02, 22, 0};
+    uint8_t response[23];
+    uint16_t response_len;
+    assert(att(&server, exchange, sizeof(exchange), response,
+               &response_len) == 1);
+    assert(response_len == 3 && response[0] == 0x03 &&
+           ble_gatt_server_u16(response + 1) == 100 &&
+           server.mtu == 23 && server.mtu_exchanged);
+}
+
 static void test_dynamic_read_enforces_att_value_limit(void) {
     ble_gatt_server server;
     ble_gatt_server_init(&server, BLE_GATT_SERVER_MTU_MAX);
@@ -989,6 +1126,9 @@ static void test_writes_cccd_and_permissions(void) {
 
     uint8_t response[517];
     uint16_t response_len;
+    cccd_test_state cccd_state = {0};
+    ble_gatt_server_set_cccd_persistence(&server, NULL, store_cccd,
+                                         &cccd_state);
     const uint8_t enable_cccd[] = {0x12, (uint8_t)cccd, 0, 1, 0};
     assert(att(&server, enable_cccd, sizeof(enable_cccd), response,
                &response_len) == 1);
@@ -1000,6 +1140,32 @@ static void test_writes_cccd_and_permissions(void) {
                &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED);
+
+    const uint8_t event_value = 0x5a;
+    assert(ble_gatt_server_queue_event(&server, notify, &event_value, 1, 0));
+    const uint8_t prepare_disable[] = {
+        0x16, (uint8_t)cccd, (uint8_t)(cccd >> 8), 0, 0, 0, 0
+    };
+    assert(att(&server, prepare_disable, sizeof(prepare_disable), response,
+               &response_len) == 1);
+    assert(response[0] == 0x17);
+    const uint8_t execute[] = {0x18, 1};
+    assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
+    assert(response[0] == 0x19 && server.attributes[cccd - 1].cccd == 0 &&
+           !server.event_count && cccd_state.stores == 2 &&
+           cccd_state.handle == notify && cccd_state.value == 0);
+
+    const uint8_t prepare_invalid[] = {
+        0x16, (uint8_t)cccd, (uint8_t)(cccd >> 8), 0, 0, 2, 0
+    };
+    assert(att(&server, prepare_invalid, sizeof(prepare_invalid), response,
+               &response_len) == 1);
+    assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
+    assert(response[0] == 0x01 && response[1] == 0x18 &&
+           ble_gatt_server_u16(response + 2) == cccd &&
+           response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED &&
+           server.attributes[cccd - 1].cccd == 0 &&
+           cccd_state.stores == 2);
 
     const uint8_t read_secure[] = {0x0a, (uint8_t)secure, 0};
     assert(att(&server, read_secure, sizeof(read_secure), response,
@@ -1148,6 +1314,15 @@ static void test_write_command(void) {
         &response_len) == 0);
     assert(response_len == 0 && ble_gatt_attribute_value(&server,
         &server.attributes[handle - 1])[0] == 0xa5);
+
+    uint8_t oversized_request[24] = {0x0a, (uint8_t)handle,
+                                     (uint8_t)(handle >> 8)};
+    assert(ble_gatt_server_att(&server, oversized_request,
+        sizeof(oversized_request), response, sizeof(response),
+        &response_len) == 1);
+    assert(response_len == 5 && response[0] == 0x01 &&
+           response[1] == 0x0a && response[2] == 0 && response[3] == 0 &&
+           response[4] == BLE_GATT_ATT_ERR_INVALID_PDU);
 }
 
 static void test_read_multiple(void) {
@@ -1543,6 +1718,8 @@ static void test_transactional_prepare_callbacks(void) {
 int main(void) {
     test_database_registration_and_handles();
     test_database_seal_requires_property_descriptors();
+    test_server_configuration_descriptor_writes();
+    test_user_description_writable_auxiliary();
     test_included_service_discovery();
     test_signed_write_command();
     test_application_authorization();
@@ -1554,6 +1731,7 @@ int main(void) {
     test_fixed_read_multiple_checks_after_mtu_boundary();
     test_response_capacity_and_large_find_information();
     test_att_mtu_and_reads();
+    test_mtu_below_default_keeps_default();
     test_read_callback_boundaries();
     test_dynamic_read_enforces_att_value_limit();
     test_discovery();

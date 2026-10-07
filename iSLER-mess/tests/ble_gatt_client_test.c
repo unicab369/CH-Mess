@@ -42,6 +42,41 @@ static int sign_pdu(void *context, const uint8_t *pdu, uint16_t len,
     return 1;
 }
 
+static void test_long_operation_deadlines_refresh(void) {
+    ble_gatt_client client;
+    uint8_t response[BLE_GATT_CLIENT_MTU_MAX];
+    ble_gatt_client_init(&client, send_pdu, on_result, on_event, on_event,
+                         NULL);
+
+    assert(ble_gatt_client_read_long(&client, 0x0042, 1000));
+    assert(ble_gatt_client_poll(&client, 20000) == 0);
+    response[0] = 0x0b;
+    memset(response + 1, 0x5a, 22);
+    assert(ble_gatt_client_receive(&client, response, 23) == 1);
+    assert(sent_len == 5 && sent[0] == 0x0c &&
+           client.deadline_ms == 50000);
+
+    ble_gatt_client_reset(&client);
+    uint8_t value[40] = {0};
+    assert(ble_gatt_client_write_long(&client, 0x0042, value,
+                                      sizeof(value), 1000));
+    assert(ble_gatt_client_poll(&client, 20000) == 0);
+    memcpy(response, sent, sent_len);
+    response[0] = 0x17;
+    assert(ble_gatt_client_receive(&client, response, sent_len) == 1);
+    assert(sent[0] == 0x16 && client.deadline_ms == 50000);
+}
+
+static void test_mtu_peer_below_default_keeps_default(void) {
+    ble_gatt_client client;
+    ble_gatt_client_init(&client, send_pdu, on_result, NULL, NULL, NULL);
+    assert(ble_gatt_client_exchange_mtu(&client, 100, 1));
+    const uint8_t response[] = {0x03, 22, 0};
+    assert(ble_gatt_client_receive(&client, response, sizeof(response)) == 1);
+    assert(!client.pending && client.mtu_exchanged &&
+           client.local_mtu == 100 && client.mtu == 23 && result_status == 0);
+}
+
 static void test_attribute_value_limit(void) {
     ble_gatt_client client;
     ble_gatt_client_init(&client, send_pdu, on_result, on_event, on_event,
@@ -478,5 +513,7 @@ int main(void) {
     test_error_response_handle_matching();
     test_unexpected_response_fails_transaction();
     test_unsolicited_response_is_rejected();
+    test_long_operation_deadlines_refresh();
+    test_mtu_peer_below_default_keeps_default();
     return 0;
 }

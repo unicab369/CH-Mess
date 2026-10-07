@@ -162,7 +162,7 @@ static inline int ble_gatt_client_response_valid(const ble_gatt_client *client,
     if (!client || !pdu || !len || len > client->mtu) return 0;
     switch (pdu[0]) {
     case 0x03:
-        return len == 3 && ((uint16_t)pdu[1] | (uint16_t)pdu[2] << 8) >= 23;
+        return len == 3;
     case 0x05:
         if (client->request_len != 5 || client->request_pdu[0] != 0x04 ||
             len < 6 || (pdu[1] != 1 && pdu[1] != 2) ||
@@ -615,12 +615,16 @@ static inline int ble_gatt_client_write_long_next(ble_gatt_client *client) {
                                    client->now_ms);
 }
 
-// Return 1 when a timeout was reported. ATT requests are not blindly replayed:
-// a delayed response or non-idempotent write could otherwise be misapplied.
-// The bearer is poisoned at timeout and must be replaced before more traffic.
+// Call from the connection loop with a monotonic millisecond tick. Refreshing
+// now_ms also timestamps the next chunk of an active long operation. Return 1
+// when a timeout was reported. Requests are not blindly replayed: a delayed
+// response or non-idempotent write could otherwise be misapplied. The bearer
+// is poisoned at timeout and must be replaced before more traffic.
 static inline int ble_gatt_client_poll(ble_gatt_client *client,
                                       uint32_t now_ms) {
-    if (!client || !client->pending ||
+    if (!client) return 0;
+    client->now_ms = now_ms;
+    if (!client->pending ||
         (int32_t)(now_ms - client->deadline_ms) < 0) return 0;
     client->pending = 0;
     client->request_opcode = client->expected_opcode = 0;
@@ -766,13 +770,8 @@ static inline int ble_gatt_client_receive(ble_gatt_client *client,
     client->request_len = 0;
     if (opcode == 0x03) {
         uint16_t peer_mtu = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
-        if (peer_mtu < 23) {
-            client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
-                           pdu, len);
-            return -1;
-        }
-        client->mtu = peer_mtu < client->local_mtu ? peer_mtu :
-                      client->local_mtu;
+        client->mtu = peer_mtu < 23 ? 23 :
+            (peer_mtu < client->local_mtu ? peer_mtu : client->local_mtu);
     }
     if (operation == 1 && (opcode == 0x0b || opcode == 0x0d)) {
         uint16_t part_len = len - 1;

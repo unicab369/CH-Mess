@@ -9,6 +9,8 @@ import tempfile
 from bumble import att, utils
 from bumble.core import UUID
 from bumble.gatt_client import Client
+from cryptography.hazmat.primitives.ciphers import algorithms
+from cryptography.hazmat.primitives.cmac import CMAC
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -43,7 +45,10 @@ class CAttServer:
         self.process.stdin.write(struct.pack("<H", len(pdu)) + pdu)
         self.process.stdin.flush()
         length = struct.unpack("<H", read_exact(self.process.stdout, 2))[0]
-        return read_exact(self.process.stdout, length) if length else b""
+        response = read_exact(self.process.stdout, length) if length else b""
+        event_length = struct.unpack("<H", read_exact(self.process.stdout, 2))[0]
+        event = read_exact(self.process.stdout, event_length) if event_length else b""
+        return response, event
 
     def close(self):
         self.process.stdin.close()
@@ -64,9 +69,10 @@ class FixtureBearer(utils.EventEmitter):
 
     def send_l2cap_pdu(self, cid, pdu):
         assert cid == att.ATT_CID
-        response = self.server.exchange(pdu)
-        if response:
-            self.client.on_gatt_pdu(att.ATT_PDU.from_bytes(response))
+        response, event = self.server.exchange(pdu)
+        for received in (response, event):
+            if received:
+                self.client.on_gatt_pdu(att.ATT_PDU.from_bytes(received))
 
     def on_att_mtu_update(self, mtu):
         self.att_mtu = mtu
@@ -79,9 +85,22 @@ async def exercise(server):
 
     assert await client.request_mtu(64) == 64
     services = await client.discover_services()
-    assert [service.uuid for service in services] == [UUID(0x180F), UUID(0x1812)]
+    assert [service.uuid for service in services] == [
+        UUID(0x180F), UUID(0x1812), UUID(0x1801)
+    ]
 
     battery_service = services[0]
+    find_battery = await client.send_request(
+        att.ATT_Find_By_Type_Value_Request(
+            starting_handle=1,
+            ending_handle=0xFFFF,
+            attribute_type=UUID(0x2800),
+            attribute_value=bytes((0x0F, 0x18)),
+        )
+    )
+    assert find_battery.handles_information == [
+        (battery_service.handle, battery_service.end_group_handle)
+    ]
     by_uuid = await client.discover_service(UUID(0x180F))
     assert len(by_uuid) == 1 and by_uuid[0].handle == battery_service.handle
 
@@ -90,6 +109,26 @@ async def exercise(server):
     assert included[0].handle == battery_service.handle
     assert included[0].end_group_handle == battery_service.end_group_handle
     assert included[0].uuid == UUID(0x180F)
+
+    database_hash_values = await client.read_characteristics_by_uuid(
+        UUID(0x2B2A), None
+    )
+    hash_input = bytes.fromhex(
+        "010000280f18 020003280a0300192a 04000129 "
+        "050000281218 06000228010004000f18 0a0000280118 "
+        "0b000328200c00052a 0d000229 0e000328020f002a2b"
+    )
+    cmac = CMAC(algorithms.AES(bytes(16)))
+    cmac.update(hash_input)
+    assert database_hash_values == [cmac.finalize()]
+
+    gatt_service = services[2]
+    gatt_characteristics = await client.discover_characteristics([], gatt_service)
+    changed = next(c for c in gatt_characteristics if c.uuid == UUID(0x2A05))
+    changed_events = []
+    await changed.subscribe(lambda value: changed_events.append(value),
+                            prefer_notify=False)
+    assert changed_events == [b"\x01\x00\xff\xff"]
 
     characteristics = await client.discover_characteristics([], battery_service)
     assert len(characteristics) == 1

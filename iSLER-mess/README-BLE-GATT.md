@@ -77,7 +77,13 @@ adapters and application services belong outside these generic modules.
   Configuration descriptors before sealing the attribute database; validate
   standard descriptor value lengths, permissions, and reserved bits, keep
   CCCD/SCCD reads unprotected, reject duplicate standard descriptors, and
-  reject incomplete characteristic declarations.
+  reject incomplete characteristic declarations. Permit writes to a
+  Characteristic User Description only when its characteristic's Extended
+  Properties enables Writable Auxiliaries.
+- [x] Apply prepared CCCD writes through the normal per-peer state, event
+  cancellation, and persistence path when Execute Write commits.
+- [x] Enforce Server Characteristic Configuration reserved bits and Broadcast
+  property rules on both direct and prepared writes.
 - [x] Model fixed and variable server values with their ATT write and
   truncation behavior.
 - [x] Preserve the full value length when a Read Multiple Variable tuple is
@@ -121,21 +127,25 @@ adapters and application services belong outside these generic modules.
   roles concurrently.
 - [x] Keep client/server ATT MTU state symmetric on one bearer, reject a local
   MTU request that differs from the server receive MTU, and defer queued events
-  until an outgoing MTU exchange completes.
+  until an outgoing MTU exchange completes; keep the default MTU when either
+  peer advertises an invalid value below 23.
 - [x] Stop ATT traffic after a client transaction or server indication
   timeout; the transport marks the bearer failed and can notify the platform
   to terminate the LE connection before another bearer is used.
 - [x] Fail the fixed bearer on malformed incoming ATT PDUs rejected by the
   client or server, and invoke the optional link-termination callback.
 - [x] Verify common MTU, discovery, read, Write Request/Command, and
-  reliable-write behavior against Bumble in both directions, including long
-  reads/writes, Read By UUID, included-service discovery, and MTU-truncated
+  reliable-write behavior against Bumble in both directions, including
+  Find By Type Value, long reads/writes, Read By UUID, included-service
+  discovery, and MTU-truncated
   fixed and variable Read Multiple responses; verify CCCD subscription,
   notification delivery, and indication confirmation with the C client and
   Bumble server; verify Insufficient Encryption and Insufficient
   Authentication errors in both directions with protected attributes on each
   server, Insufficient Authorization from the C server to Bumble, and the
-  Read Blob value-end/Invalid Offset boundary on the C server.
+  Read Blob value-end/Invalid Offset boundary on the C server; independently
+  recompute the C server's Database Hash and receive/confirm Service Changed
+  through Bumble.
 - [ ] Verify remaining procedures and security behavior against an independent
   BLE implementation.
 - [ ] Exercise MTU exchange, long values, reliable writes, notifications,

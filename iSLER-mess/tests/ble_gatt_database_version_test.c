@@ -63,7 +63,7 @@ int main(void) {
     uint16_t indication_len;
     assert(ble_gatt_server_poll_event(&server, 10, indication,
         sizeof(indication), &indication_len) == 1);
-    assert(indication[0] == 0x1d &&
+    assert(indication_len == 7 && indication[0] == 0x1d &&
            ble_gatt_server_u16(indication + 3) == 1 &&
            ble_gatt_server_u16(indication + 5) == 0xffff);
 
