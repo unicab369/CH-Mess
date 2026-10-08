@@ -5,6 +5,11 @@
 #error "Include ble_gap_connection.h through ble_gap.h"
 #endif
 
+static uint8_t gap_connection_rate_parameters_valid(uint16_t interval,
+        uint16_t factor, uint16_t latency, uint16_t continuation,
+        uint16_t timeout);
+static uint16_t gap_connection_rate_min_interval(void);
+
 #if MESH_GAP_EXT_ADV_SUPPORT && MESH_GAP_CONN_DATA_MAX < 35
 #define GAP_CONN_PACKET_BUFFER_MAX 35
 #else
@@ -52,10 +57,6 @@ static uint8_t gap_radio_pawr_connect_response[16];
 static uint64_t gap_radio_pawr_connect_request_end_ticks;
 static int gap_radio_periodic_window_overlaps_connection(uint64_t start_ticks,
                                                          uint64_t end_ticks);
-static uint8_t gap_connection_rate_parameters_valid(uint16_t interval,
-        uint16_t factor, uint16_t latency, uint16_t continuation,
-        uint16_t timeout);
-static uint16_t gap_connection_rate_min_interval(void);
 static struct {
     uint8_t active, channel, phy;
     uint64_t window_start_ticks, window_end_ticks;
@@ -107,8 +108,8 @@ static void gap_connection_end(void) {
         BLE_GAP_HW_STOP();
         gap_radio_connection_slot_valid = 0;
     }
-    if (gap_conn.central_role && gap_smp.phase == GAP_SMP_BOND_TX &&
-        gap_smp.bond_tx_step == 2) {
+    if (gap_conn.central_role && gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX &&
+        gap_smp.bearer.pairing.bond_tx_step == 2) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
         mesh_gap_smp_bond_abort();
@@ -129,7 +130,7 @@ static void gap_connection_end(void) {
     }
     gap_security.status = security_status;
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
-    uint8_t pairing_status = gap_smp.phase ? 0x08 : gap_smp.status;
+    uint8_t pairing_status = gap_smp.bearer.pairing.phase ? 0x08 : gap_smp.status;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_smp;
         size_t wipe_len = sizeof(gap_smp);
@@ -856,7 +857,7 @@ static void gap_privacy_poll(uint32_t now) {
 }
 
 // Complete an extended scan response exchange when its radio TX finishes.
-static void gap_hw_mesh_transmitted(void) {
+static inline void gap_hw_mesh_transmitted(void) {
 #if MESH_GAP_EXT_ADV_SUPPORT
     if (gap_radio_ext_adv_scan_response_started)
         gap_radio_ext_adv_scan_waiting = 0;
@@ -3493,7 +3494,7 @@ void gap_hw_mesh_init(void) {
 }
 
 static void mesh_gap_conn_poll(void);
-static void mesh_gap_conn_poll_all(void);
+static inline void mesh_gap_conn_poll_all(void);
 
 // A null random_address selects the controller's public address.
 int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
@@ -3793,14 +3794,14 @@ static void mesh_gap_conn_poll(void) {
         gap_bond_repair_pending = 1;
     }
     if (gap_conn.central_role && gap_bond_repair_pending &&
-        !gap_conn.first_event && !gap_security.phase && !gap_smp.phase &&
+        !gap_conn.first_event && !gap_security.phase && !gap_smp.bearer.pairing.phase &&
         !gap_conn.tx_pending && !gap_conn.tx_queued &&
         !gap_conn.tx_l2cap_remaining && mesh_gap_pair()) {
         gap_bond_repair_pending = 0;
     }
     if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
         !gap_conn.first_event &&
-        !gap_conn.bond_restore_attempted && !gap_security.phase && !gap_smp.phase) {
+        !gap_conn.bond_restore_attempted && !gap_security.phase && !gap_smp.bearer.pairing.phase) {
         gap_conn.bond_restore_attempted = 1;
         uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
             (uint16_t)gap_conn.bond.ediv[1] << 8;
@@ -4000,7 +4001,7 @@ static void mesh_gap_conn_poll(void) {
 
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
-static void mesh_gap_conn_poll_all(void) {
+static inline void mesh_gap_conn_poll_all(void) {
     uint8_t previous_slot = gap_connection_slot;
     uint8_t owner_at_entry = gap_radio_connection_slot_valid ?
         gap_radio_connection_slot : UINT8_MAX;

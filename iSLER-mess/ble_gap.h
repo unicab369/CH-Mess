@@ -556,12 +556,6 @@ static void gap_security_send(void);
 
 // Opt-in pairing. Just Works has no authentication; bonding is optional for legacy.
 // Passkey Entry and SC Numeric Comparison use application UI interfaces.
-enum { GAP_SMP_IDLE, GAP_SMP_RESPONSE, GAP_SMP_CONFIRM, GAP_SMP_RANDOM,
-       GAP_SMP_ENCRYPT, GAP_SMP_SECURITY_REQUEST, GAP_SMP_PASSKEY,
-       GAP_SMP_BOND_TX, GAP_SMP_BOND_RX, GAP_SMP_SC_PUBLIC_KEY,
-       GAP_SMP_SC_PASSKEY, GAP_SMP_SC_CONFIRM, GAP_SMP_SC_RANDOM,
-       GAP_SMP_SC_USER, GAP_SMP_SC_DHKEY,
-       GAP_SMP_SC_ENCRYPT };
 #define MESH_GAP_IO_DISPLAY_ONLY 0
 #define MESH_GAP_IO_DISPLAY_YES_NO 1
 #define MESH_GAP_IO_KEYBOARD_ONLY 2
@@ -575,26 +569,20 @@ static void *gap_smp_user_request_context;
 static struct {
     uint8_t io, authenticated, min_key_size, bonding, secure_connections;
     uint8_t keypress_notifications;
-} gap_pairing_policy = {MESH_GAP_IO_NONE, 0, 7};
+} gap_pairing_policy = {
+    .io = MESH_GAP_IO_NONE,
+    .authenticated = 0,
+    .min_key_size = 7,
+    .bonding = 0,
+    .secure_connections = 0,
+    .keypress_notifications = 0
+};
 typedef struct {
-    uint8_t phase, status, blocked, key_size, encryption_started;
-    uint8_t user_notified, numeric_notified, keypress_active;
-    uint8_t authenticated, passkey_action, confirm_received, tk[16];
-    uint8_t bond_requested, bond_tx_step, bond_tx_waiting, bond_rx_step, sc_active;
+    uint8_t status, blocked, encryption_started;
+    uint8_t bond_tx_waiting;
     uint8_t previous_bond_valid;
     mesh_gap_bond previous_bond;
-    struct {
-        uint8_t private_key[32], public_key[64], peer_public_key[64];
-        uint8_t dhkey[32], mac_key[16], ltk[16], peer_random[16];
-        uint8_t oob_active, oob_peer_present;
-        uint8_t oob_local_random[16], oob_peer_random[16];
-        uint8_t oob_peer_confirm[16];
-        uint8_t numeric_required, numeric_reply, passkey_required, passkey_round;
-        uint8_t peer_check_received, peer_check[16];
-        uint32_t numeric_value;
-    } sc;
-    uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
-    uint8_t tx[69], tx_len, tx_offset, rx[BLE_SMP_PDU_MAX], rx_len;
+    uint8_t tx[69], tx_len, tx_offset;
     ble_l2cap_connection l2cap;
     ble_l2cap_reassembler l2cap_rx;
     ble_smp bearer;

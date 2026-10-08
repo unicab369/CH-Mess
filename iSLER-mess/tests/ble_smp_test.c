@@ -128,6 +128,21 @@ int main(void) {
     peer.auth_req &= (uint8_t)~BLE_SMP_AUTH_SECURE_CONNECTIONS;
     assert(ble_smp_negotiate_features(&local, &peer, &policy,
         &negotiated) == BLE_SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+    uint8_t association;
+    assert(!ble_smp_select_association(1, 4, 1, 1, 1, &association) &&
+           association == BLE_SMP_ASSOCIATION_NUMERIC_COMPARISON);
+    assert(!ble_smp_select_association(2, 0, 1, 1, 1, &association) &&
+           association == BLE_SMP_ASSOCIATION_PASSKEY_INPUT);
+    assert(!ble_smp_select_association(0, 2, 1, 1, 1, &association) &&
+           association == BLE_SMP_ASSOCIATION_PASSKEY_DISPLAY);
+    assert(!ble_smp_select_association(4, 4, 1, 0, 1, &association) &&
+           association == BLE_SMP_ASSOCIATION_PASSKEY_DISPLAY);
+    assert(!ble_smp_select_association(4, 4, 1, 0, 0, &association) &&
+           association == BLE_SMP_ASSOCIATION_PASSKEY_INPUT);
+    assert(ble_smp_select_association(0, 1, 1, 1, 1, &association) ==
+           BLE_SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+    assert(!ble_smp_select_association(3, 4, 0, 1, 0, &association) &&
+           association == BLE_SMP_ASSOCIATION_NONE);
 
     fake_smp fake = {0};
     ble_l2cap_ops ops = {0};
@@ -158,7 +173,21 @@ int main(void) {
     assert(!ble_smp_aes128(&smp, key, input, output));
     assert(!ble_smp_cmac(&smp, key, input, sizeof(input), output));
     assert(!ble_smp_dhkey(&smp, secret, secret, dhkey));
+    uint8_t peer_key[32] = {0}, nonce_a[16] = {0}, nonce_b[16] = {0};
+    uint8_t address_a[7] = {0}, address_b[7] = {0}, iocap[3] = {0};
+    uint8_t mac_key[16], ltk_out[16];
+    uint32_t passkey = 123456;
+    memset(output, 0xa5, sizeof(output));
+    assert(!ble_smp_sc_f4(&smp, peer_key, peer_key, key, 0, output));
+    assert(!ble_smp_sc_f5(&smp, peer_key, nonce_a, nonce_b, address_a,
+                          address_b, mac_key, ltk_out));
+    assert(!ble_smp_sc_f6(&smp, key, nonce_a, nonce_b, nonce_a,
+                          iocap, address_a, address_b, output));
+    assert(!ble_smp_sc_g2(&smp, peer_key, peer_key, key, nonce_a, &passkey));
+    assert(passkey == 0);
     for (unsigned i = 0; i < sizeof(output); i++) assert(output[i] == 0);
+    for (unsigned i = 0; i < sizeof(mac_key); i++)
+        assert(mac_key[i] == 0 && ltk_out[i] == 0);
     for (unsigned i = 0; i < sizeof(dhkey); i++) assert(dhkey[i] == 0);
     fake.crypto_fail = 0;
     assert(ble_smp_user_request(&smp, 3, 123456) == 0);
@@ -201,6 +230,16 @@ int main(void) {
     assert(!ble_smp_tick(&smp, UINT32_MAX - 1000));
 
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};
+    const uint8_t *pending_pdu;
+    uint16_t pending_len;
+    assert(ble_smp_queue_received(&smp, pairing_request,
+                                  sizeof(pairing_request)));
+    assert(!ble_smp_queue_received(&smp, pairing_request,
+                                   sizeof(pairing_request)));
+    assert(ble_smp_take_received(&smp, &pending_pdu, &pending_len));
+    assert(pending_len == sizeof(pairing_request) &&
+           !memcmp(pending_pdu, pairing_request, pending_len));
+    assert(!ble_smp_take_received(&smp, &pending_pdu, &pending_len));
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     assert(!ble_smp_tick(&smp, 1000)); // Deadline wraps across uint32_t.
     assert(ble_smp_tick(&smp, 30000) && fake.timed_out == 1);
@@ -265,5 +304,19 @@ int main(void) {
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     ble_smp_reset(&smp);
     assert(!smp.tx_len && !smp.procedure_active);
+    assert(ble_smp_pairing_begin(&smp, 1));
+    assert(smp.pairing.local_is_central &&
+           smp.pairing.phase == BLE_SMP_PHASE_RESPONSE);
+    assert(!ble_smp_pairing_begin(&smp, 0));
+    assert(ble_smp_queue_received(&smp, pairing_request,
+                                  sizeof(pairing_request)));
+    ble_smp_procedure_finish(&smp);
+    assert(!smp.rx_len);
+    for (size_t i = 0; i < sizeof(smp.rx); i++) assert(smp.rx[i] == 0);
+    assert(ble_smp_pairing_begin(&smp, 0));
+    assert(!smp.pairing.local_is_central &&
+           smp.pairing.phase == BLE_SMP_PHASE_SECURITY_REQUEST);
+    assert(!ble_smp_pairing_begin(&smp, 2));
+    ble_smp_procedure_finish(&smp);
     return 0;
 }

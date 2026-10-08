@@ -4035,16 +4035,19 @@ static void test_smp_pairing(void) {
                           0x0e,0x6f,0xad,0x56,0x21,0xd5,0x83,0x57};
     uint8_t expected[16] = {0x86,0x3b,0xf1,0xbe,0xc5,0x4d,0xa7,0xd2,
                             0xea,0x88,0x89,0x87,0xef,0x3f,0x1e,0x1e}, confirm[16];
-    memcpy(gap_smp.request, request, 7); memcpy(gap_smp.response, response, 7);
+    memcpy(gap_smp.bearer.pairing.request, request, 7); memcpy(gap_smp.bearer.pairing.response, response, 7);
     memcpy(gap_conn.initiator, ia, 6); memcpy(gap_conn.responder, ra, 6);
     gap_conn.initiator_type = 1; gap_conn.responder_type = 0;
-    gap_smp_confirm(random, confirm);
+    assert(ble_smp_legacy_c1(&gap_smp.bearer, gap_smp.bearer.pairing.tk, random,
+        gap_conn.initiator_type, gap_conn.responder_type, request, response,
+        ia, ra, confirm));
     assert(!memcmp(confirm, expected, 16));
     uint8_t s1_input[16] = {0,0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,
                             0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11};
     uint8_t s1_expected[16] = {0x62,0xa0,0x6d,0x79,0xae,0x16,0x42,0x5b,
                               0x9b,0xf4,0xb0,0xe8,0xf0,0xe1,0x1f,0x9a};
-    gap_smp_e(s1_input, confirm); assert(!memcmp(confirm, s1_expected, 16));
+    assert(ble_smp_legacy_e(&gap_smp.bearer, gap_smp.bearer.pairing.tk, s1_input, confirm));
+    assert(!memcmp(confirm, s1_expected, 16));
     gap_connection_end();
 
     for (uint8_t central = 0; central < 2; central++) {
@@ -4053,19 +4056,19 @@ static void test_smp_pairing(void) {
         assert(mesh_gap_pair());
         uint8_t features[7] = {central ? 2 : 1, 3, 0, 0, central ? 16 : 7, 0, 0};
         receive_test_smp(features, 7, 5);
-        assert(gap_smp.phase == GAP_SMP_CONFIRM);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_CONFIRM);
         uint8_t peer_random[17] = {4}, peer_confirm[17] = {3};
         for (unsigned i = 1; i < 17; i++) peer_random[i] = (uint8_t)(0xb0 + i);
         gap_smp_confirm(peer_random + 1, peer_confirm + 1);
         receive_test_smp(peer_confirm, 17, 0);
-        assert(gap_smp.phase == GAP_SMP_RANDOM);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_RANDOM);
         receive_test_smp(peer_random, 17, 9);
-        assert(gap_smp.phase == GAP_SMP_ENCRYPT);
-        for (unsigned i = gap_smp.key_size; i < 16; i++) assert(!gap_smp.stk[i]);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_ENCRYPT);
+        for (unsigned i = gap_smp.bearer.pairing.key_size; i < 16; i++) assert(!gap_smp.bearer.pairing.stk[i]);
         if (central) {
             mesh_gap_smp_poll();
             assert(gap_security.phase == GAP_ENC_QUEUED);
-            assert(!memcmp(gap_security.ltk, gap_smp.stk, 16));
+            assert(!memcmp(gap_security.ltk, gap_smp.bearer.pairing.stk, 16));
         } else {
             gap_conn.tx_queued = 0;
             mesh_gap_smp_poll(); // Queue our Pairing Random before ENC_REQ.
@@ -4079,8 +4082,8 @@ static void test_smp_pairing(void) {
         gap_security.phase = 0; gap_security.status = 0;
         gap_security.tx_enabled = gap_security.rx_enabled = 1;
         mesh_gap_smp_poll();
-        assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase);
-        for (unsigned i = 0; i < 16; i++) assert(!gap_smp.stk[i] && !gap_smp.random[i]);
+        assert(mesh_gap_pairing_status() == 0 && !gap_smp.bearer.pairing.phase);
+        for (unsigned i = 0; i < 16; i++) assert(!gap_smp.bearer.pairing.stk[i] && !gap_smp.bearer.pairing.random[i]);
         gap_connection_end();
     }
     start_test_central_link(); gap_conn.central_role = 0;
@@ -4147,27 +4150,27 @@ static void test_smp_signing_key_distribution(void) {
     start_test_central_link();
     mesh_gap_pairing_set(1);
     assert(mesh_gap_pair());
-    assert(gap_smp.request[5] ==
+    assert(gap_smp.bearer.pairing.request[5] ==
         (MESH_GAP_KEY_DIST_ENCRYPTION | MESH_GAP_KEY_DIST_SIGNING));
-    assert(gap_smp.request[6] ==
+    assert(gap_smp.bearer.pairing.request[6] ==
         (MESH_GAP_KEY_DIST_ENCRYPTION | MESH_GAP_KEY_DIST_IDENTITY |
          MESH_GAP_KEY_DIST_SIGNING));
     gap_connection_end();
 
     start_test_central_link();
     gap_conn.central_role = 0; // Receive the Central's set as a Peripheral.
-    gap_smp.phase = GAP_SMP_BOND_RX;
+    gap_smp.bearer.pairing.phase = BLE_SMP_PHASE_BOND_RX;
     gap_smp.started_ms = GET_MILLIS();
-    gap_smp.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
+    gap_smp.bearer.pairing.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
         MESH_GAP_KEY_DIST_IDENTITY | MESH_GAP_KEY_DIST_SIGNING;
-    gap_smp.key_size = 16;
+    gap_smp.bearer.pairing.key_size = 16;
     gap_conn.peer_identity_type = 0;
     gap_conn.peer_identity_address[0] = 0x42;
 
     uint8_t encryption_information[17] = {BLE_SMP_ENCRYPTION_INFORMATION};
     memset(encryption_information + 1, 0x31, 16);
     receive_test_smp(encryption_information, sizeof(encryption_information), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 1);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step == 1);
 
     uint8_t central_identification[11] = {BLE_SMP_CENTRAL_IDENTIFICATION};
     central_identification[1] = 0x34;
@@ -4175,24 +4178,24 @@ static void test_smp_signing_key_distribution(void) {
     central_identification[3] = 0x56;
     receive_test_smp(central_identification,
                      sizeof(central_identification), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 2);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step == 2);
 
     uint8_t identity_information[17] = {BLE_SMP_IDENTITY_INFORMATION};
     memset(identity_information + 1, 0xa5, 16);
     receive_test_smp(identity_information, sizeof(identity_information), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step == 3);
 
     uint8_t identity_address[8] = {
         BLE_SMP_IDENTITY_ADDRESS_INFORMATION, 0,
         0x10, 0x21, 0x32, 0x43, 0x54, 0x65
     };
     receive_test_smp(identity_address, sizeof(identity_address), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 4);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step == 4);
 
     uint8_t signing_information[17] = {BLE_SMP_SIGNING_INFORMATION};
     memset(signing_information + 1, 0x79, 16);
     receive_test_smp(signing_information, sizeof(signing_information), 5);
-    assert(!gap_smp.phase && gap_conn.bonded &&
+    assert(!gap_smp.bearer.pairing.phase && gap_conn.bonded &&
            gap_smp.status == 0);
     assert(test_bonds[0].version == MESH_GAP_BOND_VERSION &&
            test_bonds[0].has_peer_irk &&
@@ -4210,13 +4213,13 @@ static void test_smp_signing_key_distribution(void) {
 
     // The Central receives the Peripheral's set first, then sends its own.
     start_test_central_link();
-    gap_smp.phase = GAP_SMP_BOND_RX;
+    gap_smp.bearer.pairing.phase = BLE_SMP_PHASE_BOND_RX;
     gap_smp.started_ms = GET_MILLIS();
-    gap_smp.bond_rx_step = 30;
-    gap_smp.key_size = 16;
-    gap_smp.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
+    gap_smp.bearer.pairing.bond_rx_step = 30;
+    gap_smp.bearer.pairing.key_size = 16;
+    gap_smp.bearer.pairing.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
         MESH_GAP_KEY_DIST_SIGNING;
-    gap_smp.response[6] = MESH_GAP_KEY_DIST_ENCRYPTION |
+    gap_smp.bearer.pairing.response[6] = MESH_GAP_KEY_DIST_ENCRYPTION |
         MESH_GAP_KEY_DIST_IDENTITY | MESH_GAP_KEY_DIST_SIGNING;
     memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.bonded = 0;
@@ -4246,7 +4249,7 @@ static void test_smp_signing_key_distribution(void) {
     uint8_t peer_csrk[17] = {BLE_SMP_SIGNING_INFORMATION};
     memset(peer_csrk + 1, 0x6d, 16);
     receive_test_smp(peer_csrk, sizeof(peer_csrk), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.tx_len == 21 &&
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX && gap_smp.tx_len == 21 &&
            gap_smp.tx[4] == BLE_SMP_ENCRYPTION_INFORMATION &&
            gap_conn.bond.has_peer_irk && gap_conn.bond.has_peer_csrk &&
            gap_conn.bond.has_peripheral_ltk &&
@@ -4267,17 +4270,17 @@ static void test_smp_signing_key_distribution(void) {
     assert(gap_conn.tx_data[4] == BLE_SMP_SIGNING_INFORMATION);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    assert(!gap_smp.phase && gap_conn.bonded && gap_conn.bond.has_peripheral_ltk);
+    assert(!gap_smp.bearer.pairing.phase && gap_conn.bonded && gap_conn.bond.has_peripheral_ltk);
     gap_connection_end();
 
     // The Peripheral starts legacy distribution with its own LTK.
     start_test_central_link();
     gap_conn.central_role = 0;
-    gap_smp.response[6] = MESH_GAP_KEY_DIST_ENCRYPTION |
+    gap_smp.bearer.pairing.response[6] = MESH_GAP_KEY_DIST_ENCRYPTION |
         MESH_GAP_KEY_DIST_SIGNING;
-    gap_smp.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
+    gap_smp.bearer.pairing.response[5] = MESH_GAP_KEY_DIST_ENCRYPTION |
         MESH_GAP_KEY_DIST_SIGNING;
-    gap_smp.key_size = 16;
+    gap_smp.bearer.pairing.key_size = 16;
     memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.bond.version = MESH_GAP_BOND_VERSION;
     gap_conn.bond.valid = 1;
@@ -4285,7 +4288,7 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn.bond.peer_address_type = 0;
     gap_conn.bond.peer_address[0] = 0x42;
     gap_smp_bond_peripheral_start(0);
-    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.bond_tx_step == 31 &&
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX && gap_smp.bearer.pairing.bond_tx_step == 31 &&
            gap_smp.tx_len == 21 && gap_smp.tx[2] == BLE_L2CAP_CID_SMP &&
            gap_smp.tx[4] == BLE_SMP_ENCRYPTION_INFORMATION &&
            gap_conn.bond.has_peripheral_ltk && gap_conn.bond.has_local_csrk);
@@ -4302,7 +4305,7 @@ static void test_smp_signing_key_distribution(void) {
     assert(gap_conn.tx_data[4] == BLE_SMP_SIGNING_INFORMATION);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    assert(gap_smp.phase == GAP_SMP_BOND_RX);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX);
     uint8_t central_ltk[17] = {BLE_SMP_ENCRYPTION_INFORMATION};
     memset(central_ltk + 1, 0x48, 16);
     receive_test_smp(central_ltk, sizeof(central_ltk), 0);
@@ -4312,7 +4315,7 @@ static void test_smp_signing_key_distribution(void) {
     uint8_t central_csrk[17] = {BLE_SMP_SIGNING_INFORMATION};
     memset(central_csrk + 1, 0x59, 16);
     receive_test_smp(central_csrk, sizeof(central_csrk), 0);
-    assert(!gap_smp.phase && gap_conn.bonded &&
+    assert(!gap_smp.bearer.pairing.phase && gap_conn.bonded &&
            gap_conn.bond.has_peripheral_ltk &&
            !memcmp(gap_conn.bond.peripheral_ltk, peripheral_ltk_copy, 16) &&
            gap_conn.bond.has_local_csrk &&
@@ -4329,7 +4332,7 @@ static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uin
     uint8_t key[16] = {0}, p1[16], p2[16] = {0}, block[16], encrypted[16];
     for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
     p1[0] = gap_conn.initiator_type; p1[1] = gap_conn.responder_type;
-    memcpy(p1 + 2, gap_smp.request, 7); memcpy(p1 + 9, gap_smp.response, 7);
+    memcpy(p1 + 2, gap_smp.bearer.pairing.request, 7); memcpy(p1 + 9, gap_smp.bearer.pairing.response, 7);
     memcpy(p2, gap_conn.responder, 6); memcpy(p2 + 6, gap_conn.initiator, 6);
     for (unsigned i = 0; i < 16; i++) block[15 - i] = random[i] ^ p1[i];
     AES_KEY aes;
@@ -4379,7 +4382,7 @@ static void test_passkey_pairing(void) {
                 // The Peripheral may receive a confirm while the user is typing.
                 if (input && !central) {
                     receive_test_smp(confirm, 17, 0);
-                    assert(gap_smp.phase == GAP_SMP_PASSKEY && gap_smp.confirm_received);
+                    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_PASSKEY && gap_smp.bearer.pairing.confirm_received);
                 }
                 if (input) {
                     assert(!mesh_gap_passkey_reply(1000000));
@@ -4388,10 +4391,10 @@ static void test_passkey_pairing(void) {
                     assert(!mesh_gap_passkey_reply(passkey));
                 }
                 if (!(input && !central)) receive_test_smp(confirm, 17, 0);
-                assert(gap_smp.phase == GAP_SMP_RANDOM);
+                assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_RANDOM);
                 uint8_t expected_key[16], s1_input[16], key[16] = {0};
-                memcpy(s1_input, central ? gap_smp.random : peer_random + 1, 8);
-                memcpy(s1_input + 8, central ? peer_random + 1 : gap_smp.random, 8);
+                memcpy(s1_input, central ? gap_smp.bearer.pairing.random : peer_random + 1, 8);
+                memcpy(s1_input + 8, central ? peer_random + 1 : gap_smp.bearer.pairing.random, 8);
                 for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
                 uint8_t be_input[16], be_key[16];
                 for (unsigned i = 0; i < 16; i++) be_input[i] = s1_input[15 - i];
@@ -4399,9 +4402,9 @@ static void test_passkey_pairing(void) {
                 AES_encrypt(be_input, be_key, &aes);
                 for (unsigned i = 0; i < 16; i++) expected_key[i] = be_key[15 - i];
                 receive_test_smp(peer_random, 17, 0);
-                assert(gap_smp.phase == GAP_SMP_ENCRYPT);
-                assert(!memcmp(expected_key, gap_smp.stk, 16));
-                for (unsigned i = 0; i < 16; i++) assert(!gap_smp.tk[i]);
+                assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_ENCRYPT);
+                assert(!memcmp(expected_key, gap_smp.bearer.pairing.stk, 16));
+                for (unsigned i = 0; i < 16; i++) assert(!gap_smp.bearer.pairing.tk[i]);
                 gap_conn.tx_queued = 0;
                 mesh_gap_smp_poll();
                 if (!central) {
@@ -4449,7 +4452,7 @@ static void test_passkey_pairing(void) {
     now_ms = gap_smp.started_ms + 30000;
     mesh_gap_smp_poll();
     assert(gap_smp.blocked && !mesh_gap_passkey_reply(19655));
-    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.tk[i]);
+    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.bearer.pairing.tk[i]);
     gap_connection_end();
     start_test_central_link(); gap_conn.central_role = 0;
     assert(mesh_gap_security_set(0, 1, 16));
@@ -4472,12 +4475,12 @@ static void test_passkey_pairing(void) {
     receive_test_smp(features, 7, 0);
     secure_random_disconnect = 0;
     assert(!gap_conn.active);
-    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.random[i] && !gap_smp.tk[i]);
+    for (unsigned i = 0; i < 16; i++) assert(!gap_smp.bearer.pairing.random[i] && !gap_smp.bearer.pairing.tk[i]);
     // A Peripheral's authentication request must also reach the Central's preq.
     start_test_central_link(); assert(mesh_gap_security_set(0, 0, 7));
     uint8_t request[2] = {11,4};
     receive_test_smp(request, 2, 0);
-    assert(gap_smp.request[3] == 4 && gap_smp.tx[7] == 4);
+    assert(gap_smp.bearer.pairing.request[3] == 4 && gap_smp.tx[7] == 4);
     gap_connection_end();
     assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
     mesh_gap_pairing_set(0);
@@ -4499,9 +4502,9 @@ static void test_smp_keypress_notifications(void) {
         BLE_SMP_PAIRING_REQUEST, MESH_GAP_IO_DISPLAY_ONLY, 0, 0x14, 16, 0, 0
     };
     receive_test_smp(display_request, sizeof(display_request), 0);
-    assert(gap_smp.keypress_active &&
-           gap_smp.response[3] == 0x14 &&
-           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    assert(gap_smp.bearer.pairing.keypress_active &&
+           gap_smp.bearer.pairing.response[3] == 0x14 &&
+           gap_smp.bearer.pairing.passkey_action == MESH_GAP_PASSKEY_INPUT);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Complete the Pairing Response transmission.
     assert(mesh_gap_passkey_keypress(BLE_SMP_KEYPRESS_STARTED));
@@ -4522,7 +4525,7 @@ static void test_smp_keypress_notifications(void) {
         BLE_SMP_PAIRING_RESPONSE, MESH_GAP_IO_KEYBOARD_ONLY, 0, 0x14, 16, 0, 0
     };
     receive_test_smp(keyboard_response, sizeof(keyboard_response), 0);
-    assert(gap_smp.keypress_active);
+    assert(gap_smp.bearer.pairing.keypress_active);
     const uint8_t entered[2] = {
         BLE_SMP_KEYPRESS_NOTIFICATION, BLE_SMP_KEYPRESS_DIGIT_ENTERED
     };
@@ -4551,9 +4554,9 @@ static void test_secure_connections_just_works(void) {
     assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 16));
     assert(mesh_gap_secure_connections_set(1));
     assert(mesh_gap_pair());
-    assert(gap_smp.request[3] == 9 &&
-           gap_smp.request[5] == MESH_GAP_KEY_DIST_IDENTITY &&
-           gap_smp.request[6] == MESH_GAP_KEY_DIST_IDENTITY);
+    assert(gap_smp.bearer.pairing.request[3] == 9 &&
+           gap_smp.bearer.pairing.request[5] == MESH_GAP_KEY_DIST_IDENTITY &&
+           gap_smp.bearer.pairing.request[6] == MESH_GAP_KEY_DIST_IDENTITY);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Pairing Request.
     const uint8_t response[7] = {
@@ -4561,7 +4564,7 @@ static void test_secure_connections_just_works(void) {
         MESH_GAP_KEY_DIST_IDENTITY, MESH_GAP_KEY_DIST_IDENTITY
     };
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_PUBLIC_KEY && gap_smp.tx_len == 69);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PUBLIC_KEY && gap_smp.tx_len == 69);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
@@ -4574,36 +4577,36 @@ static void test_secure_connections_just_works(void) {
     gap_sc_reverse(public_pdu + 1, peer_public, 32);
     gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_smp.tx[4] == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && gap_smp.tx[4] == 3);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send the initiator's Pairing Confirm first.
     uint8_t expected_dhkey[32];
-    assert(uECC_shared_secret(gap_smp.sc.public_key, peer_private,
+    assert(uECC_shared_secret(gap_smp.bearer.pairing.sc.public_key, peer_private,
                               expected_dhkey, uECC_secp256r1()));
-    assert(!memcmp(gap_smp.sc.dhkey, expected_dhkey, 32));
+    assert(!memcmp(gap_smp.bearer.pairing.sc.dhkey, expected_dhkey, 32));
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 70;
-    gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
+    gap_sc_confirm_value(peer_public, gap_smp.bearer.pairing.sc.public_key,
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send our Pairing Random.
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_smp.tx[4] == 13);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY && gap_smp.tx[4] == 13);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send our DHKey Check.
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     assert(gap_security.phase == GAP_ENC_QUEUED);
     gap_security.phase = 0; gap_security.status = 0;
     gap_security.tx_enabled = gap_security.rx_enabled = 1;
     mesh_gap_smp_poll();
-    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 30);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step == 30);
     uint8_t sc_peer_irk[17] = {BLE_SMP_IDENTITY_INFORMATION};
     memset(sc_peer_irk + 1, 0x81, 16);
     receive_test_smp(sc_peer_irk, sizeof(sc_peer_irk), 0);
@@ -4611,7 +4614,7 @@ static void test_secure_connections_just_works(void) {
         BLE_SMP_IDENTITY_ADDRESS_INFORMATION, 0, 1, 2, 3, 4, 5, 6
     };
     receive_test_smp(sc_peer_identity, sizeof(sc_peer_identity), 0);
-    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.tx[4] ==
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX && gap_smp.tx[4] ==
            BLE_SMP_IDENTITY_INFORMATION);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
@@ -4621,7 +4624,7 @@ static void test_secure_connections_just_works(void) {
            gap_conn.tx_data[4] == BLE_SMP_IDENTITY_ADDRESS_INFORMATION);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase &&
+    assert(mesh_gap_pairing_status() == 0 && !gap_smp.bearer.pairing.phase &&
            gap_conn.bonded && gap_conn.bond.has_peer_irk &&
            gap_conn.bond.has_local_irk &&
            !memcmp(gap_conn.bond.peer_irk, sc_peer_irk + 1, 16) &&
@@ -4651,9 +4654,9 @@ static void test_secure_connections_just_works(void) {
     memset(early_random + 1, 0xa7, 16);
     receive_test_smp(early_random, sizeof(early_random), 0);
     assert(mesh_gap_pairing_status() == BLE_SMP_FAIL_INVALID_PARAMETERS &&
-           !gap_smp.phase && gap_smp.blocked && !mesh_gap_pair());
-    for (size_t i = 0; i < sizeof(gap_smp.random); i++)
-        assert(gap_smp.random[i] == 0);
+           !gap_smp.bearer.pairing.phase && gap_smp.blocked && !mesh_gap_pair());
+    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.random); i++)
+        assert(gap_smp.bearer.pairing.random[i] == 0);
     gap_connection_end();
 
     memset(test_bonds, 0, sizeof(test_bonds));
@@ -4668,38 +4671,38 @@ static void test_secure_connections_just_works(void) {
         MESH_GAP_KEY_DIST_IDENTITY, MESH_GAP_KEY_DIST_IDENTITY
     };
     receive_test_smp(request, sizeof(request), 0);
-    assert(gap_smp.response[3] == 9 &&
-           gap_smp.response[5] == MESH_GAP_KEY_DIST_IDENTITY &&
-           gap_smp.response[6] == MESH_GAP_KEY_DIST_IDENTITY);
-    assert(gap_smp.phase == GAP_SMP_SC_PUBLIC_KEY && gap_smp.tx[4] == 2);
+    assert(gap_smp.bearer.pairing.response[3] == 9 &&
+           gap_smp.bearer.pairing.response[5] == MESH_GAP_KEY_DIST_IDENTITY &&
+           gap_smp.bearer.pairing.response[6] == MESH_GAP_KEY_DIST_IDENTITY);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PUBLIC_KEY && gap_smp.tx[4] == 2);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Pairing Response.
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_smp.tx[4] == 12);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && gap_smp.tx[4] == 12);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         assert(gap_conn.tx_llid == (fragment ? 1 : 2));
     }
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && !gap_smp.tx_len);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && !gap_smp.tx_len);
     uint8_t central_nonce[17] = {4};
     for (uint8_t i = 1; i < sizeof(central_nonce); i++)
         central_nonce[i] = (uint8_t)(i + 110);
     uint8_t central_confirm[17] = {3};
-    gap_sc_confirm_value(gap_smp.sc.peer_public_key, gap_smp.sc.public_key,
+    gap_sc_confirm_value(gap_smp.bearer.pairing.sc.peer_public_key, gap_smp.bearer.pairing.sc.public_key,
                          central_nonce + 1, 0, central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     receive_test_smp(central_nonce, sizeof(central_nonce), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_smp.tx[4] == 4);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY && gap_smp.tx[4] == 4);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT && gap_smp.tx[4] == 13);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT && gap_smp.tx[4] == 13);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     gap_security.phase = GAP_ENC_KEY_REQUEST;
@@ -4710,7 +4713,7 @@ static void test_secure_connections_just_works(void) {
     gap_security.phase = 0; gap_security.status = 0;
     gap_security.tx_enabled = gap_security.rx_enabled = 1;
     mesh_gap_smp_poll();
-    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.tx[4] ==
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX && gap_smp.tx[4] ==
            BLE_SMP_IDENTITY_INFORMATION);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Peripheral Identity Information.
@@ -4727,7 +4730,7 @@ static void test_secure_connections_just_works(void) {
         BLE_SMP_IDENTITY_ADDRESS_INFORMATION, 0, 21, 22, 23, 24, 25, 26
     };
     receive_test_smp(central_identity, sizeof(central_identity), 0);
-    assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase &&
+    assert(mesh_gap_pairing_status() == 0 && !gap_smp.bearer.pairing.phase &&
            gap_conn.bonded && gap_conn.bond.has_peer_irk &&
            gap_conn.bond.has_local_irk &&
            !memcmp(gap_conn.bond.peer_irk, central_irk + 1, 16) &&
@@ -4745,14 +4748,14 @@ static void assert_test_oob_secrets_cleared(void) {
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
     for (size_t i = 0; i < sizeof(gap_sc_oob_local.private_key); i++)
         assert(!gap_sc_oob_local.private_key[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.sc.private_key); i++)
-        assert(!gap_smp.sc.private_key[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.sc.dhkey); i++)
-        assert(!gap_smp.sc.dhkey[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.sc.oob_local_random); i++)
-        assert(!gap_smp.sc.oob_local_random[i] &&
-               !gap_smp.sc.oob_peer_random[i] &&
-               !gap_smp.sc.oob_peer_confirm[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc.private_key); i++)
+        assert(!gap_smp.bearer.pairing.sc.private_key[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc.dhkey); i++)
+        assert(!gap_smp.bearer.pairing.sc.dhkey[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc.oob_local_random); i++)
+        assert(!gap_smp.bearer.pairing.sc.oob_local_random[i] &&
+               !gap_smp.bearer.pairing.sc.oob_peer_random[i] &&
+               !gap_smp.bearer.pairing.sc.oob_peer_confirm[i]);
 }
 
 static void test_secure_connections_oob_rejects_bad_commitment(void) {
@@ -4765,13 +4768,13 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
     assert(mesh_gap_sc_oob_get(&local_oob));
     assert(mesh_gap_sc_oob_set_peer(&bad_peer_oob));
     assert(mesh_gap_pair());
-    assert(gap_smp.request[2] == 1);
+    assert(gap_smp.bearer.pairing.request[2] == 1);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
 
     const uint8_t response[7] = {2, MESH_GAP_IO_NONE, 0, 8, 16, 0, 0};
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.sc.oob_active && gap_smp.sc.oob_peer_present);
+    assert(gap_smp.bearer.pairing.sc.oob_active && gap_smp.bearer.pairing.sc.oob_peer_present);
 
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 7;
@@ -4781,7 +4784,7 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
     gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(mesh_gap_pairing_status() == 4);
-    assert(!gap_smp.phase && !mesh_gap_authenticated());
+    assert(!gap_smp.bearer.pairing.phase && !mesh_gap_authenticated());
     assert_test_oob_secrets_cleared();
 
     gap_connection_end();
@@ -4807,39 +4810,39 @@ static void test_secure_connections_oob_success(void) {
                          peer_oob.confirm);
     assert(mesh_gap_sc_oob_set_peer(&peer_oob));
     assert(mesh_gap_pair());
-    assert(gap_smp.request[2] == 1);
+    assert(gap_smp.bearer.pairing.request[2] == 1);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
 
     const uint8_t response[7] = {2, MESH_GAP_IO_NONE, 1, 8, 16, 0, 0};
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.sc.oob_active && gap_smp.sc.oob_peer_present);
+    assert(gap_smp.bearer.pairing.sc.oob_active && gap_smp.bearer.pairing.sc.oob_peer_present);
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
     gap_sc_reverse(public_pdu + 1, peer_public, 32);
     gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send the initiator's Pairing Confirm.
 
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
         peer_nonce[i] = (uint8_t)(0x70 + i);
-    gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
+    gap_sc_confirm_value(peer_public, gap_smp.bearer.pairing.sc.public_key,
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
 
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     assert(gap_security.phase == GAP_ENC_QUEUED);
@@ -4847,7 +4850,7 @@ static void test_secure_connections_oob_success(void) {
     gap_security.status = 0;
     gap_security.tx_enabled = gap_security.rx_enabled = 1;
     mesh_gap_smp_poll();
-    assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase &&
+    assert(mesh_gap_pairing_status() == 0 && !gap_smp.bearer.pairing.phase &&
            mesh_gap_authenticated() && mesh_gap_key_size() == 16);
     assert_test_oob_secrets_cleared();
 
@@ -4870,7 +4873,7 @@ static void test_secure_connections_oob_rejects_missing_local_data(void) {
     const uint8_t response[7] = {2, MESH_GAP_IO_NONE, 1, 8, 16, 0, 0};
     receive_test_smp(response, sizeof(response), 0);
     assert(mesh_gap_pairing_status() == 2);
-    assert(!gap_smp.phase);
+    assert(!gap_smp.bearer.pairing.phase);
     assert_test_oob_secrets_cleared();
 
     gap_connection_end();
@@ -4904,7 +4907,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
         1, MESH_GAP_IO_NONE, 1, 8, 16, 0, 0
     };
     receive_test_smp(request, sizeof(request), 0);
-    assert(gap_smp.response[2] == 1 && gap_smp.sc.oob_active);
+    assert(gap_smp.bearer.pairing.response[2] == 1 && gap_smp.bearer.pairing.sc.oob_active);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Pairing Response.
 
@@ -4912,7 +4915,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     gap_sc_reverse(central_pdu + 1, central_public, 32);
     gap_sc_reverse(central_pdu + 33, central_public + 32, 32);
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_smp.tx[4] == 12);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && gap_smp.tx[4] == 12);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
@@ -4921,21 +4924,21 @@ static void test_secure_connections_oob_peripheral_success(void) {
     uint8_t central_nonce[17] = {4}, central_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(central_nonce); i++)
         central_nonce[i] = (uint8_t)(i + 130);
-    gap_sc_confirm_value(central_public, gap_smp.sc.public_key,
+    gap_sc_confirm_value(central_public, gap_smp.bearer.pairing.sc.public_key,
                          central_nonce + 1, 0, central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send the responder's Pairing Confirm.
     receive_test_smp(central_nonce, sizeof(central_nonce), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_smp.tx[4] == 4);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY && gap_smp.tx[4] == 4);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send the responder's Pairing Random.
 
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT && gap_smp.tx[4] == 13);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT && gap_smp.tx[4] == 13);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     gap_security.phase = GAP_ENC_KEY_REQUEST;
@@ -4948,7 +4951,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     gap_security.status = 0;
     gap_security.tx_enabled = gap_security.rx_enabled = 1;
     mesh_gap_smp_poll();
-    assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase &&
+    assert(mesh_gap_pairing_status() == 0 && !gap_smp.bearer.pairing.phase &&
            mesh_gap_authenticated() && mesh_gap_key_size() == 16);
     assert_test_oob_secrets_cleared();
 
@@ -4967,7 +4970,7 @@ static void test_secure_connections_oob_cancel_clears_data(void) {
     assert(mesh_gap_sc_oob_set_peer(&peer_oob));
     assert(mesh_gap_pair());
     assert(mesh_gap_pair_cancel());
-    assert(mesh_gap_pairing_status() == 1 && !gap_smp.phase);
+    assert(mesh_gap_pairing_status() == 1 && !gap_smp.bearer.pairing.phase);
     assert_test_oob_secrets_cleared();
     assert(!mesh_gap_pair_cancel());
 
@@ -4991,7 +4994,7 @@ static void test_secure_connections_numeric_comparison(void) {
             2, MESH_GAP_IO_DISPLAY_YES_NO, 0, 12, 16, 0, 0
         };
         receive_test_smp(response, sizeof(response), 0);
-        assert(gap_smp.sc.numeric_required);
+        assert(gap_smp.bearer.pairing.sc.numeric_required);
         for (uint8_t fragment = 0; fragment < 3; fragment++) {
             gap_conn.tx_queued = gap_conn.tx_pending = 0;
             mesh_gap_smp_poll();
@@ -5006,13 +5009,13 @@ static void test_secure_connections_numeric_comparison(void) {
         mesh_gap_smp_poll(); // Send the initiator's Pairing Confirm.
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 90;
-        gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
+        gap_sc_confirm_value(peer_public, gap_smp.bearer.pairing.sc.public_key,
                              peer_nonce + 1, 0, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-        assert(gap_smp.phase == GAP_SMP_SC_USER && !gap_smp.tx_len);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER && !gap_smp.tx_len);
         uint32_t value;
         assert(mesh_gap_numeric_comparison(&value) && value < 1000000);
         mesh_gap_smp_poll();
@@ -5029,11 +5032,11 @@ static void test_secure_connections_numeric_comparison(void) {
             gap_connection_end();
             continue;
         }
-        assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_conn.tx_queued);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY && gap_conn.tx_queued);
         uint8_t peer_check[17] = {13};
         gap_sc_dhkey_check(0, peer_check + 1);
         receive_test_smp(peer_check, sizeof(peer_check), 0);
-        assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         assert(gap_security.phase == GAP_ENC_QUEUED);
@@ -5063,31 +5066,31 @@ static void test_secure_connections_numeric_comparison(void) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
     }
-    assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && !gap_smp.tx_len);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && !gap_smp.tx_len);
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
         peer_nonce[i] = (uint8_t)(i + 110);
-    gap_sc_confirm_value(gap_smp.sc.peer_public_key,
-                         gap_smp.sc.public_key, peer_nonce + 1, 0,
+    gap_sc_confirm_value(gap_smp.bearer.pairing.sc.peer_public_key,
+                         gap_smp.bearer.pairing.sc.public_key, peer_nonce + 1, 0,
                          peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_USER && gap_smp.tx[4] == 4);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER && gap_smp.tx[4] == 4);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Nb before the Central's DHKey Check arrives.
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
-    assert(gap_smp.sc.peer_check_received && gap_smp.phase == GAP_SMP_SC_USER);
+    assert(gap_smp.bearer.pairing.sc.peer_check_received && gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER);
     uint32_t value;
     assert(mesh_gap_numeric_comparison(&value) && value < 1000000);
     assert(mesh_gap_numeric_comparison_reply(1));
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT && gap_conn.tx_queued);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT && gap_conn.tx_queued);
     gap_security.phase = GAP_ENC_KEY_REQUEST;
     memset(gap_security.random, 0, 8); gap_security.ediv = 0;
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
@@ -5116,8 +5119,8 @@ static void test_secure_connections_passkey(void) {
         2, MESH_GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
     };
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.sc.passkey_required &&
-           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    assert(gap_smp.bearer.pairing.sc.passkey_required &&
+           gap_smp.bearer.pairing.passkey_action == MESH_GAP_PASSKEY_INPUT);
     assert(mesh_gap_passkey_reply(123456));
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
@@ -5129,40 +5132,40 @@ static void test_secure_connections_passkey(void) {
     gap_sc_reverse(public_pdu + 1, peer_public, 32);
     gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PASSKEY);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     uint8_t previous_nonce[16] = {0};
     for (uint8_t round = 0; round < 20; round++) {
         uint8_t z = 0x80 | ((123456u >> round) & 1);
         uint8_t local_confirm[16];
-        gap_sc_confirm_value(gap_smp.sc.public_key, peer_public,
-                             gap_smp.random, z, local_confirm);
-        assert(gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_smp.tx[4] == 3 &&
+        gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key, peer_public,
+                             gap_smp.bearer.pairing.random, z, local_confirm);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_CONFIRM && gap_smp.tx[4] == 3 &&
                !memcmp(gap_smp.tx + 5, local_confirm, 16));
-        if (round) assert(memcmp(previous_nonce, gap_smp.random, 16));
-        memcpy(previous_nonce, gap_smp.random, 16);
+        if (round) assert(memcmp(previous_nonce, gap_smp.bearer.pairing.random, 16));
+        memcpy(previous_nonce, gap_smp.bearer.pairing.random, 16);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
             peer_nonce[i] = (uint8_t)(round * 7 + i);
-        gap_sc_confirm_value(peer_public, gap_smp.sc.public_key,
+        gap_sc_confirm_value(peer_public, gap_smp.bearer.pairing.sc.public_key,
                              peer_nonce + 1, z, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
-        assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 4);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 4);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-        assert(gap_smp.sc.passkey_round == (round < 19 ? round + 1 : round));
+        assert(gap_smp.bearer.pairing.sc.passkey_round == (round < 19 ? round + 1 : round));
     }
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY && gap_smp.tx[4] == 13);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY && gap_smp.tx[4] == 13);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     assert(gap_security.phase == GAP_ENC_QUEUED);
@@ -5181,7 +5184,7 @@ static void test_secure_connections_passkey(void) {
     };
     receive_test_smp(request, sizeof(request), 0);
     uint32_t passkey;
-    assert(gap_smp.sc.passkey_required &&
+    assert(gap_smp.bearer.pairing.sc.passkey_required &&
            mesh_gap_passkey(&passkey) == MESH_GAP_PASSKEY_DISPLAY &&
            passkey < 1000000);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
@@ -5196,22 +5199,22 @@ static void test_secure_connections_passkey(void) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
     }
-    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PASSKEY);
     for (uint8_t round = 0; round < 20; round++) {
         uint8_t z = 0x80 | ((passkey >> round) & 1);
         uint8_t central_nonce[17] = {4}, central_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(central_nonce); i++)
             central_nonce[i] = (uint8_t)(round * 9 + i);
-        gap_sc_confirm_value(central_public, gap_smp.sc.public_key,
+        gap_sc_confirm_value(central_public, gap_smp.bearer.pairing.sc.public_key,
                              central_nonce + 1, z, central_confirm + 1);
         receive_test_smp(central_confirm, sizeof(central_confirm), 0);
-        assert(gap_smp.confirm_received && gap_smp.phase == GAP_SMP_SC_PASSKEY);
+        assert(gap_smp.bearer.pairing.confirm_received && gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PASSKEY);
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
         uint8_t expected_confirm[16];
-        gap_sc_confirm_value(gap_smp.sc.public_key, central_public,
-                             gap_smp.random, z, expected_confirm);
-        assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3 &&
+        gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key, central_public,
+                             gap_smp.bearer.pairing.random, z, expected_confirm);
+        assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3 &&
                !memcmp(gap_smp.tx + 5, expected_confirm, 16));
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
@@ -5220,11 +5223,11 @@ static void test_secure_connections_passkey(void) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
     }
-    assert(gap_smp.phase == GAP_SMP_SC_DHKEY);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_DHKEY);
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
-    assert(gap_smp.phase == GAP_SMP_SC_ENCRYPT && gap_smp.tx[4] == 13);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT && gap_smp.tx[4] == 13);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     gap_security.phase = GAP_ENC_KEY_REQUEST;
@@ -5253,19 +5256,19 @@ static void test_secure_connections_passkey(void) {
         gap_conn.tx_queued = gap_conn.tx_pending = 0;
         mesh_gap_smp_poll();
     }
-    assert(gap_smp.phase == GAP_SMP_SC_PASSKEY &&
-           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PASSKEY &&
+           gap_smp.bearer.pairing.passkey_action == MESH_GAP_PASSKEY_INPUT);
     uint8_t input_nonce[17] = {4}, input_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(input_nonce); i++) input_nonce[i] = i + 40;
-    gap_sc_confirm_value(central_public, gap_smp.sc.public_key,
+    gap_sc_confirm_value(central_public, gap_smp.bearer.pairing.sc.public_key,
                          input_nonce + 1, 0x80, input_confirm + 1);
     receive_test_smp(input_confirm, sizeof(input_confirm), 0);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    assert(gap_smp.confirm_received && !gap_smp.tx_len);
+    assert(gap_smp.bearer.pairing.confirm_received && !gap_smp.tx_len);
     assert(mesh_gap_passkey_reply(654321)); // Different low bit from the peer.
     mesh_gap_smp_poll();
-    assert(gap_smp.phase == GAP_SMP_SC_RANDOM && gap_smp.tx[4] == 3);
+    assert(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
     receive_test_smp(input_nonce, sizeof(input_nonce), 0);

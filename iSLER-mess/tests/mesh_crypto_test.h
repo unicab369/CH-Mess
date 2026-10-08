@@ -102,13 +102,17 @@ static int ble_sc_crypto_test(void) {
         0xa6,0xe8,0xe7,0xcc,0x25,0xa7,0x5f,0x6e,0x21,0x65,0x83,0xf7,0xff,0x3d,0xc4,0xcf
     };
     uint8_t actual[16], mac_key[16], ltk[16];
-    gap_sc_f4(u, v, x, 0, actual);
+    if (!ble_smp_sc_f4(&gap_smp.bearer, u, v, x, 0, actual)) return -11;
     if (memcmp(actual, expected_f4, 16)) return -1;
-    gap_sc_f5(w, n1, n2, a1, a2, mac_key, ltk);
+    if (!ble_smp_sc_f5(&gap_smp.bearer, w, n1, n2, a1, a2,
+                       mac_key, ltk)) return -12;
     if (memcmp(mac_key, expected_mac_key, 16) || memcmp(ltk, expected_ltk, 16)) return -2;
-    gap_sc_f6(check_key, n1, n2, r, iocap, a1, a2, actual);
+    if (!ble_smp_sc_f6(&gap_smp.bearer, check_key, n1, n2, r,
+                       iocap, a1, a2, actual)) return -13;
     if (memcmp(actual, expected_f6, 16)) return -3;
-    if (gap_sc_g2(u, v, expected_g2_x, expected_g2) != 938554) return -4;
+    uint32_t numeric;
+    if (!ble_smp_sc_g2(&gap_smp.bearer, u, v, expected_g2_x,
+                       expected_g2, &numeric) || numeric != 938554) return -4;
     return 0;
 }
 

@@ -121,8 +121,8 @@ static void gap_security_send(void) {
 int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!ltk || !random || !mesh_gap_connected() || !gap_conn.central_role ||
         gap_conn.first_event || gap_security.phase ||
-        (gap_smp.phase && gap_smp.phase != GAP_SMP_ENCRYPT &&
-         gap_smp.phase != GAP_SMP_SC_ENCRYPT) || gap_conn.update_pending ||
+        (gap_smp.bearer.pairing.phase && gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_ENCRYPT &&
+         gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_ENCRYPT) || gap_conn.update_pending ||
         gap_conn.local_update_queued || gap_conn.local_map_queued || gap_conn.channel_map_update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending || gap_conn.feature_request_pending ||
         gap_conn.length_queued || gap_conn.length_pending || gap_conn.phy_queued ||
