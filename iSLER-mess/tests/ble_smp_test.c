@@ -7,6 +7,8 @@ typedef struct {
     uint8_t blocked, received, sent, timed_out;
     uint16_t cid, len;
     uint8_t pdu[BLE_SMP_PDU_MAX];
+    ble_smp_bond bond;
+    uint8_t encrypted, removed, random_fail, crypto_fail;
 } fake_smp;
 
 static void fake_timeout(void *context) {
@@ -28,6 +30,71 @@ static int fake_receive(void *context, const uint8_t *pdu, uint16_t len) {
     fake_smp *fake = context;
     assert(len == 7 && pdu[0] == 1 && pdu[1] == 0x03);
     fake->received++;
+    return 1;
+}
+
+static int fake_random(void *context, uint8_t *out, size_t len) {
+    if (((fake_smp *)context)->random_fail) return 0;
+    memset(out, 0x5a, len);
+    return 1;
+}
+
+static int fake_aes(void *context, const uint8_t key[16],
+    const uint8_t input[16], uint8_t output[16]) {
+    if (((fake_smp *)context)->crypto_fail) return 0;
+    for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
+    return 1;
+}
+
+static int fake_cmac(void *context, const uint8_t key[16],
+    const uint8_t *input, size_t len, uint8_t output[16]) {
+    if (((fake_smp *)context)->crypto_fail) return 0;
+    memset(output, 0, 16);
+    for (size_t i = 0; i < len; i++) output[i % 16] ^= input[i] ^ key[i % 16];
+    return 1;
+}
+
+static int fake_dhkey(void *context, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+    if (((fake_smp *)context)->crypto_fail) return 0;
+    (void)peer_public_key;
+    memcpy(dhkey, private_key, 32);
+    return 1;
+}
+
+static int fake_user(void *context, uint8_t action, uint32_t value) {
+    (void)context;
+    return action == 3 && value == 123456 ? 0 : -1;
+}
+
+static int fake_encrypt(void *context, const uint8_t ltk[16], uint8_t key_size,
+    uint8_t authenticated) {
+    fake_smp *fake = context;
+    fake->encrypted = key_size == 16 && authenticated == 1 && ltk[0] == 0xa5;
+    return fake->encrypted;
+}
+
+static int fake_bond_load(void *context, uint8_t address_type,
+    const uint8_t address[6], ble_smp_bond *bond) {
+    fake_smp *fake = context;
+    if (!fake->bond.valid || fake->bond.peer_address_type != address_type ||
+        memcmp(fake->bond.peer_address, address, 6)) return 0;
+    *bond = fake->bond;
+    return 1;
+}
+
+static int fake_bond_store(void *context, const ble_smp_bond *bond) {
+    ((fake_smp *)context)->bond = *bond;
+    return 1;
+}
+
+static int fake_bond_remove(void *context, uint8_t address_type,
+    const uint8_t address[6]) {
+    fake_smp *fake = context;
+    if (fake->bond.peer_address_type != address_type ||
+        memcmp(fake->bond.peer_address, address, 6)) return 0;
+    memset(&fake->bond, 0, sizeof(fake->bond));
+    fake->removed++;
     return 1;
 }
 
@@ -62,6 +129,44 @@ int main(void) {
     ble_smp smp;
     assert(ble_smp_init(&smp, &l2cap, fake_receive, &fake));
     ble_smp_set_timeout_callback(&smp, fake_timeout);
+    ble_smp_ops host = {fake_random, fake_aes, fake_cmac, fake_dhkey,
+        fake_user, fake_encrypt, fake_bond_load, fake_bond_store,
+        fake_bond_remove, &fake};
+    assert(ble_smp_set_ops(&smp, &host));
+    uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16], dhkey[32];
+    assert(ble_smp_random_bytes(&smp, secret, 32) && secret[31] == 0x5a);
+    fake.random_fail = 1;
+    memset(secret, 0xa5, 32);
+    assert(!ble_smp_random_bytes(&smp, secret, 32));
+    for (unsigned i = 0; i < 32; i++) assert(secret[i] == 0);
+    fake.random_fail = 0;
+    assert(ble_smp_aes128(&smp, key, input, output) && output[0] == 1);
+    assert(ble_smp_cmac(&smp, key, input, sizeof(input), output));
+    assert(ble_smp_dhkey(&smp, secret, secret, dhkey));
+    fake.crypto_fail = 1;
+    memset(output, 0xa5, sizeof(output));
+    memset(dhkey, 0xa5, sizeof(dhkey));
+    assert(!ble_smp_aes128(&smp, key, input, output));
+    assert(!ble_smp_cmac(&smp, key, input, sizeof(input), output));
+    assert(!ble_smp_dhkey(&smp, secret, secret, dhkey));
+    for (unsigned i = 0; i < sizeof(output); i++) assert(output[i] == 0);
+    for (unsigned i = 0; i < sizeof(dhkey); i++) assert(dhkey[i] == 0);
+    fake.crypto_fail = 0;
+    assert(ble_smp_user_request(&smp, 3, 123456) == 0);
+    uint8_t ltk[16] = {0xa5};
+    assert(ble_smp_set_link_encryption(&smp, ltk, 16, 1) && fake.encrypted);
+    ble_smp_bond stored = {0};
+    stored.valid = 1; stored.peer_address_type = 0; stored.key_size = 16;
+    stored.authenticated = 1; stored.peer_address[0] = 0x42;
+    assert(ble_smp_bond_store(&smp, &stored));
+    stored.key_size = 6;
+    assert(!ble_smp_bond_store(&smp, &stored));
+    stored.key_size = 16;
+    ble_smp_bond restored;
+    assert(ble_smp_bond_load(&smp, 0, stored.peer_address, &restored));
+    assert(!memcmp(&restored, &stored, sizeof(stored)));
+    assert(ble_smp_bond_remove(&smp, 0, stored.peer_address) &&
+           fake.removed == 1);
     assert(!ble_smp_tick(&smp, UINT32_MAX - 1000));
 
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};

@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../mesh_2transport.h"
+#include "../ble_mesh/mesh_2transport.h"
 
 // A deterministic block transform is sufficient to exercise framing and CCM
 // round trips here; the firmware supplies the real AES implementation.

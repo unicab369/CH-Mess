@@ -4,7 +4,7 @@
 
 ## Foundation models
 
-Configuration and Health support live in `mesh_4foundation.h`; remaining TODOs are listed above.
+Configuration and Health support live in `ble_mesh/mesh_4foundation.h`; remaining TODOs are listed above.
 
 Configuration requests use `MESH_MODEL_CONFIG_SERVER`; their replies are handled
 by `MESH_MODEL_CONFIG_CLIENT`. SIG means Bluetooth Special Interest Group.

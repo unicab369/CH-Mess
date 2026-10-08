@@ -20,6 +20,7 @@
 //       passkey, OOB, DHKey-check, and key derivation flows.
 // - [x] Define host callbacks for cryptographic randomness/primitives, user
 //       interaction, link encryption, and bond load/store/removal.
+// - [x] Provide checked generic dispatch helpers for every host callback.
 // - [x] Validate Pairing Feature fields and negotiate key size, SC, bonding,
 //       and key-distribution intersections under a host-supplied policy.
 // - [ ] Integrate bond key distribution, persistence, restoration, and
@@ -334,6 +335,95 @@ static inline int ble_smp_set_ops(ble_smp *smp, const ble_smp_ops *ops) {
     if (!smp || !ops) return 0;
     smp->ops = *ops;
     return 1;
+}
+
+// These checked adapters are the generic interface for pairing code to use
+// without depending on a host's GAP, crypto library, UI, or bond storage.
+static inline int ble_smp_random_bytes(ble_smp *smp, uint8_t *out,
+                                       size_t len) {
+    if (!smp || !out || !len || !smp->ops.random_bytes) return 0;
+    if (smp->ops.random_bytes(smp->ops.context, out, len)) return 1;
+    volatile uint8_t *wipe = out;
+    while (len--) *wipe++ = 0;
+    return 0;
+}
+
+static inline int ble_smp_aes128(ble_smp *smp, const uint8_t key[16],
+                                 const uint8_t input[16], uint8_t output[16]) {
+    if (!smp || !smp->ops.aes128 || !key || !input || !output) return 0;
+    if (smp->ops.aes128(smp->ops.context, key, input, output)) return 1;
+    volatile uint8_t *wipe = output;
+    for (size_t i = 0; i < 16; i++) wipe[i] = 0;
+    return 0;
+}
+
+static inline int ble_smp_cmac(ble_smp *smp, const uint8_t key[16],
+    const uint8_t *input, size_t len, uint8_t output[16]) {
+    if (!smp || !smp->ops.cmac || !key || (!input && len) || !output) return 0;
+    if (smp->ops.cmac(smp->ops.context, key, input, len, output)) return 1;
+    volatile uint8_t *wipe = output;
+    for (size_t i = 0; i < 16; i++) wipe[i] = 0;
+    return 0;
+}
+
+static inline int ble_smp_dhkey(ble_smp *smp, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+    if (!smp || !smp->ops.dhkey || !private_key || !peer_public_key || !dhkey)
+        return 0;
+    if (smp->ops.dhkey(smp->ops.context, private_key, peer_public_key, dhkey))
+        return 1;
+    volatile uint8_t *wipe = dhkey;
+    for (size_t i = 0; i < 32; i++) wipe[i] = 0;
+    return 0;
+}
+
+static inline int ble_smp_user_request(ble_smp *smp, uint8_t action,
+                                        uint32_t value) {
+    return smp && smp->ops.user_request ?
+        smp->ops.user_request(smp->ops.context, action, value) : -1;
+}
+
+static inline int ble_smp_set_link_encryption(ble_smp *smp,
+    const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated) {
+    if (!smp || !smp->ops.set_link_encryption || !ltk || key_size < 7 ||
+        key_size > 16 || authenticated > 1) return 0;
+    return smp->ops.set_link_encryption(smp->ops.context, ltk, key_size,
+                                        authenticated);
+}
+
+static inline int ble_smp_bond_load(ble_smp *smp, uint8_t address_type,
+    const uint8_t address[6], ble_smp_bond *bond) {
+    if (!smp || !smp->ops.bond_load || address_type > 1 || !address || !bond)
+        return 0;
+    memset(bond, 0, sizeof(*bond));
+    if (!smp->ops.bond_load(smp->ops.context, address_type, address, bond) ||
+        bond->valid != 1 || bond->peer_address_type != address_type ||
+        (address_type && (address[5] & 0xc0) != 0xc0) ||
+        memcmp(bond->peer_address, address, 6) || bond->key_size < 7 ||
+        bond->key_size > 16 || bond->authenticated > 1) {
+        volatile uint8_t *wipe = (volatile uint8_t *)bond;
+        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static inline int ble_smp_bond_store(ble_smp *smp,
+                                      const ble_smp_bond *bond) {
+    if (!smp || !smp->ops.bond_store || !bond || bond->valid != 1 ||
+        bond->peer_address_type > 1 || bond->key_size < 7 ||
+        bond->key_size > 16 || bond->authenticated > 1 ||
+        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0))
+        return 0;
+    for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
+        if (bond->ltk[i]) return 0;
+    return smp->ops.bond_store(smp->ops.context, bond);
+}
+
+static inline int ble_smp_bond_remove(ble_smp *smp, uint8_t address_type,
+    const uint8_t address[6]) {
+    if (!smp || !smp->ops.bond_remove || address_type > 1 || !address) return 0;
+    return smp->ops.bond_remove(smp->ops.context, address_type, address);
 }
 
 // Advance the host-clock timer. Unsigned subtraction keeps deadlines correct

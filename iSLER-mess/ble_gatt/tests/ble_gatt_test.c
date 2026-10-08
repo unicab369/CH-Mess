@@ -6,10 +6,10 @@
 int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
 int mesh_gap_pair(void);
 
-#include "../../mesh_crypto.h"
+#include "../../ble_mesh/mesh_crypto.h"
 #define MESH_GATT_EAD_SUPPORT 1
 #define MESH_GATT_RPA_ONLY_SUPPORT 1
-#include "../ble_gatt_mesh.h"
+#include "../../ble_mesh/mesh_gatt.h"
 
 static uint8_t received_type, received_pdu[64];
 static size_t received_len;

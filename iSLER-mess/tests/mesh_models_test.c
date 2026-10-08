@@ -28,7 +28,7 @@ typedef struct {
 } mesh_access_message;
 
 // Use the real network key state machine; access/radio delivery stays mocked.
-#include "../mesh_1network.h"
+#include "../ble_mesh/mesh_1network.h"
 
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
     uint8_t block[16];
@@ -159,7 +159,7 @@ static int mesh_access_poll(mesh_access_message *message,
     return 1;
 }
 
-#include "../mesh_4models.h"
+#include "../ble_mesh/mesh_4models.h"
 
 static mesh_models_state saved;
 static int reset_calls, reset_fail;

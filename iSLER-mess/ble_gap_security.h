@@ -5,7 +5,7 @@
 #error "Include ble_gap_security.h through ble_gap.h"
 #endif
 
-#include "mesh_crypto.h"
+#include "ble_mesh/mesh_crypto.h"
 #include "micro-ecc/uECC.h"
 
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central) {

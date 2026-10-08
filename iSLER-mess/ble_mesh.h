@@ -5,14 +5,14 @@ void gap_hw_radio_transmitted(void);
 #define ISLER_CALLBACK_RX gap_hw_mesh_received
 #include "iSLER.h"
 volatile uint32_t rx_ready;
-#include "mesh_crypto.h"
+#include "ble_mesh/mesh_crypto.h"
 #include "aes_cmm.h"
-#include "mesh_provisioning.h"
-#include "mesh_1network.h"
-#include "mesh_2transport.h"
-#include "mesh_3access.h"
-#include "mesh_4foundation.h"
-#include "mesh_4models.h"
+#include "ble_mesh/mesh_provisioning.h"
+#include "ble_mesh/mesh_1network.h"
+#include "ble_mesh/mesh_2transport.h"
+#include "ble_mesh/mesh_3access.h"
+#include "ble_mesh/mesh_4foundation.h"
+#include "ble_mesh/mesh_4models.h"
 #include "micro-ecc/uECC.h"
 #include <stdio.h>
 #include "ch5xx_flash.h"
@@ -66,7 +66,7 @@ uint32_t GET_MILLIS(void) {
 
 #define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "ble_gap.h"
-#include "ble_gatt/ble_gatt_mesh.h"
+#include "ble_mesh/mesh_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its

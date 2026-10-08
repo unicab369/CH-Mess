@@ -49,7 +49,8 @@
 #define GAP_PERIODIC_SYNC_EVENT_COUNT 4
 #define GAP_PERIODIC_REPORT_COUNT 2
 #define MESH_GAP_BOND_SLOTS 4
-#define MESH_GAP_BOND_VERSION 1
+#define MESH_GAP_BOND_VERSION_LEGACY 1
+#define MESH_GAP_BOND_VERSION 2
 #ifndef MESH_GAP_CONNECTION_COUNT
 #define MESH_GAP_CONNECTION_COUNT 2
 #endif
@@ -246,7 +247,13 @@ typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
     uint8_t peer_irk[16], local_irk[16];
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
+    uint8_t peer_csrk[16], local_csrk[16];
+    uint8_t has_peer_csrk, has_local_csrk;
 } mesh_gap_bond;
+
+#define MESH_GAP_KEY_DIST_ENCRYPTION 0x01u
+#define MESH_GAP_KEY_DIST_IDENTITY 0x02u
+#define MESH_GAP_KEY_DIST_SIGNING 0x04u
 
 // LE Secure Connections OOB authentication data. Exchange both fields through
 // an authenticated OOB channel before calling mesh_gap_pair(). Values use SMP
@@ -256,11 +263,15 @@ typedef struct {
 } mesh_gap_sc_oob_data;
 
 static int mesh_gap_bond_valid(const mesh_gap_bond *bond) {
-    if (!bond || bond->version != MESH_GAP_BOND_VERSION || !bond->valid ||
+    if (!bond || (bond->version != MESH_GAP_BOND_VERSION &&
+        bond->version != MESH_GAP_BOND_VERSION_LEGACY) || !bond->valid ||
         bond->peer_address_type > 1 ||
         (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
         bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
-        bond->has_peer_irk > 1 || bond->has_local_irk > 1) return 0;
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
+        bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
+        (bond->version == MESH_GAP_BOND_VERSION_LEGACY &&
+         (bond->has_peer_csrk || bond->has_local_csrk))) return 0;
     for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
         if (bond->ltk[i]) return 0;
     return 1;

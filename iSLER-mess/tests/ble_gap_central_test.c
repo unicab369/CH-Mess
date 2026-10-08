@@ -5,23 +5,29 @@
 
 #define MESH_GAP_EXT_ADV_SUPPORT 1
 #include "../ble_gap.h"
-#include "../mesh_crypto.h"
+#include "../ble_mesh/mesh_crypto.h"
 #include <openssl/evp.h>
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
 #include "mesh_crypto_test.h"
 
+static uint8_t test_bond_storage_enabled;
+static mesh_gap_bond test_bonds[MESH_GAP_BOND_SLOTS];
 int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) {
-    (void)slot;
-    if (bond) memset(bond, 0, sizeof(*bond));
-    return -1;
+    if (!test_bond_storage_enabled || slot >= MESH_GAP_BOND_SLOTS) return -1;
+    if (!test_bonds[slot].valid) return 0;
+    if (bond) *bond = test_bonds[slot];
+    return 1;
 }
 int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond) {
-    (void)slot; (void)bond;
-    return 0;
+    if (!test_bond_storage_enabled || slot >= MESH_GAP_BOND_SLOTS || !bond)
+        return 0;
+    test_bonds[slot] = *bond;
+    return 1;
 }
 int BLE_GAP_BOND_DELETE(uint8_t slot) {
-    (void)slot;
-    return 0;
+    if (!test_bond_storage_enabled || slot >= MESH_GAP_BOND_SLOTS) return 0;
+    memset(&test_bonds[slot], 0, sizeof(test_bonds[slot]));
+    return 1;
 }
 
 static uint32_t now_ms;
@@ -4115,6 +4121,75 @@ static void test_smp_pairing(void) {
     gap_connection_end();
 }
 
+static void test_smp_signing_key_distribution(void) {
+    memset(test_bonds, 0, sizeof(test_bonds));
+    test_bond_storage_enabled = 1;
+    assert(mesh_gap_bonding_set(1));
+    start_test_central_link();
+    mesh_gap_pairing_set(1);
+    assert(mesh_gap_pair());
+    assert(gap_smp.request[5] ==
+        (MESH_GAP_KEY_DIST_ENCRYPTION | MESH_GAP_KEY_DIST_SIGNING));
+    assert(gap_smp.request[6] == 0);
+    gap_connection_end();
+
+    start_test_central_link();
+    gap_smp.phase = GAP_SMP_BOND_RX;
+    gap_smp.started_ms = GET_MILLIS();
+    gap_smp.response[5] = MESH_GAP_KEY_DIST_IDENTITY |
+        MESH_GAP_KEY_DIST_SIGNING;
+    gap_smp.key_size = 16;
+    gap_conn.peer_identity_type = 0;
+    gap_conn.peer_identity_address[0] = 0x42;
+
+    uint8_t encryption_information[17] = {BLE_SMP_ENCRYPTION_INFORMATION};
+    memset(encryption_information + 1, 0x31, 16);
+    receive_test_smp(encryption_information, sizeof(encryption_information), 0);
+    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 1);
+
+    uint8_t central_identification[11] = {BLE_SMP_CENTRAL_IDENTIFICATION};
+    central_identification[1] = 0x34;
+    central_identification[2] = 0x12;
+    central_identification[3] = 0x56;
+    receive_test_smp(central_identification,
+                     sizeof(central_identification), 0);
+    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 2);
+
+    uint8_t identity_information[17] = {BLE_SMP_IDENTITY_INFORMATION};
+    memset(identity_information + 1, 0xa5, 16);
+    receive_test_smp(identity_information, sizeof(identity_information), 0);
+    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 3);
+
+    uint8_t identity_address[8] = {
+        BLE_SMP_IDENTITY_ADDRESS_INFORMATION, 0,
+        0x10, 0x21, 0x32, 0x43, 0x54, 0x65
+    };
+    receive_test_smp(identity_address, sizeof(identity_address), 0);
+    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 4);
+
+    uint8_t signing_information[17] = {BLE_SMP_SIGNING_INFORMATION};
+    memset(signing_information + 1, 0x79, 16);
+    receive_test_smp(signing_information, sizeof(signing_information), 5);
+    assert(!gap_smp.phase && gap_conn.bonded &&
+           gap_smp.status == 0);
+    assert(test_bonds[0].version == MESH_GAP_BOND_VERSION &&
+           test_bonds[0].has_peer_irk &&
+           !memcmp(test_bonds[0].peer_irk, identity_information + 1, 16) &&
+           test_bonds[0].has_peer_csrk &&
+           !memcmp(test_bonds[0].peer_csrk, signing_information + 1, 16));
+    assert(test_bonds[0].peer_address_type == 0 &&
+           !memcmp(test_bonds[0].peer_address, identity_address + 2, 6));
+    assert(!memcmp(test_bonds[0].ltk, encryption_information + 1, 16));
+    assert(test_bonds[0].ediv[0] == 0x34 &&
+           test_bonds[0].ediv[1] == 0x12 &&
+           test_bonds[0].rand[0] == 0x56);
+
+    gap_connection_end();
+
+    assert(mesh_gap_bonding_set(0));
+    test_bond_storage_enabled = 0;
+}
+
 // Independent AES calculation with the user's TK, rather than assuming TK=0.
 static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uint8_t out[16]) {
     uint8_t key[16] = {0}, p1[16], p2[16] = {0}, block[16], encrypted[16];
@@ -4958,6 +5033,7 @@ int main(void) {
     test_channel_classification_reporting();
     test_link_encryption();
     test_smp_pairing();
+    test_smp_signing_key_distribution();
     test_passkey_pairing();
     test_secure_connections_just_works();
     test_secure_connections_oob_rejects_bad_commitment();

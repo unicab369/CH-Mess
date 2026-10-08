@@ -1,5 +1,5 @@
-#ifndef BLE_GATT_MESH_H
-#define BLE_GATT_MESH_H
+#ifndef MESH_GATT_H
+#define MESH_GATT_H
 
 // Bluetooth Mesh services layered on the generic GATT server and ATT/L2CAP
 // transport. ATT procedures, attribute storage, CCCDs, and L2CAP framing live
@@ -8,8 +8,8 @@
 #include <stdint.h>
 #include <string.h>
 #include "../ble_gap.h"
-#include "ble_gatt_server.h"
-#include "ble_gatt_transport.h"
+#include "../ble_gatt/ble_gatt_server.h"
+#include "../ble_gatt/ble_gatt_transport.h"
 
 #ifndef MESH_GATT_ATT_MTU_MAX
 #define MESH_GATT_ATT_MTU_MAX 247

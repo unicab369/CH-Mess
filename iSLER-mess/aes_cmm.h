@@ -1,4 +1,4 @@
-#include "mesh_crypto.h"
+#include "ble_mesh/mesh_crypto.h"
 #include <stdio.h>
 
 #if defined(CH5xx)
