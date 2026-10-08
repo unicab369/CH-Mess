@@ -50,7 +50,8 @@
 #define GAP_PERIODIC_REPORT_COUNT 2
 #define MESH_GAP_BOND_SLOTS 4
 #define MESH_GAP_BOND_VERSION_LEGACY 1
-#define MESH_GAP_BOND_VERSION 2
+#define MESH_GAP_BOND_VERSION_CSRK 2
+#define MESH_GAP_BOND_VERSION 3
 #ifndef MESH_GAP_CONNECTION_COUNT
 #define MESH_GAP_CONNECTION_COUNT 2
 #endif
@@ -249,6 +250,10 @@ typedef struct {
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
     uint8_t peer_csrk[16], local_csrk[16];
     uint8_t has_peer_csrk, has_local_csrk;
+    // LTK and identifiers distributed by the Peripheral. Kept separately
+    // from ltk/rand/ediv, which hold the Central-distributed set.
+    uint8_t peripheral_ltk[16], peripheral_rand[8], peripheral_ediv[2];
+    uint8_t has_peripheral_ltk;
 } mesh_gap_bond;
 
 #define MESH_GAP_KEY_DIST_ENCRYPTION 0x01u
@@ -264,16 +269,31 @@ typedef struct {
 
 static int mesh_gap_bond_valid(const mesh_gap_bond *bond) {
     if (!bond || (bond->version != MESH_GAP_BOND_VERSION &&
+        bond->version != MESH_GAP_BOND_VERSION_CSRK &&
         bond->version != MESH_GAP_BOND_VERSION_LEGACY) || !bond->valid ||
         bond->peer_address_type > 1 ||
         (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
         bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
         bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
         bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
+        bond->has_peripheral_ltk > 1 ||
         (bond->version == MESH_GAP_BOND_VERSION_LEGACY &&
-         (bond->has_peer_csrk || bond->has_local_csrk))) return 0;
+         (bond->has_peer_csrk || bond->has_local_csrk ||
+          bond->has_peripheral_ltk)) ||
+        (bond->version == MESH_GAP_BOND_VERSION_CSRK &&
+         bond->has_peripheral_ltk)) return 0;
     for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
         if (bond->ltk[i]) return 0;
+    if (!bond->has_peripheral_ltk) {
+        for (uint8_t i = 0; i < sizeof(bond->peripheral_ltk); i++)
+            if (bond->peripheral_ltk[i]) return 0;
+        for (uint8_t i = 0; i < sizeof(bond->peripheral_rand); i++)
+            if (bond->peripheral_rand[i]) return 0;
+        if (bond->peripheral_ediv[0] || bond->peripheral_ediv[1]) return 0;
+    } else {
+        for (uint8_t i = bond->key_size; i < sizeof(bond->peripheral_ltk); i++)
+            if (bond->peripheral_ltk[i]) return 0;
+    }
     return 1;
 }
 

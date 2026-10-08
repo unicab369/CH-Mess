@@ -11,6 +11,16 @@
 #include "ble_gatt_client.h"
 #include "ble_gatt_eatt.h"
 
+#if BLE_GATT_ENABLE_EATT
+#ifndef BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE
+#define BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE 2
+#endif
+#if BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE < 1 || \
+    BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE > 255
+#error "BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE must be between 1 and 255"
+#endif
+#endif
+
 #ifndef BLE_GATT_TRANSPORT_LL_MAX
 #define BLE_GATT_TRANSPORT_LL_MAX 251
 #endif
@@ -42,13 +52,43 @@ typedef struct {
 } ble_gatt_transport_ops;
 
 typedef uint8_t (*ble_gatt_transport_key_size_fn)(void *context);
+typedef struct ble_gatt_transport ble_gatt_transport;
 
 #if BLE_GATT_ENABLE_EATT
 typedef int (*ble_gatt_transport_eatt_receive_fn)(void *context, uint16_t cid,
     const uint8_t *pdu, uint16_t len);
-#endif
+typedef int (*ble_gatt_transport_eatt_sign_fn)(void *context, uint16_t cid,
+    const uint8_t *pdu, uint16_t len, uint8_t signature[12]);
+typedef void (*ble_gatt_transport_eatt_result_fn)(void *context, uint16_t cid,
+    uint8_t status, const uint8_t *pdu, uint16_t len);
+typedef void (*ble_gatt_transport_eatt_event_fn)(void *context, uint16_t cid,
+    uint16_t handle, const uint8_t *value, uint16_t len);
 
 typedef struct {
+    uint16_t mtu, local_mtu;
+    ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
+    uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
+    uint16_t prepare_count, prepare_used;
+    uint8_t mtu_exchanged, indication_pending;
+    uint8_t indication_timeout_armed;
+    uint16_t indication_handle;
+    uint32_t indication_started_ms;
+} ble_gatt_transport_server_bearer;
+
+typedef struct {
+    ble_gatt_transport *transport;
+    uint16_t cid;
+    ble_gatt_transport_server_bearer server;
+    ble_gatt_client client;
+    uint8_t client_enabled, client_tx_pending;
+    uint16_t tx_len[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE];
+    uint8_t tx_head, tx_count;
+    uint8_t tx_data[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE]
+                   [BLE_GATT_EATT_MTU_MAX];
+} ble_gatt_transport_eatt_context;
+#endif
+
+struct ble_gatt_transport {
     ble_gatt_transport_ops ops;
     ble_gatt_transport_key_size_fn encryption_key_size;
     ble_gatt_server *server;
@@ -62,10 +102,19 @@ typedef struct {
 #if BLE_GATT_ENABLE_EATT
     ble_gatt_eatt eatt;
     ble_gatt_transport_eatt_receive_fn eatt_receive_att;
+    ble_gatt_transport_eatt_sign_fn eatt_sign;
+    ble_gatt_transport_eatt_result_fn eatt_result;
+    ble_gatt_transport_eatt_event_fn eatt_notification, eatt_indication;
     void *eatt_context;
+    void *eatt_client_context;
     uint8_t eatt_enabled;
+    uint8_t eatt_event_cursor;
+    ble_gatt_transport_eatt_context eatt_contexts[
+        BLE_GATT_EATT_MAX_BEARERS];
 #endif
-} ble_gatt_transport;
+};
+
+static inline int ble_gatt_transport_is_client_pdu(uint8_t opcode);
 
 static inline void ble_gatt_transport_reset(ble_gatt_transport *transport) {
     ble_l2cap_connection_reset(&transport->l2cap, 0);
@@ -98,6 +147,212 @@ static inline int ble_gatt_transport_send_l2cap_pdu(void *context,
 }
 
 #if BLE_GATT_ENABLE_EATT
+static inline int ble_gatt_transport_eatt_context_find(
+    const ble_gatt_transport *transport, uint16_t cid) {
+    if (!transport || !cid) return -1;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        if (transport->eatt_contexts[i].cid == cid) return i;
+    return -1;
+}
+
+static inline void ble_gatt_transport_server_state_capture(
+    const ble_gatt_server *server,
+    ble_gatt_transport_server_bearer *state) {
+    state->mtu = server->mtu;
+    state->local_mtu = server->local_mtu;
+    state->prepare_count = server->prepare_count;
+    state->prepare_used = server->prepare_used;
+    state->mtu_exchanged = server->mtu_exchanged;
+    state->indication_pending = server->indication_pending;
+    state->indication_timeout_armed = server->indication_timeout_armed;
+    state->indication_handle = server->indication_handle;
+    state->indication_started_ms = server->indication_started_ms;
+    memcpy(state->prepared, server->prepared, sizeof(state->prepared));
+    memcpy(state->prepare_data, server->prepare_data,
+           sizeof(state->prepare_data));
+}
+
+static inline void ble_gatt_transport_server_state_load(
+    ble_gatt_server *server,
+    const ble_gatt_transport_server_bearer *state) {
+    server->mtu = state->mtu;
+    server->local_mtu = state->local_mtu;
+    server->prepare_count = state->prepare_count;
+    server->prepare_used = state->prepare_used;
+    server->mtu_exchanged = state->mtu_exchanged;
+    server->indication_pending = state->indication_pending;
+    server->indication_timeout_armed = state->indication_timeout_armed;
+    server->indication_handle = state->indication_handle;
+    server->indication_started_ms = state->indication_started_ms;
+    memcpy(server->prepared, state->prepared, sizeof(state->prepared));
+    memcpy(server->prepare_data, state->prepare_data,
+           sizeof(state->prepare_data));
+}
+
+static inline ble_gatt_transport_eatt_context *
+ble_gatt_transport_eatt_context_for(ble_gatt_transport *transport,
+                                     uint16_t cid) {
+    int slot = ble_gatt_transport_eatt_context_find(transport, cid);
+    return slot < 0 ? NULL : &transport->eatt_contexts[slot];
+}
+
+static inline int ble_gatt_transport_eatt_queue_pdu(
+    ble_gatt_transport_eatt_context *bearer, const uint8_t *pdu, uint16_t len) {
+    if (!bearer || !bearer->transport || !pdu || !len) return 0;
+    ble_gatt_transport *transport = bearer->transport;
+    int eatt_slot = ble_gatt_eatt_find(&transport->eatt, bearer->cid);
+    if (!transport->eatt.encrypted || eatt_slot < 0 ||
+        len > transport->eatt.bearers[eatt_slot].mtu ||
+        len > BLE_GATT_EATT_MTU_MAX) return 0;
+    if (!bearer->tx_count && ble_gatt_eatt_send(&transport->eatt,
+            bearer->cid, pdu, len)) return 1;
+    if (bearer->tx_count >= BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE) return 0;
+    uint8_t tail = (uint8_t)((bearer->tx_head + bearer->tx_count) %
+        BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE);
+    memcpy(bearer->tx_data[tail], pdu, len);
+    bearer->tx_len[tail] = len;
+    bearer->tx_count++;
+    return 1;
+}
+
+static inline int ble_gatt_transport_eatt_client_send(void *context,
+    const uint8_t *pdu, uint16_t len) {
+    ble_gatt_transport_eatt_context *bearer = context;
+    if (!bearer || !bearer->transport || !pdu || !len ||
+        len > BLE_GATT_EATT_MTU_MAX) return 0;
+    ble_gatt_transport *transport = bearer->transport;
+    if (pdu[0] == 0x02 && transport->server &&
+        (len != 3 || ble_gatt_server_u16(pdu + 1) != bearer->server.local_mtu))
+        return 0;
+    if (bearer->client_tx_pending && ble_att_response_opcode(pdu[0]))
+        return 0;
+    if (!ble_gatt_transport_eatt_queue_pdu(bearer, pdu, len)) return 0;
+    if (ble_att_response_opcode(pdu[0])) bearer->client_tx_pending = 1;
+    return 1;
+}
+
+static inline void ble_gatt_transport_eatt_client_result(void *context,
+    uint8_t status, const uint8_t *pdu, uint16_t len) {
+    ble_gatt_transport_eatt_context *bearer = context;
+    ble_gatt_transport *transport = bearer ? bearer->transport : NULL;
+    if (transport && transport->eatt_result) {
+        transport->eatt_result(transport->eatt_client_context, bearer->cid,
+                               status, pdu, len);
+    } else if (transport && transport->client && transport->client->result) {
+        ble_gatt_client *template = transport->client;
+        template->result(template->context, status, pdu, len);
+    }
+}
+
+static inline void ble_gatt_transport_eatt_client_notification(void *context,
+    uint16_t handle, const uint8_t *value, uint16_t len) {
+    ble_gatt_transport_eatt_context *bearer = context;
+    ble_gatt_transport *transport = bearer ? bearer->transport : NULL;
+    if (transport && transport->eatt_notification) {
+        transport->eatt_notification(transport->eatt_client_context,
+                                     bearer->cid,
+                                     handle, value, len);
+    } else if (transport && transport->client &&
+               transport->client->notification) {
+        ble_gatt_client *template = transport->client;
+        template->notification(template->context, handle, value, len);
+    }
+}
+
+static inline void ble_gatt_transport_eatt_client_indication(void *context,
+    uint16_t handle, const uint8_t *value, uint16_t len) {
+    ble_gatt_transport_eatt_context *bearer = context;
+    ble_gatt_transport *transport = bearer ? bearer->transport : NULL;
+    if (transport && transport->eatt_indication) {
+        transport->eatt_indication(transport->eatt_client_context,
+                                   bearer->cid,
+                                   handle, value, len);
+    } else if (transport && transport->client &&
+               transport->client->indication) {
+        ble_gatt_client *template = transport->client;
+        template->indication(template->context, handle, value, len);
+    }
+}
+
+static inline int ble_gatt_transport_eatt_client_sign(void *context,
+    const uint8_t *pdu, uint16_t len, uint8_t signature[12]) {
+    ble_gatt_transport_eatt_context *bearer = context;
+    ble_gatt_transport *transport = bearer ? bearer->transport : NULL;
+    if (transport && transport->eatt_sign)
+        return transport->eatt_sign(transport->eatt_client_context, bearer->cid,
+                                    pdu, len, signature);
+    return transport && transport->client && transport->client->sign &&
+        transport->client->sign(transport->client->context, pdu, len,
+                                signature);
+}
+
+static inline void ble_gatt_transport_eatt_client_init(
+    ble_gatt_transport *transport,
+    ble_gatt_transport_eatt_context *bearer);
+
+static inline void ble_gatt_transport_eatt_context_opened(
+    ble_gatt_transport *transport, uint16_t cid, uint16_t mtu) {
+    int slot = ble_gatt_transport_eatt_context_find(transport, cid);
+    if (slot < 0) {
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+            if (!transport->eatt_contexts[i].cid) { slot = i; break; }
+    }
+    if (slot < 0) return;
+    ble_gatt_transport_eatt_context *bearer =
+        &transport->eatt_contexts[slot];
+    memset(bearer, 0, sizeof(*bearer));
+    bearer->transport = transport;
+    bearer->cid = cid;
+    if (transport->server) {
+        bearer->server.mtu = 23;
+        bearer->server.local_mtu = transport->server->local_mtu < mtu ?
+            transport->server->local_mtu : mtu;
+    }
+    ble_gatt_transport_eatt_client_init(transport, bearer);
+}
+
+static inline void ble_gatt_transport_eatt_context_close(
+    ble_gatt_transport *transport, uint16_t cid) {
+    ble_gatt_transport_eatt_context *bearer =
+        ble_gatt_transport_eatt_context_for(transport, cid);
+    if (!bearer) return;
+    if (transport->server) {
+        ble_gatt_transport_server_bearer active;
+        ble_gatt_transport_server_state_capture(transport->server, &active);
+        ble_gatt_transport_server_state_load(transport->server,
+                                              &bearer->server);
+        ble_gatt_server_prepare_cancel_all(transport->server, 0);
+        ble_gatt_transport_server_state_load(transport->server, &active);
+    }
+    if (bearer->client_enabled) ble_gatt_client_reset(&bearer->client);
+    memset(bearer, 0, sizeof(*bearer));
+}
+
+static inline void ble_gatt_transport_eatt_client_init(
+    ble_gatt_transport *transport,
+    ble_gatt_transport_eatt_context *bearer) {
+    if (!transport || !bearer ||
+        (!transport->client && !transport->eatt_result)) return;
+    int eatt_slot = ble_gatt_eatt_find(&transport->eatt, bearer->cid);
+    if (eatt_slot < 0) return;
+    uint16_t mtu = transport->eatt.bearers[eatt_slot].mtu;
+    uint16_t local_mtu = BLE_GATT_CLIENT_MTU_MAX < mtu ?
+        BLE_GATT_CLIENT_MTU_MAX : mtu;
+    if (transport->server && bearer->server.local_mtu < local_mtu)
+        local_mtu = bearer->server.local_mtu;
+    ble_gatt_client_init(&bearer->client,
+        ble_gatt_transport_eatt_client_send,
+        ble_gatt_transport_eatt_client_result,
+        ble_gatt_transport_eatt_client_notification,
+        ble_gatt_transport_eatt_client_indication, bearer);
+    bearer->client.local_mtu = local_mtu;
+    if (transport->eatt_sign || (transport->client && transport->client->sign))
+        ble_gatt_client_set_signer(&bearer->client,
+            ble_gatt_transport_eatt_client_sign);
+    bearer->client_enabled = transport->eatt_result != NULL ||
+        (transport->client && transport->client->result != NULL);
+}
+
 static inline int ble_gatt_transport_eatt_open_channel(void *context,
     uint16_t psm, uint16_t mtu) {
     ble_gatt_transport *transport = context;
@@ -129,8 +384,59 @@ static inline void ble_gatt_transport_eatt_close_channel(void *context,
 static inline int ble_gatt_transport_eatt_receive_att(void *context,
     uint16_t cid, const uint8_t *pdu, uint16_t len) {
     ble_gatt_transport *transport = context;
-    return transport && transport->eatt_receive_att &&
-        transport->eatt_receive_att(transport->eatt_context, cid, pdu, len);
+    ble_gatt_transport_eatt_context *bearer =
+        ble_gatt_transport_eatt_context_for(transport, cid);
+    if (!transport || !bearer || !pdu || !len) return -1;
+    if (ble_gatt_transport_is_client_pdu(pdu[0])) {
+        if (bearer->client_enabled) {
+            uint8_t mtu_response = pdu[0] == 0x03 &&
+                bearer->client.pending &&
+                bearer->client.request_opcode == 0x02;
+            int result = ble_gatt_client_receive(&bearer->client, pdu, len);
+            if (mtu_response && result > 0 && transport->server) {
+                bearer->server.mtu = bearer->client.mtu;
+                bearer->server.mtu_exchanged = 1;
+            }
+            return result;
+        }
+        if (transport->eatt_receive_att)
+            return transport->eatt_receive_att(transport->eatt_context,
+                                                cid, pdu, len);
+        return -1;
+    }
+    if (transport->server) {
+        uint8_t response[BLE_GATT_EATT_MTU_MAX];
+        uint16_t response_len = 0;
+        uint8_t mtu_request = pdu[0] == 0x02;
+        uint8_t client_mtu_pending = bearer->client_enabled &&
+            bearer->client.pending && bearer->client.request_opcode == 0x02;
+        uint16_t previous_mtu = bearer->server.mtu;
+        ble_gatt_transport_server_bearer active;
+        ble_gatt_transport_server_state_capture(transport->server, &active);
+        ble_gatt_transport_server_state_load(transport->server,
+                                              &bearer->server);
+        int result = ble_gatt_server_att(transport->server, pdu, len,
+            response, sizeof(response), &response_len);
+        if (mtu_request && result > 0 && response[0] == 0x03) {
+            if (client_mtu_pending) {
+                transport->server->mtu = previous_mtu;
+            } else if (bearer->client_enabled) {
+                bearer->client.mtu = transport->server->mtu;
+                bearer->client.mtu_exchanged = 1;
+            }
+        }
+        ble_gatt_transport_server_state_capture(transport->server,
+                                                 &bearer->server);
+        ble_gatt_transport_server_state_load(transport->server, &active);
+        if (result < 0) return result;
+        if (result > 0 && !ble_gatt_transport_eatt_queue_pdu(
+                bearer, response, response_len)) return -1;
+        return 1;
+    }
+    if (transport->eatt_receive_att)
+        return transport->eatt_receive_att(transport->eatt_context,
+                                            cid, pdu, len);
+    return -1;
 }
 
 static inline uint16_t ble_gatt_transport_authorize_psm(void *context,
@@ -153,16 +459,19 @@ static inline void ble_gatt_transport_channel_opened(void *context,
     uint16_t mtu = local_mtu;
     if (slot >= 0 && transport->l2cap.channels[slot].remote_mtu < mtu)
         mtu = transport->l2cap.channels[slot].remote_mtu;
-    (void)ble_gatt_eatt_channel_opened(&transport->eatt, local_cid, mtu,
-        transport->eatt.encrypted, 1);
+    if (ble_gatt_eatt_channel_opened(&transport->eatt, local_cid, mtu,
+            transport->eatt.encrypted, 1))
+        ble_gatt_transport_eatt_context_opened(transport, local_cid, mtu);
 }
 
 static inline void ble_gatt_transport_channel_closed(void *context,
     uint16_t psm, uint16_t local_cid, uint16_t remote_cid, uint16_t reason) {
     ble_gatt_transport *transport = context;
     (void)remote_cid;
-    if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM)
+    if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM) {
+        ble_gatt_transport_eatt_context_close(transport, local_cid);
         ble_gatt_eatt_channel_closed(&transport->eatt, local_cid, reason);
+    }
 }
 
 static inline int ble_gatt_transport_channel_data(void *context,
@@ -172,8 +481,7 @@ static inline int ble_gatt_transport_channel_data(void *context,
     return ble_gatt_eatt_receive(&transport->eatt, local_cid, sdu, len);
 }
 
-// Bind EATT channel lifecycle to this transport's shared L2CAP ECFC manager.
-// ATT SDUs go to receive_att until per-bearer ATT state is part of transport.
+// Bind EATT channel lifecycle and per-bearer ATT routing to shared L2CAP ECFC.
 static inline int ble_gatt_transport_eatt_init(ble_gatt_transport *transport,
     uint16_t local_mtu, ble_gatt_transport_eatt_receive_fn receive_att,
     void *context) {
@@ -274,7 +582,115 @@ static inline void ble_gatt_transport_set_client(ble_gatt_transport *transport,
     if (!transport) return;
     transport->client = client;
     ble_gatt_transport_sync_mtu_from_server(transport);
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+            if (transport->eatt_contexts[i].cid)
+                ble_gatt_transport_eatt_client_init(transport,
+                    &transport->eatt_contexts[i]);
+#endif
 }
+
+#if BLE_GATT_ENABLE_EATT
+// Return the client transaction state for one open EATT bearer, if attached.
+static inline ble_gatt_client *ble_gatt_transport_eatt_client_get(
+    ble_gatt_transport *transport, uint16_t cid) {
+    ble_gatt_transport_eatt_context *bearer =
+        ble_gatt_transport_eatt_context_for(transport, cid);
+    return bearer && bearer->client_enabled ? &bearer->client : NULL;
+}
+
+// Install EATT client callbacks that identify the bearer for each event.
+static inline void ble_gatt_transport_set_eatt_client_callbacks(
+    ble_gatt_transport *transport, ble_gatt_transport_eatt_sign_fn sign,
+    ble_gatt_transport_eatt_result_fn result,
+    ble_gatt_transport_eatt_event_fn notification,
+    ble_gatt_transport_eatt_event_fn indication, void *context) {
+    if (!transport) return;
+    transport->eatt_sign = sign;
+    transport->eatt_result = result;
+    transport->eatt_notification = notification;
+    transport->eatt_indication = indication;
+    transport->eatt_client_context = context;
+    if (transport->eatt_enabled)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+            if (transport->eatt_contexts[i].cid)
+                ble_gatt_transport_eatt_client_init(transport,
+                    &transport->eatt_contexts[i]);
+}
+
+static inline void ble_gatt_transport_eatt_poll_tx(
+    ble_gatt_transport *transport) {
+    if (!transport || !transport->eatt_enabled) return;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+        ble_gatt_transport_eatt_context *bearer =
+            &transport->eatt_contexts[i];
+        if (!bearer->cid) continue;
+        int l2cap_slot = ble_l2cap_channel_find_local(&transport->l2cap,
+                                                      bearer->cid);
+        if (l2cap_slot < 0) {
+            bearer->client_tx_pending = 0;
+            continue;
+        }
+        ble_l2cap_channel *channel = &transport->l2cap.channels[l2cap_slot];
+        if (bearer->tx_count && !channel->tx_len) {
+            uint16_t len = bearer->tx_len[bearer->tx_head];
+            if (ble_gatt_eatt_send(&transport->eatt, bearer->cid,
+                    bearer->tx_data[bearer->tx_head], len)) {
+                bearer->tx_head = (uint8_t)((bearer->tx_head + 1) %
+                    BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE);
+                bearer->tx_count--;
+            }
+        }
+    }
+}
+
+static inline int ble_gatt_transport_eatt_poll_server_event(
+    ble_gatt_transport *transport, uint32_t now_ms) {
+    if (!transport || !transport->server || !transport->eatt_enabled)
+        return 0;
+    uint8_t start = transport->eatt_event_cursor;
+    for (uint8_t n = 0; n < BLE_GATT_EATT_MAX_BEARERS; n++) {
+        uint8_t i = (uint8_t)((start + n) %
+            BLE_GATT_EATT_MAX_BEARERS);
+        ble_gatt_transport_eatt_context *bearer =
+            &transport->eatt_contexts[i];
+        if (!bearer->cid) continue;
+        int slot = ble_gatt_eatt_find(&transport->eatt, bearer->cid);
+        if (slot < 0) continue;
+        int channel_slot = ble_l2cap_channel_find_local(&transport->l2cap,
+                                                        bearer->cid);
+        if (channel_slot < 0) continue;
+        if (transport->server->event_count && bearer->tx_count >=
+            BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE &&
+            !bearer->server.indication_pending) continue;
+        uint8_t att[BLE_GATT_EATT_MTU_MAX];
+        uint16_t att_len = 0;
+        ble_gatt_transport_server_bearer active;
+        ble_gatt_transport_server_state_capture(transport->server, &active);
+        ble_gatt_transport_server_state_load(transport->server,
+                                              &bearer->server);
+        int result = ble_gatt_server_poll_event(transport->server, now_ms,
+            att, sizeof(att), &att_len);
+        ble_gatt_transport_server_state_capture(transport->server,
+                                                 &bearer->server);
+        ble_gatt_transport_server_state_load(transport->server, &active);
+        transport->eatt_event_cursor = (uint8_t)((i + 1) %
+            BLE_GATT_EATT_MAX_BEARERS);
+        if (result < 0) {
+            (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
+            return -1;
+        }
+        if (result == 1 && !ble_gatt_transport_eatt_queue_pdu(
+                bearer, att, att_len)) {
+            (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
+            return -1;
+        }
+        if (result == 1) return 1;
+    }
+    return 0;
+}
+#endif
 
 // Called when ATT requires this bearer to stop after a transaction timeout.
 // On LE fixed ATT, the platform should terminate the connection.
@@ -381,7 +797,13 @@ static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
 // so the platform closes the LE connection and establishes a fresh bearer.
 static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
                                           uint32_t now_ms) {
-    if (!transport || (!transport->server && !transport->client)) return -1;
+    if (!transport) return -1;
+#if BLE_GATT_ENABLE_EATT
+    if (!transport->server && !transport->client && !transport->eatt_enabled)
+        return -1;
+#else
+    if (!transport->server && !transport->client) return -1;
+#endif
     uint8_t connected = transport->ops.connected(transport->ops.context) != 0;
     if (connected != transport->connected) {
         transport->connected = connected;
@@ -415,8 +837,29 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
             transport->server->encrypted ? transport->encryption_key_size(
                 transport->ops.context) : 0);
 
-    if (!transport->tx_len)
+#if BLE_GATT_ENABLE_EATT
+    ble_gatt_transport_eatt_poll_tx(transport);
+#endif
+    if (!transport->tx_len) {
         (void)ble_l2cap_ecfc_pump(&transport->l2cap);
+#if BLE_GATT_ENABLE_EATT
+        if (transport->eatt_enabled)
+            for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+                ble_gatt_transport_eatt_context *bearer =
+                    &transport->eatt_contexts[i];
+                if (!bearer->cid || !bearer->client_tx_pending) continue;
+                int slot = ble_l2cap_channel_find_local(&transport->l2cap,
+                                                         bearer->cid);
+                if (slot < 0 || !transport->l2cap.channels[slot].tx_len) {
+                    bearer->client_tx_pending = 0;
+                    if (slot >= 0 && bearer->client_enabled &&
+                        bearer->client.pending)
+                        bearer->client.deadline_ms = now_ms +
+                            BLE_GATT_CLIENT_TIMEOUT_MS;
+                }
+            }
+#endif
+    }
 
     if (transport->tx_len) {
         uint16_t max_len = transport->ops.max_tx_payload(transport->ops.context);
@@ -439,14 +882,41 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
     }
 
     if (transport->client) transport->client->now_ms = now_ms;
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+            ble_gatt_transport_eatt_context *bearer =
+                &transport->eatt_contexts[i];
+            if (!bearer->cid || !bearer->client_enabled) continue;
+            bearer->client.now_ms = now_ms;
+        }
+#endif
     int received = ble_gatt_transport_receive(transport);
     if (received < 0) return ble_gatt_transport_fail_bearer(transport);
     if (transport->tx_len) return 1;
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+            ble_gatt_transport_eatt_context *bearer =
+                &transport->eatt_contexts[i];
+            if (bearer->cid && bearer->client_enabled &&
+                ble_gatt_client_poll(&bearer->client, now_ms))
+                (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
+        }
+#endif
     if (transport->client &&
         ble_gatt_client_poll(transport->client, now_ms))
         return ble_gatt_transport_fail_bearer(transport);
     uint8_t event[BLE_GATT_TRANSPORT_MTU_MAX];
     uint16_t event_len = 0;
+#if BLE_GATT_ENABLE_EATT
+    int eatt_event_result = transport->eatt_enabled ?
+        ble_gatt_transport_eatt_poll_server_event(transport, now_ms) : 0;
+    if (eatt_event_result == 1) {
+        ble_gatt_transport_eatt_poll_tx(transport);
+        return received;
+    }
+#endif
     uint8_t mtu_exchange_pending = transport->client &&
         transport->client->pending &&
         transport->client->request_opcode == 0x02;

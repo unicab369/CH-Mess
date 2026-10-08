@@ -14,10 +14,10 @@
 // - [x] Keep the GAP-specific pairing procedures isolated in ble_smp_gap.h.
 // - [ ] Refactor those procedures onto this module's host callbacks so a
 //       non-GAP host can reuse the pairing state machine.
-// - [ ] Complete and verify legacy Just Works, Passkey Entry, confirm/random,
-//       key derivation, and both Central/Peripheral role combinations.
-// - [ ] Complete and verify Secure Connections public-key, numeric-comparison,
-//       passkey, OOB, DHKey-check, and key derivation flows.
+// - [x] Verify legacy Just Works, Passkey Entry, confirm/random, key derivation,
+//       and both Central/Peripheral role combinations.
+// - [x] Verify Secure Connections public-key, numeric-comparison, passkey, OOB,
+//       DHKey-check, and key derivation flows.
 // - [x] Define host callbacks for cryptographic randomness/primitives, user
 //       interaction, link encryption, and bond load/store/removal.
 // - [x] Provide checked generic dispatch helpers for every host callback.
@@ -25,21 +25,25 @@
 //       and key-distribution intersections under a host-supplied policy.
 // - [x] Distribute legacy Initiator IRK/identity address and CSRK and store
 //       the received keys with the bond.
-// - [x] Distribute and receive legacy Responder IRK/identity address and
-//       CSRK after the Initiator's key set.
-// - [x] Use the same identity/signing key exchange for Secure Connections;
-//       SC does not distribute legacy Encryption Information.
-// - [ ] Support and verify Encryption Information in both legacy directions.
-// - [ ] Verify Secure Connections key distribution as Peripheral and with an
+// - [x] Distribute and receive legacy Peripheral LTK/EDIV/Rand, identity, and
+//       signing keys before the Central's key set.
+// - [x] Restrict Secure Connections key distribution to identity keys (IRK
+//       and identity address); SC does not distribute legacy LTKs or CSRKs.
+// - [x] Support Encryption Information and Central Identification in both
+//       legacy directions; keep the two distributed LTK sets separate.
+// - [x] Verify identity-only Secure Connections key distribution in both
+//       Central and Peripheral roles.
+// - [ ] Verify Secure Connections pairing and key distribution with an
 //       independent Bluetooth host.
 // - [ ] Integrate generic bond distribution, persistence, restoration, and
 //       removal through host-provided storage callbacks.
 // - [x] Validate command-specific lengths, ignore reserved opcodes, track the
 //       30-second pairing timer, and wipe queued data when it expires.
-// - [ ] Add pairing state/order validation, collision handling, and secure
-//       cleanup of all pairing secrets on disconnect or failure.
-// - [ ] Add protocol tests for all supported pairing modes and malformed or
-//       out-of-order PDUs; verify pairing with an independent BLE host.
+// - [x] Reject malformed and out-of-order pairing PDUs and erase temporary
+//       pairing secrets on disconnect or failure.
+// - [ ] Add BR/EDR security-manager procedures and cross-transport collision
+//       handling if Classic transport support is added.
+// - [ ] Verify pairing with an independent BLE host.
 #include "ble_l2cap.h"
 
 #ifndef BLE_SMP_PDU_MAX

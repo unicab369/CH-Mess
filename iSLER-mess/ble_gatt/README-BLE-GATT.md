@@ -1,10 +1,9 @@
 # BLE GATT implementation plan
 
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
-provides server and client roles over the LE fixed ATT bearer, and lets an
-application register its own services and attributes. It does not include
-Bluetooth SIG service profiles or EATT (which requires LE Credit Based
-Channels).
+provides server and client roles over the LE fixed ATT bearer and optional
+EATT, and lets an application register its own services and attributes. It
+does not include Bluetooth SIG service profiles.
 
 `ble_gatt.h` is the generic include. `ble_att/ble_att.h` owns shared ATT opcodes,
 errors, value limits, byte-order helpers, and request/response matching.
@@ -22,8 +21,8 @@ generic modules.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
 `ble_gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
-and SDU delivery to that manager. The transport still needs independent ATT
-transaction state and full ATT routing for each EATT bearer.
+and SDU delivery to that manager. EATT is optional at compile time and keeps
+per-bearer ATT transaction state while sharing the connection's GATT database.
 
 ## Completion checklist
 
@@ -32,14 +31,13 @@ transaction state and full ATT routing for each EATT bearer.
 1. [x] Bind EATT to the shared LE L2CAP ECFC manager on PSM 0x0027. Register
    the PSM, require an encrypted link before accepting or opening a channel,
    and route EATT channel open/close/data events through the bearer manager.
-   `ble_gatt_transport_eatt_init()` attaches it; ATT SDUs currently go to an
-   application callback pending per-bearer ATT state.
-2. [ ] Give each ATT bearer its own CID, negotiated MTU, TX/RX state, and
+   `ble_gatt_transport_eatt_init()` attaches it.
+2. [x] Give each ATT bearer its own CID, negotiated MTU, TX/RX state, and
    failure state while sharing the connection's GATT database and security.
-3. [ ] Keep ATT client request matching, timeout, and indication confirmation
+3. [x] Keep ATT client request matching, timeout, and indication confirmation
    state per bearer; route each response on the bearer that received its
    request.
-4. [ ] Make server operations safe across concurrent bearers, including
+4. [x] Make server operations safe across concurrent bearers, including
    prepared writes, CCCD state, notifications, and indications.
 5. [ ] Add deterministic multi-bearer tests for negotiation, concurrent
    client/server traffic, credits, MTU boundaries, timeouts, recovery, and
@@ -237,24 +235,21 @@ to omit EATT code and per-bearer storage.
   independent of Mesh and reusable by generic GATT.
 - [x] Bind the EATT bearer manager to the LE ECFC implementation on EATT PSM
   0x0027. Register the PSM, require link encryption, and route channel
-  open/close/data events through the shared L2CAP connection. The transport
-  currently delivers EATT ATT SDUs to an application callback; per-bearer ATT
-  routing remains open work.
+  open/close/data events through the shared L2CAP connection.
 - [x] Add an optional EATT bearer manager in `ble_gatt_eatt.h`. It tracks
   multiple simultaneous channels while leaving the fixed ATT bearer intact.
-- [ ] Refactor transport routing so each bearer has its own channel ID,
+- [x] Refactor transport routing so each bearer has its own channel ID,
   fragmentation/reassembly buffers, MTU, transmit queue, and failure state.
   Route every response and confirmation back on the bearer where its
   transaction began.
-- [ ] Separate per-bearer ATT transaction state from shared connection state.
+- [x] Separate per-bearer ATT transaction state from shared connection state.
   Permit one outstanding request per bearer; isolate transaction timeouts and
   bearer failures so an EATT failure does not unnecessarily drop the LE link.
   Keep the attribute database and connection-scoped CCCD and Client Supported
   Features state shared, and make concurrent server operations atomic across
   bearers.
 - [x] Enforce the EATT minimum/negotiated MTU on bearer SDUs and reject Signed
-  Write Commands. Per-procedure and notification routing still requires the
-  transport integration above.
+  Write Commands.
 - [ ] Extend tests from manager lifecycle to channel negotiation, multiple concurrent client requests,
   simultaneous client/server roles, per-bearer indication confirmation,
   shared attribute writes, credits, MTU boundaries, timeout/recovery, and
