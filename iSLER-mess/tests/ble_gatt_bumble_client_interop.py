@@ -7,6 +7,8 @@ import tempfile
 
 from bumble import att, gatt_server
 from bumble.core import UUID
+from cryptography.hazmat.primitives.ciphers import algorithms
+from cryptography.hazmat.primitives.cmac import CMAC
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -54,8 +56,12 @@ class CAttClient:
             stdout=asyncio.subprocess.PIPE
         )
 
-    async def transact(self, command, server, bearer, expected_status=0):
-        self.process.stdin.write(bytes([command]))
+    async def transact(self, command, server, bearer, expected_status=0,
+                       handle=None):
+        request = bytes([command])
+        if handle is not None:
+            request += struct.pack("<H", handle)
+        self.process.stdin.write(request)
         await self.process.stdin.drain()
         last_request = last_response = None
         while True:
@@ -174,6 +180,24 @@ class CAttClient:
             else:
                 raise AssertionError("notification unexpectedly sent a response")
 
+    async def signed_write_command(self):
+        self.process.stdin.write(b"\x16")
+        await self.process.stdin.drain()
+        header = await asyncio.wait_for(self.process.stdout.readexactly(3), 2)
+        assert header[0] == 1
+        request_len = struct.unpack_from("<H", header, 1)[0]
+        request = await self.process.stdout.readexactly(request_len)
+        assert len(request) == 16 and request[:4] == b"\xd2\x03\x007"
+        counter = request[4:8]
+        assert counter == b"\x01\x00\x00\x00"
+        cmac = CMAC(algorithms.AES(bytes.fromhex(
+            "611b64ebfbcd1fd372ec9196df425e50")))
+        cmac.update(request[:4] + counter)
+        expected = counter + cmac.finalize()[:8][::-1]
+        assert request[4:] == expected
+        assert await asyncio.wait_for(self.process.stdout.readexactly(4), 2) == \
+            bytes((2, 0, 0, 0))
+
     async def close(self):
         self.process.stdin.write(b"\x00")
         await self.process.stdin.drain()
@@ -212,6 +236,20 @@ async def exercise():
         att.Attribute.READABLE | att.Attribute.READ_REQUIRES_AUTHENTICATION,
         b"authenticated",
     )
+    authorized_characteristic = gatt_server.Characteristic(
+        UUID(0x2A1C),
+        gatt_server.Characteristic.Properties.READ,
+        att.Attribute.READABLE | att.Attribute.READ_REQUIRES_AUTHORIZATION,
+        b"authorized",
+    )
+
+    def read_short_key(_connection):
+        raise att.ATT_Error(error_code=0x0C)
+
+    short_key_characteristic = gatt_server.Characteristic(
+        UUID(0x2A1D), gatt_server.Characteristic.Properties.READ,
+        att.Attribute.READABLE, att.AttributeValue(read=read_short_key),
+    )
     service = gatt_server.Service(
         UUID(0x180F), [characteristic, protected_characteristic,
                        authenticated_characteristic]
@@ -219,8 +257,12 @@ async def exercise():
     included_service = gatt_server.Service(
         UUID(0x1812), [], included_services=[service]
     )
+    security_service = gatt_server.Service(
+        UUID(0x1813), [authorized_characteristic, short_key_characteristic]
+    )
     server.add_service(service)
     server.add_service(included_service)
+    server.add_service(security_service)
     bearer = FakeBearer()
 
     try:
@@ -288,6 +330,16 @@ async def exercise():
             authenticated_characteristic.handle
         assert response.error_code == 0x05  # Insufficient Authentication
 
+        request, response = await client.transact(23, server, bearer,
+            expected_status=3, handle=authorized_characteristic.handle)
+        assert request.op_code == att.Opcode.ATT_READ_REQUEST
+        assert response.error_code == 0x08  # Insufficient Authorization
+
+        request, response = await client.transact(24, server, bearer,
+            expected_status=3, handle=short_key_characteristic.handle)
+        assert request.op_code == att.Opcode.ATT_READ_REQUEST
+        assert response.error_code == 0x0C  # Encryption Key Size Too Short
+
         request, response = await client.transact(10, server, bearer)
         assert request.op_code == att.Opcode.ATT_READ_BLOB_REQUEST
         assert response.part_attribute_value == bytes(range(63, 70))
@@ -321,6 +373,7 @@ async def exercise():
 
         await client.write_command(server, bearer)
         assert characteristic.value == b"\x44"
+        await client.signed_write_command()
     finally:
         await client.close()
 

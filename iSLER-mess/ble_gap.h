@@ -17,14 +17,42 @@
 //   data packets, Central channel-map updates, and PHY changes on hardware.
 // - Verify Secure Connections OOB exchange and restored bonds on hardware.
 //   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
-// - Add extended/periodic advertising and synchronization where supported by
-//   the target controller, with tests for each implemented procedure.
 
 #define MESH_GAP_ADV_DATA_MAX 31
+#ifndef MESH_GAP_EXT_ADV_SUPPORT
+#define MESH_GAP_EXT_ADV_SUPPORT 0
+#endif
+#ifndef MESH_GAP_EXT_ADV_SET_COUNT
+#define MESH_GAP_EXT_ADV_SET_COUNT 2
+#endif
+#if MESH_GAP_EXT_ADV_SET_COUNT < 1 || MESH_GAP_EXT_ADV_SET_COUNT > 4
+#error "MESH_GAP_EXT_ADV_SET_COUNT must be between 1 and 4"
+#endif
+#ifndef MESH_GAP_EXT_ADV_DATA_MAX
+#define MESH_GAP_EXT_ADV_DATA_MAX 1650
+#endif
+#define MESH_GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
+#define MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
+#define MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
+#if MESH_GAP_EXT_ADV_DATA_MAX < 1 || MESH_GAP_EXT_ADV_DATA_MAX > 1650
+#error "MESH_GAP_EXT_ADV_DATA_MAX must be between 1 and 1650"
+#endif
+#define GAP_EXT_ADV_CONTEXT_COUNT 2
+#define GAP_EXT_ADV_REPORT_COUNT 2
+#define GAP_EXT_ADV_SEEN_COUNT 4
+#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000u
+#define MESH_GAP_PERIODIC_SYNC_COUNT 2
+#define MESH_GAP_PAWR_RESPONSE_DATA_MAX 249
+#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
+#define GAP_PERIODIC_REPORT_COUNT 2
 #define MESH_GAP_BOND_SLOTS 4
 #define MESH_GAP_BOND_VERSION 1
 #ifndef MESH_GAP_CONN_DATA_MAX
+#if MESH_GAP_EXT_ADV_SUPPORT
+#define MESH_GAP_CONN_DATA_MAX 35
+#else
 #define MESH_GAP_CONN_DATA_MAX 27
+#endif
 #endif
 #if MESH_GAP_CONN_DATA_MAX < 27 || MESH_GAP_CONN_DATA_MAX > 251
 #error "MESH_GAP_CONN_DATA_MAX must be between 27 and 251"
@@ -54,6 +82,7 @@
 #define MESH_GAP_CONNECTION_PENDING 0xff
 #define MESH_GAP_PHY_1M 1
 #define MESH_GAP_PHY_2M 2
+#define MESH_GAP_PHY_CODED 4
 // Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
 #define GAP_LL_FEATURES 0x2f
 
@@ -117,6 +146,45 @@ typedef struct {
     uint8_t data_len;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
 } mesh_gap_scan_report;
+
+#if MESH_GAP_EXT_ADV_SUPPORT
+static const uint16_t gap_periodic_sca_ppm[8] = {
+    500, 250, 150, 100, 75, 50, 30, 20
+};
+typedef struct {
+    uint8_t has_address, address_type, address[6];
+    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t has_adi, sid;
+    uint16_t did;
+    int8_t rssi;
+    uint16_t data_len;
+    uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
+} mesh_gap_extended_scan_report;
+
+enum {
+    MESH_GAP_EXT_ADV_PRIMARY_PDU = 0,
+    MESH_GAP_EXT_ADV_AUXILIARY_PDU = 1,
+    MESH_GAP_EXT_ADV_PERIODIC_PDU = 2
+};
+
+enum {
+    MESH_GAP_PERIODIC_SYNC_ESTABLISHED = 1,
+    MESH_GAP_PERIODIC_SYNC_LOST = 2,
+    MESH_GAP_PERIODIC_SYNC_CANCELLED = 3,
+    MESH_GAP_PERIODIC_SYNC_TERMINATED = 4
+};
+
+typedef struct {
+    uint8_t type, handle, sid, address_type, address[6];
+} mesh_gap_periodic_sync_event;
+
+typedef struct {
+    uint8_t handle, sid;
+    uint16_t event_counter, did, data_len;
+    int8_t rssi;
+    uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
+} mesh_gap_periodic_report;
+#endif
 
 // Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
 typedef struct {
@@ -194,6 +262,38 @@ static struct {
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
     uint8_t scan_response[MESH_GAP_ADV_DATA_MAX];
 } gap_advertising;
+#if MESH_GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t enabled, sid, scannable, periodic_enabled;
+    uint8_t periodic_sync_info_sent;
+    uint8_t pawr_enabled, pawr_data_pending;
+    uint8_t pawr_num_subevents, pawr_subevent_interval;
+    uint8_t pawr_response_slot_delay, pawr_response_slot_spacing;
+    uint16_t data_len, scan_response_len, interval_ms;
+    uint16_t periodic_data_len, periodic_interval, periodic_event_counter;
+    uint16_t did, periodic_did;
+    uint32_t periodic_access_address, periodic_response_access_address;
+    uint32_t periodic_crc_init;
+    uint8_t periodic_channel_map[5], periodic_sca;
+    uint64_t periodic_next_event_ticks;
+    uint32_t next_event_ms;
+    // Holds AdvData for nonscannable sets or ScanRspData for scannable sets.
+    uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
+    uint8_t periodic_data[MESH_GAP_EXT_ADV_DATA_MAX];
+} mesh_gap_extended_advertising_set;
+static mesh_gap_extended_advertising_set
+    gap_ext_advertising[MESH_GAP_EXT_ADV_SET_COUNT];
+static uint8_t gap_ext_advertising_next_set;
+static inline int gap_ext_advertising_any_enabled(void) {
+    for (uint8_t i = 0; i < MESH_GAP_EXT_ADV_SET_COUNT; i++)
+        if (gap_ext_advertising[i].enabled ||
+            gap_ext_advertising[i].periodic_enabled) return 1;
+    return 0;
+}
+#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_advertising_any_enabled())
+#else
+#define GAP_EXT_ADVERTISING_ENABLED 0
+#endif
 
 // Connection state used by the GAP radio adapter.
 static struct {
@@ -209,6 +309,11 @@ static struct {
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    volatile uint8_t periodic_sync_transfer_queued;
+    uint8_t periodic_sync_transfer_handle;
+    uint16_t periodic_sync_transfer_id;
+#endif
     uint16_t tx_l2cap_remaining;
     uint8_t tx_llid, tx_len, tx_data[MESH_GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[MESH_GAP_CONN_DATA_MAX];
@@ -363,6 +468,10 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.tx_pending = 0;
     gap_conn.tx_queued = 0;
     gap_conn.tx_l2cap_remaining = 0;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    gap_conn.periodic_sync_transfer_queued = 0;
+    gap_conn.periodic_sync_transfer_handle = 0;
+#endif
     gap_conn.rx_ready = 0;
     gap_conn.event_counter = 0;
     gap_conn.update_pending = 0;
@@ -412,6 +521,10 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_security_generation++;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    for (uint8_t i = 0; i < MESH_GAP_EXT_ADV_SET_COUNT; i++)
+        gap_ext_advertising[i].enabled = 0;
+#endif
     return 1;
 }
 
@@ -427,6 +540,58 @@ static struct {
 } gap_scan_settings = {20, 20, MESH_GAP_DISCOVERY_ALL, 0};
 static mesh_gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
+#if MESH_GAP_EXT_ADV_SUPPORT
+static struct {
+    uint8_t active, has_address, address_type, address[6], has_adi, sid;
+    uint8_t await_scan_response;
+    uint16_t adi, data_len;
+    int8_t rssi;
+    uint32_t deadline_ms;
+    uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
+} gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
+static mesh_gap_extended_scan_report
+    gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
+static struct {
+    uint8_t used, address_type, address[6], has_adi, sid;
+    uint16_t did;
+    uint16_t data_len;
+    uint32_t data_hash;
+} gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
+static uint8_t gap_ext_adv_seen_count, gap_ext_adv_seen_next;
+typedef struct {
+    uint8_t used, established, handle, sid, address_type, address[6];
+    uint8_t channel_map[5], sca, phy, missed_events, window_active, window_chain;
+    uint8_t aux_channel, aux_phy;
+    uint8_t has_pawr_timing, pawr_num_subevents;
+    uint8_t pawr_subevent_interval, pawr_response_slot_delay;
+    uint8_t pawr_response_slot_spacing;
+    uint8_t pawr_selected_subevent, pawr_response_slot;
+    uint8_t pawr_response_pending;
+    uint8_t event_data_active;
+    uint16_t interval, event_counter, current_event_counter, did, data_len;
+    uint16_t widening_ppm;
+    uint32_t access_address, crc_init, response_access_address;
+    uint32_t timeout_ms, last_event_ms;
+    uint16_t pawr_response_data_len;
+    uint64_t anchor_ticks, next_event_ticks;
+    uint64_t window_start_ticks, window_end_ticks;
+    int8_t rssi;
+    uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
+    uint8_t pawr_response_data[MESH_GAP_PAWR_RESPONSE_DATA_MAX];
+} mesh_gap_periodic_sync_context;
+static mesh_gap_periodic_sync_context
+    gap_periodic_syncs[MESH_GAP_PERIODIC_SYNC_COUNT];
+static mesh_gap_periodic_sync_event
+    gap_periodic_sync_events[GAP_PERIODIC_SYNC_EVENT_COUNT];
+static uint8_t gap_periodic_sync_event_head, gap_periodic_sync_event_count;
+static mesh_gap_periodic_report
+    gap_periodic_reports[GAP_PERIODIC_REPORT_COUNT];
+static uint8_t gap_periodic_report_head, gap_periodic_report_count;
+static uint8_t gap_periodic_sync_owned_scan;
+static uint8_t gap_periodic_sync_transfer_enabled;
+static uint32_t gap_periodic_sync_transfer_timeout_ms = 10000;
+#endif
 static struct {
     uint8_t address_type, address[6], pdu_type, data_len;
     uint8_t data[MESH_GAP_ADV_DATA_MAX];
@@ -455,7 +620,7 @@ static struct {
 } gap_identities[GAP_IDENTITY_COUNT];
 static struct {
     uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
-    uint16_t timeout_s;
+    uint16_t timeout_s, timeout_min_s, timeout_max_s;
     uint32_t next_rotation_ms;
 } gap_privacy;
 
@@ -522,6 +687,7 @@ static int gap_accept_list_nonempty(void) {
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
 int mesh_gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
         (address_type && !gap_static_random_address_valid(address))) return 0;
     int free_slot = -1;
@@ -541,6 +707,7 @@ int mesh_gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int mesh_gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active) return 0;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
@@ -555,7 +722,8 @@ int mesh_gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) 
 
 // Empty the Filter Accept List while GAP is idle.
 int mesh_gap_accept_list_clear(void) {
-    if (gap_scanning || gap_advertising.enabled || gap_conn.active ||
+    if (gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_conn.active ||
         gap_central_connect.active) return 0;
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
     return 1;
@@ -575,7 +743,8 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 int mesh_gap_identity_set(const uint8_t address[6], uint8_t address_type,
                            const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning ||
-        gap_advertising.enabled || gap_conn.active || gap_central_connect.active ||
+        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_conn.active || gap_central_connect.active ||
         (address_type && !gap_static_random_address_valid(address))) return 0;
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
@@ -608,7 +777,8 @@ int mesh_gap_identity_set(const uint8_t address[6], uint8_t address_type,
 int mesh_gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
                                uint8_t mode) {
     if (!address || address_type > 1 || mode > MESH_GAP_PRIVACY_DEVICE ||
-        gap_scanning || gap_advertising.enabled || gap_conn.active ||
+        gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_conn.active ||
         gap_central_connect.active) return 0;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -666,6 +836,7 @@ static int gap_private_address_generate(const uint8_t irk[16],
 int mesh_gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
                                  const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+        GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active) return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0 || gap_identities[slot].address_type != address_type ||
@@ -706,7 +877,8 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
-    if (gap_advertising.enabled || gap_scanning || gap_conn.active ||
+    if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
+        gap_conn.active ||
         gap_central_connect.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
     if (!irk && !timeout_s) {
@@ -723,6 +895,52 @@ int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     memcpy(gap_random_address, address, 6);
     gap_privacy.enabled = gap_own_address_type = 1;
     gap_privacy.timeout_s = timeout_s;
+    gap_privacy.timeout_min_s = gap_privacy.timeout_max_s = timeout_s;
+    gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
+    return 1;
+}
+
+// Pick an unbiased timeout in the inclusive Core 6.1 randomized RPA range.
+static int gap_privacy_timeout_pick(uint16_t min_s, uint16_t max_s,
+                                    uint16_t *timeout_s) {
+    uint32_t range = (uint32_t)max_s - min_s + 1;
+    if (range == 1) {
+        *timeout_s = min_s;
+        return 1;
+    }
+    uint32_t limit = 65536u - (65536u % range);
+    for (uint8_t attempt = 0; attempt < 8; attempt++) {
+        uint8_t bytes[2];
+        if (!BLE_GAP_RANDOM_SECURE_BYTES(bytes, sizeof(bytes))) return 0;
+        uint32_t value = (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8;
+        if (value < limit) {
+            *timeout_s = (uint16_t)(min_s + value % range);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Generate local RPAs using a uniformly selected timeout for every rotation.
+// Bounds follow HCI LE Set Resolvable Private Address Timeout v2: 1..3600 s.
+int mesh_gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s,
+                                    uint16_t max_timeout_s) {
+    if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
+        min_timeout_s > max_timeout_s || gap_advertising.enabled ||
+        GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
+        gap_conn.active || gap_central_connect.active) return 0;
+    uint16_t timeout_s;
+    if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
+        return 0;
+    uint8_t address[6];
+    if (!gap_private_address_generate(irk, address, gap_random_address)) return 0;
+    memcpy(gap_privacy.irk, irk, sizeof(gap_privacy.irk));
+    gap_privacy.resolvable = 1;
+    memcpy(gap_random_address, address, sizeof(gap_random_address));
+    gap_privacy.enabled = gap_own_address_type = 1;
+    gap_privacy.timeout_s = timeout_s;
+    gap_privacy.timeout_min_s = min_timeout_s;
+    gap_privacy.timeout_max_s = max_timeout_s;
     gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
     return 1;
 }
@@ -731,7 +949,8 @@ int mesh_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
 // Listed peers must also pass their individual network/device privacy mode.
 int mesh_gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanning ||
-        gap_advertising.enabled || gap_conn.active || gap_central_connect.active)
+        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_conn.active || gap_central_connect.active)
         return 0;
     gap_privacy.scan_filter = scan;
     gap_privacy.connection_filter = connection;
@@ -743,7 +962,8 @@ int mesh_gap_privacy_filter(uint8_t scan, uint8_t connection) {
 int mesh_gap_advertising_filter_policy(uint8_t scan_accept_list,
                                        uint8_t connection_accept_list) {
     if (scan_accept_list > 1 || connection_accept_list > 1 ||
-        gap_scanning || gap_advertising.enabled || gap_conn.active ||
+        gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_conn.active ||
         gap_central_connect.active) return 0;
     gap_advertising.scan_accept_list = scan_accept_list;
     gap_advertising.connection_accept_list = connection_accept_list;
@@ -795,7 +1015,8 @@ static int gap_access_address_generate(uint32_t *address) {
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
 int mesh_gap_set_static_random_address(const uint8_t address[6]) {
-    if (!address || gap_advertising.enabled || gap_scanning ||
+    if (!address || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_scanning ||
         gap_conn.active || gap_central_connect.active ||
         !gap_static_random_address_valid(address)) return 0;
     memcpy(gap_random_address, address, 6);
@@ -808,7 +1029,8 @@ int mesh_gap_set_static_random_address(const uint8_t address[6]) {
 
 // Use the controller's factory public address for GAP advertising and scanning.
 int mesh_gap_use_public_address(void) {
-    if (gap_advertising.enabled || gap_scanning || gap_conn.active ||
+    if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
+        gap_conn.active ||
         gap_central_connect.active) return 0;
     gap_privacy.enabled = 0;
     gap_identity_address_type = gap_own_address_type = 0;
@@ -829,6 +1051,11 @@ int mesh_gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
     gap_scan_settings.filter_duplicates = filter_duplicates;
     gap_scan_head = gap_scan_count = 0;
     gap_scan_seen_count = gap_scan_seen_next = 0;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+    gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
+    gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
+#endif
     gap_scan_response_accepted = 0;
     gap_scan_generation++;
     return 1;
@@ -841,7 +1068,7 @@ int mesh_gap_connection_timing_set(const mesh_gap_connection_timing *timing) {
         timing->latency > 499 || timing->supervision_timeout < 10 ||
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanning ||
-        gap_advertising.enabled || gap_conn.active ||
+        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
         gap_central_connect.active || timing->background_scan_interval_ms < 3 ||
         timing->background_scan_interval_ms >= 40960 ||
         timing->background_scan_window_ms < 3 ||
@@ -1024,13 +1251,33 @@ int mesh_gap_ad_next(const uint8_t *data, size_t len, size_t *offset,
 // GAP discoverability is advertised in the Flags AD structure. A stopped
 // advertiser, or one without a discoverable bit, is in non-discoverable mode.
 int mesh_gap_discoverable(void) {
+#if MESH_GAP_EXT_ADV_SUPPORT
+    for (uint8_t set = 0; set < MESH_GAP_EXT_ADV_SET_COUNT; set++) {
+        if (!gap_ext_advertising[set].enabled) continue;
+        const uint8_t *data = gap_ext_advertising[set].data;
+        size_t data_len = gap_ext_advertising[set].data_len;
+        for (size_t offset = 0; offset < data_len;) {
+            uint8_t field_len = data[offset];
+            if (!field_len) break;
+            if (field_len >= 2 && data[offset + 1] == 0x01 &&
+                (data[offset + 2] & 0x03)) return 1;
+            offset += (size_t)field_len + 1;
+        }
+    }
     if (!gap_advertising.enabled) return 0;
-    for (size_t offset = 0; offset < gap_advertising.data_len;) {
-        uint8_t field_len = gap_advertising.data[offset];
+    const uint8_t *data = gap_advertising.data;
+    size_t data_len = gap_advertising.data_len;
+#else
+    if (!gap_advertising.enabled) return 0;
+    const uint8_t *data = gap_advertising.data;
+    size_t data_len = gap_advertising.data_len;
+#endif
+    for (size_t offset = 0; offset < data_len;) {
+        uint8_t field_len = data[offset];
         if (!field_len) break;
         if (field_len >= 2 &&
-            gap_advertising.data[offset + 1] == 0x01)
-            return (gap_advertising.data[offset + 2] & 0x03) != 0;
+            data[offset + 1] == 0x01)
+            return (data[offset + 2] & 0x03) != 0;
         offset += (size_t)field_len + 1;
     }
     return 0;
@@ -1041,6 +1288,9 @@ static inline int gap_advertising_start(uint8_t pdu_type,
     size_t scan_response_len, const uint8_t *target_address,
     uint8_t target_type, uint16_t interval_ms) {
     if (mesh_gap_conn_busy() || gap_central_connect.active ||
+#if MESH_GAP_EXT_ADV_SUPPORT
+        GAP_EXT_ADVERTISING_ENABLED ||
+#endif
         (pdu_type != 0x00 && pdu_type != 0x01 &&
          pdu_type != 0x02 && pdu_type != 0x06) ||
         !gap_ad_data_valid(data, len) ||
@@ -1086,6 +1336,250 @@ int mesh_gap_advertising_start(const uint8_t *data, size_t len,
                                      NULL, 0, interval_ms);
 }
 
+#if MESH_GAP_EXT_ADV_SUPPORT
+static int gap_ext_ad_data_valid(const uint8_t *data, size_t len) {
+    if (len > MESH_GAP_EXT_ADV_DATA_MAX || (!data && len)) return 0;
+    for (size_t offset = 0; offset < len;) {
+        uint8_t field_len = data[offset];
+        if (!field_len || offset + (size_t)field_len + 1 > len) return 0;
+        offset += (size_t)field_len + 1;
+    }
+    return 1;
+}
+
+// Generate a fresh DID and keep the advertising-set and periodic-train DIDs
+// distinct. The Link Layer random source also avoids reusing the last value.
+static uint16_t gap_ext_did_generate(uint16_t previous, uint16_t other) {
+    uint8_t random[2];
+    BLE_GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    uint16_t did = ((uint16_t)random[0] |
+                    ((uint16_t)random[1] << 8)) & 0x0fff;
+    while (did == previous || did == other) did = (did + 1) & 0x0fff;
+    return did;
+}
+
+// Estimate the complete AUX_SYNC_IND/AUX_CHAIN_IND event duration, including
+// conservative packet spacing, so periodic events cannot overlap.
+static uint32_t gap_periodic_event_duration_us(size_t data_len) {
+    uint16_t remaining = (uint16_t)data_len;
+    uint32_t duration = 0;
+    uint8_t chained = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+    uint16_t chunk = chained ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+    uint8_t ext_len = chained ? 6 : 3;
+    uint16_t pdu_len = 1 + ext_len + chunk;
+    duration += (((uint32_t)pdu_len + 10u) * 8u + 629u) / 30u * 30u;
+    remaining -= chunk;
+    while (remaining) {
+        chained = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        chunk = chained ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+        ext_len = chained ? 6 : 3;
+        pdu_len = 1 + ext_len + chunk;
+        duration += (((uint32_t)pdu_len + 10u) * 8u + 629u) / 30u * 30u;
+        remaining -= chunk;
+    }
+    return duration;
+}
+
+// Configure and start one extended advertising set.
+int mesh_gap_extended_advertising_start_set(uint8_t set_id,
+    const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms) {
+    if (mesh_gap_conn_busy() || gap_central_connect.active ||
+        gap_advertising.enabled || set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        gap_ext_advertising[set_id].enabled ||
+        gap_ext_advertising[set_id].periodic_enabled || sid > 15 ||
+        !gap_ext_ad_data_valid(data, len) ||
+        interval_ms < 100 || interval_ms > 10240) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    set->did = gap_ext_did_generate(set->did, set->periodic_did);
+    if (len) memcpy(set->data, data, len);
+    set->data_len = (uint16_t)len;
+    set->scan_response_len = 0;
+    set->scannable = 0;
+    set->sid = sid;
+    set->interval_ms = interval_ms;
+    set->next_event_ms = GET_MILLIS();
+    set->enabled = 1;
+    return 1;
+}
+
+// Start periodic advertising on an active, nonscannable extended set. The
+// interval is in 1.25 ms units (6..65535); periodic data is a sequence of AD
+// structures and may be chained across AUX_SYNC_IND/AUX_CHAIN_IND packets.
+int mesh_gap_periodic_advertising_start_set(uint8_t set_id,
+    const uint8_t *data, size_t len, uint16_t interval) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_advertising[set_id].enabled ||
+        gap_ext_advertising[set_id].scannable ||
+        gap_ext_advertising[set_id].periodic_enabled || interval < 6 ||
+        !gap_ext_ad_data_valid(data, len) ||
+        (uint32_t)interval * 1250u < gap_periodic_event_duration_us(len))
+        return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    uint8_t random[3];
+    if (!gap_access_address_generate(&set->periodic_access_address)) return 0;
+    BLE_GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    set->periodic_crc_init = (uint32_t)random[0] |
+        (uint32_t)random[1] << 8 | (uint32_t)random[2] << 16;
+    set->periodic_did = gap_ext_did_generate(set->periodic_did, set->did);
+    set->did = gap_ext_did_generate(set->did, set->periodic_did);
+    if (len) memcpy(set->periodic_data, data, len);
+    set->periodic_data_len = (uint16_t)len;
+    set->periodic_interval = interval;
+    set->periodic_event_counter = 0;
+    set->pawr_enabled = 0;
+    set->pawr_data_pending = 0;
+    set->pawr_num_subevents = 0;
+    set->pawr_subevent_interval = 0;
+    set->pawr_response_slot_delay = 0;
+    set->pawr_response_slot_spacing = 0;
+    set->periodic_response_access_address = 0;
+    // All 37 data channels enabled; SCA code zero advertises 500 ppm.
+    memset(set->periodic_channel_map, 0xff,
+           sizeof(set->periodic_channel_map));
+    set->periodic_channel_map[4] = 0x1f;
+    set->periodic_sca = 0;
+    set->periodic_sync_info_sent = 0;
+    uint32_t initial_delay_us = (uint32_t)interval * 1250u;
+    if (initial_delay_us > 100000u) initial_delay_us = 100000u;
+    set->periodic_next_event_ticks = BLE_GAP_HW_TICKS() +
+        HW_TICKS_FROM_US(initial_delay_us);
+    set->periodic_enabled = 1;
+    set->next_event_ms = GET_MILLIS();
+    return 1;
+}
+
+// Enable PAwR subevent transmission for an active periodic advertising set.
+// Timing values use the Core units: 1.25 ms for subevent interval and response
+// slot delay, and 0.125 ms for response slot spacing.
+int mesh_gap_periodic_advertising_pawr_set(uint8_t set_id,
+    uint8_t num_subevents, uint8_t subevent_interval,
+    uint8_t response_slot_delay, uint8_t response_slot_spacing) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_advertising[set_id].periodic_enabled ||
+        !num_subevents || num_subevents > 128 ||
+        (num_subevents > 1 && subevent_interval < 6) ||
+        !response_slot_delay || response_slot_delay == 0xff ||
+        response_slot_spacing < 2) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    uint32_t interval_units = set->periodic_interval;
+    if ((num_subevents > 1 &&
+         (uint32_t)num_subevents * subevent_interval > interval_units) ||
+        response_slot_delay >= (num_subevents > 1 ? subevent_interval :
+                                                       interval_units) ||
+        set->periodic_data_len > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
+        return 0;
+    uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
+        subevent_interval : set->periodic_interval) * 1250u;
+    if (gap_periodic_event_duration_us(set->periodic_data_len) >=
+            subevent_interval_us ||
+        gap_periodic_event_duration_us(set->periodic_data_len) + 150u >=
+            (uint32_t)response_slot_delay * 1250u) return 0;
+    if (!gap_access_address_generate(&set->periodic_response_access_address))
+        return 0;
+    if (set->periodic_response_access_address ==
+        set->periodic_access_address) {
+        uint8_t found_distinct_address = 0;
+        for (uint8_t bit = 0; bit < 32; bit++) {
+            uint32_t candidate = set->periodic_access_address ^
+                                 ((uint32_t)1 << bit);
+            if (!gap_access_address_valid(candidate)) continue;
+            set->periodic_response_access_address = candidate;
+            found_distinct_address = 1;
+            break;
+        }
+        if (!found_distinct_address) return 0;
+    }
+    set->pawr_num_subevents = num_subevents;
+    set->pawr_subevent_interval = subevent_interval;
+    set->pawr_response_slot_delay = response_slot_delay;
+    set->pawr_response_slot_spacing = response_slot_spacing;
+    set->pawr_enabled = 1;
+    set->pawr_data_pending = set->periodic_data_len != 0;
+    return 1;
+}
+
+int mesh_gap_periodic_advertising_update_set(uint8_t set_id,
+    const uint8_t *data, size_t len) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_advertising[set_id].periodic_enabled ||
+        !gap_ext_ad_data_valid(data, len) ||
+        (gap_ext_advertising[set_id].pawr_enabled &&
+         (len > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3 ||
+          gap_periodic_event_duration_us(len) >=
+              (uint32_t)(gap_ext_advertising[set_id].pawr_num_subevents > 1 ?
+                  gap_ext_advertising[set_id].pawr_subevent_interval :
+                  gap_ext_advertising[set_id].periodic_interval) * 1250u)) ||
+        (uint32_t)gap_ext_advertising[set_id].periodic_interval * 1250u <
+            gap_periodic_event_duration_us(len)) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    set->periodic_did = gap_ext_did_generate(set->periodic_did, set->did);
+    if (len) memcpy(set->periodic_data, data, len);
+    set->periodic_data_len = (uint16_t)len;
+    if (set->pawr_enabled) set->pawr_data_pending = len != 0;
+    return 1;
+}
+
+int mesh_gap_periodic_advertising_stop_set(uint8_t set_id) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_advertising[set_id].periodic_enabled) return 0;
+    gap_ext_advertising[set_id].periodic_enabled = 0;
+    gap_ext_advertising[set_id].pawr_enabled = 0;
+    gap_ext_advertising[set_id].pawr_data_pending = 0;
+    gap_ext_advertising[set_id].pawr_num_subevents = 0;
+    gap_ext_advertising[set_id].pawr_subevent_interval = 0;
+    gap_ext_advertising[set_id].pawr_response_slot_delay = 0;
+    gap_ext_advertising[set_id].pawr_response_slot_spacing = 0;
+    gap_ext_advertising[set_id].periodic_response_access_address = 0;
+    return 1;
+}
+
+// Start an extended scannable set; its advertising data is returned only in
+// AUX_SCAN_RSP, as required for scannable extended advertising.
+int mesh_gap_extended_scannable_advertising_start_set(uint8_t set_id,
+    const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
+    uint16_t interval_ms) {
+    if (!gap_ext_ad_data_valid(scan_response, scan_response_len) ||
+        !scan_response_len ||
+        !mesh_gap_extended_advertising_start_set(set_id, NULL, 0, sid,
+                                                  interval_ms)) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    memcpy(set->data, scan_response, scan_response_len);
+    set->scan_response_len = (uint16_t)scan_response_len;
+    set->scannable = 1;
+    return 1;
+}
+
+int mesh_gap_extended_scannable_advertising_start(
+    const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
+    uint16_t interval_ms) {
+    return mesh_gap_extended_scannable_advertising_start_set(0,
+        scan_response, scan_response_len, sid, interval_ms);
+}
+
+// Set zero is the simple default for products with one extended advertiser.
+int mesh_gap_extended_advertising_start(const uint8_t *data, size_t len,
+    uint8_t sid, uint16_t interval_ms) {
+    return mesh_gap_extended_advertising_start_set(0, data, len, sid,
+                                                    interval_ms);
+}
+
+int mesh_gap_extended_advertising_stop_set(uint8_t set_id) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    set->enabled = 0;
+    if (!set->periodic_sync_info_sent) {
+        set->periodic_enabled = 0;
+        set->pawr_enabled = 0;
+        set->pawr_data_pending = 0;
+    }
+    return 1;
+}
+
+void mesh_gap_extended_advertising_stop(void) {
+    (void)mesh_gap_extended_advertising_stop_set(0);
+}
+#endif
+
 // Start legacy scannable advertising with the AD data returned in SCAN_RSP.
 int mesh_gap_scannable_advertising_start(const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t scan_response_len,
@@ -1116,8 +1610,16 @@ void mesh_gap_advertising_stop(void) {
 }
 
 static void gap_scan_start(uint8_t active) {
+#if MESH_GAP_EXT_ADV_SUPPORT
+    gap_periodic_sync_owned_scan = 0;
+#endif
     gap_scan_head = gap_scan_count = 0;
     gap_scan_seen_count = gap_scan_seen_next = 0;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+    gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
+    gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
+#endif
     gap_scan_response_accepted = 0;
     gap_central_connect.active = 0;
     gap_scanning = 1;
@@ -1142,6 +1644,9 @@ void mesh_gap_scan_stop(void) {
     gap_central_connect.any_peer = 0;
     gap_central_connect.selective = 0;
     gap_central_connect.auto_connect = 0;
+#if MESH_GAP_EXT_ADV_SUPPORT
+    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+#endif
     gap_scan_generation++;
 }
 
@@ -1152,7 +1657,9 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
         peer_type > 1 || any_peer > 1 || selective > 1 || auto_connect > 1 ||
         (any_peer && (selective || auto_connect)) || (selective && auto_connect) ||
         active_scan > 1 || gap_conn.active || gap_scanning ||
-        gap_advertising.enabled ||
+        (gap_advertising.enabled &&
+         (gap_advertising.pdu_type == 0x00 ||
+          gap_advertising.pdu_type == 0x01)) ||
         ((selective || auto_connect) && !gap_accept_list_nonempty()))
         return 0;
     uint32_t access_address;
@@ -1348,6 +1855,735 @@ static inline void gap_receive_report(const uint8_t *frame,
     if (data_len) memcpy(report->data, frame + 8, data_len);
     gap_scan_count++;
 }
+
+#if MESH_GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t mode, flags, has_address, address_type, address[6];
+    uint8_t has_adi, sid, has_aux_ptr, aux_offset_zero;
+    uint8_t has_pawr_timing, pawr_num_subevents;
+    uint8_t pawr_subevent_interval, pawr_response_slot_delay;
+    uint8_t pawr_response_slot_spacing;
+    uint8_t has_sync_info, sync_offset_unit, sync_offset_adjust, sync_sca;
+    uint8_t aux_channel, aux_ca, aux_offset_unit, aux_phy;
+    uint32_t aux_offset_us, sync_offset_us, sync_access_address, sync_crc_init;
+    uint32_t response_access_address;
+    uint16_t adi, sync_interval, sync_event_counter;
+    uint8_t sync_channel_map[5];
+    const uint8_t *data;
+    uint16_t data_len;
+} gap_ext_adv_fields;
+
+static uint32_t gap_ext_adv_hash(const uint8_t *data, uint16_t len) {
+    uint32_t hash = 2166136261u;
+    for (uint16_t i = 0; i < len; i++) hash = (hash ^ data[i]) * 16777619u;
+    return hash;
+}
+
+// Decode the common extended advertising header, rejecting truncated fields.
+static int gap_ext_adv_decode(const uint8_t *pdu, size_t pdu_len,
+                              gap_ext_adv_fields *fields) {
+    if (!pdu || !fields || pdu_len < 3 || (pdu[0] & 0x0f) != 0x07 ||
+        pdu_len != (size_t)pdu[1] + 2) return 0;
+    uint16_t payload_len = pdu[1];
+    if (payload_len < 1) return 0;
+    memset(fields, 0, sizeof(*fields));
+    fields->mode = pdu[2] >> 6;
+    uint8_t ext_len = pdu[2] & 0x3f;
+    if (fields->mode == 3 || (uint16_t)ext_len + 1 > payload_len) return 0;
+    size_t cursor = 3, header_end = 3u + ext_len;
+    if (ext_len) {
+        fields->flags = pdu[cursor++];
+        if (fields->flags & 0x80) return 0;
+        if (fields->flags & 0x01) {
+            if (header_end - cursor < 6) return 0;
+            fields->has_address = 1;
+            fields->address_type = (pdu[0] >> 6) & 1;
+            memcpy(fields->address, pdu + cursor, 6);
+            cursor += 6;
+        }
+        if (fields->flags & 0x02) {
+            if (header_end - cursor < 6) return 0;
+            cursor += 6;
+        }
+        if (fields->flags & 0x04) {
+            if (header_end - cursor < 1) return 0;
+            cursor += 1;
+        }
+        if (fields->flags & 0x08) {
+            if (header_end - cursor < 2) return 0;
+            fields->has_adi = 1;
+            fields->adi = (uint16_t)pdu[cursor] |
+                (uint16_t)pdu[cursor + 1] << 8;
+            fields->sid = fields->adi >> 12;
+            cursor += 2;
+        }
+        if (fields->flags & 0x10) {
+            if (header_end - cursor < 3) return 0;
+            uint8_t channel = pdu[cursor] & 0x3f;
+            uint8_t phy = pdu[cursor + 2] >> 5;
+            if (channel > 36 || phy > 2) return 0;
+            fields->has_aux_ptr = 1;
+            uint16_t offset = (uint16_t)pdu[cursor + 1] |
+                (uint16_t)(pdu[cursor + 2] & 0x1f) << 8;
+            fields->aux_offset_zero = offset == 0;
+            fields->aux_channel = channel;
+            fields->aux_ca = (pdu[cursor] >> 6) & 1;
+            fields->aux_offset_unit = (pdu[cursor] >> 7) & 1;
+            fields->aux_phy = phy;
+            fields->aux_offset_us = (uint32_t)offset *
+                (fields->aux_offset_unit ? 300u : 30u);
+            cursor += 3;
+        }
+        if (fields->flags & 0x20) {
+            if (header_end - cursor < 18) return 0;
+            fields->has_sync_info = 1;
+            if (pdu[cursor + 1] & 0x80) return 0;
+            uint16_t offset = (uint16_t)pdu[cursor] |
+                (uint16_t)(pdu[cursor + 1] & 0x1f) << 8;
+            fields->sync_offset_unit = (pdu[cursor + 1] >> 5) & 1;
+            fields->sync_offset_adjust = (pdu[cursor + 1] >> 6) & 1;
+            fields->sync_offset_us = (uint32_t)offset *
+                (fields->sync_offset_unit ? 300u : 30u) +
+                (fields->sync_offset_adjust ? 2457600u : 0u);
+            if ((fields->sync_offset_adjust &&
+                 !fields->sync_offset_unit) ||
+                (fields->sync_offset_us < 245700u &&
+                 fields->sync_offset_unit)) return 0;
+            fields->sync_interval = (uint16_t)pdu[cursor + 2] |
+                (uint16_t)pdu[cursor + 3] << 8;
+            memcpy(fields->sync_channel_map, pdu + cursor + 4, 5);
+            fields->sync_sca = fields->sync_channel_map[4] >> 5;
+            fields->sync_access_address = (uint32_t)pdu[cursor + 9] |
+                (uint32_t)pdu[cursor + 10] << 8 |
+                (uint32_t)pdu[cursor + 11] << 16 |
+                (uint32_t)pdu[cursor + 12] << 24;
+            fields->sync_crc_init = (uint32_t)pdu[cursor + 13] |
+                (uint32_t)pdu[cursor + 14] << 8 |
+                (uint32_t)pdu[cursor + 15] << 16;
+            fields->sync_event_counter = (uint16_t)pdu[cursor + 16] |
+                (uint16_t)pdu[cursor + 17] << 8;
+            cursor += 18;
+        }
+        if (fields->flags & 0x40) {
+            if (header_end - cursor < 1) return 0;
+            cursor += 1;
+        }
+        if (cursor > header_end) return 0;
+        // ACAD is a sequence of length/type/value structures. Decode the
+        // Periodic Advertising Response Timing Information used by PAwR.
+        while (cursor < header_end) {
+            uint8_t acad_len = pdu[cursor++];
+            if (!acad_len || (size_t)acad_len > header_end - cursor) return 0;
+            uint8_t acad_type = pdu[cursor++];
+            uint8_t value_len = acad_len - 1;
+            if (acad_type == 0x32) {
+                if (fields->has_pawr_timing || value_len != 8) return 0;
+                fields->response_access_address =
+                    (uint32_t)pdu[cursor] |
+                    (uint32_t)pdu[cursor + 1] << 8 |
+                    (uint32_t)pdu[cursor + 2] << 16 |
+                    (uint32_t)pdu[cursor + 3] << 24;
+                fields->pawr_num_subevents = pdu[cursor + 4];
+                fields->pawr_subevent_interval = pdu[cursor + 5];
+                fields->pawr_response_slot_delay = pdu[cursor + 6];
+                fields->pawr_response_slot_spacing = pdu[cursor + 7];
+                if (!gap_access_address_valid(fields->response_access_address) ||
+                    !fields->pawr_num_subevents ||
+                    fields->pawr_num_subevents > 128 ||
+                    (fields->pawr_num_subevents > 1 &&
+                     fields->pawr_subevent_interval < 6) ||
+                    !fields->pawr_response_slot_delay ||
+                    fields->pawr_response_slot_delay == 0xff ||
+                    fields->pawr_response_slot_spacing < 2) return 0;
+                fields->has_pawr_timing = 1;
+            }
+            cursor += value_len;
+        }
+        cursor = header_end;
+    }
+    if (fields->has_pawr_timing && (!fields->has_sync_info ||
+        fields->response_access_address == fields->sync_access_address))
+        return 0;
+    fields->data = pdu + cursor;
+    fields->data_len = (uint16_t)(pdu_len - cursor);
+    return fields->data_len <= MESH_GAP_EXT_ADV_DATA_MAX;
+}
+
+static int gap_ext_adv_discoverable(const uint8_t *data, uint16_t len) {
+    for (uint16_t offset = 0; offset < len;) {
+        uint8_t field_len = data[offset];
+        if (!field_len || (uint32_t)offset + field_len + 1 > len) return 0;
+        if (field_len >= 2 && data[offset + 1] == 0x01) {
+            uint8_t mask = gap_scan_settings.discovery_mode ==
+                MESH_GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
+            return (data[offset + 2] & mask) != 0;
+        }
+        offset += field_len + 1;
+    }
+    return 0;
+}
+
+static int gap_ext_adv_data_valid(const uint8_t *data, uint16_t len) {
+    for (uint16_t offset = 0; offset < len;) {
+        uint8_t field_len = data[offset];
+        if (!field_len || (uint32_t)offset + field_len + 1 > len) return 0;
+        offset += field_len + 1;
+    }
+    return 1;
+}
+
+static void gap_ext_adv_context_clear(uint8_t slot) {
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_ext_adv_contexts[slot];
+    for (size_t i = 0; i < sizeof(gap_ext_adv_contexts[slot]); i++) wipe[i] = 0;
+}
+
+// Queue one fully reassembled extended report after privacy/discovery filters.
+static void gap_ext_adv_report_queue(const uint8_t *address, uint8_t has_address,
+    uint8_t address_type, uint8_t has_adi, uint16_t adi, uint8_t sid,
+    const uint8_t *data, uint16_t data_len, int8_t rssi) {
+    uint8_t zero_address[6] = {0};
+    if (!address) address = zero_address;
+    if (!gap_ext_adv_data_valid(data, data_len)) return;
+    int identity_slot = has_address ? gap_identity_find(address, address_type) : -1;
+    if ((has_address && !gap_peer_allowed(identity_slot, address, address_type)) ||
+        (gap_privacy.scan_filter && identity_slot < 0)) return;
+    if (gap_scan_settings.discovery_mode != MESH_GAP_DISCOVERY_ALL &&
+        !gap_ext_adv_discoverable(data, data_len)) return;
+    uint8_t identity_type = identity_slot >= 0 ?
+        gap_identities[identity_slot].address_type : address_type;
+    const uint8_t *identity = identity_slot >= 0 ?
+        gap_identities[identity_slot].address : address;
+    uint32_t data_hash = gap_ext_adv_hash(data, data_len);
+    if (gap_scan_settings.filter_duplicates) {
+        for (uint8_t i = 0; i < gap_ext_adv_seen_count; i++) {
+            if (gap_ext_adv_seen[i].used &&
+                gap_ext_adv_seen[i].address_type == identity_type &&
+                gap_ext_adv_seen[i].sid == sid &&
+                !memcmp(gap_ext_adv_seen[i].address, identity, 6) &&
+                gap_ext_adv_seen[i].has_adi == has_adi &&
+                ((has_adi && gap_ext_adv_seen[i].did == (adi & 0x0fff)) ||
+                 (!has_adi && gap_ext_adv_seen[i].data_len == data_len &&
+                  gap_ext_adv_seen[i].data_hash == data_hash))) return;
+        }
+        uint8_t slot = gap_ext_adv_seen_count;
+        if (slot == GAP_EXT_ADV_SEEN_COUNT) {
+            slot = gap_ext_adv_seen_next;
+            gap_ext_adv_seen_next = (gap_ext_adv_seen_next + 1) %
+                GAP_EXT_ADV_SEEN_COUNT;
+        } else gap_ext_adv_seen_count++;
+        gap_ext_adv_seen[slot].used = 1;
+        gap_ext_adv_seen[slot].address_type = identity_type;
+        memcpy(gap_ext_adv_seen[slot].address, identity, 6);
+        gap_ext_adv_seen[slot].has_adi = has_adi;
+        gap_ext_adv_seen[slot].sid = sid;
+        gap_ext_adv_seen[slot].did = adi & 0x0fff;
+        gap_ext_adv_seen[slot].data_len = data_len;
+        gap_ext_adv_seen[slot].data_hash = data_hash;
+    }
+    if (gap_ext_adv_report_count == GAP_EXT_ADV_REPORT_COUNT) {
+        gap_ext_adv_report_head = (gap_ext_adv_report_head + 1) %
+            GAP_EXT_ADV_REPORT_COUNT;
+        gap_ext_adv_report_count--;
+    }
+    uint8_t slot = (gap_ext_adv_report_head + gap_ext_adv_report_count) %
+        GAP_EXT_ADV_REPORT_COUNT;
+    mesh_gap_extended_scan_report *report = &gap_ext_adv_reports[slot];
+    report->has_address = has_address;
+    report->address_type = address_type;
+    memcpy(report->address, address, 6);
+    report->resolved = identity_slot >= 0;
+    report->identity_type = identity_type;
+    memcpy(report->identity_address, identity, 6);
+    report->has_adi = has_adi;
+    report->sid = sid;
+    report->did = adi & 0x0fff;
+    report->rssi = rssi;
+    report->data_len = data_len;
+    if (data_len) memcpy(report->data, data, data_len);
+    gap_ext_adv_report_count++;
+}
+
+// Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
+// Auxiliary packets must be passed in the order indicated by their AuxPtr fields.
+int mesh_gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
+                                   size_t pdu_len, int8_t rssi) {
+    if (!gap_scanning || pdu_kind > MESH_GAP_EXT_ADV_AUXILIARY_PDU) return 0;
+    gap_ext_adv_fields fields;
+    if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
+    uint32_t now = GET_MILLIS();
+    for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
+        if (gap_ext_adv_contexts[i].active &&
+            (int32_t)(now - gap_ext_adv_contexts[i].deadline_ms) >= 0)
+            gap_ext_adv_context_clear(i);
+
+    int slot = -1;
+    if (pdu_kind == MESH_GAP_EXT_ADV_PRIMARY_PDU) {
+        if (fields.has_aux_ptr && !fields.has_adi) return 0;
+        if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
+        if (!fields.has_aux_ptr) {
+            if (!gap_ext_adv_data_valid(fields.data, fields.data_len)) return 0;
+            gap_ext_adv_report_queue(fields.address, fields.has_address,
+                fields.address_type, fields.has_adi, fields.adi,
+                fields.has_adi ? fields.sid : 0xff, fields.data,
+                fields.data_len, rssi);
+            return 1;
+        }
+        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+            if (gap_ext_adv_contexts[i].active &&
+                gap_ext_adv_contexts[i].has_adi &&
+                gap_ext_adv_contexts[i].adi == fields.adi &&
+                gap_ext_adv_contexts[i].has_address == fields.has_address &&
+                (!fields.has_address ||
+                 (gap_ext_adv_contexts[i].address_type == fields.address_type &&
+                  !memcmp(gap_ext_adv_contexts[i].address, fields.address, 6)))) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0) {
+            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
+                if (!gap_ext_adv_contexts[i].active) { slot = i; break; }
+        }
+        if (slot < 0) slot = 0;
+        gap_ext_adv_context_clear((uint8_t)slot);
+        gap_ext_adv_contexts[slot].active = 1;
+        gap_ext_adv_contexts[slot].has_address = fields.has_address;
+        gap_ext_adv_contexts[slot].address_type = fields.address_type;
+        memcpy(gap_ext_adv_contexts[slot].address, fields.address, 6);
+        gap_ext_adv_contexts[slot].has_adi = fields.has_adi;
+        gap_ext_adv_contexts[slot].adi = fields.adi;
+        gap_ext_adv_contexts[slot].sid = fields.sid;
+        gap_ext_adv_contexts[slot].await_scan_response = fields.mode == 2;
+        gap_ext_adv_contexts[slot].rssi = rssi;
+    } else {
+        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+            if (!gap_ext_adv_contexts[i].active) continue;
+            if (fields.has_adi && (!gap_ext_adv_contexts[i].has_adi ||
+                gap_ext_adv_contexts[i].adi != fields.adi)) continue;
+            if (fields.has_address && gap_ext_adv_contexts[i].has_address &&
+                (fields.address_type != gap_ext_adv_contexts[i].address_type ||
+                 memcmp(fields.address, gap_ext_adv_contexts[i].address, 6)))
+                continue;
+            if (slot >= 0) return 0; // No ADI and ambiguous active chains.
+            slot = i;
+        }
+        if (slot < 0) return 0;
+        if (fields.has_address) {
+            gap_ext_adv_contexts[slot].has_address = 1;
+            gap_ext_adv_contexts[slot].address_type = fields.address_type;
+            memcpy(gap_ext_adv_contexts[slot].address, fields.address, 6);
+        }
+        if (fields.has_adi) {
+            gap_ext_adv_contexts[slot].has_adi = 1;
+            gap_ext_adv_contexts[slot].adi = fields.adi;
+            gap_ext_adv_contexts[slot].sid = fields.sid;
+        }
+        gap_ext_adv_contexts[slot].rssi = rssi;
+    }
+    if (fields.data_len > MESH_GAP_EXT_ADV_DATA_MAX -
+            gap_ext_adv_contexts[slot].data_len) {
+        gap_ext_adv_context_clear((uint8_t)slot);
+        return 0;
+    }
+    if (fields.data_len) {
+        memcpy(gap_ext_adv_contexts[slot].data +
+            gap_ext_adv_contexts[slot].data_len, fields.data, fields.data_len);
+        gap_ext_adv_contexts[slot].data_len += fields.data_len;
+    }
+    if (fields.has_aux_ptr) {
+        if (fields.aux_offset_zero) {
+            gap_ext_adv_context_clear((uint8_t)slot);
+            return 1;
+        }
+        gap_ext_adv_contexts[slot].deadline_ms =
+            now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+        return 1;
+    }
+    if (gap_ext_adv_contexts[slot].await_scan_response && fields.mode == 2) {
+        // AUX_ADV_IND starts a scannable event; its data arrives in a later
+        // AUX_SCAN_RSP, which may itself be followed by AUX_CHAIN_IND packets.
+        gap_ext_adv_contexts[slot].deadline_ms =
+            now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+        return 1;
+    }
+    if (fields.mode == 0)
+        gap_ext_adv_contexts[slot].await_scan_response = 0;
+    if (!gap_ext_adv_data_valid(gap_ext_adv_contexts[slot].data,
+                                gap_ext_adv_contexts[slot].data_len)) {
+        gap_ext_adv_context_clear((uint8_t)slot);
+        return 0;
+    }
+    gap_ext_adv_report_queue(gap_ext_adv_contexts[slot].address,
+        gap_ext_adv_contexts[slot].has_address,
+        gap_ext_adv_contexts[slot].address_type,
+        gap_ext_adv_contexts[slot].has_adi,
+        gap_ext_adv_contexts[slot].adi,
+        gap_ext_adv_contexts[slot].sid, gap_ext_adv_contexts[slot].data,
+        gap_ext_adv_contexts[slot].data_len, gap_ext_adv_contexts[slot].rssi);
+    gap_ext_adv_context_clear((uint8_t)slot);
+    return 1;
+}
+
+// Return one complete reassembled extended advertising report.
+int mesh_gap_extended_scan_poll(mesh_gap_extended_scan_report *report) {
+    if (!report || !gap_ext_adv_report_count) return 0;
+    *report = gap_ext_adv_reports[gap_ext_adv_report_head];
+    gap_ext_adv_report_head = (gap_ext_adv_report_head + 1) %
+        GAP_EXT_ADV_REPORT_COUNT;
+    gap_ext_adv_report_count--;
+    return 1;
+}
+
+static int gap_periodic_sync_handle_slot(uint8_t handle) {
+    if (!handle || handle > MESH_GAP_PERIODIC_SYNC_COUNT) return -1;
+    uint8_t slot = (uint8_t)(handle - 1);
+    return gap_periodic_syncs[slot].used ? slot : -1;
+}
+
+static void gap_periodic_sync_event_push(
+    const mesh_gap_periodic_sync_event *event) {
+    if (gap_periodic_sync_event_count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
+        gap_periodic_sync_event_head = (gap_periodic_sync_event_head + 1) %
+            GAP_PERIODIC_SYNC_EVENT_COUNT;
+        gap_periodic_sync_event_count--;
+    }
+    uint8_t tail = (gap_periodic_sync_event_head +
+        gap_periodic_sync_event_count) % GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_periodic_sync_events[tail] = *event;
+    gap_periodic_sync_event_count++;
+}
+
+static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
+    mesh_gap_periodic_sync_event event;
+    memset(&event, 0, sizeof(event));
+    event.type = type;
+    event.handle = gap_periodic_syncs[slot].handle;
+    event.sid = gap_periodic_syncs[slot].sid;
+    event.address_type = gap_periodic_syncs[slot].address_type;
+    memcpy(event.address, gap_periodic_syncs[slot].address, 6);
+    gap_periodic_sync_event_push(&event);
+}
+
+static void gap_periodic_sync_owned_scan_finish(void) {
+    if (!gap_periodic_sync_owned_scan) return;
+    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++)
+        if (gap_periodic_syncs[i].used) return;
+    gap_periodic_sync_owned_scan = 0;
+    if (gap_scanning) mesh_gap_scan_stop();
+}
+
+// Request synchronization to one advertiser and SID. Scanning is started
+// automatically when needed; the returned handle identifies later events.
+int mesh_gap_periodic_sync_start(uint8_t address_type,
+    const uint8_t address[6], uint8_t sid, uint32_t timeout_ms) {
+    if (!address || address_type > 1 || sid > 15 || timeout_ms < 100 ||
+        timeout_ms > 163840 || gap_conn.active || gap_central_connect.active)
+        return 0;
+    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++)
+        if (gap_periodic_syncs[i].used &&
+            gap_periodic_syncs[i].sid == sid &&
+            gap_periodic_syncs[i].address_type == address_type &&
+            !memcmp(gap_periodic_syncs[i].address, address, 6)) return 0;
+    int slot = -1;
+    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++)
+        if (!gap_periodic_syncs[i].used) { slot = i; break; }
+    if (slot < 0) return 0;
+    if (!gap_scanning) {
+        gap_scan_start(0);
+        gap_periodic_sync_owned_scan = 1;
+    }
+    memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
+    gap_periodic_syncs[slot].used = 1;
+    gap_periodic_syncs[slot].handle = (uint8_t)(slot + 1);
+    gap_periodic_syncs[slot].sid = sid;
+    gap_periodic_syncs[slot].address_type = address_type;
+    memcpy(gap_periodic_syncs[slot].address, address, 6);
+    gap_periodic_syncs[slot].timeout_ms = timeout_ms;
+    gap_periodic_syncs[slot].last_event_ms = GET_MILLIS();
+    return (uint8_t)(slot + 1);
+}
+
+// Enable receipt of periodic sync transfers from connected peers.
+int mesh_gap_periodic_sync_transfer_enable(uint8_t enabled,
+                                            uint32_t timeout_ms) {
+    if (enabled > 1 || (enabled &&
+        (timeout_ms < 100 || timeout_ms > 163840))) return 0;
+    gap_periodic_sync_transfer_enabled = enabled;
+    if (enabled) gap_periodic_sync_transfer_timeout_ms = timeout_ms;
+    return 1;
+}
+
+// Cancel a request that has not acquired the first periodic event.
+int mesh_gap_periodic_sync_cancel(uint8_t handle) {
+    int slot = gap_periodic_sync_handle_slot(handle);
+    if (slot < 0 || gap_periodic_syncs[slot].established) return 0;
+    gap_periodic_sync_event_post((uint8_t)slot,
+                                 MESH_GAP_PERIODIC_SYNC_CANCELLED);
+    memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
+    gap_periodic_sync_owned_scan_finish();
+    return 1;
+}
+
+// Terminate an acquired periodic synchronization.
+int mesh_gap_periodic_sync_terminate(uint8_t handle) {
+    int slot = gap_periodic_sync_handle_slot(handle);
+    if (slot < 0 || !gap_periodic_syncs[slot].established) return 0;
+    gap_periodic_sync_event_post((uint8_t)slot,
+                                 MESH_GAP_PERIODIC_SYNC_TERMINATED);
+    memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
+    gap_periodic_sync_owned_scan_finish();
+    return 1;
+}
+
+// Select one PAwR subevent and queue one response for its selected slot.
+// The configuration stays selected for later events; each queued response is
+// consumed after transmission. Pass zero data bytes to send an empty response.
+int mesh_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
+    uint8_t response_slot, const uint8_t *data, size_t len) {
+    int slot = gap_periodic_sync_handle_slot(handle);
+    if (slot < 0 || !gap_periodic_syncs[slot].established ||
+        !gap_periodic_syncs[slot].has_pawr_timing ||
+        subevent >= gap_periodic_syncs[slot].pawr_num_subevents ||
+        len > MESH_GAP_PAWR_RESPONSE_DATA_MAX || (!data && len)) return 0;
+    mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    uint32_t subevent_interval_units = sync->pawr_num_subevents > 1 ?
+        sync->pawr_subevent_interval : sync->interval;
+    uint32_t response_start_125us =
+        (uint32_t)sync->pawr_response_slot_delay * 10u +
+        (uint32_t)response_slot * sync->pawr_response_slot_spacing;
+    uint32_t subevent_duration_125us = subevent_interval_units * 10u;
+    uint32_t packet_duration_us = sync->phy == MESH_GAP_PHY_2M ?
+        ((uint32_t)len + 12u) * 4u : ((uint32_t)len + 11u) * 8u;
+    uint32_t slot_spacing_us =
+        (uint32_t)sync->pawr_response_slot_spacing * 125u;
+    if (response_start_125us >= subevent_duration_125us ||
+        packet_duration_us + 150u >= slot_spacing_us ||
+        response_start_125us * 125u + packet_duration_us >=
+            subevent_duration_125us * 125u) return 0;
+    sync->pawr_selected_subevent = subevent;
+    sync->pawr_response_slot = response_slot;
+    sync->pawr_response_data_len = (uint16_t)len;
+    if (len) memcpy(sync->pawr_response_data, data, len);
+    sync->pawr_response_pending = 1;
+    if (!sync->window_active)
+        sync->next_event_ticks = sync->anchor_ticks +
+            HW_TICKS_FROM_US((uint32_t)sync->interval * 1250u +
+                (uint32_t)subevent * sync->pawr_subevent_interval * 1250u);
+    return 1;
+}
+
+int mesh_gap_periodic_sync_event_poll(mesh_gap_periodic_sync_event *event) {
+    if (!event || !gap_periodic_sync_event_count) return 0;
+    *event = gap_periodic_sync_events[gap_periodic_sync_event_head];
+    gap_periodic_sync_event_head = (gap_periodic_sync_event_head + 1) %
+        GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_periodic_sync_event_count--;
+    return 1;
+}
+
+int mesh_gap_periodic_report_poll(mesh_gap_periodic_report *report) {
+    if (!report || !gap_periodic_report_count) return 0;
+    *report = gap_periodic_reports[gap_periodic_report_head];
+    gap_periodic_report_head = (gap_periodic_report_head + 1) %
+        GAP_PERIODIC_REPORT_COUNT;
+    gap_periodic_report_count--;
+    return 1;
+}
+
+static int gap_periodic_sync_info_accept(const gap_ext_adv_fields *fields,
+    uint8_t packet_len, uint8_t packet_phy, uint64_t packet_end_ticks) {
+    if (!fields || !fields->has_sync_info || !fields->has_address ||
+        !fields->has_adi || fields->mode != 0 ||
+        !fields->sync_offset_us || fields->sync_interval < 6 ||
+        !gap_access_address_valid(fields->sync_access_address)) return 0;
+    if (fields->has_pawr_timing && fields->pawr_num_subevents > 1 &&
+        (uint32_t)fields->pawr_num_subevents *
+            fields->pawr_subevent_interval > fields->sync_interval)
+        return 0;
+    uint8_t used_channels = 0;
+    for (uint8_t channel = 0; channel < 37; channel++)
+        if (fields->sync_channel_map[channel >> 3] &
+            (1u << (channel & 7))) used_channels++;
+    if (used_channels < 2) return 0;
+    uint32_t airtime_us = packet_phy == MESH_GAP_PHY_2M ?
+        ((uint32_t)packet_len + 11u) * 4u :
+        ((uint32_t)packet_len + 10u) * 8u;
+    if (fields->sync_offset_us <= airtime_us || packet_end_ticks <
+            HW_TICKS_FROM_US(airtime_us)) return 0;
+
+    int slot = -1;
+    int identity_slot = gap_identity_find(fields->address,
+                                          fields->address_type);
+    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++) {
+        if (gap_periodic_syncs[i].used &&
+            !gap_periodic_syncs[i].established &&
+            gap_periodic_syncs[i].sid == fields->sid &&
+            ((gap_periodic_syncs[i].address_type == fields->address_type &&
+              !memcmp(gap_periodic_syncs[i].address, fields->address, 6)) ||
+             (identity_slot >= 0 &&
+              gap_periodic_syncs[i].address_type ==
+                  gap_identities[identity_slot].address_type &&
+              !memcmp(gap_periodic_syncs[i].address,
+                  gap_identities[identity_slot].address, 6)))) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) return 0;
+    uint64_t packet_start = packet_end_ticks -
+        HW_TICKS_FROM_US(airtime_us);
+    uint64_t target = packet_start +
+        HW_TICKS_FROM_US(fields->sync_offset_us);
+    uint32_t unit_us = fields->sync_offset_unit ? 300u : 30u;
+    uint32_t widening_us = (uint32_t)(((uint64_t)(
+        gap_periodic_sca_ppm[fields->sync_sca] + 500u) *
+        (fields->sync_offset_us + unit_us) + 999999u) / 1000000u) + 2u;
+    uint64_t window_start = target > HW_TICKS_FROM_US(widening_us) ?
+        target - HW_TICKS_FROM_US(widening_us) : 0;
+    uint64_t window_end = target + HW_TICKS_FROM_US(unit_us + widening_us);
+    uint64_t now_ticks = BLE_GAP_HW_TICKS();
+    uint32_t interval_us = (uint32_t)fields->sync_interval * 1250u;
+    uint16_t event_counter = fields->sync_event_counter;
+    uint8_t skipped = 0;
+    while (skipped < 6 && window_end < now_ticks) {
+        target += HW_TICKS_FROM_US(interval_us);
+        event_counter++;
+        skipped++;
+        uint32_t elapsed_us = fields->sync_offset_us +
+            (uint32_t)skipped * interval_us + unit_us;
+        widening_us = (uint32_t)(((uint64_t)(
+            gap_periodic_sca_ppm[fields->sync_sca] + 500u) * elapsed_us +
+            999999u) / 1000000u) + 2u;
+        window_start = target > HW_TICKS_FROM_US(widening_us) ?
+            target - HW_TICKS_FROM_US(widening_us) : 0;
+        window_end = target + HW_TICKS_FROM_US(unit_us + widening_us);
+    }
+    // Sync acquisition expires after six consecutive periodic events are missed.
+    if (window_end < now_ticks || skipped >= 6) return 0;
+
+    memcpy(gap_periodic_syncs[slot].channel_map,
+           fields->sync_channel_map, 5);
+    gap_periodic_syncs[slot].sca = fields->sync_sca;
+    gap_periodic_syncs[slot].has_pawr_timing = fields->has_pawr_timing;
+    gap_periodic_syncs[slot].pawr_num_subevents =
+        fields->pawr_num_subevents;
+    gap_periodic_syncs[slot].pawr_subevent_interval =
+        fields->pawr_subevent_interval;
+    gap_periodic_syncs[slot].pawr_response_slot_delay =
+        fields->pawr_response_slot_delay;
+    gap_periodic_syncs[slot].pawr_response_slot_spacing =
+        fields->pawr_response_slot_spacing;
+    gap_periodic_syncs[slot].response_access_address =
+        fields->response_access_address;
+    gap_periodic_syncs[slot].widening_ppm =
+        (uint16_t)(gap_periodic_sca_ppm[fields->sync_sca] + 500u);
+    gap_periodic_syncs[slot].interval = fields->sync_interval;
+    gap_periodic_syncs[slot].phy = packet_phy;
+    gap_periodic_syncs[slot].address_type = fields->address_type;
+    memcpy(gap_periodic_syncs[slot].address, fields->address, 6);
+    gap_periodic_syncs[slot].event_counter = event_counter;
+    gap_periodic_syncs[slot].access_address = fields->sync_access_address;
+    gap_periodic_syncs[slot].crc_init = fields->sync_crc_init;
+    gap_periodic_syncs[slot].did = fields->adi & 0x0fff;
+    gap_periodic_syncs[slot].anchor_ticks = packet_start;
+    gap_periodic_syncs[slot].next_event_ticks = target;
+    gap_periodic_syncs[slot].window_start_ticks = window_start;
+    gap_periodic_syncs[slot].window_end_ticks = window_end;
+    gap_periodic_syncs[slot].window_active = 1;
+    gap_periodic_syncs[slot].window_chain = 0;
+    gap_periodic_syncs[slot].missed_events = skipped;
+    return 1;
+}
+
+static void gap_periodic_report_push(uint8_t slot) {
+    if (gap_periodic_report_count == GAP_PERIODIC_REPORT_COUNT) {
+        gap_periodic_report_head = (gap_periodic_report_head + 1) %
+            GAP_PERIODIC_REPORT_COUNT;
+        gap_periodic_report_count--;
+    }
+    uint8_t tail = (gap_periodic_report_head + gap_periodic_report_count) %
+        GAP_PERIODIC_REPORT_COUNT;
+    mesh_gap_periodic_report *report = &gap_periodic_reports[tail];
+    report->handle = gap_periodic_syncs[slot].handle;
+    report->sid = gap_periodic_syncs[slot].sid;
+    report->event_counter = gap_periodic_syncs[slot].current_event_counter;
+    report->did = gap_periodic_syncs[slot].did;
+    report->rssi = gap_periodic_syncs[slot].rssi;
+    report->data_len = gap_periodic_syncs[slot].data_len;
+    if (report->data_len)
+        memcpy(report->data, gap_periodic_syncs[slot].data, report->data_len);
+    gap_periodic_report_count++;
+}
+
+// Reassemble one AUX_SYNC_IND and its AUX_CHAIN_IND subordinate packets.
+static int gap_periodic_sync_receive(uint8_t slot, const uint8_t *pdu,
+    size_t pdu_len, uint8_t packet_phy, int8_t rssi,
+    uint64_t received_ticks) {
+    if (slot >= MESH_GAP_PERIODIC_SYNC_COUNT ||
+        !gap_periodic_syncs[slot].used) return 0;
+    gap_ext_adv_fields fields;
+    if (!gap_ext_adv_decode(pdu, pdu_len, &fields) || fields.mode != 0)
+        return 0;
+    if (fields.has_adi && fields.sid != gap_periodic_syncs[slot].sid)
+        return 0;
+    uint8_t was_chain = gap_periodic_syncs[slot].event_data_active;
+    if (!was_chain) {
+        uint32_t airtime_us = packet_phy == MESH_GAP_PHY_2M ?
+            ((uint32_t)pdu[1] + 11u) * 4u :
+            ((uint32_t)pdu[1] + 10u) * 8u;
+        if (received_ticks < HW_TICKS_FROM_US(airtime_us)) return 0;
+        uint64_t packet_start = received_ticks -
+            HW_TICKS_FROM_US(airtime_us);
+        gap_periodic_syncs[slot].anchor_ticks = packet_start;
+        gap_periodic_syncs[slot].next_event_ticks = packet_start +
+            HW_TICKS_FROM_US((uint32_t)gap_periodic_syncs[slot].interval * 1250u +
+                (uint32_t)gap_periodic_syncs[slot].pawr_selected_subevent *
+                gap_periodic_syncs[slot].pawr_subevent_interval * 1250u);
+        gap_periodic_syncs[slot].current_event_counter =
+            gap_periodic_syncs[slot].event_counter;
+        gap_periodic_syncs[slot].event_counter++;
+        gap_periodic_syncs[slot].missed_events = 0;
+        gap_periodic_syncs[slot].widening_ppm =
+            (uint16_t)(gap_periodic_sca_ppm[
+                gap_periodic_syncs[slot].sca] + 500u);
+        gap_periodic_syncs[slot].last_event_ms = GET_MILLIS();
+        gap_periodic_syncs[slot].data_len = 0;
+        if (fields.has_adi)
+            gap_periodic_syncs[slot].did = fields.adi & 0x0fff;
+        if (!gap_periodic_syncs[slot].established) {
+            gap_periodic_syncs[slot].established = 1;
+            gap_periodic_sync_event_post(slot,
+                                         MESH_GAP_PERIODIC_SYNC_ESTABLISHED);
+        }
+    }
+    gap_periodic_syncs[slot].rssi = rssi;
+    gap_periodic_syncs[slot].phy = packet_phy;
+    if (fields.data_len > MESH_GAP_EXT_ADV_DATA_MAX -
+            gap_periodic_syncs[slot].data_len) {
+        gap_periodic_syncs[slot].event_data_active = 0;
+        gap_periodic_syncs[slot].data_len = 0;
+        return 0;
+    }
+    if (fields.data_len) {
+        memcpy(gap_periodic_syncs[slot].data +
+            gap_periodic_syncs[slot].data_len, fields.data, fields.data_len);
+        gap_periodic_syncs[slot].data_len += fields.data_len;
+    }
+    if (fields.has_aux_ptr && !fields.aux_offset_zero) {
+        gap_periodic_syncs[slot].event_data_active = 1;
+        return 1;
+    }
+    gap_periodic_syncs[slot].event_data_active = 0;
+    if (!gap_ext_adv_data_valid(gap_periodic_syncs[slot].data,
+                                gap_periodic_syncs[slot].data_len)) {
+        gap_periodic_syncs[slot].data_len = 0;
+        return 0;
+    }
+    gap_periodic_report_push(slot);
+    gap_periodic_syncs[slot].data_len = 0;
+    return 1;
+}
+#endif
 
 #include "ble_gap_connection.h"
 

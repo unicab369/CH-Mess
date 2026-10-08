@@ -49,6 +49,9 @@ enum {
 #ifndef MESH_GATT_EAD_SUPPORT
 #define MESH_GATT_EAD_SUPPORT 0
 #endif
+#ifndef MESH_GATT_RPA_ONLY_SUPPORT
+#define MESH_GATT_RPA_ONLY_SUPPORT 0
+#endif
 
 enum {
     MESH_GATT_HANDLE_PROXY_SERVICE = 1,
@@ -74,9 +77,14 @@ enum {
     MESH_GATT_HANDLE_GAP_CAR = 21,
     MESH_GATT_HANDLE_GAP_SECURITY_LEVELS_DECL = 22,
     MESH_GATT_HANDLE_GAP_SECURITY_LEVELS = 23,
+#if MESH_GATT_RPA_ONLY_SUPPORT
+    MESH_GATT_HANDLE_GAP_RPA_ONLY_DECL = 24,
+    MESH_GATT_HANDLE_GAP_RPA_ONLY = 25,
+#endif
 #if MESH_GATT_EAD_SUPPORT
-    MESH_GATT_HANDLE_GAP_EDKM_DECL = 24,
-    MESH_GATT_HANDLE_GAP_EDKM = 25
+    MESH_GATT_HANDLE_GAP_EDKM_DECL =
+        24 + (MESH_GATT_RPA_ONLY_SUPPORT ? 2 : 0),
+    MESH_GATT_HANDLE_GAP_EDKM = MESH_GATT_HANDLE_GAP_EDKM_DECL + 1
 #endif
 };
 
@@ -97,6 +105,7 @@ typedef void (*mesh_gatt_provisioning_link_fn)(uint8_t open, void *context);
 #define MESH_GATT_GAP_APPEARANCE_UUID 0x2A01
 #define MESH_GATT_GAP_PPCP_UUID 0x2A04
 #define MESH_GATT_GAP_CAR_UUID 0x2AA6
+#define MESH_GATT_GAP_RPA_ONLY_UUID 0x2AC9
 #define MESH_GATT_GAP_SECURITY_LEVELS_UUID 0x2BF5
 #define MESH_GATT_GAP_EDKM_UUID 0x2B88
 #define MESH_GATT_DEVICE_NAME_MAX 248
@@ -342,6 +351,10 @@ static int mesh_gatt_register_services(void) {
     ble_gatt_uuid gap_car = mesh_gatt_uuid16(MESH_GATT_GAP_CAR_UUID);
     ble_gatt_uuid gap_security_levels =
         mesh_gatt_uuid16(MESH_GATT_GAP_SECURITY_LEVELS_UUID);
+#if MESH_GATT_RPA_ONLY_SUPPORT
+    ble_gatt_uuid gap_rpa_only_uuid =
+        mesh_gatt_uuid16(MESH_GATT_GAP_RPA_ONLY_UUID);
+#endif
 #if MESH_GATT_EAD_SUPPORT
     ble_gatt_uuid gap_edkm = mesh_gatt_uuid16(MESH_GATT_GAP_EDKM_UUID);
 #endif
@@ -381,6 +394,11 @@ static int mesh_gatt_register_services(void) {
     // The server's strongest attribute requirement is authenticated LE
     // security mode 1, level 3 (Device Name when not discoverable).
     const uint8_t gap_security_level_requirements[2] = {1, 3};
+#if MESH_GATT_RPA_ONLY_SUPPORT
+    // Opting in declares that the product uses only RPAs as its local address
+    // after bonding; zero is the sole defined value for this characteristic.
+    const uint8_t gap_rpa_only_value = 0;
+#endif
     if (!ble_gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
             &service) ||
         !ble_gatt_server_add_characteristic(&mesh_gatt.server,
@@ -406,6 +424,13 @@ static int mesh_gatt_register_services(void) {
             sizeof(gap_security_level_requirements),
             sizeof(gap_security_level_requirements), NULL, NULL, NULL,
             &decl, &value)) return 0;
+#if MESH_GATT_RPA_ONLY_SUPPORT
+    if (!ble_gatt_server_add_characteristic(&mesh_gatt.server,
+            &gap_rpa_only_uuid,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            &gap_rpa_only_value, 1, 1, NULL, NULL, NULL,
+            &decl, &value)) return 0;
+#endif
 #if MESH_GATT_EAD_SUPPORT
     if (!ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
             BLE_GATT_PROP_READ,
@@ -415,11 +440,9 @@ static int mesh_gatt_register_services(void) {
 #endif
     if (!mesh_gatt_transport_init(&mesh_gatt.transport,
                                   &mesh_gatt.server)) return 0;
-#if MESH_GATT_EAD_SUPPORT
-    return mesh_gatt.server.next_handle == 26;
-#else
-    return mesh_gatt.server.next_handle == 24;
-#endif
+    return mesh_gatt.server.next_handle ==
+        24 + (MESH_GATT_RPA_ONLY_SUPPORT ? 2 : 0) +
+        (MESH_GATT_EAD_SUPPORT ? 2 : 0);
 }
 
 static int mesh_gatt_ensure_initialized(void) {

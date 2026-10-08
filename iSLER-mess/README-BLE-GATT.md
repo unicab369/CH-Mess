@@ -59,16 +59,22 @@ adapters and application services belong outside these generic modules.
   auto-populate a registered 0x2B2A characteristic when sealing the database,
   and validate the standalone AES-CMAC primitive against RFC 4493 vectors.
 - [x] Provide a standard Generic Attribute service builder with Service
-  Changed and Database Hash characteristics; queue inclusive handle-range
-  indications through the normal indication/CCCD path.
+  Changed, Database Hash, and Client Supported Features characteristics; queue
+  inclusive handle-range indications through the normal indication/CCCD path.
+- [x] Keep Client Supported Features per connection, reject clearing
+  previously set or reserved bits, and allow bonded-peer load/store callbacks;
+  validate its format at database sealing and require it in manually
+  registered Generic Attribute services exposing both Service Changed and
+  Database Hash.
+- [x] Send queued notifications in ATT Multiple Handle Value Notification
+  format when the connected client enables that Client Supported Features bit;
+  keep each tuple whole and within the negotiated MTU.
 - [x] Allow application callbacks to load/store the Database Hash per bonded
   peer, compare it after CCCD restoration, queue a full-range Service Changed
   indication on mismatch (including when indications are enabled later), and
   store the new hash only after confirmation.
   Runtime database mutation remains unsupported; changes are detected after a
   reboot or firmware update.
-- [ ] Audit ATT command behavior, malformed requests, property/permission
-  consistency, and boundary cases against the Core ATT requirements.
 - [x] Add optional signed-write support through application sign/verify
   callbacks; the application owns CSRKs and replay-resistant sign counters.
 - [x] Keep characteristic properties and read/write permissions consistent,
@@ -141,16 +147,33 @@ adapters and application services belong outside these generic modules.
   both client/server directions; verify CCCD subscription,
   notification delivery, and indication confirmation with the C client and
   Bumble server; verify Insufficient Encryption and Insufficient
-  Authentication errors in both directions with protected attributes on each
-  server, Insufficient Authorization from the C server to Bumble, and the
-  Read Blob value-end/Invalid Offset boundary on the C server; read and write
-  the User Description descriptor when Writable Auxiliaries is enabled;
+  Authentication, Insufficient Authorization, and Encryption Key Size Too
+  Short errors in both directions; verify signed-write CMACs in both directions
+  and reject a replayed sign counter; verify the Read Blob value-end/Invalid
+  Offset boundary on the C server; read and write
+  the User Description descriptor when Writable Auxiliaries is enabled; read,
+  persist, and enforce monotonic Client Supported Features updates;
   independently recompute the C server's Database Hash and receive/confirm
   Service Changed through Bumble.
-- [ ] Verify remaining procedures and security behavior against an independent
-  BLE implementation.
+
+### Conformance and remaining validation
+
+- [x] Audit implemented ATT request/response pairs against Core 6.2; test
+  malformed lengths across request and command opcodes, unknown opcodes,
+  command no-response behavior, malformed confirmations, MTU limits, response
+  capacity, and unchanged state after rejected requests.
+- [x] Cross-check characteristic properties against attribute permissions,
+  standard descriptor rules, security error selection, and fixed/variable
+  value boundaries. Unit tests cover invalid combinations and side effects;
+  Bumble interop checks the externally visible security errors and writes.
+- [x] Verify signed-write CMAC generation and verification in both directions
+  with an independent Python CMAC implementation, reject replayed sign
+  counters, and check minimum encryption key size and authorization errors in
+  both client/server directions.
 - [ ] Exercise MTU exchange, long values, reliable writes, notifications,
-  indications, disconnect cleanup, and security errors on hardware.
+  indications, disconnect cleanup, and security errors on BLE hardware.
+  Independent host-side interop covers these procedures; this final check
+  requires a BLE radio and target firmware.
 
 The optional independent tests use Bumble and a local C fixture (no Bluetooth
 radio is needed). From `iSLER-mess`, create the test environment once, install
@@ -162,6 +185,48 @@ python3 -m venv .venv-ble-gatt
 ./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_interop.py
 ./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_client_interop.py
 ```
+
+### EATT completion checklist
+
+EATT is a separate optional extension to the fixed ATT bearer above. Keep the
+GATT database and ATT procedures shared, and put EATT channel management in
+`ble_gatt_eatt.h`. `BLE_GATT_ENABLE_EATT` should allow fixed-bearer-only builds
+to omit EATT code and per-bearer storage.
+
+- [ ] Add the `BLE_GATT_ENABLE_EATT` compile-time option, default it off, and
+  verify EATT-specific code and storage are excluded from fixed-bearer-only
+  builds.
+- [ ] Define platform callbacks for opening, accepting, sending on, and
+  closing LE Credit Based Flow Control channels used by EATT. Keep EATT
+  independent of Mesh and reusable by the generic GATT transport.
+- [ ] Implement EATT channel setup on the EATT PSM, including encryption
+  requirements, dynamic channel IDs, MTU negotiation (minimum ATT MTU 64),
+  credit replenishment, reconfiguration, collision handling, rejection, and
+  teardown.
+- [ ] Add an EATT bearer manager in `ble_gatt_eatt.h`. Support multiple
+  simultaneous bearers per LE connection while retaining the existing fixed
+  ATT bearer and its behavior.
+- [ ] Refactor transport routing so each bearer has its own channel ID,
+  fragmentation/reassembly buffers, MTU, transmit queue, and failure state.
+  Route every response and confirmation back on the bearer where its
+  transaction began.
+- [ ] Separate per-bearer ATT transaction state from shared connection state.
+  Permit one outstanding request per bearer; isolate transaction timeouts and
+  bearer failures so an EATT failure does not unnecessarily drop the LE link.
+  Keep the attribute database and connection-scoped CCCD and Client Supported
+  Features state shared, and make concurrent server operations atomic across
+  bearers.
+- [ ] Enforce EATT-specific ATT rules, including rejecting Signed Write
+  Commands on EATT bearers, and apply each bearer's negotiated MTU to its
+  procedures and notifications.
+- [ ] Test channel negotiation, multiple concurrent client requests,
+  simultaneous client/server roles, per-bearer indication confirmation,
+  shared attribute writes, credits, MTU boundaries, timeout/recovery, and
+  disconnect cleanup with deterministic fake L2CAP channels.
+- [ ] Verify EATT interoperation against an independent implementation, then
+  test with BLE hardware. Build and run the existing suite both with EATT
+  disabled and enabled, including size and configuration checks for
+  fixed-bearer-only builds.
 
 The stack is complete for this project when the checked procedures and
 validation above are finished. EATT, BR/EDR ATT, and SIG-defined service

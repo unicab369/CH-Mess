@@ -8,6 +8,7 @@ int mesh_gap_pair(void);
 
 #include "../mesh_crypto.h"
 #define MESH_GATT_EAD_SUPPORT 1
+#define MESH_GATT_RPA_ONLY_SUPPORT 1
 #include "../ble_gatt_mesh.h"
 
 static uint8_t received_type, received_pdu[64];
@@ -66,7 +67,7 @@ static void set_cccd(uint16_t handle, uint16_t value) {
 
 static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt_ensure_initialized());
-    assert(mesh_gatt.server.count == 25);
+    assert(mesh_gatt.server.count == 27);
     assert(mesh_gatt.server.attributes[0].handle ==
            MESH_GATT_HANDLE_PROXY_SERVICE);
     assert(ble_gatt_server_u16(ble_gatt_attribute_value(&mesh_gatt.server,
@@ -101,6 +102,8 @@ static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_SECURITY_LEVELS - 1].permissions ==
            BLE_GATT_PERM_READ);
+    assert(mesh_gatt.server.attributes[
+           MESH_GATT_HANDLE_GAP_RPA_ONLY - 1].permissions == BLE_GATT_PERM_READ);
     assert(mesh_gatt.server.attributes[MESH_GATT_HANDLE_GAP_EDKM - 1].permissions ==
            (BLE_GATT_PERM_READ_AUTHENTICATED |
             BLE_GATT_PERM_READ_AUTHORIZED));
@@ -171,6 +174,13 @@ static void test_gap_service_characteristics(void) {
         &response_len) == 1);
     assert(response[0] == 0x0b && response_len == 3 &&
            response[1] == 1 && response[2] == 3);
+
+    const uint8_t read_rpa_only[] = {
+        0x0a, MESH_GATT_HANDLE_GAP_RPA_ONLY, 0
+    };
+    assert(ble_gatt_server_att(&mesh_gatt.server, read_rpa_only,
+        sizeof(read_rpa_only), response, sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x0b && response_len == 2 && response[1] == 0);
 
     uint8_t session_key[16], iv[8], material[24];
     for (uint8_t i = 0; i < sizeof(session_key); i++) session_key[i] = i + 1;

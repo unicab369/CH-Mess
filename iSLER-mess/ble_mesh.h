@@ -194,6 +194,7 @@ static struct {
 // auto-switching at the TX rate. This must arm RX within the peer's 150 us IFS;
 // verify the adapter timing on hardware.
 void gap_hw_radio_transmitted(void) {
+    gap_hw_mesh_transmitted();
     if (gap_radio_link.receive_after_tx && gap_radio_link.tx_phy != gap_radio_link.rx_phy) {
         iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,
                        gap_radio_link.rx_phy, NULL, 0);
@@ -453,7 +454,10 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (rssi) *rssi = 127;
     mesh_gatt_poll();
     int connection_busy = mesh_gap_conn_busy();
-    if (connection_busy) mesh_gap_conn_poll();
+    if (connection_busy) {
+        mesh_gap_conn_poll();
+        gap_hw_mesh_scan_poll();
+    }
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
         if (*len < mesh_gatt_rx_queue[slot].len) return -1;

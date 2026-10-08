@@ -1745,6 +1745,108 @@ static void test_transactional_prepare_callbacks(void) {
            state.commits == 2 && state.cancels == 2);
 }
 
+static void test_multiple_handle_notifications_requires_client_feature(void) {
+    ble_gatt_server server;
+    ble_gatt_standard_service_handles standard = {0};
+    ble_gatt_server_init(&server, 23);
+    assert(ble_gatt_server_add_standard_gatt_service(&server, &standard));
+    ble_gatt_uuid service_uuid = uuid16(0x180f);
+    ble_gatt_uuid first_uuid = uuid16(0xffe8), second_uuid = uuid16(0xffe9);
+    ble_gatt_uuid cccd_uuid = uuid16(0x2902);
+    uint16_t service, decl, first, first_cccd, second, second_cccd;
+    assert(ble_gatt_server_add_service(&server, &service_uuid, 1, &service));
+    assert(ble_gatt_server_add_characteristic(&server, &first_uuid,
+        BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL, &decl, &first));
+    assert(ble_gatt_server_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
+        NULL, NULL, NULL, &first_cccd));
+    assert(ble_gatt_server_add_characteristic(&server, &second_uuid,
+        BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL, &decl, &second));
+    assert(ble_gatt_server_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
+        NULL, NULL, NULL, &second_cccd));
+    uint8_t response[23], a[] = {0xa1}, b[] = {0xb2, 0xb3};
+    uint16_t response_len;
+    assert(ble_gatt_server_set_cccd(&server, first, 1));
+    assert(ble_gatt_server_set_cccd(&server, second, 1));
+    assert(ble_gatt_server_queue_event(&server, first, a, sizeof(a), 0));
+    assert(ble_gatt_server_queue_event(&server, second, b, sizeof(b), 0));
+    assert(ble_gatt_server_poll_event(&server, 0, response,
+        sizeof(response), &response_len) == 1);
+    assert(response_len == 4 && response[0] == 0x1b);
+    assert(server.event_count == 1);
+    assert(ble_gatt_server_poll_event(&server, 0, response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x1b && server.event_count == 0);
+
+    uint8_t enable[] = {0x12,
+        (uint8_t)standard.client_supported_features_handle,
+        (uint8_t)(standard.client_supported_features_handle >> 8), 0x04};
+    assert(att(&server, enable, sizeof(enable), response, &response_len) == 1);
+    assert(ble_gatt_server_queue_event(&server, first, a, sizeof(a), 0));
+    assert(ble_gatt_server_queue_event(&server, second, b, sizeof(b), 0));
+    assert(ble_gatt_server_poll_event(&server, 1, response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == 0x23 && response_len == 12 &&
+           ble_gatt_server_u16(response + 1) == first &&
+           ble_gatt_server_u16(response + 3) == sizeof(a) &&
+           response[5] == a[0] &&
+           ble_gatt_server_u16(response + 6) == second &&
+           ble_gatt_server_u16(response + 8) == sizeof(b) &&
+           !memcmp(response + 10, b, sizeof(b)) && server.event_count == 0);
+}
+
+static void test_att_malformed_lengths_and_command_behavior(void) {
+    static const struct {
+        uint8_t opcode, length, no_response;
+    } cases[] = {
+        {0x02, 2, 0}, {0x04, 4, 0}, {0x06, 6, 0}, {0x08, 6, 0},
+        {0x0a, 2, 0}, {0x0c, 4, 0}, {0x0e, 4, 0}, {0x10, 6, 0},
+        {0x12, 2, 0}, {0x16, 4, 0}, {0x18, 1, 0}, {0x20, 4, 0},
+        {0x52, 2, 1}, {0xd2, 14, 1}
+    };
+    ble_gatt_server server;
+    ble_gatt_server_init(&server, 23);
+    uint8_t request[24] = {0}, response[23];
+    uint16_t response_len;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        memset(request, 0, sizeof(request));
+        request[0] = cases[i].opcode;
+        int result = ble_gatt_server_att(&server, request, cases[i].length,
+            response, sizeof(response), &response_len);
+        if (cases[i].no_response) {
+            assert(result == 0 && response_len == 0);
+        } else {
+            assert(result == 1 && response_len == 5 && response[0] == 0x01 &&
+                   response[1] == cases[i].opcode && response[4] == 0x04);
+        }
+        assert(!server.mtu_exchanged && server.mtu == 23 &&
+               server.prepare_count == 0 && server.event_count == 0);
+    }
+
+    request[0] = 0x25; // Unknown request opcode.
+    assert(ble_gatt_server_att(&server, request, 1, response,
+        sizeof(response), &response_len) == 1);
+    assert(response_len == 5 && response[0] == 0x01 && response[4] == 0x06);
+
+    request[0] = 0x1e; // A malformed confirmation fails the bearer unchanged.
+    server.indication_pending = 1;
+    server.indication_handle = 7;
+    assert(ble_gatt_server_att(&server, request, 2, response,
+        sizeof(response), &response_len) == -1);
+    assert(server.indication_pending && server.indication_handle == 7);
+
+    request[0] = 0x02; // No MTU state change when the response cannot fit.
+    request[1] = 64;
+    uint8_t too_small[2];
+    assert(ble_gatt_server_att(&server, request, 3, too_small,
+        sizeof(too_small), &response_len) == 0);
+    assert(!server.mtu_exchanged && server.mtu == 23);
+
+    request[0] = 0x52; // Oversized command is silently ignored.
+    assert(ble_gatt_server_att(&server, request, sizeof(request), response,
+        sizeof(response), &response_len) == 0);
+    assert(response_len == 0);
+}
+
 int main(void) {
     test_database_registration_and_handles();
     test_database_seal_requires_property_descriptors();
@@ -1774,6 +1876,8 @@ int main(void) {
     test_write_command();
     test_read_multiple();
     test_notifications_and_indications();
+    test_multiple_handle_notifications_requires_client_feature();
+    test_att_malformed_lengths_and_command_behavior();
     test_attribute_value_limit_and_notification_truncation();
     test_prepare_execute_writes();
     test_transactional_prepare_callbacks();

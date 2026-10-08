@@ -10,6 +10,14 @@ static int att(ble_gatt_server *server, const uint8_t *request,
                                BLE_GATT_SERVER_MTU_MAX, response_len);
 }
 
+static uint8_t load_client_features(void *context) {
+    return *(uint8_t *)context;
+}
+
+static void store_client_features(void *context, uint8_t features) {
+    *(uint8_t *)context = features;
+}
+
 int main(void) {
     ble_gatt_server server;
     ble_gatt_standard_service_handles handles;
@@ -71,5 +79,47 @@ int main(void) {
     ble_gatt_standard_service_handles duplicate;
     assert(!ble_gatt_server_add_standard_gatt_service(&server, &duplicate));
     assert(server.database_sealed);
+
+    ble_gatt_server_init(&server, 64);
+    assert(ble_gatt_server_add_standard_gatt_service(&server, &handles));
+    assert(handles.client_supported_features_handle == 8);
+    assert(ble_gatt_server_seal_database(&server));
+    uint8_t persisted_features = BLE_GATT_CLIENT_FEATURE_ROBUST_CACHING |
+        BLE_GATT_CLIENT_FEATURE_MULTIPLE_HANDLE_NOTIFICATIONS;
+    ble_gatt_server_set_client_features_persistence(&server,
+        load_client_features, store_client_features, &persisted_features);
+    ble_gatt_server_link_reset(&server);
+    ble_gatt_server_restore_client_features(&server);
+    ble_gatt_attribute *features = ble_gatt_server_find(
+        &server, handles.client_supported_features_handle);
+    assert(features && features->value_len == 1 &&
+        *ble_gatt_attribute_value(&server, features) == persisted_features);
+
+    uint8_t clear_feature[] = {0x12,
+        (uint8_t)handles.client_supported_features_handle,
+        (uint8_t)(handles.client_supported_features_handle >> 8),
+        BLE_GATT_CLIENT_FEATURE_ROBUST_CACHING};
+    assert(att(&server, clear_feature, sizeof(clear_feature), response,
+               &response_len) == 1);
+    assert(response[0] == 0x01 &&
+           response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED &&
+           persisted_features == (BLE_GATT_CLIENT_FEATURE_ROBUST_CACHING |
+               BLE_GATT_CLIENT_FEATURE_MULTIPLE_HANDLE_NOTIFICATIONS));
+
+    uint8_t set_feature[] = {0x12,
+        (uint8_t)handles.client_supported_features_handle,
+        (uint8_t)(handles.client_supported_features_handle >> 8),
+        BLE_GATT_CLIENT_FEATURE_MASK};
+    assert(att(&server, set_feature, sizeof(set_feature), response,
+               &response_len) == 1 && response[0] == 0x13);
+    assert(persisted_features == BLE_GATT_CLIENT_FEATURE_MASK &&
+        *ble_gatt_attribute_value(&server, features) ==
+            BLE_GATT_CLIENT_FEATURE_MASK);
+
+    ble_gatt_server_link_reset(&server);
+    assert(*ble_gatt_attribute_value(&server, features) == 0);
+    ble_gatt_server_restore_client_features(&server);
+    assert(*ble_gatt_attribute_value(&server, features) ==
+           BLE_GATT_CLIENT_FEATURE_MASK);
     return 0;
 }

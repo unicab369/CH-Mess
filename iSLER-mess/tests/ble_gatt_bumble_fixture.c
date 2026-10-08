@@ -2,12 +2,39 @@
 #include <stdio.h>
 #include "../ble_gatt_server.h"
 
-static int deny_application_access(void *context, uint16_t handle,
-                                   uint8_t write) {
+static uint8_t application_authorized;
+static uint32_t peer_sign_counter;
+
+static int authorize_application_access(void *context, uint16_t handle,
+                                        uint8_t write) {
     (void)context;
     (void)handle;
     (void)write;
-    return 0;
+    return application_authorized;
+}
+
+static int verify_peer_signed_write(void *context, const uint8_t *pdu,
+                                    uint16_t signed_len,
+                                    const uint8_t signature[12]) {
+    (void)context;
+    static const uint8_t csrk[16] = {
+        0x61, 0x1b, 0x64, 0xeb, 0xfb, 0xcd, 0x1f, 0xd3,
+        0x72, 0xec, 0x91, 0x96, 0xdf, 0x42, 0x5e, 0x50
+    };
+    uint32_t counter = (uint32_t)signature[0] |
+        (uint32_t)signature[1] << 8 | (uint32_t)signature[2] << 16 |
+        (uint32_t)signature[3] << 24;
+    if (counter <= peer_sign_counter) return 0;
+    uint8_t mac[16];
+    ble_gatt_cmac cmac;
+    ble_gatt_cmac_init(&cmac, csrk);
+    ble_gatt_cmac_update(&cmac, pdu, signed_len);
+    ble_gatt_cmac_update(&cmac, signature, 4);
+    ble_gatt_cmac_final(&cmac, mac);
+    for (uint8_t i = 0; i < 8; i++)
+        if (signature[4 + i] != mac[7 - i]) return 0;
+    peer_sign_counter = counter;
+    return 1;
 }
 
 int main(void) {
@@ -28,11 +55,13 @@ int main(void) {
     ble_gatt_uuid car_uuid = {2, {0xa6, 0x2a}};
     ble_gatt_uuid security_levels_uuid = {2, {0xf5, 0x2b}};
     ble_gatt_uuid edkm_uuid = {2, {0x88, 0x2b}};
+    ble_gatt_uuid signed_uuid = {2, {0xf0, 0xff}};
     uint8_t initial[70];
     const uint8_t writable_auxiliaries[] = {2, 0};
     for (uint8_t i = 0; i < sizeof(initial); i++) initial[i] = i;
     uint16_t service, declaration, value, descriptor, aggregate;
     uint16_t protected_value, authenticated_value, authorized_value;
+    uint16_t signed_declaration, signed_value;
     uint8_t appearance[2] = {0, 0};
     const uint8_t ppcp[8] = {0xff, 0xff, 0xff, 0xff,
                               0xff, 0xff, 0xff, 0xff};
@@ -97,8 +126,18 @@ int main(void) {
             BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
             edkm, sizeof(edkm), sizeof(edkm), NULL, NULL, NULL,
             &declaration, &value) ||
+        !ble_gatt_server_add_characteristic(&server, &signed_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_AUTH_SIGNED_WRITE,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_SIGNED,
+            (const uint8_t *)"\0", 1, 1, NULL, NULL, NULL,
+            &signed_declaration, &signed_value) ||
+        !ble_gatt_server_set_min_key_size(&server, authorized_value, 12) ||
         !ble_gatt_server_seal_database(&server)) return 2;
-    ble_gatt_server_set_authorizer(&server, deny_application_access, NULL);
+    (void)signed_declaration;
+    ble_gatt_server_set_authorizer(&server,
+        authorize_application_access, NULL);
+    ble_gatt_server_set_signed_write_verifier(&server,
+        verify_peer_signed_write, NULL);
 
     uint8_t request[BLE_GATT_SERVER_MTU_MAX];
     uint8_t response[BLE_GATT_SERVER_MTU_MAX];
@@ -110,8 +149,18 @@ int main(void) {
         if (!request_len || request_len > sizeof(request) ||
             fread(request, 1, request_len, stdin) != request_len) return 3;
         uint16_t response_len = 0;
-        int has_response = ble_gatt_server_att(&server, request, request_len,
-            response, sizeof(response), &response_len);
+        int has_response;
+        // Harness-only link state control; this is not an ATT PDU sent by a
+        // peer. It lets interop tests exercise security error selection.
+        if (request_len == 4 && request[0] == 0xf0) {
+            server.encrypted = request[1] != 0;
+            server.encryption_key_size = request[2];
+            application_authorized = request[3] != 0;
+            has_response = 0;
+        } else {
+            has_response = ble_gatt_server_att(&server, request,
+                request_len, response, sizeof(response), &response_len);
+        }
         uint8_t event[BLE_GATT_SERVER_MTU_MAX];
         uint16_t event_len = 0;
         if (request[0] == 0x12 && request_len == 5 &&
