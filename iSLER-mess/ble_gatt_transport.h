@@ -1,9 +1,9 @@
 #ifndef BLE_GATT_TRANSPORT_H
 #define BLE_GATT_TRANSPORT_H
 
-// Single-link ATT/L2CAP adapter. Supply these operations from the platform's
-// GAP connection layer; LL fragments remain owned by that layer. The server
-// and client roles are independently optional; attach at least one role.
+// One-link ATT/L2CAP adapter. Create one instance per LE connection and supply
+// its operations from the GAP layer; LL fragments remain owned by that layer.
+// The server and client roles are independently optional; attach at least one.
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -20,7 +20,12 @@
 #define BLE_GATT_TRANSPORT_MTU_MAX BLE_GATT_SERVER_MTU_MAX
 #endif
 
-#define BLE_GATT_TRANSPORT_ATT_CID 0x0004
+#ifndef BLE_L2CAP_SDU_MAX
+#define BLE_L2CAP_SDU_MAX BLE_GATT_TRANSPORT_MTU_MAX
+#endif
+#include "ble_l2cap.h"
+
+#define BLE_GATT_TRANSPORT_ATT_CID BLE_L2CAP_CID_ATT
 
 typedef struct {
     int (*connected)(void *context);
@@ -44,19 +49,16 @@ typedef struct {
     ble_gatt_client *client;
     uint8_t connected, bearer_failed, tx_client_request;
     void (*terminate_link)(void *context);
-    uint16_t rx_expected, rx_used, rx_discard_remaining;
-    uint8_t rx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
+    ble_l2cap_reassembler l2cap_rx;
     uint16_t tx_len, tx_offset;
     uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
 } ble_gatt_transport;
 
 static inline void ble_gatt_transport_reset(ble_gatt_transport *transport) {
-    transport->rx_expected = transport->rx_used = 0;
-    transport->rx_discard_remaining = 0;
+    ble_l2cap_reassembler_reset(&transport->l2cap_rx);
     transport->tx_len = transport->tx_offset = 0;
     transport->bearer_failed = 0;
     transport->tx_client_request = 0;
-    memset(transport->rx, 0, sizeof(transport->rx));
     memset(transport->tx, 0, sizeof(transport->tx));
 }
 
@@ -82,12 +84,10 @@ static inline void ble_gatt_transport_sync_mtu_from_server(
 static inline void ble_gatt_transport_send_att(ble_gatt_transport *transport,
                                                 const uint8_t *att,
                                                 uint16_t att_len) {
-    transport->tx[0] = (uint8_t)att_len;
-    transport->tx[1] = (uint8_t)(att_len >> 8);
-    transport->tx[2] = (uint8_t)BLE_GATT_TRANSPORT_ATT_CID;
-    transport->tx[3] = (uint8_t)(BLE_GATT_TRANSPORT_ATT_CID >> 8);
-    if (att_len) memcpy(transport->tx + 4, att, att_len);
-    transport->tx_len = att_len + 4;
+    int encoded = ble_l2cap_encode(transport->tx, sizeof(transport->tx),
+        BLE_GATT_TRANSPORT_ATT_CID, att, att_len);
+    if (!encoded) return;
+    transport->tx_len = (uint16_t)encoded;
     transport->tx_offset = 0;
 }
 
@@ -147,51 +147,12 @@ static inline int ble_gatt_transport_is_client_pdu(uint8_t opcode) {
     }
 }
 
-// Consume one LL fragment; return 1 when one complete ATT PDU was dispatched.
-static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
-    uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
-    size_t len = sizeof(fragment);
-    int result = transport->ops.receive(transport->ops.context, &llid,
-                                         fragment, &len);
-    if (result <= 0) return result;
-    if (!len || len > sizeof(fragment) || (llid != 1 && llid != 2)) {
-        transport->rx_expected = transport->rx_used = 0;
-        transport->rx_discard_remaining = 0;
-        return 0;
-    }
-    if (llid == 2) {
-        transport->rx_expected = transport->rx_used = 0;
-        transport->rx_discard_remaining = 0;
-        if (len < 4) return 0;
-        uint16_t l2cap_len = ble_gatt_server_u16(fragment);
-        uint16_t cid = ble_gatt_server_u16(fragment + 2);
-        if (l2cap_len > BLE_GATT_TRANSPORT_MTU_MAX ||
-            l2cap_len + 4 > sizeof(transport->rx)) return 0;
-        if (cid != BLE_GATT_TRANSPORT_ATT_CID) {
-            transport->rx_discard_remaining = l2cap_len + 4 > len ?
-                (uint16_t)(l2cap_len + 4 - len) : 0;
-            return 0;
-        }
-        transport->rx_expected = l2cap_len + 4;
-    } else if (transport->rx_discard_remaining) {
-        transport->rx_discard_remaining = len >= transport->rx_discard_remaining ?
-            0 : (uint16_t)(transport->rx_discard_remaining - len);
-        return 0;
-    } else if (!transport->rx_expected) {
-        return 0;
-    }
-    uint16_t remaining = transport->rx_expected - transport->rx_used;
-    if (len > remaining) {
-        transport->rx_expected = transport->rx_used = 0;
-        return 0;
-    }
-    memcpy(transport->rx + transport->rx_used, fragment, len);
-    transport->rx_used += (uint16_t)len;
-    if (transport->rx_used != transport->rx_expected) return 0;
-    uint16_t att_len = transport->rx_expected - 4;
+static inline int ble_gatt_transport_receive_att(void *context, uint16_t cid,
+    const uint8_t *att, uint16_t att_len) {
+    ble_gatt_transport *transport = (ble_gatt_transport *)context;
+    (void)cid;
     uint8_t response[BLE_GATT_TRANSPORT_MTU_MAX];
     uint16_t response_len = 0;
-    const uint8_t *att = transport->rx + 4;
     int has_response;
     uint8_t dispatched_to_client = 0;
     if (att_len && ble_gatt_transport_is_client_pdu(att[0])) {
@@ -216,8 +177,6 @@ static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
             att_len, response, sizeof(response), &response_len);
         if (server_mtu_request && has_response > 0 && response[0] == 0x03) {
             if (client_mtu_pending) {
-                // Until our own exchange completes, responses still use the
-                // default MTU as required for the crossover case.
                 transport->server->mtu = previous_server_mtu;
             } else {
                 ble_gatt_transport_sync_mtu_from_server(transport);
@@ -226,11 +185,32 @@ static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
     } else {
         has_response = 0;
     }
-    transport->rx_expected = transport->rx_used = 0;
     if (has_response < 0) return -1;
     if (!dispatched_to_client && has_response > 0)
         ble_gatt_transport_send_att(transport, response, response_len);
     return 1;
+}
+
+// Consume one LL fragment; return 1 when one complete ATT PDU was dispatched.
+static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
+    uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
+    size_t len = sizeof(fragment);
+    int result = transport->ops.receive(transport->ops.context, &llid,
+                                         fragment, &len);
+    if (result <= 0) return result;
+    if (!len || len > sizeof(fragment) || (llid != 1 && llid != 2)) {
+        ble_l2cap_reassembler_reset(&transport->l2cap_rx);
+        return 0;
+    }
+    uint16_t cid = 0, att_len = 0;
+    const uint8_t *att = NULL;
+    int complete = ble_l2cap_reassembler_feed(&transport->l2cap_rx,
+        llid, fragment, len, &cid, &att, &att_len);
+    if (complete <= 0) return complete;
+    const ble_l2cap_channel_handler route = {
+        BLE_GATT_TRANSPORT_ATT_CID, ble_gatt_transport_receive_att, transport
+    };
+    return ble_l2cap_dispatch(&route, 1, cid, att, att_len);
 }
 
 // Service at most one LL fragment per call. Call repeatedly from the link

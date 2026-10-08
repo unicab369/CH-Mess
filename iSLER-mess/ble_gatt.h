@@ -6,5 +6,6 @@
 #include "ble_gatt_server.h"
 #include "ble_gatt_client.h"
 #include "ble_gatt_transport.h"
+#include "ble_gatt_eatt.h"
 
 #endif

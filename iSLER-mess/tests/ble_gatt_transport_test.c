@@ -694,7 +694,7 @@ int main(void) {
     uint8_t mtu_req[] = {0x02, 23, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, mtu_req,
                   sizeof(mtu_req), 5);
-    while (link.rx_count || transport.rx_expected || !transport.tx_len) {
+    while (link.rx_count || transport.l2cap_rx.expected || !transport.tx_len) {
         int status = ble_gatt_transport_poll(&transport, 10);
         assert(status >= 0);
         if (transport.tx_len) break;
@@ -715,11 +715,11 @@ int main(void) {
     assert(!transport.tx_len && link.tx_count == 0);
 
     // Link loss clears partial PDUs and all per-link GATT state.
-    transport.rx_expected = 10;
+    transport.l2cap_rx.expected = 10;
     server.mtu_exchanged = 1;
     link.connected = 0;
     assert(ble_gatt_transport_poll(&transport, 12) == 0);
-    assert(!transport.rx_expected && !server.mtu_exchanged);
+    assert(!transport.l2cap_rx.expected && !server.mtu_exchanged);
     link.connected = 1;
     server.mtu_exchanged = 1;
     assert(ble_gatt_transport_poll(&transport, 13) == 0);

@@ -6,10 +6,19 @@ application register its own services and attributes. It does not include
 Bluetooth SIG service profiles or EATT (which requires LE Credit Based
 Channels).
 
-`ble_gatt.h` is the generic include. The implementation is split between the
-ATT/GATT server in `ble_gatt_server.h`, the client in `ble_gatt_client.h`, and
-the callback-based L2CAP/ATT adapter in `ble_gatt_transport.h`. Protocol
-adapters and application services belong outside these generic modules.
+`ble_gatt.h` is the generic include. `ble_l2cap.h` owns LE L2CAP framing,
+signaling, fixed-CID dispatch, and LE credit-based dynamic channels; its link
+adapter handles LL-fragment reassembly. The ATT/GATT server and client live in
+`ble_gatt_server.h` and `ble_gatt_client.h`, while
+`ble_gatt_transport.h` routes the fixed ATT CID between them and platform link
+callbacks. The GAP security manager uses the same L2CAP header helpers for
+fixed SMP CID 6. Protocol adapters and application services stay outside these
+generic modules.
+
+The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
+The existing GATT transport still uses its fixed ATT bearer path; wiring EATT
+bearers through the shared L2CAP link manager and isolating ATT state per
+bearer remain open work.
 
 ## Completion checklist
 
@@ -126,7 +135,7 @@ adapters and application services belong outside these generic modules.
 ### Generic transport and validation
 
 - [x] Carry ATT CID 4 over platform-supplied LE link callbacks, with bounded
-  L2CAP reassembly and fragmentation.
+  L2CAP reassembly and fragmentation implemented in `ble_l2cap.h`.
 - [x] Allow client-only or server-only transport setups without requiring
   storage for the opposite GATT role.
 - [x] Route both client and server ATT traffic so one connection may use both
@@ -193,19 +202,19 @@ GATT database and ATT procedures shared, and put EATT channel management in
 `ble_gatt_eatt.h`. `BLE_GATT_ENABLE_EATT` should allow fixed-bearer-only builds
 to omit EATT code and per-bearer storage.
 
-- [ ] Add the `BLE_GATT_ENABLE_EATT` compile-time option, default it off, and
+- [x] Add the `BLE_GATT_ENABLE_EATT` compile-time option, default it off, and
   verify EATT-specific code and storage are excluded from fixed-bearer-only
-  builds.
-- [ ] Define platform callbacks for opening, accepting, sending on, and
-  closing LE Credit Based Flow Control channels used by EATT. Keep EATT
-  independent of Mesh and reusable by the generic GATT transport.
-- [ ] Implement EATT channel setup on the EATT PSM, including encryption
-  requirements, dynamic channel IDs, MTU negotiation (minimum ATT MTU 64),
-  credit replenishment, reconfiguration, collision handling, rejection, and
-  teardown.
-- [ ] Add an EATT bearer manager in `ble_gatt_eatt.h`. Support multiple
-  simultaneous bearers per LE connection while retaining the existing fixed
-  ATT bearer and its behavior.
+  builds. See `tests/ble_gatt_eatt_test.c` for an EATT-enabled compile and the
+  fixed-bearer-only include check.
+- [x] Define platform callbacks for opening, accepting, sending on, and
+  closing LE Credit Based Flow Control channels used by EATT. EATT remains
+  independent of Mesh and reusable by generic GATT.
+- [ ] Bind the EATT bearer manager to the LE ECFC implementation on EATT PSM
+  0x0027. The L2CAP manager now handles signaling, credits, MTU/MPS, and
+  dynamic CIDs; EATT still needs encrypted-channel policy and end-to-end bearer
+  integration.
+- [x] Add an optional EATT bearer manager in `ble_gatt_eatt.h`. It tracks
+  multiple simultaneous channels while leaving the fixed ATT bearer intact.
 - [ ] Refactor transport routing so each bearer has its own channel ID,
   fragmentation/reassembly buffers, MTU, transmit queue, and failure state.
   Route every response and confirmation back on the bearer where its
@@ -216,10 +225,10 @@ to omit EATT code and per-bearer storage.
   Keep the attribute database and connection-scoped CCCD and Client Supported
   Features state shared, and make concurrent server operations atomic across
   bearers.
-- [ ] Enforce EATT-specific ATT rules, including rejecting Signed Write
-  Commands on EATT bearers, and apply each bearer's negotiated MTU to its
-  procedures and notifications.
-- [ ] Test channel negotiation, multiple concurrent client requests,
+- [x] Enforce the EATT minimum/negotiated MTU on bearer SDUs and reject Signed
+  Write Commands. Per-procedure and notification routing still requires the
+  transport integration above.
+- [ ] Extend tests from manager lifecycle to channel negotiation, multiple concurrent client requests,
   simultaneous client/server roles, per-bearer indication confirmation,
   shared attribute writes, credits, MTU boundaries, timeout/recovery, and
   disconnect cleanup with deterministic fake L2CAP channels.

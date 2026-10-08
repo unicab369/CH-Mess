@@ -476,8 +476,8 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
 }
 
 static void gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
-    gap_smp.tx[0] = len + 1; gap_smp.tx[1] = 0;
-    gap_smp.tx[2] = 6; gap_smp.tx[3] = 0;
+    ble_l2cap_write_u16(gap_smp.tx, (uint16_t)len + 1);
+    ble_l2cap_write_u16(gap_smp.tx + 2, BLE_L2CAP_CID_SMP);
     gap_smp.tx[4] = opcode;
     if (len) memcpy(gap_smp.tx + 5, data, len);
     gap_smp.tx_len = len + 5;
@@ -555,8 +555,7 @@ int mesh_gap_bonding_set(uint8_t enabled) {
     return 1;
 }
 
-// Secure Connections supports Just Works, Numeric Comparison, Passkey Entry,
-// and bonding. OOB pairing remains unsupported.
+// Configure Secure Connections association methods and bond behavior.
 int mesh_gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.phase) return 0;
     gap_pairing_policy.secure_connections = enabled;
@@ -941,16 +940,6 @@ static void mesh_gap_smp_poll(void) {
         gap_smp.phase = gap_conn.central_role ? GAP_SMP_SC_CONFIRM :
             GAP_SMP_SC_RANDOM;
     }
-    if (gap_smp.phase == GAP_SMP_SC_CONFIRM && !gap_conn.central_role &&
-        !gap_smp.tx_len && !gap_conn.tx_l2cap_remaining) {
-        // In SC Just Works, the responder commits to Nb after sending its key.
-        uint8_t confirm[16];
-        gap_sc_confirm_value(gap_smp.sc.public_key,
-                             gap_smp.sc.peer_public_key,
-                             gap_smp.random, 0, confirm);
-        gap_smp_queue(3, confirm, sizeof(confirm));
-        gap_smp.phase = GAP_SMP_SC_RANDOM;
-    }
     if (gap_smp.phase == GAP_SMP_SC_ENCRYPT) {
         if (mesh_gap_encrypted()) {
             gap_conn.authenticated = gap_smp.authenticated;
@@ -1099,8 +1088,10 @@ static void mesh_gap_smp_poll(void) {
     if (!gap_conn.rx_ready) return;
     if (gap_conn.rx_llid == 2) {
         gap_smp.rx_len = gap_smp.rx_expected = 0;
-        if (gap_conn.rx_len < 4 || gap_conn.rx_data[2] != 6 || gap_conn.rx_data[3]) return;
-        uint16_t len = (uint16_t)gap_conn.rx_data[0] | (uint16_t)gap_conn.rx_data[1] << 8;
+        if (gap_conn.rx_len < 4 ||
+            ble_l2cap_read_u16(gap_conn.rx_data + 2) != BLE_L2CAP_CID_SMP)
+            return;
+        uint16_t len = ble_l2cap_read_u16(gap_conn.rx_data);
         if (!len || len > 65) {
             gap_conn.rx_ready = 0;
             if (!gap_smp.blocked) gap_smp_finish(0x0a, 1);
@@ -1370,6 +1361,13 @@ static void mesh_gap_smp_poll(void) {
         }
         gap_smp.phase = gap_smp.sc.passkey_required ? GAP_SMP_SC_PASSKEY :
             GAP_SMP_SC_CONFIRM;
+        if (gap_conn.central_role && !gap_smp.sc.passkey_required) {
+            uint8_t confirm[16];
+            gap_sc_confirm_value(gap_smp.sc.public_key,
+                                 gap_smp.sc.peer_public_key,
+                                 gap_smp.random, 0, confirm);
+            gap_smp_queue(3, confirm, sizeof(confirm));
+        }
         return;
     }
     if (gap_smp.sc_active && gap_smp.sc.passkey_required &&
@@ -1380,24 +1378,32 @@ static void mesh_gap_smp_poll(void) {
         return;
     }
     if (gap_smp.sc_active && op == 3 && n == 17 &&
-        gap_smp.phase == GAP_SMP_SC_CONFIRM && gap_conn.central_role) {
+        gap_smp.phase == GAP_SMP_SC_CONFIRM) {
         memcpy(gap_smp.peer_confirm, p + 1, 16);
-        gap_smp_queue(4, gap_smp.random, 16);
+        if (gap_conn.central_role) {
+            gap_smp_queue(4, gap_smp.random, 16);
+        } else {
+            uint8_t confirm[16];
+            gap_sc_confirm_value(gap_smp.sc.public_key,
+                                 gap_smp.sc.peer_public_key,
+                                 gap_smp.random, 0, confirm);
+            gap_smp_queue(3, confirm, sizeof(confirm));
+        }
         gap_smp.phase = GAP_SMP_SC_RANDOM;
         return;
     }
     if (gap_smp.sc_active && op == 4 && n == 17 &&
         gap_smp.phase == GAP_SMP_SC_RANDOM) {
-        if (gap_conn.central_role || gap_smp.sc.passkey_required) {
-            uint8_t confirm[16], difference = 0;
-            gap_sc_confirm_value(gap_smp.sc.peer_public_key,
-                                 gap_smp.sc.public_key, p + 1,
-                                 gap_smp.sc.passkey_required ?
-                                     gap_sc_passkey_z() : 0, confirm);
-            for (uint8_t i = 0; i < 16; i++)
-                difference |= confirm[i] ^ gap_smp.peer_confirm[i];
-            if (difference) { error = 4; goto failed; }
-        }
+        uint8_t confirm[16], difference = 0;
+        gap_sc_confirm_value(gap_smp.sc.peer_public_key,
+                             gap_smp.sc.public_key, p + 1,
+                             gap_smp.sc.passkey_required ?
+                                 gap_sc_passkey_z() : 0, confirm);
+        for (uint8_t i = 0; i < 16; i++)
+            difference |= confirm[i] ^ gap_smp.peer_confirm[i];
+        volatile uint8_t *confirm_wipe = confirm;
+        for (size_t i = 0; i < sizeof(confirm); i++) confirm_wipe[i] = 0;
+        if (difference) { error = 4; goto failed; }
         memcpy(gap_smp.sc.peer_random, p + 1, 16);
         if (gap_smp.sc.passkey_required && gap_smp.sc.passkey_round < 19) {
             if (!gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
@@ -1487,7 +1493,8 @@ static void mesh_gap_smp_poll(void) {
         gap_smp.confirm_received = 1;
         return; // Wait for the user's passkey before sending our confirm.
     }
-    if (op == 3 && n == 17 && gap_smp.phase == GAP_SMP_CONFIRM) {
+    if (!gap_smp.sc_active && op == 3 && n == 17 &&
+        gap_smp.phase == GAP_SMP_CONFIRM) {
         memcpy(gap_smp.peer_confirm, p + 1, 16);
         if (gap_conn.central_role) gap_smp_queue(4, gap_smp.random, 16);
         else {

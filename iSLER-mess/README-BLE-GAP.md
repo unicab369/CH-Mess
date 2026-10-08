@@ -34,8 +34,8 @@ target hardware verification.
 | General and limited discoverable modes | [x] | Flags are recognized by discovery filtering; application supplies advertising data. |
 | Bondable and non-bondable modes | [x] | Hardware TODO: Verify pairing policy and bond creation behavior. |
 | Legacy scanning while advertising | [x] | The shared poll loop time-slices legacy scan receive windows with due GAP or Mesh advertising events. Host tests verify scanning resumes after each advertising event. Hardware TODO: verify coexistence timing on the target. |
-| Central connection establishment while non-connectable advertising | [x] | The poll loop time-slices connection scanning with non-connectable or scannable GAP advertising. Central initiation is rejected while connectable advertising or an independently started scan is active. Hardware TODO: verify coexistence timing. |
-| Run multiple GAP roles/procedures concurrently | [ ] TODO | Add multiple simultaneous connections and coexistence for remaining combinations, including connectable Peripheral advertising with Central initiation. |
+| Central connection establishment while advertising | [x] | The poll loop time-slices Central scanning with legacy advertising, including connectable Peripheral advertising. If an outgoing Central connection or incoming Peripheral connection wins, the other procedure is cancelled. Host tests cover scanning resuming between advertising events and both connection outcomes. Hardware TODO: verify coexistence timing. |
+| Run multiple GAP roles/procedures concurrently | [ ] TODO | PAwR periodic advertising can continue after its advertiser accepts a connection and becomes Central; the scheduler skips periodic events that overlap connection events. Remaining: add multiple simultaneous connections and coexistence for other unsupported role combinations. |
 
 ## Advertising and scan data
 
@@ -82,8 +82,8 @@ target hardware verification.
 | Connection parameter update (Central and Peripheral paths) | [x] | Hardware TODO: Verify accepted/rejected updates and timing. |
 | Disconnect and link-loss handling | [x] | Hardware TODO: Verify local/remote termination and timeout recovery. |
 | Channel-map update | [x] | Hardware TODO: Verify instant handling with an independent peer. |
-| Multiple simultaneous connections | [ ] TODO (optional) | Add per-link state, radio scheduling, and per-peer security/GATT state. |
-| Periodic Advertising Connection | [ ] TODO (optional) | Depends on PAwR synchronization and response-slot support. |
+| Multiple simultaneous connections | [ ] TODO (optional) | L2CAP links and GATT transports are per-instance and tested in isolation; GAP connection, security, SMP, and radio state are still single-link. Remaining integration is tracked below. |
+| Periodic Advertising Connection | [x] (optional) | Uses PAwR synchronization and subevents for advertiser-initiated Central connections and synchronized-device Peripheral acceptance. Hardware TODO: verify T_IFS timing and interoperability. |
 
 ## Addressing and privacy
 
@@ -117,7 +117,7 @@ target hardware verification.
 | Legacy connection data signing (Security Mode 2) | N/A | Removed in Core 6.3; excluded from this implementation target. |
 | Encrypted Advertising Data (EAD) | [x] | `mesh_gap_ead_encrypt()` and `mesh_gap_ead_decrypt()` encode/decode the 0x31 AD structure using CCM, secure randomizers, and application-provided session key/IV material. Set key material with `mesh_gap_ead_key_material_set()` before encrypting; the CSS sample vector is covered by a Central host test. |
 | Security Mode 3 / Broadcast_Code security | [ ] TODO (optional) | Required only if Broadcast Isochronous Streams are implemented. |
-| OOB exchange and restored-bond end-to-end behavior | [ ] Hardware TODO | Verify OOB data exchange, bonding, and reconnect behavior on target hardware. |
+| Secure Connections OOB interface and pairing flow | [x] | `mesh_gap_sc_oob_get()` creates local OOB random/confirm data and `mesh_gap_sc_oob_set_peer()` supplies the peer values. Host tests cover successful pairing in both roles, missing local data, invalid commitment, cancellation, and secret clearing. Hardware TODO: verify OOB data exchange, bonding, and reconnect behavior. |
 
 ## GAP GATT service
 
@@ -147,8 +147,8 @@ here because the GAP host must configure or report the capabilities it uses.
 | LE 2M PHY negotiation | [x] | Hardware TODO: verify independent TX/RX PHY switching. |
 | Data Length Extension and feature exchange | [x] | Hardware TODO: verify negotiation with peers. |
 | LE Coded PHY | [ ] TODO (optional) | Requires radio support and PHY negotiation/update procedures. |
-| Connection subrating / connection-rate procedures | [ ] TODO (optional) | Add when required by target Core version and controller. |
-| Channel classification and channel-map management beyond current update path | [ ] TODO (optional) | Add controller reporting and automatic map selection if required. |
+| Connection subrating / connection-rate procedures | [ ] TODO (optional) | Implement the feature exchange, Central and Peripheral procedures, parameter validation, and subrated event scheduling; see the software implementation queue below. |
+| Channel classification and channel-map management beyond current update path | [ ] TODO (optional) | Add channel classification reporting and controller input first; automatic map selection is application policy. |
 | Advertising coding selection | [ ] TODO (optional) | Depends on coded PHY advertising support. |
 
 ## Extended and periodic advertising
@@ -160,8 +160,8 @@ here because the GAP host must configure or report the capabilities it uses.
 | Periodic advertising mode and data | [x] (optional) | Start periodic data on an active nonscannable extended advertising set with `mesh_gap_periodic_advertising_start_set()`; update and stop with the corresponding set APIs. Periodic events use CSA#2 and carry ADI plus optional AuxPtr chaining. SyncInfo is included in `AUX_ADV_IND`, data is limited to 1,650 bytes, and intervals too short for a chained event are rejected. Periodic data buffers add 3,300 bytes with the default two sets and 1,650-byte limit. Host tests cover SyncInfo fields, event scheduling, a chained payload, and the Core CSA#2 sample. Hardware TODO: verify SyncInfo timing, channel use, and reception. |
 | Periodic synchronization establishment and termination | [x] (optional) | `mesh_gap_periodic_sync_start()` matches a peer address and SID, starts passive scanning if needed, and waits for valid SyncInfo and the first AUX_SYNC_IND. Up to two syncs track CSA#2 channels, reassemble AUX_CHAIN_IND data, and report through `mesh_gap_periodic_report_poll()`. Cancel pending syncs with `mesh_gap_periodic_sync_cancel()`; terminate established syncs with `mesh_gap_periodic_sync_terminate()`. A sync is lost after six missed acquisition events or the configured timeout. Two sync reassembly buffers plus two report slots add 6,600 bytes at the default 1,650-byte limit. Host tests cover SyncInfo parsing, receive-window scheduling, chained reports, cancellation, termination, and acquisition loss. Hardware TODO: verify sync-window timing, channel switching, and loss behavior. |
 | Periodic Advertising Sync Transfer (PAST) | [x] (optional) | `mesh_gap_periodic_sync_transfer_enable()` enables recipient handling; received `LL_PERIODIC_SYNC_IND` SyncInfo is scheduled from the connection-event anchor with clock-drift widening. `mesh_gap_periodic_sync_transfer()` queues a sender PDU when negotiated DLE supports its 35-byte payload. Extended-advertising builds default `MESH_GAP_CONN_DATA_MAX` to 35; retain that minimum if overriding it. Host tests cover receive, malformed PHY/SyncInfo rejection, first-event establishment, sender encoding, timeout, DLE length, and connection-event radio arbitration. Hardware TODO: verify PAST interoperability, timing, and clock/PHY tolerances. |
-| Periodic Advertising with Responses (PAwR) | [ ] TODO (optional; in progress) | The parser validates PRTI and stores it with a discovered sync. Advertisers configure timing with `mesh_gap_periodic_advertising_pawr_set()`; `AUX_ADV_IND` carries PRTI and scheduled events transmit `AUX_SYNC_SUBEVENT_IND` on CSA#2-selected channels. A synchronized observer can select a subevent and queue one response with `mesh_gap_periodic_sync_pawr_respond()`; the radio transmits `AUX_SYNC_SUBEVENT_RSP` in the configured slot using RspAA and the subevent channel, while reports deliver received subevent data. Host tests cover advertiser encoding/scheduling and observer response timing/channel/encoding. Remaining: receive and report responses at the advertiser, support repeated response scheduling policy, and test interleaved PAwR trains. Hardware TODO: verify PAwR timing and interoperability. |
-| Periodic Advertising Connection | [ ] TODO (optional) | Add connection initiation from a synchronized PAwR response procedure. |
+| Periodic Advertising with Responses (PAwR) | [x] (optional) | The parser validates PRTI and stores it with a discovered sync. Advertisers configure timing with `mesh_gap_periodic_advertising_pawr_set()` and local slot count with `mesh_gap_periodic_advertising_pawr_response_slots_set()`; `AUX_ADV_IND` carries PRTI and scheduled events transmit `AUX_SYNC_SUBEVENT_IND` on CSA#2-selected channels. A synchronized observer can select a subevent and queue one response with `mesh_gap_periodic_sync_pawr_respond()`; the radio transmits `AUX_SYNC_SUBEVENT_RSP` in the configured slot using RspAA and the subevent channel. Responses are one-shot by default; `mesh_gap_periodic_sync_pawr_response_repeat_set()` repeats a queued response until disabled. Advertisers listen through configured response slots and expose received data through `mesh_gap_periodic_response_report_poll()`. Host tests cover advertiser encoding/scheduling/response reports, two staggered PAwR advertising sets, and observer response timing/channel/encoding/repetition. Hardware TODO: verify PAwR timing and interoperability. |
+| Periodic Advertising Connection | [x] (optional) | A synchronized device can opt in with `mesh_gap_periodic_sync_pawr_connection_accept_set()`; it validates `AUX_CONNECT_REQ`, sends `AUX_CONNECT_RSP` on the periodic train access address, and initializes Peripheral timing while keeping the sync context. An advertiser queues a one-shot attempt to a selected peer and subevent with `mesh_gap_periodic_advertising_pawr_connect()`; it sends `AUX_CONNECT_REQ`, validates `AUX_CONNECT_RSP`, and enters the Central role. The periodic train continues after connection establishment, with events skipped when they overlap connection windows. Host tests cover both roles, address fields, channel, request/response handling, first transmit-window delay, missed responses, and radio scheduling. Hardware TODO: verify T_IFS timing and interoperability. |
 
 ## Isochronous procedures
 
@@ -193,10 +193,26 @@ here because the GAP host must configure or report the capabilities it uses.
 | Pairing, privacy, PHY, and connection timing on target hardware | [ ] Hardware TODO | Run the device-side checks after software implementation. |
 | GAP ICS/TCRL review and Bluetooth qualification | [ ] TODO | Select the supported roles/features, complete applicable test cases, and record qualification results. |
 
+## Software implementation queue
+
+These are the remaining software tasks from the feature tables, in dependency
+order. Optional features become requirements only when the product declares
+and supports them. Hardware checks and Bluetooth qualification are listed
+separately above.
+
+| Order | Status | Software task | Completion gate / dependency |
+| --- | --- | --- | --- |
+| 1 | [x] Complete | Complete Secure Connections OOB host coverage for Central and Peripheral roles, including missing local OOB data, invalid confirm, cancellation, and successful key confirmation. | Tests verify authenticated encryption after successful OOB pairing in both roles, reject unavailable or invalid OOB data, and confirm temporary private/OOB secrets are cleared after success, failure, and cancellation. |
+| 2 | TODO | Support multiple simultaneous LE connections: move GAP connection, encryption, SMP, bond restoration, and pending procedure state into per-link contexts; add connection handles to public APIs/events; schedule the shared radio across links; instantiate the existing L2CAP/GATT transport objects per link and route their callbacks. | Host tests establish two links, exercise independent data/security state, disconnect either link, and verify the remaining link continues. L2CAP's per-instance receive reassembly now has a two-link isolation test; this does not establish multiple GAP links. |
+| 3 | TODO | Add LE Coded PHY connection negotiation and PHY-specific advertising/scanning where the radio adapter advertises support. | Feature exchange and PHY updates cover S=2/S=8 selections; host tests validate PDU fields and rejection when the adapter lacks the PHY. |
+| 4 | TODO | Add Connection Subrating (Core 5.3+) and Connection Subrate Request (Core 6.0+) support. | Feature exchange, request/indication validation, instant/continuation handling, timeout behavior, and event scheduling are tested for Central and Peripheral roles. |
+| 5 | TODO | Add channel classification reporting and channel-map management inputs. | Validate Channel Reporting and Channel Status control PDUs and apply reports without violating the existing channel-map update procedure. Automatic channel selection remains application policy. |
+| 6 | TODO | Add LE Isochronous procedures (CIS, BIG/BIS, and Broadcast Isochronous Synchronizability) if the product supports audio. | Requires controller/radio ISO scheduling and data-path interfaces; then add setup, update, termination, security, synchronization, and loss tests. |
+| 7 | TODO | Add Channel Sounding if the product supports a Channel Sounding controller. | Requires controller measurements and secure-link integration; test capability exchange, configuration, procedure lifecycle, result handling, and Core 6.3 additions. |
+| 8 | TODO | Add a standard host/controller interoperability path for GAP advertising, scanning, and connections. | Run Bumble or an independent peer through a usable HCI/radio adapter; the current CH582 hooks do not provide that adapter. |
+
 ## Suggested implementation order
 
-1. Implement conditional GAP characteristics and services for enabled features.
-2. Add extended advertising/scanning if the target radio supports it.
-3. Add PAwR only if the product requires it.
-4. Add multiple links, isochronous procedures, or Channel Sounding only with the necessary radio/controller support.
-5. Complete software interoperability tests, then perform the hardware and qualification checks above.
+Follow the numbered software implementation queue above. Once the product's
+required features are implemented, finish the independent-peer, target-hardware,
+and qualification checks listed in the verification table.

@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "ble_l2cap.h"
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
@@ -43,6 +44,7 @@
 #define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000u
 #define MESH_GAP_PERIODIC_SYNC_COUNT 2
 #define MESH_GAP_PAWR_RESPONSE_DATA_MAX 249
+#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
 #define GAP_PERIODIC_SYNC_EVENT_COUNT 4
 #define GAP_PERIODIC_REPORT_COUNT 2
 #define MESH_GAP_BOND_SLOTS 4
@@ -184,6 +186,14 @@ typedef struct {
     int8_t rssi;
     uint8_t data[MESH_GAP_EXT_ADV_DATA_MAX];
 } mesh_gap_periodic_report;
+
+typedef struct {
+    uint8_t set_id, sid, subevent, response_slot;
+    uint8_t has_address, address_type, address[6];
+    uint16_t event_counter, data_len;
+    int8_t rssi;
+    uint8_t data[MESH_GAP_PAWR_RESPONSE_DATA_MAX];
+} mesh_gap_periodic_response_report;
 #endif
 
 // Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
@@ -267,7 +277,10 @@ typedef struct {
     uint8_t enabled, sid, scannable, periodic_enabled;
     uint8_t periodic_sync_info_sent;
     uint8_t pawr_enabled, pawr_data_pending;
+    uint8_t pawr_connect_pending, pawr_connect_subevent;
+    uint8_t pawr_connect_peer_type, pawr_connect_peer_address[6];
     uint8_t pawr_num_subevents, pawr_subevent_interval;
+    uint8_t pawr_num_response_slots;
     uint8_t pawr_response_slot_delay, pawr_response_slot_spacing;
     uint16_t data_len, scan_response_len, interval_ms;
     uint16_t periodic_data_len, periodic_interval, periodic_event_counter;
@@ -284,6 +297,7 @@ typedef struct {
 static mesh_gap_extended_advertising_set
     gap_ext_advertising[MESH_GAP_EXT_ADV_SET_COUNT];
 static uint8_t gap_ext_advertising_next_set;
+static uint8_t gap_periodic_advertising_next_set;
 static inline int gap_ext_advertising_any_enabled(void) {
     for (uint8_t i = 0; i < MESH_GAP_EXT_ADV_SET_COUNT; i++)
         if (gap_ext_advertising[i].enabled ||
@@ -418,32 +432,48 @@ static void mesh_gap_smp_bond_abort(void);
 static uint8_t gap_bond_repair_pending;
 
 
-// Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int gap_connection_accept(const uint8_t frame[36],
-                                            uint64_t received_ticks,
-                                            uint64_t interval_ticks) {
+// Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
+static int gap_connection_request_valid(const uint8_t frame[36]) {
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
     uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
     uint8_t win_size = frame[21], hop = frame[35] & 0x1f;
-    if (!win_size || win_size > 8 || interval < 6 || interval > 3200 ||
-        win_size >= interval ||
-        win_offset > interval || latency > 499 || timeout < 10 ||
-        timeout > 3200 || hop < 5 || hop > 16 ||
+    if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
+        !win_size || win_size > 8 || interval < 6 || interval > 3200 ||
+        win_size >= interval || win_offset > interval || latency > 499 ||
+        timeout < 10 || timeout > 3200 || hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
             2u * (uint32_t)(latency + 1) * interval) return 0;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
+        if (frame[30 + channel / 8] & (1u << (channel % 8))) count++;
+    uint32_t access_address = (uint32_t)frame[14] |
+        (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
+        (uint32_t)frame[17] << 24;
+    return count >= 2 && access_address != BLE_ADV_ACCESS_ADDRESS &&
+           access_address != 0;
+}
+
+// Validate a legacy CONNECT_IND and initialize its data-channel state.
+static int gap_connection_accept(const uint8_t frame[36],
+                                            uint64_t received_ticks,
+                                            uint64_t interval_unit_ticks,
+                                            uint64_t window_delay_ticks) {
+    if (!gap_connection_request_valid(frame)) return 0;
+    uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
+    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
+    uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
+    uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
+    uint8_t win_size = frame[21], hop = frame[35] & 0x1f;
+    uint8_t count = 0;
+    for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1u << (channel % 8)))
             gap_conn.used_channels[count++] = channel;
-    if (count < 2) return 0;
     gap_conn.access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
-    if (gap_conn.access_address == BLE_ADV_ACCESS_ADDRESS ||
-        !gap_conn.access_address) return 0;
     gap_conn.crc_init = (uint32_t)frame[18] |
         (uint32_t)frame[19] << 8 | (uint32_t)frame[20] << 16;
     memcpy(gap_conn.channel_map, frame + 30, 5);
@@ -457,7 +487,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     gap_conn.window_size = win_size;
     gap_conn.next_event_ticks = received_ticks +
-        (uint64_t)(win_offset + 1) * interval_ticks;
+        (uint64_t)win_offset * interval_unit_ticks + window_delay_ticks;
     gap_conn.last_rx_ms = GET_MILLIS();
     gap_conn.first_event = 1;
     gap_conn.rx_armed = 0;
@@ -567,7 +597,8 @@ typedef struct {
     uint8_t pawr_subevent_interval, pawr_response_slot_delay;
     uint8_t pawr_response_slot_spacing;
     uint8_t pawr_selected_subevent, pawr_response_slot;
-    uint8_t pawr_response_pending;
+    uint8_t pawr_response_pending, pawr_response_repeat;
+    uint8_t pawr_connection_accept;
     uint8_t event_data_active;
     uint16_t interval, event_counter, current_event_counter, did, data_len;
     uint16_t widening_ppm;
@@ -588,6 +619,9 @@ static uint8_t gap_periodic_sync_event_head, gap_periodic_sync_event_count;
 static mesh_gap_periodic_report
     gap_periodic_reports[GAP_PERIODIC_REPORT_COUNT];
 static uint8_t gap_periodic_report_head, gap_periodic_report_count;
+static mesh_gap_periodic_response_report
+    gap_pawr_response_reports[GAP_PAWR_RESPONSE_REPORT_COUNT];
+static uint8_t gap_pawr_response_report_head, gap_pawr_response_report_count;
 static uint8_t gap_periodic_sync_owned_scan;
 static uint8_t gap_periodic_sync_transfer_enabled;
 static uint32_t gap_periodic_sync_transfer_timeout_ms = 10000;
@@ -1430,6 +1464,7 @@ int mesh_gap_periodic_advertising_start_set(uint8_t set_id,
     set->pawr_data_pending = 0;
     set->pawr_num_subevents = 0;
     set->pawr_subevent_interval = 0;
+    set->pawr_num_response_slots = 0;
     set->pawr_response_slot_delay = 0;
     set->pawr_response_slot_spacing = 0;
     set->periodic_response_access_address = 0;
@@ -1462,10 +1497,14 @@ int mesh_gap_periodic_advertising_pawr_set(uint8_t set_id,
         response_slot_spacing < 2) return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     uint32_t interval_units = set->periodic_interval;
+    uint32_t subevent_interval_units = num_subevents > 1 ?
+        subevent_interval : interval_units;
     if ((num_subevents > 1 &&
          (uint32_t)num_subevents * subevent_interval > interval_units) ||
         response_slot_delay >= (num_subevents > 1 ? subevent_interval :
                                                        interval_units) ||
+        (uint32_t)response_slot_spacing >
+            (subevent_interval_units - response_slot_delay) * 10u ||
         set->periodic_data_len > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
         return 0;
     uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
@@ -1491,10 +1530,52 @@ int mesh_gap_periodic_advertising_pawr_set(uint8_t set_id,
     }
     set->pawr_num_subevents = num_subevents;
     set->pawr_subevent_interval = subevent_interval;
+    set->pawr_num_response_slots = 1;
     set->pawr_response_slot_delay = response_slot_delay;
     set->pawr_response_slot_spacing = response_slot_spacing;
     set->pawr_enabled = 1;
     set->pawr_data_pending = set->periodic_data_len != 0;
+    return 1;
+}
+
+// Configure how many response slots the advertiser listens to per subevent.
+// PRTI advertises their timing; the slot count is local product configuration.
+int mesh_gap_periodic_advertising_pawr_response_slots_set(uint8_t set_id,
+                                                           uint8_t count) {
+    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_advertising[set_id].pawr_enabled || !count) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    uint32_t subevent_interval_units = set->pawr_num_subevents > 1 ?
+        set->pawr_subevent_interval : set->periodic_interval;
+    uint32_t available_spacing_units =
+        (subevent_interval_units - set->pawr_response_slot_delay) * 10u;
+    if ((uint32_t)count * set->pawr_response_slot_spacing >
+        available_spacing_units) return 0;
+    set->pawr_num_response_slots = count;
+    return 1;
+}
+
+// Queue one Central connection attempt to a synchronized PAwR device. The
+// request replaces the selected subevent in the next periodic event.
+int mesh_gap_periodic_advertising_pawr_connect(uint8_t set_id,
+    uint8_t subevent, uint8_t peer_address_type,
+    const uint8_t peer_address[6]) {
+    if (!peer_address || peer_address_type > 1 ||
+        set_id >= MESH_GAP_EXT_ADV_SET_COUNT || gap_conn.active ||
+        gap_central_connect.active || gap_scanning ||
+        !gap_ext_advertising[set_id].periodic_enabled ||
+        !gap_ext_advertising[set_id].pawr_enabled ||
+        subevent >= gap_ext_advertising[set_id].pawr_num_subevents ||
+        gap_ext_advertising[set_id].pawr_connect_pending) return 0;
+    for (uint8_t i = 0; i < MESH_GAP_EXT_ADV_SET_COUNT; i++)
+        if (gap_ext_advertising[i].pawr_connect_pending) return 0;
+    if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
+                          peer_address, peer_address_type)) return 0;
+    mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    set->pawr_connect_subevent = subevent;
+    set->pawr_connect_peer_type = peer_address_type;
+    memcpy(set->pawr_connect_peer_address, peer_address, 6);
+    set->pawr_connect_pending = 1;
     return 1;
 }
 
@@ -1508,7 +1589,10 @@ int mesh_gap_periodic_advertising_update_set(uint8_t set_id,
           gap_periodic_event_duration_us(len) >=
               (uint32_t)(gap_ext_advertising[set_id].pawr_num_subevents > 1 ?
                   gap_ext_advertising[set_id].pawr_subevent_interval :
-                  gap_ext_advertising[set_id].periodic_interval) * 1250u)) ||
+                  gap_ext_advertising[set_id].periodic_interval) * 1250u ||
+          gap_periodic_event_duration_us(len) + 150u >=
+              (uint32_t)gap_ext_advertising[set_id].
+                  pawr_response_slot_delay * 1250u)) ||
         (uint32_t)gap_ext_advertising[set_id].periodic_interval * 1250u <
             gap_periodic_event_duration_us(len)) return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
@@ -1525,7 +1609,11 @@ int mesh_gap_periodic_advertising_stop_set(uint8_t set_id) {
     gap_ext_advertising[set_id].periodic_enabled = 0;
     gap_ext_advertising[set_id].pawr_enabled = 0;
     gap_ext_advertising[set_id].pawr_data_pending = 0;
+    gap_ext_advertising[set_id].pawr_connect_pending = 0;
+    memset(gap_ext_advertising[set_id].pawr_connect_peer_address, 0,
+           sizeof(gap_ext_advertising[set_id].pawr_connect_peer_address));
     gap_ext_advertising[set_id].pawr_num_subevents = 0;
+    gap_ext_advertising[set_id].pawr_num_response_slots = 0;
     gap_ext_advertising[set_id].pawr_subevent_interval = 0;
     gap_ext_advertising[set_id].pawr_response_slot_delay = 0;
     gap_ext_advertising[set_id].pawr_response_slot_spacing = 0;
@@ -1657,9 +1745,6 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
         peer_type > 1 || any_peer > 1 || selective > 1 || auto_connect > 1 ||
         (any_peer && (selective || auto_connect)) || (selective && auto_connect) ||
         active_scan > 1 || gap_conn.active || gap_scanning ||
-        (gap_advertising.enabled &&
-         (gap_advertising.pdu_type == 0x00 ||
-          gap_advertising.pdu_type == 0x01)) ||
         ((selective || auto_connect) && !gap_accept_list_nonempty()))
         return 0;
     uint32_t access_address;
@@ -2344,7 +2429,10 @@ int mesh_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
     if (slot < 0 || !gap_periodic_syncs[slot].established ||
         !gap_periodic_syncs[slot].has_pawr_timing ||
         subevent >= gap_periodic_syncs[slot].pawr_num_subevents ||
-        len > MESH_GAP_PAWR_RESPONSE_DATA_MAX || (!data && len)) return 0;
+        (gap_periodic_syncs[slot].phy != MESH_GAP_PHY_1M &&
+         gap_periodic_syncs[slot].phy != MESH_GAP_PHY_2M) ||
+        len > MESH_GAP_PAWR_RESPONSE_DATA_MAX ||
+        !gap_ext_ad_data_valid(data, len)) return 0;
     mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint32_t subevent_interval_units = sync->pawr_num_subevents > 1 ?
         sync->pawr_subevent_interval : sync->interval;
@@ -2372,6 +2460,29 @@ int mesh_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
     return 1;
 }
 
+// Repeat the queued PAwR response at matching subevents until disabled.
+// Responses remain one-shot by default; disabling repeat consumes the
+// existing response after it is sent once more.
+int mesh_gap_periodic_sync_pawr_response_repeat_set(uint8_t handle,
+                                                     uint8_t enabled) {
+    int slot = gap_periodic_sync_handle_slot(handle);
+    if (slot < 0 || !gap_periodic_syncs[slot].established ||
+        !gap_periodic_syncs[slot].has_pawr_timing || enabled > 1) return 0;
+    gap_periodic_syncs[slot].pawr_response_repeat = enabled;
+    return 1;
+}
+
+// Allow a synchronized PAwR device to accept a connection from its advertiser.
+int mesh_gap_periodic_sync_pawr_connection_accept_set(uint8_t handle,
+                                                       uint8_t enabled) {
+    int slot = gap_periodic_sync_handle_slot(handle);
+    if (slot < 0 || !gap_periodic_syncs[slot].established ||
+        !gap_periodic_syncs[slot].has_pawr_timing || enabled > 1 ||
+        gap_conn.active || gap_central_connect.active) return 0;
+    gap_periodic_syncs[slot].pawr_connection_accept = enabled;
+    return 1;
+}
+
 int mesh_gap_periodic_sync_event_poll(mesh_gap_periodic_sync_event *event) {
     if (!event || !gap_periodic_sync_event_count) return 0;
     *event = gap_periodic_sync_events[gap_periodic_sync_event_head];
@@ -2387,6 +2498,16 @@ int mesh_gap_periodic_report_poll(mesh_gap_periodic_report *report) {
     gap_periodic_report_head = (gap_periodic_report_head + 1) %
         GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_report_count--;
+    return 1;
+}
+
+int mesh_gap_periodic_response_report_poll(
+    mesh_gap_periodic_response_report *report) {
+    if (!report || !gap_pawr_response_report_count) return 0;
+    *report = gap_pawr_response_reports[gap_pawr_response_report_head];
+    gap_pawr_response_report_head =
+        (gap_pawr_response_report_head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
+    gap_pawr_response_report_count--;
     return 1;
 }
 
@@ -2534,11 +2655,20 @@ static int gap_periodic_sync_receive(uint8_t slot, const uint8_t *pdu,
         if (received_ticks < HW_TICKS_FROM_US(airtime_us)) return 0;
         uint64_t packet_start = received_ticks -
             HW_TICKS_FROM_US(airtime_us);
-        gap_periodic_syncs[slot].anchor_ticks = packet_start;
-        gap_periodic_syncs[slot].next_event_ticks = packet_start +
+        uint32_t subevent_offset_us =
+            (uint32_t)gap_periodic_syncs[slot].pawr_selected_subevent *
+            gap_periodic_syncs[slot].pawr_subevent_interval * 1250u;
+        if (!gap_periodic_syncs[slot].has_pawr_timing) subevent_offset_us = 0;
+        uint64_t subevent_offset_ticks = HW_TICKS_FROM_US(subevent_offset_us);
+        if (packet_start < subevent_offset_ticks) return 0;
+        // Keep anchor_ticks at subevent zero so successive selected subevents
+        // do not add the selection offset to the schedule a second time.
+        gap_periodic_syncs[slot].anchor_ticks = packet_start -
+            subevent_offset_ticks;
+        gap_periodic_syncs[slot].next_event_ticks =
+            gap_periodic_syncs[slot].anchor_ticks +
             HW_TICKS_FROM_US((uint32_t)gap_periodic_syncs[slot].interval * 1250u +
-                (uint32_t)gap_periodic_syncs[slot].pawr_selected_subevent *
-                gap_periodic_syncs[slot].pawr_subevent_interval * 1250u);
+                             subevent_offset_us);
         gap_periodic_syncs[slot].current_event_counter =
             gap_periodic_syncs[slot].event_counter;
         gap_periodic_syncs[slot].event_counter++;
