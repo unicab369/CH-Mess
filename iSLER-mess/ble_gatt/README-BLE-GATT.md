@@ -21,11 +21,32 @@ fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
-The existing GATT transport still uses its fixed ATT bearer path; wiring EATT
-bearers through the shared L2CAP link manager and isolating ATT state per
-bearer remain open work.
+`ble_gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
+and SDU delivery to that manager. The transport still needs independent ATT
+transaction state and full ATT routing for each EATT bearer.
 
 ## Completion checklist
+
+### Ordered remaining work
+
+1. [x] Bind EATT to the shared LE L2CAP ECFC manager on PSM 0x0027. Register
+   the PSM, require an encrypted link before accepting or opening a channel,
+   and route EATT channel open/close/data events through the bearer manager.
+   `ble_gatt_transport_eatt_init()` attaches it; ATT SDUs currently go to an
+   application callback pending per-bearer ATT state.
+2. [ ] Give each ATT bearer its own CID, negotiated MTU, TX/RX state, and
+   failure state while sharing the connection's GATT database and security.
+3. [ ] Keep ATT client request matching, timeout, and indication confirmation
+   state per bearer; route each response on the bearer that received its
+   request.
+4. [ ] Make server operations safe across concurrent bearers, including
+   prepared writes, CCCD state, notifications, and indications.
+5. [ ] Add deterministic multi-bearer tests for negotiation, concurrent
+   client/server traffic, credits, MTU boundaries, timeouts, recovery, and
+   disconnect cleanup; then verify against an independent EATT peer.
+6. [ ] Verify fixed ATT and EATT behavior on BLE hardware.
+
+Items 2–5 are software work; item 6 requires a radio and target firmware.
 
 ### Generic server
 
@@ -214,10 +235,11 @@ to omit EATT code and per-bearer storage.
 - [x] Define platform callbacks for opening, accepting, sending on, and
   closing LE Credit Based Flow Control channels used by EATT. EATT remains
   independent of Mesh and reusable by generic GATT.
-- [ ] Bind the EATT bearer manager to the LE ECFC implementation on EATT PSM
-  0x0027. The L2CAP manager now handles signaling, credits, MTU/MPS, and
-  dynamic CIDs; EATT still needs encrypted-channel policy and end-to-end bearer
-  integration.
+- [x] Bind the EATT bearer manager to the LE ECFC implementation on EATT PSM
+  0x0027. Register the PSM, require link encryption, and route channel
+  open/close/data events through the shared L2CAP connection. The transport
+  currently delivers EATT ATT SDUs to an application callback; per-bearer ATT
+  routing remains open work.
 - [x] Add an optional EATT bearer manager in `ble_gatt_eatt.h`. It tracks
   multiple simultaneous channels while leaving the fixed ATT bearer intact.
 - [ ] Refactor transport routing so each bearer has its own channel ID,

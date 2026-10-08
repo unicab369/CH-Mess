@@ -1,9 +1,8 @@
 #ifndef BLE_GATT_EATT_H
 #define BLE_GATT_EATT_H
 
-// Optional Enhanced ATT bearer manager. It owns EATT policy and bearer
-// lifecycle; map its channel callbacks to ble_l2cap_connection for ECFC
-// signaling, K-frame segmentation, and credits. Enable with
+// Optional Enhanced ATT bearer manager. ble_gatt_transport can bind its
+// channel lifecycle to the shared L2CAP ECFC manager. Enable with
 // -DBLE_GATT_ENABLE_EATT=1.
 #include <stdint.h>
 #include <string.h>

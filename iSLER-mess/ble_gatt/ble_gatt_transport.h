@@ -9,6 +9,7 @@
 #include <string.h>
 #include "ble_gatt_server.h"
 #include "ble_gatt_client.h"
+#include "ble_gatt_eatt.h"
 
 #ifndef BLE_GATT_TRANSPORT_LL_MAX
 #define BLE_GATT_TRANSPORT_LL_MAX 251
@@ -42,6 +43,11 @@ typedef struct {
 
 typedef uint8_t (*ble_gatt_transport_key_size_fn)(void *context);
 
+#if BLE_GATT_ENABLE_EATT
+typedef int (*ble_gatt_transport_eatt_receive_fn)(void *context, uint16_t cid,
+    const uint8_t *pdu, uint16_t len);
+#endif
+
 typedef struct {
     ble_gatt_transport_ops ops;
     ble_gatt_transport_key_size_fn encryption_key_size;
@@ -53,10 +59,20 @@ typedef struct {
     ble_l2cap_reassembler l2cap_rx;
     uint16_t tx_len, tx_offset;
     uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
+#if BLE_GATT_ENABLE_EATT
+    ble_gatt_eatt eatt;
+    ble_gatt_transport_eatt_receive_fn eatt_receive_att;
+    void *eatt_context;
+    uint8_t eatt_enabled;
+#endif
 } ble_gatt_transport;
 
 static inline void ble_gatt_transport_reset(ble_gatt_transport *transport) {
     ble_l2cap_connection_reset(&transport->l2cap, 0);
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled)
+        ble_gatt_eatt_set_encrypted(&transport->eatt, 0);
+#endif
     ble_l2cap_reassembler_reset(&transport->l2cap_rx);
     transport->tx_len = transport->tx_offset = 0;
     transport->bearer_failed = 0;
@@ -80,6 +96,129 @@ static inline int ble_gatt_transport_send_l2cap_pdu(void *context,
     transport->tx_offset = 0;
     return 1;
 }
+
+#if BLE_GATT_ENABLE_EATT
+static inline int ble_gatt_transport_eatt_open_channel(void *context,
+    uint16_t psm, uint16_t mtu) {
+    ble_gatt_transport *transport = context;
+    uint16_t cid;
+    if (!transport || !transport->eatt_enabled ||
+        psm != BLE_GATT_EATT_PSM || mtu != transport->eatt.local_mtu)
+        return 0;
+    int slot = ble_gatt_eatt_free_slot(&transport->eatt);
+    if (slot < 0 || !ble_l2cap_ecfc_open(&transport->l2cap, psm, &cid))
+        return 0;
+    transport->eatt.bearers[slot].cid = cid;
+    return 1;
+}
+
+static inline int ble_gatt_transport_eatt_send_sdu(void *context,
+    uint16_t cid, const uint8_t *sdu, uint16_t len) {
+    ble_gatt_transport *transport = context;
+    return transport && transport->eatt_enabled &&
+        ble_l2cap_ecfc_send(&transport->l2cap, cid, sdu, len);
+}
+
+static inline void ble_gatt_transport_eatt_close_channel(void *context,
+    uint16_t cid) {
+    ble_gatt_transport *transport = context;
+    if (transport && transport->eatt_enabled)
+        (void)ble_l2cap_channel_close(&transport->l2cap, cid);
+}
+
+static inline int ble_gatt_transport_eatt_receive_att(void *context,
+    uint16_t cid, const uint8_t *pdu, uint16_t len) {
+    ble_gatt_transport *transport = context;
+    return transport && transport->eatt_receive_att &&
+        transport->eatt_receive_att(transport->eatt_context, cid, pdu, len);
+}
+
+static inline uint16_t ble_gatt_transport_authorize_psm(void *context,
+    uint16_t psm) {
+    ble_gatt_transport *transport = context;
+    if (!transport || !transport->eatt_enabled ||
+        psm != BLE_GATT_EATT_PSM) return 0;
+    if (!transport->eatt.encrypted) return 8; // EATT requires encryption.
+    if (ble_gatt_eatt_free_slot(&transport->eatt) < 0) return 4;
+    return 0;
+}
+
+static inline void ble_gatt_transport_channel_opened(void *context,
+    uint16_t psm, uint16_t local_cid, uint16_t remote_cid, uint16_t local_mtu) {
+    ble_gatt_transport *transport = context;
+    (void)remote_cid;
+    if (!transport || !transport->eatt_enabled ||
+        psm != BLE_GATT_EATT_PSM) return;
+    int slot = ble_l2cap_channel_find_local(&transport->l2cap, local_cid);
+    uint16_t mtu = local_mtu;
+    if (slot >= 0 && transport->l2cap.channels[slot].remote_mtu < mtu)
+        mtu = transport->l2cap.channels[slot].remote_mtu;
+    (void)ble_gatt_eatt_channel_opened(&transport->eatt, local_cid, mtu,
+        transport->eatt.encrypted, 1);
+}
+
+static inline void ble_gatt_transport_channel_closed(void *context,
+    uint16_t psm, uint16_t local_cid, uint16_t remote_cid, uint16_t reason) {
+    ble_gatt_transport *transport = context;
+    (void)remote_cid;
+    if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM)
+        ble_gatt_eatt_channel_closed(&transport->eatt, local_cid, reason);
+}
+
+static inline int ble_gatt_transport_channel_data(void *context,
+    uint16_t local_cid, const uint8_t *sdu, uint16_t len) {
+    ble_gatt_transport *transport = context;
+    if (!transport || !transport->eatt_enabled) return 0;
+    return ble_gatt_eatt_receive(&transport->eatt, local_cid, sdu, len);
+}
+
+// Bind EATT channel lifecycle to this transport's shared L2CAP ECFC manager.
+// ATT SDUs go to receive_att until per-bearer ATT state is part of transport.
+static inline int ble_gatt_transport_eatt_init(ble_gatt_transport *transport,
+    uint16_t local_mtu, ble_gatt_transport_eatt_receive_fn receive_att,
+    void *context) {
+    if (!transport || transport->eatt_enabled ||
+        local_mtu < BLE_GATT_EATT_MIN_MTU ||
+        local_mtu > BLE_GATT_EATT_MTU_MAX ||
+        local_mtu > BLE_L2CAP_CHANNEL_MTU_MAX || transport->connected)
+        return 0;
+    if (transport->l2cap.local_mps < BLE_L2CAP_ECFC_MPS_MIN) return 0;
+    ble_gatt_eatt_ops eatt_ops = {0};
+    eatt_ops.open = ble_gatt_transport_eatt_open_channel;
+    eatt_ops.send = ble_gatt_transport_eatt_send_sdu;
+    eatt_ops.close = ble_gatt_transport_eatt_close_channel;
+    eatt_ops.receive_att = ble_gatt_transport_eatt_receive_att;
+    eatt_ops.context = transport;
+    ble_gatt_eatt_init(&transport->eatt, &eatt_ops, local_mtu);
+    transport->eatt_receive_att = receive_att;
+    transport->eatt_context = context;
+    if (!ble_l2cap_psm_register(&transport->l2cap, BLE_GATT_EATT_PSM)) {
+        memset(&transport->eatt, 0, sizeof(transport->eatt));
+        transport->eatt_receive_att = NULL;
+        transport->eatt_context = NULL;
+        return 0;
+    }
+    transport->l2cap.local_mtu = transport->eatt.local_mtu;
+    transport->l2cap.ops.authorize_psm = ble_gatt_transport_authorize_psm;
+    transport->l2cap.ops.channel_opened = ble_gatt_transport_channel_opened;
+    transport->l2cap.ops.channel_closed = ble_gatt_transport_channel_closed;
+    transport->l2cap.ops.channel_data = ble_gatt_transport_channel_data;
+    transport->eatt_enabled = 1;
+    return 1;
+}
+
+static inline int ble_gatt_transport_eatt_open(ble_gatt_transport *transport) {
+    return transport && transport->eatt_enabled &&
+        ble_gatt_eatt_open(&transport->eatt);
+}
+
+// Use when link security is managed outside the transport's security callback.
+static inline void ble_gatt_transport_eatt_set_encrypted(
+    ble_gatt_transport *transport, int encrypted) {
+    if (transport && transport->eatt_enabled)
+        ble_gatt_eatt_set_encrypted(&transport->eatt, encrypted);
+}
+#endif
 
 static inline int ble_gatt_transport_init(ble_gatt_transport *transport,
     ble_gatt_server *server, const ble_gatt_transport_ops *ops) {
@@ -258,6 +397,7 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
     }
     if (!connected) return 0;
     if (transport->bearer_failed) return -1;
+    (void)ble_l2cap_connection_tick(&transport->l2cap, now_ms);
     if (transport->ops.security_state) {
         uint8_t encrypted = 0, authenticated = 0;
         transport->ops.security_state(transport->ops.context, &encrypted,
@@ -265,6 +405,10 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
         if (transport->server)
             ble_gatt_server_set_security(transport->server, encrypted,
                                          authenticated);
+#if BLE_GATT_ENABLE_EATT
+        if (transport->eatt_enabled)
+            ble_gatt_eatt_set_encrypted(&transport->eatt, encrypted);
+#endif
     }
     if (transport->server && transport->encryption_key_size)
         ble_gatt_server_set_encryption_key_size(transport->server,

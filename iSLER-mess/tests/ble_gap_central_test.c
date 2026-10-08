@@ -4130,7 +4130,8 @@ static void test_smp_signing_key_distribution(void) {
     assert(mesh_gap_pair());
     assert(gap_smp.request[5] ==
         (MESH_GAP_KEY_DIST_ENCRYPTION | MESH_GAP_KEY_DIST_SIGNING));
-    assert(gap_smp.request[6] == 0);
+    assert(gap_smp.request[6] ==
+        (MESH_GAP_KEY_DIST_IDENTITY | MESH_GAP_KEY_DIST_SIGNING));
     gap_connection_end();
 
     start_test_central_link();
@@ -4184,6 +4185,58 @@ static void test_smp_signing_key_distribution(void) {
            test_bonds[0].ediv[1] == 0x12 &&
            test_bonds[0].rand[0] == 0x56);
 
+    gap_connection_end();
+
+    // The Central accepts the Responder's negotiated identity and signing
+    // keys after its own key-distribution phase has completed.
+    start_test_central_link();
+    gap_smp.phase = GAP_SMP_BOND_RX;
+    gap_smp.started_ms = GET_MILLIS();
+    gap_smp.bond_rx_step = 10;
+    gap_smp.response[6] = MESH_GAP_KEY_DIST_IDENTITY |
+        MESH_GAP_KEY_DIST_SIGNING;
+    gap_conn.bond.version = MESH_GAP_BOND_VERSION;
+    gap_conn.bond.valid = 1;
+    gap_conn.bond.key_size = 16;
+    gap_conn.bond.peer_address_type = 0;
+    gap_conn.bond.peer_address[0] = 0x42;
+    uint8_t peer_irk[17] = {BLE_SMP_IDENTITY_INFORMATION};
+    memset(peer_irk + 1, 0x3c, 16);
+    receive_test_smp(peer_irk, sizeof(peer_irk), 0);
+    uint8_t peer_identity[8] = {
+        BLE_SMP_IDENTITY_ADDRESS_INFORMATION, 0,
+        0x20, 0x31, 0x42, 0x53, 0x64, 0x75
+    };
+    receive_test_smp(peer_identity, sizeof(peer_identity), 0);
+    uint8_t peer_csrk[17] = {BLE_SMP_SIGNING_INFORMATION};
+    memset(peer_csrk + 1, 0x6d, 16);
+    receive_test_smp(peer_csrk, sizeof(peer_csrk), 0);
+    assert(!gap_smp.phase && gap_conn.bonded &&
+           gap_conn.bond.has_peer_irk && gap_conn.bond.has_peer_csrk &&
+           !memcmp(gap_conn.bond.peer_irk, peer_irk + 1, 16) &&
+           !memcmp(gap_conn.bond.peer_csrk, peer_csrk + 1, 16) &&
+           !memcmp(gap_conn.bond.peer_address, peer_identity + 2, 6));
+    gap_connection_end();
+
+    // The Peripheral starts its negotiated responder distribution with the
+    // Signing Information PDU after consuming the Initiator's LTK pair.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    gap_smp.phase = GAP_SMP_BOND_RX;
+    gap_smp.started_ms = GET_MILLIS();
+    gap_smp.response[6] = MESH_GAP_KEY_DIST_SIGNING;
+    gap_smp.key_size = 16;
+    uint8_t peripheral_ltk[17] = {BLE_SMP_ENCRYPTION_INFORMATION};
+    memset(peripheral_ltk + 1, 0x27, 16);
+    receive_test_smp(peripheral_ltk, sizeof(peripheral_ltk), 0);
+    uint8_t peripheral_master_id[11] = {
+        BLE_SMP_CENTRAL_IDENTIFICATION, 1, 0, 2, 3, 4, 5, 6, 7, 8, 9
+    };
+    receive_test_smp(peripheral_master_id, sizeof(peripheral_master_id), 0);
+    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.bond_tx_step == 13 &&
+           gap_smp.tx_len == 21 && gap_smp.tx[2] == BLE_L2CAP_CID_SMP &&
+           gap_smp.tx[4] == BLE_SMP_SIGNING_INFORMATION &&
+           gap_conn.bond.has_local_csrk);
     gap_connection_end();
 
     assert(mesh_gap_bonding_set(0));
@@ -4333,15 +4386,24 @@ static void test_secure_connections_just_works(void) {
     int vector_result = ble_sc_crypto_test();
     if (vector_result) fprintf(stderr, "SC vector failed: %d\n", vector_result);
     assert(vector_result == 0);
+    memset(test_bonds, 0, sizeof(test_bonds));
+    test_bond_storage_enabled = 1;
+    assert(mesh_gap_bonding_set(1));
     start_test_central_link();
     mesh_gap_pairing_set(1);
     assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 16));
     assert(mesh_gap_secure_connections_set(1));
     assert(mesh_gap_pair());
-    assert(gap_smp.request[3] == 8);
+    assert(gap_smp.request[3] == 9 &&
+           gap_smp.request[5] == MESH_GAP_KEY_DIST_SIGNING &&
+           gap_smp.request[6] ==
+               (MESH_GAP_KEY_DIST_IDENTITY | MESH_GAP_KEY_DIST_SIGNING));
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll(); // Send Pairing Request.
-    const uint8_t response[7] = {2, MESH_GAP_IO_NONE, 0, 8, 16, 0, 0};
+    const uint8_t response[7] = {
+        2, MESH_GAP_IO_NONE, 0, 9, 16,
+        MESH_GAP_KEY_DIST_SIGNING, MESH_GAP_KEY_DIST_SIGNING
+    };
     receive_test_smp(response, sizeof(response), 0);
     assert(gap_smp.phase == GAP_SMP_SC_PUBLIC_KEY && gap_smp.tx_len == 69);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
@@ -4385,15 +4447,33 @@ static void test_secure_connections_just_works(void) {
     gap_security.phase = 0; gap_security.status = 0;
     gap_security.tx_enabled = gap_security.rx_enabled = 1;
     mesh_gap_smp_poll();
+    assert(gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.tx_len == 21 &&
+           gap_smp.tx[4] == BLE_SMP_SIGNING_INFORMATION);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    assert(gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step == 10);
+    uint8_t sc_peer_csrk[17] = {BLE_SMP_SIGNING_INFORMATION};
+    memset(sc_peer_csrk + 1, 0x81, 16);
+    receive_test_smp(sc_peer_csrk, sizeof(sc_peer_csrk), 0);
     assert(mesh_gap_pairing_status() == 0 && !gap_smp.phase &&
+           gap_conn.bonded && gap_conn.bond.has_peer_csrk &&
+           gap_conn.bond.has_local_csrk &&
+           !memcmp(gap_conn.bond.peer_csrk, sc_peer_csrk + 1, 16) &&
            !gap_conn.authenticated && gap_conn.encryption_key_size == 16);
     gap_connection_end();
+    memset(test_bonds, 0, sizeof(test_bonds));
+    assert(mesh_gap_bonding_set(0));
 
     start_test_central_link();
     assert(mesh_gap_pair());
     gap_conn.tx_queued = gap_conn.tx_pending = 0;
     mesh_gap_smp_poll();
-    receive_test_smp(response, sizeof(response), 0);
+    const uint8_t bad_pair_response[7] = {
+        2, MESH_GAP_IO_NONE, 0, 8, 16, 0, 0
+    };
+    receive_test_smp(bad_pair_response, sizeof(bad_pair_response), 0);
     uint8_t bad_public[65] = {12};
     receive_test_smp(bad_public, sizeof(bad_public), 0);
     assert(mesh_gap_pairing_status() == 0x0b);
@@ -4449,6 +4529,7 @@ static void test_secure_connections_just_works(void) {
     gap_connection_end();
     assert(mesh_gap_secure_connections_set(0));
     mesh_gap_pairing_set(0);
+    test_bond_storage_enabled = 0;
 }
 
 static void assert_test_oob_secrets_cleared(void) {

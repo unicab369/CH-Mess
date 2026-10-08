@@ -39,6 +39,14 @@ static int gap_smp_host_cmac(void *context, const uint8_t key[16],
     return 1;
 }
 
+static int gap_smp_host_dhkey(void *context, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+    (void)context;
+    if (!private_key || !peer_public_key || !dhkey) return 0;
+    return uECC_shared_secret(peer_public_key, private_key, dhkey,
+                               uECC_secp256r1());
+}
+
 static int gap_sc_random(uint8_t *out, unsigned len) {
     return ble_smp_random_bytes(&gap_smp.bearer, out, len);
 }
@@ -92,8 +100,8 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     uint8_t dhkey[32];
     uECC_RNG_Function previous = uECC_get_rng();
     uECC_set_rng(gap_sc_random);
-    int derived = uECC_shared_secret(gap_smp.sc.peer_public_key,
-                                     gap_smp.sc.private_key, dhkey, curve);
+    int derived = ble_smp_dhkey(&gap_smp.bearer, gap_smp.sc.private_key,
+                                gap_smp.sc.peer_public_key, dhkey);
     uECC_set_rng(previous);
     if (derived && gap_conn.active && generation == gap_security_generation)
         memcpy(gap_smp.sc.dhkey, dhkey, 32);
@@ -335,6 +343,7 @@ static int mesh_gap_smp_link_init(void) {
     host_ops.random_bytes = gap_smp_host_random;
     host_ops.aes128 = gap_smp_host_aes;
     host_ops.cmac = gap_smp_host_cmac;
+    host_ops.dhkey = gap_smp_host_dhkey;
     if (!ble_smp_set_ops(&gap_smp.bearer, &host_ops)) return 0;
     ble_smp_set_timeout_callback(&gap_smp.bearer, gap_smp_timeout);
     gap_smp.l2cap_ready = 1;
@@ -579,11 +588,13 @@ int mesh_gap_pair(void) {
     else
         memset(&gap_smp.previous_bond, 0, sizeof(gap_smp.previous_bond));
     if (gap_conn.central_role) {
-        uint8_t identity_irk[16], identity_address[7];
-        uint8_t initiator_keys = gap_pairing_policy.bonding &&
-            !gap_pairing_policy.secure_connections ?
-            MESH_GAP_KEY_DIST_ENCRYPTION | MESH_GAP_KEY_DIST_SIGNING : 0;
-        if ((initiator_keys & MESH_GAP_KEY_DIST_ENCRYPTION) &&
+        uint8_t identity_irk[16] = {0}, identity_address[7] = {0};
+        uint8_t initiator_keys = gap_pairing_policy.bonding ?
+            MESH_GAP_KEY_DIST_SIGNING : 0;
+        if (gap_pairing_policy.bonding &&
+            !gap_pairing_policy.secure_connections)
+            initiator_keys |= MESH_GAP_KEY_DIST_ENCRYPTION;
+        if (gap_pairing_policy.bonding &&
             gap_smp_local_identity(identity_irk, identity_address))
             initiator_keys |= MESH_GAP_KEY_DIST_IDENTITY;
         volatile uint8_t *identity_wipe = identity_irk;
@@ -596,6 +607,8 @@ int mesh_gap_pair(void) {
                 (gap_pairing_policy.bonding ? 1 : 0) |
                 (gap_pairing_policy.secure_connections ? 8 : 0),
             16, initiator_keys, 0};
+        request[6] = gap_pairing_policy.bonding ?
+            MESH_GAP_KEY_DIST_IDENTITY | MESH_GAP_KEY_DIST_SIGNING : 0;
         memcpy(gap_smp.request, request, 7);
         gap_smp_queue(1, request + 1, 6);
         gap_smp.phase = GAP_SMP_RESPONSE;
@@ -724,8 +737,10 @@ int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
 // Restore the old Central bond if a replacement was saved but pairing failed
 // before the peer acknowledged Master Identification.
 static void mesh_gap_smp_bond_abort(void) {
-    if (gap_conn.central_role && gap_smp.phase == GAP_SMP_BOND_TX &&
-        gap_smp.bond_tx_step >= 2) {
+    uint8_t staged_central_bond = gap_conn.central_role &&
+        ((gap_smp.phase == GAP_SMP_BOND_TX && gap_smp.bond_tx_step >= 1) ||
+         (gap_smp.phase == GAP_SMP_BOND_RX && gap_smp.bond_rx_step >= 10));
+    if (staged_central_bond) {
         if (gap_smp.previous_bond_valid) {
             mesh_gap_bond_set(&gap_smp.previous_bond);
             memcpy(&gap_conn.bond, &gap_smp.previous_bond, sizeof(gap_conn.bond));
@@ -737,6 +752,60 @@ static void mesh_gap_smp_bond_abort(void) {
             gap_conn.bonded = 0;
         }
         gap_smp.bond_tx_step = 0;
+    }
+}
+
+// The Peripheral sends its negotiated key set only after consuming the
+// Initiator's complete key set. The Central persists after receiving both.
+static void gap_smp_bond_rx_complete(void) {
+    //
+    if (!gap_conn.central_role && gap_smp.response[6]) {
+        uint8_t identity_address[7];
+        if (gap_smp.response[6] & MESH_GAP_KEY_DIST_IDENTITY) {
+            if (!gap_smp_local_identity(gap_conn.bond.local_irk,
+                                         identity_address)) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            gap_conn.bond.has_local_irk = 1;
+            volatile uint8_t *wipe = identity_address;
+            for (size_t i = 0; i < sizeof(identity_address); i++) wipe[i] = 0;
+        }
+        if (gap_smp.response[6] & MESH_GAP_KEY_DIST_SIGNING) {
+            if (!ble_smp_random_bytes(&gap_smp.bearer,
+                    gap_conn.bond.local_csrk,
+                    sizeof(gap_conn.bond.local_csrk))) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            gap_conn.bond.has_local_csrk = 1;
+        }
+        gap_smp.phase = GAP_SMP_BOND_TX;
+        gap_smp.bond_tx_step = 10;
+        if (gap_smp.response[6] & MESH_GAP_KEY_DIST_IDENTITY) {
+            if (!gap_smp_queue(BLE_SMP_IDENTITY_INFORMATION,
+                               gap_conn.bond.local_irk, 16)) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            gap_smp.bond_tx_step = 11;
+        } else if (gap_smp.response[6] & MESH_GAP_KEY_DIST_SIGNING) {
+            if (!gap_smp_queue(BLE_SMP_SIGNING_INFORMATION,
+                               gap_conn.bond.local_csrk, 16)) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            gap_smp.bond_tx_step = 13;
+        }
+        return;
+    }
+    if (mesh_gap_bond_set(&gap_conn.bond)) {
+        gap_conn.bonded = 1;
+        gap_smp_finish(0, 0);
+    } else {
+        gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+        volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
+        for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
     }
 }
 
@@ -779,7 +848,41 @@ static void mesh_gap_smp_poll(void) {
     if ((gap_smp.phase == GAP_SMP_BOND_TX) && gap_smp.bond_tx_waiting) {
         if (gap_conn.tx_pending || gap_conn.tx_queued) return;
         gap_smp.bond_tx_waiting = 0;
-        if (gap_smp.bond_tx_step == 1) {
+        if (!gap_conn.central_role && gap_smp.bond_tx_step == 11) {
+            uint8_t irk[16], identity_address[7];
+            int available = gap_smp_local_identity(irk, identity_address);
+            volatile uint8_t *wipe = irk;
+            for (size_t i = 0; i < sizeof(irk); i++) wipe[i] = 0;
+            if (!available || !gap_smp_queue(
+                    BLE_SMP_IDENTITY_ADDRESS_INFORMATION,
+                    identity_address, sizeof(identity_address))) {
+                wipe = identity_address;
+                for (size_t i = 0; i < sizeof(identity_address); i++) wipe[i] = 0;
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            wipe = identity_address;
+            for (size_t i = 0; i < sizeof(identity_address); i++) wipe[i] = 0;
+            gap_smp.bond_tx_step = 12;
+        } else if (!gap_conn.central_role && gap_smp.bond_tx_step == 12 &&
+                   (gap_smp.response[6] & MESH_GAP_KEY_DIST_SIGNING)) {
+            if (!gap_smp_queue(BLE_SMP_SIGNING_INFORMATION,
+                               gap_conn.bond.local_csrk, 16)) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                return;
+            }
+            gap_smp.bond_tx_step = 13;
+        } else if (!gap_conn.central_role && gap_smp.bond_tx_step >= 12) {
+            if (!mesh_gap_bond_set(&gap_conn.bond)) {
+                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
+                volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
+                for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
+                return;
+            }
+            gap_conn.bonded = 1;
+            gap_smp_finish(0, 0);
+            return;
+        } else if (gap_smp.bond_tx_step == 1) {
             if (gap_smp.response[5] & MESH_GAP_KEY_DIST_IDENTITY) {
                 uint8_t identity_address[7];
                 if (!gap_smp_local_identity(gap_conn.bond.local_irk,
@@ -849,6 +952,12 @@ static void mesh_gap_smp_poll(void) {
             }
             gap_smp.bond_tx_step = 5;
         } else {
+            if (gap_conn.central_role && gap_smp.response[6]) {
+                gap_smp.phase = GAP_SMP_BOND_RX;
+                gap_smp.bond_rx_step = 10;
+                gap_smp.bond_tx_step = 0;
+                return;
+            }
             gap_conn.bonded = 1;
             gap_smp_finish(0, 0);
         }
@@ -912,16 +1021,77 @@ static void mesh_gap_smp_poll(void) {
                 memcpy(bond.ltk, gap_smp.sc.ltk, 16);
                 bond.key_size = 16;
                 bond.authenticated = gap_smp.authenticated;
-                if (!mesh_gap_bond_set(&bond)) {
-                    gap_smp_finish(8, 0);
-                    volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-                    for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
-                    return;
+                if (gap_conn.central_role &&
+                    (gap_smp.response[5] & MESH_GAP_KEY_DIST_IDENTITY)) {
+                    uint8_t address[7] = {0};
+                    if (!gap_smp_local_identity(bond.local_irk, address)) {
+                        gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+                        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+                        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                        return;
+                    }
+                    bond.has_local_irk = 1;
+                    volatile uint8_t *wipe = address;
+                    for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
                 }
-                memcpy(&gap_conn.bond, &bond, sizeof(bond));
-                gap_conn.bonded = 1;
+                if (gap_conn.central_role &&
+                    (gap_smp.response[5] & MESH_GAP_KEY_DIST_SIGNING)) {
+                    if (!ble_smp_random_bytes(&gap_smp.bearer,
+                            bond.local_csrk, sizeof(bond.local_csrk))) {
+                        gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+                        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+                        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                        return;
+                    }
+                    bond.has_local_csrk = 1;
+                }
+                if (gap_conn.central_role) {
+                    if (!mesh_gap_bond_set(&bond)) {
+                        gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+                        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
+                        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                        return;
+                    }
+                    memcpy(&gap_conn.bond, &bond, sizeof(bond));
+                } else {
+                    memcpy(&gap_conn.bond, &bond, sizeof(bond));
+                }
                 volatile uint8_t *wipe = (volatile uint8_t *)&bond;
                 for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                if (gap_conn.central_role) {
+                    if (gap_smp.response[5] & MESH_GAP_KEY_DIST_IDENTITY) {
+                        if (!gap_smp_queue(BLE_SMP_IDENTITY_INFORMATION,
+                                gap_conn.bond.local_irk, 16)) {
+                            gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+                            return;
+                        }
+                        gap_smp.phase = GAP_SMP_BOND_TX;
+                        gap_smp.bond_tx_step = 3;
+                    } else if (gap_smp.response[5] & MESH_GAP_KEY_DIST_SIGNING) {
+                        if (!gap_smp_queue(BLE_SMP_SIGNING_INFORMATION,
+                                gap_conn.bond.local_csrk, 16)) {
+                            gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
+                            return;
+                        }
+                        gap_smp.phase = GAP_SMP_BOND_TX;
+                        gap_smp.bond_tx_step = 5;
+                    } else if (gap_smp.response[6]) {
+                        gap_smp.phase = GAP_SMP_BOND_RX;
+                        gap_smp.bond_rx_step = 10;
+                    } else {
+                        gap_conn.bonded = 1;
+                        gap_smp_finish(0, 0);
+                    }
+                } else if (gap_smp.response[5] &
+                           (MESH_GAP_KEY_DIST_IDENTITY |
+                            MESH_GAP_KEY_DIST_SIGNING)) {
+                    gap_smp.phase = GAP_SMP_BOND_RX;
+                    gap_smp.bond_rx_step = 20;
+                } else {
+                    gap_smp.phase = GAP_SMP_BOND_RX;
+                    gap_smp_bond_rx_complete();
+                }
+                return;
             }
             gap_smp_finish(0, 0);
             return;
@@ -1103,6 +1273,74 @@ static void mesh_gap_smp_poll(void) {
     }
     if (op == 5 && n == 2) { gap_smp_finish(p[1], 0); return; }
     if (gap_smp.phase == GAP_SMP_BOND_RX) {
+        if (gap_conn.central_role && gap_smp.bond_rx_step >= 10) {
+            uint8_t identity = !!(gap_smp.response[6] &
+                MESH_GAP_KEY_DIST_IDENTITY);
+            uint8_t signing = !!(gap_smp.response[6] &
+                MESH_GAP_KEY_DIST_SIGNING);
+            uint8_t signing_step = identity ? 12 : 10;
+            if (identity && gap_smp.bond_rx_step == 10 &&
+                op == BLE_SMP_IDENTITY_INFORMATION && n == 17) {
+                memcpy(gap_conn.bond.peer_irk, p + 1, 16);
+                gap_conn.bond.has_peer_irk = 1;
+                gap_smp.bond_rx_step = 11;
+                return;
+            }
+            if (identity && gap_smp.bond_rx_step == 11 &&
+                op == BLE_SMP_IDENTITY_ADDRESS_INFORMATION && n == 8 &&
+                p[1] <= 1 && (!p[1] || (p[7] & 0xc0) == 0xc0)) {
+                gap_conn.bond.peer_address_type = p[1];
+                memcpy(gap_conn.bond.peer_address, p + 2, 6);
+                gap_conn.peer_identity_type = p[1];
+                memcpy(gap_conn.peer_identity_address, p + 2, 6);
+                gap_smp.bond_rx_step = 12;
+                if (!signing) gap_smp_bond_rx_complete();
+                return;
+            }
+            if (signing && gap_smp.bond_rx_step == signing_step &&
+                op == BLE_SMP_SIGNING_INFORMATION && n == 17) {
+                memcpy(gap_conn.bond.peer_csrk, p + 1, 16);
+                gap_conn.bond.has_peer_csrk = 1;
+                gap_smp_bond_rx_complete();
+                return;
+            }
+            gap_smp_finish(BLE_SMP_FAIL_INVALID_PARAMETERS, 1);
+            return;
+        }
+        if (!gap_conn.central_role && gap_smp.bond_rx_step >= 20) {
+            uint8_t identity = !!(gap_smp.response[5] &
+                MESH_GAP_KEY_DIST_IDENTITY);
+            uint8_t signing = !!(gap_smp.response[5] &
+                MESH_GAP_KEY_DIST_SIGNING);
+            uint8_t signing_step = identity ? 22 : 20;
+            if (identity && gap_smp.bond_rx_step == 20 &&
+                op == BLE_SMP_IDENTITY_INFORMATION && n == 17) {
+                memcpy(gap_conn.bond.peer_irk, p + 1, 16);
+                gap_conn.bond.has_peer_irk = 1;
+                gap_smp.bond_rx_step = 21;
+                return;
+            }
+            if (identity && gap_smp.bond_rx_step == 21 &&
+                op == BLE_SMP_IDENTITY_ADDRESS_INFORMATION && n == 8 &&
+                p[1] <= 1 && (!p[1] || (p[7] & 0xc0) == 0xc0)) {
+                gap_conn.bond.peer_address_type = p[1];
+                memcpy(gap_conn.bond.peer_address, p + 2, 6);
+                gap_conn.peer_identity_type = p[1];
+                memcpy(gap_conn.peer_identity_address, p + 2, 6);
+                gap_smp.bond_rx_step = 22;
+                if (!signing) gap_smp_bond_rx_complete();
+                return;
+            }
+            if (signing && gap_smp.bond_rx_step == signing_step &&
+                op == BLE_SMP_SIGNING_INFORMATION && n == 17) {
+                memcpy(gap_conn.bond.peer_csrk, p + 1, 16);
+                gap_conn.bond.has_peer_csrk = 1;
+                gap_smp_bond_rx_complete();
+                return;
+            }
+            gap_smp_finish(BLE_SMP_FAIL_INVALID_PARAMETERS, 1);
+            return;
+        }
         if (op == 6 && n == 17 && !gap_smp.bond_rx_step) {
             memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
             gap_conn.bond.version = MESH_GAP_BOND_VERSION;
@@ -1132,14 +1370,7 @@ static void mesh_gap_smp_poll(void) {
                 gap_smp.bond_rx_step = 4;
                 return;
             }
-            if (mesh_gap_bond_set(&gap_conn.bond)) {
-                gap_conn.bonded = 1;
-                gap_smp_finish(0, 0);
-            } else {
-                gap_smp_finish(8, 0);
-                volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
-                for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
-            }
+            gap_smp_bond_rx_complete();
             return;
         }
         if (op == BLE_SMP_IDENTITY_INFORMATION && n == 17 &&
@@ -1159,14 +1390,8 @@ static void mesh_gap_smp_poll(void) {
             gap_conn.peer_identity_type = p[1];
             memcpy(gap_conn.peer_identity_address, p + 2, 6);
             gap_smp.bond_rx_step = 4;
-            if (!(gap_smp.response[5] & MESH_GAP_KEY_DIST_SIGNING)) {
-                if (mesh_gap_bond_set(&gap_conn.bond)) {
-                    gap_conn.bonded = 1;
-                    gap_smp_finish(0, 0);
-                } else {
-                    gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
-                }
-            }
+            if (!(gap_smp.response[5] & MESH_GAP_KEY_DIST_SIGNING))
+                gap_smp_bond_rx_complete();
             return;
         }
         if (op == BLE_SMP_SIGNING_INFORMATION && n == 17 &&
@@ -1174,14 +1399,7 @@ static void mesh_gap_smp_poll(void) {
             (gap_smp.response[5] & MESH_GAP_KEY_DIST_SIGNING)) {
             memcpy(gap_conn.bond.peer_csrk, p + 1, 16);
             gap_conn.bond.has_peer_csrk = 1;
-            if (mesh_gap_bond_set(&gap_conn.bond)) {
-                gap_conn.bonded = 1;
-                gap_smp_finish(0, 0);
-            } else {
-                gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 0);
-                volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
-                for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
-            }
+            gap_smp_bond_rx_complete();
             return;
         }
         gap_smp_finish(0x0a, 1);
@@ -1208,7 +1426,9 @@ static void mesh_gap_smp_poll(void) {
             p[4] < 7 || p[4] > 16) goto failed;
         if (op == 2 && ((p[5] & (uint8_t)~(MESH_GAP_KEY_DIST_ENCRYPTION |
                                            MESH_GAP_KEY_DIST_IDENTITY |
-                                           MESH_GAP_KEY_DIST_SIGNING)) || p[6] ||
+                                           MESH_GAP_KEY_DIST_SIGNING)) ||
+            (p[6] & (uint8_t)~(MESH_GAP_KEY_DIST_IDENTITY |
+                              MESH_GAP_KEY_DIST_SIGNING)) ||
             (p[5] & (uint8_t)~gap_smp.request[5]) ||
             (p[6] & (uint8_t)~gap_smp.request[6]))) goto failed;
         gap_smp.sc_active = gap_pairing_policy.secure_connections && (p[3] & 8);
@@ -1217,8 +1437,9 @@ static void mesh_gap_smp_poll(void) {
         }
         if (gap_smp.sc_active && p[4] != 16) { error = 6; goto failed; }
         if (!gap_smp.sc_active && p[2]) { error = 2; goto failed; }
-        if (gap_smp.sc_active && ((p[3] & 2) || p[5] || p[6])) {
-            error = 3; goto failed; // SC key distribution remains unsupported.
+        if (gap_smp.sc_active &&
+            ((p[5] | p[6]) & MESH_GAP_KEY_DIST_ENCRYPTION)) {
+            error = 3; goto failed;
         }
         // The local flag means we have the peer's data; p[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
@@ -1352,6 +1573,18 @@ static void mesh_gap_smp_poll(void) {
         gap_smp.status = MESH_GAP_CONNECTION_PENDING;
         if (op == 1) {
             memcpy(gap_smp.request, p, 7);
+            uint8_t responder_keys = 0;
+            if (gap_smp.bond_requested) {
+                responder_keys = MESH_GAP_KEY_DIST_SIGNING;
+                uint8_t irk[16] = {0}, address[7] = {0};
+                if (gap_smp_local_identity(irk, address))
+                    responder_keys |= MESH_GAP_KEY_DIST_IDENTITY;
+                volatile uint8_t *wipe = irk;
+                for (size_t i = 0; i < sizeof(irk); i++) wipe[i] = 0;
+                wipe = address;
+                for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+                responder_keys &= p[6];
+            }
             gap_smp.response[0] = 2;
             gap_smp.response[1] = local_io;
             gap_smp.response[2] = gap_smp.sc.oob_active ? local_oob_flag : 0;
@@ -1360,12 +1593,12 @@ static void mesh_gap_smp_poll(void) {
                 (gap_smp.bond_requested ? 1 : 0) |
                 (gap_smp.sc_active ? 8 : 0);
             gap_smp.response[4] = 16;
-            gap_smp.response[5] = gap_smp.bond_requested &&
-                !gap_smp.sc_active ? (p[5] &
+            gap_smp.response[5] = gap_smp.bond_requested ? (p[5] &
                     (MESH_GAP_KEY_DIST_ENCRYPTION |
                      MESH_GAP_KEY_DIST_IDENTITY |
-                     MESH_GAP_KEY_DIST_SIGNING)) : 0;
-            gap_smp.response[6] = 0;
+                     MESH_GAP_KEY_DIST_SIGNING) &
+                     (gap_smp.sc_active ? (uint8_t)~MESH_GAP_KEY_DIST_ENCRYPTION : 0xff)) : 0;
+            gap_smp.response[6] = responder_keys;
             gap_smp_queue(2, gap_smp.response + 1, 6);
         } else {
             memcpy(gap_smp.response, p, 7);

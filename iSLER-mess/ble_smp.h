@@ -14,8 +14,8 @@
 // - [x] Keep the GAP-specific pairing procedures isolated in ble_smp_gap.h.
 // - [ ] Refactor those procedures onto this module's host callbacks so a
 //       non-GAP host can reuse the pairing state machine.
-// - [ ] Complete and verify every supported legacy pairing flow (feature
-//       exchange, Just Works, Passkey Entry, confirm/random, key derivation).
+// - [ ] Complete and verify legacy Just Works, Passkey Entry, confirm/random,
+//       key derivation, and both Central/Peripheral role combinations.
 // - [ ] Complete and verify Secure Connections public-key, numeric-comparison,
 //       passkey, OOB, DHKey-check, and key derivation flows.
 // - [x] Define host callbacks for cryptographic randomness/primitives, user
@@ -23,7 +23,16 @@
 // - [x] Provide checked generic dispatch helpers for every host callback.
 // - [x] Validate Pairing Feature fields and negotiate key size, SC, bonding,
 //       and key-distribution intersections under a host-supplied policy.
-// - [ ] Integrate bond key distribution, persistence, restoration, and
+// - [x] Distribute legacy Initiator IRK/identity address and CSRK and store
+//       the received keys with the bond.
+// - [x] Distribute and receive legacy Responder IRK/identity address and
+//       CSRK after the Initiator's key set.
+// - [x] Use the same identity/signing key exchange for Secure Connections;
+//       SC does not distribute legacy Encryption Information.
+// - [ ] Support and verify Encryption Information in both legacy directions.
+// - [ ] Verify Secure Connections key distribution as Peripheral and with an
+//       independent Bluetooth host.
+// - [ ] Integrate generic bond distribution, persistence, restoration, and
 //       removal through host-provided storage callbacks.
 // - [x] Validate command-specific lengths, ignore reserved opcodes, track the
 //       30-second pairing timer, and wipe queued data when it expires.
