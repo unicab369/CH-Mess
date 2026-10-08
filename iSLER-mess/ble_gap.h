@@ -315,8 +315,19 @@ int BLE_GAP_BOND_DELETE(uint8_t slot);
 
 int mesh_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
                       mesh_gap_bond *out);
+int mesh_gap_bond_set(const mesh_gap_bond *bond);
 int mesh_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
+static int gap_smp_generic_bond_load(const uint8_t peer_address[6],
+                                     uint8_t address_type,
+                                     mesh_gap_bond *out);
+static int gap_smp_generic_bond_store(const mesh_gap_bond *bond);
+static int gap_smp_generic_bond_remove(const uint8_t peer_address[6],
+                                       uint8_t address_type);
 int mesh_gap_pair(void);
+int mesh_gap_smp_user_request_set(ble_smp_user_request_fn callback,
+                                  void *context);
+int mesh_gap_keypress_notifications_set(uint8_t enabled);
+int mesh_gap_passkey_keypress(uint8_t notification_type);
 int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
 int mesh_gap_encrypted(void);
 
@@ -559,11 +570,15 @@ enum { GAP_SMP_IDLE, GAP_SMP_RESPONSE, GAP_SMP_CONFIRM, GAP_SMP_RANDOM,
 #define MESH_GAP_PASSKEY_DISPLAY 1
 #define MESH_GAP_PASSKEY_INPUT 2
 static uint8_t gap_pairing_enabled;
+static ble_smp_user_request_fn gap_smp_user_request_callback;
+static void *gap_smp_user_request_context;
 static struct {
     uint8_t io, authenticated, min_key_size, bonding, secure_connections;
+    uint8_t keypress_notifications;
 } gap_pairing_policy = {MESH_GAP_IO_NONE, 0, 7};
 typedef struct {
     uint8_t phase, status, blocked, key_size, encryption_started;
+    uint8_t user_notified, numeric_notified, keypress_active;
     uint8_t authenticated, passkey_action, confirm_received, tk[16];
     uint8_t bond_requested, bond_tx_step, bond_tx_waiting, bond_rx_step, sc_active;
     uint8_t previous_bond_valid;

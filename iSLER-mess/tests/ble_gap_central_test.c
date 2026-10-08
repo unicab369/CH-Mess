@@ -12,6 +12,19 @@ int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
 
 static uint8_t test_bond_storage_enabled;
 static mesh_gap_bond test_bonds[MESH_GAP_BOND_SLOTS];
+typedef struct {
+    unsigned calls;
+    uint8_t action;
+    uint32_t value;
+} test_smp_ui;
+static int test_smp_user_request(void *context, uint8_t action,
+                                 uint32_t value) {
+    test_smp_ui *ui = context;
+    ui->calls++;
+    ui->action = action;
+    ui->value = value;
+    return 0; // The application will answer through the existing GAP API.
+}
 int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) {
     if (!test_bond_storage_enabled || slot >= MESH_GAP_BOND_SLOTS) return -1;
     if (!test_bonds[slot].valid) return 0;
@@ -4333,6 +4346,8 @@ static void test_passkey_pairing(void) {
     assert(!mesh_gap_security_set(2, 1, 6));
     assert(!mesh_gap_passkey_reply(19655));
     mesh_gap_pairing_set(1);
+    test_smp_ui ui = {0};
+    assert(mesh_gap_smp_user_request_set(test_smp_user_request, &ui));
     for (uint8_t central = 0; central < 2; central++) {
         for (uint8_t local_io = 0; local_io < 5; local_io++) {
             if (local_io == MESH_GAP_IO_NONE) continue;
@@ -4346,10 +4361,15 @@ static void test_passkey_pairing(void) {
                     assert(mesh_gap_pairing_status() == 3);
                     gap_connection_end(); continue;
                 }
+                mesh_gap_smp_poll(); // Deliver the asynchronous UI callback.
                 uint8_t input = local_io == 2 ||
                     (local_io == 4 && (peer_io < 2 || (peer_io == 4 && !central)));
                 uint32_t passkey = 19655;
                 assert(mesh_gap_passkey(&passkey) == (input ? MESH_GAP_PASSKEY_INPUT : MESH_GAP_PASSKEY_DISPLAY));
+                assert(ui.calls && ui.action == (input ?
+                    BLE_SMP_USER_PASSKEY_INPUT : BLE_SMP_USER_PASSKEY_DISPLAY) &&
+                    ui.value == (input ? 0 : passkey));
+                ui.calls = 0;
                 assert(passkey <= 999999);
                 assert(!mesh_gap_authenticated() && !mesh_gap_key_size());
                 assert(!mesh_gap_security_set(0, 0, 7));
@@ -4459,6 +4479,59 @@ static void test_passkey_pairing(void) {
     receive_test_smp(request, 2, 0);
     assert(gap_smp.request[3] == 4 && gap_smp.tx[7] == 4);
     gap_connection_end();
+    assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
+    mesh_gap_pairing_set(0);
+    assert(mesh_gap_smp_user_request_set(NULL, NULL));
+}
+
+static void test_smp_keypress_notifications(void) {
+    test_smp_ui ui = {0};
+    mesh_gap_pairing_set(1); // Keep pairing enabled for both roles.
+    assert(mesh_gap_keypress_notifications_set(1));
+    assert(mesh_gap_smp_user_request_set(test_smp_user_request, &ui));
+
+    // Local KeyboardOnly Peripheral sends progress events to a display peer.
+    start_test_central_link();
+    gap_conn.central_role = 0;
+    assert(mesh_gap_security_set(MESH_GAP_IO_KEYBOARD_ONLY, 1, 16));
+    assert(mesh_gap_pair());
+    uint8_t display_request[7] = {
+        BLE_SMP_PAIRING_REQUEST, MESH_GAP_IO_DISPLAY_ONLY, 0, 0x14, 16, 0, 0
+    };
+    receive_test_smp(display_request, sizeof(display_request), 0);
+    assert(gap_smp.keypress_active &&
+           gap_smp.response[3] == 0x14 &&
+           gap_smp.passkey_action == MESH_GAP_PASSKEY_INPUT);
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll(); // Complete the Pairing Response transmission.
+    assert(mesh_gap_passkey_keypress(BLE_SMP_KEYPRESS_STARTED));
+    gap_conn.tx_queued = gap_conn.tx_pending = 0;
+    mesh_gap_smp_poll();
+    assert(gap_conn.tx_queued && gap_conn.tx_data[4] ==
+           BLE_SMP_KEYPRESS_NOTIFICATION && gap_conn.tx_data[5] ==
+           BLE_SMP_KEYPRESS_STARTED);
+    assert(!mesh_gap_passkey_keypress(5));
+    gap_connection_end();
+
+    // A local display receives valid progress events from its keyboard peer.
+    memset(&ui, 0, sizeof(ui));
+    start_test_central_link();
+    assert(mesh_gap_security_set(MESH_GAP_IO_DISPLAY_ONLY, 1, 16));
+    assert(mesh_gap_pair());
+    const uint8_t keyboard_response[7] = {
+        BLE_SMP_PAIRING_RESPONSE, MESH_GAP_IO_KEYBOARD_ONLY, 0, 0x14, 16, 0, 0
+    };
+    receive_test_smp(keyboard_response, sizeof(keyboard_response), 0);
+    assert(gap_smp.keypress_active);
+    const uint8_t entered[2] = {
+        BLE_SMP_KEYPRESS_NOTIFICATION, BLE_SMP_KEYPRESS_DIGIT_ENTERED
+    };
+    receive_test_smp(entered, sizeof(entered), 0);
+    assert(ui.calls && ui.action == BLE_SMP_USER_KEYPRESS &&
+           ui.value == BLE_SMP_KEYPRESS_DIGIT_ENTERED);
+    gap_connection_end();
+    assert(mesh_gap_keypress_notifications_set(0));
+    assert(mesh_gap_smp_user_request_set(NULL, NULL));
     assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
     mesh_gap_pairing_set(0);
 }
@@ -4906,6 +4979,8 @@ static void test_secure_connections_oob_cancel_clears_data(void) {
 static void test_secure_connections_numeric_comparison(void) {
     assert(mesh_gap_security_set(MESH_GAP_IO_DISPLAY_YES_NO, 1, 16));
     assert(mesh_gap_secure_connections_set(1));
+    test_smp_ui ui = {0};
+    assert(mesh_gap_smp_user_request_set(test_smp_user_request, &ui));
     for (uint8_t accept = 0; accept < 2; accept++) {
         start_test_central_link();
         mesh_gap_pairing_set(1);
@@ -4940,6 +5015,10 @@ static void test_secure_connections_numeric_comparison(void) {
         assert(gap_smp.phase == GAP_SMP_SC_USER && !gap_smp.tx_len);
         uint32_t value;
         assert(mesh_gap_numeric_comparison(&value) && value < 1000000);
+        mesh_gap_smp_poll();
+        assert(ui.calls == 1 && ui.action ==
+            BLE_SMP_USER_NUMERIC_COMPARISON && ui.value == value);
+        memset(&ui, 0, sizeof(ui));
         assert(!mesh_gap_authenticated());
         assert(mesh_gap_numeric_comparison_reply(accept));
         assert(!mesh_gap_numeric_comparison_reply(accept));
@@ -5022,6 +5101,7 @@ static void test_secure_connections_numeric_comparison(void) {
     assert(mesh_gap_secure_connections_set(0));
     assert(mesh_gap_security_set(MESH_GAP_IO_NONE, 0, 7));
     mesh_gap_pairing_set(0);
+    assert(mesh_gap_smp_user_request_set(NULL, NULL));
 }
 
 static void test_secure_connections_passkey(void) {
@@ -5252,6 +5332,7 @@ int main(void) {
     test_smp_pairing();
     test_smp_signing_key_distribution();
     test_passkey_pairing();
+    test_smp_keypress_notifications();
     test_secure_connections_just_works();
     test_secure_connections_oob_rejects_bad_commitment();
     test_secure_connections_oob_success();

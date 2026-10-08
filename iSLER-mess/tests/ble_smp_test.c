@@ -110,11 +110,20 @@ int main(void) {
     assert(ble_smp_parse_pairing_features(pairing_pdu, sizeof(pairing_pdu),
         &parsed));
     assert(!memcmp(&parsed, &local, sizeof(local)));
+    pairing_pdu[3] |= 0x40;
+    assert(!ble_smp_parse_pairing_features(pairing_pdu, sizeof(pairing_pdu),
+        &parsed));
+    assert(!memcmp(&parsed, &(ble_smp_pairing_features){0}, sizeof(parsed)));
+    pairing_pdu[3] &= (uint8_t)~0x40;
     assert(ble_smp_negotiate_features(&local, &peer, &policy,
         &negotiated) == 0);
     assert(negotiated.max_key_size == 12 && negotiated.secure_connections &&
            negotiated.bonding && negotiated.initiator_key_distribution == 6 &&
            negotiated.responder_key_distribution == 6);
+    ble_smp_pairing_features reserved_auth = local;
+    reserved_auth.auth_req |= 0x40;
+    assert(ble_smp_negotiate_features(&reserved_auth, &peer, &policy,
+        &negotiated) == BLE_SMP_FAIL_INVALID_PARAMETERS);
     policy.require_secure_connections = 1;
     peer.auth_req &= (uint8_t)~BLE_SMP_AUTH_SECURE_CONNECTIONS;
     assert(ble_smp_negotiate_features(&local, &peer, &policy,
@@ -157,14 +166,36 @@ int main(void) {
     assert(ble_smp_set_link_encryption(&smp, ltk, 16, 1) && fake.encrypted);
     ble_smp_bond stored = {0};
     stored.valid = 1; stored.peer_address_type = 0; stored.key_size = 16;
+    stored.version = 1;
     stored.authenticated = 1; stored.peer_address[0] = 0x42;
+    stored.has_peer_irk = stored.has_local_irk = 1;
+    stored.has_peer_csrk = stored.has_local_csrk = 1;
+    stored.has_peripheral_ltk = 1;
+    memset(stored.ltk, 0x11, sizeof(stored.ltk));
+    memset(stored.irk, 0x22, sizeof(stored.irk));
+    memset(stored.local_irk, 0x33, sizeof(stored.local_irk));
+    memset(stored.csrk, 0x44, sizeof(stored.csrk));
+    memset(stored.local_csrk, 0x55, sizeof(stored.local_csrk));
+    memset(stored.peripheral_ltk, 0x66, sizeof(stored.peripheral_ltk));
+    memset(stored.peripheral_rand, 0x77, sizeof(stored.peripheral_rand));
+    stored.peripheral_ediv[0] = 0x88;
+    stored.peripheral_ediv[1] = 0x99;
     assert(ble_smp_bond_store(&smp, &stored));
+    ble_smp_bond malformed_bond = stored;
+    malformed_bond.has_peripheral_ltk = 0;
+    assert(!ble_smp_bond_store(&smp, &malformed_bond));
     stored.key_size = 6;
     assert(!ble_smp_bond_store(&smp, &stored));
     stored.key_size = 16;
     ble_smp_bond restored;
     assert(ble_smp_bond_load(&smp, 0, stored.peer_address, &restored));
     assert(!memcmp(&restored, &stored, sizeof(stored)));
+    fake.bond.has_local_csrk = 0;
+    memset(&restored, 0xa5, sizeof(restored));
+    assert(!ble_smp_bond_load(&smp, 0, stored.peer_address, &restored));
+    for (size_t i = 0; i < sizeof(restored); i++)
+        assert(((const uint8_t *)&restored)[i] == 0);
+    fake.bond = stored;
     assert(ble_smp_bond_remove(&smp, 0, stored.peer_address) &&
            fake.removed == 1);
     assert(!ble_smp_tick(&smp, UINT32_MAX - 1000));
@@ -208,6 +239,11 @@ int main(void) {
                              sizeof(signing_information)));
     assert(!ble_smp_pdu_valid(signing_information,
                               sizeof(signing_information) - 1));
+    const uint8_t keypress[] = {BLE_SMP_KEYPRESS_NOTIFICATION,
+        BLE_SMP_KEYPRESS_DIGIT_ENTERED};
+    assert(ble_smp_pdu_valid(keypress, sizeof(keypress)));
+    const uint8_t invalid_keypress[] = {BLE_SMP_KEYPRESS_NOTIFICATION, 5};
+    assert(!ble_smp_pdu_valid(invalid_keypress, sizeof(invalid_keypress)));
 
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     assert(!ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
@@ -220,7 +256,14 @@ int main(void) {
            !memcmp(fake.pdu, pairing_request, sizeof(pairing_request)));
 
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
+    assert(smp.procedure_active && smp.deadline_ms);
+    ble_smp_procedure_finish(&smp);
+    assert(!smp.tx_len && !smp.procedure_active && !smp.deadline_ms);
+    assert(smp.l2cap == &l2cap && smp.receive == fake_receive &&
+           smp.ops.random_bytes == fake_random);
+    assert(!ble_smp_tick(&smp, 100000));
+    assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     ble_smp_reset(&smp);
-    assert(!smp.tx_len);
+    assert(!smp.tx_len && !smp.procedure_active);
     return 0;
 }

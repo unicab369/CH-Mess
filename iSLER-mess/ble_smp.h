@@ -12,8 +12,8 @@
 // - [x] Route GAP's SMP traffic through the shared L2CAP reassembler,
 //       fixed-CID dispatcher, and Basic L2CAP encoder.
 // - [x] Keep the GAP-specific pairing procedures isolated in ble_smp_gap.h.
-// - [ ] Refactor those procedures onto this module's host callbacks so a
-//       non-GAP host can reuse the pairing state machine.
+// - [ ] Move the GAP-owned pairing state machine into a reusable SMP engine
+//       driven by these host callbacks.
 // - [x] Verify legacy Just Works, Passkey Entry, confirm/random, key derivation,
 //       and both Central/Peripheral role combinations.
 // - [x] Verify Secure Connections public-key, numeric-comparison, passkey, OOB,
@@ -21,6 +21,14 @@
 // - [x] Define host callbacks for cryptographic randomness/primitives, user
 //       interaction, link encryption, and bond load/store/removal.
 // - [x] Provide checked generic dispatch helpers for every host callback.
+// - [x] Route GAP's Central-side legacy and SC encryption starts through the
+//       generic set-link-encryption callback.
+// - [x] Use generic feature parsing and policy negotiation in GAP's
+//       Pairing Request/Response handler.
+// - [x] Deliver GAP passkey and numeric-comparison prompts through the generic
+//       user-request callback while preserving asynchronous GAP reply methods.
+// - [x] Negotiate optional passkey keypress notifications and expose typed
+//       send/receive events through the generic SMP UI callback.
 // - [x] Validate Pairing Feature fields and negotiate key size, SC, bonding,
 //       and key-distribution intersections under a host-supplied policy.
 // - [x] Distribute legacy Initiator IRK/identity address and CSRK and store
@@ -33,17 +41,17 @@
 //       legacy directions; keep the two distributed LTK sets separate.
 // - [x] Verify identity-only Secure Connections key distribution in both
 //       Central and Peripheral roles.
-// - [ ] Verify Secure Connections pairing and key distribution with an
-//       independent Bluetooth host.
-// - [ ] Integrate generic bond distribution, persistence, restoration, and
-//       removal through host-provided storage callbacks.
+// - [ ] Verify full pairing, encryption, and key distribution against an
+//       independent Bluetooth host (the Bumble check currently covers the
+//       bearer and Pairing Request/Response codecs only).
+// - [x] Route GAP bond persistence, restoration lookup, rollback, and removal
+//       through the generic bond callbacks with the complete LE bond schema.
 // - [x] Validate command-specific lengths, ignore reserved opcodes, track the
 //       30-second pairing timer, and wipe queued data when it expires.
 // - [x] Reject malformed and out-of-order pairing PDUs and erase temporary
 //       pairing secrets on disconnect or failure.
-// - [ ] Add BR/EDR security-manager procedures and cross-transport collision
-//       handling if Classic transport support is added.
-// - [ ] Verify pairing with an independent BLE host.
+// - [ ] Add BR/EDR security-manager procedures only if Classic transport is
+//       supported; BR/EDR SMP is outside this LE SMP implementation.
 #include "ble_l2cap.h"
 
 #ifndef BLE_SMP_PDU_MAX
@@ -52,6 +60,7 @@
 #ifndef BLE_SMP_TIMEOUT_MS
 #define BLE_SMP_TIMEOUT_MS 30000u
 #endif
+#define BLE_SMP_BOND_SCHEMA_VERSION 1u
 
 enum {
     BLE_SMP_PAIRING_REQUEST = 0x01,
@@ -85,9 +94,26 @@ enum {
     BLE_SMP_FAIL_NUMERIC_COMPARISON = 0x0c
 };
 
+enum {
+    BLE_SMP_KEYPRESS_STARTED = 0,
+    BLE_SMP_KEYPRESS_DIGIT_ENTERED = 1,
+    BLE_SMP_KEYPRESS_DIGIT_ERASED = 2,
+    BLE_SMP_KEYPRESS_CLEARED = 3,
+    BLE_SMP_KEYPRESS_COMPLETED = 4
+};
+
 typedef int (*ble_smp_pdu_fn)(void *context, const uint8_t *pdu,
                               uint16_t len);
 typedef void (*ble_smp_timeout_fn)(void *context);
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
+
+enum {
+    BLE_SMP_USER_PASSKEY_DISPLAY = 1,
+    BLE_SMP_USER_PASSKEY_INPUT = 2,
+    BLE_SMP_USER_NUMERIC_COMPARISON = 3,
+    BLE_SMP_USER_KEYPRESS = 4
+};
 
 typedef struct {
     uint8_t valid, peer_address_type, key_size, authenticated;
@@ -95,6 +121,14 @@ typedef struct {
     uint8_t ltk[16], irk[16], csrk[16];
     uint8_t rand[8];
     uint16_t ediv;
+    // Full LE bond schema: the peer/local key flags make absent keys
+    // distinguishable from valid all-zero key material.
+    uint8_t version;
+    uint8_t has_peer_irk, has_local_irk;
+    uint8_t has_peer_csrk, has_local_csrk;
+    uint8_t local_irk[16], local_csrk[16];
+    uint8_t peripheral_ltk[16], peripheral_rand[8], peripheral_ediv[2];
+    uint8_t has_peripheral_ltk;
 } ble_smp_bond;
 
 typedef struct {
@@ -107,8 +141,11 @@ typedef struct {
                 size_t len, uint8_t output[16]);
     int (*dhkey)(void *context, const uint8_t private_key[32],
                  const uint8_t peer_public_key[64], uint8_t dhkey[32]);
-    // Return 1 to accept, 0 when asynchronous UI is pending, or -1 to reject.
-    int (*user_request)(void *context, uint8_t action, uint32_t value);
+    // User action is one of BLE_SMP_USER_*; value carries a displayed passkey
+    // or numeric-comparison value. Return <0 to reject, 0 when a reply is
+    // pending asynchronously, or >0 to accept. PASSKEY_INPUT is a prompt:
+    // the entered value is supplied later by the host's pairing procedure.
+    ble_smp_user_request_fn user_request;
     int (*set_link_encryption)(void *context, const uint8_t ltk[16],
                                uint8_t key_size, uint8_t authenticated);
     int (*bond_load)(void *context, uint8_t address_type,
@@ -133,8 +170,9 @@ static inline int ble_smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
     case BLE_SMP_SIGNING_INFORMATION:
     case BLE_SMP_PAIRING_DHKEY_CHECK: return len == 17;
     case BLE_SMP_PAIRING_FAILED:
-    case BLE_SMP_SECURITY_REQUEST:
-    case BLE_SMP_KEYPRESS_NOTIFICATION: return len == 2;
+    case BLE_SMP_SECURITY_REQUEST: return len == 2;
+    case BLE_SMP_KEYPRESS_NOTIFICATION:
+        return len == 2 && pdu[1] <= BLE_SMP_KEYPRESS_COMPLETED;
     case BLE_SMP_CENTRAL_IDENTIFICATION: return len == 11;
     case BLE_SMP_IDENTITY_ADDRESS_INFORMATION: return len == 8;
     case BLE_SMP_PAIRING_PUBLIC_KEY: return len == 65;
@@ -168,6 +206,30 @@ typedef struct {
     uint8_t responder_key_distribution;
 } ble_smp_negotiated_features;
 
+enum {
+    BLE_SMP_AUTH_BONDING_MASK = 0x03,
+    BLE_SMP_AUTH_MITM = 0x04,
+    BLE_SMP_AUTH_SECURE_CONNECTIONS = 0x08,
+    BLE_SMP_AUTH_KEYPRESS = 0x10,
+    BLE_SMP_KEY_DIST_ENCRYPTION = 0x01,
+    BLE_SMP_KEY_DIST_IDENTITY = 0x02,
+    BLE_SMP_KEY_DIST_SIGNING = 0x04,
+    BLE_SMP_KEY_DIST_LINK = 0x08,
+    BLE_SMP_KEY_DIST_MASK = 0x0f
+};
+
+static inline int ble_smp_pairing_features_valid(
+    const ble_smp_pairing_features *features) {
+    // AuthReq bits 6-7 are reserved. Bit 5 is CT2 and is valid; this LE
+    // feature negotiator preserves it without selecting a separate mode.
+    return features && features->io_capability <= 4 &&
+        features->oob_data_flag <= 1 && !(features->auth_req & 0xc0) &&
+        (features->auth_req & BLE_SMP_AUTH_BONDING_MASK) <= 1 &&
+        features->max_key_size >= 7 && features->max_key_size <= 16 &&
+        !(features->initiator_key_distribution & ~BLE_SMP_KEY_DIST_MASK) &&
+        !(features->responder_key_distribution & ~BLE_SMP_KEY_DIST_MASK);
+}
+
 static inline int ble_smp_parse_pairing_features(const uint8_t *pdu,
     uint16_t len, ble_smp_pairing_features *features) {
     if (!ble_smp_pdu_valid(pdu, len) ||
@@ -179,13 +241,16 @@ static inline int ble_smp_parse_pairing_features(const uint8_t *pdu,
     features->max_key_size = pdu[4];
     features->initiator_key_distribution = pdu[5];
     features->responder_key_distribution = pdu[6];
-    return 1;
+    if (ble_smp_pairing_features_valid(features)) return 1;
+    memset(features, 0, sizeof(*features));
+    return 0;
 }
 
 static inline int ble_smp_build_pairing_features(uint8_t opcode,
     const ble_smp_pairing_features *features, uint8_t pdu[7]) {
-    if (!features || !pdu || (opcode != BLE_SMP_PAIRING_REQUEST &&
-        opcode != BLE_SMP_PAIRING_RESPONSE)) return 0;
+    if (!ble_smp_pairing_features_valid(features) || !pdu ||
+        (opcode != BLE_SMP_PAIRING_REQUEST &&
+         opcode != BLE_SMP_PAIRING_RESPONSE)) return 0;
     pdu[0] = opcode;
     pdu[1] = features->io_capability;
     pdu[2] = features->oob_data_flag;
@@ -195,17 +260,6 @@ static inline int ble_smp_build_pairing_features(uint8_t opcode,
     pdu[6] = features->responder_key_distribution;
     return 1;
 }
-
-enum {
-    BLE_SMP_AUTH_BONDING_MASK = 0x03,
-    BLE_SMP_AUTH_MITM = 0x04,
-    BLE_SMP_AUTH_SECURE_CONNECTIONS = 0x08,
-    BLE_SMP_KEY_DIST_ENCRYPTION = 0x01,
-    BLE_SMP_KEY_DIST_IDENTITY = 0x02,
-    BLE_SMP_KEY_DIST_SIGNING = 0x04,
-    BLE_SMP_KEY_DIST_LINK = 0x08,
-    BLE_SMP_KEY_DIST_MASK = 0x0f
-};
 
 static inline int ble_smp_opcode_known(uint8_t opcode) {
     switch (opcode) {
@@ -235,17 +289,8 @@ static inline uint8_t ble_smp_negotiate_features(
     const ble_smp_pairing_policy *policy,
     ble_smp_negotiated_features *out) {
     if (!local || !peer || !policy || !out ||
-        local->io_capability > 4 || peer->io_capability > 4 ||
-        local->oob_data_flag > 1 || peer->oob_data_flag > 1 ||
-        (local->auth_req & 0xc0) || (peer->auth_req & 0xc0) ||
-        (local->auth_req & BLE_SMP_AUTH_BONDING_MASK) > 1 ||
-        (peer->auth_req & BLE_SMP_AUTH_BONDING_MASK) > 1 ||
-        local->max_key_size < 7 || local->max_key_size > 16 ||
-        peer->max_key_size < 7 || peer->max_key_size > 16 ||
-        (local->initiator_key_distribution & ~BLE_SMP_KEY_DIST_MASK) ||
-        (local->responder_key_distribution & ~BLE_SMP_KEY_DIST_MASK) ||
-        (peer->initiator_key_distribution & ~BLE_SMP_KEY_DIST_MASK) ||
-        (peer->responder_key_distribution & ~BLE_SMP_KEY_DIST_MASK) ||
+        !ble_smp_pairing_features_valid(local) ||
+        !ble_smp_pairing_features_valid(peer) ||
         policy->minimum_key_size < 7 || policy->minimum_key_size > 16 ||
         policy->require_authenticated > 1 ||
         policy->require_secure_connections > 1 || policy->allow_legacy > 1 ||
@@ -413,7 +458,34 @@ static inline int ble_smp_bond_load(ble_smp *smp, uint8_t address_type,
         bond->valid != 1 || bond->peer_address_type != address_type ||
         (address_type && (address[5] & 0xc0) != 0xc0) ||
         memcmp(bond->peer_address, address, 6) || bond->key_size < 7 ||
-        bond->key_size > 16 || bond->authenticated > 1) {
+        bond->key_size > 16 || bond->authenticated > 1 ||
+        (bond->version && bond->version != BLE_SMP_BOND_SCHEMA_VERSION) ||
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
+        bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
+        bond->has_peripheral_ltk > 1) {
+        volatile uint8_t *wipe = (volatile uint8_t *)bond;
+        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
+        return 0;
+    }
+    if ((!bond->has_peer_irk && memcmp(bond->irk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_local_irk && memcmp(bond->local_irk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_peer_csrk && memcmp(bond->csrk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_local_csrk && memcmp(bond->local_csrk, (uint8_t[16]){0}, 16))) {
+        volatile uint8_t *wipe = (volatile uint8_t *)bond;
+        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
+        return 0;
+    }
+    for (uint8_t i = bond->key_size; i < 16; i++)
+        if (bond->ltk[i] || (bond->has_peripheral_ltk &&
+                            bond->peripheral_ltk[i])) {
+            volatile uint8_t *wipe = (volatile uint8_t *)bond;
+            for (size_t j = 0; j < sizeof(*bond); j++) wipe[j] = 0;
+            return 0;
+        }
+    if (!bond->has_peripheral_ltk &&
+        (memcmp(bond->peripheral_ltk, (uint8_t[16]){0}, 16) ||
+         memcmp(bond->peripheral_rand, (uint8_t[8]){0}, 8) ||
+         bond->peripheral_ediv[0] || bond->peripheral_ediv[1])) {
         volatile uint8_t *wipe = (volatile uint8_t *)bond;
         for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
         return 0;
@@ -426,11 +498,29 @@ static inline int ble_smp_bond_store(ble_smp *smp,
     if (!smp || !smp->ops.bond_store || !bond || bond->valid != 1 ||
         bond->peer_address_type > 1 || bond->key_size < 7 ||
         bond->key_size > 16 || bond->authenticated > 1 ||
-        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0))
+        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
+        (bond->version && bond->version != BLE_SMP_BOND_SCHEMA_VERSION) ||
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
+        bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
+        bond->has_peripheral_ltk > 1)
         return 0;
     for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
-        if (bond->ltk[i]) return 0;
-    return smp->ops.bond_store(smp->ops.context, bond);
+        if (bond->ltk[i] || (bond->has_peripheral_ltk &&
+                            bond->peripheral_ltk[i])) return 0;
+    if ((!bond->has_peer_irk && memcmp(bond->irk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_local_irk && memcmp(bond->local_irk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_peer_csrk && memcmp(bond->csrk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_local_csrk && memcmp(bond->local_csrk, (uint8_t[16]){0}, 16)) ||
+        (!bond->has_peripheral_ltk &&
+         (memcmp(bond->peripheral_ltk, (uint8_t[16]){0}, 16) ||
+          memcmp(bond->peripheral_rand, (uint8_t[8]){0}, 8) ||
+          bond->peripheral_ediv[0] || bond->peripheral_ediv[1]))) return 0;
+    ble_smp_bond normalized = *bond;
+    normalized.version = BLE_SMP_BOND_SCHEMA_VERSION;
+    int stored = smp->ops.bond_store(smp->ops.context, &normalized);
+    volatile uint8_t *wipe = (volatile uint8_t *)&normalized;
+    for (size_t i = 0; i < sizeof(normalized); i++) wipe[i] = 0;
+    return stored;
 }
 
 static inline int ble_smp_bond_remove(ble_smp *smp, uint8_t address_type,
@@ -465,13 +555,21 @@ static inline int ble_smp_poll(ble_smp *smp) {
     return 1;
 }
 
-static inline void ble_smp_reset(ble_smp *smp) {
+// End a completed or abandoned SMP procedure, wiping any queued PDU and
+// cancelling its deadline while keeping the bearer, callbacks, and L2CAP
+// registration ready for a later procedure on the same connection.
+static inline void ble_smp_procedure_finish(ble_smp *smp) {
     if (!smp) return;
     volatile uint8_t *wipe = smp->tx;
     for (size_t i = 0; i < sizeof(smp->tx); i++) wipe[i] = 0;
     smp->tx_len = 0;
     smp->procedure_active = 0;
     smp->deadline_ms = 0;
+}
+
+// Backwards-compatible name for ending the current SMP procedure.
+static inline void ble_smp_reset(ble_smp *smp) {
+    ble_smp_procedure_finish(smp);
 }
 
 #endif

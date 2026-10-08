@@ -39,12 +39,17 @@ per-bearer ATT transaction state while sharing the connection's GATT database.
    request.
 4. [x] Make server operations safe across concurrent bearers, including
    prepared writes, CCCD state, notifications, and indications.
-5. [ ] Add deterministic multi-bearer tests for negotiation, concurrent
-   client/server traffic, credits, MTU boundaries, timeouts, recovery, and
-   disconnect cleanup; then verify against an independent EATT peer.
-6. [ ] Verify fixed ATT and EATT behavior on BLE hardware.
+5. [x] Add deterministic multi-bearer tests for negotiation, concurrent
+   client/server traffic, per-bearer indications, MTU boundaries, timeouts,
+   recovery, and disconnect cleanup. ECFC credit handling is covered by
+   `../tests/ble_l2cap_test.c`.
+6. [x] Exercise an independent EATT client against GATT server procedures
+   with Bumble's Enhanced Bearer API and the local C server fixture. This is
+   host-side ATT bearer interoperability; real ECFC/hardware verification is
+   still outstanding.
+7. [ ] Verify fixed ATT and EATT behavior on BLE hardware.
 
-Items 2–5 are software work; item 6 requires a radio and target firmware.
+Items 2–6 are software work; item 7 requires a radio and target firmware.
 
 ### Generic server
 
@@ -209,14 +214,15 @@ Items 2–5 are software work; item 6 requires a radio and target firmware.
   requires a BLE radio and target firmware.
 
 The optional independent tests use Bumble and a local C fixture (no Bluetooth
-radio is needed). From `iSLER-mess/ble_gatt`, create the test environment once, install
-the pinned requirements there, and run both interop directions:
+radio is needed). From `iSLER-mess/ble_gatt`, create the test environment once,
+install the pinned requirements there, and run the interop checks:
 
 ```sh
 python3 -m venv .venv-ble-gatt
 ./.venv-ble-gatt/bin/python -m pip install -r tests/requirements-ble-gatt-interop.txt
 ./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_interop.py
 ./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_client_interop.py
+./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_eatt_interop.py
 ```
 
 ### EATT completion checklist
@@ -250,14 +256,17 @@ to omit EATT code and per-bearer storage.
   bearers.
 - [x] Enforce the EATT minimum/negotiated MTU on bearer SDUs and reject Signed
   Write Commands.
-- [ ] Extend tests from manager lifecycle to channel negotiation, multiple concurrent client requests,
-  simultaneous client/server roles, per-bearer indication confirmation,
-  shared attribute writes, credits, MTU boundaries, timeout/recovery, and
-  disconnect cleanup with deterministic fake L2CAP channels.
-- [ ] Verify EATT interoperation against an independent implementation, then
-  test with BLE hardware. Build and run the existing suite both with EATT
-  disabled and enabled, including size and configuration checks for
-  fixed-bearer-only builds.
+- [x] Extend tests from manager lifecycle to channel negotiation, multiple
+  concurrent client requests, simultaneous client/server roles, per-bearer
+  indication confirmation and timeout, shared attribute writes, MTU boundaries,
+  timeout/recovery, and disconnect cleanup with deterministic fake L2CAP
+  channels. ECFC credit paths are exercised by `../tests/ble_l2cap_test.c`.
+- [x] Verify ATT procedures through Bumble's EATT Enhanced Bearer client API
+  against the C server fixture using `tests/ble_gatt_bumble_eatt_interop.py`.
+  This host test does not exercise an actual radio or the ECFC setup exchange.
+- [x] Build and run the host suite with EATT disabled and enabled, including
+  the fixed-bearer-only transport tests.
+- [ ] Verify real ECFC setup and fixed ATT/EATT behavior on BLE hardware.
 
 The stack is complete for this project when the checked procedures and
 validation above are finished. EATT, BR/EDR ATT, and SIG-defined service
