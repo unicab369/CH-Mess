@@ -23,7 +23,7 @@
 #ifndef BLE_L2CAP_SDU_MAX
 #define BLE_L2CAP_SDU_MAX BLE_GATT_TRANSPORT_MTU_MAX
 #endif
-#include "ble_l2cap.h"
+#include "../ble_l2cap.h"
 
 #define BLE_GATT_TRANSPORT_ATT_CID BLE_L2CAP_CID_ATT
 
@@ -47,6 +47,7 @@ typedef struct {
     ble_gatt_transport_key_size_fn encryption_key_size;
     ble_gatt_server *server;
     ble_gatt_client *client;
+    ble_l2cap_connection l2cap;
     uint8_t connected, bearer_failed, tx_client_request;
     void (*terminate_link)(void *context);
     ble_l2cap_reassembler l2cap_rx;
@@ -55,11 +56,29 @@ typedef struct {
 } ble_gatt_transport;
 
 static inline void ble_gatt_transport_reset(ble_gatt_transport *transport) {
+    ble_l2cap_connection_reset(&transport->l2cap, 0);
     ble_l2cap_reassembler_reset(&transport->l2cap_rx);
     transport->tx_len = transport->tx_offset = 0;
     transport->bearer_failed = 0;
     transport->tx_client_request = 0;
     memset(transport->tx, 0, sizeof(transport->tx));
+}
+
+static inline int ble_gatt_transport_receive_att(void *context, uint16_t cid,
+    const uint8_t *att, uint16_t att_len);
+
+// Queue any L2CAP channel PDU through this transport's LL-fragment TX path.
+static inline int ble_gatt_transport_send_l2cap_pdu(void *context,
+    uint16_t cid, const uint8_t *payload, uint16_t len) {
+    ble_gatt_transport *transport = (ble_gatt_transport *)context;
+    if (!transport || !transport->connected || transport->tx_len ||
+        !payload || !len) return 0;
+    int encoded = ble_l2cap_encode(transport->tx, sizeof(transport->tx),
+                                    cid, payload, len);
+    if (!encoded) return 0;
+    transport->tx_len = (uint16_t)encoded;
+    transport->tx_offset = 0;
+    return 1;
 }
 
 static inline int ble_gatt_transport_init(ble_gatt_transport *transport,
@@ -70,6 +89,16 @@ static inline int ble_gatt_transport_init(ble_gatt_transport *transport,
     transport->server = server;
     transport->ops = *ops;
     if (server && !ble_gatt_server_seal_database(server)) return 0;
+    ble_l2cap_ops l2cap_ops = {0};
+    l2cap_ops.send_pdu = ble_gatt_transport_send_l2cap_pdu;
+    l2cap_ops.context = transport;
+    uint16_t mps = BLE_L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
+        BLE_L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
+    if (!ble_l2cap_connection_init(&transport->l2cap, &l2cap_ops,
+            BLE_GATT_TRANSPORT_MTU_MAX, mps, BLE_L2CAP_INITIAL_CREDITS) ||
+        !ble_l2cap_connection_register_fixed(&transport->l2cap,
+            BLE_GATT_TRANSPORT_ATT_CID, ble_gatt_transport_receive_att,
+            transport)) return 0;
     return 1;
 }
 
@@ -84,11 +113,8 @@ static inline void ble_gatt_transport_sync_mtu_from_server(
 static inline void ble_gatt_transport_send_att(ble_gatt_transport *transport,
                                                 const uint8_t *att,
                                                 uint16_t att_len) {
-    int encoded = ble_l2cap_encode(transport->tx, sizeof(transport->tx),
+    (void)ble_gatt_transport_send_l2cap_pdu(transport,
         BLE_GATT_TRANSPORT_ATT_CID, att, att_len);
-    if (!encoded) return;
-    transport->tx_len = (uint16_t)encoded;
-    transport->tx_offset = 0;
 }
 
 static inline int ble_gatt_transport_send_client(void *context,
@@ -207,10 +233,7 @@ static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
     int complete = ble_l2cap_reassembler_feed(&transport->l2cap_rx,
         llid, fragment, len, &cid, &att, &att_len);
     if (complete <= 0) return complete;
-    const ble_l2cap_channel_handler route = {
-        BLE_GATT_TRANSPORT_ATT_CID, ble_gatt_transport_receive_att, transport
-    };
-    return ble_l2cap_dispatch(&route, 1, cid, att, att_len);
+    return ble_l2cap_connection_receive(&transport->l2cap, cid, att, att_len);
 }
 
 // Service at most one LL fragment per call. Call repeatedly from the link
@@ -247,6 +270,9 @@ static inline int ble_gatt_transport_poll(ble_gatt_transport *transport,
         ble_gatt_server_set_encryption_key_size(transport->server,
             transport->server->encrypted ? transport->encryption_key_size(
                 transport->ops.context) : 0);
+
+    if (!transport->tx_len)
+        (void)ble_l2cap_ecfc_pump(&transport->l2cap);
 
     if (transport->tx_len) {
         uint16_t max_len = transport->ops.max_tx_payload(transport->ops.context);

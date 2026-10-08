@@ -6,7 +6,12 @@ application register its own services and attributes. It does not include
 Bluetooth SIG service profiles or EATT (which requires LE Credit Based
 Channels).
 
-`ble_gatt.h` is the generic include. `ble_l2cap.h` owns LE L2CAP framing,
+`ble_gatt.h` is the generic include. `ble_att/ble_att.h` owns shared ATT opcodes,
+errors, value limits, byte-order helpers, and request/response matching.
+`ble_att/ble_att_server.h` handles ATT server PDU procedures and response
+encoding against the GATT server's attribute database. The GATT modules own
+attribute storage, service construction, client-side GATT operations, and
+transport integration. `ble_l2cap.h` owns LE L2CAP framing,
 signaling, fixed-CID dispatch, and LE credit-based dynamic channels; its link
 adapter handles LL-fragment reassembly. The ATT/GATT server and client live in
 `ble_gatt_server.h` and `ble_gatt_client.h`, while
@@ -185,7 +190,7 @@ bearer remain open work.
   requires a BLE radio and target firmware.
 
 The optional independent tests use Bumble and a local C fixture (no Bluetooth
-radio is needed). From `iSLER-mess`, create the test environment once, install
+radio is needed). From `iSLER-mess/ble_gatt`, create the test environment once, install
 the pinned requirements there, and run both interop directions:
 
 ```sh

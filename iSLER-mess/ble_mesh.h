@@ -66,7 +66,7 @@ uint32_t GET_MILLIS(void) {
 
 #define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "ble_gap.h"
-#include "ble_gatt_mesh.h"
+#include "ble_gatt/ble_gatt_mesh.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
 // is available, IV Update timing remains disabled rather than skipping its
@@ -213,6 +213,12 @@ int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     gap_radio_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, PHY_1M);
     return tx_done != 0;
+}
+uint8_t BLE_GAP_HW_ADV_PHY_MASK(void) { return MESH_GAP_PHY_1M; }
+int BLE_GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
+                          uint8_t phy) {
+    if (phy != MESH_GAP_PHY_1M) return 0;
+    return BLE_GAP_HW_ADV_TX(frame, len, channel);
 }
 void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
                              uint8_t *tx_frame, uint8_t receive_after_tx,
@@ -455,7 +461,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     mesh_gatt_poll();
     int connection_busy = mesh_gap_conn_busy();
     if (connection_busy) {
-        mesh_gap_conn_poll();
+        mesh_gap_conn_poll_all();
         gap_hw_mesh_scan_poll();
     }
     if (mesh_gatt_rx_count) {

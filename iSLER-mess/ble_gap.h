@@ -8,11 +8,12 @@
 #include <stdint.h>
 #include <string.h>
 #include "ble_l2cap.h"
+#include "ble_smp.h"
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
 // - Verify encrypted links and restored bonds on hardware.
-// - Later: Add LE Coded PHY where supported by the radio adapter.
+// - Hardware TODO: Verify LE Coded PHY advertising and scanning with a capable adapter.
 // - Later: Verify Central connection initiation and event timing on hardware;
 //   verify private address rotation, identity filters, and negotiated larger
 //   data packets, Central channel-map updates, and PHY changes on hardware.
@@ -49,6 +50,12 @@
 #define GAP_PERIODIC_REPORT_COUNT 2
 #define MESH_GAP_BOND_SLOTS 4
 #define MESH_GAP_BOND_VERSION 1
+#ifndef MESH_GAP_CONNECTION_COUNT
+#define MESH_GAP_CONNECTION_COUNT 2
+#endif
+#if MESH_GAP_CONNECTION_COUNT < 1 || MESH_GAP_CONNECTION_COUNT > 4
+#error "MESH_GAP_CONNECTION_COUNT must be between 1 and 4"
+#endif
 #ifndef MESH_GAP_CONN_DATA_MAX
 #if MESH_GAP_EXT_ADV_SUPPORT
 #define MESH_GAP_CONN_DATA_MAX 35
@@ -87,6 +94,25 @@
 #define MESH_GAP_PHY_CODED 4
 // Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
 #define GAP_LL_FEATURES 0x2f
+#define GAP_LL_FEATURES_SUBRATING 0x20
+#define GAP_LL_FEATURES_SUBRATING_HOST 0x40
+#define GAP_LL_FEATURES_CHANNEL_CLASSIFICATION 0x80
+#define MESH_GAP_CHANNEL_CLASSIFICATION_BYTES 10
+// Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
+// Shorter Connection Intervals capabilities on feature page 1.
+#define GAP_LL_FEATURES_EXTENDED 0x80
+#define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
+
+// Return conservative on-air time for a Link Layer PDU payload length.
+// LE Coded uses the slower S=8 data coding as its scheduling upper bound.
+static inline uint32_t gap_phy_packet_airtime_us(uint16_t payload_len,
+                                                  uint8_t phy) {
+    if (phy == MESH_GAP_PHY_2M)
+        return ((uint32_t)payload_len + 11u) * 4u;
+    if (phy == MESH_GAP_PHY_CODED)
+        return 976u + (uint32_t)payload_len * 64u;
+    return ((uint32_t)payload_len + 10u) * 8u;
+}
 
 #ifndef BLE_GAP_RADIO_BUFFER_ATTR
 #define BLE_GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -102,6 +128,10 @@ int8_t BLE_GAP_HW_RSSI(void);
 void BLE_GAP_HW_INIT(void);
 void BLE_GAP_HW_STOP(void);
 int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
+// Capability and transmitter for secondary-channel advertising PHYs.
+uint8_t BLE_GAP_HW_ADV_PHY_MASK(void);
+int BLE_GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
+                          uint8_t phy);
 void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
                             uint8_t *tx_frame, uint8_t receive_after_tx,
                             uint8_t tx_phy, uint8_t rx_phy);
@@ -274,7 +304,7 @@ static struct {
 } gap_advertising;
 #if MESH_GAP_EXT_ADV_SUPPORT
 typedef struct {
-    uint8_t enabled, sid, scannable, periodic_enabled;
+    uint8_t enabled, sid, scannable, periodic_enabled, aux_phy;
     uint8_t periodic_sync_info_sent;
     uint8_t pawr_enabled, pawr_data_pending;
     uint8_t pawr_connect_pending, pawr_connect_subevent;
@@ -309,8 +339,8 @@ static inline int gap_ext_advertising_any_enabled(void) {
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
-// Connection state used by the GAP radio adapter.
-static struct {
+// Each accepted LE link keeps its independent Link Layer procedure state.
+typedef struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t local_terminate_queued, local_terminate_pending;
@@ -334,8 +364,37 @@ static struct {
     uint8_t window_size, update_pending, update_window_active, update_window_size;
     uint8_t channel_map_update_pending, pending_channel_map[5];
     volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
+    uint8_t channel_reporting_queued, channel_reporting_pending;
+    uint8_t channel_status_queued;
+    uint8_t channel_reporting_enabled, channel_classification_valid;
+    uint8_t channel_peer_classification_valid, channel_status_last_sent_valid;
+    uint8_t channel_min_spacing_200ms, channel_max_delay_200ms;
+    uint8_t channel_local_classification[MESH_GAP_CHANNEL_CLASSIFICATION_BYTES];
+    uint8_t channel_peer_classification[MESH_GAP_CHANNEL_CLASSIFICATION_BYTES];
+    uint32_t channel_status_changed_ms, channel_status_last_sent_ms;
     uint8_t params_pending, params_local, connection_status;
-    uint8_t features_known, peer_features, peer_features2, feature_request_pending;
+    uint8_t features_known, peer_features, peer_features2, peer_features4;
+    uint8_t peer_features7;
+    uint8_t feature_request_pending, feature_ext_pending;
+    uint8_t feature_page1_known, rate_set_queued, rate_request_queued;
+    uint8_t rate_update_pending, rate_request_pending;
+    uint8_t rate_ack_waiting;
+    uint8_t peer_features_page1[8];
+    uint16_t subrate_factor, subrate_continuation;
+    uint8_t subrate_transition;
+    uint8_t subrate_event_activity, subrate_event_received;
+    uint8_t subrate_force_event;
+    uint16_t subrate_continuations, subrate_latency, subrate_latency_remaining;
+    uint8_t subrate_pending, subrate_update_queued;
+    uint8_t subrate_request_queued, subrate_request_pending;
+    uint8_t subrate_status;
+    uint16_t subrate_base_event, subrate_pending_factor;
+    uint16_t subrate_pending_base_event, subrate_pending_latency;
+    uint16_t subrate_pending_continuation, subrate_pending_timeout;
+    uint16_t subrate_request_min, subrate_request_max;
+    uint16_t subrate_request_latency, subrate_request_continuation;
+    uint16_t subrate_request_timeout;
+    uint32_t subrate_started_ms;
     uint8_t tx_phy, rx_phy, preferred_tx_phy, preferred_rx_phy;
     volatile uint8_t phy_queued;
     uint8_t phy_pending, phy_update_pending, phy_status;
@@ -349,13 +408,82 @@ static struct {
     volatile uint8_t length_queued;
     uint8_t length_pending, length_status;
     uint32_t length_started_ms;
-    uint16_t interval, latency, supervision_timeout, peer_sca_ppm;
+    uint16_t interval, interval_125us, latency, supervision_timeout, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
     uint16_t update_interval, update_latency, update_timeout;
+    uint16_t rate_interval_min, rate_interval_max;
+    uint16_t rate_factor_min, rate_factor_max, rate_latency;
+    uint16_t rate_continuation, rate_timeout, rate_periodicity;
+    uint16_t rate_offsets[4];
+    uint16_t rate_interval, rate_win_offset, rate_instant;
+    uint16_t rate_factor, rate_update_latency, rate_update_continuation;
+    uint16_t rate_update_timeout;
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_event_ticks;
-} gap_conn;
+} mesh_gap_connection_context;
+static mesh_gap_connection_context
+    gap_connection_contexts[MESH_GAP_CONNECTION_COUNT];
+static uint8_t gap_connection_slot;
+static uint16_t gap_connection_generations[MESH_GAP_CONNECTION_COUNT];
+#define gap_conn gap_connection_contexts[gap_connection_slot]
+static int gap_connection_free_slot(void) {
+    for (uint8_t slot = 0; slot < MESH_GAP_CONNECTION_COUNT; slot++)
+        if (!gap_connection_contexts[slot].active) return slot;
+    return -1;
+}
+static int gap_connection_select_slot(uint8_t slot) {
+    if (slot >= MESH_GAP_CONNECTION_COUNT) return 0;
+    gap_connection_slot = slot;
+    return 1;
+}
+
+// Public connection handles identify a live slot generation, so a handle
+// from a disconnected link cannot accidentally select a later link in it.
+typedef struct {
+    uint8_t slot;
+    uint16_t generation;
+} mesh_gap_connection_handle;
+
+static inline uint8_t mesh_gap_connection_count(void) {
+    uint8_t count = 0;
+    for (uint8_t slot = 0; slot < MESH_GAP_CONNECTION_COUNT; slot++)
+        count += gap_connection_contexts[slot].active != 0;
+    return count;
+}
+
+// Return the handle for the active connection at this zero-based list index.
+static inline int mesh_gap_connection_handle_at(
+    uint8_t index, mesh_gap_connection_handle *handle) {
+    if (!handle) return 0;
+    for (uint8_t slot = 0; slot < MESH_GAP_CONNECTION_COUNT; slot++) {
+        if (!gap_connection_contexts[slot].active) continue;
+        if (index--) continue;
+        handle->slot = slot;
+        handle->generation = gap_connection_generations[slot];
+        return 1;
+    }
+    return 0;
+}
+
+// Select a live link for the existing connection-specific GAP operations.
+static inline int mesh_gap_connection_select(
+    mesh_gap_connection_handle handle) {
+    if (handle.slot >= MESH_GAP_CONNECTION_COUNT || !handle.generation ||
+        !gap_connection_contexts[handle.slot].active ||
+        gap_connection_generations[handle.slot] != handle.generation)
+        return 0;
+    return gap_connection_select_slot(handle.slot);
+}
+
+// Capture the currently selected link's handle for later API calls.
+static inline int mesh_gap_connection_current(
+    mesh_gap_connection_handle *handle) {
+    if (!handle || !gap_conn.active) return 0;
+    handle->slot = gap_connection_slot;
+    handle->generation = gap_connection_generations[gap_connection_slot];
+    return handle->generation != 0;
+}
 
 // Encryption procedure state; application/SMP code supplies keys in PDU byte order.
 enum {
@@ -364,7 +492,7 @@ enum {
     GAP_ENC_PERIPHERAL_START, GAP_ENC_PAUSE_QUEUED, GAP_ENC_WAIT_PAUSE,
     GAP_ENC_PERIPHERAL_PAUSE, GAP_ENC_RESTART_QUEUED, GAP_ENC_PERIPHERAL_RESTART
 };
-static struct {
+typedef struct {
     volatile uint8_t phase;
     uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
     uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
@@ -372,8 +500,12 @@ static struct {
     uint16_t ediv;
     uint64_t tx_counter, rx_counter;
     uint32_t started_ms;
-} gap_security;
-static uint32_t gap_security_generation;
+} mesh_gap_security_context;
+static mesh_gap_security_context
+    gap_security_contexts[MESH_GAP_CONNECTION_COUNT];
+static uint32_t gap_security_generations[MESH_GAP_CONNECTION_COUNT];
+#define gap_security gap_security_contexts[gap_connection_slot]
+#define gap_security_generation gap_security_generations[gap_connection_slot]
 
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central);
 static void gap_security_derive(void);
@@ -399,7 +531,7 @@ static uint8_t gap_pairing_enabled;
 static struct {
     uint8_t io, authenticated, min_key_size, bonding, secure_connections;
 } gap_pairing_policy = {MESH_GAP_IO_NONE, 0, 7};
-static struct {
+typedef struct {
     uint8_t phase, status, blocked, key_size, encryption_started;
     uint8_t authenticated, passkey_action, confirm_received, tk[16];
     uint8_t bond_requested, bond_tx_step, bond_tx_waiting, bond_rx_step, sc_active;
@@ -418,18 +550,29 @@ static struct {
     uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
     uint8_t tx[69], tx_len, tx_offset, rx[69], rx_len, rx_expected;
     uint32_t started_ms;
-} gap_smp;
-static struct {
+} mesh_gap_smp_context;
+static mesh_gap_smp_context gap_smp_contexts[MESH_GAP_CONNECTION_COUNT];
+#define gap_smp gap_smp_contexts[gap_connection_slot]
+typedef struct {
     uint8_t valid, private_key[32], public_key[64];
     mesh_gap_sc_oob_data data;
-} gap_sc_oob_local;
-static struct {
+} mesh_gap_sc_oob_local_context;
+static mesh_gap_sc_oob_local_context
+    gap_sc_oob_local_contexts[MESH_GAP_CONNECTION_COUNT];
+#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_connection_slot]
+typedef struct {
     uint8_t valid;
     mesh_gap_sc_oob_data data;
-} gap_sc_oob_peer;
+} mesh_gap_sc_oob_peer_context;
+static mesh_gap_sc_oob_peer_context
+    gap_sc_oob_peer_contexts[MESH_GAP_CONNECTION_COUNT];
+#define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_connection_slot]
 static void mesh_gap_smp_poll(void);
 static void mesh_gap_smp_bond_abort(void);
-static uint8_t gap_bond_repair_pending;
+static void gap_sc_oob_clear(void);
+static uint8_t gap_bond_repair_pending_contexts[MESH_GAP_CONNECTION_COUNT];
+#define gap_bond_repair_pending \
+    gap_bond_repair_pending_contexts[gap_connection_slot]
 
 
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
@@ -462,6 +605,9 @@ static int gap_connection_accept(const uint8_t frame[36],
                                             uint64_t interval_unit_ticks,
                                             uint64_t window_delay_ticks) {
     if (!gap_connection_request_valid(frame)) return 0;
+    int free_slot = gap_connection_free_slot();
+    if (free_slot < 0) return 0;
+    gap_connection_select_slot((uint8_t)free_slot);
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -481,8 +627,25 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.hop = hop;
     gap_conn.unmapped_channel = 0;
     gap_conn.interval = interval;
+    gap_conn.interval_125us = (uint16_t)(interval * 10u);
     gap_conn.latency = latency;
     gap_conn.supervision_timeout = timeout;
+    gap_conn.subrate_factor = 1;
+    gap_conn.subrate_base_event = 0;
+    gap_conn.subrate_continuation = 0;
+    gap_conn.subrate_latency = 0;
+    gap_conn.subrate_latency_remaining = 0;
+    gap_conn.subrate_continuations = 0;
+    gap_conn.subrate_transition = 0;
+    gap_conn.subrate_event_activity = 0;
+    gap_conn.subrate_event_received = 0;
+    gap_conn.subrate_force_event = 0;
+    gap_conn.subrate_pending = 0;
+    gap_conn.subrate_update_queued = 0;
+    gap_conn.subrate_request_queued = 0;
+    gap_conn.subrate_request_pending = 0;
+    gap_conn.subrate_status = 0;
+    gap_conn.peer_features4 = 0;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     gap_conn.window_size = win_size;
@@ -508,8 +671,28 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_conn.local_update_queued = gap_conn.local_params_queued = 0;
     gap_conn.params_pending = gap_conn.params_local = 0;
     gap_conn.features_known = gap_conn.peer_features = gap_conn.peer_features2 = 0;
+    gap_conn.peer_features4 = 0;
+    gap_conn.peer_features7 = 0;
+    gap_conn.feature_page1_known = gap_conn.feature_ext_pending = 0;
+    gap_conn.rate_set_queued = gap_conn.rate_request_queued = 0;
+    gap_conn.rate_update_pending = gap_conn.rate_request_pending = 0;
+    gap_conn.channel_reporting_queued = gap_conn.channel_reporting_pending = 0;
+    gap_conn.channel_status_queued = gap_conn.channel_reporting_enabled = 0;
+    gap_conn.channel_classification_valid = 1;
+    gap_conn.channel_peer_classification_valid = 0;
+    gap_conn.channel_status_last_sent_valid = 0;
+    gap_conn.channel_min_spacing_200ms = 5;
+    gap_conn.channel_max_delay_200ms = 5;
+    memset(gap_conn.channel_local_classification, 0,
+           sizeof(gap_conn.channel_local_classification));
+    memset(gap_conn.channel_peer_classification, 0,
+           sizeof(gap_conn.channel_peer_classification));
+    gap_conn.channel_status_changed_ms = GET_MILLIS();
+    gap_conn.channel_status_last_sent_ms = 0;
+    memset(gap_conn.peer_features_page1, 0,
+           sizeof(gap_conn.peer_features_page1));
     gap_conn.tx_phy = gap_conn.rx_phy = MESH_GAP_PHY_1M;
-    gap_conn.preferred_tx_phy = gap_conn.preferred_rx_phy = BLE_GAP_HW_PHY_MASK() & 3;
+    gap_conn.preferred_tx_phy = gap_conn.preferred_rx_phy = BLE_GAP_HW_PHY_MASK() & 7;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending = gap_conn.phy_status = 0;
     gap_conn.feature_request_pending = gap_conn.connection_status = 0;
     gap_conn.update_window_active = 0;
@@ -549,6 +732,8 @@ static int gap_connection_accept(const uint8_t frame[36],
     memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
     gap_security_generation++;
+    if (++gap_connection_generations[gap_connection_slot] == 0)
+        gap_connection_generations[gap_connection_slot] = 1;
     gap_conn.active = 1;
     gap_advertising.enabled = 0;
 #if MESH_GAP_EXT_ADV_SUPPORT
@@ -1394,46 +1579,58 @@ static uint16_t gap_ext_did_generate(uint16_t previous, uint16_t other) {
 
 // Estimate the complete AUX_SYNC_IND/AUX_CHAIN_IND event duration, including
 // conservative packet spacing, so periodic events cannot overlap.
-static uint32_t gap_periodic_event_duration_us(size_t data_len) {
+static uint32_t gap_periodic_event_duration_us(size_t data_len, uint8_t phy) {
     uint16_t remaining = (uint16_t)data_len;
     uint32_t duration = 0;
     uint8_t chained = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
     uint16_t chunk = chained ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
     uint8_t ext_len = chained ? 6 : 3;
     uint16_t pdu_len = 1 + ext_len + chunk;
-    duration += (((uint32_t)pdu_len + 10u) * 8u + 629u) / 30u * 30u;
+    duration += ((gap_phy_packet_airtime_us(pdu_len, phy) + 629u) / 30u) * 30u;
     remaining -= chunk;
     while (remaining) {
         chained = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
         chunk = chained ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
         ext_len = chained ? 6 : 3;
         pdu_len = 1 + ext_len + chunk;
-        duration += (((uint32_t)pdu_len + 10u) * 8u + 629u) / 30u * 30u;
+        duration += ((gap_phy_packet_airtime_us(pdu_len, phy) + 629u) / 30u) * 30u;
         remaining -= chunk;
     }
     return duration;
 }
 
 // Configure and start one extended advertising set.
-int mesh_gap_extended_advertising_start_set(uint8_t set_id,
-    const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms) {
+int mesh_gap_extended_advertising_start_set_phy(uint8_t set_id,
+    const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms,
+    uint8_t aux_phy) {
     if (mesh_gap_conn_busy() || gap_central_connect.active ||
         gap_advertising.enabled || set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
         gap_ext_advertising[set_id].enabled ||
         gap_ext_advertising[set_id].periodic_enabled || sid > 15 ||
         !gap_ext_ad_data_valid(data, len) ||
-        interval_ms < 100 || interval_ms > 10240) return 0;
+        interval_ms < 100 || interval_ms > 10240 ||
+        (aux_phy != MESH_GAP_PHY_1M && aux_phy != MESH_GAP_PHY_2M &&
+         aux_phy != MESH_GAP_PHY_CODED) ||
+        !(BLE_GAP_HW_ADV_PHY_MASK() & aux_phy)) return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->did = gap_ext_did_generate(set->did, set->periodic_did);
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
     set->scan_response_len = 0;
     set->scannable = 0;
+    set->aux_phy = aux_phy;
     set->sid = sid;
     set->interval_ms = interval_ms;
     set->next_event_ms = GET_MILLIS();
     set->enabled = 1;
     return 1;
+}
+
+// Configure the default 1M secondary PHY for an extended advertising set.
+int mesh_gap_extended_advertising_start_set(uint8_t set_id,
+    const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms) {
+    return mesh_gap_extended_advertising_start_set_phy(set_id, data, len,
+        sid, interval_ms, MESH_GAP_PHY_1M);
 }
 
 // Start periodic advertising on an active, nonscannable extended set. The
@@ -1446,7 +1643,9 @@ int mesh_gap_periodic_advertising_start_set(uint8_t set_id,
         gap_ext_advertising[set_id].scannable ||
         gap_ext_advertising[set_id].periodic_enabled || interval < 6 ||
         !gap_ext_ad_data_valid(data, len) ||
-        (uint32_t)interval * 1250u < gap_periodic_event_duration_us(len))
+        (uint32_t)interval * 1250u <
+            gap_periodic_event_duration_us(len,
+                gap_ext_advertising[set_id].aux_phy))
         return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     uint8_t random[3];
@@ -1509,9 +1708,10 @@ int mesh_gap_periodic_advertising_pawr_set(uint8_t set_id,
         return 0;
     uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
         subevent_interval : set->periodic_interval) * 1250u;
-    if (gap_periodic_event_duration_us(set->periodic_data_len) >=
+    if (gap_periodic_event_duration_us(set->periodic_data_len, set->aux_phy) >=
             subevent_interval_us ||
-        gap_periodic_event_duration_us(set->periodic_data_len) + 150u >=
+        gap_periodic_event_duration_us(set->periodic_data_len,
+            set->aux_phy) + 150u >=
             (uint32_t)response_slot_delay * 1250u) return 0;
     if (!gap_access_address_generate(&set->periodic_response_access_address))
         return 0;
@@ -1586,15 +1786,18 @@ int mesh_gap_periodic_advertising_update_set(uint8_t set_id,
         !gap_ext_ad_data_valid(data, len) ||
         (gap_ext_advertising[set_id].pawr_enabled &&
          (len > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3 ||
-          gap_periodic_event_duration_us(len) >=
+          gap_periodic_event_duration_us(len,
+              gap_ext_advertising[set_id].aux_phy) >=
               (uint32_t)(gap_ext_advertising[set_id].pawr_num_subevents > 1 ?
                   gap_ext_advertising[set_id].pawr_subevent_interval :
                   gap_ext_advertising[set_id].periodic_interval) * 1250u ||
-          gap_periodic_event_duration_us(len) + 150u >=
+          gap_periodic_event_duration_us(len,
+              gap_ext_advertising[set_id].aux_phy) + 150u >=
               (uint32_t)gap_ext_advertising[set_id].
                   pawr_response_slot_delay * 1250u)) ||
         (uint32_t)gap_ext_advertising[set_id].periodic_interval * 1250u <
-            gap_periodic_event_duration_us(len)) return 0;
+            gap_periodic_event_duration_us(len,
+                gap_ext_advertising[set_id].aux_phy)) return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->periodic_did = gap_ext_did_generate(set->periodic_did, set->did);
     if (len) memcpy(set->periodic_data, data, len);
@@ -1623,18 +1826,26 @@ int mesh_gap_periodic_advertising_stop_set(uint8_t set_id) {
 
 // Start an extended scannable set; its advertising data is returned only in
 // AUX_SCAN_RSP, as required for scannable extended advertising.
-int mesh_gap_extended_scannable_advertising_start_set(uint8_t set_id,
+int mesh_gap_extended_scannable_advertising_start_set_phy(uint8_t set_id,
     const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
-    uint16_t interval_ms) {
+    uint16_t interval_ms, uint8_t aux_phy) {
     if (!gap_ext_ad_data_valid(scan_response, scan_response_len) ||
         !scan_response_len ||
-        !mesh_gap_extended_advertising_start_set(set_id, NULL, 0, sid,
-                                                  interval_ms)) return 0;
+        !mesh_gap_extended_advertising_start_set_phy(set_id, NULL, 0, sid,
+            interval_ms, aux_phy)) return 0;
     mesh_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     memcpy(set->data, scan_response, scan_response_len);
     set->scan_response_len = (uint16_t)scan_response_len;
     set->scannable = 1;
     return 1;
+}
+
+int mesh_gap_extended_scannable_advertising_start_set(uint8_t set_id,
+    const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
+    uint16_t interval_ms) {
+    return mesh_gap_extended_scannable_advertising_start_set_phy(set_id,
+        scan_response, scan_response_len, sid, interval_ms,
+        MESH_GAP_PHY_1M);
 }
 
 int mesh_gap_extended_scannable_advertising_start(
@@ -2430,7 +2641,9 @@ int mesh_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
         !gap_periodic_syncs[slot].has_pawr_timing ||
         subevent >= gap_periodic_syncs[slot].pawr_num_subevents ||
         (gap_periodic_syncs[slot].phy != MESH_GAP_PHY_1M &&
-         gap_periodic_syncs[slot].phy != MESH_GAP_PHY_2M) ||
+         gap_periodic_syncs[slot].phy != MESH_GAP_PHY_2M &&
+         gap_periodic_syncs[slot].phy != MESH_GAP_PHY_CODED) ||
+        !(BLE_GAP_HW_PHY_MASK() & gap_periodic_syncs[slot].phy) ||
         len > MESH_GAP_PAWR_RESPONSE_DATA_MAX ||
         !gap_ext_ad_data_valid(data, len)) return 0;
     mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
@@ -2440,8 +2653,8 @@ int mesh_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
         (uint32_t)sync->pawr_response_slot_delay * 10u +
         (uint32_t)response_slot * sync->pawr_response_slot_spacing;
     uint32_t subevent_duration_125us = subevent_interval_units * 10u;
-    uint32_t packet_duration_us = sync->phy == MESH_GAP_PHY_2M ?
-        ((uint32_t)len + 12u) * 4u : ((uint32_t)len + 11u) * 8u;
+    uint32_t packet_duration_us = gap_phy_packet_airtime_us(
+        (uint16_t)len, sync->phy);
     uint32_t slot_spacing_us =
         (uint32_t)sync->pawr_response_slot_spacing * 125u;
     if (response_start_125us >= subevent_duration_125us ||
@@ -2526,9 +2739,7 @@ static int gap_periodic_sync_info_accept(const gap_ext_adv_fields *fields,
         if (fields->sync_channel_map[channel >> 3] &
             (1u << (channel & 7))) used_channels++;
     if (used_channels < 2) return 0;
-    uint32_t airtime_us = packet_phy == MESH_GAP_PHY_2M ?
-        ((uint32_t)packet_len + 11u) * 4u :
-        ((uint32_t)packet_len + 10u) * 8u;
+    uint32_t airtime_us = gap_phy_packet_airtime_us(packet_len, packet_phy);
     if (fields->sync_offset_us <= airtime_us || packet_end_ticks <
             HW_TICKS_FROM_US(airtime_us)) return 0;
 
@@ -2649,9 +2860,7 @@ static int gap_periodic_sync_receive(uint8_t slot, const uint8_t *pdu,
         return 0;
     uint8_t was_chain = gap_periodic_syncs[slot].event_data_active;
     if (!was_chain) {
-        uint32_t airtime_us = packet_phy == MESH_GAP_PHY_2M ?
-            ((uint32_t)pdu[1] + 11u) * 4u :
-            ((uint32_t)pdu[1] + 10u) * 8u;
+        uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
         if (received_ticks < HW_TICKS_FROM_US(airtime_us)) return 0;
         uint64_t packet_start = received_ticks -
             HW_TICKS_FROM_US(airtime_us);

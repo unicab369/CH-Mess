@@ -476,11 +476,15 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
 }
 
 static void gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
-    ble_l2cap_write_u16(gap_smp.tx, (uint16_t)len + 1);
-    ble_l2cap_write_u16(gap_smp.tx + 2, BLE_L2CAP_CID_SMP);
-    gap_smp.tx[4] = opcode;
-    if (len) memcpy(gap_smp.tx + 5, data, len);
-    gap_smp.tx_len = len + 5;
+    uint8_t smp[65];
+    if (len > sizeof(smp) - 1 || (len && !data)) return;
+    smp[0] = opcode;
+    if (len) memcpy(smp + 1, data, len);
+    if (!ble_smp_pdu_valid(smp, (uint16_t)len + 1)) return;
+    int encoded = ble_l2cap_encode(gap_smp.tx, sizeof(gap_smp.tx),
+        BLE_L2CAP_CID_SMP, smp, (uint16_t)len + 1);
+    if (!encoded) return;
+    gap_smp.tx_len = (uint8_t)encoded;
     gap_smp.tx_offset = 0;
     gap_smp.started_ms = GET_MILLIS();
 }
@@ -1112,7 +1116,12 @@ static void mesh_gap_smp_poll(void) {
     n = gap_smp.rx_len - 4;
     gap_smp.rx_len = gap_smp.rx_expected = 0;
     uint8_t *p = gap_smp.rx + 4, op = p[0];
-    if (gap_smp.blocked || !op || op > 14) return;
+    if (gap_smp.blocked) return;
+    if (!ble_smp_opcode_known(op)) return;
+    if (!ble_smp_pdu_valid(p, n)) {
+        gap_smp_finish(BLE_SMP_FAIL_INVALID_PARAMETERS, 1);
+        return;
+    }
     if (op == 5 && n == 2) { gap_smp_finish(p[1], 0); return; }
     if (gap_smp.phase == GAP_SMP_BOND_RX) {
         if (op == 6 && n == 17 && !gap_smp.bond_rx_step) {

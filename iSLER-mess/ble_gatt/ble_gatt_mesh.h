@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "ble_gap.h"
+#include "../ble_gap.h"
 #include "ble_gatt_server.h"
 #include "ble_gatt_transport.h"
 

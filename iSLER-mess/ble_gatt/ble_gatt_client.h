@@ -6,10 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "../ble_att/ble_att.h"
 
-#ifndef BLE_GATT_ATT_VALUE_MAX
-#define BLE_GATT_ATT_VALUE_MAX 512u
-#endif
 #ifndef BLE_GATT_CLIENT_MTU_MAX
 #define BLE_GATT_CLIENT_MTU_MAX 517
 #endif
@@ -107,21 +105,7 @@ static inline int ble_gatt_client_request(ble_gatt_client *client,
         !client->result || !pdu || !len ||
         len > client->mtu || !expected_opcode || client->pending) return 0;
     if (pdu[0] == 0x02 && client->mtu_exchanged) return 0;
-    switch (pdu[0]) {
-    case 0x02: if (expected_opcode != 0x03) return 0; break;
-    case 0x04: if (expected_opcode != 0x05) return 0; break;
-    case 0x06: if (expected_opcode != 0x07) return 0; break;
-    case 0x08: if (expected_opcode != 0x09) return 0; break;
-    case 0x0a: if (expected_opcode != 0x0b) return 0; break;
-    case 0x0c: if (expected_opcode != 0x0d) return 0; break;
-    case 0x0e: if (expected_opcode != 0x0f) return 0; break;
-    case 0x10: if (expected_opcode != 0x11) return 0; break;
-    case 0x12: if (expected_opcode != 0x13) return 0; break;
-    case 0x16: if (expected_opcode != 0x17) return 0; break;
-    case 0x18: if (expected_opcode != 0x19) return 0; break;
-    case 0x20: if (expected_opcode != 0x21) return 0; break;
-    default: return 0;
-    }
+    if (ble_att_response_opcode(pdu[0]) != expected_opcode) return 0;
     if (!client->send(client->context, pdu, len)) return 0;
     if (pdu[0] == 0x02) client->mtu_exchanged = 1;
     memcpy(client->request_pdu, pdu, len);
@@ -141,7 +125,7 @@ static inline int ble_gatt_client_request(ble_gatt_client *client,
 }
 
 static inline uint16_t ble_gatt_client_get_u16(const uint8_t *p) {
-    return (uint16_t)p[0] | (uint16_t)p[1] << 8;
+    return ble_att_get_u16(p);
 }
 
 static inline uint16_t ble_gatt_client_uuid_assigned16(const uint8_t *uuid,
@@ -362,8 +346,7 @@ static inline int ble_gatt_client_error_handle_valid(
 }
 
 static inline void ble_gatt_client_put_u16(uint8_t *p, uint16_t value) {
-    p[0] = (uint8_t)value;
-    p[1] = (uint8_t)(value >> 8);
+    ble_att_put_u16(p, value);
 }
 
 static inline int ble_gatt_client_range_valid(uint16_t start, uint16_t end) {
