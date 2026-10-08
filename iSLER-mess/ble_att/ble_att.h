@@ -4,6 +4,14 @@
 // Attribute Protocol (ATT) wire definitions shared by GATT clients/servers.
 // ATT procedures operate on attributes; GATT defines the service model and
 // higher-level procedures built on those ATT PDUs.
+// TODO for complete LE ATT support:
+// - [x] Define LE ATT opcodes, error codes, and little-endian handle helpers.
+// - [x] Map every implemented request opcode to its required response opcode.
+// - [x] Keep ATT wire definitions independent of GATT services and L2CAP.
+// - [x] Test shared wire helpers and request/response mapping directly.
+// - [ ] Verify ATT client/server procedures over a BLE controller and radio.
+// Scope: LE ATT. BR/EDR ATT bearers and optional EATT bearer integration are
+// handled outside this shared LE wire-definition header.
 #include <stdint.h>
 
 #ifndef BLE_ATT_VALUE_MAX

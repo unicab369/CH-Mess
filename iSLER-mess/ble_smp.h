@@ -5,6 +5,7 @@
 // storage, and Link Layer encryption remain owned by the host GAP/security
 // implementation; this module owns only SMP's fixed L2CAP channel boundary.
 // TODO for complete LE SMP support:
+// - [x] Recognize all assigned LE SMP opcodes, including Signing Information.
 // - [x] Register the SMP fixed CID with the shared L2CAP connection and
 //       deliver complete, bounded SMP PDUs to the protocol handler.
 // - [x] Queue one outbound SMP PDU and retry through the L2CAP link adapter.
@@ -48,6 +49,7 @@ enum {
     BLE_SMP_CENTRAL_IDENTIFICATION = 0x07,
     BLE_SMP_IDENTITY_INFORMATION = 0x08,
     BLE_SMP_IDENTITY_ADDRESS_INFORMATION = 0x09,
+    BLE_SMP_SIGNING_INFORMATION = 0x0a,
     BLE_SMP_SECURITY_REQUEST = 0x0b,
     BLE_SMP_PAIRING_PUBLIC_KEY = 0x0c,
     BLE_SMP_PAIRING_DHKEY_CHECK = 0x0d,
@@ -114,6 +116,7 @@ static inline int ble_smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
     case BLE_SMP_PAIRING_RANDOM:
     case BLE_SMP_ENCRYPTION_INFORMATION:
     case BLE_SMP_IDENTITY_INFORMATION:
+    case BLE_SMP_SIGNING_INFORMATION:
     case BLE_SMP_PAIRING_DHKEY_CHECK: return len == 17;
     case BLE_SMP_PAIRING_FAILED:
     case BLE_SMP_SECURITY_REQUEST:
@@ -201,6 +204,7 @@ static inline int ble_smp_opcode_known(uint8_t opcode) {
     case BLE_SMP_CENTRAL_IDENTIFICATION:
     case BLE_SMP_IDENTITY_INFORMATION:
     case BLE_SMP_IDENTITY_ADDRESS_INFORMATION:
+    case BLE_SMP_SIGNING_INFORMATION:
     case BLE_SMP_SECURITY_REQUEST:
     case BLE_SMP_PAIRING_PUBLIC_KEY:
     case BLE_SMP_PAIRING_DHKEY_CHECK:

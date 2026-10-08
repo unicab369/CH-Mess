@@ -30,6 +30,8 @@
 // - [x] Test basic signaling, fixed-CID dispatch, ECFC negotiation/data,
 //       credits, reconfiguration, timeout, and LL fragmentation with fake peers.
 // - [x] Expand host protocol-boundary/error coverage with fake peers.
+// - [x] Verify LE Credit Based Connection setup, SDU delivery, and credit
+//       replenishment against Bumble's independent L2CAP implementation.
 // - [x] Carry GAP SMP SDUs through the common fixed-channel L2CAP path; GAP
 //       retains ownership of pairing policy and procedures in ble_smp_gap.h.
 // - [x] Verify L2CAP/SMP packet compatibility against Bumble at the bearer
@@ -648,7 +650,8 @@ static inline int ble_l2cap_ecfc_send_pending_credit(
     uint8_t payload[4];
     if (!conn || !ch || !ch->rx_credit_pending ||
         ch->rx_credit_pending > 65535u - ch->rx_credits) return 0;
-    ble_l2cap_write_u16(payload, ch->local_cid);
+    // The peer addresses its channel by the source CID it supplied at setup.
+    ble_l2cap_write_u16(payload, ch->remote_cid);
     ble_l2cap_write_u16(payload + 2, ch->rx_credit_pending);
     uint8_t id = ble_l2cap_identifier_alloc(conn);
     if (!id) return 0;

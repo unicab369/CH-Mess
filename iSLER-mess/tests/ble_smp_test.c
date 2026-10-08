@@ -95,6 +95,14 @@ int main(void) {
     const uint8_t public_key[65] = {BLE_SMP_PAIRING_PUBLIC_KEY};
     assert(ble_smp_pdu_valid(public_key, sizeof(public_key)));
     assert(!ble_smp_pdu_valid(public_key, sizeof(public_key) - 1));
+    const uint8_t signing_information[17] = {
+        BLE_SMP_SIGNING_INFORMATION
+    };
+    assert(ble_smp_opcode_known(BLE_SMP_SIGNING_INFORMATION));
+    assert(ble_smp_pdu_valid(signing_information,
+                             sizeof(signing_information)));
+    assert(!ble_smp_pdu_valid(signing_information,
+                              sizeof(signing_information) - 1));
 
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     assert(!ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));

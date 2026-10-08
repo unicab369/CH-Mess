@@ -203,6 +203,7 @@ int main(void) {
     assert(ble_l2cap_ecfc_pump(&conn));
     assert(fake.cid == BLE_L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
            BLE_L2CAP_SIG_FLOW_CONTROL_CREDIT);
+    assert(ble_l2cap_read_u16(fake.pdu + 4) == 0x44);
     assert(ble_l2cap_read_u16(fake.pdu + 6) == 2);
     assert(ble_l2cap_channel_close(&conn, local_cid));
     assert(fake.pdu[0] == BLE_L2CAP_SIG_DISCONNECTION_REQUEST);
