@@ -1,11 +1,10 @@
 #include "ch32fun.h"
-void gap_hw_mesh_received(void);
+void ble_gap_hw_received(void);
 void gap_hw_radio_transmitted(void);
 #define ISLER_CALLBACK_TX gap_hw_radio_transmitted
-#define ISLER_CALLBACK_RX gap_hw_mesh_received
+#define ISLER_CALLBACK_RX ble_gap_hw_received
 #include "iSLER.h"
-volatile uint32_t rx_ready;
-#include "ble_mesh/mesh_crypto.h"
+#include "ble_crypto.h"
 #include "aes_cmm.h"
 #include "ble_mesh/mesh_provisioning.h"
 #include "ble_mesh/mesh_1network.h"
@@ -64,8 +63,8 @@ uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }
 
-#define BLE_GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
-#include "ble_gap.h"
+#define GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
+#include "ble_gap/ble_gap.h"
 #include "ble_mesh/mesh_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
@@ -147,144 +146,7 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 }
 
 
-// Application must override this with a cryptographic entropy source before
-// using link encryption. The advertising LFSR cannot safely generate session IVs.
-__attribute__((weak)) int BLE_GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
-    (void)out; (void)len;
-    return 0;
-}
-// Bond storage is application-owned until a reserved persistent region is
-// assigned. The generic GAP bond API safely reports storage as unavailable.
-__attribute__((weak)) int BLE_GAP_BOND_LOAD(uint8_t slot, mesh_gap_bond *bond) {
-    (void)slot;
-    if (bond) memset(bond, 0, sizeof(*bond));
-    return -1;
-}
-__attribute__((weak)) int BLE_GAP_BOND_SAVE(uint8_t slot, const mesh_gap_bond *bond) {
-    (void)slot; (void)bond;
-    return 0;
-}
-__attribute__((weak)) int BLE_GAP_BOND_DELETE(uint8_t slot) {
-    (void)slot;
-    return 0;
-}
-uint32_t BLE_GAP_CRITICAL_ENTER(void) {
-    uint32_t state = __get_MSTATUS();
-    __disable_irq();
-    return state;
-}
-void BLE_GAP_CRITICAL_EXIT(uint32_t state) { __set_MSTATUS(state); }
-int BLE_GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
-                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]) {
-    return ccm_encrypt_and_tag(key, nonce, 13, &aad, 1, data, len, data, mic, 4) == CCM_OK;
-}
-int BLE_GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
-                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]) {
-    return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
-}
-
-// iSLER adapter for the generic GAP radio interfaces in ble_gap.h.
-static struct {
-    uint32_t access_address;
-    uint8_t channel, tx_phy, rx_phy, receive_after_tx;
-    const uint8_t *tx_frame;
-} gap_radio_link;
-
-// For different TX/RX rates, arm RX from TX completion instead of hardware
-// auto-switching at the TX rate. This must arm RX within the peer's 150 us IFS;
-// verify the adapter timing on hardware.
-void gap_hw_radio_transmitted(void) {
-    gap_hw_mesh_transmitted();
-    if (gap_radio_link.receive_after_tx && gap_radio_link.tx_phy != gap_radio_link.rx_phy) {
-        iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,
-                       gap_radio_link.rx_phy, NULL, 0);
-        iSLERLinkRX();
-    }
-}
-const uint8_t *BLE_GAP_HW_RX_FRAME(void) { return (const uint8_t *)LLE_BUF; }
-int8_t BLE_GAP_HW_RSSI(void) { return (int8_t)iSLERRSSI(); }
-void BLE_GAP_HW_INIT(void) { iSLERInit(LL_TX_POWER_0_DBM); }
-void BLE_GAP_HW_STOP(void) {
-    gap_radio_link.receive_after_tx = 0;
-    iSLERStop();
-    gs_iSLERLink.is_open = 0;
-}
-int BLE_GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
-    gap_radio_link.receive_after_tx = 0;
-    iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, PHY_1M);
-    return tx_done != 0;
-}
-uint8_t BLE_GAP_HW_ADV_PHY_MASK(void) { return MESH_GAP_PHY_1M; }
-int BLE_GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
-                          uint8_t phy) {
-    if (phy != MESH_GAP_PHY_1M) return 0;
-    return BLE_GAP_HW_ADV_TX(frame, len, channel);
-}
-void BLE_GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
-                             uint8_t *tx_frame, uint8_t receive_after_tx,
-                             uint8_t tx_phy, uint8_t rx_phy) {
-    gap_radio_link.access_address = access_address;
-    gap_radio_link.channel = channel;
-    gap_radio_link.tx_frame = tx_frame;
-    gap_radio_link.tx_phy = tx_phy;
-    gap_radio_link.rx_phy = rx_phy;
-    gap_radio_link.receive_after_tx = receive_after_tx;
-    iSLERLinkConfig(access_address, channel, receive_after_tx ? tx_phy : rx_phy,
-                   tx_frame, receive_after_tx && tx_phy == rx_phy);
-}
-// The iSLER DMA buffers accommodate the maximum LE data payload.
-uint16_t BLE_GAP_HW_DATA_MAX(void) { return 251; }
-uint8_t BLE_GAP_HW_PHY_MASK(void) {
-#ifdef CH571_CH573
-    return MESH_GAP_PHY_1M;
-#else
-    return MESH_GAP_PHY_1M | MESH_GAP_PHY_2M;
-#endif
-}
-void BLE_GAP_HW_LINK_TX(void) {
-    if (gs_iSLERLink.phy_mode != gap_radio_link.tx_phy)
-        iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,
-                       gap_radio_link.tx_phy, (uint8_t *)gap_radio_link.tx_frame,
-                       gap_radio_link.receive_after_tx && gap_radio_link.tx_phy == gap_radio_link.rx_phy);
-    iSLERLinkTX();
-}
-void BLE_GAP_HW_LINK_RX(void) { iSLERLinkRX(); }
-void BLE_GAP_HW_SCAN_RX(uint8_t channel) {
-    gap_radio_link.receive_after_tx = 0;
-    iSLERRX(BLE_ADV_ACCESS_ADDRESS, channel, PHY_1M);
-}
-void BLE_GAP_HW_TX_BUFFER(const uint8_t *frame) {
-    gap_radio_link.tx_frame = frame;
-#ifdef CH571_CH573
-    DMA->TXBUF = (uint32_t)frame;
-#else
-    LL->TXBUF = (uint32_t)frame;
-#endif
-}
-void BLE_GAP_HW_CRC_INIT(uint32_t crc_init) {
-    BB->CRCINIT1 = crc_init;
-#ifdef CH570_CH572
-    BB->CRCINIT2 = crc_init;
-#endif
-}
-int BLE_GAP_HW_TX_DONE(void) { return tx_done != 0; }
-void BLE_GAP_HW_TX_CLEAR_DONE(void) { tx_done = 0; }
-uint64_t BLE_GAP_HW_TICKS(void) { return funSysTick64(); }
-uint64_t HW_TICKS_FROM_US(uint32_t us) { return Ticks_from_Us(us); }
-void BLE_GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]) {
-    const uint8_t *stored = (const uint8_t *)ROM_CFG_MAC_ADDR;
-    for (uint8_t i = 0; i < 6; i++) address[i] = stored[5 - i];
-}
-void BLE_GAP_HW_PACKET_READY(void) { rx_ready = 1; }
-void BLE_GAP_HW_PACKET_CLEAR(void) { rx_ready = 0; }
-uint8_t BLE_GAP_HW_RANDOM_JITTER(void) { return (uint8_t)(rand() % 11); }
-void BLE_GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
-    for (size_t i = 0; i < len;) {
-        uint32_t value = (uint32_t)rand();
-        for (uint8_t byte = 0; byte < 4 && i < len; byte++, i++)
-            out[i] = (uint8_t)(value >> (8 * byte));
-    }
-}
+#include "ble_gap/ports/ch58x_isler.h"
 
 static int mesh_proxy_gatt_receive(uint8_t type, const uint8_t *pdu,
                                    size_t len, void *context) {
@@ -321,7 +183,7 @@ int BLE_MESH_GATT_PROXY_OFFER_PDU(uint8_t type, const uint8_t *pdu,
 }
 
 static void mesh_radio_init(void) {
-    gap_hw_mesh_init();
+    ble_gap_hw_init();
     uint32_t value = (uint32_t)funSysTick64();
     seed(value ? value : 0x747AA32F);
     mesh_gatt_proxy_set_rx_callback(mesh_proxy_gatt_receive, NULL);
@@ -459,10 +321,10 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
     mesh_gatt_poll();
-    int connection_busy = mesh_gap_conn_busy();
+    int connection_busy = ble_gap_conn_busy();
     if (connection_busy) {
-        mesh_gap_conn_poll_all();
-        gap_hw_mesh_scan_poll();
+        ble_gap_conn_poll_all();
+        ble_gap_hw_scan_poll();
     }
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
@@ -478,14 +340,14 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
     };
-    int received = gap_hw_mesh_take_ad(mesh_ad_types,
+    int received = ble_gap_scan_take_ad(mesh_ad_types,
         sizeof(mesh_ad_types), adv_data, len, rssi);
     if (received < 0) return -1;
 
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
     uint8_t jitter;
-    int send_result = gap_hw_mesh_send_due(
+    int send_result = ble_gap_radio_send_due(
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
         now, &sent_at, &jitter);
@@ -530,7 +392,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         }
     }
 
-    gap_hw_mesh_scan_poll();
+    ble_gap_hw_scan_poll();
     return received;
 }
 

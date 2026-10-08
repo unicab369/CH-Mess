@@ -33,7 +33,7 @@
 // - [x] Verify LE Credit Based Connection setup, SDU delivery, and credit
 //       replenishment against Bumble's independent L2CAP implementation.
 // - [x] Carry GAP SMP SDUs through the common fixed-channel L2CAP path; GAP
-//       retains ownership of pairing policy and procedures in ble_smp_gap.h.
+//       retains ownership of pairing policy and procedures in ble_gap_smp.h.
 // - [x] Verify L2CAP/SMP packet compatibility against Bumble at the bearer
 //       boundary; a complete pairing-session check remains SMP integration work.
 // - [ ] Verify controller/radio behavior on BLE hardware.

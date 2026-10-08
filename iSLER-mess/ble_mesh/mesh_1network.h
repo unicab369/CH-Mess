@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "mesh_crypto.h"
+#include "../ble_crypto.h"
 
 // Provisioning capabilities may advertise up to this many local elements.
 #define MESH_MAX_ELEMENTS 2

@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "../ble_gap.h"
+#include "../ble_gap/ble_gap.h"
 #include "../ble_gatt/ble_gatt_server.h"
 #include "../ble_gatt/ble_gatt_transport.h"
 
@@ -201,7 +201,7 @@ static uint8_t mesh_gatt_gap_edkm_read(void *context, uint16_t offset,
     uint8_t material[24];
     if (!inout_len || (out == NULL && *inout_len))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (!mesh_gap_ead_key_material_get(material))
+    if (!ble_gap_ead_key_material_get(material))
         return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
     if (offset > sizeof(material)) {
         memset(material, 0, sizeof(material));
@@ -221,31 +221,31 @@ static uint8_t mesh_gatt_gap_edkm_read(void *context, uint16_t offset,
 // generic transport itself depends only on the operations supplied here.
 static int mesh_gatt_gap_connected(void *context) {
     (void)context;
-    return mesh_gap_connected();
+    return ble_gap_connected();
 }
 
 static int mesh_gatt_gap_receive(void *context, uint8_t *llid,
                                  uint8_t *data, size_t *len) {
     (void)context;
-    return mesh_gap_receive_data(llid, data, len);
+    return ble_gap_receive_data(llid, data, len);
 }
 
 static int mesh_gatt_gap_send(void *context, uint8_t llid,
                               const uint8_t *data, size_t len) {
     (void)context;
-    return mesh_gap_send_data(llid, data, len);
+    return ble_gap_send_data(llid, data, len);
 }
 
 static uint16_t mesh_gatt_gap_max_payload(void *context) {
     (void)context;
-    return mesh_gap_data_length_get().tx_octets;
+    return ble_gap_data_length_get().tx_octets;
 }
 
 static void mesh_gatt_gap_security_state(void *context, uint8_t *encrypted,
                                         uint8_t *authenticated) {
     (void)context;
-    if (encrypted) *encrypted = mesh_gap_encrypted() != 0;
-    if (authenticated) *authenticated = mesh_gap_authenticated() != 0;
+    if (encrypted) *encrypted = ble_gap_encrypted() != 0;
+    if (authenticated) *authenticated = ble_gap_authenticated() != 0;
 }
 
 static int mesh_gatt_transport_init(ble_gatt_transport *transport,
@@ -286,7 +286,7 @@ static void mesh_gatt_proxy_sar_cancel(void) {
 // bearer behavior; this is separate from generic ATT indication timeouts.
 static int mesh_gatt_proxy_sar_timeout_poll(void) {
     if (mesh_gatt.proxy_sar_disconnect_pending) {
-        mesh_gap_disconnect(0x13);
+        ble_gap_disconnect(0x13);
         return 1;
     }
     uint32_t now = GET_MILLIS();
@@ -299,7 +299,7 @@ static int mesh_gatt_proxy_sar_timeout_poll(void) {
         mesh_gatt_proxy_sar_cancel();
         mesh_gatt.proxy_tx_head = mesh_gatt.proxy_tx_count = 0;
         mesh_gatt.proxy_sar_disconnect_pending = 1;
-        mesh_gap_disconnect(0x13);
+        ble_gap_disconnect(0x13);
         return 1;
     }
     return 0;
@@ -478,7 +478,7 @@ static void mesh_gatt_gap_policy_update(void) {
     ble_gatt_attribute *name = ble_gatt_server_find(&mesh_gatt.server,
         MESH_GATT_HANDLE_GAP_DEVICE_NAME);
     if (!name) return;
-    name->permissions = mesh_gap_discoverable() ? BLE_GATT_PERM_READ :
+    name->permissions = ble_gap_discoverable() ? BLE_GATT_PERM_READ :
         BLE_GATT_PERM_READ_AUTHENTICATED;
 }
 
@@ -514,7 +514,7 @@ int mesh_gatt_provisioning_advertising_start(const uint8_t device_uuid[16],
     memcpy(data + 7, device_uuid, 16);
     data[23] = (uint8_t)oob_info;
     data[24] = (uint8_t)(oob_info >> 8);
-    return mesh_gap_connectable_advertising_start(data, sizeof(data),
+    return ble_gap_connectable_advertising_start(data, sizeof(data),
                                                    NULL, 0, interval_ms);
 }
 
@@ -522,7 +522,7 @@ int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
     static const uint8_t data[] = {
         2, 0x01, 0x06, 3, 0x03, 0x28, 0x18
     };
-    return mesh_gap_connectable_advertising_start(data, sizeof(data),
+    return ble_gap_connectable_advertising_start(data, sizeof(data),
                                                    NULL, 0, interval_ms);
 }
 
@@ -726,7 +726,7 @@ static void mesh_gatt_link_reset(void) {
 void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized()) return;
     mesh_gatt_gap_policy_update();
-    uint8_t connected = mesh_gap_connected() != 0;
+    uint8_t connected = ble_gap_connected() != 0;
     if (!connected) {
         if (mesh_gatt.connected) {
             mesh_gatt_provisioning_link_notify(0);

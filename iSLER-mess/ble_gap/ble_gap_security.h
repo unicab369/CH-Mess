@@ -1,12 +1,12 @@
 // Security implementation included once at the end of ble_gap.h.
-#ifndef BLE_GAP_SECURITY_H
-#define BLE_GAP_SECURITY_H
-#ifndef BLE_GAP_H
+#ifndef GAP_SECURITY_H
+#define GAP_SECURITY_H
+#ifndef GAP_H
 #error "Include ble_gap_security.h through ble_gap.h"
 #endif
 
-#include "ble_mesh/mesh_crypto.h"
-#include "micro-ecc/uECC.h"
+#include "../ble_crypto.h"
+#include "../micro-ecc/uECC.h"
 
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central) {
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));
@@ -56,7 +56,7 @@ static uint8_t *gap_security_tx_frame(void) {
     uint8_t nonce[13];
     gap_security_nonce(nonce, gap_security.tx_counter, gap_conn.central_role);
     memcpy(gap_conn_cipher_frame, gap_conn_tx_frame, gap_conn_tx_frame[1] + 2u);
-    if (!BLE_GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
+    if (!GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
             gap_conn_tx_frame[0] & 0xe3, gap_conn_cipher_frame + 2,
             gap_conn_tx_frame[1], gap_conn_cipher_frame + 2 + gap_conn_tx_frame[1])) {
         gap_security.status = 0x3d;
@@ -118,8 +118,8 @@ static void gap_security_send(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
-int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
-    if (!ltk || !random || !mesh_gap_connected() || !gap_conn.central_role ||
+int ble_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
+    if (!ltk || !random || !ble_gap_connected() || !gap_conn.central_role ||
         gap_conn.first_event || gap_security.phase ||
         (gap_smp.bearer.pairing.phase && gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_ENCRYPT &&
          gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_ENCRYPT) || gap_conn.update_pending ||
@@ -134,11 +134,11 @@ int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ed
     }
     uint32_t generation = gap_security_generation;
     uint8_t entropy[12];
-    if (!BLE_GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+    if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
         gap_security.status = 0x1f;
         return 0;
     }
-    uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     // Entropy collection may take time: recheck the link and procedures before
     // committing a key, so a disconnect/reconnect cannot apply it to another peer.
     if (!gap_conn.active || gap_security_generation != generation || gap_security.phase ||
@@ -152,7 +152,7 @@ int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ed
             size_t wipe_len = sizeof(entropy);
             while (wipe_len--) *wipe_bytes++ = 0;
         }
-        BLE_GAP_CRITICAL_EXIT(irq_state);
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
@@ -168,25 +168,25 @@ int mesh_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ed
     }
     gap_security.refreshing = gap_security.tx_enabled;
     gap_security.started_ms = GET_MILLIS();
-    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+    gap_security.status = GAP_CONNECTION_PENDING;
     gap_security.phase = gap_security.refreshing ? GAP_ENC_PAUSE_QUEUED : GAP_ENC_QUEUED;
-    BLE_GAP_CRITICAL_EXIT(irq_state);
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
-int mesh_gap_key_request(uint8_t random[8], uint16_t *ediv) {
+int ble_gap_key_request(uint8_t random[8], uint16_t *ediv) {
     if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) return 0;
     if (random) memcpy(random, gap_security.random, 8);
     if (ediv) *ediv = gap_security.ediv;
     return 1;
 }
 
-int mesh_gap_key_reply(const uint8_t ltk[16]) {
-    uint32_t irq_state = BLE_GAP_CRITICAL_ENTER();
+int ble_gap_key_reply(const uint8_t ltk[16]) {
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
     if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) {
-        BLE_GAP_CRITICAL_EXIT(irq_state);
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
     if (ltk) {
@@ -200,20 +200,20 @@ int mesh_gap_key_reply(const uint8_t ltk[16]) {
         gap_security.status = 0x06;
         gap_security.phase = GAP_ENC_START_QUEUED;
     }
-    BLE_GAP_CRITICAL_EXIT(irq_state);
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
-int mesh_gap_encrypted(void) {
-    return mesh_gap_connected() && !gap_security.phase &&
+int ble_gap_encrypted(void) {
+    return ble_gap_connected() && !gap_security.phase &&
         gap_security.tx_enabled && gap_security.rx_enabled;
 }
 
-uint8_t mesh_gap_security_status(void) {
+uint8_t ble_gap_security_status(void) {
     return gap_security.status;
 }
 
 
-#include "ble_smp_gap.h"
+#include "ble_gap_smp.h"
 
-#endif // BLE_GAP_SECURITY_H
+#endif // GAP_SECURITY_H

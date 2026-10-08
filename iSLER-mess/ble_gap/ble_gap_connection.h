@@ -1,7 +1,7 @@
 // Radio packet handling and connection procedures included by ble_gap.h.
-#ifndef BLE_GAP_CONNECTION_H
-#define BLE_GAP_CONNECTION_H
-#ifndef BLE_GAP_H
+#ifndef GAP_CONNECTION_H
+#define GAP_CONNECTION_H
+#ifndef GAP_H
 #error "Include ble_gap_connection.h through ble_gap.h"
 #endif
 
@@ -10,10 +10,10 @@ static uint8_t gap_connection_rate_parameters_valid(uint16_t interval,
         uint16_t timeout);
 static uint16_t gap_connection_rate_min_interval(void);
 
-#if MESH_GAP_EXT_ADV_SUPPORT && MESH_GAP_CONN_DATA_MAX < 35
+#if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
 #define GAP_CONN_PACKET_BUFFER_MAX 35
 #else
-#define GAP_CONN_PACKET_BUFFER_MAX MESH_GAP_CONN_DATA_MAX
+#define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
 #endif
 
 static uint8_t gap_radio_rx_armed, gap_radio_rx_channel_index;
@@ -25,14 +25,14 @@ static volatile uint8_t gap_radio_active_scan_pending;
 static volatile uint8_t gap_radio_active_scan_address_type;
 static uint8_t gap_radio_active_scan_address[6];
 static uint32_t gap_radio_active_scan_deadline_ms;
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_request[14];
+static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_request[14];
 static uint8_t gap_radio_scan_adv_frame[2 + 37];
 static volatile uint8_t gap_radio_scan_adv_ready;
 static volatile int8_t gap_radio_scan_adv_rssi;
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
 static uint8_t gap_radio_ext_scan_frame[2 + 255];
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_ext_primary_frame[9];
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_ext_adv_frame[255];
+static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_ext_primary_frame[9];
+static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_ext_adv_frame[255];
 static volatile uint8_t gap_radio_ext_adv_scan_waiting;
 static volatile uint8_t gap_radio_ext_adv_scan_response_started;
 static uint8_t gap_radio_ext_adv_scan_address_type, gap_radio_ext_adv_scan_address[6];
@@ -63,8 +63,8 @@ static struct {
 } gap_radio_aux_request[GAP_EXT_ADV_CONTEXT_COUNT];
 static void gap_radio_connection_take_radio(void);
 #endif
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_adv_frame[8 + MESH_GAP_ADV_DATA_MAX];
-static BLE_GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_response_frame[8 + MESH_GAP_ADV_DATA_MAX];
+static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_adv_frame[8 + GAP_ADV_DATA_MAX];
+static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_response_frame[8 + GAP_ADV_DATA_MAX];
 static uint8_t gap_radio_rx_frame[2 + 37];
 static volatile uint8_t gap_radio_rx_ready;
 static volatile uint8_t gap_radio_advertising_rx_event;
@@ -73,13 +73,13 @@ static volatile uint8_t gap_radio_connect_request_ready;
 static uint8_t gap_radio_connect_request_frame[36];
 static uint64_t gap_radio_connect_request_ticks;
 typedef struct {
-    BLE_GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
-    BLE_GAP_RADIO_BUFFER_ATTR uint8_t
+    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t
         cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-} mesh_gap_connection_radio_buffers;
-static mesh_gap_connection_radio_buffers
-    gap_connection_radio_buffers[MESH_GAP_CONNECTION_COUNT];
+} ble_gap_connection_radio_buffers;
+static ble_gap_connection_radio_buffers
+    gap_connection_radio_buffers[GAP_CONNECTION_COUNT];
 #define gap_conn_tx_frame gap_connection_radio_buffers[gap_connection_slot].tx
 #define gap_conn_cipher_frame \
     gap_connection_radio_buffers[gap_connection_slot].cipher
@@ -105,14 +105,14 @@ static void gap_connection_end(void) {
     if (!gap_conn.active) return;
     if (gap_radio_connection_slot_valid &&
         gap_radio_connection_slot == gap_connection_slot) {
-        BLE_GAP_HW_STOP();
+        GAP_HW_STOP();
         gap_radio_connection_slot_valid = 0;
     }
     if (gap_conn.central_role && gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX &&
         gap_smp.bearer.pairing.bond_tx_step == 2) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
-        mesh_gap_smp_bond_abort();
+        ble_gap_smp_bond_abort();
         gap_bond_repair_pending = 1;
     }
     if (gap_conn.central_role && gap_conn.bond_restore_started &&
@@ -121,7 +121,7 @@ static void gap_connection_end(void) {
                                     gap_conn.bond.peer_address_type);
         gap_bond_repair_pending = 1;
     }
-    uint8_t security_status = gap_security.status == MESH_GAP_CONNECTION_PENDING ?
+    uint8_t security_status = gap_security.status == GAP_CONNECTION_PENDING ?
         0x08 : gap_security.status;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
@@ -171,12 +171,12 @@ static void gap_connection_end(void) {
     }
     gap_conn.bonded = gap_conn.bond_restore_started = 0;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending = 0;
-    if (gap_conn.phy_status == MESH_GAP_CONNECTION_PENDING) gap_conn.phy_status = 0x08;
+    if (gap_conn.phy_status == GAP_CONNECTION_PENDING) gap_conn.phy_status = 0x08;
     gap_conn.rx_armed = 0;
     gap_conn.event_replied = 0;
     gap_conn.channel_selected = 0;
     gap_conn.tx_queued = 0;
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
     gap_conn.periodic_sync_transfer_queued = 0;
     gap_conn.periodic_sync_transfer_handle = 0;
 #endif
@@ -184,10 +184,10 @@ static void gap_connection_end(void) {
     gap_conn.update_pending = 0;
     gap_conn.local_update_queued = gap_conn.local_params_queued = 0;
     gap_conn.params_pending = gap_conn.params_local = gap_conn.feature_request_pending = 0;
-    if (gap_conn.connection_status == MESH_GAP_CONNECTION_PENDING)
+    if (gap_conn.connection_status == GAP_CONNECTION_PENDING)
         gap_conn.connection_status = 0x08; // Connection timeout/loss.
     gap_conn.length_queued = gap_conn.length_pending = 0;
-    if (gap_conn.length_status == MESH_GAP_CONNECTION_PENDING)
+    if (gap_conn.length_status == GAP_CONNECTION_PENDING)
         gap_conn.length_status = 0x08;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = gap_conn.local_map_queued = 0;
@@ -283,7 +283,7 @@ static void gap_connection_update_apply(uint8_t instant_packet_received) {
         gap_conn.update_window_active = !instant_packet_received;
         gap_conn.subrate_force_event = 1;
         gap_conn.update_pending = 0;
-        if (gap_conn.connection_status == MESH_GAP_CONNECTION_PENDING)
+        if (gap_conn.connection_status == GAP_CONNECTION_PENDING)
             gap_conn.connection_status = 0;
     }
     // Switch rates at the shared Instant, including events skipped by polling.
@@ -318,7 +318,7 @@ static void gap_connection_update_apply(uint8_t instant_packet_received) {
             if (gap_conn.channel_map[channel / 8] & (1u << (channel % 8)))
                 gap_conn.used_channels[gap_conn.used_count++] = channel;
         gap_conn.channel_map_update_pending = 0;
-        if (gap_conn.central_role && gap_conn.connection_status == MESH_GAP_CONNECTION_PENDING)
+        if (gap_conn.central_role && gap_conn.connection_status == GAP_CONNECTION_PENDING)
             gap_conn.connection_status = 0;
     }
 }
@@ -479,7 +479,7 @@ static void gap_channel_reporting_send(void) {
     gap_conn_tx_frame[5] = gap_conn.channel_max_delay_200ms;
     gap_conn.channel_reporting_queued = 0;
     gap_conn.channel_reporting_pending = 1;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
 }
 
 static void gap_channel_status_send(void) {
@@ -487,7 +487,7 @@ static void gap_channel_status_send(void) {
     gap_conn_tx_frame[1] = 11;
     gap_conn_tx_frame[2] = 0x29; // LL_CHANNEL_STATUS_IND.
     memcpy(gap_conn_tx_frame + 3, gap_conn.channel_local_classification,
-           MESH_GAP_CHANNEL_CLASSIFICATION_BYTES);
+           GAP_CHANNEL_CLASSIFICATION_BYTES);
     gap_conn.channel_status_queued = 0;
     gap_conn.channel_status_last_sent_ms = GET_MILLIS();
     gap_conn.channel_status_last_sent_valid = 1;
@@ -507,23 +507,23 @@ static void gap_phy_request_send(void) {
 
 // FeatureSet octet 1 advertises LE 2M (bit 0) and LE Coded (bit 3).
 static uint8_t gap_phy_feature_octet(void) {
-    uint8_t supported = BLE_GAP_HW_PHY_MASK();
-    return ((supported & MESH_GAP_PHY_2M) ? 0x01 : 0) |
-        ((supported & MESH_GAP_PHY_CODED) ? 0x08 : 0);
+    uint8_t supported = GAP_HW_PHY_MASK();
+    return ((supported & GAP_PHY_2M) ? 0x01 : 0) |
+        ((supported & GAP_PHY_CODED) ? 0x08 : 0);
 }
 
 // Select one PHY from a negotiated preference mask. Prefer the highest rate,
 // then the mandatory 1M PHY; coded airtime is accounted for conservatively.
 static uint8_t gap_phy_preferred(uint8_t mask) {
-    if (mask & MESH_GAP_PHY_2M) return MESH_GAP_PHY_2M;
-    if (mask & MESH_GAP_PHY_CODED) return MESH_GAP_PHY_CODED;
-    return mask & MESH_GAP_PHY_1M;
+    if (mask & GAP_PHY_2M) return GAP_PHY_2M;
+    if (mask & GAP_PHY_CODED) return GAP_PHY_CODED;
+    return mask & GAP_PHY_1M;
 }
 
 static uint8_t gap_phy_peer_supported_mask(void) {
-    uint8_t mask = MESH_GAP_PHY_1M;
-    if (gap_conn.peer_features2 & 0x01) mask |= MESH_GAP_PHY_2M;
-    if (gap_conn.peer_features2 & 0x08) mask |= MESH_GAP_PHY_CODED;
+    uint8_t mask = GAP_PHY_1M;
+    if (gap_conn.peer_features2 & 0x01) mask |= GAP_PHY_2M;
+    if (gap_conn.peer_features2 & 0x08) mask |= GAP_PHY_CODED;
     return mask;
 }
 
@@ -537,8 +537,8 @@ static void gap_phy_update_send(uint8_t peer_tx, uint8_t peer_rx) {
     // A single identical peer preference requests symmetry: choose it in
     // both directions or leave both unchanged, as required by PHY negotiation.
     if (peer_tx == peer_rx &&
-        (peer_tx == MESH_GAP_PHY_1M || peer_tx == MESH_GAP_PHY_2M ||
-         peer_tx == MESH_GAP_PHY_CODED) &&
+        (peer_tx == GAP_PHY_1M || peer_tx == GAP_PHY_2M ||
+         peer_tx == GAP_PHY_CODED) &&
         ((tx ? tx : gap_conn.tx_phy) != peer_tx ||
          (rx ? rx : gap_conn.rx_phy) != peer_rx)) tx = rx = 0;
     if (tx == gap_conn.tx_phy) tx = 0;
@@ -702,7 +702,7 @@ static void gap_connection_rate_send_indication(void) {
     }
     gap_conn.rate_update_pending = 1;
     gap_conn.rate_set_queued = 0;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     gap_conn.params_started_ms = GET_MILLIS();
 }
 
@@ -823,7 +823,7 @@ static void gap_privacy_poll(uint32_t now) {
         gap_radio_active_scan_pending || gap_radio_advertising_rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0) return;
     if (gap_radio_rx_armed) {
-        BLE_GAP_HW_STOP();
+        GAP_HW_STOP();
         gap_radio_rx_armed = 0;
     }
     uint8_t address[6];
@@ -857,28 +857,28 @@ static void gap_privacy_poll(uint32_t now) {
 }
 
 // Complete an extended scan response exchange when its radio TX finishes.
-static inline void gap_hw_mesh_transmitted(void) {
-#if MESH_GAP_EXT_ADV_SUPPORT
+static inline void ble_gap_hw_transmitted(void) {
+#if GAP_EXT_ADV_SUPPORT
     if (gap_radio_ext_adv_scan_response_started)
         gap_radio_ext_adv_scan_waiting = 0;
 #endif
 }
 
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
 // Encode an AuxPtr to the next secondary-channel packet.
 static void gap_radio_ext_aux_ptr_write_phy(uint8_t *field, uint8_t channel,
     uint32_t offset_us, uint8_t phy) {
     uint16_t offset_units = (uint16_t)((offset_us + 29u) / 30u);
     field[0] = channel & 0x3f; // CA=0, Offset Units=30 us.
     field[1] = (uint8_t)offset_units;
-    uint8_t aux_phy = phy == MESH_GAP_PHY_2M ? 1 :
-        phy == MESH_GAP_PHY_CODED ? 2 : 0;
+    uint8_t aux_phy = phy == GAP_PHY_2M ? 1 :
+        phy == GAP_PHY_CODED ? 2 : 0;
     field[2] = (uint8_t)(((offset_units >> 8) & 0x1f) | (aux_phy << 6));
 }
 
 // Encode the periodic event announced by SyncInfo, relative to AUX_ADV_IND.
 static void gap_radio_ext_sync_info_write(uint8_t *field,
-    mesh_gap_extended_advertising_set *set, uint64_t aux_start) {
+    ble_gap_extended_advertising_set *set, uint64_t aux_start) {
     uint64_t target = set->periodic_next_event_ticks;
     if (!set->periodic_sync_info_sent && target <= aux_start) {
         // If polling missed startup, defer the first event so this SyncInfo
@@ -927,7 +927,7 @@ static uint32_t gap_radio_ext_next_offset_phy(uint8_t pdu_payload_len,
 }
 
 static void gap_radio_ext_wait_until(uint64_t ticks) {
-    while (BLE_GAP_HW_TICKS() < ticks) {}
+    while (GAP_HW_TICKS() < ticks) {}
 }
 
 static uint8_t gap_periodic_channel_for(uint32_t access_address,
@@ -960,33 +960,33 @@ static uint8_t gap_periodic_channel_for(uint32_t access_address,
     return 0;
 }
 
-static uint8_t gap_periodic_channel(const mesh_gap_extended_advertising_set *set,
+static uint8_t gap_periodic_channel(const ble_gap_extended_advertising_set *set,
                                     uint16_t event_counter) {
     return gap_periodic_channel_for(set->periodic_access_address,
                                     set->periodic_channel_map, event_counter);
 }
 
 static int gap_radio_periodic_tx(uint8_t *frame, uint8_t length,
-    const mesh_gap_extended_advertising_set *set, uint8_t channel,
+    const ble_gap_extended_advertising_set *set, uint8_t channel,
     uint64_t start_ticks, uint64_t *actual_start) {
-    BLE_GAP_HW_TX_CLEAR_DONE();
-    BLE_GAP_HW_CRC_INIT(set->periodic_crc_init);
-    BLE_GAP_HW_LINK_CONFIG(set->periodic_access_address, channel, frame, 0,
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(set->periodic_crc_init);
+    GAP_HW_LINK_CONFIG(set->periodic_access_address, channel, frame, 0,
                            set->aux_phy, set->aux_phy);
     gap_radio_ext_wait_until(start_ticks);
-    if (actual_start) *actual_start = BLE_GAP_HW_TICKS();
-    BLE_GAP_HW_LINK_TX();
-    uint64_t deadline = BLE_GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-    while (!BLE_GAP_HW_TX_DONE() && BLE_GAP_HW_TICKS() < deadline) {}
-    return BLE_GAP_HW_TX_DONE() && length >= 2;
+    if (actual_start) *actual_start = GAP_HW_TICKS();
+    GAP_HW_LINK_TX();
+    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
+    return GAP_HW_TX_DONE() && length >= 2;
 }
 
 // Transmit one queued PAwR response in its selected slot using the RspAA from
 // the advertiser's PRTI and the same channel as the received subevent.
 static int gap_radio_periodic_response_tx(uint8_t slot, uint8_t channel,
     uint64_t response_start_ticks) {
-    if (slot >= MESH_GAP_PERIODIC_SYNC_COUNT) return 0;
-    mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
+    ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint8_t *frame = gap_radio_ext_adv_frame;
     frame[0] = 0x07; // AUX_SYNC_SUBEVENT_RSP, common extended format.
     frame[1] = (uint8_t)(2 + sync->pawr_response_data_len);
@@ -995,26 +995,26 @@ static int gap_radio_periodic_response_tx(uint8_t slot, uint8_t channel,
     if (sync->pawr_response_data_len)
         memcpy(frame + 4, sync->pawr_response_data,
                sync->pawr_response_data_len);
-    BLE_GAP_HW_TX_CLEAR_DONE();
-    BLE_GAP_HW_CRC_INIT(sync->crc_init);
-    BLE_GAP_HW_LINK_CONFIG(sync->response_access_address, channel, frame, 0,
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(sync->crc_init);
+    GAP_HW_LINK_CONFIG(sync->response_access_address, channel, frame, 0,
                            sync->phy, sync->phy);
-    if (BLE_GAP_HW_TICKS() >= response_start_ticks) return 0;
+    if (GAP_HW_TICKS() >= response_start_ticks) return 0;
     gap_radio_ext_wait_until(response_start_ticks);
-    BLE_GAP_HW_LINK_TX();
-    uint64_t deadline = BLE_GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-    while (!BLE_GAP_HW_TX_DONE() && BLE_GAP_HW_TICKS() < deadline) {}
-    return BLE_GAP_HW_TX_DONE();
+    GAP_HW_LINK_TX();
+    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
+    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
+    return GAP_HW_TX_DONE();
 }
 
 static void gap_periodic_response_report_push(uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint8_t response_slot,
     const uint8_t *pdu, size_t pdu_len, int8_t rssi) {
     gap_ext_adv_fields fields;
-    if (set_id >= MESH_GAP_EXT_ADV_SET_COUNT ||
+    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
         !gap_ext_adv_decode(pdu, pdu_len, &fields) || fields.mode != 0 ||
         fields.has_aux_ptr || fields.has_sync_info ||
-        fields.data_len > MESH_GAP_PAWR_RESPONSE_DATA_MAX ||
+        fields.data_len > GAP_PAWR_RESPONSE_DATA_MAX ||
         !gap_ext_ad_data_valid(fields.data, fields.data_len)) return;
     if (gap_pawr_response_report_count == GAP_PAWR_RESPONSE_REPORT_COUNT) {
         gap_pawr_response_report_head =
@@ -1024,7 +1024,7 @@ static void gap_periodic_response_report_push(uint8_t set_id,
     }
     uint8_t tail = (gap_pawr_response_report_head +
         gap_pawr_response_report_count) % GAP_PAWR_RESPONSE_REPORT_COUNT;
-    mesh_gap_periodic_response_report *report =
+    ble_gap_periodic_response_report *report =
         &gap_pawr_response_reports[tail];
     memset(report, 0, sizeof(*report));
     report->set_id = set_id;
@@ -1043,7 +1043,7 @@ static void gap_periodic_response_report_push(uint8_t set_id,
 
 // Decode a captured response and identify its slot from the packet start time.
 static void gap_radio_periodic_response_report_current(
-    mesh_gap_extended_advertising_set *set, uint8_t set_id,
+    ble_gap_extended_advertising_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint64_t subevent_start_ticks) {
     if (!gap_radio_pawr_response_ready) return;
     uint8_t *pdu = gap_radio_pawr_response_frame;
@@ -1075,7 +1075,7 @@ static void gap_radio_periodic_response_report_current(
 // Listen continuously over a subevent's response window so adjacent slots do
 // not have a radio retune gap between them.
 static void gap_radio_periodic_response_window_listen(
-    mesh_gap_extended_advertising_set *set, uint8_t set_id,
+    ble_gap_extended_advertising_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint8_t channel,
     uint64_t subevent_start_ticks) {
     uint64_t first_slot_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
@@ -1088,21 +1088,21 @@ static void gap_radio_periodic_response_window_listen(
     gap_radio_ext_wait_until(listen_start_ticks);
     gap_radio_pawr_response_ready = 0;
     gap_radio_pawr_response_listening = 1;
-    BLE_GAP_HW_PACKET_CLEAR();
-    BLE_GAP_HW_CRC_INIT(set->periodic_crc_init);
-    BLE_GAP_HW_LINK_CONFIG(set->periodic_response_access_address, channel,
+    GAP_HW_PACKET_CLEAR();
+    GAP_HW_CRC_INIT(set->periodic_crc_init);
+    GAP_HW_LINK_CONFIG(set->periodic_response_access_address, channel,
                            NULL, 0, set->aux_phy, set->aux_phy);
-    BLE_GAP_HW_LINK_RX();
+    GAP_HW_LINK_RX();
     gap_radio_rx_armed = 1;
-    while (BLE_GAP_HW_TICKS() < window_end_ticks) {
+    while (GAP_HW_TICKS() < window_end_ticks) {
         if (gap_radio_pawr_response_ready)
             gap_radio_periodic_response_report_current(set, set_id,
                 event_counter, subevent, subevent_start_ticks);
     }
-    if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+    if (gap_radio_rx_armed) GAP_HW_STOP();
     gap_radio_rx_armed = 0;
     gap_radio_pawr_response_listening = 0;
-    BLE_GAP_HW_PACKET_CLEAR();
+    GAP_HW_PACKET_CLEAR();
     if (gap_radio_pawr_response_ready)
         gap_radio_periodic_response_report_current(set, set_id,
             event_counter, subevent, subevent_start_ticks);
@@ -1111,13 +1111,13 @@ static void gap_radio_periodic_response_window_listen(
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
 static int gap_radio_periodic_connect_request(uint8_t slot,
     const uint8_t *request, size_t request_len, uint64_t received_ticks) {
-    if (slot >= MESH_GAP_PERIODIC_SYNC_COUNT || !request ||
+    if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_periodic_syncs[slot].pawr_connection_accept ||
         gap_conn.active || gap_central_connect.active ||
-        BLE_GAP_HW_DATA_MAX() < 27 ||
+        GAP_HW_DATA_MAX() < 27 ||
         !gap_connection_request_valid(request)) return 0;
-    mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint8_t initiator_type = (request[0] >> 6) & 1;
     uint8_t responder_type = (request[0] >> 7) & 1;
     if (initiator_type != sync->address_type ||
@@ -1143,16 +1143,16 @@ static int gap_radio_periodic_connect_request(uint8_t slot,
         sync->channel_map, (uint16_t)(sync->current_event_counter ^
                                       sync->pawr_selected_subevent));
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150u);
-    BLE_GAP_HW_TX_CLEAR_DONE();
-    BLE_GAP_HW_CRC_INIT(sync->crc_init);
-    BLE_GAP_HW_LINK_CONFIG(sync->access_address, channel, response, 0,
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(sync->crc_init);
+    GAP_HW_LINK_CONFIG(sync->access_address, channel, response, 0,
                            sync->phy, sync->phy);
-    if (BLE_GAP_HW_TICKS() >= response_start) return 0;
+    if (GAP_HW_TICKS() >= response_start) return 0;
     gap_radio_ext_wait_until(response_start);
-    BLE_GAP_HW_LINK_TX();
-    uint64_t deadline = BLE_GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
-    while (!BLE_GAP_HW_TX_DONE() && BLE_GAP_HW_TICKS() < deadline) {}
-    if (!BLE_GAP_HW_TX_DONE()) return 0;
+    GAP_HW_LINK_TX();
+    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
+    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
+    if (!GAP_HW_TX_DONE()) return 0;
 
     if (!gap_connection_accept(request, received_ticks,
             HW_TICKS_FROM_US(1250u), HW_TICKS_FROM_US(2500u))) return 0;
@@ -1167,10 +1167,10 @@ static int gap_radio_periodic_connect_request(uint8_t slot,
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
 static int gap_radio_periodic_connect_exchange(
-    mesh_gap_extended_advertising_set *set, uint8_t channel,
+    ble_gap_extended_advertising_set *set, uint8_t channel,
     uint64_t request_start_ticks) {
     if (!set || !set->pawr_connect_pending || gap_conn.active ||
-        BLE_GAP_HW_DATA_MAX() < 27) return 0;
+        GAP_HW_DATA_MAX() < 27) return 0;
     uint8_t *request = gap_central_connect.request;
     uint8_t peer_type = set->pawr_connect_peer_type;
     const uint8_t *peer_address = set->pawr_connect_peer_address;
@@ -1191,7 +1191,7 @@ static int gap_radio_periodic_connect_exchange(
     request[15] = (uint8_t)(access_address >> 8);
     request[16] = (uint8_t)(access_address >> 16);
     request[17] = (uint8_t)(access_address >> 24);
-    BLE_GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
+    GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(request + 18, crc_init, sizeof(crc_init));
     request[21] = 1;
     request[24] = (uint8_t)gap_connection_timing.interval;
@@ -1210,23 +1210,23 @@ static int gap_radio_periodic_connect_exchange(
 
     gap_radio_pawr_connect_response_ready = 0;
     gap_radio_pawr_connect_waiting = 1;
-    BLE_GAP_HW_TX_CLEAR_DONE();
-    BLE_GAP_HW_CRC_INIT(set->periodic_crc_init);
-    BLE_GAP_HW_LINK_CONFIG(set->periodic_access_address, channel, request, 1,
+    GAP_HW_TX_CLEAR_DONE();
+    GAP_HW_CRC_INIT(set->periodic_crc_init);
+    GAP_HW_LINK_CONFIG(set->periodic_access_address, channel, request, 1,
                            set->aux_phy, set->aux_phy);
     gap_radio_ext_wait_until(request_start_ticks);
-    BLE_GAP_HW_LINK_TX();
-    uint64_t tx_deadline = BLE_GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
-    while (!BLE_GAP_HW_TX_DONE() && BLE_GAP_HW_TICKS() < tx_deadline) {}
-    if (BLE_GAP_HW_TX_DONE())
-        gap_radio_pawr_connect_request_end_ticks = BLE_GAP_HW_TICKS();
-    uint64_t response_deadline = BLE_GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
-    while (BLE_GAP_HW_TX_DONE() && !gap_radio_pawr_connect_response_ready &&
-           BLE_GAP_HW_TICKS() < response_deadline) {}
+    GAP_HW_LINK_TX();
+    uint64_t tx_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
+    while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
+    if (GAP_HW_TX_DONE())
+        gap_radio_pawr_connect_request_end_ticks = GAP_HW_TICKS();
+    uint64_t response_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000u);
+    while (GAP_HW_TX_DONE() && !gap_radio_pawr_connect_response_ready &&
+           GAP_HW_TICKS() < response_deadline) {}
     gap_radio_pawr_connect_waiting = 0;
     set->pawr_connect_pending = 0;
-    BLE_GAP_HW_STOP();
-    if (!BLE_GAP_HW_TX_DONE() || !gap_radio_pawr_connect_response_ready)
+    GAP_HW_STOP();
+    if (!GAP_HW_TX_DONE() || !gap_radio_pawr_connect_response_ready)
         return 0;
 
     const uint8_t *response = gap_radio_pawr_connect_response;
@@ -1256,8 +1256,8 @@ static int gap_radio_periodic_connect_exchange(
 }
 
 // Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
-static int gap_hw_mesh_transmit_periodic(
-    mesh_gap_extended_advertising_set *set) {
+static int ble_gap_hw_transmit_periodic(
+    ble_gap_extended_advertising_set *set) {
     if (set->pawr_enabled) {
         uint8_t *frame = gap_radio_ext_adv_frame;
         uint16_t adi = (uint16_t)((set->sid << 12) | set->periodic_did);
@@ -1311,11 +1311,11 @@ static int gap_hw_mesh_transmit_periodic(
     uint16_t remaining = set->periodic_data_len, offset = 0;
     uint8_t channel = gap_periodic_channel(set,
                                             set->periodic_event_counter);
-    uint64_t next_start = BLE_GAP_HW_TICKS();
+    uint64_t next_start = GAP_HW_TICKS();
     while (remaining || offset == 0) {
-        uint8_t has_chain = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
         uint8_t ext_len = has_chain ? 6 : 3;
-        uint16_t chunk = has_chain ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
+        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
             remaining;
         frame[0] = 0x07; // AUX_SYNC_IND for the first PDU, AUX_CHAIN_IND later.
         frame[1] = (uint8_t)(1 + ext_len + chunk);
@@ -1344,8 +1344,8 @@ static int gap_hw_mesh_transmit_periodic(
 }
 
 // Send an AUX_ADV_IND followed by any AUX_CHAIN_IND packets for one set.
-static int gap_hw_mesh_transmit_extended_advertising(
-    mesh_gap_extended_advertising_set *set) {
+static int ble_gap_hw_transmit_extended_advertising(
+    ble_gap_extended_advertising_set *set) {
     uint8_t address[6], address_type;
     gap_local_address_select(-1, address, &address_type);
     uint16_t adi = (uint16_t)((set->sid & 0x0f) << 12) | set->did;
@@ -1369,15 +1369,15 @@ static int gap_hw_mesh_transmit_extended_advertising(
         memcpy(frame + 4, address, sizeof(address));
         frame[10] = (uint8_t)adi;
         frame[11] = (uint8_t)(adi >> 8);
-        uint64_t primary_start = BLE_GAP_HW_TICKS();
-        if (!BLE_GAP_HW_ADV_TX(primary, sizeof(gap_radio_ext_primary_frame), 37))
+        uint64_t primary_start = GAP_HW_TICKS();
+        if (!GAP_HW_ADV_TX(primary, sizeof(gap_radio_ext_primary_frame), 37))
             return 0;
         gap_radio_ext_wait_until(primary_start + HW_TICKS_FROM_US(480));
-        if (!BLE_GAP_HW_ADV_TX_PHY(frame, 12, 0, set->aux_phy)) return 0;
+        if (!GAP_HW_ADV_TX_PHY(frame, 12, 0, set->aux_phy)) return 0;
 
         uint16_t remaining = set->scan_response_len;
-        uint8_t has_chain = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4;
-        uint16_t first_chunk = has_chain ? MESH_GAP_EXT_ADV_FIRST_PDU_DATA_MAX :
+        uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4;
+        uint16_t first_chunk = has_chain ? GAP_EXT_ADV_FIRST_PDU_DATA_MAX :
             remaining;
         uint8_t ext_len = has_chain ? 12 : 9;
         frame[0] = 0x07 | (address_type ? 0x40 : 0);
@@ -1399,22 +1399,22 @@ static int gap_hw_mesh_transmit_extended_advertising(
         gap_radio_ext_adv_scan_address_type = address_type;
         memcpy(gap_radio_ext_adv_scan_address, address, sizeof(address));
         gap_radio_ext_adv_scan_waiting = 1;
-        BLE_GAP_HW_TX_CLEAR_DONE();
-        BLE_GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, frame, 1,
+        GAP_HW_TX_CLEAR_DONE();
+        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, frame, 1,
                                set->aux_phy, set->aux_phy);
-        BLE_GAP_HW_LINK_RX();
-        uint64_t rx_deadline_ticks = BLE_GAP_HW_TICKS() +
+        GAP_HW_LINK_RX();
+        uint64_t rx_deadline_ticks = GAP_HW_TICKS() +
             HW_TICKS_FROM_US(1500);
         while (gap_radio_ext_adv_scan_waiting &&
-               BLE_GAP_HW_TICKS() < rx_deadline_ticks) {}
-        BLE_GAP_HW_STOP();
+               GAP_HW_TICKS() < rx_deadline_ticks) {}
+        GAP_HW_STOP();
         gap_radio_ext_adv_scan_waiting = 0;
         if (!gap_radio_ext_adv_scan_response_started) return 1;
-        uint64_t tx_deadline_ticks = BLE_GAP_HW_TICKS() +
+        uint64_t tx_deadline_ticks = GAP_HW_TICKS() +
             HW_TICKS_FROM_US(1000);
-        while (!BLE_GAP_HW_TX_DONE() &&
-               BLE_GAP_HW_TICKS() < tx_deadline_ticks) {}
-        if (!BLE_GAP_HW_TX_DONE()) return 0;
+        while (!GAP_HW_TX_DONE() &&
+               GAP_HW_TICKS() < tx_deadline_ticks) {}
+        if (!GAP_HW_TX_DONE()) return 0;
         if (!has_chain) return 1;
 
         uint16_t data_offset = first_chunk;
@@ -1424,8 +1424,8 @@ static int gap_hw_mesh_transmit_extended_advertising(
                                                            set->aux_phy));
         uint8_t channel = 1;
         while (remaining) {
-            has_chain = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-            uint16_t chunk = has_chain ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
+            has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+            uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
                 remaining;
             ext_len = has_chain ? 6 : 3;
             frame[0] = 0x07 | (address_type ? 0x40 : 0);
@@ -1444,8 +1444,8 @@ static int gap_hw_mesh_transmit_extended_advertising(
             data_offset += chunk;
             remaining -= chunk;
             gap_radio_ext_wait_until(next_start);
-            uint64_t pdu_start = BLE_GAP_HW_TICKS();
-            if (!BLE_GAP_HW_ADV_TX_PHY(frame,
+            uint64_t pdu_start = GAP_HW_TICKS();
+            if (!GAP_HW_ADV_TX_PHY(frame,
                     (uint8_t)(frame[1] + 2), channel, set->aux_phy))
                 return 0;
             if (!has_chain) return 1;
@@ -1518,14 +1518,14 @@ static int gap_hw_mesh_transmit_extended_advertising(
         memcpy(frame + header_offset, set->data, first_chunk);
     data_offset += first_chunk;
     remaining -= first_chunk;
-    uint64_t primary_start = BLE_GAP_HW_TICKS();
-    if (!BLE_GAP_HW_ADV_TX(primary, sizeof(gap_radio_ext_primary_frame), 37))
+    uint64_t primary_start = GAP_HW_TICKS();
+    if (!GAP_HW_ADV_TX(primary, sizeof(gap_radio_ext_primary_frame), 37))
         return 0;
     gap_radio_ext_wait_until(primary_start + HW_TICKS_FROM_US(480));
-    uint64_t pdu_start = BLE_GAP_HW_TICKS();
+    uint64_t pdu_start = GAP_HW_TICKS();
     if (sync_info)
         gap_radio_ext_sync_info_write(sync_info, set, pdu_start);
-    if (!BLE_GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), 0,
+    if (!GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), 0,
                                set->aux_phy)) return 0;
     if (has_sync_info) set->periodic_sync_info_sent = 1;
     if (!has_chain) return 1;
@@ -1534,8 +1534,8 @@ static int gap_hw_mesh_transmit_extended_advertising(
 
     uint8_t channel = 1;
     while (remaining) {
-        has_chain = remaining > MESH_GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-        uint16_t chunk = has_chain ? MESH_GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
+        has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
             remaining;
         uint8_t ext_len = has_chain ? 6 : 3;
         frame[0] = 0x07 | (address_type ? 0x40 : 0);
@@ -1554,8 +1554,8 @@ static int gap_hw_mesh_transmit_extended_advertising(
         data_offset += chunk;
         remaining -= chunk;
         gap_radio_ext_wait_until(next_start);
-        pdu_start = BLE_GAP_HW_TICKS();
-        if (!BLE_GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), channel,
+        pdu_start = GAP_HW_TICKS();
+        if (!GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), channel,
                                    set->aux_phy))
             return 0;
         if (!has_chain) return 1;
@@ -1567,18 +1567,18 @@ static int gap_hw_mesh_transmit_extended_advertising(
 }
 
 // Schedule an auxiliary receive window with AuxPtr accuracy and local clock
-// widening. The CH582 adapter currently supports the 1M and 2M PHYs.
+// widening. The CH582 iSLER adapter supports 1M, 2M, and coded PHY operation.
 static int gap_radio_ext_aux_schedule(const gap_ext_adv_fields *fields,
     uint8_t packet_len, uint8_t packet_phy, uint64_t packet_end_ticks,
     int slot) {
     if (!fields || !fields->has_aux_ptr || fields->aux_offset_zero ||
         fields->aux_offset_us == 0) return 0;
-    uint8_t phy = fields->aux_phy == 0 ? MESH_GAP_PHY_1M :
-        fields->aux_phy == 1 ? MESH_GAP_PHY_2M : MESH_GAP_PHY_CODED;
-    if (!(BLE_GAP_HW_PHY_MASK() & phy)) return 0;
-    if (packet_phy != MESH_GAP_PHY_1M &&
-        packet_phy != MESH_GAP_PHY_2M &&
-        packet_phy != MESH_GAP_PHY_CODED) return 0;
+    uint8_t phy = fields->aux_phy == 0 ? GAP_PHY_1M :
+        fields->aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
+    if (!(GAP_HW_PHY_MASK() & phy)) return 0;
+    if (packet_phy != GAP_PHY_1M &&
+        packet_phy != GAP_PHY_2M &&
+        packet_phy != GAP_PHY_CODED) return 0;
     uint32_t airtime_us = gap_phy_packet_airtime_us(packet_len, packet_phy);
     if (fields->aux_offset_us <= airtime_us) return 0;
     uint32_t tx_ca_ppm = fields->aux_ca ? 50u : 500u;
@@ -1614,15 +1614,15 @@ static int gap_radio_ext_aux_schedule(const gap_ext_adv_fields *fields,
 static int gap_radio_periodic_aux_schedule(const gap_ext_adv_fields *fields,
     uint8_t packet_len, uint8_t packet_phy, uint64_t packet_end_ticks,
     uint8_t slot) {
-    if (!fields || slot >= MESH_GAP_PERIODIC_SYNC_COUNT ||
+    if (!fields || slot >= GAP_PERIODIC_SYNC_COUNT ||
         !gap_periodic_syncs[slot].used || !fields->has_aux_ptr ||
         fields->aux_offset_zero || fields->aux_offset_us == 0) return 0;
-    uint8_t phy = fields->aux_phy == 0 ? MESH_GAP_PHY_1M :
-        fields->aux_phy == 1 ? MESH_GAP_PHY_2M : MESH_GAP_PHY_CODED;
-    if (!(BLE_GAP_HW_PHY_MASK() & phy)) return 0;
-    if (packet_phy != MESH_GAP_PHY_1M &&
-        packet_phy != MESH_GAP_PHY_2M &&
-        packet_phy != MESH_GAP_PHY_CODED) return 0;
+    uint8_t phy = fields->aux_phy == 0 ? GAP_PHY_1M :
+        fields->aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
+    if (!(GAP_HW_PHY_MASK() & phy)) return 0;
+    if (packet_phy != GAP_PHY_1M &&
+        packet_phy != GAP_PHY_2M &&
+        packet_phy != GAP_PHY_CODED) return 0;
     uint32_t airtime_us = gap_phy_packet_airtime_us(packet_len, packet_phy);
     if (fields->aux_offset_us <= airtime_us) return 0;
     uint32_t tx_ca_ppm = fields->aux_ca ? 50u : 500u;
@@ -1648,27 +1648,27 @@ static int gap_radio_periodic_aux_schedule(const gap_ext_adv_fields *fields,
 static void gap_radio_ext_scan_process(void) {
     if (!gap_radio_ext_scan_ready) return;
     uint8_t kind = gap_radio_ext_scan_kind;
-    uint8_t periodic = kind == MESH_GAP_EXT_ADV_PERIODIC_PDU;
+    uint8_t periodic = kind == GAP_EXT_ADV_PERIODIC_PDU;
     int slot = periodic ? gap_radio_periodic_listening_slot :
-        kind == MESH_GAP_EXT_ADV_AUXILIARY_PDU ?
+        kind == GAP_EXT_ADV_AUXILIARY_PDU ?
             gap_radio_aux_listening_slot : -1;
-    if (kind == MESH_GAP_EXT_ADV_AUXILIARY_PDU &&
+    if (kind == GAP_EXT_ADV_AUXILIARY_PDU &&
         slot < GAP_EXT_ADV_CONTEXT_COUNT)
         gap_radio_aux_request[slot].active = 0;
     if (periodic && slot >= 0 &&
-        slot < MESH_GAP_PERIODIC_SYNC_COUNT)
+        slot < GAP_PERIODIC_SYNC_COUNT)
         gap_periodic_syncs[slot].window_active = 0;
     gap_radio_aux_listening = 0;
     gap_radio_periodic_listening = 0;
     gap_radio_ext_scan_ready = 0;
-    BLE_GAP_HW_PACKET_CLEAR();
-    if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+    GAP_HW_PACKET_CLEAR();
+    if (gap_radio_rx_armed) GAP_HW_STOP();
     gap_radio_rx_armed = 0;
 
     uint8_t *pdu = gap_radio_ext_scan_frame;
-    uint8_t packet_phy = kind == MESH_GAP_EXT_ADV_AUXILIARY_PDU ?
+    uint8_t packet_phy = kind == GAP_EXT_ADV_AUXILIARY_PDU ?
         gap_radio_aux_rx_phy : periodic ? gap_radio_periodic_rx_phy :
-        MESH_GAP_PHY_1M;
+        GAP_PHY_1M;
     size_t pdu_len = (size_t)pdu[1] + 2;
     if (periodic && (pdu[0] & 0x0f) == 0x05) {
         (void)gap_radio_periodic_connect_request((uint8_t)slot, pdu,
@@ -1684,7 +1684,7 @@ static void gap_radio_ext_scan_process(void) {
         if (received && !fields.has_aux_ptr && !fields.has_sync_info &&
             fields.has_adi && slot >= 0 &&
             gap_periodic_syncs[slot].pawr_response_pending) {
-            mesh_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+            ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
             uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
             uint64_t packet_start = gap_radio_ext_scan_ticks >=
                 HW_TICKS_FROM_US(airtime_us) ? gap_radio_ext_scan_ticks -
@@ -1714,19 +1714,19 @@ static void gap_radio_ext_scan_process(void) {
                 gap_radio_ext_scan_ticks, (uint8_t)slot);
         return;
     }
-    (void)mesh_gap_extended_scan_receive(kind, pdu, pdu_len,
+    (void)ble_gap_extended_scan_receive(kind, pdu, pdu_len,
                                           gap_radio_ext_scan_rssi);
-    if (kind == MESH_GAP_EXT_ADV_AUXILIARY_PDU && fields.has_sync_info)
+    if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.has_sync_info)
         (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy,
                                             gap_radio_ext_scan_ticks);
     if (fields.has_aux_ptr && !fields.aux_offset_zero)
         gap_radio_ext_aux_schedule(&fields, pdu[1], packet_phy,
             gap_radio_ext_scan_ticks,
-            kind == MESH_GAP_EXT_ADV_AUXILIARY_PDU ? slot : -1);
+            kind == GAP_EXT_ADV_AUXILIARY_PDU ? slot : -1);
 }
 #endif
 
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
 // Import LL_PERIODIC_SYNC_IND's SyncInfo and schedule its first PA event from
 // the connection-event anchor and event counter carried by the local Link Layer.
 static int gap_periodic_sync_transfer_receive(const uint8_t *frame,
@@ -1737,10 +1737,10 @@ static int gap_periodic_sync_transfer_receive(const uint8_t *frame,
     uint8_t sid = frame[27] & 0x0f;
     uint8_t sca = frame[27] >> 5;
     uint8_t periodic_phy = frame[28];
-    uint8_t phy = periodic_phy == 1 ? MESH_GAP_PHY_1M :
-        periodic_phy == 2 ? MESH_GAP_PHY_2M :
-        periodic_phy == 4 ? MESH_GAP_PHY_CODED : 0;
-    if (!phy || !(BLE_GAP_HW_PHY_MASK() & phy)) return 0;
+    uint8_t phy = periodic_phy == 1 ? GAP_PHY_1M :
+        periodic_phy == 2 ? GAP_PHY_2M :
+        periodic_phy == 4 ? GAP_PHY_CODED : 0;
+    if (!phy || !(GAP_HW_PHY_MASK() & phy)) return 0;
 
     // Reuse the extended-header decoder for the 18-byte SyncInfo structure.
     uint8_t pdu[30] = {0};
@@ -1810,7 +1810,7 @@ static int gap_periodic_sync_transfer_receive(const uint8_t *frame,
         target - widening_ticks : 0;
     uint64_t window_end = target + HW_TICKS_FROM_US(
         unit_us + (uint32_t)widening_us);
-    uint64_t now_ticks = BLE_GAP_HW_TICKS();
+    uint64_t now_ticks = GAP_HW_TICKS();
     uint16_t event_counter = fields.sync_event_counter;
     uint8_t skipped = 0;
     while (skipped < 6 && window_end < now_ticks) {
@@ -1825,7 +1825,7 @@ static int gap_periodic_sync_transfer_receive(const uint8_t *frame,
     if (window_end < now_ticks || skipped >= 6) return 0;
 
     int free_slot = -1;
-    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++) {
+    for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_periodic_syncs[i].used &&
             gap_periodic_syncs[i].sid == sid &&
             gap_periodic_syncs[i].address_type == address_type &&
@@ -1868,13 +1868,13 @@ static int gap_periodic_sync_transfer_receive(const uint8_t *frame,
 static int gap_periodic_sync_transfer_encode(uint8_t *frame, uint16_t id,
     uint8_t sync_slot, uint64_t connection_anchor_ticks,
     uint16_t connection_event_counter) {
-    if (!frame || sync_slot >= MESH_GAP_PERIODIC_SYNC_COUNT ||
+    if (!frame || sync_slot >= GAP_PERIODIC_SYNC_COUNT ||
         !gap_periodic_syncs[sync_slot].used ||
         !gap_periodic_syncs[sync_slot].established) return 0;
-    const mesh_gap_periodic_sync_context *sync =
+    const ble_gap_periodic_sync_context *sync =
         &gap_periodic_syncs[sync_slot];
-    if ((sync->phy != MESH_GAP_PHY_1M && sync->phy != MESH_GAP_PHY_2M &&
-         sync->phy != MESH_GAP_PHY_CODED) ||
+    if ((sync->phy != GAP_PHY_1M && sync->phy != GAP_PHY_2M &&
+         sync->phy != GAP_PHY_CODED) ||
         !gap_access_address_valid(sync->access_address) || sync->interval < 6)
         return 0;
 
@@ -1946,7 +1946,7 @@ static int gap_periodic_sync_transfer_encode(uint8_t *frame, uint16_t id,
 }
 
 // Queue a PAST LL control PDU for the active connection.
-int mesh_gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
+int ble_gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     int sync_slot = gap_periodic_sync_handle_slot(handle);
     if (!gap_conn.active || sync_slot < 0 ||
         !gap_periodic_syncs[sync_slot].established ||
@@ -1961,16 +1961,16 @@ int mesh_gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
 #endif
 
 // Validate scan requests and start the response from the radio RX interrupt.
-static void gap_hw_mesh_received_selected(void) {
-    const uint8_t *frame = BLE_GAP_HW_RX_FRAME();
-    int8_t rssi = BLE_GAP_HW_RSSI();
-    uint64_t received_ticks = BLE_GAP_HW_TICKS();
-#if MESH_GAP_EXT_ADV_SUPPORT
+static void ble_gap_hw_received_selected(void) {
+    const uint8_t *frame = GAP_HW_RX_FRAME();
+    int8_t rssi = GAP_HW_RSSI();
+    uint64_t received_ticks = GAP_HW_TICKS();
+#if GAP_EXT_ADV_SUPPORT
     if (gap_radio_pawr_connect_waiting && frame[1] == 14 &&
         (frame[0] & 0x0f) == 0x07) {
         memcpy(gap_radio_pawr_connect_response, frame, 16);
         gap_radio_pawr_connect_response_ready = 1;
-        BLE_GAP_HW_PACKET_READY();
+        GAP_HW_PACKET_READY();
         return;
     }
 #endif
@@ -1995,7 +1995,7 @@ static void gap_hw_mesh_received_selected(void) {
             gap_conn_plain_frame[1] -= 4;
             uint8_t nonce[13];
             gap_security_nonce(nonce, counter, !gap_conn.central_role);
-            if (!BLE_GAP_CCM_DECRYPT(gap_security.session_key, nonce, frame[0] & 0xe3,
+            if (!GAP_CCM_DECRYPT(gap_security.session_key, nonce, frame[0] & 0xe3,
                     gap_conn_plain_frame + 2, gap_conn_plain_frame[1],
                     frame + 2 + gap_conn_plain_frame[1])) {
                 gap_security.status = 0x3d;
@@ -2011,7 +2011,7 @@ static void gap_hw_mesh_received_selected(void) {
             gap_connection_end();
             return;
         }
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
         uint64_t connection_anchor_ticks;
         if (gap_conn.central_role) {
             connection_anchor_ticks = gap_conn.next_event_ticks;
@@ -2134,7 +2134,7 @@ static void gap_hw_mesh_received_selected(void) {
                         gap_conn.update_pending || gap_conn.channel_map_update_pending ||
                         gap_conn.phy_update_pending) goto unknown_control_pdu;
                     uint8_t entropy[12];
-                    if (!BLE_GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
+                    if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
                         gap_conn_tx_frame[1] = 3;
                         gap_conn_tx_frame[2] = 0x11;
                         gap_conn_tx_frame[3] = 0x03;
@@ -2162,7 +2162,7 @@ static void gap_hw_mesh_received_selected(void) {
                         size_t wipe_len = sizeof(entropy);
                         while (wipe_len--) *wipe_bytes++ = 0;
                     }
-                    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+                    gap_security.status = GAP_CONNECTION_PENDING;
                     gap_security.started_ms = GET_MILLIS();
                     gap_security.phase = GAP_ENC_KEY_REQUEST;
                     break;
@@ -2203,7 +2203,7 @@ static void gap_hw_mesh_received_selected(void) {
                     gap_security.rx_enabled = 0;
                     gap_security.phase = GAP_ENC_PERIPHERAL_PAUSE;
                     gap_security.started_ms = GET_MILLIS();
-                    gap_security.status = MESH_GAP_CONNECTION_PENDING;
+                    gap_security.status = GAP_CONNECTION_PENDING;
                     break;
                 case 0x0b: // LL_PAUSE_ENC_RSP
                     if (frame[1] != 1) goto unknown_control_pdu;
@@ -2858,7 +2858,7 @@ reject_parameters:
                         gap_conn.rate_update_pending = 1;
                         gap_conn.rate_ack_waiting = 1;
                         gap_conn.params_started_ms = GET_MILLIS();
-                        gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+                        gap_conn.connection_status = GAP_CONNECTION_PENDING;
                     break;
                 }
                 case 0x26: { // LL_SUBRATE_REQ (Peripheral to Central).
@@ -2914,7 +2914,7 @@ reject_parameters:
                                 gap_conn.subrate_pending_latency = max_latency;
                                 gap_conn.subrate_pending_continuation = continuation;
                                 gap_conn.subrate_pending_timeout = timeout;
-                                gap_conn.subrate_status = MESH_GAP_CONNECTION_PENDING;
+                                gap_conn.subrate_status = GAP_CONNECTION_PENDING;
                                 gap_subrate_update_send();
                                 break;
                             }
@@ -2995,7 +2995,7 @@ reject_parameters:
                         goto unknown_control_pdu;
                     }
                     memcpy(gap_conn.channel_peer_classification, frame + 3,
-                           MESH_GAP_CHANNEL_CLASSIFICATION_BYTES);
+                           GAP_CHANNEL_CLASSIFICATION_BYTES);
                     gap_conn.channel_peer_classification_valid = 1;
                     break;
                 }
@@ -3018,11 +3018,11 @@ reject_parameters:
                             break;
                         }
                         if (frame[2] == 0x15 && !gap_conn.length_pending) break;
-                        gap_conn.remote_data_length = (mesh_gap_data_length){
+                        gap_conn.remote_data_length = (ble_gap_data_length){
                             values[2], values[3], values[0], values[1]};
                         // Combine sender and receiver limits for new fragments;
                         // already queued fragments retain their original length.
-                        mesh_gap_data_length remote = gap_conn.remote_data_length;
+                        ble_gap_data_length remote = gap_conn.remote_data_length;
                         uint16_t tx_time = (uint16_t)((gap_conn.local_tx_octets + 14) * 8);
                         uint16_t rx_time = (uint16_t)((gap_conn.data_capacity + 14) * 8);
                         gap_conn.data_length.tx_octets = gap_conn.local_tx_octets < remote.rx_octets ?
@@ -3046,7 +3046,7 @@ reject_parameters:
                     break;
                 case 0x16: // LL_PHY_REQ
                 case 0x17: // LL_PHY_RSP
-                    if (!(BLE_GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
+                    if (!(GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
                     if (frame[1] != 3 || !frame[3] || !frame[4] ||
                         (frame[3] & ~7) || (frame[4] & ~7)) {
                         gap_conn_tx_frame[1] = 3;
@@ -3086,9 +3086,9 @@ reject_parameters:
                     break;
                 case 0x18: { // LL_PHY_UPDATE_IND (Central to Peripheral)
                     if (gap_conn.central_role || frame[1] != 5 ||
-                        !(BLE_GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
+                        !(GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
                     if (gap_conn.phy_update_pending) goto unknown_control_pdu;
-                    uint8_t supported = BLE_GAP_HW_PHY_MASK() & 7;
+                    uint8_t supported = GAP_HW_PHY_MASK() & 7;
                     uint8_t tx = frame[4], rx = frame[3];
                     // Invalid or unsupported selections leave that direction unchanged.
                     if ((tx != 1 && tx != 2 && tx != 4) || !(tx & supported)) tx = 0;
@@ -3110,7 +3110,7 @@ reject_parameters:
                     gap_conn.phy_update_pending = 1;
                     break;
                 }
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
                 case 0x1c: // LL_PERIODIC_SYNC_IND
                     if (frame[1] != 35) goto unknown_control_pdu;
                     (void)gap_periodic_sync_transfer_receive(frame,
@@ -3177,7 +3177,7 @@ unknown_control_pdu:
                 !gap_conn.terminate_after_reply &&
                 gap_conn.channel_reporting_queued)
                 gap_channel_reporting_start_queued();
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
                 gap_conn.periodic_sync_transfer_queued &&
                 !gap_conn.terminate_after_reply) {
@@ -3233,13 +3233,13 @@ unknown_control_pdu:
         gap_conn.tx_pending = 1;
         uint8_t *transmit = gap_security_tx_frame();
         if (!transmit) return;
-        BLE_GAP_HW_TX_BUFFER(transmit);
+        GAP_HW_TX_BUFFER(transmit);
         gap_conn.event_replied = 1;
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_LINK_TX();
         return;
     }
     uint8_t pdu_type = frame[0] & 0x0f;
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
     if (gap_radio_pawr_response_listening && pdu_type == 0x07 &&
         !gap_radio_pawr_response_ready && frame[1] <= 253) {
         gap_radio_pawr_response_len = (uint8_t)(frame[1] + 2);
@@ -3248,7 +3248,7 @@ unknown_control_pdu:
         gap_radio_pawr_response_rssi = rssi;
         gap_radio_pawr_response_ticks = received_ticks;
         gap_radio_pawr_response_ready = 1;
-        BLE_GAP_HW_PACKET_READY();
+        GAP_HW_PACKET_READY();
         return;
     }
     if (gap_radio_ext_adv_scan_waiting && pdu_type == 0x03) {
@@ -3268,10 +3268,10 @@ unknown_control_pdu:
             return;
         }
         gap_radio_ext_adv_scan_response_started = 1;
-        BLE_GAP_HW_TX_BUFFER(gap_radio_ext_adv_frame);
-        gap_radio_ext_adv_scan_response_ticks = BLE_GAP_HW_TICKS() +
+        GAP_HW_TX_BUFFER(gap_radio_ext_adv_frame);
+        gap_radio_ext_adv_scan_response_ticks = GAP_HW_TICKS() +
             HW_TICKS_FROM_US(150);
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_LINK_TX();
         return;
     }
     if ((gap_scanning || gap_radio_periodic_listening) &&
@@ -3279,14 +3279,14 @@ unknown_control_pdu:
          (gap_radio_periodic_listening && pdu_type == 0x05 && frame[1] == 34)) &&
         !gap_radio_ext_scan_ready) {
         gap_radio_ext_scan_kind = gap_radio_periodic_listening ?
-            MESH_GAP_EXT_ADV_PERIODIC_PDU : gap_radio_aux_listening ?
-                MESH_GAP_EXT_ADV_AUXILIARY_PDU :
-                MESH_GAP_EXT_ADV_PRIMARY_PDU;
+            GAP_EXT_ADV_PERIODIC_PDU : gap_radio_aux_listening ?
+                GAP_EXT_ADV_AUXILIARY_PDU :
+                GAP_EXT_ADV_PRIMARY_PDU;
         gap_radio_ext_scan_ticks = received_ticks;
         gap_radio_ext_scan_rssi = rssi;
         memcpy(gap_radio_ext_scan_frame, frame, (size_t)frame[1] + 2);
         gap_radio_ext_scan_ready = 1;
-        BLE_GAP_HW_PACKET_READY();
+        GAP_HW_PACKET_READY();
         return;
     }
     if (gap_radio_aux_listening) return;
@@ -3339,12 +3339,12 @@ unknown_control_pdu:
             (gap_central_connect.request[0] & 0x7f) | (frame[0] & 0x40) << 1;
         memcpy(gap_central_connect.request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_radio_rx_channel_index;
-        BLE_GAP_HW_STOP();
+        GAP_HW_STOP();
         gap_radio_rx_armed = 0;
-        if (BLE_GAP_HW_ADV_TX(gap_central_connect.request,
+        if (GAP_HW_ADV_TX(gap_central_connect.request,
                               sizeof(gap_central_connect.request), channel) &&
             gap_connection_accept(gap_central_connect.request,
-                                  BLE_GAP_HW_TICKS(),
+                                  GAP_HW_TICKS(),
                                   HW_TICKS_FROM_US(1250),
                                   HW_TICKS_FROM_US(1250))) {
             gap_conn.central_role = 1;
@@ -3372,7 +3372,7 @@ unknown_control_pdu:
             gap_active_scanning = 0;
             gap_scan_generation++;
             gap_radio_rx_ready = 0;
-            BLE_GAP_HW_PACKET_CLEAR();
+            GAP_HW_PACKET_CLEAR();
         }
         return;
     }
@@ -3395,8 +3395,8 @@ unknown_control_pdu:
             (local_type << 6) | (advertiser_type << 7));
         gap_radio_scan_request[1] = 12;
         memcpy(gap_radio_scan_request + 8, frame + 2, 6);
-        BLE_GAP_HW_TX_BUFFER(gap_radio_scan_request);
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_TX_BUFFER(gap_radio_scan_request);
+        GAP_HW_LINK_TX();
         return;
     }
     if (gap_active_scanning && gap_radio_active_scan_pending && pdu_type == 0x04 &&
@@ -3407,7 +3407,7 @@ unknown_control_pdu:
         memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
         gap_radio_rx_rssi = rssi;
         gap_radio_rx_ready = 1;
-        BLE_GAP_HW_PACKET_READY();
+        GAP_HW_PACKET_READY();
         return;
     }
     if (gap_radio_advertising_rx_event &&
@@ -3425,9 +3425,9 @@ unknown_control_pdu:
         memcpy(gap_radio_scan_response_frame + 2, gap_radio_adv_frame + 2, 6);
         if (response_len) memcpy(gap_radio_scan_response_frame + 8,
             gap_advertising.scan_response, response_len);
-        BLE_GAP_HW_TX_BUFFER(gap_radio_scan_response_frame);
+        GAP_HW_TX_BUFFER(gap_radio_scan_response_frame);
         gap_radio_scan_response_started = 1;
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_LINK_TX();
         return;
     }
     if (gap_radio_advertising_rx_event &&
@@ -3452,23 +3452,23 @@ unknown_control_pdu:
         memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
         gap_radio_rx_rssi = rssi;
         gap_radio_rx_ready = 1;
-        BLE_GAP_HW_PACKET_READY();
+        GAP_HW_PACKET_READY();
     }
 }
 
 // The single radio callback belongs to the connection whose event configured
 // the radio. Select that link while processing the packet, then preserve the
 // application's previously selected handle.
-void gap_hw_mesh_received(void) {
+void ble_gap_hw_received(void) {
     uint8_t previous_slot = gap_connection_slot;
     if (gap_radio_connection_slot_valid)
         gap_connection_select_slot(gap_radio_connection_slot);
-    gap_hw_mesh_received_selected();
+    ble_gap_hw_received_selected();
     gap_connection_select_slot(previous_slot);
 }
 
-void gap_hw_mesh_init(void) {
-    BLE_GAP_HW_INIT();
+void ble_gap_hw_init(void) {
+    GAP_HW_INIT();
     gap_radio_rx_armed = 0;
     gap_radio_connection_slot = 0;
     gap_radio_connection_slot_valid = 0;
@@ -3477,7 +3477,7 @@ void gap_hw_mesh_init(void) {
     gap_radio_scan_generation = gap_scan_generation - 1;
     gap_radio_scan_interval_start_ms = 0;
     gap_radio_rx_ready = 0;
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
     gap_radio_ext_adv_scan_waiting = 0;
     gap_radio_ext_adv_scan_response_started = 0;
     gap_radio_ext_scan_ready = 0;
@@ -3487,27 +3487,27 @@ void gap_hw_mesh_init(void) {
     gap_radio_rx_rssi = 127;
     gap_radio_active_scan_pending = 0;
     gap_radio_scan_adv_ready = 0;
-    BLE_GAP_HW_PACKET_CLEAR();
+    GAP_HW_PACKET_CLEAR();
     gap_radio_advertising_rx_event = 0;
     gap_radio_scan_response_started = 0;
     gap_radio_connect_request_ready = 0;
 }
 
-static void mesh_gap_conn_poll(void);
-static inline void mesh_gap_conn_poll_all(void);
+static void ble_gap_conn_poll(void);
+static inline void ble_gap_conn_poll_all(void);
 
 // A null random_address selects the controller's public address.
-int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
+int ble_gap_hw_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
                            const uint8_t *random_address,
                            const uint8_t *target_address, uint8_t target_type) {
     if ((pdu_type != 0x00 && pdu_type != 0x01 &&
          pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
-        len > MESH_GAP_ADV_DATA_MAX ||
+        len > GAP_ADV_DATA_MAX ||
         ((pdu_type == 0x01) != (target_address != NULL)) ||
         target_type > 1 || (pdu_type == 0x01 && len) ||
         (pdu_type == 0x06 && !gap_advertising.scan_response_len)) return 0;
     uint8_t public_address[6];
-    BLE_GAP_HW_PUBLIC_ADDRESS(public_address);
+    GAP_HW_PUBLIC_ADDRESS(public_address);
     gap_radio_adv_frame[0] = pdu_type | (random_address ? 0x40 : 0) |
         (target_address ? target_type << 7 : 0);
     gap_radio_adv_frame[1] = pdu_type == 0x01 ? 12 : 6 + len;
@@ -3521,7 +3521,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
     gap_radio_rx_armed = 0;
     if (pdu_type == 0x02) {
         for (uint8_t channel = 37; channel <= 39; channel++) {
-            if (!BLE_GAP_HW_ADV_TX(gap_radio_adv_frame, 8 + len, channel))
+            if (!GAP_HW_ADV_TX(gap_radio_adv_frame, 8 + len, channel))
                 return 0;
         }
         return 1;
@@ -3532,23 +3532,23 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
         gap_radio_rx_ready = 0;
         gap_radio_scan_response_started = 0;
         gap_radio_connect_request_ready = 0;
-        BLE_GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
-                               gap_radio_adv_frame, 1, MESH_GAP_PHY_1M, MESH_GAP_PHY_1M);
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
+                               gap_radio_adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
+        GAP_HW_LINK_TX();
         int timeout = HW_TICKS_FROM_US(1000);
-        while (!BLE_GAP_HW_TX_DONE() && timeout-- > 0) {}
-        if (!BLE_GAP_HW_TX_DONE()) {
-            BLE_GAP_HW_STOP();
+        while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+        if (!GAP_HW_TX_DONE()) {
+            GAP_HW_STOP();
             gap_radio_advertising_rx_event = 0;
             return 0;
         }
-        BLE_GAP_HW_TX_CLEAR_DONE();
+        GAP_HW_TX_CLEAR_DONE();
         timeout = HW_TICKS_FROM_US(800);
         while (!gap_radio_scan_response_started && !gap_radio_connect_request_ready &&
                !gap_radio_rx_ready &&
                timeout-- > 0) {}
         if (gap_radio_connect_request_ready) {
-            BLE_GAP_HW_STOP();
+            GAP_HW_STOP();
             gap_radio_advertising_rx_event = 0;
             if (gap_connection_accept(
                     gap_radio_connect_request_frame,
@@ -3567,7 +3567,7 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
                     gap_central_connect.auto_connect = 0;
                     gap_scanning = gap_active_scanning = 0;
                     gap_scan_generation++;
-                    mesh_gap_conn_poll();
+                    ble_gap_conn_poll();
                 return 2;
             }
             gap_radio_connect_request_ready = 0;
@@ -3575,166 +3575,23 @@ int gap_hw_mesh_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
         }
         if (gap_radio_scan_response_started) {
             timeout = HW_TICKS_FROM_US(1000);
-            while (!BLE_GAP_HW_TX_DONE() && timeout-- > 0) {}
-            if (!BLE_GAP_HW_TX_DONE()) {
-                BLE_GAP_HW_STOP();
+            while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+            if (!GAP_HW_TX_DONE()) {
+                GAP_HW_STOP();
                 gap_radio_advertising_rx_event = 0;
                 return 0;
             }
         }
-        BLE_GAP_HW_STOP();
+        GAP_HW_STOP();
         if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
     }
     gap_radio_advertising_rx_event = 0;
     return 1;
 }
 
-// Send GAP advertising when due, otherwise send the offered Mesh advertisement.
-// Return -1 on radio failure, 0 when idle or GAP sent, 1 when Mesh sent,
-// and 2 when a connection starts. Mesh queue timing is returned for its caller.
-int gap_hw_mesh_send_due(const uint8_t *mesh_ad, uint8_t mesh_len,
-                            uint32_t now, uint32_t *sent_at,
-                            uint8_t *jitter) {
-    gap_privacy_poll(now);
-#if MESH_GAP_EXT_ADV_SUPPORT
-    // Periodic events use controller ticks so their interval does not inherit
-    // millisecond scheduler jitter. Advance the event counter across missed
-    // intervals as required by the periodic channel selection algorithm.
-    if ((!mesh_gap_conn_busy() ||
-         (gap_conn.active && gap_conn.central_role)) &&
-        !gap_central_connect.active &&
-        !gap_radio_active_scan_pending) {
-        uint64_t ticks = BLE_GAP_HW_TICKS();
-        int periodic_set = -1;
-        uint64_t periodic_target = UINT64_MAX;
-        for (uint8_t offset = 0; offset < MESH_GAP_EXT_ADV_SET_COUNT;
-             offset++) {
-            uint8_t i = (gap_periodic_advertising_next_set + offset) %
-                MESH_GAP_EXT_ADV_SET_COUNT;
-            mesh_gap_extended_advertising_set *candidate =
-                &gap_ext_advertising[i];
-            if (!candidate->periodic_enabled ||
-                !candidate->periodic_sync_info_sent ||
-                ticks < candidate->periodic_next_event_ticks ||
-                candidate->periodic_next_event_ticks >= periodic_target)
-                continue;
-            periodic_set = i;
-            periodic_target = candidate->periodic_next_event_ticks;
-        }
-        if (periodic_set >= 0) {
-            mesh_gap_extended_advertising_set *set =
-                &gap_ext_advertising[periodic_set];
-            uint64_t interval = HW_TICKS_FROM_US(
-                (uint32_t)set->periodic_interval * 1250u);
-            uint64_t late = ticks - set->periodic_next_event_ticks;
-            uint64_t missed = interval ? late / interval : 0;
-            set->periodic_event_counter = (uint16_t)(
-                set->periodic_event_counter + missed);
-            set->periodic_next_event_ticks += missed * interval;
-            if (gap_conn.active && gap_conn.central_role) {
-                uint32_t event_duration_us =
-                    gap_periodic_event_duration_us(set->periodic_data_len,
-                                                   set->aux_phy);
-                if (set->pawr_enabled) {
-                    uint32_t subevent_interval_us =
-                        (uint32_t)(set->pawr_num_subevents > 1 ?
-                            set->pawr_subevent_interval :
-                            set->periodic_interval) * 1250u;
-                    uint32_t response_end_us =
-                        (uint32_t)(set->pawr_num_subevents - 1) *
-                            subevent_interval_us +
-                        (uint32_t)set->pawr_response_slot_delay * 1250u +
-                        (uint32_t)set->pawr_num_response_slots *
-                            set->pawr_response_slot_spacing * 125u;
-                    if (response_end_us > event_duration_us)
-                        event_duration_us = response_end_us;
-                }
-                uint64_t event_end = set->periodic_next_event_ticks +
-                    HW_TICKS_FROM_US(event_duration_us + 400u);
-                if (gap_conn.rx_armed || gap_conn.event_replied) return 0;
-                if (gap_radio_periodic_window_overlaps_connection(
-                        set->periodic_next_event_ticks, event_end)) {
-                    set->periodic_event_counter++;
-                    set->periodic_next_event_ticks += interval;
-                    gap_periodic_advertising_next_set =
-                        (periodic_set + 1) % MESH_GAP_EXT_ADV_SET_COUNT;
-                    return 0;
-                }
-            }
-            if (gap_radio_rx_armed) {
-                BLE_GAP_HW_STOP();
-                gap_radio_rx_armed = 0;
-            }
-            int transmitted = gap_hw_mesh_transmit_periodic(set);
-            set->periodic_event_counter++;
-            set->periodic_next_event_ticks += interval;
-            gap_periodic_advertising_next_set =
-                (periodic_set + 1) % MESH_GAP_EXT_ADV_SET_COUNT;
-            if (!transmitted) return -1;
-            return 0;
-        }
-    }
-    int send_extended = -1;
-    for (uint8_t offset = 0; offset < MESH_GAP_EXT_ADV_SET_COUNT; offset++) {
-        uint8_t set_id = (gap_ext_advertising_next_set + offset) %
-            MESH_GAP_EXT_ADV_SET_COUNT;
-        if (gap_ext_advertising[set_id].enabled &&
-            (int32_t)(now - gap_ext_advertising[set_id].next_event_ms) >= 0) {
-            send_extended = set_id;
-            break;
-        }
-    }
-#else
-    int send_extended = -1;
-#endif
-    int send_gap = gap_advertising.enabled &&
-        (int32_t)(now - gap_advertising.next_event_ms) >= 0;
-    if (send_extended < 0 && !send_gap && !mesh_ad) return 0;
-    if (send_extended >= 0 && gap_radio_active_scan_pending) return 0;
-    if (gap_radio_rx_armed) {
-        BLE_GAP_HW_STOP();
-        gap_radio_rx_armed = 0;
-    }
-#if MESH_GAP_EXT_ADV_SUPPORT
-    int transmit_result = send_extended >= 0 ?
-        gap_hw_mesh_transmit_extended_advertising(
-            &gap_ext_advertising[send_extended]) : gap_hw_mesh_transmit(
-#else
-    int transmit_result = gap_hw_mesh_transmit(
-#endif
-            send_gap ? gap_advertising.pdu_type : 0x02,
-            send_gap ? gap_advertising.data : mesh_ad,
-            send_gap ? gap_advertising.data_len : mesh_len,
-            send_gap && gap_advertising.address_type ? gap_advertising.address : NULL,
-            send_gap && gap_advertising.pdu_type == 0x01 ?
-                gap_advertising.target_address : NULL,
-            send_gap ? gap_advertising.target_type : 0);
-    if (!transmit_result) return -1;
-    if (transmit_result == 2) return 2;
-    uint32_t completed_at = GET_MILLIS();
-    uint8_t event_jitter = BLE_GAP_HW_RANDOM_JITTER() % 11;
-#if MESH_GAP_EXT_ADV_SUPPORT
-    if (send_extended >= 0) {
-        gap_ext_advertising[send_extended].next_event_ms = completed_at +
-            gap_ext_advertising[send_extended].interval_ms + event_jitter;
-        gap_ext_advertising_next_set = (send_extended + 1) %
-            MESH_GAP_EXT_ADV_SET_COUNT;
-        return 0;
-    }
-#endif
-    if (send_gap) {
-        gap_advertising.next_event_ms = completed_at +
-            gap_advertising.interval_ms + event_jitter;
-        return 0;
-    }
-    if (sent_at) *sent_at = completed_at;
-    if (jitter) *jitter = event_jitter;
-    return 1;
-}
-
 // Calculate the receive-window deadline used to arbitrate the shared radio.
 static uint64_t gap_connection_event_close_ticks(
-    const mesh_gap_connection_context *connection, uint32_t now_ms) {
+    const ble_gap_connection_context *connection, uint32_t now_ms) {
     uint32_t widening_us =
         ((uint32_t)(now_ms - connection->last_rx_ms) *
          (500u + connection->peer_sca_ppm) + 999) / 1000;
@@ -3744,8 +3601,8 @@ static uint64_t gap_connection_event_close_ticks(
         connection->update_window_active ?
         (uint32_t)connection->window_size * 1250u : 1000u;
     uint32_t packet_us;
-    if (connection->tx_phy == MESH_GAP_PHY_CODED ||
-        connection->rx_phy == MESH_GAP_PHY_CODED) {
+    if (connection->tx_phy == GAP_PHY_CODED ||
+        connection->rx_phy == GAP_PHY_CODED) {
         // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
         // per octet. S=2 packets finish sooner, so this is conservative.
@@ -3762,7 +3619,7 @@ static uint64_t gap_connection_event_close_ticks(
 }
 
 // Give an established Peripheral connection its data-channel receive window.
-static void mesh_gap_conn_poll(void) {
+static void ble_gap_conn_poll(void) {
     if (!gap_conn.active) return;
     if (gap_conn.bond_lookup_pending) {
         gap_conn.bond_lookup_pending = 0;
@@ -3779,14 +3636,14 @@ static void mesh_gap_conn_poll(void) {
                 gap_conn.peer_identity_type, &gap_conn.bond))
             gap_conn.bonded = 1;
     }
-    if (gap_conn.bond_restore_started && mesh_gap_encrypted()) {
+    if (gap_conn.bond_restore_started && ble_gap_encrypted()) {
         gap_conn.authenticated = gap_conn.bond.authenticated;
         gap_conn.encryption_key_size = gap_conn.bond.key_size;
         gap_conn.bond_restore_started = 0;
     }
     if (gap_conn.bond_restore_started && gap_conn.central_role &&
         !gap_security.phase && gap_security.status &&
-        gap_security.status != MESH_GAP_CONNECTION_PENDING) {
+        gap_security.status != GAP_CONNECTION_PENDING) {
         gap_smp_generic_bond_remove(gap_conn.bond.peer_address,
                                     gap_conn.bond.peer_address_type);
         memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
@@ -3796,7 +3653,7 @@ static void mesh_gap_conn_poll(void) {
     if (gap_conn.central_role && gap_bond_repair_pending &&
         !gap_conn.first_event && !gap_security.phase && !gap_smp.bearer.pairing.phase &&
         !gap_conn.tx_pending && !gap_conn.tx_queued &&
-        !gap_conn.tx_l2cap_remaining && mesh_gap_pair()) {
+        !gap_conn.tx_l2cap_remaining && ble_gap_pair()) {
         gap_bond_repair_pending = 0;
     }
     if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
@@ -3805,10 +3662,10 @@ static void mesh_gap_conn_poll(void) {
         gap_conn.bond_restore_attempted = 1;
         uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
             (uint16_t)gap_conn.bond.ediv[1] << 8;
-        if (mesh_gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
+        if (ble_gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
             gap_conn.bond_restore_started = 1;
     }
-    mesh_gap_smp_poll();
+    ble_gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
         gap_security.phase != GAP_ENC_PAUSE_QUEUED && gap_security.phase != GAP_ENC_RESTART_QUEUED &&
@@ -3861,7 +3718,7 @@ static void mesh_gap_conn_poll(void) {
     // alter the channel or TX state owned by this link.
     if (gap_radio_connection_slot_valid &&
         gap_radio_connection_slot != gap_connection_slot) return;
-    uint64_t now = BLE_GAP_HW_TICKS();
+    uint64_t now = GAP_HW_TICKS();
     uint32_t widening_us =
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
          (500u + gap_conn.peer_sca_ppm) + 999) / 1000;
@@ -3871,12 +3728,12 @@ static void mesh_gap_conn_poll(void) {
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint64_t widening_ticks = (uint64_t)widening_us * HW_TICKS_FROM_US(1);
     if (gap_conn.event_replied) {
-        if (!BLE_GAP_HW_TX_DONE()) {
+        if (!GAP_HW_TX_DONE()) {
             if (now > gap_conn.next_event_ticks)
                 gap_connection_end();
             return;
         }
-        BLE_GAP_HW_STOP();
+        GAP_HW_STOP();
         gap_radio_connection_slot_valid = 0;
         gap_conn.event_replied = 0;
         if (gap_conn.terminate_after_reply) {
@@ -3887,7 +3744,7 @@ static void mesh_gap_conn_poll(void) {
     }
     uint64_t close_ticks = gap_connection_event_close_ticks(&gap_conn, now_ms);
     if (now >= close_ticks) {
-        if (gap_conn.rx_armed) BLE_GAP_HW_STOP();
+        if (gap_conn.rx_armed) GAP_HW_STOP();
         if (gap_radio_connection_slot_valid &&
             gap_radio_connection_slot == gap_connection_slot)
             gap_radio_connection_slot_valid = 0;
@@ -3922,7 +3779,7 @@ static void mesh_gap_conn_poll(void) {
         return;
     }
 
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
     // A connection event owns the single radio once its receive window opens.
     // Yield any periodic sync receive window before configuring the data channel.
     gap_radio_connection_take_radio();
@@ -3936,7 +3793,7 @@ static void mesh_gap_conn_poll(void) {
         gap_conn.channel_map[unmapped / 8] & (1u << (unmapped % 8)) ?
         unmapped : gap_conn.used_channels[unmapped %
                                                    gap_conn.used_count];
-    BLE_GAP_HW_CRC_INIT(gap_conn.crc_init);
+    GAP_HW_CRC_INIT(gap_conn.crc_init);
     if (gap_conn.central_role) {
         if (!gap_conn.central_anchor_set) {
             gap_conn.next_event_ticks = now;
@@ -3979,39 +3836,39 @@ static void mesh_gap_conn_poll(void) {
         }
         gap_conn_tx_frame[0] = (gap_conn_tx_frame[0] & 0x03) |
             (gap_conn.expected_rx_sn << 2) | (gap_conn.tx_sn << 3);
-        BLE_GAP_HW_TX_CLEAR_DONE();
+        GAP_HW_TX_CLEAR_DONE();
         uint8_t *transmit = gap_security_tx_frame();
         if (!transmit) return;
-        BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
+        GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
                                transmit, 1, gap_conn.tx_phy, gap_conn.rx_phy);
         gap_radio_connection_slot = gap_connection_slot;
         gap_radio_connection_slot_valid = 1;
-        BLE_GAP_HW_LINK_TX();
+        GAP_HW_LINK_TX();
         gap_conn.rx_armed = 1;
         gap_conn.channel_selected = 1;
         return;
     }
-    BLE_GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.tx_phy, gap_conn.rx_phy);
+    GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.tx_phy, gap_conn.rx_phy);
     gap_radio_connection_slot = gap_connection_slot;
     gap_radio_connection_slot_valid = 1;
-    BLE_GAP_HW_LINK_RX();
+    GAP_HW_LINK_RX();
     gap_conn.rx_armed = 1;
     gap_conn.channel_selected = 1;
 }
 
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
-static inline void mesh_gap_conn_poll_all(void) {
+static inline void ble_gap_conn_poll_all(void) {
     uint8_t previous_slot = gap_connection_slot;
     uint8_t owner_at_entry = gap_radio_connection_slot_valid ?
         gap_radio_connection_slot : UINT8_MAX;
-    uint8_t order[MESH_GAP_CONNECTION_COUNT];
-    uint64_t deadlines[MESH_GAP_CONNECTION_COUNT];
+    uint8_t order[GAP_CONNECTION_COUNT];
+    uint64_t deadlines[GAP_CONNECTION_COUNT];
     uint8_t count = 0;
     uint32_t now_ms = GET_MILLIS();
-    for (uint8_t offset = 0; offset < MESH_GAP_CONNECTION_COUNT; offset++) {
+    for (uint8_t offset = 0; offset < GAP_CONNECTION_COUNT; offset++) {
         uint8_t slot = (uint8_t)((gap_radio_connection_poll_cursor + offset) %
-                                 MESH_GAP_CONNECTION_COUNT);
+                                 GAP_CONNECTION_COUNT);
         if (!gap_connection_contexts[slot].active) continue;
         uint64_t deadline = gap_connection_event_close_ticks(
             &gap_connection_contexts[slot], now_ms);
@@ -4028,13 +3885,13 @@ static inline void mesh_gap_conn_poll_all(void) {
     for (uint8_t index = 0; index < count; index++) {
         uint8_t slot = order[index];
         gap_connection_select_slot(slot);
-        mesh_gap_conn_poll();
+        ble_gap_conn_poll();
         if (gap_radio_connection_slot_valid &&
             gap_radio_connection_slot != owner_at_entry) {
             // Rotate ties so one link cannot repeatedly win an overlapping
             // event window just because it occupies the lower-numbered slot.
             gap_radio_connection_poll_cursor = (uint8_t)(
-                (gap_radio_connection_slot + 1) % MESH_GAP_CONNECTION_COUNT);
+                (gap_radio_connection_slot + 1) % GAP_CONNECTION_COUNT);
             owner_at_entry = gap_radio_connection_slot;
         }
     }
@@ -4042,18 +3899,18 @@ static inline void mesh_gap_conn_poll_all(void) {
 }
 
 // True after Central initiation or the first received Peripheral data packet.
-int mesh_gap_connected(void) {
+int ble_gap_connected(void) {
     return gap_conn.active && (gap_conn.central_role || !gap_conn.first_event);
 }
 
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
-int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
+int ble_gap_connection_update(uint16_t interval, uint16_t latency,
                                  uint16_t timeout) {
     uint16_t factor = (uint32_t)interval * 10u == gap_conn.interval_125us ?
         gap_conn.subrate_factor : 1;
-    if (!mesh_gap_connected() || gap_security.phase || !gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || gap_security.phase || !gap_conn.central_role || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4069,7 +3926,7 @@ int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
     gap_conn.update_interval = interval;
     gap_conn.update_latency = latency;
     gap_conn.update_timeout = timeout;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     gap_conn.local_update_queued = 1;
     return 1;
 }
@@ -4077,12 +3934,12 @@ int mesh_gap_connection_update(uint16_t interval, uint16_t latency,
 // Request a timing range in either role. Intervals use 1.25 ms units,
 // latency counts skipped events, and timeout uses 10 ms units.
 // Feature exchange runs first; the Central ultimately selects the new timing.
-int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
+int ble_gap_connection_request(uint16_t minimum, uint16_t maximum,
                                   uint16_t latency, uint16_t timeout) {
     uint16_t factor = minimum * 10u <= gap_conn.interval_125us &&
         gap_conn.interval_125us <= maximum * 10u ?
         gap_conn.subrate_factor : 1;
-    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event ||
+    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4102,22 +3959,22 @@ int mesh_gap_connection_request(uint16_t minimum, uint16_t maximum,
     gap_conn.params_max = maximum;
     gap_conn.params_latency = latency;
     gap_conn.params_timeout = timeout;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     gap_conn.local_params_queued = 1;
     return 1;
 }
 
 // Last local timing, channel-map, or connection-rate operation: 0 means
 // success, 0xff pending, otherwise a Bluetooth Link Layer error.
-uint8_t mesh_gap_connection_status(void) {
+uint8_t ble_gap_connection_status(void) {
     return gap_conn.connection_status;
 }
 
 // Request a subrate update as the Central. The Peripheral can request a
-// range with mesh_gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
-int mesh_gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
+// range with ble_gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
+int ble_gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
                          uint16_t continuation, uint16_t timeout) {
-    if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4144,16 +4001,16 @@ int mesh_gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
     gap_conn.subrate_pending_latency = peripheral_latency;
     gap_conn.subrate_pending_continuation = continuation;
     gap_conn.subrate_pending_timeout = timeout;
-    gap_conn.subrate_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.subrate_status = GAP_CONNECTION_PENDING;
     gap_conn.subrate_update_queued = 1;
     return 1;
 }
 
 // Request subrating as the Peripheral. The Central selects the final values.
-int mesh_gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
+int ble_gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
                              uint16_t max_latency, uint16_t continuation,
                              uint16_t timeout) {
-    if (!mesh_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4186,13 +4043,13 @@ int mesh_gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
     gap_conn.subrate_request_latency = max_latency;
     gap_conn.subrate_request_continuation = continuation;
     gap_conn.subrate_request_timeout = timeout;
-    gap_conn.subrate_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.subrate_status = GAP_CONNECTION_PENDING;
     gap_conn.subrate_request_queued = 1;
     return 1;
 }
 
 // Report the applied or pending Link Layer subrate settings.
-void mesh_gap_subrate_get(uint16_t *factor, uint16_t *base_event,
+void ble_gap_subrate_get(uint16_t *factor, uint16_t *base_event,
                           uint16_t *peripheral_latency,
                           uint16_t *continuation, uint16_t *timeout) {
     if (factor) *factor = gap_conn.subrate_factor;
@@ -4202,7 +4059,7 @@ void mesh_gap_subrate_get(uint16_t *factor, uint16_t *base_event,
     if (timeout) *timeout = gap_conn.supervision_timeout;
 }
 
-uint8_t mesh_gap_subrate_status(void) {
+uint8_t ble_gap_subrate_status(void) {
     return gap_conn.subrate_status;
 }
 
@@ -4221,20 +4078,20 @@ static uint16_t gap_connection_rate_min_interval(void) {
     uint32_t coded_limit = (uint32_t)gap_conn.data_length.rx_octets * 64u + 976u;
     uint8_t peripheral_tx_phy = gap_conn.central_role ? gap_conn.rx_phy :
         gap_conn.tx_phy;
-    if (peripheral_tx_phy == MESH_GAP_PHY_CODED && rx_time < 2704u)
+    if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704u)
         rx_time = 2704u;
     if (coded_limit < rx_time) rx_time = coded_limit;
     uint32_t required = 300u + rx_time +
-        ((gap_conn.tx_phy == MESH_GAP_PHY_CODED ||
-          gap_conn.rx_phy == MESH_GAP_PHY_CODED) ? 2704u : 328u);
+        ((gap_conn.tx_phy == GAP_PHY_CODED ||
+          gap_conn.rx_phy == GAP_PHY_CODED) ? 2704u : 328u);
     return (uint16_t)((required + 124u) / 125u);
 }
 
 // Queue a Central-selected interval (125-us units) and subrate tuple. Both
 // devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
-int mesh_gap_connection_rate_set(uint16_t interval, uint16_t factor,
+int ble_gap_connection_rate_set(uint16_t interval, uint16_t factor,
         uint16_t latency, uint16_t continuation, uint16_t timeout) {
-    if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.rate_set_queued ||
         gap_conn.rate_request_queued || gap_conn.rate_update_pending ||
         gap_conn.rate_request_pending || gap_conn.local_update_queued ||
@@ -4256,16 +4113,16 @@ int mesh_gap_connection_rate_set(uint16_t interval, uint16_t factor,
     gap_conn.rate_update_continuation = continuation;
     gap_conn.rate_update_timeout = timeout;
     gap_conn.rate_set_queued = 1;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
 
 // Request a Core 6.2 connection-rate range as the Peripheral. The Central
 // selects the interval and subrate values; the anchor offset is unspecified.
-int mesh_gap_connection_rate_request(uint16_t interval_min,
+int ble_gap_connection_rate_request(uint16_t interval_min,
         uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
         uint16_t max_latency, uint16_t continuation, uint16_t timeout) {
-    if (!mesh_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.rate_set_queued ||
         gap_conn.rate_request_queued || gap_conn.rate_update_pending ||
         gap_conn.rate_request_pending || gap_conn.local_update_queued ||
@@ -4293,13 +4150,13 @@ int mesh_gap_connection_rate_request(uint16_t interval_min,
     gap_conn.rate_periodicity = 0;
     for (uint8_t i = 0; i < 4; i++) gap_conn.rate_offsets[i] = 0xffff;
     gap_conn.rate_request_queued = 1;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
 
 // Read the applied rate tuple. Interval uses 125-us units; other values match
 // the Connection Subrating fields. Pass NULL for fields the caller does not need.
-void mesh_gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
+void ble_gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
         uint16_t *peripheral_latency, uint16_t *continuation,
         uint16_t *timeout) {
     if (interval) *interval = gap_conn.interval_125us;
@@ -4312,8 +4169,8 @@ void mesh_gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
-int mesh_gap_channel_map_set(const uint8_t channels[5]) {
-    if (!channels || !mesh_gap_connected() || gap_security.phase || !gap_conn.central_role ||
+int ble_gap_channel_map_set(const uint8_t channels[5]) {
+    if (!channels || !ble_gap_connected() || gap_security.phase || !gap_conn.central_role ||
         gap_conn.first_event || gap_conn.phy_queued || gap_conn.phy_pending ||
         gap_conn.phy_update_pending || gap_conn.local_map_queued ||
         gap_conn.channel_map_update_pending || gap_conn.local_update_queued ||
@@ -4330,16 +4187,16 @@ int mesh_gap_channel_map_set(const uint8_t channels[5]) {
         return 1;
     }
     memcpy(gap_conn.pending_channel_map, channels, 5);
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     gap_conn.local_map_queued = 1;
     return 1;
 }
 
 // Enable or disable Peripheral channel reports. Spacing and delay use 200-ms
 // units, as required by LL_CHANNEL_REPORTING_IND; status is connection_status.
-int mesh_gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
+int ble_gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
                                    uint8_t max_delay_200ms) {
-    if (!mesh_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || enable > 1 || min_spacing_200ms < 5 ||
         min_spacing_200ms > 150 || max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 || gap_conn.channel_reporting_queued ||
@@ -4350,21 +4207,21 @@ int mesh_gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
     gap_conn.channel_min_spacing_200ms = min_spacing_200ms;
     gap_conn.channel_max_delay_200ms = max_delay_200ms;
     gap_conn.channel_reporting_queued = 1;
-    gap_conn.connection_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
 
 // Supply local channel classifications packed as four 2-bit values per byte,
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
 // A Peripheral reports changes only after the Central enables reporting.
-int mesh_gap_channel_classification_set(
-        const uint8_t classification[MESH_GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!mesh_gap_connected() || !classification ||
+int ble_gap_channel_classification_set(
+        const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
+    if (!ble_gap_connected() || !classification ||
         !gap_channel_classification_valid(classification)) return 0;
     if (memcmp(gap_conn.channel_local_classification, classification,
-               MESH_GAP_CHANNEL_CLASSIFICATION_BYTES) == 0) return 1;
+               GAP_CHANNEL_CLASSIFICATION_BYTES) == 0) return 1;
     memcpy(gap_conn.channel_local_classification, classification,
-           MESH_GAP_CHANNEL_CLASSIFICATION_BYTES);
+           GAP_CHANNEL_CLASSIFICATION_BYTES);
     gap_conn.channel_classification_valid = 1;
     gap_conn.channel_status_changed_ms = GET_MILLIS();
     if (!gap_conn.central_role && gap_conn.channel_reporting_enabled)
@@ -4373,29 +4230,29 @@ int mesh_gap_channel_classification_set(
 }
 
 // Read the local classifications supplied by the Host/adapter.
-int mesh_gap_channel_classification_get(
-        uint8_t classification[MESH_GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!mesh_gap_connected() || !classification ||
+int ble_gap_channel_classification_get(
+        uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
+    if (!ble_gap_connected() || !classification ||
         !gap_conn.channel_classification_valid) return 0;
     memcpy(classification, gap_conn.channel_local_classification,
-           MESH_GAP_CHANNEL_CLASSIFICATION_BYTES);
+           GAP_CHANNEL_CLASSIFICATION_BYTES);
     return 1;
 }
 
 // Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
-int mesh_gap_peer_channel_classification_get(
-        uint8_t classification[MESH_GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!mesh_gap_connected() || !gap_conn.central_role || !classification ||
+int ble_gap_peer_channel_classification_get(
+        uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
+    if (!ble_gap_connected() || !gap_conn.central_role || !classification ||
         !gap_conn.channel_peer_classification_valid) return 0;
     memcpy(classification, gap_conn.channel_peer_classification,
-           MESH_GAP_CHANNEL_CLASSIFICATION_BYTES);
+           GAP_CHANNEL_CLASSIFICATION_BYTES);
     return 1;
 }
 
 // Request a transmit payload limit in either role; packet time is derived for
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
-int mesh_gap_data_length_set(uint16_t octets) {
-    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event ||
+int ble_gap_data_length_set(uint16_t octets) {
+    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4409,25 +4266,25 @@ int mesh_gap_data_length_set(uint16_t octets) {
         return 0;
     }
     gap_conn.local_tx_octets = octets;
-    gap_conn.length_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.length_status = GAP_CONNECTION_PENDING;
     gap_conn.length_queued = 1;
     return 1;
 }
 
-mesh_gap_data_length mesh_gap_data_length_get(void) {
+ble_gap_data_length ble_gap_data_length_get(void) {
     return gap_conn.data_length;
 }
 
 // 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
-uint8_t mesh_gap_data_length_status(void) {
+uint8_t ble_gap_data_length_status(void) {
     return gap_conn.length_status;
 }
 
 // Request preferred transmit and receive PHY masks (1M=1, 2M=2, Coded=4).
 // The Central chooses the final rates; the connection switches at a shared Instant.
-int mesh_gap_phy_set(uint8_t tx, uint8_t rx) {
-    uint8_t supported = BLE_GAP_HW_PHY_MASK() & 7;
-    if (!mesh_gap_connected() || gap_security.phase || gap_conn.first_event || !(supported & 6) ||
+int ble_gap_phy_set(uint8_t tx, uint8_t rx) {
+    uint8_t supported = GAP_HW_PHY_MASK() & 7;
+    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event || !(supported & 6) ||
         !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
@@ -4446,26 +4303,26 @@ int mesh_gap_phy_set(uint8_t tx, uint8_t rx) {
     }
     gap_conn.preferred_tx_phy = tx;
     gap_conn.preferred_rx_phy = rx;
-    gap_conn.phy_status = MESH_GAP_CONNECTION_PENDING;
+    gap_conn.phy_status = GAP_CONNECTION_PENDING;
     gap_conn.phy_queued = 1;
     return 1;
 }
 
-// Return the current rate in each direction; values are MESH_GAP_PHY_*.
-void mesh_gap_phy_get(uint8_t *tx, uint8_t *rx) {
+// Return the current rate in each direction; values are GAP_PHY_*.
+void ble_gap_phy_get(uint8_t *tx, uint8_t *rx) {
     if (tx) *tx = gap_conn.tx_phy;
     if (rx) *rx = gap_conn.rx_phy;
 }
 
-uint8_t mesh_gap_phy_status(void) {
+uint8_t ble_gap_phy_status(void) {
     return gap_conn.phy_status;
 }
 
     // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
-int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    if (!mesh_gap_connected() || gap_security.phase || gap_conn.tx_queued ||
+int ble_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
+    if (!ble_gap_connected() || gap_security.phase || gap_conn.tx_queued ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         gap_conn.terminate_after_reply || !data ||
         (llid != 1 && llid != 2) || !len ||
@@ -4489,8 +4346,8 @@ int mesh_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 
 // Gracefully terminate the active Peripheral connection after sending the
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
-int mesh_gap_disconnect(uint8_t reason) {
-    if (!mesh_gap_connected() || !reason || gap_conn.terminate_after_reply ||
+int ble_gap_disconnect(uint8_t reason) {
+    if (!ble_gap_connected() || !reason || gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending)
         return 0;
     gap_conn.local_terminate_reason = reason;
@@ -4499,8 +4356,8 @@ int mesh_gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
-int mesh_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
-    mesh_gap_smp_poll();
+int ble_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
+    ble_gap_smp_poll();
     if (!data || !len || !gap_conn.rx_ready) return 0;
     if (*len < gap_conn.rx_len) return -1;
     if (llid) *llid = gap_conn.rx_llid;
@@ -4511,53 +4368,16 @@ int mesh_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     return 1;
 }
 
-int mesh_gap_conn_busy(void) {
-    for (uint8_t slot = 0; slot < MESH_GAP_CONNECTION_COUNT; slot++)
+int ble_gap_conn_busy(void) {
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         if (gap_connection_contexts[slot].active) return 1;
     return 0;
 }
 
-// Take one advertising packet and copy the first AD structure with a requested type.
-// Return 1 when found, 0 when absent, or -1 when the output is too small.
-int gap_hw_mesh_take_ad(const uint8_t *types, size_t type_count,
-                           uint8_t *ad, size_t *len, int8_t *rssi) {
-    if (gap_radio_scan_adv_ready) {
-        gap_receive_report(gap_radio_scan_adv_frame,
-                              gap_radio_scan_adv_frame[1],
-                              gap_radio_scan_adv_rssi);
-        gap_radio_scan_adv_ready = 0;
-    }
-    if (!types || !ad || !len || !gap_radio_rx_ready) return 0;
-    const uint8_t *frame = gap_radio_rx_frame;
-    uint8_t payload_len = frame[1];
-    int8_t packet_rssi = gap_radio_rx_rssi;
-    if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
-    gap_radio_rx_ready = 0;
-    BLE_GAP_HW_PACKET_CLEAR();
-    gap_receive_report(frame, payload_len, packet_rssi);
-    // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
-    if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 ||
-        payload_len > 37) return 0;
-    size_t end = (size_t)payload_len + 2;
-    for (size_t offset = 8; offset < end;) {
-        uint8_t ad_len = frame[offset];
-        if (!ad_len || offset + ad_len + 1 > end) break;
-        for (size_t i = 0; i < type_count; i++) {
-            if (frame[offset + 1] != types[i]) continue;
-            if ((size_t)ad_len + 1 > *len) return -1;
-            memcpy(ad, frame + offset, (size_t)ad_len + 1);
-            *len = (size_t)ad_len + 1;
-            if (rssi) *rssi = packet_rssi;
-            return 1;
-        }
-        offset += (size_t)ad_len + 1;
-    }
-    return 0;
-}
 
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
 static void gap_radio_periodic_sync_lost(uint8_t slot) {
-    gap_periodic_sync_event_post(slot, MESH_GAP_PERIODIC_SYNC_LOST);
+    gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
     memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
     gap_periodic_sync_owned_scan_finish();
 }
@@ -4623,12 +4443,12 @@ static int gap_radio_periodic_window_overlaps_connection(uint64_t start_ticks,
 // Stop a lower-priority scan before the connection poll configures its channel.
 static void gap_radio_connection_take_radio(void) {
     if (!gap_radio_periodic_listening && !gap_radio_aux_listening) return;
-    if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+    if (gap_radio_rx_armed) GAP_HW_STOP();
     gap_radio_rx_armed = 0;
     if (gap_radio_periodic_listening) {
         uint8_t slot = gap_radio_periodic_listening_slot;
         gap_radio_periodic_listening = 0;
-        if (slot < MESH_GAP_PERIODIC_SYNC_COUNT &&
+        if (slot < GAP_PERIODIC_SYNC_COUNT &&
             gap_periodic_syncs[slot].used &&
             gap_periodic_syncs[slot].window_active)
             gap_radio_periodic_window_missed(slot);
@@ -4639,21 +4459,21 @@ static void gap_radio_connection_take_radio(void) {
         if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
             gap_radio_aux_request[slot].active = 0;
     }
-    BLE_GAP_HW_PACKET_CLEAR();
+    GAP_HW_PACKET_CLEAR();
 }
 #endif
 
-void gap_hw_mesh_scan_poll(void) {
+void ble_gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
     gap_privacy_poll(now);
-#if MESH_GAP_EXT_ADV_SUPPORT
-    for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++) {
+#if GAP_EXT_ADV_SUPPORT
+    for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (!gap_periodic_syncs[i].used ||
             (uint32_t)(now - gap_periodic_syncs[i].last_event_ms) <
                 gap_periodic_syncs[i].timeout_ms) continue;
         if (gap_radio_periodic_listening &&
             gap_radio_periodic_listening_slot == i) {
-            BLE_GAP_HW_STOP();
+            GAP_HW_STOP();
             gap_radio_periodic_listening = 0;
             gap_radio_rx_armed = 0;
         }
@@ -4674,50 +4494,50 @@ void gap_hw_mesh_scan_poll(void) {
         gap_active_scanning = 0;
         gap_scan_generation++;
     }
-    if (!mesh_gap_conn_busy() && gap_radio_scan_generation != gap_scan_generation) {
-        if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+    if (!ble_gap_conn_busy() && gap_radio_scan_generation != gap_scan_generation) {
+        if (gap_radio_rx_armed) GAP_HW_STOP();
         gap_radio_rx_armed = 0;
         gap_radio_active_scan_pending = 0;
         gap_radio_rx_channel_index = 0;
         gap_radio_scan_interval_start_ms = now;
         gap_radio_scan_generation = gap_scan_generation;
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
         gap_radio_ext_scan_ready = 0;
         gap_radio_aux_listening = 0;
         gap_radio_periodic_listening = 0;
         memset(gap_radio_aux_request, 0, sizeof(gap_radio_aux_request));
-        BLE_GAP_HW_PACKET_CLEAR();
+        GAP_HW_PACKET_CLEAR();
 #endif
     }
-#if MESH_GAP_EXT_ADV_SUPPORT
+#if GAP_EXT_ADV_SUPPORT
     gap_radio_ext_scan_process();
     if (gap_radio_periodic_listening) {
-        uint64_t ticks = BLE_GAP_HW_TICKS();
+        uint64_t ticks = GAP_HW_TICKS();
         uint8_t slot = gap_radio_periodic_listening_slot;
         if (ticks <= gap_periodic_syncs[slot].window_end_ticks) return;
-        if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+        if (gap_radio_rx_armed) GAP_HW_STOP();
         gap_radio_rx_armed = 0;
         gap_radio_periodic_listening = 0;
         if (gap_periodic_syncs[slot].used &&
             gap_periodic_syncs[slot].window_active)
             gap_radio_periodic_window_missed(slot);
-        BLE_GAP_HW_PACKET_CLEAR();
+        GAP_HW_PACKET_CLEAR();
     }
     if (gap_radio_aux_listening) {
-        uint64_t ticks = BLE_GAP_HW_TICKS();
+        uint64_t ticks = GAP_HW_TICKS();
         uint8_t slot = gap_radio_aux_listening_slot;
         if (ticks <= gap_radio_aux_request[slot].window_end_ticks) return;
-        if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+        if (gap_radio_rx_armed) GAP_HW_STOP();
         gap_radio_rx_armed = 0;
         gap_radio_aux_listening = 0;
         gap_radio_aux_request[slot].active = 0;
-        BLE_GAP_HW_PACKET_CLEAR();
+        GAP_HW_PACKET_CLEAR();
     }
     if (!gap_radio_active_scan_pending) {
         int slot = -1;
         int periodic_slot = -1;
-        uint64_t ticks = BLE_GAP_HW_TICKS();
-        for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++) {
+        uint64_t ticks = GAP_HW_TICKS();
+        for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_periodic_syncs[i].used ||
                 gap_periodic_syncs[i].window_active ||
                 !gap_periodic_syncs[i].next_event_ticks) continue;
@@ -4742,12 +4562,12 @@ void gap_hw_mesh_scan_poll(void) {
             gap_periodic_syncs[i].window_chain = 0;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (mesh_gap_conn_busy()) break;
+            if (ble_gap_conn_busy()) break;
             if (!gap_radio_aux_request[i].active) continue;
             if (slot < 0 || gap_radio_aux_request[i].window_start_ticks <
                     gap_radio_aux_request[slot].window_start_ticks) slot = i;
         }
-        for (uint8_t i = 0; i < MESH_GAP_PERIODIC_SYNC_COUNT; i++) {
+        for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_periodic_syncs[i].used ||
                 !gap_periodic_syncs[i].window_active) continue;
             if (periodic_slot < 0 ||
@@ -4774,10 +4594,10 @@ void gap_hw_mesh_scan_poll(void) {
         if (select_periodic && ticks >=
                 gap_periodic_syncs[periodic_slot].window_start_ticks &&
                 ticks <= gap_periodic_syncs[periodic_slot].window_end_ticks) {
-            if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+            if (gap_radio_rx_armed) GAP_HW_STOP();
             gap_radio_periodic_listening_slot = (uint8_t)periodic_slot;
-            gap_radio_ext_scan_kind = MESH_GAP_EXT_ADV_PERIODIC_PDU;
-            BLE_GAP_HW_CRC_INIT(gap_periodic_syncs[periodic_slot].crc_init);
+            gap_radio_ext_scan_kind = GAP_EXT_ADV_PERIODIC_PDU;
+            GAP_HW_CRC_INIT(gap_periodic_syncs[periodic_slot].crc_init);
             uint8_t channel = gap_periodic_syncs[periodic_slot].window_chain ?
                 gap_periodic_syncs[periodic_slot].aux_channel :
                     gap_periodic_channel_for(
@@ -4791,10 +4611,10 @@ void gap_hw_mesh_scan_poll(void) {
                 gap_periodic_syncs[periodic_slot].aux_phy :
                 gap_periodic_syncs[periodic_slot].phy;
             gap_radio_periodic_rx_phy = phy;
-            BLE_GAP_HW_LINK_CONFIG(
+            GAP_HW_LINK_CONFIG(
                 gap_periodic_syncs[periodic_slot].access_address,
                 channel, NULL, 0, phy, phy);
-            BLE_GAP_HW_LINK_RX();
+            GAP_HW_LINK_RX();
             gap_radio_periodic_listening = 1;
             gap_radio_rx_armed = 1;
             return;
@@ -4804,21 +4624,21 @@ void gap_hw_mesh_scan_poll(void) {
                 gap_radio_aux_request[slot].active = 0;
             } else if (ticks >=
                        gap_radio_aux_request[slot].window_start_ticks) {
-                if (gap_radio_rx_armed) BLE_GAP_HW_STOP();
+                if (gap_radio_rx_armed) GAP_HW_STOP();
                 gap_radio_aux_listening_slot = (uint8_t)slot;
                 gap_radio_aux_rx_phy = gap_radio_aux_request[slot].phy;
                 gap_radio_aux_listening = 1;
-                BLE_GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS,
+                GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS,
                     gap_radio_aux_request[slot].channel, NULL, 0,
                     gap_radio_aux_rx_phy, gap_radio_aux_rx_phy);
-                BLE_GAP_HW_LINK_RX();
+                GAP_HW_LINK_RX();
                 gap_radio_rx_armed = 1;
                 return;
             }
         }
     }
 #endif
-    if (mesh_gap_conn_busy()) return;
+    if (ble_gap_conn_busy()) return;
     if (gap_radio_active_scan_pending &&
         (int32_t)(now - gap_radio_active_scan_deadline_ms) >= 0) {
         gap_radio_active_scan_pending = 0;
@@ -4838,13 +4658,13 @@ void gap_hw_mesh_scan_poll(void) {
             (gap_radio_rx_channel_index + intervals % 3) % 3;
         elapsed -= intervals * interval_ms;
         if (gap_radio_rx_armed) {
-            BLE_GAP_HW_STOP();
+            GAP_HW_STOP();
             gap_radio_rx_armed = 0;
         }
     }
     if (elapsed >= window_ms) {
         if (gap_radio_rx_armed) {
-            BLE_GAP_HW_STOP();
+            GAP_HW_STOP();
             gap_radio_rx_armed = 0;
         }
         return;
@@ -4852,12 +4672,12 @@ void gap_hw_mesh_scan_poll(void) {
     if (!gap_radio_rx_armed) {
         uint8_t channel = 37 + gap_radio_rx_channel_index;
         if (gap_active_scanning) {
-            BLE_GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1, MESH_GAP_PHY_1M, MESH_GAP_PHY_1M);
-            BLE_GAP_HW_LINK_RX();
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1, GAP_PHY_1M, GAP_PHY_1M);
+            GAP_HW_LINK_RX();
         } else {
-            BLE_GAP_HW_SCAN_RX(channel);
+            GAP_HW_SCAN_RX(channel);
         }
         gap_radio_rx_armed = 1;
     }
 }
-#endif // BLE_GAP_CONNECTION_H
+#endif // GAP_CONNECTION_H
