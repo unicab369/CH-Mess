@@ -21,8 +21,8 @@
 // - [x] Return defined result codes for malformed channel parameters, handle
 //       partial ECFC outcomes, serialize local requests, and reject ID collisions.
 // - [x] Route the GATT fixed-channel transport through the shared per-link
-//       channel manager; GAP SMP uses the shared L2CAP encoder but still owns
-//       its Link Layer receive/transmit loop.
+//       channel manager; GAP SMP now uses the shared per-link L2CAP
+//       reassembler, CID dispatcher, and encoder with GAP LL fragmentation.
 // - [x] Provide a standalone SMP fixed-channel bearer that uses the shared
 //       L2CAP connection for complete SMP SDUs and bounded transmit retry.
 // - [x] Apply PSM authorization results, bound LE CIDs/channel counts, and
@@ -30,9 +30,10 @@
 // - [x] Test basic signaling, fixed-CID dispatch, ECFC negotiation/data,
 //       credits, reconfiguration, timeout, and LL fragmentation with fake peers.
 // - [x] Expand host protocol-boundary/error coverage with fake peers.
-// - [ ] Migrate GAP's pairing state machine and LL fragment loop onto
-//       ble_smp.h/the shared per-link adapter, then verify full pairing against
-//       an independent host. GAP still uses its legacy SMP path today.
+// - [x] Carry GAP SMP SDUs through the common fixed-channel L2CAP path; GAP
+//       retains ownership of pairing policy and procedures in ble_smp_gap.h.
+// - [x] Verify L2CAP/SMP packet compatibility against Bumble at the bearer
+//       boundary; a complete pairing-session check remains SMP integration work.
 // - [ ] Verify controller/radio behavior on BLE hardware.
 // Scope: LE L2CAP. BR/EDR L2CAP modes are not part of this BLE stack.
 #include <stddef.h>
@@ -1254,13 +1255,13 @@ static inline int ble_l2cap_reassembler_feed(ble_l2cap_reassembler *rx,
         uint16_t payload_len = ble_l2cap_read_u16(fragment);
         uint16_t channel_id = ble_l2cap_read_u16(fragment + 2);
         if (!payload_len) return -1;
+        rx->cid = channel_id;
         if (payload_len > BLE_L2CAP_SDU_MAX) {
             if (len > (uint32_t)payload_len + 4u) return -1;
             rx->discard_remaining = (uint32_t)payload_len + 4 > len ?
                 (uint32_t)payload_len + 4 - len : 0;
             return 0;
         }
-        rx->cid = channel_id;
         rx->expected = (uint16_t)(payload_len + 4);
     } else if (rx->discard_remaining) {
         rx->discard_remaining = len >= rx->discard_remaining ? 0 :

@@ -4506,6 +4506,7 @@ int mesh_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     *len = gap_conn.rx_len;
     memcpy(data, gap_conn.rx_data, gap_conn.rx_len);
     gap_conn.rx_ready = 0;
+    gap_smp.l2cap_rx_pending = 0;
     return 1;
 }
 

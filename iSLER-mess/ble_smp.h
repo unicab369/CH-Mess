@@ -8,11 +8,14 @@
 // - [x] Register the SMP fixed CID with the shared L2CAP connection and
 //       deliver complete, bounded SMP PDUs to the protocol handler.
 // - [x] Queue one outbound SMP PDU and retry through the L2CAP link adapter.
-// - [ ] Move GAP's pairing state machine onto this bearer without coupling
-//       SMP protocol logic to the GAP Link Layer implementation.
-// - [ ] Move and complete the existing GAP legacy pairing flows (feature
-//       exchange, Just Works, Passkey Entry, confirm/random, and key derivation).
-// - [ ] Move and complete Secure Connections public-key, numeric-comparison,
+// - [x] Route GAP's SMP traffic through the shared L2CAP reassembler,
+//       fixed-CID dispatcher, and Basic L2CAP encoder.
+// - [x] Keep the GAP-specific pairing procedures isolated in ble_smp_gap.h.
+// - [ ] Refactor those procedures onto this module's host callbacks so a
+//       non-GAP host can reuse the pairing state machine.
+// - [ ] Complete and verify every supported legacy pairing flow (feature
+//       exchange, Just Works, Passkey Entry, confirm/random, key derivation).
+// - [ ] Complete and verify Secure Connections public-key, numeric-comparison,
 //       passkey, OOB, DHKey-check, and key derivation flows.
 // - [x] Define host callbacks for cryptographic randomness/primitives, user
 //       interaction, link encryption, and bond load/store/removal.

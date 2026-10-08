@@ -548,7 +548,11 @@ typedef struct {
         uint32_t numeric_value;
     } sc;
     uint8_t request[7], response[7], random[16], peer_confirm[16], stk[16];
-    uint8_t tx[69], tx_len, tx_offset, rx[69], rx_len, rx_expected;
+    uint8_t tx[69], tx_len, tx_offset, rx[BLE_SMP_PDU_MAX], rx_len;
+    ble_l2cap_connection l2cap;
+    ble_l2cap_reassembler l2cap_rx;
+    ble_smp bearer;
+    uint8_t l2cap_ready, l2cap_rx_pending;
     uint32_t started_ms;
 } mesh_gap_smp_context;
 static mesh_gap_smp_context gap_smp_contexts[MESH_GAP_CONNECTION_COUNT];
@@ -569,6 +573,8 @@ static mesh_gap_sc_oob_peer_context
 #define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_connection_slot]
 static void mesh_gap_smp_poll(void);
 static void mesh_gap_smp_bond_abort(void);
+static void gap_smp_finish(uint8_t status, uint8_t notify_peer);
+static int mesh_gap_smp_link_init(void);
 static void gap_sc_oob_clear(void);
 static uint8_t gap_bond_repair_pending_contexts[MESH_GAP_CONNECTION_COUNT];
 #define gap_bond_repair_pending \
@@ -735,6 +741,10 @@ static int gap_connection_accept(const uint8_t frame[36],
     if (++gap_connection_generations[gap_connection_slot] == 0)
         gap_connection_generations[gap_connection_slot] = 1;
     gap_conn.active = 1;
+    if (!mesh_gap_smp_link_init()) {
+        gap_conn.active = 0;
+        return 0;
+    }
     gap_advertising.enabled = 0;
 #if MESH_GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < MESH_GAP_EXT_ADV_SET_COUNT; i++)
