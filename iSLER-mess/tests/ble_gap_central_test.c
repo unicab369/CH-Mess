@@ -1415,8 +1415,8 @@ static void test_pawr_connection_accept(void) {
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
     sync->phy = GAP_PHY_1M;
-    assert(gap_periodic_sync_pawr_connection_accept_set(1, 1));
-    assert(!gap_periodic_sync_pawr_connection_accept_set(1, 2));
+    assert(gap_periodic_sync_pawr_connect_accept(1, 1));
+    assert(!gap_periodic_sync_pawr_connect_accept(1, 2));
 
     request[0] = 0x05; // Public InitA and AdvA.
     request[1] = 34;
@@ -1437,11 +1437,11 @@ static void test_pawr_connection_accept(void) {
     request[35] = 5;
 
     captured_extended_count = 0;
-    assert(gap_periodic_sync_pawr_connection_accept_set(1, 0));
+    assert(gap_periodic_sync_pawr_connect_accept(1, 0));
     assert(!gap_radio_periodic_connect_request(0, request, sizeof(request),
                                                8000000));
     assert(!gap_conn.active && !captured_extended_count);
-    assert(gap_periodic_sync_pawr_connection_accept_set(1, 1));
+    assert(gap_periodic_sync_pawr_connect_accept(1, 1));
 
     fake_radio_ticks = 8000000;
     fake_radio_ticks_enabled = 1;
@@ -1518,8 +1518,8 @@ static void test_pawr_observer_response(void) {
     sync->last_event_ms = now_ms;
     sync->timeout_ms = 1000;
     assert(!sync->pawr_response_repeat);
-    assert(gap_periodic_sync_pawr_response_repeat_set(1, 1));
-    assert(!gap_periodic_sync_pawr_response_repeat_set(1, 2));
+    assert(gap_periodic_sync_pawr_repeat(1, 1));
+    assert(!gap_periodic_sync_pawr_repeat(1, 2));
     assert(gap_periodic_sync_pawr_respond(1, 2, 0, response_data,
                                                 sizeof(response_data)));
     assert(sync->pawr_selected_subevent == 2 && sync->pawr_response_pending &&
@@ -1587,7 +1587,7 @@ static void test_pawr_observer_response(void) {
            sync->event_counter == 14);
 
     // Disabling repeat leaves one final transmission, then consumes the data.
-    assert(gap_periodic_sync_pawr_response_repeat_set(1, 0));
+    assert(gap_periodic_sync_pawr_repeat(1, 0));
     memcpy(gap_radio_ext_scan_frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_ticks = sync->next_event_ticks + 136;
     gap_radio_ext_scan_kind = GAP_EXT_ADV_PERIODIC_PDU;
