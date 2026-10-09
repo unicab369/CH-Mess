@@ -91,7 +91,8 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
             gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0) {
+            memcmp(gap_accept_list[i].address, address, 6) == 0
+        ) {
             memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
             return 1;
         }
@@ -129,7 +130,8 @@ int gap_identity_set(const uint8_t address[6], uint8_t address_type,
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
             gap_identities[i].address_type == address_type &&
-            memcmp(gap_identities[i].address, address, 6) == 0) {
+            memcmp(gap_identities[i].address, address, 6) == 0
+        ) {
             if (!irk) {
                 memset(&gap_identities[i], 0, sizeof(gap_identities[i]));
                 return 1;
@@ -162,7 +164,8 @@ int gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
             gap_identities[i].address_type == address_type &&
-            memcmp(gap_identities[i].address, address, 6) == 0) {
+            memcmp(gap_identities[i].address, address, 6) == 0
+        ) {
             gap_identities[i].privacy_mode = mode;
             return 1;
         }
@@ -236,7 +239,8 @@ int gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
 // or the global address when that peer has no local key override.
 static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type) {
     if (gap_privacy.enabled && gap_privacy.resolvable && slot >= 0 &&
-        gap_identities[slot].local_key_set) {
+        gap_identities[slot].local_key_set
+    ) {
         if (gap_identities[slot].has_local_irk) {
             *type = 1;
             memcpy(address, gap_identities[slot].local_address, 6);

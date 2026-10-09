@@ -487,7 +487,8 @@ static inline int gap_advertising_start_internal(uint8_t pdu_type,
     if (target_address) {
         memcpy(target, target_address, 6);
         if (gap_privacy.enabled && gap_privacy.resolvable &&
-            slot >= 0 && gap_identities[slot].has_irk) {
+            slot >= 0 && gap_identities[slot].has_irk
+        ) {
             if (!gap_private_address_generate(gap_identities[slot].irk, target,
                                               target_address)) return 0;
             target_type = 1;
@@ -1074,7 +1075,8 @@ static inline void gap_receive_report(const uint8_t *frame,
         for (uint8_t i = 0; i < gap_scan_seen_count; i++) {
             if (gap_scan_seen[i].address_type == identity_type &&
                 gap_scan_seen[i].pdu_type == pdu_type &&
-                memcmp(gap_scan_seen[i].address, identity, 6) == 0) {
+                memcmp(gap_scan_seen[i].address, identity, 6) == 0
+            ) {
                 slot = i;
                 if (gap_scan_seen[i].data_len == seen_len &&
                     memcmp(gap_scan_seen[i].data, frame + 8, seen_len) == 0)
@@ -1396,7 +1398,8 @@ int gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
                 gap_ext_adv_contexts[i].has_address == fields.has_address &&
                 (!fields.has_address ||
                  (gap_ext_adv_contexts[i].address_type == fields.address_type &&
-                  !memcmp(gap_ext_adv_contexts[i].address, fields.address, 6)))) {
+                  !memcmp(gap_ext_adv_contexts[i].address, fields.address, 6)))
+            ) {
                 slot = i;
                 break;
             }
@@ -1470,7 +1473,8 @@ int gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
     if (fields.mode == 0)
         gap_ext_adv_contexts[slot].await_scan_response = 0;
     if (!gap_ext_adv_data_valid(gap_ext_adv_contexts[slot].data,
-                                gap_ext_adv_contexts[slot].data_len)) {
+                                gap_ext_adv_contexts[slot].data_len)
+    ) {
         gap_ext_adv_context_clear((uint8_t)slot);
         return 0;
     }
@@ -1721,7 +1725,8 @@ static int gap_periodic_sync_info_accept(const gap_ext_adv_fields *fields,
               gap_periodic_syncs[i].address_type ==
                   gap_identities[identity_slot].address_type &&
               !memcmp(gap_periodic_syncs[i].address,
-                  gap_identities[identity_slot].address, 6)))) {
+                  gap_identities[identity_slot].address, 6)))
+        ) {
             slot = i;
             break;
         }
@@ -1879,7 +1884,8 @@ static int gap_periodic_sync_receive(uint8_t slot, const uint8_t *pdu,
     }
     gap_periodic_syncs[slot].event_data_active = 0;
     if (!gap_ext_adv_data_valid(gap_periodic_syncs[slot].data,
-                                gap_periodic_syncs[slot].data_len)) {
+                                gap_periodic_syncs[slot].data_len)
+    ) {
         gap_periodic_syncs[slot].data_len = 0;
         return 0;
     }

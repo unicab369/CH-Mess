@@ -83,7 +83,8 @@ int gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
     uint8_t *mic = out + 7 + plaintext_len;
     if (ccm_encrypt_and_tag(gap_ead_key_material.session_key, nonce,
             sizeof(nonce), &aad, sizeof(aad), out + 7, plaintext_len,
-            out + 7, mic, GAP_EAD_MIC_LEN) != CCM_OK) {
+            out + 7, mic, GAP_EAD_MIC_LEN) != CCM_OK
+    ) {
         memset(out + 7, 0, plaintext_len + GAP_EAD_MIC_LEN);
         return 0;
     }
@@ -114,7 +115,8 @@ int gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
     if (ccm_auth_decrypt(gap_ead_key_material.session_key, nonce,
             sizeof(nonce), &aad, sizeof(aad), out, plaintext_len, mic,
             GAP_EAD_MIC_LEN, out) != CCM_OK ||
-        !gap_ead_plaintext_valid(out, plaintext_len)) {
+        !gap_ead_plaintext_valid(out, plaintext_len)
+    ) {
         volatile uint8_t *wipe = out;
         for (size_t i = 0; i < plaintext_len; i++) wipe[i] = 0;
         return 0;

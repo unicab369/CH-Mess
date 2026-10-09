@@ -58,7 +58,8 @@ static uint8_t *gap_security_tx_frame(void) {
     memcpy(gap_conn_cipher_frame, gap_conn_tx_frame, gap_conn_tx_frame[1] + 2u);
     if (!GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
             gap_conn_tx_frame[0] & 0xe3, gap_conn_cipher_frame + 2,
-            gap_conn_tx_frame[1], gap_conn_cipher_frame + 2 + gap_conn_tx_frame[1])) {
+            gap_conn_tx_frame[1], gap_conn_cipher_frame + 2 + gap_conn_tx_frame[1])
+    ) {
         gap_security.status = 0x3d;
         gap_connection_end();
         return NULL;
@@ -146,7 +147,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         gap_conn.channel_map_update_pending || gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.feature_request_pending || gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending || gap_conn.terminate_after_reply) {
+        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending || gap_conn.terminate_after_reply
+    ) {
         {
             volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
             size_t wipe_len = sizeof(entropy);

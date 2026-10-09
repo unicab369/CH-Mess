@@ -19,7 +19,8 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
     if ((!gap_conn_busy() ||
          (gap_conn.active && gap_conn.central_role)) &&
         !gap_central_connect.active &&
-        !gap_radio_active_scan_pending) {
+        !gap_radio_active_scan_pending
+    ) {
         uint64_t ticks = GAP_HW_TICKS();
         int periodic_set = -1;
         uint64_t periodic_target = UINT64_MAX;
@@ -69,7 +70,8 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
                     HW_TICKS_FROM_US(event_duration_us + 400u);
                 if (gap_conn.rx_armed || gap_conn.event_replied) return 0;
                 if (gap_radio_periodic_window_overlaps_connection(
-                        set->periodic_next_event_ticks, event_end)) {
+                        set->periodic_next_event_ticks, event_end)
+                ) {
                     set->periodic_event_counter++;
                     set->periodic_next_event_ticks += interval;
                     gap_periodic_advertising_next_set =
@@ -95,7 +97,8 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
         uint8_t set_id = (gap_ext_advertising_next_set + offset) %
             GAP_EXT_ADV_SET_COUNT;
         if (gap_ext_advertising[set_id].enabled &&
-            (int32_t)(now - gap_ext_advertising[set_id].next_event_ms) >= 0) {
+            (int32_t)(now - gap_ext_advertising[set_id].next_event_ms) >= 0
+        ) {
             send_extended = set_id;
             break;
         }
