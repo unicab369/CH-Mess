@@ -740,17 +740,27 @@ void gap_scan_stop(void) {
     gap_scan_generation++;
 }
 
+typedef enum {
+    GAP_CONNECT_MODE_DIRECT,
+    GAP_CONNECT_MODE_GENERAL,
+    GAP_CONNECT_MODE_SELECTIVE,
+    GAP_CONNECT_MODE_AUTO
+} gap_connect_mode;
+
 static int gap_connect_procedure_start(
-    const uint8_t *peer_address,
-    uint8_t peer_type, uint8_t any_peer, uint8_t selective,
-    uint8_t auto_connect, uint8_t active_scan
+    gap_connect_mode mode, const uint8_t *peer_address,
+    uint8_t peer_type, uint8_t active_scan
 ) {
-    if ((!any_peer && !selective && !auto_connect && !peer_address) ||
-        peer_type > 1 || any_peer > 1 || selective > 1 || auto_connect > 1 ||
-        (any_peer && (selective || auto_connect)) || (selective && auto_connect) ||
-        active_scan > 1 || gap_conn.active || gap_scanning ||
-        ((selective || auto_connect) && !gap_accept_list_nonempty()))
+    if (mode < GAP_CONNECT_MODE_DIRECT || mode > GAP_CONNECT_MODE_AUTO ||
+        (mode == GAP_CONNECT_MODE_DIRECT && !peer_address) ||
+        (mode != GAP_CONNECT_MODE_DIRECT && peer_address) ||
+        peer_type > 1 || active_scan > 1 || gap_conn.active || gap_scanning ||
+        ((mode == GAP_CONNECT_MODE_SELECTIVE ||
+          mode == GAP_CONNECT_MODE_AUTO) && !gap_accept_list_nonempty()))
         return 0;
+    uint8_t any_peer = mode == GAP_CONNECT_MODE_GENERAL;
+    uint8_t selective = mode == GAP_CONNECT_MODE_SELECTIVE;
+    uint8_t auto_connect = mode == GAP_CONNECT_MODE_AUTO;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
     memset(gap_central_connect.request, 0,
@@ -811,24 +821,28 @@ static int gap_connect_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    return gap_connect_procedure_start(peer_address, peer_type, 0, 0, 0, 0);
+    return gap_connect_procedure_start(
+        GAP_CONNECT_MODE_DIRECT, peer_address, peer_type, 0);
 }
 
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
 int gap_connect_general_start(uint8_t active_scan) {
-    return gap_connect_procedure_start(NULL, 0, 1, 0, 0, active_scan);
+    return gap_connect_procedure_start(
+        GAP_CONNECT_MODE_GENERAL, NULL, 0, active_scan);
 }
 
 // Selective Connection Establishment scans for an advertiser in the accept list.
 int gap_connect_selective_start(uint8_t active_scan) {
-    return gap_connect_procedure_start(NULL, 0, 0, 1, 0, active_scan);
+    return gap_connect_procedure_start(
+        GAP_CONNECT_MODE_SELECTIVE, NULL, 0, active_scan);
 }
 
 // Auto Connection Establishment scans in the background until a listed peer
 // connects or the application cancels; it does not time out after one attempt.
 int gap_connect_auto_start(void) {
-    return gap_connect_procedure_start(NULL, 0, 0, 0, 1, 0);
+    return gap_connect_procedure_start(
+        GAP_CONNECT_MODE_AUTO, NULL, 0, 0);
 }
 
 int gap_connecting(void) {
@@ -850,34 +864,38 @@ int gap_scan_poll(gap_scan_report *report) {
 
 // Keep the newest advertising observation when the application falls behind.
 static inline void gap_receive_report(
-    const uint8_t *frame,
-                                         uint8_t payload_len, int8_t rssi
+    const uint8_t *frame, uint8_t payload_len, int8_t rssi
 ) {
     if (!gap_scanning || payload_len < 6 || payload_len > 37) return;
+
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
     if (pdu_type != 0 && pdu_type != 1 && pdu_type != 2 &&
-        pdu_type != 4 && pdu_type != 6)
-        return;
+        pdu_type != 4 && pdu_type != 6
+    ) return;
+
     if (pdu_type == 1 && payload_len != 12) return;
     uint8_t data_len = payload_len - 6;
     if (pdu_type == 1) data_len = 0; // ADV_DIRECT_IND has a second address.
     if (data_len > GAP_ADV_DATA_MAX) return;
+
     uint8_t address_type = (frame[0] >> 6) & 1;
     int identity_slot = gap_identity_find(frame + 2, address_type);
     if (!gap_peer_allowed(identity_slot, frame + 2, address_type)) return;
     if (gap_privacy.scan_filter && identity_slot < 0) return;
+
     if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == 4) {
             if (!gap_scan_response_accepted ||
                 address_type != gap_scan_response_address_type ||
-                memcmp(frame + 2, gap_scan_response_address, 6) != 0)
-                return;
+                memcmp(frame + 2, gap_scan_response_address, 6) != 0
+            ) return;
+
         } else {
-            if (pdu_type == 0 || pdu_type == 6)
-                gap_scan_response_accepted = 0;
+            if (pdu_type == 0 || pdu_type == 6) gap_scan_response_accepted = 0;
             uint8_t flags = 0;
+
             for (uint8_t offset = 0; offset < data_len;) {
                 uint8_t field_len = frame[8 + offset];
                 if (!field_len || (uint16_t)offset + field_len + 1 > data_len) break;
@@ -888,6 +906,7 @@ static inline void gap_receive_report(
             uint8_t mask = gap_scan_settings.discovery_mode ==
                 GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
             if (!(flags & mask)) return;
+
             if (pdu_type == 0 || pdu_type == 6) {
                 gap_scan_response_accepted = 1;
                 gap_scan_response_address_type = address_type;
@@ -896,13 +915,12 @@ static inline void gap_receive_report(
         }
     }
     if (gap_scan_settings.filter_duplicates) {
-        const uint8_t *identity = identity_slot >= 0 ?
-            gap_identities[identity_slot].address : frame + 2;
-        uint8_t identity_type = identity_slot >= 0 ?
-            gap_identities[identity_slot].address_type : address_type;
+        const uint8_t *identity = identity_slot >= 0 ? gap_identities[identity_slot].address : frame + 2;
+        uint8_t identity_type = identity_slot >= 0 ? gap_identities[identity_slot].address_type : address_type;
         // For directed advertising, compare the target address too.
         uint8_t seen_len = pdu_type == 1 ? 6 : data_len;
         uint8_t slot = gap_scan_seen_count;
+
         for (uint8_t i = 0; i < gap_scan_seen_count; i++) {
             if (gap_scan_seen[i].address_type == identity_type &&
                 gap_scan_seen[i].pdu_type == pdu_type &&
@@ -910,8 +928,8 @@ static inline void gap_receive_report(
             ) {
                 slot = i;
                 if (gap_scan_seen[i].data_len == seen_len &&
-                    memcmp(gap_scan_seen[i].data, frame + 8, seen_len) == 0)
-                    return;
+                    memcmp(gap_scan_seen[i].data, frame + 8, seen_len) == 0
+                ) return;
                 break;
             }
         }
@@ -937,10 +955,8 @@ static inline void gap_receive_report(
     report->address_type = address_type;
     memcpy(report->address, frame + 2, 6);
     report->resolved = identity_slot >= 0;
-    report->identity_type = report->resolved ?
-        gap_identities[identity_slot].address_type : address_type;
-    memcpy(report->identity_address, report->resolved ?
-        gap_identities[identity_slot].address : frame + 2, 6);
+    report->identity_type = report->resolved ? gap_identities[identity_slot].address_type : address_type;
+    memcpy(report->identity_address, report->resolved ? gap_identities[identity_slot].address : frame + 2, 6);
     report->has_target = pdu_type == 1;
     report->target_address_type = (frame[0] >> 7) & 1;
     if (report->has_target) memcpy(report->target_address, frame + 8, 6);
@@ -967,20 +983,14 @@ typedef struct {
     uint16_t data_len;
 } gap_ext_adv_fields;
 
-static uint32_t gap_ext_adv_hash(const uint8_t *data, uint16_t len) {
-    uint32_t hash = 2166136261u;
-    for (uint16_t i = 0; i < len; i++) hash = (hash ^ data[i]) * 16777619u;
-    return hash;
-}
-
 // Decode the common extended advertising header, rejecting truncated fields.
 static int gap_ext_adv_decode(
-    const uint8_t *pdu, size_t pdu_len,
-                              gap_ext_adv_fields *fields
+    const uint8_t *pdu, size_t pdu_len, gap_ext_adv_fields *fields
 ) {
     if (!pdu || !fields || pdu_len < 3 || (pdu[0] & 0x0f) != 0x07 ||
-        pdu_len != (size_t)pdu[1] + 2)
-        return 0;
+        pdu_len != (size_t)pdu[1] + 2
+    ) return 0;
+
     uint16_t payload_len = pdu[1];
     if (payload_len < 1) return 0;
     memset(fields, 0, sizeof(*fields));
@@ -988,6 +998,7 @@ static int gap_ext_adv_decode(
     uint8_t ext_len = pdu[2] & 0x3f;
     if (fields->mode == 3 || (uint16_t)ext_len + 1 > payload_len) return 0;
     size_t cursor = 3, header_end = 3u + ext_len;
+
     if (ext_len) {
         fields->flags = pdu[cursor++];
         if (fields->flags & 0x80) return 0;
@@ -1009,8 +1020,7 @@ static int gap_ext_adv_decode(
         if (fields->flags & 0x08) {
             if (header_end - cursor < 2) return 0;
             fields->has_adi = 1;
-            fields->adi = (uint16_t)pdu[cursor] |
-                (uint16_t)pdu[cursor + 1] << 8;
+            fields->adi = (uint16_t)pdu[cursor] | (uint16_t)pdu[cursor + 1] << 8;
             fields->sid = fields->adi >> 12;
             cursor += 2;
         }
@@ -1020,46 +1030,42 @@ static int gap_ext_adv_decode(
             uint8_t phy = pdu[cursor + 2] >> 5;
             if (channel > 36 || phy > 2) return 0;
             fields->has_aux_ptr = 1;
-            uint16_t offset = (uint16_t)pdu[cursor + 1] |
-                (uint16_t)(pdu[cursor + 2] & 0x1f) << 8;
+
+            uint16_t offset = (uint16_t)pdu[cursor + 1] | (uint16_t)(pdu[cursor + 2] & 0x1f) << 8;
             fields->aux_offset_zero = offset == 0;
             fields->aux_channel = channel;
             fields->aux_ca = (pdu[cursor] >> 6) & 1;
             fields->aux_offset_unit = (pdu[cursor] >> 7) & 1;
             fields->aux_phy = phy;
-            fields->aux_offset_us = (uint32_t)offset *
-                (fields->aux_offset_unit ? 300u : 30u);
+            fields->aux_offset_us = (uint32_t)offset * (fields->aux_offset_unit ? 300u : 30u);
             cursor += 3;
         }
         if (fields->flags & 0x20) {
             if (header_end - cursor < 18) return 0;
             fields->has_sync_info = 1;
             if (pdu[cursor + 1] & 0x80) return 0;
-            uint16_t offset = (uint16_t)pdu[cursor] |
-                (uint16_t)(pdu[cursor + 1] & 0x1f) << 8;
+            uint16_t offset = (uint16_t)pdu[cursor] | (uint16_t)(pdu[cursor + 1] & 0x1f) << 8;
             fields->sync_offset_unit = (pdu[cursor + 1] >> 5) & 1;
             fields->sync_offset_adjust = (pdu[cursor + 1] >> 6) & 1;
-            fields->sync_offset_us = (uint32_t)offset *
-                (fields->sync_offset_unit ? 300u : 30u) +
-                (fields->sync_offset_adjust ? 2457600u : 0u);
-            if ((fields->sync_offset_adjust &&
-                 !fields->sync_offset_unit) ||
-                (fields->sync_offset_us < 245700u &&
-                 fields->sync_offset_unit))
-                return 0;
+            fields->sync_offset_us = (uint32_t)offset * (fields->sync_offset_unit ? 300u : 30u) +
+                                                        (fields->sync_offset_adjust ? 2457600u : 0u);
+            if ((fields->sync_offset_adjust && !fields->sync_offset_unit) ||
+                (fields->sync_offset_us < 245700u && fields->sync_offset_unit)
+            ) return 0;
+
             fields->sync_interval = (uint16_t)pdu[cursor + 2] |
-                (uint16_t)pdu[cursor + 3] << 8;
+                                    (uint16_t)pdu[cursor + 3] << 8;
             memcpy(fields->sync_channel_map, pdu + cursor + 4, 5);
             fields->sync_sca = fields->sync_channel_map[4] >> 5;
-            fields->sync_access_address = (uint32_t)pdu[cursor + 9] |
-                (uint32_t)pdu[cursor + 10] << 8 |
-                (uint32_t)pdu[cursor + 11] << 16 |
-                (uint32_t)pdu[cursor + 12] << 24;
+            fields->sync_access_address =   (uint32_t)pdu[cursor + 9] |
+                                            (uint32_t)pdu[cursor + 10] << 8 |
+                                            (uint32_t)pdu[cursor + 11] << 16 |
+                                            (uint32_t)pdu[cursor + 12] << 24;
             fields->sync_crc_init = (uint32_t)pdu[cursor + 13] |
-                (uint32_t)pdu[cursor + 14] << 8 |
-                (uint32_t)pdu[cursor + 15] << 16;
-            fields->sync_event_counter = (uint16_t)pdu[cursor + 16] |
-                (uint16_t)pdu[cursor + 17] << 8;
+                                    (uint32_t)pdu[cursor + 14] << 8 |
+                                    (uint32_t)pdu[cursor + 15] << 16;
+            fields->sync_event_counter =    (uint16_t)pdu[cursor + 16] |
+                                            (uint16_t)pdu[cursor + 17] << 8;
             cursor += 18;
         }
         if (fields->flags & 0x40) {
@@ -1069,22 +1075,24 @@ static int gap_ext_adv_decode(
         if (cursor > header_end) return 0;
         // ACAD is a sequence of length/type/value structures. Decode the
         // Periodic Advertising Response Timing Information used by PAwR.
+
         while (cursor < header_end) {
             uint8_t acad_len = pdu[cursor++];
             if (!acad_len || (size_t)acad_len > header_end - cursor) return 0;
             uint8_t acad_type = pdu[cursor++];
             uint8_t value_len = acad_len - 1;
+
             if (acad_type == 0x32) {
                 if (fields->has_pawr_timing || value_len != 8) return 0;
-                fields->response_access_address =
-                    (uint32_t)pdu[cursor] |
-                    (uint32_t)pdu[cursor + 1] << 8 |
-                    (uint32_t)pdu[cursor + 2] << 16 |
-                    (uint32_t)pdu[cursor + 3] << 24;
+                fields->response_access_address =   (uint32_t)pdu[cursor] |
+                                                    (uint32_t)pdu[cursor + 1] << 8 |
+                                                    (uint32_t)pdu[cursor + 2] << 16 |
+                                                    (uint32_t)pdu[cursor + 3] << 24;
                 fields->pawr_num_subevents = pdu[cursor + 4];
                 fields->pawr_subevent_interval = pdu[cursor + 5];
                 fields->pawr_response_slot_delay = pdu[cursor + 6];
                 fields->pawr_response_slot_spacing = pdu[cursor + 7];
+
                 if (!gap_access_address_valid(fields->response_access_address) ||
                     !fields->pawr_num_subevents ||
                     fields->pawr_num_subevents > 128 ||
@@ -1092,8 +1100,9 @@ static int gap_ext_adv_decode(
                      fields->pawr_subevent_interval < 6) ||
                     !fields->pawr_response_slot_delay ||
                     fields->pawr_response_slot_delay == 0xff ||
-                    fields->pawr_response_slot_spacing < 2)
-                    return 0;
+                    fields->pawr_response_slot_spacing < 2
+                ) return 0;
+
                 fields->has_pawr_timing = 1;
             }
             cursor += value_len;
@@ -1101,25 +1110,12 @@ static int gap_ext_adv_decode(
         cursor = header_end;
     }
     if (fields->has_pawr_timing && (!fields->has_sync_info ||
-        fields->response_access_address == fields->sync_access_address))
-        return 0;
+        fields->response_access_address == fields->sync_access_address)
+    ) return 0;
+
     fields->data = pdu + cursor;
     fields->data_len = (uint16_t)(pdu_len - cursor);
     return fields->data_len <= GAP_EXT_ADV_DATA_MAX;
-}
-
-static int gap_ext_adv_discoverable(const uint8_t *data, uint16_t len) {
-    for (uint16_t offset = 0; offset < len;) {
-        uint8_t field_len = data[offset];
-        if (!field_len || (uint32_t)offset + field_len + 1 > len) return 0;
-        if (field_len >= 2 && data[offset + 1] == 0x01) {
-            uint8_t mask = gap_scan_settings.discovery_mode ==
-                GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
-            return (data[offset + 2] & mask) != 0;
-        }
-        offset += field_len + 1;
-    }
-    return 0;
 }
 
 static int gap_ext_adv_data_valid(const uint8_t *data, uint16_t len) {
@@ -1149,14 +1145,29 @@ static void gap_ext_adv_report_queue(
     if ((has_address && !gap_peer_allowed(identity_slot, address, address_type)) ||
         (gap_privacy.scan_filter && identity_slot < 0))
         return;
-    if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL &&
-        !gap_ext_adv_discoverable(data, data_len))
-        return;
-    uint8_t identity_type = identity_slot >= 0 ?
-        gap_identities[identity_slot].address_type : address_type;
-    const uint8_t *identity = identity_slot >= 0 ?
-        gap_identities[identity_slot].address : address;
-    uint32_t data_hash = gap_ext_adv_hash(data, data_len);
+    if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
+        // Limited discovery requires the Limited flag; general accepts either.
+        uint8_t discoverable = 0;
+        uint8_t mask = gap_scan_settings.discovery_mode ==
+            GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
+        for (uint16_t offset = 0; offset < data_len;) {
+            uint8_t field_len = data[offset];
+            if (field_len >= 2 && data[offset + 1] == 0x01) {
+                discoverable = (data[offset + 2] & mask) != 0;
+                break;
+            }
+            offset += field_len + 1;
+        }
+        if (!discoverable) return;
+    }
+
+    uint8_t identity_type = identity_slot >= 0 ? gap_identities[identity_slot].address_type : address_type;
+    const uint8_t *identity = identity_slot >= 0 ? gap_identities[identity_slot].address : address;
+    uint32_t data_hash = 2166136261u;
+
+    for (uint16_t i = 0; i < data_len; i++)
+        data_hash = (data_hash ^ data[i]) * 16777619u;
+
     if (gap_scan_settings.filter_duplicates) {
         for (uint8_t i = 0; i < gap_ext_adv_seen_count; i++) {
             if (gap_ext_adv_seen[i].used &&
@@ -1166,15 +1177,15 @@ static void gap_ext_adv_report_queue(
                 gap_ext_adv_seen[i].has_adi == has_adi &&
                 ((has_adi && gap_ext_adv_seen[i].did == (adi & 0x0fff)) ||
                  (!has_adi && gap_ext_adv_seen[i].data_len == data_len &&
-                  gap_ext_adv_seen[i].data_hash == data_hash)))
-                return;
+                  gap_ext_adv_seen[i].data_hash == data_hash))
+            ) return;
         }
         uint8_t slot = gap_ext_adv_seen_count;
         if (slot == GAP_EXT_ADV_SEEN_COUNT) {
             slot = gap_ext_adv_seen_next;
-            gap_ext_adv_seen_next = (gap_ext_adv_seen_next + 1) %
-                GAP_EXT_ADV_SEEN_COUNT;
+            gap_ext_adv_seen_next = (gap_ext_adv_seen_next + 1) % GAP_EXT_ADV_SEEN_COUNT;
         } else gap_ext_adv_seen_count++;
+
         gap_ext_adv_seen[slot].used = 1;
         gap_ext_adv_seen[slot].address_type = identity_type;
         memcpy(gap_ext_adv_seen[slot].address, identity, 6);
@@ -1185,12 +1196,10 @@ static void gap_ext_adv_report_queue(
         gap_ext_adv_seen[slot].data_hash = data_hash;
     }
     if (gap_ext_adv_report_count == GAP_EXT_ADV_REPORT_COUNT) {
-        gap_ext_adv_report_head = (gap_ext_adv_report_head + 1) %
-            GAP_EXT_ADV_REPORT_COUNT;
+        gap_ext_adv_report_head = (gap_ext_adv_report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
         gap_ext_adv_report_count--;
     }
-    uint8_t slot = (gap_ext_adv_report_head + gap_ext_adv_report_count) %
-        GAP_EXT_ADV_REPORT_COUNT;
+    uint8_t slot = (gap_ext_adv_report_head + gap_ext_adv_report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_scan_report *report = &gap_ext_adv_reports[slot];
     report->has_address = has_address;
     report->address_type = address_type;
@@ -1210,17 +1219,17 @@ static void gap_ext_adv_report_queue(
 // Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
 // Auxiliary packets must be passed in the order indicated by their AuxPtr fields.
 int gap_ext_scan_receive(
-    uint8_t pdu_kind, const uint8_t *pdu,
-                                   size_t pdu_len, int8_t rssi
+    uint8_t pdu_kind, const uint8_t *pdu, size_t pdu_len, int8_t rssi
 ) {
     if (!gap_scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU) return 0;
     gap_ext_adv_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
     uint32_t now = GET_MILLIS();
+
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
         if (gap_ext_adv_contexts[i].active &&
-            (int32_t)(now - gap_ext_adv_contexts[i].deadline_ms) >= 0)
-            gap_ext_adv_context_clear(i);
+            (int32_t)(now - gap_ext_adv_contexts[i].deadline_ms) >= 0
+        ) gap_ext_adv_context_clear(i);
 
     int slot = -1;
     if (pdu_kind == GAP_EXT_ADV_PRIMARY_PDU) {
@@ -1228,10 +1237,12 @@ int gap_ext_scan_receive(
         if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
         if (!fields.has_aux_ptr) {
             if (!gap_ext_adv_data_valid(fields.data, fields.data_len)) return 0;
-            gap_ext_adv_report_queue(fields.address, fields.has_address,
+            gap_ext_adv_report_queue(
+                fields.address, fields.has_address,
                 fields.address_type, fields.has_adi, fields.adi,
                 fields.has_adi ? fields.sid : 0xff, fields.data,
-                fields.data_len, rssi);
+                fields.data_len, rssi
+            );
             return 1;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
