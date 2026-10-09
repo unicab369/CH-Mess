@@ -85,20 +85,20 @@ typedef struct {
     uint16_t rate_update_timeout;
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_event_ticks;
-} gap_connection_context;
-static gap_connection_context
-    gap_connection_contexts[GAP_CONNECTION_COUNT];
-static uint8_t gap_connection_slot;
-static uint16_t gap_connection_generations[GAP_CONNECTION_COUNT];
-#define gap_conn gap_connection_contexts[gap_connection_slot]
-static int gap_connection_free_slot(void) {
+} gap_conn_context;
+static gap_conn_context
+    gap_conn_contexts[GAP_CONNECTION_COUNT];
+static uint8_t gap_conn_slot;
+static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
+#define gap_conn gap_conn_contexts[gap_conn_slot]
+static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (!gap_connection_contexts[slot].active) return slot;
+        if (!gap_conn_contexts[slot].active) return slot;
     return -1;
 }
-static int gap_connection_select_slot(uint8_t slot) {
+static int gap_conn_select_slot(uint8_t slot) {
     if (slot >= GAP_CONNECTION_COUNT) return 0;
-    gap_connection_slot = slot;
+    gap_conn_slot = slot;
     return 1;
 }
 
@@ -107,48 +107,48 @@ static int gap_connection_select_slot(uint8_t slot) {
 typedef struct {
     uint8_t slot;
     uint16_t generation;
-} gap_connection_handle;
+} gap_conn_handle;
 
-static inline uint8_t gap_connection_count(void) {
+static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        count += gap_connection_contexts[slot].active != 0;
+        count += gap_conn_contexts[slot].active != 0;
     return count;
 }
 
 // Return the handle for the active connection at this zero-based list index.
-static inline int gap_connection_handle_at(
-    uint8_t index, gap_connection_handle *handle
+static inline int gap_conn_handle_at(
+    uint8_t index, gap_conn_handle *handle
 ) {
     if (!handle) return 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!gap_connection_contexts[slot].active) continue;
+        if (!gap_conn_contexts[slot].active) continue;
         if (index--) continue;
         handle->slot = slot;
-        handle->generation = gap_connection_generations[slot];
+        handle->generation = gap_conn_generations[slot];
         return 1;
     }
     return 0;
 }
 
 // Select a live link for the existing connection-specific GAP operations.
-static inline int gap_connection_select(
-    gap_connection_handle handle
+static inline int gap_conn_select(
+    gap_conn_handle handle
 ) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
-        !gap_connection_contexts[handle.slot].active ||
-        gap_connection_generations[handle.slot] != handle.generation)
+        !gap_conn_contexts[handle.slot].active ||
+        gap_conn_generations[handle.slot] != handle.generation)
         return 0;
-    return gap_connection_select_slot(handle.slot);
+    return gap_conn_select_slot(handle.slot);
 }
 
 // Capture the currently selected link's handle for later API calls.
-static inline int gap_connection_current(
-    gap_connection_handle *handle
+static inline int gap_conn_current(
+    gap_conn_handle *handle
 ) {
     if (!handle || !gap_conn.active) return 0;
-    handle->slot = gap_connection_slot;
-    handle->generation = gap_connection_generations[gap_connection_slot];
+    handle->slot = gap_conn_slot;
+    handle->generation = gap_conn_generations[gap_conn_slot];
     return handle->generation != 0;
 }
 
@@ -171,8 +171,8 @@ typedef struct {
 static gap_security_context
     gap_security_contexts[GAP_CONNECTION_COUNT];
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
-#define gap_security gap_security_contexts[gap_connection_slot]
-#define gap_security_generation gap_security_generations[gap_connection_slot]
+#define gap_security gap_security_contexts[gap_conn_slot]
+#define gap_security_generation gap_security_generations[gap_conn_slot]
 
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central);
 static void gap_security_derive(void);
@@ -215,21 +215,21 @@ typedef struct {
     uint32_t started_ms;
 } gap_smp_context;
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
-#define gap_smp gap_smp_contexts[gap_connection_slot]
+#define gap_smp gap_smp_contexts[gap_conn_slot]
 typedef struct {
     uint8_t valid, private_key[32], public_key[64];
     gap_sc_oob_data data;
 } gap_sc_oob_local_context;
 static gap_sc_oob_local_context
     gap_sc_oob_local_contexts[GAP_CONNECTION_COUNT];
-#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_connection_slot]
+#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_conn_slot]
 typedef struct {
     uint8_t valid;
     gap_sc_oob_data data;
 } gap_sc_oob_peer_context;
 static gap_sc_oob_peer_context
     gap_sc_oob_peer_contexts[GAP_CONNECTION_COUNT];
-#define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_connection_slot]
+#define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_conn_slot]
 static void gap_smp_poll(void);
 static void gap_smp_bond_abort(void);
 static void gap_smp_finish(uint8_t status, uint8_t notify_peer);
@@ -237,13 +237,13 @@ static int gap_smp_link_init(void);
 static void gap_sc_oob_clear(void);
 static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
 #define gap_bond_repair_pending \
-    gap_bond_repair_pending_contexts[gap_connection_slot]
+    gap_bond_repair_pending_contexts[gap_conn_slot]
 
 
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
 static int gap_access_address_valid(uint32_t address);
 
-static int gap_connection_request_valid(const uint8_t frame[36]) {
+static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -267,16 +267,16 @@ static int gap_connection_request_valid(const uint8_t frame[36]) {
 }
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int gap_connection_accept(
+static int gap_conn_accept(
     const uint8_t frame[36],
                                             uint64_t received_ticks,
                                             uint64_t interval_unit_ticks,
                                             uint64_t window_delay_ticks
 ) {
-    if (!gap_connection_request_valid(frame)) return 0;
-    int free_slot = gap_connection_free_slot();
+    if (!gap_conn_request_valid(frame)) return 0;
+    int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
-    gap_connection_select_slot((uint8_t)free_slot);
+    gap_conn_select_slot((uint8_t)free_slot);
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -401,8 +401,8 @@ static int gap_connection_accept(
     memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
     gap_security_generation++;
-    if (++gap_connection_generations[gap_connection_slot] == 0)
-        gap_connection_generations[gap_connection_slot] = 1;
+    if (++gap_conn_generations[gap_conn_slot] == 0)
+        gap_conn_generations[gap_conn_slot] = 1;
     gap_conn.active = 1;
     if (!gap_smp_link_init()) {
         gap_conn.active = 0;

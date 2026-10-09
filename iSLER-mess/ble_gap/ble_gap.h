@@ -166,12 +166,28 @@ int gap_conn_busy(void);
 #include "ble_gap_advertising.h"
 
 #include "ble_gap_connection.h"
-#include "ble_gap_radio_scheduler.h"
 
 #include "ble_gap_security.h"
 
 #include "ble_gap_smp.h"
 
 #include "ble_gap_ead.h"
+
+// Compatibility aliases for the former gap_connection_* API names.
+typedef gap_conn_context gap_connection_context;
+typedef gap_conn_handle gap_connection_handle;
+typedef gap_conn_timing_config gap_connection_timing;
+#define gap_connection_count gap_conn_count
+#define gap_connection_handle_at gap_conn_handle_at
+#define gap_connection_select gap_conn_select
+#define gap_connection_current gap_conn_current
+#define gap_connection_timing_set gap_conn_timing_set
+#define gap_connection_timing_get gap_conn_timing_get
+#define gap_connection_update gap_conn_update
+#define gap_connection_request gap_conn_request
+#define gap_connection_status gap_conn_status
+#define gap_connection_rate_set gap_conn_rate_set
+#define gap_connection_rate_request gap_conn_rate_request
+#define gap_connection_rate_get gap_conn_rate_get
 
 #endif // GAP_H

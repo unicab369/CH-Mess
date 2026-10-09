@@ -72,7 +72,10 @@ static uint8_t gap_radio_phy_mode(uint8_t phy) {
 
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
 void gap_hw_radio_transmitted(void) {
-    gap_hw_transmitted();
+#if GAP_EXT_ADV_SUPPORT
+    if (gap_radio_ext_adv_scan_response_started)
+        gap_radio_ext_adv_scan_waiting = 0;
+#endif
     if (gap_radio_link.receive_after_tx &&
         gap_radio_link.tx_phy != gap_radio_link.rx_phy) {
         iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,

@@ -782,16 +782,16 @@ static int gap_connect_procedure_start(
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_central_connect.request + 18, crc_init, sizeof(crc_init));
     gap_central_connect.request[21] = 1; // transmit window size: 1.25 ms
-    gap_central_connect.request[24] = (uint8_t)gap_connection_timing.interval;
+    gap_central_connect.request[24] = (uint8_t)gap_conn_timing.interval;
     gap_central_connect.request[25] =
-        (uint8_t)(gap_connection_timing.interval >> 8);
-    gap_central_connect.request[26] = (uint8_t)gap_connection_timing.latency;
+        (uint8_t)(gap_conn_timing.interval >> 8);
+    gap_central_connect.request[26] = (uint8_t)gap_conn_timing.latency;
     gap_central_connect.request[27] =
-        (uint8_t)(gap_connection_timing.latency >> 8);
+        (uint8_t)(gap_conn_timing.latency >> 8);
     gap_central_connect.request[28] =
-        (uint8_t)gap_connection_timing.supervision_timeout;
+        (uint8_t)gap_conn_timing.supervision_timeout;
     gap_central_connect.request[29] =
-        (uint8_t)(gap_connection_timing.supervision_timeout >> 8);
+        (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
     memset(gap_central_connect.request + 30, 0xff, 4);
     gap_central_connect.request[34] = 0x1f; // data channels 0 through 36
     gap_central_connect.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
@@ -808,7 +808,7 @@ static int gap_connect_procedure_start(
     else gap_scanning = 1;
     gap_central_connect.active = 1;
     gap_central_connect.deadline_ms = auto_connect ? 0 :
-        GET_MILLIS() + gap_connection_timing.attempt_timeout_ms;
+        GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
         gap_active_scanning = 0;
         gap_scan_head = gap_scan_count = 0;

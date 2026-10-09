@@ -50,7 +50,7 @@ static uint8_t *gap_security_tx_frame(void) {
     if (!gap_security.tx_enabled || !gap_conn_tx_frame[1]) return gap_conn_tx_frame;
     if (gap_security.tx_counter >= (UINT64_C(1) << 39)) {
         gap_security.status = 0x3d;
-        gap_connection_end();
+        gap_conn_end();
         return NULL;
     }
     uint8_t nonce[13];
@@ -61,7 +61,7 @@ static uint8_t *gap_security_tx_frame(void) {
             gap_conn_tx_frame[1], gap_conn_cipher_frame + 2 + gap_conn_tx_frame[1])
     ) {
         gap_security.status = 0x3d;
-        gap_connection_end();
+        gap_conn_end();
         return NULL;
     }
     gap_conn_cipher_frame[1] += 4;
