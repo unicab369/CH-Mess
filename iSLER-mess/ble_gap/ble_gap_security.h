@@ -215,8 +215,4 @@ int gap_encrypted(void) {
 uint8_t gap_security_status(void) {
     return gap_security.status;
 }
-
-
-#include "ble_gap_smp.h"
-
 #endif // GAP_SECURITY_H

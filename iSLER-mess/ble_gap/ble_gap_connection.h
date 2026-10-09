@@ -5,6 +5,9 @@
 #error "Include gap_connection.h through ble_gap.h"
 #endif
 
+static int gap_smp_generic_bond_load(
+    const uint8_t peer_address[6], uint8_t address_type, gap_bond *out
+);
 static uint8_t gap_connection_rate_parameters_valid(
     uint16_t interval,
         uint16_t factor, uint16_t latency, uint16_t continuation,
@@ -122,8 +125,9 @@ static void gap_connection_end(void) {
     if (gap_conn.central_role && gap_conn.bond_restore_started &&
         gap_security.status == 0x3d
     ) {
-        gap_smp_generic_bond_remove(gap_conn.bond.peer_address,
-                                    gap_conn.bond.peer_address_type);
+        ble_smp_bond_remove(&gap_smp.bearer,
+                            gap_conn.bond.peer_address_type,
+                            gap_conn.bond.peer_address);
         gap_bond_repair_pending = 1;
     }
     uint8_t security_status = gap_security.status == GAP_CONNECTION_PENDING ?
@@ -3790,8 +3794,9 @@ static void gap_conn_poll(void) {
         !gap_security.phase && gap_security.status &&
         gap_security.status != GAP_CONNECTION_PENDING
     ) {
-        gap_smp_generic_bond_remove(gap_conn.bond.peer_address,
-                                    gap_conn.bond.peer_address_type);
+        ble_smp_bond_remove(&gap_smp.bearer,
+                            gap_conn.bond.peer_address_type,
+                            gap_conn.bond.peer_address);
         memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
         gap_conn.bonded = gap_conn.bond_restore_started = 0;
         gap_bond_repair_pending = 1;

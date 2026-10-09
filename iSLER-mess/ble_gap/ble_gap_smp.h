@@ -7,6 +7,27 @@
 #error "Include gap_smp.h through ble_gap.h"
 #endif
 
+#define GAP_BOND_SLOTS 4
+#define GAP_BOND_VERSION_LEGACY 1
+#define GAP_BOND_VERSION_CSRK 2
+#define GAP_BOND_VERSION 3
+#define GAP_KEY_DIST_ENCRYPTION 0x01u
+#define GAP_KEY_DIST_IDENTITY 0x02u
+#define GAP_KEY_DIST_SIGNING 0x04u
+
+// Platforms implement durable whole-record bond storage. LOAD returns 1 for
+// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
+// only after the operation is durable.
+#if defined(__GNUC__)
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
+int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
+#else
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
+int GAP_BOND_DELETE(uint8_t slot);
+#endif
+
 static int gap_smp_host_random(void *context, uint8_t *out, size_t len) {
     (void)context;
     return out && len && GAP_RANDOM_SECURE_BYTES(out, len);
@@ -664,6 +685,37 @@ int gap_pair(void) {
 
 uint8_t gap_pairing_status(void) { return gap_smp.status; }
 
+static int gap_bond_valid(const gap_bond *bond) {
+    if (!bond || (bond->version != GAP_BOND_VERSION &&
+        bond->version != GAP_BOND_VERSION_CSRK &&
+        bond->version != GAP_BOND_VERSION_LEGACY) || !bond->valid ||
+        bond->peer_address_type > 1 ||
+        (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
+        bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
+        bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
+        bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
+        bond->has_peripheral_ltk > 1 ||
+        (bond->version == GAP_BOND_VERSION_LEGACY &&
+         (bond->has_peer_csrk || bond->has_local_csrk ||
+          bond->has_peripheral_ltk)) ||
+        (bond->version == GAP_BOND_VERSION_CSRK &&
+         bond->has_peripheral_ltk))
+        return 0;
+    for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
+        if (bond->ltk[i]) return 0;
+    if (!bond->has_peripheral_ltk) {
+        for (uint8_t i = 0; i < sizeof(bond->peripheral_ltk); i++)
+            if (bond->peripheral_ltk[i]) return 0;
+        for (uint8_t i = 0; i < sizeof(bond->peripheral_rand); i++)
+            if (bond->peripheral_rand[i]) return 0;
+        if (bond->peripheral_ediv[0] || bond->peripheral_ediv[1]) return 0;
+    } else {
+        for (uint8_t i = bond->key_size; i < sizeof(bond->peripheral_ltk); i++)
+            if (bond->peripheral_ltk[i]) return 0;
+    }
+    return 1;
+}
+
 // Load a bond by the peer's stable identity address, not its rotating address.
 int gap_bond_get(
     const uint8_t peer_address[6], uint8_t address_type,
@@ -905,13 +957,6 @@ static int gap_smp_generic_bond_store(const gap_bond *bond) {
     return result;
 }
 
-static int gap_smp_generic_bond_remove(
-    const uint8_t address[6],
-                                      uint8_t address_type
-) {
-    return ble_smp_bond_remove(&gap_smp.bearer, address_type, address);
-}
-
 // Restore the old Central bond if a replacement was saved but pairing failed
 // before the peer acknowledged Master Identification.
 static void gap_smp_bond_abort(void) {
@@ -924,8 +969,9 @@ static void gap_smp_bond_abort(void) {
             memcpy(&gap_conn.bond, &gap_smp.previous_bond, sizeof(gap_conn.bond));
             gap_conn.bonded = 1;
         } else {
-            gap_smp_generic_bond_remove(gap_conn.bond.peer_address,
-                                        gap_conn.bond.peer_address_type);
+            ble_smp_bond_remove(&gap_smp.bearer,
+                                gap_conn.bond.peer_address_type,
+                                gap_conn.bond.peer_address);
             memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
             gap_conn.bonded = 0;
         }

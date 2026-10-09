@@ -49,10 +49,6 @@
 #define GAP_PAWR_RESPONSE_REPORT_COUNT 4
 #define GAP_PERIODIC_SYNC_EVENT_COUNT 4
 #define GAP_PERIODIC_REPORT_COUNT 2
-#define GAP_BOND_SLOTS 4
-#define GAP_BOND_VERSION_LEGACY 1
-#define GAP_BOND_VERSION_CSRK 2
-#define GAP_BOND_VERSION 3
 #ifndef GAP_CONNECTION_COUNT
 #define GAP_CONNECTION_COUNT 2
 #endif
@@ -128,7 +124,20 @@ typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;
 } gap_data_length;
 
-#include "ble_gap_bond.h"
+// One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
+// little-endian byte order; unused keys and reserved bytes are zero.
+typedef struct {
+    uint8_t version, valid, peer_address_type, peer_address[6];
+    uint8_t ltk[16], rand[8], ediv[2];
+    uint8_t peer_irk[16], local_irk[16];
+    uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
+    uint8_t peer_csrk[16], local_csrk[16];
+    uint8_t has_peer_csrk, has_local_csrk;
+    // LTK and identifiers distributed by the Peripheral are stored separately
+    // from the Central-distributed set above.
+    uint8_t peripheral_ltk[16], peripheral_rand[8], peripheral_ediv[2];
+    uint8_t has_peripheral_ltk;
+} gap_bond;
 
 // LE Secure Connections OOB authentication data. Exchange both fields through
 // an authenticated OOB channel before calling gap_pair(). Values use SMP
@@ -160,6 +169,8 @@ int gap_conn_busy(void);
 #include "ble_gap_radio_scheduler.h"
 
 #include "ble_gap_security.h"
+
+#include "ble_gap_smp.h"
 
 #include "ble_gap_ead.h"
 
