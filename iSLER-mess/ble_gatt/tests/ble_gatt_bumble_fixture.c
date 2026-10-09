@@ -5,17 +5,21 @@
 static uint8_t application_authorized;
 static uint32_t peer_sign_counter;
 
-static int authorize_application_access(void *context, uint16_t handle,
-                                        uint8_t write) {
+static int authorize_application_access(
+    void *context, uint16_t handle,
+                                        uint8_t write
+) {
     (void)context;
     (void)handle;
     (void)write;
     return application_authorized;
 }
 
-static int verify_peer_signed_write(void *context, const uint8_t *pdu,
+static int verify_peer_signed_write(
+    void *context, const uint8_t *pdu,
                                     uint16_t signed_len,
-                                    const uint8_t signature[12]) {
+                                    const uint8_t signature[12]
+) {
     (void)context;
     static const uint8_t csrk[16] = {
         0x61, 0x1b, 0x64, 0xeb, 0xfb, 0xcd, 0x1f, 0xd3,

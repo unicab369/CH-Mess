@@ -10,8 +10,10 @@ static uint16_t outbound_len;
 static uint8_t received[32];
 static uint16_t received_len;
 
-static int send_pdu(void *context, uint16_t cid, const uint8_t *sdu,
-                    uint16_t len) {
+static int send_pdu(
+    void *context, uint16_t cid, const uint8_t *sdu,
+                    uint16_t len
+) {
     (void)context;
     if (outbound_len) return 0;
     int encoded = ble_l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
@@ -25,8 +27,10 @@ static int accept_psm(void *context, uint16_t psm) {
     return psm == 0x0027;
 }
 
-static int receive_data(void *context, uint16_t cid, const uint8_t *data,
-                        uint16_t len) {
+static int receive_data(
+    void *context, uint16_t cid, const uint8_t *data,
+                        uint16_t len
+) {
     (void)context;
     (void)cid;
     if (len > sizeof(received)) return 0;
@@ -48,8 +52,10 @@ static int read_record(uint8_t *data, uint16_t capacity, uint16_t *len) {
     return *len <= capacity && fread(data, 1, *len, stdin) == *len;
 }
 
-static int receive_frame(const uint8_t *frame, uint16_t len,
-                         uint16_t *cid_out) {
+static int receive_frame(
+    const uint8_t *frame, uint16_t len,
+                         uint16_t *cid_out
+) {
     uint16_t cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
     int result = ble_l2cap_reassembler_feed(&reassembler, 2, frame, len,

@@ -3,8 +3,10 @@
 #define BLE_GATT_SERVER_VALUE_POOL_SIZE 64
 #include "../ble_gatt_server.h"
 
-static void add_manual_gatt_service(ble_gatt_server *server,
-                                   int include_client_features) {
+static void add_manual_gatt_service(
+    ble_gatt_server *server,
+                                   int include_client_features
+) {
     ble_gatt_uuid service = {2, {0x01, 0x18}};
     ble_gatt_uuid changed = {2, {0x05, 0x2a}};
     ble_gatt_uuid hash = {2, {0x2a, 0x2b}};

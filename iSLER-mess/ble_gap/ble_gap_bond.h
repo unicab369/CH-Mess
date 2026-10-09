@@ -71,15 +71,18 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-int gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
+int gap_bond_get(
+    const uint8_t peer_address[6], uint8_t address_type,
                       gap_bond *out);
 int gap_bond_set(const gap_bond *bond);
 int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
-static int gap_smp_generic_bond_load(const uint8_t peer_address[6],
+static int gap_smp_generic_bond_load(
+    const uint8_t peer_address[6],
                                      uint8_t address_type,
                                      gap_bond *out);
 static int gap_smp_generic_bond_store(const gap_bond *bond);
-static int gap_smp_generic_bond_remove(const uint8_t peer_address[6],
+static int gap_smp_generic_bond_remove(
+    const uint8_t peer_address[6],
                                        uint8_t address_type);
 
 #endif // GAP_BOND_H

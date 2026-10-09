@@ -109,8 +109,10 @@ static struct {
 static uint32_t radio_order;
 static int reset_slot = -1;
 
-static int mesh_adv_queue_add(const uint8_t *ad, size_t len,
-                              uint32_t send_at_ms, uint8_t transmit) {
+static int mesh_adv_queue_add(
+    const uint8_t *ad, size_t len,
+                              uint32_t send_at_ms, uint8_t transmit
+) {
     if (!ad || len < 2 || len > MESH_ADV_MAX_SIZE || (size_t)ad[0] + 1 != len)
         return -1;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
@@ -151,8 +153,10 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 
 #include "ble_gap/ports/ch58x_isler.h"
 
-static int mesh_proxy_gatt_receive(uint8_t type, const uint8_t *pdu,
-                                   size_t len, void *context) {
+static int mesh_proxy_gatt_receive(
+    uint8_t type, const uint8_t *pdu,
+                                   size_t len, void *context
+) {
     (void)context;
     if (!mesh_network.ready || !pdu || !len ||
         (type == MESH_GATT_PROXY_NETWORK &&
@@ -176,13 +180,17 @@ static int mesh_proxy_gatt_receive(uint8_t type, const uint8_t *pdu,
 
 // Call after a Network PDU has passed mesh authentication and its destination
 // is known, so the Proxy Filter can select the subscribed GATT clients.
-int BLE_MESH_GATT_PROXY_OFFER(const uint8_t *pdu, size_t len,
-                              uint16_t destination) {
+int BLE_MESH_GATT_PROXY_OFFER(
+    const uint8_t *pdu, size_t len,
+                              uint16_t destination
+) {
     return mesh_gatt_proxy_offer(MESH_GATT_PROXY_NETWORK, pdu, len, destination);
 }
 
-int BLE_MESH_GATT_PROXY_OFFER_PDU(uint8_t type, const uint8_t *pdu,
-                                  size_t len, uint16_t destination) {
+int BLE_MESH_GATT_PROXY_OFFER_PDU(
+    uint8_t type, const uint8_t *pdu,
+                                  size_t len, uint16_t destination
+) {
     return mesh_gatt_proxy_offer(type, pdu, len, destination);
 }
 
@@ -200,8 +208,10 @@ int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
 }
 
-int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *adv_data, size_t len,
-                            uint8_t relay_retransmit) {
+int BLE_MESH_QUEUE_RELAY_TX(
+    const uint8_t *adv_data, size_t len,
+                            uint8_t relay_retransmit
+) {
     if (reset_slot >= 0) return -1;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), relay_retransmit);
 }
@@ -465,8 +475,10 @@ int BLE_MESH_NODE_RESET(uint16_t dst) {
 }
 
 
-int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
-                           uint8_t num_elements) {
+int PROVISIONEE_STORE_DATA(
+    const prov_data *data, const uint8_t device_key[16],
+                           uint8_t num_elements
+) {
     if (!data || !device_key) return -1;
     if (!num_elements || num_elements > MESH_MAX_ELEMENTS ||
         (uint32_t)data->unicast_address + num_elements - 1 > 0x7fff)
@@ -598,16 +610,20 @@ void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present) {
     (void)present;
 }
 
-void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
-                            const uint8_t *params, size_t len) {
+void BLE_MESH_CONFIG_STATUS(
+    uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len
+) {
     (void)src;
     (void)opcode;
     (void)params;
     (void)len;
 }
 
-void BLE_MESH_HEALTH_STATUS(uint16_t element, uint16_t src, uint32_t opcode,
-                            const uint8_t *params, size_t len) {
+void BLE_MESH_HEALTH_STATUS(
+    uint16_t element, uint16_t src, uint32_t opcode,
+                            const uint8_t *params, size_t len
+) {
     (void)element;
     (void)src;
     (void)opcode;

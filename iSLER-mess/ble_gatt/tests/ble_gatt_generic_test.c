@@ -8,8 +8,10 @@ static int connected(void *context) {
     return 1;
 }
 
-static int receive_fragment(void *context, uint8_t *llid, uint8_t *data,
-                            size_t *len) {
+static int receive_fragment(
+    void *context, uint8_t *llid, uint8_t *data,
+                            size_t *len
+) {
     (void)context;
     (void)llid;
     (void)data;
@@ -17,8 +19,10 @@ static int receive_fragment(void *context, uint8_t *llid, uint8_t *data,
     return 0;
 }
 
-static int send_fragment(void *context, uint8_t llid, const uint8_t *data,
-                         size_t len) {
+static int send_fragment(
+    void *context, uint8_t llid, const uint8_t *data,
+                         size_t len
+) {
     (void)context;
     (void)llid;
     (void)data;
@@ -38,8 +42,10 @@ static int send_att(void *context, const uint8_t *pdu, uint16_t len) {
     return 1;
 }
 
-static void on_result(void *context, uint8_t status, const uint8_t *pdu,
-                      uint16_t len) {
+static void on_result(
+    void *context, uint8_t status, const uint8_t *pdu,
+                      uint16_t len
+) {
     (void)context;
     (void)status;
     (void)pdu;

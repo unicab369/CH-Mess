@@ -31,8 +31,10 @@ static void link_security(void *ctx, uint8_t *encrypted, uint8_t *authenticated)
     *encrypted = fake->encrypted;
     *authenticated = 0;
 }
-static int receive_eatt_att(void *ctx, uint16_t cid, const uint8_t *pdu,
-                            uint16_t len) {
+static int receive_eatt_att(
+    void *ctx, uint16_t cid, const uint8_t *pdu,
+                            uint16_t len
+) {
     fake_transport *fake = ctx;
     assert(len <= sizeof(fake->received_pdu));
     fake->received = 1;
@@ -44,15 +46,19 @@ static int receive_eatt_att(void *ctx, uint16_t cid, const uint8_t *pdu,
 static int unused_client_send(void *ctx, const uint8_t *pdu, uint16_t len) {
     (void)ctx; (void)pdu; (void)len; return 1;
 }
-static void eatt_client_result(void *ctx, uint8_t status,
-                               const uint8_t *pdu, uint16_t len) {
+static void eatt_client_result(
+    void *ctx, uint8_t status,
+                               const uint8_t *pdu, uint16_t len
+) {
     fake_transport *fake = ctx;
     (void)pdu; (void)len;
     fake->client_results++;
     fake->client_status = status;
 }
-static void eatt_client_result_with_cid(void *ctx, uint16_t cid,
-    uint8_t status, const uint8_t *pdu, uint16_t len) {
+static void eatt_client_result_with_cid(
+    void *ctx, uint16_t cid,
+    uint8_t status, const uint8_t *pdu, uint16_t len
+) {
     fake_transport *fake = ctx;
     (void)pdu; (void)len;
     fake->client_results++;
@@ -81,8 +87,10 @@ static void close_channel(void *ctx, uint16_t cid) {
 static void ready(void *ctx, uint16_t cid, uint16_t mtu) {
     fake_ecfc *f = ctx; f->last_cid = cid; f->last_mtu = mtu; f->ready++;
 }
-static int receive_att(void *ctx, uint16_t cid, const uint8_t *pdu,
-                       uint16_t len) {
+static int receive_att(
+    void *ctx, uint16_t cid, const uint8_t *pdu,
+                       uint16_t len
+) {
     fake_ecfc *f = ctx; f->last_cid = cid; f->received++;
     f->sent_len = len; f->last_pdu[0] = pdu[0]; return 1;
 }

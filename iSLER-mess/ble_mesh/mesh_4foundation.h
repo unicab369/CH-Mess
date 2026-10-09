@@ -106,10 +106,12 @@
 #define MESH_APP_INDEX_BYTES ((MESH_MAX_APP_KEYS / 2) * 3 + \
                               (MESH_MAX_APP_KEYS % 2) * 2)
 
-void BLE_MESH_CONFIG_STATUS(uint16_t src, uint32_t opcode,
+void BLE_MESH_CONFIG_STATUS(
+    uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len);
 // Health Client status parameters are valid only during this callback.
-void BLE_MESH_HEALTH_STATUS(uint16_t element, uint16_t src, uint32_t opcode,
+void BLE_MESH_HEALTH_STATUS(
+    uint16_t element, uint16_t src, uint32_t opcode,
                             const uint8_t *params, size_t len);
 void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds);
 // Run a supported self-test and fill faults; *len is capacity on input/count on output.
@@ -117,9 +119,11 @@ void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds);
 int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len);
 
 // Queue to a unicast/group address, or to a Label UUID when label is set.
-static int mesh_health_queue(uint16_t element, uint16_t dst,
+static int mesh_health_queue(
+    uint16_t element, uint16_t dst,
                              const uint8_t *label, uint16_t app_idx,
-                             uint32_t opcode, const uint8_t *params, size_t len) {
+                             uint32_t opcode, const uint8_t *params, size_t len
+) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || mesh_models.reset_pending || index < 0) return 0;
     if (label)
@@ -289,9 +293,11 @@ static inline int mesh_config_virtual_sub(
               OP_CONFIG_MODEL_SUB_VIRTUAL_DELETE, params, sizeof(params), 0);
 }
 
-static inline int mesh_group_subscription(uint16_t dst, uint16_t element,
+static inline int mesh_group_subscription(
+    uint16_t dst, uint16_t element,
                                             uint16_t model, uint16_t group,
-                                            uint8_t add) {
+                                            uint8_t add
+) {
     if (!element || element > 0x7fff || group < 0xc000 || group > 0xfeff ||
         !mesh_virtual_model_valid(model))
         return 0;
@@ -331,8 +337,10 @@ static int mesh_unbind_slot(uint8_t slot) {
 }
 
 // Pack 12-bit AppKey indexes as Bluetooth Mesh key-index pairs.
-static size_t mesh_pack_app_indexes(uint8_t *out, const uint16_t *indexes,
-                                    uint8_t count) {
+static size_t mesh_pack_app_indexes(
+    uint8_t *out, const uint16_t *indexes,
+                                    uint8_t count
+) {
     size_t len = 0;
     for (uint8_t i = 0; i < count; i += 2) {
         out[len++] = (uint8_t)indexes[i];
@@ -359,8 +367,10 @@ static uint8_t mesh_health_attention_remaining(uint8_t element) {
 }
 
 // Replace or clear all subscriptions of one model in a single saved update.
-static uint8_t mesh_subscription_replace(uint16_t element, uint16_t model,
-                                          uint16_t address, const uint8_t *label) {
+static uint8_t mesh_subscription_replace(
+    uint16_t element, uint16_t model,
+                                          uint16_t address, const uint8_t *label
+) {
     int index = mesh_element_index(element);
     if (index < 0 || (address && (address < 0xc000 || address > 0xfeff)))
         return MESH_CONFIG_INVALID_ADDRESS;
@@ -1213,8 +1223,10 @@ static inline int mesh_get_heartbeat_sub(uint16_t dst) {
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_HEARTBEAT_SUB_GET, NULL, 0, 0);
 }
 
-static inline int mesh_set_heartbeat_sub(uint16_t dst, uint16_t src,
-                                            uint16_t address, uint8_t period_log) {
+static inline int mesh_set_heartbeat_sub(
+    uint16_t dst, uint16_t src,
+                                            uint16_t address, uint8_t period_log
+) {
     if (src > 0x7fff || period_log > 0x11 ||
         (address && address != dst && address < 0xc000) ||
         (address >= 0xff00 && address < 0xfffc))
@@ -1243,8 +1255,10 @@ static inline int mesh_get_net_transmit(uint16_t dst) {
 }
 
 // count is 0..7 extra sends; interval_steps is 0..31 in units of 10 ms.
-static inline int mesh_set_net_transmit(uint16_t dst, uint8_t count,
-                                           uint8_t interval_steps) {
+static inline int mesh_set_net_transmit(
+    uint16_t dst, uint8_t count,
+                                           uint8_t interval_steps
+) {
     if (count > 7 || interval_steps > 31) return 0;
     uint8_t params = count | (interval_steps << 3);
     return mesh_access_queue(mesh_network.state.unicast_address, dst,
@@ -1258,7 +1272,8 @@ static inline int mesh_get_sar_transmitter(uint16_t dst) {
 }
 
 static inline int mesh_set_sar_transmitter(
-    uint16_t dst, const mesh_sar_tx_state *sar) {
+    uint16_t dst, const mesh_sar_tx_state *sar
+) {
     if (!mesh_sar_tx_valid(sar)) return 0;
     uint8_t params[4] = {
         (uint8_t)(sar->segment_interval_step | (sar->unicast_retrans_count << 4)),
@@ -1280,7 +1295,8 @@ static inline int mesh_get_sar_receiver(uint16_t dst) {
 }
 
 static inline int mesh_set_sar_receiver(
-    uint16_t dst, const mesh_sar_rx_state *sar) {
+    uint16_t dst, const mesh_sar_rx_state *sar
+) {
     if (!mesh_sar_rx_valid(sar)) return 0;
     uint8_t params[3] = {
         (uint8_t)(sar->segments_threshold | (sar->ack_delay_increment << 5)),
@@ -1297,8 +1313,10 @@ static inline int mesh_get_relay(uint16_t dst) {
         mesh_models.state.default_ttl, APP_KEY_INDEX_NONE, OP_CONFIG_RELAY_GET, NULL, 0, 0);
 }
 
-static inline int mesh_set_relay(uint16_t dst, uint8_t enabled,
-        uint8_t retransmit_count, uint8_t retransmit_interval_steps) {
+static inline int mesh_set_relay(
+    uint16_t dst, uint8_t enabled,
+        uint8_t retransmit_count, uint8_t retransmit_interval_steps
+) {
     if (enabled > 1 || retransmit_count > 7 ||
         retransmit_interval_steps > 31)
         return 0;
@@ -1329,8 +1347,10 @@ static inline int mesh_get_node_identity(uint16_t dst, uint16_t net_idx) {
 
 //! Net key
 // Set update to 1 to start Key Refresh, or 0 to add a subnet key.
-static inline int mesh_netkey_add_or_update(uint16_t dst, uint16_t net_idx,
-    const uint8_t key[16], uint8_t update) {
+static inline int mesh_netkey_add_or_update(
+    uint16_t dst, uint16_t net_idx,
+    const uint8_t key[16], uint8_t update
+) {
     if (!key || net_idx > 0x0fff || update > 1) return 0;
     uint8_t params[18] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
     memcpy(params + 2, key, 16);
@@ -1365,8 +1385,10 @@ static inline int mesh_netkey_get_phase(uint16_t dst, uint16_t net_idx) {
 }
 
 // Transition 2 starts sending with new keys; 3 revokes old keys and returns to 0.
-static inline int mesh_netkey_set_phase(uint16_t dst, uint16_t net_idx,
-                                         uint8_t transition) {
+static inline int mesh_netkey_set_phase(
+    uint16_t dst, uint16_t net_idx,
+                                         uint8_t transition
+) {
     if (net_idx > 0x0fff || (transition != 2 && transition != 3)) return 0;
     uint8_t params[3] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8), transition};
     return mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
@@ -1406,8 +1428,10 @@ static inline int mesh_delete_app_key(
         params, sizeof(params));
 }
 
-static inline int mesh_get_app_keys(uint16_t dst,
-                                                uint16_t net_idx) {
+static inline int mesh_get_app_keys(
+    uint16_t dst,
+                                                uint16_t net_idx
+) {
     if (net_idx > 0x0fff) return 0;
     uint8_t params[2] = {(uint8_t)net_idx, (uint8_t)(net_idx >> 8)};
     return mesh_access_queue_on_net(net_idx, dst, mesh_models.state.default_ttl,
@@ -1431,9 +1455,11 @@ static inline int mesh_model_binding(
                                  params, sizeof(params), 0);
 }
 
-static inline int mesh_get_bindings(uint16_t dst,
+static inline int mesh_get_bindings(
+    uint16_t dst,
                                                  uint16_t element,
-                                                 uint16_t model) {
+                                                 uint16_t model
+) {
     if (!element || element > 0x7fff || !mesh_virtual_model_valid(model)) return 0;
     uint8_t params[4] = {
         (uint8_t)element, (uint8_t)(element >> 8),
@@ -1463,8 +1489,10 @@ static inline int mesh_set_default_ttl(uint16_t dst, uint8_t ttl) {
         OP_CONFIG_DEFAULT_TTL_SET, &ttl, 1, 0);
 }
 
-static inline int mesh_get_publication(uint16_t dst, uint16_t element,
-                                           uint16_t model) {
+static inline int mesh_get_publication(
+    uint16_t dst, uint16_t element,
+                                           uint16_t model
+) {
     if (!element || element > 0x7fff || mesh_publication_slot(model) < 0) return 0;
     uint8_t params[] = {(uint8_t)element, (uint8_t)(element >> 8),
                         (uint8_t)model, (uint8_t)(model >> 8)};
@@ -1474,8 +1502,10 @@ static inline int mesh_get_publication(uint16_t dst, uint16_t element,
 }
 
 // address 0 disables publication; has_label selects a Label UUID destination.
-static inline int mesh_set_publication(uint16_t dst, uint16_t element,
-                                           uint16_t model, const mesh_publication *pub) {
+static inline int mesh_set_publication(
+    uint16_t dst, uint16_t element,
+                                           uint16_t model, const mesh_publication *pub
+) {
     if (!pub || !element || element > 0x7fff || mesh_publication_slot(model) < 0 ||
         pub->has_label > 1 || ((pub->address || pub->has_label) &&
         (pub->app_idx > 0x0fff || (pub->ttl > 0x7f && pub->ttl != 0xff))))
@@ -1506,8 +1536,10 @@ static inline int mesh_set_publication(uint16_t dst, uint16_t element,
         params, offset, 0);
 }
 
-static inline int mesh_get_subscriptions(uint16_t dst, uint16_t element,
-                                             uint16_t model) {
+static inline int mesh_get_subscriptions(
+    uint16_t dst, uint16_t element,
+                                             uint16_t model
+) {
     if (!element || element > 0x7fff || !mesh_virtual_model_valid(model)) return 0;
     uint8_t params[] = {(uint8_t)element, (uint8_t)(element >> 8),
                         (uint8_t)model, (uint8_t)(model >> 8)};
@@ -1517,8 +1549,10 @@ static inline int mesh_get_subscriptions(uint16_t dst, uint16_t element,
 }
 
 // A label replaces all subscriptions with that label; address 0 clears them.
-static inline int mesh_replace_subscription(uint16_t dst, uint16_t element,
-    uint16_t model, uint16_t address, const uint8_t *label) {
+static inline int mesh_replace_subscription(
+    uint16_t dst, uint16_t element,
+    uint16_t model, uint16_t address, const uint8_t *label
+) {
     if (!element || element > 0x7fff || !mesh_virtual_model_valid(model) ||
         (!label && address && (address < 0xc000 || address > 0xfeff)))
         return 0;
@@ -1541,8 +1575,10 @@ static inline int mesh_replace_subscription(uint16_t dst, uint16_t element,
 }
 
 // Replace active faults and retain their history until Fault Clear or reboot.
-static inline int mesh_health_faults(uint16_t element, uint8_t test_id,
-                                        const uint8_t *faults, size_t len) {
+static inline int mesh_health_faults(
+    uint16_t element, uint8_t test_id,
+                                        const uint8_t *faults, size_t len
+) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
         len > MESH_HEALTH_MAX_FAULTS || (!faults && len))

@@ -4,16 +4,20 @@
 #include "../ble_l2cap.h"
 
 static uint8_t routed;
-static int route_att(void *ctx, uint16_t cid, const uint8_t *data,
-                     uint16_t len) {
+static int route_att(
+    void *ctx, uint16_t cid, const uint8_t *data,
+                     uint16_t len
+) {
     (void)ctx;
     assert(cid == BLE_L2CAP_CID_ATT && len == 3 && data[0] == 0x0a);
     routed++;
     return 1;
 }
 
-static int route_att_count(void *ctx, uint16_t cid, const uint8_t *data,
-                           uint16_t len) {
+static int route_att_count(
+    void *ctx, uint16_t cid, const uint8_t *data,
+                           uint16_t len
+) {
     uint8_t *count = ctx;
     assert(cid == BLE_L2CAP_CID_ATT && len == 3 && data[0] == 0x0a);
     (*count)++;
@@ -28,8 +32,10 @@ typedef struct {
     uint16_t data_len;
     uint8_t data[16];
 } fake_l2cap;
-static int fake_send_pdu(void *ctx, uint16_t cid, const uint8_t *pdu,
-                         uint16_t len) {
+static int fake_send_pdu(
+    void *ctx, uint16_t cid, const uint8_t *pdu,
+                         uint16_t len
+) {
     fake_l2cap *f = ctx;
     if (f->block_send) return 0;
     assert(len <= sizeof(f->pdu));
@@ -41,18 +47,24 @@ static int fake_accept_psm(void *ctx, uint16_t psm) {
 static uint16_t fake_authorize_psm(void *ctx, uint16_t psm) {
     (void)psm; return ((fake_l2cap *)ctx)->authorization_result;
 }
-static void fake_channel_opened(void *ctx, uint16_t psm, uint16_t local,
-    uint16_t remote, uint16_t mtu) {
+static void fake_channel_opened(
+    void *ctx, uint16_t psm, uint16_t local,
+    uint16_t remote, uint16_t mtu
+) {
     fake_l2cap *f = ctx; assert(psm == 0x0027 && local >= 0x40 &&
                                 remote >= 0x40 && mtu >= 23); f->opened++;
 }
-static void fake_channel_closed(void *ctx, uint16_t psm, uint16_t local,
-    uint16_t remote, uint16_t reason) {
+static void fake_channel_closed(
+    void *ctx, uint16_t psm, uint16_t local,
+    uint16_t remote, uint16_t reason
+) {
     fake_l2cap *f = ctx; (void)psm; (void)local; (void)remote; (void)reason;
     f->closed++;
 }
-static int fake_channel_data(void *ctx, uint16_t local, const uint8_t *sdu,
-                             uint16_t len) {
+static int fake_channel_data(
+    void *ctx, uint16_t local, const uint8_t *sdu,
+                             uint16_t len
+) {
     fake_l2cap *f = ctx; assert(local >= 0x40 && len <= sizeof(f->data));
     f->data_count++; f->data_len = len; memcpy(f->data, sdu, len); return 1;
 }

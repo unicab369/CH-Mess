@@ -3,9 +3,11 @@
 #include <string.h>
 #include "../ble_gatt_server.h"
 
-static int att(ble_gatt_server *server, const uint8_t *request,
+static int att(
+    ble_gatt_server *server, const uint8_t *request,
                uint16_t request_len, uint8_t *response,
-               uint16_t *response_len) {
+               uint16_t *response_len
+) {
     return ble_gatt_server_att(server, request, request_len, response,
                                BLE_GATT_SERVER_MTU_MAX, response_len);
 }

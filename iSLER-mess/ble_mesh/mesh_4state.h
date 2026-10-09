@@ -138,8 +138,10 @@ static int mesh_element_index(uint16_t address) {
         (int)(address - mesh_network.state.unicast_address) : -1;
 }
 
-static uint8_t *mesh_model_bindings(mesh_models_state *state,
-                                    uint8_t element, uint16_t model) {
+static uint8_t *mesh_model_bindings(
+    mesh_models_state *state,
+                                    uint8_t element, uint16_t model
+) {
     if (element >= mesh_network.state.element_count) return NULL;
     if (element == 0) {
         if (model == MESH_MODEL_ONOFF_SERVER) return &state->onoff_server_bindings;
@@ -269,8 +271,10 @@ static inline uint8_t mesh_model_label_add(
     return MESH_CONFIG_SUCCESS;
 }
 
-static inline uint8_t mesh_model_label_remove(uint16_t element, uint16_t model,
-                                                         const uint8_t label[16]) {
+static inline uint8_t mesh_model_label_remove(
+    uint16_t element, uint16_t model,
+                                                         const uint8_t label[16]
+) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || !label || index < 0) return MESH_CONFIG_INVALID_ADDRESS;
     if (!mesh_virtual_model_valid(model)) return MESH_CONFIG_INVALID_MODEL;
@@ -301,8 +305,10 @@ static inline uint8_t mesh_model_label_remove(uint16_t element, uint16_t model,
 
 // Add or remove a model's group subscription on one element and save it.
 // Returns a Mesh Configuration status code.
-static inline uint8_t mesh_model_group_change(uint16_t element, uint16_t model,
-                                              uint16_t address, uint8_t add) {
+static inline uint8_t mesh_model_group_change(
+    uint16_t element, uint16_t model,
+                                              uint16_t address, uint8_t add
+) {
     int index = mesh_element_index(element);
     if (index < 0 || address < 0xc000 || address > 0xfeff)
         return MESH_CONFIG_INVALID_ADDRESS;
@@ -333,9 +339,11 @@ static int app_key_allowed(uint8_t element, uint16_t model, uint16_t app_idx) {
 }
 
 // Start a publication; another publication cancels the old retransmissions.
-static int mesh_publication_begin(uint8_t element, uint16_t model,
+static int mesh_publication_begin(
+    uint8_t element, uint16_t model,
                                    uint32_t opcode, const uint8_t *params,
-                                   size_t len) {
+                                   size_t len
+) {
     int slot = mesh_publication_slot(model);
     if (!mesh_models.ready || element >= mesh_network.state.element_count ||
         slot < 0 || len > MESH_PUBLICATION_MAX_PARAMS || (!params && len))

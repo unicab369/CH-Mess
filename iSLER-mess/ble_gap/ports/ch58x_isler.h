@@ -34,14 +34,18 @@ uint32_t GAP_CRITICAL_ENTER(void) {
     return state;
 }
 void GAP_CRITICAL_EXIT(uint32_t state) { __set_MSTATUS(state); }
-int GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
-                    uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]) {
+int GAP_CCM_ENCRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
+                    uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]
+) {
     return ccm_encrypt_and_tag(key, nonce, 13, &aad, 1, data, len,
                                data, mic, 4) == CCM_OK;
 }
-int GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
+int GAP_CCM_DECRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
                     uint8_t aad, uint8_t *data, size_t len,
-                    const uint8_t mic[4]) {
+                    const uint8_t mic[4]
+) {
     return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len,
                             mic, 4, data) == CCM_OK;
 }
@@ -97,17 +101,21 @@ uint8_t GAP_HW_ADV_PHY_MASK(void) {
     return GAP_PHY_1M;
 #endif
 }
-int GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
-                      uint8_t phy) {
+int GAP_HW_ADV_TX_PHY(
+    uint8_t *frame, uint8_t len, uint8_t channel,
+                      uint8_t phy
+) {
     uint8_t mode = gap_radio_phy_mode(phy);
     if (!(GAP_HW_ADV_PHY_MASK() & phy)) return 0;
     gap_radio_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, mode);
     return tx_done != 0;
 }
-void GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
+void GAP_HW_LINK_CONFIG(
+    uint32_t access_address, uint8_t channel,
                         uint8_t *tx_frame, uint8_t receive_after_tx,
-                        uint8_t tx_phy, uint8_t rx_phy) {
+                        uint8_t tx_phy, uint8_t rx_phy
+) {
     gap_radio_link.access_address = access_address;
     gap_radio_link.channel = channel;
     gap_radio_link.tx_frame = tx_frame;

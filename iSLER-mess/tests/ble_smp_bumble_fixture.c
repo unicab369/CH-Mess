@@ -8,8 +8,10 @@ static uint16_t outbound_len;
 static uint8_t inbound[BLE_SMP_PDU_MAX];
 static uint16_t inbound_len;
 
-static int send_pdu(void *context, uint16_t cid, const uint8_t *pdu,
-                    uint16_t len) {
+static int send_pdu(
+    void *context, uint16_t cid, const uint8_t *pdu,
+                    uint16_t len
+) {
     (void)context;
     int encoded = ble_l2cap_encode(outbound, sizeof(outbound), cid, pdu, len);
     if (!encoded || outbound_len) return 0;

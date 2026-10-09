@@ -15,8 +15,10 @@ static void fake_timeout(void *context) {
     ((fake_smp *)context)->timed_out++;
 }
 
-static int fake_send(void *context, uint16_t cid, const uint8_t *pdu,
-                     uint16_t len) {
+static int fake_send(
+    void *context, uint16_t cid, const uint8_t *pdu,
+                     uint16_t len
+) {
     fake_smp *fake = context;
     if (fake->blocked) return 0;
     fake->cid = cid;
@@ -39,23 +41,29 @@ static int fake_random(void *context, uint8_t *out, size_t len) {
     return 1;
 }
 
-static int fake_aes(void *context, const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]) {
+static int fake_aes(
+    void *context, const uint8_t key[16],
+    const uint8_t input[16], uint8_t output[16]
+) {
     if (((fake_smp *)context)->crypto_fail) return 0;
     for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
     return 1;
 }
 
-static int fake_cmac(void *context, const uint8_t key[16],
-    const uint8_t *input, size_t len, uint8_t output[16]) {
+static int fake_cmac(
+    void *context, const uint8_t key[16],
+    const uint8_t *input, size_t len, uint8_t output[16]
+) {
     if (((fake_smp *)context)->crypto_fail) return 0;
     memset(output, 0, 16);
     for (size_t i = 0; i < len; i++) output[i % 16] ^= input[i] ^ key[i % 16];
     return 1;
 }
 
-static int fake_dhkey(void *context, const uint8_t private_key[32],
-    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+static int fake_dhkey(
+    void *context, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]
+) {
     if (((fake_smp *)context)->crypto_fail) return 0;
     (void)peer_public_key;
     memcpy(dhkey, private_key, 32);
@@ -67,15 +75,19 @@ static int fake_user(void *context, uint8_t action, uint32_t value) {
     return action == 3 && value == 123456 ? 0 : -1;
 }
 
-static int fake_encrypt(void *context, const uint8_t ltk[16], uint8_t key_size,
-    uint8_t authenticated) {
+static int fake_encrypt(
+    void *context, const uint8_t ltk[16], uint8_t key_size,
+    uint8_t authenticated
+) {
     fake_smp *fake = context;
     fake->encrypted = key_size == 16 && authenticated == 1 && ltk[0] == 0xa5;
     return fake->encrypted;
 }
 
-static int fake_bond_load(void *context, uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond) {
+static int fake_bond_load(
+    void *context, uint8_t address_type,
+    const uint8_t address[6], ble_smp_bond *bond
+) {
     fake_smp *fake = context;
     if (!fake->bond.valid || fake->bond.peer_address_type != address_type ||
         memcmp(fake->bond.peer_address, address, 6))
@@ -89,8 +101,10 @@ static int fake_bond_store(void *context, const ble_smp_bond *bond) {
     return 1;
 }
 
-static int fake_bond_remove(void *context, uint8_t address_type,
-    const uint8_t address[6]) {
+static int fake_bond_remove(
+    void *context, uint8_t address_type,
+    const uint8_t address[6]
+) {
     fake_smp *fake = context;
     if (fake->bond.peer_address_type != address_type ||
         memcmp(fake->bond.peer_address, address, 6))

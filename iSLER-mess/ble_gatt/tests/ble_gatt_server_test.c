@@ -7,8 +7,10 @@
 static uint8_t dynamic_value[] = {0x31, 0x32, 0x33};
 static int read_calls, write_calls;
 
-static uint8_t dynamic_read(void *context, uint16_t offset, uint8_t *out,
-                            uint16_t *inout_len) {
+static uint8_t dynamic_read(
+    void *context, uint16_t offset, uint8_t *out,
+                            uint16_t *inout_len
+) {
     const uint8_t *value = context;
     if (offset > sizeof(dynamic_value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     uint16_t len = (uint16_t)(sizeof(dynamic_value) - offset);
@@ -19,9 +21,11 @@ static uint8_t dynamic_read(void *context, uint16_t offset, uint8_t *out,
     return 0;
 }
 
-static uint8_t dynamic_write(void *context, uint16_t offset,
+static uint8_t dynamic_write(
+    void *context, uint16_t offset,
                              const uint8_t *value, uint16_t len,
-                             uint8_t command) {
+                             uint8_t command
+) {
     (void)context;
     assert(offset == 0 && !command);
     if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
@@ -45,8 +49,10 @@ static void bluetooth_uuid128(uint16_t value, uint8_t out[16]) {
     out[15] = (uint8_t)(value >> 8);
 }
 
-static int att(ble_gatt_server *server, const uint8_t *request, uint16_t len,
-               uint8_t *response, uint16_t *response_len) {
+static int att(
+    ble_gatt_server *server, const uint8_t *request, uint16_t len,
+               uint8_t *response, uint16_t *response_len
+) {
     return ble_gatt_server_att(server, request, len, response, 517,
                                response_len);
 }
@@ -73,8 +79,10 @@ static void store_cccd(void *context, uint16_t handle, uint16_t value) {
     state->stores++;
 }
 
-static uint8_t bounded_read(void *context, uint16_t offset, uint8_t *out,
-                            uint16_t *inout_len) {
+static uint8_t bounded_read(
+    void *context, uint16_t offset, uint8_t *out,
+                            uint16_t *inout_len
+) {
     bounded_read_state *state = context;
     if (offset > sizeof(state->value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     if (state->over_report) {
@@ -87,8 +95,10 @@ static uint8_t bounded_read(void *context, uint16_t offset, uint8_t *out,
     return 0;
 }
 
-static uint8_t oversized_dynamic_read(void *context, uint16_t offset,
-                                      uint8_t *out, uint16_t *inout_len) {
+static uint8_t oversized_dynamic_read(
+    void *context, uint16_t offset,
+                                      uint8_t *out, uint16_t *inout_len
+) {
     const uint8_t *value = context;
     const uint16_t value_len = BLE_GATT_ATT_VALUE_MAX + 1u;
     if (offset > value_len) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
@@ -99,8 +109,10 @@ static uint8_t oversized_dynamic_read(void *context, uint16_t offset,
     return 0;
 }
 
-static uint8_t transaction_prepare(void *context, uint16_t offset,
-                                  const uint8_t *value, uint16_t len) {
+static uint8_t transaction_prepare(
+    void *context, uint16_t offset,
+                                  const uint8_t *value, uint16_t len
+) {
     transaction_state *state = context;
     if ((len && value[0] == 0xee) || offset > sizeof(state->staged) ||
         len > sizeof(state->staged) - offset)
@@ -440,8 +452,10 @@ static void test_included_service_discovery(void) {
 
 typedef struct { uint32_t last_counter, accepted; } signed_state;
 
-static int verify_signed(void *context, const uint8_t *pdu, uint16_t len,
-                         const uint8_t signature[12]) {
+static int verify_signed(
+    void *context, const uint8_t *pdu, uint16_t len,
+                         const uint8_t signature[12]
+) {
     signed_state *state = context;
     uint32_t counter = (uint32_t)signature[8] |
         (uint32_t)signature[9] << 8 | (uint32_t)signature[10] << 16 |

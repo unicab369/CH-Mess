@@ -23,9 +23,11 @@ void GAP_HW_STOP(void);
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
 // Capability and transmitter for secondary-channel advertising PHYs.
 uint8_t GAP_HW_ADV_PHY_MASK(void);
-int GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
+int GAP_HW_ADV_TX_PHY(
+    uint8_t *frame, uint8_t len, uint8_t channel,
                           uint8_t phy);
-void GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
+void GAP_HW_LINK_CONFIG(
+    uint32_t access_address, uint8_t channel,
                             uint8_t *tx_frame, uint8_t receive_after_tx,
                             uint8_t tx_phy, uint8_t rx_phy);
 // Maximum unencrypted data payload supported by the radio (27..251 bytes).
@@ -54,9 +56,11 @@ int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 uint32_t GAP_CRITICAL_ENTER(void);
 void GAP_CRITICAL_EXIT(uint32_t state);
 // Standard AES key/nonce byte order, in-place CCM, one AAD byte, four-byte MIC.
-int GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
+int GAP_CCM_ENCRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
                         uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]);
-int GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
+int GAP_CCM_DECRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
                         uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
 

@@ -27,8 +27,10 @@ static int fake_connected(void *context) {
     return ((fake_link *)context)->connected;
 }
 
-static int fake_receive(void *context, uint8_t *llid, uint8_t *data,
-                        size_t *len) {
+static int fake_receive(
+    void *context, uint8_t *llid, uint8_t *data,
+                        size_t *len
+) {
     fake_link *link = context;
     if (!link->rx_count) return 0;
     if (*len < link->rx[0].len) return -1;
@@ -40,8 +42,10 @@ static int fake_receive(void *context, uint8_t *llid, uint8_t *data,
     return 1;
 }
 
-static int fake_send(void *context, uint8_t llid, const uint8_t *data,
-                     size_t len) {
+static int fake_send(
+    void *context, uint8_t llid, const uint8_t *data,
+                     size_t len
+) {
     fake_link *link = context;
     if (link->block_tx) return 0;
     assert(link->tx_count < FAKE_RX_COUNT && len <= link->max_payload);
@@ -56,8 +60,10 @@ static uint16_t fake_max_payload(void *context) {
     return ((fake_link *)context)->max_payload;
 }
 
-static void fake_security_state(void *context, uint8_t *encrypted,
-                                uint8_t *authenticated) {
+static void fake_security_state(
+    void *context, uint8_t *encrypted,
+                                uint8_t *authenticated
+) {
     fake_link *link = context;
     *encrypted = link->encrypted;
     *authenticated = link->authenticated;
@@ -80,8 +86,10 @@ static uint16_t fake_cccd_load(void *context, uint16_t value_handle) {
         link->cccd_value : 0;
 }
 
-static void fake_cccd_store(void *context, uint16_t value_handle,
-                            uint16_t configuration) {
+static void fake_cccd_store(
+    void *context, uint16_t value_handle,
+                            uint16_t configuration
+) {
     fake_link *link = context;
     link->cccd_handle = value_handle;
     link->cccd_value = configuration;
@@ -102,9 +110,11 @@ static void fake_database_hash_store(void *context, const uint8_t hash[16]) {
     link->database_hash_stores++;
 }
 
-static void enqueue_l2cap(fake_link *link, uint16_t cid,
+static void enqueue_l2cap(
+    fake_link *link, uint16_t cid,
                           const uint8_t *pdu, uint16_t pdu_len,
-                          uint16_t fragment_size) {
+                          uint16_t fragment_size
+) {
     uint8_t packet[4 + BLE_GATT_SERVER_MTU_MAX];
     packet[0] = (uint8_t)pdu_len;
     packet[1] = (uint8_t)(pdu_len >> 8);
@@ -137,8 +147,10 @@ static uint16_t collect_tx(const fake_link *link, uint8_t *out) {
 static uint8_t client_result_count, client_result_status;
 static uint8_t client_event_count;
 
-static void client_result(void *context, uint8_t status,
-                          const uint8_t *pdu, uint16_t len) {
+static void client_result(
+    void *context, uint8_t status,
+                          const uint8_t *pdu, uint16_t len
+) {
     (void)context;
     (void)pdu;
     (void)len;
@@ -146,8 +158,10 @@ static void client_result(void *context, uint8_t status,
     client_result_status = status;
 }
 
-static void client_event(void *context, uint16_t handle,
-                         const uint8_t *value, uint16_t len) {
+static void client_event(
+    void *context, uint16_t handle,
+                         const uint8_t *value, uint16_t len
+) {
     (void)context;
     assert(len == 1);
     if (handle == 2) assert(value[0] == 0x66);

@@ -180,8 +180,10 @@ static int mesh_gatt_gap_device_name_valid(const uint8_t *name, size_t len) {
     return 1;
 }
 
-static uint8_t mesh_gatt_gap_device_name_read(void *context, uint16_t offset,
-    uint8_t *out, uint16_t *inout_len) {
+static uint8_t mesh_gatt_gap_device_name_read(
+    void *context, uint16_t offset,
+    uint8_t *out, uint16_t *inout_len
+) {
     (void)context;
     if (!inout_len || (out == NULL && *inout_len))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
@@ -195,8 +197,10 @@ static uint8_t mesh_gatt_gap_device_name_read(void *context, uint16_t offset,
 }
 
 #if MESH_GATT_EAD_SUPPORT
-static uint8_t mesh_gatt_gap_edkm_read(void *context, uint16_t offset,
-    uint8_t *out, uint16_t *inout_len) {
+static uint8_t mesh_gatt_gap_edkm_read(
+    void *context, uint16_t offset,
+    uint8_t *out, uint16_t *inout_len
+) {
     (void)context;
     uint8_t material[24];
     if (!inout_len || (out == NULL && *inout_len))
@@ -224,14 +228,18 @@ static int mesh_gatt_gap_connected(void *context) {
     return gap_connected();
 }
 
-static int mesh_gatt_gap_receive(void *context, uint8_t *llid,
-                                 uint8_t *data, size_t *len) {
+static int mesh_gatt_gap_receive(
+    void *context, uint8_t *llid,
+                                 uint8_t *data, size_t *len
+) {
     (void)context;
     return gap_receive_data(llid, data, len);
 }
 
-static int mesh_gatt_gap_send(void *context, uint8_t llid,
-                              const uint8_t *data, size_t len) {
+static int mesh_gatt_gap_send(
+    void *context, uint8_t llid,
+                              const uint8_t *data, size_t len
+) {
     (void)context;
     return gap_send_data(llid, data, len);
 }
@@ -241,15 +249,19 @@ static uint16_t mesh_gatt_gap_max_payload(void *context) {
     return gap_data_length_get().tx_octets;
 }
 
-static void mesh_gatt_gap_security_state(void *context, uint8_t *encrypted,
-                                        uint8_t *authenticated) {
+static void mesh_gatt_gap_security_state(
+    void *context, uint8_t *encrypted,
+                                        uint8_t *authenticated
+) {
     (void)context;
     if (encrypted) *encrypted = gap_encrypted() != 0;
     if (authenticated) *authenticated = gap_authenticated() != 0;
 }
 
-static int mesh_gatt_transport_init(ble_gatt_transport *transport,
-                                    ble_gatt_server *server) {
+static int mesh_gatt_transport_init(
+    ble_gatt_transport *transport,
+                                    ble_gatt_server *server
+) {
     const ble_gatt_transport_ops ops = {
         mesh_gatt_gap_connected,
         mesh_gatt_gap_receive,
@@ -305,13 +317,17 @@ static int mesh_gatt_proxy_sar_timeout_poll(void) {
     return 0;
 }
 
-static void mesh_gatt_proxy_deliver(uint8_t type, const uint8_t *pdu,
+static void mesh_gatt_proxy_deliver(
+    uint8_t type, const uint8_t *pdu,
                                     size_t len);
-static void mesh_gatt_proxy_input(const uint8_t *p, size_t len,
+static void mesh_gatt_proxy_input(
+    const uint8_t *p, size_t len,
                                   uint8_t provisioning_service);
 
-static uint8_t mesh_gatt_data_in_write(void *context, uint16_t offset,
-    const uint8_t *value, uint16_t len, uint8_t command) {
+static uint8_t mesh_gatt_data_in_write(
+    void *context, uint16_t offset,
+    const uint8_t *value, uint16_t len, uint8_t command
+) {
     uint8_t provisioning = *(const uint8_t *)context;
     if (!command) return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
@@ -518,20 +534,24 @@ static void mesh_gatt_gap_policy_update(void) {
         BLE_GATT_PERM_READ_AUTHENTICATED;
 }
 
-void mesh_gatt_proxy_set_rx_callback(mesh_gatt_proxy_rx_fn callback,
-                                      void *context) {
+void mesh_gatt_proxy_set_rx_callback(
+    mesh_gatt_proxy_rx_fn callback,
+                                      void *context
+) {
     mesh_gatt.proxy_rx_callback = callback;
     mesh_gatt.proxy_rx_context = context;
 }
 
 void mesh_gatt_provisioning_set_rx_callback(
-    mesh_gatt_provisioning_rx_fn callback, void *context) {
+    mesh_gatt_provisioning_rx_fn callback, void *context
+) {
     mesh_gatt.provisioning_rx_callback = callback;
     mesh_gatt.provisioning_rx_context = context;
 }
 
 void mesh_gatt_provisioning_set_link_callback(
-    mesh_gatt_provisioning_link_fn callback, void *context) {
+    mesh_gatt_provisioning_link_fn callback, void *context
+) {
     mesh_gatt.provisioning_link_callback = callback;
     mesh_gatt.provisioning_link_context = context;
 }
@@ -542,9 +562,11 @@ static void mesh_gatt_provisioning_link_notify(uint8_t open) {
             mesh_gatt.provisioning_link_context);
 }
 
-int mesh_gatt_provisioning_advertising_start(const uint8_t device_uuid[16],
+int mesh_gatt_provisioning_advertising_start(
+    const uint8_t device_uuid[16],
                                              uint16_t oob_info,
-                                             uint16_t interval_ms) {
+                                             uint16_t interval_ms
+) {
     if (!device_uuid) return 0;
     uint8_t data[25] = {2, 0x01, 0x06, 21, 0x16, 0x27, 0x18};
     memcpy(data + 7, device_uuid, 16);
@@ -562,8 +584,10 @@ int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
                                                    NULL, 0, interval_ms);
 }
 
-int mesh_gatt_proxy_offer(uint8_t type, const uint8_t *pdu, size_t len,
-                          uint16_t destination) {
+int mesh_gatt_proxy_offer(
+    uint8_t type, const uint8_t *pdu, size_t len,
+                          uint16_t destination
+) {
     if (!mesh_gatt_ensure_initialized() || !pdu || !len ||
         len > MESH_GATT_PROXY_PDU_MAX ||
         type > MESH_GATT_PROXY_CONFIGURATION || !mesh_gatt.connected ||
@@ -641,16 +665,20 @@ static void mesh_gatt_proxy_configuration(const uint8_t *p, size_t len) {
     mesh_gatt_proxy_queue(MESH_GATT_PROXY_CONFIGURATION, status, sizeof(status));
 }
 
-static void mesh_gatt_proxy_deliver(uint8_t type, const uint8_t *pdu,
-                                    size_t len) {
+static void mesh_gatt_proxy_deliver(
+    uint8_t type, const uint8_t *pdu,
+                                    size_t len
+) {
     if (type == MESH_GATT_PROXY_CONFIGURATION)
         mesh_gatt_proxy_configuration(pdu, len);
     else if (type != MESH_GATT_PROXY_PROVISIONING && mesh_gatt.proxy_rx_callback)
         mesh_gatt.proxy_rx_callback(type, pdu, len, mesh_gatt.proxy_rx_context);
 }
 
-static void mesh_gatt_proxy_input(const uint8_t *p, size_t len,
-                                  uint8_t provisioning_service) {
+static void mesh_gatt_proxy_input(
+    const uint8_t *p, size_t len,
+                                  uint8_t provisioning_service
+) {
     if (!len) return;
     if (mesh_gatt_proxy_sar_timeout_poll()) return;
     uint8_t header = p[0], sar = header >> 6, type = header & 0x0f;

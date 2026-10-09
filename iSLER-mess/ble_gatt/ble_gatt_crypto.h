@@ -33,8 +33,10 @@ static const uint8_t ble_gatt_aes_sbox[256] = {
     0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
-static inline void ble_gatt_aes128_expand(const uint8_t key[16],
-                                           uint8_t round_keys[176]) {
+static inline void ble_gatt_aes128_expand(
+    const uint8_t key[16],
+                                           uint8_t round_keys[176]
+) {
     static const uint8_t rcon[10] =
         {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36};
     memcpy(round_keys, key, 16);
@@ -60,7 +62,8 @@ static inline uint8_t ble_gatt_aes_xtime(uint8_t value) {
 }
 
 static inline void ble_gatt_aes128_encrypt_expanded(
-    const uint8_t round_keys[176], const uint8_t input[16], uint8_t output[16]) {
+    const uint8_t round_keys[176], const uint8_t input[16], uint8_t output[16]
+) {
     uint8_t state[16];
     memcpy(state, input, sizeof(state));
     for (uint8_t i = 0; i < 16; i++) state[i] ^= round_keys[i];
@@ -89,16 +92,20 @@ static inline void ble_gatt_aes128_encrypt_expanded(
     memcpy(output, state, sizeof(state));
 }
 
-static inline void ble_gatt_aes128_encrypt(const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]) {
+static inline void ble_gatt_aes128_encrypt(
+    const uint8_t key[16],
+    const uint8_t input[16], uint8_t output[16]
+) {
     uint8_t round_keys[176];
     ble_gatt_aes128_expand(key, round_keys);
     ble_gatt_aes128_encrypt_expanded(round_keys, input, output);
     memset(round_keys, 0, sizeof(round_keys));
 }
 
-static inline void ble_gatt_cmac_init(ble_gatt_cmac *cmac,
-                                      const uint8_t key[16]) {
+static inline void ble_gatt_cmac_init(
+    ble_gatt_cmac *cmac,
+                                      const uint8_t key[16]
+) {
     if (!cmac || !key) return;
     memset(cmac, 0, sizeof(*cmac));
     ble_gatt_aes128_expand(key, cmac->round_keys);
@@ -112,8 +119,10 @@ static inline void ble_gatt_cmac_block(ble_gatt_cmac *cmac) {
     cmac->used = 0;
 }
 
-static inline void ble_gatt_cmac_update(ble_gatt_cmac *cmac,
-    const uint8_t *data, size_t len) {
+static inline void ble_gatt_cmac_update(
+    ble_gatt_cmac *cmac,
+    const uint8_t *data, size_t len
+) {
     if (!cmac || (!data && len)) return;
     while (len) {
         if (cmac->used == 16) ble_gatt_cmac_block(cmac);

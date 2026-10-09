@@ -131,8 +131,10 @@ static int mesh_subnet_slot(const mesh_net_state *state, uint16_t index) {
     return -1;
 }
 
-static uint16_t mesh_app_net_idx(const mesh_net_state *state,
-                                 const mesh_app_key *app) {
+static uint16_t mesh_app_net_idx(
+    const mesh_net_state *state,
+                                 const mesh_app_key *app
+) {
     // A zero-initialized legacy AppKey belongs to the provisioned subnet.
     return app->net_idx == 0 && mesh_subnet_slot(state, 0) < 0 ?
         state->net_key_index : app->net_idx;
@@ -147,8 +149,10 @@ static int mesh_app_key_slot(const mesh_net_state *state, uint16_t index) {
     return -1;
 }
 
-static int mesh_subnet_key(const mesh_net_state *state, uint16_t index,
-                           uint8_t key[16], uint8_t use_new) {
+static int mesh_subnet_key(
+    const mesh_net_state *state, uint16_t index,
+                           uint8_t key[16], uint8_t use_new
+) {
     int slot = mesh_subnet_slot(state, index);
     if (slot < 0) return 0;
     if (slot == 0) {
@@ -189,7 +193,8 @@ typedef struct {
 
 // Queue a complete AD structure; success is 0.
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len);
-int BLE_MESH_QUEUE_RELAY_TX(const uint8_t *adv_data, size_t len,
+int BLE_MESH_QUEUE_RELAY_TX(
+    const uint8_t *adv_data, size_t len,
                             uint8_t relay_retransmit);
 // RSSI is signed dBm, or 127 when unavailable; pass NULL when not needed.
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi);
@@ -256,8 +261,10 @@ static struct {
 } mesh_network;
 
 // Update replay protection only after a segmented message is reassembled.
-static inline int mesh_net_replay_update(uint16_t src, uint16_t net_idx,
-                                              uint32_t iv, uint32_t seq) {
+static inline int mesh_net_replay_update(
+    uint16_t src, uint16_t net_idx,
+                                              uint32_t iv, uint32_t seq
+) {
     uint8_t slot = 0;
     while (slot < mesh_network.replay_count &&
            (mesh_network.replay[slot].src != src ||
@@ -287,8 +294,10 @@ static inline int mesh_local_element(uint16_t address) {
 }
 
 // Derive the Network ID, EncryptionKey, and PrivacyKey portion of k2 output.
-static void mesh_derive_k2(const uint8_t net_key[16], const uint8_t *p,
-                           size_t p_len, mesh_credentials *out) {
+static void mesh_derive_k2(
+    const uint8_t net_key[16], const uint8_t *p,
+                           size_t p_len, mesh_credentials *out
+) {
     const uint8_t zero[16] = {0};
     uint8_t salt[16], t[16], t1[16], t2[16], input[32];
     aes_cmac(zero, (const uint8_t *)"smk2", 4, salt);
@@ -309,8 +318,10 @@ static void mesh_derive_k2(const uint8_t net_key[16], const uint8_t *p,
 }
 
 // k2, k3, and k1 derive managed-flooding and Secure Network Beacon keys.
-static void mesh_derive_keys(const uint8_t net_key[16],
-                            mesh_credentials *out) {
+static void mesh_derive_keys(
+    const uint8_t net_key[16],
+                            mesh_credentials *out
+) {
     const uint8_t zero[16] = {0};
     const uint8_t p = 0x00;
     uint8_t salt[16], t[16], t1[16];
@@ -328,7 +339,8 @@ static void mesh_derive_keys(const uint8_t net_key[16],
 }
 
 static const mesh_credentials *mesh_runtime_netkey(
-    const mesh_net_state *state, uint16_t index, uint8_t use_new) {
+    const mesh_net_state *state, uint16_t index, uint8_t use_new
+) {
     int slot = mesh_subnet_slot(state, index);
     if (slot < 0) return NULL;
     if (slot == 0) {
@@ -348,8 +360,10 @@ static uint8_t mesh_subnet_phase(const mesh_net_state *state, uint16_t index) {
                     state->additional_subnets[slot - 1].key_refresh_phase) : 0xff;
 }
 
-static const uint8_t *mesh_subnet_key_bytes(const mesh_net_state *state,
-                                             uint16_t index) {
+static const uint8_t *mesh_subnet_key_bytes(
+    const mesh_net_state *state,
+                                             uint16_t index
+) {
     int slot = mesh_subnet_slot(state, index);
     if (slot < 0) return NULL;
     if (slot == 0)
@@ -361,8 +375,10 @@ static const uint8_t *mesh_subnet_key_bytes(const mesh_net_state *state,
 }
 
 // Friendship k2 input uses the protocol's big-endian address and counter order.
-static void mesh_friendship_derive(mesh_friendship *friendship,
-        const uint8_t net_key[16], mesh_credentials *credentials) {
+static void mesh_friendship_derive(
+    mesh_friendship *friendship,
+        const uint8_t net_key[16], mesh_credentials *credentials
+) {
     uint8_t p[9] = {
         0x01,
         (uint8_t)(friendship->lpn_address >> 8),
@@ -407,9 +423,11 @@ static void mesh_friendships_rederive(void) {
 
 // Install the friendship counters and derive credentials for this node's
 // active Friend/LPN relationship on the specified subnet.
-static inline int mesh_friendship_add(uint16_t net_key_index,
+static inline int mesh_friendship_add(
+    uint16_t net_key_index,
         uint16_t lpn_address, uint16_t friend_address,
-        uint16_t lpn_counter, uint16_t friend_counter) {
+        uint16_t lpn_counter, uint16_t friend_counter
+) {
     if (!mesh_network.ready || lpn_address == 0 || lpn_address > 0x7fff ||
         friend_address == 0 || friend_address > 0x7fff ||
         lpn_address == friend_address ||
@@ -441,8 +459,10 @@ static inline int mesh_friendship_add(uint16_t net_key_index,
     return 1;
 }
 
-static inline void mesh_friendship_clear(uint16_t net_key_index,
-        uint16_t lpn_address, uint16_t friend_address) {
+static inline void mesh_friendship_clear(
+    uint16_t net_key_index,
+        uint16_t lpn_address, uint16_t friend_address
+) {
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         mesh_friendship *friendship = &mesh_network.friendships[i];
         if (friendship->used && friendship->net_key_index == net_key_index &&
@@ -591,8 +611,10 @@ static int mesh_commit(const mesh_net_state *next) {
 }
 
 // Stage or rotate a NetKey by its subnet index.
-static inline int mesh_stage_net_key(uint16_t net_idx,
-                                         const uint8_t new_net_key[16]) {
+static inline int mesh_stage_net_key(
+    uint16_t net_idx,
+                                         const uint8_t new_net_key[16]
+) {
     if (!mesh_network.ready || !new_net_key) return 0;
     int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
     if (slot < 0) return 0;
@@ -625,8 +647,10 @@ static inline int mesh_stage_net_key(uint16_t net_idx,
 }
 
 // Config AppKey Update can stage a key only on its parent subnet in Phase 1.
-static inline int mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
-                                              const uint8_t new_app_key[16]) {
+static inline int mesh_stage_app_key_for(
+    uint16_t net_idx, uint16_t index,
+                                              const uint8_t new_app_key[16]
+) {
     if (!mesh_network.ready || !new_app_key ||
         mesh_subnet_phase(&mesh_network.state, net_idx) != 1)
         return 0;
@@ -642,8 +666,10 @@ static inline int mesh_stage_app_key_for(uint16_t net_idx, uint16_t index,
     return mesh_commit(&next);
 }
 
-static inline int mesh_stage_app_key(uint16_t index,
-                                         const uint8_t new_app_key[16]) {
+static inline int mesh_stage_app_key(
+    uint16_t index,
+                                         const uint8_t new_app_key[16]
+) {
     int slot = mesh_app_key_slot(&mesh_network.state, index);
     if (slot < 0) return 0;
     return mesh_stage_app_key_for(
@@ -652,8 +678,10 @@ static inline int mesh_stage_app_key(uint16_t index,
 }
 
 // Update Key Refresh fields in a state copy; transition 2 selects new TX keys.
-static int mesh_key_refresh_transition_apply(mesh_net_state *next,
-        uint16_t net_idx, uint8_t transition) {
+static int mesh_key_refresh_transition_apply(
+    mesh_net_state *next,
+        uint16_t net_idx, uint8_t transition
+) {
     if (!next) return 0;
     int slot = mesh_subnet_slot(next, net_idx);
     if (slot < 0) return 0;
@@ -703,8 +731,10 @@ static int iv_time_ready(uint64_t *now) {
 
 // Apply the same IV Index transition rules for Secure Network beacons and
 // Friend Updates. Return 1 when the advertised state is valid.
-static int mesh_iv_state_update(mesh_net_state *next, uint32_t observed_iv,
-                                uint8_t observed_update) {
+static int mesh_iv_state_update(
+    mesh_net_state *next, uint32_t observed_iv,
+                                uint8_t observed_update
+) {
     if (!next || observed_update > 1) return 0;
     uint64_t now;
     if (next->iv_index != UINT32_MAX &&
@@ -744,8 +774,10 @@ static inline int mesh_start_iv_update(void) {
 }
 
 // The 13-byte network nonce authenticates CTL/TTL, SEQ, SRC, and IV Index.
-static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
-                        uint32_t iv_index) {
+static void mesh_nonce(
+    uint8_t nonce[13], const uint8_t header[6],
+                        uint32_t iv_index
+) {
     nonce[0] = 0;
     memcpy(nonce + 1, header, 6);
     nonce[7] = 0;
@@ -757,9 +789,11 @@ static void mesh_nonce(uint8_t nonce[13], const uint8_t header[6],
 }
 
 // The first seven encrypted octets form PrivacyRandom for header obfuscation.
-static void mesh_obfuscate(const mesh_credentials *key,
+static void mesh_obfuscate(
+    const mesh_credentials *key,
                             uint8_t pdu[MESH_NETWORK_MAX_PDU],
-                            uint32_t iv_index) {
+                            uint32_t iv_index
+) {
     uint8_t privacy[16] = {0}, pecb[16];
     privacy[5] = (uint8_t)(iv_index >> 24);
     privacy[6] = (uint8_t)(iv_index >> 16);
@@ -810,9 +844,11 @@ static inline int mesh_net_beacon_queue(void) {
 
 // Queue one Network PDU containing a lower transport PDU supplied by layer 3.
 // Reserve the next sequence number before a transmission is queued.
-static inline int mesh_net_queue_with_credentials(uint16_t src, uint16_t dst,
+static inline int mesh_net_queue_with_credentials(
+    uint16_t src, uint16_t dst,
         uint8_t ctl, uint8_t ttl, const uint8_t *transport, size_t len,
-        const mesh_credentials *key) {
+        const mesh_credentials *key
+) {
     mesh_net_state *state = &mesh_network.state;
 
     if (!mesh_network.ready || !mesh_local_element(src) || !transport ||
@@ -854,8 +890,10 @@ static inline int mesh_net_queue_with_credentials(uint16_t src, uint16_t dst,
     return BLE_MESH_QUEUE_TX(ad, (size_t)ad[0] + 1) == 0;
 }
 
-static inline int mesh_net_queue(uint16_t net_idx, uint16_t src, uint16_t dst,
-        uint8_t ctl, uint8_t ttl, const uint8_t *transport, size_t len) {
+static inline int mesh_net_queue(
+    uint16_t net_idx, uint16_t src, uint16_t dst,
+        uint8_t ctl, uint8_t ttl, const uint8_t *transport, size_t len
+) {
     const mesh_net_state *state = &mesh_network.state;
     int slot = mesh_subnet_slot(state, net_idx);
     uint8_t use_new = slot == 0 ? state->key_refresh_phase == 2 :
@@ -867,9 +905,11 @@ static inline int mesh_net_queue(uint16_t net_idx, uint16_t src, uint16_t dst,
 }
 
 // Queue a Network PDU with the credentials for an established friendship.
-static inline int mesh_net_queue_friend(uint16_t net_idx, uint16_t src,
+static inline int mesh_net_queue_friend(
+    uint16_t net_idx, uint16_t src,
         uint16_t dst, uint8_t ctl, uint8_t ttl, const uint8_t *transport,
-        size_t len) {
+        size_t len
+) {
     if (!mesh_network.ready || !mesh_local_element(src)) return 0;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         const mesh_friendship *friendship =
@@ -990,8 +1030,10 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
 // Unsegmented messages get replay-checked here; segmented messages defer the
 // replay update until lower-transport reassembly completes. Returns 1 if
 // accepted, 0 if ignored, or -1 for bad arguments.
-static inline int mesh_net_receive(const uint8_t *pdu, size_t len,
-                                        mesh_net_message *message) {
+static inline int mesh_net_receive(
+    const uint8_t *pdu, size_t len,
+                                        mesh_net_message *message
+) {
     if (!pdu || !message) return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
         return 0;

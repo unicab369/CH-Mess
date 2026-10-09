@@ -13,8 +13,10 @@ static int send_pdu(void *context, const uint8_t *pdu, uint16_t len) {
     return 1;
 }
 
-static void on_result(void *context, uint8_t status,
-                      const uint8_t *pdu, uint16_t len) {
+static void on_result(
+    void *context, uint8_t status,
+                      const uint8_t *pdu, uint16_t len
+) {
     (void)context;
     (void)pdu;
     (void)len;
@@ -22,8 +24,10 @@ static void on_result(void *context, uint8_t status,
     result_count++;
 }
 
-static void on_event(void *context, uint16_t handle,
-                     const uint8_t *value, uint16_t len) {
+static void on_event(
+    void *context, uint16_t handle,
+                     const uint8_t *value, uint16_t len
+) {
     (void)context;
     assert(len == 1);
     if (handle == 0x1234) assert(value[0] == 0x5a);
@@ -32,8 +36,10 @@ static void on_event(void *context, uint16_t handle,
     event_count++;
 }
 
-static int sign_pdu(void *context, const uint8_t *pdu, uint16_t len,
-                    uint8_t signature[12]) {
+static int sign_pdu(
+    void *context, const uint8_t *pdu, uint16_t len,
+                    uint8_t signature[12]
+) {
     (void)context;
     assert(len == 4 && pdu[0] == 0xd2);
     memset(signature, 0, 12);

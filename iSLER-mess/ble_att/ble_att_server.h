@@ -5,9 +5,11 @@
 // and access callbacks; ATT owns wire opcode handling and response encoding.
 #include "../ble_gatt/ble_gatt_server.h"
 
-static int ble_gatt_server_error_rsp(uint8_t request, uint16_t handle,
+static int ble_gatt_server_error_rsp(
+    uint8_t request, uint16_t handle,
                                      uint8_t error, uint8_t *rsp,
-                                     uint16_t cap, uint16_t *rsp_len) {
+                                     uint16_t cap, uint16_t *rsp_len
+) {
     if (cap < 5) return 0;
     rsp[0] = 0x01; rsp[1] = request;
     ble_gatt_server_put_u16(rsp + 2, handle); rsp[4] = error;
@@ -15,8 +17,10 @@ static int ble_gatt_server_error_rsp(uint8_t request, uint16_t handle,
     return 1;
 }
 
-static int ble_gatt_server_uuid_from_wire(const uint8_t *p, uint8_t len,
-                                          ble_gatt_uuid *uuid) {
+static int ble_gatt_server_uuid_from_wire(
+    const uint8_t *p, uint8_t len,
+                                          ble_gatt_uuid *uuid
+) {
     if (len != 2 && len != 16) return 0;
     uuid->len = len;
     memcpy(uuid->value, p, len);
@@ -25,9 +29,11 @@ static int ble_gatt_server_uuid_from_wire(const uint8_t *p, uint8_t len,
 
 // Process one complete ATT PDU. Returns 1 when a response is present, 0 for
 // one-way PDUs, and -1 for bad arguments or malformed one-way PDUs.
-static inline int ble_att_server_process(ble_gatt_server *server, const uint8_t *req,
+static inline int ble_att_server_process(
+    ble_gatt_server *server, const uint8_t *req,
                         uint16_t req_len, uint8_t *rsp, uint16_t rsp_capacity,
-                        uint16_t *rsp_len) {
+                        uint16_t *rsp_len
+) {
     if (!server || !req || !req_len || !rsp || !rsp_len) return -1;
     *rsp_len = 0;
     uint8_t op = req[0];

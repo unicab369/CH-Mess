@@ -65,8 +65,10 @@ typedef struct {
     uint8_t encrypted;
 } ble_gatt_eatt;
 
-static inline void ble_gatt_eatt_init(ble_gatt_eatt *eatt,
-    const ble_gatt_eatt_ops *ops, uint16_t local_mtu) {
+static inline void ble_gatt_eatt_init(
+    ble_gatt_eatt *eatt,
+    const ble_gatt_eatt_ops *ops, uint16_t local_mtu
+) {
     if (!eatt) return;
     memset(eatt, 0, sizeof(*eatt));
     if (ops) eatt->ops = *ops;
@@ -76,8 +78,10 @@ static inline void ble_gatt_eatt_init(ble_gatt_eatt *eatt,
         eatt->local_mtu = BLE_GATT_EATT_MTU_MAX;
 }
 
-static inline void ble_gatt_eatt_set_encrypted(ble_gatt_eatt *eatt,
-                                               int encrypted) {
+static inline void ble_gatt_eatt_set_encrypted(
+    ble_gatt_eatt *eatt,
+                                               int encrypted
+) {
     if (!eatt) return;
     eatt->encrypted = (uint8_t)(encrypted != 0);
     if (!eatt->encrypted) {
@@ -90,8 +94,10 @@ static inline void ble_gatt_eatt_set_encrypted(ble_gatt_eatt *eatt,
     }
 }
 
-static inline int ble_gatt_eatt_find(const ble_gatt_eatt *eatt,
-                                      uint16_t cid) {
+static inline int ble_gatt_eatt_find(
+    const ble_gatt_eatt *eatt,
+                                      uint16_t cid
+) {
     if (!eatt || !cid) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED &&
@@ -140,8 +146,10 @@ static inline int ble_gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
 
 // Report completion of outgoing or incoming ECFC negotiation. Failed,
 // unencrypted, duplicate-CID, and undersized channels are closed/rejected.
-static inline int ble_gatt_eatt_channel_opened(ble_gatt_eatt *eatt,
-    uint16_t cid, uint16_t negotiated_mtu, int encrypted, int success) {
+static inline int ble_gatt_eatt_channel_opened(
+    ble_gatt_eatt *eatt,
+    uint16_t cid, uint16_t negotiated_mtu, int encrypted, int success
+) {
     if (!eatt || !cid) return 0;
     int existing = ble_gatt_eatt_find(eatt, cid);
     if (existing >= 0 && eatt->bearers[existing].state != BLE_GATT_EATT_OPENING)
@@ -177,8 +185,10 @@ static inline int ble_gatt_eatt_channel_opened(ble_gatt_eatt *eatt,
 }
 
 // An ECFC reconfiguration must still provide a valid EATT MTU.
-static inline int ble_gatt_eatt_reconfigure(ble_gatt_eatt *eatt,
-    uint16_t cid, uint16_t negotiated_mtu) {
+static inline int ble_gatt_eatt_reconfigure(
+    ble_gatt_eatt *eatt,
+    uint16_t cid, uint16_t negotiated_mtu
+) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
         negotiated_mtu > BLE_GATT_EATT_MTU_MAX)
@@ -188,8 +198,10 @@ static inline int ble_gatt_eatt_reconfigure(ble_gatt_eatt *eatt,
     return 1;
 }
 
-static inline int ble_gatt_eatt_send(ble_gatt_eatt *eatt, uint16_t cid,
-    const uint8_t *pdu, uint16_t len) {
+static inline int ble_gatt_eatt_send(
+    ble_gatt_eatt *eatt, uint16_t cid,
+    const uint8_t *pdu, uint16_t len
+) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || !eatt->ops.send)
@@ -199,8 +211,10 @@ static inline int ble_gatt_eatt_send(ble_gatt_eatt *eatt, uint16_t cid,
 
 // Deliver one complete ATT SDU from ECFC. EATT does not carry ATT Signed
 // Write Commands (opcode 0xd2); reject those before invoking the GATT core.
-static inline int ble_gatt_eatt_receive(ble_gatt_eatt *eatt, uint16_t cid,
-    const uint8_t *pdu, uint16_t len) {
+static inline int ble_gatt_eatt_receive(
+    ble_gatt_eatt *eatt, uint16_t cid,
+    const uint8_t *pdu, uint16_t len
+) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
@@ -209,8 +223,10 @@ static inline int ble_gatt_eatt_receive(ble_gatt_eatt *eatt, uint16_t cid,
     return eatt->ops.receive_att(eatt->ops.context, cid, pdu, len);
 }
 
-static inline void ble_gatt_eatt_channel_closed(ble_gatt_eatt *eatt,
-    uint16_t cid, int reason) {
+static inline void ble_gatt_eatt_channel_closed(
+    ble_gatt_eatt *eatt,
+    uint16_t cid, int reason
+) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0) return;
     memset(&eatt->bearers[slot], 0, sizeof(eatt->bearers[slot]));

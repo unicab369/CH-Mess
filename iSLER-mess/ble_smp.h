@@ -290,9 +290,11 @@ enum {
 // The caller decides whether MITM is required from local policy and both
 // AuthReq fields, and supplies its Central/Peripheral role for the legacy
 // KeyboardDisplay/KeyboardDisplay tie-break.
-static inline uint8_t ble_smp_select_association(uint8_t local_io,
+static inline uint8_t ble_smp_select_association(
+    uint8_t local_io,
     uint8_t peer_io, uint8_t mitm_required, uint8_t secure_connections,
-    uint8_t local_is_central, uint8_t *association) {
+    uint8_t local_is_central, uint8_t *association
+) {
     if (local_io > 4 || peer_io > 4 || mitm_required > 1 ||
         secure_connections > 1 || local_is_central > 1 || !association)
         return BLE_SMP_FAIL_INVALID_PARAMETERS;
@@ -319,7 +321,8 @@ static inline uint8_t ble_smp_select_association(uint8_t local_io,
 }
 
 static inline int ble_smp_pairing_features_valid(
-    const ble_smp_pairing_features *features) {
+    const ble_smp_pairing_features *features
+) {
     // AuthReq bits 6-7 are reserved. Bit 5 is CT2 and is valid; this LE
     // feature negotiator preserves it without selecting a separate mode.
     return features && features->io_capability <= 4 &&
@@ -330,8 +333,10 @@ static inline int ble_smp_pairing_features_valid(
         !(features->responder_key_distribution & ~BLE_SMP_KEY_DIST_MASK);
 }
 
-static inline int ble_smp_parse_pairing_features(const uint8_t *pdu,
-    uint16_t len, ble_smp_pairing_features *features) {
+static inline int ble_smp_parse_pairing_features(
+    const uint8_t *pdu,
+    uint16_t len, ble_smp_pairing_features *features
+) {
     if (!ble_smp_pdu_valid(pdu, len) ||
         (pdu[0] != BLE_SMP_PAIRING_REQUEST &&
          pdu[0] != BLE_SMP_PAIRING_RESPONSE) || !features)
@@ -347,8 +352,10 @@ static inline int ble_smp_parse_pairing_features(const uint8_t *pdu,
     return 0;
 }
 
-static inline int ble_smp_build_pairing_features(uint8_t opcode,
-    const ble_smp_pairing_features *features, uint8_t pdu[7]) {
+static inline int ble_smp_build_pairing_features(
+    uint8_t opcode,
+    const ble_smp_pairing_features *features, uint8_t pdu[7]
+) {
     if (!ble_smp_pairing_features_valid(features) || !pdu ||
         (opcode != BLE_SMP_PAIRING_REQUEST &&
          opcode != BLE_SMP_PAIRING_RESPONSE))
@@ -389,7 +396,8 @@ static inline uint8_t ble_smp_negotiate_features(
     const ble_smp_pairing_features *local,
     const ble_smp_pairing_features *peer,
     const ble_smp_pairing_policy *policy,
-    ble_smp_negotiated_features *out) {
+    ble_smp_negotiated_features *out
+) {
     if (!local || !peer || !policy || !out ||
         !ble_smp_pairing_features_valid(local) ||
         !ble_smp_pairing_features_valid(peer) ||
@@ -446,8 +454,10 @@ typedef struct {
     uint32_t deadline_ms;
 } ble_smp;
 
-static inline int ble_smp_receive_sdu(void *context, uint16_t cid,
-    const uint8_t *sdu, uint16_t len) {
+static inline int ble_smp_receive_sdu(
+    void *context, uint16_t cid,
+    const uint8_t *sdu, uint16_t len
+) {
     ble_smp *smp = (ble_smp *)context;
     if (!smp || cid != BLE_L2CAP_CID_SMP || !sdu || !len) return 0;
     // Reserved command codes are ignored by SMP, as required by the spec.
@@ -461,8 +471,10 @@ static inline int ble_smp_receive_sdu(void *context, uint16_t cid,
     return smp->receive(smp->context, sdu, len);
 }
 
-static inline int ble_smp_init(ble_smp *smp,
-    ble_l2cap_connection *l2cap, ble_smp_pdu_fn receive, void *context) {
+static inline int ble_smp_init(
+    ble_smp *smp,
+    ble_l2cap_connection *l2cap, ble_smp_pdu_fn receive, void *context
+) {
     if (!smp || !l2cap || !receive) return 0;
     memset(smp, 0, sizeof(*smp));
     smp->l2cap = l2cap;
@@ -474,8 +486,10 @@ static inline int ble_smp_init(ble_smp *smp,
 
 // Queue one complete SMP PDU. A queued PDU is retained when the link adapter
 // is busy and is retried by ble_smp_poll().
-static inline int ble_smp_send(ble_smp *smp, const uint8_t *pdu,
-                               uint16_t len) {
+static inline int ble_smp_send(
+    ble_smp *smp, const uint8_t *pdu,
+                               uint16_t len
+) {
     if (!smp || !smp->l2cap || !ble_smp_pdu_valid(pdu, len) ||
         smp->tx_len)
         return 0;
@@ -489,8 +503,10 @@ static inline int ble_smp_send(ble_smp *smp, const uint8_t *pdu,
     return 1;
 }
 
-static inline void ble_smp_set_timeout_callback(ble_smp *smp,
-                                                 ble_smp_timeout_fn callback) {
+static inline void ble_smp_set_timeout_callback(
+    ble_smp *smp,
+                                                 ble_smp_timeout_fn callback
+) {
     if (smp) smp->timeout = callback;
 }
 
@@ -503,8 +519,10 @@ static inline int ble_smp_set_ops(ble_smp *smp, const ble_smp_ops *ops) {
 // Queue one complete PDU for foreground procedure handling. The queue is
 // intentionally one-deep so an adapter can apply backpressure while its
 // state machine is busy.
-static inline int ble_smp_queue_received(ble_smp *smp, const uint8_t *pdu,
-                                          uint16_t len) {
+static inline int ble_smp_queue_received(
+    ble_smp *smp, const uint8_t *pdu,
+                                          uint16_t len
+) {
     if (!smp || !pdu || !ble_smp_pdu_valid(pdu, len) || smp->rx_len)
         return 0;
     memcpy(smp->rx, pdu, len);
@@ -514,8 +532,10 @@ static inline int ble_smp_queue_received(ble_smp *smp, const uint8_t *pdu,
 
 // Claim the pending PDU. The returned bytes remain in the bearer buffer until
 // another receive or procedure finish, so callers must consume them promptly.
-static inline int ble_smp_take_received(ble_smp *smp, const uint8_t **pdu,
-                                         uint16_t *len) {
+static inline int ble_smp_take_received(
+    ble_smp *smp, const uint8_t **pdu,
+                                         uint16_t *len
+) {
     if (!smp || !pdu || !len || !smp->rx_len) return 0;
     *pdu = smp->rx;
     *len = smp->rx_len;
@@ -526,8 +546,10 @@ static inline int ble_smp_take_received(ble_smp *smp, const uint8_t **pdu,
 // Begin the local pairing/security procedure and initialize SMP-owned state.
 // A Central starts at Pairing Response wait; a Peripheral starts by awaiting
 // or requesting feature exchange as directed by the GAP adapter.
-static inline int ble_smp_pairing_begin(ble_smp *smp,
-                                         uint8_t local_is_central) {
+static inline int ble_smp_pairing_begin(
+    ble_smp *smp,
+                                         uint8_t local_is_central
+) {
     if (!smp || local_is_central > 1 ||
         smp->pairing.phase != BLE_SMP_PHASE_IDLE)
         return 0;
@@ -541,8 +563,10 @@ static inline int ble_smp_pairing_begin(ble_smp *smp,
 
 // These checked adapters are the generic interface for pairing code to use
 // without depending on a host's GAP, crypto library, UI, or bond storage.
-static inline int ble_smp_random_bytes(ble_smp *smp, uint8_t *out,
-                                       size_t len) {
+static inline int ble_smp_random_bytes(
+    ble_smp *smp, uint8_t *out,
+                                       size_t len
+) {
     if (!smp || !out || !len || !smp->ops.random_bytes) return 0;
     if (smp->ops.random_bytes(smp->ops.context, out, len)) return 1;
     volatile uint8_t *wipe = out;
@@ -550,8 +574,10 @@ static inline int ble_smp_random_bytes(ble_smp *smp, uint8_t *out,
     return 0;
 }
 
-static inline int ble_smp_aes128(ble_smp *smp, const uint8_t key[16],
-                                 const uint8_t input[16], uint8_t output[16]) {
+static inline int ble_smp_aes128(
+    ble_smp *smp, const uint8_t key[16],
+                                 const uint8_t input[16], uint8_t output[16]
+) {
     if (!smp || !smp->ops.aes128 || !key || !input || !output) return 0;
     if (smp->ops.aes128(smp->ops.context, key, input, output)) return 1;
     volatile uint8_t *wipe = output;
@@ -562,16 +588,20 @@ static inline int ble_smp_aes128(ble_smp *smp, const uint8_t key[16],
 // LE legacy pairing's e security function and c1 confirmation function.
 // Values are in SMP/on-air byte order. Addresses exclude their type octet;
 // the address types and Pairing Request/Response PDUs are supplied separately.
-static inline int ble_smp_legacy_e(ble_smp *smp, const uint8_t tk[16],
-    const uint8_t input[16], uint8_t output[16]) {
+static inline int ble_smp_legacy_e(
+    ble_smp *smp, const uint8_t tk[16],
+    const uint8_t input[16], uint8_t output[16]
+) {
     return ble_smp_aes128(smp, tk, input, output);
 }
 
-static inline int ble_smp_legacy_c1(ble_smp *smp, const uint8_t tk[16],
+static inline int ble_smp_legacy_c1(
+    ble_smp *smp, const uint8_t tk[16],
     const uint8_t random[16], uint8_t initiator_type,
     uint8_t responder_type, const uint8_t request[7],
     const uint8_t response[7], const uint8_t initiator_address[6],
-    const uint8_t responder_address[6], uint8_t confirm[16]) {
+    const uint8_t responder_address[6], uint8_t confirm[16]
+) {
     if (!smp || !tk || !random || initiator_type > 1 || responder_type > 1 ||
         !request || !response || !initiator_address || !responder_address ||
         !confirm)
@@ -599,9 +629,11 @@ static inline int ble_smp_legacy_c1(ble_smp *smp, const uint8_t tk[16],
 
 // Derive the legacy Short Term Key from the least-significant 64 bits of the
 // initiator random followed by those of the responder random.
-static inline int ble_smp_legacy_s1(ble_smp *smp, const uint8_t tk[16],
+static inline int ble_smp_legacy_s1(
+    ble_smp *smp, const uint8_t tk[16],
     const uint8_t initiator_random[16], const uint8_t responder_random[16],
-    uint8_t stk[16]) {
+    uint8_t stk[16]
+) {
     if (!smp || !tk || !initiator_random || !responder_random || !stk)
         return 0;
     uint8_t r[16];
@@ -613,8 +645,10 @@ static inline int ble_smp_legacy_s1(ble_smp *smp, const uint8_t tk[16],
     return ok;
 }
 
-static inline int ble_smp_cmac(ble_smp *smp, const uint8_t key[16],
-    const uint8_t *input, size_t len, uint8_t output[16]) {
+static inline int ble_smp_cmac(
+    ble_smp *smp, const uint8_t key[16],
+    const uint8_t *input, size_t len, uint8_t output[16]
+) {
     if (!smp || !smp->ops.cmac || !key || (!input && len) || !output) return 0;
     if (smp->ops.cmac(smp->ops.context, key, input, len, output)) return 1;
     volatile uint8_t *wipe = output;
@@ -624,8 +658,10 @@ static inline int ble_smp_cmac(ble_smp *smp, const uint8_t key[16],
 
 // LE Secure Connections f4/f5 primitives. Inputs and outputs use SMP's
 // little-endian representation; byte-order conversion stays with the caller.
-static inline int ble_smp_sc_f4(ble_smp *smp, const uint8_t u[32],
-    const uint8_t v[32], const uint8_t x[16], uint8_t z, uint8_t out[16]) {
+static inline int ble_smp_sc_f4(
+    ble_smp *smp, const uint8_t u[32],
+    const uint8_t v[32], const uint8_t x[16], uint8_t z, uint8_t out[16]
+) {
     if (!smp || !u || !v || !x || !out) return 0;
     uint8_t message[65];
     memcpy(message, u, 32);
@@ -637,9 +673,11 @@ static inline int ble_smp_sc_f4(ble_smp *smp, const uint8_t u[32],
     return ok;
 }
 
-static inline int ble_smp_sc_f5(ble_smp *smp, const uint8_t w[32],
+static inline int ble_smp_sc_f5(
+    ble_smp *smp, const uint8_t w[32],
     const uint8_t n1[16], const uint8_t n2[16], const uint8_t a1[7],
-    const uint8_t a2[7], uint8_t mac_key[16], uint8_t ltk[16]) {
+    const uint8_t a2[7], uint8_t mac_key[16], uint8_t ltk[16]
+) {
     if (!smp || !w || !n1 || !n2 || !a1 || !a2 || !mac_key || !ltk)
         return 0;
     static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
@@ -672,10 +710,12 @@ static inline int ble_smp_sc_f5(ble_smp *smp, const uint8_t w[32],
     return ok;
 }
 
-static inline int ble_smp_sc_f6(ble_smp *smp, const uint8_t w[16],
+static inline int ble_smp_sc_f6(
+    ble_smp *smp, const uint8_t w[16],
     const uint8_t n1[16], const uint8_t n2[16], const uint8_t r[16],
     const uint8_t iocap[3], const uint8_t a1[7], const uint8_t a2[7],
-    uint8_t out[16]) {
+    uint8_t out[16]
+) {
     if (!smp || !w || !n1 || !n2 || !r || !iocap || !a1 || !a2 || !out)
         return 0;
     uint8_t message[65];
@@ -691,9 +731,11 @@ static inline int ble_smp_sc_f6(ble_smp *smp, const uint8_t w[16],
     return ok;
 }
 
-static inline int ble_smp_sc_g2(ble_smp *smp, const uint8_t u[32],
+static inline int ble_smp_sc_g2(
+    ble_smp *smp, const uint8_t u[32],
     const uint8_t v[32], const uint8_t x[16], const uint8_t y[16],
-    uint32_t *passkey) {
+    uint32_t *passkey
+) {
     if (!smp || !u || !v || !x || !y || !passkey) return 0;
     uint8_t message[80], mac[16];
     memcpy(message, u, 32);
@@ -714,8 +756,10 @@ static inline int ble_smp_sc_g2(ble_smp *smp, const uint8_t u[32],
     return ok;
 }
 
-static inline int ble_smp_dhkey(ble_smp *smp, const uint8_t private_key[32],
-    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+static inline int ble_smp_dhkey(
+    ble_smp *smp, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]
+) {
     if (!smp || !smp->ops.dhkey || !private_key || !peer_public_key || !dhkey)
         return 0;
     if (smp->ops.dhkey(smp->ops.context, private_key, peer_public_key, dhkey))
@@ -725,14 +769,18 @@ static inline int ble_smp_dhkey(ble_smp *smp, const uint8_t private_key[32],
     return 0;
 }
 
-static inline int ble_smp_user_request(ble_smp *smp, uint8_t action,
-                                        uint32_t value) {
+static inline int ble_smp_user_request(
+    ble_smp *smp, uint8_t action,
+                                        uint32_t value
+) {
     return smp && smp->ops.user_request ?
         smp->ops.user_request(smp->ops.context, action, value) : -1;
 }
 
-static inline int ble_smp_set_link_encryption(ble_smp *smp,
-    const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated) {
+static inline int ble_smp_set_link_encryption(
+    ble_smp *smp,
+    const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated
+) {
     if (!smp || !smp->ops.set_link_encryption || !ltk || key_size < 7 ||
         key_size > 16 || authenticated > 1)
         return 0;
@@ -740,8 +788,10 @@ static inline int ble_smp_set_link_encryption(ble_smp *smp,
                                         authenticated);
 }
 
-static inline int ble_smp_bond_load(ble_smp *smp, uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond) {
+static inline int ble_smp_bond_load(
+    ble_smp *smp, uint8_t address_type,
+    const uint8_t address[6], ble_smp_bond *bond
+) {
     if (!smp || !smp->ops.bond_load || address_type > 1 || !address || !bond)
         return 0;
     memset(bond, 0, sizeof(*bond));
@@ -784,8 +834,10 @@ static inline int ble_smp_bond_load(ble_smp *smp, uint8_t address_type,
     return 1;
 }
 
-static inline int ble_smp_bond_store(ble_smp *smp,
-                                      const ble_smp_bond *bond) {
+static inline int ble_smp_bond_store(
+    ble_smp *smp,
+                                      const ble_smp_bond *bond
+) {
     if (!smp || !smp->ops.bond_store || !bond || bond->valid != 1 ||
         bond->peer_address_type > 1 || bond->key_size < 7 ||
         bond->key_size > 16 || bond->authenticated > 1 ||
@@ -816,8 +868,10 @@ static inline int ble_smp_bond_store(ble_smp *smp,
     return stored;
 }
 
-static inline int ble_smp_bond_remove(ble_smp *smp, uint8_t address_type,
-    const uint8_t address[6]) {
+static inline int ble_smp_bond_remove(
+    ble_smp *smp, uint8_t address_type,
+    const uint8_t address[6]
+) {
     if (!smp || !smp->ops.bond_remove || address_type > 1 || !address) return 0;
     return smp->ops.bond_remove(smp->ops.context, address_type, address);
 }

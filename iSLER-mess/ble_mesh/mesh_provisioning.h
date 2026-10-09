@@ -222,7 +222,8 @@ int PROVISIONER_STORE_NODE_DEVKEY(
     const uint8_t device_key[16], uint16_t unicast_address,
     uint8_t num_elements
 );
-int PROVISIONEE_STORE_DATA(const prov_data *data, const uint8_t device_key[16],
+int PROVISIONEE_STORE_DATA(
+    const prov_data *data, const uint8_t device_key[16],
                            uint8_t num_elements);
 static int PROVISIONER_CHOOSE_PARAMS(const prov_caps *caps, prov_start *out);
 

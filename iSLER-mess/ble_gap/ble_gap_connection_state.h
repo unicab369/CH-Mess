@@ -118,7 +118,8 @@ static inline uint8_t gap_connection_count(void) {
 
 // Return the handle for the active connection at this zero-based list index.
 static inline int gap_connection_handle_at(
-    uint8_t index, gap_connection_handle *handle) {
+    uint8_t index, gap_connection_handle *handle
+) {
     if (!handle) return 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!gap_connection_contexts[slot].active) continue;
@@ -132,7 +133,8 @@ static inline int gap_connection_handle_at(
 
 // Select a live link for the existing connection-specific GAP operations.
 static inline int gap_connection_select(
-    gap_connection_handle handle) {
+    gap_connection_handle handle
+) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
         !gap_connection_contexts[handle.slot].active ||
         gap_connection_generations[handle.slot] != handle.generation)
@@ -142,7 +144,8 @@ static inline int gap_connection_select(
 
 // Capture the currently selected link's handle for later API calls.
 static inline int gap_connection_current(
-    gap_connection_handle *handle) {
+    gap_connection_handle *handle
+) {
     if (!handle || !gap_conn.active) return 0;
     handle->slot = gap_connection_slot;
     handle->generation = gap_connection_generations[gap_connection_slot];
@@ -264,10 +267,12 @@ static int gap_connection_request_valid(const uint8_t frame[36]) {
 }
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int gap_connection_accept(const uint8_t frame[36],
+static int gap_connection_accept(
+    const uint8_t frame[36],
                                             uint64_t received_ticks,
                                             uint64_t interval_unit_ticks,
-                                            uint64_t window_delay_ticks) {
+                                            uint64_t window_delay_ticks
+) {
     if (!gap_connection_request_valid(frame)) return 0;
     int free_slot = gap_connection_free_slot();
     if (free_slot < 0) return 0;

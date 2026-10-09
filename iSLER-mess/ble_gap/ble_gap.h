@@ -108,8 +108,10 @@
 
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
-static inline uint32_t gap_phy_packet_airtime_us(uint16_t payload_len,
-                                                  uint8_t phy) {
+static inline uint32_t gap_phy_packet_airtime_us(
+    uint16_t payload_len,
+                                                  uint8_t phy
+) {
     if (phy == GAP_PHY_2M)
         return ((uint32_t)payload_len + 11u) * 4u;
     if (phy == GAP_PHY_CODED)
@@ -136,7 +138,8 @@ typedef struct {
 } gap_sc_oob_data;
 
 int gap_pair(void);
-int gap_smp_user_request_set(ble_smp_user_request_fn callback,
+int gap_smp_user_request_set(
+    ble_smp_user_request_fn callback,
                                   void *context);
 int gap_keypress_notifications_set(uint8_t enabled);
 int gap_passkey_keypress(uint8_t notification_type);

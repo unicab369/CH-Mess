@@ -220,8 +220,10 @@ static inline int mesh_access_queue_virtual(
 // Poll transport and decode one Access message. The decoded params point into
 // message, so keep it alive until the model handles the result.
 // Returns 1 if decoded, 0 if none/malformed, or -1 on a transport error.
-static inline int mesh_access_poll(mesh_access_message *message,
-                                       mesh_access_pdu *access) {
+static inline int mesh_access_poll(
+    mesh_access_message *message,
+                                       mesh_access_pdu *access
+) {
     if (!message || !access) return -1;
     int result = mesh_transport_poll(message);
     if (result < 0) return result;

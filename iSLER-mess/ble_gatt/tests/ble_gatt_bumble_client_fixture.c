@@ -6,8 +6,10 @@
 static ble_gatt_client client;
 static uint8_t active_command;
 
-static int sign_with_test_csrk(void *context, const uint8_t *pdu,
-                               uint16_t len, uint8_t signature[12]) {
+static int sign_with_test_csrk(
+    void *context, const uint8_t *pdu,
+                               uint16_t len, uint8_t signature[12]
+) {
     (void)context;
     static const uint8_t csrk[16] = {
         0x61, 0x1b, 0x64, 0xeb, 0xfb, 0xcd, 0x1f, 0xd3,
@@ -35,8 +37,10 @@ static int send_pdu(void *context, const uint8_t *pdu, uint16_t len) {
     return 1;
 }
 
-static void on_result(void *context, uint8_t status,
-                      const uint8_t *pdu, uint16_t len) {
+static void on_result(
+    void *context, uint8_t status,
+                      const uint8_t *pdu, uint16_t len
+) {
     (void)context;
     if (active_command == 10) {
         if (client.long_value_len != 70)
@@ -53,8 +57,10 @@ static void on_result(void *context, uint8_t status,
     fflush(stdout);
 }
 
-static void on_event(void *context, uint16_t handle,
-                     const uint8_t *value, uint16_t len) {
+static void on_event(
+    void *context, uint16_t handle,
+                     const uint8_t *value, uint16_t len
+) {
     (void)context;
     uint8_t header[5] = {3, (uint8_t)handle, (uint8_t)(handle >> 8),
                          (uint8_t)len, (uint8_t)(len >> 8)};

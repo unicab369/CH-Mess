@@ -58,10 +58,12 @@ typedef struct {
     void *context;
 } ble_gatt_client;
 
-static inline void ble_gatt_client_init(ble_gatt_client *client,
+static inline void ble_gatt_client_init(
+    ble_gatt_client *client,
     ble_gatt_client_send_fn send, ble_gatt_client_result_fn result,
     ble_gatt_client_event_fn notification,
-    ble_gatt_client_event_fn indication, void *context) {
+    ble_gatt_client_event_fn indication, void *context
+) {
     if (!client) return;
     memset(client, 0, sizeof(*client));
     client->mtu = client->local_mtu = 23;
@@ -72,8 +74,10 @@ static inline void ble_gatt_client_init(ble_gatt_client *client,
     client->context = context;
 }
 
-static inline void ble_gatt_client_set_signer(ble_gatt_client *client,
-    ble_gatt_client_sign_fn sign) {
+static inline void ble_gatt_client_set_signer(
+    ble_gatt_client *client,
+    ble_gatt_client_sign_fn sign
+) {
     if (client) client->sign = sign;
 }
 
@@ -98,9 +102,11 @@ static inline void ble_gatt_client_reset(ble_gatt_client *client) {
 
 // Begin one ATT request. Responses are delivered intact to `result`; helpers
 // for the standard GATT procedures can build on this single-bearer primitive.
-static inline int ble_gatt_client_request(ble_gatt_client *client,
+static inline int ble_gatt_client_request(
+    ble_gatt_client *client,
     const uint8_t *pdu, uint16_t len, uint8_t expected_opcode,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     if (!client || client->bearer_failed || !client->send ||
         !client->result || !pdu || !len ||
         len > client->mtu || !expected_opcode || client->pending)
@@ -129,8 +135,10 @@ static inline uint16_t ble_gatt_client_get_u16(const uint8_t *p) {
     return ble_att_get_u16(p);
 }
 
-static inline uint16_t ble_gatt_client_uuid_assigned16(const uint8_t *uuid,
-                                                       uint8_t uuid_len) {
+static inline uint16_t ble_gatt_client_uuid_assigned16(
+    const uint8_t *uuid,
+                                                       uint8_t uuid_len
+) {
     static const uint8_t base_prefix[14] = {
         0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00,
         0x80, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00
@@ -142,8 +150,10 @@ static inline uint16_t ble_gatt_client_uuid_assigned16(const uint8_t *uuid,
     return 0;
 }
 
-static inline int ble_gatt_client_response_valid(const ble_gatt_client *client,
-    const uint8_t *pdu, uint16_t len) {
+static inline int ble_gatt_client_response_valid(
+    const ble_gatt_client *client,
+    const uint8_t *pdu, uint16_t len
+) {
     if (!client || !pdu || !len || len > client->mtu) return 0;
     switch (pdu[0]) {
     case 0x03:
@@ -291,7 +301,8 @@ static inline int ble_gatt_client_response_valid(const ble_gatt_client *client,
 }
 
 static inline int ble_gatt_client_error_handle_valid(
-    const ble_gatt_client *client, const uint8_t *pdu) {
+    const ble_gatt_client *client, const uint8_t *pdu
+) {
     uint16_t error_handle = ble_gatt_client_get_u16(pdu + 2);
     uint8_t request = client->request_opcode;
     if (!error_handle) {
@@ -366,17 +377,21 @@ static inline int ble_gatt_client_range_valid(uint16_t start, uint16_t end) {
     return start != 0 && start <= end;
 }
 
-static inline int ble_gatt_client_exchange_mtu(ble_gatt_client *client,
-    uint16_t mtu, uint32_t now_ms) {
+static inline int ble_gatt_client_exchange_mtu(
+    ble_gatt_client *client,
+    uint16_t mtu, uint32_t now_ms
+) {
     uint8_t pdu[3] = {0x02};
     if (mtu < 23 || mtu > BLE_GATT_CLIENT_MTU_MAX) return 0;
     ble_gatt_client_put_u16(pdu + 1, mtu);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x03, now_ms);
 }
 
-static inline int ble_gatt_client_discover_services(ble_gatt_client *client,
+static inline int ble_gatt_client_discover_services(
+    ble_gatt_client *client,
     uint16_t start, uint16_t end, const uint8_t *uuid, uint8_t uuid_len,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     uint8_t pdu[23];
     if (!ble_gatt_client_range_valid(start, end) ||
         (uuid && uuid_len != 2 && uuid_len != 16) || (!uuid && uuid_len))
@@ -397,7 +412,8 @@ static inline int ble_gatt_client_discover_services(ble_gatt_client *client,
 }
 
 static inline int ble_gatt_client_discover_included_services(
-    ble_gatt_client *client, uint16_t start, uint16_t end, uint32_t now_ms) {
+    ble_gatt_client *client, uint16_t start, uint16_t end, uint32_t now_ms
+) {
     uint8_t pdu[7] = {0x08};
     if (!ble_gatt_client_range_valid(start, end)) return 0;
     ble_gatt_client_put_u16(pdu + 1, start);
@@ -408,7 +424,8 @@ static inline int ble_gatt_client_discover_included_services(
 
 static inline int ble_gatt_client_discover_characteristics(
     ble_gatt_client *client, uint16_t start, uint16_t end,
-    const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms) {
+    const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms
+) {
     uint8_t pdu[21] = {0x08};
     if (!ble_gatt_client_range_valid(start, end) ||
         (uuid && uuid_len != 2 && uuid_len != 16) || (!uuid && uuid_len))
@@ -423,8 +440,10 @@ static inline int ble_gatt_client_discover_characteristics(
     return ble_gatt_client_request(client, pdu, 7, 0x09, now_ms);
 }
 
-static inline int ble_gatt_client_discover_descriptors(ble_gatt_client *client,
-    uint16_t start, uint16_t end, uint32_t now_ms) {
+static inline int ble_gatt_client_discover_descriptors(
+    ble_gatt_client *client,
+    uint16_t start, uint16_t end, uint32_t now_ms
+) {
     uint8_t pdu[5] = {0x04};
     if (!ble_gatt_client_range_valid(start, end)) return 0;
     ble_gatt_client_put_u16(pdu + 1, start);
@@ -432,8 +451,10 @@ static inline int ble_gatt_client_discover_descriptors(ble_gatt_client *client,
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x05, now_ms);
 }
 
-static inline int ble_gatt_client_read(ble_gatt_client *client,
-    uint16_t handle, uint32_t now_ms) {
+static inline int ble_gatt_client_read(
+    ble_gatt_client *client,
+    uint16_t handle, uint32_t now_ms
+) {
     uint8_t pdu[3] = {0x0a};
     if (!handle) return 0;
     ble_gatt_client_put_u16(pdu + 1, handle);
@@ -443,8 +464,10 @@ static inline int ble_gatt_client_read(ble_gatt_client *client,
 // Automatically fetch successive Read Blob chunks. The assembled value is
 // available in client->long_value/client->long_value_len at the completion
 // callback; the ordinary response callback fires once for the whole read.
-static inline int ble_gatt_client_read_long(ble_gatt_client *client,
-    uint16_t handle, uint32_t now_ms) {
+static inline int ble_gatt_client_read_long(
+    ble_gatt_client *client,
+    uint16_t handle, uint32_t now_ms
+) {
     if (!client || !handle || client->operation) return 0;
     client->operation = 1;
     client->operation_handle = handle;
@@ -458,8 +481,10 @@ static inline int ble_gatt_client_read_long(ble_gatt_client *client,
     return 1;
 }
 
-static inline int ble_gatt_client_read_blob(ble_gatt_client *client,
-    uint16_t handle, uint16_t offset, uint32_t now_ms) {
+static inline int ble_gatt_client_read_blob(
+    ble_gatt_client *client,
+    uint16_t handle, uint16_t offset, uint32_t now_ms
+) {
     uint8_t pdu[5] = {0x0c};
     if (!handle || offset > BLE_GATT_ATT_VALUE_MAX) return 0;
     ble_gatt_client_put_u16(pdu + 1, handle);
@@ -467,9 +492,11 @@ static inline int ble_gatt_client_read_blob(ble_gatt_client *client,
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x0d, now_ms);
 }
 
-static inline int ble_gatt_client_read_by_uuid(ble_gatt_client *client,
+static inline int ble_gatt_client_read_by_uuid(
+    ble_gatt_client *client,
     uint16_t start, uint16_t end, const uint8_t *uuid, uint8_t uuid_len,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     uint8_t pdu[21] = {0x08};
     if (!ble_gatt_client_range_valid(start, end) || !uuid ||
         (uuid_len != 2 && uuid_len != 16))
@@ -480,9 +507,11 @@ static inline int ble_gatt_client_read_by_uuid(ble_gatt_client *client,
     return ble_gatt_client_request(client, pdu, 5 + uuid_len, 0x09, now_ms);
 }
 
-static inline int ble_gatt_client_read_multiple(ble_gatt_client *client,
+static inline int ble_gatt_client_read_multiple(
+    ble_gatt_client *client,
     const uint16_t *handles, uint8_t count, uint8_t variable,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     uint8_t pdu[1 + 2 * (BLE_GATT_CLIENT_MTU_MAX / 2)];
     if (!handles || count < 2 || count > (client ? (client->mtu - 1) / 2 : 0))
         return 0;
@@ -495,8 +524,10 @@ static inline int ble_gatt_client_read_multiple(ble_gatt_client *client,
                                    variable ? 0x21 : 0x0f, now_ms);
 }
 
-static inline int ble_gatt_client_write(ble_gatt_client *client,
-    uint16_t handle, const uint8_t *value, uint16_t len, uint32_t now_ms) {
+static inline int ble_gatt_client_write(
+    ble_gatt_client *client,
+    uint16_t handle, const uint8_t *value, uint16_t len, uint32_t now_ms
+) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
     if (!client || !handle || (!value && len) ||
         len > BLE_GATT_ATT_VALUE_MAX || len > client->mtu - 3)
@@ -507,17 +538,21 @@ static inline int ble_gatt_client_write(ble_gatt_client *client,
     return ble_gatt_client_request(client, pdu, len + 3, 0x13, now_ms);
 }
 
-static inline int ble_gatt_client_set_cccd(ble_gatt_client *client,
+static inline int ble_gatt_client_set_cccd(
+    ble_gatt_client *client,
     uint16_t cccd_handle, uint8_t notifications, uint8_t indications,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     uint8_t value[2] = {(uint8_t)((notifications ? 1 : 0) |
                                   (indications ? 2 : 0)), 0};
     return ble_gatt_client_write(client, cccd_handle, value, sizeof(value),
                                  now_ms);
 }
 
-static inline int ble_gatt_client_write_long(ble_gatt_client *client,
-    uint16_t handle, const uint8_t *value, uint16_t len, uint32_t now_ms) {
+static inline int ble_gatt_client_write_long(
+    ble_gatt_client *client,
+    uint16_t handle, const uint8_t *value, uint16_t len, uint32_t now_ms
+) {
     if (!client || !handle || (!value && len) ||
         len > BLE_GATT_CLIENT_VALUE_MAX || client->operation)
         return 0;
@@ -545,8 +580,10 @@ static inline int ble_gatt_client_write_long(ble_gatt_client *client,
 
 // Commands do not receive an ATT response and therefore do not occupy the
 // request/response transaction slot.
-static inline int ble_gatt_client_write_command(ble_gatt_client *client,
-    uint16_t handle, const uint8_t *value, uint16_t len) {
+static inline int ble_gatt_client_write_command(
+    ble_gatt_client *client,
+    uint16_t handle, const uint8_t *value, uint16_t len
+) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
     if (!client || client->bearer_failed || !client->send || !handle ||
         (!value && len) || len > BLE_GATT_ATT_VALUE_MAX ||
@@ -560,8 +597,10 @@ static inline int ble_gatt_client_write_command(ble_gatt_client *client,
 
 // Signed Write is a command (no ATT response). The signer owns the bonded
 // CSRK and monotonically increasing sign counter.
-static inline int ble_gatt_client_write_signed(ble_gatt_client *client,
-    uint16_t handle, const uint8_t *value, uint16_t len) {
+static inline int ble_gatt_client_write_signed(
+    ble_gatt_client *client,
+    uint16_t handle, const uint8_t *value, uint16_t len
+) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
     if (!client || client->bearer_failed || !client->send || !client->sign ||
         !handle ||
@@ -576,9 +615,11 @@ static inline int ble_gatt_client_write_signed(ble_gatt_client *client,
     return client->send(client->context, pdu, signed_len + 12);
 }
 
-static inline int ble_gatt_client_prepare_write(ble_gatt_client *client,
+static inline int ble_gatt_client_prepare_write(
+    ble_gatt_client *client,
     uint16_t handle, uint16_t offset, const uint8_t *value, uint16_t len,
-    uint32_t now_ms) {
+    uint32_t now_ms
+) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
     if (!client || !handle || (!value && len) ||
         (uint32_t)offset + len > BLE_GATT_ATT_VALUE_MAX ||
@@ -591,8 +632,10 @@ static inline int ble_gatt_client_prepare_write(ble_gatt_client *client,
     return ble_gatt_client_request(client, pdu, len + 5, 0x17, now_ms);
 }
 
-static inline int ble_gatt_client_execute_write(ble_gatt_client *client,
-    uint8_t commit, uint32_t now_ms) {
+static inline int ble_gatt_client_execute_write(
+    ble_gatt_client *client,
+    uint8_t commit, uint32_t now_ms
+) {
     const uint8_t pdu[2] = {0x18, (uint8_t)(commit != 0)};
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x19, now_ms);
 }
@@ -620,8 +663,10 @@ static inline int ble_gatt_client_write_long_next(ble_gatt_client *client) {
 // when a timeout was reported. Requests are not blindly replayed: a delayed
 // response or non-idempotent write could otherwise be misapplied. The bearer
 // is poisoned at timeout and must be replaced before more traffic.
-static inline int ble_gatt_client_poll(ble_gatt_client *client,
-                                      uint32_t now_ms) {
+static inline int ble_gatt_client_poll(
+    ble_gatt_client *client,
+                                      uint32_t now_ms
+) {
     if (!client) return 0;
     client->now_ms = now_ms;
     if (!client->pending ||
@@ -637,8 +682,10 @@ static inline int ble_gatt_client_poll(ble_gatt_client *client,
     return 1;
 }
 
-static inline int ble_gatt_client_receive(ble_gatt_client *client,
-    const uint8_t *pdu, uint16_t len) {
+static inline int ble_gatt_client_receive(
+    ble_gatt_client *client,
+    const uint8_t *pdu, uint16_t len
+) {
     if (!client || client->bearer_failed || !pdu || !len) return -1;
     uint8_t opcode = pdu[0];
     if ((opcode == 0x1b || opcode == 0x1d) &&

@@ -11,8 +11,10 @@
 void BLE_MESH_ONOFF_CHANGED(uint16_t element, uint8_t on);
 void BLE_MESH_ONOFF_STATUS(uint16_t element, uint16_t src, uint8_t present);
 
-static inline int mesh_onoff_get(uint16_t element, uint16_t dst,
-                                          uint16_t app_idx) {
+static inline int mesh_onoff_get(
+    uint16_t element, uint16_t dst,
+                                          uint16_t app_idx
+) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
@@ -23,9 +25,11 @@ static inline int mesh_onoff_get(uint16_t element, uint16_t dst,
         MESH_ACCESS_ACK_RETRY_COUNT);
 }
 
-static inline int mesh_onoff_get_virtual(uint16_t element,
+static inline int mesh_onoff_get_virtual(
+    uint16_t element,
                                                   const uint8_t label[16],
-                                                  uint16_t app_idx) {
+                                                  uint16_t app_idx
+) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
@@ -112,8 +116,10 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
 }
 
 // Publish through the OnOff Client's configured address and AppKey.
-static inline int mesh_onoff_publish(uint16_t element, uint8_t on,
-                                         uint8_t acknowledged) {
+static inline int mesh_onoff_publish(
+    uint16_t element, uint8_t on,
+                                         uint8_t acknowledged
+) {
     int index = mesh_element_index(element);
     if (index < 0 || on > 1 || acknowledged > 1) return 0;
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid};

@@ -178,7 +178,8 @@ static inline mesh_sar_tx_state mesh_transport_get_sar_transmitter(void) {
 
 // Register a handler for unsegmented and reassembled segmented Control PDUs.
 static inline void mesh_transport_set_control_handler(
-    mesh_transport_control_handler handler) {
+    mesh_transport_control_handler handler
+) {
     transport_control_handler = handler;
 }
 
@@ -209,9 +210,11 @@ static inline int mesh_lpn_send_request(void) {
 
 // Begin LPN friendship discovery. poll_timeout_ms must be 1,000–345,599,900 ms;
 // next_lpn_counter is caller-owned persistent state initialized to zero.
-static inline int mesh_lpn_start(uint16_t net_key_index, uint8_t criteria,
+static inline int mesh_lpn_start(
+    uint16_t net_key_index, uint8_t criteria,
         uint8_t receive_delay, uint32_t poll_timeout_ms,
-        uint16_t previous_friend, uint16_t next_lpn_counter) {
+        uint16_t previous_friend, uint16_t next_lpn_counter
+) {
     uint8_t elements = mesh_network.state.element_count;
     if (!mesh_network.ready || transport_lpn.state != MESH_LPN_IDLE ||
         !elements || elements > MESH_MAX_ELEMENTS ||
@@ -267,7 +270,8 @@ static inline int mesh_lpn_clear(void) {
 
 // Accept a Friend response, advance FSN, and restart the negotiated timeout.
 static inline void mesh_lpn_poll_response_received(
-        const mesh_net_message *message) {
+        const mesh_net_message *message
+) {
     if (!message || !message->friendship ||
         transport_lpn.state != MESH_LPN_ESTABLISHED ||
         message->dst < mesh_network.state.unicast_address ||
@@ -287,8 +291,10 @@ static inline int mesh_friend_subscription_address(uint16_t address) {
 
 // Send one unsegmented Friend Subscription List transaction. An unconfirmed
 // transaction is repeated with the same number during later Friend Polls.
-static inline int mesh_lpn_subscription_update(uint8_t opcode,
-        const uint16_t *addresses, uint8_t count) {
+static inline int mesh_lpn_subscription_update(
+    uint8_t opcode,
+        const uint16_t *addresses, uint8_t count
+) {
     if (transport_lpn.state != MESH_LPN_ESTABLISHED || !addresses || !count ||
         count > MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX ||
         count > transport_lpn.subscription_list_size ||
@@ -320,9 +326,11 @@ static inline int mesh_lpn_subscription_update(uint8_t opcode,
 }
 
 // Enable Friend responses on one subnet. The caller persists the counter.
-static inline int mesh_friend_enable(uint16_t net_key_index,
+static inline int mesh_friend_enable(
+    uint16_t net_key_index,
         uint8_t receive_window, uint8_t subscription_size,
-        uint16_t next_friend_counter) {
+        uint16_t next_friend_counter
+) {
     if (!mesh_network.ready || !receive_window ||
         subscription_size > MESH_FRIEND_SUBSCRIPTION_CAPACITY ||
         mesh_subnet_slot(&mesh_network.state, net_key_index) < 0)
@@ -357,7 +365,8 @@ static inline uint16_t mesh_friend_next_counter(void) {
 
 // Cache a qualifying request until its delayed Friend Offer can be sent.
 static inline void mesh_friend_request_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!transport_friend.enabled || !message ||
         message->opcode != MESH_CONTROL_FRIEND_REQUEST || message->friendship ||
         message->net_key_index != transport_friend.net_key_index ||
@@ -431,7 +440,8 @@ static inline void mesh_friend_request_receive(
 // Update one LPN's group/virtual list and confirm each new or repeated
 // transaction using the friendship credentials.
 static inline void mesh_friend_subscription_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!message || !message->friendship || message->ttl != 0 ||
         message->dst != mesh_network.state.unicast_address ||
         (message->opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
@@ -558,7 +568,8 @@ static inline int mesh_friend_queue_receive(const mesh_net_message *message) {
 
 // Reply to a friendship-key Friend Poll with the current Friend Update.
 static inline void mesh_friend_poll_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!transport_friend.enabled || !message ||
         message->opcode != MESH_CONTROL_FRIEND_POLL || !message->friendship ||
         message->net_key_index != transport_friend.net_key_index ||
@@ -732,7 +743,8 @@ static inline void mesh_friend_poll_receive(
 // Validate either a current LPN's Clear or a replacement Friend's Clear,
 // confirm it with the matching credentials, then release the old friendship.
 static inline void mesh_friend_clear_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR ||
         message->net_key_index != transport_friend.net_key_index ||
         message->len != 4)
@@ -803,7 +815,8 @@ static inline void mesh_friend_clear_receive(
 
 // Stop retrying the PreviousAddress Clear after its matching confirmation.
 static inline void mesh_friend_clear_confirm_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR_CONFIRM ||
         message->friendship || message->len != 2 ||
         message->dst != mesh_network.state.unicast_address)
@@ -824,7 +837,8 @@ static inline void mesh_friend_clear_confirm_receive(
 
 // Process LPN Friend Offers and apply security state from Friend Updates.
 static inline void mesh_lpn_control_receive(
-        const mesh_transport_control_message *message) {
+        const mesh_transport_control_message *message
+) {
     if (!message || message->net_key_index != transport_lpn.net_key_index ||
         !mesh_network.ready)
         return;
@@ -990,9 +1004,11 @@ static uint8_t transport_app_aid(const uint8_t app_key[16]) {
     return result[15] & 0x3f;
 }
 
-static void transport_nonce(uint8_t nonce[13], uint8_t device_key,
+static void transport_nonce(
+    uint8_t nonce[13], uint8_t device_key,
                             uint8_t mic_64, uint32_t seq, uint16_t src,
-                            uint16_t dst, uint32_t iv_index) {
+                            uint16_t dst, uint32_t iv_index
+) {
     nonce[0] = device_key ? 2 : 1;
     nonce[1] = mic_64 ? 0x80 : 0;
     nonce[2] = (uint8_t)(seq >> 16);
@@ -1008,11 +1024,13 @@ static void transport_nonce(uint8_t nonce[13], uint8_t device_key,
     nonce[12] = (uint8_t)iv_index;
 }
 
-static int transport_decrypt(uint8_t akf, uint8_t aid, uint8_t mic_64,
+static int transport_decrypt(
+    uint8_t akf, uint8_t aid, uint8_t mic_64,
                              uint32_t seq, uint32_t iv_index, uint16_t net_idx,
                              uint16_t src,
                              uint16_t dst, const uint8_t *upper, size_t len,
-                             mesh_access_message *out) {
+                             mesh_access_message *out
+) {
     size_t mic_len = mic_64 ? 8 : 4;
     if (len <= mic_len || len - mic_len > MESH_TRANSPORT_MAX_ACCESS) return 0;
 
@@ -1168,16 +1186,20 @@ static int transport_tx_start(const struct transport_tx_pending *pending) {
     return transport_segment_queue();
 }
 
-static int transport_rx_matches(const struct transport_rx *rx, uint8_t ctl,
+static int transport_rx_matches(
+    const struct transport_rx *rx, uint8_t ctl,
                                 uint16_t net_idx, uint16_t src, uint16_t dst,
-                                uint32_t seq_auth, uint32_t iv_index) {
+                                uint32_t seq_auth, uint32_t iv_index
+) {
     return rx->active && rx->ctl == ctl && rx->net_idx == net_idx && rx->src == src &&
         rx->dst == dst && rx->seq_auth == seq_auth &&
         rx->iv_index == iv_index;
 }
 
-static int mesh_friend_send_obo_ack(const mesh_net_message *net,
-        uint16_t seq_zero, uint8_t seg_n) {
+static int mesh_friend_send_obo_ack(
+    const mesh_net_message *net,
+        uint16_t seq_zero, uint8_t seg_n
+) {
     if (!net || net->dst > 0x7fff) return 0;
     uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
         ((uint32_t)1 << (seg_n + 1)) - 1;
@@ -1193,9 +1215,11 @@ static int mesh_friend_send_obo_ack(const mesh_net_message *net,
         ack, sizeof(ack));
 }
 
-static uint32_t transport_rx_received(uint8_t ctl, uint16_t net_idx, uint16_t src,
+static uint32_t transport_rx_received(
+    uint8_t ctl, uint16_t net_idx, uint16_t src,
                                       uint16_t dst, uint32_t seq_auth,
-                                      uint32_t iv_index) {
+                                      uint32_t iv_index
+) {
     uint32_t received = 0;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         const struct transport_rx *rx = &transport_rx[i];
@@ -1208,10 +1232,12 @@ static uint32_t transport_rx_received(uint8_t ctl, uint16_t net_idx, uint16_t sr
     return received;
 }
 
-static void transport_rx_ack(uint8_t ctl, uint16_t net_idx, uint16_t src, uint16_t dst,
+static void transport_rx_ack(
+    uint8_t ctl, uint16_t net_idx, uint16_t src, uint16_t dst,
                              uint32_t seq_auth, uint32_t iv_index,
                              uint8_t pending, uint32_t ack_at_ms,
-                             uint32_t updated_ms, uint8_t retrans_left) {
+                             uint32_t updated_ms, uint8_t retrans_left
+) {
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (!transport_rx_matches(rx, ctl, net_idx, src, dst, seq_auth, iv_index))
@@ -1240,12 +1266,14 @@ static uint32_t transport_sar_rx_ack_delay_ms(uint8_t seg_n) {
 // Queue an encrypted Access message. Returns 1 if accepted, 0 on failure.
 // APP_KEY_INDEX_NONE uses the destination's Device Key; DEVICE_KEY_LOCAL uses ours.
 // Set mic_64 to 1 for an 8-byte TransMIC and segmented transport.
-static inline int mesh_transport_queue(uint16_t src,
+static inline int mesh_transport_queue(
+    uint16_t src,
                                                 uint16_t dst, uint8_t ttl,
                                                 uint16_t app_key_index,
                                                 const uint8_t label[16],
                                                 const uint8_t *access, size_t len,
-                                                uint8_t mic_64) {
+                                                uint8_t mic_64
+) {
     // A destination in the virtual address range requires its Label UUID.
     if (!mesh_network.ready || !mesh_local_element(src) ||
         !access || len == 0 || mic_64 > 1 ||
@@ -1330,8 +1358,10 @@ static inline int mesh_transport_queue(uint16_t src,
 // 0 for an incomplete/ignored message, or -1 for bad arguments. Completed
 // segmented Control messages are dispatched during polling when a handler is
 // registered.
-static inline int mesh_transport_receive(const mesh_net_message *net,
-                                              mesh_access_message *out) {
+static inline int mesh_transport_receive(
+    const mesh_net_message *net,
+                                              mesh_access_message *out
+) {
     if (!net || !out) return -1;
     if (!net->transport_len || net->transport_len > sizeof(net->transport)) return 0;
     const uint8_t *pdu = net->transport;

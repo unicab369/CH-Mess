@@ -23,8 +23,10 @@ static struct {
 } gap_privacy;
 
 // Bluetooth ah: encrypt the padded prand and keep the low 24 bits as hash.
-static void gap_address_hash(const uint8_t irk[16], const uint8_t prand[3],
-                              uint8_t hash[3]) {
+static void gap_address_hash(
+    const uint8_t irk[16], const uint8_t prand[3],
+                              uint8_t hash[3]
+) {
     uint8_t input[16] = {0}, output[16];
     for (uint8_t i = 0; i < 3; i++) input[15 - i] = prand[i];
     AES_ENCRYPT_BLOCK(irk, input, output);
@@ -62,8 +64,10 @@ static int gap_static_random_address_valid(const uint8_t address[6]) {
 }
 
 // Match an advertiser against the accept list, resolving RPAs to stored identities.
-static int gap_accept_list_match(const uint8_t address[6], uint8_t address_type,
-                                int identity_slot) {
+static int gap_accept_list_match(
+    const uint8_t address[6], uint8_t address_type,
+                                int identity_slot
+) {
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!gap_accept_list[i].used) continue;
         if (gap_accept_list[i].address_type == address_type &&
@@ -146,8 +150,10 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
-int gap_identity_set(const uint8_t address[6], uint8_t address_type,
-                           const uint8_t irk[16]) {
+int gap_identity_set(
+    const uint8_t address[6], uint8_t address_type,
+                           const uint8_t irk[16]
+) {
     if (!address || address_type > 1 || gap_scanning ||
         gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
@@ -182,8 +188,10 @@ int gap_identity_set(const uint8_t address[6], uint8_t address_type,
 }
 
 // Set a listed peer's network/device privacy mode while GAP is idle.
-int gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
-                               uint8_t mode) {
+int gap_identity_privacy(
+    const uint8_t address[6], uint8_t address_type,
+                               uint8_t mode
+) {
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
@@ -202,8 +210,10 @@ int gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
 }
 
 // Resolve without replacing the received address, which is needed on the air.
-int gap_resolve(const uint8_t address[6], uint8_t address_type,
-                      uint8_t identity[6], uint8_t *identity_type) {
+int gap_resolve(
+    const uint8_t address[6], uint8_t address_type,
+                      uint8_t identity[6], uint8_t *identity_type
+) {
     if (!address || address_type > 1 || !identity || !identity_type) return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0) return 0;
@@ -212,9 +222,11 @@ int gap_resolve(const uint8_t address[6], uint8_t address_type,
     return 1;
 }
 
-static int gap_private_address_generate(const uint8_t irk[16],
+static int gap_private_address_generate(
+    const uint8_t irk[16],
                                          uint8_t address[6],
-                                         const uint8_t previous[6]) {
+                                         const uint8_t previous[6]
+) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         if (irk) {
             GAP_HW_RANDOM_BYTES(address + 3, 3);
@@ -243,8 +255,10 @@ static int gap_private_address_generate(const uint8_t irk[16],
 
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
-int gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
-                                 const uint8_t irk[16]) {
+int gap_identity_local_key(
+    const uint8_t address[6], uint8_t address_type,
+                                 const uint8_t irk[16]
+) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active)
@@ -315,8 +329,10 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
 }
 
 // Pick an unbiased timeout in the inclusive Core 6.1 randomized RPA range.
-static int gap_privacy_timeout_pick(uint16_t min_s, uint16_t max_s,
-                                    uint16_t *timeout_s) {
+static int gap_privacy_timeout_pick(
+    uint16_t min_s, uint16_t max_s,
+                                    uint16_t *timeout_s
+) {
     uint32_t range = (uint32_t)max_s - min_s + 1;
     if (range == 1) {
         *timeout_s = min_s;
@@ -337,8 +353,10 @@ static int gap_privacy_timeout_pick(uint16_t min_s, uint16_t max_s,
 
 // Generate local RPAs using a uniformly selected timeout for every rotation.
 // Bounds follow HCI LE Set Resolvable Private Address Timeout v2: 1..3600 s.
-int gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s,
-                                    uint16_t max_timeout_s) {
+int gap_privacy_set_randomized(
+    const uint8_t irk[16], uint16_t min_timeout_s,
+                                    uint16_t max_timeout_s
+) {
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||

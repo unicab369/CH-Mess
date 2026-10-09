@@ -14,8 +14,10 @@ static int gap_smp_host_random(void *context, uint8_t *out, size_t len) {
 
 static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len);
 
-static int gap_smp_host_aes(void *context, const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]) {
+static int gap_smp_host_aes(
+    void *context, const uint8_t key[16],
+    const uint8_t input[16], uint8_t output[16]
+) {
     (void)context;
     uint8_t standard_key[16], standard_input[16], standard_output[16];
     gap_sc_reverse(standard_key, key, sizeof(standard_key));
@@ -31,24 +33,30 @@ static int gap_smp_host_aes(void *context, const uint8_t key[16],
     return 1;
 }
 
-static int gap_smp_host_cmac(void *context, const uint8_t key[16],
-    const uint8_t *input, size_t len, uint8_t output[16]) {
+static int gap_smp_host_cmac(
+    void *context, const uint8_t key[16],
+    const uint8_t *input, size_t len, uint8_t output[16]
+) {
     (void)context;
     if (!key || (!input && len) || !output) return 0;
     aes_cmac(key, input, len, output);
     return 1;
 }
 
-static int gap_smp_host_dhkey(void *context, const uint8_t private_key[32],
-    const uint8_t peer_public_key[64], uint8_t dhkey[32]) {
+static int gap_smp_host_dhkey(
+    void *context, const uint8_t private_key[32],
+    const uint8_t peer_public_key[64], uint8_t dhkey[32]
+) {
     (void)context;
     if (!private_key || !peer_public_key || !dhkey) return 0;
     return uECC_shared_secret(peer_public_key, private_key, dhkey,
                               uECC_secp256r1());
 }
 
-static int gap_smp_host_set_encryption(void *context, const uint8_t ltk[16],
-    uint8_t key_size, uint8_t authenticated) {
+static int gap_smp_host_set_encryption(
+    void *context, const uint8_t ltk[16],
+    uint8_t key_size, uint8_t authenticated
+) {
     (void)context;
     if (!ltk || key_size < 7 || key_size > 16 || authenticated > 1)
         return 0;
@@ -56,10 +64,12 @@ static int gap_smp_host_set_encryption(void *context, const uint8_t ltk[16],
     return gap_encrypt(ltk, zero_rand, 0);
 }
 
-static int gap_smp_host_bond_load(void *context, uint8_t address_type,
+static int gap_smp_host_bond_load(
+    void *context, uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond);
 static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond);
-static int gap_smp_host_bond_remove(void *context, uint8_t address_type,
+static int gap_smp_host_bond_remove(
+    void *context, uint8_t address_type,
                                     const uint8_t address[6]);
 
 static int gap_sc_random(uint8_t *out, unsigned len) {
@@ -137,17 +147,21 @@ static void gap_sc_public_key_pdu(uint8_t on_air[64]) {
 
 // LE Secure Connections crypto toolbox from the Bluetooth SMP specification.
 // All multi-octet cryptographic values use the byte order defined by SMP.
-static inline void gap_sc_f4(const uint8_t u[32], const uint8_t v[32],
-                      const uint8_t x[16], uint8_t z, uint8_t out[16]) {
+static inline void gap_sc_f4(
+    const uint8_t u[32], const uint8_t v[32],
+                      const uint8_t x[16], uint8_t z, uint8_t out[16]
+) {
     if (!ble_smp_sc_f4(&gap_smp.bearer, u, v, x, z, out))
         memset(out, 0, 16);
 }
 
 // Derive MacKey and LTK from the DHKey, nonces, and typed device addresses.
-static inline void gap_sc_f5(const uint8_t w[32], const uint8_t n1[16],
+static inline void gap_sc_f5(
+    const uint8_t w[32], const uint8_t n1[16],
                       const uint8_t n2[16], const uint8_t a1[7],
                       const uint8_t a2[7], uint8_t mac_key[16],
-                      uint8_t ltk[16]) {
+                      uint8_t ltk[16]
+) {
     if (!ble_smp_sc_f5(&gap_smp.bearer, w, n1, n2, a1, a2,
                        mac_key, ltk)) {
         memset(mac_key, 0, 16);
@@ -155,28 +169,34 @@ static inline void gap_sc_f5(const uint8_t w[32], const uint8_t n1[16],
     }
 }
 
-static inline void gap_sc_f6(const uint8_t w[16], const uint8_t n1[16],
+static inline void gap_sc_f6(
+    const uint8_t w[16], const uint8_t n1[16],
                       const uint8_t n2[16], const uint8_t r[16],
                       const uint8_t iocap[3], const uint8_t a1[7],
-                      const uint8_t a2[7], uint8_t out[16]) {
+                      const uint8_t a2[7], uint8_t out[16]
+) {
     if (!ble_smp_sc_f6(&gap_smp.bearer, w, n1, n2, r, iocap, a1, a2, out))
         memset(out, 0, 16);
 }
 
 // Return the six-digit Numeric Comparison value from the least-significant
 // 32 bits of the CMAC result, as specified for g2.
-static inline uint32_t gap_sc_g2(const uint8_t u[32], const uint8_t v[32],
-                          const uint8_t x[16], const uint8_t y[16]) {
+static inline uint32_t gap_sc_g2(
+    const uint8_t u[32], const uint8_t v[32],
+                          const uint8_t x[16], const uint8_t y[16]
+) {
     uint32_t passkey = 0;
     (void)ble_smp_sc_g2(&gap_smp.bearer, u, v, x, y, &passkey);
     return passkey;
 }
 
-static void gap_sc_confirm_value(const uint8_t first_x[32],
+static void gap_sc_confirm_value(
+    const uint8_t first_x[32],
                                  const uint8_t second_x[32],
                                  const uint8_t nonce_air[16],
                                  uint8_t z,
-                                 uint8_t confirm_air[16]) {
+                                 uint8_t confirm_air[16]
+) {
     uint8_t nonce[16], confirm[16];
     gap_sc_reverse(nonce, nonce_air, 16);
     gap_sc_f4(first_x, second_x, nonce, z, confirm);
@@ -195,8 +215,10 @@ static uint8_t gap_sc_passkey_z(void) {
     return 0x80 | ((passkey >> gap_smp.bearer.pairing.sc.passkey_round) & 1);
 }
 
-static void gap_sc_typed_address(uint8_t out[7], uint8_t type,
-                                 const uint8_t address_air[6]) {
+static void gap_sc_typed_address(
+    uint8_t out[7], uint8_t type,
+                                 const uint8_t address_air[6]
+) {
     out[0] = type;
     gap_sc_reverse(out + 1, address_air, 6);
 }
@@ -267,8 +289,10 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
         gap_smp.bearer.pairing.response, gap_conn.initiator, gap_conn.responder, confirm);
 }
 
-static int gap_smp_link_send_pdu(void *context, uint16_t cid,
-    const uint8_t *payload, uint16_t len) {
+static int gap_smp_link_send_pdu(
+    void *context, uint16_t cid,
+    const uint8_t *payload, uint16_t len
+) {
     gap_smp_context *ctx = (gap_smp_context *)context;
     if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
         return 0;
@@ -280,8 +304,10 @@ static int gap_smp_link_send_pdu(void *context, uint16_t cid,
     return 1;
 }
 
-static int gap_smp_receive_pdu(void *context, const uint8_t *pdu,
-                                uint16_t len) {
+static int gap_smp_receive_pdu(
+    void *context, const uint8_t *pdu,
+                                uint16_t len
+) {
     gap_smp_context *ctx = (gap_smp_context *)context;
     return ctx && ble_smp_queue_received(&ctx->bearer, pdu, len);
 }
@@ -385,8 +411,10 @@ void gap_pairing_set(uint8_t enabled) {
 
 // Install an optional application notification callback for passkey and
 // numeric-comparison requests. Replies remain asynchronous through the GAP API.
-int gap_smp_user_request_set(ble_smp_user_request_fn callback,
-                                  void *context) {
+int gap_smp_user_request_set(
+    ble_smp_user_request_fn callback,
+                                  void *context
+) {
     if (gap_smp.bearer.pairing.phase) return 0;
     gap_smp_user_request_callback = callback;
     gap_smp_user_request_context = context;
@@ -637,8 +665,10 @@ int gap_pair(void) {
 uint8_t gap_pairing_status(void) { return gap_smp.status; }
 
 // Load a bond by the peer's stable identity address, not its rotating address.
-int gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
-                      gap_bond *out) {
+int gap_bond_get(
+    const uint8_t peer_address[6], uint8_t address_type,
+                      gap_bond *out
+) {
     if (!peer_address || !out || address_type > 1 ||
         (address_type && (peer_address[5] & 0xc0) != 0xc0))
         return 0;
@@ -756,8 +786,10 @@ int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     return 0;
 }
 
-static void gap_smp_bond_to_generic(const gap_bond *source,
-                                    ble_smp_bond *out) {
+static void gap_smp_bond_to_generic(
+    const gap_bond *source,
+                                    ble_smp_bond *out
+) {
     memset(out, 0, sizeof(*out));
     out->version = BLE_SMP_BOND_SCHEMA_VERSION;
     out->valid = source->valid;
@@ -787,8 +819,10 @@ static void gap_smp_bond_to_generic(const gap_bond *source,
     out->has_peripheral_ltk = source->has_peripheral_ltk;
 }
 
-static void gap_smp_bond_from_generic(const ble_smp_bond *source,
-                                      gap_bond *out) {
+static void gap_smp_bond_from_generic(
+    const ble_smp_bond *source,
+                                      gap_bond *out
+) {
     memset(out, 0, sizeof(*out));
     out->version = GAP_BOND_VERSION;
     out->valid = source->valid;
@@ -814,8 +848,10 @@ static void gap_smp_bond_from_generic(const ble_smp_bond *source,
     out->has_peripheral_ltk = source->has_peripheral_ltk;
 }
 
-static int gap_smp_host_bond_load(void *context, uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond) {
+static int gap_smp_host_bond_load(
+    void *context, uint8_t address_type,
+    const uint8_t address[6], ble_smp_bond *bond
+) {
     (void)context;
     gap_bond stored;
     if (!bond || !gap_bond_get(address, address_type, &stored)) return 0;
@@ -836,14 +872,18 @@ static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond) {
     return result;
 }
 
-static int gap_smp_host_bond_remove(void *context, uint8_t address_type,
-                                    const uint8_t address[6]) {
+static int gap_smp_host_bond_remove(
+    void *context, uint8_t address_type,
+                                    const uint8_t address[6]
+) {
     (void)context;
     return gap_bond_remove(address, address_type);
 }
 
-static int gap_smp_generic_bond_load(const uint8_t address[6],
-    uint8_t address_type, gap_bond *out) {
+static int gap_smp_generic_bond_load(
+    const uint8_t address[6],
+    uint8_t address_type, gap_bond *out
+) {
     ble_smp_bond generic;
     if (!out) return 0;
     memset(out, 0, sizeof(*out));
@@ -865,8 +905,10 @@ static int gap_smp_generic_bond_store(const gap_bond *bond) {
     return result;
 }
 
-static int gap_smp_generic_bond_remove(const uint8_t address[6],
-                                      uint8_t address_type) {
+static int gap_smp_generic_bond_remove(
+    const uint8_t address[6],
+                                      uint8_t address_type
+) {
     return ble_smp_bond_remove(&gap_smp.bearer, address_type, address);
 }
 

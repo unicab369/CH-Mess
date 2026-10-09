@@ -18,8 +18,10 @@ static uint8_t provisioning_received[MESH_GATT_PROVISIONING_PDU_MAX];
 static size_t provisioning_received_len;
 static uint8_t provisioning_link_events[4], provisioning_link_event_count;
 
-static int authorize_gatt_access(void *context, uint16_t handle,
-                                 uint8_t write) {
+static int authorize_gatt_access(
+    void *context, uint16_t handle,
+                                 uint8_t write
+) {
     (void)handle;
     (void)write;
     return *(const uint8_t *)context;
@@ -27,8 +29,10 @@ static int authorize_gatt_access(void *context, uint16_t handle,
 
 uint32_t GET_MILLIS(void) { return fake_now_ms; }
 
-static int capture_proxy_pdu(uint8_t type, const uint8_t *pdu, size_t len,
-                             void *context) {
+static int capture_proxy_pdu(
+    uint8_t type, const uint8_t *pdu, size_t len,
+                             void *context
+) {
     (void)context;
     assert(len <= sizeof(received_pdu));
     received_type = type;
@@ -37,8 +41,10 @@ static int capture_proxy_pdu(uint8_t type, const uint8_t *pdu, size_t len,
     return 1;
 }
 
-static int capture_provisioning_pdu(const uint8_t *pdu, size_t len,
-                                    void *context) {
+static int capture_provisioning_pdu(
+    const uint8_t *pdu, size_t len,
+                                    void *context
+) {
     (void)context;
     assert(len <= sizeof(provisioning_received));
     memcpy(provisioning_received, pdu, len);

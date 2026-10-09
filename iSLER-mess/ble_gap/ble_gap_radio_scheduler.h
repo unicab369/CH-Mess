@@ -8,9 +8,11 @@
 // Send GAP advertising when due, otherwise send the offered fallback packet.
 // Return -1 on radio failure, 0 when idle or GAP sent, 1 when fallback sent,
 // and 2 when a connection starts. Fallback queue timing is returned for its caller.
-int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
+int gap_radio_send_due(
+    const uint8_t *fallback_ad, uint8_t fallback_len,
                             uint32_t now, uint32_t *sent_at,
-                            uint8_t *jitter) {
+                            uint8_t *jitter
+) {
     gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
     // Periodic events use controller ticks so their interval does not inherit
@@ -154,8 +156,10 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
 
 // Take one advertising packet and copy the first AD structure with a requested type.
 // Return 1 when found, 0 when absent, or -1 when the output is too small.
-int gap_scan_take_ad(const uint8_t *types, size_t type_count,
-                           uint8_t *ad, size_t *len, int8_t *rssi) {
+int gap_scan_take_ad(
+    const uint8_t *types, size_t type_count,
+                           uint8_t *ad, size_t *len, int8_t *rssi
+) {
     if (gap_radio_scan_adv_ready) {
         gap_receive_report(gap_radio_scan_adv_frame,
                               gap_radio_scan_adv_frame[1],

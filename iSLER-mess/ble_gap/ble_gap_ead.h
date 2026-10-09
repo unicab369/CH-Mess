@@ -17,8 +17,10 @@ static struct {
 // Install the session key and IV shared with EAD receivers. The key must come
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
-int gap_ead_key_material_set(const uint8_t session_key[16],
-                                  const uint8_t iv[8]) {
+int gap_ead_key_material_set(
+    const uint8_t session_key[16],
+                                  const uint8_t iv[8]
+) {
     if (!session_key || !iv) return 0;
     uint8_t key_bits = 0;
     for (size_t i = 0; i < GAP_EAD_KEY_LEN; i++)
@@ -66,9 +68,11 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
 // Encrypt concatenated AD structures into one Encrypted Data AD structure.
 // Output includes the length and 0x31 type bytes. Secure entropy supplies the
 // five-octet randomizer; output capacity must allow plaintext length + 11.
-int gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
+int gap_ead_encrypt(
+    const uint8_t *plaintext, size_t plaintext_len,
                          uint8_t *out, size_t out_capacity,
-                         size_t *out_len) {
+                         size_t *out_len
+) {
     if (!gap_ead_key_material.set || !out || !out_len ||
         !gap_ead_plaintext_valid(plaintext, plaintext_len) ||
         plaintext_len + 11 > out_capacity)
@@ -97,9 +101,11 @@ int gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
 }
 
 // Authenticate and decrypt one complete Encrypted Data AD structure.
-int gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
+int gap_ead_decrypt(
+    const uint8_t *ead, size_t ead_len,
                          uint8_t *out, size_t out_capacity,
-                         size_t *out_len) {
+                         size_t *out_len
+) {
     if (!gap_ead_key_material.set || !ead || !out || !out_len ||
         ead_len < 13 || ead[1] != GAP_AD_ENCRYPTED_DATA ||
         (size_t)ead[0] + 1 != ead_len ||

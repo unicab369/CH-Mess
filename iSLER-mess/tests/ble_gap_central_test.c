@@ -17,8 +17,10 @@ typedef struct {
     uint8_t action;
     uint32_t value;
 } test_smp_ui;
-static int test_smp_user_request(void *context, uint8_t action,
-                                 uint32_t value) {
+static int test_smp_user_request(
+    void *context, uint8_t action,
+                                 uint32_t value
+) {
     test_smp_ui *ui = context;
     ui->calls++;
     ui->action = action;
@@ -156,12 +158,16 @@ static void test_encrypted_advertising_data(void) {
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size) {
     return GAP_RANDOM_SECURE_BYTES(out, size);
 }
-int GAP_CCM_ENCRYPT(const uint8_t key[16], const uint8_t nonce[13],
-                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]) {
+int GAP_CCM_ENCRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]
+) {
     return ccm_encrypt_and_tag(key, nonce, 13, &aad, 1, data, len, data, mic, 4) == CCM_OK;
 }
-int GAP_CCM_DECRYPT(const uint8_t key[16], const uint8_t nonce[13],
-                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]) {
+int GAP_CCM_DECRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
+                        uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]
+) {
     return ccm_auth_decrypt(key, nonce, 13, &aad, 1, data, len, mic, 4, data) == CCM_OK;
 }
 const uint8_t *GAP_HW_RX_FRAME(void) { return rx_frame; }
@@ -253,8 +259,10 @@ void GAP_HW_LINK_TX(void) {
 int GAP_HW_TX_DONE(void) { return 1; }
 void GAP_HW_TX_CLEAR_DONE(void) {}
 void GAP_HW_CRC_INIT(uint32_t crc_init) { configured_crc_init = crc_init; }
-void GAP_HW_LINK_CONFIG(uint32_t access_address, uint8_t channel,
-                            uint8_t *frame, uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy) {
+void GAP_HW_LINK_CONFIG(
+    uint32_t access_address, uint8_t channel,
+                            uint8_t *frame, uint8_t receive_after_tx, uint8_t tx_phy, uint8_t rx_phy
+) {
     configured_access_address = access_address;
     configured_radio_channel = channel;
     tx_buffer = frame;
@@ -308,8 +316,10 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     return 1;
 }
 uint8_t GAP_HW_ADV_PHY_MASK(void) { return radio_adv_phy_mask; }
-int GAP_HW_ADV_TX_PHY(uint8_t *frame, uint8_t len, uint8_t channel,
-                          uint8_t phy) {
+int GAP_HW_ADV_TX_PHY(
+    uint8_t *frame, uint8_t len, uint8_t channel,
+                          uint8_t phy
+) {
     if (!(radio_adv_phy_mask & phy)) return 0;
     configured_adv_phy = phy;
     return GAP_HW_ADV_TX(frame, len, channel);
@@ -879,7 +889,7 @@ static void test_extended_advertising_transmit(void) {
     assert(gap_ext_scan_poll(&report));
     assert(report.has_address && report.sid == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
-    gap_ext_adv_stop();
+    assert(gap_ext_adv_stop(0));
     gap_scan_stop();
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;
@@ -905,7 +915,7 @@ static void test_extended_advertising_transmit(void) {
     }
     assert(gap_ext_adv_start(maximum_data,
         sizeof(maximum_data), 4, 100));
-    gap_ext_adv_stop();
+    assert(gap_ext_adv_stop(0));
     assert(!gap_ext_adv_start(oversized_data,
         sizeof(oversized_data), 4, 100));
 }
@@ -932,7 +942,7 @@ static void test_coded_extended_advertising_transmit(void) {
            captured_extended_channels[1] == 0 &&
            configured_adv_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     radio_adv_phy_mask = old_adv_phy_mask;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
@@ -1006,7 +1016,7 @@ static void test_extended_advertising_chain_transmit(void) {
     assert(report.has_address && report.sid == 5 &&
            report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
-    gap_ext_adv_stop();
+    assert(gap_ext_adv_stop(0));
     gap_scan_stop();
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;
@@ -1113,7 +1123,7 @@ static void test_periodic_advertising_transmit(void) {
            set->periodic_did != old_periodic_did);
     assert(gap_periodic_adv_stop(0));
     assert(!gap_periodic_adv_stop(0));
-    gap_ext_adv_stop();
+    assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1162,7 +1172,7 @@ static void test_periodic_advertising_with_central_connection(void) {
 
     gap_conn.active = 0;
     assert(gap_periodic_adv_stop(0));
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1233,7 +1243,7 @@ static void test_pawr_advertising_subevents(void) {
     assert(!gap_periodic_response_report_poll(&response_report));
     assert(!gap_periodic_adv_update(0, periodic_data, 247));
     assert(gap_periodic_adv_stop(0));
-    gap_ext_adv_stop();
+    assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1288,8 +1298,8 @@ static void test_pawr_interleaved_advertising_sets(void) {
 
     assert(gap_periodic_adv_stop(0));
     assert(gap_periodic_adv_stop(1));
-    assert(gap_ext_adv_stop_set(0));
-    assert(gap_ext_adv_stop_set(1));
+    assert(gap_ext_adv_stop(0));
+    assert(gap_ext_adv_stop(1));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1365,7 +1375,7 @@ static void test_pawr_advertiser_connection(void) {
 
     gap_conn.active = 0;
     assert(gap_periodic_adv_stop(0));
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1938,11 +1948,11 @@ static void test_extended_advertising_multiple_sets(void) {
            !memcmp(captured_extended_pdus[3] + 12, data1, sizeof(data1)));
     assert(gap_ext_adv_next_set == 0);
 
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     assert(!gap_ext_adv[0].enabled && gap_ext_adv[1].enabled);
-    assert(gap_ext_adv_stop_set(1));
+    assert(gap_ext_adv_stop(1));
     assert(!GAP_EXT_ADVERTISING_ENABLED);
-    assert(!gap_ext_adv_stop_set(
+    assert(!gap_ext_adv_stop(
         GAP_EXT_ADV_SET_COUNT));
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
@@ -1977,8 +1987,8 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_advertising_filter_policy(0, 0));
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_ALL, 0));
     gap_scan_start();
-    assert(gap_ext_scannable_advertising_start_set(0, data,
-        sizeof(data), 6, 100));
+    assert(gap_ext_scannable_advertising_start_set_phy(0, data,
+        sizeof(data), 6, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_radio_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count == 9);
@@ -2016,7 +2026,7 @@ static void test_extended_scannable_advertising(void) {
     assert(report.sid == 6 && report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
 
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     gap_scan_stop();
     static const uint8_t allowed_peer[6] = {
         0x51, 0x52, 0x53, 0x54, 0x55, 0x56
@@ -2025,13 +2035,13 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_accept_list_add(allowed_peer, 0));
     assert(gap_advertising_filter_policy(1, 0));
     captured_extended_count = 0;
-    assert(gap_ext_scannable_advertising_start_set(0,
-        short_response, sizeof(short_response), 7, 100));
+    assert(gap_ext_scannable_advertising_start_set_phy(0,
+        short_response, sizeof(short_response), 7, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_radio_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!force_aux_scan_request && captured_extended_count == 2 &&
            !gap_radio_ext_adv_scan_response_started);
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     assert(gap_accept_list_clear());
     assert(gap_advertising_filter_policy(0, 0));
 
@@ -2047,7 +2057,7 @@ static void test_extended_scannable_advertising(void) {
            configured_tx_phy == GAP_PHY_CODED &&
            configured_rx_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
-    assert(gap_ext_adv_stop_set(0));
+    assert(gap_ext_adv_stop(0));
     radio_adv_phy_mask = GAP_PHY_1M;
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;
@@ -3779,9 +3789,11 @@ static const uint8_t peripheral_entropy[12] = {
 
 // Independently encrypt peer packets with OpenSSL to check the project's CCM
 // against a second implementation, including AAD, direction and counter layout.
-static void receive_secure_test_pdu(uint8_t llid, const uint8_t *payload,
+static void receive_secure_test_pdu(
+    uint8_t llid, const uint8_t *payload,
                                      size_t len, uint64_t counter, uint8_t duplicate,
-                                     uint8_t acknowledged, uint8_t tampered) {
+                                     uint8_t acknowledged, uint8_t tampered
+) {
     uint8_t nonce[13], aad;
     rx_frame[0] = llid | ((gap_conn.expected_rx_sn ^ duplicate) << 3) |
         ((gap_conn.tx_sn ^ acknowledged) << 2);
