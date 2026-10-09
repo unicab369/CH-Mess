@@ -408,7 +408,7 @@ static int gap_connection_accept(
         gap_conn.active = 0;
         return 0;
     }
-    gap_advertising.enabled = 0;
+    gap_adv.enabled = 0;
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
         gap_ext_adv[i].enabled = 0;

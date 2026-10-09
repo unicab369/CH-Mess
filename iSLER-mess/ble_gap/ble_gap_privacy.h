@@ -91,7 +91,7 @@ static int gap_accept_list_nonempty(void) {
 
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
-    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+    if (!address || address_type > 1 || gap_scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
         (address_type && !gap_static_random_address_valid(address)))
@@ -113,7 +113,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
-    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+    if (!address || address_type > 1 || gap_scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active)
         return 0;
@@ -131,7 +131,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
-    if (gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+    if (gap_scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
         gap_central_connect.active)
         return 0;
@@ -155,7 +155,7 @@ int gap_identity_set(
                            const uint8_t irk[16]
 ) {
     if (!address || address_type > 1 || gap_scanning ||
-        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
@@ -193,7 +193,7 @@ int gap_identity_privacy(
                                uint8_t mode
 ) {
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
-        gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
         gap_central_connect.active)
         return 0;
@@ -259,7 +259,7 @@ int gap_identity_local_key(
     const uint8_t address[6], uint8_t address_type,
                                  const uint8_t irk[16]
 ) {
-    if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
+    if (!address || address_type > 1 || gap_scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active)
         return 0;
@@ -305,7 +305,7 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
-    if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
+    if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active ||
         gap_central_connect.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
@@ -358,7 +358,7 @@ int gap_privacy_set_randomized(
                                     uint16_t max_timeout_s
 ) {
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
-        min_timeout_s > max_timeout_s || gap_advertising.enabled ||
+        min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active || gap_central_connect.active)
         return 0;
@@ -382,7 +382,7 @@ int gap_privacy_set_randomized(
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanning ||
-        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active)
         return 0;
     gap_privacy.scan_filter = scan;
@@ -394,7 +394,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
 int gap_set_static_random_address(const uint8_t address[6]) {
-    if (!address || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+    if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanning ||
         gap_conn.active || gap_central_connect.active ||
         !gap_static_random_address_valid(address))
@@ -409,7 +409,7 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
-    if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
+    if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active ||
         gap_central_connect.active)
         return 0;

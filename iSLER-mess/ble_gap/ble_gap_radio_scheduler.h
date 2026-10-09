@@ -108,8 +108,8 @@ int gap_radio_send_due(
 #else
     int send_extended = -1;
 #endif
-    int send_gap = gap_advertising.enabled &&
-        (int32_t)(now - gap_advertising.next_event_ms) >= 0;
+    int send_gap = gap_adv.enabled &&
+        (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (send_extended < 0 && !send_gap && !fallback_ad) return 0;
     if (send_extended >= 0 && gap_radio_active_scan_pending) return 0;
     if (gap_radio_rx_armed) {
@@ -123,13 +123,13 @@ int gap_radio_send_due(
 #else
     int transmit_result = gap_hw_transmit(
 #endif
-            send_gap ? gap_advertising.pdu_type : 0x02,
-            send_gap ? gap_advertising.data : fallback_ad,
-            send_gap ? gap_advertising.data_len : fallback_len,
-            send_gap && gap_advertising.address_type ? gap_advertising.address : NULL,
-            send_gap && gap_advertising.pdu_type == 0x01 ?
-                gap_advertising.target_address : NULL,
-            send_gap ? gap_advertising.target_type : 0);
+            send_gap ? gap_adv.pdu_type : 0x02,
+            send_gap ? gap_adv.data : fallback_ad,
+            send_gap ? gap_adv.data_len : fallback_len,
+            send_gap && gap_adv.address_type ? gap_adv.address : NULL,
+            send_gap && gap_adv.pdu_type == 0x01 ?
+                gap_adv.target_address : NULL,
+            send_gap ? gap_adv.target_type : 0);
     if (!transmit_result) return -1;
     if (transmit_result == 2) return 2;
     uint32_t completed_at = GET_MILLIS();
@@ -144,8 +144,8 @@ int gap_radio_send_due(
     }
 #endif
     if (send_gap) {
-        gap_advertising.next_event_ms = completed_at +
-            gap_advertising.interval_ms + event_jitter;
+        gap_adv.next_event_ms = completed_at +
+            gap_adv.interval_ms + event_jitter;
         return 0;
     }
     if (sent_at) *sent_at = completed_at;

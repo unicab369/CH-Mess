@@ -64,7 +64,7 @@ static struct {
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
-} gap_advertising;
+} gap_adv;
 
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {

@@ -218,7 +218,7 @@ static void test_gap_service_characteristics(void) {
     ble_gatt_server_set_security(&mesh_gatt.server, 0, 0);
     gap_ead_key_material_clear();
 
-    gap_advertising_stop();
+    gap_adv_stop();
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
@@ -229,7 +229,7 @@ static void test_gap_service_characteristics(void) {
            BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
 }
 
-static void test_gap_advertising_data_helpers(void) {
+static void test_gap_adv_data_helpers(void) {
     uint8_t data[31];
     gap_ad_builder builder;
     assert(gap_ad_builder_init(&builder, data, sizeof(data)));
@@ -461,7 +461,7 @@ static void test_provisioning_link_callbacks(void) {
 int main(void) {
     test_mesh_services_registered_in_generic_database();
     test_gap_service_characteristics();
-    test_gap_advertising_data_helpers();
+    test_gap_adv_data_helpers();
     test_generic_att_handles_mesh_attributes();
     test_proxy_sar_and_configuration();
     test_mesh_notification_sar_uses_generic_queue();

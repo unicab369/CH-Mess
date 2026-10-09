@@ -28,7 +28,7 @@ int gap_connection_timing_set(const gap_connection_timing *timing) {
         timing->latency > 499 || timing->supervision_timeout < 10 ||
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanning ||
-        gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
         gap_central_connect.active || timing->background_scan_interval_ms < 3 ||
         timing->background_scan_interval_ms >= 40960 ||
         timing->background_scan_window_ms < 3 ||

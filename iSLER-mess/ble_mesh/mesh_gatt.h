@@ -521,8 +521,8 @@ static int mesh_gatt_gap_discoverable(void) {
             return 1;
     }
 #endif
-    return gap_advertising.enabled && mesh_gatt_gap_data_discoverable(
-        gap_advertising.data, gap_advertising.data_len);
+    return gap_adv.enabled && mesh_gatt_gap_data_discoverable(
+        gap_adv.data, gap_adv.data_len);
 }
 
 // Refresh Device Name access permissions from the active Flags AD structure.
