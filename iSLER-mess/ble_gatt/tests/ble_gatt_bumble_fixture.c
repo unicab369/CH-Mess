@@ -132,7 +132,8 @@ int main(void) {
             (const uint8_t *)"\0", 1, 1, NULL, NULL, NULL,
             &signed_declaration, &signed_value) ||
         !ble_gatt_server_set_min_key_size(&server, authorized_value, 12) ||
-        !ble_gatt_server_seal_database(&server)) return 2;
+        !ble_gatt_server_seal_database(&server))
+        return 2;
     (void)signed_declaration;
     ble_gatt_server_set_authorizer(&server,
         authorize_application_access, NULL);
@@ -147,7 +148,8 @@ int main(void) {
         uint16_t request_len = (uint16_t)size_bytes[0] |
                                (uint16_t)size_bytes[1] << 8;
         if (!request_len || request_len > sizeof(request) ||
-            fread(request, 1, request_len, stdin) != request_len) return 3;
+            fread(request, 1, request_len, stdin) != request_len)
+            return 3;
         uint16_t response_len = 0;
         int has_response;
         // Harness-only link state control; this is not an ATT PDU sent by a

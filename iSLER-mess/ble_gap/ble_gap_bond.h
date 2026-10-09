@@ -38,7 +38,8 @@ static int gap_bond_valid(const gap_bond *bond) {
          (bond->has_peer_csrk || bond->has_local_csrk ||
           bond->has_peripheral_ltk)) ||
         (bond->version == GAP_BOND_VERSION_CSRK &&
-         bond->has_peripheral_ltk)) return 0;
+         bond->has_peripheral_ltk))
+        return 0;
     for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
         if (bond->ltk[i]) return 0;
     if (!bond->has_peripheral_ltk) {

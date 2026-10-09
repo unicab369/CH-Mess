@@ -276,7 +276,8 @@ static inline int mesh_config_virtual_sub(
     uint16_t model, const uint8_t label[16], uint8_t add
 ) {
     if (!label || !element || element > 0x7fff ||
-        !mesh_virtual_model_valid(model)) return 0;
+        !mesh_virtual_model_valid(model))
+        return 0;
 
     uint8_t params[20] = {(uint8_t)element, (uint8_t)(element >> 8)};
     memcpy(params + 2, label, 16);
@@ -292,7 +293,8 @@ static inline int mesh_group_subscription(uint16_t dst, uint16_t element,
                                             uint16_t model, uint16_t group,
                                             uint8_t add) {
     if (!element || element > 0x7fff || group < 0xc000 || group > 0xfeff ||
-        !mesh_virtual_model_valid(model)) return 0;
+        !mesh_virtual_model_valid(model))
+        return 0;
     uint8_t params[6] = {
         (uint8_t)element, (uint8_t)(element >> 8),
         (uint8_t)group, (uint8_t)(group >> 8),
@@ -322,7 +324,8 @@ static int mesh_unbind_slot(uint8_t slot) {
             if (next.publications[i][j].address && next.publications[i][j].app_idx == app_idx)
                 memset(&next.publications[i][j], 0, sizeof(next.publications[i][j]));
     if (memcmp(&next, &mesh_models.state, sizeof(next)) != 0 &&
-        BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return 0;
+        BLE_MESH_MODELS_SAVE_STATE(&next) != 1)
+        return 0;
     mesh_models.state = next;
     return 1;
 }
@@ -389,7 +392,8 @@ static uint8_t mesh_subscription_replace(uint16_t element, uint16_t model,
         memcpy(entry->label, label, 16);
     }
     if (memcmp(&next, &mesh_models.state, sizeof(next)) &&
-        BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return MESH_CONFIG_STORAGE_FAILURE;
+        BLE_MESH_MODELS_SAVE_STATE(&next) != 1)
+        return MESH_CONFIG_STORAGE_FAILURE;
     mesh_models.state = next;
     mesh_transport_clear_labels();
     for (uint8_t i = 0; i < next.virtual_count; i++)
@@ -567,7 +571,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
             uint16_t dst = p[2] | (uint16_t)p[3] << 8;
             if (src > 0x7fff || p[4] > 0x11 ||
                 (dst && dst != state->unicast_address && dst < 0xc000) ||
-                (dst >= 0xff00 && dst < 0xfffc)) return 0;
+                (dst >= 0xff00 && dst < 0xfffc))
+                return 0;
             if (!src || !dst) {
                 mesh_network.heartbeat.src = mesh_network.heartbeat.dst = 0;
                 mesh_network.heartbeat.count = 0;
@@ -795,7 +800,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
         message->opcode == OP_CONFIG_KEY_PHASE_SET) {
         uint8_t set = message->opcode == OP_CONFIG_KEY_PHASE_SET;
         if (len != (set ? 3u : 2u) || (p[1] & 0xf0) ||
-            (set && p[2] != 2 && p[2] != 3)) return 0;
+            (set && p[2] != 2 && p[2] != 3))
+            return 0;
         uint16_t net_idx = p[0] | ((uint16_t)p[1] << 8);
         uint8_t phase = mesh_subnet_phase(state, net_idx);
         uint8_t status = phase == 0xff ?
@@ -854,7 +860,8 @@ static int server_config_receive(const mesh_access_pdu *message) {
             mesh_models_state next = mesh_models.state;
             next.default_ttl = p[0];
             if (next.default_ttl != mesh_models.state.default_ttl &&
-                BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return 0;
+                BLE_MESH_MODELS_SAVE_STATE(&next) != 1)
+                return 0;
             mesh_models.state = next;
         } else if (len != 0) return 0;
         return mesh_access_queue(state->unicast_address, message->src,
@@ -1191,7 +1198,8 @@ static inline int mesh_set_heartbeat_pub(uint16_t dst, const mesh_heartbeat_publ
     if (!pub || pub->ttl > 0x7f || pub->net_idx > 0x0fff ||
         pub->period_log > 0x11 || (pub->count_log > 0x11 && pub->count_log != 0xff) ||
         (pub->dst >= 0x8000 && pub->dst < 0xc000) ||
-        (pub->dst >= 0xff00 && pub->dst < 0xfffc)) return 0;
+        (pub->dst >= 0xff00 && pub->dst < 0xfffc))
+        return 0;
     uint8_t params[] = {(uint8_t)pub->dst, (uint8_t)(pub->dst >> 8), pub->count_log,
         pub->period_log, pub->ttl, (uint8_t)pub->features, (uint8_t)(pub->features >> 8),
         (uint8_t)pub->net_idx, (uint8_t)(pub->net_idx >> 8)};
@@ -1209,7 +1217,8 @@ static inline int mesh_set_heartbeat_sub(uint16_t dst, uint16_t src,
                                             uint16_t address, uint8_t period_log) {
     if (src > 0x7fff || period_log > 0x11 ||
         (address && address != dst && address < 0xc000) ||
-        (address >= 0xff00 && address < 0xfffc)) return 0;
+        (address >= 0xff00 && address < 0xfffc))
+        return 0;
     uint8_t params[] = {(uint8_t)src, (uint8_t)(src >> 8),
         (uint8_t)address, (uint8_t)(address >> 8), period_log};
     return mesh_access_queue(mesh_network.state.unicast_address, dst,
@@ -1291,7 +1300,8 @@ static inline int mesh_get_relay(uint16_t dst) {
 static inline int mesh_set_relay(uint16_t dst, uint8_t enabled,
         uint8_t retransmit_count, uint8_t retransmit_interval_steps) {
     if (enabled > 1 || retransmit_count > 7 ||
-        retransmit_interval_steps > 31) return 0;
+        retransmit_interval_steps > 31)
+        return 0;
     uint8_t params[2] = {enabled,
         (uint8_t)((retransmit_interval_steps << 3) | retransmit_count)};
     return mesh_access_queue(mesh_network.state.unicast_address, dst,
@@ -1468,9 +1478,11 @@ static inline int mesh_set_publication(uint16_t dst, uint16_t element,
                                            uint16_t model, const mesh_publication *pub) {
     if (!pub || !element || element > 0x7fff || mesh_publication_slot(model) < 0 ||
         pub->has_label > 1 || ((pub->address || pub->has_label) &&
-        (pub->app_idx > 0x0fff || (pub->ttl > 0x7f && pub->ttl != 0xff)))) return 0;
+        (pub->app_idx > 0x0fff || (pub->ttl > 0x7f && pub->ttl != 0xff))))
+        return 0;
     if (!pub->has_label && ((pub->address >= 0x8000 && pub->address < 0xc000) ||
-                           (pub->address >= 0xff00 && pub->address < 0xfffc))) return 0;
+                           (pub->address >= 0xff00 && pub->address < 0xfffc)))
+        return 0;
     uint8_t params[25] = {(uint8_t)element, (uint8_t)(element >> 8)};
     size_t offset = 4;
     if (pub->has_label) {
@@ -1508,7 +1520,8 @@ static inline int mesh_get_subscriptions(uint16_t dst, uint16_t element,
 static inline int mesh_replace_subscription(uint16_t dst, uint16_t element,
     uint16_t model, uint16_t address, const uint8_t *label) {
     if (!element || element > 0x7fff || !mesh_virtual_model_valid(model) ||
-        (!label && address && (address < 0xc000 || address > 0xfeff))) return 0;
+        (!label && address && (address < 0xc000 || address > 0xfeff)))
+        return 0;
     uint8_t params[20] = {(uint8_t)element, (uint8_t)(element >> 8)};
     uint32_t opcode = OP_CONFIG_MODEL_SUB_DELETE_ALL;
     size_t offset = 2;
@@ -1532,7 +1545,8 @@ static inline int mesh_health_faults(uint16_t element, uint8_t test_id,
                                         const uint8_t *faults, size_t len) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || mesh_models.reset_pending || index < 0 ||
-        len > MESH_HEALTH_MAX_FAULTS || (!faults && len)) return 0;
+        len > MESH_HEALTH_MAX_FAULTS || (!faults && len))
+        return 0;
     uint8_t current[MESH_HEALTH_MAX_FAULTS] = {0}, registered[MESH_HEALTH_MAX_FAULTS];
     uint8_t current_count = 0, registered_count = mesh_models.health_server[index].registered_count;
     memcpy(registered, mesh_models.health_server[index].registered, sizeof(registered));
@@ -1576,7 +1590,8 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
             mesh_models_state next = mesh_models.state;
             next.health_period[element] = p[0];
             if (memcmp(&next, &mesh_models.state, sizeof(next)) &&
-                BLE_MESH_MODELS_SAVE_STATE(&next) != 1) return 0;
+                BLE_MESH_MODELS_SAVE_STATE(&next) != 1)
+                return 0;
             mesh_models.state = next;
             mesh_models.publications[element][2].period_at_ms = GET_MILLIS() + mesh_health_period(element);
             if (opcode == OP_HEALTH_PERIOD_SET_UNACK) return 1;
@@ -1590,14 +1605,16 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
         opcode == OP_HEALTH_FAULT_TEST_UNACK) {
         uint8_t test = opcode == OP_HEALTH_FAULT_TEST || opcode == OP_HEALTH_FAULT_TEST_UNACK;
         if (len != (test ? 3u : 2u) ||
-            (uint16_t)(p[test] | (uint16_t)p[test + 1] << 8) != MESH_COMPANY_ID) return 0;
+            (uint16_t)(p[test] | (uint16_t)p[test + 1] << 8) != MESH_COMPANY_ID)
+            return 0;
         if (test) {
             uint8_t faults[MESH_HEALTH_MAX_FAULTS];
             size_t count = sizeof(faults);
             if (BLE_MESH_HEALTH_TEST(mesh_network.state.unicast_address + element,
                                     p[0], faults, &count) != 1 ||
                 !mesh_health_faults(mesh_network.state.unicast_address + element,
-                                        p[0], faults, count)) return 0;
+                                        p[0], faults, count))
+                return 0;
         } else if (opcode != OP_HEALTH_FAULT_GET) {
             mesh_models.health_server[element].registered_count = 0;
             memset(mesh_models.health_server[element].registered, 0,

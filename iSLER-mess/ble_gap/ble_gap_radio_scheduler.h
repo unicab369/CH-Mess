@@ -28,8 +28,8 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
              offset++) {
             uint8_t i = (gap_periodic_advertising_next_set + offset) %
                 GAP_EXT_ADV_SET_COUNT;
-            gap_extended_advertising_set *candidate =
-                &gap_ext_advertising[i];
+            gap_ext_adv_set *candidate =
+                &gap_ext_adv[i];
             if (!candidate->periodic_enabled ||
                 !candidate->periodic_sync_info_sent ||
                 ticks < candidate->periodic_next_event_ticks ||
@@ -39,8 +39,8 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
             periodic_target = candidate->periodic_next_event_ticks;
         }
         if (periodic_set >= 0) {
-            gap_extended_advertising_set *set =
-                &gap_ext_advertising[periodic_set];
+            gap_ext_adv_set *set =
+                &gap_ext_adv[periodic_set];
             uint64_t interval = HW_TICKS_FROM_US(
                 (uint32_t)set->periodic_interval * 1250u);
             uint64_t late = ticks - set->periodic_next_event_ticks;
@@ -94,10 +94,10 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
     }
     int send_extended = -1;
     for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
-        uint8_t set_id = (gap_ext_advertising_next_set + offset) %
+        uint8_t set_id = (gap_ext_adv_next_set + offset) %
             GAP_EXT_ADV_SET_COUNT;
-        if (gap_ext_advertising[set_id].enabled &&
-            (int32_t)(now - gap_ext_advertising[set_id].next_event_ms) >= 0
+        if (gap_ext_adv[set_id].enabled &&
+            (int32_t)(now - gap_ext_adv[set_id].next_event_ms) >= 0
         ) {
             send_extended = set_id;
             break;
@@ -117,7 +117,7 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
 #if GAP_EXT_ADV_SUPPORT
     int transmit_result = send_extended >= 0 ?
         gap_hw_transmit_extended_advertising(
-            &gap_ext_advertising[send_extended]) : gap_hw_transmit(
+            &gap_ext_adv[send_extended]) : gap_hw_transmit(
 #else
     int transmit_result = gap_hw_transmit(
 #endif
@@ -134,9 +134,9 @@ int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
     uint8_t event_jitter = GAP_HW_RANDOM_JITTER() % 11;
 #if GAP_EXT_ADV_SUPPORT
     if (send_extended >= 0) {
-        gap_ext_advertising[send_extended].next_event_ms = completed_at +
-            gap_ext_advertising[send_extended].interval_ms + event_jitter;
-        gap_ext_advertising_next_set = (send_extended + 1) %
+        gap_ext_adv[send_extended].next_event_ms = completed_at +
+            gap_ext_adv[send_extended].interval_ms + event_jitter;
+        gap_ext_adv_next_set = (send_extended + 1) %
             GAP_EXT_ADV_SET_COUNT;
         return 0;
     }
@@ -172,7 +172,8 @@ int gap_scan_take_ad(const uint8_t *types, size_t type_count,
     gap_receive_report(frame, payload_len, packet_rssi);
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
     if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 ||
-        payload_len > 37) return 0;
+        payload_len > 37)
+        return 0;
     size_t end = (size_t)payload_len + 2;
     for (size_t offset = 8; offset < end;) {
         uint8_t ad_len = frame[offset];

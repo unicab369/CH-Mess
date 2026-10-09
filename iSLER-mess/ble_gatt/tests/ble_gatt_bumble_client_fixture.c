@@ -29,7 +29,8 @@ static int send_pdu(void *context, const uint8_t *pdu, uint16_t len) {
     (void)context;
     uint8_t header[3] = {1, (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-        fwrite(pdu, 1, len, stdout) != len) return 0;
+        fwrite(pdu, 1, len, stdout) != len)
+        return 0;
     fflush(stdout);
     return 1;
 }
@@ -47,7 +48,8 @@ static void on_result(void *context, uint8_t status,
     }
     uint8_t header[4] = {2, status, (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-        (len && fwrite(pdu, 1, len, stdout) != len)) return;
+        (len && fwrite(pdu, 1, len, stdout) != len))
+        return;
     fflush(stdout);
 }
 
@@ -57,7 +59,8 @@ static void on_event(void *context, uint16_t handle,
     uint8_t header[5] = {3, (uint8_t)handle, (uint8_t)(handle >> 8),
                          (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-        (len && fwrite(value, 1, len, stdout) != len)) return;
+        (len && fwrite(value, 1, len, stdout) != len))
+        return;
     fflush(stdout);
 }
 
@@ -74,7 +77,8 @@ int main(void) {
         if (command == 23 || command == 24) {
             uint8_t handle_bytes[2];
             if (fread(handle_bytes, 1, sizeof(handle_bytes), stdin) !=
-                sizeof(handle_bytes)) return 11;
+                sizeof(handle_bytes))
+                return 11;
             requested_handle = (uint16_t)handle_bytes[0] |
                 (uint16_t)handle_bytes[1] << 8;
         }
@@ -192,11 +196,13 @@ int main(void) {
         if (command == 14 || command == 15) {
             uint8_t size_bytes[2], pdu[BLE_GATT_CLIENT_MTU_MAX];
             if (fread(size_bytes, 1, sizeof(size_bytes), stdin) !=
-                sizeof(size_bytes)) return 8;
+                sizeof(size_bytes))
+                return 8;
             uint16_t pdu_len = (uint16_t)size_bytes[0] |
                                (uint16_t)size_bytes[1] << 8;
             if (!pdu_len || pdu_len > sizeof(pdu) ||
-                fread(pdu, 1, pdu_len, stdin) != pdu_len) return 9;
+                fread(pdu, 1, pdu_len, stdin) != pdu_len)
+                return 9;
             if (ble_gatt_client_receive(&client, pdu, pdu_len) < 0) return 10;
             continue;
         }

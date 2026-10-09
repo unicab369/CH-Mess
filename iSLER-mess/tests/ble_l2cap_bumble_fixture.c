@@ -65,19 +65,22 @@ int main(void) {
     ops.accept_psm = accept_psm;
     ops.channel_data = receive_data;
     if (!ble_l2cap_connection_init(&connection, &ops, 100, 40, 2) ||
-        !ble_l2cap_psm_register(&connection, 0x0027)) return 1;
+        !ble_l2cap_psm_register(&connection, 0x0027))
+        return 1;
 
     uint8_t frame[BLE_L2CAP_SDU_MAX + 4];
     uint16_t frame_len, cid;
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) ||
         cid != BLE_L2CAP_CID_LE_SIGNALING || !outbound_len ||
-        !write_record(outbound, outbound_len)) return 2;
+        !write_record(outbound, outbound_len))
+        return 2;
     outbound_len = 0;
 
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) || received_len != 5 ||
         memcmp(received, "hello", 5) || !write_record(received, received_len) ||
-        !outbound_len || !write_record(outbound, outbound_len)) return 3;
+        !outbound_len || !write_record(outbound, outbound_len))
+        return 3;
     return 0;
 }

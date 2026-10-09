@@ -78,7 +78,8 @@ static int fake_bond_load(void *context, uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond) {
     fake_smp *fake = context;
     if (!fake->bond.valid || fake->bond.peer_address_type != address_type ||
-        memcmp(fake->bond.peer_address, address, 6)) return 0;
+        memcmp(fake->bond.peer_address, address, 6))
+        return 0;
     *bond = fake->bond;
     return 1;
 }
@@ -92,7 +93,8 @@ static int fake_bond_remove(void *context, uint8_t address_type,
     const uint8_t address[6]) {
     fake_smp *fake = context;
     if (fake->bond.peer_address_type != address_type ||
-        memcmp(fake->bond.peer_address, address, 6)) return 0;
+        memcmp(fake->bond.peer_address, address, 6))
+        return 0;
     memset(&fake->bond, 0, sizeof(fake->bond));
     fake->removed++;
     return 1;

@@ -128,7 +128,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         gap_conn.local_params_queued || gap_conn.params_pending || gap_conn.feature_request_pending ||
         gap_conn.length_queued || gap_conn.length_pending || gap_conn.phy_queued ||
         gap_conn.phy_pending || gap_conn.phy_update_pending || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply) return 0;
+        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply)
+        return 0;
     if (gap_conn.features_known && !(gap_conn.peer_features & 1)) {
         gap_security.status = 0x1a;
         return 0;

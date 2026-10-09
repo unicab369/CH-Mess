@@ -252,7 +252,8 @@ static int gap_connection_request_valid(const uint8_t frame[36]) {
         timeout < 10 || timeout > 3200 || hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
-            2u * (uint32_t)(latency + 1) * interval) return 0;
+            2u * (uint32_t)(latency + 1) * interval)
+        return 0;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1u << (channel % 8))) count++;
@@ -405,7 +406,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     gap_advertising.enabled = 0;
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        gap_ext_advertising[i].enabled = 0;
+        gap_ext_adv[i].enabled = 0;
 #endif
     return 1;
 }

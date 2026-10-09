@@ -447,7 +447,8 @@ static int verify_signed(void *context, const uint8_t *pdu, uint16_t len,
         (uint32_t)signature[9] << 8 | (uint32_t)signature[10] << 16 |
         (uint32_t)signature[11] << 24;
     if (len != 4 || pdu[0] != 0xd2 || signature[0] != 0xa5 ||
-        counter <= state->last_counter) return 0;
+        counter <= state->last_counter)
+        return 0;
     state->last_counter = counter;
     state->accepted++;
     return 1;

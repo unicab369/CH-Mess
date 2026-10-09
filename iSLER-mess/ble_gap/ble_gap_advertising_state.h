@@ -25,7 +25,7 @@ typedef struct {
     int8_t rssi;
     uint16_t data_len;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_extended_scan_report;
+} gap_ext_scan_report;
 enum {
     GAP_EXT_ADV_PRIMARY_PDU = 0,
     GAP_EXT_ADV_AUXILIARY_PDU = 1,
@@ -86,17 +86,18 @@ typedef struct {
     uint32_t next_event_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
     uint8_t periodic_data[GAP_EXT_ADV_DATA_MAX];
-} gap_extended_advertising_set;
-static gap_extended_advertising_set gap_ext_advertising[GAP_EXT_ADV_SET_COUNT];
-static uint8_t gap_ext_advertising_next_set;
+} gap_ext_adv_set;
+static gap_ext_adv_set gap_ext_adv[GAP_EXT_ADV_SET_COUNT];
+static uint8_t gap_ext_adv_next_set;
 static uint8_t gap_periodic_advertising_next_set;
-static inline int gap_ext_advertising_any_enabled(void) {
+static inline int gap_ext_adv_any_enabled(void) {
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        if (gap_ext_advertising[i].enabled ||
-            gap_ext_advertising[i].periodic_enabled) return 1;
+        if (gap_ext_adv[i].enabled ||
+            gap_ext_adv[i].periodic_enabled)
+            return 1;
     return 0;
 }
-#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_advertising_any_enabled())
+#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_adv_any_enabled())
 #else
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
@@ -118,7 +119,7 @@ static struct {
     uint32_t deadline_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 } gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
-static gap_extended_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+static gap_ext_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
 static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
 static struct {
     uint8_t used, address_type, address[6], has_adi, sid;

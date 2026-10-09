@@ -110,7 +110,8 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
                        on_air + 32 * coordinate, 32);
     uECC_Curve curve = uECC_secp256r1();
     if (!uECC_valid_public_key(gap_smp.bearer.pairing.sc.peer_public_key, curve) ||
-        !memcmp(gap_smp.bearer.pairing.sc.public_key, gap_smp.bearer.pairing.sc.peer_public_key, 32)) return 0;
+        !memcmp(gap_smp.bearer.pairing.sc.public_key, gap_smp.bearer.pairing.sc.peer_public_key, 32))
+        return 0;
     uint32_t generation = gap_security_generation;
     uint8_t dhkey[32];
     uECC_RNG_Function previous = uECC_get_rng();
@@ -299,7 +300,8 @@ static int gap_smp_link_init(void) {
     ops.context = &gap_smp;
     if (!ble_l2cap_connection_init(&gap_smp.l2cap, &ops, 65, 65, 0) ||
         !ble_smp_init(&gap_smp.bearer, &gap_smp.l2cap,
-                      gap_smp_receive_pdu, &gap_smp)) return 0;
+                      gap_smp_receive_pdu, &gap_smp))
+        return 0;
     ble_smp_ops host_ops = {0};
     host_ops.random_bytes = gap_smp_host_random;
     host_ops.aes128 = gap_smp_host_aes;
@@ -406,7 +408,8 @@ int gap_keypress_notifications_set(uint8_t enabled) {
 int gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
     if (io > GAP_IO_KEYBOARD_DISPLAY || authenticated > 1 ||
         min_key_size < 7 || min_key_size > 16 || gap_smp.bearer.pairing.phase ||
-        (authenticated && io == GAP_IO_NONE)) return 0;
+        (authenticated && io == GAP_IO_NONE))
+        return 0;
     gap_pairing_policy.io = io;
     gap_pairing_policy.authenticated = authenticated;
     gap_pairing_policy.min_key_size = min_key_size;
@@ -445,7 +448,8 @@ int gap_secure_connections_set(uint8_t enabled) {
 int gap_sc_oob_get(gap_sc_oob_data *out) {
     if (!out || !gap_pairing_enabled || !gap_pairing_policy.secure_connections ||
         !gap_connected() || gap_encrypted() || gap_smp.bearer.pairing.phase ||
-        gap_security.phase) return 0;
+        gap_security.phase)
+        return 0;
     volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
     for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
     memset(&gap_smp.bearer.pairing.sc, 0, sizeof(gap_smp.bearer.pairing.sc));
@@ -531,7 +535,8 @@ int gap_passkey_keypress(uint8_t notification_type) {
           gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_RANDOM));
     if (!gap_smp.bearer.pairing.keypress_active || !passkey_phase ||
         gap_pairing_policy.io != GAP_IO_KEYBOARD_ONLY ||
-        notification_type > BLE_SMP_KEYPRESS_COMPLETED) return 0;
+        notification_type > BLE_SMP_KEYPRESS_COMPLETED)
+        return 0;
     return gap_smp_queue(BLE_SMP_KEYPRESS_NOTIFICATION,
                          &notification_type, 1);
 }
@@ -635,7 +640,8 @@ uint8_t gap_pairing_status(void) { return gap_smp.status; }
 int gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
                       gap_bond *out) {
     if (!peer_address || !out || address_type > 1 ||
-        (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+        (address_type && (peer_address[5] & 0xc0) != 0xc0))
+        return 0;
     if (!GAP_BOND_LOAD) { memset(out, 0, sizeof(*out)); return 0; }
     gap_bond bond;
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
@@ -724,7 +730,8 @@ int gap_bond_set(const gap_bond *bond) {
 
 int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     if (!peer_address || address_type > 1 ||
-        (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
+        (address_type && (peer_address[5] & 0xc0) != 0xc0))
+        return 0;
     if (!GAP_BOND_LOAD || !GAP_BOND_DELETE) return 0;
     gap_bond bond;
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
@@ -1239,7 +1246,8 @@ static void gap_smp_poll(void) {
         size_t remaining = gap_smp.tx_len - gap_smp.tx_offset;
         if (max_len > remaining) max_len = remaining;
         if (!max_len || !gap_send_data(gap_smp.tx_offset ? 1 : 2,
-                gap_smp.tx + gap_smp.tx_offset, max_len)) return;
+                gap_smp.tx + gap_smp.tx_offset, max_len))
+            return;
         gap_smp.tx_offset += (uint8_t)max_len;
         if (gap_smp.tx_offset == gap_smp.tx_len) {
             gap_smp.tx_len = gap_smp.tx_offset = 0;

@@ -171,7 +171,8 @@ static int mesh_gatt_gap_device_name_valid(const uint8_t *name, size_t len) {
             if (first == 0xf4) second_max = 0x8f;
         } else return 0;
         if (continuation_count > len - i || name[i] < second_min ||
-            name[i] > second_max) return 0;
+            name[i] > second_max)
+            return 0;
         for (uint8_t j = 0; j < continuation_count; j++)
             if (name[i + j] < 0x80 || name[i + j] > 0xbf) return 0;
         i += continuation_count;
@@ -317,7 +318,8 @@ static uint8_t mesh_gatt_data_in_write(void *context, uint16_t offset,
     if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t header = value[0];
     if ((header & 0x30) || (provisioning &&
-        (header & 0x0f) != MESH_GATT_PROXY_PROVISIONING)) return 0;
+        (header & 0x0f) != MESH_GATT_PROXY_PROVISIONING))
+        return 0;
     mesh_gatt_proxy_input(value, len, provisioning);
     return 0;
 }
@@ -329,7 +331,8 @@ static int mesh_gatt_register_services(void) {
     ble_gatt_server_init(&mesh_gatt.server, MESH_GATT_ATT_MTU_MAX);
     size_t device_name_len = sizeof(MESH_GATT_DEVICE_NAME) - 1;
     if (!mesh_gatt_gap_device_name_valid(
-            (const uint8_t *)MESH_GATT_DEVICE_NAME, device_name_len)) return 0;
+            (const uint8_t *)MESH_GATT_DEVICE_NAME, device_name_len))
+        return 0;
     memcpy(mesh_gatt.gap_device_name, MESH_GATT_DEVICE_NAME, device_name_len);
     mesh_gatt.gap_device_name_len = (uint16_t)device_name_len;
     ble_gatt_uuid proxy_service = mesh_gatt_uuid16(MESH_GATT_PROXY_SERVICE_UUID);
@@ -380,7 +383,8 @@ static int mesh_gatt_register_services(void) {
             &provisioning_out, BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0,
             NULL, NULL, NULL, &decl, &value) ||
         !ble_gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
-            0, NULL, 0, 0, NULL, NULL, NULL, &descriptor)) return 0;
+            0, NULL, 0, 0, NULL, NULL, NULL, &descriptor))
+        return 0;
     uint8_t appearance[2] = {
         (uint8_t)MESH_GATT_APPEARANCE,
         (uint8_t)(MESH_GATT_APPEARANCE >> 8)
@@ -422,23 +426,27 @@ static int mesh_gatt_register_services(void) {
             gap_security_level_requirements,
             sizeof(gap_security_level_requirements),
             sizeof(gap_security_level_requirements), NULL, NULL, NULL,
-            &decl, &value)) return 0;
+            &decl, &value))
+        return 0;
 #if MESH_GATT_RPA_ONLY_SUPPORT
     if (!ble_gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_rpa_only_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &gap_rpa_only_value, 1, 1, NULL, NULL, NULL,
-            &decl, &value)) return 0;
+            &decl, &value))
+        return 0;
 #endif
 #if MESH_GATT_EAD_SUPPORT
     if (!ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
             BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
             NULL, 0, 24, mesh_gatt_gap_edkm_read, NULL, NULL,
-            &decl, &value)) return 0;
+            &decl, &value))
+        return 0;
 #endif
     if (!mesh_gatt_transport_init(&mesh_gatt.transport,
-                                  &mesh_gatt.server)) return 0;
+                                  &mesh_gatt.server))
+        return 0;
     return mesh_gatt.server.next_handle ==
         24 + (MESH_GATT_RPA_ONLY_SUPPORT ? 2 : 0) +
         (MESH_GATT_EAD_SUPPORT ? 2 : 0);
@@ -462,7 +470,8 @@ int mesh_gatt_set_authorizer(ble_gatt_authorize_fn authorize, void *context) {
 // Set the UTF-8 Device Name value. Empty names are allowed by GAP.
 int mesh_gatt_gap_device_name_set(const uint8_t *name, size_t len) {
     if (!mesh_gatt_gap_device_name_valid(name, len) ||
-        !mesh_gatt_ensure_initialized()) return 0;
+        !mesh_gatt_ensure_initialized())
+        return 0;
     if (len) memcpy(mesh_gatt.gap_device_name, name, len);
     if (len < sizeof(mesh_gatt.gap_device_name))
         memset(mesh_gatt.gap_device_name + len, 0,
@@ -478,7 +487,7 @@ static int mesh_gatt_gap_data_discoverable(const uint8_t *data, size_t len) {
         uint8_t type;
         const uint8_t *value;
         size_t value_len;
-        int result = gap_ad_next(data, len, &offset, &type, &value,
+        int result = gap_ad_parse_next(data, len, &offset, &type, &value,
                                  &value_len);
         if (result <= 0) return 0;
         if (type == GAP_AD_FLAGS && value_len >= 1 && (value[0] & 0x03))
@@ -490,9 +499,10 @@ static int mesh_gatt_gap_data_discoverable(const uint8_t *data, size_t len) {
 static int mesh_gatt_gap_discoverable(void) {
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t set = 0; set < GAP_EXT_ADV_SET_COUNT; set++) {
-        if (gap_ext_advertising[set].enabled &&
-            mesh_gatt_gap_data_discoverable(gap_ext_advertising[set].data,
-                gap_ext_advertising[set].data_len)) return 1;
+        if (gap_ext_adv[set].enabled &&
+            mesh_gatt_gap_data_discoverable(gap_ext_adv[set].data,
+                gap_ext_adv[set].data_len))
+            return 1;
     }
 #endif
     return gap_advertising.enabled && mesh_gatt_gap_data_discoverable(
@@ -558,18 +568,21 @@ int mesh_gatt_proxy_offer(uint8_t type, const uint8_t *pdu, size_t len,
         len > MESH_GATT_PROXY_PDU_MAX ||
         type > MESH_GATT_PROXY_CONFIGURATION || !mesh_gatt.connected ||
         !mesh_gatt_proxy_cccd() ||
-        mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE) return 0;
+        mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE)
+        return 0;
     if ((type == MESH_GATT_PROXY_NETWORK &&
          (len < MESH_GATT_PROXY_NETWORK_PDU_MIN ||
           len > MESH_GATT_PROXY_NETWORK_PDU_MAX)) ||
         (type == MESH_GATT_PROXY_BEACON &&
-         len != MESH_GATT_PROXY_BEACON_PDU_LEN)) return 0;
+         len != MESH_GATT_PROXY_BEACON_PDU_LEN))
+        return 0;
     if (type == MESH_GATT_PROXY_NETWORK) {
         uint8_t listed = 0;
         for (uint8_t i = 0; i < mesh_gatt.filter_count; i++)
             if (mesh_gatt.filter[i] == destination) listed = 1;
         if ((!mesh_gatt.filter_type && !listed) ||
-            (mesh_gatt.filter_type && listed)) return 0;
+            (mesh_gatt.filter_type && listed))
+            return 0;
     }
     uint8_t slot = (mesh_gatt.proxy_tx_head + mesh_gatt.proxy_tx_count) %
                    MESH_GATT_PROXY_QUEUE_SIZE;
@@ -586,7 +599,8 @@ static int mesh_gatt_proxy_queue(uint8_t type, const uint8_t *data, size_t len) 
     size_t max_len = type == MESH_GATT_PROXY_PROVISIONING ?
         MESH_GATT_PROVISIONING_PDU_MAX : MESH_GATT_PROXY_PDU_MAX;
     if (!mesh_gatt_ensure_initialized() || !data || !len || len > max_len ||
-        mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE) return 0;
+        mesh_gatt.proxy_tx_count >= MESH_GATT_PROXY_QUEUE_SIZE)
+        return 0;
     uint8_t slot = (mesh_gatt.proxy_tx_head + mesh_gatt.proxy_tx_count) %
                    MESH_GATT_PROXY_QUEUE_SIZE;
     mesh_gatt.proxy_tx[slot].type = type;
@@ -726,7 +740,8 @@ static void mesh_gatt_notify_poll(void) {
     uint16_t handle = provisioning ? MESH_GATT_HANDLE_PROVISIONING_DATA_OUT :
                                      MESH_GATT_HANDLE_DATA_OUT;
     if (!ble_gatt_server_queue_event(&mesh_gatt.server, handle, value,
-                                      chunk + 1, 0)) return;
+                                      chunk + 1, 0))
+        return;
     if (sar == 1) {
         mesh_gatt.proxy_tx_sar_active = 1;
         mesh_gatt.proxy_tx_started_ms = GET_MILLIS();

@@ -67,7 +67,8 @@ static inline int mesh_access_queue(
 
     if ((!params && params_len) || mic_64 > 1 ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
-                     opcode_len) return 0;
+                     opcode_len)
+        return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
@@ -106,7 +107,8 @@ static inline int mesh_access_queue_acknowledged(
     if (params_len) memcpy(data + opcode_len, params, params_len);
     size_t len = opcode_len + params_len;
     if (!mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
-            data, len, mic_64)) return 0;
+            data, len, mic_64))
+        return 0;
 
     mesh_access_ack.src = src;
     mesh_access_ack.dst = dst;
@@ -133,7 +135,8 @@ static inline uint8_t mesh_access_ack_status(void) {
 // Service the one outstanding transaction after checking for a reply.
 static inline void mesh_access_ack_poll(void) {
     if (mesh_access_ack.state != MESH_ACCESS_ACK_PENDING ||
-        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0) return;
+        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0)
+        return;
     if (mesh_access_ack.retries_sent >= mesh_access_ack.retry_limit) {
         mesh_access_ack.state = MESH_ACCESS_ACK_TIMED_OUT;
         return;
@@ -168,7 +171,8 @@ static inline int mesh_access_queue_on_net(
     else return 0;
 
     if ((!params && params_len) ||
-        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len) return 0;
+        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len)
+        return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
@@ -199,7 +203,8 @@ static inline int mesh_access_queue_virtual(
         app_key_index == DEVICE_KEY_LOCAL || !opcode_len ||
         mic_64 > 1 || (!params && params_len) ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
-                     opcode_len) return 0;
+                     opcode_len)
+        return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {

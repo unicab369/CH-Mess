@@ -346,7 +346,8 @@ static inline int ble_att_server_process(ble_gatt_server *server, const uint8_t 
         uint16_t handle = ble_gatt_server_u16(req + 1);
         ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
         if (!a || !(a->properties & BLE_GATT_PROP_AUTH_SIGNED_WRITE) ||
-            !(a->permissions & BLE_GATT_PERM_WRITE_SIGNED)) return 0;
+            !(a->permissions & BLE_GATT_PERM_WRITE_SIGNED))
+            return 0;
         uint16_t value_len = req_len - 15;
         uint16_t signed_len = req_len - 12;
         if (server->signed_verify(server->signed_context, req, signed_len,

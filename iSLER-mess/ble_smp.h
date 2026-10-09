@@ -334,7 +334,8 @@ static inline int ble_smp_parse_pairing_features(const uint8_t *pdu,
     uint16_t len, ble_smp_pairing_features *features) {
     if (!ble_smp_pdu_valid(pdu, len) ||
         (pdu[0] != BLE_SMP_PAIRING_REQUEST &&
-         pdu[0] != BLE_SMP_PAIRING_RESPONSE) || !features) return 0;
+         pdu[0] != BLE_SMP_PAIRING_RESPONSE) || !features)
+        return 0;
     features->io_capability = pdu[1];
     features->oob_data_flag = pdu[2];
     features->auth_req = pdu[3];
@@ -350,7 +351,8 @@ static inline int ble_smp_build_pairing_features(uint8_t opcode,
     const ble_smp_pairing_features *features, uint8_t pdu[7]) {
     if (!ble_smp_pairing_features_valid(features) || !pdu ||
         (opcode != BLE_SMP_PAIRING_REQUEST &&
-         opcode != BLE_SMP_PAIRING_RESPONSE)) return 0;
+         opcode != BLE_SMP_PAIRING_RESPONSE))
+        return 0;
     pdu[0] = opcode;
     pdu[1] = features->io_capability;
     pdu[2] = features->oob_data_flag;
@@ -475,7 +477,8 @@ static inline int ble_smp_init(ble_smp *smp,
 static inline int ble_smp_send(ble_smp *smp, const uint8_t *pdu,
                                uint16_t len) {
     if (!smp || !smp->l2cap || !ble_smp_pdu_valid(pdu, len) ||
-        smp->tx_len) return 0;
+        smp->tx_len)
+        return 0;
     memcpy(smp->tx, pdu, len);
     smp->tx_len = (uint8_t)len;
     if (pdu[0] == BLE_SMP_PAIRING_REQUEST ||
@@ -526,7 +529,8 @@ static inline int ble_smp_take_received(ble_smp *smp, const uint8_t **pdu,
 static inline int ble_smp_pairing_begin(ble_smp *smp,
                                          uint8_t local_is_central) {
     if (!smp || local_is_central > 1 ||
-        smp->pairing.phase != BLE_SMP_PHASE_IDLE) return 0;
+        smp->pairing.phase != BLE_SMP_PHASE_IDLE)
+        return 0;
     volatile uint8_t *wipe = (volatile uint8_t *)&smp->pairing;
     for (size_t i = 0; i < sizeof(smp->pairing); i++) wipe[i] = 0;
     smp->pairing.local_is_central = local_is_central;
@@ -570,7 +574,8 @@ static inline int ble_smp_legacy_c1(ble_smp *smp, const uint8_t tk[16],
     const uint8_t responder_address[6], uint8_t confirm[16]) {
     if (!smp || !tk || !random || initiator_type > 1 || responder_type > 1 ||
         !request || !response || !initiator_address || !responder_address ||
-        !confirm) return 0;
+        !confirm)
+        return 0;
     uint8_t block[16];
     block[0] = initiator_type;
     block[1] = responder_type;
@@ -729,7 +734,8 @@ static inline int ble_smp_user_request(ble_smp *smp, uint8_t action,
 static inline int ble_smp_set_link_encryption(ble_smp *smp,
     const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated) {
     if (!smp || !smp->ops.set_link_encryption || !ltk || key_size < 7 ||
-        key_size > 16 || authenticated > 1) return 0;
+        key_size > 16 || authenticated > 1)
+        return 0;
     return smp->ops.set_link_encryption(smp->ops.context, ltk, key_size,
                                         authenticated);
 }
@@ -791,7 +797,8 @@ static inline int ble_smp_bond_store(ble_smp *smp,
         return 0;
     for (uint8_t i = bond->key_size; i < sizeof(bond->ltk); i++)
         if (bond->ltk[i] || (bond->has_peripheral_ltk &&
-                            bond->peripheral_ltk[i])) return 0;
+                            bond->peripheral_ltk[i]))
+            return 0;
     if ((!bond->has_peer_irk && memcmp(bond->irk, (uint8_t[16]){0}, 16)) ||
         (!bond->has_local_irk && memcmp(bond->local_irk, (uint8_t[16]){0}, 16)) ||
         (!bond->has_peer_csrk && memcmp(bond->csrk, (uint8_t[16]){0}, 16)) ||
@@ -799,7 +806,8 @@ static inline int ble_smp_bond_store(ble_smp *smp,
         (!bond->has_peripheral_ltk &&
          (memcmp(bond->peripheral_ltk, (uint8_t[16]){0}, 16) ||
           memcmp(bond->peripheral_rand, (uint8_t[8]){0}, 8) ||
-          bond->peripheral_ediv[0] || bond->peripheral_ediv[1]))) return 0;
+          bond->peripheral_ediv[0] || bond->peripheral_ediv[1])))
+        return 0;
     ble_smp_bond normalized = *bond;
     normalized.version = BLE_SMP_BOND_SCHEMA_VERSION;
     int stored = smp->ops.bond_store(smp->ops.context, &normalized);
@@ -820,7 +828,8 @@ static inline int ble_smp_tick(ble_smp *smp, uint32_t now_ms) {
     if (!smp) return 0;
     smp->now_ms = now_ms;
     if (!smp->procedure_active ||
-        (int32_t)(now_ms - smp->deadline_ms) < 0) return 0;
+        (int32_t)(now_ms - smp->deadline_ms) < 0)
+        return 0;
     smp->procedure_active = 0;
     smp->deadline_ms = 0;
     volatile uint8_t *wipe = smp->tx;
@@ -837,7 +846,8 @@ static inline int ble_smp_poll(ble_smp *smp) {
     if (!smp || !smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu)
         return 0;
     if (!smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
-            BLE_L2CAP_CID_SMP, smp->tx, smp->tx_len)) return 0;
+            BLE_L2CAP_CID_SMP, smp->tx, smp->tx_len))
+        return 0;
     memset(smp->tx, 0, sizeof(smp->tx));
     smp->tx_len = 0;
     return 1;

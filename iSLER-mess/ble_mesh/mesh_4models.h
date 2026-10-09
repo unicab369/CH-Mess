@@ -15,7 +15,8 @@ static inline int mesh_onoff_get(uint16_t element, uint16_t dst,
                                           uint16_t app_idx) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
+        return 0;
     return mesh_access_queue_acknowledged(element, dst,
         mesh_models.state.default_ttl, app_idx, OP_ONOFF_GET,
         OP_ONOFF_STATUS, NULL, 0, 0, MESH_ACCESS_ACK_TIMEOUT_MS,
@@ -27,7 +28,8 @@ static inline int mesh_onoff_get_virtual(uint16_t element,
                                                   uint16_t app_idx) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
+        return 0;
     return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
         app_idx, OP_ONOFF_GET, NULL, 0, 0);
 }
@@ -39,7 +41,8 @@ static inline int mesh_onoff_set(
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 || on > 1 || acknowledged > 1 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
-    ) return 0;
+    )
+        return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
     if (acknowledged && dst > 0 && dst <= 0x7fff)
@@ -58,7 +61,8 @@ static inline int mesh_onoff_set_virtual(
 ) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 || !label || on > 1 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)) return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
+        return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
     return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl, app_idx,

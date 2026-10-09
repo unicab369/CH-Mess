@@ -243,27 +243,27 @@ static void test_gap_advertising_data_helpers(void) {
     size_t offset = 0, value_len;
     uint8_t type;
     const uint8_t *value;
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_FLAGS && value_len == 1 && value[0] == 0x06);
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_NAME_COMPLETE && value_len == 6 &&
            !memcmp(value, name, value_len));
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_UUID16_COMPLETE && value_len == 4 &&
            value[0] == 0x00 && value[1] == 0x18 &&
            value[2] == 0x01 && value[3] == 0x18);
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_TX_POWER && value_len == 1 && value[0] == 0xf8);
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_SERVICE_DATA16 && value_len == 5 &&
            value[0] == 0x0f && value[1] == 0x18 &&
            !memcmp(value + 2, service_payload, sizeof(service_payload)));
-    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_parse_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 0);
 
     uint8_t small[3];
@@ -273,7 +273,7 @@ static void test_gap_advertising_data_helpers(void) {
     assert(builder.len == sizeof(small));
     const uint8_t malformed[] = {3, GAP_AD_FLAGS, 0x06};
     offset = 0;
-    assert(gap_ad_next(malformed, sizeof(malformed), &offset, &type,
+    assert(gap_ad_parse_next(malformed, sizeof(malformed), &offset, &type,
                             &value, &value_len) == -1);
     assert(offset == 0);
 }

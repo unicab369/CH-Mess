@@ -36,7 +36,8 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (!gap_identities[i].used) continue;
         if (address_type == gap_identities[i].address_type &&
-            memcmp(address, gap_identities[i].address, 6) == 0) return i;
+            memcmp(address, gap_identities[i].address, 6) == 0)
+            return i;
         if (address_type == 1 && (address[5] & 0xc0) == 0x40) {
             if (!gap_identities[i].has_irk) continue; // Zero IRK: identity only.
             uint8_t hash[3];
@@ -66,12 +67,14 @@ static int gap_accept_list_match(const uint8_t address[6], uint8_t address_type,
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!gap_accept_list[i].used) continue;
         if (gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0) return 1;
+            memcmp(gap_accept_list[i].address, address, 6) == 0)
+            return 1;
         if (identity_slot >= 0 &&
             gap_identities[identity_slot].address_type ==
                 gap_accept_list[i].address_type &&
             memcmp(gap_identities[identity_slot].address,
-                   gap_accept_list[i].address, 6) == 0) return 1;
+                   gap_accept_list[i].address, 6) == 0)
+            return 1;
     }
     return 0;
 }
@@ -87,12 +90,14 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
-        (address_type && !gap_static_random_address_valid(address))) return 0;
+        (address_type && !gap_static_random_address_valid(address)))
+        return 0;
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
             gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0) return 1;
+            memcmp(gap_accept_list[i].address, address, 6) == 0)
+            return 1;
         if (!gap_accept_list[i].used && free_slot < 0) free_slot = i;
     }
     if (free_slot < 0) return 0;
@@ -106,7 +111,8 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_connect.active) return 0;
+        gap_conn.active || gap_central_connect.active)
+        return 0;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
             gap_accept_list[i].address_type == address_type &&
@@ -123,7 +129,8 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 int gap_accept_list_clear(void) {
     if (gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
-        gap_central_connect.active) return 0;
+        gap_central_connect.active)
+        return 0;
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
     return 1;
 }
@@ -144,7 +151,8 @@ int gap_identity_set(const uint8_t address[6], uint8_t address_type,
     if (!address || address_type > 1 || gap_scanning ||
         gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
-        (address_type && !gap_static_random_address_valid(address))) return 0;
+        (address_type && !gap_static_random_address_valid(address)))
+        return 0;
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -179,7 +187,8 @@ int gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
-        gap_central_connect.active) return 0;
+        gap_central_connect.active)
+        return 0;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
             gap_identities[i].address_type == address_type &&
@@ -238,14 +247,17 @@ int gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
                                  const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_connect.active) return 0;
+        gap_conn.active || gap_central_connect.active)
+        return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0 || gap_identities[slot].address_type != address_type ||
-        memcmp(address, gap_identities[slot].address, 6) != 0) return 0;
+        memcmp(address, gap_identities[slot].address, 6) != 0)
+        return 0;
     uint8_t key_bits = 0, local[6] = {0};
     if (irk) for (uint8_t i = 0; i < 16; i++) key_bits |= irk[i];
     if (key_bits && !gap_private_address_generate(irk, local,
-            gap_identities[slot].local_address)) return 0;
+            gap_identities[slot].local_address))
+        return 0;
     if (irk) memcpy(gap_identities[slot].local_irk, irk, 16);
     else memset(gap_identities[slot].local_irk, 0, 16);
     memcpy(gap_identities[slot].local_address, local, 6);
@@ -330,7 +342,8 @@ int gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s,
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
-        gap_conn.active || gap_central_connect.active) return 0;
+        gap_conn.active || gap_central_connect.active)
+        return 0;
     uint16_t timeout_s;
     if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
         return 0;
@@ -366,7 +379,8 @@ int gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanning ||
         gap_conn.active || gap_central_connect.active ||
-        !gap_static_random_address_valid(address)) return 0;
+        !gap_static_random_address_valid(address))
+        return 0;
     memcpy(gap_random_address, address, 6);
     memcpy(gap_identity_address, address, 6);
     gap_identity_address_type = 1;
@@ -379,7 +393,8 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 int gap_use_public_address(void) {
     if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active ||
-        gap_central_connect.active) return 0;
+        gap_central_connect.active)
+        return 0;
     gap_privacy.enabled = 0;
     gap_identity_address_type = gap_own_address_type = 0;
     return 1;

@@ -35,7 +35,8 @@ int gap_connection_timing_set(const gap_connection_timing *timing) {
         timing->background_scan_window_ms > timing->background_scan_interval_ms)
         return 0;
     if ((uint32_t)timing->supervision_timeout * 4u <=
-        (uint32_t)(timing->latency + 1u) * timing->interval) return 0;
+        (uint32_t)(timing->latency + 1u) * timing->interval)
+        return 0;
     gap_connection_timing = *timing;
     return 1;
 }

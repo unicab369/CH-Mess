@@ -44,12 +44,14 @@ int main(void) {
     ble_l2cap_connection l2cap;
     ble_smp smp;
     if (!ble_l2cap_connection_init(&l2cap, &ops, 65, 65, 1) ||
-        !ble_smp_init(&smp, &l2cap, receive_pdu, NULL)) return 1;
+        !ble_smp_init(&smp, &l2cap, receive_pdu, NULL))
+        return 1;
 
     const uint8_t request[] = {BLE_SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};
     if (!ble_smp_send(&smp, request, sizeof(request)) ||
         !ble_smp_poll(&smp) || !outbound_len ||
-        !write_record(outbound, outbound_len)) return 2;
+        !write_record(outbound, outbound_len))
+        return 2;
 
     uint8_t frame[BLE_L2CAP_SDU_MAX + 4];
     uint16_t frame_len, cid, sdu_len;
@@ -59,6 +61,7 @@ int main(void) {
     if (ble_l2cap_reassembler_feed(&rx, 2, frame, frame_len,
             &cid, &sdu, &sdu_len) != 1 || cid != BLE_L2CAP_CID_SMP ||
         !ble_l2cap_connection_receive(&l2cap, cid, sdu, sdu_len) ||
-        !inbound_len || !write_record(inbound, inbound_len)) return 4;
+        !inbound_len || !write_record(inbound, inbound_len))
+        return 4;
     return 0;
 }

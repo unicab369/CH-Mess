@@ -166,12 +166,14 @@ static int mesh_virtual_model_valid(uint16_t model) {
 static inline int mesh_models_init(void) {
     if (!mesh_network.ready ||
         BLE_MESH_MODELS_LOAD_STATE(&mesh_models.state) != 1
-    ) return 0;
+    )
+        return 0;
 
     if (mesh_models.state.virtual_count > MESH_MODEL_VIRTUAL_SLOTS ||
         mesh_models.state.group_count > MESH_MODEL_GROUP_SLOTS ||
         mesh_models.state.default_ttl == 1 ||
-        mesh_models.state.default_ttl > 0x7f) return 0;
+        mesh_models.state.default_ttl > 0x7f)
+        return 0;
     if (!mesh_sar_tx_valid(&mesh_models.state.sar_transmitter)) return 0;
     transport_sar_tx = mesh_models.state.sar_transmitter;
     if (!mesh_sar_rx_valid(&mesh_models.state.sar_receiver)) return 0;
@@ -180,20 +182,23 @@ static inline int mesh_models_init(void) {
     if ((mesh_models.state.onoff_server_bindings & ~valid_mask) ||
         (mesh_models.state.onoff_client_bindings & ~valid_mask) ||
         (mesh_models.state.health_server_bindings & ~valid_mask) ||
-        (mesh_models.state.health_client_bindings & ~valid_mask)) return 0;
+        (mesh_models.state.health_client_bindings & ~valid_mask))
+        return 0;
     for (uint8_t i = 1; i < mesh_network.state.element_count; i++) {
         mesh_element_bindings *b = &mesh_models.state.other[i - 1];
         if ((b->onoff_server_bindings & ~valid_mask) ||
             (b->onoff_client_bindings & ~valid_mask) ||
             (b->health_server_bindings & ~valid_mask) ||
-            (b->health_client_bindings & ~valid_mask)) return 0;
+            (b->health_client_bindings & ~valid_mask))
+            return 0;
     }
     mesh_transport_clear_labels();
 
     for (uint8_t i = 0; i < mesh_models.state.virtual_count; i++) {
         if (mesh_models.state.virtual[i].element >=
             mesh_network.state.element_count ||
-            !mesh_virtual_model_valid(mesh_models.state.virtual[i].model)) return 0;
+            !mesh_virtual_model_valid(mesh_models.state.virtual[i].model))
+            return 0;
         if (!mesh_label_add(mesh_models.state.virtual[i].label))
             return 0;
     }
@@ -201,7 +206,8 @@ static inline int mesh_models_init(void) {
         mesh_model_group *group = &mesh_models.state.groups[i];
         if (group->element >= mesh_network.state.element_count ||
             group->address < 0xc000 || group->address > 0xfeff ||
-            !mesh_virtual_model_valid(group->model)) return 0;
+            !mesh_virtual_model_valid(group->model))
+            return 0;
     }
 
     uint32_t now = GET_MILLIS();
@@ -246,7 +252,8 @@ static inline uint8_t mesh_model_label_add(
     mesh_models_state next = mesh_models.state;
     for (uint8_t i = 0; i < next.virtual_count; i++) {
         if (next.virtual[i].element == index && next.virtual[i].model == model &&
-            memcmp(next.virtual[i].label, label, 16) == 0) return MESH_CONFIG_SUCCESS;
+            memcmp(next.virtual[i].label, label, 16) == 0)
+            return MESH_CONFIG_SUCCESS;
     }
     if (next.virtual_count == MESH_MODEL_VIRTUAL_SLOTS)
         return MESH_CONFIG_INSUFFICIENT_RESOURCES;
@@ -331,7 +338,8 @@ static int mesh_publication_begin(uint8_t element, uint16_t model,
                                    size_t len) {
     int slot = mesh_publication_slot(model);
     if (!mesh_models.ready || element >= mesh_network.state.element_count ||
-        slot < 0 || len > MESH_PUBLICATION_MAX_PARAMS || (!params && len)) return 0;
+        slot < 0 || len > MESH_PUBLICATION_MAX_PARAMS || (!params && len))
+        return 0;
     mesh_publication *pub = &mesh_models.state.publications[element][slot];
     if (!pub->address || !app_key_allowed(element, model, pub->app_idx)) return 0;
     mesh_models.publications[element][slot].opcode = opcode;

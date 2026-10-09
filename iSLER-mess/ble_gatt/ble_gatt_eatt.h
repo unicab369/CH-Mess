@@ -95,7 +95,8 @@ static inline int ble_gatt_eatt_find(const ble_gatt_eatt *eatt,
     if (!eatt || !cid) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED &&
-            eatt->bearers[i].cid == cid) return i;
+            eatt->bearers[i].cid == cid)
+            return i;
     return -1;
 }
 
@@ -110,10 +111,12 @@ static inline int ble_gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
 // asynchronous and reported through ble_gatt_eatt_channel_opened().
 static inline int ble_gatt_eatt_open(ble_gatt_eatt *eatt) {
     if (!eatt || !eatt->encrypted || !eatt->ops.open ||
-        ble_gatt_eatt_free_slot(eatt) < 0) return 0;
+        ble_gatt_eatt_free_slot(eatt) < 0)
+        return 0;
     int slot = ble_gatt_eatt_free_slot(eatt);
     if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_PSM,
-                        eatt->local_mtu)) return 0;
+                        eatt->local_mtu))
+        return 0;
     eatt->bearers[slot].state = BLE_GATT_EATT_OPENING;
     return 1;
 }
@@ -178,7 +181,8 @@ static inline int ble_gatt_eatt_reconfigure(ble_gatt_eatt *eatt,
     uint16_t cid, uint16_t negotiated_mtu) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
-        negotiated_mtu > BLE_GATT_EATT_MTU_MAX) return 0;
+        negotiated_mtu > BLE_GATT_EATT_MTU_MAX)
+        return 0;
     eatt->bearers[slot].mtu = negotiated_mtu < eatt->local_mtu ?
         negotiated_mtu : eatt->local_mtu;
     return 1;
@@ -188,7 +192,8 @@ static inline int ble_gatt_eatt_send(ble_gatt_eatt *eatt, uint16_t cid,
     const uint8_t *pdu, uint16_t len) {
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
-        len > eatt->bearers[slot].mtu || !eatt->ops.send) return 0;
+        len > eatt->bearers[slot].mtu || !eatt->ops.send)
+        return 0;
     return eatt->ops.send(eatt->ops.context, cid, pdu, len);
 }
 
@@ -199,7 +204,8 @@ static inline int ble_gatt_eatt_receive(ble_gatt_eatt *eatt, uint16_t cid,
     int slot = ble_gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
-        !eatt->ops.receive_att) return 0;
+        !eatt->ops.receive_att)
+        return 0;
     return eatt->ops.receive_att(eatt->ops.context, cid, pdu, len);
 }
 
