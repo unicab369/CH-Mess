@@ -64,7 +64,7 @@ static int gap_accept_list_nonempty(void) {
 }
 
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
-int ble_gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
+int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active ||
@@ -84,7 +84,7 @@ int ble_gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 }
 
 // Remove an identity address from the Filter Accept List while GAP is idle.
-int ble_gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
+int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active) return 0;
@@ -100,7 +100,7 @@ int ble_gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 }
 
 // Empty the Filter Accept List while GAP is idle.
-int ble_gap_accept_list_clear(void) {
+int gap_accept_list_clear(void) {
     if (gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
         gap_central_connect.active) return 0;
@@ -119,7 +119,7 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
-int ble_gap_identity_set(const uint8_t address[6], uint8_t address_type,
+int gap_identity_set(const uint8_t address[6], uint8_t address_type,
                            const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning ||
         gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
@@ -153,7 +153,7 @@ int ble_gap_identity_set(const uint8_t address[6], uint8_t address_type,
 }
 
 // Set a listed peer's network/device privacy mode while GAP is idle.
-int ble_gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
+int gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
                                uint8_t mode) {
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
@@ -171,7 +171,7 @@ int ble_gap_identity_privacy(const uint8_t address[6], uint8_t address_type,
 }
 
 // Resolve without replacing the received address, which is needed on the air.
-int ble_gap_resolve(const uint8_t address[6], uint8_t address_type,
+int gap_resolve(const uint8_t address[6], uint8_t address_type,
                       uint8_t identity[6], uint8_t *identity_type) {
     if (!address || address_type > 1 || !identity || !identity_type) return 0;
     int slot = gap_identity_find(address, address_type);
@@ -212,7 +212,7 @@ static int gap_private_address_generate(const uint8_t irk[16],
 
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
-int ble_gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
+int gap_identity_local_key(const uint8_t address[6], uint8_t address_type,
                                  const uint8_t irk[16]) {
     if (!address || address_type > 1 || gap_scanning || gap_advertising.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
@@ -255,7 +255,7 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // Set rotating private addresses while GAP is idle: an IRK selects RPAs,
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
-int ble_gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
+int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active ||
         gap_central_connect.active || timeout_s > 41400 || (irk && !timeout_s))
@@ -302,7 +302,7 @@ static int gap_privacy_timeout_pick(uint16_t min_s, uint16_t max_s,
 
 // Generate local RPAs using a uniformly selected timeout for every rotation.
 // Bounds follow HCI LE Set Resolvable Private Address Timeout v2: 1..3600 s.
-int ble_gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s,
+int gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s,
                                     uint16_t max_timeout_s) {
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_advertising.enabled ||
@@ -326,7 +326,7 @@ int ble_gap_privacy_set_randomized(const uint8_t irk[16], uint16_t min_timeout_s
 
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
-int ble_gap_privacy_filter(uint8_t scan, uint8_t connection) {
+int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanning ||
         gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active || gap_central_connect.active)
@@ -339,7 +339,7 @@ int ble_gap_privacy_filter(uint8_t scan, uint8_t connection) {
 
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
-int ble_gap_set_static_random_address(const uint8_t address[6]) {
+int gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanning ||
         gap_conn.active || gap_central_connect.active ||
@@ -353,7 +353,7 @@ int ble_gap_set_static_random_address(const uint8_t address[6]) {
 }
 
 // Use the controller's factory public address for GAP advertising and scanning.
-int ble_gap_use_public_address(void) {
+int gap_use_public_address(void) {
     if (gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanning ||
         gap_conn.active ||
         gap_central_connect.active) return 0;

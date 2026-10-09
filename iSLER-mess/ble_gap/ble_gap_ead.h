@@ -17,7 +17,7 @@ static struct {
 // Install the session key and IV shared with EAD receivers. The key must come
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
-int ble_gap_ead_key_material_set(const uint8_t session_key[16],
+int gap_ead_key_material_set(const uint8_t session_key[16],
                                   const uint8_t iv[8]) {
     if (!session_key || !iv) return 0;
     uint8_t key_bits = 0;
@@ -32,7 +32,7 @@ int ble_gap_ead_key_material_set(const uint8_t session_key[16],
 }
 
 // Copy the current EAD session key and IV for application key distribution.
-int ble_gap_ead_key_material_get(uint8_t out[24]) {
+int gap_ead_key_material_get(uint8_t out[24]) {
     if (!out || !gap_ead_key_material.set) return 0;
     memcpy(out, gap_ead_key_material.session_key, GAP_EAD_KEY_LEN);
     memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key_material.iv,
@@ -41,12 +41,12 @@ int ble_gap_ead_key_material_get(uint8_t out[24]) {
 }
 
 // Erase the EAD key material so encrypted advertising cannot be produced.
-void ble_gap_ead_key_material_clear(void) {
+void gap_ead_key_material_clear(void) {
     volatile uint8_t *wipe = (volatile uint8_t *)&gap_ead_key_material;
     for (size_t i = 0; i < sizeof(gap_ead_key_material); i++) wipe[i] = 0;
 }
 
-static int ble_gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
+static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
     if (!data || !len || len > GAP_EAD_PLAINTEXT_MAX) return 0;
     size_t offset = 0;
     size_t structures = 0;
@@ -54,7 +54,7 @@ static int ble_gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
         uint8_t type;
         const uint8_t *value;
         size_t value_len;
-        int result = ble_gap_ad_next(data, len, &offset, &type, &value,
+        int result = gap_ad_next(data, len, &offset, &type, &value,
                                       &value_len);
         if (result < 0) return 0;
         if (!result) break;
@@ -66,11 +66,11 @@ static int ble_gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
 // Encrypt concatenated AD structures into one Encrypted Data AD structure.
 // Output includes the length and 0x31 type bytes. Secure entropy supplies the
 // five-octet randomizer; output capacity must allow plaintext length + 11.
-int ble_gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
+int gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
                          uint8_t *out, size_t out_capacity,
                          size_t *out_len) {
     if (!gap_ead_key_material.set || !out || !out_len ||
-        !ble_gap_ead_plaintext_valid(plaintext, plaintext_len) ||
+        !gap_ead_plaintext_valid(plaintext, plaintext_len) ||
         plaintext_len + 11 > out_capacity) return 0;
 
     uint8_t randomizer[GAP_EAD_RANDOMIZER_LEN];
@@ -95,7 +95,7 @@ int ble_gap_ead_encrypt(const uint8_t *plaintext, size_t plaintext_len,
 }
 
 // Authenticate and decrypt one complete Encrypted Data AD structure.
-int ble_gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
+int gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
                          uint8_t *out, size_t out_capacity,
                          size_t *out_len) {
     if (!gap_ead_key_material.set || !ead || !out || !out_len ||
@@ -114,7 +114,7 @@ int ble_gap_ead_decrypt(const uint8_t *ead, size_t ead_len,
     if (ccm_auth_decrypt(gap_ead_key_material.session_key, nonce,
             sizeof(nonce), &aad, sizeof(aad), out, plaintext_len, mic,
             GAP_EAD_MIC_LEN, out) != CCM_OK ||
-        !ble_gap_ead_plaintext_valid(out, plaintext_len)) {
+        !gap_ead_plaintext_valid(out, plaintext_len)) {
         volatile uint8_t *wipe = out;
         for (size_t i = 0; i < plaintext_len; i++) wipe[i] = 0;
         return 0;

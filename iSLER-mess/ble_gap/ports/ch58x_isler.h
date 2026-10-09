@@ -14,12 +14,12 @@ __attribute__((weak)) int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
 
 // Bond storage is application-owned until a reserved persistent region is
 // assigned. The generic GAP bond API safely reports storage as unavailable.
-__attribute__((weak)) int GAP_BOND_LOAD(uint8_t slot, ble_gap_bond *bond) {
+__attribute__((weak)) int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
     (void)slot;
     if (bond) memset(bond, 0, sizeof(*bond));
     return -1;
 }
-__attribute__((weak)) int GAP_BOND_SAVE(uint8_t slot, const ble_gap_bond *bond) {
+__attribute__((weak)) int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) {
     (void)slot; (void)bond;
     return 0;
 }
@@ -68,7 +68,7 @@ static uint8_t gap_radio_phy_mode(uint8_t phy) {
 
 // For different TX/RX rates, arm RX from TX completion within the peer's IFS.
 void gap_hw_radio_transmitted(void) {
-    ble_gap_hw_transmitted();
+    gap_hw_transmitted();
     if (gap_radio_link.receive_after_tx &&
         gap_radio_link.tx_phy != gap_radio_link.rx_phy) {
         iSLERLinkConfig(gap_radio_link.access_address, gap_radio_link.channel,

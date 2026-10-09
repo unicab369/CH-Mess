@@ -127,26 +127,26 @@ static inline uint32_t gap_phy_packet_airtime_us(uint16_t payload_len,
 // Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
 typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;
-} ble_gap_data_length;
+} gap_data_length;
 
 #include "ble_gap_bond.h"
 
 // LE Secure Connections OOB authentication data. Exchange both fields through
-// an authenticated OOB channel before calling ble_gap_pair(). Values use SMP
+// an authenticated OOB channel before calling gap_pair(). Values use SMP
 // byte order.
 typedef struct {
     uint8_t random[16], confirm[16];
-} ble_gap_sc_oob_data;
+} gap_sc_oob_data;
 
-int ble_gap_pair(void);
-int ble_gap_smp_user_request_set(ble_smp_user_request_fn callback,
+int gap_pair(void);
+int gap_smp_user_request_set(ble_smp_user_request_fn callback,
                                   void *context);
-int ble_gap_keypress_notifications_set(uint8_t enabled);
-int ble_gap_passkey_keypress(uint8_t notification_type);
-int ble_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
-int ble_gap_encrypted(void);
+int gap_keypress_notifications_set(uint8_t enabled);
+int gap_passkey_keypress(uint8_t notification_type);
+int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
+int gap_encrypted(void);
 
-int ble_gap_conn_busy(void);
+int gap_conn_busy(void);
 
 #include "ble_gap_connection_state.h"
 

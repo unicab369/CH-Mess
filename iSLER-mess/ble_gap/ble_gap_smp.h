@@ -4,7 +4,7 @@
 #ifndef BLE_SMP_GAP_H
 #define BLE_SMP_GAP_H
 #ifndef GAP_H
-#error "Include ble_gap_smp.h through ble_gap.h"
+#error "Include gap_smp.h through ble_gap.h"
 #endif
 
 static int gap_smp_host_random(void *context, uint8_t *out, size_t len) {
@@ -53,7 +53,7 @@ static int gap_smp_host_set_encryption(void *context, const uint8_t ltk[16],
     if (!ltk || key_size < 7 || key_size > 16 || authenticated > 1)
         return 0;
     const uint8_t zero_rand[8] = {0};
-    return ble_gap_encrypt(ltk, zero_rand, 0);
+    return gap_encrypt(ltk, zero_rand, 0);
 }
 
 static int gap_smp_host_bond_load(void *context, uint8_t address_type,
@@ -268,7 +268,7 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
 
 static int gap_smp_link_send_pdu(void *context, uint16_t cid,
     const uint8_t *payload, uint16_t len) {
-    ble_gap_smp_context *ctx = (ble_gap_smp_context *)context;
+    gap_smp_context *ctx = (gap_smp_context *)context;
     if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
         return 0;
     int encoded = ble_l2cap_encode(ctx->tx, sizeof(ctx->tx), cid,
@@ -281,19 +281,19 @@ static int gap_smp_link_send_pdu(void *context, uint16_t cid,
 
 static int gap_smp_receive_pdu(void *context, const uint8_t *pdu,
                                 uint16_t len) {
-    ble_gap_smp_context *ctx = (ble_gap_smp_context *)context;
+    gap_smp_context *ctx = (gap_smp_context *)context;
     return ctx && ble_smp_queue_received(&ctx->bearer, pdu, len);
 }
 
 static void gap_smp_timeout(void *context) {
-    ble_gap_smp_context *ctx = (ble_gap_smp_context *)context;
+    gap_smp_context *ctx = (gap_smp_context *)context;
     if (ctx && ctx->bearer.pairing.phase) {
         gap_smp_finish(0x08, 0);
         ctx->blocked = 1;
     }
 }
 
-static int ble_gap_smp_link_init(void) {
+static int gap_smp_link_init(void) {
     ble_l2cap_ops ops = {0};
     ops.send_pdu = gap_smp_link_send_pdu;
     ops.context = &gap_smp;
@@ -348,7 +348,7 @@ static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
 
 // Stop the procedure and erase temporary secrets on every success/failure path.
 static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
-    if (status) ble_gap_smp_bond_abort();
+    if (status) gap_smp_bond_abort();
     uint8_t discard_bond = status && !gap_conn.bonded &&
         (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX || gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX);
     volatile uint8_t *wipe = gap_smp.tx;
@@ -376,14 +376,14 @@ static void gap_smp_finish(uint8_t status, uint8_t notify_peer) {
     if (notify_peer) gap_smp_queue(5, &status, 1);
 }
 
-void ble_gap_pairing_set(uint8_t enabled) {
+void gap_pairing_set(uint8_t enabled) {
     gap_pairing_enabled = !!enabled;
     if (!enabled && gap_smp.bearer.pairing.phase) gap_smp_finish(5, 1);
 }
 
 // Install an optional application notification callback for passkey and
 // numeric-comparison requests. Replies remain asynchronous through the GAP API.
-int ble_gap_smp_user_request_set(ble_smp_user_request_fn callback,
+int gap_smp_user_request_set(ble_smp_user_request_fn callback,
                                   void *context) {
     if (gap_smp.bearer.pairing.phase) return 0;
     gap_smp_user_request_callback = callback;
@@ -395,7 +395,7 @@ int ble_gap_smp_user_request_set(ble_smp_user_request_fn callback,
     return 1;
 }
 
-int ble_gap_keypress_notifications_set(uint8_t enabled) {
+int gap_keypress_notifications_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.bearer.pairing.phase) return 0;
     gap_pairing_policy.keypress_notifications = enabled;
     return 1;
@@ -403,7 +403,7 @@ int ble_gap_keypress_notifications_set(uint8_t enabled) {
 
 // Configure UI capabilities and reject pairing below the application's security
 // requirements. Settings cannot change during a pairing procedure.
-int ble_gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
+int gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
     if (io > GAP_IO_KEYBOARD_DISPLAY || authenticated > 1 ||
         min_key_size < 7 || min_key_size > 16 || gap_smp.bearer.pairing.phase ||
         (authenticated && io == GAP_IO_NONE)) return 0;
@@ -414,12 +414,12 @@ int ble_gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size
 }
 
 // Request bonded pairing; it fails if bond storage cannot commit the key.
-int ble_gap_bonding_set(uint8_t enabled) {
+int gap_bonding_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.bearer.pairing.phase) return 0;
     if (enabled) {
         if (!GAP_BOND_LOAD || !GAP_BOND_SAVE || !GAP_BOND_DELETE)
             return 0;
-        ble_gap_bond bond;
+        gap_bond bond;
         for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
             memset(&bond, 0, sizeof(bond));
             int loaded = GAP_BOND_LOAD(slot, &bond);
@@ -433,7 +433,7 @@ int ble_gap_bonding_set(uint8_t enabled) {
 }
 
 // Configure Secure Connections association methods and bond behavior.
-int ble_gap_secure_connections_set(uint8_t enabled) {
+int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.bearer.pairing.phase) return 0;
     gap_pairing_policy.secure_connections = enabled;
     if (!enabled) gap_sc_oob_clear();
@@ -442,9 +442,9 @@ int ble_gap_secure_connections_set(uint8_t enabled) {
 
 // Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
 // The application must deliver both values to the peer over its OOB channel.
-int ble_gap_sc_oob_get(ble_gap_sc_oob_data *out) {
+int gap_sc_oob_get(gap_sc_oob_data *out) {
     if (!out || !gap_pairing_enabled || !gap_pairing_policy.secure_connections ||
-        !ble_gap_connected() || ble_gap_encrypted() || gap_smp.bearer.pairing.phase ||
+        !gap_connected() || gap_encrypted() || gap_smp.bearer.pairing.phase ||
         gap_security.phase) return 0;
     volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
     for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
@@ -480,7 +480,7 @@ int ble_gap_sc_oob_get(ble_gap_sc_oob_data *out) {
 }
 
 // Provide the peer's OOB commitment and random value. Pass NULL to clear it.
-int ble_gap_sc_oob_set_peer(const ble_gap_sc_oob_data *peer) {
+int gap_sc_oob_set_peer(const gap_sc_oob_data *peer) {
     if (!gap_pairing_policy.secure_connections || gap_smp.bearer.pairing.phase) return 0;
     volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_peer;
     for (size_t i = 0; i < sizeof(gap_sc_oob_peer); i++) wipe[i] = 0;
@@ -493,7 +493,7 @@ int ble_gap_sc_oob_set_peer(const ble_gap_sc_oob_data *peer) {
 
 // Return DISPLAY (render all six digits, including leading zeros), INPUT, or 0.
 // A display value is generated anew for each pairing; never cache/reuse it.
-uint8_t ble_gap_passkey(uint32_t *value) {
+uint8_t gap_passkey(uint32_t *value) {
     if (gap_smp.bearer.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value)
         *value = (uint32_t)gap_smp.bearer.pairing.tk[0] | (uint32_t)gap_smp.bearer.pairing.tk[1] << 8 |
             (uint32_t)gap_smp.bearer.pairing.tk[2] << 16 | (uint32_t)gap_smp.bearer.pairing.tk[3] << 24;
@@ -501,9 +501,9 @@ uint8_t ble_gap_passkey(uint32_t *value) {
 }
 
 // Submit the passkey entered by the user. Confirm exchange resumes on polling.
-int ble_gap_passkey_reply(uint32_t value) {
+int gap_passkey_reply(uint32_t value) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
-    if (!ble_gap_connected() ||
+    if (!gap_connected() ||
         (gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_PASSKEY &&
          !(gap_smp.bearer.pairing.secure_connections && gap_smp.bearer.pairing.sc.passkey_required &&
            (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PUBLIC_KEY ||
@@ -519,7 +519,7 @@ int ble_gap_passkey_reply(uint32_t value) {
 }
 
 // Send a passkey-entry progress event from a local keyboard-only device.
-int ble_gap_passkey_keypress(uint8_t notification_type) {
+int gap_passkey_keypress(uint8_t notification_type) {
     uint8_t passkey_phase = gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_PASSKEY ||
         gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_CONFIRM || gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_RANDOM ||
         (gap_smp.bearer.pairing.secure_connections && gap_smp.bearer.pairing.sc.passkey_required &&
@@ -535,16 +535,16 @@ int ble_gap_passkey_keypress(uint8_t notification_type) {
 }
 
 // Show all six digits on both devices and ask the user whether they match.
-int ble_gap_numeric_comparison(uint32_t *value) {
+int gap_numeric_comparison(uint32_t *value) {
     if (!value || gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_USER || gap_smp.bearer.pairing.sc.numeric_reply)
         return 0;
     *value = gap_smp.bearer.pairing.sc.numeric_value;
     return 1;
 }
 
-int ble_gap_numeric_comparison_reply(uint8_t accept) {
+int gap_numeric_comparison_reply(uint8_t accept) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
-    if (!ble_gap_connected() || gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_USER ||
+    if (!gap_connected() || gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_USER ||
         gap_smp.bearer.pairing.sc.numeric_reply || accept > 1) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
@@ -554,24 +554,24 @@ int ble_gap_numeric_comparison_reply(uint8_t accept) {
     return 1;
 }
 
-int ble_gap_pair_cancel(void) {
+int gap_pair_cancel(void) {
     if (!gap_smp.bearer.pairing.phase || gap_smp.blocked) return 0;
     gap_smp_finish(gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER ? 0x0c : 1, 1);
     return 1;
 }
 
 // Report achieved security only after encryption completes, never during pairing.
-int ble_gap_authenticated(void) {
-    return ble_gap_encrypted() && gap_conn.authenticated;
+int gap_authenticated(void) {
+    return gap_encrypted() && gap_conn.authenticated;
 }
-uint8_t ble_gap_key_size(void) {
-    return ble_gap_encrypted() ? gap_conn.encryption_key_size : 0;
+uint8_t gap_key_size(void) {
+    return gap_encrypted() ? gap_conn.encryption_key_size : 0;
 }
 
 // Central starts pairing; Peripheral asks its Central to start it.
-int ble_gap_pair(void) {
-    if (!gap_pairing_enabled || !ble_gap_connected() || gap_smp.bearer.pairing.phase ||
-        gap_smp.blocked || gap_security.phase || ble_gap_encrypted() ||
+int gap_pair(void) {
+    if (!gap_pairing_enabled || !gap_connected() || gap_smp.bearer.pairing.phase ||
+        gap_smp.blocked || gap_security.phase || gap_encrypted() ||
         gap_smp.tx_len || gap_smp.bearer.tx_len)
         return 0;
     if (!ble_smp_pairing_begin(&gap_smp.bearer, !!gap_conn.central_role))
@@ -626,15 +626,15 @@ int ble_gap_pair(void) {
     return 1;
 }
 
-uint8_t ble_gap_pairing_status(void) { return gap_smp.status; }
+uint8_t gap_pairing_status(void) { return gap_smp.status; }
 
 // Load a bond by the peer's stable identity address, not its rotating address.
-int ble_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
-                      ble_gap_bond *out) {
+int gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
+                      gap_bond *out) {
     if (!peer_address || !out || address_type > 1 ||
         (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
     if (!GAP_BOND_LOAD) { memset(out, 0, sizeof(*out)); return 0; }
-    ble_gap_bond bond;
+    gap_bond bond;
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&bond, 0, sizeof(bond));
         int loaded = GAP_BOND_LOAD(slot, &bond);
@@ -643,7 +643,7 @@ int ble_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             memset(out, 0, sizeof(*out)); return 0;
         }
-        if (!loaded || !ble_gap_bond_valid(&bond)) {
+        if (!loaded || !gap_bond_valid(&bond)) {
             volatile uint8_t *wipe = (volatile uint8_t *)&bond;
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             continue;
@@ -664,10 +664,10 @@ int ble_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
 
 // Add or replace a bond using its peer identity address. Returns 0 if full or
 // storage is unavailable; the application chooses which record to evict.
-int ble_gap_bond_set(const ble_gap_bond *bond) {
-    if (!ble_gap_bond_valid(bond)) return 0;
+int gap_bond_set(const gap_bond *bond) {
+    if (!gap_bond_valid(bond)) return 0;
     if (!GAP_BOND_LOAD || !GAP_BOND_SAVE) return 0;
-    ble_gap_bond record = *bond;
+    gap_bond record = *bond;
     record.version = GAP_BOND_VERSION;
     for (uint8_t i = record.key_size; i < sizeof(record.ltk); i++) record.ltk[i] = 0;
     if (!record.has_peer_irk) memset(record.peer_irk, 0, sizeof(record.peer_irk));
@@ -681,7 +681,7 @@ int ble_gap_bond_set(const ble_gap_bond *bond) {
         memset(record.peripheral_rand, 0, sizeof(record.peripheral_rand));
         memset(record.peripheral_ediv, 0, sizeof(record.peripheral_ediv));
     }
-    ble_gap_bond current;
+    gap_bond current;
     int free_slot = -1;
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&current, 0, sizeof(current));
@@ -693,7 +693,7 @@ int ble_gap_bond_set(const ble_gap_bond *bond) {
             for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
             return 0;
         }
-        if (!loaded || !ble_gap_bond_valid(&current)) {
+        if (!loaded || !gap_bond_valid(&current)) {
             if (free_slot < 0) free_slot = slot;
             volatile uint8_t *wipe = (volatile uint8_t *)&current;
             for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
@@ -717,11 +717,11 @@ int ble_gap_bond_set(const ble_gap_bond *bond) {
     return saved;
 }
 
-int ble_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
+int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     if (!peer_address || address_type > 1 ||
         (address_type && (peer_address[5] & 0xc0) != 0xc0)) return 0;
     if (!GAP_BOND_LOAD || !GAP_BOND_DELETE) return 0;
-    ble_gap_bond bond;
+    gap_bond bond;
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&bond, 0, sizeof(bond));
         int loaded = GAP_BOND_LOAD(slot, &bond);
@@ -730,7 +730,7 @@ int ble_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
             for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
             return 0;
         }
-        if (loaded && ble_gap_bond_valid(&bond) &&
+        if (loaded && gap_bond_valid(&bond) &&
             bond.peer_address_type == address_type &&
             memcmp(bond.peer_address, peer_address, 6) == 0) {
             volatile uint8_t *wipe = (volatile uint8_t *)&bond;
@@ -743,7 +743,7 @@ int ble_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     return 0;
 }
 
-static void gap_smp_bond_to_generic(const ble_gap_bond *source,
+static void gap_smp_bond_to_generic(const gap_bond *source,
                                     ble_smp_bond *out) {
     memset(out, 0, sizeof(*out));
     out->version = BLE_SMP_BOND_SCHEMA_VERSION;
@@ -775,7 +775,7 @@ static void gap_smp_bond_to_generic(const ble_gap_bond *source,
 }
 
 static void gap_smp_bond_from_generic(const ble_smp_bond *source,
-                                      ble_gap_bond *out) {
+                                      gap_bond *out) {
     memset(out, 0, sizeof(*out));
     out->version = GAP_BOND_VERSION;
     out->valid = source->valid;
@@ -804,8 +804,8 @@ static void gap_smp_bond_from_generic(const ble_smp_bond *source,
 static int gap_smp_host_bond_load(void *context, uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond) {
     (void)context;
-    ble_gap_bond stored;
-    if (!bond || !ble_gap_bond_get(address, address_type, &stored)) return 0;
+    gap_bond stored;
+    if (!bond || !gap_bond_get(address, address_type, &stored)) return 0;
     gap_smp_bond_to_generic(&stored, bond);
     volatile uint8_t *wipe = (volatile uint8_t *)&stored;
     for (size_t i = 0; i < sizeof(stored); i++) wipe[i] = 0;
@@ -815,9 +815,9 @@ static int gap_smp_host_bond_load(void *context, uint8_t address_type,
 static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond) {
     (void)context;
     if (!bond) return 0;
-    ble_gap_bond stored;
+    gap_bond stored;
     gap_smp_bond_from_generic(bond, &stored);
-    int result = ble_gap_bond_set(&stored);
+    int result = gap_bond_set(&stored);
     volatile uint8_t *wipe = (volatile uint8_t *)&stored;
     for (size_t i = 0; i < sizeof(stored); i++) wipe[i] = 0;
     return result;
@@ -826,11 +826,11 @@ static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond) {
 static int gap_smp_host_bond_remove(void *context, uint8_t address_type,
                                     const uint8_t address[6]) {
     (void)context;
-    return ble_gap_bond_remove(address, address_type);
+    return gap_bond_remove(address, address_type);
 }
 
 static int gap_smp_generic_bond_load(const uint8_t address[6],
-    uint8_t address_type, ble_gap_bond *out) {
+    uint8_t address_type, gap_bond *out) {
     ble_smp_bond generic;
     if (!out) return 0;
     memset(out, 0, sizeof(*out));
@@ -842,7 +842,7 @@ static int gap_smp_generic_bond_load(const uint8_t address[6],
     return 1;
 }
 
-static int gap_smp_generic_bond_store(const ble_gap_bond *bond) {
+static int gap_smp_generic_bond_store(const gap_bond *bond) {
     if (!bond) return 0;
     ble_smp_bond generic;
     gap_smp_bond_to_generic(bond, &generic);
@@ -859,7 +859,7 @@ static int gap_smp_generic_bond_remove(const uint8_t address[6],
 
 // Restore the old Central bond if a replacement was saved but pairing failed
 // before the peer acknowledged Master Identification.
-static void ble_gap_smp_bond_abort(void) {
+static void gap_smp_bond_abort(void) {
     uint8_t staged_central_bond = gap_conn.central_role && gap_smp.bearer.pairing.secure_connections &&
         ((gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX && gap_smp.bearer.pairing.bond_tx_step >= 2) ||
          (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_RX && gap_smp.bearer.pairing.bond_rx_step >= 10));
@@ -1010,7 +1010,7 @@ static void gap_smp_bond_peripheral_tx_complete(void) {
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.
-static void ble_gap_smp_poll(void) {
+static void gap_smp_poll(void) {
     if (!gap_conn.active) return;
     if (gap_smp.l2cap_ready)
         (void)ble_smp_tick(&gap_smp.bearer, GET_MILLIS());
@@ -1196,7 +1196,7 @@ static void ble_gap_smp_poll(void) {
     if (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX) {
         if (!gap_smp.bond_tx_waiting && gap_smp.tx_len && !gap_conn.tx_pending &&
             !gap_conn.tx_queued && !gap_conn.tx_l2cap_remaining &&
-            ble_gap_send_data(2, gap_smp.tx, gap_smp.tx_len)) {
+            gap_send_data(2, gap_smp.tx, gap_smp.tx_len)) {
             gap_smp.tx_len = 0;
             gap_smp.bond_tx_waiting = 1;
             volatile uint8_t *wipe = gap_smp.tx;
@@ -1213,7 +1213,7 @@ static void ble_gap_smp_poll(void) {
         if (max_len > time_len) max_len = time_len;
         size_t remaining = gap_smp.tx_len - gap_smp.tx_offset;
         if (max_len > remaining) max_len = remaining;
-        if (!max_len || !ble_gap_send_data(gap_smp.tx_offset ? 1 : 2,
+        if (!max_len || !gap_send_data(gap_smp.tx_offset ? 1 : 2,
                 gap_smp.tx + gap_smp.tx_offset, max_len)) return;
         gap_smp.tx_offset += (uint8_t)max_len;
         if (gap_smp.tx_offset == gap_smp.tx_len) {
@@ -1238,12 +1238,12 @@ static void ble_gap_smp_poll(void) {
             BLE_SMP_PHASE_SC_RANDOM;
     }
     if (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_ENCRYPT) {
-        if (ble_gap_encrypted()) {
+        if (gap_encrypted()) {
             gap_conn.authenticated = gap_smp.bearer.pairing.authenticated;
             gap_conn.encryption_key_size = 16;
             if (gap_smp.bearer.pairing.bond_requested) {
                 // SC bonds store the f5 LTK and use zero EDIV and Rand.
-                ble_gap_bond bond = {0};
+                gap_bond bond = {0};
                 bond.version = GAP_BOND_VERSION;
                 bond.valid = 1;
                 bond.peer_address_type = gap_conn.peer_identity_type;
@@ -1281,12 +1281,12 @@ static void ble_gap_smp_poll(void) {
                         gap_smp.bearer.pairing.sc.ltk, 16, gap_smp.bearer.pairing.authenticated))
                     gap_smp.encryption_started = 1;
             } else if (!gap_conn.central_role &&
-                       ble_gap_key_request(NULL, NULL)) {
+                       gap_key_request(NULL, NULL)) {
                 uint8_t identifiers = (uint8_t)gap_security.ediv |
                     (uint8_t)(gap_security.ediv >> 8);
                 for (uint8_t i = 0; i < 8; i++)
                     identifiers |= gap_security.random[i];
-                ble_gap_key_reply(identifiers ? NULL : gap_smp.bearer.pairing.sc.ltk);
+                gap_key_reply(identifiers ? NULL : gap_smp.bearer.pairing.sc.ltk);
                 gap_smp.encryption_started = 1;
                 if (identifiers) gap_smp_finish(8, 0);
             }
@@ -1304,7 +1304,7 @@ static void ble_gap_smp_poll(void) {
         }
     }
     if (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_ENCRYPT) {
-        if (ble_gap_encrypted()) {
+        if (gap_encrypted()) {
             if (!gap_smp.encryption_started) { gap_smp_finish(8, 1); return; }
             gap_conn.authenticated = gap_smp.bearer.pairing.authenticated;
             gap_conn.encryption_key_size = gap_smp.bearer.pairing.key_size;
@@ -1368,10 +1368,10 @@ static void ble_gap_smp_poll(void) {
                 gap_smp_finish(0x08, 1); return;
             }
             gap_smp.encryption_started = 1;
-        } else if (!gap_conn.central_role && ble_gap_key_request(NULL, NULL)) {
+        } else if (!gap_conn.central_role && gap_key_request(NULL, NULL)) {
             uint8_t zero = (uint8_t)gap_security.ediv | (uint8_t)(gap_security.ediv >> 8);
             for (unsigned i = 0; i < 8; i++) zero |= gap_security.random[i];
-            ble_gap_key_reply(zero ? NULL : gap_smp.bearer.pairing.stk);
+            gap_key_reply(zero ? NULL : gap_smp.bearer.pairing.stk);
             gap_smp.encryption_started = 1;
             if (zero) { gap_smp_finish(0x08, 0); return; }
         }
@@ -1385,10 +1385,10 @@ static void ble_gap_smp_poll(void) {
         uint8_t id_match = !memcmp(gap_security.random, gap_conn.bond.rand, 8) &&
             gap_security.ediv == ((uint16_t)gap_conn.bond.ediv[0] |
                                   (uint16_t)gap_conn.bond.ediv[1] << 8);
-        if (id_match && ble_gap_key_reply(gap_conn.bond.ltk))
+        if (id_match && gap_key_reply(gap_conn.bond.ltk))
             gap_conn.bond_restore_started = 1;
         else
-            ble_gap_key_reply(NULL);
+            gap_key_reply(NULL);
     }
     if (!gap_conn.rx_ready || gap_smp.l2cap_rx_pending) return;
     gap_smp.l2cap_rx_pending = 1;
@@ -1599,7 +1599,7 @@ static void ble_gap_smp_poll(void) {
     }
     if (!gap_pairing_enabled) { gap_smp_finish(5, 1); return; }
     if (op == 11 && n == 2 && gap_conn.central_role && !gap_smp.bearer.pairing.phase) {
-        if (ble_gap_pair()) {
+        if (gap_pair()) {
             if (p[1] & 4) {
                 gap_smp.bearer.pairing.request[3] |= 4;
                 gap_smp.tx[7] |= 4;

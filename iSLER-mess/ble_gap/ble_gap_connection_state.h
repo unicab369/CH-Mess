@@ -13,7 +13,7 @@ typedef struct {
     uint8_t authenticated, encryption_key_size;
     uint8_t peer_identity_type, peer_identity_address[6];
     uint8_t bond_lookup_pending, bonded, bond_restore_started, bond_restore_attempted;
-    ble_gap_bond bond;
+    gap_bond bond;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
@@ -68,7 +68,7 @@ typedef struct {
     uint16_t params_min, params_max, params_latency, params_timeout;
     uint32_t params_started_ms;
     uint16_t data_capacity, local_tx_octets;
-    ble_gap_data_length data_length, remote_data_length;
+    gap_data_length data_length, remote_data_length;
     volatile uint8_t length_queued;
     uint8_t length_pending, length_status;
     uint32_t length_started_ms;
@@ -85,8 +85,8 @@ typedef struct {
     uint16_t rate_update_timeout;
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_event_ticks;
-} ble_gap_connection_context;
-static ble_gap_connection_context
+} gap_connection_context;
+static gap_connection_context
     gap_connection_contexts[GAP_CONNECTION_COUNT];
 static uint8_t gap_connection_slot;
 static uint16_t gap_connection_generations[GAP_CONNECTION_COUNT];
@@ -107,9 +107,9 @@ static int gap_connection_select_slot(uint8_t slot) {
 typedef struct {
     uint8_t slot;
     uint16_t generation;
-} ble_gap_connection_handle;
+} gap_connection_handle;
 
-static inline uint8_t ble_gap_connection_count(void) {
+static inline uint8_t gap_connection_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         count += gap_connection_contexts[slot].active != 0;
@@ -117,8 +117,8 @@ static inline uint8_t ble_gap_connection_count(void) {
 }
 
 // Return the handle for the active connection at this zero-based list index.
-static inline int ble_gap_connection_handle_at(
-    uint8_t index, ble_gap_connection_handle *handle) {
+static inline int gap_connection_handle_at(
+    uint8_t index, gap_connection_handle *handle) {
     if (!handle) return 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!gap_connection_contexts[slot].active) continue;
@@ -131,8 +131,8 @@ static inline int ble_gap_connection_handle_at(
 }
 
 // Select a live link for the existing connection-specific GAP operations.
-static inline int ble_gap_connection_select(
-    ble_gap_connection_handle handle) {
+static inline int gap_connection_select(
+    gap_connection_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
         !gap_connection_contexts[handle.slot].active ||
         gap_connection_generations[handle.slot] != handle.generation)
@@ -141,8 +141,8 @@ static inline int ble_gap_connection_select(
 }
 
 // Capture the currently selected link's handle for later API calls.
-static inline int ble_gap_connection_current(
-    ble_gap_connection_handle *handle) {
+static inline int gap_connection_current(
+    gap_connection_handle *handle) {
     if (!handle || !gap_conn.active) return 0;
     handle->slot = gap_connection_slot;
     handle->generation = gap_connection_generations[gap_connection_slot];
@@ -164,8 +164,8 @@ typedef struct {
     uint16_t ediv;
     uint64_t tx_counter, rx_counter;
     uint32_t started_ms;
-} ble_gap_security_context;
-static ble_gap_security_context
+} gap_security_context;
+static gap_security_context
     gap_security_contexts[GAP_CONNECTION_COUNT];
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 #define gap_security gap_security_contexts[gap_connection_slot]
@@ -203,34 +203,34 @@ typedef struct {
     uint8_t status, blocked, encryption_started;
     uint8_t bond_tx_waiting;
     uint8_t previous_bond_valid;
-    ble_gap_bond previous_bond;
+    gap_bond previous_bond;
     uint8_t tx[69], tx_len, tx_offset;
     ble_l2cap_connection l2cap;
     ble_l2cap_reassembler l2cap_rx;
     ble_smp bearer;
     uint8_t l2cap_ready, l2cap_rx_pending;
     uint32_t started_ms;
-} ble_gap_smp_context;
-static ble_gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
+} gap_smp_context;
+static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 #define gap_smp gap_smp_contexts[gap_connection_slot]
 typedef struct {
     uint8_t valid, private_key[32], public_key[64];
-    ble_gap_sc_oob_data data;
-} ble_gap_sc_oob_local_context;
-static ble_gap_sc_oob_local_context
+    gap_sc_oob_data data;
+} gap_sc_oob_local_context;
+static gap_sc_oob_local_context
     gap_sc_oob_local_contexts[GAP_CONNECTION_COUNT];
 #define gap_sc_oob_local gap_sc_oob_local_contexts[gap_connection_slot]
 typedef struct {
     uint8_t valid;
-    ble_gap_sc_oob_data data;
-} ble_gap_sc_oob_peer_context;
-static ble_gap_sc_oob_peer_context
+    gap_sc_oob_data data;
+} gap_sc_oob_peer_context;
+static gap_sc_oob_peer_context
     gap_sc_oob_peer_contexts[GAP_CONNECTION_COUNT];
 #define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_connection_slot]
-static void ble_gap_smp_poll(void);
-static void ble_gap_smp_bond_abort(void);
+static void gap_smp_poll(void);
+static void gap_smp_bond_abort(void);
 static void gap_smp_finish(uint8_t status, uint8_t notify_peer);
-static int ble_gap_smp_link_init(void);
+static int gap_smp_link_init(void);
 static void gap_sc_oob_clear(void);
 static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
 #define gap_bond_repair_pending \
@@ -371,7 +371,7 @@ static int gap_connection_accept(const uint8_t frame[36],
         capacity : GAP_CONN_DATA_MAX;
     gap_conn.local_tx_octets = 27;
     gap_conn.data_length = gap_conn.remote_data_length =
-        (ble_gap_data_length){27, 328, 27, 328};
+        (gap_data_length){27, 328, 27, 328};
     gap_conn.length_queued = gap_conn.length_pending = gap_conn.length_status = 0;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
@@ -397,7 +397,7 @@ static int gap_connection_accept(const uint8_t frame[36],
     if (++gap_connection_generations[gap_connection_slot] == 0)
         gap_connection_generations[gap_connection_slot] = 1;
     gap_conn.active = 1;
-    if (!ble_gap_smp_link_init()) {
+    if (!gap_smp_link_init()) {
         gap_conn.active = 0;
         return 0;
     }

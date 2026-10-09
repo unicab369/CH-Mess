@@ -2,7 +2,7 @@
 #ifndef GAP_CONNECTION_H
 #define GAP_CONNECTION_H
 #ifndef GAP_H
-#error "Include ble_gap_connection.h through ble_gap.h"
+#error "Include gap_connection.h through ble_gap.h"
 #endif
 
 static uint8_t gap_connection_rate_parameters_valid(uint16_t interval,
@@ -77,8 +77,8 @@ typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t
         cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-} ble_gap_connection_radio_buffers;
-static ble_gap_connection_radio_buffers
+} gap_connection_radio_buffers;
+static gap_connection_radio_buffers
     gap_connection_radio_buffers[GAP_CONNECTION_COUNT];
 #define gap_conn_tx_frame gap_connection_radio_buffers[gap_connection_slot].tx
 #define gap_conn_cipher_frame \
@@ -112,7 +112,7 @@ static void gap_connection_end(void) {
         gap_smp.bearer.pairing.bond_tx_step == 2) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
-        ble_gap_smp_bond_abort();
+        gap_smp_bond_abort();
         gap_bond_repair_pending = 1;
     }
     if (gap_conn.central_role && gap_conn.bond_restore_started &&
@@ -857,7 +857,7 @@ static void gap_privacy_poll(uint32_t now) {
 }
 
 // Complete an extended scan response exchange when its radio TX finishes.
-static inline void ble_gap_hw_transmitted(void) {
+static inline void gap_hw_transmitted(void) {
 #if GAP_EXT_ADV_SUPPORT
     if (gap_radio_ext_adv_scan_response_started)
         gap_radio_ext_adv_scan_waiting = 0;
@@ -878,7 +878,7 @@ static void gap_radio_ext_aux_ptr_write_phy(uint8_t *field, uint8_t channel,
 
 // Encode the periodic event announced by SyncInfo, relative to AUX_ADV_IND.
 static void gap_radio_ext_sync_info_write(uint8_t *field,
-    ble_gap_extended_advertising_set *set, uint64_t aux_start) {
+    gap_extended_advertising_set *set, uint64_t aux_start) {
     uint64_t target = set->periodic_next_event_ticks;
     if (!set->periodic_sync_info_sent && target <= aux_start) {
         // If polling missed startup, defer the first event so this SyncInfo
@@ -960,14 +960,14 @@ static uint8_t gap_periodic_channel_for(uint32_t access_address,
     return 0;
 }
 
-static uint8_t gap_periodic_channel(const ble_gap_extended_advertising_set *set,
+static uint8_t gap_periodic_channel(const gap_extended_advertising_set *set,
                                     uint16_t event_counter) {
     return gap_periodic_channel_for(set->periodic_access_address,
                                     set->periodic_channel_map, event_counter);
 }
 
 static int gap_radio_periodic_tx(uint8_t *frame, uint8_t length,
-    const ble_gap_extended_advertising_set *set, uint8_t channel,
+    const gap_extended_advertising_set *set, uint8_t channel,
     uint64_t start_ticks, uint64_t *actual_start) {
     GAP_HW_TX_CLEAR_DONE();
     GAP_HW_CRC_INIT(set->periodic_crc_init);
@@ -986,7 +986,7 @@ static int gap_radio_periodic_tx(uint8_t *frame, uint8_t length,
 static int gap_radio_periodic_response_tx(uint8_t slot, uint8_t channel,
     uint64_t response_start_ticks) {
     if (slot >= GAP_PERIODIC_SYNC_COUNT) return 0;
-    ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint8_t *frame = gap_radio_ext_adv_frame;
     frame[0] = 0x07; // AUX_SYNC_SUBEVENT_RSP, common extended format.
     frame[1] = (uint8_t)(2 + sync->pawr_response_data_len);
@@ -1024,7 +1024,7 @@ static void gap_periodic_response_report_push(uint8_t set_id,
     }
     uint8_t tail = (gap_pawr_response_report_head +
         gap_pawr_response_report_count) % GAP_PAWR_RESPONSE_REPORT_COUNT;
-    ble_gap_periodic_response_report *report =
+    gap_periodic_response_report *report =
         &gap_pawr_response_reports[tail];
     memset(report, 0, sizeof(*report));
     report->set_id = set_id;
@@ -1043,7 +1043,7 @@ static void gap_periodic_response_report_push(uint8_t set_id,
 
 // Decode a captured response and identify its slot from the packet start time.
 static void gap_radio_periodic_response_report_current(
-    ble_gap_extended_advertising_set *set, uint8_t set_id,
+    gap_extended_advertising_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint64_t subevent_start_ticks) {
     if (!gap_radio_pawr_response_ready) return;
     uint8_t *pdu = gap_radio_pawr_response_frame;
@@ -1075,7 +1075,7 @@ static void gap_radio_periodic_response_report_current(
 // Listen continuously over a subevent's response window so adjacent slots do
 // not have a radio retune gap between them.
 static void gap_radio_periodic_response_window_listen(
-    ble_gap_extended_advertising_set *set, uint8_t set_id,
+    gap_extended_advertising_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint8_t channel,
     uint64_t subevent_start_ticks) {
     uint64_t first_slot_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
@@ -1117,7 +1117,7 @@ static int gap_radio_periodic_connect_request(uint8_t slot,
         gap_conn.active || gap_central_connect.active ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_connection_request_valid(request)) return 0;
-    ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint8_t initiator_type = (request[0] >> 6) & 1;
     uint8_t responder_type = (request[0] >> 7) & 1;
     if (initiator_type != sync->address_type ||
@@ -1167,7 +1167,7 @@ static int gap_radio_periodic_connect_request(uint8_t slot,
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
 static int gap_radio_periodic_connect_exchange(
-    ble_gap_extended_advertising_set *set, uint8_t channel,
+    gap_extended_advertising_set *set, uint8_t channel,
     uint64_t request_start_ticks) {
     if (!set || !set->pawr_connect_pending || gap_conn.active ||
         GAP_HW_DATA_MAX() < 27) return 0;
@@ -1256,8 +1256,8 @@ static int gap_radio_periodic_connect_exchange(
 }
 
 // Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
-static int ble_gap_hw_transmit_periodic(
-    ble_gap_extended_advertising_set *set) {
+static int gap_hw_transmit_periodic(
+    gap_extended_advertising_set *set) {
     if (set->pawr_enabled) {
         uint8_t *frame = gap_radio_ext_adv_frame;
         uint16_t adi = (uint16_t)((set->sid << 12) | set->periodic_did);
@@ -1344,8 +1344,8 @@ static int ble_gap_hw_transmit_periodic(
 }
 
 // Send an AUX_ADV_IND followed by any AUX_CHAIN_IND packets for one set.
-static int ble_gap_hw_transmit_extended_advertising(
-    ble_gap_extended_advertising_set *set) {
+static int gap_hw_transmit_extended_advertising(
+    gap_extended_advertising_set *set) {
     uint8_t address[6], address_type;
     gap_local_address_select(-1, address, &address_type);
     uint16_t adi = (uint16_t)((set->sid & 0x0f) << 12) | set->did;
@@ -1684,7 +1684,7 @@ static void gap_radio_ext_scan_process(void) {
         if (received && !fields.has_aux_ptr && !fields.has_sync_info &&
             fields.has_adi && slot >= 0 &&
             gap_periodic_syncs[slot].pawr_response_pending) {
-            ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+            gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
             uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
             uint64_t packet_start = gap_radio_ext_scan_ticks >=
                 HW_TICKS_FROM_US(airtime_us) ? gap_radio_ext_scan_ticks -
@@ -1714,7 +1714,7 @@ static void gap_radio_ext_scan_process(void) {
                 gap_radio_ext_scan_ticks, (uint8_t)slot);
         return;
     }
-    (void)ble_gap_extended_scan_receive(kind, pdu, pdu_len,
+    (void)gap_extended_scan_receive(kind, pdu, pdu_len,
                                           gap_radio_ext_scan_rssi);
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.has_sync_info)
         (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy,
@@ -1871,7 +1871,7 @@ static int gap_periodic_sync_transfer_encode(uint8_t *frame, uint16_t id,
     if (!frame || sync_slot >= GAP_PERIODIC_SYNC_COUNT ||
         !gap_periodic_syncs[sync_slot].used ||
         !gap_periodic_syncs[sync_slot].established) return 0;
-    const ble_gap_periodic_sync_context *sync =
+    const gap_periodic_sync_context *sync =
         &gap_periodic_syncs[sync_slot];
     if ((sync->phy != GAP_PHY_1M && sync->phy != GAP_PHY_2M &&
          sync->phy != GAP_PHY_CODED) ||
@@ -1946,7 +1946,7 @@ static int gap_periodic_sync_transfer_encode(uint8_t *frame, uint16_t id,
 }
 
 // Queue a PAST LL control PDU for the active connection.
-int ble_gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
+int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     int sync_slot = gap_periodic_sync_handle_slot(handle);
     if (!gap_conn.active || sync_slot < 0 ||
         !gap_periodic_syncs[sync_slot].established ||
@@ -1961,7 +1961,7 @@ int ble_gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
 #endif
 
 // Validate scan requests and start the response from the radio RX interrupt.
-static void ble_gap_hw_received_selected(void) {
+static void gap_hw_received_selected(void) {
     const uint8_t *frame = GAP_HW_RX_FRAME();
     int8_t rssi = GAP_HW_RSSI();
     uint64_t received_ticks = GAP_HW_TICKS();
@@ -3018,11 +3018,11 @@ reject_parameters:
                             break;
                         }
                         if (frame[2] == 0x15 && !gap_conn.length_pending) break;
-                        gap_conn.remote_data_length = (ble_gap_data_length){
+                        gap_conn.remote_data_length = (gap_data_length){
                             values[2], values[3], values[0], values[1]};
                         // Combine sender and receiver limits for new fragments;
                         // already queued fragments retain their original length.
-                        ble_gap_data_length remote = gap_conn.remote_data_length;
+                        gap_data_length remote = gap_conn.remote_data_length;
                         uint16_t tx_time = (uint16_t)((gap_conn.local_tx_octets + 14) * 8);
                         uint16_t rx_time = (uint16_t)((gap_conn.data_capacity + 14) * 8);
                         gap_conn.data_length.tx_octets = gap_conn.local_tx_octets < remote.rx_octets ?
@@ -3459,15 +3459,15 @@ unknown_control_pdu:
 // The single radio callback belongs to the connection whose event configured
 // the radio. Select that link while processing the packet, then preserve the
 // application's previously selected handle.
-void ble_gap_hw_received(void) {
+void gap_hw_received(void) {
     uint8_t previous_slot = gap_connection_slot;
     if (gap_radio_connection_slot_valid)
         gap_connection_select_slot(gap_radio_connection_slot);
-    ble_gap_hw_received_selected();
+    gap_hw_received_selected();
     gap_connection_select_slot(previous_slot);
 }
 
-void ble_gap_hw_init(void) {
+void gap_hw_init(void) {
     GAP_HW_INIT();
     gap_radio_rx_armed = 0;
     gap_radio_connection_slot = 0;
@@ -3493,11 +3493,11 @@ void ble_gap_hw_init(void) {
     gap_radio_connect_request_ready = 0;
 }
 
-static void ble_gap_conn_poll(void);
-static inline void ble_gap_conn_poll_all(void);
+static void gap_conn_poll(void);
+static inline void gap_conn_poll_all(void);
 
 // A null random_address selects the controller's public address.
-int ble_gap_hw_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
+int gap_hw_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
                            const uint8_t *random_address,
                            const uint8_t *target_address, uint8_t target_type) {
     if ((pdu_type != 0x00 && pdu_type != 0x01 &&
@@ -3567,7 +3567,7 @@ int ble_gap_hw_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
                     gap_central_connect.auto_connect = 0;
                     gap_scanning = gap_active_scanning = 0;
                     gap_scan_generation++;
-                    ble_gap_conn_poll();
+                    gap_conn_poll();
                 return 2;
             }
             gap_radio_connect_request_ready = 0;
@@ -3591,7 +3591,7 @@ int ble_gap_hw_transmit(uint8_t pdu_type, const uint8_t *data, uint8_t len,
 
 // Calculate the receive-window deadline used to arbitrate the shared radio.
 static uint64_t gap_connection_event_close_ticks(
-    const ble_gap_connection_context *connection, uint32_t now_ms) {
+    const gap_connection_context *connection, uint32_t now_ms) {
     uint32_t widening_us =
         ((uint32_t)(now_ms - connection->last_rx_ms) *
          (500u + connection->peer_sca_ppm) + 999) / 1000;
@@ -3619,7 +3619,7 @@ static uint64_t gap_connection_event_close_ticks(
 }
 
 // Give an established Peripheral connection its data-channel receive window.
-static void ble_gap_conn_poll(void) {
+static void gap_conn_poll(void) {
     if (!gap_conn.active) return;
     if (gap_conn.bond_lookup_pending) {
         gap_conn.bond_lookup_pending = 0;
@@ -3636,7 +3636,7 @@ static void ble_gap_conn_poll(void) {
                 gap_conn.peer_identity_type, &gap_conn.bond))
             gap_conn.bonded = 1;
     }
-    if (gap_conn.bond_restore_started && ble_gap_encrypted()) {
+    if (gap_conn.bond_restore_started && gap_encrypted()) {
         gap_conn.authenticated = gap_conn.bond.authenticated;
         gap_conn.encryption_key_size = gap_conn.bond.key_size;
         gap_conn.bond_restore_started = 0;
@@ -3653,7 +3653,7 @@ static void ble_gap_conn_poll(void) {
     if (gap_conn.central_role && gap_bond_repair_pending &&
         !gap_conn.first_event && !gap_security.phase && !gap_smp.bearer.pairing.phase &&
         !gap_conn.tx_pending && !gap_conn.tx_queued &&
-        !gap_conn.tx_l2cap_remaining && ble_gap_pair()) {
+        !gap_conn.tx_l2cap_remaining && gap_pair()) {
         gap_bond_repair_pending = 0;
     }
     if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
@@ -3662,10 +3662,10 @@ static void ble_gap_conn_poll(void) {
         gap_conn.bond_restore_attempted = 1;
         uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
             (uint16_t)gap_conn.bond.ediv[1] << 8;
-        if (ble_gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
+        if (gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
             gap_conn.bond_restore_started = 1;
     }
-    ble_gap_smp_poll();
+    gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
         gap_security.phase != GAP_ENC_PAUSE_QUEUED && gap_security.phase != GAP_ENC_RESTART_QUEUED &&
@@ -3858,7 +3858,7 @@ static void ble_gap_conn_poll(void) {
 
 // Run housekeeping for every live link and let the first due link claim the
 // shared radio until its connection event finishes.
-static inline void ble_gap_conn_poll_all(void) {
+static inline void gap_conn_poll_all(void) {
     uint8_t previous_slot = gap_connection_slot;
     uint8_t owner_at_entry = gap_radio_connection_slot_valid ?
         gap_radio_connection_slot : UINT8_MAX;
@@ -3885,7 +3885,7 @@ static inline void ble_gap_conn_poll_all(void) {
     for (uint8_t index = 0; index < count; index++) {
         uint8_t slot = order[index];
         gap_connection_select_slot(slot);
-        ble_gap_conn_poll();
+        gap_conn_poll();
         if (gap_radio_connection_slot_valid &&
             gap_radio_connection_slot != owner_at_entry) {
             // Rotate ties so one link cannot repeatedly win an overlapping
@@ -3899,18 +3899,18 @@ static inline void ble_gap_conn_poll_all(void) {
 }
 
 // True after Central initiation or the first received Peripheral data packet.
-int ble_gap_connected(void) {
+int gap_connected(void) {
     return gap_conn.active && (gap_conn.central_role || !gap_conn.first_event);
 }
 
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
-int ble_gap_connection_update(uint16_t interval, uint16_t latency,
+int gap_connection_update(uint16_t interval, uint16_t latency,
                                  uint16_t timeout) {
     uint16_t factor = (uint32_t)interval * 10u == gap_conn.interval_125us ?
         gap_conn.subrate_factor : 1;
-    if (!ble_gap_connected() || gap_security.phase || !gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || gap_security.phase || !gap_conn.central_role || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -3934,12 +3934,12 @@ int ble_gap_connection_update(uint16_t interval, uint16_t latency,
 // Request a timing range in either role. Intervals use 1.25 ms units,
 // latency counts skipped events, and timeout uses 10 ms units.
 // Feature exchange runs first; the Central ultimately selects the new timing.
-int ble_gap_connection_request(uint16_t minimum, uint16_t maximum,
+int gap_connection_request(uint16_t minimum, uint16_t maximum,
                                   uint16_t latency, uint16_t timeout) {
     uint16_t factor = minimum * 10u <= gap_conn.interval_125us &&
         gap_conn.interval_125us <= maximum * 10u ?
         gap_conn.subrate_factor : 1;
-    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event ||
+    if (!gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -3966,15 +3966,15 @@ int ble_gap_connection_request(uint16_t minimum, uint16_t maximum,
 
 // Last local timing, channel-map, or connection-rate operation: 0 means
 // success, 0xff pending, otherwise a Bluetooth Link Layer error.
-uint8_t ble_gap_connection_status(void) {
+uint8_t gap_connection_status(void) {
     return gap_conn.connection_status;
 }
 
 // Request a subrate update as the Central. The Peripheral can request a
-// range with ble_gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
-int ble_gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
+// range with gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
+int gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
                          uint16_t continuation, uint16_t timeout) {
-    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4007,10 +4007,10 @@ int ble_gap_subrate_set(uint16_t factor, uint16_t peripheral_latency,
 }
 
 // Request subrating as the Peripheral. The Central selects the final values.
-int ble_gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
+int gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
                              uint16_t max_latency, uint16_t continuation,
                              uint16_t timeout) {
-    if (!ble_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_connection_rate_busy() ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4049,7 +4049,7 @@ int ble_gap_subrate_request(uint16_t factor_min, uint16_t factor_max,
 }
 
 // Report the applied or pending Link Layer subrate settings.
-void ble_gap_subrate_get(uint16_t *factor, uint16_t *base_event,
+void gap_subrate_get(uint16_t *factor, uint16_t *base_event,
                           uint16_t *peripheral_latency,
                           uint16_t *continuation, uint16_t *timeout) {
     if (factor) *factor = gap_conn.subrate_factor;
@@ -4059,7 +4059,7 @@ void ble_gap_subrate_get(uint16_t *factor, uint16_t *base_event,
     if (timeout) *timeout = gap_conn.supervision_timeout;
 }
 
-uint8_t ble_gap_subrate_status(void) {
+uint8_t gap_subrate_status(void) {
     return gap_conn.subrate_status;
 }
 
@@ -4089,9 +4089,9 @@ static uint16_t gap_connection_rate_min_interval(void) {
 
 // Queue a Central-selected interval (125-us units) and subrate tuple. Both
 // devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
-int ble_gap_connection_rate_set(uint16_t interval, uint16_t factor,
+int gap_connection_rate_set(uint16_t interval, uint16_t factor,
         uint16_t latency, uint16_t continuation, uint16_t timeout) {
-    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.rate_set_queued ||
         gap_conn.rate_request_queued || gap_conn.rate_update_pending ||
         gap_conn.rate_request_pending || gap_conn.local_update_queued ||
@@ -4119,10 +4119,10 @@ int ble_gap_connection_rate_set(uint16_t interval, uint16_t factor,
 
 // Request a Core 6.2 connection-rate range as the Peripheral. The Central
 // selects the interval and subrate values; the anchor offset is unspecified.
-int ble_gap_connection_rate_request(uint16_t interval_min,
+int gap_connection_rate_request(uint16_t interval_min,
         uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
         uint16_t max_latency, uint16_t continuation, uint16_t timeout) {
-    if (!ble_gap_connected() || gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || gap_conn.rate_set_queued ||
         gap_conn.rate_request_queued || gap_conn.rate_update_pending ||
         gap_conn.rate_request_pending || gap_conn.local_update_queued ||
@@ -4156,7 +4156,7 @@ int ble_gap_connection_rate_request(uint16_t interval_min,
 
 // Read the applied rate tuple. Interval uses 125-us units; other values match
 // the Connection Subrating fields. Pass NULL for fields the caller does not need.
-void ble_gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
+void gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
         uint16_t *peripheral_latency, uint16_t *continuation,
         uint16_t *timeout) {
     if (interval) *interval = gap_conn.interval_125us;
@@ -4169,8 +4169,8 @@ void ble_gap_connection_rate_get(uint16_t *interval, uint16_t *factor,
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
-int ble_gap_channel_map_set(const uint8_t channels[5]) {
-    if (!channels || !ble_gap_connected() || gap_security.phase || !gap_conn.central_role ||
+int gap_channel_map_set(const uint8_t channels[5]) {
+    if (!channels || !gap_connected() || gap_security.phase || !gap_conn.central_role ||
         gap_conn.first_event || gap_conn.phy_queued || gap_conn.phy_pending ||
         gap_conn.phy_update_pending || gap_conn.local_map_queued ||
         gap_conn.channel_map_update_pending || gap_conn.local_update_queued ||
@@ -4194,9 +4194,9 @@ int ble_gap_channel_map_set(const uint8_t channels[5]) {
 
 // Enable or disable Peripheral channel reports. Spacing and delay use 200-ms
 // units, as required by LL_CHANNEL_REPORTING_IND; status is connection_status.
-int ble_gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
+int gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
                                    uint8_t max_delay_200ms) {
-    if (!ble_gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
+    if (!gap_connected() || !gap_conn.central_role || gap_conn.first_event ||
         gap_security.phase || enable > 1 || min_spacing_200ms < 5 ||
         min_spacing_200ms > 150 || max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 || gap_conn.channel_reporting_queued ||
@@ -4214,9 +4214,9 @@ int ble_gap_channel_reporting_set(uint8_t enable, uint8_t min_spacing_200ms,
 // Supply local channel classifications packed as four 2-bit values per byte,
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
 // A Peripheral reports changes only after the Central enables reporting.
-int ble_gap_channel_classification_set(
+int gap_channel_classification_set(
         const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!ble_gap_connected() || !classification ||
+    if (!gap_connected() || !classification ||
         !gap_channel_classification_valid(classification)) return 0;
     if (memcmp(gap_conn.channel_local_classification, classification,
                GAP_CHANNEL_CLASSIFICATION_BYTES) == 0) return 1;
@@ -4230,9 +4230,9 @@ int ble_gap_channel_classification_set(
 }
 
 // Read the local classifications supplied by the Host/adapter.
-int ble_gap_channel_classification_get(
+int gap_channel_classification_get(
         uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!ble_gap_connected() || !classification ||
+    if (!gap_connected() || !classification ||
         !gap_conn.channel_classification_valid) return 0;
     memcpy(classification, gap_conn.channel_local_classification,
            GAP_CHANNEL_CLASSIFICATION_BYTES);
@@ -4240,9 +4240,9 @@ int ble_gap_channel_classification_get(
 }
 
 // Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
-int ble_gap_peer_channel_classification_get(
+int gap_peer_channel_classification_get(
         uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]) {
-    if (!ble_gap_connected() || !gap_conn.central_role || !classification ||
+    if (!gap_connected() || !gap_conn.central_role || !classification ||
         !gap_conn.channel_peer_classification_valid) return 0;
     memcpy(classification, gap_conn.channel_peer_classification,
            GAP_CHANNEL_CLASSIFICATION_BYTES);
@@ -4251,8 +4251,8 @@ int ble_gap_peer_channel_classification_get(
 
 // Request a transmit payload limit in either role; packet time is derived for
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
-int ble_gap_data_length_set(uint16_t octets) {
-    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event ||
+int gap_data_length_set(uint16_t octets) {
+    if (!gap_connected() || gap_security.phase || gap_conn.first_event ||
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
@@ -4271,20 +4271,20 @@ int ble_gap_data_length_set(uint16_t octets) {
     return 1;
 }
 
-ble_gap_data_length ble_gap_data_length_get(void) {
+gap_data_length gap_data_length_get(void) {
     return gap_conn.data_length;
 }
 
 // 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
-uint8_t ble_gap_data_length_status(void) {
+uint8_t gap_data_length_status(void) {
     return gap_conn.length_status;
 }
 
 // Request preferred transmit and receive PHY masks (1M=1, 2M=2, Coded=4).
 // The Central chooses the final rates; the connection switches at a shared Instant.
-int ble_gap_phy_set(uint8_t tx, uint8_t rx) {
+int gap_phy_set(uint8_t tx, uint8_t rx) {
     uint8_t supported = GAP_HW_PHY_MASK() & 7;
-    if (!ble_gap_connected() || gap_security.phase || gap_conn.first_event || !(supported & 6) ||
+    if (!gap_connected() || gap_security.phase || gap_conn.first_event || !(supported & 6) ||
         !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
         gap_conn.local_update_queued || gap_conn.update_pending ||
@@ -4309,20 +4309,20 @@ int ble_gap_phy_set(uint8_t tx, uint8_t rx) {
 }
 
 // Return the current rate in each direction; values are GAP_PHY_*.
-void ble_gap_phy_get(uint8_t *tx, uint8_t *rx) {
+void gap_phy_get(uint8_t *tx, uint8_t *rx) {
     if (tx) *tx = gap_conn.tx_phy;
     if (rx) *rx = gap_conn.rx_phy;
 }
 
-uint8_t ble_gap_phy_status(void) {
+uint8_t gap_phy_status(void) {
     return gap_conn.phy_status;
 }
 
     // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
-int ble_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    if (!ble_gap_connected() || gap_security.phase || gap_conn.tx_queued ||
+int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
+    if (!gap_connected() || gap_security.phase || gap_conn.tx_queued ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
         gap_conn.terminate_after_reply || !data ||
         (llid != 1 && llid != 2) || !len ||
@@ -4346,8 +4346,8 @@ int ble_gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 
 // Gracefully terminate the active Peripheral connection after sending the
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
-int ble_gap_disconnect(uint8_t reason) {
-    if (!ble_gap_connected() || !reason || gap_conn.terminate_after_reply ||
+int gap_disconnect(uint8_t reason) {
+    if (!gap_connected() || !reason || gap_conn.terminate_after_reply ||
         gap_conn.local_terminate_queued || gap_conn.local_terminate_pending)
         return 0;
     gap_conn.local_terminate_reason = reason;
@@ -4356,8 +4356,8 @@ int ble_gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
-int ble_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
-    ble_gap_smp_poll();
+int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
+    gap_smp_poll();
     if (!data || !len || !gap_conn.rx_ready) return 0;
     if (*len < gap_conn.rx_len) return -1;
     if (llid) *llid = gap_conn.rx_llid;
@@ -4368,7 +4368,7 @@ int ble_gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     return 1;
 }
 
-int ble_gap_conn_busy(void) {
+int gap_conn_busy(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         if (gap_connection_contexts[slot].active) return 1;
     return 0;
@@ -4463,7 +4463,7 @@ static void gap_radio_connection_take_radio(void) {
 }
 #endif
 
-void ble_gap_hw_scan_poll(void) {
+void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
     gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
@@ -4494,7 +4494,7 @@ void ble_gap_hw_scan_poll(void) {
         gap_active_scanning = 0;
         gap_scan_generation++;
     }
-    if (!ble_gap_conn_busy() && gap_radio_scan_generation != gap_scan_generation) {
+    if (!gap_conn_busy() && gap_radio_scan_generation != gap_scan_generation) {
         if (gap_radio_rx_armed) GAP_HW_STOP();
         gap_radio_rx_armed = 0;
         gap_radio_active_scan_pending = 0;
@@ -4562,7 +4562,7 @@ void ble_gap_hw_scan_poll(void) {
             gap_periodic_syncs[i].window_chain = 0;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (ble_gap_conn_busy()) break;
+            if (gap_conn_busy()) break;
             if (!gap_radio_aux_request[i].active) continue;
             if (slot < 0 || gap_radio_aux_request[i].window_start_ticks <
                     gap_radio_aux_request[slot].window_start_ticks) slot = i;
@@ -4638,7 +4638,7 @@ void ble_gap_hw_scan_poll(void) {
         }
     }
 #endif
-    if (ble_gap_conn_busy()) return;
+    if (gap_conn_busy()) return;
     if (gap_radio_active_scan_pending &&
         (int32_t)(now - gap_radio_active_scan_deadline_ms) >= 0) {
         gap_radio_active_scan_pending = 0;

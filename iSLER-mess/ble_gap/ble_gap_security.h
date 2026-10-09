@@ -2,7 +2,7 @@
 #ifndef GAP_SECURITY_H
 #define GAP_SECURITY_H
 #ifndef GAP_H
-#error "Include ble_gap_security.h through ble_gap.h"
+#error "Include gap_security.h through ble_gap.h"
 #endif
 
 #include "../ble_crypto.h"
@@ -118,8 +118,8 @@ static void gap_security_send(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
-int ble_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
-    if (!ltk || !random || !ble_gap_connected() || !gap_conn.central_role ||
+int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
+    if (!ltk || !random || !gap_connected() || !gap_conn.central_role ||
         gap_conn.first_event || gap_security.phase ||
         (gap_smp.bearer.pairing.phase && gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_ENCRYPT &&
          gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_ENCRYPT) || gap_conn.update_pending ||
@@ -176,14 +176,14 @@ int ble_gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t edi
 
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
-int ble_gap_key_request(uint8_t random[8], uint16_t *ediv) {
+int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) return 0;
     if (random) memcpy(random, gap_security.random, 8);
     if (ediv) *ediv = gap_security.ediv;
     return 1;
 }
 
-int ble_gap_key_reply(const uint8_t ltk[16]) {
+int gap_key_reply(const uint8_t ltk[16]) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
     if (!gap_conn.active || gap_security.phase != GAP_ENC_KEY_REQUEST) {
         GAP_CRITICAL_EXIT(irq_state);
@@ -204,12 +204,12 @@ int ble_gap_key_reply(const uint8_t ltk[16]) {
     return 1;
 }
 
-int ble_gap_encrypted(void) {
-    return ble_gap_connected() && !gap_security.phase &&
+int gap_encrypted(void) {
+    return gap_connected() && !gap_security.phase &&
         gap_security.tx_enabled && gap_security.rx_enabled;
 }
 
-uint8_t ble_gap_security_status(void) {
+uint8_t gap_security_status(void) {
     return gap_security.status;
 }
 

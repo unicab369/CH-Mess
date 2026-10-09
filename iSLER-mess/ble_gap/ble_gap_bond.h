@@ -17,14 +17,14 @@ typedef struct {
     // from ltk/rand/ediv, which hold the Central-distributed set.
     uint8_t peripheral_ltk[16], peripheral_rand[8], peripheral_ediv[2];
     uint8_t has_peripheral_ltk;
-} ble_gap_bond;
+} gap_bond;
 
 #define GAP_KEY_DIST_ENCRYPTION 0x01u
 #define GAP_KEY_DIST_IDENTITY 0x02u
 #define GAP_KEY_DIST_SIGNING 0x04u
 
 
-static int ble_gap_bond_valid(const ble_gap_bond *bond) {
+static int gap_bond_valid(const gap_bond *bond) {
     if (!bond || (bond->version != GAP_BOND_VERSION &&
         bond->version != GAP_BOND_VERSION_CSRK &&
         bond->version != GAP_BOND_VERSION_LEGACY) || !bond->valid ||
@@ -61,23 +61,23 @@ static int ble_gap_bond_valid(const ble_gap_bond *bond) {
 // after the operation is durable.
 // Weak references let a GAP-only build omit bond storage and fail closed.
 #if defined(__GNUC__)
-int GAP_BOND_LOAD(uint8_t slot, ble_gap_bond *bond) __attribute__((weak));
-int GAP_BOND_SAVE(uint8_t slot, const ble_gap_bond *bond) __attribute__((weak));
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
 int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
 #else
-int GAP_BOND_LOAD(uint8_t slot, ble_gap_bond *bond);
-int GAP_BOND_SAVE(uint8_t slot, const ble_gap_bond *bond);
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-int ble_gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
-                      ble_gap_bond *out);
-int ble_gap_bond_set(const ble_gap_bond *bond);
-int ble_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
+int gap_bond_get(const uint8_t peer_address[6], uint8_t address_type,
+                      gap_bond *out);
+int gap_bond_set(const gap_bond *bond);
+int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
 static int gap_smp_generic_bond_load(const uint8_t peer_address[6],
                                      uint8_t address_type,
-                                     ble_gap_bond *out);
-static int gap_smp_generic_bond_store(const ble_gap_bond *bond);
+                                     gap_bond *out);
+static int gap_smp_generic_bond_store(const gap_bond *bond);
 static int gap_smp_generic_bond_remove(const uint8_t peer_address[6],
                                        uint8_t address_type);
 

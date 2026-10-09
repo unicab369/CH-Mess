@@ -1,8 +1,8 @@
 #include "ch32fun.h"
-void ble_gap_hw_received(void);
+void gap_hw_received(void);
 void gap_hw_radio_transmitted(void);
 #define ISLER_CALLBACK_TX gap_hw_radio_transmitted
-#define ISLER_CALLBACK_RX ble_gap_hw_received
+#define ISLER_CALLBACK_RX gap_hw_received
 #include "iSLER.h"
 #include "ble_crypto.h"
 #include "aes_cmm.h"
@@ -183,7 +183,7 @@ int BLE_MESH_GATT_PROXY_OFFER_PDU(uint8_t type, const uint8_t *pdu,
 }
 
 static void mesh_radio_init(void) {
-    ble_gap_hw_init();
+    gap_hw_init();
     uint32_t value = (uint32_t)funSysTick64();
     seed(value ? value : 0x747AA32F);
     mesh_gatt_proxy_set_rx_callback(mesh_proxy_gatt_receive, NULL);
@@ -321,10 +321,10 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     if (!adv_data || !len) return -1;
     if (rssi) *rssi = 127;
     mesh_gatt_poll();
-    int connection_busy = ble_gap_conn_busy();
+    int connection_busy = gap_conn_busy();
     if (connection_busy) {
-        ble_gap_conn_poll_all();
-        ble_gap_hw_scan_poll();
+        gap_conn_poll_all();
+        gap_hw_scan_poll();
     }
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
@@ -340,14 +340,14 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
     };
-    int received = ble_gap_scan_take_ad(mesh_ad_types,
+    int received = gap_scan_take_ad(mesh_ad_types,
         sizeof(mesh_ad_types), adv_data, len, rssi);
     if (received < 0) return -1;
 
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
     uint8_t jitter;
-    int send_result = ble_gap_radio_send_due(
+    int send_result = gap_radio_send_due(
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
         now, &sent_at, &jitter);
@@ -392,7 +392,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         }
     }
 
-    ble_gap_hw_scan_poll();
+    gap_hw_scan_poll();
     return received;
 }
 

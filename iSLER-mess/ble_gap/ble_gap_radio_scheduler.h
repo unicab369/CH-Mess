@@ -2,13 +2,13 @@
 #ifndef GAP_RADIO_SCHEDULER_H
 #define GAP_RADIO_SCHEDULER_H
 #ifndef GAP_H
-#error "Include ble_gap_radio_scheduler.h through ble_gap.h"
+#error "Include gap_radio_scheduler.h through ble_gap.h"
 #endif
 
 // Send GAP advertising when due, otherwise send the offered fallback packet.
 // Return -1 on radio failure, 0 when idle or GAP sent, 1 when fallback sent,
 // and 2 when a connection starts. Fallback queue timing is returned for its caller.
-int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
+int gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
                             uint32_t now, uint32_t *sent_at,
                             uint8_t *jitter) {
     gap_privacy_poll(now);
@@ -16,7 +16,7 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
-    if ((!ble_gap_conn_busy() ||
+    if ((!gap_conn_busy() ||
          (gap_conn.active && gap_conn.central_role)) &&
         !gap_central_connect.active &&
         !gap_radio_active_scan_pending) {
@@ -27,7 +27,7 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
              offset++) {
             uint8_t i = (gap_periodic_advertising_next_set + offset) %
                 GAP_EXT_ADV_SET_COUNT;
-            ble_gap_extended_advertising_set *candidate =
+            gap_extended_advertising_set *candidate =
                 &gap_ext_advertising[i];
             if (!candidate->periodic_enabled ||
                 !candidate->periodic_sync_info_sent ||
@@ -38,7 +38,7 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
             periodic_target = candidate->periodic_next_event_ticks;
         }
         if (periodic_set >= 0) {
-            ble_gap_extended_advertising_set *set =
+            gap_extended_advertising_set *set =
                 &gap_ext_advertising[periodic_set];
             uint64_t interval = HW_TICKS_FROM_US(
                 (uint32_t)set->periodic_interval * 1250u);
@@ -81,7 +81,7 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
                 GAP_HW_STOP();
                 gap_radio_rx_armed = 0;
             }
-            int transmitted = ble_gap_hw_transmit_periodic(set);
+            int transmitted = gap_hw_transmit_periodic(set);
             set->periodic_event_counter++;
             set->periodic_next_event_ticks += interval;
             gap_periodic_advertising_next_set =
@@ -113,10 +113,10 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
     }
 #if GAP_EXT_ADV_SUPPORT
     int transmit_result = send_extended >= 0 ?
-        ble_gap_hw_transmit_extended_advertising(
-            &gap_ext_advertising[send_extended]) : ble_gap_hw_transmit(
+        gap_hw_transmit_extended_advertising(
+            &gap_ext_advertising[send_extended]) : gap_hw_transmit(
 #else
-    int transmit_result = ble_gap_hw_transmit(
+    int transmit_result = gap_hw_transmit(
 #endif
             send_gap ? gap_advertising.pdu_type : 0x02,
             send_gap ? gap_advertising.data : fallback_ad,
@@ -151,7 +151,7 @@ int ble_gap_radio_send_due(const uint8_t *fallback_ad, uint8_t fallback_len,
 
 // Take one advertising packet and copy the first AD structure with a requested type.
 // Return 1 when found, 0 when absent, or -1 when the output is too small.
-int ble_gap_scan_take_ad(const uint8_t *types, size_t type_count,
+int gap_scan_take_ad(const uint8_t *types, size_t type_count,
                            uint8_t *ad, size_t *len, int8_t *rssi) {
     if (gap_radio_scan_adv_ready) {
         gap_receive_report(gap_radio_scan_adv_frame,

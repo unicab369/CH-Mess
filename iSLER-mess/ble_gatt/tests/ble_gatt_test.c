@@ -2,9 +2,9 @@
 #include <stdint.h>
 #include <string.h>
 
-// ble_gap_connection.h is included before ble_gap_security.h in GAP.
-int ble_gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
-int ble_gap_pair(void);
+// gap_connection.h is included before gap_security.h in GAP.
+int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
+int gap_pair(void);
 
 #include "../../ble_crypto.h"
 #define MESH_GATT_EAD_SUPPORT 1
@@ -112,9 +112,9 @@ static void test_mesh_services_registered_in_generic_database(void) {
 static void test_gap_service_characteristics(void) {
     assert(mesh_gatt_ensure_initialized());
     const uint8_t flags[] = {2, 0x01, 0x06};
-    assert(ble_gap_connectable_advertising_start(flags, sizeof(flags),
+    assert(gap_connectable_advertising_start(flags, sizeof(flags),
                                                    NULL, 0, 100));
-    assert(ble_gap_discoverable());
+    assert(gap_discoverable());
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
@@ -187,7 +187,7 @@ static void test_gap_service_characteristics(void) {
     for (uint8_t i = 0; i < sizeof(iv); i++) iv[i] = i + 0x20;
     memcpy(material, session_key, sizeof(session_key));
     memcpy(material + sizeof(session_key), iv, sizeof(iv));
-    assert(ble_gap_ead_key_material_set(session_key, iv));
+    assert(gap_ead_key_material_set(session_key, iv));
     uint8_t allow_authorization = 1;
     assert(mesh_gatt_set_authorizer(authorize_gatt_access,
                                     &allow_authorization));
@@ -211,10 +211,10 @@ static void test_gap_service_characteristics(void) {
            BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     assert(mesh_gatt_set_authorizer(NULL, NULL));
     ble_gatt_server_set_security(&mesh_gatt.server, 0, 0);
-    ble_gap_ead_key_material_clear();
+    gap_ead_key_material_clear();
 
-    ble_gap_advertising_stop();
-    assert(!ble_gap_discoverable());
+    gap_advertising_stop();
+    assert(!gap_discoverable());
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
@@ -227,54 +227,55 @@ static void test_gap_service_characteristics(void) {
 
 static void test_gap_advertising_data_helpers(void) {
     uint8_t data[31];
-    ble_gap_ad_builder builder;
-    assert(ble_gap_ad_builder_init(&builder, data, sizeof(data)));
-    assert(ble_gap_ad_add_flags(&builder, 0x06));
-    assert(!ble_gap_ad_add_flags(&builder, 0x80));
+    gap_ad_builder builder;
+    assert(gap_ad_builder_init(&builder, data, sizeof(data)));
+    assert(gap_ad_add_flags(&builder, 0x06));
+    assert(!gap_ad_add_flags(&builder, 0x80));
     const uint8_t name[] = "Sensor";
-    assert(ble_gap_ad_add_local_name(&builder, name, sizeof(name) - 1, 1));
+    assert(gap_ad_add_local_name(&builder, name, sizeof(name) - 1, 1));
     const uint16_t services[] = {0x1800, 0x1801};
-    assert(ble_gap_ad_add_uuid16_list(&builder, services, 2, 1));
-    assert(ble_gap_ad_add_tx_power(&builder, -8));
+    assert(gap_ad_add_uuid16_list(&builder, services, 2, 1));
+    assert(gap_ad_add_tx_power(&builder, -8));
     const uint8_t service_payload[] = {0xaa, 0xbb, 0xcc};
-    assert(ble_gap_ad_add_service_data16(&builder, 0x180f,
-        service_payload, sizeof(service_payload)));
+    const uint8_t service_uuid[] = {0x0f, 0x18};
+    assert(gap_ad_add_service_data(&builder, service_uuid,
+        sizeof(service_uuid), service_payload, sizeof(service_payload)));
     assert(builder.len <= sizeof(data));
 
     size_t offset = 0, value_len;
     uint8_t type;
     const uint8_t *value;
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_FLAGS && value_len == 1 && value[0] == 0x06);
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_NAME_COMPLETE && value_len == 6 &&
            !memcmp(value, name, value_len));
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_UUID16_COMPLETE && value_len == 4 &&
            value[0] == 0x00 && value[1] == 0x18 &&
            value[2] == 0x01 && value[3] == 0x18);
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_TX_POWER && value_len == 1 && value[0] == 0xf8);
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 1);
     assert(type == GAP_AD_SERVICE_DATA16 && value_len == 5 &&
            value[0] == 0x0f && value[1] == 0x18 &&
            !memcmp(value + 2, service_payload, sizeof(service_payload)));
-    assert(ble_gap_ad_next(data, builder.len, &offset, &type, &value,
+    assert(gap_ad_next(data, builder.len, &offset, &type, &value,
                             &value_len) == 0);
 
     uint8_t small[3];
-    assert(ble_gap_ad_builder_init(&builder, small, sizeof(small)));
-    assert(ble_gap_ad_add_flags(&builder, 0x06));
-    assert(!ble_gap_ad_add_tx_power(&builder, 0));
+    assert(gap_ad_builder_init(&builder, small, sizeof(small)));
+    assert(gap_ad_add_flags(&builder, 0x06));
+    assert(!gap_ad_add_tx_power(&builder, 0));
     assert(builder.len == sizeof(small));
     const uint8_t malformed[] = {3, GAP_AD_FLAGS, 0x06};
     offset = 0;
-    assert(ble_gap_ad_next(malformed, sizeof(malformed), &offset, &type,
+    assert(gap_ad_next(malformed, sizeof(malformed), &offset, &type,
                             &value, &value_len) == -1);
     assert(offset == 0);
 }

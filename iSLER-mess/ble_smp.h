@@ -12,7 +12,7 @@
 // - [x] Queue one outbound SMP PDU and retry through the L2CAP link adapter.
 // - [x] Route GAP's SMP traffic through the shared L2CAP reassembler,
 //       fixed-CID dispatcher, and Basic L2CAP encoder.
-// - [x] Keep the GAP-specific pairing procedures isolated in ble_gap_smp.h.
+// - [x] Keep the GAP-specific pairing procedures isolated in gap_smp.h.
 // - [x] Own the pairing phase identifiers and IO-capability association
 //       selection in the SMP layer; GAP supplies only role and device policy.
 // - [x] Store the active pairing phase on the generic SMP bearer rather than

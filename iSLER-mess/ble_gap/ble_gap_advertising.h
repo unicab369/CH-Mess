@@ -7,6 +7,169 @@
 // GAP advertising, scanning, and periodic synchronization data types and
 // shared state. Included by ble_gap.h before privacy and radio procedures.
 
+typedef struct {
+    uint8_t pdu_type, address_type, address[6];
+    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t has_target, target_address_type, target_address[6];
+    int8_t rssi;
+    uint8_t data_len, data[GAP_ADV_DATA_MAX];
+} gap_scan_report;
+
+#if GAP_EXT_ADV_SUPPORT
+static const uint16_t gap_periodic_sca_ppm[8] = {
+    500, 250, 150, 100, 75, 50, 30, 20
+};
+typedef struct {
+    uint8_t has_address, address_type, address[6];
+    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t has_adi, sid;
+    uint16_t did;
+    int8_t rssi;
+    uint16_t data_len;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_extended_scan_report;
+enum {
+    GAP_EXT_ADV_PRIMARY_PDU = 0,
+    GAP_EXT_ADV_AUXILIARY_PDU = 1,
+    GAP_EXT_ADV_PERIODIC_PDU = 2
+};
+enum {
+    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
+    GAP_PERIODIC_SYNC_LOST = 2,
+    GAP_PERIODIC_SYNC_CANCELLED = 3,
+    GAP_PERIODIC_SYNC_TERMINATED = 4
+};
+typedef struct {
+    uint8_t type, handle, sid, address_type, address[6];
+} gap_periodic_sync_event;
+typedef struct {
+    uint8_t handle, sid;
+    uint16_t event_counter, did, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_periodic_report;
+typedef struct {
+    uint8_t set_id, sid, subevent, response_slot;
+    uint8_t has_address, address_type, address[6];
+    uint16_t event_counter, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_periodic_response_report;
+#endif
+
+static struct {
+    uint8_t enabled, pdu_type, data_len, scan_response_len;
+    uint8_t address_type, address[6];
+    uint8_t target_type, target_address[6];
+    int8_t peer_slot;
+    uint8_t scan_accept_list, connection_accept_list;
+    uint16_t interval_ms;
+    uint32_t next_event_ms;
+    uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
+} gap_advertising;
+
+#if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t enabled, sid, scannable, periodic_enabled, aux_phy;
+    uint8_t periodic_sync_info_sent;
+    uint8_t pawr_enabled, pawr_data_pending;
+    uint8_t pawr_connect_pending, pawr_connect_subevent;
+    uint8_t pawr_connect_peer_type, pawr_connect_peer_address[6];
+    uint8_t pawr_num_subevents, pawr_subevent_interval;
+    uint8_t pawr_num_response_slots;
+    uint8_t pawr_response_slot_delay, pawr_response_slot_spacing;
+    uint16_t data_len, scan_response_len, interval_ms;
+    uint16_t periodic_data_len, periodic_interval, periodic_event_counter;
+    uint16_t did, periodic_did;
+    uint32_t periodic_access_address, periodic_response_access_address;
+    uint32_t periodic_crc_init;
+    uint8_t periodic_channel_map[5], periodic_sca;
+    uint64_t periodic_next_event_ticks;
+    uint32_t next_event_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    uint8_t periodic_data[GAP_EXT_ADV_DATA_MAX];
+} gap_extended_advertising_set;
+static gap_extended_advertising_set gap_ext_advertising[GAP_EXT_ADV_SET_COUNT];
+static uint8_t gap_ext_advertising_next_set;
+static uint8_t gap_periodic_advertising_next_set;
+static inline int gap_ext_advertising_any_enabled(void) {
+    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
+        if (gap_ext_advertising[i].enabled ||
+            gap_ext_advertising[i].periodic_enabled) return 1;
+    return 0;
+}
+#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_advertising_any_enabled())
+#else
+#define GAP_EXT_ADVERTISING_ENABLED 0
+#endif
+
+static uint8_t gap_scanning, gap_active_scanning, gap_scan_generation;
+static struct {
+    uint16_t interval_ms, window_ms;
+    uint8_t discovery_mode, filter_duplicates;
+} gap_scan_settings = {20, 20, GAP_DISCOVERY_ALL, 0};
+static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+static uint8_t gap_scan_head, gap_scan_count;
+
+#if GAP_EXT_ADV_SUPPORT
+static struct {
+    uint8_t active, has_address, address_type, address[6], has_adi, sid;
+    uint8_t await_scan_response;
+    uint16_t adi, data_len;
+    int8_t rssi;
+    uint32_t deadline_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
+static gap_extended_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
+static struct {
+    uint8_t used, address_type, address[6], has_adi, sid;
+    uint16_t did, data_len;
+    uint32_t data_hash;
+} gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
+static uint8_t gap_ext_adv_seen_count, gap_ext_adv_seen_next;
+typedef struct {
+    uint8_t used, established, handle, sid, address_type, address[6];
+    uint8_t channel_map[5], sca, phy, missed_events, window_active, window_chain;
+    uint8_t aux_channel, aux_phy;
+    uint8_t has_pawr_timing, pawr_num_subevents;
+    uint8_t pawr_subevent_interval, pawr_response_slot_delay;
+    uint8_t pawr_response_slot_spacing;
+    uint8_t pawr_selected_subevent, pawr_response_slot;
+    uint8_t pawr_response_pending, pawr_response_repeat;
+    uint8_t pawr_connection_accept, event_data_active;
+    uint16_t interval, event_counter, current_event_counter, did, data_len;
+    uint16_t widening_ppm;
+    uint32_t access_address, crc_init, response_access_address;
+    uint32_t timeout_ms, last_event_ms;
+    uint16_t pawr_response_data_len;
+    uint64_t anchor_ticks, next_event_ticks;
+    uint64_t window_start_ticks, window_end_ticks;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    uint8_t pawr_response_data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_periodic_sync_context;
+static gap_periodic_sync_context gap_periodic_syncs[GAP_PERIODIC_SYNC_COUNT];
+static gap_periodic_sync_event
+    gap_periodic_sync_events[GAP_PERIODIC_SYNC_EVENT_COUNT];
+static uint8_t gap_periodic_sync_event_head, gap_periodic_sync_event_count;
+static gap_periodic_report gap_periodic_reports[GAP_PERIODIC_REPORT_COUNT];
+static uint8_t gap_periodic_report_head, gap_periodic_report_count;
+static gap_periodic_response_report
+    gap_pawr_response_reports[GAP_PAWR_RESPONSE_REPORT_COUNT];
+static uint8_t gap_pawr_response_report_head, gap_pawr_response_report_count;
+static uint8_t gap_periodic_sync_owned_scan, gap_periodic_sync_transfer_enabled;
+static uint32_t gap_periodic_sync_transfer_timeout_ms = 10000;
+#endif
+
+static struct {
+    uint8_t address_type, address[6], pdu_type, data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
+} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
+static uint8_t gap_scan_seen_count, gap_scan_seen_next;
+static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
+static uint8_t gap_scan_response_address[6];
+
 // Advertising data (AD) structure types and builder interface.
 enum {
     GAP_AD_FLAGS = 0x01,
@@ -28,11 +191,12 @@ enum {
 typedef struct {
     uint8_t *data;
     size_t capacity, len;
-} ble_gap_ad_builder;
+} gap_ad_builder;
 
 // Start building AD structures in caller-owned storage.
-int ble_gap_ad_builder_init(ble_gap_ad_builder *builder, uint8_t *data,
-                             size_t capacity) {
+int gap_ad_builder_init(
+    gap_ad_builder *builder, uint8_t *data, size_t capacity
+) {
     if (!builder || (!data && capacity)) return 0;
     builder->data = data;
     builder->capacity = capacity;
@@ -41,11 +205,14 @@ int ble_gap_ad_builder_init(ble_gap_ad_builder *builder, uint8_t *data,
 }
 
 // Append one length-type-value AD structure. Values are stored in BLE byte order.
-int ble_gap_ad_append(ble_gap_ad_builder *builder, uint8_t type,
-                       const uint8_t *value, size_t value_len) {
+int gap_ad_append(
+    gap_ad_builder *builder, uint8_t type,
+    const uint8_t *value, size_t value_len
+) {
     if (!builder || !builder->data || (!value && value_len) ||
         value_len > 254 || builder->len > builder->capacity ||
-        value_len + 2 > builder->capacity - builder->len) return 0;
+        value_len + 2 > builder->capacity - builder->len
+    ) return 0;
     builder->data[builder->len] = (uint8_t)(value_len + 1);
     builder->data[builder->len + 1] = type;
     if (value_len) memcpy(builder->data + builder->len + 2, value, value_len);
@@ -53,92 +220,94 @@ int ble_gap_ad_append(ble_gap_ad_builder *builder, uint8_t type,
     return 1;
 }
 
-int ble_gap_ad_add_flags(ble_gap_ad_builder *builder, uint8_t flags) {
+int gap_ad_add_flags(
+    gap_ad_builder *builder, uint8_t flags
+) {
     if (flags & 0xe0) return 0;
-    return ble_gap_ad_append(builder, GAP_AD_FLAGS, &flags, 1);
+    return gap_ad_append(builder, GAP_AD_FLAGS, &flags, 1);
 }
 
-int ble_gap_ad_add_local_name(ble_gap_ad_builder *builder,
-                               const uint8_t *name, size_t len,
-                               uint8_t complete) {
+int gap_ad_add_local_name(
+    gap_ad_builder *builder, const uint8_t *name,
+    size_t len, uint8_t complete
+) {
     if (complete > 1 || (!name && len)) return 0;
-    return ble_gap_ad_append(builder,
-        complete ? GAP_AD_NAME_COMPLETE : GAP_AD_NAME_SHORT,
-        name, len);
+    uint8_t type = complete ? GAP_AD_NAME_COMPLETE : GAP_AD_NAME_SHORT;
+    return gap_ad_append(builder, type, name, len);
 }
 
-int ble_gap_ad_add_uuid16_list(ble_gap_ad_builder *builder,
-    const uint16_t *uuids, size_t count, uint8_t complete) {
+int gap_ad_add_uuid16_list(
+    gap_ad_builder *builder, const uint16_t *uuids,
+    size_t count, uint8_t complete
+) {
     uint8_t value[254];
     if (complete > 1 || (!uuids && count) || count > sizeof(value) / 2)
         return 0;
+    uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
     for (size_t i = 0; i < count; i++) {
         value[i * 2] = (uint8_t)uuids[i];
         value[i * 2 + 1] = (uint8_t)(uuids[i] >> 8);
     }
-    return ble_gap_ad_append(builder, complete ? GAP_AD_UUID16_COMPLETE :
-        GAP_AD_UUID16_INCOMPLETE, value, count * 2);
+    return gap_ad_append(builder, type, value, count * 2);
 }
 
-int ble_gap_ad_add_uuid32_list(ble_gap_ad_builder *builder,
-    const uint32_t *uuids, size_t count, uint8_t complete) {
+int gap_ad_add_uuid32_list(
+    gap_ad_builder *builder, const uint32_t *uuids,
+    size_t count, uint8_t complete
+) {
     uint8_t value[252];
     if (complete > 1 || (!uuids && count) || count > sizeof(value) / 4)
         return 0;
+    uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
     for (size_t i = 0; i < count; i++)
         for (uint8_t b = 0; b < 4; b++)
             value[i * 4 + b] = (uint8_t)(uuids[i] >> (8 * b));
-    return ble_gap_ad_append(builder, complete ? GAP_AD_UUID32_COMPLETE :
-        GAP_AD_UUID32_INCOMPLETE, value, count * 4);
+    return gap_ad_append(builder, type, value, count * 4);
 }
 
-int ble_gap_ad_add_uuid128_list(ble_gap_ad_builder *builder,
-    const uint8_t *uuids, size_t count, uint8_t complete) {
+int gap_ad_add_uuid128_list(
+    gap_ad_builder *builder, const uint8_t *uuids,
+    size_t count, uint8_t complete
+) {
     if (complete > 1 || (count && !uuids) || count > 254 / 16) return 0;
-    return ble_gap_ad_append(builder, complete ? GAP_AD_UUID128_COMPLETE :
-        GAP_AD_UUID128_INCOMPLETE, uuids, count * 16);
+    uint8_t type = complete ? GAP_AD_UUID128_COMPLETE : GAP_AD_UUID128_INCOMPLETE;
+    return gap_ad_append(builder, type, uuids, count * 16);
 }
 
-int ble_gap_ad_add_tx_power(ble_gap_ad_builder *builder, int8_t dbm) {
+int gap_ad_add_tx_power(
+    gap_ad_builder *builder, int8_t dbm
+) {
     uint8_t value = (uint8_t)dbm;
-    return ble_gap_ad_append(builder, GAP_AD_TX_POWER, &value, 1);
+    return gap_ad_append(builder, GAP_AD_TX_POWER, &value, 1);
 }
 
-int ble_gap_ad_add_service_data16(ble_gap_ad_builder *builder,
-    uint16_t uuid, const uint8_t *data, size_t len) {
+// Append service data with a 16-, 32-, or 128-bit UUID already encoded in
+// Bluetooth little-endian byte order.
+int gap_ad_add_service_data(
+    gap_ad_builder *builder, const uint8_t *uuid, size_t uuid_len,
+    const uint8_t *data, size_t len
+) {
     uint8_t value[254];
-    if ((!data && len) || len > sizeof(value) - 2) return 0;
-    value[0] = (uint8_t)uuid;
-    value[1] = (uint8_t)(uuid >> 8);
-    if (len) memcpy(value + 2, data, len);
-    return ble_gap_ad_append(builder, GAP_AD_SERVICE_DATA16,
-                              value, len + 2);
-}
-
-int ble_gap_ad_add_service_data32(ble_gap_ad_builder *builder,
-    uint32_t uuid, const uint8_t *data, size_t len) {
-    uint8_t value[254];
-    if ((!data && len) || len > sizeof(value) - 4) return 0;
-    for (uint8_t b = 0; b < 4; b++) value[b] = (uint8_t)(uuid >> (8 * b));
-    if (len) memcpy(value + 4, data, len);
-    return ble_gap_ad_append(builder, GAP_AD_SERVICE_DATA32,
-                              value, len + 4);
-}
-
-int ble_gap_ad_add_service_data128(ble_gap_ad_builder *builder,
-    const uint8_t uuid[16], const uint8_t *data, size_t len) {
-    uint8_t value[254];
-    if (!uuid || (!data && len) || len > sizeof(value) - 16) return 0;
-    memcpy(value, uuid, 16);
-    if (len) memcpy(value + 16, data, len);
-    return ble_gap_ad_append(builder, GAP_AD_SERVICE_DATA128,
-                              value, len + 16);
+    uint8_t type;
+    switch (uuid_len) {
+    case 2: type = GAP_AD_SERVICE_DATA16; break;
+    case 4: type = GAP_AD_SERVICE_DATA32; break;
+    case 16: type = GAP_AD_SERVICE_DATA128; break;
+    default: return 0;
+    }
+    if (!builder || !uuid || (!data && len) || len > sizeof(value) - uuid_len)
+        return 0;
+    memcpy(value, uuid, uuid_len);
+    if (len) memcpy(value + uuid_len, data, len);
+    return gap_ad_append(builder, type, value, uuid_len + len);
 }
 
 // Parse the next AD structure: 1 means a value was returned, 0 means end,
 // and -1 means malformed input. A zero length byte terminates padded data.
-int ble_gap_ad_next(const uint8_t *data, size_t len, size_t *offset,
-    uint8_t *type, const uint8_t **value, size_t *value_len) {
+int gap_ad_next(
+    const uint8_t *data, size_t len, size_t *offset, uint8_t *type,
+    const uint8_t **value, size_t *value_len
+) {
     if ((!data && len) || !offset || !type || !value || !value_len ||
         *offset > len) return -1;
     if (*offset == len) return 0;
@@ -163,12 +332,14 @@ int ble_gap_ad_next(const uint8_t *data, size_t len, size_t *offset,
 
 // Restrict Peripheral scan and connection requests to peers in the Filter
 // Accept List. This is advertising policy, separate from privacy resolution.
-int ble_gap_advertising_filter_policy(uint8_t scan_accept_list,
-                                       uint8_t connection_accept_list) {
+int gap_advertising_filter_policy(
+    uint8_t scan_accept_list, uint8_t connection_accept_list
+) {
     if (scan_accept_list > 1 || connection_accept_list > 1 ||
-        gap_scanning || gap_advertising.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active ||
-        gap_central_connect.active) return 0;
+        gap_scanning || gap_advertising.enabled ||
+        GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
+        gap_central_connect.active
+    ) return 0;
     gap_advertising.scan_accept_list = scan_accept_list;
     gap_advertising.connection_accept_list = connection_accept_list;
     return 1;
@@ -220,7 +391,7 @@ static int gap_access_address_generate(uint32_t *address) {
 
 // Configure each scan window and the interval between window starts, in ms.
 // General discovery accepts general and limited devices; limited accepts only limited.
-int ble_gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
+int gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
                             uint8_t discovery_mode, uint8_t filter_duplicates) {
     if (interval_ms < 3 || interval_ms >= 40960 ||
         window_ms < 3 || window_ms > interval_ms ||
@@ -244,7 +415,7 @@ int ble_gap_scan_configure(uint16_t interval_ms, uint16_t window_ms,
 
 // GAP discoverability is advertised in the Flags AD structure. A stopped
 // advertiser, or one without a discoverable bit, is in non-discoverable mode.
-int ble_gap_discoverable(void) {
+int gap_discoverable(void) {
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t set = 0; set < GAP_EXT_ADV_SET_COUNT; set++) {
         if (!gap_ext_advertising[set].enabled) continue;
@@ -293,11 +464,11 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
     return 1;
 }
 
-static inline int gap_advertising_start(uint8_t pdu_type,
+static inline int gap_advertising_start_internal(uint8_t pdu_type,
     const uint8_t *data, size_t len, const uint8_t *scan_response,
     size_t scan_response_len, const uint8_t *target_address,
     uint8_t target_type, uint16_t interval_ms) {
-    if (ble_gap_conn_busy() || gap_central_connect.active ||
+    if (gap_conn_busy() || gap_central_connect.active ||
 #if GAP_EXT_ADV_SUPPORT
         GAP_EXT_ADVERTISING_ENABLED ||
 #endif
@@ -340,10 +511,10 @@ static inline int gap_advertising_start(uint8_t pdu_type,
 }
 
 // Start legacy non-connectable, non-scannable advertising.
-int ble_gap_advertising_start(const uint8_t *data, size_t len,
+int gap_advertising_start(const uint8_t *data, size_t len,
                                uint16_t interval_ms) {
-    return gap_advertising_start(0x02, data, len, NULL, 0,
-                                     NULL, 0, interval_ms);
+    return gap_advertising_start_internal(0x02, data, len, NULL, 0,
+                                          NULL, 0, interval_ms);
 }
 
 #if GAP_EXT_ADV_SUPPORT
@@ -391,10 +562,10 @@ static uint32_t gap_periodic_event_duration_us(size_t data_len, uint8_t phy) {
 }
 
 // Configure and start one extended advertising set.
-int ble_gap_extended_advertising_start_set_phy(uint8_t set_id,
+int gap_extended_advertising_start_set_phy(uint8_t set_id,
     const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms,
     uint8_t aux_phy) {
-    if (ble_gap_conn_busy() || gap_central_connect.active ||
+    if (gap_conn_busy() || gap_central_connect.active ||
         gap_advertising.enabled || set_id >= GAP_EXT_ADV_SET_COUNT ||
         gap_ext_advertising[set_id].enabled ||
         gap_ext_advertising[set_id].periodic_enabled || sid > 15 ||
@@ -403,7 +574,7 @@ int ble_gap_extended_advertising_start_set_phy(uint8_t set_id,
         (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M &&
          aux_phy != GAP_PHY_CODED) ||
         !(GAP_HW_ADV_PHY_MASK() & aux_phy)) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->did = gap_ext_did_generate(set->did, set->periodic_did);
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
@@ -418,16 +589,16 @@ int ble_gap_extended_advertising_start_set_phy(uint8_t set_id,
 }
 
 // Configure the default 1M secondary PHY for an extended advertising set.
-int ble_gap_extended_advertising_start_set(uint8_t set_id,
+int gap_extended_advertising_start_set(uint8_t set_id,
     const uint8_t *data, size_t len, uint8_t sid, uint16_t interval_ms) {
-    return ble_gap_extended_advertising_start_set_phy(set_id, data, len,
+    return gap_extended_advertising_start_set_phy(set_id, data, len,
         sid, interval_ms, GAP_PHY_1M);
 }
 
 // Start periodic advertising on an active, nonscannable extended set. The
 // interval is in 1.25 ms units (6..65535); periodic data is a sequence of AD
 // structures and may be chained across AUX_SYNC_IND/AUX_CHAIN_IND packets.
-int ble_gap_periodic_advertising_start_set(uint8_t set_id,
+int gap_periodic_advertising_start_set(uint8_t set_id,
     const uint8_t *data, size_t len, uint16_t interval) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
         !gap_ext_advertising[set_id].enabled ||
@@ -438,7 +609,7 @@ int ble_gap_periodic_advertising_start_set(uint8_t set_id,
             gap_periodic_event_duration_us(len,
                 gap_ext_advertising[set_id].aux_phy))
         return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     uint8_t random[3];
     if (!gap_access_address_generate(&set->periodic_access_address)) return 0;
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
@@ -476,7 +647,7 @@ int ble_gap_periodic_advertising_start_set(uint8_t set_id,
 // Enable PAwR subevent transmission for an active periodic advertising set.
 // Timing values use the Core units: 1.25 ms for subevent interval and response
 // slot delay, and 0.125 ms for response slot spacing.
-int ble_gap_periodic_advertising_pawr_set(uint8_t set_id,
+int gap_periodic_advertising_pawr_set(uint8_t set_id,
     uint8_t num_subevents, uint8_t subevent_interval,
     uint8_t response_slot_delay, uint8_t response_slot_spacing) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
@@ -485,7 +656,7 @@ int ble_gap_periodic_advertising_pawr_set(uint8_t set_id,
         (num_subevents > 1 && subevent_interval < 6) ||
         !response_slot_delay || response_slot_delay == 0xff ||
         response_slot_spacing < 2) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     uint32_t interval_units = set->periodic_interval;
     uint32_t subevent_interval_units = num_subevents > 1 ?
         subevent_interval : interval_units;
@@ -531,11 +702,11 @@ int ble_gap_periodic_advertising_pawr_set(uint8_t set_id,
 
 // Configure how many response slots the advertiser listens to per subevent.
 // PRTI advertises their timing; the slot count is local product configuration.
-int ble_gap_periodic_advertising_pawr_response_slots_set(uint8_t set_id,
+int gap_periodic_advertising_pawr_response_slots_set(uint8_t set_id,
                                                            uint8_t count) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
         !gap_ext_advertising[set_id].pawr_enabled || !count) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     uint32_t subevent_interval_units = set->pawr_num_subevents > 1 ?
         set->pawr_subevent_interval : set->periodic_interval;
     uint32_t available_spacing_units =
@@ -548,7 +719,7 @@ int ble_gap_periodic_advertising_pawr_response_slots_set(uint8_t set_id,
 
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
-int ble_gap_periodic_advertising_pawr_connect(uint8_t set_id,
+int gap_periodic_advertising_pawr_connect(uint8_t set_id,
     uint8_t subevent, uint8_t peer_address_type,
     const uint8_t peer_address[6]) {
     if (!peer_address || peer_address_type > 1 ||
@@ -562,7 +733,7 @@ int ble_gap_periodic_advertising_pawr_connect(uint8_t set_id,
         if (gap_ext_advertising[i].pawr_connect_pending) return 0;
     if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
                           peer_address, peer_address_type)) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->pawr_connect_subevent = subevent;
     set->pawr_connect_peer_type = peer_address_type;
     memcpy(set->pawr_connect_peer_address, peer_address, 6);
@@ -570,7 +741,7 @@ int ble_gap_periodic_advertising_pawr_connect(uint8_t set_id,
     return 1;
 }
 
-int ble_gap_periodic_advertising_update_set(uint8_t set_id,
+int gap_periodic_advertising_update_set(uint8_t set_id,
     const uint8_t *data, size_t len) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
         !gap_ext_advertising[set_id].periodic_enabled ||
@@ -589,7 +760,7 @@ int ble_gap_periodic_advertising_update_set(uint8_t set_id,
         (uint32_t)gap_ext_advertising[set_id].periodic_interval * 1250u <
             gap_periodic_event_duration_us(len,
                 gap_ext_advertising[set_id].aux_phy)) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->periodic_did = gap_ext_did_generate(set->periodic_did, set->did);
     if (len) memcpy(set->periodic_data, data, len);
     set->periodic_data_len = (uint16_t)len;
@@ -597,7 +768,7 @@ int ble_gap_periodic_advertising_update_set(uint8_t set_id,
     return 1;
 }
 
-int ble_gap_periodic_advertising_stop_set(uint8_t set_id) {
+int gap_periodic_advertising_stop_set(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
         !gap_ext_advertising[set_id].periodic_enabled) return 0;
     gap_ext_advertising[set_id].periodic_enabled = 0;
@@ -617,45 +788,45 @@ int ble_gap_periodic_advertising_stop_set(uint8_t set_id) {
 
 // Start an extended scannable set; its advertising data is returned only in
 // AUX_SCAN_RSP, as required for scannable extended advertising.
-int ble_gap_extended_scannable_advertising_start_set_phy(uint8_t set_id,
+int gap_extended_scannable_advertising_start_set_phy(uint8_t set_id,
     const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
     uint16_t interval_ms, uint8_t aux_phy) {
     if (!gap_ext_ad_data_valid(scan_response, scan_response_len) ||
         !scan_response_len ||
-        !ble_gap_extended_advertising_start_set_phy(set_id, NULL, 0, sid,
+        !gap_extended_advertising_start_set_phy(set_id, NULL, 0, sid,
             interval_ms, aux_phy)) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     memcpy(set->data, scan_response, scan_response_len);
     set->scan_response_len = (uint16_t)scan_response_len;
     set->scannable = 1;
     return 1;
 }
 
-int ble_gap_extended_scannable_advertising_start_set(uint8_t set_id,
+int gap_extended_scannable_advertising_start_set(uint8_t set_id,
     const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
     uint16_t interval_ms) {
-    return ble_gap_extended_scannable_advertising_start_set_phy(set_id,
+    return gap_extended_scannable_advertising_start_set_phy(set_id,
         scan_response, scan_response_len, sid, interval_ms,
         GAP_PHY_1M);
 }
 
-int ble_gap_extended_scannable_advertising_start(
+int gap_extended_scannable_advertising_start(
     const uint8_t *scan_response, size_t scan_response_len, uint8_t sid,
     uint16_t interval_ms) {
-    return ble_gap_extended_scannable_advertising_start_set(0,
+    return gap_extended_scannable_advertising_start_set(0,
         scan_response, scan_response_len, sid, interval_ms);
 }
 
 // Set zero is the simple default for products with one extended advertiser.
-int ble_gap_extended_advertising_start(const uint8_t *data, size_t len,
+int gap_extended_advertising_start(const uint8_t *data, size_t len,
     uint8_t sid, uint16_t interval_ms) {
-    return ble_gap_extended_advertising_start_set(0, data, len, sid,
+    return gap_extended_advertising_start_set(0, data, len, sid,
                                                     interval_ms);
 }
 
-int ble_gap_extended_advertising_stop_set(uint8_t set_id) {
+int gap_extended_advertising_stop_set(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
-    ble_gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
+    gap_extended_advertising_set *set = &gap_ext_advertising[set_id];
     set->enabled = 0;
     if (!set->periodic_sync_info_sent) {
         set->periodic_enabled = 0;
@@ -665,41 +836,44 @@ int ble_gap_extended_advertising_stop_set(uint8_t set_id) {
     return 1;
 }
 
-void ble_gap_extended_advertising_stop(void) {
-    (void)ble_gap_extended_advertising_stop_set(0);
+void gap_extended_advertising_stop(void) {
+    (void)gap_extended_advertising_stop_set(0);
 }
 #endif
 
 // Start legacy scannable advertising with the AD data returned in SCAN_RSP.
-int ble_gap_scannable_advertising_start(const uint8_t *data, size_t len,
+int gap_scannable_advertising_start(const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t scan_response_len,
     uint16_t interval_ms) {
     if (!scan_response || !scan_response_len) return 0;
-    return gap_advertising_start(0x06, data, len, scan_response,
-                                     scan_response_len, NULL, 0, interval_ms);
+    return gap_advertising_start_internal(0x06, data, len, scan_response,
+                                          scan_response_len, NULL, 0,
+                                          interval_ms);
 }
 
 // Advertise as a connectable, scannable Peripheral. The platform polling loop
 // must run continuously to service connection events; GATT data is not handled yet.
-int ble_gap_connectable_advertising_start(const uint8_t *data, size_t len,
+int gap_connectable_advertising_start(const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t scan_response_len,
     uint16_t interval_ms) {
-    return gap_advertising_start(0x00, data, len, scan_response,
-                                     scan_response_len, NULL, 0, interval_ms);
+    return gap_advertising_start_internal(0x00, data, len, scan_response,
+                                          scan_response_len, NULL, 0,
+                                          interval_ms);
 }
 
 // Low duty cycle directed advertising to one peer; address bytes are PDU order.
-int ble_gap_directed_advertising_start(const uint8_t target_address[6],
+int gap_directed_advertising_start(const uint8_t target_address[6],
     uint8_t target_type, uint16_t interval_ms) {
-    return gap_advertising_start(0x01, NULL, 0, NULL, 0,
-                                     target_address, target_type, interval_ms);
+    return gap_advertising_start_internal(0x01, NULL, 0, NULL, 0,
+                                          target_address, target_type,
+                                          interval_ms);
 }
 
-void ble_gap_advertising_stop(void) {
+void gap_advertising_stop(void) {
     gap_advertising.enabled = 0;
 }
 
-static void gap_scan_start(uint8_t active) {
+static void gap_scan_start_internal(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
     gap_periodic_sync_owned_scan = 0;
 #endif
@@ -718,16 +892,16 @@ static void gap_scan_start(uint8_t active) {
 }
 
 // Enable passive scanning and discard reports collected before this call.
-void ble_gap_scan_start(void) {
-    gap_scan_start(0);
+void gap_scan_start(void) {
+    gap_scan_start_internal(0);
 }
 
 // Scan actively and request the scan-response data from scannable advertisers.
-void ble_gap_active_scan_start(void) {
-    gap_scan_start(1);
+void gap_active_scan_start(void) {
+    gap_scan_start_internal(1);
 }
 
-void ble_gap_scan_stop(void) {
+void gap_scan_stop(void) {
     gap_scanning = 0;
     gap_active_scanning = 0;
     gap_central_connect.active = 0;
@@ -792,7 +966,7 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
                 sizeof(gap_central_connect.peer_address));
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
-    if (any_peer || auto_connect) gap_scan_start(active_scan);
+    if (any_peer || auto_connect) gap_scan_start_internal(active_scan);
     else gap_scanning = 1;
     gap_central_connect.active = 1;
     gap_central_connect.deadline_ms = auto_connect ? 0 :
@@ -808,37 +982,37 @@ static int gap_connect_procedure_start(const uint8_t *peer_address,
 
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
-int ble_gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
+int gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
     return gap_connect_procedure_start(peer_address, peer_type, 0, 0, 0, 0);
 }
 
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
-int ble_gap_connect_general_start(uint8_t active_scan) {
+int gap_connect_general_start(uint8_t active_scan) {
     return gap_connect_procedure_start(NULL, 0, 1, 0, 0, active_scan);
 }
 
 // Selective Connection Establishment scans for an advertiser in the accept list.
-int ble_gap_connect_selective_start(uint8_t active_scan) {
+int gap_connect_selective_start(uint8_t active_scan) {
     return gap_connect_procedure_start(NULL, 0, 0, 1, 0, active_scan);
 }
 
 // Auto Connection Establishment scans in the background until a listed peer
 // connects or the application cancels; it does not time out after one attempt.
-int ble_gap_connect_auto_start(void) {
+int gap_connect_auto_start(void) {
     return gap_connect_procedure_start(NULL, 0, 0, 0, 1, 0);
 }
 
-int ble_gap_connecting(void) {
+int gap_connecting(void) {
     return gap_central_connect.active;
 }
 
-void ble_gap_connect_cancel(void) {
-    if (gap_central_connect.active) ble_gap_scan_stop();
+void gap_connect_cancel(void) {
+    if (gap_central_connect.active) gap_scan_stop();
 }
 
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
-int ble_gap_scan_poll(ble_gap_scan_report *report) {
+int gap_scan_poll(gap_scan_report *report) {
     if (!report || !gap_scan_count) return 0;
     *report = gap_scan_reports[gap_scan_head];
     gap_scan_head = (gap_scan_head + 1) % GAP_SCAN_REPORT_COUNT;
@@ -925,7 +1099,7 @@ static inline void gap_receive_report(const uint8_t *frame,
         gap_scan_count--;
     }
     uint8_t slot = (gap_scan_head + gap_scan_count) % GAP_SCAN_REPORT_COUNT;
-    ble_gap_scan_report *report = &gap_scan_reports[slot];
+    gap_scan_report *report = &gap_scan_reports[slot];
     report->pdu_type = pdu_type;
     report->address_type = address_type;
     memcpy(report->address, frame + 2, 6);
@@ -1174,7 +1348,7 @@ static void gap_ext_adv_report_queue(const uint8_t *address, uint8_t has_address
     }
     uint8_t slot = (gap_ext_adv_report_head + gap_ext_adv_report_count) %
         GAP_EXT_ADV_REPORT_COUNT;
-    ble_gap_extended_scan_report *report = &gap_ext_adv_reports[slot];
+    gap_extended_scan_report *report = &gap_ext_adv_reports[slot];
     report->has_address = has_address;
     report->address_type = address_type;
     memcpy(report->address, address, 6);
@@ -1192,7 +1366,7 @@ static void gap_ext_adv_report_queue(const uint8_t *address, uint8_t has_address
 
 // Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
 // Auxiliary packets must be passed in the order indicated by their AuxPtr fields.
-int ble_gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
+int gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
                                    size_t pdu_len, int8_t rssi) {
     if (!gap_scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU) return 0;
     gap_ext_adv_fields fields;
@@ -1312,7 +1486,7 @@ int ble_gap_extended_scan_receive(uint8_t pdu_kind, const uint8_t *pdu,
 }
 
 // Return one complete reassembled extended advertising report.
-int ble_gap_extended_scan_poll(ble_gap_extended_scan_report *report) {
+int gap_extended_scan_poll(gap_extended_scan_report *report) {
     if (!report || !gap_ext_adv_report_count) return 0;
     *report = gap_ext_adv_reports[gap_ext_adv_report_head];
     gap_ext_adv_report_head = (gap_ext_adv_report_head + 1) %
@@ -1328,7 +1502,7 @@ static int gap_periodic_sync_handle_slot(uint8_t handle) {
 }
 
 static void gap_periodic_sync_event_push(
-    const ble_gap_periodic_sync_event *event) {
+    const gap_periodic_sync_event *event) {
     if (gap_periodic_sync_event_count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
         gap_periodic_sync_event_head = (gap_periodic_sync_event_head + 1) %
             GAP_PERIODIC_SYNC_EVENT_COUNT;
@@ -1341,7 +1515,7 @@ static void gap_periodic_sync_event_push(
 }
 
 static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
-    ble_gap_periodic_sync_event event;
+    gap_periodic_sync_event event;
     memset(&event, 0, sizeof(event));
     event.type = type;
     event.handle = gap_periodic_syncs[slot].handle;
@@ -1356,12 +1530,12 @@ static void gap_periodic_sync_owned_scan_finish(void) {
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_periodic_syncs[i].used) return;
     gap_periodic_sync_owned_scan = 0;
-    if (gap_scanning) ble_gap_scan_stop();
+    if (gap_scanning) gap_scan_stop();
 }
 
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned handle identifies later events.
-int ble_gap_periodic_sync_start(uint8_t address_type,
+int gap_periodic_sync_start(uint8_t address_type,
     const uint8_t address[6], uint8_t sid, uint32_t timeout_ms) {
     if (!address || address_type > 1 || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 || gap_conn.active || gap_central_connect.active)
@@ -1376,7 +1550,7 @@ int ble_gap_periodic_sync_start(uint8_t address_type,
         if (!gap_periodic_syncs[i].used) { slot = i; break; }
     if (slot < 0) return 0;
     if (!gap_scanning) {
-        gap_scan_start(0);
+        gap_scan_start_internal(0);
         gap_periodic_sync_owned_scan = 1;
     }
     memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
@@ -1391,7 +1565,7 @@ int ble_gap_periodic_sync_start(uint8_t address_type,
 }
 
 // Enable receipt of periodic sync transfers from connected peers.
-int ble_gap_periodic_sync_transfer_enable(uint8_t enabled,
+int gap_periodic_sync_transfer_enable(uint8_t enabled,
                                             uint32_t timeout_ms) {
     if (enabled > 1 || (enabled &&
         (timeout_ms < 100 || timeout_ms > 163840))) return 0;
@@ -1401,7 +1575,7 @@ int ble_gap_periodic_sync_transfer_enable(uint8_t enabled,
 }
 
 // Cancel a request that has not acquired the first periodic event.
-int ble_gap_periodic_sync_cancel(uint8_t handle) {
+int gap_periodic_sync_cancel(uint8_t handle) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || gap_periodic_syncs[slot].established) return 0;
     gap_periodic_sync_event_post((uint8_t)slot,
@@ -1412,7 +1586,7 @@ int ble_gap_periodic_sync_cancel(uint8_t handle) {
 }
 
 // Terminate an acquired periodic synchronization.
-int ble_gap_periodic_sync_terminate(uint8_t handle) {
+int gap_periodic_sync_terminate(uint8_t handle) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || !gap_periodic_syncs[slot].established) return 0;
     gap_periodic_sync_event_post((uint8_t)slot,
@@ -1425,7 +1599,7 @@ int ble_gap_periodic_sync_terminate(uint8_t handle) {
 // Select one PAwR subevent and queue one response for its selected slot.
 // The configuration stays selected for later events; each queued response is
 // consumed after transmission. Pass zero data bytes to send an empty response.
-int ble_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
+int gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || !gap_periodic_syncs[slot].established ||
@@ -1437,7 +1611,7 @@ int ble_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
         !(GAP_HW_PHY_MASK() & gap_periodic_syncs[slot].phy) ||
         len > GAP_PAWR_RESPONSE_DATA_MAX ||
         !gap_ext_ad_data_valid(data, len)) return 0;
-    ble_gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
+    gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
     uint32_t subevent_interval_units = sync->pawr_num_subevents > 1 ?
         sync->pawr_subevent_interval : sync->interval;
     uint32_t response_start_125us =
@@ -1467,7 +1641,7 @@ int ble_gap_periodic_sync_pawr_respond(uint8_t handle, uint8_t subevent,
 // Repeat the queued PAwR response at matching subevents until disabled.
 // Responses remain one-shot by default; disabling repeat consumes the
 // existing response after it is sent once more.
-int ble_gap_periodic_sync_pawr_response_repeat_set(uint8_t handle,
+int gap_periodic_sync_pawr_response_repeat_set(uint8_t handle,
                                                      uint8_t enabled) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || !gap_periodic_syncs[slot].established ||
@@ -1477,7 +1651,7 @@ int ble_gap_periodic_sync_pawr_response_repeat_set(uint8_t handle,
 }
 
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
-int ble_gap_periodic_sync_pawr_connection_accept_set(uint8_t handle,
+int gap_periodic_sync_pawr_connection_accept_set(uint8_t handle,
                                                        uint8_t enabled) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || !gap_periodic_syncs[slot].established ||
@@ -1487,7 +1661,7 @@ int ble_gap_periodic_sync_pawr_connection_accept_set(uint8_t handle,
     return 1;
 }
 
-int ble_gap_periodic_sync_event_poll(ble_gap_periodic_sync_event *event) {
+int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
     if (!event || !gap_periodic_sync_event_count) return 0;
     *event = gap_periodic_sync_events[gap_periodic_sync_event_head];
     gap_periodic_sync_event_head = (gap_periodic_sync_event_head + 1) %
@@ -1496,7 +1670,7 @@ int ble_gap_periodic_sync_event_poll(ble_gap_periodic_sync_event *event) {
     return 1;
 }
 
-int ble_gap_periodic_report_poll(ble_gap_periodic_report *report) {
+int gap_periodic_report_poll(gap_periodic_report *report) {
     if (!report || !gap_periodic_report_count) return 0;
     *report = gap_periodic_reports[gap_periodic_report_head];
     gap_periodic_report_head = (gap_periodic_report_head + 1) %
@@ -1505,8 +1679,8 @@ int ble_gap_periodic_report_poll(ble_gap_periodic_report *report) {
     return 1;
 }
 
-int ble_gap_periodic_response_report_poll(
-    ble_gap_periodic_response_report *report) {
+int gap_periodic_response_report_poll(
+    gap_periodic_response_report *report) {
     if (!report || !gap_pawr_response_report_count) return 0;
     *report = gap_pawr_response_reports[gap_pawr_response_report_head];
     gap_pawr_response_report_head =
@@ -1626,7 +1800,7 @@ static void gap_periodic_report_push(uint8_t slot) {
     }
     uint8_t tail = (gap_periodic_report_head + gap_periodic_report_count) %
         GAP_PERIODIC_REPORT_COUNT;
-    ble_gap_periodic_report *report = &gap_periodic_reports[tail];
+    gap_periodic_report *report = &gap_periodic_reports[tail];
     report->handle = gap_periodic_syncs[slot].handle;
     report->sid = gap_periodic_syncs[slot].sid;
     report->event_counter = gap_periodic_syncs[slot].current_event_counter;
