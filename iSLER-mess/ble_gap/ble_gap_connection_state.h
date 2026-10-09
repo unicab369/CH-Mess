@@ -238,6 +238,8 @@ static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
 
 
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
+static int gap_access_address_valid(uint32_t address);
+
 static int gap_connection_request_valid(const uint8_t frame[36]) {
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
@@ -257,8 +259,7 @@ static int gap_connection_request_valid(const uint8_t frame[36]) {
     uint32_t access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
-    return count >= 2 && access_address != BLE_ADV_ACCESS_ADDRESS &&
-           access_address != 0;
+    return count >= 2 && gap_access_address_valid(access_address);
 }
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.

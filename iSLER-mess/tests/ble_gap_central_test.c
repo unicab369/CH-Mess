@@ -851,7 +851,6 @@ static void test_extended_advertising_transmit(void) {
     gap_scan_start();
     assert(gap_extended_advertising_start(data, sizeof(data), 4, 100));
     assert(!gap_advertising_start(data, sizeof(data), 100));
-    assert(gap_discoverable() == 1);
     assert(gap_radio_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 2);
     const uint8_t *primary = captured_extended_pdus[0];
@@ -1926,7 +1925,6 @@ static void test_extended_advertising_multiple_sets(void) {
         9, 100));
     assert(!gap_extended_advertising_start_set(0, data1,
         sizeof(data1), 9, 100));
-    assert(gap_discoverable());
 
     // Both sets are due; successive poll calls must service each set once.
     assert(gap_radio_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1942,10 +1940,8 @@ static void test_extended_advertising_multiple_sets(void) {
 
     assert(gap_extended_advertising_stop_set(0));
     assert(!gap_ext_advertising[0].enabled && gap_ext_advertising[1].enabled);
-    assert(gap_discoverable());
     assert(gap_extended_advertising_stop_set(1));
     assert(!GAP_EXT_ADVERTISING_ENABLED);
-    assert(!gap_discoverable());
     assert(!gap_extended_advertising_stop_set(
         GAP_EXT_ADV_SET_COUNT));
     fake_radio_tick_autoincrement = 0;

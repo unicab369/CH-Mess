@@ -118,11 +118,8 @@ static inline uint32_t gap_phy_packet_airtime_us(uint16_t payload_len,
 }
 
 
-// Advertising state is needed by privacy and connection helpers. The same
-// header's procedure section is included below after those dependencies.
-#define GAP_ADVERTISING_DECLARATIONS_ONLY
-#include "ble_gap_advertising.h"
-#undef GAP_ADVERTISING_DECLARATIONS_ONLY
+// Advertising state is needed by privacy and connection helpers.
+#include "ble_gap_advertising_state.h"
 
 // Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
 typedef struct {
@@ -152,7 +149,6 @@ int gap_conn_busy(void);
 
 #include "ble_gap_connection_config.h"
 
-#include "ble_gap_privacy_state.h"
 #include "ble_gap_privacy.h"
 
 #include "ble_gap_advertising.h"

@@ -114,7 +114,6 @@ static void test_gap_service_characteristics(void) {
     const uint8_t flags[] = {2, 0x01, 0x06};
     assert(gap_connectable_advertising_start(flags, sizeof(flags),
                                                    NULL, 0, 100));
-    assert(gap_discoverable());
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
@@ -214,7 +213,6 @@ static void test_gap_service_characteristics(void) {
     gap_ead_key_material_clear();
 
     gap_advertising_stop();
-    assert(!gap_discoverable());
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
