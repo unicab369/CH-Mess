@@ -11,6 +11,8 @@ typedef struct {
     uint8_t encrypted, removed, random_fail, crypto_fail;
 } fake_smp;
 
+static fake_smp *fake_random_state;
+
 static void fake_timeout(void *context) {
     ((fake_smp *)context)->timed_out++;
 }
@@ -35,8 +37,8 @@ static int fake_receive(void *context, const uint8_t *pdu, uint16_t len) {
     return 1;
 }
 
-static int fake_random(void *context, uint8_t *out, size_t len) {
-    if (((fake_smp *)context)->random_fail) return 0;
+static int fake_random(uint8_t *out, size_t len) {
+    if (!fake_random_state || fake_random_state->random_fail) return 0;
     memset(out, 0x5a, len);
     return 1;
 }
@@ -161,6 +163,7 @@ int main(void) {
            association == BLE_SMP_ASSOCIATION_NONE);
 
     fake_smp fake = {0};
+    fake_random_state = &fake;
     ble_l2cap_ops ops = {0};
     ops.send_pdu = fake_send;
     ops.context = &fake;

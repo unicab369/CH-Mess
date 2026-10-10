@@ -174,7 +174,7 @@ typedef struct {
 typedef struct {
     // Random output and cryptographic byte arrays use SMP/on-air little-endian
     // representation. The host supplies a cryptographically secure generator.
-    int (*random_bytes)(void *context, uint8_t *out, size_t len);
+    int (*random_bytes)(uint8_t *out, size_t len);
     int (*aes128)(void *context, const uint8_t key[16],
                   const uint8_t input[16], uint8_t output[16]);
     int (*cmac)(void *context, const uint8_t key[16], const uint8_t *input,
@@ -568,7 +568,7 @@ static inline int ble_smp_random_bytes(
                                        size_t len
 ) {
     if (!smp || !out || !len || !smp->ops.random_bytes) return 0;
-    if (smp->ops.random_bytes(smp->ops.context, out, len)) return 1;
+    if (smp->ops.random_bytes(out, len)) return 1;
     volatile uint8_t *wipe = out;
     while (len--) *wipe++ = 0;
     return 0;

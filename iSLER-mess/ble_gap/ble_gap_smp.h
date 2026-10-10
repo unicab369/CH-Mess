@@ -85,11 +85,6 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-static int gap_smp_host_random(void *context, uint8_t *out, size_t len) {
-    (void)context;
-    return out && len && GAP_RANDOM_SECURE_BYTES(out, len);
-}
-
 static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len);
 
 static int gap_smp_host_aes(
@@ -410,7 +405,7 @@ static int gap_smp_link_init(void) {
                       gap_smp_receive_pdu, &gap_smp))
         return 0;
     ble_smp_ops host_ops = {0};
-    host_ops.random_bytes = gap_smp_host_random;
+    host_ops.random_bytes = GAP_RANDOM_SECURE_BYTES;
     host_ops.aes128 = gap_smp_host_aes;
     host_ops.cmac = gap_smp_host_cmac;
     host_ops.dhkey = gap_smp_host_dhkey;

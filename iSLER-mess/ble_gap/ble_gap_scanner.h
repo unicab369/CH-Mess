@@ -842,8 +842,8 @@ int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || terminate > 1 ||
         gap_periodic_syncs[slot].established != terminate
-    )
-        return 0;
+    ) return 0;
+
     gap_periodic_sync_event_post((uint8_t)slot, terminate ?
         GAP_PERIODIC_SYNC_TERMINATED : GAP_PERIODIC_SYNC_CANCELLED);
     memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
@@ -1102,8 +1102,7 @@ static int gap_periodic_sync_receive(
             gap_periodic_syncs[slot].did = fields.adi & 0x0fff;
         if (!gap_periodic_syncs[slot].established) {
             gap_periodic_syncs[slot].established = 1;
-            gap_periodic_sync_event_post(slot,
-                                         GAP_PERIODIC_SYNC_ESTABLISHED);
+            gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
         }
     }
     gap_periodic_syncs[slot].rssi = rssi;
