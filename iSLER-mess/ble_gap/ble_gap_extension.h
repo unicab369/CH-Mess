@@ -377,8 +377,11 @@ typedef struct {
 static gap_ext_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
 static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
 
-static void gap_ext_scan_reports_clear(void) {
+static void gap_ext_scan_reset(uint8_t clear_owned_scan) {
+    if (clear_owned_scan) gap_periodic_sync_owned_scan = 0;
+    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
     gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
+    gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
 }
 
 // -----------------------------------------------------------------------------

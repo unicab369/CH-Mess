@@ -393,7 +393,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     gap_adv.enabled = 0;
     radio_data_max = GAP_CONN_DATA_MAX;
     now_ms = 330;
-    assert(gap_connectable_advertising_start(advertising_data,
+    assert(gap_adv_start_connectable(advertising_data,
         sizeof(advertising_data), NULL, 0, 100));
     assert(gap_conn_start(peer_address, 0));
     assert(gap_adv.enabled && gap_scanning &&
@@ -422,7 +422,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
 
     // If an incoming Peripheral request wins while the Central procedure is
     // scanning, accept it and cancel the competing initiation cleanly.
-    assert(gap_connectable_advertising_start(advertising_data,
+    assert(gap_adv_start_connectable(advertising_data,
         sizeof(advertising_data), NULL, 0, 100));
     const uint8_t central_target[6] = {0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6};
     assert(gap_conn_start(central_target, 0));
@@ -842,7 +842,7 @@ static void test_scanning_and_advertising_coexistence(void) {
     gap_scan_stop();
     gap_adv_stop();
     static const uint8_t scan_response[] = {2, 0x0a, 0};
-    assert(gap_connectable_advertising_start(data, sizeof(data),
+    assert(gap_adv_start_connectable(data, sizeof(data),
         scan_response, sizeof(scan_response), 100));
     assert(gap_conn_start(peer, 0));
     assert(gap_adv.enabled && gap_central_conn.active &&
@@ -2446,7 +2446,7 @@ static void test_peer_local_keys(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
 
-    assert(gap_directed_advertising_start(test_identity, 0, 100));
+    assert(gap_adv_start_directed(test_identity, 0, 100));
     assert(gap_adv.peer_slot == slot && gap_adv.address_type == 1);
     gap_address_hash(local_irk, gap_adv.address + 3, hash);
     assert(memcmp(hash, gap_adv.address, 3) == 0);
@@ -2548,7 +2548,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert((gap_random_address[5] & 0xc0) == 0);
     assert(aes_count == before);
     assert(!gap_resolve(gap_random_address, 1, identity, &type));
-    assert(!gap_directed_advertising_start(test_identity, 0, 100));
+    assert(!gap_adv_start_directed(test_identity, 0, 100));
     assert(gap_adv_start(NULL, 0, 100));
     memcpy(first, gap_random_address, 6);
     now_ms = gap_privacy.next_rotation_ms - 1;

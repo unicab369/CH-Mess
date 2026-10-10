@@ -118,7 +118,7 @@ static void test_mesh_services_registered_in_generic_database(void) {
 static void test_gap_service_characteristics(void) {
     assert(mesh_gatt_ensure_initialized());
     const uint8_t flags[] = {2, 0x01, 0x06};
-    assert(gap_connectable_advertising_start(flags, sizeof(flags),
+    assert(gap_adv_start_connectable(flags, sizeof(flags),
                                                    NULL, 0, 100));
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[

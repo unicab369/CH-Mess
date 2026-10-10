@@ -313,7 +313,7 @@ static void gap_hw_received_selected(void) {
         int scanner_slot = gap_identity_find(frame + 2, scanner_type);
         if (!gap_peer_allowed(scanner_slot, frame + 2, scanner_type) ||
             (gap_privacy.connection_filter && scanner_slot < 0) ||
-            (gap_adv.scan_accept_list &&
+            (gap_adv.scan_accept &&
              !gap_accept_list_match(frame + 2, scanner_type, scanner_slot))
         ) {
             // A request addressed to this advertiser but excluded by its
@@ -478,7 +478,7 @@ static void gap_hw_received_selected(void) {
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
-        (!gap_adv.scan_accept_list ||
+        (!gap_adv.scan_accept ||
          gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot))
     ) {
         uint8_t response_len = gap_adv.scan_response_len;
@@ -499,7 +499,7 @@ static void gap_hw_received_selected(void) {
         ((frame[0] >> 7) & 1) == ((gap_radio_adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, gap_radio_adv_frame + 2, 6) == 0 &&
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
-        (!gap_adv.connection_accept_list ||
+        (!gap_adv.connection_accept ||
          gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot)) &&
         ((gap_radio_adv_frame[0] & 0x0f) != 0x01 ||
          (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||

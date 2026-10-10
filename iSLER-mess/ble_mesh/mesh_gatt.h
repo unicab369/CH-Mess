@@ -572,7 +572,7 @@ int mesh_gatt_provisioning_advertising_start(
     memcpy(data + 7, device_uuid, 16);
     data[23] = (uint8_t)oob_info;
     data[24] = (uint8_t)(oob_info >> 8);
-    return gap_connectable_advertising_start(data, sizeof(data),
+    return gap_adv_start_connectable(data, sizeof(data),
                                                    NULL, 0, interval_ms);
 }
 
@@ -580,7 +580,7 @@ int mesh_gatt_proxy_advertising_start(uint16_t interval_ms) {
     static const uint8_t data[] = {
         2, 0x01, 0x06, 3, 0x03, 0x28, 0x18
     };
-    return gap_connectable_advertising_start(data, sizeof(data),
+    return gap_adv_start_connectable(data, sizeof(data),
                                                    NULL, 0, interval_ms);
 }
 

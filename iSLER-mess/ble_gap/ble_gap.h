@@ -173,7 +173,7 @@ static struct {
     uint8_t address_type, address[6];
     uint8_t target_type, target_address[6];
     int8_t peer_slot;
-    uint8_t scan_accept_list, connection_accept_list;
+    uint8_t scan_accept, connection_accept;
     uint16_t interval_ms;
     uint32_t next_event_ms;
     uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
