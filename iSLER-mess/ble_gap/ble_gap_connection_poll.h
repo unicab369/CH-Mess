@@ -1265,14 +1265,10 @@ void gap_hw_scan_poll(void) {
         gap_radio_rx_armed = 1;
     }
 }
-// Shared radio scheduling and scan report extraction.
-int gap_radio_send_due(
-    const uint8_t *fallback_ad, uint8_t fallback_len,
-    uint32_t now, uint32_t *sent_at,
-    uint8_t *jitter
-) {
-    gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
+// Send periodic and extended advertisements before regular advertising.
+// Return zero when none are due, one when handled, -1 on failure, or 2 to retry.
+static int gap_radio_ext_send_due(uint32_t now) {
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
@@ -1328,7 +1324,7 @@ int gap_radio_send_due(
                 }
                 uint64_t event_end = set->periodic_next_event_ticks +
                     HW_TICKS_FROM_US(event_duration_us + 400u);
-                if (gap_conn.rx_armed || gap_conn.event_replied) return 0;
+                if (gap_conn.rx_armed || gap_conn.event_replied) return 1;
                 if (gap_radio_periodic_window_overlaps_connection(
                         set->periodic_next_event_ticks, event_end)
                 ) {
@@ -1336,7 +1332,7 @@ int gap_radio_send_due(
                     set->periodic_next_event_ticks += interval;
                     gap_periodic_advertising_next_set =
                         (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
-                    return 0;
+                    return 1;
                 }
             }
             if (gap_radio_rx_armed) {
@@ -1349,7 +1345,7 @@ int gap_radio_send_due(
             gap_periodic_advertising_next_set =
                 (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
             if (!transmitted) return -1;
-            return 0;
+            return 1;
         }
     }
     int send_extended = -1;
@@ -1363,34 +1359,46 @@ int gap_radio_send_due(
             break;
         }
     }
-#else
-    int send_extended = -1;
-#endif
-    int send_gap = gap_adv.enabled &&
-        (int32_t)(now - gap_adv.next_event_ms) >= 0;
-    if (send_extended < 0 && !send_gap && !fallback_ad) return 0;
-    if (send_extended >= 0 && gap_radio_active_scan_pending) return 0;
+    if (send_extended < 0) return 0;
+    if (gap_radio_active_scan_pending) return 1;
     if (gap_radio_rx_armed) {
         GAP_HW_STOP();
         gap_radio_rx_armed = 0;
     }
-    int transmit_result;
+    int transmit_result = gap_hw_transmit_extended_advertising(
+        &gap_ext_adv[send_extended]);
+    if (!transmit_result) return -1;
+    if (transmit_result == 2) return 2;
+    uint32_t completed_at = GET_MILLIS();
+    uint8_t event_jitter = GAP_HW_RANDOM_JITTER() % 11;
+    gap_ext_adv[send_extended].next_event_ms = completed_at +
+        gap_ext_adv[send_extended].interval_ms + event_jitter;
+    gap_ext_adv_next_set = (send_extended + 1) %
+        GAP_EXT_ADV_SET_COUNT;
+    return 1;
+}
+#endif
+
+// Shared radio scheduling and scan report extraction.
+int gap_radio_send_due(
+    const uint8_t *fallback_ad, uint8_t fallback_len,
+    uint32_t now, uint32_t *sent_at,
+    uint8_t *jitter
+) {
+    gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
-    if (send_extended >= 0) {
-        transmit_result = gap_hw_transmit_extended_advertising(
-            &gap_ext_adv[send_extended]);
-    } else {
-        transmit_result = gap_hw_transmit(
-            send_gap ? gap_adv.pdu_type : 0x02,
-            send_gap ? gap_adv.data : fallback_ad,
-            send_gap ? gap_adv.data_len : fallback_len,
-            send_gap && gap_adv.address_type ? gap_adv.address : NULL,
-            send_gap && gap_adv.pdu_type == 0x01 ?
-                gap_adv.target_address : NULL,
-            send_gap ? gap_adv.target_type : 0);
+    int extended_result = gap_radio_ext_send_due(now);
+    if (extended_result == 1) return 0;
+    if (extended_result) return extended_result;
+#endif
+    int send_gap = gap_adv.enabled &&
+        (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    if (!send_gap && !fallback_ad) return 0;
+    if (gap_radio_rx_armed) {
+        GAP_HW_STOP();
+        gap_radio_rx_armed = 0;
     }
-#else
-    transmit_result = gap_hw_transmit(
+    int transmit_result = gap_hw_transmit(
         send_gap ? gap_adv.pdu_type : 0x02,
         send_gap ? gap_adv.data : fallback_ad,
         send_gap ? gap_adv.data_len : fallback_len,
@@ -1398,20 +1406,10 @@ int gap_radio_send_due(
         send_gap && gap_adv.pdu_type == 0x01 ?
             gap_adv.target_address : NULL,
         send_gap ? gap_adv.target_type : 0);
-#endif
     if (!transmit_result) return -1;
     if (transmit_result == 2) return 2;
     uint32_t completed_at = GET_MILLIS();
     uint8_t event_jitter = GAP_HW_RANDOM_JITTER() % 11;
-#if GAP_EXT_ADV_SUPPORT
-    if (send_extended >= 0) {
-        gap_ext_adv[send_extended].next_event_ms = completed_at +
-            gap_ext_adv[send_extended].interval_ms + event_jitter;
-        gap_ext_adv_next_set = (send_extended + 1) %
-            GAP_EXT_ADV_SET_COUNT;
-        return 0;
-    }
-#endif
     if (send_gap) {
         gap_adv.next_event_ms = completed_at +
             gap_adv.interval_ms + event_jitter;
