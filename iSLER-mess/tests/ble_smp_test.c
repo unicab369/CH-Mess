@@ -8,7 +8,6 @@ typedef struct {
     uint8_t blocked, sent;
     uint16_t cid, len;
     uint8_t pdu[SMP_PDU_MAX];
-    ble_smp_bond bond;
     uint8_t random_fail, crypto_fail;
 } fake_smp;
 
@@ -45,23 +44,6 @@ int ble_smp_port_cmac(
     if (fake_random_state->crypto_fail) return 0;
     memset(output, 0, 16);
     for (size_t i = 0; i < len; i++) output[i % 16] ^= input[i] ^ key[i % 16];
-    return 1;
-}
-
-int ble_smp_port_bond_load(
-    uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond
-) {
-    fake_smp *fake = fake_random_state;
-    if (!fake->bond.valid || fake->bond.peer_address_type != address_type ||
-        memcmp(fake->bond.peer_address, address, 6))
-        return 0;
-    *bond = fake->bond;
-    return 1;
-}
-
-int ble_smp_port_bond_store(const ble_smp_bond *bond) {
-    fake_random_state->bond = *bond;
     return 1;
 }
 
@@ -137,26 +119,6 @@ int main(void) {
     assert(!ble_smp_cmac(&smp, key, input, sizeof(input), output));
     for (unsigned i = 0; i < sizeof(output); i++) assert(output[i] == 0);
     fake.crypto_fail = 0;
-    ble_smp_bond stored = {0};
-    stored.valid = 1; stored.peer_address_type = 0; stored.key_size = 16;
-    stored.version = 1;
-    stored.authenticated = 1; stored.peer_address[0] = 0x42;
-    stored.has_peer_irk = stored.has_local_irk = 1;
-    stored.has_peer_csrk = stored.has_local_csrk = 1;
-    stored.has_peripheral_ltk = 1;
-    memset(stored.ltk, 0x11, sizeof(stored.ltk));
-    memset(stored.irk, 0x22, sizeof(stored.irk));
-    memset(stored.local_irk, 0x33, sizeof(stored.local_irk));
-    memset(stored.csrk, 0x44, sizeof(stored.csrk));
-    memset(stored.local_csrk, 0x55, sizeof(stored.local_csrk));
-    memset(stored.peripheral_ltk, 0x66, sizeof(stored.peripheral_ltk));
-    memset(stored.peripheral_rand, 0x77, sizeof(stored.peripheral_rand));
-    stored.peripheral_ediv[0] = 0x88;
-    stored.peripheral_ediv[1] = 0x99;
-    assert(ble_smp_port_bond_store(&stored));
-    ble_smp_bond restored;
-    assert(ble_smp_port_bond_load(0, stored.peer_address, &restored));
-    assert(!memcmp(&restored, &stored, sizeof(stored)));
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};
     const uint8_t *pending_pdu;
     uint16_t pending_len;
