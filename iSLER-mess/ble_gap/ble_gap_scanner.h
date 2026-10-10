@@ -315,6 +315,47 @@ static inline void gap_receive_report(
     gap_scan_count++;
 }
 
+// Take one advertising packet and copy the first AD structure with a requested type.
+// Return 1 when found, 0 when absent, or -1 when the output is too small.
+int gap_scan_take_ad(
+    const uint8_t *types, size_t type_count,
+                           uint8_t *ad, size_t *len, int8_t *rssi
+) {
+    if (gap_radio_scan_adv_ready) {
+        gap_receive_report(gap_radio_scan_adv_frame,
+                              gap_radio_scan_adv_frame[1],
+                              gap_radio_scan_adv_rssi);
+        gap_radio_scan_adv_ready = 0;
+    }
+    if (!types || !ad || !len || !gap_radio_rx_ready) return 0;
+    const uint8_t *frame = gap_radio_rx_frame;
+    uint8_t payload_len = frame[1];
+    int8_t packet_rssi = gap_radio_rx_rssi;
+    if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
+    gap_radio_rx_ready = 0;
+    GAP_HW_PACKET_CLEAR();
+    gap_receive_report(frame, payload_len, packet_rssi);
+    // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
+    if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 ||
+        payload_len > 37)
+        return 0;
+    size_t end = (size_t)payload_len + 2;
+    for (size_t offset = 8; offset < end;) {
+        uint8_t ad_len = frame[offset];
+        if (!ad_len || offset + ad_len + 1 > end) break;
+        for (size_t i = 0; i < type_count; i++) {
+            if (frame[offset + 1] != types[i]) continue;
+            if ((size_t)ad_len + 1 > *len) return -1;
+            memcpy(ad, frame + offset, (size_t)ad_len + 1);
+            *len = (size_t)ad_len + 1;
+            if (rssi) *rssi = packet_rssi;
+            return 1;
+        }
+        offset += (size_t)ad_len + 1;
+    }
+    return 0;
+}
+
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
     uint8_t mode, flags, has_address, address_type, address[6];
