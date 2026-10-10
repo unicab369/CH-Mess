@@ -1057,11 +1057,6 @@ void gap_hw_scan_poll(void) {
         gap_radio_periodic_sync_lost(i);
     }
 #endif
-    // The connection poll owns an armed connection event. Only schedule a
-    // periodic sync in the radio gaps between those events.
-    if (gap_radio_connection_slot_valid ||
-        (gap_conn.active && (gap_conn.rx_armed || gap_conn.event_replied)))
-        return;
     if (gap_central_conn.active && !gap_central_conn.auto_connect &&
         (int32_t)(now - gap_central_conn.deadline_ms) >= 0
     ) {
@@ -1073,6 +1068,11 @@ void gap_hw_scan_poll(void) {
         gap_active_scanning = 0;
         gap_scan_generation++;
     }
+    // The connection poll owns an armed connection event. Only schedule a
+    // periodic sync in the radio gaps between those events.
+    if (gap_radio_connection_slot_valid ||
+        (gap_conn.active && (gap_conn.rx_armed || gap_conn.event_replied)))
+        return;
     uint8_t reset_scan = !gap_conn_busy() &&
         gap_radio_scan_generation != gap_scan_generation;
     if (reset_scan) {
