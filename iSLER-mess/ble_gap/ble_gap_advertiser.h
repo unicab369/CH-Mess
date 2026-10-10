@@ -371,7 +371,7 @@ static inline int gap_adv_start_payload(
     const uint8_t *scan_response, size_t scan_response_len,
     uint16_t interval_ms
 ) {
-    if (gap_conn_busy() || gap_central_connect.active ||
+    if (gap_conn_busy() || gap_central_conn.active ||
 #if GAP_EXT_ADV_SUPPORT
         GAP_EXT_ADVERTISING_ENABLED ||
 #endif
@@ -589,7 +589,7 @@ int gap_periodic_adv_pawr_connect(
 ) {
     if (!peer_address || peer_address_type > 1 ||
         set_id >= GAP_EXT_ADV_SET_COUNT || gap_conn.active ||
-        gap_central_connect.active || gap_scanning ||
+        gap_central_conn.active || gap_scanning ||
         !gap_ext_adv[set_id].periodic_enabled ||
         !gap_ext_adv[set_id].pawr_enabled ||
         subevent >= gap_ext_adv[set_id].pawr_num_subevents ||
@@ -667,7 +667,7 @@ int gap_ext_adv_start_phy(
     uint8_t set_id, const uint8_t *data, size_t len,
     uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
 ) {
-    if (gap_conn_busy() || gap_central_connect.active ||
+    if (gap_conn_busy() || gap_central_conn.active ||
         gap_adv.enabled || set_id >= GAP_EXT_ADV_SET_COUNT ||
         gap_ext_adv[set_id].enabled ||
         gap_ext_adv[set_id].periodic_enabled || sid > 15 ||
@@ -751,7 +751,7 @@ int gap_connectable_advertising_start(
 int gap_directed_advertising_start(
     const uint8_t target_address[6], uint8_t target_type, uint16_t interval_ms
 ) {
-    if (gap_conn_busy() || gap_central_connect.active ||
+    if (gap_conn_busy() || gap_central_conn.active ||
 #if GAP_EXT_ADV_SUPPORT
         GAP_EXT_ADVERTISING_ENABLED ||
 #endif
@@ -790,7 +790,7 @@ int gap_adv_filter_policy(uint8_t scan_accept_list, uint8_t connection_accept_li
     if (scan_accept_list > 1 || connection_accept_list > 1 ||
         gap_scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
-        gap_central_connect.active
+        gap_central_conn.active
     ) return 0;
 
     gap_adv.scan_accept_list = scan_accept_list;

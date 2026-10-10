@@ -777,7 +777,7 @@ static void gap_data_length_send(uint8_t opcode) {
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
-    if (!gap_privacy.enabled || gap_conn.active || gap_central_connect.active ||
+    if (!gap_privacy.enabled || gap_conn.active || gap_central_conn.active ||
         gap_radio_active_scan_pending || gap_radio_advertising_rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0)
         return;
@@ -965,7 +965,7 @@ static int gap_radio_periodic_connect_request(
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_periodic_syncs[slot].pawr_connection_accept ||
-        gap_conn.active || gap_central_connect.active ||
+        gap_conn.active || gap_central_conn.active ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request))
         return 0;
@@ -1015,7 +1015,7 @@ static int gap_radio_periodic_connect_request(
     gap_conn.peer_sca_ppm = 500;
     gap_conn.central_role = 0;
     gap_scanning = gap_active_scanning = 0;
-    gap_central_connect.active = 0;
+    gap_central_conn.active = 0;
     gap_scan_generation++;
     return 1;
 }
@@ -1029,7 +1029,7 @@ static int gap_radio_periodic_connect_exchange(
     if (!set || !set->pawr_connect_pending || gap_conn.active ||
         GAP_HW_DATA_MAX() < 27)
         return 0;
-    uint8_t *request = gap_central_connect.request;
+    uint8_t *request = gap_central_conn.request;
     uint8_t peer_type = set->pawr_connect_peer_type;
     const uint8_t *peer_address = set->pawr_connect_peer_address;
     int peer_slot = gap_identity_find(peer_address, peer_type);
@@ -1040,7 +1040,7 @@ static int gap_radio_periodic_connect_exchange(
         set->pawr_connect_pending = 0;
         return 0;
     }
-    memset(request, 0, sizeof(gap_central_connect.request));
+    memset(request, 0, sizeof(gap_central_conn.request));
     request[0] = 0x05 | (local_type << 6) | (peer_type << 7);
     request[1] = 34;
     memcpy(request + 2, local_address, 6);
@@ -1622,8 +1622,8 @@ static void gap_radio_ext_scan_process(void) {
         }
         return;
     }
-    (void)gap_ext_scan_receive(kind, pdu, pdu_len,
-                                          gap_radio_ext_scan_rssi);
+    (void)gap_ext_scan_receive(kind, pdu, pdu_len, gap_radio_ext_scan_rssi);
+
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.has_sync_info)
         (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy,
                                             gap_radio_ext_scan_ticks);

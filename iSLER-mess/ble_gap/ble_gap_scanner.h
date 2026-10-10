@@ -38,7 +38,7 @@ void gap_scan_start(uint8_t active) {
     gap_scan_head = gap_scan_count = 0;
     gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
-    gap_central_connect.active = 0;
+    gap_central_conn.active = 0;
     gap_scanning = 1;
     gap_active_scanning = active;
     gap_scan_generation++;
@@ -75,10 +75,10 @@ int gap_scan_configure(
 void gap_scan_stop(void) {
     gap_scanning = 0;
     gap_active_scanning = 0;
-    gap_central_connect.active = 0;
-    gap_central_connect.any_peer = 0;
-    gap_central_connect.selective = 0;
-    gap_central_connect.auto_connect = 0;
+    gap_central_conn.active = 0;
+    gap_central_conn.any_peer = 0;
+    gap_central_conn.selective = 0;
+    gap_central_conn.auto_connect = 0;
 #if GAP_EXT_ADV_SUPPORT
     memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
 #endif
@@ -97,7 +97,7 @@ static int gap_conn_procedure_start(
 ) {
     if (mode < GAP_CONN_MODE_DIRECT || mode > GAP_CONN_MODE_AUTO ||
         active_scan > 1 || gap_conn.active || gap_scanning ||
-        gap_central_connect.active ||
+        gap_central_conn.active ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
           mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty()))
         return 0;
@@ -105,56 +105,56 @@ static int gap_conn_procedure_start(
     uint8_t selective = mode == GAP_CONN_MODE_SELECTIVE;
     uint8_t auto_connect = mode == GAP_CONN_MODE_AUTO;
     uint8_t peer_type = mode == GAP_CONN_MODE_DIRECT ?
-        gap_central_connect.peer_type : 0;
+        gap_central_conn.peer_type : 0;
     const uint8_t *peer_address = mode == GAP_CONN_MODE_DIRECT ?
-        gap_central_connect.peer_address : NULL;
+        gap_central_conn.peer_address : NULL;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
-    memset(gap_central_connect.request, 0,
-           sizeof(gap_central_connect.request));
+    memset(gap_central_conn.request, 0,
+           sizeof(gap_central_conn.request));
     uint8_t local_type;
     int peer_slot = peer_address ? gap_identity_find(peer_address, peer_type) : -1;
-    gap_local_address_select(peer_slot, gap_central_connect.request + 2,
+    gap_local_address_select(peer_slot, gap_central_conn.request + 2,
                              &local_type);
-    gap_central_connect.request[0] = 0x05 |
+    gap_central_conn.request[0] = 0x05 |
         (local_type << 6) | (peer_type << 7); // CONNECT_IND
-    gap_central_connect.request[1] = 34;
+    gap_central_conn.request[1] = 34;
     if (peer_address)
-        memcpy(gap_central_connect.request + 8, peer_address, 6);
-    gap_central_connect.request[14] = (uint8_t)access_address;
-    gap_central_connect.request[15] = (uint8_t)(access_address >> 8);
-    gap_central_connect.request[16] = (uint8_t)(access_address >> 16);
-    gap_central_connect.request[17] = (uint8_t)(access_address >> 24);
+        memcpy(gap_central_conn.request + 8, peer_address, 6);
+    gap_central_conn.request[14] = (uint8_t)access_address;
+    gap_central_conn.request[15] = (uint8_t)(access_address >> 8);
+    gap_central_conn.request[16] = (uint8_t)(access_address >> 16);
+    gap_central_conn.request[17] = (uint8_t)(access_address >> 24);
     uint8_t crc_init[3];
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
-    memcpy(gap_central_connect.request + 18, crc_init, sizeof(crc_init));
-    gap_central_connect.request[21] = 1; // transmit window size: 1.25 ms
-    gap_central_connect.request[24] = (uint8_t)gap_conn_timing.interval;
-    gap_central_connect.request[25] =
+    memcpy(gap_central_conn.request + 18, crc_init, sizeof(crc_init));
+    gap_central_conn.request[21] = 1; // transmit window size: 1.25 ms
+    gap_central_conn.request[24] = (uint8_t)gap_conn_timing.interval;
+    gap_central_conn.request[25] =
         (uint8_t)(gap_conn_timing.interval >> 8);
-    gap_central_connect.request[26] = (uint8_t)gap_conn_timing.latency;
-    gap_central_connect.request[27] =
+    gap_central_conn.request[26] = (uint8_t)gap_conn_timing.latency;
+    gap_central_conn.request[27] =
         (uint8_t)(gap_conn_timing.latency >> 8);
-    gap_central_connect.request[28] =
+    gap_central_conn.request[28] =
         (uint8_t)gap_conn_timing.supervision_timeout;
-    gap_central_connect.request[29] =
+    gap_central_conn.request[29] =
         (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
-    memset(gap_central_connect.request + 30, 0xff, 4);
-    gap_central_connect.request[34] = 0x1f; // data channels 0 through 36
-    gap_central_connect.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
-    gap_central_connect.any_peer = any_peer;
-    gap_central_connect.selective = selective;
-    gap_central_connect.auto_connect = auto_connect;
-    gap_central_connect.peer_type = peer_type;
+    memset(gap_central_conn.request + 30, 0xff, 4);
+    gap_central_conn.request[34] = 0x1f; // data channels 0 through 36
+    gap_central_conn.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+    gap_central_conn.any_peer = any_peer;
+    gap_central_conn.selective = selective;
+    gap_central_conn.auto_connect = auto_connect;
+    gap_central_conn.peer_type = peer_type;
     if (mode != GAP_CONN_MODE_DIRECT)
-        memset(gap_central_connect.peer_address, 0,
-               sizeof(gap_central_connect.peer_address));
+        memset(gap_central_conn.peer_address, 0,
+               sizeof(gap_central_conn.peer_address));
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
     if (any_peer || auto_connect) gap_scan_start(active_scan);
     else gap_scanning = 1;
-    gap_central_connect.active = 1;
-    gap_central_connect.deadline_ms = auto_connect ? 0 :
+    gap_central_conn.active = 1;
+    gap_central_conn.deadline_ms = auto_connect ? 0 :
         GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
         gap_active_scanning = 0;
@@ -169,44 +169,40 @@ static int gap_conn_procedure_start(
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
     if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
-        gap_central_connect.active
+        gap_central_conn.active
     ) return 0;
-    memcpy(gap_central_connect.peer_address, peer_address, 6);
-    gap_central_connect.peer_type = peer_type;
+    memcpy(gap_central_conn.peer_address, peer_address, 6);
+    gap_central_conn.peer_type = peer_type;
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
-    memset(gap_central_connect.peer_address, 0,
-           sizeof(gap_central_connect.peer_address));
-    gap_central_connect.peer_type = 0;
+    memset(gap_central_conn.peer_address, 0, sizeof(gap_central_conn.peer_address));
+    gap_central_conn.peer_type = 0;
     return 0;
 }
 
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
-int gap_conn_general_start(uint8_t active_scan) {
-    return gap_conn_procedure_start(
-        GAP_CONN_MODE_GENERAL, active_scan);
+int gap_conn_start_general(uint8_t active_scan) {
+    return gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, active_scan);
 }
 
 // Selective Connection Establishment scans for an advertiser in the accept list.
-int gap_conn_selective_start(uint8_t active_scan) {
-    return gap_conn_procedure_start(
-        GAP_CONN_MODE_SELECTIVE, active_scan);
+int gap_conn_start_selective(uint8_t active_scan) {
+    return gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, active_scan);
 }
 
 // Auto Connection Establishment scans in the background until a listed peer
 // connects or the application cancels; it does not time out after one attempt.
-int gap_conn_auto_start(void) {
-    return gap_conn_procedure_start(
-        GAP_CONN_MODE_AUTO, 0);
+int gap_conn_start_auto(void) {
+    return gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0);
 }
 
 int gap_conn_initiating(void) {
-    return gap_central_connect.active;
+    return gap_central_conn.active;
 }
 
 void gap_conn_cancel(void) {
-    if (gap_central_connect.active) gap_scan_stop();
+    if (gap_central_conn.active) gap_scan_stop();
 }
 
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
@@ -326,15 +322,16 @@ static inline void gap_receive_report(
 // Return 1 when found, 0 when absent, or -1 when the output is too small.
 int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
-                           uint8_t *ad, size_t *len, int8_t *rssi
+    uint8_t *ad, size_t *len, int8_t *rssi
 ) {
     if (gap_radio_scan_adv_ready) {
         gap_receive_report(gap_radio_scan_adv_frame,
-                              gap_radio_scan_adv_frame[1],
-                              gap_radio_scan_adv_rssi);
+                            gap_radio_scan_adv_frame[1],
+                            gap_radio_scan_adv_rssi);
         gap_radio_scan_adv_ready = 0;
     }
     if (!types || !ad || !len || !gap_radio_rx_ready) return 0;
+
     const uint8_t *frame = gap_radio_rx_frame;
     uint8_t payload_len = frame[1];
     int8_t packet_rssi = gap_radio_rx_rssi;
@@ -342,14 +339,16 @@ int gap_scan_take_ad(
     gap_radio_rx_ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);
+
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
-    if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 ||
-        payload_len > 37)
+    if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 || payload_len > 37)
         return 0;
     size_t end = (size_t)payload_len + 2;
+
     for (size_t offset = 8; offset < end;) {
         uint8_t ad_len = frame[offset];
         if (!ad_len || offset + ad_len + 1 > end) break;
+
         for (size_t i = 0; i < type_count; i++) {
             if (frame[offset + 1] != types[i]) continue;
             if ((size_t)ad_len + 1 > *len) return -1;
@@ -729,7 +728,8 @@ int gap_ext_scan_receive(
         gap_ext_adv_context_clear((uint8_t)slot);
         return 0;
     }
-    gap_ext_adv_report_queue(gap_ext_adv_contexts[slot].address,
+    gap_ext_adv_report_queue(
+        gap_ext_adv_contexts[slot].address,
         gap_ext_adv_contexts[slot].has_address,
         gap_ext_adv_contexts[slot].address_type,
         gap_ext_adv_contexts[slot].has_adi,
@@ -781,7 +781,7 @@ int gap_periodic_sync_start(
     const uint8_t address[6], uint8_t sid, uint32_t timeout_ms
 ) {
     if (!address || address_type > 1 || sid > 15 || timeout_ms < 100 ||
-        timeout_ms > 163840 || gap_conn.active || gap_central_connect.active
+        timeout_ms > 163840 || gap_conn.active || gap_central_conn.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
@@ -812,7 +812,7 @@ int gap_periodic_sync_start(
 }
 
 // Enable receipt of periodic sync transfers from connected peers.
-int gap_periodic_sync_transfer_enable(
+int gap_periodic_sync_enable(
     uint8_t enabled, uint32_t timeout_ms
 ) {
     if (enabled > 1 || (enabled && (timeout_ms < 100 || timeout_ms > 163840)))
@@ -836,21 +836,16 @@ static void gap_periodic_sync_owned_scan_finish(void) {
     if (gap_scanning) gap_scan_stop();
 }
 
-// Cancel a request that has not acquired the first periodic event.
-int gap_periodic_sync_cancel(uint8_t handle) {
+// Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
+// established synchronization.
+int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     int slot = gap_periodic_sync_handle_slot(handle);
-    if (slot < 0 || gap_periodic_syncs[slot].established) return 0;
-    gap_periodic_sync_event_post((uint8_t)slot, GAP_PERIODIC_SYNC_CANCELLED);
-    memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
-    gap_periodic_sync_owned_scan_finish();
-    return 1;
-}
-
-// Terminate an acquired periodic synchronization.
-int gap_periodic_sync_terminate(uint8_t handle) {
-    int slot = gap_periodic_sync_handle_slot(handle);
-    if (slot < 0 || !gap_periodic_syncs[slot].established) return 0;
-    gap_periodic_sync_event_post((uint8_t)slot, GAP_PERIODIC_SYNC_TERMINATED);
+    if (slot < 0 || terminate > 1 ||
+        gap_periodic_syncs[slot].established != terminate
+    )
+        return 0;
+    gap_periodic_sync_event_post((uint8_t)slot, terminate ?
+        GAP_PERIODIC_SYNC_TERMINATED : GAP_PERIODIC_SYNC_CANCELLED);
     memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
     gap_periodic_sync_owned_scan_finish();
     return 1;
@@ -926,7 +921,7 @@ int gap_periodic_sync_pawr_connect_accept(
     int slot = gap_periodic_sync_handle_slot(handle);
     if (slot < 0 || !gap_periodic_syncs[slot].established ||
         !gap_periodic_syncs[slot].has_pawr_timing || enabled > 1 ||
-        gap_conn.active || gap_central_connect.active
+        gap_conn.active || gap_central_conn.active
     ) return 0;
 
     gap_periodic_syncs[slot].pawr_connection_accept = enabled;
