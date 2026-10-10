@@ -178,15 +178,11 @@ typedef struct {
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 int ble_smp_port_cmac(const uint8_t key[16], const uint8_t *input,
                       size_t len, uint8_t output[16]);
-int ble_smp_port_dhkey(const uint8_t private_key[32],
-                       const uint8_t peer_public_key[64], uint8_t dhkey[32]);
-int ble_smp_port_user_request(uint8_t action, uint32_t value);
 int ble_smp_port_set_link_encryption(const uint8_t ltk[16], uint8_t key_size,
                                      uint8_t authenticated);
 int ble_smp_port_bond_load(uint8_t address_type, const uint8_t address[6],
                            ble_smp_bond *bond);
 int ble_smp_port_bond_store(const ble_smp_bond *bond);
-int ble_smp_port_bond_remove(uint8_t address_type, const uint8_t address[6]);
 
 // LE SMP command lengths include the one-octet command code. Reserved command
 // codes are rejected here so the protocol owner can choose to ignore them.
@@ -399,8 +395,8 @@ static inline uint8_t ble_smp_negotiate_features(
         policy->require_authenticated > 1 ||
         policy->require_secure_connections > 1 || policy->allow_legacy > 1 ||
         policy->allow_bonding > 1 ||
-        (policy->key_distribution_mask & ~BLE_SMP_KEY_DIST_MASK))
-        return BLE_SMP_FAIL_INVALID_PARAMETERS;
+        (policy->key_distribution_mask & ~BLE_SMP_KEY_DIST_MASK)
+    ) return BLE_SMP_FAIL_INVALID_PARAMETERS;
 
     uint8_t sc = !!((local->auth_req & BLE_SMP_AUTH_SECURE_CONNECTIONS) &&
                     (peer->auth_req & BLE_SMP_AUTH_SECURE_CONNECTIONS));
@@ -491,10 +487,11 @@ static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len) {
     for (size_t i = 0; i < len; i++) out[i] = in[len - 1 - i];
 }
 
-static int ble_smp_port_aes128(
-    const uint8_t key[16],
+static inline int ble_smp_aes128(
+    ble_smp *smp, const uint8_t key[16],
     const uint8_t input[16], uint8_t output[16]
 ) {
+    if (!smp || !key || !input || !output) return 0;
     uint8_t standard_key[16], standard_input[16], standard_output[16];
     gap_sc_reverse(standard_key, key, sizeof(standard_key));
     gap_sc_reverse(standard_input, input, sizeof(standard_input));
@@ -507,17 +504,6 @@ static int ble_smp_port_aes128(
     wipe = standard_output;
     for (size_t i = 0; i < sizeof(standard_output); i++) wipe[i] = 0;
     return 1;
-}
-
-static inline int ble_smp_aes128(
-    ble_smp *smp, const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]
-) {
-    if (!smp || !key || !input || !output) return 0;
-    if (ble_smp_port_aes128(key, input, output)) return 1;
-    volatile uint8_t *wipe = output;
-    for (size_t i = 0; i < 16; i++) wipe[i] = 0;
-    return 0;
 }
 
 // Derive the legacy Short Term Key from the least-significant 64 bits of the
@@ -549,126 +535,6 @@ static inline int ble_smp_cmac(
     return 0;
 }
 
-// LE Secure Connections f4/f5 primitives. Inputs and outputs use SMP's
-// little-endian representation; byte-order conversion stays with the caller.
-static inline int ble_smp_sc_f4(
-    ble_smp *smp, const uint8_t u[32],
-    const uint8_t v[32], const uint8_t x[16], uint8_t z, uint8_t out[16]
-) {
-    if (!smp || !u || !v || !x || !out) return 0;
-    uint8_t message[65];
-    memcpy(message, u, 32);
-    memcpy(message + 32, v, 32);
-    message[64] = z;
-    int ok = ble_smp_cmac(smp, x, message, sizeof(message), out);
-    volatile uint8_t *wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-    return ok;
-}
-
-static inline int ble_smp_sc_f5(
-    ble_smp *smp, const uint8_t w[32],
-    const uint8_t n1[16], const uint8_t n2[16], const uint8_t a1[7],
-    const uint8_t a2[7], uint8_t mac_key[16], uint8_t ltk[16]
-) {
-    if (!smp || !w || !n1 || !n2 || !a1 || !a2 || !mac_key || !ltk)
-        return 0;
-    static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
-    static const uint8_t salt[16] = {
-        0x6c, 0x88, 0x83, 0x91, 0xaa, 0xf5, 0xa5, 0x38,
-        0x60, 0x37, 0x0b, 0xdb, 0x5a, 0x60, 0x83, 0xbe
-    };
-    uint8_t t[16], message[53];
-    int ok = ble_smp_cmac(smp, salt, w, 32, t);
-    for (uint8_t counter = 0; ok && counter < 2; counter++) {
-        message[0] = counter;
-        memcpy(message + 1, key_id, sizeof(key_id));
-        memcpy(message + 5, n1, 16);
-        memcpy(message + 21, n2, 16);
-        memcpy(message + 37, a1, 7);
-        memcpy(message + 44, a2, 7);
-        message[51] = 1;
-        message[52] = 0;
-        ok = ble_smp_cmac(smp, t, message, sizeof(message),
-                           counter ? ltk : mac_key);
-    }
-    if (!ok) {
-        memset(mac_key, 0, 16);
-        memset(ltk, 0, 16);
-    }
-    volatile uint8_t *wipe = t;
-    for (size_t i = 0; i < sizeof(t); i++) wipe[i] = 0;
-    wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-    return ok;
-}
-
-static inline int ble_smp_sc_f6(
-    ble_smp *smp, const uint8_t w[16],
-    const uint8_t n1[16], const uint8_t n2[16], const uint8_t r[16],
-    const uint8_t iocap[3], const uint8_t a1[7], const uint8_t a2[7],
-    uint8_t out[16]
-) {
-    if (!smp || !w || !n1 || !n2 || !r || !iocap || !a1 || !a2 || !out)
-        return 0;
-    uint8_t message[65];
-    memcpy(message, n1, 16);
-    memcpy(message + 16, n2, 16);
-    memcpy(message + 32, r, 16);
-    memcpy(message + 48, iocap, 3);
-    memcpy(message + 51, a1, 7);
-    memcpy(message + 58, a2, 7);
-    int ok = ble_smp_cmac(smp, w, message, sizeof(message), out);
-    volatile uint8_t *wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-    return ok;
-}
-
-static inline int ble_smp_sc_g2(
-    ble_smp *smp, const uint8_t u[32],
-    const uint8_t v[32], const uint8_t x[16], const uint8_t y[16],
-    uint32_t *passkey
-) {
-    if (!smp || !u || !v || !x || !y || !passkey) return 0;
-    uint8_t message[80], mac[16];
-    memcpy(message, u, 32);
-    memcpy(message + 32, v, 32);
-    memcpy(message + 64, y, 16);
-    int ok = ble_smp_cmac(smp, x, message, sizeof(message), mac);
-    if (ok) {
-        uint32_t value = (uint32_t)mac[12] << 24 |
-            (uint32_t)mac[13] << 16 | (uint32_t)mac[14] << 8 | mac[15];
-        *passkey = value % 1000000;
-    } else {
-        *passkey = 0;
-    }
-    volatile uint8_t *wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-    wipe = mac;
-    for (size_t i = 0; i < sizeof(mac); i++) wipe[i] = 0;
-    return ok;
-}
-
-static inline int ble_smp_dhkey(
-    ble_smp *smp, const uint8_t private_key[32],
-    const uint8_t peer_public_key[64], uint8_t dhkey[32]
-) {
-    if (!smp || !private_key || !peer_public_key || !dhkey)
-        return 0;
-    if (ble_smp_port_dhkey(private_key, peer_public_key, dhkey))
-        return 1;
-    volatile uint8_t *wipe = dhkey;
-    for (size_t i = 0; i < 32; i++) wipe[i] = 0;
-    return 0;
-}
-
-static inline int ble_smp_user_request(
-    ble_smp *smp, uint8_t action,
-                                        uint32_t value
-) {
-    return smp ? ble_smp_port_user_request(action, value) : -1;
-}
-
 static inline int ble_smp_set_link_encryption(
     ble_smp *smp,
     const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated
@@ -677,52 +543,6 @@ static inline int ble_smp_set_link_encryption(
         key_size > 16 || authenticated > 1)
         return 0;
     return ble_smp_port_set_link_encryption(ltk, key_size, authenticated);
-}
-
-static inline int ble_smp_bond_load(
-    ble_smp *smp, uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond
-) {
-    if (!smp || address_type > 1 || !address || !bond)
-        return 0;
-    memset(bond, 0, sizeof(*bond));
-    if (!ble_smp_port_bond_load(address_type, address, bond) ||
-        bond->valid != 1 || bond->peer_address_type != address_type ||
-        (address_type && (address[5] & 0xc0) != 0xc0) ||
-        memcmp(bond->peer_address, address, 6) || bond->key_size < 7 ||
-        bond->key_size > 16 || bond->authenticated > 1 ||
-        (bond->version && bond->version != BLE_SMP_BOND_SCHEMA_VERSION) ||
-        bond->has_peer_irk > 1 || bond->has_local_irk > 1 ||
-        bond->has_peer_csrk > 1 || bond->has_local_csrk > 1 ||
-        bond->has_peripheral_ltk > 1) {
-        volatile uint8_t *wipe = (volatile uint8_t *)bond;
-        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
-        return 0;
-    }
-    if ((!bond->has_peer_irk && memcmp(bond->irk, (uint8_t[16]){0}, 16)) ||
-        (!bond->has_local_irk && memcmp(bond->local_irk, (uint8_t[16]){0}, 16)) ||
-        (!bond->has_peer_csrk && memcmp(bond->csrk, (uint8_t[16]){0}, 16)) ||
-        (!bond->has_local_csrk && memcmp(bond->local_csrk, (uint8_t[16]){0}, 16))) {
-        volatile uint8_t *wipe = (volatile uint8_t *)bond;
-        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
-        return 0;
-    }
-    for (uint8_t i = bond->key_size; i < 16; i++)
-        if (bond->ltk[i] || (bond->has_peripheral_ltk &&
-                            bond->peripheral_ltk[i])) {
-            volatile uint8_t *wipe = (volatile uint8_t *)bond;
-            for (size_t j = 0; j < sizeof(*bond); j++) wipe[j] = 0;
-            return 0;
-        }
-    if (!bond->has_peripheral_ltk &&
-        (memcmp(bond->peripheral_ltk, (uint8_t[16]){0}, 16) ||
-         memcmp(bond->peripheral_rand, (uint8_t[8]){0}, 8) ||
-         bond->peripheral_ediv[0] || bond->peripheral_ediv[1])) {
-        volatile uint8_t *wipe = (volatile uint8_t *)bond;
-        for (size_t i = 0; i < sizeof(*bond); i++) wipe[i] = 0;
-        return 0;
-    }
-    return 1;
 }
 
 static inline int ble_smp_bond_store(
@@ -757,14 +577,6 @@ static inline int ble_smp_bond_store(
     volatile uint8_t *wipe = (volatile uint8_t *)&normalized;
     for (size_t i = 0; i < sizeof(normalized); i++) wipe[i] = 0;
     return stored;
-}
-
-static inline int ble_smp_bond_remove(
-    ble_smp *smp, uint8_t address_type,
-    const uint8_t address[6]
-) {
-    if (!smp || address_type > 1 || !address) return 0;
-    return ble_smp_port_bond_remove(address_type, address);
 }
 
 // Advance the host-clock timer. Unsigned subtraction keeps deadlines correct
@@ -901,12 +713,6 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-int ble_smp_port_user_request(uint8_t action, uint32_t value) {
-    return gap_smp_user_request_callback ?
-        gap_smp_user_request_callback(gap_smp_user_request_context,
-                                      action, value) : -1;
-}
-
 int ble_smp_port_cmac(
     const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
@@ -914,15 +720,6 @@ int ble_smp_port_cmac(
     if (!key || (!input && len) || !output) return 0;
     aes_cmac(key, input, len, output);
     return 1;
-}
-
-int ble_smp_port_dhkey(
-    const uint8_t private_key[32],
-    const uint8_t peer_public_key[64], uint8_t dhkey[32]
-) {
-    if (!private_key || !peer_public_key || !dhkey) return 0;
-    return uECC_shared_secret(peer_public_key, private_key, dhkey,
-                              uECC_secp256r1());
 }
 
 int ble_smp_port_set_link_encryption(
@@ -980,8 +777,9 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     uint8_t dhkey[32];
     uECC_RNG_Function previous = uECC_get_rng();
     uECC_set_rng(ble_smp_random_bytes);
-    int derived = ble_smp_dhkey(&gap_smp.bearer, gap_smp.bearer.pairing.sc.private_key,
-                                gap_smp.bearer.pairing.sc.peer_public_key, dhkey);
+    int derived = uECC_shared_secret(
+        gap_smp.bearer.pairing.sc.peer_public_key,
+        gap_smp.bearer.pairing.sc.private_key, dhkey, curve);
     uECC_set_rng(previous);
     if (derived && gap_conn.active && generation == gap_security_generation)
         memcpy(gap_smp.bearer.pairing.sc.dhkey, dhkey, 32);
@@ -1005,8 +803,18 @@ static inline void gap_sc_f4(
     const uint8_t u[32], const uint8_t v[32],
                       const uint8_t x[16], uint8_t z, uint8_t out[16]
 ) {
-    if (!ble_smp_sc_f4(&gap_smp.bearer, u, v, x, z, out))
+    if (!u || !v || !x || !out) {
+        if (out) memset(out, 0, 16);
+        return;
+    }
+    uint8_t message[65];
+    memcpy(message, u, 32);
+    memcpy(message + 32, v, 32);
+    message[64] = z;
+    if (!ble_smp_cmac(&gap_smp.bearer, x, message, sizeof(message), out))
         memset(out, 0, 16);
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
 }
 
 // Derive MacKey and LTK from the DHKey, nonces, and typed device addresses.
@@ -1016,11 +824,38 @@ static inline void gap_sc_f5(
                       const uint8_t a2[7], uint8_t mac_key[16],
                       uint8_t ltk[16]
 ) {
-    if (!ble_smp_sc_f5(&gap_smp.bearer, w, n1, n2, a1, a2,
-                       mac_key, ltk)) {
+    if (!w || !n1 || !n2 || !a1 || !a2 || !mac_key || !ltk) {
+        if (mac_key) memset(mac_key, 0, 16);
+        if (ltk) memset(ltk, 0, 16);
+        return;
+    }
+    static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
+    static const uint8_t salt[16] = {
+        0x6c, 0x88, 0x83, 0x91, 0xaa, 0xf5, 0xa5, 0x38,
+        0x60, 0x37, 0x0b, 0xdb, 0x5a, 0x60, 0x83, 0xbe
+    };
+    uint8_t t[16], message[53] = {0};
+    int ok = ble_smp_cmac(&gap_smp.bearer, salt, w, 32, t);
+    for (uint8_t counter = 0; ok && counter < 2; counter++) {
+        message[0] = counter;
+        memcpy(message + 1, key_id, sizeof(key_id));
+        memcpy(message + 5, n1, 16);
+        memcpy(message + 21, n2, 16);
+        memcpy(message + 37, a1, 7);
+        memcpy(message + 44, a2, 7);
+        message[51] = 1;
+        message[52] = 0;
+        ok = ble_smp_cmac(&gap_smp.bearer, t, message, sizeof(message),
+                           counter ? ltk : mac_key);
+    }
+    if (!ok) {
         memset(mac_key, 0, 16);
         memset(ltk, 0, 16);
     }
+    volatile uint8_t *wipe = t;
+    for (size_t i = 0; i < sizeof(t); i++) wipe[i] = 0;
+    wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
 }
 
 static inline void gap_sc_f6(
@@ -1029,8 +864,21 @@ static inline void gap_sc_f6(
                       const uint8_t iocap[3], const uint8_t a1[7],
                       const uint8_t a2[7], uint8_t out[16]
 ) {
-    if (!ble_smp_sc_f6(&gap_smp.bearer, w, n1, n2, r, iocap, a1, a2, out))
+    if (!w || !n1 || !n2 || !r || !iocap || !a1 || !a2 || !out) {
+        if (out) memset(out, 0, 16);
+        return;
+    }
+    uint8_t message[65];
+    memcpy(message, n1, 16);
+    memcpy(message + 16, n2, 16);
+    memcpy(message + 32, r, 16);
+    memcpy(message + 48, iocap, 3);
+    memcpy(message + 51, a1, 7);
+    memcpy(message + 58, a2, 7);
+    if (!ble_smp_cmac(&gap_smp.bearer, w, message, sizeof(message), out))
         memset(out, 0, 16);
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
 }
 
 // Return the six-digit Numeric Comparison value from the least-significant
@@ -1039,8 +887,22 @@ static inline uint32_t gap_sc_g2(
     const uint8_t u[32], const uint8_t v[32],
                           const uint8_t x[16], const uint8_t y[16]
 ) {
+    if (!u || !v || !x || !y) return 0;
+    uint8_t message[80], mac[16];
+    memcpy(message, u, 32);
+    memcpy(message + 32, v, 32);
+    memcpy(message + 64, y, 16);
+    int ok = ble_smp_cmac(&gap_smp.bearer, x, message, sizeof(message), mac);
     uint32_t passkey = 0;
-    (void)ble_smp_sc_g2(&gap_smp.bearer, u, v, x, y, &passkey);
+    if (ok) {
+        uint32_t value = (uint32_t)mac[12] << 24 |
+            (uint32_t)mac[13] << 16 | (uint32_t)mac[14] << 8 | mac[15];
+        passkey = value % 1000000;
+    }
+    volatile uint8_t *wipe = message;
+    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+    wipe = mac;
+    for (size_t i = 0; i < sizeof(mac); i++) wipe[i] = 0;
     return passkey;
 }
 
@@ -1777,25 +1639,52 @@ int ble_smp_port_bond_store(const ble_smp_bond *bond) {
     return result;
 }
 
-int ble_smp_port_bond_remove(
-    uint8_t address_type, const uint8_t address[6]
-) {
-    return gap_bond_remove(address, address_type);
-}
-
 static int gap_smp_generic_bond_load(
     const uint8_t address[6],
     uint8_t address_type, gap_bond *out
 ) {
     ble_smp_bond generic;
-    if (!out) return 0;
+    if (!out || address_type > 1 || !address) return 0;
     memset(out, 0, sizeof(*out));
-    if (!ble_smp_bond_load(&gap_smp.bearer, address_type, address, &generic))
-        return 0;
+    memset(&generic, 0, sizeof(generic));
+    if (!ble_smp_port_bond_load(address_type, address, &generic) ||
+        generic.valid != 1 || generic.peer_address_type != address_type ||
+        (address_type && (address[5] & 0xc0) != 0xc0) ||
+        memcmp(generic.peer_address, address, 6) || generic.key_size < 7 ||
+        generic.key_size > 16 || generic.authenticated > 1 ||
+        (generic.version && generic.version != BLE_SMP_BOND_SCHEMA_VERSION) ||
+        generic.has_peer_irk > 1 || generic.has_local_irk > 1 ||
+        generic.has_peer_csrk > 1 || generic.has_local_csrk > 1 ||
+        generic.has_peripheral_ltk > 1)
+        goto invalid;
+    if ((!generic.has_peer_irk &&
+         memcmp(generic.irk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_local_irk &&
+         memcmp(generic.local_irk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_peer_csrk &&
+         memcmp(generic.csrk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_local_csrk &&
+         memcmp(generic.local_csrk, (uint8_t[16]){0}, 16)))
+        goto invalid;
+    for (uint8_t i = generic.key_size; i < 16; i++)
+        if (generic.ltk[i] || (generic.has_peripheral_ltk &&
+                              generic.peripheral_ltk[i]))
+            goto invalid;
+    if (!generic.has_peripheral_ltk &&
+        (memcmp(generic.peripheral_ltk, (uint8_t[16]){0}, 16) ||
+         memcmp(generic.peripheral_rand, (uint8_t[8]){0}, 8) ||
+         generic.peripheral_ediv[0] || generic.peripheral_ediv[1]))
+        goto invalid;
     gap_smp_bond_from_generic(&generic, out);
     volatile uint8_t *wipe = (volatile uint8_t *)&generic;
     for (size_t i = 0; i < sizeof(generic); i++) wipe[i] = 0;
     return 1;
+invalid:
+    {
+        volatile uint8_t *wipe = (volatile uint8_t *)&generic;
+        for (size_t i = 0; i < sizeof(generic); i++) wipe[i] = 0;
+    }
+    return 0;
 }
 
 static int gap_smp_generic_bond_store(const gap_bond *bond) {
@@ -1820,9 +1709,8 @@ static void gap_smp_bond_abort(void) {
             memcpy(&gap_conn.bond, &gap_smp.previous_bond, sizeof(gap_conn.bond));
             gap_conn.bonded = 1;
         } else {
-            ble_smp_bond_remove(&gap_smp.bearer,
-                                gap_conn.bond.peer_address_type,
-                                gap_conn.bond.peer_address);
+            gap_bond_remove(gap_conn.bond.peer_address,
+                            gap_conn.bond.peer_address_type);
             memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
             gap_conn.bonded = 0;
         }
@@ -1844,9 +1732,8 @@ static void gap_smp_link_close(void) {
     if (gap_conn.central_role && gap_conn.bond_restore_started &&
         gap_security.status == 0x3d
     ) {
-        ble_smp_bond_remove(&gap_smp.bearer,
-                            gap_conn.bond.peer_address_type,
-                            gap_conn.bond.peer_address);
+        gap_bond_remove(gap_conn.bond.peer_address,
+                        gap_conn.bond.peer_address_type);
         gap_bond_repair_pending = 1;
     }
     uint8_t status = gap_smp.bearer.pairing.phase ? 0x08 : gap_smp.status;
@@ -1867,9 +1754,8 @@ static void gap_smp_bond_restore_poll(void) {
         !gap_security.phase && gap_security.status &&
         gap_security.status != GAP_CONNECTION_PENDING
     ) {
-        ble_smp_bond_remove(&gap_smp.bearer,
-                            gap_conn.bond.peer_address_type,
-                            gap_conn.bond.peer_address);
+        gap_bond_remove(gap_conn.bond.peer_address,
+                        gap_conn.bond.peer_address_type);
         memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
         gap_conn.bonded = gap_conn.bond_restore_started = 0;
         gap_bond_repair_pending = 1;
@@ -1895,8 +1781,7 @@ static void gap_smp_bond_restore_poll(void) {
 
 static int gap_smp_blocks_encryption(void) {
     uint8_t phase = gap_smp.bearer.pairing.phase;
-    return phase && phase != BLE_SMP_PHASE_ENCRYPT &&
-        phase != BLE_SMP_PHASE_SC_ENCRYPT;
+    return phase && phase != BLE_SMP_PHASE_ENCRYPT &&  phase != BLE_SMP_PHASE_SC_ENCRYPT;
 }
 
 static void gap_smp_receive_complete(void) {
@@ -2027,12 +1912,6 @@ send_failed:
     gap_smp_finish(BLE_SMP_FAIL_UNSPECIFIED, 1);
 }
 
-static void gap_smp_bond_peripheral_tx_complete(void) {
-    gap_smp.bearer.pairing.phase = BLE_SMP_PHASE_BOND_RX;
-    gap_smp.bearer.pairing.bond_rx_step = gap_smp.bearer.pairing.secure_connections ? 20 : 0;
-    if (!gap_smp.bearer.pairing.response[5]) gap_smp_bond_rx_complete();
-}
-
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.
 static void gap_smp_poll(void) {
@@ -2057,7 +1936,8 @@ static void gap_smp_poll(void) {
         uint32_t value = action == BLE_SMP_USER_PASSKEY_DISPLAY ?
             ((uint32_t)gap_smp.bearer.pairing.tk[0] | (uint32_t)gap_smp.bearer.pairing.tk[1] << 8 |
              (uint32_t)gap_smp.bearer.pairing.tk[2] << 16 | (uint32_t)gap_smp.bearer.pairing.tk[3] << 24) : 0;
-        if (ble_smp_user_request(&gap_smp.bearer, action, value) < 0) {
+        if (gap_smp_user_request_callback(gap_smp_user_request_context,
+                action, value) < 0) {
             gap_smp_finish(BLE_SMP_FAIL_PASSKEY_ENTRY, 1);
             return;
         }
@@ -2066,8 +1946,9 @@ static void gap_smp_poll(void) {
     if (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER && !gap_smp.bearer.pairing.numeric_notified &&
         gap_smp_user_request_callback
     ) {
-        int decision = ble_smp_user_request(&gap_smp.bearer,
-            BLE_SMP_USER_NUMERIC_COMPARISON, gap_smp.bearer.pairing.sc.numeric_value);
+        int decision = gap_smp_user_request_callback(
+            gap_smp_user_request_context, BLE_SMP_USER_NUMERIC_COMPARISON,
+            gap_smp.bearer.pairing.sc.numeric_value);
         gap_smp.bearer.pairing.numeric_notified = 1;
         if (decision < 0) gap_smp.bearer.pairing.sc.numeric_reply = 2;
         else if (decision > 0) gap_smp.bearer.pairing.sc.numeric_reply = 1;
@@ -2163,7 +2044,11 @@ static void gap_smp_poll(void) {
             }
             gap_smp.bearer.pairing.bond_tx_step = 35;
         } else if (!gap_conn.central_role && gap_smp.bearer.pairing.bond_tx_step >= 32) {
-            gap_smp_bond_peripheral_tx_complete();
+            gap_smp.bearer.pairing.phase = BLE_SMP_PHASE_BOND_RX;
+            gap_smp.bearer.pairing.bond_rx_step =
+                gap_smp.bearer.pairing.secure_connections ? 20 : 0;
+            if (!gap_smp.bearer.pairing.response[5])
+                gap_smp_bond_rx_complete();
             return;
         } else if (gap_smp.bearer.pairing.bond_tx_step == 1) {
             uint8_t master_id[10] = {
@@ -2686,7 +2571,7 @@ static void gap_smp_poll(void) {
         if (!gap_smp.bearer.pairing.keypress_active || !passkey_phase ||
             peer_io != GAP_IO_KEYBOARD_ONLY) goto failed;
         if (gap_smp_user_request_callback)
-            (void)ble_smp_user_request(&gap_smp.bearer,
+            (void)gap_smp_user_request_callback(gap_smp_user_request_context,
                 BLE_SMP_USER_KEYPRESS, p[1]);
         return;
     }
