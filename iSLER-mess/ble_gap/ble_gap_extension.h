@@ -34,6 +34,334 @@ static uint8_t gap_radio_pawr_connect_response[16];
 static uint64_t gap_radio_pawr_connect_request_end_ticks;
 
 // -----------------------------------------------------------------------------
+// Extended advertising and periodic advertising control
+// -----------------------------------------------------------------------------
+static int gap_ext_ad_data_valid(const uint8_t *data, size_t len) {
+    if (len > GAP_EXT_ADV_DATA_MAX || (!data && len)) return 0;
+
+    for (size_t offset = 0; offset < len;) {
+        uint8_t field_len = data[offset];
+        if (!field_len || offset + (size_t)field_len + 1 > len) return 0;
+        offset += (size_t)field_len + 1;
+    }
+    return 1;
+}
+
+// Generate a fresh DID and keep the advertising-set and periodic-train DIDs
+// distinct. The Link Layer random source also avoids reusing the last value.
+static uint16_t gap_ext_data_id_generate(uint16_t previous, uint16_t other) {
+    uint8_t random[2];
+    GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    uint16_t did = ((uint16_t)random[0] | ((uint16_t)random[1] << 8)) & 0x0fff;
+    while (did == previous || did == other) did = (did + 1) & 0x0fff;
+    return did;
+}
+
+// Estimate the complete AUX_SYNC_IND/AUX_CHAIN_IND event duration, including
+// conservative packet spacing, so periodic events cannot overlap.
+static uint32_t gap_periodic_tx_duration_us(size_t data_len, uint8_t phy) {
+    uint16_t remaining = (uint16_t)data_len;
+    uint32_t duration = 0;
+    uint8_t chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+    uint16_t chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+    uint8_t ext_len = chained ? 6 : 3;
+    uint16_t pdu_len = 1 + ext_len + chunk;
+    duration += ((gap_phy_packet_airtime_us(pdu_len, phy) + 629u) / 30u) * 30u;
+    remaining -= chunk;
+
+    while (remaining) {
+        chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+        ext_len = chained ? 6 : 3;
+        pdu_len = 1 + ext_len + chunk;
+        duration += ((gap_phy_packet_airtime_us(pdu_len, phy) + 629u) / 30u) * 30u;
+        remaining -= chunk;
+    }
+    return duration;
+}
+
+// Start periodic advertising on an active, nonscannable extended set. The
+// interval is in 1.25 ms units (6..65535); periodic data is a sequence of AD
+// structures and may be chained across AUX_SYNC_IND/AUX_CHAIN_IND packets.
+int gap_periodic_adv_start(
+    uint8_t set_id, const uint8_t *data, size_t len, uint16_t interval
+) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_adv[set_id].enabled ||
+        gap_ext_adv[set_id].scannable ||
+        gap_ext_adv[set_id].periodic_enabled || interval < 6 ||
+        !gap_ext_ad_data_valid(data, len) ||
+        (uint32_t)interval * 1250u <
+        gap_periodic_tx_duration_us(len, gap_ext_adv[set_id].aux_phy)
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    uint8_t random[3];
+
+    if (!gap_access_address_generate(&set->periodic_access_address)) return 0;
+    GAP_HW_RANDOM_BYTES(random, sizeof(random));
+    set->periodic_crc_init = (uint32_t)random[0] |
+        (uint32_t)random[1] << 8 | (uint32_t)random[2] << 16;
+    set->periodic_did = gap_ext_data_id_generate(set->periodic_did, set->did);
+    set->did = gap_ext_data_id_generate(set->did, set->periodic_did);
+
+    if (len) memcpy(set->periodic_data, data, len);
+    set->periodic_data_len = (uint16_t)len;
+    set->periodic_interval = interval;
+    set->periodic_event_counter = 0;
+    set->pawr_enabled = 0;
+    set->pawr_data_pending = 0;
+    set->pawr_num_subevents = 0;
+    set->pawr_subevent_interval = 0;
+    set->pawr_num_response_slots = 0;
+    set->pawr_response_slot_delay = 0;
+    set->pawr_response_slot_spacing = 0;
+    set->periodic_response_access_address = 0;
+
+    // All 37 data channels enabled; SCA code zero advertises 500 ppm.
+    memset(set->periodic_channel_map, 0xff, sizeof(set->periodic_channel_map));
+    set->periodic_channel_map[4] = 0x1f;
+    set->periodic_sca = 0;
+    set->periodic_sync_info_sent = 0;
+
+    uint32_t initial_delay_us = (uint32_t)interval * 1250u;
+    if (initial_delay_us > 100000u) initial_delay_us = 100000u;
+    set->periodic_next_event_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(initial_delay_us);
+    set->periodic_enabled = 1;
+    set->next_event_ms = GET_MILLIS();
+    return 1;
+}
+
+// Enable PAwR subevent transmission for an active periodic advertising set.
+// Timing values use the Core units: 1.25 ms for subevent interval and response
+// slot delay, and 0.125 ms for response slot spacing.
+int gap_periodic_adv_pawr_set(
+    uint8_t set_id, uint8_t num_subevents, uint8_t subevent_interval,
+    uint8_t response_slot_delay, uint8_t response_slot_spacing
+) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_adv[set_id].periodic_enabled ||
+        !num_subevents || num_subevents > 128 ||
+        (num_subevents > 1 && subevent_interval < 6) ||
+        !response_slot_delay || response_slot_delay == 0xff ||
+        response_slot_spacing < 2
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    uint32_t interval_units = set->periodic_interval;
+    uint32_t subevent_interval_units =
+        num_subevents > 1 ? subevent_interval : interval_units;
+
+    if ((num_subevents > 1 &&
+         (uint32_t)num_subevents * subevent_interval > interval_units) ||
+        response_slot_delay >= (num_subevents > 1 ? subevent_interval : interval_units) ||
+        (uint32_t)response_slot_spacing >
+            (subevent_interval_units - response_slot_delay) * 10u ||
+        set->periodic_data_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
+        return 0;
+
+    uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
+        subevent_interval : set->periodic_interval) * 1250u;
+    if (gap_periodic_tx_duration_us(set->periodic_data_len, set->aux_phy) >=
+            subevent_interval_us ||
+        gap_periodic_tx_duration_us(set->periodic_data_len, set->aux_phy) + 150u >=
+            (uint32_t)response_slot_delay * 1250u
+    ) return 0;
+
+    if (!gap_access_address_generate(&set->periodic_response_access_address))
+        return 0;
+
+    if (set->periodic_response_access_address == set->periodic_access_address) {
+        uint8_t found_distinct_address = 0;
+
+        for (uint8_t bit = 0; bit < 32; bit++) {
+            uint32_t candidate = set->periodic_access_address ^ ((uint32_t)1 << bit);
+            if (!gap_access_address_valid(candidate)) continue;
+            set->periodic_response_access_address = candidate;
+            found_distinct_address = 1;
+            break;
+        }
+        if (!found_distinct_address) return 0;
+    }
+
+    set->pawr_num_subevents = num_subevents;
+    set->pawr_subevent_interval = subevent_interval;
+    set->pawr_num_response_slots = 1;
+    set->pawr_response_slot_delay = response_slot_delay;
+    set->pawr_response_slot_spacing = response_slot_spacing;
+    set->pawr_enabled = 1;
+    set->pawr_data_pending = set->periodic_data_len != 0;
+    return 1;
+}
+
+// Configure how many response slots the advertiser listens to per subevent.
+// PRTI advertises their timing; the slot count is local product configuration.
+int gap_periodic_adv_pawr_slots_set(
+    uint8_t set_id, uint8_t count
+) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
+        !gap_ext_adv[set_id].pawr_enabled || !count
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    uint32_t subevent_interval_units = set->pawr_num_subevents > 1 ?
+            set->pawr_subevent_interval : set->periodic_interval;
+    uint32_t available_spacing_units =
+            (subevent_interval_units - set->pawr_response_slot_delay) * 10u;
+    if ((uint32_t)count * set->pawr_response_slot_spacing > available_spacing_units)
+        return 0;
+
+    set->pawr_num_response_slots = count;
+    return 1;
+}
+
+// Queue one Central connection attempt to a synchronized PAwR device. The
+// request replaces the selected subevent in the next periodic event.
+int gap_periodic_adv_pawr_connect(
+    uint8_t set_id, uint8_t subevent,
+    uint8_t peer_address_type, const uint8_t peer_address[6]
+) {
+    if (!peer_address || peer_address_type > 1 ||
+        set_id >= GAP_EXT_ADV_SET_COUNT || gap_conn.active ||
+        gap_central_conn.active || gap_scanning ||
+        !gap_ext_adv[set_id].periodic_enabled ||
+        !gap_ext_adv[set_id].pawr_enabled ||
+        subevent >= gap_ext_adv[set_id].pawr_num_subevents ||
+        gap_ext_adv[set_id].pawr_connect_pending
+    ) return 0;
+
+    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
+        if (gap_ext_adv[i].pawr_connect_pending) return 0;
+
+    if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
+                          peer_address, peer_address_type)
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    set->pawr_connect_subevent = subevent;
+    set->pawr_connect_peer_type = peer_address_type;
+    memcpy(set->pawr_connect_peer_address, peer_address, 6);
+    set->pawr_connect_pending = 1;
+    return 1;
+}
+
+int gap_periodic_adv_update(
+    uint8_t set_id, const uint8_t *data, size_t len
+) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    if (!set->periodic_enabled || !gap_ext_ad_data_valid(data, len))
+        return 0;
+
+    uint32_t tx_duration_us = gap_periodic_tx_duration_us(len, set->aux_phy);
+    uint32_t periodic_interval_us = (uint32_t)set->periodic_interval * 1250u;
+    if (periodic_interval_us < tx_duration_us)
+        return 0;
+
+    if (set->pawr_enabled) {
+        if (len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
+            return 0;
+
+        uint16_t subevent_interval = set->pawr_num_subevents > 1 ?
+            set->pawr_subevent_interval : set->periodic_interval;
+        uint32_t subevent_interval_us = (uint32_t)subevent_interval * 1250u;
+        uint32_t response_slot_delay_us = (uint32_t)set->pawr_response_slot_delay * 1250u;
+        if (tx_duration_us >= subevent_interval_us ||
+            tx_duration_us + 150u >= response_slot_delay_us
+        ) return 0;
+    }
+
+    set->periodic_did = gap_ext_data_id_generate(set->periodic_did, set->did);
+    if (len) memcpy(set->periodic_data, data, len);
+    set->periodic_data_len = (uint16_t)len;
+    if (set->pawr_enabled) set->pawr_data_pending = len != 0;
+    return 1;
+}
+
+int gap_periodic_adv_stop(uint8_t set_id) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT || !gap_ext_adv[set_id].periodic_enabled)
+        return 0;
+    gap_ext_adv[set_id].periodic_enabled = 0;
+    gap_ext_adv[set_id].pawr_enabled = 0;
+    gap_ext_adv[set_id].pawr_data_pending = 0;
+    gap_ext_adv[set_id].pawr_connect_pending = 0;
+    memset(gap_ext_adv[set_id].pawr_connect_peer_address, 0,
+           sizeof(gap_ext_adv[set_id].pawr_connect_peer_address));
+    gap_ext_adv[set_id].pawr_num_subevents = 0;
+    gap_ext_adv[set_id].pawr_num_response_slots = 0;
+    gap_ext_adv[set_id].pawr_subevent_interval = 0;
+    gap_ext_adv[set_id].pawr_response_slot_delay = 0;
+    gap_ext_adv[set_id].pawr_response_slot_spacing = 0;
+    gap_ext_adv[set_id].periodic_response_access_address = 0;
+    return 1;
+}
+
+// Configure and start one extended advertising set.
+int gap_ext_adv_start_phy(
+    uint8_t set_id, const uint8_t *data, size_t len,
+    uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
+) {
+    if (gap_conn_busy() || gap_central_conn.active ||
+        gap_adv.enabled || set_id >= GAP_EXT_ADV_SET_COUNT ||
+        gap_ext_adv[set_id].enabled ||
+        gap_ext_adv[set_id].periodic_enabled || sid > 15 ||
+        !gap_ext_ad_data_valid(data, len) ||
+        interval_ms < 100 || interval_ms > 10240 ||
+        (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M &&
+         aux_phy != GAP_PHY_CODED) ||
+        !(GAP_HW_ADV_PHY_MASK() & aux_phy)
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    set->did = gap_ext_data_id_generate(
+        set->did, set->periodic_did);
+    if (len) memcpy(set->data, data, len);
+    set->data_len = (uint16_t)len;
+    set->scan_response_len = 0;
+    set->scannable = 0;
+    set->aux_phy = aux_phy;
+    set->sid = sid;
+    set->interval_ms = interval_ms;
+    set->next_event_ms = GET_MILLIS();
+    set->enabled = 1;
+    return 1;
+}
+
+// Start an extended scannable set; its advertising data is returned only in
+// AUX_SCAN_RSP, as required for scannable extended advertising.
+int gap_ext_adv_scannable_start_phy(
+    uint8_t set_id, const uint8_t *scan_response,
+    size_t scan_response_len, uint8_t sid,
+    uint16_t interval_ms, uint8_t aux_phy
+) {
+    if (!gap_ext_ad_data_valid(scan_response, scan_response_len) ||
+        !scan_response_len ||
+        !gap_ext_adv_start_phy(set_id, NULL, 0, sid, interval_ms, aux_phy)
+    ) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    memcpy(set->data, scan_response, scan_response_len);
+    set->scan_response_len = (uint16_t)scan_response_len;
+    set->scannable = 1;
+    return 1;
+}
+
+int gap_ext_adv_stop(uint8_t set_id) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    set->enabled = 0;
+    if (!set->periodic_sync_info_sent) {
+        set->periodic_enabled = 0;
+        set->pawr_enabled = 0;
+        set->pawr_data_pending = 0;
+    }
+    return 1;
+}
+
+
+// -----------------------------------------------------------------------------
 // Extended scan report state
 // -----------------------------------------------------------------------------
 typedef struct {

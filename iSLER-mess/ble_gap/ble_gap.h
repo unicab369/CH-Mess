@@ -1183,9 +1183,7 @@ int gap_use_public_address(void) {
     return 1;
 }
 
-#include "ble_gap_advertiser.h"
-
-#include "ble_gap_scanner.h"
+#include "ble_gap_advertising.h"
 
 #include "ble_gap_connection.h"
 
