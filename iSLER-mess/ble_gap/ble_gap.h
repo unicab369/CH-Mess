@@ -9,7 +9,59 @@
 #include <string.h>
 #include "../ble_l2cap.h"
 #include "../ble_smp.h"
-#include "ble_gap_port.h"
+
+// Platform hooks used by the GAP controller and security procedures.
+#ifndef GAP_RADIO_BUFFER_ATTR
+#define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
+#endif
+
+uint32_t GET_MILLIS(void);
+// AES uses standard byte order; the platform must serialize shared hardware use.
+void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out);
+
+// Radio frames and addresses use Bluetooth on-air byte order.
+const uint8_t *GAP_HW_RX_FRAME(void);
+int8_t GAP_HW_RSSI(void);
+void GAP_HW_INIT(void);
+void GAP_HW_STOP(void);
+int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
+uint8_t GAP_HW_ADV_PHY_MASK(void);
+int GAP_HW_ADV_TX_PHY(
+    uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy);
+void GAP_HW_LINK_CONFIG(
+    uint32_t access_address, uint8_t channel,
+    uint8_t *tx_frame, uint8_t receive_after_tx,
+    uint8_t tx_phy, uint8_t rx_phy);
+// Maximum unencrypted radio payload supported (27..251 bytes).
+uint16_t GAP_HW_DATA_MAX(void);
+// 1M PHY is mandatory; masks report supported PHYs.
+uint8_t GAP_HW_PHY_MASK(void);
+void GAP_HW_LINK_TX(void);
+void GAP_HW_LINK_RX(void);
+void GAP_HW_SCAN_RX(uint8_t channel);
+void GAP_HW_TX_BUFFER(const uint8_t *frame);
+void GAP_HW_CRC_INIT(uint32_t crc_init);
+int GAP_HW_TX_DONE(void);
+void GAP_HW_TX_CLEAR_DONE(void);
+uint64_t GAP_HW_TICKS(void);
+uint64_t HW_TICKS_FROM_US(uint32_t us);
+void GAP_HW_PUBLIC_ADDRESS(uint8_t address[6]);
+void GAP_HW_PACKET_READY(void);
+void GAP_HW_PACKET_CLEAR(void);
+uint8_t GAP_HW_RANDOM_JITTER(void);
+void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len);
+// Must provide cryptographic randomness or fail; never use advertising jitter.
+int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
+// Protect foreground key updates from interrupt handlers.
+uint32_t GAP_CRITICAL_ENTER(void);
+void GAP_CRITICAL_EXIT(uint32_t state);
+// Standard AES key/nonce order; in-place CCM with one AAD byte and 4-byte MIC.
+int GAP_CCM_ENCRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
+    uint8_t aad, uint8_t *data, size_t len, uint8_t mic[4]);
+int GAP_CCM_DECRYPT(
+    const uint8_t key[16], const uint8_t nonce[13],
+    uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
 // TODO for complete BLE GAP support:
 // - Verify Peripheral connection timing on hardware.
@@ -489,65 +541,13 @@ static void gap_security_derive(void);
 static uint8_t *gap_security_tx_frame(void);
 static void gap_security_send(void);
 
-// Opt-in pairing. Just Works has no authentication; bonding is optional for legacy.
-// Passkey Entry and SC Numeric Comparison use application UI interfaces.
-#define GAP_IO_DISPLAY_ONLY 0
-#define GAP_IO_DISPLAY_YES_NO 1
-#define GAP_IO_KEYBOARD_ONLY 2
-#define GAP_IO_NONE 3
-#define GAP_IO_KEYBOARD_DISPLAY 4
-#define GAP_PASSKEY_DISPLAY 1
-#define GAP_PASSKEY_INPUT 2
-static uint8_t gap_pairing_enabled;
-static ble_smp_user_request_fn gap_smp_user_request_callback;
-static void *gap_smp_user_request_context;
-static struct {
-    uint8_t io, authenticated, min_key_size, bonding, secure_connections;
-    uint8_t keypress_notifications;
-} gap_pairing_policy = {
-    .io = GAP_IO_NONE,
-    .authenticated = 0,
-    .min_key_size = 7,
-    .bonding = 0,
-    .secure_connections = 0,
-    .keypress_notifications = 0
-};
-typedef struct {
-    uint8_t status, blocked, encryption_started;
-    uint8_t bond_tx_waiting;
-    uint8_t previous_bond_valid;
-    gap_bond previous_bond;
-    uint8_t tx[69], tx_len, tx_offset;
-    ble_l2cap_connection l2cap;
-    ble_l2cap_reassembler l2cap_rx;
-    ble_smp bearer;
-    uint8_t l2cap_ready, l2cap_rx_pending;
-    uint32_t started_ms;
-} gap_smp_context;
-static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
-#define gap_smp gap_smp_contexts[gap_conn_slot]
-typedef struct {
-    uint8_t valid, private_key[32], public_key[64];
-    gap_sc_oob_data data;
-} gap_sc_oob_local_context;
-static gap_sc_oob_local_context
-    gap_sc_oob_local_contexts[GAP_CONNECTION_COUNT];
-#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_conn_slot]
-typedef struct {
-    uint8_t valid;
-    gap_sc_oob_data data;
-} gap_sc_oob_peer_context;
-static gap_sc_oob_peer_context
-    gap_sc_oob_peer_contexts[GAP_CONNECTION_COUNT];
-#define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_conn_slot]
+// SMP owns pairing state; GAP connection code uses only these operations.
 static void gap_smp_poll(void);
-static void gap_smp_bond_abort(void);
-static void gap_smp_finish(uint8_t status, uint8_t notify_peer);
 static int gap_smp_link_init(void);
-static void gap_sc_oob_clear(void);
-static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
-#define gap_bond_repair_pending \
-    gap_bond_repair_pending_contexts[gap_conn_slot]
+static void gap_smp_link_close(void);
+static void gap_smp_bond_restore_poll(void);
+static int gap_smp_blocks_encryption(void);
+static void gap_smp_receive_complete(void);
 
 
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
@@ -693,11 +693,6 @@ static int gap_conn_accept(
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
         size_t wipe_len = sizeof(gap_security);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_smp;
-        size_t wipe_len = sizeof(gap_smp);
         while (wipe_len--) *wipe_bytes++ = 0;
     }
     gap_conn.initiator_type = (frame[0] >> 6) & 1;

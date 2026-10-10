@@ -107,22 +107,7 @@ static void gap_conn_end(void) {
         GAP_HW_STOP();
         gap_radio_connection_slot_valid = 0;
     }
-    if (gap_conn.central_role && gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX &&
-        gap_smp.bearer.pairing.bond_tx_step == 2
-    ) {
-        // The peer may or may not have received Master Identification; retry
-        // pairing on the next link to reconcile whichever bond was committed.
-        gap_smp_bond_abort();
-        gap_bond_repair_pending = 1;
-    }
-    if (gap_conn.central_role && gap_conn.bond_restore_started &&
-        gap_security.status == 0x3d
-    ) {
-        ble_smp_bond_remove(&gap_smp.bearer,
-                            gap_conn.bond.peer_address_type,
-                            gap_conn.bond.peer_address);
-        gap_bond_repair_pending = 1;
-    }
+    gap_smp_link_close();
     uint8_t security_status = gap_security.status == GAP_CONNECTION_PENDING ?
         0x08 : gap_security.status;
     {
@@ -132,14 +117,6 @@ static void gap_conn_end(void) {
     }
     gap_security.status = security_status;
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
-    uint8_t pairing_status = gap_smp.bearer.pairing.phase ? 0x08 : gap_smp.status;
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)&gap_smp;
-        size_t wipe_len = sizeof(gap_smp);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
-    gap_smp.status = pairing_status;
-    gap_sc_oob_clear();
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_conn_tx_frame);
         size_t wipe_len = sizeof(gap_conn_tx_frame);
@@ -3511,7 +3488,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     *len = gap_conn.rx_len;
     memcpy(data, gap_conn.rx_data, gap_conn.rx_len);
     gap_conn.rx_ready = 0;
-    gap_smp.l2cap_rx_pending = 0;
+    gap_smp_receive_complete();
     return 1;
 }
 
@@ -3641,8 +3618,7 @@ static void gap_security_send(void) {
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!ltk || !random || !gap_connected() || !gap_conn.central_role ||
         gap_conn.first_event || gap_security.phase ||
-        (gap_smp.bearer.pairing.phase && gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_ENCRYPT &&
-         gap_smp.bearer.pairing.phase != BLE_SMP_PHASE_SC_ENCRYPT) || gap_conn.update_pending ||
+        gap_smp_blocks_encryption() || gap_conn.update_pending ||
         gap_conn.local_update_queued || gap_conn.local_map_queued || gap_conn.channel_map_update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending || gap_conn.feature_request_pending ||
         gap_conn.length_queued || gap_conn.length_pending || gap_conn.phy_queued ||

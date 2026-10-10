@@ -697,39 +697,7 @@ static void gap_conn_poll(void) {
                 gap_conn.peer_identity_type, &gap_conn.bond))
             gap_conn.bonded = 1;
     }
-    if (gap_conn.bond_restore_started && gap_encrypted()) {
-        gap_conn.authenticated = gap_conn.bond.authenticated;
-        gap_conn.encryption_key_size = gap_conn.bond.key_size;
-        gap_conn.bond_restore_started = 0;
-    }
-    if (gap_conn.bond_restore_started && gap_conn.central_role &&
-        !gap_security.phase && gap_security.status &&
-        gap_security.status != GAP_CONNECTION_PENDING
-    ) {
-        ble_smp_bond_remove(&gap_smp.bearer,
-                            gap_conn.bond.peer_address_type,
-                            gap_conn.bond.peer_address);
-        memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
-        gap_conn.bonded = gap_conn.bond_restore_started = 0;
-        gap_bond_repair_pending = 1;
-    }
-    if (gap_conn.central_role && gap_bond_repair_pending &&
-        !gap_conn.first_event && !gap_security.phase && !gap_smp.bearer.pairing.phase &&
-        !gap_conn.tx_pending && !gap_conn.tx_queued &&
-        !gap_conn.tx_l2cap_remaining && gap_pair()
-    ) {
-        gap_bond_repair_pending = 0;
-    }
-    if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
-        !gap_conn.first_event &&
-        !gap_conn.bond_restore_attempted && !gap_security.phase && !gap_smp.bearer.pairing.phase
-    ) {
-        gap_conn.bond_restore_attempted = 1;
-        uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
-            (uint16_t)gap_conn.bond.ediv[1] << 8;
-        if (gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
-            gap_conn.bond_restore_started = 1;
-    }
+    gap_smp_bond_restore_poll();
     gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&

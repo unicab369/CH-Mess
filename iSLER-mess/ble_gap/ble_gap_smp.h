@@ -4,7 +4,7 @@
 #ifndef BLE_SMP_GAP_H
 #define BLE_SMP_GAP_H
 #ifndef GAP_H
-#error "Include gap_smp.h through ble_gap.h"
+#error "Include ble_gap_smp.h through ble_gap.h"
 #endif
 
 #define GAP_BOND_SLOTS 4
@@ -14,6 +14,63 @@
 #define GAP_KEY_DIST_ENCRYPTION 0x01u
 #define GAP_KEY_DIST_IDENTITY 0x02u
 #define GAP_KEY_DIST_SIGNING 0x04u
+
+// Pairing policy and per-link protocol state belong to the SMP adapter.
+#define GAP_IO_DISPLAY_ONLY 0
+#define GAP_IO_DISPLAY_YES_NO 1
+#define GAP_IO_KEYBOARD_ONLY 2
+#define GAP_IO_NONE 3
+#define GAP_IO_KEYBOARD_DISPLAY 4
+#define GAP_PASSKEY_DISPLAY 1
+#define GAP_PASSKEY_INPUT 2
+static uint8_t gap_pairing_enabled;
+static ble_smp_user_request_fn gap_smp_user_request_callback;
+static void *gap_smp_user_request_context;
+static struct {
+    uint8_t io, authenticated, min_key_size, bonding, secure_connections;
+    uint8_t keypress_notifications;
+} gap_pairing_policy = {
+    .io = GAP_IO_NONE,
+    .authenticated = 0,
+    .min_key_size = 7,
+    .bonding = 0,
+    .secure_connections = 0,
+    .keypress_notifications = 0
+};
+typedef struct {
+    uint8_t status, blocked, encryption_started;
+    uint8_t bond_tx_waiting;
+    uint8_t previous_bond_valid;
+    gap_bond previous_bond;
+    uint8_t tx[69], tx_len, tx_offset;
+    ble_l2cap_connection l2cap;
+    ble_l2cap_reassembler l2cap_rx;
+    ble_smp bearer;
+    uint8_t l2cap_ready, l2cap_rx_pending;
+    uint32_t started_ms;
+} gap_smp_context;
+static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
+#define gap_smp gap_smp_contexts[gap_conn_slot]
+typedef struct {
+    uint8_t valid, private_key[32], public_key[64];
+    gap_sc_oob_data data;
+} gap_sc_oob_local_context;
+static gap_sc_oob_local_context
+    gap_sc_oob_local_contexts[GAP_CONNECTION_COUNT];
+#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_conn_slot]
+typedef struct {
+    uint8_t valid;
+    gap_sc_oob_data data;
+} gap_sc_oob_peer_context;
+static gap_sc_oob_peer_context
+    gap_sc_oob_peer_contexts[GAP_CONNECTION_COUNT];
+#define gap_sc_oob_peer gap_sc_oob_peer_contexts[gap_conn_slot]
+static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
+#define gap_bond_repair_pending \
+    gap_bond_repair_pending_contexts[gap_conn_slot]
+
+static void gap_smp_bond_abort(void);
+static void gap_smp_finish(uint8_t status, uint8_t notify_peer);
 
 // Platforms implement durable whole-record bond storage. LOAD returns 1 for
 // a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
@@ -342,6 +399,9 @@ static void gap_smp_timeout(void *context) {
 }
 
 static int gap_smp_link_init(void) {
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_smp;
+    for (size_t i = 0; i < sizeof(gap_smp); i++) wipe[i] = 0;
+    gap_sc_oob_clear();
     ble_l2cap_ops ops = {0};
     ops.send_pdu = gap_smp_link_send_pdu;
     ops.context = &gap_smp;
@@ -977,6 +1037,79 @@ static void gap_smp_bond_abort(void) {
         }
         gap_smp.bearer.pairing.bond_tx_step = 0;
     }
+}
+
+// Close pairing state and retain only its final status for the GAP API.
+static void gap_smp_link_close(void) {
+    if (gap_conn.central_role &&
+        gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_BOND_TX &&
+        gap_smp.bearer.pairing.bond_tx_step == 2
+    ) {
+        // The peer may or may not have received Master Identification; retry
+        // pairing on the next link to reconcile whichever bond was committed.
+        gap_smp_bond_abort();
+        gap_bond_repair_pending = 1;
+    }
+    if (gap_conn.central_role && gap_conn.bond_restore_started &&
+        gap_security.status == 0x3d
+    ) {
+        ble_smp_bond_remove(&gap_smp.bearer,
+                            gap_conn.bond.peer_address_type,
+                            gap_conn.bond.peer_address);
+        gap_bond_repair_pending = 1;
+    }
+    uint8_t status = gap_smp.bearer.pairing.phase ? 0x08 : gap_smp.status;
+    volatile uint8_t *wipe = (volatile uint8_t *)&gap_smp;
+    for (size_t i = 0; i < sizeof(gap_smp); i++) wipe[i] = 0;
+    gap_smp.status = status;
+    gap_sc_oob_clear();
+}
+
+// Handle bond restoration and repair without exposing SMP phase state to GAP.
+static void gap_smp_bond_restore_poll(void) {
+    if (gap_conn.bond_restore_started && gap_encrypted()) {
+        gap_conn.authenticated = gap_conn.bond.authenticated;
+        gap_conn.encryption_key_size = gap_conn.bond.key_size;
+        gap_conn.bond_restore_started = 0;
+    }
+    if (gap_conn.bond_restore_started && gap_conn.central_role &&
+        !gap_security.phase && gap_security.status &&
+        gap_security.status != GAP_CONNECTION_PENDING
+    ) {
+        ble_smp_bond_remove(&gap_smp.bearer,
+                            gap_conn.bond.peer_address_type,
+                            gap_conn.bond.peer_address);
+        memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
+        gap_conn.bonded = gap_conn.bond_restore_started = 0;
+        gap_bond_repair_pending = 1;
+    }
+    if (gap_conn.central_role && gap_bond_repair_pending &&
+        !gap_conn.first_event && !gap_security.phase &&
+        !gap_smp.bearer.pairing.phase && !gap_conn.tx_pending &&
+        !gap_conn.tx_queued && !gap_conn.tx_l2cap_remaining && gap_pair()
+    ) {
+        gap_bond_repair_pending = 0;
+    }
+    if (!gap_bond_repair_pending && gap_conn.bonded && gap_conn.central_role &&
+        !gap_conn.first_event && !gap_conn.bond_restore_attempted &&
+        !gap_security.phase && !gap_smp.bearer.pairing.phase
+    ) {
+        gap_conn.bond_restore_attempted = 1;
+        uint16_t ediv = (uint16_t)gap_conn.bond.ediv[0] |
+            (uint16_t)gap_conn.bond.ediv[1] << 8;
+        if (gap_encrypt(gap_conn.bond.ltk, gap_conn.bond.rand, ediv))
+            gap_conn.bond_restore_started = 1;
+    }
+}
+
+static int gap_smp_blocks_encryption(void) {
+    uint8_t phase = gap_smp.bearer.pairing.phase;
+    return phase && phase != BLE_SMP_PHASE_ENCRYPT &&
+        phase != BLE_SMP_PHASE_SC_ENCRYPT;
+}
+
+static void gap_smp_receive_complete(void) {
+    gap_smp.l2cap_rx_pending = 0;
 }
 
 // The Core orders key distribution Peripheral first, then Central. This
