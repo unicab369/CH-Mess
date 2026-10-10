@@ -35,7 +35,6 @@ void gap_hw_received(void) {
         gap_conn_slot = gap_radio_connection_slot;
 
     const uint8_t *frame = GAP_HW_RX_FRAME();
-    int8_t rssi = GAP_HW_RSSI();
     uint64_t received_ticks = GAP_HW_TICKS();
     uint8_t pdu_type = frame[0] & 0x0f;
     uint64_t connection_anchor_ticks = 0;
@@ -55,7 +54,7 @@ void gap_hw_received(void) {
         gap_radio_pawr_response_len = (uint8_t)(frame[1] + 2);
         memcpy(gap_radio_pawr_response_frame, frame,
                gap_radio_pawr_response_len);
-        gap_radio_pawr_response_rssi = rssi;
+        gap_radio_pawr_response_rssi = GAP_HW_RSSI();
         gap_radio_pawr_response_ticks = received_ticks;
         gap_radio_pawr_response_ready = 1;
         GAP_HW_PACKET_READY();
@@ -79,17 +78,17 @@ void gap_hw_received(void) {
     }
 #endif
     if (gap_conn.active && gap_conn.rx_armed) {
-        uint8_t wire_len = frame[1], authenticated = 0;
+        uint8_t authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
-        // During the handshake an unacknowledged START_ENC_REQ is still plaintext.
-        uint8_t plain_start_retry =
-            duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL && frame[1] == 1 &&
-            (frame[0] & 3) == 3 && frame[2] == 0x05;
-        uint8_t pause_retry = duplicate &&
-                              gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
-                              frame[1] == 5 && (frame[0] & 3) == 3;
+        // The unacknowledged START_ENC_REQ retry remains plaintext.
+        // A PAUSE_ENC_REQ retry remains encrypted during the transition.
         if (frame[1] &&
-            ((gap_security.rx_enabled && !plain_start_retry) || pause_retry)) {
+            ((gap_security.rx_enabled &&
+              !(duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL &&
+                frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == 0x05)) ||
+             (duplicate && gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+              frame[1] == 5 && (frame[0] & 3) == 3))
+        ) {
             uint64_t counter = gap_security.rx_counter;
             if (duplicate && counter) counter--;
             if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4 ||
@@ -132,9 +131,12 @@ void gap_hw_received(void) {
         if (gap_conn.central_role) {
             gap_conn.next_ticks += gap_conn_interval_ticks();
         } else {
-            gap_conn.next_ticks = received_ticks -
-                HW_TICKS_FROM_US(gap_conn.phy.rx == 2 ?
-                    ((uint32_t)wire_len + 11) * 4 : ((uint32_t)wire_len + 10) * 8) +
+            uint8_t wire_len = frame[1];
+            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(
+                gap_conn.phy.rx == 2 ?
+                    ((uint32_t)wire_len + 11) * 4 :
+                    ((uint32_t)wire_len + 10) * 8);
+            gap_conn.next_ticks = received_ticks - rx_airtime_ticks +
                 gap_conn_interval_ticks();
         }
         gap_conn.first_event = 0;
@@ -366,7 +368,7 @@ void gap_hw_received(void) {
                 GAP_EXT_ADV_AUXILIARY_PDU :
                 GAP_EXT_ADV_PRIMARY_PDU;
         gap_radio_ext_scan_ticks = received_ticks;
-        gap_radio_ext_scan_rssi = rssi;
+        gap_radio_ext_scan_rssi = GAP_HW_RSSI();
         memcpy(gap_radio_ext_scan_frame, frame, (size_t)frame[1] + 2);
         gap_radio_ext_scan_ready = 1;
         GAP_HW_PACKET_READY();
@@ -492,7 +494,7 @@ void gap_hw_received(void) {
         gap_radio_active_scan_pending = 1;
         // Preserve the advertisement while sending SCAN_REQ promptly.
         memcpy(gap_adv_scan.frame, frame, (size_t)frame[1] + 2);
-        gap_adv_scan.rssi = rssi;
+        gap_adv_scan.rssi = GAP_HW_RSSI();
         gap_adv_scan.ready = 1;
         uint8_t local_type;
         gap_local_address_select(peer_slot, gap_radio_scan_request + 2, &local_type);
@@ -512,7 +514,7 @@ void gap_hw_received(void) {
     ) {
         gap_radio_active_scan_pending = 0;
         memcpy(gap_radio_rx.frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx.rssi = rssi;
+        gap_radio_rx.rssi = GAP_HW_RSSI();
         gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
         gap_conn_slot = previous_slot;
@@ -562,7 +564,7 @@ void gap_hw_received(void) {
     }
     if (frame[1] <= 37) {
         memcpy(gap_radio_rx.frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx.rssi = rssi;
+        gap_radio_rx.rssi = GAP_HW_RSSI();
         gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
     }
@@ -1229,8 +1231,5 @@ int gap_radio_send_due(
     if (jitter) *jitter = event_jitter;
     return 1;
 }
-
-
-
 
 #endif // GAP_CONNECTION_POLL_H
