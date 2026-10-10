@@ -94,7 +94,7 @@ int GAP_CCM_DECRYPT(
 #define GAP_EXT_ADV_CONTEXT_COUNT 2
 #define GAP_EXT_ADV_REPORT_COUNT 2
 #define GAP_EXT_ADV_SEEN_COUNT 4
-#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000u
+#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
 #define GAP_PERIODIC_SYNC_COUNT 2
 #define GAP_PAWR_RESPONSE_DATA_MAX 249
 #define GAP_PAWR_RESPONSE_REPORT_COUNT 4
@@ -160,10 +160,10 @@ static inline uint32_t gap_phy_packet_airtime_us(
                                                   uint8_t phy
 ) {
     if (phy == GAP_PHY_2M)
-        return ((uint32_t)payload_len + 11u) * 4u;
+        return ((uint32_t)payload_len + 11) * 4;
     if (phy == GAP_PHY_CODED)
-        return 976u + (uint32_t)payload_len * 64u;
-    return ((uint32_t)payload_len + 10u) * 8u;
+        return 976 + (uint32_t)payload_len * 64;
+    return ((uint32_t)payload_len + 10) * 8;
 }
 
 
@@ -286,7 +286,7 @@ typedef struct {
     uint16_t tx_l2cap_remaining;
     uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
-    uint8_t window_size, update_pending, update_window_active, update_window_size;
+    uint8_t window_size, timing_update_pending, update_window_active, update_window_size;
     uint8_t channel_map_update_pending, pending_channel_map[5];
     volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
     uint8_t channel_reporting_queued, channel_reporting_pending;
@@ -336,7 +336,7 @@ typedef struct {
     uint16_t interval, interval_125us, latency, supervision_timeout, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
-    uint16_t update_interval, update_latency, update_timeout;
+    uint16_t new_interval, new_latency, new_timeout;
     uint16_t rate_interval_min, rate_interval_max;
     uint16_t rate_factor_min, rate_factor_max, rate_latency;
     uint16_t rate_continuation, rate_timeout, rate_periodicity;
@@ -345,7 +345,7 @@ typedef struct {
     uint16_t rate_factor, rate_update_latency, rate_update_continuation;
     uint16_t rate_update_timeout;
     uint32_t access_address, crc_init, last_rx_ms;
-    uint64_t next_event_ticks;
+    uint64_t next_ticks;
 } gap_conn_context;
 static gap_conn_context
     gap_conn_contexts[GAP_CONNECTION_COUNT];
@@ -470,11 +470,11 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
         timeout < 10 || timeout > 3200 || hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
-            2u * (uint32_t)(latency + 1) * interval)
+            2 * (uint32_t)(latency + 1) * interval)
         return 0;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1u << (channel % 8))) count++;
+        if (frame[30 + channel / 8] & (1 << (channel % 8))) count++;
     uint32_t access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
@@ -503,7 +503,7 @@ static int gap_conn_accept(
     uint8_t win_size = frame[21], hop = frame[35] & 0x1f;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1u << (channel % 8)))
+        if (frame[30 + channel / 8] & (1 << (channel % 8)))
             gap_conn.used_channels[count++] = channel;
     gap_conn.access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
@@ -515,7 +515,7 @@ static int gap_conn_accept(
     gap_conn.hop = hop;
     gap_conn.unmapped_channel = 0;
     gap_conn.interval = interval;
-    gap_conn.interval_125us = (uint16_t)(interval * 10u);
+    gap_conn.interval_125us = (uint16_t)(interval * 10);
     gap_conn.latency = latency;
     gap_conn.supervision_timeout = timeout;
     gap_conn.subrate_factor = 1;
@@ -537,7 +537,7 @@ static int gap_conn_accept(
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     gap_conn.window_size = win_size;
-    gap_conn.next_event_ticks = received_ticks +
+    gap_conn.next_ticks = received_ticks +
         (uint64_t)win_offset * interval_unit_ticks + window_delay_ticks;
     gap_conn.last_rx_ms = GET_MILLIS();
     gap_conn.first_event = 1;
@@ -551,7 +551,7 @@ static int gap_conn_accept(
     gap_conn.tx_l2cap_remaining = 0;
     gap_conn.rx_ready = 0;
     gap_conn.event_counter = 0;
-    gap_conn.update_pending = 0;
+    gap_conn.timing_update_pending = 0;
     gap_conn.local_update_queued = gap_conn.local_params_queued = 0;
     gap_conn.params_pending = gap_conn.params_local = 0;
     gap_conn.features_known = gap_conn.peer_features = gap_conn.peer_features2 = 0;
@@ -659,8 +659,8 @@ int gap_conn_timing_set(const gap_conn_timing_config *timing) {
         timing->background_scan_window_ms < 3 ||
         timing->background_scan_window_ms > timing->background_scan_interval_ms)
         return 0;
-    if ((uint32_t)timing->supervision_timeout * 4u <=
-        (uint32_t)(timing->latency + 1u) * timing->interval)
+    if ((uint32_t)timing->supervision_timeout * 4 <=
+        (uint32_t)(timing->latency + 1) * timing->interval)
         return 0;
     gap_conn_timing = *timing;
     return 1;
@@ -1011,7 +1011,7 @@ static int gap_privacy_timeout_pick(
         *timeout_s = min_s;
         return 1;
     }
-    uint32_t limit = 65536u - (65536u % range);
+    uint32_t limit = 65536 - (65536 % range);
     for (uint8_t attempt = 0; attempt < 8; attempt++) {
         uint8_t bytes[2];
         if (!GAP_RANDOM_SECURE_BYTES(bytes, sizeof(bytes))) return 0;

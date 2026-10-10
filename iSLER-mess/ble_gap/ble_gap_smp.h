@@ -77,12 +77,12 @@
 #include "../ble_l2cap.h"
 
 #ifndef SMP_PDU_MAX
-#define SMP_PDU_MAX 65u
+#define SMP_PDU_MAX 65
 #endif
 #ifndef SMP_TIMEOUT_MS
-#define SMP_TIMEOUT_MS 30000u
+#define SMP_TIMEOUT_MS 30000
 #endif
-#define SMP_BOND_SCHEMA_VERSION 1u
+#define SMP_BOND_SCHEMA_VERSION 1
 
 enum {
     SMP_PAIRING_REQUEST = 0x01,
@@ -550,9 +550,9 @@ static inline void ble_smp_procedure_finish(ble_smp *smp) {
 #define GAP_BOND_VERSION_LEGACY 1
 #define GAP_BOND_VERSION_CSRK 2
 #define GAP_BOND_VERSION 3
-#define GAP_KEY_DIST_ENCRYPTION 0x01u
-#define GAP_KEY_DIST_IDENTITY 0x02u
-#define GAP_KEY_DIST_SIGNING 0x04u
+#define GAP_KEY_DIST_ENCRYPTION 0x01
+#define GAP_KEY_DIST_IDENTITY 0x02
+#define GAP_KEY_DIST_SIGNING 0x04
 
 // Pairing policy and per-link protocol state belong to the SMP adapter.
 #define GAP_IO_DISPLAY_ONLY 0
@@ -2067,8 +2067,8 @@ static void gap_smp_poll(void) {
 
         size_t max_len = gap_conn.data_length.tx_octets;
         size_t time_len = gap_conn.data_length.tx_time / 8;
-        time_len = time_len > 10 + (gap_security.tx_enabled ? 4u : 0u) ?
-            time_len - 10 - (gap_security.tx_enabled ? 4u : 0u) : 0;
+        time_len = time_len > 10 + (gap_security.tx_enabled ? 4 : 0) ?
+            time_len - 10 - (gap_security.tx_enabled ? 4 : 0) : 0;
         if (max_len > time_len) max_len = time_len;
 
         size_t remaining = gap_smp.tx_len - gap_smp.tx_offset;

@@ -49,14 +49,14 @@ void gap_hw_received(void) {
             ((gap_security.rx_enabled && !plain_start_retry) || pause_retry)) {
             uint64_t counter = gap_security.rx_counter;
             if (duplicate && counter) counter--;
-            if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4u ||
+            if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4 ||
                 counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security.rx_counter)
             ) {
                 gap_security.status = 0x3d;
                 gap_conn_end();
                 goto received_done;
             }
-            memcpy(gap_conn_plain_frame, frame, frame[1] - 4u + 2);
+            memcpy(gap_conn_plain_frame, frame, frame[1] - 4 + 2);
             gap_conn_plain_frame[1] -= 4;
             uint8_t nonce[13];
             gap_security_nonce(nonce, counter, !gap_conn.central_role);
@@ -80,7 +80,7 @@ void gap_hw_received(void) {
 #if GAP_EXT_ADV_SUPPORT
         uint64_t connection_anchor_ticks;
         if (gap_conn.central_role) {
-            connection_anchor_ticks = gap_conn.next_event_ticks;
+            connection_anchor_ticks = gap_conn.next_ticks;
         } else {
             uint32_t airtime_us = gap_phy_packet_airtime_us(
                 (uint16_t)wire_len, gap_conn.rx_phy);
@@ -97,9 +97,9 @@ void gap_hw_received(void) {
             gap_conn.subrate_event_received = 1;
         }
         if (gap_conn.central_role) {
-            gap_conn.next_event_ticks += gap_conn_interval_ticks();
+            gap_conn.next_ticks += gap_conn_interval_ticks();
         } else {
-            gap_conn.next_event_ticks = received_ticks -
+            gap_conn.next_ticks = received_ticks -
                 HW_TICKS_FROM_US(gap_conn.rx_phy == 2 ?
                     ((uint32_t)wire_len + 11) * 4 : ((uint32_t)wire_len + 10) * 8) +
                 gap_conn_interval_ticks();
@@ -267,9 +267,9 @@ void gap_hw_received(void) {
             ) {
                 uint32_t now_ms = GET_MILLIS();
                 uint32_t delay_ms =
-                    (uint32_t)gap_conn.channel_max_delay_200ms * 200u;
+                    (uint32_t)gap_conn.channel_max_delay_200ms * 200;
                 uint32_t spacing_ms =
-                    (uint32_t)gap_conn.channel_min_spacing_200ms * 200u;
+                    (uint32_t)gap_conn.channel_min_spacing_200ms * 200;
                 if ((uint32_t)(now_ms - gap_conn.channel_status_changed_ms) >=
                         delay_ms &&
                     (!gap_conn.channel_status_last_sent_valid ||
@@ -559,27 +559,27 @@ static uint64_t gap_conn_event_close_ticks(
 ) {
     uint32_t widening_us =
         ((uint32_t)(now_ms - connection->last_rx_ms) *
-         (500u + connection->peer_sca_ppm) + 999) / 1000;
+         (500 + connection->peer_sca_ppm) + 999) / 1000;
     uint32_t widening_limit_us = (uint32_t)connection->interval * 625;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint32_t window_us = connection->first_event ||
         connection->update_window_active ?
-        (uint32_t)connection->window_size * 1250u : 1000u;
+        (uint32_t)connection->window_size * 1250 : 1000;
     uint32_t packet_us;
     if (connection->tx_phy == GAP_PHY_CODED ||
         connection->rx_phy == GAP_PHY_CODED) {
         // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
         // per octet. S=2 packets finish sooner, so this is conservative.
-        uint32_t coded_packet_us = 976u +
-            (uint32_t)connection->data_capacity * 64u;
-        packet_us = 2u * coded_packet_us + 150u;
+        uint32_t coded_packet_us = 976 +
+            (uint32_t)connection->data_capacity * 64;
+        packet_us = 2 * coded_packet_us + 150;
     } else {
-        packet_us = 400u +
-            2u * (connection->data_capacity > 27 ?
-                connection->data_capacity - 27u : 0u) * 8u;
+        packet_us = 400 +
+            2 * (connection->data_capacity > 27 ?
+                connection->data_capacity - 27 : 0) * 8;
     }
-    return connection->next_event_ticks + HW_TICKS_FROM_US(window_us) +
+    return connection->next_ticks + HW_TICKS_FROM_US(window_us) +
         HW_TICKS_FROM_US(packet_us) + HW_TICKS_FROM_US(widening_us);
 }
 
@@ -665,15 +665,15 @@ static void gap_conn_poll(void) {
     uint64_t now = GAP_HW_TICKS();
     uint32_t widening_us =
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
-         (500u + gap_conn.peer_sca_ppm) + 999) / 1000;
+         (500 + gap_conn.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.interval_125us ?
-        gap_conn.interval_125us : (uint16_t)(gap_conn.interval * 10u);
-    uint32_t widening_limit_us = interval_125us * 125u / 2u;
+        gap_conn.interval_125us : (uint16_t)(gap_conn.interval * 10);
+    uint32_t widening_limit_us = interval_125us * 125 / 2;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint64_t widening_ticks = (uint64_t)widening_us * HW_TICKS_FROM_US(1);
     if (gap_conn.event_replied) {
         if (!GAP_HW_TX_DONE()) {
-            if (now > gap_conn.next_event_ticks)
+            if (now > gap_conn.next_ticks)
                 gap_conn_end();
             return;
         }
@@ -695,7 +695,7 @@ static void gap_conn_poll(void) {
         gap_conn.rx_armed = 0;
         uint32_t skipped = 0;
         do {
-            gap_conn.next_event_ticks += gap_conn_interval_ticks();
+            gap_conn.next_ticks += gap_conn_interval_ticks();
             gap_conn_event_advance();
             gap_conn_update_apply(0);
             if (!gap_conn.active) return;
@@ -707,7 +707,7 @@ static void gap_conn_poll(void) {
              extra_hops * gap_conn.hop) % 37;
         gap_conn.channel_selected = 0;
     }
-    uint64_t open_ticks = gap_conn.next_event_ticks;
+    uint64_t open_ticks = gap_conn.next_ticks;
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
     if (open_ticks > early_ticks) open_ticks -= early_ticks;
     if (gap_conn.rx_armed || now < open_ticks) return;
@@ -717,7 +717,7 @@ static void gap_conn_poll(void) {
         // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
         gap_conn.unmapped_channel =
             (gap_conn.unmapped_channel + gap_conn.hop) % 37;
-        gap_conn.next_event_ticks += gap_conn_interval_ticks();
+        gap_conn.next_ticks += gap_conn_interval_ticks();
         gap_conn_event_advance();
         gap_conn_update_apply(0);
         return;
@@ -734,13 +734,13 @@ static void gap_conn_poll(void) {
                         gap_conn.hop) % 37;
     gap_conn.unmapped_channel = unmapped;
     uint8_t channel =
-        gap_conn.channel_map[unmapped / 8] & (1u << (unmapped % 8)) ?
+        gap_conn.channel_map[unmapped / 8] & (1 << (unmapped % 8)) ?
         unmapped : gap_conn.used_channels[unmapped %
                                                    gap_conn.used_count];
     GAP_HW_CRC_INIT(gap_conn.crc_init);
     if (gap_conn.central_role) {
         if (!gap_conn.central_anchor_set) {
-            gap_conn.next_event_ticks = now;
+            gap_conn.next_ticks = now;
             gap_conn.central_anchor_set = 1;
         }
         if (!gap_conn.tx_pending) {
@@ -932,8 +932,8 @@ void gap_hw_scan_poll(void) {
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_periodic_syncs[i].used ||
                 gap_periodic_syncs[i].window_active ||
-                !gap_periodic_syncs[i].next_event_ticks) continue;
-            uint64_t target = gap_periodic_syncs[i].next_event_ticks;
+                !gap_periodic_syncs[i].next_ticks) continue;
+            uint64_t target = gap_periodic_syncs[i].next_ticks;
             uint64_t elapsed_ticks = target > gap_periodic_syncs[i].anchor_ticks ?
                 target - gap_periodic_syncs[i].anchor_ticks : 0;
             uint32_t elapsed_us = (uint32_t)(elapsed_ticks /
@@ -941,10 +941,10 @@ void gap_hw_scan_poll(void) {
             uint16_t widening_ppm = gap_periodic_syncs[i].widening_ppm ?
                 gap_periodic_syncs[i].widening_ppm :
                 (uint16_t)(gap_periodic_sca_ppm[
-                    gap_periodic_syncs[i].sca] + 500u);
+                    gap_periodic_syncs[i].sca] + 500);
             uint32_t widening_us = (uint32_t)(((uint64_t)widening_ppm * elapsed_us +
-                999999u) / 1000000u) + 2u;
-            uint32_t window_us = 1250u;
+                999999) / 1000000) + 2;
+            uint32_t window_us = 1250;
             gap_periodic_syncs[i].window_start_ticks = target >
                 HW_TICKS_FROM_US(widening_us) ? target -
                 HW_TICKS_FROM_US(widening_us) : 0;
