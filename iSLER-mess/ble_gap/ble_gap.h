@@ -266,6 +266,23 @@ static struct {
 
 // Each accepted LE link keeps its independent Link Layer procedure state.
 typedef struct {
+    uint16_t interval, latency, supervision_timeout;
+} gap_conn_parameters;
+
+typedef struct {
+    uint16_t factor, continuation;
+    uint8_t transition, event_activity, event_received, force_event;
+    uint16_t continuations, latency, latency_remaining;
+    uint8_t pending, update_queued, request_queued, request_pending;
+    uint8_t status;
+    uint16_t base_event, pending_factor, pending_base_event, pending_latency;
+    uint16_t pending_continuation, pending_timeout;
+    uint16_t request_min, request_max, request_latency, request_continuation;
+    uint16_t request_timeout;
+    uint32_t started_ms;
+} gap_conn_subrate;
+
+typedef struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t local_terminate_queued, local_terminate_pending;
@@ -305,21 +322,7 @@ typedef struct {
     uint8_t rate_update_pending, rate_request_pending;
     uint8_t rate_ack_waiting;
     uint8_t peer_features_page1[8];
-    uint16_t subrate_factor, subrate_continuation;
-    uint8_t subrate_transition;
-    uint8_t subrate_event_activity, subrate_event_received;
-    uint8_t subrate_force_event;
-    uint16_t subrate_continuations, subrate_latency, subrate_latency_remaining;
-    uint8_t subrate_pending, subrate_update_queued;
-    uint8_t subrate_request_queued, subrate_request_pending;
-    uint8_t subrate_status;
-    uint16_t subrate_base_event, subrate_pending_factor;
-    uint16_t subrate_pending_base_event, subrate_pending_latency;
-    uint16_t subrate_pending_continuation, subrate_pending_timeout;
-    uint16_t subrate_request_min, subrate_request_max;
-    uint16_t subrate_request_latency, subrate_request_continuation;
-    uint16_t subrate_request_timeout;
-    uint32_t subrate_started_ms;
+    gap_conn_subrate subrate;
     uint8_t tx_phy, rx_phy, preferred_tx_phy, preferred_rx_phy;
     volatile uint8_t phy_queued;
     uint8_t phy_pending, phy_update_pending, phy_status;
@@ -333,10 +336,10 @@ typedef struct {
     volatile uint8_t length_queued;
     uint8_t length_pending, length_status;
     uint32_t length_started_ms;
-    uint16_t interval, interval_125us, latency, supervision_timeout, peer_sca_ppm;
+    gap_conn_parameters parameters, new_parameters;
+    uint16_t interval_125us, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
-    uint16_t new_interval, new_latency, new_timeout;
     uint16_t rate_interval_min, rate_interval_max;
     uint16_t rate_factor_min, rate_factor_max, rate_latency;
     uint16_t rate_continuation, rate_timeout, rate_periodicity;
@@ -514,25 +517,25 @@ static int gap_conn_accept(
     gap_conn.used_count = count;
     gap_conn.hop = hop;
     gap_conn.unmapped_channel = 0;
-    gap_conn.interval = interval;
+    gap_conn.parameters.interval = interval;
     gap_conn.interval_125us = (uint16_t)(interval * 10);
-    gap_conn.latency = latency;
-    gap_conn.supervision_timeout = timeout;
-    gap_conn.subrate_factor = 1;
-    gap_conn.subrate_base_event = 0;
-    gap_conn.subrate_continuation = 0;
-    gap_conn.subrate_latency = 0;
-    gap_conn.subrate_latency_remaining = 0;
-    gap_conn.subrate_continuations = 0;
-    gap_conn.subrate_transition = 0;
-    gap_conn.subrate_event_activity = 0;
-    gap_conn.subrate_event_received = 0;
-    gap_conn.subrate_force_event = 0;
-    gap_conn.subrate_pending = 0;
-    gap_conn.subrate_update_queued = 0;
-    gap_conn.subrate_request_queued = 0;
-    gap_conn.subrate_request_pending = 0;
-    gap_conn.subrate_status = 0;
+    gap_conn.parameters.latency = latency;
+    gap_conn.parameters.supervision_timeout = timeout;
+    gap_conn.subrate.factor = 1;
+    gap_conn.subrate.base_event = 0;
+    gap_conn.subrate.continuation = 0;
+    gap_conn.subrate.latency = 0;
+    gap_conn.subrate.latency_remaining = 0;
+    gap_conn.subrate.continuations = 0;
+    gap_conn.subrate.transition = 0;
+    gap_conn.subrate.event_activity = 0;
+    gap_conn.subrate.event_received = 0;
+    gap_conn.subrate.force_event = 0;
+    gap_conn.subrate.pending = 0;
+    gap_conn.subrate.update_queued = 0;
+    gap_conn.subrate.request_queued = 0;
+    gap_conn.subrate.request_pending = 0;
+    gap_conn.subrate.status = 0;
     gap_conn.peer_features4 = 0;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];

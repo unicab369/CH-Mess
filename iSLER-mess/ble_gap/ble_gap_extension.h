@@ -2441,14 +2441,14 @@ static void gap_radio_connection_take_radio(void) {
 static int gap_periodic_conn_overlap(
     uint64_t start_ticks, uint64_t end_ticks
 ) {
-    if (!gap_conn.active || !gap_conn.next_ticks || !gap_conn.interval)
+    if (!gap_conn.active || !gap_conn.next_ticks || !gap_conn.parameters.interval)
         return 0;
     uint32_t now_ms = GET_MILLIS();
     uint32_t widening_us =
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
          (500 + gap_conn.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.interval_125us ?
-        gap_conn.interval_125us : (uint16_t)(gap_conn.interval * 10);
+        gap_conn.interval_125us : (uint16_t)(gap_conn.parameters.interval * 10);
     uint32_t widening_limit_us = interval_125us * 125 / 2;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint64_t widening_ticks =

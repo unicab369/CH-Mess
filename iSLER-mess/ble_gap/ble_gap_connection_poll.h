@@ -93,8 +93,8 @@ void gap_hw_received(void) {
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.rx_armed = 0;
         if (frame[1]) {
-            gap_conn.subrate_event_activity = 1;
-            gap_conn.subrate_event_received = 1;
+            gap_conn.subrate.event_activity = 1;
+            gap_conn.subrate.event_received = 1;
         }
         if (gap_conn.central_role) {
             gap_conn.next_ticks += gap_conn_interval_ticks();
@@ -121,18 +121,19 @@ void gap_hw_received(void) {
             if (!gap_conn.central_role && gap_conn.rate_ack_waiting) {
                 gap_conn.rate_ack_waiting = 0;
             }
-            if (gap_conn.central_role && gap_conn.subrate_pending &&
+            if (gap_conn.central_role && gap_conn.subrate.pending &&
                 (gap_conn_tx_frame[0] & 3) == 3 &&
                 gap_conn_tx_frame[1] == 11 && gap_conn_tx_frame[2] == 0x27
             ) {
-                gap_conn.subrate_factor = gap_conn.subrate_pending_factor;
-                gap_conn.subrate_base_event = gap_conn.subrate_pending_base_event;
-                gap_conn.subrate_latency = gap_conn.subrate_pending_latency;
-                gap_conn.subrate_continuation =
-                    gap_conn.subrate_pending_continuation;
-                gap_conn.supervision_timeout = gap_conn.subrate_pending_timeout;
-                gap_conn.subrate_pending = gap_conn.subrate_transition = 0;
-                gap_conn.subrate_status = 0;
+                gap_conn.subrate.factor = gap_conn.subrate.pending_factor;
+                gap_conn.subrate.base_event = gap_conn.subrate.pending_base_event;
+                gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
+                gap_conn.subrate.continuation =
+                    gap_conn.subrate.pending_continuation;
+                gap_conn.parameters.supervision_timeout =
+                    gap_conn.subrate.pending_timeout;
+                gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
+                gap_conn.subrate.status = 0;
             }
             gap_conn.tx_sn ^= 1;
             gap_conn.tx_pending = 0;
@@ -232,7 +233,7 @@ void gap_hw_received(void) {
                 gap_phy_request_send();
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.terminate_after_reply &&
-                (gap_conn.subrate_update_queued || gap_conn.subrate_request_queued))
+                (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
                 gap_subrate_start_queued();
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.terminate_after_reply &&
@@ -289,7 +290,7 @@ void gap_hw_received(void) {
             // data PDU; a zero-length LL Control PDU is invalid.
             if (gap_conn_tx_frame[1] == 0) gap_conn_tx_frame[0] = 0x01;
         }
-        if (gap_conn_tx_frame[1]) gap_conn.subrate_event_activity = 1;
+        if (gap_conn_tx_frame[1]) gap_conn.subrate.event_activity = 1;
         gap_conn_update_apply(1);
         if (!gap_conn.active) goto received_done;
         gap_conn_event_advance();
@@ -631,27 +632,27 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - gap_conn.params_started_ms) >= 40000
     ) {
         gap_conn.connection_status = 0x22; // LL response timeout.
-        if (gap_conn.subrate_update_queued || gap_conn.subrate_request_queued ||
-            gap_conn.subrate_request_pending
+        if (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued ||
+            gap_conn.subrate.request_pending
         ) {
-            gap_conn.subrate_update_queued = gap_conn.subrate_request_queued = 0;
-            gap_conn.subrate_request_pending = 0;
-            gap_conn.subrate_status = 0x22;
+            gap_conn.subrate.update_queued = gap_conn.subrate.request_queued = 0;
+            gap_conn.subrate.request_pending = 0;
+            gap_conn.subrate.status = 0x22;
         }
         gap_conn_end();
         return;
     }
-    if ((gap_conn.subrate_pending || gap_conn.subrate_request_pending) &&
-        (uint32_t)(now_ms - gap_conn.subrate_started_ms) >= 40000
+    if ((gap_conn.subrate.pending || gap_conn.subrate.request_pending) &&
+        (uint32_t)(now_ms - gap_conn.subrate.started_ms) >= 40000
     ) {
-        gap_conn.subrate_pending = gap_conn.subrate_transition = 0;
-        gap_conn.subrate_request_pending = 0;
-        gap_conn.subrate_status = 0x22;
+        gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
+        gap_conn.subrate.request_pending = 0;
+        gap_conn.subrate.status = 0x22;
         gap_conn_end();
         return;
     }
     if ((uint32_t)(now_ms - gap_conn.last_rx_ms) >=
-        (uint32_t)gap_conn.supervision_timeout * 10
+        (uint32_t)gap_conn.parameters.supervision_timeout * 10
     ) {
         gap_conn_end();
         return;
@@ -667,7 +668,7 @@ static void gap_conn_poll(void) {
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
          (500 + gap_conn.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.interval_125us ?
-        gap_conn.interval_125us : (uint16_t)(gap_conn.interval * 10);
+        gap_conn.interval_125us : (uint16_t)(gap_conn.parameters.interval * 10);
     uint32_t widening_limit_us = interval_125us * 125 / 2;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint64_t widening_ticks = (uint64_t)widening_us * HW_TICKS_FROM_US(1);
@@ -769,7 +770,7 @@ static void gap_conn_poll(void) {
                 gap_phy_request_send();
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending &&
-                (gap_conn.subrate_update_queued || gap_conn.subrate_request_queued))
+                (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
                 gap_subrate_start_queued();
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending &&
