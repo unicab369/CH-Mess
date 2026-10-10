@@ -5,19 +5,10 @@
 #error "Include gap_connection.h through ble_gap.h"
 #endif
 
-static int gap_smp_generic_bond_load(
-    const uint8_t peer_address[6], uint8_t address_type, gap_bond *out
-);
 static int gap_periodic_sync_transfer_receive(
     const uint8_t *frame,
     uint64_t connection_anchor_ticks, uint16_t connection_event_counter
 );
-static uint8_t gap_conn_rate_parameters_valid(
-    uint16_t interval,
-        uint16_t factor, uint16_t latency, uint16_t continuation,
-        uint16_t timeout);
-static uint16_t gap_conn_rate_min_interval(void);
-
 #if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
 #define GAP_CONN_PACKET_BUFFER_MAX 35
 #else
@@ -800,6 +791,32 @@ static uint8_t gap_subrate_parameters_valid(
 
 // Process one acknowledged LL control PDU and prepare its response.
 // Return nonzero when handling the PDU ended the connection.
+static uint8_t gap_conn_rate_parameters_valid(
+    uint16_t interval,
+    uint16_t factor, uint16_t latency, uint16_t continuation,
+    uint16_t timeout
+) {
+    return interval >= 3 && interval <= 32000 && factor >= 1 &&
+        factor <= 500 && latency <= 499 && continuation < factor &&
+        factor * (latency + 1u) <= 500u && timeout >= 10 && timeout <= 3200 &&
+        (uint32_t)timeout * 80u >
+            2u * (uint32_t)interval * factor * (latency + 1u);
+}
+
+static uint16_t gap_conn_rate_min_interval(void) {
+    uint32_t rx_time = gap_conn.data_length.rx_time;
+    uint32_t coded_limit = (uint32_t)gap_conn.data_length.rx_octets * 64u + 976u;
+    uint8_t peripheral_tx_phy = gap_conn.central_role ? gap_conn.rx_phy :
+        gap_conn.tx_phy;
+    if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704u)
+        rx_time = 2704u;
+    if (coded_limit < rx_time) rx_time = coded_limit;
+    uint32_t required = 300u + rx_time +
+        ((gap_conn.tx_phy == GAP_PHY_CODED ||
+          gap_conn.rx_phy == GAP_PHY_CODED) ? 2704u : 328u);
+    return (uint16_t)((required + 124u) / 125u);
+}
+
 static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     uint8_t authenticated, uint64_t connection_anchor_ticks,
     uint16_t connection_event_counter) {
@@ -2051,32 +2068,6 @@ uint8_t gap_subrate_status(void) {
     return gap_conn.subrate_status;
 }
 
-static uint8_t gap_conn_rate_parameters_valid(
-    uint16_t interval,
-        uint16_t factor, uint16_t latency, uint16_t continuation,
-        uint16_t timeout
-) {
-    return interval >= 3 && interval <= 32000 && factor >= 1 &&
-        factor <= 500 && latency <= 499 && continuation < factor &&
-        factor * (latency + 1u) <= 500u && timeout >= 10 && timeout <= 3200 &&
-        (uint32_t)timeout * 80u >
-            2u * (uint32_t)interval * factor * (latency + 1u);
-}
-
-static uint16_t gap_conn_rate_min_interval(void) {
-    uint32_t rx_time = gap_conn.data_length.rx_time;
-    uint32_t coded_limit = (uint32_t)gap_conn.data_length.rx_octets * 64u + 976u;
-    uint8_t peripheral_tx_phy = gap_conn.central_role ? gap_conn.rx_phy :
-        gap_conn.tx_phy;
-    if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704u)
-        rx_time = 2704u;
-    if (coded_limit < rx_time) rx_time = coded_limit;
-    uint32_t required = 300u + rx_time +
-        ((gap_conn.tx_phy == GAP_PHY_CODED ||
-          gap_conn.rx_phy == GAP_PHY_CODED) ? 2704u : 328u);
-    return (uint16_t)((required + 124u) / 125u);
-}
-
 // Queue a Central-selected interval (125-us units) and subrate tuple. Both
 // devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
 int gap_conn_rate_set(
@@ -2380,8 +2371,6 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_smp_receive_complete();
     return 1;
 }
-
-#include "ble_gap_connection_poll.h"
 
 // Link encryption procedures for the active LE connection.
 #include "../ble_crypto.h"

@@ -1097,4 +1097,6 @@ int gap_use_public_address(void) {
 
 #include "ble_gap_smp.h"
 
+#include "ble_gap_connection_poll.h"
+
 #endif // GAP_H
