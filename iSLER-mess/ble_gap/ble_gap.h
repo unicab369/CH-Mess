@@ -223,11 +223,7 @@ enum {
 };
 #endif
 
-static uint8_t gap_scanning, gap_active_scanning, gap_scan_generation;
-static struct {
-    uint16_t interval_ms, window_ms;
-    uint8_t discovery_mode, filter_duplicates;
-} gap_scan_settings = {20, 20, GAP_DISCOVERY_ALL, 0};
+static uint8_t gap_scanning;
 
 #if GAP_EXT_ADV_SUPPORT
 static struct {
@@ -245,14 +241,6 @@ static struct {
 } gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
 static uint8_t gap_ext_adv_seen_count, gap_ext_adv_seen_next;
 #endif
-
-static struct {
-    uint8_t address_type, address[6], pdu_type, data_len;
-    uint8_t data[GAP_ADV_DATA_MAX];
-} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
-static uint8_t gap_scan_seen_count, gap_scan_seen_next;
-static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
-static uint8_t gap_scan_response_address[6];
 
 #if GAP_EXT_ADV_SUPPORT
 static const uint16_t gap_periodic_sca_ppm[8] = {

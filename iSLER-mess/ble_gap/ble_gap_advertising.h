@@ -437,9 +437,9 @@ int gap_adv_start_directed(
         (gap_privacy.enabled && !gap_privacy.resolvable)
     ) return 0;
 
-    int slot = gap_identity_find(address, address_type);
     uint8_t target[6];
     memcpy(target, address, sizeof(target));
+    int slot = gap_identity_find(address, address_type);
 
     if (gap_privacy.enabled && gap_privacy.resolvable &&
         slot >= 0 && gap_identities[slot].has_irk
@@ -474,15 +474,34 @@ int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
 // =============================================================================
 
 typedef struct {
-    uint8_t pdu_type, address_type, address[6];
-    uint8_t resolved, identity_type, identity_address[6];
-    uint8_t has_target, target_address_type, target_address[6];
+    // Received advertising PDU and advertiser address.
+    uint8_t pdu_type;
+    uint8_t address_type, address[6];
+    uint8_t resolved;
+    uint8_t identity_type, identity_address[6];
+    uint8_t has_target;
+    uint8_t target_address_type, target_address[6];
+
+    // Received signal strength and AD payload.
     int8_t rssi;
-    uint8_t data_len, data[GAP_ADV_DATA_MAX];
+    uint8_t data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_report;
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
+static uint8_t gap_active_scanning, gap_scan_generation;
+static struct {
+    uint16_t interval_ms, window_ms;
+    uint8_t discovery_mode, filter_duplicates;
+} gap_scan_settings = {20, 20, GAP_DISCOVERY_ALL, 0};
+static struct {
+    uint8_t address_type, address[6], pdu_type, data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
+} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
+static uint8_t gap_scan_seen_count, gap_scan_seen_next;
+static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
+static uint8_t gap_scan_response_address[6];
 
 #if GAP_EXT_ADV_SUPPORT
 static void gap_ext_scan_reset(uint8_t clear_owned_scan);
@@ -550,67 +569,64 @@ typedef enum {
 static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
 ) {
-    if (mode < GAP_CONN_MODE_DIRECT || mode > GAP_CONN_MODE_AUTO ||
-        active_scan > 1 || gap_conn.active || gap_scanning ||
-        gap_central_conn.active ||
+    if (active_scan > 1 || gap_conn.active || gap_scanning ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
-          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty()))
-        return 0;
-    uint8_t any_peer = mode == GAP_CONN_MODE_GENERAL;
-    uint8_t selective = mode == GAP_CONN_MODE_SELECTIVE;
-    uint8_t auto_connect = mode == GAP_CONN_MODE_AUTO;
-    uint8_t peer_type = mode == GAP_CONN_MODE_DIRECT ?
-        gap_central_conn.peer_type : 0;
+          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty())
+    ) return 0;
+
+    uint8_t peer_type = mode == GAP_CONN_MODE_DIRECT ? gap_central_conn.peer_type : 0;
     const uint8_t *peer_address = mode == GAP_CONN_MODE_DIRECT ?
-        gap_central_conn.peer_address : NULL;
+                                gap_central_conn.peer_address : NULL;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
-    memset(gap_central_conn.request, 0,
-           sizeof(gap_central_conn.request));
+
+    memset(gap_central_conn.request, 0, sizeof(gap_central_conn.request));
     uint8_t local_type;
     int peer_slot = peer_address ? gap_identity_find(peer_address, peer_type) : -1;
-    gap_local_address_select(peer_slot, gap_central_conn.request + 2,
-                             &local_type);
-    gap_central_conn.request[0] = 0x05 |
-        (local_type << 6) | (peer_type << 7); // CONNECT_IND
+    gap_local_address_select(peer_slot, gap_central_conn.request + 2, &local_type);
+    gap_central_conn.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central_conn.request[1] = 34;
+
     if (peer_address)
         memcpy(gap_central_conn.request + 8, peer_address, 6);
     gap_central_conn.request[14] = (uint8_t)access_address;
     gap_central_conn.request[15] = (uint8_t)(access_address >> 8);
     gap_central_conn.request[16] = (uint8_t)(access_address >> 16);
     gap_central_conn.request[17] = (uint8_t)(access_address >> 24);
+
     uint8_t crc_init[3];
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_central_conn.request + 18, crc_init, sizeof(crc_init));
     gap_central_conn.request[21] = 1; // transmit window size: 1.25 ms
     gap_central_conn.request[24] = (uint8_t)gap_conn_timing.interval;
-    gap_central_conn.request[25] =
-        (uint8_t)(gap_conn_timing.interval >> 8);
+    gap_central_conn.request[25] = (uint8_t)(gap_conn_timing.interval >> 8);
     gap_central_conn.request[26] = (uint8_t)gap_conn_timing.latency;
-    gap_central_conn.request[27] =
-        (uint8_t)(gap_conn_timing.latency >> 8);
-    gap_central_conn.request[28] =
-        (uint8_t)gap_conn_timing.supervision_timeout;
-    gap_central_conn.request[29] =
-        (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
+    gap_central_conn.request[27] = (uint8_t)(gap_conn_timing.latency >> 8);
+    gap_central_conn.request[28] = (uint8_t)gap_conn_timing.supervision_timeout;
+    gap_central_conn.request[29] = (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
+
     memset(gap_central_conn.request + 30, 0xff, 4);
     gap_central_conn.request[34] = 0x1f; // data channels 0 through 36
     gap_central_conn.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+
+    uint8_t any_peer = mode == GAP_CONN_MODE_GENERAL;
+    uint8_t selective = mode == GAP_CONN_MODE_SELECTIVE;
+    uint8_t auto_connect = mode == GAP_CONN_MODE_AUTO;
     gap_central_conn.any_peer = any_peer;
     gap_central_conn.selective = selective;
     gap_central_conn.auto_connect = auto_connect;
     gap_central_conn.peer_type = peer_type;
+
     if (mode != GAP_CONN_MODE_DIRECT)
-        memset(gap_central_conn.peer_address, 0,
-               sizeof(gap_central_conn.peer_address));
+        memset(gap_central_conn.peer_address, 0, sizeof(gap_central_conn.peer_address));
+
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
     if (any_peer || auto_connect) gap_scan_start(active_scan);
     else gap_scanning = 1;
     gap_central_conn.active = 1;
     gap_central_conn.deadline_ms = auto_connect ? 0 :
-        GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
+                                GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
         gap_active_scanning = 0;
         gap_scan_head = gap_scan_count = 0;
@@ -626,10 +642,12 @@ int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
     if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
         gap_central_conn.active
     ) return 0;
+
     memcpy(gap_central_conn.peer_address, peer_address, 6);
     gap_central_conn.peer_type = peer_type;
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
+
     memset(gap_central_conn.peer_address, 0, sizeof(gap_central_conn.peer_address));
     gap_central_conn.peer_type = 0;
     return 0;
@@ -663,6 +681,7 @@ void gap_conn_cancel(void) {
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 int gap_scan_poll(gap_scan_report *report) {
     if (!report || !gap_scan_count) return 0;
+
     *report = gap_scan_reports[gap_scan_head];
     gap_scan_head = (gap_scan_head + 1) % GAP_SCAN_REPORT_COUNT;
     gap_scan_count--;
