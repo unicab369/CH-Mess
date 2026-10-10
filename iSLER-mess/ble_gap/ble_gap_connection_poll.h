@@ -83,7 +83,7 @@ void gap_hw_received(void) {
             connection_anchor_ticks = gap_conn.next_ticks;
         } else {
             uint32_t airtime_us = gap_phy_packet_airtime_us(
-                (uint16_t)wire_len, gap_conn.rx_phy);
+                (uint16_t)wire_len, gap_conn.phy.rx);
             uint64_t airtime_ticks = HW_TICKS_FROM_US(airtime_us);
             if (received_ticks < airtime_ticks) goto received_done;
             connection_anchor_ticks = received_ticks - airtime_ticks;
@@ -100,7 +100,7 @@ void gap_hw_received(void) {
             gap_conn.next_ticks += gap_conn_interval_ticks();
         } else {
             gap_conn.next_ticks = received_ticks -
-                HW_TICKS_FROM_US(gap_conn.rx_phy == 2 ?
+                HW_TICKS_FROM_US(gap_conn.phy.rx == 2 ?
                     ((uint32_t)wire_len + 11) * 4 : ((uint32_t)wire_len + 10) * 8) +
                 gap_conn_interval_ticks();
         }
@@ -130,7 +130,7 @@ void gap_hw_received(void) {
                 gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
                 gap_conn.subrate.continuation =
                     gap_conn.subrate.pending_continuation;
-                gap_conn.parameters.supervision_timeout =
+                gap_conn.params.supervision_timeout =
                     gap_conn.subrate.pending_timeout;
                 gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
                 gap_conn.subrate.status = 0;
@@ -652,7 +652,7 @@ static void gap_conn_poll(void) {
         return;
     }
     if ((uint32_t)(now_ms - gap_conn.last_rx_ms) >=
-        (uint32_t)gap_conn.parameters.supervision_timeout * 10
+        (uint32_t)gap_conn.params.supervision_timeout * 10
     ) {
         gap_conn_end();
         return;
@@ -668,7 +668,7 @@ static void gap_conn_poll(void) {
         ((uint32_t)(now_ms - gap_conn.last_rx_ms) *
          (500 + gap_conn.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.interval_125us ?
-        gap_conn.interval_125us : (uint16_t)(gap_conn.parameters.interval * 10);
+        gap_conn.interval_125us : (uint16_t)(gap_conn.params.interval * 10);
     uint32_t widening_limit_us = interval_125us * 125 / 2;
     if (widening_us > widening_limit_us) widening_us = widening_limit_us;
     uint64_t widening_ticks = (uint64_t)widening_us * HW_TICKS_FROM_US(1);
@@ -789,7 +789,7 @@ static void gap_conn_poll(void) {
         uint8_t *transmit = gap_security_tx_frame();
         if (!transmit) return;
         GAP_HW_LINK_CONFIG(gap_conn.access_address, channel,
-                               transmit, 1, gap_conn.tx_phy, gap_conn.rx_phy);
+                               transmit, 1, gap_conn.phy.tx, gap_conn.phy.rx);
         gap_radio_connection_slot = gap_conn_slot;
         gap_radio_connection_slot_valid = 1;
         GAP_HW_LINK_TX();
@@ -797,8 +797,8 @@ static void gap_conn_poll(void) {
         gap_conn.channel_selected = 1;
         return;
     }
-    GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.tx_phy,
-                       gap_conn.rx_phy);
+    GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.phy.tx,
+                       gap_conn.phy.rx);
     gap_radio_connection_slot = gap_conn_slot;
     gap_radio_connection_slot_valid = 1;
     GAP_HW_LINK_RX();

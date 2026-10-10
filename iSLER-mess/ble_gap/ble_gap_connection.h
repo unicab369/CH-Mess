@@ -49,7 +49,7 @@ static gap_conn_radio_buffers
 // retaining the legacy 1.25-ms interval field for older LL procedures.
 static uint64_t gap_conn_interval_ticks(void) {
     uint16_t interval = gap_conn.interval_125us ? gap_conn.interval_125us :
-        (uint16_t)(gap_conn.parameters.interval * 10);
+        (uint16_t)(gap_conn.params.interval * 10);
     return HW_TICKS_FROM_US((uint32_t)interval * 125);
 }
 
@@ -157,15 +157,15 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
                 (uint64_t)gap_conn.rate_win_offset * HW_TICKS_FROM_US(125);
         }
         gap_conn.interval_125us = gap_conn.rate_interval;
-        gap_conn.parameters.interval = (uint16_t)((gap_conn.rate_interval + 9) / 10);
+        gap_conn.params.interval = (uint16_t)((gap_conn.rate_interval + 9) / 10);
         gap_conn.subrate.base_event = gap_conn.rate_instant;
         gap_conn.subrate.factor = gap_conn.rate_factor;
         gap_conn.subrate.latency = gap_conn.rate_update_latency;
         gap_conn.subrate.latency_remaining = 0;
         gap_conn.subrate.continuation = gap_conn.rate_update_continuation;
         gap_conn.subrate.continuations = 0;
-        gap_conn.parameters.latency = gap_conn.rate_update_latency;
-        gap_conn.parameters.supervision_timeout = gap_conn.rate_update_timeout;
+        gap_conn.params.latency = gap_conn.rate_update_latency;
+        gap_conn.params.supervision_timeout = gap_conn.rate_update_timeout;
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.subrate.force_event = 1;
         gap_conn.rate_update_pending = gap_conn.rate_request_pending = 0;
@@ -189,13 +189,13 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         if (instant_packet_received) {
             // The packet already fixed the new anchor; ignore WinOffset and WinSize.
             gap_conn.next_ticks = gap_conn.next_ticks - gap_conn_interval_ticks() +
-                    (uint64_t)gap_conn.new_parameters.interval * HW_TICKS_FROM_US(1250);
+                    (uint64_t)gap_conn.new_params.interval * HW_TICKS_FROM_US(1250);
         } else {
             gap_conn.next_ticks +=
                 (uint64_t)gap_conn.update_win_offset * HW_TICKS_FROM_US(1250);
         }
 
-        if ((uint32_t)gap_conn.new_parameters.interval * 10 != gap_conn.interval_125us ) {
+        if ((uint32_t)gap_conn.new_params.interval * 10 != gap_conn.interval_125us ) {
             // Core requires interval changes to restart at factor one and no
             // continuation events at the connection update Instant.
             gap_conn.subrate.factor = 1;
@@ -206,12 +206,11 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             gap_conn.subrate.update_queued = 0;
         }
 
-        gap_conn.parameters.interval = gap_conn.new_parameters.interval;
-        gap_conn.interval_125us = (uint16_t)(gap_conn.new_parameters.interval * 10);
-        gap_conn.parameters.latency = gap_conn.new_parameters.latency;
-        gap_conn.subrate.latency = gap_conn.new_parameters.latency;
-        gap_conn.parameters.supervision_timeout =
-            gap_conn.new_parameters.supervision_timeout;
+        gap_conn.params.interval = gap_conn.new_params.interval;
+        gap_conn.interval_125us = (uint16_t)(gap_conn.new_params.interval * 10);
+        gap_conn.params.latency = gap_conn.new_params.latency;
+        gap_conn.subrate.latency = gap_conn.new_params.latency;
+        gap_conn.params.supervision_timeout = gap_conn.new_params.supervision_timeout;
         gap_conn.window_size = gap_conn.update_window_size;
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.update_window_active = !instant_packet_received;
@@ -222,9 +221,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     }
 
     // Switch rates at the shared Instant, including events skipped by polling.
-    if (gap_conn.phy_update_pending &&
-        gap_conn.phy_instant == gap_conn.event_counter
-    ) {
+    if (gap_conn.phy_update_pending && gap_conn.phy_instant == gap_conn.event_counter ) {
         if (gap_conn.central_role && gap_conn.tx_pending &&
             (gap_conn_tx_frame[0] & 3) == 3 && gap_conn_tx_frame[1] == 5 &&
             gap_conn_tx_frame[2] == 0x18
@@ -233,8 +230,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             gap_conn_end();
             return;
         }
-        if (gap_conn.pending_tx_phy) gap_conn.tx_phy = gap_conn.pending_tx_phy;
-        if (gap_conn.pending_rx_phy) gap_conn.rx_phy = gap_conn.pending_rx_phy;
+        if (gap_conn.pending_phy.tx) gap_conn.phy.tx = gap_conn.pending_phy.tx;
+        if (gap_conn.pending_phy.rx) gap_conn.phy.rx = gap_conn.pending_phy.rx;
         gap_conn.phy_update_pending = gap_conn.phy_pending = 0;
         gap_conn.phy_status = 0;
     }
@@ -372,18 +369,18 @@ static void gap_conn_update_send(void) {
     gap_conn.update_window_size = 1;
     gap_conn.update_win_offset = 0;
     gap_conn.update_instant = (uint16_t)(gap_conn.event_counter +
-        6 * (gap_conn.parameters.latency + 1) + 1);
+        6 * (gap_conn.params.latency + 1) + 1);
     gap_conn_tx_frame[0] = 0x03;
     gap_conn_tx_frame[1] = 12;
     gap_conn_tx_frame[2] = 0x00; // LL_CONNECTION_UPDATE_IND
     gap_conn_tx_frame[3] = gap_conn.update_window_size;
     gap_conn_tx_frame[4] = gap_conn_tx_frame[5] = 0; // WinOffset
-    gap_conn_tx_frame[6] = (uint8_t)gap_conn.new_parameters.interval;
-    gap_conn_tx_frame[7] = (uint8_t)(gap_conn.new_parameters.interval >> 8);
-    gap_conn_tx_frame[8] = (uint8_t)gap_conn.new_parameters.latency;
-    gap_conn_tx_frame[9] = (uint8_t)(gap_conn.new_parameters.latency >> 8);
-    gap_conn_tx_frame[10] = (uint8_t)gap_conn.new_parameters.supervision_timeout;
-    gap_conn_tx_frame[11] = (uint8_t)(gap_conn.new_parameters.supervision_timeout >> 8);
+    gap_conn_tx_frame[6] = (uint8_t)gap_conn.new_params.interval;
+    gap_conn_tx_frame[7] = (uint8_t)(gap_conn.new_params.interval >> 8);
+    gap_conn_tx_frame[8] = (uint8_t)gap_conn.new_params.latency;
+    gap_conn_tx_frame[9] = (uint8_t)(gap_conn.new_params.latency >> 8);
+    gap_conn_tx_frame[10] = (uint8_t)gap_conn.new_params.supervision_timeout;
+    gap_conn_tx_frame[11] = (uint8_t)(gap_conn.new_params.supervision_timeout >> 8);
     gap_conn_tx_frame[12] = (uint8_t)gap_conn.update_instant;
     gap_conn_tx_frame[13] = (uint8_t)(gap_conn.update_instant >> 8);
     gap_conn.timing_update_pending = 1;
@@ -395,7 +392,7 @@ static void gap_conn_update_send(void) {
 // Choosing the Instant here keeps it ahead of retries of earlier packets.
 static void gap_channel_map_send(void) {
     gap_conn.channel_map_update_instant = (uint16_t)(gap_conn.event_counter +
-        6 * (gap_conn.parameters.latency + 1) + 1);
+        6 * (gap_conn.params.latency + 1) + 1);
     gap_conn_tx_frame[0] = 3;
     gap_conn_tx_frame[1] = 8;
     gap_conn_tx_frame[2] = 0x01; // LL_CHANNEL_MAP_IND
@@ -431,8 +428,8 @@ static void gap_phy_request_send(void) {
     gap_conn_tx_frame[0] = 3;
     gap_conn_tx_frame[1] = 3;
     gap_conn_tx_frame[2] = 0x16; // LL_PHY_REQ
-    gap_conn_tx_frame[3] = gap_conn.preferred_tx_phy;
-    gap_conn_tx_frame[4] = gap_conn.preferred_rx_phy;
+    gap_conn_tx_frame[3] = gap_conn.preferred_phy.tx;
+    gap_conn_tx_frame[4] = gap_conn.preferred_phy.rx;
     gap_conn.phy_queued = 0;
     gap_conn.phy_pending = 1;
     gap_conn.phy_started_ms = GET_MILLIS();
@@ -449,8 +446,8 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 // The Central chooses a rate per direction from intersecting preferences.
 // An empty intersection leaves that direction unchanged; prefer 2M, then Coded.
 static void gap_phy_update_send(uint8_t peer_tx, uint8_t peer_rx) {
-    uint8_t tx = gap_conn.preferred_tx_phy & peer_rx;
-    uint8_t rx = gap_conn.preferred_rx_phy & peer_tx;
+    uint8_t tx = gap_conn.preferred_phy.tx & peer_rx;
+    uint8_t rx = gap_conn.preferred_phy.rx & peer_tx;
     tx = gap_phy_preferred(tx);
     rx = gap_phy_preferred(rx);
     // A single identical peer preference requests symmetry: choose it in
@@ -458,17 +455,17 @@ static void gap_phy_update_send(uint8_t peer_tx, uint8_t peer_rx) {
     if (peer_tx == peer_rx &&
         (peer_tx == GAP_PHY_1M || peer_tx == GAP_PHY_2M ||
          peer_tx == GAP_PHY_CODED) &&
-        ((tx ? tx : gap_conn.tx_phy) != peer_tx ||
-         (rx ? rx : gap_conn.rx_phy) != peer_rx)) tx = rx = 0;
-    if (tx == gap_conn.tx_phy) tx = 0;
-    if (rx == gap_conn.rx_phy) rx = 0;
+        ((tx ? tx : gap_conn.phy.tx) != peer_tx ||
+         (rx ? rx : gap_conn.phy.rx) != peer_rx)) tx = rx = 0;
+    if (tx == gap_conn.phy.tx) tx = 0;
+    if (rx == gap_conn.phy.rx) rx = 0;
     gap_conn_tx_frame[0] = 3;
     gap_conn_tx_frame[1] = 5;
     gap_conn_tx_frame[2] = 0x18; // LL_PHY_UPDATE_IND
-    gap_conn_tx_frame[3] = gap_conn.pending_tx_phy = tx;
-    gap_conn_tx_frame[4] = gap_conn.pending_rx_phy = rx;
+    gap_conn_tx_frame[3] = gap_conn.pending_phy.tx = tx;
+    gap_conn_tx_frame[4] = gap_conn.pending_phy.rx = rx;
     gap_conn.phy_instant = tx || rx ? (uint16_t)(gap_conn.event_counter +
-        6 * (gap_conn.parameters.latency + 1) + 1) : 0;
+        6 * (gap_conn.params.latency + 1) + 1) : 0;
     gap_conn_tx_frame[5] = (uint8_t)gap_conn.phy_instant;
     gap_conn_tx_frame[6] = (uint8_t)(gap_conn.phy_instant >> 8);
     gap_conn.phy_queued = gap_conn.phy_pending = 0;
@@ -805,14 +802,14 @@ static uint8_t gap_conn_rate_parameters_valid(
 static uint16_t gap_conn_rate_min_interval(void) {
     uint32_t rx_time = gap_conn.data_length.rx_time;
     uint32_t coded_limit = (uint32_t)gap_conn.data_length.rx_octets * 64 + 976;
-    uint8_t peripheral_tx_phy = gap_conn.central_role ? gap_conn.rx_phy :
-        gap_conn.tx_phy;
+    uint8_t peripheral_tx_phy = gap_conn.central_role ? gap_conn.phy.rx :
+        gap_conn.phy.tx;
     if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704)
         rx_time = 2704;
     if (coded_limit < rx_time) rx_time = coded_limit;
     uint32_t required = 300 + rx_time +
-        ((gap_conn.tx_phy == GAP_PHY_CODED ||
-          gap_conn.rx_phy == GAP_PHY_CODED) ? 2704 : 328);
+        ((gap_conn.phy.tx == GAP_PHY_CODED ||
+          gap_conn.phy.rx == GAP_PHY_CODED) ? 2704 : 328);
     return (uint16_t)((required + 124) / 125);
 }
 
@@ -953,9 +950,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 }
                 gap_conn.update_window_size = win_size;
                 gap_conn.update_win_offset = win_offset;
-                gap_conn.new_parameters.interval = interval;
-                gap_conn.new_parameters.latency = latency;
-                gap_conn.new_parameters.supervision_timeout = timeout;
+                gap_conn.new_params.interval = interval;
+                gap_conn.new_params.latency = latency;
+                gap_conn.new_params.supervision_timeout = timeout;
                 gap_conn.update_instant = instant;
                 gap_conn.timing_update_pending = 1;
                 gap_conn.params_pending = gap_conn.params_local = 0;
@@ -1047,7 +1044,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             if (minimum > maximum) goto reject_parameters;
         }
         if (gap_conn.central_role) {
-            uint16_t interval = gap_conn.parameters.interval;
+            uint16_t interval = gap_conn.params.interval;
             if (interval < minimum || interval > maximum) interval = minimum;
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t)
@@ -1061,9 +1058,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             if ((uint32_t)timeout * 80 <= 2 *
                 (uint32_t)(latency + 1) * interval * 10 * factor)
                 goto reject_parameters;
-            gap_conn.new_parameters.interval = interval;
-            gap_conn.new_parameters.latency = latency;
-            gap_conn.new_parameters.supervision_timeout = timeout;
+            gap_conn.new_params.interval = interval;
+            gap_conn.new_params.latency = latency;
+            gap_conn.new_params.supervision_timeout = timeout;
             gap_conn_update_send();
         } else {
             // The Central's procedure takes precedence over a
@@ -1704,7 +1701,7 @@ reject_parameters:
         gap_conn.subrate.latency = latency;
         gap_conn.subrate.latency_remaining = 0;
         gap_conn.subrate.continuation = continuation;
-        gap_conn.parameters.supervision_timeout = timeout;
+        gap_conn.params.supervision_timeout = timeout;
         gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
         gap_conn.subrate.request_pending = 0;
         gap_conn.subrate.status = 0;
@@ -1828,8 +1825,8 @@ reject_parameters:
             gap_conn.phy_started_ms = GET_MILLIS();
             gap_conn_tx_frame[1] = 3;
             gap_conn_tx_frame[2] = 0x17;
-            gap_conn_tx_frame[3] = gap_conn.preferred_tx_phy;
-            gap_conn_tx_frame[4] = gap_conn.preferred_rx_phy;
+            gap_conn_tx_frame[3] = gap_conn.preferred_phy.tx;
+            gap_conn_tx_frame[4] = gap_conn.preferred_phy.rx;
         }
         break;
     case 0x18: { // LL_PHY_UPDATE_IND (Central to Peripheral)
@@ -1841,8 +1838,8 @@ reject_parameters:
         // Invalid or unsupported selections leave that direction unchanged.
         if ((tx != 1 && tx != 2 && tx != 4) || !(tx & supported)) tx = 0;
         if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported)) rx = 0;
-        if (tx == gap_conn.tx_phy) tx = 0;
-        if (rx == gap_conn.rx_phy) rx = 0;
+        if (tx == gap_conn.phy.tx) tx = 0;
+        if (rx == gap_conn.phy.rx) rx = 0;
         gap_conn.phy_pending = gap_conn.phy_queued = 0;
         if (!tx && !rx) { gap_conn.phy_status = 0; break; }
         uint16_t instant = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
@@ -1853,8 +1850,8 @@ reject_parameters:
             gap_conn_end();
             return 1;
         }
-        gap_conn.pending_tx_phy = tx;
-        gap_conn.pending_rx_phy = rx;
+        gap_conn.pending_phy.tx = tx;
+        gap_conn.pending_phy.rx = rx;
         gap_conn.phy_instant = instant;
         gap_conn.phy_update_pending = 1;
         break;
@@ -1914,9 +1911,9 @@ int gap_conn_update(
         latency > 499 || timeout < 10 || timeout > 3200 ||
         (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * interval * 10 * factor)
         return 0;
-    gap_conn.new_parameters.interval = interval;
-    gap_conn.new_parameters.latency = latency;
-    gap_conn.new_parameters.supervision_timeout = timeout;
+    gap_conn.new_params.interval = interval;
+    gap_conn.new_params.latency = latency;
+    gap_conn.new_params.supervision_timeout = timeout;
     gap_conn.connection_status = GAP_CONNECTION_PENDING;
     gap_conn.local_update_queued = 1;
     return 1;
@@ -2063,7 +2060,7 @@ void gap_subrate_get(
     if (base_event) *base_event = gap_conn.subrate.base_event;
     if (peripheral_latency) *peripheral_latency = gap_conn.subrate.latency;
     if (continuation) *continuation = gap_conn.subrate.continuation;
-    if (timeout) *timeout = gap_conn.parameters.supervision_timeout;
+    if (timeout) *timeout = gap_conn.params.supervision_timeout;
 }
 
 uint8_t gap_subrate_status(void) {
@@ -2153,7 +2150,7 @@ void gap_conn_rate_get(
     if (factor) *factor = gap_conn.subrate.factor;
     if (peripheral_latency) *peripheral_latency = gap_conn.subrate.latency;
     if (continuation) *continuation = gap_conn.subrate.continuation;
-    if (timeout) *timeout = gap_conn.parameters.supervision_timeout;
+    if (timeout) *timeout = gap_conn.params.supervision_timeout;
 }
 
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
@@ -2305,8 +2302,8 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
             return 0;
         }
     }
-    gap_conn.preferred_tx_phy = tx;
-    gap_conn.preferred_rx_phy = rx;
+    gap_conn.preferred_phy.tx = tx;
+    gap_conn.preferred_phy.rx = rx;
     gap_conn.phy_status = GAP_CONNECTION_PENDING;
     gap_conn.phy_queued = 1;
     return 1;
@@ -2314,8 +2311,8 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 
 // Return the current rate in each direction; values are GAP_PHY_*.
 void gap_phy_get(uint8_t *tx, uint8_t *rx) {
-    if (tx) *tx = gap_conn.tx_phy;
-    if (rx) *rx = gap_conn.rx_phy;
+    if (tx) *tx = gap_conn.phy.tx;
+    if (rx) *rx = gap_conn.phy.rx;
 }
 
 uint8_t gap_phy_status(void) {

@@ -270,6 +270,10 @@ typedef struct {
 } gap_conn_parameters;
 
 typedef struct {
+    uint8_t tx, rx;
+} gap_conn_phy;
+
+typedef struct {
     uint16_t factor, continuation;
     uint8_t transition, event_activity, event_received, force_event;
     uint16_t continuations, latency, latency_remaining;
@@ -323,10 +327,9 @@ typedef struct {
     uint8_t rate_ack_waiting;
     uint8_t peer_features_page1[8];
     gap_conn_subrate subrate;
-    uint8_t tx_phy, rx_phy, preferred_tx_phy, preferred_rx_phy;
+    gap_conn_phy phy, preferred_phy, pending_phy;
     volatile uint8_t phy_queued;
     uint8_t phy_pending, phy_update_pending, phy_status;
-    uint8_t pending_tx_phy, pending_rx_phy;
     uint16_t phy_instant;
     uint32_t phy_started_ms;
     uint16_t params_min, params_max, params_latency, params_timeout;
@@ -336,7 +339,7 @@ typedef struct {
     volatile uint8_t length_queued;
     uint8_t length_pending, length_status;
     uint32_t length_started_ms;
-    gap_conn_parameters parameters, new_parameters;
+    gap_conn_parameters params, new_params;
     uint16_t interval_125us, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
     uint16_t channel_map_update_instant;
@@ -517,10 +520,10 @@ static int gap_conn_accept(
     gap_conn.used_count = count;
     gap_conn.hop = hop;
     gap_conn.unmapped_channel = 0;
-    gap_conn.parameters.interval = interval;
+    gap_conn.params.interval = interval;
     gap_conn.interval_125us = (uint16_t)(interval * 10);
-    gap_conn.parameters.latency = latency;
-    gap_conn.parameters.supervision_timeout = timeout;
+    gap_conn.params.latency = latency;
+    gap_conn.params.supervision_timeout = timeout;
     gap_conn.subrate.factor = 1;
     gap_conn.subrate.base_event = 0;
     gap_conn.subrate.continuation = 0;
@@ -578,8 +581,8 @@ static int gap_conn_accept(
     gap_conn.channel_status_last_sent_ms = 0;
     memset(gap_conn.peer_features_page1, 0,
            sizeof(gap_conn.peer_features_page1));
-    gap_conn.tx_phy = gap_conn.rx_phy = GAP_PHY_1M;
-    gap_conn.preferred_tx_phy = gap_conn.preferred_rx_phy = GAP_HW_PHY_MASK() & 7;
+    gap_conn.phy.tx = gap_conn.phy.rx = GAP_PHY_1M;
+    gap_conn.preferred_phy.tx = gap_conn.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending =
         gap_conn.phy_status = 0;
     gap_conn.feature_request_pending = gap_conn.connection_status = 0;
