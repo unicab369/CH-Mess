@@ -696,21 +696,25 @@ static void gap_subrate_start_queued(void) {
         return;
     }
 
-    if ((gap_conn.peer_features4 &
-        (GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST)) !=
-        (GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST)
-    ) {
+    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
+    if ((gap_conn.peer_features4 & required) != required) {
         gap_conn.subrate.update_queued = gap_conn.subrate.request_queued = 0;
         gap_conn.subrate.status = 0x1a;
         return;
     }
 
-    if (gap_conn.central_role && gap_conn.subrate.update_queued)
+    if (gap_conn.central_role && gap_conn.subrate.update_queued) {
         gap_subrate_update_send();
+    }
     else if (!gap_conn.central_role && gap_conn.subrate.request_queued) {
+        gap_conn.subrate.request_queued = 0;
+        gap_conn.subrate.request_pending = 1;
+        gap_conn.subrate.started_ms = GET_MILLIS();
+
         gap_tx_frame[0] = 0x03;
         gap_tx_frame[1] = 11;
         gap_tx_frame[2] = 0x26; // LL_SUBRATE_REQ.
+
         const uint16_t values[5] = {
             gap_conn.subrate.request_min,
             gap_conn.subrate.request_max,
@@ -722,29 +726,28 @@ static void gap_subrate_start_queued(void) {
             gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
             gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
         }
-        gap_conn.subrate.request_queued = 0;
-        gap_conn.subrate.request_pending = 1;
-        gap_conn.subrate.started_ms = GET_MILLIS();
     }
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
 static void gap_data_length_send(uint8_t opcode) {
-    const uint16_t values[4] = {gap_conn.data_capacity,
-        (uint16_t)((gap_conn.data_capacity + 14) * 8), gap_conn.local_tx_octets,
-        (uint16_t)((gap_conn.local_tx_octets + 14) * 8)};
-    gap_tx_frame[0] = 3;
-    gap_tx_frame[1] = 9;
-    gap_tx_frame[2] = opcode;
-    for (uint8_t i = 0; i < 4; i++) {
-        gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
-        gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
-    }
     if (opcode == 0x14) {
         gap_conn.length_queued = 0;
         gap_conn.length_pending = 1;
         gap_conn.length_started_ms = GET_MILLIS();
     }
+
+    gap_tx_frame[0] = 3;
+    gap_tx_frame[1] = 9;
+    gap_tx_frame[2] = opcode;
+    gap_tx_frame[3] = (uint8_t)gap_conn.data_capacity;
+    gap_tx_frame[4] = (uint8_t)(gap_conn.data_capacity >> 8);
+    gap_tx_frame[5] = (uint8_t)((gap_conn.data_capacity + 14) * 8);
+    gap_tx_frame[6] = (uint8_t)(((gap_conn.data_capacity + 14) * 8) >> 8);
+    gap_tx_frame[7] = (uint8_t)gap_conn.local_tx_octets;
+    gap_tx_frame[8] = (uint8_t)(gap_conn.local_tx_octets >> 8);
+    gap_tx_frame[9] = (uint8_t)((gap_conn.local_tx_octets + 14) * 8);
+    gap_tx_frame[10] = (uint8_t)(((gap_conn.local_tx_octets + 14) * 8) >> 8);
 }
 
 // Rotate between radio exchanges; preserve addresses throughout initiation,
