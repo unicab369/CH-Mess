@@ -5,11 +5,11 @@
 #include "../ble_gap/ble_gap_smp.h"
 
 typedef struct {
-    uint8_t blocked, sent, timed_out;
+    uint8_t blocked, sent;
     uint16_t cid, len;
     uint8_t pdu[SMP_PDU_MAX];
     ble_smp_bond bond;
-    uint8_t encrypted, random_fail, crypto_fail;
+    uint8_t random_fail, crypto_fail;
 } fake_smp;
 
 static fake_smp *fake_random_state;
@@ -17,10 +17,6 @@ static fake_smp *fake_random_state;
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
                        uint8_t *output) {
     for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
-}
-
-static void fake_timeout(void *context) {
-    ((fake_smp *)context)->timed_out++;
 }
 
 static int fake_send(
@@ -50,15 +46,6 @@ int ble_smp_port_cmac(
     memset(output, 0, 16);
     for (size_t i = 0; i < len; i++) output[i % 16] ^= input[i] ^ key[i % 16];
     return 1;
-}
-
-int ble_smp_port_set_link_encryption(
-    const uint8_t ltk[16], uint8_t key_size,
-    uint8_t authenticated
-) {
-    fake_smp *fake = fake_random_state;
-    fake->encrypted = key_size == 16 && authenticated == 1 && ltk[0] == 0xa5;
-    return fake->encrypted;
 }
 
 int ble_smp_port_bond_load(
@@ -98,8 +85,8 @@ int main(void) {
     assert(ble_smp_negotiate_features(&local, &peer, &policy,
         &negotiated) == 0);
     assert(negotiated.max_key_size == 12 && negotiated.secure_connections &&
-           negotiated.bonding && negotiated.initiator_key_distribution == 6 &&
-           negotiated.responder_key_distribution == 6);
+           negotiated.bonding && negotiated.init_key_dist == 6 &&
+           negotiated.resp_key_dist == 6);
     smp_features reserved_auth = local;
     reserved_auth.auth_req |= 0x40;
     assert(ble_smp_negotiate_features(&reserved_auth, &peer, &policy,
@@ -134,10 +121,8 @@ int main(void) {
     ble_smp smp;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    smp.context = &fake;
     assert(ble_l2cap_connection_register_fixed(&l2cap, BLE_L2CAP_CID_SMP,
         ble_smp_receive_sdu, &smp));
-    smp.timeout = fake_timeout;
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16];
     assert(ble_smp_random_bytes(secret, 32) && secret[31] == 0x5a);
     fake.random_fail = 1;
@@ -152,8 +137,6 @@ int main(void) {
     assert(!ble_smp_cmac(&smp, key, input, sizeof(input), output));
     for (unsigned i = 0; i < sizeof(output); i++) assert(output[i] == 0);
     fake.crypto_fail = 0;
-    uint8_t ltk[16] = {0xa5};
-    assert(ble_smp_set_link_encryption(&smp, ltk, 16, 1) && fake.encrypted);
     ble_smp_bond stored = {0};
     stored.valid = 1; stored.peer_address_type = 0; stored.key_size = 16;
     stored.version = 1;
@@ -170,18 +153,10 @@ int main(void) {
     memset(stored.peripheral_rand, 0x77, sizeof(stored.peripheral_rand));
     stored.peripheral_ediv[0] = 0x88;
     stored.peripheral_ediv[1] = 0x99;
-    assert(ble_smp_bond_store(&smp, &stored));
-    ble_smp_bond malformed_bond = stored;
-    malformed_bond.has_peripheral_ltk = 0;
-    assert(!ble_smp_bond_store(&smp, &malformed_bond));
-    stored.key_size = 6;
-    assert(!ble_smp_bond_store(&smp, &stored));
-    stored.key_size = 16;
+    assert(ble_smp_port_bond_store(&stored));
     ble_smp_bond restored;
     assert(ble_smp_port_bond_load(0, stored.peer_address, &restored));
     assert(!memcmp(&restored, &stored, sizeof(stored)));
-    assert(!ble_smp_tick(&smp, UINT32_MAX - 1000));
-
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};
     const uint8_t *pending_pdu;
     uint16_t pending_len;
@@ -193,18 +168,11 @@ int main(void) {
     assert(!ble_smp_take_received(&smp, &pending_pdu, &pending_len));
     assert(ble_smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
            !smp.tx_len);
-    memcpy(smp.tx, pairing_request, sizeof(pairing_request));
-    smp.tx_len = sizeof(pairing_request);
-    smp.procedure_active = 1;
-    smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
-    assert(!ble_smp_tick(&smp, 1000)); // Deadline wraps across uint32_t.
-    assert(ble_smp_tick(&smp, 30000) && fake.timed_out == 1);
     assert(ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
         pairing_request, sizeof(pairing_request)));
     assert(ble_smp_take_received(&smp, &pending_pdu, &pending_len));
     assert(pending_len == sizeof(pairing_request) &&
            !memcmp(pending_pdu, pairing_request, pending_len));
-    assert(ble_smp_tick(&smp, 60000) && fake.timed_out == 2);
     uint8_t l2cap_packet[sizeof(pairing_request) + 4];
     assert(ble_l2cap_encode(l2cap_packet, sizeof(l2cap_packet),
         BLE_L2CAP_CID_SMP, pairing_request, sizeof(pairing_request)) ==
@@ -268,15 +236,14 @@ int main(void) {
     assert(smp.procedure_active && smp.deadline_ms);
     ble_smp_procedure_finish(&smp);
     assert(!smp.tx_len && !smp.procedure_active && !smp.deadline_ms);
-    assert(smp.l2cap == &l2cap && smp.context == &fake);
-    assert(!ble_smp_tick(&smp, 100000));
+    assert(smp.l2cap == &l2cap);
     assert(ble_smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
            !smp.tx_len);
     memcpy(smp.tx, pairing_request, sizeof(pairing_request));
     smp.tx_len = sizeof(pairing_request);
     smp.procedure_active = 1;
     smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
-    ble_smp_reset(&smp);
+    ble_smp_procedure_finish(&smp);
     assert(!smp.tx_len && !smp.procedure_active);
     memset(&smp.pairing, 0xa5, sizeof(smp.pairing));
     memcpy(smp.rx, pairing_request, sizeof(pairing_request));
