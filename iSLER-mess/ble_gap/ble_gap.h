@@ -372,12 +372,6 @@ static int gap_conn_free_slot(void) {
         if (!gap_conn_contexts[slot].active) return slot;
     return -1;
 }
-static int gap_conn_select_slot(uint8_t slot) {
-    if (slot >= GAP_CONNECTION_COUNT) return 0;
-    gap_conn_slot = slot;
-    return 1;
-}
-
 // Public connection handles identify a live slot generation, so a handle
 // from a disconnected link cannot accidentally select a later link in it.
 typedef struct {
@@ -415,7 +409,8 @@ static inline int gap_conn_select(
         !gap_conn_contexts[handle.slot].active ||
         gap_conn_generations[handle.slot] != handle.generation)
         return 0;
-    return gap_conn_select_slot(handle.slot);
+    gap_conn_slot = handle.slot;
+    return 1;
 }
 
 // Capture the currently selected link's handle for later API calls.
@@ -500,7 +495,7 @@ static int gap_conn_accept(
     if (!gap_conn_request_valid(frame)) return 0;
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
-    gap_conn_select_slot((uint8_t)free_slot);
+    gap_conn_slot = (uint8_t)free_slot;
 #if GAP_EXT_ADV_SUPPORT
     gap_conn.periodic_sync_transfer_queued = 0;
     gap_conn.periodic_sync_transfer_handle = 0;
