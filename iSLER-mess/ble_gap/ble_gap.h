@@ -584,6 +584,10 @@ static int gap_conn_accept(
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
     gap_conn_select_slot((uint8_t)free_slot);
+#if GAP_EXT_ADV_SUPPORT
+    gap_conn.periodic_sync_transfer_queued = 0;
+    gap_conn.periodic_sync_transfer_handle = 0;
+#endif
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -637,10 +641,6 @@ static int gap_conn_accept(
     gap_conn.tx_pending = 0;
     gap_conn.tx_queued = 0;
     gap_conn.tx_l2cap_remaining = 0;
-#if GAP_EXT_ADV_SUPPORT
-    gap_conn.periodic_sync_transfer_queued = 0;
-    gap_conn.periodic_sync_transfer_handle = 0;
-#endif
     gap_conn.rx_ready = 0;
     gap_conn.event_counter = 0;
     gap_conn.update_pending = 0;

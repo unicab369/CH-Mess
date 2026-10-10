@@ -73,15 +73,15 @@ int gap_scan_configure(
 
 // Start scanning; active mode requests scan-response data from advertisers.
 void gap_scan_stop(void) {
+#if GAP_EXT_ADV_SUPPORT
+    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+#endif
     gap_scanning = 0;
     gap_active_scanning = 0;
     gap_central_conn.active = 0;
     gap_central_conn.any_peer = 0;
     gap_central_conn.selective = 0;
     gap_central_conn.auto_connect = 0;
-#if GAP_EXT_ADV_SUPPORT
-    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
-#endif
     gap_scan_generation++;
 }
 

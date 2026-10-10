@@ -525,6 +525,13 @@ void gap_hw_received(void) {
 
 void gap_hw_init(void) {
     GAP_HW_INIT();
+#if GAP_EXT_ADV_SUPPORT
+    gap_radio_ext_adv_scan_waiting = 0;
+    gap_radio_ext_adv_scan_response_started = 0;
+    gap_radio_ext_scan_ready = 0;
+    gap_radio_aux_listening = 0;
+    memset(gap_radio_aux_request, 0, sizeof(gap_radio_aux_request));
+#endif
     gap_radio_rx_armed = 0;
     gap_radio_connection_slot = 0;
     gap_radio_connection_slot_valid = 0;
@@ -533,13 +540,6 @@ void gap_hw_init(void) {
     gap_radio_scan_generation = gap_scan_generation - 1;
     gap_radio_scan_interval_start_ms = 0;
     gap_radio_rx_ready = 0;
-#if GAP_EXT_ADV_SUPPORT
-    gap_radio_ext_adv_scan_waiting = 0;
-    gap_radio_ext_adv_scan_response_started = 0;
-    gap_radio_ext_scan_ready = 0;
-    gap_radio_aux_listening = 0;
-    memset(gap_radio_aux_request, 0, sizeof(gap_radio_aux_request));
-#endif
     gap_radio_rx_rssi = 127;
     gap_radio_active_scan_pending = 0;
     gap_radio_scan_adv_ready = 0;
@@ -1363,13 +1363,13 @@ int gap_radio_send_due(
         GAP_HW_STOP();
         gap_radio_rx_armed = 0;
     }
+    int transmit_result;
 #if GAP_EXT_ADV_SUPPORT
-    int transmit_result = send_extended >= 0 ?
-        gap_hw_transmit_extended_advertising(
-            &gap_ext_adv[send_extended]) : gap_hw_transmit(
-#else
-    int transmit_result = gap_hw_transmit(
-#endif
+    if (send_extended >= 0) {
+        transmit_result = gap_hw_transmit_extended_advertising(
+            &gap_ext_adv[send_extended]);
+    } else {
+        transmit_result = gap_hw_transmit(
             send_gap ? gap_adv.pdu_type : 0x02,
             send_gap ? gap_adv.data : fallback_ad,
             send_gap ? gap_adv.data_len : fallback_len,
@@ -1377,6 +1377,17 @@ int gap_radio_send_due(
             send_gap && gap_adv.pdu_type == 0x01 ?
                 gap_adv.target_address : NULL,
             send_gap ? gap_adv.target_type : 0);
+    }
+#else
+    transmit_result = gap_hw_transmit(
+        send_gap ? gap_adv.pdu_type : 0x02,
+        send_gap ? gap_adv.data : fallback_ad,
+        send_gap ? gap_adv.data_len : fallback_len,
+        send_gap && gap_adv.address_type ? gap_adv.address : NULL,
+        send_gap && gap_adv.pdu_type == 0x01 ?
+            gap_adv.target_address : NULL,
+        send_gap ? gap_adv.target_type : 0);
+#endif
     if (!transmit_result) return -1;
     if (transmit_result == 2) return 2;
     uint32_t completed_at = GET_MILLIS();
