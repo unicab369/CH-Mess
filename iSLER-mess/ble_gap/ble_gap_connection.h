@@ -1487,14 +1487,12 @@ static void gap_radio_ext_scan_process(void) {
     uint8_t kind = gap_radio_ext_scan_kind;
     uint8_t periodic = kind == GAP_EXT_ADV_PERIODIC_PDU;
     int slot = periodic ? gap_radio_periodic_listening_slot :
-        kind == GAP_EXT_ADV_AUXILIARY_PDU ?
-            gap_radio_aux_listening_slot : -1;
-    if (kind == GAP_EXT_ADV_AUXILIARY_PDU &&
-        slot < GAP_EXT_ADV_CONTEXT_COUNT)
+                kind == GAP_EXT_ADV_AUXILIARY_PDU ? gap_radio_aux_listening_slot : -1;
+    if (kind == GAP_EXT_ADV_AUXILIARY_PDU && slot < GAP_EXT_ADV_CONTEXT_COUNT)
         gap_radio_aux_request[slot].active = 0;
-    if (periodic && slot >= 0 &&
-        slot < GAP_PERIODIC_SYNC_COUNT)
+    if (periodic && slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
         gap_periodic_syncs[slot].window_active = 0;
+
     gap_radio_aux_listening = 0;
     gap_radio_periodic_listening = 0;
     gap_radio_ext_scan_ready = 0;
@@ -1504,9 +1502,9 @@ static void gap_radio_ext_scan_process(void) {
 
     uint8_t *pdu = gap_radio_ext_scan_frame;
     uint8_t packet_phy = kind == GAP_EXT_ADV_AUXILIARY_PDU ?
-        gap_radio_aux_rx_phy : periodic ? gap_radio_periodic_rx_phy :
-        GAP_PHY_1M;
+        gap_radio_aux_rx_phy : periodic ? gap_radio_periodic_rx_phy : GAP_PHY_1M;
     size_t pdu_len = (size_t)pdu[1] + 2;
+
     if (periodic && (pdu[0] & 0x0f) == 0x05) {
         (void)gap_radio_periodic_connect_request((uint8_t)slot, pdu,
             pdu_len, gap_radio_ext_scan_ticks);
@@ -1514,6 +1512,7 @@ static void gap_radio_ext_scan_process(void) {
     }
     gap_ext_adv_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return;
+
     if (periodic) {
         int received = slot >= 0 && gap_periodic_sync_receive((uint8_t)slot, pdu, pdu_len,
                 packet_phy, gap_radio_ext_scan_rssi,
@@ -1525,20 +1524,18 @@ static void gap_radio_ext_scan_process(void) {
             gap_periodic_sync_context *sync = &gap_periodic_syncs[slot];
             uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
             uint64_t packet_start = gap_radio_ext_scan_ticks >=
-                HW_TICKS_FROM_US(airtime_us) ? gap_radio_ext_scan_ticks -
-                HW_TICKS_FROM_US(airtime_us) : 0;
-            uint32_t response_delay_us =
-                (uint32_t)sync->pawr_response_slot_delay * 1250u +
-                (uint32_t)sync->pawr_response_slot *
-                    sync->pawr_response_slot_spacing * 125u;
-            uint64_t response_start = packet_start +
-                HW_TICKS_FROM_US(response_delay_us);
+                                    HW_TICKS_FROM_US(airtime_us) ? gap_radio_ext_scan_ticks -
+                                    HW_TICKS_FROM_US(airtime_us) : 0;
+            uint32_t response_delay_us = (uint32_t)sync->pawr_response_slot_delay * 1250u +
+                                        (uint32_t)sync->pawr_response_slot *
+                                        sync->pawr_response_slot_spacing * 125u;
+            uint64_t response_start = packet_start + HW_TICKS_FROM_US(response_delay_us);
             uint8_t response_channel = gap_periodic_channel_for(
-                sync->access_address, sync->channel_map,
-                (uint16_t)(sync->current_event_counter ^
-                           sync->pawr_selected_subevent));
-            uint8_t may_respond = response_start >=
-                gap_radio_ext_scan_ticks + HW_TICKS_FROM_US(150u);
+                                        sync->access_address, sync->channel_map,
+                                        (uint16_t)(sync->current_event_counter ^
+                                        sync->pawr_selected_subevent));
+            uint8_t may_respond = response_start >= gap_radio_ext_scan_ticks + HW_TICKS_FROM_US(150u);
+
             if (may_respond && slot < GAP_PERIODIC_SYNC_COUNT) {
                 uint8_t *response = gap_radio_ext_adv_frame;
                 response[0] = 0x07; // AUX_SYNC_SUBEVENT_RSP extended format.
@@ -1546,17 +1543,16 @@ static void gap_radio_ext_scan_process(void) {
                 response[2] = 1; // No AdvA or ADI.
                 response[3] = 0;
                 if (sync->pawr_response_data_len)
-                    memcpy(response + 4, sync->pawr_response_data,
-                           sync->pawr_response_data_len);
+                    memcpy(response + 4, sync->pawr_response_data, sync->pawr_response_data_len);
                 GAP_HW_TX_CLEAR_DONE();
                 GAP_HW_CRC_INIT(sync->crc_init);
                 GAP_HW_LINK_CONFIG(sync->response_access_address,
-                    response_channel, response, 0, sync->phy, sync->phy);
+                                    response_channel, response, 0, sync->phy, sync->phy);
+
                 if (GAP_HW_TICKS() < response_start) {
                     while (GAP_HW_TICKS() < response_start) {}
                     GAP_HW_LINK_TX();
-                    uint64_t deadline = GAP_HW_TICKS() +
-                        HW_TICKS_FROM_US(1000);
+                    uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
                     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
                     (void)GAP_HW_TX_DONE();
                 }
@@ -1567,32 +1563,31 @@ static void gap_radio_ext_scan_process(void) {
             }
         }
         if (received && fields.has_aux_ptr && !fields.aux_offset_zero &&
-            fields.aux_offset_us != 0) {
+            fields.aux_offset_us != 0
+        ) {
             uint8_t aux_phy = fields.aux_phy == 0 ? GAP_PHY_1M :
-                fields.aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
+                            fields.aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
+
             if ((GAP_HW_PHY_MASK() & aux_phy) &&
                 (packet_phy == GAP_PHY_1M || packet_phy == GAP_PHY_2M ||
-                 packet_phy == GAP_PHY_CODED)) {
-                uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1],
-                                                               packet_phy);
+                 packet_phy == GAP_PHY_CODED)
+            ) {
+                uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
+
                 if (fields.aux_offset_us > airtime_us) {
                     uint32_t tx_ca_ppm = fields.aux_ca ? 50u : 500u;
                     uint32_t unit_us = fields.aux_offset_unit ? 300u : 30u;
                     uint32_t end_us = fields.aux_offset_us + unit_us;
-                    uint32_t widening_us =
-                        ((tx_ca_ppm + 500u) * end_us + 999999u) / 1000000u +
-                        2u;
-                    uint32_t after_packet_us = fields.aux_offset_us -
-                        airtime_us;
+                    uint32_t widening_us = ((tx_ca_ppm + 500u) * end_us + 999999u) / 1000000u + 2u;
+                    uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
                     uint32_t start_delta_us = after_packet_us > widening_us ?
-                        after_packet_us - widening_us : 0;
+                                            after_packet_us - widening_us : 0;
                     gap_periodic_syncs[slot].aux_channel = fields.aux_channel;
                     gap_periodic_syncs[slot].aux_phy = aux_phy;
-                    gap_periodic_syncs[slot].window_start_ticks =
-                        gap_radio_ext_scan_ticks +
-                        HW_TICKS_FROM_US(start_delta_us);
+                    gap_periodic_syncs[slot].window_start_ticks = gap_radio_ext_scan_ticks +
+                                                                HW_TICKS_FROM_US(start_delta_us);
                     gap_periodic_syncs[slot].window_end_ticks =
-                        gap_radio_ext_scan_ticks + HW_TICKS_FROM_US(
+                            gap_radio_ext_scan_ticks + HW_TICKS_FROM_US(
                             after_packet_us + unit_us + widening_us);
                     gap_periodic_syncs[slot].window_active = 1;
                     gap_periodic_syncs[slot].window_chain = 1;
@@ -1604,33 +1599,34 @@ static void gap_radio_ext_scan_process(void) {
     (void)gap_ext_scan_receive(kind, pdu, pdu_len, gap_radio_ext_scan_rssi);
 
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.has_sync_info)
-        (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy,
-                                            gap_radio_ext_scan_ticks);
+        (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy, gap_radio_ext_scan_ticks);
+
     if (fields.has_aux_ptr && !fields.aux_offset_zero &&
-        fields.aux_offset_us != 0) {
+        fields.aux_offset_us != 0
+    ) {
         uint8_t aux_phy = fields.aux_phy == 0 ? GAP_PHY_1M :
             fields.aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
+
         if ((GAP_HW_PHY_MASK() & aux_phy) &&
             (packet_phy == GAP_PHY_1M || packet_phy == GAP_PHY_2M ||
-             packet_phy == GAP_PHY_CODED)) {
-            uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1],
-                                                           packet_phy);
+             packet_phy == GAP_PHY_CODED)
+        ) {
+            uint32_t airtime_us = gap_phy_packet_airtime_us(pdu[1], packet_phy);
+
             if (fields.aux_offset_us > airtime_us) {
                 uint32_t tx_ca_ppm = fields.aux_ca ? 50u : 500u;
                 uint32_t offset_unit_us = fields.aux_offset_unit ? 300u : 30u;
-                uint32_t receive_window_end_us = fields.aux_offset_us +
-                    offset_unit_us;
-                uint32_t widening_us =
-                    ((tx_ca_ppm + 500u) * receive_window_end_us + 999999u) /
-                    1000000u + 2u;
+                uint32_t receive_window_end_us = fields.aux_offset_us + offset_unit_us;
+                uint32_t widening_us = ((tx_ca_ppm + 500u) * receive_window_end_us + 999999u) / 1000000u + 2u;
+
                 // AuxOffset starts at the PDU start; the timestamp is captured
                 // at PDU reception completion, so subtract this PDU's airtime.
                 uint32_t after_packet_us = fields.aux_offset_us - airtime_us;
                 uint32_t start_delta_us = after_packet_us > widening_us ?
-                    after_packet_us - widening_us : 0;
-                uint32_t end_delta_us = after_packet_us + offset_unit_us +
-                    widening_us;
+                                            after_packet_us - widening_us : 0;
+                uint32_t end_delta_us = after_packet_us + offset_unit_us + widening_us;
                 int aux_slot = kind == GAP_EXT_ADV_AUXILIARY_PDU ? slot : -1;
+
                 if (aux_slot < 0) {
                     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
                         if (!gap_radio_aux_request[i].active) {
@@ -1666,8 +1662,8 @@ static int gap_periodic_sync_transfer_receive(
     uint8_t sca = frame[27] >> 5;
     uint8_t periodic_phy = frame[28];
     uint8_t phy = periodic_phy == 1 ? GAP_PHY_1M :
-        periodic_phy == 2 ? GAP_PHY_2M :
-        periodic_phy == 4 ? GAP_PHY_CODED : 0;
+                periodic_phy == 2 ? GAP_PHY_2M :
+                periodic_phy == 4 ? GAP_PHY_CODED : 0;
     if (!phy || !(GAP_HW_PHY_MASK() & phy)) return 0;
 
     // Reuse the extended-header decoder for the 18-byte SyncInfo structure.
@@ -1680,48 +1676,42 @@ static int gap_periodic_sync_transfer_receive(
     pdu[11] = (uint8_t)(sid << 4);
     memcpy(pdu + 12, frame + 5, 18);
     gap_ext_adv_fields fields;
+
     if (!gap_ext_adv_decode(pdu, sizeof(pdu), &fields) ||
         !fields.has_address || !fields.has_adi || !fields.has_sync_info ||
         !gap_access_address_valid(fields.sync_access_address) ||
-        fields.sync_interval < 6)
-        return 0;
+        fields.sync_interval < 6
+    ) return 0;
 
     uint8_t used_channels = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (fields.sync_channel_map[channel >> 3] &
-            (1u << (channel & 7))) used_channels++;
+        if (fields.sync_channel_map[channel >> 3] & (1u << (channel & 7)))
+            used_channels++;
     if (used_channels < 2) return 0;
+
     uint32_t interval_us = (uint32_t)fields.sync_interval * 1250u;
-    uint16_t last_pa_counter = (uint16_t)frame[25] |
-        (uint16_t)frame[26] << 8;
-    uint16_t pa_delta = (uint16_t)(fields.sync_event_counter -
-                                    last_pa_counter);
+    uint16_t last_pa_counter = (uint16_t)frame[25] | (uint16_t)frame[26] << 8;
+    uint16_t pa_delta = (uint16_t)(fields.sync_event_counter - last_pa_counter);
     uint32_t pa_distance = pa_delta < 0x8000 ? pa_delta : 0x10000u - pa_delta;
-    if (pa_distance > 1 &&
-        (uint64_t)pa_distance * interval_us > 5000000u)
+    if (pa_distance > 1 && (uint64_t)pa_distance * interval_us > 5000000u)
         return 0;
 
-    uint16_t reference_event = (uint16_t)frame[23] |
-        (uint16_t)frame[24] << 8;
-    int16_t event_delta = (int16_t)(reference_event -
-                                     connection_event_counter);
+    uint16_t reference_event = (uint16_t)frame[23] | (uint16_t)frame[24] << 8;
+    int16_t event_delta = (int16_t)(reference_event - connection_event_counter);
     if (event_delta <= -16384 || event_delta >= 16384) return 0;
+
     uint64_t connection_interval_ticks = gap_conn_interval_ticks();
     int64_t target_signed = (int64_t)connection_anchor_ticks +
-        (int64_t)event_delta * (int64_t)connection_interval_ticks +
-        (int64_t)HW_TICKS_FROM_US(fields.sync_offset_us);
+                            (int64_t)event_delta * (int64_t)connection_interval_ticks +
+                            (int64_t)HW_TICKS_FROM_US(fields.sync_offset_us);
     if (target_signed <= 0) return 0;
     uint64_t target = (uint64_t)target_signed;
 
-    uint16_t sync_connection_event = (uint16_t)frame[35] |
-        (uint16_t)frame[36] << 8;
-    uint16_t conn_delta = (uint16_t)(connection_event_counter -
-                                      sync_connection_event);
-    uint32_t conn_distance = conn_delta < 0x8000 ? conn_delta :
-        0x10000u - conn_delta;
+    uint16_t sync_connection_event = (uint16_t)frame[35] | (uint16_t)frame[36] << 8;
+    uint16_t conn_delta = (uint16_t)(connection_event_counter - sync_connection_event);
+    uint32_t conn_distance = conn_delta < 0x8000 ? conn_delta : 0x10000u - conn_delta;
     uint32_t sender_sca_ppm = gap_periodic_sca_ppm[sca];
-    uint32_t advertiser_sca_ppm =
-        gap_periodic_sca_ppm[fields.sync_sca];
+    uint32_t advertiser_sca_ppm = gap_periodic_sca_ppm[fields.sync_sca];
     uint32_t clock_sum_ppm = advertiser_sca_ppm + sender_sca_ppm + 500u;
     uint64_t drift_pa_us = (uint64_t)pa_distance * interval_us *
         (advertiser_sca_ppm + 500u);
