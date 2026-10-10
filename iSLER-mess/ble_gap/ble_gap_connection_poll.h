@@ -1073,22 +1073,24 @@ void gap_hw_scan_poll(void) {
         gap_active_scanning = 0;
         gap_scan_generation++;
     }
-    if (!gap_conn_busy() && gap_radio_scan_generation != gap_scan_generation) {
+    uint8_t reset_scan = !gap_conn_busy() &&
+        gap_radio_scan_generation != gap_scan_generation;
+    if (reset_scan) {
         if (gap_radio_rx_armed) GAP_HW_STOP();
         gap_radio_rx_armed = 0;
         gap_radio_active_scan_pending = 0;
         gap_radio_rx_channel_index = 0;
         gap_radio_scan_interval_start_ms = now;
         gap_radio_scan_generation = gap_scan_generation;
+    }
 #if GAP_EXT_ADV_SUPPORT
+    if (reset_scan) {
         gap_radio_ext_scan_ready = 0;
         gap_radio_aux_listening = 0;
         gap_radio_periodic_listening = 0;
         memset(gap_radio_aux_request, 0, sizeof(gap_radio_aux_request));
         GAP_HW_PACKET_CLEAR();
-#endif
     }
-#if GAP_EXT_ADV_SUPPORT
     gap_radio_ext_scan_process();
     if (gap_radio_periodic_listening) {
         uint64_t ticks = GAP_HW_TICKS();
