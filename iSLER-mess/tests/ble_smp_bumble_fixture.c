@@ -6,8 +6,6 @@
 
 static uint8_t outbound[BLE_L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
-static uint8_t inbound[BLE_SMP_PDU_MAX];
-static uint16_t inbound_len;
 
 static int send_pdu(
     void *context, uint16_t cid, const uint8_t *pdu,
@@ -17,14 +15,6 @@ static int send_pdu(
     int encoded = ble_l2cap_encode(outbound, sizeof(outbound), cid, pdu, len);
     if (!encoded || outbound_len) return 0;
     outbound_len = (uint16_t)encoded;
-    return 1;
-}
-
-static int receive_pdu(void *context, const uint8_t *pdu, uint16_t len) {
-    (void)context;
-    if (!pdu || len > sizeof(inbound)) return 0;
-    memcpy(inbound, pdu, len);
-    inbound_len = len;
     return 1;
 }
 
@@ -50,18 +40,17 @@ int main(void) {
         return 1;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    smp.receive = receive_pdu;
     if (!ble_l2cap_connection_register_fixed(&l2cap, BLE_L2CAP_CID_SMP,
             ble_smp_receive_sdu, &smp))
         return 1;
 
-    const uint8_t request[] = {BLE_SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};
+    const uint8_t request[] = {SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};
     if (!ble_smp_pdu_valid(request, sizeof(request)) || smp.tx_len)
         return 2;
     memcpy(smp.tx, request, sizeof(request));
     smp.tx_len = sizeof(request);
     smp.procedure_active = 1;
-    smp.deadline_ms = smp.now_ms + BLE_SMP_TIMEOUT_MS;
+    smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
     if (!ble_smp_poll(&smp) || !outbound_len ||
         !write_record(outbound, outbound_len))
         return 2;
@@ -74,7 +63,7 @@ int main(void) {
     if (ble_l2cap_reassembler_feed(&rx, 2, frame, frame_len,
             &cid, &sdu, &sdu_len) != 1 || cid != BLE_L2CAP_CID_SMP ||
         !ble_l2cap_connection_receive(&l2cap, cid, sdu, sdu_len) ||
-        !inbound_len || !write_record(inbound, inbound_len))
+        !smp.rx_len || !write_record(smp.rx, smp.rx_len))
         return 4;
     return 0;
 }
