@@ -4,8 +4,13 @@
 
 #include "ble_gap_extension.h"
 
-// Process one received packet for the currently selected connection.
-static void gap_hw_received_process(void) {
+// Handle the radio callback under its connection context, then restore the
+// application's previously selected handle.
+void gap_hw_received(void) {
+    uint8_t previous_slot = gap_conn_slot;
+    if (gap_radio_connection_slot_valid)
+        gap_conn_slot = gap_radio_connection_slot;
+
     const uint8_t *frame = GAP_HW_RX_FRAME();
     int8_t rssi = GAP_HW_RSSI();
     uint64_t received_ticks = GAP_HW_TICKS();
@@ -16,6 +21,7 @@ static void gap_hw_received_process(void) {
         memcpy(gap_radio_pawr_connect_response, frame, 16);
         gap_radio_pawr_connect_response_ready = 1;
         GAP_HW_PACKET_READY();
+        gap_conn_slot = previous_slot;
         return;
     }
     if (gap_radio_pawr_response_listening && pdu_type == 0x07 &&
@@ -28,11 +34,28 @@ static void gap_hw_received_process(void) {
         gap_radio_pawr_response_ticks = received_ticks;
         gap_radio_pawr_response_ready = 1;
         GAP_HW_PACKET_READY();
+        gap_conn_slot = previous_slot;
         return;
     }
 #endif
     if (gap_conn.active && gap_conn.rx_armed) {
         uint8_t wire_len = frame[1], authenticated = 0;
+#if GAP_EXT_ADV_SUPPORT
+        uint64_t connection_anchor_ticks;
+        if (gap_conn.central_role) {
+            connection_anchor_ticks = gap_conn.next_ticks;
+        } else {
+            uint32_t airtime_us = gap_phy_packet_airtime_us(
+                (uint16_t)wire_len, gap_conn.phy.rx);
+            uint64_t airtime_ticks = HW_TICKS_FROM_US(airtime_us);
+            if (received_ticks < airtime_ticks) {
+                gap_conn_slot = previous_slot;
+                return;
+            }
+            connection_anchor_ticks = received_ticks - airtime_ticks;
+        }
+        uint16_t connection_event_counter = gap_conn.event_counter;
+#endif
         uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
         // During the handshake an unacknowledged START_ENC_REQ is still plaintext.
         uint8_t plain_start_retry =
@@ -50,6 +73,7 @@ static void gap_hw_received_process(void) {
             ) {
                 gap_security.status = 0x3d;
                 gap_conn_end();
+                gap_conn_slot = previous_slot;
                 return;
             }
             memcpy(gap_conn_plain_frame, frame, frame[1] - 4 + 2);
@@ -62,6 +86,7 @@ static void gap_hw_received_process(void) {
             ) {
                 gap_security.status = 0x3d;
                 gap_conn_end();
+                gap_conn_slot = previous_slot;
                 return;
             }
             frame = gap_conn_plain_frame;
@@ -71,21 +96,9 @@ static void gap_hw_received_process(void) {
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
         if (frame[1] > gap_conn.data_length.rx_octets) {
             gap_conn_end();
+            gap_conn_slot = previous_slot;
             return;
         }
-#if GAP_EXT_ADV_SUPPORT
-        uint64_t connection_anchor_ticks;
-        if (gap_conn.central_role) {
-            connection_anchor_ticks = gap_conn.next_ticks;
-        } else {
-            uint32_t airtime_us = gap_phy_packet_airtime_us(
-                (uint16_t)wire_len, gap_conn.phy.rx);
-            uint64_t airtime_ticks = HW_TICKS_FROM_US(airtime_us);
-            if (received_ticks < airtime_ticks) return;
-            connection_anchor_ticks = received_ticks - airtime_ticks;
-        }
-        uint16_t connection_event_counter = gap_conn.event_counter;
-#endif
         gap_conn.last_rx_ms = GET_MILLIS();
         gap_conn.rx_armed = 0;
         if (frame[1]) {
@@ -137,6 +150,7 @@ static void gap_hw_received_process(void) {
             if (gap_conn.local_terminate_pending) {
                 if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
                     gap_conn_end();
+                    gap_conn_slot = previous_slot;
                     return;
                 }
                 // Process a simultaneous peer termination so it gets ACKed.
@@ -175,6 +189,7 @@ static void gap_hw_received_process(void) {
             if (!allowed) {
                 gap_security.status = 0x3d;
                 gap_conn_end();
+                gap_conn_slot = previous_slot;
                 return;
             }
         }
@@ -195,7 +210,10 @@ static void gap_hw_received_process(void) {
                 gap_tx_frame[0] = 0x03;
                 if (gap_conn_control_pdu_process(frame, authenticated,
                         connection_anchor_ticks,
-                        connection_event_counter)) return;
+                        connection_event_counter)) {
+                    gap_conn_slot = previous_slot;
+                    return;
+                }
             }
             if (gap_tx_frame[1] == 0 &&
                 gap_conn.local_terminate_queued &&
@@ -288,28 +306,40 @@ static void gap_hw_received_process(void) {
         }
         if (gap_tx_frame[1]) gap_conn.subrate.event_activity = 1;
         gap_conn_update_apply(1);
-        if (!gap_conn.active) return;
+        if (!gap_conn.active) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
         gap_conn_event_advance();
         gap_conn_update_apply(0);
-        if (!gap_conn.active) return;
+        if (!gap_conn.active) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
         gap_tx_frame[0] =
             (gap_tx_frame[0] & 0x03) |
             (gap_conn.expected_rx_sn << 2) |
             (gap_conn.tx_sn << 3);
         gap_conn.tx_pending = 1;
         uint8_t *transmit = gap_security_tx_frame();
-        if (!transmit) return;
+        if (!transmit) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
         GAP_HW_TX_BUFFER(transmit);
         gap_conn.event_replied = 1;
         GAP_HW_LINK_TX();
+        gap_conn_slot = previous_slot;
         return;
     }
 #if GAP_EXT_ADV_SUPPORT
     if (gap_radio_ext_adv_scan_waiting && pdu_type == 0x03) {
         if (frame[1] != 12 ||
             ((frame[0] >> 7) & 1) != gap_radio_ext_adv_scan_address_type ||
-            memcmp(frame + 8, gap_radio_ext_adv_scan_address, 6) != 0)
+            memcmp(frame + 8, gap_radio_ext_adv_scan_address, 6) != 0) {
+            gap_conn_slot = previous_slot;
             return;
+        }
         uint8_t scanner_type = (frame[0] >> 6) & 1;
         int scanner_slot = gap_identity_find(frame + 2, scanner_type);
         if (!gap_peer_allowed(scanner_slot, frame + 2, scanner_type) ||
@@ -320,6 +350,7 @@ static void gap_hw_received_process(void) {
             // A request addressed to this advertiser but excluded by its
             // filter policy closes this scannable advertising event.
             gap_radio_ext_adv_scan_waiting = 0;
+            gap_conn_slot = previous_slot;
             return;
         }
         gap_radio_ext_adv_scan_response_started = 1;
@@ -327,6 +358,7 @@ static void gap_hw_received_process(void) {
         gap_radio_ext_adv_scan_response_ticks = GAP_HW_TICKS() +
             HW_TICKS_FROM_US(150);
         GAP_HW_LINK_TX();
+        gap_conn_slot = previous_slot;
         return;
     }
     if ((gap_scanning || gap_radio_periodic_listening) &&
@@ -343,9 +375,13 @@ static void gap_hw_received_process(void) {
         memcpy(gap_radio_ext_scan_frame, frame, (size_t)frame[1] + 2);
         gap_radio_ext_scan_ready = 1;
         GAP_HW_PACKET_READY();
+        gap_conn_slot = previous_slot;
         return;
     }
-    if (gap_radio_aux_listening) return;
+    if (gap_radio_aux_listening) {
+        gap_conn_slot = previous_slot;
+        return;
+    }
 #endif
     int peer_slot = -1;
     if (pdu_type <= 0x06 && frame[1] >= 6 && frame[1] <= 37) {
@@ -353,7 +389,10 @@ static void gap_hw_received_process(void) {
         peer_slot = gap_identity_find(frame + 2, peer_type);
         // Enforce each peer's privacy mode before responding or connecting,
         // even when the optional known-peer filters are disabled.
-        if (!gap_peer_allowed(peer_slot, frame + 2, peer_type)) return;
+        if (!gap_peer_allowed(peer_slot, frame + 2, peer_type)) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
     }
     uint8_t advertiser_type = (frame[0] >> 6) & 1;
     int peer_matches = gap_central_conn.any_peer ?
@@ -372,7 +411,10 @@ static void gap_hw_received_process(void) {
         // Directed advertising must target our current address or an RPA
         // generated with our IRK before we send CONNECT_IND.
         if (pdu_type == 0x01) {
-            if (frame[1] != 12) return;
+            if (frame[1] != 12) {
+                gap_conn_slot = previous_slot;
+                return;
+            }
             uint8_t target_type = (frame[0] >> 7) & 1;
             int target_matches = target_type ==
                 ((gap_central_conn.request[0] >> 6) & 1) &&
@@ -391,7 +433,10 @@ static void gap_hw_received_process(void) {
                     target_matches = memcmp(frame + 8, hash, 3) == 0;
                 }
             }
-            if (!target_matches) return;
+            if (!target_matches) {
+                gap_conn_slot = previous_slot;
+                return;
+            }
         }
         gap_central_conn.request[0] =
             (gap_central_conn.request[0] & 0x7f) | (frame[0] & 0x40) << 1;
@@ -434,6 +479,7 @@ static void gap_hw_received_process(void) {
             gap_radio_rx.ready = 0;
             GAP_HW_PACKET_CLEAR();
         }
+        gap_conn_slot = previous_slot;
         return;
     }
     if (gap_active_scanning && !gap_radio_advertising_rx_event &&
@@ -441,7 +487,10 @@ static void gap_hw_received_process(void) {
         frame[1] >= 6 && frame[1] <= 37
     ) {
         uint8_t advertiser_type = (frame[0] >> 6) & 1;
-        if (gap_privacy.scan_filter && peer_slot < 0) return;
+        if (gap_privacy.scan_filter && peer_slot < 0) {
+            gap_conn_slot = previous_slot;
+            return;
+        }
         memcpy(gap_radio_active_scan_address, frame + 2, 6);
         gap_radio_active_scan_address_type = advertiser_type;
         gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
@@ -458,6 +507,7 @@ static void gap_hw_received_process(void) {
         memcpy(gap_radio_scan_request + 8, frame + 2, 6);
         GAP_HW_TX_BUFFER(gap_radio_scan_request);
         GAP_HW_LINK_TX();
+        gap_conn_slot = previous_slot;
         return;
     }
     if (gap_active_scanning && gap_radio_active_scan_pending && pdu_type == 0x04 &&
@@ -470,6 +520,7 @@ static void gap_hw_received_process(void) {
         gap_radio_rx.rssi = rssi;
         gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
+        gap_conn_slot = previous_slot;
         return;
     }
     if (gap_radio_advertising_rx_event &&
@@ -491,6 +542,7 @@ static void gap_hw_received_process(void) {
         GAP_HW_TX_BUFFER(gap_radio_scan_response_frame);
         gap_radio_scan_response_started = 1;
         GAP_HW_LINK_TX();
+        gap_conn_slot = previous_slot;
         return;
     }
     if (gap_radio_advertising_rx_event &&
@@ -510,6 +562,7 @@ static void gap_hw_received_process(void) {
         memcpy(gap_radio_connect_request_frame, frame, 36);
         gap_radio_connect_request_ticks = received_ticks;
         gap_radio_connect_request_ready = 1;
+        gap_conn_slot = previous_slot;
         return;
     }
     if (frame[1] <= 37) {
@@ -518,19 +571,10 @@ static void gap_hw_received_process(void) {
         gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
     }
-}
-
-
-// Handle the radio callback under its connection context, then restore the
-// application's previously selected handle.
-void gap_hw_received(void) {
-    uint8_t previous_slot = gap_conn_slot;
-    if (gap_radio_connection_slot_valid)
-        gap_conn_slot = gap_radio_connection_slot;
-
-    gap_hw_received_process();
     gap_conn_slot = previous_slot;
 }
+
+
 
 void gap_hw_init(void) {
     GAP_HW_INIT();
