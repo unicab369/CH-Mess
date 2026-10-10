@@ -136,11 +136,13 @@ static int mesh_adv_queue_next(uint32_t now) {
         if (!radio_queue[i].started && (first < 0 ||
             (int32_t)(radio_queue[i].order - radio_queue[first].order) < 0)) first = i;
         if (radio_queue[i].started && (int32_t)(now - radio_queue[i].send_at_ms) >= 0 &&
-            (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0)) next = i;
+            (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0))
+            next = i;
     }
     // Keep initial packets in order; a waiting retry does not block new packets.
     if (first >= 0 && (int32_t)(now - radio_queue[first].send_at_ms) >= 0 &&
-        (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0)) next = first;
+        (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0))
+        next = first;
     return next;
 }
 
@@ -382,12 +384,15 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         if (mesh_state_save_record(&empty)) {
             mesh_state_record first;
             uint32_t old_addr = mesh_state_read(BLE_MESH_DATA_ADDR, &first) &&
-                first.generation == empty.generation ? BLE_MESH_DATA_ADDR + SECTOR_SIZE : BLE_MESH_DATA_ADDR;
+                                        first.generation == empty.generation
+                                    ? BLE_MESH_DATA_ADDR + SECTOR_SIZE
+                                    : BLE_MESH_DATA_ADDR;
             if (flash_erase_data(old_addr, SECTOR_SIZE)) {
                 memset(radio_queue, 0, sizeof(radio_queue));
                 for (uint8_t i = 0; i < MESH_MAX_ELEMENTS; i++)
                     if (mesh_models.health_server[i].attention)
-                        BLE_MESH_HEALTH_ATTENTION(mesh_network.state.unicast_address + i, 0);
+                        BLE_MESH_HEALTH_ATTENTION(mesh_network.state.unicast_address + i,
+                                                  0);
                 memset(&mesh_network, 0, sizeof(mesh_network));
                 memset(&mesh_models, 0, sizeof(mesh_models));
                 memset(&transport_tx, 0, sizeof(transport_tx));

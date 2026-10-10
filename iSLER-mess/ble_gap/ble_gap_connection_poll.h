@@ -20,11 +20,14 @@ static void gap_hw_received_selected(void) {
         uint8_t wire_len = frame[1], authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
         // During the handshake an unacknowledged START_ENC_REQ is still plaintext.
-        uint8_t plain_start_retry = duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL &&
-            frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == 0x05;
-        uint8_t pause_retry = duplicate && gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
-            frame[1] == 5 && (frame[0] & 3) == 3;
-        if (frame[1] && ((gap_security.rx_enabled && !plain_start_retry) || pause_retry)) {
+        uint8_t plain_start_retry =
+            duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL && frame[1] == 1 &&
+            (frame[0] & 3) == 3 && frame[2] == 0x05;
+        uint8_t pause_retry = duplicate &&
+                              gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+                              frame[1] == 5 && (frame[0] & 3) == 3;
+        if (frame[1] &&
+            ((gap_security.rx_enabled && !plain_start_retry) || pause_retry)) {
             uint64_t counter = gap_security.rx_counter;
             if (duplicate && counter) counter--;
             if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4u ||
@@ -134,12 +137,13 @@ static void gap_hw_received_selected(void) {
         // A control PDU needs its reply slot before it can be acknowledged.
         if (new_packet && llid == 3 && gap_conn.tx_pending) new_packet = 0;
         if (new_packet && frame[1] && gap_security.phase &&
-            gap_security.phase != GAP_ENC_QUEUED && gap_security.phase != GAP_ENC_PAUSE_QUEUED
-        ) {
+            gap_security.phase != GAP_ENC_QUEUED &&
+            gap_security.phase != GAP_ENC_PAUSE_QUEUED) {
             uint8_t opcode = llid == 3 ? frame[2] : 0xff;
             uint8_t allowed = opcode == 0x02;
             switch (gap_security.phase) {
-            case GAP_ENC_WAIT_RSP: allowed |= opcode == 0x04; // Fall through for rejection.
+            case GAP_ENC_WAIT_RSP:
+                allowed |= opcode == 0x04; // Fall through for rejection.
             case GAP_ENC_WAIT_START:
                 allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
                     (gap_security.phase == GAP_ENC_WAIT_START && opcode == 0x05);
@@ -191,17 +195,18 @@ static void gap_hw_received_selected(void) {
             }
             if (gap_conn_tx_frame[1] == 0 && !gap_conn.terminate_after_reply)
                 gap_security_send();
-            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_update_queued &&
-                !gap_conn.terminate_after_reply)
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
+                gap_conn.local_update_queued && !gap_conn.terminate_after_reply)
                 gap_conn_update_send();
-            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_map_queued &&
-                !gap_conn.terminate_after_reply)
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
+                gap_conn.local_map_queued && !gap_conn.terminate_after_reply)
                 gap_channel_map_send();
-            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_params_queued &&
-                !gap_conn.feature_request_pending && !gap_conn.terminate_after_reply)
-                gap_conn_request_send();
-            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.length_queued &&
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
+                gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
                 !gap_conn.terminate_after_reply)
+                gap_conn_request_send();
+            if (gap_conn_tx_frame[1] == 0 && !gap_security.phase &&
+                gap_conn.length_queued && !gap_conn.terminate_after_reply)
                 gap_data_length_send(0x14);
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.terminate_after_reply)
@@ -701,9 +706,9 @@ static void gap_conn_poll(void) {
     gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
     if (gap_security.phase && gap_security.phase != GAP_ENC_QUEUED &&
-        gap_security.phase != GAP_ENC_PAUSE_QUEUED && gap_security.phase != GAP_ENC_RESTART_QUEUED &&
-        (uint32_t)(now_ms - gap_security.started_ms) >= 40000
-    ) {
+        gap_security.phase != GAP_ENC_PAUSE_QUEUED &&
+        gap_security.phase != GAP_ENC_RESTART_QUEUED &&
+        (uint32_t)(now_ms - gap_security.started_ms) >= 40000) {
         gap_security.status = 0x22;
         gap_conn_end();
         return;
@@ -844,17 +849,21 @@ static void gap_conn_poll(void) {
             gap_conn_tx_frame[1] = 0;
             if (!gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_security_send();
-            if (!gap_security.phase && gap_conn.local_update_queued && !gap_conn.local_terminate_queued &&
-                !gap_conn.local_terminate_pending)
-                gap_conn_update_send();
-            else if (!gap_security.phase && gap_conn.local_map_queued && !gap_conn.local_terminate_queued &&
-                !gap_conn.local_terminate_pending)
-                gap_channel_map_send();
-            else if (!gap_security.phase && gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
+            if (!gap_security.phase && gap_conn.local_update_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
+                gap_conn_update_send();
+            else if (!gap_security.phase && gap_conn.local_map_queued &&
+                     !gap_conn.local_terminate_queued &&
+                     !gap_conn.local_terminate_pending)
+                gap_channel_map_send();
+            else if (!gap_security.phase && gap_conn.local_params_queued &&
+                     !gap_conn.feature_request_pending &&
+                     !gap_conn.local_terminate_queued &&
+                     !gap_conn.local_terminate_pending)
                 gap_conn_request_send();
-            else if (!gap_security.phase && gap_conn.length_queued && !gap_conn.local_terminate_queued &&
-                !gap_conn.local_terminate_pending)
+            else if (!gap_security.phase && gap_conn.length_queued &&
+                     !gap_conn.local_terminate_queued &&
+                     !gap_conn.local_terminate_pending)
                 gap_data_length_send(0x14);
             if (gap_conn_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
@@ -888,7 +897,8 @@ static void gap_conn_poll(void) {
         gap_conn.channel_selected = 1;
         return;
     }
-    GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.tx_phy, gap_conn.rx_phy);
+    GAP_HW_LINK_CONFIG(gap_conn.access_address, channel, NULL, 0, gap_conn.tx_phy,
+                       gap_conn.rx_phy);
     gap_radio_connection_slot = gap_conn_slot;
     gap_radio_connection_slot_valid = 1;
     GAP_HW_LINK_RX();
@@ -1246,7 +1256,8 @@ void gap_hw_scan_poll(void) {
     if (!gap_radio_rx_armed) {
         uint8_t channel = 37 + gap_radio_rx_channel_index;
         if (gap_active_scanning) {
-            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1, GAP_PHY_1M, GAP_PHY_1M);
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1, GAP_PHY_1M,
+                               GAP_PHY_1M);
             GAP_HW_LINK_RX();
         } else {
             GAP_HW_SCAN_RX(channel);

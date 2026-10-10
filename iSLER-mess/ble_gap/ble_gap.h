@@ -669,7 +669,8 @@ static int gap_conn_accept(
            sizeof(gap_conn.peer_features_page1));
     gap_conn.tx_phy = gap_conn.rx_phy = GAP_PHY_1M;
     gap_conn.preferred_tx_phy = gap_conn.preferred_rx_phy = GAP_HW_PHY_MASK() & 7;
-    gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending = gap_conn.phy_status = 0;
+    gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending =
+        gap_conn.phy_status = 0;
     gap_conn.feature_request_pending = gap_conn.connection_status = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_update_pending = gap_conn.local_map_queued = 0;

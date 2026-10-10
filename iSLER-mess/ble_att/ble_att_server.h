@@ -203,7 +203,8 @@ static inline int ble_att_server_process(
     }
     if (op == 0x04) { // Find Information Request
         if (req_len != 5) goto invalid_pdu;
-        uint16_t first = ble_gatt_server_u16(req + 1), last = ble_gatt_server_u16(req + 3);
+        uint16_t first = ble_gatt_server_u16(req + 1),
+                 last = ble_gatt_server_u16(req + 3);
         if (!first || first > last) return ble_gatt_server_error_rsp(op, first, 0x01,
             rsp, rsp_capacity, rsp_len);
         if (rsp_capacity < 2) return 0;

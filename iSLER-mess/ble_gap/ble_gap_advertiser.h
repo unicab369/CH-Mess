@@ -517,14 +517,16 @@ int gap_periodic_adv_pawr_set(
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
     uint32_t interval_units = set->periodic_interval;
-    uint32_t subevent_interval_units = num_subevents > 1 ? subevent_interval : interval_units;
+    uint32_t subevent_interval_units =
+        num_subevents > 1 ? subevent_interval : interval_units;
 
     if ((num_subevents > 1 &&
          (uint32_t)num_subevents * subevent_interval > interval_units) ||
         response_slot_delay >= (num_subevents > 1 ? subevent_interval : interval_units) ||
-        (uint32_t)response_slot_spacing > (subevent_interval_units - response_slot_delay) * 10u ||
-        set->periodic_data_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3
-    ) return 0;
+        (uint32_t)response_slot_spacing >
+            (subevent_interval_units - response_slot_delay) * 10u ||
+        set->periodic_data_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
+        return 0;
 
     uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
         subevent_interval : set->periodic_interval) * 1250u;
@@ -646,7 +648,8 @@ int gap_periodic_adv_update(
 }
 
 int gap_periodic_adv_stop(uint8_t set_id) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT || !gap_ext_adv[set_id].periodic_enabled) return 0;
+    if (set_id >= GAP_EXT_ADV_SET_COUNT || !gap_ext_adv[set_id].periodic_enabled)
+        return 0;
     gap_ext_adv[set_id].periodic_enabled = 0;
     gap_ext_adv[set_id].pawr_enabled = 0;
     gap_ext_adv[set_id].pawr_data_pending = 0;
