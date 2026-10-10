@@ -256,7 +256,7 @@ static struct {
     uint8_t frame[2 + 37];
     volatile uint8_t ready;
     volatile int8_t rssi;
-} gap_radio_scan_adv;
+} gap_adv_scan;
 // General received packet, paired with its receive metadata.
 static struct {
     uint8_t frame[2 + 37];

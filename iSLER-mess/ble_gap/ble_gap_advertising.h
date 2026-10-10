@@ -804,11 +804,9 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
-    if (gap_radio_scan_adv.ready) {
-        gap_receive_report(gap_radio_scan_adv.frame,
-                            gap_radio_scan_adv.frame[1],
-                            gap_radio_scan_adv.rssi);
-        gap_radio_scan_adv.ready = 0;
+    if (gap_adv_scan.ready) {
+        gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
+        gap_adv_scan.ready = 0;
     }
     if (!types || !ad || !len || !gap_radio_rx.ready) return 0;
 
@@ -832,6 +830,7 @@ int gap_scan_take_ad(
         for (size_t i = 0; i < type_count; i++) {
             if (frame[offset + 1] != types[i]) continue;
             if ((size_t)ad_len + 1 > *len) return -1;
+
             memcpy(ad, frame + offset, (size_t)ad_len + 1);
             *len = (size_t)ad_len + 1;
             if (rssi) *rssi = packet_rssi;
