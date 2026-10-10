@@ -226,28 +226,26 @@ void gap_hw_received(void) {
                     gap_conn.tx_queued = 0;
                 }
 
-                // Each sender may fill the frame, so later sends must check
-                // that it is still empty before using it.
-                if (gap_tx_frame[1] == 0)
-                    gap_send_security();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_update_queued)
+                // Send helpers leave the frame untouched when it is occupied.
+                gap_send_security();
+                if (!gap_security.phase && gap_conn.local_update_queued)
                     gap_send_conn_update();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_map_queued)
+                if (!gap_security.phase && gap_conn.local_map_queued)
                     gap_send_channel_map();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                    gap_conn.local_params_queued && !gap_conn.feature_request_pending)
+                if (!gap_security.phase && gap_conn.local_params_queued &&
+                    !gap_conn.feature_request_pending)
                     gap_send_conn_request();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.length_queued)
+                if (!gap_security.phase && gap_conn.length_queued)
                     gap_send_data_length(0x14);
-                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued)
+                if (!gap_security.phase && gap_conn.phy_queued)
                     gap_send_phy_request();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                if (!gap_security.phase &&
                     (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
                     gap_subrate_start_queued();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                if (!gap_security.phase &&
                     (gap_conn.rate_set_queued || gap_conn.rate_request_queued))
                     gap_conn_rate_start_queued();
-                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.channel.report_queued)
+                if (!gap_security.phase && gap_conn.channel.report_queued)
                     gap_channel_report_start();
 #if GAP_EXT_ADV_SUPPORT
                 if (gap_tx_frame[1] == 0 && !gap_security.phase &&
@@ -268,8 +266,8 @@ void gap_hw_received(void) {
                 }
 #endif
             }
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                !gap_conn.central_role && gap_conn.channel.status_queued &&
+            if (!gap_security.phase && !gap_conn.central_role &&
+                gap_conn.channel.status_queued &&
                 gap_conn.channel.enabled
             ) {
                 uint32_t now_ms = GET_MILLIS();
@@ -789,7 +787,8 @@ static void gap_conn_poll(void) {
         if (!gap_conn.tx_pending) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
-            if (!gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
+            if (!gap_conn.local_terminate_queued &&
+                !gap_conn.local_terminate_pending)
                 gap_send_security();
             if (!gap_security.phase && gap_conn.local_update_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
@@ -807,18 +806,18 @@ static void gap_conn_poll(void) {
                      !gap_conn.local_terminate_queued &&
                      !gap_conn.local_terminate_pending)
                 gap_send_data_length(0x14);
-            if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
+            if (!gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
                 gap_send_phy_request();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+            if (!gap_security.phase &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending &&
                 (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
                 gap_subrate_start_queued();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+            if (!gap_security.phase &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending &&
                 (gap_conn.rate_set_queued || gap_conn.rate_request_queued))
                 gap_conn_rate_start_queued();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+            if (!gap_security.phase &&
                 !gap_conn.local_terminate_queued &&
                 !gap_conn.local_terminate_pending &&
                 gap_conn.channel.report_queued)

@@ -359,6 +359,8 @@ static void gap_conn_event_advance(void) {
 // Build the queued Central update only when its TX slot is free, so the
 // Instant stays in the future while earlier packets wait for acknowledgement.
 static void gap_send_conn_update(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.update_window_size = 1;
     gap_conn.update_win_offset = 0;
     gap_conn.update_instant = (uint16_t)(gap_conn.event_counter +
@@ -385,6 +387,8 @@ static void gap_send_conn_update(void) {
 // Build a Central channel-map update when the TX slot becomes available.
 // Choosing the Instant here keeps it ahead of retries of earlier packets.
 static void gap_send_channel_map(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.channel_map_instant = (uint16_t)(gap_conn.event_counter +
         6 * (gap_conn.params.latency + 1) + 1);
     gap_conn.channel_map_pending = 1;
@@ -409,6 +413,8 @@ static uint8_t gap_class_valid(const uint8_t *class) {
 }
 
 static void gap_send_channel_status(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.channel.status_queued = 0;
     gap_conn.channel.status_last_sent_ms = GET_MILLIS();
     gap_conn.channel.status_last_sent_valid = 1;
@@ -422,6 +428,8 @@ static void gap_send_channel_status(void) {
 
 // Encode local preferences in either role once earlier TX has been acknowledged.
 static void gap_send_phy_request(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.phy_queued = 0;
     gap_conn.phy_pending = 1;
     gap_conn.phy_started_ms = GET_MILLIS();
@@ -444,6 +452,8 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 // The Central chooses a rate per direction from intersecting preferences.
 // An empty intersection leaves that direction unchanged; prefer 2M, then Coded.
 static void gap_send_phy_update(uint8_t peer_tx, uint8_t peer_rx) {
+    if (gap_tx_frame[1]) return;
+
     uint8_t tx = gap_conn.preferred_phy.tx & peer_rx;
     uint8_t rx = gap_conn.preferred_phy.rx & peer_tx;
     tx = gap_phy_preferred(tx);
@@ -478,6 +488,8 @@ static void gap_send_phy_update(uint8_t peer_tx, uint8_t peer_rx) {
 // Start feature exchange if needed, then send the application's timing range.
 // Offset hints are unspecified; packet retries use the existing LL TX slot.
 static void gap_send_conn_request(void) {
+    if (gap_tx_frame[1]) return;
+
     if (gap_conn.features_known && !(gap_conn.peer_features & 0x02)) {
         gap_conn.local_params_queued = 0;
         gap_conn.connection_status = 0x1a;
@@ -520,6 +532,8 @@ static void gap_send_conn_request(void) {
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
 static void gap_send_subrate_update(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.subrate.pending_base_event = gap_conn.event_counter;
     gap_conn.subrate.update_queued = 0;
     gap_conn.subrate.pending = 1;
@@ -544,6 +558,8 @@ static void gap_send_subrate_update(void) {
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
 static void gap_send_conn_feature_request(void) {
+    if (gap_tx_frame[1]) return;
+
     uint8_t supported_phys = GAP_HW_PHY_MASK();
     gap_conn.feature_request_pending = 1;
     gap_conn.params_started_ms = GET_MILLIS();
@@ -564,6 +580,8 @@ static void gap_send_conn_feature_request(void) {
 // Exchange Core 6.2 feature page 1 after the legacy feature page advertised
 // LL Extended Feature Set support (bit 63).
 static void gap_send_conn_feature_ext_request(void) {
+    if (gap_tx_frame[1]) return;
+
     gap_conn.feature_ext_pending = 1;
     gap_conn.params_started_ms = GET_MILLIS();
 
@@ -577,6 +595,8 @@ static void gap_send_conn_feature_ext_request(void) {
 }
 
 static void gap_conn_rate_send_indication(void) {
+    if (gap_tx_frame[1]) return;
+
     uint32_t active_events = (uint32_t)gap_conn.rate_factor *
         (gap_conn.rate_update_latency + 1);
     gap_conn.rate_instant = (uint16_t)(gap_conn.event_counter +
@@ -607,7 +627,8 @@ static void gap_conn_rate_send_indication(void) {
 }
 
 static void gap_conn_rate_start_queued(void) {
-    if ((!gap_conn.rate_set_queued && !gap_conn.rate_request_queued) ||
+    if (gap_tx_frame[1] ||
+        (!gap_conn.rate_set_queued && !gap_conn.rate_request_queued) ||
         gap_conn.feature_request_pending || gap_conn.feature_ext_pending)
         return;
     if (!gap_conn.features_known) {
@@ -657,7 +678,8 @@ static void gap_conn_rate_start_queued(void) {
 }
 
 static void gap_channel_report_start(void) {
-    if (!gap_conn.channel.report_queued || !gap_conn.central_role ||
+    if (gap_tx_frame[1] || !gap_conn.channel.report_queued ||
+        !gap_conn.central_role ||
         gap_conn.feature_request_pending
     ) return;
 
@@ -687,7 +709,7 @@ static void gap_channel_report_start(void) {
 // Start one queued subrate procedure after the feature exchange confirms that
 // the remote Link Layer and Host both support Connection Subrating.
 static void gap_subrate_start_queued(void) {
-    if (gap_conn.feature_request_pending ||
+    if (gap_tx_frame[1] || gap_conn.feature_request_pending ||
         (!gap_conn.subrate.update_queued && !gap_conn.subrate.request_queued)
     ) return;
 
@@ -731,6 +753,8 @@ static void gap_subrate_start_queued(void) {
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
 static void gap_send_data_length(uint8_t opcode) {
+    if (gap_tx_frame[1]) return;
+
     if (opcode == 0x14) {
         gap_conn.length_queued = 0;
         gap_conn.length_pending = 1;
@@ -2461,6 +2485,8 @@ static uint8_t *gap_security_tx_frame(void) {
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(void) {
+    if (gap_tx_frame[1]) return;
+
     uint8_t phase = gap_security.phase;
     if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
         memcpy(gap_security.skd, gap_security.next_skd, 8);
