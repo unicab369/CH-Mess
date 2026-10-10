@@ -7,11 +7,24 @@ static void gap_hw_received_selected(void) {
     const uint8_t *frame = GAP_HW_RX_FRAME();
     int8_t rssi = GAP_HW_RSSI();
     uint64_t received_ticks = GAP_HW_TICKS();
+    uint8_t pdu_type = frame[0] & 0x0f;
 #if GAP_EXT_ADV_SUPPORT
     if (gap_radio_pawr_connect_waiting && frame[1] == 14 &&
-        (frame[0] & 0x0f) == 0x07) {
+        pdu_type == 0x07) {
         memcpy(gap_radio_pawr_connect_response, frame, 16);
         gap_radio_pawr_connect_response_ready = 1;
+        GAP_HW_PACKET_READY();
+        return;
+    }
+    if (gap_radio_pawr_response_listening && pdu_type == 0x07 &&
+        !gap_radio_pawr_response_ready && frame[1] <= 253
+    ) {
+        gap_radio_pawr_response_len = (uint8_t)(frame[1] + 2);
+        memcpy(gap_radio_pawr_response_frame, frame,
+               gap_radio_pawr_response_len);
+        gap_radio_pawr_response_rssi = rssi;
+        gap_radio_pawr_response_ticks = received_ticks;
+        gap_radio_pawr_response_ready = 1;
         GAP_HW_PACKET_READY();
         return;
     }
@@ -288,20 +301,7 @@ static void gap_hw_received_selected(void) {
         GAP_HW_LINK_TX();
         return;
     }
-    uint8_t pdu_type = frame[0] & 0x0f;
 #if GAP_EXT_ADV_SUPPORT
-    if (gap_radio_pawr_response_listening && pdu_type == 0x07 &&
-        !gap_radio_pawr_response_ready && frame[1] <= 253
-    ) {
-        gap_radio_pawr_response_len = (uint8_t)(frame[1] + 2);
-        memcpy(gap_radio_pawr_response_frame, frame,
-               gap_radio_pawr_response_len);
-        gap_radio_pawr_response_rssi = rssi;
-        gap_radio_pawr_response_ticks = received_ticks;
-        gap_radio_pawr_response_ready = 1;
-        GAP_HW_PACKET_READY();
-        return;
-    }
     if (gap_radio_ext_adv_scan_waiting && pdu_type == 0x03) {
         if (frame[1] != 12 ||
             ((frame[0] >> 7) & 1) != gap_radio_ext_adv_scan_address_type ||
@@ -555,103 +555,6 @@ void gap_hw_init(void) {
 }
 
 static void gap_conn_poll(void);
-
-// A null random_address selects the controller's public address.
-int gap_hw_transmit(
-    uint8_t pdu_type, const uint8_t *data, uint8_t len,
-                           const uint8_t *random_address,
-                           const uint8_t *target_address, uint8_t target_type
-) {
-    if ((pdu_type != 0x00 && pdu_type != 0x01 &&
-         pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
-        len > GAP_ADV_DATA_MAX ||
-        ((pdu_type == 0x01) != (target_address != NULL)) ||
-        target_type > 1 || (pdu_type == 0x01 && len) ||
-        (pdu_type == 0x06 && !gap_adv.scan_response_len))
-        return 0;
-    uint8_t public_address[6];
-    GAP_HW_PUBLIC_ADDRESS(public_address);
-    gap_radio_adv_frame[0] = pdu_type | (random_address ? 0x40 : 0) |
-        (target_address ? target_type << 7 : 0);
-    gap_radio_adv_frame[1] = pdu_type == 0x01 ? 12 : 6 + len;
-    for (uint8_t i = 0; i < 6; i++) {
-        if (random_address)
-            gap_radio_adv_frame[2 + i] = random_address[i];
-        else gap_radio_adv_frame[2 + i] = public_address[i];
-    }
-    if (target_address) memcpy(gap_radio_adv_frame + 8, target_address, 6);
-    else if (len) memcpy(gap_radio_adv_frame + 8, data, len);
-    gap_radio_rx_armed = 0;
-    if (pdu_type == 0x02) {
-        for (uint8_t channel = 37; channel <= 39; channel++) {
-            if (!GAP_HW_ADV_TX(gap_radio_adv_frame, 8 + len, channel))
-                return 0;
-        }
-        return 1;
-    }
-
-    gap_radio_advertising_rx_event = 1;
-    for (uint8_t channel = 37; channel <= 39; channel++) {
-        gap_radio_rx_ready = 0;
-        gap_radio_scan_response_started = 0;
-        gap_radio_connect_request_ready = 0;
-        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
-                               gap_radio_adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
-        GAP_HW_LINK_TX();
-        int timeout = HW_TICKS_FROM_US(1000);
-        while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
-        if (!GAP_HW_TX_DONE()) {
-            GAP_HW_STOP();
-            gap_radio_advertising_rx_event = 0;
-            return 0;
-        }
-        GAP_HW_TX_CLEAR_DONE();
-        timeout = HW_TICKS_FROM_US(800);
-        while (!gap_radio_scan_response_started && !gap_radio_connect_request_ready &&
-               !gap_radio_rx_ready &&
-               timeout-- > 0) {}
-        if (gap_radio_connect_request_ready) {
-            GAP_HW_STOP();
-            gap_radio_advertising_rx_event = 0;
-            if (gap_conn_accept(
-                    gap_radio_connect_request_frame,
-                    gap_radio_connect_request_ticks,
-                    HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
-            ) {
-                    gap_radio_connect_request_ready = 0;
-                    gap_radio_rx_ready = 0;
-                    gap_radio_scan_adv_ready = 0;
-                    gap_radio_active_scan_pending = 0;
-                    gap_radio_rx_armed = 0;
-                    // An incoming Peripheral connection wins over any
-                    // simultaneous Central initiation or discovery scan.
-                    gap_central_conn.active = 0;
-                    gap_central_conn.any_peer = 0;
-                    gap_central_conn.selective = 0;
-                    gap_central_conn.auto_connect = 0;
-                    gap_scanning = gap_active_scanning = 0;
-                    gap_scan_generation++;
-                    gap_conn_poll();
-                return 2;
-            }
-            gap_radio_connect_request_ready = 0;
-            break;
-        }
-        if (gap_radio_scan_response_started) {
-            timeout = HW_TICKS_FROM_US(1000);
-            while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
-            if (!GAP_HW_TX_DONE()) {
-                GAP_HW_STOP();
-                gap_radio_advertising_rx_event = 0;
-                return 0;
-            }
-        }
-        GAP_HW_STOP();
-        if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
-    }
-    gap_radio_advertising_rx_event = 0;
-    return 1;
-}
 
 // Calculate the receive-window deadline used to arbitrate the shared radio.
 static uint64_t gap_conn_event_close_ticks(
@@ -1403,14 +1306,106 @@ int gap_radio_send_due(
         GAP_HW_STOP();
         gap_radio_rx_armed = 0;
     }
-    int transmit_result = gap_hw_transmit(
-        send_gap ? gap_adv.pdu_type : 0x02,
-        send_gap ? gap_adv.data : fallback_ad,
-        send_gap ? gap_adv.data_len : fallback_len,
-        send_gap && gap_adv.address_type ? gap_adv.address : NULL,
+    uint8_t pdu_type = send_gap ? gap_adv.pdu_type : 0x02;
+    const uint8_t *data = send_gap ? gap_adv.data : fallback_ad;
+    uint8_t len = send_gap ? gap_adv.data_len : fallback_len;
+    const uint8_t *random_address =
+        send_gap && gap_adv.address_type ? gap_adv.address : NULL;
+    const uint8_t *target_address =
         send_gap && gap_adv.pdu_type == 0x01 ?
-            gap_adv.target_address : NULL,
-        send_gap ? gap_adv.target_type : 0);
+            gap_adv.target_address : NULL;
+    uint8_t target_type = send_gap ? gap_adv.target_type : 0;
+    if ((pdu_type != 0x00 && pdu_type != 0x01 &&
+         pdu_type != 0x02 && pdu_type != 0x06) || (!data && len) ||
+        len > GAP_ADV_DATA_MAX ||
+        ((pdu_type == 0x01) != (target_address != NULL)) ||
+        target_type > 1 || (pdu_type == 0x01 && len) ||
+        (pdu_type == 0x06 && !gap_adv.scan_response_len))
+        return -1;
+    uint8_t public_address[6];
+    GAP_HW_PUBLIC_ADDRESS(public_address);
+    gap_radio_adv_frame[0] = pdu_type | (random_address ? 0x40 : 0) |
+        (target_address ? target_type << 7 : 0);
+    gap_radio_adv_frame[1] = pdu_type == 0x01 ? 12 : 6 + len;
+    for (uint8_t i = 0; i < 6; i++) {
+        if (random_address)
+            gap_radio_adv_frame[2 + i] = random_address[i];
+        else gap_radio_adv_frame[2 + i] = public_address[i];
+    }
+    if (target_address) memcpy(gap_radio_adv_frame + 8, target_address, 6);
+    else if (len) memcpy(gap_radio_adv_frame + 8, data, len);
+    gap_radio_rx_armed = 0;
+    int transmit_result = 1;
+    if (pdu_type == 0x02) {
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            if (!GAP_HW_ADV_TX(gap_radio_adv_frame, 8 + len, channel)) {
+                transmit_result = 0;
+                break;
+            }
+        }
+    } else {
+        gap_radio_advertising_rx_event = 1;
+        for (uint8_t channel = 37; channel <= 39; channel++) {
+            gap_radio_rx_ready = 0;
+            gap_radio_scan_response_started = 0;
+            gap_radio_connect_request_ready = 0;
+            GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
+                gap_radio_adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
+            GAP_HW_LINK_TX();
+            int timeout = HW_TICKS_FROM_US(1000);
+            while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+            if (!GAP_HW_TX_DONE()) {
+                GAP_HW_STOP();
+                gap_radio_advertising_rx_event = 0;
+                transmit_result = 0;
+                break;
+            }
+            GAP_HW_TX_CLEAR_DONE();
+            timeout = HW_TICKS_FROM_US(800);
+            while (!gap_radio_scan_response_started &&
+                   !gap_radio_connect_request_ready && !gap_radio_rx_ready &&
+                   timeout-- > 0) {}
+            if (gap_radio_connect_request_ready) {
+                GAP_HW_STOP();
+                gap_radio_advertising_rx_event = 0;
+                if (gap_conn_accept(gap_radio_connect_request_frame,
+                        gap_radio_connect_request_ticks,
+                        HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
+                    gap_radio_connect_request_ready = 0;
+                    gap_radio_rx_ready = 0;
+                    gap_radio_scan_adv_ready = 0;
+                    gap_radio_active_scan_pending = 0;
+                    gap_radio_rx_armed = 0;
+                    // An incoming Peripheral connection wins over any
+                    // simultaneous Central initiation or discovery scan.
+                    gap_central_conn.active = 0;
+                    gap_central_conn.any_peer = 0;
+                    gap_central_conn.selective = 0;
+                    gap_central_conn.auto_connect = 0;
+                    gap_scanning = gap_active_scanning = 0;
+                    gap_scan_generation++;
+                    gap_conn_poll();
+                    transmit_result = 2;
+                } else {
+                    gap_radio_connect_request_ready = 0;
+                }
+                break;
+            }
+            if (gap_radio_scan_response_started) {
+                timeout = HW_TICKS_FROM_US(1000);
+                while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
+                if (!GAP_HW_TX_DONE()) {
+                    GAP_HW_STOP();
+                    gap_radio_advertising_rx_event = 0;
+                    transmit_result = 0;
+                    break;
+                }
+            }
+            GAP_HW_STOP();
+            if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
+        }
+        gap_radio_advertising_rx_event = 0;
+    }
     if (!transmit_result) return -1;
     if (transmit_result == 2) return 2;
     uint32_t completed_at = GET_MILLIS();

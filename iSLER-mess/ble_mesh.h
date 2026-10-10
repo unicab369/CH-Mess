@@ -1,5 +1,4 @@
 #include "ch32fun.h"
-void gap_hw_received(void);
 void gap_hw_radio_transmitted(void);
 #define ISLER_CALLBACK_TX gap_hw_radio_transmitted
 #define ISLER_CALLBACK_RX gap_hw_received
