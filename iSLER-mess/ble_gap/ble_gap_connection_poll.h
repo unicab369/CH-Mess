@@ -38,6 +38,8 @@ void gap_hw_received(void) {
     int8_t rssi = GAP_HW_RSSI();
     uint64_t received_ticks = GAP_HW_TICKS();
     uint8_t pdu_type = frame[0] & 0x0f;
+    uint64_t connection_anchor_ticks = 0;
+    uint16_t connection_event_counter = 0;
 #if GAP_EXT_ADV_SUPPORT
     if (gap_radio_pawr_connect_waiting && frame[1] == 14 &&
         pdu_type == 0x07) {
@@ -60,16 +62,12 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-#endif
     if (gap_conn.active && gap_conn.rx_armed) {
-        uint8_t wire_len = frame[1], authenticated = 0;
-#if GAP_EXT_ADV_SUPPORT
-        uint64_t connection_anchor_ticks;
         if (gap_conn.central_role) {
             connection_anchor_ticks = gap_conn.next_ticks;
         } else {
             uint32_t airtime_us = gap_phy_packet_airtime_us(
-                (uint16_t)wire_len, gap_conn.phy.rx);
+                (uint16_t)frame[1], gap_conn.phy.rx);
             uint64_t airtime_ticks = HW_TICKS_FROM_US(airtime_us);
             if (received_ticks < airtime_ticks) {
                 gap_conn_slot = previous_slot;
@@ -77,8 +75,11 @@ void gap_hw_received(void) {
             }
             connection_anchor_ticks = received_ticks - airtime_ticks;
         }
-        uint16_t connection_event_counter = gap_conn.event_counter;
+        connection_event_counter = gap_conn.event_counter;
+    }
 #endif
+    if (gap_conn.active && gap_conn.rx_armed) {
+        uint8_t wire_len = frame[1], authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
         // During the handshake an unacknowledged START_ENC_REQ is still plaintext.
         uint8_t plain_start_retry =
@@ -867,6 +868,19 @@ static inline void gap_conn_poll_all(void) {
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
     gap_privacy_poll(now);
+
+    if (gap_central_conn.active && !gap_central_conn.auto_connect &&
+        (int32_t)(now - gap_central_conn.deadline_ms) >= 0
+    ) {
+        gap_central_conn.active = 0;
+        gap_central_conn.any_peer = 0;
+        gap_central_conn.selective = 0;
+        gap_central_conn.auto_connect = 0;
+        gap_scanning = 0;
+        gap_active_scanning = 0;
+        gap_scan_generation++;
+    }
+
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (!gap_periodic_syncs[i].used ||
@@ -883,17 +897,6 @@ void gap_hw_scan_poll(void) {
         gap_periodic_sync_owned_scan_finish();
     }
 #endif
-    if (gap_central_conn.active && !gap_central_conn.auto_connect &&
-        (int32_t)(now - gap_central_conn.deadline_ms) >= 0
-    ) {
-        gap_central_conn.active = 0;
-        gap_central_conn.any_peer = 0;
-        gap_central_conn.selective = 0;
-        gap_central_conn.auto_connect = 0;
-        gap_scanning = 0;
-        gap_active_scanning = 0;
-        gap_scan_generation++;
-    }
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
     if (gap_radio_connection_slot_valid ||
