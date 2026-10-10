@@ -358,7 +358,7 @@ static void gap_conn_event_advance(void) {
 
 // Build the queued Central update only when its TX slot is free, so the
 // Instant stays in the future while earlier packets wait for acknowledgement.
-static void gap_conn_update_send(void) {
+static void gap_send_conn_update(void) {
     gap_conn.update_window_size = 1;
     gap_conn.update_win_offset = 0;
     gap_conn.update_instant = (uint16_t)(gap_conn.event_counter +
@@ -384,7 +384,7 @@ static void gap_conn_update_send(void) {
 
 // Build a Central channel-map update when the TX slot becomes available.
 // Choosing the Instant here keeps it ahead of retries of earlier packets.
-static void gap_channel_map_send(void) {
+static void gap_send_channel_map(void) {
     gap_conn.channel_map_instant = (uint16_t)(gap_conn.event_counter +
         6 * (gap_conn.params.latency + 1) + 1);
     gap_conn.channel_map_pending = 1;
@@ -408,7 +408,7 @@ static uint8_t gap_class_valid(const uint8_t *class) {
     return 1;
 }
 
-static void gap_channel_status_send(void) {
+static void gap_send_channel_status(void) {
     gap_conn.channel.status_queued = 0;
     gap_conn.channel.status_last_sent_ms = GET_MILLIS();
     gap_conn.channel.status_last_sent_valid = 1;
@@ -421,7 +421,7 @@ static void gap_channel_status_send(void) {
 }
 
 // Encode local preferences in either role once earlier TX has been acknowledged.
-static void gap_phy_request_send(void) {
+static void gap_send_phy_request(void) {
     gap_conn.phy_queued = 0;
     gap_conn.phy_pending = 1;
     gap_conn.phy_started_ms = GET_MILLIS();
@@ -443,7 +443,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 
 // The Central chooses a rate per direction from intersecting preferences.
 // An empty intersection leaves that direction unchanged; prefer 2M, then Coded.
-static void gap_phy_update_send(uint8_t peer_tx, uint8_t peer_rx) {
+static void gap_send_phy_update(uint8_t peer_tx, uint8_t peer_rx) {
     uint8_t tx = gap_conn.preferred_phy.tx & peer_rx;
     uint8_t rx = gap_conn.preferred_phy.rx & peer_tx;
     tx = gap_phy_preferred(tx);
@@ -477,7 +477,7 @@ static void gap_phy_update_send(uint8_t peer_tx, uint8_t peer_rx) {
 
 // Start feature exchange if needed, then send the application's timing range.
 // Offset hints are unspecified; packet retries use the existing LL TX slot.
-static void gap_conn_request_send(void) {
+static void gap_send_conn_request(void) {
     if (gap_conn.features_known && !(gap_conn.peer_features & 0x02)) {
         gap_conn.local_params_queued = 0;
         gap_conn.connection_status = 0x1a;
@@ -519,7 +519,7 @@ static void gap_conn_request_send(void) {
 
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
-static void gap_subrate_update_send(void) {
+static void gap_send_subrate_update(void) {
     gap_conn.subrate.pending_base_event = gap_conn.event_counter;
     gap_conn.subrate.update_queued = 0;
     gap_conn.subrate.pending = 1;
@@ -543,7 +543,7 @@ static void gap_subrate_update_send(void) {
 
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
-static void gap_conn_feature_request_send(void) {
+static void gap_send_conn_feature_request(void) {
     uint8_t supported_phys = GAP_HW_PHY_MASK();
     gap_conn.feature_request_pending = 1;
     gap_conn.params_started_ms = GET_MILLIS();
@@ -563,7 +563,7 @@ static void gap_conn_feature_request_send(void) {
 
 // Exchange Core 6.2 feature page 1 after the legacy feature page advertised
 // LL Extended Feature Set support (bit 63).
-static void gap_conn_feature_ext_request_send(void) {
+static void gap_send_conn_feature_ext_request(void) {
     gap_conn.feature_ext_pending = 1;
     gap_conn.params_started_ms = GET_MILLIS();
 
@@ -611,7 +611,7 @@ static void gap_conn_rate_start_queued(void) {
         gap_conn.feature_request_pending || gap_conn.feature_ext_pending)
         return;
     if (!gap_conn.features_known) {
-        gap_conn_feature_request_send();
+        gap_send_conn_feature_request();
         return;
     }
     if (!(gap_conn.peer_features7 & GAP_LL_FEATURES_EXTENDED)) {
@@ -620,7 +620,7 @@ static void gap_conn_rate_start_queued(void) {
         return;
     }
     if (!gap_conn.feature_page1_known) {
-        gap_conn_feature_ext_request_send();
+        gap_send_conn_feature_ext_request();
         return;
     }
     if (!(gap_conn.peer_features_page1[1] & 0x02)) {
@@ -662,7 +662,7 @@ static void gap_channel_report_start(void) {
     ) return;
 
     if (!gap_conn.features_known) {
-        gap_conn_feature_request_send();
+        gap_send_conn_feature_request();
         return;
     }
 
@@ -692,7 +692,7 @@ static void gap_subrate_start_queued(void) {
     ) return;
 
     if (!gap_conn.features_known) {
-        gap_conn_feature_request_send();
+        gap_send_conn_feature_request();
         return;
     }
 
@@ -704,7 +704,7 @@ static void gap_subrate_start_queued(void) {
     }
 
     if (gap_conn.central_role && gap_conn.subrate.update_queued) {
-        gap_subrate_update_send();
+        gap_send_subrate_update();
     }
     else if (!gap_conn.central_role && gap_conn.subrate.request_queued) {
         gap_conn.subrate.request_queued = 0;
@@ -730,7 +730,7 @@ static void gap_subrate_start_queued(void) {
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
-static void gap_data_length_send(uint8_t opcode) {
+static void gap_send_data_length(uint8_t opcode) {
     if (opcode == 0x14) {
         gap_conn.length_queued = 0;
         gap_conn.length_pending = 1;
@@ -1082,7 +1082,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             gap_conn.new_params.interval = interval;
             gap_conn.new_params.latency = latency;
             gap_conn.new_params.supervision_timeout = timeout;
-            gap_conn_update_send();
+            gap_send_conn_update();
         } else {
             // The Central's procedure takes precedence over a
             // simultaneous locally initiated Peripheral request.
@@ -1669,7 +1669,7 @@ reject_parameters:
                     gap_conn.subrate.pending_continuation = continuation;
                     gap_conn.subrate.pending_timeout = timeout;
                     gap_conn.subrate.status = GAP_CONNECTION_PENDING;
-                    gap_subrate_update_send();
+                    gap_send_subrate_update();
                     break;
                 }
             }
@@ -1795,7 +1795,7 @@ reject_parameters:
             gap_conn.data_length.rx_time =
                 rx_time < remote.tx_time ? rx_time : remote.tx_time;
             if (frame[2] == 0x14) {
-                gap_data_length_send(0x15);
+                gap_send_data_length(0x15);
                 // A queued local change is advertised in this response.
                 if (gap_conn.length_queued) {
                     gap_conn.length_queued = 0;
@@ -1821,7 +1821,7 @@ reject_parameters:
         }
         if (frame[2] == 0x17) {
             if (!gap_conn.central_role || !gap_conn.phy_pending) break;
-            gap_phy_update_send(frame[3], frame[4]);
+            gap_send_phy_update(frame[3], frame[4]);
             break;
         }
         if (gap_security.phase || gap_conn.timing_update_pending ||
@@ -1837,7 +1837,7 @@ reject_parameters:
             break;
         }
         if (gap_conn.central_role) {
-            gap_phy_update_send(frame[3], frame[4]);
+            gap_send_phy_update(frame[3], frame[4]);
         }
         else {
             // The Central's request wins simultaneous requests.
@@ -2460,7 +2460,7 @@ static uint8_t *gap_security_tx_frame(void) {
 
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
-static void gap_security_send(void) {
+static void gap_send_security(void) {
     uint8_t phase = gap_security.phase;
     if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
         memcpy(gap_security.skd, gap_security.next_skd, 8);

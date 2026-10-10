@@ -215,67 +215,59 @@ void gap_hw_received(void) {
                     return;
                 }
             }
-            if (gap_tx_frame[1] == 0 &&
-                gap_conn.local_terminate_queued &&
-                !gap_conn.terminate_after_reply
-            ) {
-                gap_tx_frame[0] = 0x03;
-                gap_tx_frame[1] = 2;
-                gap_tx_frame[2] = 0x02; // LL_TERMINATE_IND
-                gap_tx_frame[3] = gap_conn.local_terminate_reason;
-                gap_conn.local_terminate_queued = 0;
-                gap_conn.local_terminate_pending = 1;
-                gap_conn.tx_queued = 0;
-            }
-            if (gap_tx_frame[1] == 0 && !gap_conn.terminate_after_reply)
-                gap_security_send();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                gap_conn.local_update_queued && !gap_conn.terminate_after_reply)
-                gap_conn_update_send();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                gap_conn.local_map_queued && !gap_conn.terminate_after_reply)
-                gap_channel_map_send();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                gap_conn.local_params_queued && !gap_conn.feature_request_pending &&
-                !gap_conn.terminate_after_reply)
-                gap_conn_request_send();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                gap_conn.length_queued && !gap_conn.terminate_after_reply)
-                gap_data_length_send(0x14);
-            if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
-                !gap_conn.terminate_after_reply)
-                gap_phy_request_send();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                !gap_conn.terminate_after_reply &&
-                (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
-                gap_subrate_start_queued();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                !gap_conn.terminate_after_reply &&
-                (gap_conn.rate_set_queued || gap_conn.rate_request_queued))
-                gap_conn_rate_start_queued();
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                !gap_conn.terminate_after_reply &&
-                gap_conn.channel.report_queued)
-                gap_channel_report_start();
-#if GAP_EXT_ADV_SUPPORT
-            if (gap_tx_frame[1] == 0 && !gap_security.phase &&
-                gap_conn.periodic_sync_transfer_queued &&
-                !gap_conn.terminate_after_reply
-            ) {
-                int sync_slot = gap_periodic_sync_handle_slot(
-                    gap_conn.periodic_sync_transfer_handle);
-                if (sync_slot >= 0 && gap_periodic_sync_transfer_encode(
-                        gap_tx_frame,
-                        gap_conn.periodic_sync_transfer_id,
-                        (uint8_t)sync_slot, connection_anchor_ticks,
-                        connection_event_counter)
-                ) {
-                    gap_conn.periodic_sync_transfer_queued = 0;
-                } else {
-                    gap_conn.periodic_sync_transfer_queued = 0;
+            if (!gap_conn.terminate_after_reply) {
+                if (gap_tx_frame[1] == 0 && gap_conn.local_terminate_queued) {
+                    gap_tx_frame[0] = 0x03;
+                    gap_tx_frame[1] = 2;
+                    gap_tx_frame[2] = 0x02; // LL_TERMINATE_IND
+                    gap_tx_frame[3] = gap_conn.local_terminate_reason;
+                    gap_conn.local_terminate_queued = 0;
+                    gap_conn.local_terminate_pending = 1;
+                    gap_conn.tx_queued = 0;
                 }
-            }
+
+                // Each sender may fill the frame, so later sends must check
+                // that it is still empty before using it.
+                if (gap_tx_frame[1] == 0)
+                    gap_send_security();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_update_queued)
+                    gap_send_conn_update();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.local_map_queued)
+                    gap_send_channel_map();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                    gap_conn.local_params_queued && !gap_conn.feature_request_pending)
+                    gap_send_conn_request();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.length_queued)
+                    gap_send_data_length(0x14);
+                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued)
+                    gap_send_phy_request();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                    (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))
+                    gap_subrate_start_queued();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                    (gap_conn.rate_set_queued || gap_conn.rate_request_queued))
+                    gap_conn_rate_start_queued();
+                if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.channel.report_queued)
+                    gap_channel_report_start();
+#if GAP_EXT_ADV_SUPPORT
+                if (gap_tx_frame[1] == 0 && !gap_security.phase &&
+                    gap_conn.periodic_sync_transfer_queued
+                ) {
+                    int sync_slot = gap_periodic_sync_handle_slot(
+                        gap_conn.periodic_sync_transfer_handle);
+                    if (sync_slot >= 0 && gap_periodic_sync_transfer_encode(
+                            gap_tx_frame,
+                            gap_conn.periodic_sync_transfer_id,
+                            (uint8_t)sync_slot, connection_anchor_ticks,
+                            connection_event_counter)
+                    ) {
+                        gap_conn.periodic_sync_transfer_queued = 0;
+                    } else {
+                        gap_conn.periodic_sync_transfer_queued = 0;
+                    }
+                }
 #endif
+            }
             if (gap_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.central_role && gap_conn.channel.status_queued &&
                 gap_conn.channel.enabled
@@ -290,7 +282,7 @@ void gap_hw_received(void) {
                     (!gap_conn.channel.status_last_sent_valid ||
                      (uint32_t)(now_ms - gap_conn.channel.status_last_sent_ms) >=
                         spacing_ms))
-                    gap_channel_status_send();
+                    gap_send_channel_status();
             }
             if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.tx_queued &&
                 !gap_conn.terminate_after_reply
@@ -798,26 +790,26 @@ static void gap_conn_poll(void) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
             if (!gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
-                gap_security_send();
+                gap_send_security();
             if (!gap_security.phase && gap_conn.local_update_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
-                gap_conn_update_send();
+                gap_send_conn_update();
             else if (!gap_security.phase && gap_conn.local_map_queued &&
                      !gap_conn.local_terminate_queued &&
                      !gap_conn.local_terminate_pending)
-                gap_channel_map_send();
+                gap_send_channel_map();
             else if (!gap_security.phase && gap_conn.local_params_queued &&
                      !gap_conn.feature_request_pending &&
                      !gap_conn.local_terminate_queued &&
                      !gap_conn.local_terminate_pending)
-                gap_conn_request_send();
+                gap_send_conn_request();
             else if (!gap_security.phase && gap_conn.length_queued &&
                      !gap_conn.local_terminate_queued &&
                      !gap_conn.local_terminate_pending)
-                gap_data_length_send(0x14);
+                gap_send_data_length(0x14);
             if (gap_tx_frame[1] == 0 && !gap_security.phase && gap_conn.phy_queued &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending)
-                gap_phy_request_send();
+                gap_send_phy_request();
             if (gap_tx_frame[1] == 0 && !gap_security.phase &&
                 !gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending &&
                 (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued))

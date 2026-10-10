@@ -448,7 +448,7 @@ static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central);
 static void gap_security_derive(void);
 static uint8_t *gap_security_tx_frame(void);
-static void gap_security_send(void);
+static void gap_send_security(void);
 
 // SMP owns pairing state; GAP connection code uses only these operations.
 static void gap_smp_poll(void);
