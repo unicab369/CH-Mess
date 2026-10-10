@@ -31,14 +31,12 @@ static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
 void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
     gap_periodic_sync_owned_scan = 0;
-#endif
-    gap_scan_head = gap_scan_count = 0;
-    gap_scan_seen_count = gap_scan_seen_next = 0;
-#if GAP_EXT_ADV_SUPPORT
     memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
     gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
     gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
 #endif
+    gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
     gap_central_connect.active = 0;
     gap_scanning = 1;
@@ -54,22 +52,20 @@ int gap_scan_configure(
 ) {
     if (interval_ms < 3 || interval_ms >= 40960 ||
         window_ms < 3 || window_ms > interval_ms ||
-        discovery_mode > GAP_DISCOVERY_LIMITED ||
-        filter_duplicates > 1
-    ) {
-        return 0;
-    }
-    gap_scan_settings.interval_ms = interval_ms;
-    gap_scan_settings.window_ms = window_ms;
-    gap_scan_settings.discovery_mode = discovery_mode;
-    gap_scan_settings.filter_duplicates = filter_duplicates;
-    gap_scan_head = gap_scan_count = 0;
-    gap_scan_seen_count = gap_scan_seen_next = 0;
+        discovery_mode > GAP_DISCOVERY_LIMITED
+    ) return 0;
+
 #if GAP_EXT_ADV_SUPPORT
     memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
     gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
     gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
 #endif
+    gap_scan_settings.interval_ms = interval_ms;
+    gap_scan_settings.window_ms = window_ms;
+    gap_scan_settings.discovery_mode = discovery_mode;
+    gap_scan_settings.filter_duplicates = !!filter_duplicates;
+    gap_scan_head = gap_scan_count = 0;
+    gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
     gap_scan_generation++;
     return 1;
@@ -90,26 +86,28 @@ void gap_scan_stop(void) {
 }
 
 typedef enum {
-    GAP_CONNECT_MODE_DIRECT,
-    GAP_CONNECT_MODE_GENERAL,
-    GAP_CONNECT_MODE_SELECTIVE,
-    GAP_CONNECT_MODE_AUTO
-} gap_connect_mode;
+    GAP_CONN_MODE_DIRECT,
+    GAP_CONN_MODE_GENERAL,
+    GAP_CONN_MODE_SELECTIVE,
+    GAP_CONN_MODE_AUTO
+} gap_conn_mode;
 
-static int gap_connect_procedure_start(
-    gap_connect_mode mode, const uint8_t *peer_address,
-    uint8_t peer_type, uint8_t active_scan
+static int gap_conn_procedure_start(
+    gap_conn_mode mode, uint8_t active_scan
 ) {
-    if (mode < GAP_CONNECT_MODE_DIRECT || mode > GAP_CONNECT_MODE_AUTO ||
-        (mode == GAP_CONNECT_MODE_DIRECT && !peer_address) ||
-        (mode != GAP_CONNECT_MODE_DIRECT && peer_address) ||
-        peer_type > 1 || active_scan > 1 || gap_conn.active || gap_scanning ||
-        ((mode == GAP_CONNECT_MODE_SELECTIVE ||
-          mode == GAP_CONNECT_MODE_AUTO) && !gap_accept_list_nonempty()))
+    if (mode < GAP_CONN_MODE_DIRECT || mode > GAP_CONN_MODE_AUTO ||
+        active_scan > 1 || gap_conn.active || gap_scanning ||
+        gap_central_connect.active ||
+        ((mode == GAP_CONN_MODE_SELECTIVE ||
+          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty()))
         return 0;
-    uint8_t any_peer = mode == GAP_CONNECT_MODE_GENERAL;
-    uint8_t selective = mode == GAP_CONNECT_MODE_SELECTIVE;
-    uint8_t auto_connect = mode == GAP_CONNECT_MODE_AUTO;
+    uint8_t any_peer = mode == GAP_CONN_MODE_GENERAL;
+    uint8_t selective = mode == GAP_CONN_MODE_SELECTIVE;
+    uint8_t auto_connect = mode == GAP_CONN_MODE_AUTO;
+    uint8_t peer_type = mode == GAP_CONN_MODE_DIRECT ?
+        gap_central_connect.peer_type : 0;
+    const uint8_t *peer_address = mode == GAP_CONN_MODE_DIRECT ?
+        gap_central_connect.peer_address : NULL;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
     memset(gap_central_connect.request, 0,
@@ -148,9 +146,9 @@ static int gap_connect_procedure_start(
     gap_central_connect.selective = selective;
     gap_central_connect.auto_connect = auto_connect;
     gap_central_connect.peer_type = peer_type;
-    if (peer_address) memcpy(gap_central_connect.peer_address, peer_address, 6);
-    else memset(gap_central_connect.peer_address, 0,
-                sizeof(gap_central_connect.peer_address));
+    if (mode != GAP_CONN_MODE_DIRECT)
+        memset(gap_central_connect.peer_address, 0,
+               sizeof(gap_central_connect.peer_address));
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
     if (any_peer || auto_connect) gap_scan_start(active_scan);
@@ -169,36 +167,45 @@ static int gap_connect_procedure_start(
 
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
-int gap_connect_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    return gap_connect_procedure_start(
-        GAP_CONNECT_MODE_DIRECT, peer_address, peer_type, 0);
+int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
+    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
+        gap_central_connect.active
+    ) return 0;
+    memcpy(gap_central_connect.peer_address, peer_address, 6);
+    gap_central_connect.peer_type = peer_type;
+    if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
+        return 1;
+    memset(gap_central_connect.peer_address, 0,
+           sizeof(gap_central_connect.peer_address));
+    gap_central_connect.peer_type = 0;
+    return 0;
 }
 
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
-int gap_connect_general_start(uint8_t active_scan) {
-    return gap_connect_procedure_start(
-        GAP_CONNECT_MODE_GENERAL, NULL, 0, active_scan);
+int gap_conn_general_start(uint8_t active_scan) {
+    return gap_conn_procedure_start(
+        GAP_CONN_MODE_GENERAL, active_scan);
 }
 
 // Selective Connection Establishment scans for an advertiser in the accept list.
-int gap_connect_selective_start(uint8_t active_scan) {
-    return gap_connect_procedure_start(
-        GAP_CONNECT_MODE_SELECTIVE, NULL, 0, active_scan);
+int gap_conn_selective_start(uint8_t active_scan) {
+    return gap_conn_procedure_start(
+        GAP_CONN_MODE_SELECTIVE, active_scan);
 }
 
 // Auto Connection Establishment scans in the background until a listed peer
 // connects or the application cancels; it does not time out after one attempt.
-int gap_connect_auto_start(void) {
-    return gap_connect_procedure_start(
-        GAP_CONNECT_MODE_AUTO, NULL, 0, 0);
+int gap_conn_auto_start(void) {
+    return gap_conn_procedure_start(
+        GAP_CONN_MODE_AUTO, 0);
 }
 
-int gap_connecting(void) {
+int gap_conn_initiating(void) {
     return gap_central_connect.active;
 }
 
-void gap_connect_cancel(void) {
+void gap_conn_cancel(void) {
     if (gap_central_connect.active) gap_scan_stop();
 }
 
