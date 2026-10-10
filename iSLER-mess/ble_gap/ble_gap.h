@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <string.h>
 #include "../ble_l2cap.h"
-#include "../ble_smp.h"
 
 // Platform hooks used by the GAP controller and security procedures.
 #ifndef GAP_RADIO_BUFFER_ATTR
@@ -343,16 +342,8 @@ typedef struct {
     uint8_t random[16], confirm[16];
 } gap_sc_oob_data;
 
-int gap_pair(void);
-int gap_smp_user_request_set(
-    ble_smp_user_request_fn callback,
-                                  void *context);
-int gap_keypress_notifications_set(uint8_t enabled);
-int gap_passkey_keypress(uint8_t notification_type);
-int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv);
-int gap_encrypted(void);
-
-int gap_conn_busy(void);
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive state shared by scanning and connection polling.
@@ -453,6 +444,12 @@ static gap_conn_context
 static uint8_t gap_conn_slot;
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 #define gap_conn gap_conn_contexts[gap_conn_slot]
+int gap_conn_busy(void) {
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
+        if (gap_conn_contexts[slot].active) return 1;
+    return 0;
+}
+
 static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         if (!gap_conn_contexts[slot].active) return slot;

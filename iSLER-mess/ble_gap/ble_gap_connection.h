@@ -3492,12 +3492,6 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     return 1;
 }
 
-int gap_conn_busy(void) {
-    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (gap_conn_contexts[slot].active) return 1;
-    return 0;
-}
-
 #include "ble_gap_connection_poll.h"
 
 // Link encryption procedures for the active LE connection.

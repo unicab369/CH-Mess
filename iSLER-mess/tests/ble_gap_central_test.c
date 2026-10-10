@@ -4065,15 +4065,13 @@ static void test_smp_pairing(void) {
     memcpy(gap_smp.bearer.pairing.request, request, 7); memcpy(gap_smp.bearer.pairing.response, response, 7);
     memcpy(gap_conn.initiator, ia, 6); memcpy(gap_conn.responder, ra, 6);
     gap_conn.initiator_type = 1; gap_conn.responder_type = 0;
-    assert(ble_smp_legacy_c1(&gap_smp.bearer, gap_smp.bearer.pairing.tk, random,
-        gap_conn.initiator_type, gap_conn.responder_type, request, response,
-        ia, ra, confirm));
+    gap_smp_confirm(random, confirm);
     assert(!memcmp(confirm, expected, 16));
     uint8_t s1_input[16] = {0,0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,
                             0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11};
     uint8_t s1_expected[16] = {0x62,0xa0,0x6d,0x79,0xae,0x16,0x42,0x5b,
                               0x9b,0xf4,0xb0,0xe8,0xf0,0xe1,0x1f,0x9a};
-    assert(ble_smp_legacy_e(&gap_smp.bearer, gap_smp.bearer.pairing.tk, s1_input, confirm));
+    assert(ble_smp_aes128(&gap_smp.bearer, gap_smp.bearer.pairing.tk, s1_input, confirm));
     assert(!memcmp(confirm, s1_expected, 16));
     gap_conn_end();
 
