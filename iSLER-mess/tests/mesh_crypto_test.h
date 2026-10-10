@@ -46,12 +46,7 @@ static int aes_cmac_test(void) {
 }
 
 static int ble_sc_crypto_test(void) {
-    // Exercise the GAP adapter through the same generic SMP crypto callbacks
-    // used by a live connection, without requiring a Link Layer connection.
-    ble_smp_ops crypto_ops = {0};
-    crypto_ops.aes128 = gap_smp_host_aes;
-    crypto_ops.cmac = gap_smp_host_cmac;
-    if (!ble_smp_set_ops(&gap_smp.bearer, &crypto_ops)) return -10;
+    // Exercise the direct GAP SMP crypto methods without requiring a link.
     // Bluetooth Core Specification, Vol 3, Part H, Appendix D, vectors D.2-D.5.
     const uint8_t u[32] = {
         0x20,0xb0,0x03,0xd2,0xf2,0x97,0xbe,0x2c,0x5e,0x2c,0x83,0xa7,0xe9,0xf9,0xa5,0xb9,

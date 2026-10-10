@@ -26,27 +26,26 @@
 // - [x] Initialize Central/Peripheral procedure role and initial phase with
 //       the generic pairing-begin helper.
 // - [x] Move LE legacy e/c1 confirmation cryptography behind generic SMP
-//       helpers that use the host-provided AES callback; derive legacy STK
+//       helpers that use the platform AES method; derive legacy STK
 //       through the same generic crypto path.
 // - [x] Move the LE Secure Connections f4/f5/f6/g2 cryptographic functions into
-//       SMP and make callback failures abort derivation with cleared outputs.
-// - [ ] Move the GAP-owned pairing state machine into a reusable SMP engine
-//       driven by these host callbacks.
+//       SMP and make platform method failures abort derivation with cleared outputs.
+// - [ ] Move the GAP-owned pairing state machine into a reusable SMP engine.
 // - [x] Verify legacy Just Works, Passkey Entry, confirm/random, key derivation,
 //       and both Central/Peripheral role combinations.
 // - [x] Verify Secure Connections public-key, numeric-comparison, passkey, OOB,
 //       DHKey-check, and key derivation flows.
-// - [x] Define host callbacks for cryptographic randomness/primitives, user
-//       interaction, link encryption, and bond load/store/removal.
-// - [x] Provide checked generic dispatch helpers for every host callback.
+// - [x] Define direct platform methods for cryptographic randomness/primitives,
+//       user interaction, link encryption, and bond load/store/removal.
+// - [x] Provide checked helpers around each platform method.
 // - [x] Route GAP's Central-side legacy and SC encryption starts through the
-//       generic set-link-encryption callback.
+//       platform set-link-encryption method.
 // - [x] Use generic feature parsing and policy negotiation in GAP's
 //       Pairing Request/Response handler.
 // - [x] Deliver GAP passkey and numeric-comparison prompts through the generic
-//       user-request callback while preserving asynchronous GAP reply methods.
+//       platform user-request method while preserving asynchronous GAP replies.
 // - [x] Negotiate optional passkey keypress notifications and expose typed
-//       send/receive events through the generic SMP UI callback.
+//       send/receive events through the SMP UI interface.
 // - [x] Validate Pairing Feature fields and negotiate key size, SC, bonding,
 //       and key-distribution intersections under a host-supplied policy.
 // - [x] Distribute legacy Initiator IRK/identity address and CSRK and store
@@ -63,7 +62,7 @@
 //       independent Bluetooth host (the Bumble check currently covers the
 //       bearer and Pairing Request/Response codecs only).
 // - [x] Route GAP bond persistence, restoration lookup, rollback, and removal
-//       through the generic bond callbacks with the complete LE bond schema.
+//       through the platform bond methods with the complete LE bond schema.
 // - [x] Validate command-specific lengths, ignore reserved opcodes, track the
 //       30-second pairing timer, and wipe queued data when it expires.
 // - [x] Reject malformed and out-of-order pairing PDUs and erase temporary
@@ -171,30 +170,22 @@ typedef struct {
     uint8_t has_peripheral_ltk;
 } ble_smp_bond;
 
-typedef struct {
-    // Random output and cryptographic byte arrays use SMP/on-air little-endian
-    // representation. The host supplies a cryptographically secure generator.
-    int (*random_bytes)(uint8_t *out, size_t len);
-    int (*aes128)(void *context, const uint8_t key[16],
-                  const uint8_t input[16], uint8_t output[16]);
-    int (*cmac)(void *context, const uint8_t key[16], const uint8_t *input,
-                size_t len, uint8_t output[16]);
-    int (*dhkey)(void *context, const uint8_t private_key[32],
-                 const uint8_t peer_public_key[64], uint8_t dhkey[32]);
-    // User action is one of BLE_SMP_USER_*; value carries a displayed passkey
-    // or numeric-comparison value. Return <0 to reject, 0 when a reply is
-    // pending asynchronously, or >0 to accept. PASSKEY_INPUT is a prompt:
-    // the entered value is supplied later by the host's pairing procedure.
-    ble_smp_user_request_fn user_request;
-    int (*set_link_encryption)(void *context, const uint8_t ltk[16],
-                               uint8_t key_size, uint8_t authenticated);
-    int (*bond_load)(void *context, uint8_t address_type,
-                     const uint8_t address[6], ble_smp_bond *bond);
-    int (*bond_store)(void *context, const ble_smp_bond *bond);
-    int (*bond_remove)(void *context, uint8_t address_type,
-                       const uint8_t address[6]);
-    void *context;
-} ble_smp_ops;
+// Platform methods used by the SMP procedure. GAP provides these methods;
+// tests can provide a fake implementation without configuring a callback table.
+int ble_smp_port_random_bytes(uint8_t *out, size_t len);
+int ble_smp_port_aes128(const uint8_t key[16], const uint8_t input[16],
+                        uint8_t output[16]);
+int ble_smp_port_cmac(const uint8_t key[16], const uint8_t *input,
+                      size_t len, uint8_t output[16]);
+int ble_smp_port_dhkey(const uint8_t private_key[32],
+                       const uint8_t peer_public_key[64], uint8_t dhkey[32]);
+int ble_smp_port_user_request(uint8_t action, uint32_t value);
+int ble_smp_port_set_link_encryption(const uint8_t ltk[16], uint8_t key_size,
+                                     uint8_t authenticated);
+int ble_smp_port_bond_load(uint8_t address_type, const uint8_t address[6],
+                           ble_smp_bond *bond);
+int ble_smp_port_bond_store(const ble_smp_bond *bond);
+int ble_smp_port_bond_remove(uint8_t address_type, const uint8_t address[6]);
 
 // LE SMP command lengths include the one-octet command code. Reserved command
 // codes are rejected here so the protocol owner can choose to ignore them.
@@ -441,7 +432,6 @@ static inline uint8_t ble_smp_negotiate_features(
 
 typedef struct {
     ble_l2cap_connection *l2cap;
-    ble_smp_ops ops;
     ble_smp_pairing_state pairing;
     ble_smp_pdu_fn receive;
     ble_smp_timeout_fn timeout;
@@ -510,12 +500,6 @@ static inline void ble_smp_set_timeout_callback(
     if (smp) smp->timeout = callback;
 }
 
-static inline int ble_smp_set_ops(ble_smp *smp, const ble_smp_ops *ops) {
-    if (!smp || !ops) return 0;
-    smp->ops = *ops;
-    return 1;
-}
-
 // Queue one complete PDU for foreground procedure handling. The queue is
 // intentionally one-deep so an adapter can apply backpressure while its
 // state machine is busy.
@@ -561,14 +545,13 @@ static inline int ble_smp_pairing_begin(
     return 1;
 }
 
-// These checked adapters are the generic interface for pairing code to use
-// without depending on a host's GAP, crypto library, UI, or bond storage.
+// Validate platform results and clear sensitive outputs when an operation fails.
 static inline int ble_smp_random_bytes(
     ble_smp *smp, uint8_t *out,
                                        size_t len
 ) {
-    if (!smp || !out || !len || !smp->ops.random_bytes) return 0;
-    if (smp->ops.random_bytes(out, len)) return 1;
+    if (!smp || !out || !len) return 0;
+    if (ble_smp_port_random_bytes(out, len)) return 1;
     volatile uint8_t *wipe = out;
     while (len--) *wipe++ = 0;
     return 0;
@@ -578,8 +561,8 @@ static inline int ble_smp_aes128(
     ble_smp *smp, const uint8_t key[16],
                                  const uint8_t input[16], uint8_t output[16]
 ) {
-    if (!smp || !smp->ops.aes128 || !key || !input || !output) return 0;
-    if (smp->ops.aes128(smp->ops.context, key, input, output)) return 1;
+    if (!smp || !key || !input || !output) return 0;
+    if (ble_smp_port_aes128(key, input, output)) return 1;
     volatile uint8_t *wipe = output;
     for (size_t i = 0; i < 16; i++) wipe[i] = 0;
     return 0;
@@ -649,8 +632,8 @@ static inline int ble_smp_cmac(
     ble_smp *smp, const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
 ) {
-    if (!smp || !smp->ops.cmac || !key || (!input && len) || !output) return 0;
-    if (smp->ops.cmac(smp->ops.context, key, input, len, output)) return 1;
+    if (!smp || !key || (!input && len) || !output) return 0;
+    if (ble_smp_port_cmac(key, input, len, output)) return 1;
     volatile uint8_t *wipe = output;
     for (size_t i = 0; i < 16; i++) wipe[i] = 0;
     return 0;
@@ -760,9 +743,9 @@ static inline int ble_smp_dhkey(
     ble_smp *smp, const uint8_t private_key[32],
     const uint8_t peer_public_key[64], uint8_t dhkey[32]
 ) {
-    if (!smp || !smp->ops.dhkey || !private_key || !peer_public_key || !dhkey)
+    if (!smp || !private_key || !peer_public_key || !dhkey)
         return 0;
-    if (smp->ops.dhkey(smp->ops.context, private_key, peer_public_key, dhkey))
+    if (ble_smp_port_dhkey(private_key, peer_public_key, dhkey))
         return 1;
     volatile uint8_t *wipe = dhkey;
     for (size_t i = 0; i < 32; i++) wipe[i] = 0;
@@ -773,29 +756,27 @@ static inline int ble_smp_user_request(
     ble_smp *smp, uint8_t action,
                                         uint32_t value
 ) {
-    return smp && smp->ops.user_request ?
-        smp->ops.user_request(smp->ops.context, action, value) : -1;
+    return smp ? ble_smp_port_user_request(action, value) : -1;
 }
 
 static inline int ble_smp_set_link_encryption(
     ble_smp *smp,
     const uint8_t ltk[16], uint8_t key_size, uint8_t authenticated
 ) {
-    if (!smp || !smp->ops.set_link_encryption || !ltk || key_size < 7 ||
+    if (!smp || !ltk || key_size < 7 ||
         key_size > 16 || authenticated > 1)
         return 0;
-    return smp->ops.set_link_encryption(smp->ops.context, ltk, key_size,
-                                        authenticated);
+    return ble_smp_port_set_link_encryption(ltk, key_size, authenticated);
 }
 
 static inline int ble_smp_bond_load(
     ble_smp *smp, uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond
 ) {
-    if (!smp || !smp->ops.bond_load || address_type > 1 || !address || !bond)
+    if (!smp || address_type > 1 || !address || !bond)
         return 0;
     memset(bond, 0, sizeof(*bond));
-    if (!smp->ops.bond_load(smp->ops.context, address_type, address, bond) ||
+    if (!ble_smp_port_bond_load(address_type, address, bond) ||
         bond->valid != 1 || bond->peer_address_type != address_type ||
         (address_type && (address[5] & 0xc0) != 0xc0) ||
         memcmp(bond->peer_address, address, 6) || bond->key_size < 7 ||
@@ -838,7 +819,7 @@ static inline int ble_smp_bond_store(
     ble_smp *smp,
                                       const ble_smp_bond *bond
 ) {
-    if (!smp || !smp->ops.bond_store || !bond || bond->valid != 1 ||
+    if (!smp || !bond || bond->valid != 1 ||
         bond->peer_address_type > 1 || bond->key_size < 7 ||
         bond->key_size > 16 || bond->authenticated > 1 ||
         (bond->peer_address_type && (bond->peer_address[5] & 0xc0) != 0xc0) ||
@@ -862,7 +843,7 @@ static inline int ble_smp_bond_store(
         return 0;
     ble_smp_bond normalized = *bond;
     normalized.version = BLE_SMP_BOND_SCHEMA_VERSION;
-    int stored = smp->ops.bond_store(smp->ops.context, &normalized);
+    int stored = ble_smp_port_bond_store(&normalized);
     volatile uint8_t *wipe = (volatile uint8_t *)&normalized;
     for (size_t i = 0; i < sizeof(normalized); i++) wipe[i] = 0;
     return stored;
@@ -872,8 +853,8 @@ static inline int ble_smp_bond_remove(
     ble_smp *smp, uint8_t address_type,
     const uint8_t address[6]
 ) {
-    if (!smp || !smp->ops.bond_remove || address_type > 1 || !address) return 0;
-    return smp->ops.bond_remove(smp->ops.context, address_type, address);
+    if (!smp || address_type > 1 || !address) return 0;
+    return ble_smp_port_bond_remove(address_type, address);
 }
 
 // Advance the host-clock timer. Unsigned subtraction keeps deadlines correct
@@ -908,7 +889,7 @@ static inline int ble_smp_poll(ble_smp *smp) {
 }
 
 // End a completed or abandoned SMP procedure, wiping any queued PDU and
-// cancelling its deadline while keeping the bearer, callbacks, and L2CAP
+// cancelling its deadline while keeping the bearer and L2CAP
 // registration ready for a later procedure on the same connection.
 static inline void ble_smp_procedure_finish(ble_smp *smp) {
     if (!smp) return;

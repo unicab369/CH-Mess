@@ -37,60 +37,59 @@ static int fake_receive(void *context, const uint8_t *pdu, uint16_t len) {
     return 1;
 }
 
-static int fake_random(uint8_t *out, size_t len) {
+int ble_smp_port_random_bytes(uint8_t *out, size_t len) {
     if (!fake_random_state || fake_random_state->random_fail) return 0;
     memset(out, 0x5a, len);
     return 1;
 }
 
-static int fake_aes(
-    void *context, const uint8_t key[16],
+int ble_smp_port_aes128(
+    const uint8_t key[16],
     const uint8_t input[16], uint8_t output[16]
 ) {
-    if (((fake_smp *)context)->crypto_fail) return 0;
+    if (fake_random_state->crypto_fail) return 0;
     for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
     return 1;
 }
 
-static int fake_cmac(
-    void *context, const uint8_t key[16],
+int ble_smp_port_cmac(
+    const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
 ) {
-    if (((fake_smp *)context)->crypto_fail) return 0;
+    if (fake_random_state->crypto_fail) return 0;
     memset(output, 0, 16);
     for (size_t i = 0; i < len; i++) output[i % 16] ^= input[i] ^ key[i % 16];
     return 1;
 }
 
-static int fake_dhkey(
-    void *context, const uint8_t private_key[32],
+int ble_smp_port_dhkey(
+    const uint8_t private_key[32],
     const uint8_t peer_public_key[64], uint8_t dhkey[32]
 ) {
-    if (((fake_smp *)context)->crypto_fail) return 0;
+    if (fake_random_state->crypto_fail) return 0;
     (void)peer_public_key;
     memcpy(dhkey, private_key, 32);
     return 1;
 }
 
-static int fake_user(void *context, uint8_t action, uint32_t value) {
-    (void)context;
+int ble_smp_port_user_request(uint8_t action, uint32_t value) {
     return action == 3 && value == 123456 ? 0 : -1;
 }
 
-static int fake_encrypt(
-    void *context, const uint8_t ltk[16], uint8_t key_size,
+int ble_smp_port_set_link_encryption(
+    const uint8_t ltk[16], uint8_t key_size,
     uint8_t authenticated
 ) {
-    fake_smp *fake = context;
+    fake_smp *fake = fake_random_state;
     fake->encrypted = key_size == 16 && authenticated == 1 && ltk[0] == 0xa5;
     return fake->encrypted;
 }
 
-static int fake_bond_load(
-    void *context, uint8_t address_type,
+int ble_smp_port_bond_load(
+    uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond
 ) {
-    fake_smp *fake = context;
+    fake_smp *fake = fake_random_state;
     if (!fake->bond.valid || fake->bond.peer_address_type != address_type ||
         memcmp(fake->bond.peer_address, address, 6))
         return 0;
@@ -98,16 +97,16 @@ static int fake_bond_load(
     return 1;
 }
 
-static int fake_bond_store(void *context, const ble_smp_bond *bond) {
-    ((fake_smp *)context)->bond = *bond;
+int ble_smp_port_bond_store(const ble_smp_bond *bond) {
+    fake_random_state->bond = *bond;
     return 1;
 }
 
-static int fake_bond_remove(
-    void *context, uint8_t address_type,
+int ble_smp_port_bond_remove(
+    uint8_t address_type,
     const uint8_t address[6]
 ) {
-    fake_smp *fake = context;
+    fake_smp *fake = fake_random_state;
     if (fake->bond.peer_address_type != address_type ||
         memcmp(fake->bond.peer_address, address, 6))
         return 0;
@@ -172,10 +171,6 @@ int main(void) {
     ble_smp smp;
     assert(ble_smp_init(&smp, &l2cap, fake_receive, &fake));
     ble_smp_set_timeout_callback(&smp, fake_timeout);
-    ble_smp_ops host = {fake_random, fake_aes, fake_cmac, fake_dhkey,
-        fake_user, fake_encrypt, fake_bond_load, fake_bond_store,
-        fake_bond_remove, &fake};
-    assert(ble_smp_set_ops(&smp, &host));
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16], dhkey[32];
     assert(ble_smp_random_bytes(&smp, secret, 32) && secret[31] == 0x5a);
     fake.random_fail = 1;
@@ -317,8 +312,7 @@ int main(void) {
     assert(smp.procedure_active && smp.deadline_ms);
     ble_smp_procedure_finish(&smp);
     assert(!smp.tx_len && !smp.procedure_active && !smp.deadline_ms);
-    assert(smp.l2cap == &l2cap && smp.receive == fake_receive &&
-           smp.ops.random_bytes == fake_random);
+    assert(smp.l2cap == &l2cap && smp.receive == fake_receive);
     assert(!ble_smp_tick(&smp, 100000));
     assert(ble_smp_send(&smp, pairing_request, sizeof(pairing_request)));
     ble_smp_reset(&smp);

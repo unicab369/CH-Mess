@@ -87,11 +87,20 @@ int GAP_BOND_DELETE(uint8_t slot);
 
 static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len);
 
-static int gap_smp_host_aes(
-    void *context, const uint8_t key[16],
+int ble_smp_port_random_bytes(uint8_t *out, size_t len) {
+    return out && len && GAP_RANDOM_SECURE_BYTES(out, len);
+}
+
+int ble_smp_port_user_request(uint8_t action, uint32_t value) {
+    return gap_smp_user_request_callback ?
+        gap_smp_user_request_callback(gap_smp_user_request_context,
+                                      action, value) : -1;
+}
+
+int ble_smp_port_aes128(
+    const uint8_t key[16],
     const uint8_t input[16], uint8_t output[16]
 ) {
-    (void)context;
     uint8_t standard_key[16], standard_input[16], standard_output[16];
     gap_sc_reverse(standard_key, key, sizeof(standard_key));
     gap_sc_reverse(standard_input, input, sizeof(standard_input));
@@ -106,44 +115,33 @@ static int gap_smp_host_aes(
     return 1;
 }
 
-static int gap_smp_host_cmac(
-    void *context, const uint8_t key[16],
+int ble_smp_port_cmac(
+    const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
 ) {
-    (void)context;
     if (!key || (!input && len) || !output) return 0;
     aes_cmac(key, input, len, output);
     return 1;
 }
 
-static int gap_smp_host_dhkey(
-    void *context, const uint8_t private_key[32],
+int ble_smp_port_dhkey(
+    const uint8_t private_key[32],
     const uint8_t peer_public_key[64], uint8_t dhkey[32]
 ) {
-    (void)context;
     if (!private_key || !peer_public_key || !dhkey) return 0;
     return uECC_shared_secret(peer_public_key, private_key, dhkey,
                               uECC_secp256r1());
 }
 
-static int gap_smp_host_set_encryption(
-    void *context, const uint8_t ltk[16],
+int ble_smp_port_set_link_encryption(
+    const uint8_t ltk[16],
     uint8_t key_size, uint8_t authenticated
 ) {
-    (void)context;
     if (!ltk || key_size < 7 || key_size > 16 || authenticated > 1)
         return 0;
     const uint8_t zero_rand[8] = {0};
     return gap_encrypt(ltk, zero_rand, 0);
 }
-
-static int gap_smp_host_bond_load(
-    void *context, uint8_t address_type,
-    const uint8_t address[6], ble_smp_bond *bond);
-static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond);
-static int gap_smp_host_bond_remove(
-    void *context, uint8_t address_type,
-                                    const uint8_t address[6]);
 
 static int gap_sc_random(uint8_t *out, unsigned len) {
     return ble_smp_random_bytes(&gap_smp.bearer, out, len);
@@ -404,18 +402,6 @@ static int gap_smp_link_init(void) {
         !ble_smp_init(&gap_smp.bearer, &gap_smp.l2cap,
                       gap_smp_receive_pdu, &gap_smp))
         return 0;
-    ble_smp_ops host_ops = {0};
-    host_ops.random_bytes = GAP_RANDOM_SECURE_BYTES;
-    host_ops.aes128 = gap_smp_host_aes;
-    host_ops.cmac = gap_smp_host_cmac;
-    host_ops.dhkey = gap_smp_host_dhkey;
-    host_ops.set_link_encryption = gap_smp_host_set_encryption;
-    host_ops.bond_load = gap_smp_host_bond_load;
-    host_ops.bond_store = gap_smp_host_bond_store;
-    host_ops.bond_remove = gap_smp_host_bond_remove;
-    host_ops.user_request = gap_smp_user_request_callback;
-    host_ops.context = gap_smp_user_request_context;
-    if (!ble_smp_set_ops(&gap_smp.bearer, &host_ops)) return 0;
     ble_smp_set_timeout_callback(&gap_smp.bearer, gap_smp_timeout);
     gap_smp.l2cap_ready = 1;
     return 1;
@@ -494,10 +480,6 @@ int gap_smp_user_request_set(
     if (gap_smp.bearer.pairing.phase) return 0;
     gap_smp_user_request_callback = callback;
     gap_smp_user_request_context = context;
-    if (gap_smp.l2cap_ready) {
-        gap_smp.bearer.ops.user_request = callback;
-        gap_smp.bearer.ops.context = context;
-    }
     return 1;
 }
 
@@ -955,11 +937,10 @@ static void gap_smp_bond_from_generic(
     out->has_peripheral_ltk = source->has_peripheral_ltk;
 }
 
-static int gap_smp_host_bond_load(
-    void *context, uint8_t address_type,
+int ble_smp_port_bond_load(
+    uint8_t address_type,
     const uint8_t address[6], ble_smp_bond *bond
 ) {
-    (void)context;
     gap_bond stored;
     if (!bond || !gap_bond_get(address, address_type, &stored)) return 0;
     gap_smp_bond_to_generic(&stored, bond);
@@ -968,8 +949,7 @@ static int gap_smp_host_bond_load(
     return 1;
 }
 
-static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond) {
-    (void)context;
+int ble_smp_port_bond_store(const ble_smp_bond *bond) {
     if (!bond) return 0;
     gap_bond stored;
     gap_smp_bond_from_generic(bond, &stored);
@@ -979,11 +959,9 @@ static int gap_smp_host_bond_store(void *context, const ble_smp_bond *bond) {
     return result;
 }
 
-static int gap_smp_host_bond_remove(
-    void *context, uint8_t address_type,
-                                    const uint8_t address[6]
+int ble_smp_port_bond_remove(
+    uint8_t address_type, const uint8_t address[6]
 ) {
-    (void)context;
     return gap_bond_remove(address, address_type);
 }
 
@@ -1257,7 +1235,7 @@ static void gap_smp_poll(void) {
          (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PUBLIC_KEY ||
           gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_PASSKEY));
     if (passkey_phase && gap_smp.bearer.pairing.passkey_action && !gap_smp.bearer.pairing.user_notified &&
-        gap_smp.bearer.ops.user_request
+        gap_smp_user_request_callback
     ) {
         uint8_t action = gap_smp.bearer.pairing.passkey_action == GAP_PASSKEY_DISPLAY ?
             BLE_SMP_USER_PASSKEY_DISPLAY : BLE_SMP_USER_PASSKEY_INPUT;
@@ -1271,7 +1249,7 @@ static void gap_smp_poll(void) {
         gap_smp.bearer.pairing.user_notified = 1;
     }
     if (gap_smp.bearer.pairing.phase == BLE_SMP_PHASE_SC_USER && !gap_smp.bearer.pairing.numeric_notified &&
-        gap_smp.bearer.ops.user_request
+        gap_smp_user_request_callback
     ) {
         int decision = ble_smp_user_request(&gap_smp.bearer,
             BLE_SMP_USER_NUMERIC_COMPARISON, gap_smp.bearer.pairing.sc.numeric_value);
@@ -1892,7 +1870,7 @@ static void gap_smp_poll(void) {
             gap_smp.bearer.pairing.request[1];
         if (!gap_smp.bearer.pairing.keypress_active || !passkey_phase ||
             peer_io != GAP_IO_KEYBOARD_ONLY) goto failed;
-        if (gap_smp.bearer.ops.user_request)
+        if (gap_smp_user_request_callback)
             (void)ble_smp_user_request(&gap_smp.bearer,
                 BLE_SMP_USER_KEYPRESS, p[1]);
         return;
