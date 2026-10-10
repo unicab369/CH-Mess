@@ -192,7 +192,7 @@ static void test_gap_service_characteristics(void) {
     for (uint8_t i = 0; i < sizeof(iv); i++) iv[i] = i + 0x20;
     memcpy(material, session_key, sizeof(session_key));
     memcpy(material + sizeof(session_key), iv, sizeof(iv));
-    assert(gap_ead_key_material_set(session_key, iv));
+    assert(gap_ead_key_set(session_key, iv));
     uint8_t allow_authorization = 1;
     assert(mesh_gatt_set_authorizer(authorize_gatt_access,
                                     &allow_authorization));
@@ -216,7 +216,7 @@ static void test_gap_service_characteristics(void) {
            BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     assert(mesh_gatt_set_authorizer(NULL, NULL));
     ble_gatt_server_set_security(&mesh_gatt.server, 0, 0);
-    gap_ead_key_material_clear();
+    gap_ead_key_clear();
 
     gap_adv_stop();
     mesh_gatt_gap_policy_update();

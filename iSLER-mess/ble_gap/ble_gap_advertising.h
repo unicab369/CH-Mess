@@ -48,8 +48,8 @@ int gap_ad_append(
     if (!builder || !builder->data || (!value && value_len) ||
         value_len > 254 || builder->len > builder->capacity ||
         value_len + 2 > builder->capacity - builder->len
-    )
-        return 0;
+    ) return 0;
+
     builder->data[builder->len] = (uint8_t)(value_len + 1);
     builder->data[builder->len + 1] = type;
     if (value_len) memcpy(builder->data + builder->len + 2, value, value_len);
@@ -117,18 +117,18 @@ int gap_ad_add_tx_power(gap_ad_builder *builder, int8_t dbm) {
 // Append service data with a 16-, 32-, or 128-bit UUID already encoded in
 // Bluetooth little-endian byte order.
 int gap_ad_add_service_data(
-    gap_ad_builder *builder,
-    const uint8_t *uuid, size_t uuid_len,
+    gap_ad_builder *builder, const uint8_t *uuid, size_t uuid_len,
     const uint8_t *data, size_t len
 ) {
     uint8_t value[254];
     uint8_t type;
     switch (uuid_len) {
-    case 2: type = GAP_AD_SERVICE_DATA16; break;
-    case 4: type = GAP_AD_SERVICE_DATA32; break;
-    case 16: type = GAP_AD_SERVICE_DATA128; break;
-    default: return 0;
+        case 2: type = GAP_AD_SERVICE_DATA16; break;
+        case 4: type = GAP_AD_SERVICE_DATA32; break;
+        case 16: type = GAP_AD_SERVICE_DATA128; break;
+        default: return 0;
     }
+
     if (!builder || !uuid || (!data && len) || len > sizeof(value) - uuid_len)
         return 0;
     memcpy(value, uuid, uuid_len);
@@ -142,15 +142,16 @@ int gap_ad_parse_next(
     const uint8_t *data, size_t len, size_t *offset, uint8_t *type,
     const uint8_t **value, size_t *value_len
 ) {
-    if ((!data && len) || !offset || !type || !value || !value_len ||
-        *offset > len)
-        return -1;
+    if ((!data && len) || !offset || !type ||
+        !value || !value_len || *offset > len
+    ) return -1;
+
     if (*offset == len) return 0;
     uint8_t field_len = data[*offset];
     if (!field_len) {
-        *offset = len;
-        return 0;
+        *offset = len; return 0;
     }
+
     if ((size_t)field_len + 1 > len - *offset) return -1;
     *type = data[*offset + 1];
     *value = data + *offset + 2;
@@ -179,9 +180,7 @@ static struct {
 // Install the session key and IV shared with EAD receivers. The key must come
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
-int gap_ead_key_material_set(
-    const uint8_t session_key[16], const uint8_t iv[8]
-) {
+int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
     if (!session_key || !iv) return 0;
     uint8_t key_bits = 0;
     for (size_t i = 0; i < GAP_EAD_KEY_LEN; i++)
@@ -195,7 +194,7 @@ int gap_ead_key_material_set(
 }
 
 // Copy the current EAD session key and IV for application key distribution.
-int gap_ead_key_material_get(uint8_t out[24]) {
+int gap_ead_key_get(uint8_t out[24]) {
     if (!out || !gap_ead_key_material.set) return 0;
     memcpy(out, gap_ead_key_material.session_key, GAP_EAD_KEY_LEN);
     memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key_material.iv,
@@ -204,7 +203,7 @@ int gap_ead_key_material_get(uint8_t out[24]) {
 }
 
 // Erase the EAD key material so encrypted advertising cannot be produced.
-void gap_ead_key_material_clear(void) {
+void gap_ead_key_clear(void) {
     volatile uint8_t *wipe = (volatile uint8_t *)&gap_ead_key_material;
     for (size_t i = 0; i < sizeof(gap_ead_key_material); i++) wipe[i] = 0;
 }
@@ -213,6 +212,7 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
     if (!data || !len || len > GAP_EAD_PLAINTEXT_MAX) return 0;
     size_t offset = 0;
     size_t structures = 0;
+
     while (offset < len) {
         uint8_t type;
         const uint8_t *value;

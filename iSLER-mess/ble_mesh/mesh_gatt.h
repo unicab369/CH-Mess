@@ -205,7 +205,7 @@ static uint8_t mesh_gatt_gap_edkm_read(
     uint8_t material[24];
     if (!inout_len || (out == NULL && *inout_len))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (!gap_ead_key_material_get(material))
+    if (!gap_ead_key_get(material))
         return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
     if (offset > sizeof(material)) {
         memset(material, 0, sizeof(material));

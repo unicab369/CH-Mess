@@ -116,7 +116,7 @@ target hardware verification.
 | GATT attribute security permissions | [x] | Hardware TODO: Verify insufficient encryption/authentication responses. |
 | Application authorization procedure/policy | [x] | GATT attributes can require application authorization for reads or writes; the server calls the configured authorizer and returns Insufficient Authorization when denied or unavailable. Unit tests cover allow/deny behavior and security-check ordering. |
 | Legacy connection data signing (Security Mode 2) | N/A | Removed in Core 6.3; excluded from this implementation target. |
-| Encrypted Advertising Data (EAD) | [x] | `gap_ead_encrypt()` and `gap_ead_decrypt()` encode/decode the 0x31 AD structure using CCM, secure randomizers, and application-provided session key/IV material. Set key material with `gap_ead_key_material_set()` before encrypting; the CSS sample vector is covered by a Central host test. |
+| Encrypted Advertising Data (EAD) | [x] | `gap_ead_encrypt()` and `gap_ead_decrypt()` encode/decode the 0x31 AD structure using CCM, secure randomizers, and application-provided session key/IV material. Set key material with `gap_ead_key_set()` before encrypting; the CSS sample vector is covered by a Central host test. |
 | Security Mode 3 / Broadcast_Code security | [ ] TODO (optional) | Required only if Broadcast Isochronous Streams are implemented. |
 | Secure Connections OOB interface and pairing flow | [x] | `gap_sc_oob_get()` creates local OOB random/confirm data and `gap_sc_oob_set_peer()` supplies the peer values. Host tests cover successful pairing in both roles, missing local data, invalid commitment, cancellation, and secret clearing. Hardware TODO: verify OOB data exchange, bonding, and reconnect behavior. |
 
