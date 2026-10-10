@@ -2631,7 +2631,7 @@ static void test_connection_context_slots(void) {
     gap_conn.tx_sn = 1;
     gap_security.tx_counter = 0x12345678;
     gap_smp.status = 0x31;
-    gap_conn_tx_frame[3] = 0xa0;
+    gap_tx_frame[3] = 0xa0;
 
     uint8_t request[36] = {0x05, 34};
     const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
@@ -2687,16 +2687,16 @@ static void test_connection_context_slots(void) {
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     gap_security.tx_counter = 0xabcdef;
     gap_smp.status = 0x52;
-    gap_conn_tx_frame[3] = 0xb1;
+    gap_tx_frame[3] = 0xb1;
 
     assert(gap_conn_select(first_handle));
     assert(gap_conn.active && gap_conn.central_role && gap_conn.tx_sn == 1);
     assert(gap_security.tx_counter == 0x12345678 && gap_smp.status == 0x31);
-    assert(gap_conn_tx_frame[3] == 0xa0);
+    assert(gap_tx_frame[3] == 0xa0);
     assert(gap_conn_select(second_handle));
     assert(gap_conn.active && !gap_conn.central_role && gap_conn.tx_sn == 0);
     assert(gap_security.tx_counter == 0xabcdef && gap_smp.status == 0x52);
-    assert(gap_conn_tx_frame[3] == 0xb1);
+    assert(gap_tx_frame[3] == 0xb1);
 
     // Both links have an open event window. The radio poll rotates its tie
     // break after servicing one connection so the lower slot cannot starve
@@ -2967,15 +2967,15 @@ static void test_connection_timing_updates(void) {
     assert(gap_conn.local_update_queued && !gap_conn.update_pending);
     receive_test_link_packet(1);
     assert(!gap_conn.local_update_queued && gap_conn.update_pending);
-    assert((gap_conn_tx_frame[0] & 3) == 3 && gap_conn_tx_frame[1] == 12);
-    assert(memcmp(gap_conn_tx_frame + 2,
+    assert((gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 12);
+    assert(memcmp(gap_tx_frame + 2,
         (uint8_t[]){0, 1, 0, 0, 48, 0, 1, 0, 44, 1}, 10) == 0);
     uint16_t instant = gap_conn.update_instant;
     assert((uint16_t)(instant - gap_conn.event_counter) >= 6);
     uint8_t payload[12];
-    memcpy(payload, gap_conn_tx_frame + 2, 12);
+    memcpy(payload, gap_tx_frame + 2, 12);
     receive_test_link_packet(0);
-    assert(memcmp(payload, gap_conn_tx_frame + 2, 12) == 0);
+    assert(memcmp(payload, gap_tx_frame + 2, 12) == 0);
     receive_test_link_packet(1);
     while (gap_conn.event_counter != instant) {
         assert(gap_conn.interval == 24);
@@ -3043,14 +3043,14 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn_update(48, 1, 300));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn.feature_request_pending && gap_conn_tx_frame[2] == 0x08);
+    assert(gap_conn.feature_request_pending && gap_tx_frame[2] == 0x08);
     receive_test_control(0x09, features, sizeof(features));
     assert(gap_conn.features_known && gap_conn.params_pending);
-    assert(gap_conn_tx_frame[2] == 0x0f && gap_conn_tx_frame[1] == 24);
-    assert(memcmp(gap_conn_tx_frame + 3, parameters, 8) == 0);
-    for (uint8_t i = 14; i < 26; i++) assert(gap_conn_tx_frame[i] == 0xff);
+    assert(gap_tx_frame[2] == 0x0f && gap_tx_frame[1] == 24);
+    assert(memcmp(gap_tx_frame + 3, parameters, 8) == 0);
+    for (uint8_t i = 14; i < 26; i++) assert(gap_tx_frame[i] == 0xff);
     receive_test_control(0x10, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0 && gap_conn.update_pending);
+    assert(gap_tx_frame[2] == 0 && gap_conn.update_pending);
     assert(gap_conn.update_interval == 50); // Honor preferred periodicity.
     uint16_t instant = gap_conn.update_instant;
     while (gap_conn.event_counter != instant) receive_test_link_packet(1);
@@ -3062,9 +3062,9 @@ static void test_connection_parameter_requests(void) {
     gap_conn.central_role = 0;
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x0e);
+    assert(gap_tx_frame[2] == 0x0e);
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_conn_tx_frame[2] == 0x0f && gap_conn.params_pending);
+    assert(gap_tx_frame[2] == 0x0f && gap_conn.params_pending);
     receive_test_control(0x11, (uint8_t[]){0x08, 0x20}, 2);
     assert(gap_conn.params_pending); // Unrelated rejection cannot cancel it.
     receive_test_control(0x11, (uint8_t[]){0x0f, 0x20}, 2);
@@ -3085,12 +3085,12 @@ static void test_connection_parameter_requests(void) {
     start_test_central_link();
     gap_conn.central_role = 0;
     receive_test_control(0x08, features, sizeof(features));
-    assert(gap_conn_tx_frame[2] == 9 && gap_conn_tx_frame[3] == 0x0e);
+    assert(gap_tx_frame[2] == 9 && gap_tx_frame[3] == 0x0e);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0x10);
-    assert(memcmp(gap_conn_tx_frame + 3, parameters, sizeof(parameters)) == 0);
+    assert(gap_tx_frame[2] == 0x10);
+    assert(memcmp(gap_tx_frame + 3, parameters, sizeof(parameters)) == 0);
     assert(gap_conn.params_pending && !gap_conn.params_local);
     assert(gap_conn_status() == 0x23); // Central wins the collision.
     gap_conn_end();
@@ -3098,27 +3098,27 @@ static void test_connection_parameter_requests(void) {
     // A Central accepts a Peripheral request directly with UPDATE_IND.
     start_test_central_link();
     receive_test_control(0x0e, features, sizeof(features));
-    assert(gap_conn_tx_frame[2] == 9 && gap_conn_tx_frame[3] == 0x0e);
+    assert(gap_tx_frame[2] == 9 && gap_tx_frame[3] == 0x0e);
     parameters[0] = 5;
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1e);
     parameters[0] = 48;
     parameters[11] = 1; parameters[12] = 0;
     parameters[13] = 1; parameters[14] = 0; // Duplicate offset hints.
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1e);
     memset(parameters + 11, 0xff, 12);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x23);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x23);
     assert(gap_conn.params_pending && gap_conn.params_local);
     receive_test_control(0x07, (uint8_t[]){0x0f}, 1);
     assert(!gap_conn.params_pending && gap_conn_status() == 0x1a);
     gap_conn_end();
     start_test_central_link();
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(gap_conn_tx_frame[2] == 0 && gap_conn.update_pending);
+    assert(gap_tx_frame[2] == 0 && gap_conn.update_pending);
     gap_conn_end();
 
     start_test_central_link();
@@ -3155,17 +3155,17 @@ static void test_data_length(void) {
     assert(gap_data_length_set(capacity));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x14 && gap_conn_tx_frame[1] == 9);
-    assert(gap_conn_tx_frame[3] == capacity && gap_conn_tx_frame[7] == capacity);
-    uint16_t duration = (uint16_t)gap_conn_tx_frame[4] << 8 | gap_conn_tx_frame[3];
+    assert(gap_tx_frame[2] == 0x14 && gap_tx_frame[1] == 9);
+    assert(gap_tx_frame[3] == capacity && gap_tx_frame[7] == capacity);
+    uint16_t duration = (uint16_t)gap_tx_frame[4] << 8 | gap_tx_frame[3];
     assert(duration == capacity);
-    duration = (uint16_t)gap_conn_tx_frame[6] << 8 | gap_conn_tx_frame[5];
+    duration = (uint16_t)gap_tx_frame[6] << 8 | gap_tx_frame[5];
     assert(duration == (capacity + 14) * 8);
     receive_test_link_packet(0);
-    assert(gap_conn_tx_frame[2] == 0x14 && gap_conn.length_pending);
+    assert(gap_tx_frame[2] == 0x14 && gap_conn.length_pending);
     // Simultaneous requests are answered while our own response remains pending.
     receive_test_control(0x14, limits, 8);
-    assert(gap_conn_tx_frame[2] == 0x15 && gap_conn.length_pending);
+    assert(gap_tx_frame[2] == 0x15 && gap_conn.length_pending);
     receive_test_control(0x15, limits, 8);
     assert(gap_data_length_status() == 0);
     state = gap_data_length_get();
@@ -3178,7 +3178,7 @@ static void test_data_length(void) {
     assert(gap_conn.tx_queued && gap_conn.tx_len == capacity);
     assert(gap_data_length_get().tx_octets == 27);
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[1] == capacity);
+    assert(gap_tx_frame[1] == capacity);
     receive_test_link_packet(1);
     assert(!gap_send_data(1, data, 28));
     // Receive a full negotiated fragment, including >27-byte configured builds.
@@ -3208,7 +3208,7 @@ static void test_data_length(void) {
     assert(gap_data_length_get().rx_octets == capacity);
     limits[0] = 26;
     receive_test_control(0x14, limits, 8);
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1e);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1e);
     gap_conn_end();
 
     start_test_central_link();
@@ -3229,10 +3229,10 @@ static void test_data_length(void) {
     limits[0] = limits[4] = 251;
     limits[2] = limits[6] = 0x48; limits[3] = limits[7] = 0x08;
     receive_test_control(0x14, limits, 8);
-    assert(gap_conn_tx_frame[2] == 0x15);
+    assert(gap_tx_frame[2] == 0x15);
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x14);
+    assert(gap_tx_frame[2] == 0x14);
     receive_test_control(0x15, limits, 8);
     assert(gap_data_length_status() == 0);
     gap_conn_end();
@@ -3254,7 +3254,7 @@ static void test_data_length(void) {
     start_test_central_link();
     assert(!gap_data_length_set(28));
     receive_test_control(0x14, limits, 8);
-    assert(gap_conn_tx_frame[3] == 27 && gap_data_length_get().rx_octets == 27);
+    assert(gap_tx_frame[3] == 27 && gap_data_length_get().rx_octets == 27);
     gap_conn_end();
     radio_data_max = GAP_CONN_DATA_MAX;
 }
@@ -3285,16 +3285,16 @@ static void test_channel_map_updates(void) {
     gap_conn.latency = 3;
     receive_test_link_packet(1);
     assert(!gap_conn.local_map_queued && gap_conn.channel_map_update_pending);
-    assert(gap_conn_tx_frame[2] == 0x01 && gap_conn_tx_frame[1] == 8);
-    assert(memcmp(gap_conn_tx_frame + 3, channels, 5) == 0);
-    uint16_t instant = (uint16_t)gap_conn_tx_frame[8] |
-        (uint16_t)gap_conn_tx_frame[9] << 8;
+    assert(gap_tx_frame[2] == 0x01 && gap_tx_frame[1] == 8);
+    assert(memcmp(gap_tx_frame + 3, channels, 5) == 0);
+    uint16_t instant = (uint16_t)gap_tx_frame[8] |
+        (uint16_t)gap_tx_frame[9] << 8;
     assert(instant == 23); // The Instant wraps safely through event zero.
     assert(memcmp(gap_conn.channel_map, old_map, 5) == 0);
     uint8_t pending_frame[10];
-    memcpy(pending_frame, gap_conn_tx_frame, sizeof(pending_frame));
+    memcpy(pending_frame, gap_tx_frame, sizeof(pending_frame));
     receive_test_link_packet(0);
-    assert(memcmp(pending_frame + 1, gap_conn_tx_frame + 1, 9) == 0);
+    assert(memcmp(pending_frame + 1, gap_tx_frame + 1, 9) == 0);
     while (gap_conn.event_counter != instant) {
         assert(memcmp(gap_conn.channel_map, old_map, 5) == 0);
         receive_test_link_packet(1);
@@ -3311,7 +3311,7 @@ static void test_channel_map_updates(void) {
     uint8_t timing[23] = {48, 0, 60, 0, 0, 0, 200, 0};
     memset(timing + 11, 0xff, 12);
     receive_test_control(0x0f, timing, sizeof(timing));
-    assert(gap_conn_tx_frame[2] == 0x11 && !gap_conn.update_pending);
+    assert(gap_tx_frame[2] == 0x11 && !gap_conn.update_pending);
     assert(gap_conn.local_map_queued && gap_conn_status() == GAP_CONNECTION_PENDING);
     gap_conn_end();
 
@@ -3321,7 +3321,7 @@ static void test_channel_map_updates(void) {
     gap_conn.tx_pending = gap_conn.event_replied = gap_conn.rx_armed = 0;
     now_ms = (uint32_t)((gap_conn.next_event_ticks + 999) / 1000);
     gap_conn_poll();
-    assert(gap_conn_tx_frame[2] == 0x01 && gap_conn.channel_map_update_pending);
+    assert(gap_tx_frame[2] == 0x01 && gap_conn.channel_map_update_pending);
     // Reaching the Instant without an ACK must close the link.
     gap_conn.event_counter = gap_conn.channel_map_update_instant;
     gap_conn_update_apply(0);
@@ -3358,16 +3358,16 @@ static void test_phy_updates(void) {
     assert(gap_conn.phy_queued && !gap_conn.phy_pending);
     gap_conn.event_counter = 0xfffd;
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x16 && gap_conn_tx_frame[3] == 2);
+    assert(gap_tx_frame[2] == 0x16 && gap_tx_frame[3] == 2);
     receive_test_link_packet(0);
-    assert(gap_conn_tx_frame[2] == 0x16 && gap_phy_status() == 0xff);
+    assert(gap_tx_frame[2] == 0x16 && gap_phy_status() == 0xff);
     // Central wins a simultaneous PHY request and keeps its pending request.
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x23);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x23);
     assert(gap_conn.phy_pending);
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 2 &&
-           gap_conn_tx_frame[4] == 2);
+    assert(gap_tx_frame[2] == 0x18 && gap_tx_frame[3] == 2 &&
+           gap_tx_frame[4] == 2);
     uint16_t instant = gap_conn.phy_instant;
     assert(gap_conn.phy_update_pending && instant < 10);
     while (gap_conn.event_counter != instant) {
@@ -3382,8 +3382,8 @@ static void test_phy_updates(void) {
     assert(configured_tx_phy == 2 && configured_rx_phy == 2);
     // A peer's asymmetric preference can change only one direction.
     receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 0 &&
-           gap_conn_tx_frame[4] == 0);
+    assert(gap_tx_frame[2] == 0x18 && gap_tx_frame[3] == 0 &&
+           gap_tx_frame[4] == 0);
     // No shared preference: unchanged rates and immediate completion.
     assert(!gap_conn.phy_update_pending);
     gap_conn_end();
@@ -3391,8 +3391,8 @@ static void test_phy_updates(void) {
     // The Central can select different supported rates in each direction.
     start_test_central_link();
     receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x18 && gap_conn_tx_frame[3] == 2 &&
-           gap_conn_tx_frame[4] == 0);
+    assert(gap_tx_frame[2] == 0x18 && gap_tx_frame[3] == 2 &&
+           gap_tx_frame[4] == 0);
     instant = gap_conn.phy_instant;
     while (gap_conn.event_counter != instant) receive_test_link_packet(1);
     assert(gap_conn.tx_phy == 2 && gap_conn.rx_phy == 1);
@@ -3403,7 +3403,7 @@ static void test_phy_updates(void) {
     assert(gap_phy_set(2, 1));
     receive_test_link_packet(1);
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
-    assert(gap_conn_tx_frame[3] == 0 && gap_conn_tx_frame[4] == 0);
+    assert(gap_tx_frame[3] == 0 && gap_tx_frame[4] == 0);
     assert(gap_phy_status() == 0 && !gap_conn.phy_update_pending);
     gap_conn_end();
 
@@ -3413,7 +3413,7 @@ static void test_phy_updates(void) {
     gap_conn.tx_pending = gap_conn.event_replied = gap_conn.rx_armed = 0;
     now_ms = (uint32_t)((gap_conn.next_event_ticks + 999) / 1000);
     gap_conn_poll();
-    assert(gap_conn_tx_frame[2] == 0x16 && gap_conn.phy_pending);
+    assert(gap_tx_frame[2] == 0x16 && gap_conn.phy_pending);
     gap_conn_end();
 
     // Peripheral responds and applies independent directions at the Instant.
@@ -3422,7 +3422,7 @@ static void test_phy_updates(void) {
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x17 && gap_conn.phy_pending);
+    assert(gap_tx_frame[2] == 0x17 && gap_conn.phy_pending);
     instant = gap_conn.event_counter + 7;
     receive_test_control(0x18,
                          (uint8_t[]){2, 1, (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
@@ -3464,7 +3464,7 @@ static void test_phy_updates(void) {
     // Feature exchange advertises 2M in byte 1, and caches the peer's support.
     start_test_central_link();
     receive_test_control(0x0e, (uint8_t[]){0x2e, 1, 0, 0, 0, 0, 0, 0}, 8);
-    assert(gap_conn_tx_frame[2] == 0x09 && gap_conn_tx_frame[4] == 1);
+    assert(gap_tx_frame[2] == 0x09 && gap_tx_frame[4] == 1);
     assert(gap_phy_set(2, 2));
     gap_conn_end();
     start_test_central_link();
@@ -3478,18 +3478,18 @@ static void test_phy_updates(void) {
     start_test_central_link();
     receive_test_control(0x0e,
         (uint8_t[]){0x2e, 0x08, 0, 0, 0, 0, 0, 0}, 8);
-    assert(gap_conn_tx_frame[2] == 0x09 && gap_conn_tx_frame[4] == 0x09);
+    assert(gap_tx_frame[2] == 0x09 && gap_tx_frame[4] == 0x09);
     assert(gap_phy_set(GAP_PHY_CODED, GAP_PHY_CODED));
     receive_test_link_packet(0);
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x16 &&
-           gap_conn_tx_frame[3] == GAP_PHY_CODED &&
-           gap_conn_tx_frame[4] == GAP_PHY_CODED);
+    assert(gap_tx_frame[2] == 0x16 &&
+           gap_tx_frame[3] == GAP_PHY_CODED &&
+           gap_tx_frame[4] == GAP_PHY_CODED);
     receive_test_control(0x17,
         (uint8_t[]){GAP_PHY_CODED, GAP_PHY_CODED}, 2);
-    assert(gap_conn_tx_frame[2] == 0x18 &&
-           gap_conn_tx_frame[3] == GAP_PHY_CODED &&
-           gap_conn_tx_frame[4] == GAP_PHY_CODED);
+    assert(gap_tx_frame[2] == 0x18 &&
+           gap_tx_frame[3] == GAP_PHY_CODED &&
+           gap_tx_frame[4] == GAP_PHY_CODED);
     instant = gap_conn.phy_instant;
     while (gap_conn.event_counter != instant) receive_test_link_packet(1);
     gap_phy_get(&tx, &rx);
@@ -3517,12 +3517,12 @@ static void test_phy_updates(void) {
     start_test_central_link();
     assert(!gap_phy_set(2, 2));
     receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
-    assert(gap_conn_tx_frame[4] == 0);
+    assert(gap_tx_frame[4] == 0);
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(gap_conn_tx_frame[2] == 0x07);
+    assert(gap_tx_frame[2] == 0x07);
     receive_test_control(0x16,
         (uint8_t[]){GAP_PHY_CODED, GAP_PHY_CODED}, 2);
-    assert(gap_conn_tx_frame[2] == 0x07);
+    assert(gap_tx_frame[2] == 0x07);
     gap_conn_end();
     radio_phy_mask = 3;
 }
@@ -3535,13 +3535,13 @@ static void test_connection_subrating(void) {
     assert(!gap_subrate_set(501, 0, 0, 300));
     assert(gap_subrate_set(5, 1, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x08 && gap_conn_tx_frame[1] == 9);
-    assert(gap_conn_tx_frame[7] == 0xe0);
+    assert(gap_tx_frame[2] == 0x08 && gap_tx_frame[1] == 9);
+    assert(gap_tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
-    assert(gap_conn_tx_frame[2] == 0x27 && gap_conn_tx_frame[1] == 11);
+    assert(gap_tx_frame[2] == 0x27 && gap_tx_frame[1] == 11);
     assert(gap_conn.subrate_transition && gap_conn.subrate_pending);
-    assert(gap_conn_tx_frame[3] == 5 && gap_conn_tx_frame[4] == 0);
-    assert(gap_conn_tx_frame[7] == 1 && gap_conn_tx_frame[9] == 1);
+    assert(gap_tx_frame[3] == 5 && gap_tx_frame[4] == 0);
+    assert(gap_tx_frame[7] == 1 && gap_tx_frame[9] == 1);
     receive_test_link_packet(1);
     assert(gap_conn.subrate_factor == 5 && !gap_conn.subrate_transition &&
            gap_subrate_status() == 0);
@@ -3557,10 +3557,10 @@ static void test_connection_subrating(void) {
     assert(gap_subrate_request(2, 6, 2, 1, 300));
     assert(!gap_subrate_request(1, 6, 2, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x0e && gap_conn_tx_frame[7] == 0xe0);
+    assert(gap_tx_frame[2] == 0x0e && gap_tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
-    assert(gap_conn_tx_frame[2] == 0x26 && gap_conn_tx_frame[1] == 11);
-    assert(gap_conn_tx_frame[3] == 2 && gap_conn_tx_frame[5] == 6);
+    assert(gap_tx_frame[2] == 0x26 && gap_tx_frame[1] == 11);
+    assert(gap_tx_frame[3] == 2 && gap_tx_frame[5] == 6);
     uint8_t indication[10] = {6, 0, 4, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x27, indication, sizeof(indication));
     assert(gap_conn.subrate_factor == 6 && gap_conn.subrate_base_event == 4 &&
@@ -3574,7 +3574,7 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     uint8_t request[10] = {2, 0, 6, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x26, request, sizeof(request));
-    assert(gap_conn_tx_frame[2] == 0x27 && gap_conn.subrate_pending);
+    assert(gap_tx_frame[2] == 0x27 && gap_conn.subrate_pending);
     assert(gap_conn.subrate_pending_factor == 6);
     receive_test_link_packet(1);
     assert(gap_conn.subrate_factor == 6 && gap_subrate_status() == 0);
@@ -3583,8 +3583,8 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     request[0] = 0;
     receive_test_control(0x26, request, sizeof(request));
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[3] == 0x26 &&
-           gap_conn_tx_frame[4] == 0x1e);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[3] == 0x26 &&
+           gap_tx_frame[4] == 0x1e);
     gap_conn_end();
 
     // Subrating skips radio work but continues event-counter and channel
@@ -3668,20 +3668,20 @@ static void test_extended_feature_page(void) {
     start_test_central_link();
     const uint8_t peer_features[8] = {0, 0, 0, 0, 0, 0, 0, 0x80};
     receive_test_control(0x0e, peer_features, sizeof(peer_features));
-    assert(gap_conn_tx_frame[2] == 0x09 && gap_conn_tx_frame[10] == 0x80);
+    assert(gap_tx_frame[2] == 0x09 && gap_tx_frame[10] == 0x80);
     const uint8_t page_request[10] = {1, 1};
     receive_test_control(0x2b, page_request, sizeof(page_request));
-    assert(gap_conn_tx_frame[1] == 11 && gap_conn_tx_frame[2] == 0x2c);
-    assert(gap_conn_tx_frame[3] == 1 && gap_conn_tx_frame[4] == 1);
-    assert(gap_conn_tx_frame[5] == 0 && gap_conn_tx_frame[6] == 0x03);
+    assert(gap_tx_frame[1] == 11 && gap_tx_frame[2] == 0x2c);
+    assert(gap_tx_frame[3] == 1 && gap_tx_frame[4] == 1);
+    assert(gap_tx_frame[5] == 0 && gap_tx_frame[6] == 0x03);
     gap_conn_end();
 
     start_test_central_link();
     receive_test_control(0x0e, peer_features, sizeof(peer_features));
-    gap_conn_tx_frame[1] = 0;
+    gap_tx_frame[1] = 0;
     gap_conn_feature_ext_request_send();
-    assert(gap_conn_tx_frame[1] == 11 && gap_conn_tx_frame[2] == 0x2b);
-    assert(gap_conn_tx_frame[3] == 1 && gap_conn_tx_frame[4] == 1);
+    assert(gap_tx_frame[1] == 11 && gap_tx_frame[2] == 0x2b);
+    assert(gap_tx_frame[3] == 1 && gap_tx_frame[4] == 1);
     uint8_t page_response[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page_response, sizeof(page_response));
     assert(!gap_conn.feature_ext_pending &&
@@ -3694,15 +3694,15 @@ static void test_connection_rate_exchange(void) {
     assert(!gap_conn.feature_page1_known && !gap_conn.peer_features7);
     assert(gap_conn_rate_set(80, 2, 0, 1, 100));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x08);
+    assert(gap_tx_frame[2] == 0x08);
     uint8_t features[8] = {0};
     features[7] = 0x80;
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_conn_tx_frame[2] == 0x2b && gap_conn.feature_ext_pending);
+    assert(gap_tx_frame[2] == 0x2b && gap_conn.feature_ext_pending);
     uint8_t page[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page, sizeof(page));
-    assert(gap_conn_tx_frame[2] == 0x3f && gap_conn_tx_frame[1] == 15);
-    assert(gap_conn_tx_frame[5] == 80 && gap_conn_tx_frame[9] == 2);
+    assert(gap_tx_frame[2] == 0x3f && gap_tx_frame[1] == 15);
+    assert(gap_tx_frame[5] == 80 && gap_tx_frame[9] == 2);
     uint16_t instant = gap_conn.rate_instant;
     uint16_t events_until_instant = (uint16_t)(instant - gap_conn.event_counter);
     assert(events_until_instant >= 6 && events_until_instant < 0x8000);
@@ -3719,13 +3719,13 @@ static void test_connection_rate_exchange(void) {
     gap_conn.central_role = 0;
     assert(gap_conn_rate_request(60, 120, 2, 4, 1, 1, 200));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x0e && gap_conn_tx_frame[1] == 9);
+    assert(gap_tx_frame[2] == 0x0e && gap_tx_frame[1] == 9);
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_conn_tx_frame[2] == 0x2b);
+    assert(gap_tx_frame[2] == 0x2b);
     receive_test_control(0x2c, page, sizeof(page));
-    assert(gap_conn_tx_frame[2] == 0x3e && gap_conn_tx_frame[1] == 27);
-    assert(gap_conn_tx_frame[3] == 60 && gap_conn_tx_frame[5] == 120 &&
-           gap_conn_tx_frame[21] == 0xff && gap_conn_tx_frame[23] == 0xff);
+    assert(gap_tx_frame[2] == 0x3e && gap_tx_frame[1] == 27);
+    assert(gap_tx_frame[3] == 60 && gap_tx_frame[5] == 120 &&
+           gap_tx_frame[21] == 0xff && gap_tx_frame[23] == 0xff);
     uint8_t indication[14] = {
         0, 0, 80, 0, 12, 0, 2, 0, 1, 0, 1, 0, 200, 0
     };
@@ -3755,7 +3755,7 @@ static void test_connection_rate_exchange(void) {
     request[18] = request[19] = 0;
     assert(gap_conn.interval_125us > 120);
     receive_test_control(0x3e, request, sizeof(request));
-    assert(gap_conn_tx_frame[2] == 0x3f && gap_conn_tx_frame[1] == 15);
+    assert(gap_tx_frame[2] == 0x3f && gap_tx_frame[1] == 15);
     assert(gap_conn.rate_interval == 60 && gap_conn.rate_factor == 4 &&
            gap_conn.rate_update_pending);
     gap_conn_end();
@@ -3771,9 +3771,9 @@ static void test_channel_classification_reporting(void) {
     gap_conn.peer_features4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_reporting_set(1, 5, 10));
     gap_channel_reporting_start_queued();
-    assert(gap_conn_tx_frame[2] == 0x28 && gap_conn_tx_frame[1] == 4 &&
-           gap_conn_tx_frame[3] == 1 && gap_conn_tx_frame[4] == 5 &&
-           gap_conn_tx_frame[5] == 10);
+    assert(gap_tx_frame[2] == 0x28 && gap_tx_frame[1] == 4 &&
+           gap_tx_frame[3] == 1 && gap_tx_frame[4] == 5 &&
+           gap_tx_frame[5] == 10);
     receive_test_link_packet(1);
     assert(gap_conn_status() == 0);
     uint8_t report[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
@@ -3798,8 +3798,8 @@ static void test_channel_classification_reporting(void) {
     assert(gap_conn.channel_reporting_enabled && gap_conn.channel_status_queued);
     now_ms += 2000;
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x29 && gap_conn_tx_frame[1] == 11 &&
-           memcmp(gap_conn_tx_frame + 3, classification, sizeof(classification)) == 0);
+    assert(gap_tx_frame[2] == 0x29 && gap_tx_frame[1] == 11 &&
+           memcmp(gap_tx_frame + 3, classification, sizeof(classification)) == 0);
     assert(!gap_conn.channel_status_queued && gap_conn.channel_status_last_sent_valid);
     gap_conn_end();
 }
@@ -3855,9 +3855,9 @@ static void start_test_encrypted_central(void) {
     secure_random_force = 1;
     assert(gap_encrypt(encryption_ltk, encryption_random, 0x2474));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x03 && gap_conn_tx_frame[1] == 23);
-    assert(memcmp(gap_conn_tx_frame + 3, encryption_random, 8) == 0);
-    assert(gap_conn_tx_frame[11] == 0x74 && gap_conn_tx_frame[12] == 0x24);
+    assert(gap_tx_frame[2] == 0x03 && gap_tx_frame[1] == 23);
+    assert(memcmp(gap_tx_frame + 3, encryption_random, 8) == 0);
+    assert(gap_tx_frame[11] == 0x74 && gap_tx_frame[12] == 0x24);
     receive_test_control(0x04, peripheral_entropy, 12);
     const uint8_t session[16] = {
         0x99, 0xad, 0x1b, 0x52, 0x26, 0xa3, 0x7e, 0x3e,
@@ -3914,7 +3914,7 @@ static void test_link_encryption(void) {
     receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
     assert(gap_security.rx_counter == 3 && gap_conn.rx_ready);
     receive_secure_test_pdu(3, (uint8_t[]){0x12}, 1, 3, 0, 1, 0);
-    assert(gap_conn_tx_frame[2] == 0x13 && tx_buffer[1] == 5);
+    assert(gap_tx_frame[2] == 0x13 && tx_buffer[1] == 5);
     // Authentication failure disconnects before a packet reaches the application.
     receive_secure_test_pdu(1, central_data, 27, 4, 0, 1, 1);
     assert(!gap_conn.active && gap_security_status() == 0x3d);
@@ -3929,12 +3929,12 @@ static void test_link_encryption(void) {
     assert(!gap_send_data(1, central_data, 1));
     assert(memcmp(gap_security.iv, old_iv, 8) == 0);
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x0a && tx_buffer[1] == 5);
+    assert(gap_tx_frame[2] == 0x0a && tx_buffer[1] == 5);
     receive_secure_test_pdu(3, (uint8_t[]){0x0b}, 1, 1, 0, 1, 0);
-    assert(gap_conn_tx_frame[2] == 0x0b && tx_buffer[1] == 1);
+    assert(gap_tx_frame[2] == 0x0b && tx_buffer[1] == 1);
     assert(!gap_security.tx_enabled && !gap_security.rx_enabled);
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x03 && gap_conn_tx_frame[11] == 0x34);
+    assert(gap_tx_frame[2] == 0x03 && gap_tx_frame[11] == 0x34);
     receive_test_control(0x04, peripheral_entropy, 12);
     receive_test_control(0x05, NULL, 0);
     assert(gap_security.tx_counter == 1);
@@ -3949,18 +3949,18 @@ static void test_link_encryption(void) {
     memcpy(request, encryption_random, 8); request[8] = 0x74; request[9] = 0x24;
     memcpy(request + 10, central_entropy, 12);
     receive_test_control(0x03, request, sizeof(request));
-    assert(gap_conn_tx_frame[2] == 0x04 && gap_conn_tx_frame[1] == 13);
+    assert(gap_tx_frame[2] == 0x04 && gap_tx_frame[1] == 13);
     uint8_t requested_random[8]; uint16_t ediv;
     assert(gap_key_request(requested_random, &ediv));
     assert(ediv == 0x2474 && memcmp(requested_random, encryption_random, 8) == 0);
     assert(gap_key_reply(encryption_ltk));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x05 && tx_buffer[1] == 1);
+    assert(gap_tx_frame[2] == 0x05 && tx_buffer[1] == 1);
     receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
     assert(gap_encrypted() && tx_buffer[1] == 5);
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0xa3, 0x4c, 0x13, 0xa4, 0x15}, 5) == 0);
     receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 0, 1, 0);
-    assert(gap_conn_tx_frame[2] == 0x0b && !gap_security.rx_enabled);
+    assert(gap_tx_frame[2] == 0x0b && !gap_security.rx_enabled);
     uint64_t transmitted = gap_security.tx_counter;
     receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 1, 0, 0);
     assert(gap_security.tx_counter == transmitted);
@@ -3969,7 +3969,7 @@ static void test_link_encryption(void) {
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x02 && gap_conn_tx_frame[3] == 0x06);
+    assert(gap_tx_frame[2] == 0x02 && gap_tx_frame[3] == 0x06);
     receive_test_link_packet(1);
     assert(!gap_conn.active && gap_security_status() == 0x06);
     secure_random_force = 0;
@@ -3979,7 +3979,7 @@ static void test_link_encryption(void) {
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x06);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x06);
     assert(!gap_encrypted() && !gap_key_request(NULL, NULL));
     gap_conn_end();
     start_test_central_link();
@@ -4003,7 +4003,7 @@ static void test_link_encryption(void) {
     start_test_encrypted_central();
     assert(gap_data_length_set(GAP_CONN_DATA_MAX));
     receive_test_link_packet(1);
-    assert(gap_conn_tx_frame[2] == 0x14);
+    assert(gap_tx_frame[2] == 0x14);
     receive_secure_test_pdu(3, (uint8_t[]){0x15, 251, 0, 0x48, 0x08, 251, 0, 0x48, 0x08},
                             9, 1, 0, 1, 0);
     uint8_t large[GAP_CONN_DATA_MAX]; memset(large, 0xab, sizeof(large));
@@ -4029,7 +4029,7 @@ static void test_link_encryption(void) {
     assert(gap_security_status() == 0x1f && !gap_security.phase);
     gap_conn.central_role = 0;
     receive_test_control(0x03, request, sizeof(request));
-    assert(gap_conn_tx_frame[2] == 0x11 && gap_conn_tx_frame[4] == 0x1f);
+    assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1f);
     secure_random_available = 1;
     gap_conn_end();
     start_test_central_link();

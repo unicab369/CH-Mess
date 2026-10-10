@@ -287,6 +287,16 @@ typedef struct {
 } gap_conn_subrate;
 
 typedef struct {
+    uint8_t report_queued, report_pending, status_queued;
+    uint8_t enabled, classification_valid, peer_classification_valid;
+    uint8_t status_last_sent_valid;
+    uint8_t min_spacing_200ms, max_delay_200ms;
+    uint8_t local_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+    uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+    uint32_t status_changed_ms, status_last_sent_ms;
+} gap_channel;
+
+typedef struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t local_terminate_queued, local_terminate_pending;
@@ -308,16 +318,9 @@ typedef struct {
     uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
     uint8_t window_size, timing_update_pending, update_window_active, update_window_size;
-    uint8_t channel_map_update_pending, pending_channel_map[5];
+    uint8_t channel_map_pending, pending_channel_map[5];
     volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
-    uint8_t channel_reporting_queued, channel_reporting_pending;
-    uint8_t channel_status_queued;
-    uint8_t channel_reporting_enabled, channel_classification_valid;
-    uint8_t channel_peer_classification_valid, channel_status_last_sent_valid;
-    uint8_t channel_min_spacing_200ms, channel_max_delay_200ms;
-    uint8_t channel_local_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
-    uint8_t channel_peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
-    uint32_t channel_status_changed_ms, channel_status_last_sent_ms;
+    gap_channel channel;
     uint8_t params_pending, params_local, connection_status;
     uint8_t features_known, peer_features, peer_features2, peer_features4;
     uint8_t peer_features7;
@@ -342,7 +345,7 @@ typedef struct {
     gap_conn_parameters params, new_params;
     uint16_t interval_125us, peer_sca_ppm;
     uint16_t event_counter, update_instant, update_win_offset;
-    uint16_t channel_map_update_instant;
+    uint16_t channel_map_instant;
     uint16_t rate_interval_min, rate_interval_max;
     uint16_t rate_factor_min, rate_factor_max, rate_latency;
     uint16_t rate_continuation, rate_timeout, rate_periodicity;
@@ -353,10 +356,10 @@ typedef struct {
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_ticks;
 } gap_conn_context;
-static gap_conn_context
-    gap_conn_contexts[GAP_CONNECTION_COUNT];
+static gap_conn_context gap_conn_contexts[GAP_CONNECTION_COUNT];
 static uint8_t gap_conn_slot;
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
+
 #define gap_conn gap_conn_contexts[gap_conn_slot]
 int gap_conn_busy(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
@@ -566,19 +569,19 @@ static int gap_conn_accept(
     gap_conn.feature_page1_known = gap_conn.feature_ext_pending = 0;
     gap_conn.rate_set_queued = gap_conn.rate_request_queued = 0;
     gap_conn.rate_update_pending = gap_conn.rate_request_pending = 0;
-    gap_conn.channel_reporting_queued = gap_conn.channel_reporting_pending = 0;
-    gap_conn.channel_status_queued = gap_conn.channel_reporting_enabled = 0;
-    gap_conn.channel_classification_valid = 1;
-    gap_conn.channel_peer_classification_valid = 0;
-    gap_conn.channel_status_last_sent_valid = 0;
-    gap_conn.channel_min_spacing_200ms = 5;
-    gap_conn.channel_max_delay_200ms = 5;
-    memset(gap_conn.channel_local_classification, 0,
-           sizeof(gap_conn.channel_local_classification));
-    memset(gap_conn.channel_peer_classification, 0,
-           sizeof(gap_conn.channel_peer_classification));
-    gap_conn.channel_status_changed_ms = GET_MILLIS();
-    gap_conn.channel_status_last_sent_ms = 0;
+    gap_conn.channel.report_queued = gap_conn.channel.report_pending = 0;
+    gap_conn.channel.status_queued = gap_conn.channel.enabled = 0;
+    gap_conn.channel.classification_valid = 1;
+    gap_conn.channel.peer_classification_valid = 0;
+    gap_conn.channel.status_last_sent_valid = 0;
+    gap_conn.channel.min_spacing_200ms = 5;
+    gap_conn.channel.max_delay_200ms = 5;
+    memset(gap_conn.channel.local_classification, 0,
+           sizeof(gap_conn.channel.local_classification));
+    memset(gap_conn.channel.peer_classification, 0,
+           sizeof(gap_conn.channel.peer_classification));
+    gap_conn.channel.status_changed_ms = GET_MILLIS();
+    gap_conn.channel.status_last_sent_ms = 0;
     memset(gap_conn.peer_features_page1, 0,
            sizeof(gap_conn.peer_features_page1));
     gap_conn.phy.tx = gap_conn.phy.rx = GAP_PHY_1M;
@@ -587,7 +590,7 @@ static int gap_conn_accept(
         gap_conn.phy_status = 0;
     gap_conn.feature_request_pending = gap_conn.connection_status = 0;
     gap_conn.update_window_active = 0;
-    gap_conn.channel_map_update_pending = gap_conn.local_map_queued = 0;
+    gap_conn.channel_map_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
     gap_conn.local_terminate_queued = 0;
