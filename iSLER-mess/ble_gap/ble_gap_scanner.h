@@ -2,6 +2,32 @@
 #ifndef GAP_SCANNER_H
 #define GAP_SCANNER_H
 
+typedef struct {
+    uint8_t pdu_type, address_type, address[6];
+    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t has_target, target_address_type, target_address[6];
+    int8_t rssi;
+    uint8_t data_len, data[GAP_ADV_DATA_MAX];
+} gap_scan_report;
+
+static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+static uint8_t gap_scan_head, gap_scan_count;
+
+#if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t has_address, address_type, address[6];
+    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t has_adi, sid;
+    uint16_t did;
+    int8_t rssi;
+    uint16_t data_len;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_scan_report;
+
+static gap_ext_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
+#endif
+
 void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
     gap_periodic_sync_owned_scan = 0;
@@ -1081,6 +1107,7 @@ static int gap_periodic_sync_receive(
     gap_periodic_syncs[slot].data_len = 0;
     return 1;
 }
-#endif
+
+#endif // GAP_EXT_ADV_SUPPORT
 
 #endif // GAP_SCANNER_H

@@ -5,56 +5,6 @@
 // GAP advertising, scanning, and periodic synchronization data types and
 // shared state. Included by ble_gap.h before privacy and radio procedures.
 
-typedef struct {
-    uint8_t pdu_type, address_type, address[6];
-    uint8_t resolved, identity_type, identity_address[6];
-    uint8_t has_target, target_address_type, target_address[6];
-    int8_t rssi;
-    uint8_t data_len, data[GAP_ADV_DATA_MAX];
-} gap_scan_report;
-
-#if GAP_EXT_ADV_SUPPORT
-static const uint16_t gap_periodic_sca_ppm[8] = {
-    500, 250, 150, 100, 75, 50, 30, 20
-};
-typedef struct {
-    uint8_t has_address, address_type, address[6];
-    uint8_t resolved, identity_type, identity_address[6];
-    uint8_t has_adi, sid;
-    uint16_t did;
-    int8_t rssi;
-    uint16_t data_len;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_scan_report;
-enum {
-    GAP_EXT_ADV_PRIMARY_PDU = 0,
-    GAP_EXT_ADV_AUXILIARY_PDU = 1,
-    GAP_EXT_ADV_PERIODIC_PDU = 2
-};
-enum {
-    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
-    GAP_PERIODIC_SYNC_LOST = 2,
-    GAP_PERIODIC_SYNC_CANCELLED = 3,
-    GAP_PERIODIC_SYNC_TERMINATED = 4
-};
-typedef struct {
-    uint8_t type, handle, sid, address_type, address[6];
-} gap_periodic_sync_event;
-typedef struct {
-    uint8_t handle, sid;
-    uint16_t event_counter, did, data_len;
-    int8_t rssi;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_periodic_report;
-typedef struct {
-    uint8_t set_id, sid, subevent, response_slot;
-    uint8_t has_address, address_type, address[6];
-    uint16_t event_counter, data_len;
-    int8_t rssi;
-    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
-} gap_periodic_response_report;
-#endif
-
 static struct {
     uint8_t enabled, pdu_type, data_len, scan_response_len;
     uint8_t address_type, address[6];
@@ -102,13 +52,19 @@ static inline int gap_ext_adv_any_enabled(void) {
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
+#if GAP_EXT_ADV_SUPPORT
+enum {
+    GAP_EXT_ADV_PRIMARY_PDU = 0,
+    GAP_EXT_ADV_AUXILIARY_PDU = 1,
+    GAP_EXT_ADV_PERIODIC_PDU = 2
+};
+#endif
+
 static uint8_t gap_scanning, gap_active_scanning, gap_scan_generation;
 static struct {
     uint16_t interval_ms, window_ms;
     uint8_t discovery_mode, filter_duplicates;
 } gap_scan_settings = {20, 20, GAP_DISCOVERY_ALL, 0};
-static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
-static uint8_t gap_scan_head, gap_scan_count;
 
 #if GAP_EXT_ADV_SUPPORT
 static struct {
@@ -119,14 +75,49 @@ static struct {
     uint32_t deadline_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 } gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
-static gap_ext_scan_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
-static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
 static struct {
     uint8_t used, address_type, address[6], has_adi, sid;
     uint16_t did, data_len;
     uint32_t data_hash;
 } gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
 static uint8_t gap_ext_adv_seen_count, gap_ext_adv_seen_next;
+#endif
+
+static struct {
+    uint8_t address_type, address[6], pdu_type, data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
+} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
+static uint8_t gap_scan_seen_count, gap_scan_seen_next;
+static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
+static uint8_t gap_scan_response_address[6];
+
+#if GAP_EXT_ADV_SUPPORT
+static const uint16_t gap_periodic_sca_ppm[8] = {
+    500, 250, 150, 100, 75, 50, 30, 20
+};
+enum {
+    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
+    GAP_PERIODIC_SYNC_LOST = 2,
+    GAP_PERIODIC_SYNC_CANCELLED = 3,
+    GAP_PERIODIC_SYNC_TERMINATED = 4
+};
+typedef struct {
+    uint8_t type, handle, sid, address_type, address[6];
+} gap_periodic_sync_event;
+typedef struct {
+    uint8_t handle, sid;
+    uint16_t event_counter, did, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_periodic_report;
+typedef struct {
+    uint8_t set_id, sid, subevent, response_slot;
+    uint8_t has_address, address_type, address[6];
+    uint16_t event_counter, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_periodic_response_report;
+
 typedef struct {
     uint8_t used, established, handle, sid, address_type, address[6];
     uint8_t channel_map[5], sca, phy, missed_events, window_active, window_chain;
@@ -160,13 +151,5 @@ static uint8_t gap_pawr_response_report_head, gap_pawr_response_report_count;
 static uint8_t gap_periodic_sync_owned_scan, gap_periodic_sync_transfer_enabled;
 static uint32_t gap_periodic_sync_transfer_timeout_ms = 10000;
 #endif
-
-static struct {
-    uint8_t address_type, address[6], pdu_type, data_len;
-    uint8_t data[GAP_ADV_DATA_MAX];
-} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
-static uint8_t gap_scan_seen_count, gap_scan_seen_next;
-static uint8_t gap_scan_response_accepted, gap_scan_response_address_type;
-static uint8_t gap_scan_response_address[6];
 
 #endif // GAP_ADVERTISING_STATE_H
