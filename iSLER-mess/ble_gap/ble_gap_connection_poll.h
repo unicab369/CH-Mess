@@ -555,7 +555,6 @@ void gap_hw_init(void) {
 }
 
 static void gap_conn_poll(void);
-static inline void gap_conn_poll_all(void);
 
 // A null random_address selects the controller's public address.
 int gap_hw_transmit(
@@ -685,6 +684,54 @@ static uint64_t gap_conn_event_close_ticks(
 }
 
 // Give an established Peripheral connection its data-channel receive window.
+#if GAP_EXT_ADV_SUPPORT
+static void gap_radio_periodic_window_missed(uint8_t slot) {
+    if (!gap_periodic_syncs[slot].used) return;
+    if (gap_periodic_syncs[slot].window_chain) {
+        gap_periodic_syncs[slot].event_data_active = 0;
+        gap_periodic_syncs[slot].data_len = 0;
+    } else {
+        gap_periodic_syncs[slot].event_counter++;
+        gap_periodic_syncs[slot].next_event_ticks += HW_TICKS_FROM_US(
+            (uint32_t)gap_periodic_syncs[slot].interval * 1250u);
+        if (gap_periodic_syncs[slot].missed_events < 255)
+            gap_periodic_syncs[slot].missed_events++;
+        if (!gap_periodic_syncs[slot].established &&
+            gap_periodic_syncs[slot].missed_events >= 6
+        ) {
+            gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
+            memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
+            gap_periodic_sync_owned_scan_finish();
+            return;
+        }
+    }
+    gap_periodic_syncs[slot].window_active = 0;
+    gap_periodic_syncs[slot].window_chain = 0;
+}
+
+// Stop a lower-priority scan before the connection poll configures its channel.
+static void gap_radio_connection_take_radio(void) {
+    if (!gap_radio_periodic_listening && !gap_radio_aux_listening) return;
+    if (gap_radio_rx_armed) GAP_HW_STOP();
+    gap_radio_rx_armed = 0;
+    if (gap_radio_periodic_listening) {
+        uint8_t slot = gap_radio_periodic_listening_slot;
+        gap_radio_periodic_listening = 0;
+        if (slot < GAP_PERIODIC_SYNC_COUNT &&
+            gap_periodic_syncs[slot].used &&
+            gap_periodic_syncs[slot].window_active)
+            gap_radio_periodic_window_missed(slot);
+    }
+    if (gap_radio_aux_listening) {
+        uint8_t slot = gap_radio_aux_listening_slot;
+        gap_radio_aux_listening = 0;
+        if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
+            gap_radio_aux_request[slot].active = 0;
+    }
+    GAP_HW_PACKET_CLEAR();
+}
+#endif
+
 static void gap_conn_poll(void) {
     if (!gap_conn.active) return;
     if (gap_conn.bond_lookup_pending) {
@@ -950,38 +997,11 @@ static inline void gap_conn_poll_all(void) {
 }
 
 #if GAP_EXT_ADV_SUPPORT
-static void gap_radio_periodic_sync_lost(uint8_t slot) {
-    gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
-    memset(&gap_periodic_syncs[slot], 0, sizeof(gap_periodic_syncs[slot]));
-    gap_periodic_sync_owned_scan_finish();
-}
 
-static void gap_radio_periodic_window_missed(uint8_t slot) {
-    if (!gap_periodic_syncs[slot].used) return;
-    if (gap_periodic_syncs[slot].window_chain) {
-        gap_periodic_syncs[slot].event_data_active = 0;
-        gap_periodic_syncs[slot].data_len = 0;
-    } else {
-        gap_periodic_syncs[slot].event_counter++;
-        gap_periodic_syncs[slot].next_event_ticks += HW_TICKS_FROM_US(
-            (uint32_t)gap_periodic_syncs[slot].interval * 1250u);
-        if (gap_periodic_syncs[slot].missed_events < 255)
-            gap_periodic_syncs[slot].missed_events++;
-        if (!gap_periodic_syncs[slot].established &&
-            gap_periodic_syncs[slot].missed_events >= 6
-        ) {
-            gap_radio_periodic_sync_lost(slot);
-            return;
-        }
-    }
-    gap_periodic_syncs[slot].window_active = 0;
-    gap_periodic_syncs[slot].window_chain = 0;
-}
 
 // Check whether a periodic receive window intersects a guarded connection event.
-static int gap_radio_periodic_window_overlaps_connection(
-    uint64_t start_ticks,
-                                                         uint64_t end_ticks
+static int gap_periodic_conn_overlap(
+    uint64_t start_ticks, uint64_t end_ticks
 ) {
     if (!gap_conn.active || !gap_conn.next_event_ticks || !gap_conn.interval)
         return 0;
@@ -1018,26 +1038,7 @@ static int gap_radio_periodic_window_overlaps_connection(
 }
 
 // Stop a lower-priority scan before the connection poll configures its channel.
-static void gap_radio_connection_take_radio(void) {
-    if (!gap_radio_periodic_listening && !gap_radio_aux_listening) return;
-    if (gap_radio_rx_armed) GAP_HW_STOP();
-    gap_radio_rx_armed = 0;
-    if (gap_radio_periodic_listening) {
-        uint8_t slot = gap_radio_periodic_listening_slot;
-        gap_radio_periodic_listening = 0;
-        if (slot < GAP_PERIODIC_SYNC_COUNT &&
-            gap_periodic_syncs[slot].used &&
-            gap_periodic_syncs[slot].window_active)
-            gap_radio_periodic_window_missed(slot);
-    }
-    if (gap_radio_aux_listening) {
-        uint8_t slot = gap_radio_aux_listening_slot;
-        gap_radio_aux_listening = 0;
-        if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
-            gap_radio_aux_request[slot].active = 0;
-    }
-    GAP_HW_PACKET_CLEAR();
-}
+
 #endif
 
 void gap_hw_scan_poll(void) {
@@ -1054,7 +1055,9 @@ void gap_hw_scan_poll(void) {
             gap_radio_periodic_listening = 0;
             gap_radio_rx_armed = 0;
         }
-        gap_radio_periodic_sync_lost(i);
+        gap_periodic_sync_event_post(i, GAP_PERIODIC_SYNC_LOST);
+        memset(&gap_periodic_syncs[i], 0, sizeof(gap_periodic_syncs[i]));
+        gap_periodic_sync_owned_scan_finish();
     }
 #endif
     if (gap_central_conn.active && !gap_central_conn.auto_connect &&
@@ -1164,7 +1167,7 @@ void gap_hw_scan_poll(void) {
         }
         if (periodic_slot >= 0 && gap_conn.active &&
             ticks >= gap_periodic_syncs[periodic_slot].window_start_ticks &&
-            gap_radio_periodic_window_overlaps_connection(
+            gap_periodic_conn_overlap(
                 gap_periodic_syncs[periodic_slot].window_start_ticks,
                 gap_periodic_syncs[periodic_slot].window_end_ticks)
         ) {
@@ -1327,7 +1330,7 @@ static int gap_radio_ext_send_due(uint32_t now) {
                 uint64_t event_end = set->periodic_next_event_ticks +
                     HW_TICKS_FROM_US(event_duration_us + 400u);
                 if (gap_conn.rx_armed || gap_conn.event_replied) return 1;
-                if (gap_radio_periodic_window_overlaps_connection(
+                if (gap_periodic_conn_overlap(
                         set->periodic_next_event_ticks, event_end)
                 ) {
                     set->periodic_event_counter++;

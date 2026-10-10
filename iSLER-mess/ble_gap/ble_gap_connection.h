@@ -55,14 +55,10 @@ static volatile uint8_t gap_radio_pawr_connect_waiting;
 static volatile uint8_t gap_radio_pawr_connect_response_ready;
 static uint8_t gap_radio_pawr_connect_response[16];
 static uint64_t gap_radio_pawr_connect_request_end_ticks;
-static int gap_radio_periodic_window_overlaps_connection(
-    uint64_t start_ticks,
-                                                         uint64_t end_ticks);
 static struct {
     uint8_t active, channel, phy;
     uint64_t window_start_ticks, window_end_ticks;
 } gap_radio_aux_request[GAP_EXT_ADV_CONTEXT_COUNT];
-static void gap_radio_connection_take_radio(void);
 #endif
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_adv_frame[8 + GAP_ADV_DATA_MAX];
 static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_response_frame[8 + GAP_ADV_DATA_MAX];
