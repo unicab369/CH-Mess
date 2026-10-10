@@ -4,6 +4,90 @@
 
 #if GAP_EXT_ADV_SUPPORT
 // -----------------------------------------------------------------------------
+// Extended scan reassembly and duplicate filtering
+// -----------------------------------------------------------------------------
+enum {
+    GAP_EXT_ADV_PRIMARY_PDU = 0,
+    GAP_EXT_ADV_AUXILIARY_PDU = 1,
+    GAP_EXT_ADV_PERIODIC_PDU = 2
+};
+static struct {
+    uint8_t active, has_address, address_type, address[6], has_adi, sid;
+    uint8_t await_scan_response;
+    uint16_t adi, data_len;
+    int8_t rssi;
+    uint32_t deadline_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
+static struct {
+    uint8_t used, address_type, address[6], has_adi, sid;
+    uint16_t did, data_len;
+    uint32_t data_hash;
+} gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
+static uint8_t gap_ext_adv_seen_count, gap_ext_adv_seen_next;
+
+// -----------------------------------------------------------------------------
+// Periodic synchronization state and reports
+// -----------------------------------------------------------------------------
+static const uint16_t gap_periodic_sca_ppm[8] = {
+    500, 250, 150, 100, 75, 50, 30, 20
+};
+enum {
+    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
+    GAP_PERIODIC_SYNC_LOST = 2,
+    GAP_PERIODIC_SYNC_CANCELLED = 3,
+    GAP_PERIODIC_SYNC_TERMINATED = 4
+};
+typedef struct {
+    uint8_t type, handle, sid, address_type, address[6];
+} gap_periodic_sync_event;
+typedef struct {
+    uint8_t handle, sid;
+    uint16_t event_counter, did, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_periodic_report;
+typedef struct {
+    uint8_t set_id, sid, subevent, response_slot;
+    uint8_t has_address, address_type, address[6];
+    uint16_t event_counter, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_periodic_response_report;
+typedef struct {
+    uint8_t used, established, handle, sid, address_type, address[6];
+    uint8_t channel_map[5], sca, phy, missed_events, window_active, window_chain;
+    uint8_t aux_channel, aux_phy;
+    uint8_t has_pawr_timing, pawr_num_subevents;
+    uint8_t pawr_subevent_interval, pawr_response_slot_delay;
+    uint8_t pawr_response_slot_spacing;
+    uint8_t pawr_selected_subevent, pawr_response_slot;
+    uint8_t pawr_response_pending, pawr_response_repeat;
+    uint8_t pawr_connection_accept, event_data_active;
+    uint16_t interval, event_counter, current_event_counter, did, data_len;
+    uint16_t widening_ppm;
+    uint32_t access_address, crc_init, response_access_address;
+    uint32_t timeout_ms, last_event_ms;
+    uint16_t pawr_response_data_len;
+    uint64_t anchor_ticks, next_event_ticks;
+    uint64_t window_start_ticks, window_end_ticks;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    uint8_t pawr_response_data[GAP_PAWR_RESPONSE_DATA_MAX];
+} gap_periodic_sync_context;
+static gap_periodic_sync_context gap_periodic_syncs[GAP_PERIODIC_SYNC_COUNT];
+static gap_periodic_sync_event
+    gap_periodic_sync_events[GAP_PERIODIC_SYNC_EVENT_COUNT];
+static uint8_t gap_periodic_sync_event_head, gap_periodic_sync_event_count;
+static gap_periodic_report gap_periodic_reports[GAP_PERIODIC_REPORT_COUNT];
+static uint8_t gap_periodic_report_head, gap_periodic_report_count;
+static gap_periodic_response_report
+    gap_pawr_response_reports[GAP_PAWR_RESPONSE_REPORT_COUNT];
+static uint8_t gap_pawr_response_report_head, gap_pawr_response_report_count;
+static uint8_t gap_periodic_sync_owned_scan, gap_periodic_sync_transfer_enabled;
+static uint32_t gap_periodic_sync_transfer_timeout_ms = 10000;
+
+// -----------------------------------------------------------------------------
 // Extended scan and periodic radio state
 // -----------------------------------------------------------------------------
 // Extended scan and periodic radio state.
@@ -567,12 +651,12 @@ static void gap_ext_adv_report_queue(
     if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
         // Limited discovery requires the Limited flag; general accepts either.
         uint8_t discoverable = 0;
-        uint8_t mask = gap_scan_settings.discovery_mode ==
-            GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
         for (uint16_t offset = 0; offset < data_len;) {
             uint8_t field_len = data[offset];
             if (field_len >= 2 && data[offset + 1] == 0x01) {
-                discoverable = (data[offset + 2] & mask) != 0;
+                discoverable = (data[offset + 2] &
+                    (gap_scan_settings.discovery_mode ==
+                        GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)) != 0;
                 break;
             }
             offset += field_len + 1;

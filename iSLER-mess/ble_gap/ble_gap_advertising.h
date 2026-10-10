@@ -548,7 +548,7 @@ int gap_scan_configure(
 // Start scanning; active mode requests scan-response data from advertisers.
 void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
-    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+    gap_ext_scan_reset(1);
 #endif
     gap_scanning = 0;
     gap_active_scanning = 0;
@@ -707,9 +707,9 @@ static inline void gap_receive_report(
     if (data_len > GAP_ADV_DATA_MAX) return;
 
     uint8_t address_type = (frame[0] >> 6) & 1;
-    int identity_slot = gap_identity_find(frame + 2, address_type);
-    if (!gap_peer_allowed(identity_slot, frame + 2, address_type)) return;
-    if (gap_privacy.scan_filter && identity_slot < 0) return;
+    int slot = gap_identity_find(frame + 2, address_type);
+    if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
+    if (gap_privacy.scan_filter && slot < 0) return;
 
     if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == 4) {
@@ -729,9 +729,9 @@ static inline void gap_receive_report(
                     flags = frame[10 + offset];
                 offset += field_len + 1;
             }
-            uint8_t mask = gap_scan_settings.discovery_mode ==
-                GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
-            if (!(flags & mask)) return;
+            // Check after scanning so Flags can appear anywhere in the payload.
+            if (!(flags & (gap_scan_settings.discovery_mode ==
+                GAP_DISCOVERY_LIMITED ? 0x01 : 0x03))) return;
 
             if (pdu_type == 0 || pdu_type == 6) {
                 gap_scan_response_accepted = 1;
@@ -741,59 +741,60 @@ static inline void gap_receive_report(
         }
     }
     if (gap_scan_settings.filter_duplicates) {
-        const uint8_t *identity =
-            identity_slot >= 0 ? gap_identities[identity_slot].address : frame + 2;
-        uint8_t identity_type = identity_slot >= 0
-                                    ? gap_identities[identity_slot].address_type
-                                    : address_type;
+        const uint8_t *identity = slot >= 0 ? gap_identities[slot].address : frame + 2;
+        uint8_t identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
         // For directed advertising, compare the target address too.
         uint8_t seen_len = pdu_type == 1 ? 6 : data_len;
-        uint8_t slot = gap_scan_seen_count;
+        uint8_t seen_slot = gap_scan_seen_count;
 
         for (uint8_t i = 0; i < gap_scan_seen_count; i++) {
             if (gap_scan_seen[i].address_type == identity_type &&
                 gap_scan_seen[i].pdu_type == pdu_type &&
                 memcmp(gap_scan_seen[i].address, identity, 6) == 0
             ) {
-                slot = i;
+                seen_slot = i;
                 if (gap_scan_seen[i].data_len == seen_len &&
                     memcmp(gap_scan_seen[i].data, frame + 8, seen_len) == 0
                 ) return;
                 break;
             }
         }
-        if (slot == GAP_SCAN_SEEN_COUNT) {
-            slot = gap_scan_seen_next;
+        if (seen_slot == GAP_SCAN_SEEN_COUNT) {
+            seen_slot = gap_scan_seen_next;
             gap_scan_seen_next = (gap_scan_seen_next + 1) % GAP_SCAN_SEEN_COUNT;
-        } else if (slot == gap_scan_seen_count) {
+        } else if (seen_slot == gap_scan_seen_count) {
             gap_scan_seen_count++;
         }
-        gap_scan_seen[slot].address_type = identity_type;
-        gap_scan_seen[slot].pdu_type = pdu_type;
-        gap_scan_seen[slot].data_len = seen_len;
-        memcpy(gap_scan_seen[slot].address, identity, 6);
-        if (seen_len) memcpy(gap_scan_seen[slot].data, frame + 8, seen_len);
+        gap_scan_seen[seen_slot].address_type = identity_type;
+        gap_scan_seen[seen_slot].pdu_type = pdu_type;
+        gap_scan_seen[seen_slot].data_len = seen_len;
+        memcpy(gap_scan_seen[seen_slot].address, identity, 6);
+        if (seen_len)
+            memcpy(gap_scan_seen[seen_slot].data, frame + 8, seen_len);
     }
+
     if (gap_scan_count == GAP_SCAN_REPORT_COUNT) {
         gap_scan_head = (gap_scan_head + 1) % GAP_SCAN_REPORT_COUNT;
         gap_scan_count--;
     }
-    uint8_t slot = (gap_scan_head + gap_scan_count) % GAP_SCAN_REPORT_COUNT;
-    gap_scan_report *report = &gap_scan_reports[slot];
+
+    uint8_t report_slot = (gap_scan_head + gap_scan_count) % GAP_SCAN_REPORT_COUNT;
+    gap_scan_report *report = &gap_scan_reports[report_slot];
     report->pdu_type = pdu_type;
     report->address_type = address_type;
-    memcpy(report->address, frame + 2, 6);
-    report->resolved = identity_slot >= 0;
-    report->identity_type =
-        report->resolved ? gap_identities[identity_slot].address_type : address_type;
-    memcpy(report->identity_address,
-           report->resolved ? gap_identities[identity_slot].address : frame + 2, 6);
+    report->resolved = slot >= 0;
+    report->identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
     report->has_target = pdu_type == 1;
     report->target_address_type = (frame[0] >> 7) & 1;
-    if (report->has_target) memcpy(report->target_address, frame + 8, 6);
     report->rssi = rssi;
     report->data_len = data_len;
-    if (data_len) memcpy(report->data, frame + 8, data_len);
+
+    memcpy(report->address, frame + 2, 6);
+    memcpy(report->identity_address, slot >= 0 ? gap_identities[slot].address : frame + 2, 6);
+    if (report->has_target)
+        memcpy(report->target_address, frame + 8, 6);
+    if (data_len)
+        memcpy(report->data, frame + 8, data_len);
     gap_scan_count++;
 }
 
@@ -803,19 +804,19 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
-    if (gap_radio_scan_adv_ready) {
-        gap_receive_report(gap_radio_scan_adv_frame,
-                            gap_radio_scan_adv_frame[1],
-                            gap_radio_scan_adv_rssi);
-        gap_radio_scan_adv_ready = 0;
+    if (gap_radio_scan_adv.ready) {
+        gap_receive_report(gap_radio_scan_adv.frame,
+                            gap_radio_scan_adv.frame[1],
+                            gap_radio_scan_adv.rssi);
+        gap_radio_scan_adv.ready = 0;
     }
-    if (!types || !ad || !len || !gap_radio_rx_ready) return 0;
+    if (!types || !ad || !len || !gap_radio_rx.ready) return 0;
 
-    const uint8_t *frame = gap_radio_rx_frame;
+    const uint8_t *frame = gap_radio_rx.frame;
     uint8_t payload_len = frame[1];
-    int8_t packet_rssi = gap_radio_rx_rssi;
+    int8_t packet_rssi = gap_radio_rx.rssi;
     if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
-    gap_radio_rx_ready = 0;
+    gap_radio_rx.ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);
 

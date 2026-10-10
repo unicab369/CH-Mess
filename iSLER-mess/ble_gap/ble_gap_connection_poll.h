@@ -430,7 +430,7 @@ static void gap_hw_received_selected(void) {
             gap_scanning = 0;
             gap_active_scanning = 0;
             gap_scan_generation++;
-            gap_radio_rx_ready = 0;
+            gap_radio_rx.ready = 0;
             GAP_HW_PACKET_CLEAR();
         }
         return;
@@ -446,9 +446,9 @@ static void gap_hw_received_selected(void) {
         gap_radio_active_scan_deadline_ms = GET_MILLIS() + 10;
         gap_radio_active_scan_pending = 1;
         // Preserve the advertisement while sending SCAN_REQ promptly.
-        memcpy(gap_radio_scan_adv_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_scan_adv_rssi = rssi;
-        gap_radio_scan_adv_ready = 1;
+        memcpy(gap_radio_scan_adv.frame, frame, (size_t)frame[1] + 2);
+        gap_radio_scan_adv.rssi = rssi;
+        gap_radio_scan_adv.ready = 1;
         uint8_t local_type;
         gap_local_address_select(peer_slot, gap_radio_scan_request + 2, &local_type);
         gap_radio_scan_request[0] = (uint8_t)(0x03 |
@@ -465,9 +465,9 @@ static void gap_hw_received_selected(void) {
         memcmp(frame + 2, gap_radio_active_scan_address, 6) == 0
     ) {
         gap_radio_active_scan_pending = 0;
-        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx_rssi = rssi;
-        gap_radio_rx_ready = 1;
+        memcpy(gap_radio_rx.frame, frame, (size_t)frame[1] + 2);
+        gap_radio_rx.rssi = rssi;
+        gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
         return;
     }
@@ -512,9 +512,9 @@ static void gap_hw_received_selected(void) {
         return;
     }
     if (frame[1] <= 37) {
-        memcpy(gap_radio_rx_frame, frame, (size_t)frame[1] + 2);
-        gap_radio_rx_rssi = rssi;
-        gap_radio_rx_ready = 1;
+        memcpy(gap_radio_rx.frame, frame, (size_t)frame[1] + 2);
+        gap_radio_rx.rssi = rssi;
+        gap_radio_rx.ready = 1;
         GAP_HW_PACKET_READY();
     }
 }
@@ -546,10 +546,10 @@ void gap_hw_init(void) {
     gap_radio_rx_channel_index = 0;
     gap_radio_scan_generation = gap_scan_generation - 1;
     gap_radio_scan_interval_start_ms = 0;
-    gap_radio_rx_ready = 0;
-    gap_radio_rx_rssi = 127;
+    gap_radio_rx.ready = 0;
+    gap_radio_rx.rssi = 127;
     gap_radio_active_scan_pending = 0;
-    gap_radio_scan_adv_ready = 0;
+    gap_radio_scan_adv.ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_radio_advertising_rx_event = 0;
     gap_radio_scan_response_started = 0;
@@ -1143,7 +1143,7 @@ int gap_radio_send_due(
     } else {
         gap_radio_advertising_rx_event = 1;
         for (uint8_t channel = 37; channel <= 39; channel++) {
-            gap_radio_rx_ready = 0;
+            gap_radio_rx.ready = 0;
             gap_radio_scan_response_started = 0;
             gap_radio_connect_request_ready = 0;
             GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
@@ -1160,7 +1160,7 @@ int gap_radio_send_due(
             GAP_HW_TX_CLEAR_DONE();
             timeout = HW_TICKS_FROM_US(800);
             while (!gap_radio_scan_response_started &&
-                   !gap_radio_connect_request_ready && !gap_radio_rx_ready &&
+                   !gap_radio_connect_request_ready && !gap_radio_rx.ready &&
                    timeout-- > 0) {}
             if (gap_radio_connect_request_ready) {
                 GAP_HW_STOP();
@@ -1169,8 +1169,8 @@ int gap_radio_send_due(
                         gap_radio_connect_request_ticks,
                         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))) {
                     gap_radio_connect_request_ready = 0;
-                    gap_radio_rx_ready = 0;
-                    gap_radio_scan_adv_ready = 0;
+                    gap_radio_rx.ready = 0;
+                    gap_radio_scan_adv.ready = 0;
                     gap_radio_active_scan_pending = 0;
                     gap_radio_rx_armed = 0;
                     // An incoming Peripheral connection wins over any
@@ -1199,7 +1199,7 @@ int gap_radio_send_due(
                 }
             }
             GAP_HW_STOP();
-            if (!gap_radio_scan_response_started && gap_radio_rx_ready) break;
+            if (!gap_radio_scan_response_started && gap_radio_rx.ready) break;
         }
         gap_radio_advertising_rx_event = 0;
     }
