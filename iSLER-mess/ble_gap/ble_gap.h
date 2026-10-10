@@ -159,19 +159,15 @@ int gap_conn_busy(void);
 
 #include "ble_gap_connection_state.h"
 
-#include "ble_gap_connection_config.h"
-
 #include "ble_gap_privacy.h"
 
-#include "ble_gap_advertising.h"
+#include "ble_gap_advertiser.h"
+
+#include "ble_gap_scanner.h"
 
 #include "ble_gap_connection.h"
 
-#include "ble_gap_security.h"
-
 #include "ble_gap_smp.h"
-
-#include "ble_gap_ead.h"
 
 // Compatibility aliases for the former gap_connection_* API names.
 typedef gap_conn_context gap_connection_context;
