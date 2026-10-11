@@ -581,11 +581,13 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
 
 // Derive MacKey and LTK from the DHKey, nonces, and typed device addresses.
 static inline void gap_sc_f5(
-    const uint8_t w[32], const uint8_t n1[16],
-    const uint8_t n2[16], const uint8_t a1[7],
-    const uint8_t a2[7], uint8_t mac_key[16], uint8_t ltk[16]
+    const uint8_t dhkey[32], const uint8_t initiator_nonce[16],
+    const uint8_t responder_nonce[16], const uint8_t initiator_address[7],
+    const uint8_t responder_address[7], uint8_t mac_key[16], uint8_t ltk[16]
 ) {
-    if (!w || !n1 || !n2 || !a1 || !a2 || !mac_key || !ltk) {
+    if (!dhkey || !initiator_nonce || !responder_nonce ||
+        !initiator_address || !responder_address || !mac_key || !ltk
+    ) {
         if (mac_key) memset(mac_key, 0, 16);
         if (ltk) memset(ltk, 0, 16);
         return;
@@ -596,15 +598,15 @@ static inline void gap_sc_f5(
         0x60, 0x37, 0x0b, 0xdb, 0x5a, 0x60, 0x83, 0xbe
     };
     uint8_t t[16], message[53] = {0};
-    int ok = smp_port_cmac(salt, w, 32, t);
+    int ok = smp_port_cmac(salt, dhkey, 32, t);
 
     for (uint8_t counter = 0; ok && counter < 2; counter++) {
         message[0] = counter;
         memcpy(message + 1, key_id, sizeof(key_id));
-        memcpy(message + 5, n1, 16);
-        memcpy(message + 21, n2, 16);
-        memcpy(message + 37, a1, 7);
-        memcpy(message + 44, a2, 7);
+        memcpy(message + 5, initiator_nonce, 16);
+        memcpy(message + 21, responder_nonce, 16);
+        memcpy(message + 37, initiator_address, 7);
+        memcpy(message + 44, responder_address, 7);
         message[51] = 1;
         message[52] = 0;
         ok = smp_port_cmac(t, message, sizeof(message),
@@ -2732,8 +2734,8 @@ static void gap_smp_poll(void) {
         }
 
         memcpy(gap_smp.secure.peer_random, p + 1, 16);
-        if (gap_smp.secure.passkey_required &&
-            gap_smp.secure.passkey_round < 19) {
+
+        if (gap_smp.secure.passkey_required && gap_smp.secure.passkey_round < 19) {
             if (!gap_conn.link_state.central_role)
                 gap_smp_queue(SMP_PAIRING_RANDOM, gap_smp.pairing.random, 16);
             // Each passkey bit needs a fresh nonce. Commit it only if entropy
@@ -2742,17 +2744,20 @@ static void gap_smp_poll(void) {
             uint32_t generation = gap_security_generation;
             int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
             int same_link = gap_conn.link_state.active && generation == gap_security_generation;
+
             if (entropy_ready && same_link)
                 memcpy(gap_smp.pairing.random, next_nonce, sizeof(next_nonce));
 
             gap_wipe(next_nonce, sizeof(next_nonce));
             if (!same_link) return;
+
             if (!entropy_ready) {
                 error = SMP_FAIL_UNSPECIFIED;
                 gap_smp_fail(error);
                 return;
             }
             gap_smp.secure.passkey_round++;
+
             if (gap_conn.link_state.central_role) {
                 uint8_t confirm[16];
                 gap_sc_confirm_value(gap_smp.secure.public_key,
@@ -2765,29 +2770,34 @@ static void gap_smp_poll(void) {
         }
 
         // Derive MacKey and LTK from the final round's nonces and DHKey.
-        uint8_t na[16], nb[16], a1[7], a2[7], ltk[16];
-        gap_sc_reverse(na, gap_conn.link_state.central_role ? gap_smp.pairing.random :
-                       gap_smp.secure.peer_random, 16);
-        gap_sc_reverse(nb, gap_conn.link_state.central_role ? gap_smp.secure.peer_random :
-                       gap_smp.pairing.random, 16);
-        a1[0] = gap_conn.initiator.type;
-        gap_sc_reverse(a1 + 1, gap_conn.initiator.address, 6);
-        a2[0] = gap_conn.responder.type;
-        gap_sc_reverse(a2 + 1, gap_conn.responder.address, 6);
-        gap_sc_f5(gap_smp.secure.dhkey, na, nb, a1, a2,
+        uint8_t ini_nonce[16], resp_nonce[16];
+        uint8_t ini_address[7], resp_address[7], ltk[16];
+        const uint8_t *ini_random = gap_conn.link_state.central_role ?
+                                    gap_smp.pairing.random : gap_smp.secure.peer_random;
+        const uint8_t *resp_random = gap_conn.link_state.central_role ?
+                                    gap_smp.secure.peer_random : gap_smp.pairing.random;
+
+        gap_sc_reverse(ini_nonce, ini_random, sizeof(ini_nonce));
+        gap_sc_reverse(resp_nonce, resp_random, sizeof(resp_nonce));
+        ini_address[0] = gap_conn.initiator.type;
+        gap_sc_reverse(ini_address + 1, gap_conn.initiator.address, 6);
+        resp_address[0] = gap_conn.responder.type;
+        gap_sc_reverse(resp_address + 1, gap_conn.responder.address, 6);
+        gap_sc_f5(gap_smp.secure.dhkey, ini_nonce, resp_nonce,
+                  ini_address, resp_address,
                   gap_smp.secure.mac_key, ltk);
-        gap_sc_reverse(gap_smp.secure.ltk, ltk, 16);
-
-        gap_wipe(na, sizeof(na));
-        gap_wipe(nb, sizeof(nb));
+        gap_sc_reverse(gap_smp.secure.ltk, ltk, sizeof(ltk));
+        gap_wipe(ini_nonce, sizeof(ini_nonce));
+        gap_wipe(resp_nonce, sizeof(resp_nonce));
         gap_wipe(ltk, sizeof(ltk));
-
         gap_wipe(gap_smp.secure.dhkey, sizeof(gap_smp.secure.dhkey));
+
         if (gap_smp.secure.passkey_required)
             gap_smp.pairing.authenticated = 1;
 
         if (gap_smp.secure.numeric_required) {
             gap_smp.secure.numeric_value = gap_sc_numeric_value();
+
             if (!gap_conn.link_state.central_role)
                 gap_smp_queue(SMP_PAIRING_RANDOM, gap_smp.pairing.random, 16);
             gap_smp.pairing.phase = SMP_PHASE_SC_USER;
