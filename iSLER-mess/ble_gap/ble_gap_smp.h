@@ -492,19 +492,18 @@ static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 typedef struct {
     uint8_t valid, private_key[32], public_key[64];
     gap_sc_oob_data data;
-} gap_sc_oob_local_context;
+} gap_oob_local;
 
-static gap_sc_oob_local_context gap_sc_oob_local_contexts[GAP_CONNECTION_COUNT];
-#define gap_sc_oob_local gap_sc_oob_local_contexts[gap_conn_slot]
+static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
 
 typedef struct {
     uint8_t valid;
     gap_sc_oob_data data;
-} gap_sc_oob_peer_context;
+} gap_oob_peer;
 
-static gap_sc_oob_peer_context gap_sc_oob_peer_contexts[GAP_CONNECTION_COUNT];
+static gap_oob_peer gap_oob_peers[GAP_CONNECTION_COUNT];
 
-static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
+static uint8_t gap_bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static void gap_smp_finish(uint8_t status);
 
@@ -755,9 +754,10 @@ static int gap_smp_link_send_pdu(
 
 static int smp_link_init(void) {
     gap_wipe(&gap_smp, sizeof(gap_smp));
-    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
-    gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot],
-             sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot],
+             sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot],
+             sizeof(gap_oob_peers[gap_conn_slot]));
     ble_l2cap_ops ops = {
         .send_pdu = gap_smp_link_send_pdu,
         .context = &gap_smp
@@ -880,8 +880,9 @@ int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.pairing.phase) return 0;
     gap_pair_policy.secure_connections = enabled;
     if (!enabled) {
-        gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
-        gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot], sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+        gap_wipe(&gap_oob_locals[gap_conn_slot],
+                 sizeof(gap_oob_locals[gap_conn_slot]));
+        gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
     }
     return 1;
 }
@@ -894,7 +895,8 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
         gap_security.phase
     ) return 0;
 
-    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+    gap_wipe(&gap_oob_locals[gap_conn_slot],
+             sizeof(gap_oob_locals[gap_conn_slot]));
     memset(&gap_smp.pairing.sc, 0, sizeof(gap_smp.pairing.sc));
     uint8_t random[16] = {0}, confirm[16] = {0};
     uint32_t generation = gap_security_generation;
@@ -911,12 +913,14 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
 
     gap_sc_confirm_value(gap_smp.secure.public_key,
                          gap_smp.secure.public_key, random, confirm);
-    gap_sc_oob_local.valid = 1;
-    memcpy(gap_sc_oob_local.private_key, gap_smp.secure.private_key, 32);
-    memcpy(gap_sc_oob_local.public_key, gap_smp.secure.public_key, 64);
-    memcpy(gap_sc_oob_local.data.random, random, 16);
-    memcpy(gap_sc_oob_local.data.confirm, confirm, 16);
-    *out = gap_sc_oob_local.data;
+    gap_oob_locals[gap_conn_slot].valid = 1;
+    memcpy(gap_oob_locals[gap_conn_slot].private_key,
+           gap_smp.secure.private_key, 32);
+    memcpy(gap_oob_locals[gap_conn_slot].public_key,
+           gap_smp.secure.public_key, 64);
+    memcpy(gap_oob_locals[gap_conn_slot].data.random, random, 16);
+    memcpy(gap_oob_locals[gap_conn_slot].data.confirm, confirm, 16);
+    *out = gap_oob_locals[gap_conn_slot].data;
     gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
     gap_wipe(random, sizeof(random));
     gap_wipe(confirm, sizeof(confirm));
@@ -927,10 +931,10 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
 int gap_sc_oob_set_peer(const gap_sc_oob_data *peer) {
     if (!gap_pair_policy.secure_connections || gap_smp.pairing.phase) return 0;
 
-    gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot], sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
     if (peer) {
-        gap_sc_oob_peer_contexts[gap_conn_slot].valid = 1;
-        memcpy(&gap_sc_oob_peer_contexts[gap_conn_slot].data, peer, sizeof(*peer));
+        gap_oob_peers[gap_conn_slot].valid = 1;
+        memcpy(&gap_oob_peers[gap_conn_slot].data, peer, sizeof(*peer));
     }
     return 1;
 }
@@ -1067,7 +1071,7 @@ int gap_pair(void) {
         uint8_t request[7] = {1,
                               gap_pair_policy.io,
                               gap_pair_policy.secure_connections &&
-                                  gap_sc_oob_peer_contexts[gap_conn_slot].valid,
+                                  gap_oob_peers[gap_conn_slot].valid,
                               (gap_pair_policy.authenticated ? 4 : 0) |
                                   (gap_pair_policy.bonding ? 1 : 0) |
                                   (gap_pair_policy.secure_connections ? 8 : 0) |
@@ -1436,8 +1440,9 @@ static void gap_smp_finish(uint8_t status) {
     gap_smp.l2cap_rx_pending = 0;
 
     gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
-    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
-    gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot], sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot],
+             sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
 
     gap_wipe(&gap_smp.previous_bond, sizeof(gap_smp.previous_bond));
     gap_smp.previous_bond_valid = 0;
@@ -1455,21 +1460,22 @@ static void gap_smp_link_close(void) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
         smp_bond_abort();
-        gap_bond_repair_pending_contexts[gap_conn_slot] = 1;
+        gap_bond_repair_pending[gap_conn_slot] = 1;
     }
     if (gap_conn.link_state.central_role && gap_conn.bond_restore_started &&
         gap_security.status == 0x3d
     ) {
         gap_bond_remove(gap_conn.bond.peer_address,
                         gap_conn.bond.peer_address_type);
-        gap_bond_repair_pending_contexts[gap_conn_slot] = 1;
+        gap_bond_repair_pending[gap_conn_slot] = 1;
     }
     uint8_t status = gap_smp.pairing.phase ? 0x08 : gap_smp.status;
     gap_wipe(&gap_smp, sizeof(gap_smp));
     gap_smp.status = status;
-    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
-    gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot],
-             sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot],
+             sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot],
+             sizeof(gap_oob_peers[gap_conn_slot]));
 }
 
 // Handle bond restoration and repair without exposing SMP phase state to GAP.
@@ -1487,17 +1493,17 @@ static void smp_bond_restore_poll(void) {
                         gap_conn.bond.peer_address_type);
         memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
         gap_conn.bonded = gap_conn.bond_restore_started = 0;
-        gap_bond_repair_pending_contexts[gap_conn_slot] = 1;
+        gap_bond_repair_pending[gap_conn_slot] = 1;
     }
     if (gap_conn.link_state.central_role &&
-        gap_bond_repair_pending_contexts[gap_conn_slot] &&
+        gap_bond_repair_pending[gap_conn_slot] &&
         !gap_conn.link.first_event && !gap_security.phase &&
         !gap_smp.pairing.phase && !gap_conn.link.tx_pending &&
         !gap_conn.queue.tx_queued && !gap_conn.tx_l2cap_remaining && gap_pair()
     ) {
-        gap_bond_repair_pending_contexts[gap_conn_slot] = 0;
+        gap_bond_repair_pending[gap_conn_slot] = 0;
     }
-    if (!gap_bond_repair_pending_contexts[gap_conn_slot] && gap_conn.bonded &&
+    if (!gap_bond_repair_pending[gap_conn_slot] && gap_conn.bonded &&
         gap_conn.link_state.central_role &&
         !gap_conn.link.first_event && !gap_conn.bond_restore_attempted &&
         !gap_security.phase && !gap_smp.pairing.phase
@@ -2365,7 +2371,7 @@ static void gap_smp_poll(void) {
         }
         else {
             local_features.io_capability = gap_pair_policy.io;
-            local_features.oob_data_flag = gap_sc_oob_local.valid;
+            local_features.oob_data_flag = gap_oob_locals[gap_conn_slot].valid;
             local_features.auth_req =   (gap_pair_policy.bonding ? 1 : 0) |
                                         (gap_pair_policy.authenticated ? 4 : 0) |
                                         (gap_pair_policy.secure_connections ? 8 : 0);
@@ -2422,10 +2428,12 @@ static void gap_smp_poll(void) {
         // The local flag means we have the peer's data; p[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
         uint8_t local_oob_flag =
-            op == SMP_PAIRING_REQUEST ? gap_sc_oob_peer_contexts[gap_conn_slot].valid : gap_smp.pairing.request[2];
+            op == SMP_PAIRING_REQUEST ? gap_oob_peers[gap_conn_slot].valid : gap_smp.pairing.request[2];
         gap_smp.secure.oob_active =
             gap_smp.pairing.secure_connections && (local_oob_flag || p[2]);
-        if (gap_smp.secure.oob_active && p[2] && !gap_sc_oob_local.valid) {
+        if (gap_smp.secure.oob_active && p[2] &&
+            !gap_oob_locals[gap_conn_slot].valid
+        ) {
             error = SMP_FAIL_OOB_NOT_AVAILABLE;
             gap_smp_fail(error);
             return;
@@ -2519,11 +2527,11 @@ static void gap_smp_poll(void) {
             if (gap_smp.secure.oob_active) {
                 gap_smp.secure.oob_peer_present = local_oob_flag;
 
-                if (gap_sc_oob_local.valid) {
+                if (gap_oob_locals[gap_conn_slot].valid) {
                     memcpy(gap_smp.secure.private_key,
-                           gap_sc_oob_local.private_key, 32);
+                           gap_oob_locals[gap_conn_slot].private_key, 32);
                     memcpy(gap_smp.secure.public_key,
-                           gap_sc_oob_local.public_key, 64);
+                           gap_oob_locals[gap_conn_slot].public_key, 64);
                 }
                 else if (!gap_sc_generate_key()) {
                     if (!gap_conn.link_state.active || generation != gap_security_generation)
@@ -2535,15 +2543,16 @@ static void gap_smp_poll(void) {
 
                 if (p[2])
                     memcpy(gap_smp.secure.oob_local_random,
-                           gap_sc_oob_local.data.random, 16);
+                           gap_oob_locals[gap_conn_slot].data.random, 16);
                 if (local_oob_flag) {
                     memcpy(gap_smp.secure.oob_peer_random,
-                           gap_sc_oob_peer_contexts[gap_conn_slot].data.random, 16);
+                           gap_oob_peers[gap_conn_slot].data.random, 16);
                     memcpy(gap_smp.secure.oob_peer_confirm,
-                           gap_sc_oob_peer_contexts[gap_conn_slot].data.confirm, 16);
+                           gap_oob_peers[gap_conn_slot].data.confirm, 16);
                 }
-                gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
-                gap_wipe(&gap_sc_oob_peer_contexts[gap_conn_slot], sizeof(gap_sc_oob_peer_contexts[gap_conn_slot]));
+                gap_wipe(&gap_oob_locals[gap_conn_slot],
+                         sizeof(gap_oob_locals[gap_conn_slot]));
+                gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
             }
             else if (!gap_sc_generate_key()) {
                 if (!gap_conn.link_state.active || generation != gap_security_generation)
