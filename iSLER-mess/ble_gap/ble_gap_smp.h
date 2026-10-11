@@ -184,25 +184,6 @@ static inline int smp_features_valid(
         !(feat->resp_key_dist & ~SMP_KEY_DIST_MASK);
 }
 
-static inline int smp_features_parse(
-    const uint8_t *pdu, uint16_t len, smp_features *feat
-) {
-    if (!pdu || len != 7 || !feat ||
-        (pdu[0] != SMP_PAIRING_REQUEST &&
-         pdu[0] != SMP_PAIRING_RESPONSE)
-    ) return 0;
-
-    feat->io_capability = pdu[1];
-    feat->oob_data_flag = pdu[2];
-    feat->auth_req = pdu[3];
-    feat->max_key_size = pdu[4];
-    feat->init_key_dist = pdu[5];
-    feat->resp_key_dist = pdu[6];
-    if (smp_features_valid(feat)) return 1;
-    memset(feat, 0, sizeof(*feat));
-    return 0;
-}
-
 static inline int smp_features_build(
     uint8_t opcode, const smp_features *feat, uint8_t pdu[7]
 ) {
@@ -2270,13 +2251,19 @@ static void gap_smp_poll(void) {
             return;
         }
 
-        smp_features peer, local;
-        ble_smp_negotiated negotiated;
-        uint8_t key_dist_supported = GAP_KEY_DIST_ENCRYPTION |
-                                    GAP_KEY_DIST_IDENTITY |
+        uint8_t key_dist_supported = GAP_KEY_DIST_ENCRYPTION | GAP_KEY_DIST_IDENTITY |
                                     GAP_KEY_DIST_SIGNING;
+        smp_features peer = { pdu[1], pdu[2], pdu[3], pdu[4], pdu[5], pdu[6] };
+        smp_features local = (smp_features){
+            gap_smp.pairing.request[1],
+            gap_smp.pairing.request[2],
+            gap_smp.pairing.request[3],
+            gap_smp.pairing.request[4],
+            gap_smp.pairing.request[5],
+            gap_smp.pairing.request[6]
+        };
 
-        if (!smp_features_parse(pdu, pending_len, &peer) ||
+        if (!smp_features_valid(&peer) ||
             (peer.init_key_dist & ~key_dist_supported) ||
             (peer.resp_key_dist & ~key_dist_supported)
         ) {
@@ -2285,8 +2272,7 @@ static void gap_smp_poll(void) {
         }
 
         if (op == SMP_PAIRING_RESPONSE) {
-            if (!smp_features_parse(gap_smp.pairing.request,
-                    sizeof(gap_smp.pairing.request), &local) ||
+            if (!smp_features_valid(&local) ||
                 (peer.init_key_dist & (uint8_t)~local.init_key_dist) ||
                 (peer.resp_key_dist & (uint8_t)~local.resp_key_dist)
             ) {
@@ -2297,15 +2283,14 @@ static void gap_smp_poll(void) {
         else {
             local.io_capability = gap_pair_cfg.io;
             local.oob_data_flag = gap_oob_locals[gap_conn_slot].oob.valid;
-            local.auth_req = (gap_pair_cfg.bonding ? 1 : 0) |
-                            (gap_pair_cfg.authenticated ? 4 : 0) |
-                            (gap_pair_cfg.secure_connections ? 8 : 0);
             local.max_key_size = 16;
             local.init_key_dist = key_dist_supported;
             local.resp_key_dist = key_dist_supported;
+            local.auth_req = (gap_pair_cfg.bonding ? 1 : 0) |
+                            (gap_pair_cfg.authenticated ? 4 : 0) |
+                            (gap_pair_cfg.secure_connections ? 8 : 0);
         }
 
-        // Negotiate the validated local and peer feature fields.
         uint8_t sc = (local.auth_req & SMP_AUTH_SECURE_CONNECTIONS) &&
                      (peer.auth_req & SMP_AUTH_SECURE_CONNECTIONS);
         uint8_t key_size = local.max_key_size < peer.max_key_size ?
@@ -2322,6 +2307,8 @@ static void gap_smp_poll(void) {
             return;
         }
 
+        // Negotiate the validated local and peer feature fields.
+        ble_smp_negotiated negotiated;
         negotiated.bonding = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
                             (peer.auth_req & SMP_AUTH_BONDING_MASK);
         negotiated.max_key_size = key_size;

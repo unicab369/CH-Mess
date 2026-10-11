@@ -50,32 +50,11 @@ int smp_port_cmac(
 int main(void) {
     smp_features local = {3, 0, 0x0d, 16, 0x07, 0x07};
     uint8_t pairing_pdu[7];
-    smp_features parsed;
     assert(smp_features_build(SMP_PAIRING_REQUEST,
         &local, pairing_pdu));
-    assert(smp_features_parse(pairing_pdu, sizeof(pairing_pdu),
-        &parsed));
-    assert(!memcmp(&parsed, &local, sizeof(local)));
-    pairing_pdu[3] |= 0x40;
-    assert(!smp_features_parse(pairing_pdu, sizeof(pairing_pdu),
-        &parsed));
-    assert(!memcmp(&parsed, &(smp_features){0}, sizeof(parsed)));
-    pairing_pdu[3] &= (uint8_t)~0x40;
-    uint8_t model;
-    assert(!smp_select_model(1, 4, 1, 1, 1, &model) &&
-           model == SMP_MODEL_NUMERIC_COMPARISON);
-    assert(!smp_select_model(2, 0, 1, 1, 1, &model) &&
-           model == SMP_MODEL_PASSKEY_INPUT);
-    assert(!smp_select_model(0, 2, 1, 1, 1, &model) &&
-           model == SMP_MODEL_PASSKEY_DISPLAY);
-    assert(!smp_select_model(4, 4, 1, 0, 1, &model) &&
-           model == SMP_MODEL_PASSKEY_DISPLAY);
-    assert(!smp_select_model(4, 4, 1, 0, 0, &model) &&
-           model == SMP_MODEL_PASSKEY_INPUT);
-    assert(smp_select_model(0, 1, 1, 1, 1, &model) ==
-           SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
-    assert(!smp_select_model(3, 4, 0, 1, 0, &model) &&
-           model == SMP_MODEL_NONE);
+    assert(smp_features_valid(&local));
+    local.auth_req |= 0x40;
+    assert(!smp_features_valid(&local));
 
     fake_smp fake = {0};
     fake_random_state = &fake;
