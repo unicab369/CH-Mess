@@ -429,24 +429,6 @@ static inline int smp_aes128(
     return 1;
 }
 
-// Derive the legacy Short Term Key from the least-significant 64 bits of the
-// initiator random followed by those of the responder random.
-static inline int smp_legacy_s1(
-    ble_smp *smp, const uint8_t tk[16],
-    const uint8_t initiator_random[16], const uint8_t responder_random[16],
-    uint8_t stk[16]
-) {
-    if (!smp || !tk || !initiator_random || !responder_random || !stk)
-        return 0;
-
-    uint8_t r[16];
-    memcpy(r, initiator_random, 8);
-    memcpy(r + 8, responder_random, 8);
-    int ok = smp_aes128(smp, tk, r, stk);
-    gap_wipe(r, sizeof(r));
-    return ok;
-}
-
 static inline int smp_poll(ble_smp *smp) {
     if (!smp || !smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu)
         return 0;
@@ -1568,6 +1550,7 @@ static void smp_bond_rx_complete(void) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
+            return;
         } else if (keyset & GAP_KEY_DIST_IDENTITY) {
             gap_smp.bearer.pairing.bond_tx_step = 3;
             if (!gap_smp_queue(SMP_IDENTITY_INFORMATION,
@@ -1575,6 +1558,7 @@ static void smp_bond_rx_complete(void) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
+            return;
         } else if (keyset & GAP_KEY_DIST_SIGNING) {
             gap_smp.bearer.pairing.bond_tx_step = 5;
             if (!gap_smp_queue(SMP_SIGNING_INFORMATION,
@@ -1582,14 +1566,10 @@ static void smp_bond_rx_complete(void) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
-        } else {
-            goto save_bond;
+            return;
         }
-        return;
     }
-    goto save_bond;
 
-save_bond:
     if (smp_bond_store_generic(&gap_conn.bond)) {
         gap_conn.bonded = 1;
         gap_smp_finish(0);
@@ -2401,7 +2381,8 @@ static void gap_smp_poll(void) {
          (gap_smp.bearer.pairing.phase == SMP_PHASE_IDLE ||
           gap_smp.bearer.pairing.phase == SMP_PHASE_SECURITY_REQUEST)) ||
         (op == 2 && gap_conn.link_state.central_role &&
-         gap_smp.bearer.pairing.phase == SMP_PHASE_RESPONSE)) {
+         gap_smp.bearer.pairing.phase == SMP_PHASE_RESPONSE)
+    ) {
         if (gap_security.phase || gap_security.tx_enabled || gap_security.rx_enabled) {
             error = 8;
             // Re-pairing an encrypted link is not supported yet.
@@ -2950,9 +2931,13 @@ static void gap_smp_poll(void) {
         const uint8_t *responder_random =
             gap_conn.link_state.central_role ? p + 1 : gap_smp.bearer.pairing.random;
 
-        if (!smp_legacy_s1(&gap_smp.bearer, gap_smp.bearer.pairing.tk,
-                initiator_random, responder_random, gap_smp.bearer.pairing.stk)
-        ) {
+        uint8_t s1_random[16];
+        memcpy(s1_random, initiator_random, 8);
+        memcpy(s1_random + 8, responder_random, 8);
+        int stk_ready = smp_aes128(&gap_smp.bearer,
+            gap_smp.bearer.pairing.tk, s1_random, gap_smp.bearer.pairing.stk);
+        gap_wipe(s1_random, sizeof(s1_random));
+        if (!stk_ready) {
             error = SMP_FAIL_UNSPECIFIED;
             gap_smp_fail(error);
             return;
