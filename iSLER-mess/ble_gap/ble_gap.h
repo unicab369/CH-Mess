@@ -288,15 +288,20 @@ typedef struct {
     struct {
         uint8_t first_event;
         uint8_t local_terminate_reason;
-        uint8_t initiator_type, responder_type, initiator[6], responder[6];
         uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
         uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
         uint16_t interval_125us, peer_sca_ppm, event_counter;
         uint32_t access_address, crc_init, last_rx_ms;
         uint64_t next_ticks;
     } link;
+    // Connection endpoint addresses used by the Link Layer and SMP.
+    struct {
+        uint8_t type, address[6];
+    } initiator, responder;
     uint8_t authenticated, encryption_key_size;
-    uint8_t peer_id_type, peer_id_addr[6];
+    struct {
+        uint8_t type, address[6];
+    } peer_id;
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
     struct {
@@ -528,9 +533,17 @@ static int gap_conn_accept(
     uint64_t window_delay_ticks
 ) {
     if (!gap_conn_request_valid(frame)) return 0;
+    uint16_t data_capacity = GAP_HW_DATA_MAX();
+    if (data_capacity < 27) return 0;
+    if (data_capacity > GAP_CONN_DATA_MAX)
+        data_capacity = GAP_CONN_DATA_MAX;
+
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
-    gap_conn_slot = (uint8_t)free_slot;
+    // Must precede gap_conn.data_capacity; gap_conn uses this slot index.
+    gap_conn_slot = free_slot;
+    gap_conn.data_capacity = data_capacity;
+
     gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
     gap_wipe(&gap_security, sizeof(gap_security));
     memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
@@ -538,9 +551,14 @@ static int gap_conn_accept(
     memset(&gap_conn.features, 0, sizeof(gap_conn.features));
     memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
     memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
+    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     memcpy(gap_conn.link.channel_map, frame + 30, 5);
-    memcpy(gap_conn.link.initiator, frame + 2, 6);
-    memcpy(gap_conn.link.responder, frame + 8, 6);
+
+    gap_conn.initiator.type = (frame[0] >> 6) & 1;
+    gap_conn.responder.type = (frame[0] >> 7) & 1;
+    memcpy(gap_conn.initiator.address, frame + 2, 6);
+    memcpy(gap_conn.responder.address, frame + 8, 6);
+    memcpy(&gap_conn.peer_id, &gap_conn.initiator, sizeof(gap_conn.peer_id));
 
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint8_t count = 0;
@@ -562,8 +580,6 @@ static int gap_conn_accept(
                 (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
                 interval_unit_ticks + window_delay_ticks;
 
-    gap_conn.link.initiator_type = (frame[0] >> 6) & 1;
-    gap_conn.link.responder_type = (frame[0] >> 7) & 1;
     gap_conn.link.used_count = count;
     gap_conn.link.hop = frame[35] & 0x1f;
     gap_conn.link.unmapped_channel = 0;
@@ -586,23 +602,20 @@ static int gap_conn_accept(
     gap_conn.sync_transfer_queued = 0;
     gap_conn.sync_transfer_handle = 0;
 #endif
+
+
+    gap_conn.data_length = (gap_data_length){27, 328, 27, 328};
+    gap_conn.remote_data_length = (gap_data_length){27, 328, 27, 328};
+
     gap_conn.window_size = frame[21];
     gap_conn.tx_l2cap_remaining = 0;
     gap_conn.connection_status = 0;
-    gap_conn.data_capacity = GAP_HW_DATA_MAX();
-    if (gap_conn.data_capacity < 27) return 0;
-    if (gap_conn.data_capacity > GAP_CONN_DATA_MAX)
-        gap_conn.data_capacity = GAP_CONN_DATA_MAX;
     gap_conn.local_tx_octets = 27;
-    gap_conn.data_length = gap_conn.remote_data_length =
-                            (gap_data_length){27, 328, 27, 328};
     gap_conn.length_status = 0;
-    gap_conn.peer_id_type = gap_conn.link.initiator_type;
-    memcpy(gap_conn.peer_id_addr, gap_conn.link.initiator, 6);
     gap_conn.bond_load_pending = 1;
-    gap_conn.bonded = gap_conn.bond_restore_started =
-        gap_conn.bond_restore_attempted = 0;
-    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
+    gap_conn.bonded = 0;
+    gap_conn.bond_restore_started = 0;
+    gap_conn.bond_restore_attempted = 0;
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
 
     // Initialize subrate and connection rate state.
@@ -624,8 +637,8 @@ static int gap_conn_accept(
 
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
-    gap_conn.link_state.active = 1;
 
+    gap_conn.link_state.active = 1;
     if (!gap_smp_link_init()) {
         gap_conn.link_state.active = 0;
         return 0;

@@ -814,10 +814,10 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
                    gap_smp.bearer.pairing.sc.peer_random, 16);
     gap_sc_reverse(nb, gap_conn.link_state.central_role ? gap_smp.bearer.pairing.sc.peer_random :
                    gap_smp.bearer.pairing.random, 16);
-    a1[0] = gap_conn.link.initiator_type;
-    gap_sc_reverse(a1 + 1, gap_conn.link.initiator, 6);
-    a2[0] = gap_conn.link.responder_type;
-    gap_sc_reverse(a2 + 1, gap_conn.link.responder, 6);
+    a1[0] = gap_conn.initiator.type;
+    gap_sc_reverse(a1 + 1, gap_conn.initiator.address, 6);
+    a2[0] = gap_conn.responder.type;
+    gap_sc_reverse(a2 + 1, gap_conn.responder.address, 6);
     const uint8_t *iocap = from_central ? gap_smp.bearer.pairing.request + 1 :
         gap_smp.bearer.pairing.response + 1;
     uint8_t message[65];
@@ -848,8 +848,8 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
 // c1 authenticates the random against the exact on-air addresses and features.
 static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     uint8_t block[16];
-    block[0] = gap_conn.link.initiator_type;
-    block[1] = gap_conn.link.responder_type;
+    block[0] = gap_conn.initiator.type;
+    block[1] = gap_conn.responder.type;
     memcpy(block + 2, gap_smp.bearer.pairing.request, 7);
     memcpy(block + 9, gap_smp.bearer.pairing.response, 7);
 
@@ -857,8 +857,8 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     int ok = ble_smp_aes128(&gap_smp.bearer, gap_smp.bearer.pairing.tk, block, confirm);
 
     for (size_t i = 0; i < 6; i++) {
-        confirm[i] ^= gap_conn.link.responder[i];
-        confirm[i + 6] ^= gap_conn.link.initiator[i];
+        confirm[i] ^= gap_conn.responder.address[i];
+        confirm[i + 6] ^= gap_conn.initiator.address[i];
     }
 
     if (ok) ok = ble_smp_aes128(&gap_smp.bearer,
@@ -2110,8 +2110,8 @@ static void gap_smp_poll(void) {
                 gap_bond bond = {0};
                 bond.version = GAP_BOND_VERSION;
                 bond.valid = 1;
-                bond.peer_address_type = gap_conn.peer_id_type;
-                memcpy(bond.peer_address, gap_conn.peer_id_addr, 6);
+                bond.peer_address_type = gap_conn.peer_id.type;
+                memcpy(bond.peer_address, gap_conn.peer_id.address, 6);
                 memcpy(bond.ltk, gap_smp.bearer.pairing.sc.ltk, 16);
                 bond.key_size = 16;
                 bond.authenticated = gap_smp.bearer.pairing.authenticated;
@@ -2183,9 +2183,9 @@ static void gap_smp_poll(void) {
                 memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
                 gap_conn.bond.version = GAP_BOND_VERSION;
                 gap_conn.bond.valid = 1;
-                gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
+                gap_conn.bond.peer_address_type = gap_conn.peer_id.type;
                 memcpy(gap_conn.bond.peer_address,
-                       gap_conn.peer_id_addr, 6);
+                       gap_conn.peer_id.address, 6);
                 gap_conn.bond.key_size = gap_smp.bearer.pairing.key_size;
                 gap_conn.bond.authenticated = gap_smp.bearer.pairing.authenticated;
                 gap_smp_bond_peripheral_start();
@@ -2215,8 +2215,8 @@ static void gap_smp_poll(void) {
             memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
             gap_conn.bond.version = GAP_BOND_VERSION;
             gap_conn.bond.valid = 1;
-            gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
-            memcpy(gap_conn.bond.peer_address, gap_conn.peer_id_addr, 6);
+            gap_conn.bond.peer_address_type = gap_conn.peer_id.type;
+            memcpy(gap_conn.bond.peer_address, gap_conn.peer_id.address, 6);
             memcpy(gap_conn.bond.ltk, bond_material, 16);
 
             for (unsigned i = gap_smp.bearer.pairing.key_size; i < 16; i++)
@@ -2378,8 +2378,8 @@ static void gap_smp_poll(void) {
             ) {
                 gap_conn.bond.peer_address_type = p[1];
                 memcpy(gap_conn.bond.peer_address, p + 2, 6);
-                gap_conn.peer_id_type = p[1];
-                memcpy(gap_conn.peer_id_addr, p + 2, 6);
+                gap_conn.peer_id.type = p[1];
+                memcpy(gap_conn.peer_id.address, p + 2, 6);
                 gap_smp.bearer.pairing.bond_rx_step = identity_step + 2;
                 if (!signing) gap_smp_bond_rx_complete();
                 return;
@@ -2418,8 +2418,8 @@ static void gap_smp_poll(void) {
             ) {
                 gap_conn.bond.peer_address_type = p[1];
                 memcpy(gap_conn.bond.peer_address, p + 2, 6);
-                gap_conn.peer_id_type = p[1];
-                memcpy(gap_conn.peer_id_addr, p + 2, 6);
+                gap_conn.peer_id.type = p[1];
+                memcpy(gap_conn.peer_id.address, p + 2, 6);
                 gap_smp.bearer.pairing.bond_rx_step = 22;
                 if (!signing) gap_smp_bond_rx_complete();
                 return;
@@ -2441,8 +2441,8 @@ static void gap_smp_poll(void) {
                 memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
                 gap_conn.bond.version = GAP_BOND_VERSION;
                 gap_conn.bond.valid = 1;
-                gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
-                memcpy(gap_conn.bond.peer_address, gap_conn.peer_id_addr, 6);
+                gap_conn.bond.peer_address_type = gap_conn.peer_id.type;
+                memcpy(gap_conn.bond.peer_address, gap_conn.peer_id.address, 6);
             }
             memcpy(gap_conn.bond.ltk, p + 1, 16);
             gap_conn.bond.key_size = gap_smp.bearer.pairing.key_size;
@@ -2489,8 +2489,8 @@ static void gap_smp_poll(void) {
         ) {
             gap_conn.bond.peer_address_type = p[1];
             memcpy(gap_conn.bond.peer_address, p + 2, 6);
-            gap_conn.peer_id_type = p[1];
-            memcpy(gap_conn.peer_id_addr, p + 2, 6);
+            gap_conn.peer_id.type = p[1];
+            memcpy(gap_conn.peer_id.address, p + 2, 6);
             gap_smp.bearer.pairing.bond_rx_step = 4;
             if (!(gap_smp.bearer.pairing.response[5] & GAP_KEY_DIST_SIGNING))
                 gap_smp_bond_rx_complete();
@@ -2988,10 +2988,10 @@ static void gap_smp_poll(void) {
                        gap_smp.bearer.pairing.sc.peer_random, 16);
         gap_sc_reverse(nb, gap_conn.link_state.central_role ? gap_smp.bearer.pairing.sc.peer_random :
                        gap_smp.bearer.pairing.random, 16);
-        a1[0] = gap_conn.link.initiator_type;
-        gap_sc_reverse(a1 + 1, gap_conn.link.initiator, 6);
-        a2[0] = gap_conn.link.responder_type;
-        gap_sc_reverse(a2 + 1, gap_conn.link.responder, 6);
+        a1[0] = gap_conn.initiator.type;
+        gap_sc_reverse(a1 + 1, gap_conn.initiator.address, 6);
+        a2[0] = gap_conn.responder.type;
+        gap_sc_reverse(a2 + 1, gap_conn.responder.address, 6);
         gap_sc_f5(gap_smp.bearer.pairing.sc.dhkey, na, nb, a1, a2,
                   gap_smp.bearer.pairing.sc.mac_key, ltk);
         gap_sc_reverse(gap_smp.bearer.pairing.sc.ltk, ltk, 16);

@@ -481,18 +481,18 @@ void gap_hw_received(void) {
             gap_conn.link.peer_sca_ppm = 500; // conservative until clock data exists
 
             if (peer_slot >= 0) {
-                gap_conn.peer_id_type = gap_identities[peer_slot].address_type;
-                memcpy(gap_conn.peer_id_addr, gap_identities[peer_slot].address, 6);
+                gap_conn.peer_id.type = gap_identities[peer_slot].address_type;
+                memcpy(gap_conn.peer_id.address, gap_identities[peer_slot].address, 6);
             }
             else if (gap_central.any_peer ||
                 gap_central.selective ||
                 gap_central.auto_connect
             ) {
-                gap_conn.peer_id_type = advertiser_type;
-                memcpy(gap_conn.peer_id_addr, frame + 2, 6);
+                gap_conn.peer_id.type = advertiser_type;
+                memcpy(gap_conn.peer_id.address, frame + 2, 6);
             } else {
-                gap_conn.peer_id_type = gap_central.peer_type;
-                memcpy(gap_conn.peer_id_addr, gap_central.peer_address, 6);
+                gap_conn.peer_id.type = gap_central.peer_type;
+                memcpy(gap_conn.peer_id.address, gap_central.peer_address, 6);
             }
             gap_central.active = 0;
             gap_central.any_peer = 0;
@@ -668,13 +668,13 @@ static void gap_conn_poll(void) {
         gap_conn.bond_load_pending = 0;
 
         if (!gap_conn.link_state.central_role) {
-            int peer_slot = gap_identity_find(gap_conn.link.initiator, gap_conn.link.initiator_type);
+            int peer_slot = gap_identity_find(gap_conn.initiator.address, gap_conn.initiator.type);
             if (peer_slot >= 0) {
-                gap_conn.peer_id_type = gap_identities[peer_slot].address_type;
-                memcpy(gap_conn.peer_id_addr, gap_identities[peer_slot].address, 6);
+                gap_conn.peer_id.type = gap_identities[peer_slot].address_type;
+                memcpy(gap_conn.peer_id.address, gap_identities[peer_slot].address, 6);
             }
         }
-        if (gap_smp_generic_bond_load(gap_conn.peer_id_addr, gap_conn.peer_id_type, &gap_conn.bond))
+        if (gap_smp_generic_bond_load(gap_conn.peer_id.address, gap_conn.peer_id.type, &gap_conn.bond))
             gap_conn.bonded = 1;
     }
 
