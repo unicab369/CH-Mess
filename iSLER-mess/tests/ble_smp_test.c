@@ -77,21 +77,21 @@ int main(void) {
     peer.auth_req &= (uint8_t)~SMP_AUTH_SECURE_CONNECTIONS;
     assert(smp_negotiate_features(&local, &peer, &policy,
         &negotiated) == SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
-    uint8_t association;
-    assert(!smp_select_association(1, 4, 1, 1, 1, &association) &&
-           association == SMP_ASSOCIATION_NUMERIC_COMPARISON);
-    assert(!smp_select_association(2, 0, 1, 1, 1, &association) &&
-           association == SMP_ASSOCIATION_PASSKEY_INPUT);
-    assert(!smp_select_association(0, 2, 1, 1, 1, &association) &&
-           association == SMP_ASSOCIATION_PASSKEY_DISPLAY);
-    assert(!smp_select_association(4, 4, 1, 0, 1, &association) &&
-           association == SMP_ASSOCIATION_PASSKEY_DISPLAY);
-    assert(!smp_select_association(4, 4, 1, 0, 0, &association) &&
-           association == SMP_ASSOCIATION_PASSKEY_INPUT);
-    assert(smp_select_association(0, 1, 1, 1, 1, &association) ==
+    uint8_t model;
+    assert(!smp_select_model(1, 4, 1, 1, 1, &model) &&
+           model == SMP_MODEL_NUMERIC_COMPARISON);
+    assert(!smp_select_model(2, 0, 1, 1, 1, &model) &&
+           model == SMP_MODEL_PASSKEY_INPUT);
+    assert(!smp_select_model(0, 2, 1, 1, 1, &model) &&
+           model == SMP_MODEL_PASSKEY_DISPLAY);
+    assert(!smp_select_model(4, 4, 1, 0, 1, &model) &&
+           model == SMP_MODEL_PASSKEY_DISPLAY);
+    assert(!smp_select_model(4, 4, 1, 0, 0, &model) &&
+           model == SMP_MODEL_PASSKEY_INPUT);
+    assert(smp_select_model(0, 1, 1, 1, 1, &model) ==
            SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
-    assert(!smp_select_association(3, 4, 0, 1, 0, &association) &&
-           association == SMP_ASSOCIATION_NONE);
+    assert(!smp_select_model(3, 4, 0, 1, 0, &model) &&
+           model == SMP_MODEL_NONE);
 
     fake_smp fake = {0};
     fake_random_state = &fake;
