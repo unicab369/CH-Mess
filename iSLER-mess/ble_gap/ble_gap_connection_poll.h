@@ -1065,7 +1065,7 @@ void gap_hw_scan_poll(void) {
                     (uint16_t)(gap_syncs[sync_slot].event_counter ^
                         (gap_syncs[sync_slot].has_pawr_timing ?
                             gap_syncs[sync_slot].
-                                pawr_selected_subevent : 0)));
+                                pawr_subevent : 0)));
             uint8_t phy = gap_syncs[sync_slot].window_chain ?
                 gap_syncs[sync_slot].aux_phy :
                 gap_syncs[sync_slot].phy;
