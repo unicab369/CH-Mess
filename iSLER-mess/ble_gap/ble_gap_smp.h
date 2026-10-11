@@ -1658,7 +1658,7 @@ static void gap_smp_bond_restore_poll(void) {
     if (gap_conn.link_state.central_role && gap_bond_repair_pending &&
         !gap_conn.link.first_event && !gap_security.phase &&
         !gap_smp.bearer.pairing.phase && !gap_conn.link.tx_pending &&
-        !gap_conn.queue.tx_queued && !gap_conn.procedures.tx_l2cap_remaining && gap_pair()
+        !gap_conn.queue.tx_queued && !gap_conn.tx_l2cap_remaining && gap_pair()
     ) {
         gap_bond_repair_pending = 0;
     }
@@ -2052,7 +2052,7 @@ static void gap_smp_poll(void) {
     }
     if (gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_TX) {
         if (!gap_smp.bond_tx_waiting && gap_smp.tx_len && !gap_conn.link.tx_pending &&
-            !gap_conn.queue.tx_queued && !gap_conn.procedures.tx_l2cap_remaining &&
+            !gap_conn.queue.tx_queued && !gap_conn.tx_l2cap_remaining &&
             gap_send_data(2, gap_smp.tx, gap_smp.tx_len)
         ) {
             gap_smp.tx_len = 0;
@@ -2063,10 +2063,10 @@ static void gap_smp_poll(void) {
         return;
     }
     if (gap_smp.tx_len) {
-        if (gap_conn.procedures.tx_l2cap_remaining && !gap_smp.tx_offset) return;
+        if (gap_conn.tx_l2cap_remaining && !gap_smp.tx_offset) return;
 
-        size_t max_len = gap_conn.procedures.data_length.tx_octets;
-        size_t time_len = gap_conn.procedures.data_length.tx_time / 8;
+        size_t max_len = gap_conn.data_length.tx_octets;
+        size_t time_len = gap_conn.data_length.tx_time / 8;
         time_len = time_len > 10 + (gap_security.tx_enabled ? 4 : 0) ?
             time_len - 10 - (gap_security.tx_enabled ? 4 : 0) : 0;
         if (max_len > time_len) max_len = time_len;
@@ -2087,7 +2087,7 @@ static void gap_smp_poll(void) {
     if (gap_smp.bearer.pairing.phase == SMP_PHASE_SC_PASSKEY &&
         gap_smp.bearer.pairing.passkey_action != GAP_PASSKEY_INPUT &&
         (gap_conn.link_state.central_role || gap_smp.bearer.pairing.confirm_received) &&
-        !gap_smp.tx_len && !gap_conn.procedures.tx_l2cap_remaining &&
+        !gap_smp.tx_len && !gap_conn.tx_l2cap_remaining &&
         !gap_conn.link.tx_pending && !gap_conn.queue.tx_queued
     ) {
         // The initiator commits first; the responder waits for its confirm.
@@ -2138,7 +2138,7 @@ static void gap_smp_poll(void) {
             return;
         }
         if (!gap_smp.encryption_started && !gap_smp.tx_len &&
-            !gap_conn.procedures.tx_l2cap_remaining && !gap_conn.link.tx_pending &&
+            !gap_conn.tx_l2cap_remaining && !gap_conn.link.tx_pending &&
             !gap_conn.queue.tx_queued
         ) {
             if (gap_conn.link_state.central_role && !gap_security.phase) {
@@ -2277,13 +2277,13 @@ static void gap_smp_poll(void) {
     gap_smp.l2cap_rx_pending = 1;
     uint16_t cid = gap_smp.l2cap_rx.cid;
 
-    if (gap_conn.procedures.rx_llid == 2 && gap_conn.procedures.rx_len >= 4)
-        cid = ble_l2cap_read_u16(gap_conn.procedures.rx_data + 2);
+    if (gap_conn.rx_llid == 2 && gap_conn.rx_len >= 4)
+        cid = ble_l2cap_read_u16(gap_conn.rx_data + 2);
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
     int assembled = ble_l2cap_reassembler_feed(&gap_smp.l2cap_rx,
-        gap_conn.procedures.rx_llid, gap_conn.procedures.rx_data, gap_conn.procedures.rx_len,
+        gap_conn.rx_llid, gap_conn.rx_data, gap_conn.rx_len,
         &completed_cid, &sdu, &sdu_len);
 
     if (assembled < 0) {

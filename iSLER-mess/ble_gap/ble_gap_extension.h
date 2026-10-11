@@ -2383,13 +2383,13 @@ int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     int sync_slot = gap_periodic_sync_handle_slot(handle);
     if (!gap_conn.link_state.active || sync_slot < 0 ||
         !gap_syncs[sync_slot].established ||
-        gap_conn.procedures.sync_transfer_queued ||
-        gap_conn.procedures.data_length.tx_octets < 35 ||
-        gap_conn.procedures.data_length.tx_time < 392)
+        gap_conn.sync_transfer_queued ||
+        gap_conn.data_length.tx_octets < 35 ||
+        gap_conn.data_length.tx_time < 392)
         return 0;
-    gap_conn.procedures.sync_transfer_handle = handle;
-    gap_conn.procedures.sync_transfer_id = id;
-    gap_conn.procedures.sync_transfer_queued = 1;
+    gap_conn.sync_transfer_handle = handle;
+    gap_conn.sync_transfer_id = id;
+    gap_conn.sync_transfer_queued = 1;
     return 1;
 }
 
@@ -2462,9 +2462,9 @@ static int gap_sync_conn_overlap(
     uint64_t interval_ticks = gap_conn_interval_ticks();
     uint64_t event_ticks = gap_conn.link.next_ticks;
     uint32_t event_window_us = gap_conn.link.first_event ||
-        gap_conn.pending.update_window_active ? gap_conn.procedures.window_size * 1250 : 1000;
+        gap_conn.pending.update_window_active ? gap_conn.window_size * 1250 : 1000;
     uint32_t packet_guard_us = 400 +
-        2 * ((gap_conn.procedures.data_capacity > 27 ? gap_conn.procedures.data_capacity : 27) - 27) * 8;
+        2 * ((gap_conn.data_capacity > 27 ? gap_conn.data_capacity : 27) - 27) * 8;
     uint64_t open_ticks, close_ticks;
 
     for (;;) {

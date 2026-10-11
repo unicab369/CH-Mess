@@ -278,34 +278,6 @@ static struct {
     volatile int8_t rssi;
 } gap_rx;
 
-// Each accepted LE link keeps its independent Link Layer procedure state.
-// Queues and negotiated procedures associated with the link.
-typedef struct {
-    // Radio queues and connection data.
-    uint8_t window_size, update_window_size;
-#if GAP_EXT_ADV_SUPPORT
-    volatile uint8_t sync_transfer_queued;
-    uint8_t sync_transfer_handle;
-    uint16_t sync_transfer_id;
-#endif
-    uint16_t tx_l2cap_remaining;
-    uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
-    uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
-
-    // Connection parameter and channel-map procedures.
-    uint8_t pending_channel_map[5];
-    uint8_t connection_status;
-    uint16_t params_min, params_max, params_latency, params_timeout;
-    uint32_t params_started_ms;
-    uint16_t update_instant, update_win_offset, channel_map_instant;
-
-    // Data-length negotiation.
-    uint16_t data_capacity, local_tx_octets;
-    gap_data_length data_length, remote_data_length;
-    uint8_t length_status;
-    uint32_t length_started_ms;
-} gap_conn_procedures;
-
 typedef struct {
     struct {
         uint8_t active, rx_armed, event_replied, channel_selected;
@@ -334,7 +306,30 @@ typedef struct {
         volatile uint8_t local_params_queued, local_map_queued;
         volatile uint8_t length_queued;
     } queue;
-    gap_conn_procedures procedures;
+
+    // Radio queues and connection data.
+    uint8_t window_size, update_window_size;
+#if GAP_EXT_ADV_SUPPORT
+    volatile uint8_t sync_transfer_queued;
+    uint8_t sync_transfer_handle;
+    uint16_t sync_transfer_id;
+#endif
+    uint16_t tx_l2cap_remaining;
+    uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
+    uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
+
+    // Connection parameter and channel-map procedures.
+    uint8_t pending_channel_map[5];
+    uint8_t connection_status;
+    uint16_t params_min, params_max, params_latency, params_timeout;
+    uint32_t params_started_ms;
+    uint16_t update_instant, update_win_offset, channel_map_instant;
+
+    // Data-length negotiation.
+    uint16_t data_capacity, local_tx_octets;
+    gap_data_length data_length, remote_data_length;
+    uint8_t length_status;
+    uint32_t length_started_ms;
     struct {
         uint8_t set_queued, request_queued, update_pending;
         uint8_t req_pending, ack_waiting;
@@ -588,24 +583,24 @@ static int gap_conn_accept(
 
     // Initialize per-link procedures together after setting link parameters.
 #if GAP_EXT_ADV_SUPPORT
-    gap_conn.procedures.sync_transfer_queued = 0;
-    gap_conn.procedures.sync_transfer_handle = 0;
+    gap_conn.sync_transfer_queued = 0;
+    gap_conn.sync_transfer_handle = 0;
 #endif
-    gap_conn.procedures.window_size = frame[21];
-    gap_conn.procedures.tx_l2cap_remaining = 0;
+    gap_conn.window_size = frame[21];
+    gap_conn.tx_l2cap_remaining = 0;
     gap_conn.rate.set_queued = 0;
     gap_conn.rate.request_queued = 0;
     gap_conn.rate.update_pending = 0;
     gap_conn.rate.req_pending = 0;
-    gap_conn.procedures.connection_status = 0;
-    gap_conn.procedures.data_capacity = GAP_HW_DATA_MAX();
-    if (gap_conn.procedures.data_capacity < 27) return 0;
-    if (gap_conn.procedures.data_capacity > GAP_CONN_DATA_MAX)
-        gap_conn.procedures.data_capacity = GAP_CONN_DATA_MAX;
-    gap_conn.procedures.local_tx_octets = 27;
-    gap_conn.procedures.data_length = gap_conn.procedures.remote_data_length =
+    gap_conn.connection_status = 0;
+    gap_conn.data_capacity = GAP_HW_DATA_MAX();
+    if (gap_conn.data_capacity < 27) return 0;
+    if (gap_conn.data_capacity > GAP_CONN_DATA_MAX)
+        gap_conn.data_capacity = GAP_CONN_DATA_MAX;
+    gap_conn.local_tx_octets = 27;
+    gap_conn.data_length = gap_conn.remote_data_length =
         (gap_data_length){27, 328, 27, 328};
-    gap_conn.procedures.length_status = 0;
+    gap_conn.length_status = 0;
 
     gap_conn.channel.classification_valid = 1;
     gap_conn.channel.min_spacing_200ms = 5;

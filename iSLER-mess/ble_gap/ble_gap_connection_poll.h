@@ -87,7 +87,7 @@ void gap_hw_received(void) {
             uint64_t counter = gap_security.rx_counter;
 
             if (duplicate && counter) counter--;
-            if (frame[1] <= 4 || frame[1] > gap_conn.procedures.data_capacity + 4 ||
+            if (frame[1] <= 4 || frame[1] > gap_conn.data_capacity + 4 ||
                 counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security.rx_counter)
             ) {
                 gap_security.status = 0x3d;
@@ -115,7 +115,7 @@ void gap_hw_received(void) {
         }
         // Extended LL control PDUs (including PAST) can exceed 27 bytes after
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
-        if (frame[1] > gap_conn.procedures.data_length.rx_octets) {
+        if (frame[1] > gap_conn.data_length.rx_octets) {
             gap_conn_end();
             gap_conn_slot = previous_slot;
             return;
@@ -149,7 +149,7 @@ void gap_hw_received(void) {
                 gap_tx_frame[2] == 0x28
             ) {
                 gap_conn.channel.report_pending = 0;
-                gap_conn.procedures.connection_status = 0;
+                gap_conn.connection_status = 0;
             }
 
             if (!gap_conn.link_state.central_role && gap_conn.rate.ack_waiting) {
@@ -230,9 +230,9 @@ void gap_hw_received(void) {
         if (new_packet) {
             if (authenticated) gap_security.rx_counter++;
             if ((llid == 1 || llid == 2) && frame[1]) {
-                gap_conn.procedures.rx_llid = llid;
-                gap_conn.procedures.rx_len = frame[1];
-                memcpy(gap_conn.procedures.rx_data, frame + 2, frame[1]);
+                gap_conn.rx_llid = llid;
+                gap_conn.rx_len = frame[1];
+                memcpy(gap_conn.rx_data, frame + 2, frame[1]);
                 gap_conn.queue.rx_ready = 1;
             }
             gap_conn.link.expected_rx_sn ^= 1;
@@ -267,16 +267,16 @@ void gap_hw_received(void) {
 
 #if GAP_EXT_ADV_SUPPORT
                 if (!gap_security.phase && gap_tx_frame[1] == 0 &&
-                        gap_conn.procedures.sync_transfer_queued
+                        gap_conn.sync_transfer_queued
                 ) {
                     int slot = gap_periodic_sync_handle_slot(
-                        gap_conn.procedures.sync_transfer_handle);
+                        gap_conn.sync_transfer_handle);
                     if (slot >= 0) {
                         gap_periodic_sync_transfer_encode(
-                            gap_tx_frame, gap_conn.procedures.sync_transfer_id,
+                            gap_tx_frame, gap_conn.sync_transfer_id,
                             (uint8_t)slot, conn_anchor_ticks, event_counter);
                     }
-                    gap_conn.procedures.sync_transfer_queued = 0;
+                    gap_conn.sync_transfer_queued = 0;
                 }
 #endif
             }
@@ -296,9 +296,9 @@ void gap_hw_received(void) {
                 if (gap_tx_frame[1] == 0 && gap_conn.queue.tx_queued &&
                     !gap_conn.link_state.terminate_after_reply
                 ) {
-                    gap_tx_frame[0] = gap_conn.procedures.tx_llid;
-                    gap_tx_frame[1] = gap_conn.procedures.tx_len;
-                    memcpy(gap_tx_frame + 2, gap_conn.procedures.tx_data, gap_conn.procedures.tx_len);
+                    gap_tx_frame[0] = gap_conn.tx_llid;
+                    gap_tx_frame[1] = gap_conn.tx_len;
+                    memcpy(gap_tx_frame + 2, gap_conn.tx_data, gap_conn.tx_len);
                     gap_conn.queue.tx_queued = 0;
                 }
             }
@@ -643,18 +643,18 @@ static uint64_t gap_conn_event_close_ticks(
         // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
         // per octet. S=2 packets finish sooner, so this is conservative.
-        packet_us = 2 * (976 + (uint32_t)connection->procedures.data_capacity * 64) + 150;
+        packet_us = 2 * (976 + (uint32_t)connection->data_capacity * 64) + 150;
     } else {
-        packet_us = 400 + 2 * (connection->procedures.data_capacity > 27 ?
-                    connection->procedures.data_capacity - 27 : 0) * 8;
+        packet_us = 400 + 2 * (connection->data_capacity > 27 ?
+                    connection->data_capacity - 27 : 0) * 8;
     }
 
     uint32_t window_us = connection->link.first_event ||
                         connection->pending.update_window_active ?
-                        (uint32_t)connection->procedures.window_size * 1250 : 1000;
+                        (uint32_t)connection->window_size * 1250 : 1000;
     uint32_t widen_us = ((uint32_t)(now_ms - connection->link.last_rx_ms) *
                             (500 + connection->link.peer_sca_ppm) + 999) / 1000;
-    uint32_t widen_max_us = (uint32_t)connection->procedures.params.interval * 625;
+    uint32_t widen_max_us = (uint32_t)connection->params.interval * 625;
     if (widen_us > widen_max_us) widen_us = widen_max_us;
 
     return connection->link.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
@@ -701,9 +701,9 @@ static void gap_conn_poll(void) {
     }
 
     if (gap_conn.pending.length &&
-        (uint32_t)(now_ms - gap_conn.procedures.length_started_ms) >= 40000
+        (uint32_t)(now_ms - gap_conn.length_started_ms) >= 40000
     ) {
-        gap_conn.procedures.length_status = 0x22; // LL response timeout.
+        gap_conn.length_status = 0x22; // LL response timeout.
         gap_conn_end();
         return;
     }
@@ -711,9 +711,9 @@ static void gap_conn_poll(void) {
     if ((gap_conn.pending.params || gap_conn.features.request_pending ||
          gap_conn.features.ext_pending || gap_conn.rate.req_pending ||
          gap_conn.rate.update_pending) &&
-        (uint32_t)(now_ms - gap_conn.procedures.params_started_ms) >= 40000
+        (uint32_t)(now_ms - gap_conn.params_started_ms) >= 40000
     ) {
-        gap_conn.procedures.connection_status = 0x22; // LL response timeout.
+        gap_conn.connection_status = 0x22; // LL response timeout.
         if (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued ||
             gap_conn.subrate.request_pending
         ) {
