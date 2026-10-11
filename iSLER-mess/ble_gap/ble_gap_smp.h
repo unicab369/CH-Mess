@@ -514,22 +514,24 @@ static void gap_sc_confirm_value(
     const uint8_t nonce_air[16],
     uint8_t confirm_air[16]
 ) {
-    uint8_t nonce[16], confirm[16];
-    gap_sc_reverse(nonce, nonce_air, 16);
+    // f4 uses zero for other models and one passkey bit per round.
+    uint8_t z = 0;
+    if (gap_smp.secure.passkey_required) {
+        uint8_t byte_index = gap_smp.secure.passkey_round / 8;
+        uint8_t bit_index = gap_smp.secure.passkey_round % 8;
+        z = (uint8_t)(0x80 | ((gap_smp.pairing.tk[byte_index] >> bit_index) & 1));
+    }
+
     uint8_t message[65];
     memcpy(message, first_x, 32);
     memcpy(message + 32, second_x, 32);
-    uint32_t passkey = (uint32_t)gap_smp.pairing.tk[0] |
-        (uint32_t)gap_smp.pairing.tk[1] << 8 |
-        (uint32_t)gap_smp.pairing.tk[2] << 16 |
-        (uint32_t)gap_smp.pairing.tk[3] << 24;
-    // f4 uses zero for other models and one passkey bit per round.
-    uint8_t z = gap_smp.secure.passkey_required ?
-        (uint8_t)(0x80 | ((passkey >>
-            gap_smp.secure.passkey_round) & 1)) : 0;
     message[64] = z;
+
+    uint8_t nonce[16], confirm[16];
+    gap_sc_reverse(nonce, nonce_air, sizeof(nonce));
     if (!smp_port_cmac(nonce, message, sizeof(message), confirm))
         memset(confirm, 0, sizeof(confirm));
+
     gap_sc_reverse(confirm_air, confirm, 16);
     gap_wipe(nonce, sizeof(nonce));
     gap_wipe(confirm, sizeof(confirm));
@@ -566,26 +568,27 @@ static uint32_t gap_sc_numeric_value(void) {
 }
 
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
+    uint8_t central_role = gap_conn.link_state.central_role;
     uint8_t na[16], nb[16], a1[7], a2[7], check[16], r[16] = {0};
+
     if (gap_smp.secure.oob_active) {
-        const uint8_t *oob_random = from_central == gap_conn.link_state.central_role
-                                        ? gap_smp.secure.oob_local_random
-                                        : gap_smp.oob_peer.random;
+        const uint8_t *oob_random = from_central == central_role ?
+                gap_smp.secure.oob_local_random : gap_smp.oob_peer.random;
         gap_sc_reverse(r, oob_random, 16);
-    } else if (gap_smp.secure.passkey_required) {
+    }
+    else if (gap_smp.secure.passkey_required) {
         r[12] = gap_smp.pairing.tk[3]; r[13] = gap_smp.pairing.tk[2];
         r[14] = gap_smp.pairing.tk[1]; r[15] = gap_smp.pairing.tk[0];
     }
-    gap_sc_reverse(na, gap_conn.link_state.central_role ? gap_smp.random :
-                   gap_smp.peer_random, 16);
-    gap_sc_reverse(nb, gap_conn.link_state.central_role ? gap_smp.peer_random :
-                   gap_smp.random, 16);
+
+    gap_sc_reverse(na, central_role ? gap_smp.random : gap_smp.peer_random, 16);
+    gap_sc_reverse(nb, central_role ? gap_smp.peer_random : gap_smp.random, 16);
     a1[0] = gap_conn.initiator.type;
     gap_sc_reverse(a1 + 1, gap_conn.initiator.address, 6);
     a2[0] = gap_conn.responder.type;
     gap_sc_reverse(a2 + 1, gap_conn.responder.address, 6);
     const uint8_t *iocap = from_central ? gap_smp.pairing.request + 1 :
-        gap_smp.pairing.response + 1;
+                                        gap_smp.pairing.response + 1;
     uint8_t message[65];
     memcpy(message, from_central ? na : nb, 16);
     memcpy(message + 16, from_central ? nb : na, 16);
@@ -593,8 +596,8 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     memcpy(message + 48, iocap, 3);
     memcpy(message + 51, from_central ? a1 : a2, 7);
     memcpy(message + 58, from_central ? a2 : a1, 7);
-    if (!smp_port_cmac(gap_smp.secure.mac_key,
-                           message, sizeof(message), check))
+
+    if (!smp_port_cmac(gap_smp.secure.mac_key, message, sizeof(message), check))
         memset(check, 0, sizeof(check));
     gap_sc_reverse(out_air, check, 16);
     gap_wipe(na, sizeof(na));
@@ -614,7 +617,8 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     memcpy(block + 2, gap_smp.pairing.request, 7);
     memcpy(block + 9, gap_smp.pairing.response, 7);
 
-    for (size_t i = 0; i < sizeof(block); i++) block[i] ^= random[i];
+    for (size_t i = 0; i < sizeof(block); i++)
+        block[i] ^= random[i];
     int ok = smp_aes128(&gap_smp.bearer, gap_smp.pairing.tk, block, confirm);
 
     for (size_t i = 0; i < 6; i++) {
@@ -622,9 +626,10 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
         confirm[i + 6] ^= gap_conn.initiator.address[i];
     }
 
-    if (ok) ok = smp_aes128(&gap_smp.bearer,
-        gap_smp.pairing.tk, confirm, confirm);
-    if (!ok) memset(confirm, 0, 16);
+    if (ok)
+        ok = smp_aes128(&gap_smp.bearer, gap_smp.pairing.tk, confirm, confirm);
+    if (!ok)
+        memset(confirm, 0, 16);
     gap_wipe(block, sizeof(block));
 }
 
