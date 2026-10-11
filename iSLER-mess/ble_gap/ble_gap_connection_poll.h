@@ -60,7 +60,7 @@ void gap_hw_received(void) {
             conn_anchor_ticks = gap_conn.link.next_ticks;
         } else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
-                gap_phy_packet_airtime_us((uint16_t)frame[1], gap_conn.phy.current.rx));
+                gap_phy_airtime_us((uint16_t)frame[1], gap_conn.phy.current.rx));
 
             if (received_ticks < airtime_ticks) {
                 gap_conn_slot = previous_slot;

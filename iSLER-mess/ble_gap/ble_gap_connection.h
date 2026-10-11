@@ -174,8 +174,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             // continuation events at the connection update Instant.
             gap_conn.schedule.factor = 1;
             gap_conn.schedule.continuation = 0;
-            gap_conn.subrate.continuations = 0;
-            gap_conn.subrate.latency_remaining = 0;
+            gap_conn.subrate.continuations =
+                gap_conn.subrate.latency_remaining = 0;
             gap_conn.subrate.transition = gap_conn.subrate.pending = 0;
             gap_conn.subrate.update_queued = 0;
         }

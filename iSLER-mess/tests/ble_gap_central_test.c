@@ -1782,7 +1782,7 @@ static void test_periodic_advertising_sync(void) {
 static void test_coded_aux_receive_timing(void) {
     gap_ext_adv_fields fields = {0};
     uint8_t old_phy_mask = radio_phy_mask;
-    assert(gap_phy_packet_airtime_us(27, GAP_PHY_CODED) == 2704);
+    assert(gap_phy_airtime_us(27, GAP_PHY_CODED) == 2704);
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
     memset(gap_syncs, 0, sizeof(gap_syncs));
     radio_phy_mask = 7;

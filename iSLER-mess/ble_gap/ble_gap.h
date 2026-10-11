@@ -9,12 +9,6 @@
 #include <string.h>
 #include "../ble_l2cap.h"
 
-// Volatile stores keep the compiler from removing the wipe as dead code.
-static void gap_wipe(volatile void *data, size_t len) {
-    volatile uint8_t *bytes = data;
-    while (len--) *bytes++ = 0;
-}
-
 // Platform hooks used by the GAP controller and security procedures.
 #ifndef GAP_RADIO_BUFFER_ATTR
 #define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -68,69 +62,69 @@ int GAP_CCM_DECRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
     uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
-// TODO for complete BLE GAP support:
-// - Verify Peripheral connection timing on hardware.
-// - Verify encrypted links and restored bonds on hardware.
-// - Hardware TODO: Verify LE Coded PHY advertising and scanning with a capable adapter.
-// - Later: Verify Central connection initiation and event timing on hardware;
-//   verify private address rotation, identity filters, and negotiated larger
-//   data packets, Central channel-map updates, and PHY changes on hardware.
-// - Verify Secure Connections OOB exchange and restored bonds on hardware.
-//   Just Works, Numeric Comparison, Passkey Entry, and LTK bonding are opt-in.
-
-#define GAP_ADV_DATA_MAX 31
+// Build-time feature and capacity settings.
 #ifndef GAP_EXT_ADV_SUPPORT
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
+
+#ifndef GAP_CONN_DATA_MAX
+    #if GAP_EXT_ADV_SUPPORT
+        #define GAP_CONN_DATA_MAX 35
+    #else
+        #define GAP_CONN_DATA_MAX 27
+    #endif
+#endif
+#if GAP_CONN_DATA_MAX < 27 || GAP_CONN_DATA_MAX > 251
+#error "GAP_CONN_DATA_MAX must be between 27 and 251"
+#endif
+
 #ifndef GAP_EXT_ADV_SET_COUNT
 #define GAP_EXT_ADV_SET_COUNT 2
 #endif
 #if GAP_EXT_ADV_SET_COUNT < 1 || GAP_EXT_ADV_SET_COUNT > 4
 #error "GAP_EXT_ADV_SET_COUNT must be between 1 and 4"
 #endif
+
 #ifndef GAP_EXT_ADV_DATA_MAX
 #define GAP_EXT_ADV_DATA_MAX 1650
 #endif
-#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
-#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
-#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
 #if GAP_EXT_ADV_DATA_MAX < 1 || GAP_EXT_ADV_DATA_MAX > 1650
 #error "GAP_EXT_ADV_DATA_MAX must be between 1 and 1650"
 #endif
-#define GAP_EXT_ADV_CONTEXT_COUNT 2
-#define GAP_EXT_ADV_REPORT_COUNT 2
-#define GAP_EXT_ADV_SEEN_COUNT 4
-#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
-#define GAP_PERIODIC_SYNC_COUNT 2
-#define GAP_PAWR_RESPONSE_DATA_MAX 249
-#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
-#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
-#define GAP_PERIODIC_REPORT_COUNT 2
+
 #ifndef GAP_CONNECTION_COUNT
 #define GAP_CONNECTION_COUNT 2
 #endif
 #if GAP_CONNECTION_COUNT < 1 || GAP_CONNECTION_COUNT > 4
 #error "GAP_CONNECTION_COUNT must be between 1 and 4"
 #endif
-#ifndef GAP_CONN_DATA_MAX
-#if GAP_EXT_ADV_SUPPORT
-#define GAP_CONN_DATA_MAX 35
-#else
-#define GAP_CONN_DATA_MAX 27
-#endif
-#endif
-#if GAP_CONN_DATA_MAX < 27 || GAP_CONN_DATA_MAX > 251
-#error "GAP_CONN_DATA_MAX must be between 27 and 251"
-#endif
-#define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
+
+// Advertising payload limits and extended advertising storage.
+#define GAP_ADV_DATA_MAX 31
+#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
+#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
+#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
+#define GAP_EXT_ADV_CONTEXT_COUNT 2
+#define GAP_EXT_ADV_REPORT_COUNT 2
+#define GAP_EXT_ADV_SEEN_COUNT 4
+#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
+#define GAP_PAWR_RESPONSE_DATA_MAX 249
+#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
+
+// Scanner, periodic synchronization, and identity storage capacities.
 #define GAP_SCAN_REPORT_COUNT 4
 #define GAP_SCAN_SEEN_COUNT 4
+#define GAP_PERIODIC_SYNC_COUNT 2
+#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
+#define GAP_PERIODIC_REPORT_COUNT 2
+
 #ifndef GAP_IDENTITY_COUNT
 #define GAP_IDENTITY_COUNT 4
 #endif
 #if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
 #error "GAP_IDENTITY_COUNT must be between 1 and 32"
 #endif
+
 #ifndef GAP_ACCEPT_LIST_COUNT
 #define GAP_ACCEPT_LIST_COUNT 4
 #endif
@@ -138,13 +132,17 @@ int GAP_CCM_DECRYPT(
 #error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
 #endif
 
+// Advertising and connection constants.
+#define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
+#define GAP_CONNECTION_PENDING 0xff
+
+// GAP discovery, privacy, PHY, and Link Layer feature values.
 #define GAP_DISCOVERY_ALL 0
 #define GAP_DISCOVERY_GENERAL 1
 #define GAP_DISCOVERY_LIMITED 2
 
 #define GAP_PRIVACY_NETWORK 0
 #define GAP_PRIVACY_DEVICE 1
-#define GAP_CONNECTION_PENDING 0xff
 #define GAP_PHY_1M 1
 #define GAP_PHY_2M 2
 #define GAP_PHY_CODED 4
@@ -161,9 +159,8 @@ int GAP_CCM_DECRYPT(
 
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
-static inline uint32_t gap_phy_packet_airtime_us(
-    uint16_t payload_len,
-                                                  uint8_t phy
+static inline uint32_t gap_phy_airtime_us(
+    uint16_t payload_len, uint8_t phy
 ) {
     if (phy == GAP_PHY_2M)
         return ((uint32_t)payload_len + 11) * 4;
@@ -171,7 +168,6 @@ static inline uint32_t gap_phy_packet_airtime_us(
         return 976 + (uint32_t)payload_len * 64;
     return ((uint32_t)payload_len + 10) * 8;
 }
-
 
 // Advertising, scanning, and periodic-sync state.
 static struct {
@@ -186,36 +182,8 @@ static struct {
 } gap_adv;
 
 #if GAP_EXT_ADV_SUPPORT
-typedef struct {
-    uint8_t enabled, sid, scannable, periodic_enabled, aux_phy;
-    uint8_t periodic_sync_info_sent;
-    uint8_t pawr_enabled, pawr_data_pending;
-    uint8_t pawr_connect_pending, pawr_connect_subevent;
-    uint8_t pawr_connect_peer_type, pawr_connect_peer_address[6];
-    uint8_t pawr_num_subevents, pawr_subevent_interval;
-    uint8_t pawr_num_response_slots;
-    uint8_t pawr_response_slot_delay, pawr_response_slot_spacing;
-    uint16_t data_len, scan_response_len, interval_ms;
-    uint16_t periodic_data_len, periodic_interval, periodic_event_counter;
-    uint16_t did, periodic_did;
-    uint32_t periodic_access_address, periodic_response_access_address;
-    uint32_t periodic_crc_init;
-    uint8_t periodic_channel_map[5], periodic_sca;
-    uint64_t periodic_next_event_ticks;
-    uint32_t next_event_ms;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-    uint8_t periodic_data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_adv_set;
-static gap_ext_adv_set gap_ext_adv[GAP_EXT_ADV_SET_COUNT];
-static uint8_t gap_ext_adv_next_set;
-static uint8_t gap_periodic_advertising_next_set;
-static inline int gap_ext_adv_any_enabled(void) {
-    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        if (gap_ext_adv[i].enabled ||
-            gap_ext_adv[i].periodic_enabled)
-            return 1;
-    return 0;
-}
+static int gap_ext_adv_any_enabled(void);
+static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED (gap_ext_adv_any_enabled())
 #else
 #define GAP_EXT_ADVERTISING_ENABLED 0
@@ -527,6 +495,12 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     return count >= 2 && gap_access_address_valid(access_address);
 }
 
+// Volatile stores keep the compiler from removing the wipe as dead code.
+static void gap_wipe(volatile void *data, size_t len) {
+    volatile uint8_t *bytes = data;
+    while (len--) *bytes++ = 0;
+}
+
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
     const uint8_t frame[36],
@@ -648,8 +622,7 @@ static int gap_conn_accept(
 
     gap_adv.enabled = 0;
 #if GAP_EXT_ADV_SUPPORT
-    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        gap_ext_adv[i].enabled = 0;
+    gap_ext_adv_connection_accept();
 #endif
     return 1;
 }
