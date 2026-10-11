@@ -288,16 +288,6 @@ typedef struct {
 } gap_conn_phy;
 
 typedef struct {
-    uint8_t report_queued, report_pending, status_queued;
-    uint8_t enabled, classification_valid, peer_classification_valid;
-    uint8_t status_last_sent_valid;
-    uint8_t min_spacing_200ms, max_delay_200ms;
-    uint8_t local_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
-    uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
-    uint32_t status_changed_ms, status_last_sent_ms;
-} gap_channel;
-
-typedef struct {
     uint8_t active, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t terminate_queued, terminate_sent;
@@ -331,7 +321,6 @@ typedef struct {
 
     // Connection parameter and channel-map procedures.
     uint8_t pending_channel_map[5];
-    gap_channel channel;
     uint8_t connection_status;
     gap_conn_parameters params, new_params;
     uint16_t params_min, params_max, params_latency, params_timeout;
@@ -394,6 +383,15 @@ typedef struct {
         uint16_t request_timeout;
         uint32_t started_ms;
     } subrate;
+    struct {
+        uint8_t report_queued, report_pending, status_queued;
+        uint8_t enabled, classification_valid, peer_classification_valid;
+        uint8_t status_last_sent_valid;
+        uint8_t min_spacing_200ms, max_delay_200ms;
+        uint8_t local_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+        uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+        uint32_t status_changed_ms, status_last_sent_ms;
+    } channel;
     struct {
         uint8_t update_window_active;
         uint8_t timing_update, channel_map;
@@ -596,19 +594,11 @@ static int gap_conn_accept(
     gap_conn.procedures.feature_page1_known = gap_conn.procedures.feature_ext_pending = 0;
     gap_conn.procedures.rate_set_queued = gap_conn.procedures.rate_request_queued = 0;
     gap_conn.procedures.rate_update_pending = gap_conn.procedures.rate_req_pending = 0;
-    gap_conn.procedures.channel.report_queued = gap_conn.procedures.channel.report_pending = 0;
-    gap_conn.procedures.channel.status_queued = gap_conn.procedures.channel.enabled = 0;
-    gap_conn.procedures.channel.classification_valid = 1;
-    gap_conn.procedures.channel.peer_classification_valid = 0;
-    gap_conn.procedures.channel.status_last_sent_valid = 0;
-    gap_conn.procedures.channel.min_spacing_200ms = 5;
-    gap_conn.procedures.channel.max_delay_200ms = 5;
-    memset(gap_conn.procedures.channel.local_classification, 0,
-           sizeof(gap_conn.procedures.channel.local_classification));
-    memset(gap_conn.procedures.channel.peer_classification, 0,
-           sizeof(gap_conn.procedures.channel.peer_classification));
-    gap_conn.procedures.channel.status_changed_ms = GET_MILLIS();
-    gap_conn.procedures.channel.status_last_sent_ms = 0;
+    memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
+    gap_conn.channel.classification_valid = 1;
+    gap_conn.channel.min_spacing_200ms = 5;
+    gap_conn.channel.max_delay_200ms = 5;
+    gap_conn.channel.status_changed_ms = GET_MILLIS();
     memset(gap_conn.procedures.peer_features_page1, 0,
            sizeof(gap_conn.procedures.peer_features_page1));
     gap_conn.procedures.phy.tx = gap_conn.procedures.phy.rx = GAP_PHY_1M;

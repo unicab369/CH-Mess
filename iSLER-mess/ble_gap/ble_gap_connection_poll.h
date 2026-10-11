@@ -23,7 +23,7 @@ static void gap_conn_send_queued(void) {
         gap_subrate_start_queued();
     if (gap_conn.procedures.rate_set_queued || gap_conn.procedures.rate_request_queued)
         gap_conn_rate_start_queued();
-    if (gap_conn.procedures.channel.report_queued)
+    if (gap_conn.channel.report_queued)
         gap_channel_report_start();
 }
 
@@ -143,12 +143,12 @@ void gap_hw_received(void) {
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
         if (gap_conn.link.tx_pending && (((frame[0] >> 2) & 1) != gap_conn.link.tx_sn)) {
-            if (gap_conn.link_state.central_role && gap_conn.procedures.channel.report_pending &&
+            if (gap_conn.link_state.central_role && gap_conn.channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
                 gap_tx_frame[2] == 0x28
             ) {
-                gap_conn.procedures.channel.report_pending = 0;
+                gap_conn.channel.report_pending = 0;
                 gap_conn.procedures.connection_status = 0;
             }
 
@@ -282,15 +282,15 @@ void gap_hw_received(void) {
             }
 
             if (!gap_security.phase) {
-                if (!gap_conn.link_state.central_role && gap_conn.procedures.channel.status_queued &&
-                    gap_conn.procedures.channel.enabled
+                if (!gap_conn.link_state.central_role && gap_conn.channel.status_queued &&
+                    gap_conn.channel.enabled
                 ) {
                     uint32_t now_ms = GET_MILLIS();
-                    if ((uint32_t)(now_ms - gap_conn.procedures.channel.status_changed_ms) >=
-                            (uint32_t)gap_conn.procedures.channel.max_delay_200ms * 200 &&
-                        (!gap_conn.procedures.channel.status_last_sent_valid ||
-                         (uint32_t)(now_ms - gap_conn.procedures.channel.status_last_sent_ms) >=
-                            (uint32_t)gap_conn.procedures.channel.min_spacing_200ms * 200)
+                    if ((uint32_t)(now_ms - gap_conn.channel.status_changed_ms) >=
+                            (uint32_t)gap_conn.channel.max_delay_200ms * 200 &&
+                        (!gap_conn.channel.status_last_sent_valid ||
+                         (uint32_t)(now_ms - gap_conn.channel.status_last_sent_ms) >=
+                            (uint32_t)gap_conn.channel.min_spacing_200ms * 200)
                     ) gap_send_channel_status();
                 }
                 if (gap_tx_frame[1] == 0 && gap_conn.queue.tx_queued &&
