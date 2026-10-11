@@ -65,8 +65,8 @@ static uint8_t gap_conn_rate_busy(void) {
 static void gap_conn_end(void) {
     if (!gap_conn.active) return;
 #if GAP_EXT_ADV_SUPPORT
-    gap_conn.periodic_sync_transfer_queued = 0;
-    gap_conn.periodic_sync_transfer_handle = 0;
+    gap_conn.sync_transfer_queued = 0;
+    gap_conn.sync_transfer_handle = 0;
 #endif
     if (gap_poll.slot_valid &&
         gap_poll.slot == gap_conn_slot
@@ -133,8 +133,8 @@ static void gap_conn_end(void) {
     gap_conn.channel_map_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
-    gap_conn.local_terminate_queued = 0;
-    gap_conn.local_terminate_pending = 0;
+    gap_conn.terminate_queued = 0;
+    gap_conn.terminate_sent = 0;
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
     gap_scan.applied_generation = gap_scan_generation - 1;
@@ -1957,8 +1957,8 @@ int gap_conn_update(
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.channel_map_pending || gap_conn.local_map_queued ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
-        gap_conn.terminate_after_reply || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || interval < 6 || interval > 3200 ||
+        gap_conn.terminate_after_reply || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || interval < 6 || interval > 3200 ||
         latency > 499 || timeout < 10 || timeout > 3200 ||
         (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * interval * 10 * factor)
         return 0;
@@ -1988,7 +1988,7 @@ int gap_conn_request(
         gap_conn.channel_map_pending || gap_conn.local_map_queued ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
         gap_conn.terminate_after_reply ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         minimum < 6 || maximum > 3200 || minimum > maximum || latency > 499 ||
         timeout < 10 || timeout > 3200 || (uint32_t)timeout * 80 <=
             2 * (uint32_t)(latency + 1) * maximum * 10 * factor)
@@ -2028,8 +2028,8 @@ int gap_subrate_set(
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.channel_map_pending || gap_conn.local_map_queued ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
-        gap_conn.terminate_after_reply || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending ||
+        gap_conn.terminate_after_reply || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent ||
         !gap_subrate_parameters_valid(factor, peripheral_latency,
                                       continuation, timeout))
         return 0;
@@ -2070,8 +2070,8 @@ int gap_subrate_request(
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.channel_map_pending || gap_conn.local_map_queued ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
-        gap_conn.terminate_after_reply || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || factor_min < 1 ||
+        gap_conn.terminate_after_reply || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || factor_min < 1 ||
         factor_max > 500 || factor_min > factor_max || max_latency > 499 ||
         continuation >= factor_min ||
         factor_max * (max_latency + 1) > 500 || timeout < 10 || timeout > 3200 ||
@@ -2135,7 +2135,7 @@ int gap_conn_rate_set(
         gap_conn.local_map_queued || gap_conn.length_queued ||
         gap_conn.length_pending || gap_conn.phy_queued || gap_conn.phy_pending ||
         gap_conn.phy_update_pending || gap_conn.terminate_after_reply ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         !gap_conn_rate_parameters_valid(interval, factor, latency,
                                                continuation, timeout))
         return 0;
@@ -2168,7 +2168,7 @@ int gap_conn_rate_request(
         gap_conn.local_map_queued || gap_conn.length_queued ||
         gap_conn.length_pending || gap_conn.phy_queued || gap_conn.phy_pending ||
         gap_conn.phy_update_pending || gap_conn.terminate_after_reply ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         interval_min < 3 || interval_max > 32000 || interval_min > interval_max ||
         factor_min < 1 || factor_max > 500 || factor_min > factor_max ||
         max_latency > 499 || continuation >= factor_min ||
@@ -2214,8 +2214,8 @@ int gap_channel_map_set(const uint8_t channels[5]) {
         gap_conn.channel_map_pending || gap_conn.local_update_queued ||
         gap_conn.timing_update_pending || gap_conn.local_params_queued ||
         gap_conn.params_pending || gap_conn.length_queued || gap_conn.length_pending ||
-        gap_conn.terminate_after_reply || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || (channels[4] & 0xe0))
+        gap_conn.terminate_after_reply || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || (channels[4] & 0xe0))
         return 0;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
@@ -2241,8 +2241,8 @@ int gap_channel_reporting_set(
         gap_security.phase || enable > 1 || min_spacing_200ms < 5 ||
         min_spacing_200ms > 150 || max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 || gap_conn.channel.report_queued ||
-        gap_conn.channel.report_pending || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply)
+        gap_conn.channel.report_pending || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || gap_conn.terminate_after_reply)
         return 0;
     gap_conn.channel.enabled = enable;
     gap_conn.channel.min_spacing_200ms = min_spacing_200ms;
@@ -2304,7 +2304,7 @@ int gap_data_length_set(uint16_t octets) {
         gap_conn.length_queued || gap_conn.length_pending ||
         gap_conn.local_update_queued || gap_conn.timing_update_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         gap_conn.channel_map_pending || gap_conn.local_map_queued ||
         gap_conn.phy_queued || gap_conn.phy_pending || gap_conn.phy_update_pending ||
         gap_conn.terminate_after_reply || octets < 27 ||
@@ -2340,7 +2340,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
         gap_conn.local_map_queued || gap_conn.channel_map_pending ||
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.length_queued || gap_conn.length_pending ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         gap_conn.terminate_after_reply)
         return 0;
     if (gap_conn.features_known) {
@@ -2375,7 +2375,7 @@ uint8_t gap_phy_status(void) {
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     if (!gap_connected() || gap_security.phase || gap_conn.tx_queued ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending ||
+        gap_conn.terminate_queued || gap_conn.terminate_sent ||
         gap_conn.terminate_after_reply || !data || (llid != 1 && llid != 2) || !len ||
         len > gap_conn.data_length.tx_octets ||
         (len + 10 + (gap_security.tx_enabled ? 4 : 0)) * 8 >
@@ -2402,10 +2402,10 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
 int gap_disconnect(uint8_t reason) {
     if (!gap_connected() || !reason || gap_conn.terminate_after_reply ||
-        gap_conn.local_terminate_queued || gap_conn.local_terminate_pending)
+        gap_conn.terminate_queued || gap_conn.terminate_sent)
         return 0;
     gap_conn.local_terminate_reason = reason;
-    gap_conn.local_terminate_queued = 1;
+    gap_conn.terminate_queued = 1;
     return 1;
 }
 
@@ -2514,7 +2514,7 @@ static void gap_send_security(void) {
             gap_tx_frame[1] = 2;
             gap_tx_frame[2] = 0x02;
             gap_tx_frame[3] = 0x06;
-            gap_conn.local_terminate_pending = 1;
+            gap_conn.terminate_sent = 1;
         } else {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -2548,8 +2548,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.feature_request_pending || gap_conn.length_queued ||
         gap_conn.length_pending || gap_conn.phy_queued || gap_conn.phy_pending ||
-        gap_conn.phy_update_pending || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply)
+        gap_conn.phy_update_pending || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || gap_conn.terminate_after_reply)
         return 0;
     if (gap_conn.features_known && !(gap_conn.peer_features & 1)) {
         gap_security.status = 0x1a;
@@ -2570,8 +2570,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         gap_conn.local_params_queued || gap_conn.params_pending ||
         gap_conn.feature_request_pending || gap_conn.length_queued ||
         gap_conn.length_pending || gap_conn.phy_queued || gap_conn.phy_pending ||
-        gap_conn.phy_update_pending || gap_conn.local_terminate_queued ||
-        gap_conn.local_terminate_pending || gap_conn.terminate_after_reply) {
+        gap_conn.phy_update_pending || gap_conn.terminate_queued ||
+        gap_conn.terminate_sent || gap_conn.terminate_after_reply) {
         {
             volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
             size_t wipe_len = sizeof(entropy);

@@ -299,7 +299,7 @@ typedef struct {
 typedef struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
-    uint8_t local_terminate_queued, local_terminate_pending;
+    uint8_t terminate_queued, terminate_sent;
     uint8_t local_terminate_reason, central_role, central_anchor_set;
     uint8_t initiator_type, responder_type, initiator[6], responder[6];
     uint8_t authenticated, encryption_key_size;
@@ -310,9 +310,9 @@ typedef struct {
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
     volatile uint8_t tx_queued, rx_ready;
 #if GAP_EXT_ADV_SUPPORT
-    volatile uint8_t periodic_sync_transfer_queued;
-    uint8_t periodic_sync_transfer_handle;
-    uint16_t periodic_sync_transfer_id;
+    volatile uint8_t sync_transfer_queued;
+    uint8_t sync_transfer_handle;
+    uint16_t sync_transfer_id;
 #endif
     uint16_t tx_l2cap_remaining;
     uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
@@ -497,8 +497,8 @@ static int gap_conn_accept(
     if (free_slot < 0) return 0;
     gap_conn_slot = (uint8_t)free_slot;
 #if GAP_EXT_ADV_SUPPORT
-    gap_conn.periodic_sync_transfer_queued = 0;
-    gap_conn.periodic_sync_transfer_handle = 0;
+    gap_conn.sync_transfer_queued = 0;
+    gap_conn.sync_transfer_handle = 0;
 #endif
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
@@ -588,8 +588,8 @@ static int gap_conn_accept(
     gap_conn.channel_map_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
     gap_conn.version_ind_sent = 0;
-    gap_conn.local_terminate_queued = 0;
-    gap_conn.local_terminate_pending = 0;
+    gap_conn.terminate_queued = 0;
+    gap_conn.terminate_sent = 0;
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
     uint16_t capacity = GAP_HW_DATA_MAX();

@@ -82,6 +82,7 @@ void gap_hw_received(void) {
         uint8_t duplicate = ((frame[0] >> 3) & 1) != gap_conn.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
+
         if (frame[1] &&
             ((gap_security.rx_enabled &&
               !(duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL &&
@@ -100,6 +101,7 @@ void gap_hw_received(void) {
                 gap_conn_slot = previous_slot;
                 return;
             }
+
             uint8_t *plain = gap_conn_buffers[gap_conn_slot].plain;
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
@@ -124,95 +126,104 @@ void gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
-        gap_conn.last_rx_ms = GET_MILLIS();
-        gap_conn.rx_armed = 0;
         if (frame[1]) {
             gap_conn.subrate.event_activity = 1;
             gap_conn.subrate.event_received = 1;
         }
+
         if (gap_conn.central_role) {
             gap_conn.next_ticks += gap_conn_interval_ticks();
         } else {
-            uint8_t wire_len = frame[1];
-            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(
-                gap_conn.phy.rx == 2 ?
-                    ((uint32_t)wire_len + 11) * 4 :
-                    ((uint32_t)wire_len + 10) * 8);
-            gap_conn.next_ticks = received_ticks - rx_airtime_ticks +
-                gap_conn_interval_ticks();
+            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_conn.phy.rx == 2 ?
+                                                ((uint32_t)frame[1] + 11) * 4 :
+                                                ((uint32_t)frame[1] + 10) * 8);
+            gap_conn.next_ticks = received_ticks - rx_airtime_ticks + gap_conn_interval_ticks();
         }
+
+        gap_conn.last_rx_ms = GET_MILLIS();
+        gap_conn.rx_armed = 0;
         gap_conn.first_event = 0;
         gap_conn.update_window_active = 0;
         gap_conn.channel_selected = 0;
-        uint8_t remote_sn = (frame[0] >> 3) & 1;
-        uint8_t remote_nesn = (frame[0] >> 2) & 1;
-        if (gap_conn.tx_pending &&
-            remote_nesn != gap_conn.tx_sn) {
+
+        // NESN is the peer's next expected TX sequence number; a changed NESN
+        // acknowledges the packet currently pending for transmission.
+        if (gap_conn.tx_pending && (((frame[0] >> 2) & 1) != gap_conn.tx_sn)) {
             if (gap_conn.central_role && gap_conn.channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
-                gap_tx_frame[1] == 4 && gap_tx_frame[2] == 0x28
+                gap_tx_frame[1] == 4 &&
+                gap_tx_frame[2] == 0x28
             ) {
                 gap_conn.channel.report_pending = 0;
                 gap_conn.connection_status = 0;
             }
+
             if (!gap_conn.central_role && gap_conn.rate_ack_waiting) {
                 gap_conn.rate_ack_waiting = 0;
             }
             if (gap_conn.central_role && gap_conn.subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
-                gap_tx_frame[1] == 11 && gap_tx_frame[2] == 0x27
+                gap_tx_frame[1] == 11 &&
+                gap_tx_frame[2] == 0x27
             ) {
                 gap_conn.subrate.factor = gap_conn.subrate.pending_factor;
                 gap_conn.subrate.base_event = gap_conn.subrate.pending_base_event;
                 gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
-                gap_conn.subrate.continuation =
-                    gap_conn.subrate.pending_continuation;
-                gap_conn.params.supervision_timeout =
-                    gap_conn.subrate.pending_timeout;
+                gap_conn.subrate.continuation = gap_conn.subrate.pending_continuation;
+                gap_conn.params.supervision_timeout = gap_conn.subrate.pending_timeout;
                 gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
                 gap_conn.subrate.status = 0;
             }
             gap_conn.tx_sn ^= 1;
             gap_conn.tx_pending = 0;
             gap_security.tx_sealed = 0;
-            if (gap_conn.local_terminate_pending) {
+
+            if (gap_conn.terminate_sent) {
                 if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
                     gap_conn_end();
                     gap_conn_slot = previous_slot;
                     return;
                 }
                 // Process a simultaneous peer termination so it gets ACKed.
-                gap_conn.local_terminate_pending = 0;
+                gap_conn.terminate_sent = 0;
             }
         }
+
         uint8_t llid = frame[0] & 3;
+        uint8_t remote_sn = (frame[0] >> 3) & 1;
         uint8_t new_packet = remote_sn == gap_conn.expected_rx_sn;
-        // A zero-length LL Control PDU is invalid; leave it unacknowledged.
-        if (new_packet && llid == 3 && !frame[1]) new_packet = 0;
-        // Leave a new data PDU unacknowledged until its one receive slot is free.
-        if (new_packet && (llid == 1 || llid == 2) && frame[1] &&
-            gap_conn.rx_ready) new_packet = 0;
-        // A control PDU needs its reply slot before it can be acknowledged.
-        if (new_packet && llid == 3 && gap_conn.tx_pending) new_packet = 0;
+
+        // Reject control PDUs without a payload or reply slot, and data PDUs
+        // while the receive slot is occupied, so they remain unacknowledged.
+        if (new_packet &&
+            ((llid == 3 && (!frame[1] || gap_conn.tx_pending)) ||
+             ((llid == 1 || llid == 2) && frame[1] && gap_conn.rx_ready))
+        ) new_packet = 0;
+
         if (new_packet && frame[1] && gap_security.phase &&
             gap_security.phase != GAP_ENC_QUEUED &&
-            gap_security.phase != GAP_ENC_PAUSE_QUEUED) {
+            gap_security.phase != GAP_ENC_PAUSE_QUEUED
+        ) {
             uint8_t opcode = llid == 3 ? frame[2] : 0xff;
             uint8_t allowed = opcode == 0x02;
             switch (gap_security.phase) {
-            case GAP_ENC_WAIT_RSP:
-                allowed |= opcode == 0x04; // Fall through for rejection.
-            case GAP_ENC_WAIT_START:
-                allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
-                    (gap_security.phase == GAP_ENC_WAIT_START && opcode == 0x05);
-                break;
-            case GAP_ENC_KEY_REQUEST: allowed |= opcode == 0x07; break;
-            case GAP_ENC_WAIT_FINAL:
-            case GAP_ENC_PERIPHERAL_START: allowed |= opcode == 0x06; break;
-            case GAP_ENC_WAIT_PAUSE:
-            case GAP_ENC_PERIPHERAL_PAUSE: allowed |= opcode == 0x0b; break;
-            case GAP_ENC_PERIPHERAL_RESTART: allowed |= opcode == 0x03; break;
-            default: break;
+                case GAP_ENC_WAIT_RSP:
+                    allowed |= opcode == 0x04; // Fall through for rejection.
+                case GAP_ENC_WAIT_START:
+                    allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
+                        (gap_security.phase == GAP_ENC_WAIT_START && opcode == 0x05);
+                    break;
+                case GAP_ENC_KEY_REQUEST:
+                    allowed |= opcode == 0x07; break;
+                case GAP_ENC_WAIT_FINAL:
+                case GAP_ENC_PERIPHERAL_START:
+                    allowed |= opcode == 0x06; break;
+                case GAP_ENC_WAIT_PAUSE:
+                case GAP_ENC_PERIPHERAL_PAUSE:
+                    allowed |= opcode == 0x0b; break;
+                case GAP_ENC_PERIPHERAL_RESTART:
+                    allowed |= opcode == 0x03; break;
+                default: break;
             }
             if (!allowed) {
                 gap_security.status = 0x3d;
@@ -221,6 +232,7 @@ void gap_hw_received(void) {
                 return;
             }
         }
+
         if (new_packet) {
             if (authenticated) gap_security.rx_counter++;
             if ((llid == 1 || llid == 2) && frame[1]) {
@@ -231,26 +243,29 @@ void gap_hw_received(void) {
             }
             gap_conn.expected_rx_sn ^= 1;
         }
+
         if (!gap_conn.tx_pending) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
+
             if (new_packet && (frame[0] & 3) == 3 && frame[1]) {
                 gap_tx_frame[0] = 0x03;
+
                 if (gap_conn_control_pdu_process(frame, authenticated,
-                        conn_anchor_ticks,
-                        event_counter)) {
+                        conn_anchor_ticks, event_counter)
+                ) {
                     gap_conn_slot = previous_slot;
                     return;
                 }
             }
             if (!gap_conn.terminate_after_reply) {
-                if (gap_tx_frame[1] == 0 && gap_conn.local_terminate_queued) {
+                if (gap_tx_frame[1] == 0 && gap_conn.terminate_queued) {
                     gap_tx_frame[0] = 0x03;
                     gap_tx_frame[1] = 2;
                     gap_tx_frame[2] = 0x02; // LL_TERMINATE_IND
                     gap_tx_frame[3] = gap_conn.local_terminate_reason;
-                    gap_conn.local_terminate_queued = 0;
-                    gap_conn.local_terminate_pending = 1;
+                    gap_conn.terminate_queued = 0;
+                    gap_conn.terminate_sent = 1;
                     gap_conn.tx_queued = 0;
                 }
 
@@ -258,19 +273,19 @@ void gap_hw_received(void) {
 
 #if GAP_EXT_ADV_SUPPORT
                 if (!gap_security.phase && gap_tx_frame[1] == 0 &&
-                        gap_conn.periodic_sync_transfer_queued
+                        gap_conn.sync_transfer_queued
                 ) {
                     int sync_slot = gap_periodic_sync_handle_slot(
-                        gap_conn.periodic_sync_transfer_handle);
+                        gap_conn.sync_transfer_handle);
                     if (sync_slot >= 0 && gap_periodic_sync_transfer_encode(
                             gap_tx_frame,
-                            gap_conn.periodic_sync_transfer_id,
+                            gap_conn.sync_transfer_id,
                             (uint8_t)sync_slot, conn_anchor_ticks,
                             event_counter)
                     ) {
-                        gap_conn.periodic_sync_transfer_queued = 0;
+                        gap_conn.sync_transfer_queued = 0;
                     } else {
-                        gap_conn.periodic_sync_transfer_queued = 0;
+                        gap_conn.sync_transfer_queued = 0;
                     }
                 }
 #endif
@@ -800,7 +815,7 @@ static void gap_conn_poll(void) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
 
-            if (!gap_conn.local_terminate_queued && !gap_conn.local_terminate_pending) {
+            if (!gap_conn.terminate_queued && !gap_conn.terminate_sent) {
                 gap_conn_send_queued();
             }
             gap_conn.tx_pending = 1;

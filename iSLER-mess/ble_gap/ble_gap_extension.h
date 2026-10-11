@@ -2384,13 +2384,13 @@ int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     int sync_slot = gap_periodic_sync_handle_slot(handle);
     if (!gap_conn.active || sync_slot < 0 ||
         !gap_periodic_syncs[sync_slot].established ||
-        gap_conn.periodic_sync_transfer_queued ||
+        gap_conn.sync_transfer_queued ||
         gap_conn.data_length.tx_octets < 35 ||
         gap_conn.data_length.tx_time < 392)
         return 0;
-    gap_conn.periodic_sync_transfer_handle = handle;
-    gap_conn.periodic_sync_transfer_id = id;
-    gap_conn.periodic_sync_transfer_queued = 1;
+    gap_conn.sync_transfer_handle = handle;
+    gap_conn.sync_transfer_id = id;
+    gap_conn.sync_transfer_queued = 1;
     return 1;
 }
 
