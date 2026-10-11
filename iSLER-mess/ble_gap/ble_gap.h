@@ -603,7 +603,6 @@ static int gap_conn_accept(
     gap_conn.sync_transfer_handle = 0;
 #endif
 
-
     gap_conn.data_length = (gap_data_length){27, 328, 27, 328};
     gap_conn.remote_data_length = (gap_data_length){27, 328, 27, 328};
 

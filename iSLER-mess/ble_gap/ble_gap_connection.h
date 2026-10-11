@@ -71,33 +71,34 @@ static void gap_conn_end(void) {
     // Preserve the final status while clearing the rest of the security state.
     uint8_t security_status = gap_security.status == GAP_CONNECTION_PENDING ?
                                 0x08 : gap_security.status;
-    gap_wipe(&gap_security, sizeof(gap_security));
-    gap_security.status = security_status;
 
+    // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(gap_tx_frame, sizeof(gap_tx_frame));
     gap_wipe(gap_conn_buff[gap_conn_slot].cipher, sizeof(gap_conn_buff[gap_conn_slot].cipher));
     gap_wipe(gap_conn_buff[gap_conn_slot].plain, sizeof(gap_conn_buff[gap_conn_slot].plain));
+    gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
+    gap_wipe(gap_conn.tx_data, sizeof(gap_conn.tx_data));
+    gap_wipe(gap_conn.rx_data, sizeof(gap_conn.rx_data));
+    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
+    gap_wipe(&gap_security, sizeof(gap_security));
+    gap_security.status = security_status;
 
-    // Clear Link state together after stopping radio use.
+    // Clear link and queued procedure state after stopping radio use.
     memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
+    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
+    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
 
     // Clear per-link security and bond state.
-    gap_conn.authenticated = gap_conn.encryption_key_size = 0;
-    gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
+    gap_conn.authenticated = 0;
+    gap_conn.encryption_key_size = 0;
     gap_conn.bonded = 0;
     gap_conn.bond_restore_started = 0;
 
-    // Clear queued data and procedure state.
+    // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
     gap_conn.sync_transfer_queued = 0;
     gap_conn.sync_transfer_handle = 0;
 #endif
-    gap_wipe(gap_conn.tx_data, sizeof(gap_conn.tx_data));
-    gap_wipe(gap_conn.rx_data, sizeof(gap_conn.rx_data));
-    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
-    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
-    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
-
     if (gap_conn.connection_status == GAP_CONNECTION_PENDING)
         gap_conn.connection_status = 0x08; // Connection timeout/loss.
     if (gap_conn.phy.status == GAP_CONNECTION_PENDING)
@@ -123,6 +124,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             gap_conn_end();
             return;
         }
+
         if (instant_packet_received) {
             gap_conn.link.next_ticks = gap_conn.link.next_ticks - gap_conn_interval_ticks() +
                     HW_TICKS_FROM_US((uint32_t)gap_conn.rate.interval * 125);
@@ -130,6 +132,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             gap_conn.link.next_ticks +=
                 (uint64_t)gap_conn.rate.win_offset * HW_TICKS_FROM_US(125);
         }
+
         gap_conn.link.interval_125us = gap_conn.rate.interval;
         gap_conn.params.interval = (uint16_t)((gap_conn.rate.interval + 9) / 10);
         gap_conn.subrate.base_event = gap_conn.rate.instant;
