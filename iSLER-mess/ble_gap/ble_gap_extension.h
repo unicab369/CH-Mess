@@ -1396,7 +1396,7 @@ static void gap_pawr_response_report_push(
 }
 
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
-static int gap_radio_periodic_connect_request(
+static int gap_periodic_connect_request(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
@@ -1463,7 +1463,7 @@ static int gap_radio_periodic_connect_request(
 
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
-static int gap_radio_periodic_connect_exchange(
+static int gap_periodic_connect_exchange(
     gap_ext_adv_set *set, uint8_t channel,
     uint64_t request_start_ticks
 ) {
@@ -1561,7 +1561,7 @@ static int gap_radio_periodic_connect_exchange(
 // Extended and periodic advertising transmission
 // -----------------------------------------------------------------------------
 // Leave extra spacing beyond T_MAFS so foreground PDU preparation fits.
-static uint32_t gap_radio_ext_next_offset_phy(
+static uint32_t gap_ext_next_offset_phy(
     uint8_t pdu_payload_len, uint8_t phy
 ) {
     uint32_t airtime_us = gap_phy_packet_airtime_us(pdu_payload_len, phy);
@@ -1570,7 +1570,7 @@ static uint32_t gap_radio_ext_next_offset_phy(
 }
 
 // Encode an AuxPtr to the next secondary-channel packet.
-static void gap_radio_ext_aux_ptr_write_phy(
+static void gap_ext_aux_ptr_write_phy(
     uint8_t *field, uint8_t channel,
     uint32_t offset_us, uint8_t phy
 ) {
@@ -1582,7 +1582,7 @@ static void gap_radio_ext_aux_ptr_write_phy(
     field[2] = (uint8_t)(((offset_units >> 8) & 0x1f) | (aux_phy << 6));
 }
 
-static int gap_radio_periodic_tx(
+static int gap_periodic_tx(
     uint8_t *frame, uint8_t length,
     const gap_ext_adv_set *set, uint8_t channel,
     uint64_t start_ticks, uint64_t *actual_start
@@ -1618,7 +1618,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             if (set->pawr_connect_pending &&
                 subevent == set->pawr_connect_subevent
             ) {
-                if (gap_radio_periodic_connect_exchange(
+                if (gap_periodic_connect_exchange(
                         set, channel, subevent_start)) return 1;
 
                 continue;
@@ -1635,7 +1635,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
                 memcpy(frame + 6, set->periodic_data,
                        data_len);
             uint64_t subevent_start_ticks = 0;
-            if (!gap_radio_periodic_tx(frame, (uint8_t)(frame[1] + 2), set,
+            if (!gap_periodic_tx(frame, (uint8_t)(frame[1] + 2), set,
                     channel,
                     subevent_start,
                     &subevent_start_ticks))
@@ -1660,7 +1660,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             GAP_HW_LINK_CONFIG(set->periodic_response_access_address,
                 channel, NULL, 0, set->aux_phy, set->aux_phy);
             GAP_HW_LINK_RX();
-            gap_radio_rx_armed = 1;
+            gap_rx_armed = 1;
             while (GAP_HW_TICKS() < window_end_ticks) {
                 if (gap_ext_pawr.response.ready)
                     gap_pawr_response_report_push(set,
@@ -1668,8 +1668,8 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
                         set->periodic_event_counter, subevent,
                         subevent_start_ticks);
             }
-            if (gap_radio_rx_armed) GAP_HW_STOP();
-            gap_radio_rx_armed = 0;
+            if (gap_rx_armed) GAP_HW_STOP();
+            gap_rx_armed = 0;
             gap_ext_pawr.response.listening = 0;
             GAP_HW_PACKET_CLEAR();
             if (gap_ext_pawr.response.ready)
@@ -1698,13 +1698,13 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
         frame[4] = (uint8_t)adi;
         frame[5] = (uint8_t)(adi >> 8);
         if (has_chain)
-            gap_radio_ext_aux_ptr_write_phy(frame + 6, (channel + 1) % 37,
-                gap_radio_ext_next_offset_phy(frame[1], set->aux_phy),
+            gap_ext_aux_ptr_write_phy(frame + 6, (channel + 1) % 37,
+                gap_ext_next_offset_phy(frame[1], set->aux_phy),
                 set->aux_phy);
         if (chunk) memcpy(frame + 1 + ext_len + 2,
                           set->periodic_data + offset, chunk);
         uint64_t pdu_start = 0;
-        if (!gap_radio_periodic_tx(frame, (uint8_t)(frame[1] + 2), set,
+        if (!gap_periodic_tx(frame, (uint8_t)(frame[1] + 2), set,
                                    channel, next_start, &pdu_start))
             return 0;
         offset += chunk;
@@ -1712,7 +1712,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
         if (!has_chain) return 1;
         channel = (uint8_t)((channel + 1) % 37);
         next_start = pdu_start + HW_TICKS_FROM_US(
-            gap_radio_ext_next_offset_phy(frame[1], set->aux_phy));
+            gap_ext_next_offset_phy(frame[1], set->aux_phy));
     }
     return 1;
 }
@@ -1736,7 +1736,7 @@ static int gap_hw_transmit_extended_advertising(
         primary[3] = 0x18; // ADI and AuxPtr.
         primary[4] = (uint8_t)adi;
         primary[5] = (uint8_t)(adi >> 8);
-        gap_radio_ext_aux_ptr_write_phy(primary + 6, 0, 480, set->aux_phy);
+        gap_ext_aux_ptr_write_phy(primary + 6, 0, 480, set->aux_phy);
         frame[0] = 0x07 | (address_type ? 0x40 : 0);
         frame[1] = 10;
         frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
@@ -1764,8 +1764,8 @@ static int gap_hw_transmit_extended_advertising(
         frame[10] = (uint8_t)adi;
         frame[11] = (uint8_t)(adi >> 8);
         if (has_chain)
-            gap_radio_ext_aux_ptr_write_phy(frame + 12, 1,
-                gap_radio_ext_next_offset_phy(frame[1], set->aux_phy),
+            gap_ext_aux_ptr_write_phy(frame + 12, 1,
+                gap_ext_next_offset_phy(frame[1], set->aux_phy),
                 set->aux_phy);
         if (first_chunk)
             memcpy(frame + (has_chain ? 15 : 12), set->data,
@@ -1796,7 +1796,7 @@ static int gap_hw_transmit_extended_advertising(
         uint16_t data_offset = first_chunk;
         remaining -= first_chunk;
         uint64_t next_start = gap_ext_adv_scan.response_ticks +
-            HW_TICKS_FROM_US(gap_radio_ext_next_offset_phy(frame[1],
+            HW_TICKS_FROM_US(gap_ext_next_offset_phy(frame[1],
                                                            set->aux_phy));
         uint8_t channel = 1;
         while (remaining) {
@@ -1811,9 +1811,9 @@ static int gap_hw_transmit_extended_advertising(
             frame[4] = (uint8_t)adi;
             frame[5] = (uint8_t)(adi >> 8);
             if (has_chain)
-                gap_radio_ext_aux_ptr_write_phy(frame + 6,
+                gap_ext_aux_ptr_write_phy(frame + 6,
                     (channel + 1) % 37,
-                    gap_radio_ext_next_offset_phy(frame[1], set->aux_phy),
+                    gap_ext_next_offset_phy(frame[1], set->aux_phy),
                     set->aux_phy);
             memcpy(frame + 1 + ext_len + 2,
                    set->data + data_offset, chunk);
@@ -1827,7 +1827,7 @@ static int gap_hw_transmit_extended_advertising(
             if (!has_chain) return 1;
             channel = (channel + 1) % 37;
             next_start = pdu_start + HW_TICKS_FROM_US(
-                gap_radio_ext_next_offset_phy(frame[1], set->aux_phy));
+                gap_ext_next_offset_phy(frame[1], set->aux_phy));
         }
         return 1;
     }
@@ -1839,7 +1839,7 @@ static int gap_hw_transmit_extended_advertising(
     primary[3] = 0x18; // ADI and AuxPtr.
     primary[4] = (uint8_t)adi;
     primary[5] = (uint8_t)(adi >> 8);
-        gap_radio_ext_aux_ptr_write_phy(primary + 6, 0, 480, set->aux_phy);
+        gap_ext_aux_ptr_write_phy(primary + 6, 0, 480, set->aux_phy);
 
     uint16_t data_offset = 0;
     uint16_t remaining = set->data_len;
@@ -1867,8 +1867,8 @@ static int gap_hw_transmit_extended_advertising(
     uint8_t *sync_info = NULL;
     uint8_t header_offset = 12;
     if (has_chain) {
-        gap_radio_ext_aux_ptr_write_phy(frame + header_offset, 1,
-            gap_radio_ext_next_offset_phy(frame[1], set->aux_phy),
+        gap_ext_aux_ptr_write_phy(frame + header_offset, 1,
+            gap_ext_next_offset_phy(frame[1], set->aux_phy),
             set->aux_phy);
         header_offset += 3;
     }
@@ -1944,7 +1944,7 @@ static int gap_hw_transmit_extended_advertising(
     if (has_sync_info) set->periodic_sync_info_sent = 1;
     if (!has_chain) return 1;
     uint64_t next_start = pdu_start + HW_TICKS_FROM_US(
-        gap_radio_ext_next_offset_phy(frame[1], set->aux_phy));
+        gap_ext_next_offset_phy(frame[1], set->aux_phy));
 
     uint8_t channel = 1;
     while (remaining) {
@@ -1959,9 +1959,9 @@ static int gap_hw_transmit_extended_advertising(
         frame[4] = (uint8_t)adi;
         frame[5] = (uint8_t)(adi >> 8);
         if (has_chain)
-            gap_radio_ext_aux_ptr_write_phy(frame + 6,
+            gap_ext_aux_ptr_write_phy(frame + 6,
                 (channel + 1) % 37,
-                gap_radio_ext_next_offset_phy(frame[1], set->aux_phy),
+                gap_ext_next_offset_phy(frame[1], set->aux_phy),
                 set->aux_phy);
         memcpy(frame + 1 + ext_len + 2,
                set->data + data_offset, chunk);
@@ -1975,7 +1975,7 @@ static int gap_hw_transmit_extended_advertising(
         if (!has_chain) return 1;
         channel = (channel + 1) % 37;
         next_start = pdu_start + HW_TICKS_FROM_US(
-            gap_radio_ext_next_offset_phy(frame[1], set->aux_phy));
+            gap_ext_next_offset_phy(frame[1], set->aux_phy));
     }
     return 1;
 }
@@ -1991,7 +1991,7 @@ static void gap_ext_scan_process(void) {
     int slot = periodic ? gap_ext_scan.periodic_slot :
                 kind == GAP_EXT_ADV_AUXILIARY_PDU ? gap_ext_scan.aux_slot : -1;
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && slot < GAP_EXT_ADV_CONTEXT_COUNT)
-        gap_radio_aux_request[slot].active = 0;
+        gap_aux_request[slot].active = 0;
     if (periodic && slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
         gap_periodic_syncs[slot].window_active = 0;
 
@@ -1999,8 +1999,8 @@ static void gap_ext_scan_process(void) {
     gap_ext_scan.periodic_listening = 0;
     gap_ext_scan.ready = 0;
     GAP_HW_PACKET_CLEAR();
-    if (gap_radio_rx_armed) GAP_HW_STOP();
-    gap_radio_rx_armed = 0;
+    if (gap_rx_armed) GAP_HW_STOP();
+    gap_rx_armed = 0;
 
     uint8_t *pdu = gap_ext_scan.frame;
     uint8_t packet_phy = kind == GAP_EXT_ADV_AUXILIARY_PDU ?
@@ -2008,7 +2008,7 @@ static void gap_ext_scan_process(void) {
     size_t pdu_len = (size_t)pdu[1] + 2;
 
     if (periodic && (pdu[0] & 0x0f) == 0x05) {
-        (void)gap_radio_periodic_connect_request((uint8_t)slot, pdu,
+        (void)gap_periodic_connect_request((uint8_t)slot, pdu,
             pdu_len, gap_ext_scan.ticks);
         return;
     }
@@ -2139,20 +2139,20 @@ static void gap_ext_scan_process(void) {
 
                 if (aux_slot < 0) {
                     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                        if (!gap_radio_aux_request[i].active) {
+                        if (!gap_aux_request[i].active) {
                             aux_slot = i;
                             break;
                         }
                     if (aux_slot < 0)
-                        aux_slot = gap_radio_aux_request[0].window_start_ticks <=
-                            gap_radio_aux_request[1].window_start_ticks ? 0 : 1;
+                        aux_slot = gap_aux_request[0].window_start_ticks <=
+                            gap_aux_request[1].window_start_ticks ? 0 : 1;
                 }
-                gap_radio_aux_request[aux_slot].active = 1;
-                gap_radio_aux_request[aux_slot].channel = fields.aux_channel;
-                gap_radio_aux_request[aux_slot].phy = aux_phy;
-                gap_radio_aux_request[aux_slot].window_start_ticks =
+                gap_aux_request[aux_slot].active = 1;
+                gap_aux_request[aux_slot].channel = fields.aux_channel;
+                gap_aux_request[aux_slot].phy = aux_phy;
+                gap_aux_request[aux_slot].window_start_ticks =
                     gap_ext_scan.ticks + HW_TICKS_FROM_US(start_delta_us);
-                gap_radio_aux_request[aux_slot].window_end_ticks =
+                gap_aux_request[aux_slot].window_end_ticks =
                     gap_ext_scan.ticks + HW_TICKS_FROM_US(end_delta_us);
             }
         }
@@ -2395,7 +2395,7 @@ int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
 }
 
 
-static void gap_radio_periodic_window_missed(uint8_t slot) {
+static void gap_periodic_window_missed(uint8_t slot) {
     if (!gap_periodic_syncs[slot].used) return;
     if (gap_periodic_syncs[slot].window_chain) {
         gap_periodic_syncs[slot].event_data_active = 0;
@@ -2423,23 +2423,23 @@ static void gap_radio_periodic_window_missed(uint8_t slot) {
 // Connection-poll coordination for extended and periodic procedures
 // -----------------------------------------------------------------------------
 // Stop a lower-priority scan before the connection poll configures its channel.
-static void gap_radio_connection_take_radio(void) {
+static void gap_connection_take_radio(void) {
     if (!gap_ext_scan.periodic_listening && !gap_ext_scan.aux_listening) return;
-    if (gap_radio_rx_armed) GAP_HW_STOP();
-    gap_radio_rx_armed = 0;
+    if (gap_rx_armed) GAP_HW_STOP();
+    gap_rx_armed = 0;
     if (gap_ext_scan.periodic_listening) {
         uint8_t slot = gap_ext_scan.periodic_slot;
         gap_ext_scan.periodic_listening = 0;
         if (slot < GAP_PERIODIC_SYNC_COUNT &&
             gap_periodic_syncs[slot].used &&
             gap_periodic_syncs[slot].window_active)
-            gap_radio_periodic_window_missed(slot);
+            gap_periodic_window_missed(slot);
     }
     if (gap_ext_scan.aux_listening) {
         uint8_t slot = gap_ext_scan.aux_slot;
         gap_ext_scan.aux_listening = 0;
         if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
-            gap_radio_aux_request[slot].active = 0;
+            gap_aux_request[slot].active = 0;
     }
     GAP_HW_PACKET_CLEAR();
 }
@@ -2484,14 +2484,14 @@ static int gap_periodic_conn_overlap(
 
 // Send periodic and extended advertisements before regular advertising.
 // Return zero when none are due, one when handled, -1 on failure, or 2 to retry.
-static int gap_radio_ext_send_due(uint32_t now) {
+static int gap_ext_send_due(uint32_t now) {
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
     if ((!gap_conn_busy() ||
          (gap_conn.active && gap_conn.central_role)) &&
         !gap_central_conn.active &&
-        !gap_radio_active_scan_pending
+        !gap_active_scan_pending
     ) {
         uint64_t ticks = GAP_HW_TICKS();
         int periodic_set = -1;
@@ -2551,9 +2551,9 @@ static int gap_radio_ext_send_due(uint32_t now) {
                     return 1;
                 }
             }
-            if (gap_radio_rx_armed) {
+            if (gap_rx_armed) {
                 GAP_HW_STOP();
-                gap_radio_rx_armed = 0;
+                gap_rx_armed = 0;
             }
             int transmitted = gap_hw_transmit_periodic(set);
             set->periodic_event_counter++;
@@ -2576,10 +2576,10 @@ static int gap_radio_ext_send_due(uint32_t now) {
         }
     }
     if (send_extended < 0) return 0;
-    if (gap_radio_active_scan_pending) return 1;
-    if (gap_radio_rx_armed) {
+    if (gap_active_scan_pending) return 1;
+    if (gap_rx_armed) {
         GAP_HW_STOP();
-        gap_radio_rx_armed = 0;
+        gap_rx_armed = 0;
     }
     int transmit_result = gap_hw_transmit_extended_advertising(
         &gap_ext_adv[send_extended]);

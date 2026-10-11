@@ -249,8 +249,8 @@ typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
-static uint8_t gap_radio_rx_armed;
-static volatile uint8_t gap_radio_active_scan_pending;
+static uint8_t gap_rx_armed;
+static volatile uint8_t gap_active_scan_pending;
 // Advertising captured for an active scan, paired with its receive metadata.
 static struct {
     uint8_t frame[2 + 37];
@@ -262,7 +262,7 @@ static struct {
     uint8_t frame[2 + 37];
     volatile uint8_t ready;
     volatile int8_t rssi;
-} gap_radio_rx;
+} gap_rx;
 
 // Each accepted LE link keeps its independent Link Layer procedure state.
 typedef struct {

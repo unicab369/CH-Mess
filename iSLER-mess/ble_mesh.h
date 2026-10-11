@@ -363,7 +363,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
     uint8_t jitter;
-    int send_result = gap_radio_send_due(
+    int send_result = gap_send_due(
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
         now, &sent_at, &jitter);

@@ -808,13 +808,13 @@ int gap_scan_take_ad(
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;
     }
-    if (!types || !ad || !len || !gap_radio_rx.ready) return 0;
+    if (!types || !ad || !len || !gap_rx.ready) return 0;
 
-    const uint8_t *frame = gap_radio_rx.frame;
+    const uint8_t *frame = gap_rx.frame;
     uint8_t payload_len = frame[1];
-    int8_t packet_rssi = gap_radio_rx.rssi;
-    if (!gap_radio_active_scan_pending) gap_radio_rx_armed = 0;
-    gap_radio_rx.ready = 0;
+    int8_t packet_rssi = gap_rx.rssi;
+    if (!gap_active_scan_pending) gap_rx_armed = 0;
+    gap_rx.ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);
 

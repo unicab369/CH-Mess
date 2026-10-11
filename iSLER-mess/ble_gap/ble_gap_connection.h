@@ -15,41 +15,45 @@ static int gap_periodic_sync_transfer_receive(
 #define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
 #endif
 
-static uint8_t gap_radio_rx_channel_index;
-static uint8_t gap_radio_connection_slot, gap_radio_connection_slot_valid;
-static uint8_t gap_radio_connection_poll_cursor;
-static uint8_t gap_radio_scan_generation;
-static uint32_t gap_radio_scan_interval_start_ms;
-static volatile uint8_t gap_radio_active_scan_address_type;
-static uint8_t gap_radio_active_scan_address[6];
-static uint32_t gap_radio_active_scan_deadline_ms;
-static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_request[14];
-static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_adv_frame[8 + GAP_ADV_DATA_MAX];
-static GAP_RADIO_BUFFER_ATTR uint8_t gap_radio_scan_response_frame[8 + GAP_ADV_DATA_MAX];
-static volatile uint8_t gap_radio_advertising_rx_event;
-static volatile uint8_t gap_radio_scan_response_started;
-static volatile uint8_t gap_radio_connect_request_ready;
-static uint8_t gap_radio_connect_request_frame[36];
-static uint64_t gap_radio_connect_request_ticks;
+typedef struct {
+    uint8_t channel_index, applied_generation;
+    uint32_t interval_start_ms;
+    volatile uint8_t active_address_type;
+    uint8_t active_address[6];
+    uint32_t active_deadline_ms;
+    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
+} gap_scan_state;
+static gap_scan_state gap_scan;
+
+typedef struct {
+    uint8_t slot, slot_valid, poll_cursor;
+} gap_poll_state;
+static gap_poll_state gap_poll;
+
+typedef struct {
+    GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t scan_response_frame[8 + GAP_ADV_DATA_MAX];
+    volatile uint8_t rx_event, scan_response_started;
+    volatile uint8_t connect_request_ready;
+    uint8_t connect_request_frame[36];
+    uint64_t connect_request_ticks;
+} gap_adv_state;
+static gap_adv_state gap_adv_radio;
 typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
-    GAP_RADIO_BUFFER_ATTR uint8_t
-        cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
+    GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-} gap_conn_radio_buffers;
-static gap_conn_radio_buffers
-    gap_conn_radio_buffers[GAP_CONNECTION_COUNT];
-#define gap_tx_frame gap_conn_radio_buffers[gap_conn_slot].tx
-#define gap_conn_cipher_frame \
-    gap_conn_radio_buffers[gap_conn_slot].cipher
-#define gap_conn_plain_frame \
-    gap_conn_radio_buffers[gap_conn_slot].plain
+} gap_conn_buffer;
+
+static gap_conn_buffer gap_conn_buffers[GAP_CONNECTION_COUNT];
+
+#define gap_tx_frame gap_conn_buffers[gap_conn_slot].tx
 
 // Keep the Core 6.2 125-us interval resolution for event scheduling while
 // retaining the legacy 1.25-ms interval field for older LL procedures.
 static uint64_t gap_conn_interval_ticks(void) {
     uint16_t interval = gap_conn.interval_125us ? gap_conn.interval_125us :
-        (uint16_t)(gap_conn.params.interval * 10);
+                        (uint16_t)(gap_conn.params.interval * 10);
     return HW_TICKS_FROM_US((uint32_t)interval * 125);
 }
 
@@ -64,11 +68,11 @@ static void gap_conn_end(void) {
     gap_conn.periodic_sync_transfer_queued = 0;
     gap_conn.periodic_sync_transfer_handle = 0;
 #endif
-    if (gap_radio_connection_slot_valid &&
-        gap_radio_connection_slot == gap_conn_slot
+    if (gap_poll.slot_valid &&
+        gap_poll.slot == gap_conn_slot
     ) {
         GAP_HW_STOP();
-        gap_radio_connection_slot_valid = 0;
+        gap_poll.slot_valid = 0;
     }
     gap_smp_link_close();
     // Preserve the final status while clearing the rest of the security state.
@@ -84,12 +88,14 @@ static void gap_conn_end(void) {
     wipe_len = sizeof(gap_tx_frame);
     while (wipe_len--) *wipe_bytes++ = 0;
 
-    wipe_bytes = (volatile uint8_t *)gap_conn_cipher_frame;
-    wipe_len = sizeof(gap_conn_cipher_frame);
+    wipe_bytes = (volatile uint8_t *)
+        gap_conn_buffers[gap_conn_slot].cipher;
+    wipe_len = sizeof(gap_conn_buffers[gap_conn_slot].cipher);
     while (wipe_len--) *wipe_bytes++ = 0;
 
-    wipe_bytes = (volatile uint8_t *)gap_conn_plain_frame;
-    wipe_len = sizeof(gap_conn_plain_frame);
+    wipe_bytes = (volatile uint8_t *)
+        gap_conn_buffers[gap_conn_slot].plain;
+    wipe_len = sizeof(gap_conn_buffers[gap_conn_slot].plain);
     while (wipe_len--) *wipe_bytes++ = 0;
 
     wipe_bytes = (volatile uint8_t *)gap_conn.tx_data;
@@ -131,7 +137,7 @@ static void gap_conn_end(void) {
     gap_conn.local_terminate_pending = 0;
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
-    gap_radio_scan_generation = gap_scan_generation - 1;
+    gap_scan.applied_generation = gap_scan_generation - 1;
 }
 
 // Apply connection or channel-map settings when their Instant event
@@ -778,12 +784,12 @@ static void gap_send_data_length(uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
     if (!gap_privacy.enabled || gap_conn.active || gap_central_conn.active ||
-        gap_radio_active_scan_pending || gap_radio_advertising_rx_event ||
+        gap_active_scan_pending || gap_adv_radio.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0)
         return;
-    if (gap_radio_rx_armed) {
+    if (gap_rx_armed) {
         GAP_HW_STOP();
-        gap_radio_rx_armed = 0;
+        gap_rx_armed = 0;
     }
     uint8_t address[6];
     if (!gap_private_address_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
@@ -2455,9 +2461,10 @@ static void gap_security_derive(void) {
 // Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
 // only SN/NESN/MD may change, and those bits are excluded from CCM authentication.
 static uint8_t *gap_security_tx_frame(void) {
+    uint8_t *cipher = gap_conn_buffers[gap_conn_slot].cipher;
     if (gap_security.tx_sealed) {
-        gap_conn_cipher_frame[0] = gap_tx_frame[0];
-        return gap_conn_cipher_frame;
+        cipher[0] = gap_tx_frame[0];
+        return cipher;
     }
     if (!gap_security.tx_enabled || !gap_tx_frame[1]) return gap_tx_frame;
     if (gap_security.tx_counter >= (UINT64_C(1) << 39)) {
@@ -2467,19 +2474,19 @@ static uint8_t *gap_security_tx_frame(void) {
     }
     uint8_t nonce[13];
     gap_security_nonce(nonce, gap_security.tx_counter, gap_conn.central_role);
-    memcpy(gap_conn_cipher_frame, gap_tx_frame, gap_tx_frame[1] + 2);
+    memcpy(cipher, gap_tx_frame, gap_tx_frame[1] + 2);
     if (!GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
-            gap_tx_frame[0] & 0xe3, gap_conn_cipher_frame + 2,
-            gap_tx_frame[1], gap_conn_cipher_frame + 2 + gap_tx_frame[1])
+            gap_tx_frame[0] & 0xe3, cipher + 2,
+            gap_tx_frame[1], cipher + 2 + gap_tx_frame[1])
     ) {
         gap_security.status = 0x3d;
         gap_conn_end();
         return NULL;
     }
-    gap_conn_cipher_frame[1] += 4;
+    cipher[1] += 4;
     gap_security.tx_counter++;
     gap_security.tx_sealed = 1;
-    return gap_conn_cipher_frame;
+    return cipher;
 }
 
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
