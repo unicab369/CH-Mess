@@ -49,9 +49,6 @@ int smp_port_cmac(
 
 int main(void) {
     smp_features local = {3, 0, 0x0d, 16, 0x07, 0x07};
-    smp_features peer = {1, 0, 0x0d, 12, 0x07, 0x07};
-    ble_smp_policy policy = {7, 0, 0, 1, 1, 0x0f};
-    ble_smp_negotiated negotiated;
     uint8_t pairing_pdu[7];
     smp_features parsed;
     assert(smp_features_build(SMP_PAIRING_REQUEST,
@@ -64,19 +61,6 @@ int main(void) {
         &parsed));
     assert(!memcmp(&parsed, &(smp_features){0}, sizeof(parsed)));
     pairing_pdu[3] &= (uint8_t)~0x40;
-    assert(smp_negotiate_features(&local, &peer, &policy,
-        &negotiated) == 0);
-    assert(negotiated.max_key_size == 12 && negotiated.secure_connections &&
-           negotiated.bonding && negotiated.init_key_dist == 6 &&
-           negotiated.resp_key_dist == 6);
-    smp_features reserved_auth = local;
-    reserved_auth.auth_req |= 0x40;
-    assert(smp_negotiate_features(&reserved_auth, &peer, &policy,
-        &negotiated) == SMP_FAIL_INVALID_PARAMETERS);
-    policy.require_secure_connections = 1;
-    peer.auth_req &= (uint8_t)~SMP_AUTH_SECURE_CONNECTIONS;
-    assert(smp_negotiate_features(&local, &peer, &policy,
-        &negotiated) == SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
     uint8_t model;
     assert(!smp_select_model(1, 4, 1, 1, 1, &model) &&
            model == SMP_MODEL_NUMERIC_COMPARISON);
