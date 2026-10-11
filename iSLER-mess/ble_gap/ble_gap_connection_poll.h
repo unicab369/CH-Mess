@@ -13,7 +13,7 @@ static void gap_conn_send_queued(void) {
         gap_send_conn_update();
     if (gap_conn.procedures.local_map_queued)
         gap_send_channel_map();
-    if (gap_conn.procedures.local_params_queued && !gap_conn.procedures.feature_req_pending)
+    if (gap_conn.procedures.local_params_queued && !gap_conn.pending.feature_req_pending)
         gap_send_conn_request();
     if (gap_conn.procedures.length_queued)
         gap_send_data_length(0x14);
@@ -137,7 +137,7 @@ void gap_hw_received(void) {
         gap_conn.link.last_rx_ms = GET_MILLIS();
         gap_conn.link.rx_armed = 0;
         gap_conn.link.first_event = 0;
-        gap_conn.procedures.update_window_active = 0;
+        gap_conn.pending.update_window_active = 0;
         gap_conn.link.channel_selected = 0;
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
@@ -650,7 +650,7 @@ static uint64_t gap_conn_event_close_ticks(
     }
 
     uint32_t window_us = connection->link.first_event ||
-                        connection->procedures.update_window_active ?
+                        connection->pending.update_window_active ?
                         (uint32_t)connection->procedures.window_size * 1250 : 1000;
     uint32_t widen_us = ((uint32_t)(now_ms - connection->link.last_rx_ms) *
                             (500 + connection->link.peer_sca_ppm) + 999) / 1000;
@@ -693,14 +693,14 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if (gap_conn.procedures.phy_pending &&
+    if (gap_conn.pending.phy_pending &&
         (uint32_t)(now_ms - gap_conn.procedures.phy_started_ms) >= 40000) {
         gap_conn.procedures.phy_status = 0x22;
         gap_conn_end();
         return;
     }
 
-    if (gap_conn.procedures.length_pending &&
+    if (gap_conn.pending.length_pending &&
         (uint32_t)(now_ms - gap_conn.procedures.length_started_ms) >= 40000
     ) {
         gap_conn.procedures.length_status = 0x22; // LL response timeout.
@@ -708,7 +708,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((gap_conn.procedures.params_pending || gap_conn.procedures.feature_req_pending ||
+    if ((gap_conn.pending.params_pending || gap_conn.pending.feature_req_pending ||
          gap_conn.procedures.feature_ext_pending || gap_conn.procedures.rate_req_pending ||
          gap_conn.procedures.rate_update_pending) &&
         (uint32_t)(now_ms - gap_conn.procedures.params_started_ms) >= 40000

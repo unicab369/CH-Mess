@@ -2462,7 +2462,7 @@ static int gap_sync_conn_overlap(
     uint64_t interval_ticks = gap_conn_interval_ticks();
     uint64_t event_ticks = gap_conn.link.next_ticks;
     uint32_t event_window_us = gap_conn.link.first_event ||
-        gap_conn.procedures.update_window_active ? gap_conn.procedures.window_size * 1250 : 1000;
+        gap_conn.pending.update_window_active ? gap_conn.procedures.window_size * 1250 : 1000;
     uint32_t packet_guard_us = 400 +
         2 * ((gap_conn.procedures.data_capacity > 27 ? gap_conn.procedures.data_capacity : 27) - 27) * 8;
     uint64_t open_ticks, close_ticks;

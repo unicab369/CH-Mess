@@ -9,6 +9,12 @@
 #include <string.h>
 #include "../ble_l2cap.h"
 
+// Volatile stores keep the compiler from removing the wipe as dead code.
+static void gap_wipe(volatile void *data, size_t len) {
+    volatile uint8_t *bytes = data;
+    while (len--) *bytes++ = 0;
+}
+
 // Platform hooks used by the GAP controller and security procedures.
 #ifndef GAP_RADIO_BUFFER_ATTR
 #define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
@@ -329,7 +335,7 @@ typedef struct {
 // Queues and negotiated procedures associated with the link.
 typedef struct {
     // Radio queues and connection data.
-    uint8_t window_size, update_window_active, update_window_size;
+    uint8_t window_size, update_window_size;
     volatile uint8_t tx_queued, rx_ready;
 #if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
@@ -341,11 +347,10 @@ typedef struct {
     uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
 
     // Connection parameter and channel-map procedures.
-    uint8_t timing_update_pending;
-    uint8_t channel_map_pending, pending_channel_map[5];
+    uint8_t pending_channel_map[5];
     volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
     gap_channel channel;
-    uint8_t params_pending, params_local, connection_status;
+    uint8_t connection_status;
     gap_conn_parameters params, new_params;
     uint16_t params_min, params_max, params_latency, params_timeout;
     uint32_t params_started_ms;
@@ -354,7 +359,7 @@ typedef struct {
     // Peer features, subrating, and connection rate control.
     uint8_t features_known, peer_features, peer_features2, peer_features4;
     uint8_t peer_features7;
-    uint8_t feature_req_pending, feature_ext_pending;
+    uint8_t feature_ext_pending;
     uint8_t feature_page1_known, rate_set_queued, rate_request_queued;
     uint8_t rate_update_pending, rate_req_pending;
     uint8_t rate_ack_waiting;
@@ -364,7 +369,7 @@ typedef struct {
     // PHY negotiation.
     gap_conn_phy phy, preferred_phy, pending_phy;
     volatile uint8_t phy_queued;
-    uint8_t phy_pending, phy_update_pending, phy_status;
+    uint8_t phy_status;
     uint16_t phy_instant;
     uint32_t phy_started_ms;
 
@@ -372,7 +377,7 @@ typedef struct {
     uint16_t data_capacity, local_tx_octets;
     gap_data_length data_length, remote_data_length;
     volatile uint8_t length_queued;
-    uint8_t length_pending, length_status;
+    uint8_t length_status;
     uint32_t length_started_ms;
     uint16_t rate_interval_min, rate_interval_max;
     uint16_t rate_factor_min, rate_factor_max, rate_latency;
@@ -387,6 +392,15 @@ typedef struct {
     gap_conn_link link;
     gap_conn_security security;
     gap_conn_procedures procedures;
+    struct {
+        uint8_t update_window_active;
+        uint8_t timing_update_pending;
+        uint8_t channel_map_pending;
+        uint8_t params_pending, params_local;
+        uint8_t feature_req_pending;
+        uint8_t phy_pending, phy_update_pending;
+        uint8_t length_pending;
+    } pending;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
@@ -589,9 +603,8 @@ static int gap_conn_accept(
     gap_conn.procedures.tx_l2cap_remaining = 0;
     gap_conn.procedures.rx_ready = 0;
     gap_conn.link.event_counter = 0;
-    gap_conn.procedures.timing_update_pending = 0;
+    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
     gap_conn.procedures.local_update_queued = gap_conn.procedures.local_params_queued = 0;
-    gap_conn.procedures.params_pending = gap_conn.procedures.params_local = 0;
     gap_conn.procedures.features_known = gap_conn.procedures.peer_features = gap_conn.procedures.peer_features2 = 0;
     gap_conn.procedures.peer_features4 = 0;
     gap_conn.procedures.peer_features7 = 0;
@@ -615,11 +628,8 @@ static int gap_conn_accept(
            sizeof(gap_conn.procedures.peer_features_page1));
     gap_conn.procedures.phy.tx = gap_conn.procedures.phy.rx = GAP_PHY_1M;
     gap_conn.procedures.preferred_phy.tx = gap_conn.procedures.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
-    gap_conn.procedures.phy_queued = gap_conn.procedures.phy_pending = gap_conn.procedures.phy_update_pending =
-        gap_conn.procedures.phy_status = 0;
-    gap_conn.procedures.feature_req_pending = gap_conn.procedures.connection_status = 0;
-    gap_conn.procedures.update_window_active = 0;
-    gap_conn.procedures.channel_map_pending = gap_conn.procedures.local_map_queued = 0;
+    gap_conn.procedures.phy_queued = gap_conn.procedures.phy_status = 0;
+    gap_conn.procedures.connection_status = 0;
     gap_conn.link.terminate_after_reply = 0;
     gap_conn.link.version_ind_sent = 0;
     gap_conn.link.terminate_queued = 0;
@@ -633,7 +643,7 @@ static int gap_conn_accept(
     gap_conn.procedures.local_tx_octets = 27;
     gap_conn.procedures.data_length = gap_conn.procedures.remote_data_length =
         (gap_data_length){27, 328, 27, 328};
-    gap_conn.procedures.length_queued = gap_conn.procedures.length_pending = gap_conn.procedures.length_status = 0;
+    gap_conn.procedures.length_queued = gap_conn.procedures.length_status = 0;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
         size_t wipe_len = sizeof(gap_security);
