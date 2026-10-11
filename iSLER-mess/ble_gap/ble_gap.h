@@ -433,19 +433,6 @@ static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 #define gap_security gap_security_contexts[gap_conn_slot]
 #define gap_security_generation gap_security_generations[gap_conn_slot]
 
-static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central);
-static void gap_security_derive(void);
-static uint8_t *gap_security_tx_frame(void);
-static void gap_send_security(void);
-
-// SMP owns pairing state; GAP connection code uses only these operations.
-static void gap_smp_poll(void);
-static void gap_smp_link_close(void);
-static void gap_smp_bond_restore_poll(void);
-static int gap_smp_blocks_encryption(void);
-static void gap_smp_receive_complete(void);
-
-
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
 static int gap_access_address_valid(uint32_t address);
 
@@ -481,7 +468,7 @@ static void gap_wipe(volatile void *data, size_t len) {
 }
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int gap_smp_link_init(void);
+static int smp_link_init(void);
 
 static int gap_conn_accept(
     const uint8_t frame[36],
@@ -596,7 +583,7 @@ static int gap_conn_accept(
         gap_conn_generations[gap_conn_slot] = 1;
 
     gap_conn.link_state.active = 1;
-    if (!gap_smp_link_init()) {
+    if (!smp_link_init()) {
         gap_conn.link_state.active = 0;
         return 0;
     }

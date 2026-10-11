@@ -59,6 +59,8 @@ static uint8_t gap_conn_rate_busy(void) {
         gap_conn.rate.update_pending || gap_conn.rate.req_pending;
 }
 
+static void gap_smp_link_close(void);
+
 static void gap_conn_end(void) {
     if (!gap_conn.link_state.active) return;
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
@@ -829,6 +831,8 @@ static uint16_t gap_conn_rate_min_interval(void) {
           gap_conn.phy.current.rx == GAP_PHY_CODED) ? 2704 : 328);
     return (uint16_t)((required + 124) / 125);
 }
+
+static void gap_security_derive(void);
 
 static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     uint8_t authenticated, uint64_t connection_anchor_ticks,
@@ -2376,6 +2380,9 @@ int gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
+static void gap_smp_poll(void);
+static void gap_smp_receive_complete(void);
+
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_smp_poll();
     if (!data || !len || !gap_conn.queue.rx_ready) return 0;
@@ -2506,6 +2513,8 @@ static void gap_send_security(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
+static int gap_smp_blocks_encryption(void);
+
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!ltk || !random || !gap_connected() || !gap_conn.link_state.central_role ||
         gap_conn.link.first_event || gap_security.phase || gap_smp_blocks_encryption() ||

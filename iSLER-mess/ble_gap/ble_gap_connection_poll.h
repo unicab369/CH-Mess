@@ -675,11 +675,11 @@ static void gap_conn_poll(void) {
                 memcpy(gap_conn.peer_id.address, gap_identities[peer_slot].address, 6);
             }
         }
-        if (gap_smp_generic_bond_load(gap_conn.peer_id.address, gap_conn.peer_id.type, &gap_conn.bond))
+        if (smp_bond_load_generic(gap_conn.peer_id.address, gap_conn.peer_id.type, &gap_conn.bond))
             gap_conn.bonded = 1;
     }
 
-    gap_smp_bond_restore_poll();
+    smp_bond_restore_poll();
     gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
 

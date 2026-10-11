@@ -4333,7 +4333,7 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn.bond.key_size = 16;
     gap_conn.bond.peer_address_type = 0;
     gap_conn.bond.peer_address[0] = 0x42;
-    gap_smp_bond_peripheral_start(0);
+    smp_bond_peripheral_start(0);
     assert(gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_TX &&
            gap_smp.bearer.pairing.bond_tx_step == 31 && gap_smp.tx_len == 21 &&
            gap_smp.tx[2] == BLE_L2CAP_CID_SMP &&
@@ -5077,14 +5077,14 @@ static void test_secure_connections_numeric_comparison(void) {
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
         assert(gap_smp.bearer.pairing.phase == SMP_PHASE_SC_USER && !gap_smp.tx_len);
         uint32_t value;
-        assert(gap_numeric_comparison(&value) && value < 1000000);
+        assert(gap_numeric_get(&value) && value < 1000000);
         gap_smp_poll();
         assert(ui.calls == 1 && ui.action ==
             SMP_USER_NUMERIC_COMPARISON && ui.value == value);
         memset(&ui, 0, sizeof(ui));
         assert(!gap_authenticated());
-        assert(gap_numeric_comparison_reply(accept));
-        assert(!gap_numeric_comparison_reply(accept));
+        assert(gap_numeric_reply(accept));
+        assert(!gap_numeric_reply(accept));
         gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
         gap_smp_poll();
         if (!accept) {
@@ -5147,8 +5147,8 @@ static void test_secure_connections_numeric_comparison(void) {
     assert(gap_smp.bearer.pairing.sc.peer_check_received &&
            gap_smp.bearer.pairing.phase == SMP_PHASE_SC_USER);
     uint32_t value;
-    assert(gap_numeric_comparison(&value) && value < 1000000);
-    assert(gap_numeric_comparison_reply(1));
+    assert(gap_numeric_get(&value) && value < 1000000);
+    assert(gap_numeric_reply(1));
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll();
     assert(gap_smp.bearer.pairing.phase == SMP_PHASE_SC_ENCRYPT && gap_conn.queue.tx_queued);
