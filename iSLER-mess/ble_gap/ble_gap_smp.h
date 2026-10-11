@@ -172,16 +172,6 @@ typedef struct {
     uint32_t numeric_value;
 } ble_smp_sc_state;
 
-typedef struct {
-    uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
-    uint8_t confirm_received, bond_requested, secure_connections;
-    uint8_t user_notified, numeric_notified, keypress_active;
-    uint8_t bond_tx_step, bond_rx_step;
-    uint8_t tk[16], request[7], response[7];
-    uint8_t random[16], peer_confirm[16], stk[16];
-    ble_smp_sc_state sc;
-} ble_smp_pairing;
-
 enum {
     SMP_AUTH_BONDING_MASK = 0x03,
     SMP_AUTH_MITM = 0x04,
@@ -358,7 +348,15 @@ static inline uint8_t smp_negotiate_features(
 
 typedef struct {
     ble_l2cap_connection *l2cap;
-    ble_smp_pairing pairing;
+    struct {
+        uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
+        uint8_t confirm_received, bond_requested, secure_connections;
+        uint8_t user_notified, numeric_notified, keypress_active;
+        uint8_t bond_tx_step, bond_rx_step;
+        uint8_t tk[16], request[7], response[7];
+        uint8_t random[16], peer_confirm[16], stk[16];
+        ble_smp_sc_state sc;
+    } pairing;
     uint8_t tx[SMP_PDU_MAX];
     uint8_t rx[SMP_PDU_MAX];
     uint8_t tx_len, rx_len;
@@ -2632,7 +2630,8 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (gap_smp.bearer.pairing.secure_connections && op == SMP_PAIRING_PUBLIC_KEY && pending_len == 65 &&
+    if (op == SMP_PAIRING_PUBLIC_KEY && pending_len == 65 &&
+        gap_smp.bearer.pairing.secure_connections &&
         gap_smp.bearer.pairing.phase == SMP_PHASE_SC_PUBLIC_KEY
     ) {
         uint32_t generation = gap_security_generation;
@@ -2680,7 +2679,9 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (gap_smp.bearer.pairing.secure_connections && op == SMP_PAIRING_CONFIRM && pending_len == 17 ) {
+    if (op == SMP_PAIRING_CONFIRM && pending_len == 17 &&
+        gap_smp.bearer.pairing.secure_connections
+    ) {
         if (gap_smp.bearer.pairing.sc.passkey_required &&
             gap_smp.bearer.pairing.phase == SMP_PHASE_SC_PASSKEY &&
             !gap_conn.link_state.central_role &&
@@ -2707,7 +2708,8 @@ static void gap_smp_poll(void) {
         }
     }
 
-    if (gap_smp.bearer.pairing.secure_connections && op == SMP_PAIRING_RANDOM && pending_len == 17 &&
+    if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
+        gap_smp.bearer.pairing.secure_connections &&
         gap_smp.bearer.pairing.phase == SMP_PHASE_SC_RANDOM
     ) {
         uint8_t confirm[16], difference = 0;
@@ -2797,8 +2799,8 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (gap_smp.bearer.pairing.secure_connections && op == SMP_PAIRING_DHKEY_CHECK &&
-        pending_len == 17
+    if (op == SMP_PAIRING_DHKEY_CHECK && pending_len == 17 &&
+        gap_smp.bearer.pairing.secure_connections
     ) {
         if (gap_smp.bearer.pairing.phase == SMP_PHASE_SC_USER &&
             !gap_conn.link_state.central_role &&
@@ -2855,7 +2857,9 @@ static void gap_smp_poll(void) {
         }
     }
 
-    if (op == SMP_PAIRING_RANDOM && pending_len == 17 && gap_smp.bearer.pairing.phase == SMP_PHASE_RANDOM) {
+    if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
+        gap_smp.bearer.pairing.phase == SMP_PHASE_RANDOM
+    ) {
         uint8_t confirm[16], difference = 0;
         gap_smp_confirm(p + 1, confirm);
         for (unsigned i = 0; i < 16; i++)
@@ -2891,10 +2895,11 @@ static void gap_smp_poll(void) {
         gap_smp.bearer.pairing.phase = SMP_PHASE_ENCRYPT;
         return;
     }
-    if (op >= SMP_ENCRYPTION_INFORMATION && op != SMP_SECURITY_REQUEST) error = SMP_FAIL_COMMAND_NOT_SUPPORTED; // Unsupported method/key distribution.
+    if (op >= SMP_ENCRYPTION_INFORMATION && op != SMP_SECURITY_REQUEST)
+        error = SMP_FAIL_COMMAND_NOT_SUPPORTED; // Unsupported method/key distribution.
     gap_smp_fail(error);
 }
 
-#endif
+#endif // BLE_GAP_SMP_CORE_TEST
 
-#endif
+#endif // BLE_GAP_SMP_H
