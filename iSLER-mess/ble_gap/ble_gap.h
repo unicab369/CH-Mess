@@ -220,36 +220,18 @@ typedef struct {
     uint8_t has_peripheral_ltk;
 } gap_bond;
 
-// LE Secure Connections OOB authentication data. Exchange both fields through
-// an authenticated OOB channel before calling gap_pair(). Values use SMP
-// byte order.
-typedef struct {
-    uint8_t random[16], confirm[16];
-} gap_sc_oob_data;
-
 typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
                                        uint32_t value);
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
 static uint8_t gap_rx_armed;
-// Advertising captured for an active scan, paired with its receive metadata.
-static struct {
-    uint8_t frame[2 + 37];
-    volatile uint8_t ready;
-    volatile int8_t rssi;
-} gap_adv_scan;
 // General received packet, paired with its receive metadata.
 static struct {
     uint8_t frame[2 + 37];
     volatile uint8_t ready;
     volatile int8_t rssi;
 } gap_rx;
-
-typedef struct {
-    uint16_t interval_125us, factor, latency, continuation, timeout;
-    uint16_t base_event, win_offset, instant;
-} gap_conn_schedule;
 
 typedef struct {
     struct {
@@ -304,7 +286,10 @@ typedef struct {
     uint16_t update_instant, update_win_offset, channel_map_instant;
 
     // Active and pending connection timing and subrate schedules.
-    gap_conn_schedule schedule, next_schedule;
+    struct {
+        uint16_t interval_125us, factor, latency, continuation, timeout;
+        uint16_t base_event, win_offset, instant;
+    } schedule, next_schedule;
     struct {
         uint8_t set_queued, request_queued, update_pending;
         uint8_t req_pending, ack_waiting;
@@ -394,10 +379,9 @@ static inline uint8_t gap_conn_count(void) {
 }
 
 // Return the handle for the active connection at this zero-based list index.
-static inline int gap_conn_handle_at(
-    uint8_t index, gap_conn_handle *handle
-) {
+static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
     if (!handle) return 0;
+
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!gap_conn_ctx[slot].link_state.active) continue;
         if (index--) continue;
@@ -409,9 +393,7 @@ static inline int gap_conn_handle_at(
 }
 
 // Select a live link for the existing connection-specific GAP operations.
-static inline int gap_conn_select(
-    gap_conn_handle handle
-) {
+static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
         !gap_conn_ctx[handle.slot].link_state.active ||
         gap_conn_generations[handle.slot] != handle.generation)
@@ -421,9 +403,7 @@ static inline int gap_conn_select(
 }
 
 // Capture the currently selected link's handle for later API calls.
-static inline int gap_conn_current(
-    gap_conn_handle *handle
-) {
+static inline int gap_conn_current(gap_conn_handle *handle) {
     if (!handle || !gap_conn.link_state.active) return 0;
     handle->slot = gap_conn_slot;
     handle->generation = gap_conn_generations[gap_conn_slot];

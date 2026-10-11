@@ -10,68 +10,6 @@
 // LE SMP implementation used by GAP. This file keeps the SMP protocol helpers,
 // pairing transaction, and GAP-specific policy and platform integration
 // together because GAP is the only runtime user of SMP in this stack.
-// TODO for complete LE SMP support:
-// - [x] Recognize all assigned LE SMP opcodes, including Signing Information.
-// - [x] Register the SMP fixed CID with the shared L2CAP connection and
-//       deliver complete, bounded SMP PDUs to the protocol handler.
-// - [x] Queue one outbound SMP PDU and retry through the L2CAP link adapter.
-// - [x] Route GAP's SMP traffic through the shared L2CAP reassembler,
-//       fixed-CID dispatcher, and Basic L2CAP encoder.
-// - [x] Keep the GAP-specific pairing procedures with the SMP protocol code.
-// - [x] Own the pairing phase identifiers and IO-capability association
-//       selection in the SMP layer; GAP supplies only role and device policy.
-// - [x] Store the active pairing phase on the generic SMP bearer rather than
-//       in GAP's connection context.
-// - [x] Move common pairing PDUs, randoms, STK/TK, role, and authentication
-//       flags from GAP connection storage into the generic SMP transaction.
-// - [x] Move Secure Connections ephemeral keys, nonces, checks, and association
-//       progress into the same SMP-owned transaction state.
-// - [x] Move SMP UI-notification and key-distribution progress into that
-//       transaction; keep only radio transmit-completion state in GAP.
-// - [x] Initialize Central/Peripheral procedure role and initial phase with
-//       the generic pairing-begin helper.
-// - [x] Move LE legacy e/c1 confirmation cryptography behind generic SMP
-//       helpers that use the platform AES method; derive legacy STK
-//       through the same generic crypto path.
-// - [x] Move the LE Secure Connections f4/f5/f6/g2 cryptographic functions into
-//       SMP and make platform method failures abort derivation with cleared outputs.
-// - [x] Combine the SMP protocol helpers and GAP pairing implementation.
-// - [x] Verify legacy Just Works, Passkey Entry, confirm/random, key derivation,
-//       and both Central/Peripheral role combinations.
-// - [x] Verify Secure Connections public-key, numeric-comparison, passkey, OOB,
-//       DHKey-check, and key derivation flows.
-// - [x] Define direct platform methods for cryptographic randomness/primitives,
-//       user interaction, link encryption, and bond load/store/removal.
-// - [x] Provide checked helpers around each platform method.
-// - [x] Route GAP's Central-side legacy and SC encryption starts through the
-//       platform set-link-encryption method.
-// - [x] Use generic feature parsing and policy negotiation in GAP's
-//       Pairing Request/Response handler.
-// - [x] Deliver GAP passkey and numeric-comparison prompts through the generic
-//       platform user-request method while preserving asynchronous GAP replies.
-// - [x] Negotiate optional passkey keypress notifications and expose typed
-//       send/receive events through the SMP UI interface.
-// - [x] Validate Pairing Feature fields and negotiate key size, SC, bonding,
-//       and key-distribution intersections under a host-supplied policy.
-// - [x] Distribute legacy Initiator IRK/identity address and CSRK and store
-//       the received keys with the bond.
-// - [x] Distribute and receive legacy Peripheral LTK/EDIV/Rand, identity, and
-//       signing keys before the Central's key set.
-// - [x] Restrict Secure Connections key distribution to identity keys (IRK
-//       and identity address); SC does not distribute legacy LTKs or CSRKs.
-// - [x] Support Encryption Information and Central Identification in both
-//       legacy directions; keep the two distributed LTK sets separate.
-// - [x] Verify identity-only Secure Connections key distribution in both
-//       Central and Peripheral roles.
-// - [ ] Verify full pairing, encryption, and key distribution against an
-//       independent Bluetooth host (the Bumble check currently covers the
-//       bearer and Pairing Request/Response codecs only).
-// - [x] Route GAP bond persistence, restoration lookup, rollback, and removal
-//       through the platform bond methods with the complete LE bond schema.
-// - [x] Validate command-specific lengths, ignore reserved opcodes, track the
-//       30-second pairing timer, and wipe queued data when it expires.
-// - [x] Reject malformed and out-of-order pairing PDUs and erase temporary
-//       pairing secrets on disconnect or failure.
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
 #include "../ble_l2cap.h"
@@ -172,12 +110,10 @@ typedef struct {
 // Platform methods used by the SMP procedure. GAP provides these methods;
 // tests can provide a fake implementation without configuring a callback table.
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
-int ble_smp_port_cmac(const uint8_t key[16], const uint8_t *input,
-                      size_t len, uint8_t output[16]);
 
 // LE SMP command lengths include the one-octet command code. Reserved command
 // codes are rejected here so the protocol owner can choose to ignore them.
-static inline int ble_smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
+static inline int smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
     if (!pdu || !len || len > SMP_PDU_MAX) return 0;
     switch (pdu[0]) {
     case SMP_PAIRING_REQUEST:
@@ -269,7 +205,7 @@ enum {
 // The caller decides whether MITM is required from local policy and both
 // AuthReq fields, and supplies its Central/Peripheral role for the legacy
 // KeyboardDisplay/KeyboardDisplay tie-break.
-static inline uint8_t ble_smp_select_association(
+static inline uint8_t smp_select_association(
     uint8_t local_io,
     uint8_t peer_io, uint8_t mitm_required, uint8_t secure_connections,
     uint8_t local_is_central, uint8_t *association
@@ -301,7 +237,7 @@ static inline uint8_t ble_smp_select_association(
     return 0;
 }
 
-static inline int ble_smp_features_valid(
+static inline int smp_features_valid(
     const smp_features *feat
 ) {
     // AuthReq bits 6-7 are reserved. Bit 5 is CT2 and is valid; this LE
@@ -314,10 +250,10 @@ static inline int ble_smp_features_valid(
         !(feat->resp_key_dist & ~SMP_KEY_DIST_MASK);
 }
 
-static inline int ble_smp_features_parse(
+static inline int smp_features_parse(
     const uint8_t *pdu, uint16_t len, smp_features *feat
 ) {
-    if (!ble_smp_pdu_valid(pdu, len) ||
+    if (!smp_pdu_valid(pdu, len) ||
         (pdu[0] != SMP_PAIRING_REQUEST &&
          pdu[0] != SMP_PAIRING_RESPONSE) || !feat
     ) return 0;
@@ -328,15 +264,15 @@ static inline int ble_smp_features_parse(
     feat->max_key_size = pdu[4];
     feat->init_key_dist = pdu[5];
     feat->resp_key_dist = pdu[6];
-    if (ble_smp_features_valid(feat)) return 1;
+    if (smp_features_valid(feat)) return 1;
     memset(feat, 0, sizeof(*feat));
     return 0;
 }
 
-static inline int ble_smp_features_build(
+static inline int smp_features_build(
     uint8_t opcode, const smp_features *feat, uint8_t pdu[7]
 ) {
-    if (!ble_smp_features_valid(feat) || !pdu ||
+    if (!smp_features_valid(feat) || !pdu ||
         (opcode != SMP_PAIRING_REQUEST &&
          opcode != SMP_PAIRING_RESPONSE)
     ) return 0;
@@ -351,7 +287,7 @@ static inline int ble_smp_features_build(
     return 1;
 }
 
-static inline int ble_smp_opcode_known(uint8_t opcode) {
+static inline int smp_opcode_known(uint8_t opcode) {
     switch (opcode) {
         case SMP_PAIRING_REQUEST:
         case SMP_PAIRING_RESPONSE:
@@ -373,15 +309,15 @@ static inline int ble_smp_opcode_known(uint8_t opcode) {
 
 // Validate and intersect the Pairing Request/Response feature fields. The
 // caller performs IO association selection and cryptographic key generation.
-static inline uint8_t ble_smp_negotiate_features(
+static inline uint8_t smp_negotiate_features(
     const smp_features *local,
     const smp_features *peer,
     const ble_smp_policy *policy,
     ble_smp_negotiated *out
 ) {
     if (!local || !peer || !policy || !out ||
-        !ble_smp_features_valid(local) ||
-        !ble_smp_features_valid(peer) ||
+        !smp_features_valid(local) ||
+        !smp_features_valid(peer) ||
         policy->minimum_key_size < 7 || policy->minimum_key_size > 16 ||
         policy->require_authenticated > 1 ||
         policy->require_secure_connections > 1 || policy->allow_legacy > 1 ||
@@ -431,14 +367,14 @@ typedef struct {
     uint32_t deadline_ms;
 } ble_smp;
 
-static inline int ble_smp_receive_sdu(
+static inline int smp_receive_sdu(
     void *context, uint16_t cid, const uint8_t *sdu, uint16_t len
 ) {
     ble_smp *smp = (ble_smp *)context;
     if (!smp || cid != BLE_L2CAP_CID_SMP || !sdu || !len) return 0;
     // Reserved command codes are ignored by SMP, as required by the spec.
-    if (!ble_smp_opcode_known(sdu[0])) return 1;
-    if (len > sizeof(smp->rx) || !ble_smp_pdu_valid(sdu, len) || smp->rx_len)
+    if (!smp_opcode_known(sdu[0])) return 1;
+    if (len > sizeof(smp->rx) || !smp_pdu_valid(sdu, len) || smp->rx_len)
         return 0;
 
     if (sdu[0] == SMP_PAIRING_REQUEST || sdu[0] == SMP_SECURITY_REQUEST)
@@ -452,7 +388,7 @@ static inline int ble_smp_receive_sdu(
 
 // Claim the pending PDU. The returned bytes remain in the bearer buffer until
 // another receive or procedure finish, so callers must consume them promptly.
-static inline int ble_smp_take_received(
+static inline int smp_take_received(
     ble_smp *smp, const uint8_t **pdu, uint16_t *len
 ) {
     if (!smp || !pdu || !len || !smp->rx_len) return 0;
@@ -463,7 +399,7 @@ static inline int ble_smp_take_received(
 }
 
 // Validate platform results and clear sensitive outputs when an operation fails.
-static inline int ble_smp_random_bytes(uint8_t *out, unsigned len) {
+static inline int smp_random_bytes(uint8_t *out, unsigned len) {
     if (!out || !len) return 0;
     if (GAP_RANDOM_SECURE_BYTES(out, len)) return 1;
     volatile uint8_t *wipe = out;
@@ -476,7 +412,7 @@ static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len) {
     for (size_t i = 0; i < len; i++) out[i] = in[len - 1 - i];
 }
 
-static inline int ble_smp_aes128(
+static inline int smp_aes128(
     ble_smp *smp, const uint8_t key[16],
     const uint8_t input[16], uint8_t output[16]
 ) {
@@ -499,7 +435,7 @@ static inline int ble_smp_aes128(
 
 // Derive the legacy Short Term Key from the least-significant 64 bits of the
 // initiator random followed by those of the responder random.
-static inline int ble_smp_legacy_s1(
+static inline int smp_legacy_s1(
     ble_smp *smp, const uint8_t tk[16],
     const uint8_t initiator_random[16], const uint8_t responder_random[16],
     uint8_t stk[16]
@@ -510,13 +446,13 @@ static inline int ble_smp_legacy_s1(
     uint8_t r[16];
     memcpy(r, initiator_random, 8);
     memcpy(r + 8, responder_random, 8);
-    int ok = ble_smp_aes128(smp, tk, r, stk);
+    int ok = smp_aes128(smp, tk, r, stk);
     volatile uint8_t *wipe = r;
     for (size_t i = 0; i < sizeof(r); i++) wipe[i] = 0;
     return ok;
 }
 
-static inline int ble_smp_poll(ble_smp *smp) {
+static inline int smp_poll(ble_smp *smp) {
     if (!smp || !smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu)
         return 0;
     if (!smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
@@ -530,7 +466,7 @@ static inline int ble_smp_poll(ble_smp *smp) {
 // End a completed or abandoned SMP procedure, wiping any queued PDU and
 // cancelling its deadline while keeping the bearer and L2CAP
 // registration ready for a later procedure on the same connection.
-static inline void ble_smp_procedure_finish(ble_smp *smp) {
+static inline void smp_procedure_finish(ble_smp *smp) {
     if (!smp) return;
     volatile uint8_t *wipe = smp->tx;
     for (size_t i = 0; i < sizeof(smp->tx); i++) wipe[i] = 0;
@@ -546,6 +482,12 @@ static inline void ble_smp_procedure_finish(ble_smp *smp) {
 }
 
 #ifndef BLE_GAP_SMP_CORE_TEST
+// LE Secure Connections OOB data exchanged through an authenticated channel.
+// Values use SMP byte order.
+typedef struct {
+    uint8_t random[16], confirm[16];
+} gap_sc_oob_data;
+
 #define GAP_BOND_SLOTS 4
 #define GAP_BOND_VERSION_LEGACY 1
 #define GAP_BOND_VERSION_CSRK 2
@@ -624,7 +566,7 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
 int GAP_BOND_DELETE(uint8_t slot);
 #endif
 
-int ble_smp_port_cmac(
+int smp_port_cmac(
     const uint8_t key[16],
     const uint8_t *input, size_t len, uint8_t output[16]
 ) {
@@ -636,12 +578,12 @@ int ble_smp_port_cmac(
 static int gap_sc_generate_key(void) {
     uECC_Curve curve = uECC_secp256r1();
     uECC_RNG_Function previous = uECC_get_rng();
-    uECC_set_rng(ble_smp_random_bytes);
+    uECC_set_rng(smp_random_bytes);
     uint32_t generation = gap_security_generation;
     uint8_t private_key[32], public_key[64];
     int generated = 0;
     for (uint8_t attempt = 0; attempt < 8 && !generated; attempt++) {
-        if (!ble_smp_random_bytes(private_key,
+        if (!smp_random_bytes(private_key,
                                   sizeof(private_key)) ||
             !gap_conn.link_state.active || generation != gap_security_generation) break;
         generated = uECC_compute_public_key(private_key, public_key, curve);
@@ -678,7 +620,7 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     uint32_t generation = gap_security_generation;
     uint8_t dhkey[32];
     uECC_RNG_Function previous = uECC_get_rng();
-    uECC_set_rng(ble_smp_random_bytes);
+    uECC_set_rng(smp_random_bytes);
     int derived = uECC_shared_secret(
         gap_smp.bearer.pairing.sc.peer_public_key,
         gap_smp.bearer.pairing.sc.private_key, dhkey, curve);
@@ -711,7 +653,7 @@ static inline void gap_sc_f5(
         0x60, 0x37, 0x0b, 0xdb, 0x5a, 0x60, 0x83, 0xbe
     };
     uint8_t t[16], message[53] = {0};
-    int ok = ble_smp_port_cmac(salt, w, 32, t);
+    int ok = smp_port_cmac(salt, w, 32, t);
 
     for (uint8_t counter = 0; ok && counter < 2; counter++) {
         message[0] = counter;
@@ -722,7 +664,7 @@ static inline void gap_sc_f5(
         memcpy(message + 44, a2, 7);
         message[51] = 1;
         message[52] = 0;
-        ok = ble_smp_port_cmac(t, message, sizeof(message),
+        ok = smp_port_cmac(t, message, sizeof(message),
                                counter ? ltk : mac_key);
     }
 
@@ -749,7 +691,7 @@ static void gap_sc_confirm_value(
     memcpy(message, first_x, 32);
     memcpy(message + 32, second_x, 32);
     message[64] = z;
-    if (!ble_smp_port_cmac(nonce, message, sizeof(message), confirm))
+    if (!smp_port_cmac(nonce, message, sizeof(message), confirm))
         memset(confirm, 0, sizeof(confirm));
     gap_sc_reverse(confirm_air, confirm, 16);
     volatile uint8_t *wipe = nonce;
@@ -783,7 +725,7 @@ static uint32_t gap_sc_numeric_value(void) {
     memcpy(message + 32, peripheral_key, 32);
     memcpy(message + 64, nb, 16);
     uint32_t value = 0;
-    if (ble_smp_port_cmac(na, message, sizeof(message), mac)) {
+    if (smp_port_cmac(na, message, sizeof(message), mac)) {
         uint32_t mac_value = (uint32_t)mac[12] << 24 |
             (uint32_t)mac[13] << 16 | (uint32_t)mac[14] << 8 | mac[15];
         value = mac_value % 1000000;
@@ -827,7 +769,7 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     memcpy(message + 48, iocap, 3);
     memcpy(message + 51, from_central ? a1 : a2, 7);
     memcpy(message + 58, from_central ? a2 : a1, 7);
-    if (!ble_smp_port_cmac(gap_smp.bearer.pairing.sc.mac_key,
+    if (!smp_port_cmac(gap_smp.bearer.pairing.sc.mac_key,
                            message, sizeof(message), check))
         memset(check, 0, sizeof(check));
     gap_sc_reverse(out_air, check, 16);
@@ -854,14 +796,14 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     memcpy(block + 9, gap_smp.bearer.pairing.response, 7);
 
     for (size_t i = 0; i < sizeof(block); i++) block[i] ^= random[i];
-    int ok = ble_smp_aes128(&gap_smp.bearer, gap_smp.bearer.pairing.tk, block, confirm);
+    int ok = smp_aes128(&gap_smp.bearer, gap_smp.bearer.pairing.tk, block, confirm);
 
     for (size_t i = 0; i < 6; i++) {
         confirm[i] ^= gap_conn.responder.address[i];
         confirm[i + 6] ^= gap_conn.initiator.address[i];
     }
 
-    if (ok) ok = ble_smp_aes128(&gap_smp.bearer,
+    if (ok) ok = smp_aes128(&gap_smp.bearer,
         gap_smp.bearer.pairing.tk, confirm, confirm);
     if (!ok) memset(confirm, 0, 16);
     volatile uint8_t *wipe = block;
@@ -895,7 +837,7 @@ static int gap_smp_link_init(void) {
         return 0;
     gap_smp.bearer.l2cap = &gap_smp.l2cap;
     if (!ble_l2cap_connection_register_fixed(&gap_smp.l2cap,
-            BLE_L2CAP_CID_SMP, ble_smp_receive_sdu, &gap_smp.bearer)
+            BLE_L2CAP_CID_SMP, smp_receive_sdu, &gap_smp.bearer)
     ) return 0;
     gap_smp.l2cap_ready = 1;
     return 1;
@@ -909,7 +851,7 @@ static int gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
 
     gap_smp.bearer.now_ms = GET_MILLIS();
     uint16_t pdu_len = (uint16_t)len + 1;
-    if (!ble_smp_pdu_valid(smp, pdu_len) || gap_smp.bearer.tx_len)
+    if (!smp_pdu_valid(smp, pdu_len) || gap_smp.bearer.tx_len)
         return 0;
 
     memcpy(gap_smp.bearer.tx, smp, pdu_len);
@@ -918,7 +860,7 @@ static int gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
         gap_smp.bearer.procedure_active = 1;
     if (gap_smp.bearer.procedure_active)
         gap_smp.bearer.deadline_ms = gap_smp.bearer.now_ms + SMP_TIMEOUT_MS;
-    int queued = ble_smp_poll(&gap_smp.bearer);
+    int queued = smp_poll(&gap_smp.bearer);
     gap_smp.started_ms = GET_MILLIS();
     return queued;
 }
@@ -950,7 +892,7 @@ static void gap_smp_finish(uint8_t status) {
     volatile uint8_t *wipe = gap_smp.tx;
 
     for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
-    ble_smp_procedure_finish(&gap_smp.bearer);
+    smp_procedure_finish(&gap_smp.bearer);
     ble_l2cap_reassembler_reset(&gap_smp.l2cap_rx);
     // A new SMP pairing procedure requires a new physical connection, even
     // after an unsuccessful attempt; preserve only the connection status.
@@ -1062,7 +1004,7 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
     uint32_t generation = gap_security_generation;
 
     if (!gap_sc_generate_key() ||
-        !ble_smp_random_bytes(random, sizeof(random)) ||
+        !smp_random_bytes(random, sizeof(random)) ||
         !gap_conn.link_state.active || generation != gap_security_generation
     ) {
         volatile uint8_t *secret = (volatile uint8_t *)&gap_smp.bearer.pairing.sc;
@@ -1701,7 +1643,7 @@ static void gap_smp_bond_rx_complete(void) {
 
         if ((keyset & GAP_KEY_DIST_SIGNING) &&
             !gap_conn.bond.has_local_csrk) {
-            if (!ble_smp_random_bytes(gap_conn.bond.local_csrk,
+            if (!smp_random_bytes(gap_conn.bond.local_csrk,
                     sizeof(gap_conn.bond.local_csrk))
             ) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
@@ -1750,7 +1692,7 @@ static void gap_smp_bond_peripheral_start(void) {
         uint8_t material[26], nonzero;
         uint8_t attempts = 0;
         do {
-            if (++attempts > 4 || !ble_smp_random_bytes(material, sizeof(material))
+            if (++attempts > 4 || !smp_random_bytes(material, sizeof(material))
             ) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
@@ -1778,7 +1720,7 @@ static void gap_smp_bond_peripheral_start(void) {
         for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
     }
     if (keyset & GAP_KEY_DIST_SIGNING) {
-        if (!ble_smp_random_bytes(gap_conn.bond.local_csrk,
+        if (!smp_random_bytes(gap_conn.bond.local_csrk,
                 sizeof(gap_conn.bond.local_csrk))
         ) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
@@ -1875,7 +1817,7 @@ static void gap_smp_poll(void) {
         else if (decision > 0) gap_smp.bearer.pairing.sc.numeric_reply = 1;
     }
     if (!gap_smp.tx_len && gap_smp.bearer.tx_len)
-        (void)ble_smp_poll(&gap_smp.bearer);
+        (void)smp_poll(&gap_smp.bearer);
 
     if (gap_smp.bearer.pairing.phase == SMP_PHASE_SC_USER &&
         gap_smp.bearer.pairing.sc.numeric_reply) {
@@ -2195,7 +2137,7 @@ static void gap_smp_poll(void) {
 
             do {
                 if (++attempts > 4 ||
-                    !ble_smp_random_bytes(bond_material, sizeof(bond_material))) {
+                    !smp_random_bytes(bond_material, sizeof(bond_material))) {
                     volatile uint8_t *wipe = bond_material;
                     for (unsigned i = 0; i < sizeof(bond_material); i++) wipe[i] = 0;
                     gap_smp_finish(8);
@@ -2316,13 +2258,13 @@ static void gap_smp_poll(void) {
     const uint8_t *p;
     uint16_t pending_len;
 
-    if (!ble_smp_take_received(&gap_smp.bearer, &p, &pending_len))
+    if (!smp_take_received(&gap_smp.bearer, &p, &pending_len))
         return; // Reserved SMP opcode was ignored.
     uint8_t n = (uint8_t)pending_len, op = p[0];
     if (gap_smp.blocked) return;
-    if (!ble_smp_opcode_known(op)) return;
+    if (!smp_opcode_known(op)) return;
 
-    if (!ble_smp_pdu_valid(p, n)) {
+    if (!smp_pdu_valid(p, n)) {
         gap_smp_fail(SMP_FAIL_INVALID_PARAMETERS);
         return;
     }
@@ -2548,7 +2490,10 @@ static void gap_smp_poll(void) {
         uint8_t peer_io = gap_conn.link_state.central_role ? gap_smp.bearer.pairing.response[1] :
             gap_smp.bearer.pairing.request[1];
         if (!gap_smp.bearer.pairing.keypress_active || !passkey_phase ||
-            peer_io != GAP_IO_KEYBOARD_ONLY) goto failed;
+            peer_io != GAP_IO_KEYBOARD_ONLY) {
+            gap_smp_fail(error);
+            return;
+        }
         if (gap_smp_user_request_callback)
             (void)gap_smp_user_request_callback(gap_smp_user_request_context,
                 SMP_USER_KEYPRESS, p[1]);
@@ -2562,7 +2507,9 @@ static void gap_smp_poll(void) {
          gap_smp.bearer.pairing.phase == SMP_PHASE_RESPONSE)) {
         if (gap_security.phase || gap_security.tx_enabled || gap_security.rx_enabled) {
             error = 8;
-            goto failed; // Re-pairing an encrypted link is not supported yet.
+            // Re-pairing an encrypted link is not supported yet.
+            gap_smp_fail(error);
+            return;
         }
         smp_features peer_features, local_features;
         ble_smp_negotiated negotiated;
@@ -2570,10 +2517,13 @@ static void gap_smp_poll(void) {
                                             GAP_KEY_DIST_IDENTITY |
                                             GAP_KEY_DIST_SIGNING;
 
-        if (!ble_smp_features_parse(p, n, &peer_features) ||
+        if (!smp_features_parse(p, n, &peer_features) ||
             (peer_features.init_key_dist & ~supported_key_distribution) ||
             (peer_features.resp_key_dist & ~supported_key_distribution)
-        ) goto failed;
+        ) {
+            gap_smp_fail(error);
+            return;
+        }
 
         ble_smp_policy feature_policy = {
             gap_pairing_policy.min_key_size, 0,
@@ -2584,15 +2534,18 @@ static void gap_smp_poll(void) {
         uint8_t negotiation_error;
 
         if (op == 2) {
-            if (!ble_smp_features_parse(gap_smp.bearer.pairing.request,
+            if (!smp_features_parse(gap_smp.bearer.pairing.request,
                     sizeof(gap_smp.bearer.pairing.request), &local_features) ||
                 (peer_features.init_key_dist &
                     (uint8_t)~local_features.init_key_dist) ||
                 (peer_features.resp_key_dist &
                     (uint8_t)~local_features.resp_key_dist)
-            ) goto failed;
+            ) {
+                gap_smp_fail(error);
+                return;
+            }
 
-            negotiation_error = ble_smp_negotiate_features(&local_features,
+            negotiation_error = smp_negotiate_features(&local_features,
                 &peer_features, &feature_policy, &negotiated);
         }
         else {
@@ -2604,13 +2557,14 @@ static void gap_smp_poll(void) {
             local_features.max_key_size = 16;
             local_features.init_key_dist = supported_key_distribution;
             local_features.resp_key_dist = supported_key_distribution;
-            negotiation_error = ble_smp_negotiate_features(&local_features,
+            negotiation_error = smp_negotiate_features(&local_features,
                 &peer_features, &feature_policy, &negotiated);
         }
 
         if (negotiation_error) {
             error = negotiation_error;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
         gap_smp.bearer.pairing.secure_connections = negotiated.secure_connections;
         uint8_t local_auth_req =
@@ -2626,22 +2580,28 @@ static void gap_smp_poll(void) {
                 (uint8_t)~gap_smp.bearer.pairing.request[5]) ||
             (peer_features.resp_key_dist &
                 (uint8_t)~gap_smp.bearer.pairing.request[6]))
-        ) goto failed;
+        ) {
+            gap_smp_fail(error);
+            return;
+        }
 
         if (gap_smp.bearer.pairing.secure_connections && negotiated.max_key_size != 16) {
             error = 6;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
 
         if (!gap_smp.bearer.pairing.secure_connections && p[2]) {
             error = 2;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
         if (gap_smp.bearer.pairing.secure_connections &&
             ((p[5] | p[6]) & (GAP_KEY_DIST_ENCRYPTION | GAP_KEY_DIST_SIGNING))
         ) {
             error = 3;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
         // The local flag means we have the peer's data; p[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
@@ -2651,7 +2611,8 @@ static void gap_smp_poll(void) {
             gap_smp.bearer.pairing.secure_connections && (local_oob_flag || p[2]);
         if (gap_smp.bearer.pairing.sc.oob_active && p[2] && !gap_sc_oob_local.valid) {
             error = 2;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
 
         if (op == 1 && gap_pairing_policy.bonding &&
@@ -2659,7 +2620,8 @@ static void gap_smp_poll(void) {
              !(p[5] & GAP_KEY_DIST_ENCRYPTION)))
         ) {
             error = 3;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
 
         if (op == 2) {
@@ -2670,7 +2632,8 @@ static void gap_smp_poll(void) {
 
             if (gap_pairing_policy.bonding && !gap_smp.bearer.pairing.bond_requested) {
                 error = 3;
-                goto failed;
+                gap_smp_fail(error);
+                return;
             }
         } else {
             gap_smp.bearer.pairing.bond_requested =
@@ -2693,13 +2656,14 @@ static void gap_smp_poll(void) {
                 (gap_conn.link_state.central_role &&
                  (gap_smp.bearer.pairing.request[3] & SMP_AUTH_MITM)) ||
                 gap_pairing_policy.authenticated;
-            uint8_t association_error = ble_smp_select_association(
+            uint8_t association_error = smp_select_association(
                 local_io, peer_io, mitm, gap_smp.bearer.pairing.secure_connections,
                 gap_conn.link_state.central_role, &association);
 
             if (association_error) {
                 error = association_error;
-                goto failed;
+                gap_smp_fail(error);
+                return;
             }
             if (gap_smp.bearer.pairing.secure_connections) {
                 gap_smp.bearer.pairing.sc.numeric_required = association ==
@@ -2721,7 +2685,7 @@ static void gap_smp_poll(void) {
         memset(gap_smp.bearer.pairing.tk, 0, sizeof(gap_smp.bearer.pairing.tk));
         uint32_t generation = gap_security_generation;
         uint8_t pairing_random[16];
-        int entropy_ready = ble_smp_random_bytes(pairing_random, 16);
+        int entropy_ready = smp_random_bytes(pairing_random, 16);
         uint8_t same_link = gap_conn.link_state.active && generation == gap_security_generation;
 
         if (entropy_ready && same_link)
@@ -2733,7 +2697,8 @@ static void gap_smp_poll(void) {
 
         if (!entropy_ready) {
             error = 8;
-            goto failed;
+            gap_smp_fail(error);
+            return;
         }
 
         if (gap_smp.bearer.pairing.secure_connections) {
@@ -2750,7 +2715,8 @@ static void gap_smp_poll(void) {
                     if (!gap_conn.link_state.active || generation != gap_security_generation)
                         return;
                     error = 8;
-                    goto failed;
+                    gap_smp_fail(error);
+                    return;
                 }
 
                 if (p[2])
@@ -2768,7 +2734,8 @@ static void gap_smp_poll(void) {
                 if (!gap_conn.link_state.active || generation != gap_security_generation)
                     return;
                 error = 8;
-                goto failed;
+                gap_smp_fail(error);
+                return;
             }
         }
         if (gap_smp.bearer.pairing.passkey_action == GAP_PASSKEY_DISPLAY) {
@@ -2777,9 +2744,10 @@ static void gap_smp_poll(void) {
             uint32_t value;
 
             do {
-                if (++attempts > 8 || !ble_smp_random_bytes(bytes, 4)) {
-                    error = 8; goto failed;
-
+                if (++attempts > 8 || !smp_random_bytes(bytes, 4)) {
+                    error = 8;
+                    gap_smp_fail(error);
+                    return;
                 }
                 if (!gap_conn.link_state.active || generation != gap_security_generation)
                     return;
@@ -2868,7 +2836,9 @@ static void gap_smp_poll(void) {
             if (!gap_conn.link_state.active || generation != gap_security_generation)
                 return;
             error = 0x0b;
-            goto failed; // Invalid P-256 point or reflected key.
+            // Invalid P-256 point or reflected key.
+            gap_smp_fail(error);
+            return;
         }
         if (gap_smp.bearer.pairing.sc.oob_active &&
             gap_smp.bearer.pairing.sc.oob_peer_present) {
@@ -2882,7 +2852,8 @@ static void gap_smp_poll(void) {
             for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
             if (difference) {
                 error = 4;
-                goto failed;
+                gap_smp_fail(error);
+                return;
             }
         }
         if (!gap_conn.link_state.central_role) {
@@ -2946,7 +2917,9 @@ static void gap_smp_poll(void) {
         volatile uint8_t *confirm_wipe = confirm;
         for (size_t i = 0; i < sizeof(confirm); i++) confirm_wipe[i] = 0;
         if (difference) {
-            error = 4; goto failed;
+            error = 4;
+            gap_smp_fail(error);
+            return;
         }
 
         memcpy(gap_smp.bearer.pairing.sc.peer_random, p + 1, 16);
@@ -2958,7 +2931,7 @@ static void gap_smp_poll(void) {
             // generation completes for this same connection.
             uint8_t next_nonce[16];
             uint32_t generation = gap_security_generation;
-            int entropy_ready = ble_smp_random_bytes(next_nonce, sizeof(next_nonce));
+            int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
             int same_link = gap_conn.link_state.active && generation == gap_security_generation;
             if (entropy_ready && same_link)
                 memcpy(gap_smp.bearer.pairing.random, next_nonce, sizeof(next_nonce));
@@ -2967,7 +2940,9 @@ static void gap_smp_poll(void) {
             for (size_t i = 0; i < sizeof(next_nonce); i++) nonce_wipe[i] = 0;
             if (!same_link) return;
             if (!entropy_ready) {
-                error = 8; goto failed;
+                error = 8;
+                gap_smp_fail(error);
+                return;
             }
             gap_smp.bearer.pairing.sc.passkey_round++;
             if (gap_conn.link_state.central_role) {
@@ -3042,7 +3017,9 @@ static void gap_smp_poll(void) {
         gap_sc_dhkey_check(!gap_conn.link_state.central_role, check);
         for (uint8_t i = 0; i < 16; i++) difference |= check[i] ^ p[i + 1];
         if (difference) {
-            error = 0x0b; goto failed;
+            error = 0x0b;
+            gap_smp_fail(error);
+            return;
         }
 
         if (!gap_conn.link_state.central_role) {
@@ -3081,7 +3058,9 @@ static void gap_smp_poll(void) {
         for (unsigned i = 0; i < 16; i++)
             difference |= confirm[i] ^ gap_smp.bearer.pairing.peer_confirm[i];
         if (difference) {
-            error = 4; goto failed;
+            error = 4;
+            gap_smp_fail(error);
+            return;
         }
 
         const uint8_t *initiator_random =
@@ -3089,10 +3068,12 @@ static void gap_smp_poll(void) {
         const uint8_t *responder_random =
             gap_conn.link_state.central_role ? p + 1 : gap_smp.bearer.pairing.random;
 
-        if (!ble_smp_legacy_s1(&gap_smp.bearer, gap_smp.bearer.pairing.tk,
+        if (!smp_legacy_s1(&gap_smp.bearer, gap_smp.bearer.pairing.tk,
                 initiator_random, responder_random, gap_smp.bearer.pairing.stk)
         ) {
-            error = SMP_FAIL_UNSPECIFIED; goto failed;
+            error = SMP_FAIL_UNSPECIFIED;
+            gap_smp_fail(error);
+            return;
         }
 
         volatile uint8_t *tk_wipe = gap_smp.bearer.pairing.tk;
@@ -3105,7 +3086,6 @@ static void gap_smp_poll(void) {
         return;
     }
     if (op >= 6 && op != 11) error = 7; // Unsupported method/key distribution.
-failed:
     gap_smp_fail(error);
 }
 

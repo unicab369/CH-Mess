@@ -41,17 +41,17 @@ int main(void) {
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
     if (!ble_l2cap_connection_register_fixed(&l2cap, BLE_L2CAP_CID_SMP,
-            ble_smp_receive_sdu, &smp))
+            smp_receive_sdu, &smp))
         return 1;
 
     const uint8_t request[] = {SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};
-    if (!ble_smp_pdu_valid(request, sizeof(request)) || smp.tx_len)
+    if (!smp_pdu_valid(request, sizeof(request)) || smp.tx_len)
         return 2;
     memcpy(smp.tx, request, sizeof(request));
     smp.tx_len = sizeof(request);
     smp.procedure_active = 1;
     smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
-    if (!ble_smp_poll(&smp) || !outbound_len ||
+    if (!smp_poll(&smp) || !outbound_len ||
         !write_record(outbound, outbound_len))
         return 2;
 

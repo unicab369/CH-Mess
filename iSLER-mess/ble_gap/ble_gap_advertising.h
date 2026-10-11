@@ -473,6 +473,13 @@ int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
 // Scanning and connection discovery
 // =============================================================================
 
+// Advertisement saved while an active scan requests its scan response.
+static struct {
+    uint8_t frame[2 + 37];
+    volatile uint8_t ready;
+    volatile int8_t rssi;
+} gap_adv_scan;
+
 typedef struct {
     // Received advertising PDU and advertiser address.
     uint8_t pdu_type;
