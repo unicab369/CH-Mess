@@ -774,9 +774,9 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_scan_poll();
     int slot = gap_aux_request[0].active ? 0 : 1;
     assert(gap_aux_request[slot].active);
-    assert(gap_aux_request[slot].window_start_ticks == 500311 &&
-           gap_aux_request[slot].window_end_ticks == 500347);
-    fake_radio_ticks = gap_aux_request[slot].window_start_ticks;
+    assert(gap_aux_request[slot].start_ticks == 500311 &&
+           gap_aux_request[slot].end_ticks == 500347);
+    fake_radio_ticks = gap_aux_request[slot].start_ticks;
     gap_hw_scan_poll();
     assert(gap_ext_scan.aux_listening);
     assert(configured_access_address == BLE_ADV_ACCESS_ADDRESS);
@@ -787,7 +787,7 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_received();
     gap_hw_scan_poll();
     assert(gap_aux_request[slot].active);
-    fake_radio_ticks = gap_aux_request[slot].window_start_ticks;
+    fake_radio_ticks = gap_aux_request[slot].start_ticks;
     gap_hw_scan_poll();
     assert(gap_ext_scan.aux_listening);
 
@@ -1409,10 +1409,10 @@ static void test_pawr_connection_accept(void) {
     static const uint8_t advertiser[6] = {9, 8, 7, 6, 5, 4};
     static const uint8_t local_address[6] = {1, 2, 3, 4, 5, 6};
     uint8_t request[36] = {0};
-    gap_periodic_sync_context *sync = &gap_periodic_syncs[0];
+    gap_periodic_sync_context *sync = &gap_syncs[0];
     memset(&gap_conn, 0, sizeof(gap_conn));
     memset(&gap_central, 0, sizeof(gap_central));
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
     gap_own_address_type = 0;
     gap_privacy.connection_filter = 0;
@@ -1491,7 +1491,7 @@ static void test_pawr_connection_accept(void) {
            gap_conn.next_event_ticks == 8002500);
 
     gap_conn_end();
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_rx_armed = 0;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
@@ -1502,7 +1502,7 @@ static void test_pawr_observer_response(void) {
     static const uint8_t subevent_pdu[] = {
         0x07, 7, 3, 0x08, 0x02, 0x60, 2, 0x01, 0x06
     };
-    gap_periodic_sync_context *sync = &gap_periodic_syncs[0];
+    gap_periodic_sync_context *sync = &gap_syncs[0];
     gap_periodic_report report;
     gap_scan_stop();
     memset(&gap_conn, 0, sizeof(gap_conn));
@@ -1512,7 +1512,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.periodic_listening = 0;
     gap_ext_scan.aux_listening = 0;
     gap_scan.applied_generation = gap_scanner.generation;
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_periodic_report_head = gap_periodic_report_count = 0;
     memset(sync, 0, sizeof(*sync));
     sync->used = sync->established = 1;
@@ -1551,11 +1551,11 @@ static void test_pawr_observer_response(void) {
     fake_radio_tick_autoincrement = 0;
     captured_extended_count = 0;
     gap_hw_scan_poll(); // Calculate the selected subevent receive window.
-    assert(sync->window_active && sync->window_start_ticks <=
-           sync->window_end_ticks);
-    fake_radio_ticks = sync->window_start_ticks;
-    assert(fake_radio_ticks >= sync->window_start_ticks &&
-           fake_radio_ticks <= sync->window_end_ticks);
+    assert(sync->window_active && sync->start_ticks <=
+           sync->end_ticks);
+    fake_radio_ticks = sync->start_ticks;
+    assert(fake_radio_ticks >= sync->start_ticks &&
+           fake_radio_ticks <= sync->end_ticks);
     gap_hw_scan_poll();
     assert(gap_ext_scan.periodic_listening &&
            configured_radio_channel == gap_periodic_channel_for(
@@ -1636,7 +1636,7 @@ static void test_periodic_advertising_sync(void) {
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
     gap_scan_stop();
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
     int handle = gap_periodic_sync_start(0, advertiser, 6, 1000);
     assert(handle == 1 && gap_scanner.scanning);
@@ -1676,7 +1676,7 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.ready = 1;
     gap_hw_scan_poll();
-    assert(!gap_periodic_syncs[0].window_active);
+    assert(!gap_syncs[0].window_active);
 
     gap_ext_adv_fields decoded_sync_info;
     sync_info_pdu[13] = 0x20; // 300 us units are invalid for this short offset.
@@ -1692,40 +1692,40 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.rssi = -35;
     gap_ext_scan.ready = 1;
     gap_hw_scan_poll();
-    assert(gap_periodic_syncs[0].window_active &&
-           !gap_periodic_syncs[0].established &&
-           gap_periodic_syncs[0].event_counter == 5 &&
-           gap_periodic_syncs[0].access_address == 0x12345678 &&
-           gap_periodic_syncs[0].has_pawr_timing &&
-           gap_periodic_syncs[0].pawr_num_subevents == 2 &&
-           gap_periodic_syncs[0].pawr_subevent_interval == 6 &&
-           gap_periodic_syncs[0].pawr_response_slot_delay == 1 &&
-           gap_periodic_syncs[0].pawr_response_slot_spacing == 2 &&
-           gap_periodic_syncs[0].response_access_address == 0x78563412);
+    assert(gap_syncs[0].window_active &&
+           !gap_syncs[0].established &&
+           gap_syncs[0].event_counter == 5 &&
+           gap_syncs[0].access_address == 0x12345678 &&
+           gap_syncs[0].has_pawr_timing &&
+           gap_syncs[0].pawr_num_subevents == 2 &&
+           gap_syncs[0].pawr_subevent_interval == 6 &&
+           gap_syncs[0].pawr_response_slot_delay == 1 &&
+           gap_syncs[0].pawr_response_slot_spacing == 2 &&
+           gap_syncs[0].response_access_address == 0x78563412);
 
-    uint64_t first_event = gap_periodic_syncs[0].next_event_ticks;
-    fake_radio_ticks = gap_periodic_syncs[0].window_start_ticks;
+    uint64_t first_event = gap_syncs[0].next_event_ticks;
+    fake_radio_ticks = gap_syncs[0].start_ticks;
     gap_hw_scan_poll();
     assert(gap_ext_scan.periodic_listening &&
            configured_access_address == 0x12345678 &&
            configured_crc_init == 0x123456 &&
            configured_radio_channel ==
                gap_periodic_channel_for(0x12345678,
-                   gap_periodic_syncs[0].channel_map, 5));
+                   gap_syncs[0].channel_map, 5));
 
     fake_radio_ticks = first_event + 152;
     memcpy(rx_frame, sync_ind, sizeof(sync_ind));
     gap_hw_received();
     gap_hw_scan_poll();
-    assert(gap_periodic_syncs[0].established &&
-           gap_periodic_syncs[0].event_counter == 6 &&
-           gap_periodic_syncs[0].event_data_active &&
-           gap_periodic_syncs[0].window_chain);
+    assert(gap_syncs[0].established &&
+           gap_syncs[0].event_counter == 6 &&
+           gap_syncs[0].event_data_active &&
+           gap_syncs[0].window_chain);
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.handle == handle && event.sid == 6);
 
-    uint64_t chain_window_start = gap_periodic_syncs[0].window_start_ticks;
+    uint64_t chain_window_start = gap_syncs[0].start_ticks;
     fake_radio_ticks = chain_window_start;
     gap_hw_scan_poll();
     assert(gap_ext_scan.periodic_listening && configured_radio_channel == 1);
@@ -1742,7 +1742,7 @@ static void test_periodic_advertising_sync(void) {
     assert(gap_periodic_sync_stop((uint8_t)handle, 1));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED &&
-           event.handle == handle && !gap_periodic_syncs[0].used);
+           event.handle == handle && !gap_syncs[0].used);
     assert(!gap_scanner.scanning);
 
     int pending = gap_periodic_sync_start(0, advertiser, 7, 1000);
@@ -1765,14 +1765,14 @@ static void test_periodic_advertising_sync(void) {
     gap_ext_scan.ready = 1;
     gap_hw_scan_poll();
     for (uint8_t missed = 0; missed < 6; missed++) {
-        assert(gap_periodic_syncs[0].used);
-        fake_radio_ticks = gap_periodic_syncs[0].window_start_ticks;
+        assert(gap_syncs[0].used);
+        fake_radio_ticks = gap_syncs[0].start_ticks;
         gap_hw_scan_poll();
         assert(gap_ext_scan.periodic_listening);
-        fake_radio_ticks = gap_periodic_syncs[0].window_end_ticks + 1;
+        fake_radio_ticks = gap_syncs[0].end_ticks + 1;
         gap_hw_scan_poll();
     }
-    assert(!gap_periodic_syncs[0].used &&
+    assert(!gap_syncs[0].used &&
            gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST &&
            event.handle == missed_handle);
@@ -1784,7 +1784,7 @@ static void test_coded_aux_receive_timing(void) {
     uint8_t old_phy_mask = radio_phy_mask;
     assert(gap_phy_packet_airtime_us(27, GAP_PHY_CODED) == 2704);
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     radio_phy_mask = 7;
     fields.has_aux_ptr = 1;
     fields.aux_channel = 18;
@@ -1795,15 +1795,15 @@ static void test_coded_aux_receive_timing(void) {
     assert(gap_aux_request[0].active &&
            gap_aux_request[0].phy == GAP_PHY_CODED &&
            gap_aux_request[0].channel == 18 &&
-           gap_aux_request[0].window_start_ticks > 100000 &&
-           gap_aux_request[0].window_end_ticks >
-               gap_aux_request[0].window_start_ticks);
+           gap_aux_request[0].start_ticks > 100000 &&
+           gap_aux_request[0].end_ticks >
+               gap_aux_request[0].start_ticks);
     uint8_t old_tick_mode = fake_radio_ticks_enabled;
     uint8_t old_tick_auto = fake_radio_tick_autoincrement;
     uint64_t old_ticks = fake_radio_ticks;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
-    fake_radio_ticks = gap_aux_request[0].window_start_ticks;
+    fake_radio_ticks = gap_aux_request[0].start_ticks;
     gap_scan.applied_generation = gap_scanner.generation;
     gap_active_scan_pending = 0;
     gap_rx_armed = gap_ext_scan.aux_listening = 0;
@@ -1822,18 +1822,18 @@ static void test_coded_aux_receive_timing(void) {
                                        100000, -1));
 
     radio_phy_mask = 7;
-    gap_periodic_syncs[0].used = 1;
+    gap_syncs[0].used = 1;
     assert(gap_periodic_aux_schedule(&fields, 27,
         GAP_PHY_CODED, 200000, 0));
-    assert(gap_periodic_syncs[0].window_active &&
-           gap_periodic_syncs[0].window_chain &&
-           gap_periodic_syncs[0].aux_phy == GAP_PHY_CODED &&
-           gap_periodic_syncs[0].aux_channel == 18 &&
-           gap_periodic_syncs[0].window_start_ticks > 200000 &&
-           gap_periodic_syncs[0].window_end_ticks >
-               gap_periodic_syncs[0].window_start_ticks);
+    assert(gap_syncs[0].window_active &&
+           gap_syncs[0].window_chain &&
+           gap_syncs[0].aux_phy == GAP_PHY_CODED &&
+           gap_syncs[0].aux_channel == 18 &&
+           gap_syncs[0].start_ticks > 200000 &&
+           gap_syncs[0].end_ticks >
+               gap_syncs[0].start_ticks);
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     radio_phy_mask = old_phy_mask;
 }
 
@@ -1888,7 +1888,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
     memset(&gap_conn, 0, sizeof(gap_conn));
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_rx_armed = gap_active_scan_pending = 0;
     gap_ext_scan.periodic_listening = gap_ext_scan.aux_listening = 0;
     gap_ext_scan.ready = 0;
@@ -1899,7 +1899,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_conn.last_rx_ms = now_ms;
     gap_conn.next_event_ticks = fake_radio_ticks + HW_TICKS_FROM_US(20000);
 
-    gap_periodic_sync_context *sync = &gap_periodic_syncs[0];
+    gap_periodic_sync_context *sync = &gap_syncs[0];
     sync->used = sync->established = 1;
     sync->handle = 1;
     sync->interval = 8;
@@ -1916,7 +1916,7 @@ static void test_periodic_sync_connection_arbitration(void) {
 
     // A periodic event outside the connection guard window can use the radio.
     gap_hw_scan_poll();
-    fake_radio_ticks = sync->window_start_ticks;
+    fake_radio_ticks = sync->start_ticks;
     gap_hw_scan_poll();
     assert(gap_ext_scan.periodic_listening);
 
@@ -1930,13 +1930,13 @@ static void test_periodic_sync_connection_arbitration(void) {
     sync->window_active = 0;
     gap_conn.next_event_ticks = fake_radio_ticks + HW_TICKS_FROM_US(2200);
     gap_hw_scan_poll();
-    fake_radio_ticks = sync->window_start_ticks;
+    fake_radio_ticks = sync->start_ticks;
     gap_hw_scan_poll();
     assert(!gap_ext_scan.periodic_listening && sync->missed_events == 2 &&
            sync->event_counter == 5);
 
     memset(&gap_conn, 0, sizeof(gap_conn));
-    memset(gap_periodic_syncs, 0, sizeof(gap_periodic_syncs));
+    memset(gap_syncs, 0, sizeof(gap_syncs));
     fake_radio_ticks_enabled = 0;
 }
 
@@ -2860,17 +2860,17 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_conn.rx_armed = 1;
     gap_hw_received();
     memcpy(valid_transfer, rx_frame, sizeof(valid_transfer));
-    assert(gap_conn.active && gap_periodic_syncs[0].used &&
-           !gap_periodic_syncs[0].established &&
-           gap_periodic_syncs[0].handle == 1 &&
-           gap_periodic_syncs[0].sid == 6 &&
-           gap_periodic_syncs[0].phy == GAP_PHY_1M &&
-           gap_periodic_syncs[0].event_counter == 5 &&
-           gap_periodic_syncs[0].widening_ppm == 1500 &&
-           gap_periodic_syncs[0].window_active &&
-           !memcmp(gap_periodic_syncs[0].address, advertiser, 6));
+    assert(gap_conn.active && gap_syncs[0].used &&
+           !gap_syncs[0].established &&
+           gap_syncs[0].handle == 1 &&
+           gap_syncs[0].sid == 6 &&
+           gap_syncs[0].phy == GAP_PHY_1M &&
+           gap_syncs[0].event_counter == 5 &&
+           gap_syncs[0].widening_ppm == 1500 &&
+           gap_syncs[0].window_active &&
+           !memcmp(gap_syncs[0].address, advertiser, 6));
 
-    uint64_t first_event = gap_periodic_syncs[0].next_event_ticks;
+    uint64_t first_event = gap_syncs[0].next_event_ticks;
     assert(gap_periodic_sync_receive(0, first_periodic_event,
         sizeof(first_periodic_event), GAP_PHY_1M, -40,
         first_event + 152));
@@ -2913,13 +2913,13 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[28] = 3; // Reserved periodic PHY encoding.
     gap_conn.rx_armed = 1;
     gap_hw_received();
-    assert(gap_conn.active && !gap_periodic_syncs[0].used);
+    assert(gap_conn.active && !gap_syncs[0].used);
     rx_frame[0] = 3 | (gap_conn.expected_rx_sn << 3) |
         ((gap_conn.tx_sn ^ 1) << 2);
     rx_frame[28] = 1;
     gap_conn.rx_armed = 1;
     gap_hw_received();
-    assert(gap_conn.active && !gap_periodic_syncs[0].used);
+    assert(gap_conn.active && !gap_syncs[0].used);
 
     // An accepted transfer that never receives its first PA event times out.
     assert(gap_periodic_sync_enable(1, 100));
@@ -2933,10 +2933,10 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[36] = (uint8_t)(timeout_event >> 8);
     gap_conn.rx_armed = 1;
     gap_hw_received();
-    assert(gap_periodic_syncs[0].used && !gap_periodic_syncs[0].established);
+    assert(gap_syncs[0].used && !gap_syncs[0].established);
     now_ms += 100;
     gap_hw_scan_poll();
-    assert(!gap_periodic_syncs[0].used &&
+    assert(!gap_syncs[0].used &&
            gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST);
     gap_conn_end();

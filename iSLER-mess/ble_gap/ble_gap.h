@@ -365,20 +365,21 @@ typedef struct {
     uint32_t access_address, crc_init, last_rx_ms;
     uint64_t next_ticks;
 } gap_conn_context;
-static gap_conn_context gap_conn_contexts[GAP_CONNECTION_COUNT];
-static uint8_t gap_conn_slot;
-static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 
-#define gap_conn gap_conn_contexts[gap_conn_slot]
+static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
+static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
+static uint8_t gap_conn_slot;
+
+#define gap_conn gap_conn_ctx[gap_conn_slot]
 int gap_conn_busy(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (gap_conn_contexts[slot].active) return 1;
+        if (gap_conn_ctx[slot].active) return 1;
     return 0;
 }
 
 static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (!gap_conn_contexts[slot].active) return slot;
+        if (!gap_conn_ctx[slot].active) return slot;
     return -1;
 }
 // Public connection handles identify a live slot generation, so a handle
@@ -391,7 +392,7 @@ typedef struct {
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        count += gap_conn_contexts[slot].active != 0;
+        count += gap_conn_ctx[slot].active != 0;
     return count;
 }
 
@@ -401,7 +402,7 @@ static inline int gap_conn_handle_at(
 ) {
     if (!handle) return 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!gap_conn_contexts[slot].active) continue;
+        if (!gap_conn_ctx[slot].active) continue;
         if (index--) continue;
         handle->slot = slot;
         handle->generation = gap_conn_generations[slot];
@@ -415,7 +416,7 @@ static inline int gap_conn_select(
     gap_conn_handle handle
 ) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
-        !gap_conn_contexts[handle.slot].active ||
+        !gap_conn_ctx[handle.slot].active ||
         gap_conn_generations[handle.slot] != handle.generation)
         return 0;
     gap_conn_slot = handle.slot;
