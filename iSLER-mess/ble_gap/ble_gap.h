@@ -327,14 +327,10 @@ typedef struct {
     uint32_t params_started_ms;
     uint16_t update_instant, update_win_offset, channel_map_instant;
 
-    // Peer features, subrating, and connection rate control.
-    uint8_t features_known, peer_features, peer_features2, peer_features4;
-    uint8_t peer_features7;
-    uint8_t feature_ext_pending;
-    uint8_t feature_page1_known, rate_set_queued, rate_request_queued;
+    // Subrating and connection rate control.
+    uint8_t rate_set_queued, rate_request_queued;
     uint8_t rate_update_pending, rate_req_pending;
     uint8_t rate_ack_waiting;
-    uint8_t peer_features_page1[8];
 
     // PHY negotiation.
     gap_conn_phy phy, preferred_phy, pending_phy;
@@ -384,6 +380,11 @@ typedef struct {
         uint32_t started_ms;
     } subrate;
     struct {
+        uint8_t known, peer[8];
+        uint8_t ext_pending, page1_known, peer_page1[8];
+        uint8_t request_pending;
+    } features;
+    struct {
         uint8_t report_queued, report_pending, status_queued;
         uint8_t enabled, classification_valid, peer_classification_valid;
         uint8_t status_last_sent_valid;
@@ -396,7 +397,6 @@ typedef struct {
         uint8_t update_window_active;
         uint8_t timing_update, channel_map;
         uint8_t params, params_local;
-        uint8_t feature_req;
         uint8_t phy_request, phy_update;
         uint8_t length;
     } pending;
@@ -536,9 +536,9 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
     const uint8_t frame[36],
-                                            uint64_t received_ticks,
-                                            uint64_t interval_unit_ticks,
-                                            uint64_t window_delay_ticks
+    uint64_t received_ticks,
+    uint64_t interval_unit_ticks,
+    uint64_t window_delay_ticks
 ) {
     if (!gap_conn_request_valid(frame)) return 0;
     int free_slot = gap_conn_free_slot();
@@ -572,7 +572,6 @@ static int gap_conn_accept(
     gap_conn.procedures.params.supervision_timeout = timeout;
     memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
     gap_conn.subrate.factor = 1;
-    gap_conn.procedures.peer_features4 = 0;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     gap_conn.procedures.window_size = win_size;
@@ -588,10 +587,7 @@ static int gap_conn_accept(
     gap_conn.procedures.tx_l2cap_remaining = 0;
     gap_conn.link.event_counter = 0;
     memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
-    gap_conn.procedures.features_known = gap_conn.procedures.peer_features = gap_conn.procedures.peer_features2 = 0;
-    gap_conn.procedures.peer_features4 = 0;
-    gap_conn.procedures.peer_features7 = 0;
-    gap_conn.procedures.feature_page1_known = gap_conn.procedures.feature_ext_pending = 0;
+    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
     gap_conn.procedures.rate_set_queued = gap_conn.procedures.rate_request_queued = 0;
     gap_conn.procedures.rate_update_pending = gap_conn.procedures.rate_req_pending = 0;
     memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
@@ -599,8 +595,6 @@ static int gap_conn_accept(
     gap_conn.channel.min_spacing_200ms = 5;
     gap_conn.channel.max_delay_200ms = 5;
     gap_conn.channel.status_changed_ms = GET_MILLIS();
-    memset(gap_conn.procedures.peer_features_page1, 0,
-           sizeof(gap_conn.procedures.peer_features_page1));
     gap_conn.procedures.phy.tx = gap_conn.procedures.phy.rx = GAP_PHY_1M;
     gap_conn.procedures.preferred_phy.tx = gap_conn.procedures.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
     gap_conn.procedures.phy_status = 0;

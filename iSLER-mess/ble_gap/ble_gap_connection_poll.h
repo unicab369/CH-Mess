@@ -13,7 +13,7 @@ static void gap_conn_send_queued(void) {
         gap_send_conn_update();
     if (gap_conn.queue.local_map_queued)
         gap_send_channel_map();
-    if (gap_conn.queue.local_params_queued && !gap_conn.pending.feature_req)
+    if (gap_conn.queue.local_params_queued && !gap_conn.features.request_pending)
         gap_send_conn_request();
     if (gap_conn.queue.length_queued)
         gap_send_data_length(0x14);
@@ -708,8 +708,8 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((gap_conn.pending.params || gap_conn.pending.feature_req ||
-         gap_conn.procedures.feature_ext_pending || gap_conn.procedures.rate_req_pending ||
+    if ((gap_conn.pending.params || gap_conn.features.request_pending ||
+         gap_conn.features.ext_pending || gap_conn.procedures.rate_req_pending ||
          gap_conn.procedures.rate_update_pending) &&
         (uint32_t)(now_ms - gap_conn.procedures.params_started_ms) >= 40000
     ) {

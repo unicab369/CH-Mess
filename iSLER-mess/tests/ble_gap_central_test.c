@@ -3043,9 +3043,9 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn_update(48, 1, 300));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(gap_conn.pending.feature_req && gap_tx_frame[2] == 0x08);
+    assert(gap_conn.features.request_pending && gap_tx_frame[2] == 0x08);
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_conn.procedures.features_known && gap_conn.pending.params);
+    assert(gap_conn.features.known && gap_conn.pending.params);
     assert(gap_tx_frame[2] == 0x0f && gap_tx_frame[1] == 24);
     assert(memcmp(gap_tx_frame + 3, parameters, 8) == 0);
     for (uint8_t i = 14; i < 26; i++) assert(gap_tx_frame[i] == 0xff);
@@ -3131,7 +3131,7 @@ static void test_connection_parameter_requests(void) {
 
     // A responsive link with a stalled procedure still has a 40-second timeout.
     start_test_central_link();
-    gap_conn.procedures.features_known = 1; gap_conn.procedures.peer_features = 0x0e;
+    gap_conn.features.known = 1; gap_conn.features.peer[0] = 0x0e;
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     now_ms = gap_conn.procedures.params_started_ms + 40000;
@@ -3238,10 +3238,10 @@ static void test_data_length(void) {
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.procedures.features_known = 1; gap_conn.procedures.peer_features = 0x0e;
+    gap_conn.features.known = 1; gap_conn.features.peer[0] = 0x0e;
     assert(!gap_data_length_set(capacity));
     assert(gap_data_length_status() == 0x1a);
-    gap_conn.procedures.features_known = 0;
+    gap_conn.features.known = 0;
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
     now_ms = gap_conn.procedures.length_started_ms + 40000;
@@ -3684,21 +3684,21 @@ static void test_extended_feature_page(void) {
     assert(gap_tx_frame[3] == 1 && gap_tx_frame[4] == 1);
     uint8_t page_response[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page_response, sizeof(page_response));
-    assert(!gap_conn.procedures.feature_ext_pending &&
-           gap_conn.procedures.peer_features_page1[1] == 0x03);
+    assert(!gap_conn.features.ext_pending &&
+           gap_conn.features.peer_page1[1] == 0x03);
     gap_conn_end();
 }
 
 static void test_connection_rate_exchange(void) {
     start_test_central_link();
-    assert(!gap_conn.procedures.feature_page1_known && !gap_conn.procedures.peer_features7);
+    assert(!gap_conn.features.page1_known && !gap_conn.features.peer[7]);
     assert(gap_conn_rate_set(80, 2, 0, 1, 100));
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x08);
     uint8_t features[8] = {0};
     features[7] = 0x80;
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_tx_frame[2] == 0x2b && gap_conn.procedures.feature_ext_pending);
+    assert(gap_tx_frame[2] == 0x2b && gap_conn.features.ext_pending);
     uint8_t page[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page, sizeof(page));
     assert(gap_tx_frame[2] == 0x3f && gap_tx_frame[1] == 15);
@@ -3746,7 +3746,7 @@ static void test_connection_rate_exchange(void) {
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.procedures.peer_features_page1[1] = 0x03;
+    gap_conn.features.peer_page1[1] = 0x03;
     uint8_t request[26] = {
         60, 0, 120, 0, 2, 0, 4, 0, 1, 0, 1, 0, 200, 0,
         0, 0, 0, 0
@@ -3767,8 +3767,8 @@ static void test_channel_classification_reporting(void) {
     classification[0] = 0x0d; // Channel 0 good; channel 1 bad.
 
     start_test_central_link();
-    gap_conn.procedures.features_known = 1;
-    gap_conn.procedures.peer_features4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    gap_conn.features.known = 1;
+    gap_conn.features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_reporting_set(1, 5, 10));
     gap_channel_reporting_start_queued();
     assert(gap_tx_frame[2] == 0x28 && gap_tx_frame[1] == 4 &&
@@ -3785,8 +3785,8 @@ static void test_channel_classification_reporting(void) {
 
     start_test_central_link();
     gap_conn.link_state.central_role = 0;
-    gap_conn.procedures.features_known = 1;
-    gap_conn.procedures.peer_features4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    gap_conn.features.known = 1;
+    gap_conn.features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_classification_set(classification));
     uint8_t reserved_value[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
     reserved_value[0] = 2; // Classification value 2 is reserved.
