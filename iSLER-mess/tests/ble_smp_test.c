@@ -83,21 +83,18 @@ int main(void) {
     for (unsigned i = 0; i < sizeof(output); i++) assert(output[i] == 0);
     fake.crypto_fail = 0;
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};
-    const uint8_t *pending_pdu;
-    uint16_t pending_len;
     memcpy(smp.rx, pairing_request, sizeof(pairing_request));
     smp.rx_len = sizeof(pairing_request);
-    assert(smp_take_received(&smp, &pending_pdu, &pending_len));
-    assert(pending_len == sizeof(pairing_request) &&
-           !memcmp(pending_pdu, pairing_request, pending_len));
-    assert(!smp_take_received(&smp, &pending_pdu, &pending_len));
+    assert(smp.rx_len == sizeof(pairing_request) &&
+           !memcmp(smp.rx, pairing_request, smp.rx_len));
+    smp.rx_len = 0;
     assert(smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
            !smp.tx_len);
     assert(ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
         pairing_request, sizeof(pairing_request)));
-    assert(smp_take_received(&smp, &pending_pdu, &pending_len));
-    assert(pending_len == sizeof(pairing_request) &&
-           !memcmp(pending_pdu, pairing_request, pending_len));
+    assert(smp.rx_len == sizeof(pairing_request) &&
+           !memcmp(smp.rx, pairing_request, smp.rx_len));
+    smp.rx_len = 0;
     uint8_t l2cap_packet[sizeof(pairing_request) + 4];
     assert(ble_l2cap_encode(l2cap_packet, sizeof(l2cap_packet),
         BLE_L2CAP_CID_SMP, pairing_request, sizeof(pairing_request)) ==
@@ -111,9 +108,9 @@ int main(void) {
         sizeof(l2cap_packet) - 6, &cid, &sdu, &sdu_len) == 1);
     assert(cid == BLE_L2CAP_CID_SMP &&
         ble_l2cap_connection_receive(&l2cap, cid, sdu, sdu_len));
-    assert(smp_take_received(&smp, &pending_pdu, &pending_len));
-    assert(pending_len == sizeof(pairing_request) &&
-           !memcmp(pending_pdu, pairing_request, pending_len));
+    assert(smp.rx_len == sizeof(pairing_request) &&
+           !memcmp(smp.rx, pairing_request, smp.rx_len));
+    smp.rx_len = 0;
     const uint8_t invalid_length[] = {0x01, 0x03};
     assert(!ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
         invalid_length, sizeof(invalid_length)));
