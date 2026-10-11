@@ -423,7 +423,7 @@ static inline int smp_poll(ble_smp *smp) {
 // Values use SMP byte order.
 typedef struct {
     uint8_t random[16], confirm[16];
-} gap_sc_oob_data;
+} gap_oob_data;
 
 #define GAP_BOND_SLOTS 4
 #define GAP_BOND_VERSION_LEGACY 1
@@ -476,13 +476,13 @@ typedef struct {
         uint8_t private_key[32], public_key[64], peer_public_key[64];
         uint8_t dhkey[32], mac_key[16], ltk[16], peer_random[16];
         uint8_t oob_active, oob_peer_present;
-        uint8_t oob_local_random[16], oob_peer_random[16];
-        uint8_t oob_peer_confirm[16];
+        uint8_t oob_local_random[16];
         uint8_t numeric_required, numeric_reply;
         uint8_t passkey_required, passkey_round;
         uint8_t peer_check_rx, peer_check[16];
         uint32_t numeric_value;
     } secure;
+    gap_oob_data oob_peer;
     uint8_t l2cap_ready, l2cap_rx_pending;
     uint32_t started_ms;
 } gap_smp_context;
@@ -492,14 +492,14 @@ static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 
 typedef struct {
     uint8_t valid, private_key[32], public_key[64];
-    gap_sc_oob_data data;
+    gap_oob_data data;
 } gap_oob_local;
 
 static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
 
 typedef struct {
     uint8_t valid;
-    gap_sc_oob_data data;
+    gap_oob_data data;
 } gap_oob_peer;
 
 static gap_oob_peer gap_oob_peers[GAP_CONNECTION_COUNT];
@@ -680,7 +680,7 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     if (gap_smp.secure.oob_active) {
         const uint8_t *oob_random = from_central == gap_conn.link_state.central_role
                                         ? gap_smp.secure.oob_local_random
-                                        : gap_smp.secure.oob_peer_random;
+                                        : gap_smp.oob_peer.random;
         gap_sc_reverse(r, oob_random, 16);
     } else if (gap_smp.secure.passkey_required) {
         r[12] = gap_smp.pairing.tk[3]; r[13] = gap_smp.pairing.tk[2];
@@ -890,7 +890,7 @@ int gap_secure_connections_set(uint8_t enabled) {
 
 // Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
 // The application must deliver both values to the peer over its OOB channel.
-int gap_sc_oob_get(gap_sc_oob_data *out) {
+int gap_sc_oob_get(gap_oob_data *out) {
     if (!out || !gap_pairing_enabled || !gap_pair_cfg.secure_connections ||
         !gap_connected() || gap_encrypted() || gap_smp.pairing.phase ||
         gap_security.phase
@@ -929,7 +929,7 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
 }
 
 // Provide the peer's OOB commitment and random value. Pass NULL to clear it.
-int gap_sc_oob_set_peer(const gap_sc_oob_data *peer) {
+int gap_sc_oob_set_peer(const gap_oob_data *peer) {
     if (!gap_pair_cfg.secure_connections || gap_smp.pairing.phase) return 0;
 
     gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
@@ -2546,13 +2546,9 @@ static void gap_smp_poll(void) {
                     memcpy(gap_smp.secure.oob_local_random,
                            gap_oob_locals[gap_conn_slot].data.random, 16);
                 if (local_oob_flag) {
-                    memcpy(gap_smp.secure.oob_peer_random,
-                           gap_oob_peers[gap_conn_slot].data.random, 16);
-                    memcpy(gap_smp.secure.oob_peer_confirm,
-                           gap_oob_peers[gap_conn_slot].data.confirm, 16);
+                    gap_smp.oob_peer = gap_oob_peers[gap_conn_slot].data;
                 }
-                gap_wipe(&gap_oob_locals[gap_conn_slot],
-                         sizeof(gap_oob_locals[gap_conn_slot]));
+                gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
                 gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
             }
             else if (!gap_sc_generate_key()) {
@@ -2670,9 +2666,9 @@ static void gap_smp_poll(void) {
             uint8_t confirm[16], difference = 0;
             gap_sc_confirm_value(gap_smp.secure.peer_public_key,
                                  gap_smp.secure.peer_public_key,
-                                 gap_smp.secure.oob_peer_random, confirm);
+                                 gap_smp.oob_peer.random, confirm);
             for (uint8_t i = 0; i < 16; i++)
-                difference |= confirm[i] ^ gap_smp.secure.oob_peer_confirm[i];
+                difference |= confirm[i] ^ gap_smp.oob_peer.confirm[i];
             gap_wipe(confirm, sizeof(confirm));
 
             if (difference) {
