@@ -187,9 +187,9 @@ static inline int smp_features_valid(
 static inline int smp_features_parse(
     const uint8_t *pdu, uint16_t len, smp_features *feat
 ) {
-    if (!smp_pdu_valid(pdu, len) ||
+    if (!pdu || len != 7 || !feat ||
         (pdu[0] != SMP_PAIRING_REQUEST &&
-         pdu[0] != SMP_PAIRING_RESPONSE) || !feat
+         pdu[0] != SMP_PAIRING_RESPONSE)
     ) return 0;
 
     feat->io_capability = pdu[1];
