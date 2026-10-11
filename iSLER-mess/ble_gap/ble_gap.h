@@ -279,33 +279,6 @@ static struct {
 } gap_rx;
 
 // Each accepted LE link keeps its independent Link Layer procedure state.
-typedef struct {
-    uint16_t interval, latency, supervision_timeout;
-} gap_conn_parameters;
-
-typedef struct {
-    uint8_t tx, rx;
-} gap_conn_phy;
-
-typedef struct {
-    uint8_t active, rx_armed, event_replied, channel_selected;
-    uint8_t terminate_after_reply, version_ind_sent;
-    uint8_t terminate_queued, terminate_sent;
-    uint8_t central_role, central_anchor_set;
-} gap_conn_link_state;
-
-// Link identity, scheduling, and Link Layer radio state.
-typedef struct {
-    uint8_t first_event;
-    uint8_t local_terminate_reason;
-    uint8_t initiator_type, responder_type, initiator[6], responder[6];
-    uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
-    uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
-    uint16_t interval_125us, peer_sca_ppm, event_counter;
-    uint32_t access_address, crc_init, last_rx_ms;
-    uint64_t next_ticks;
-} gap_conn_link;
-
 // Queues and negotiated procedures associated with the link.
 typedef struct {
     // Radio queues and connection data.
@@ -322,39 +295,34 @@ typedef struct {
     // Connection parameter and channel-map procedures.
     uint8_t pending_channel_map[5];
     uint8_t connection_status;
-    gap_conn_parameters params, new_params;
     uint16_t params_min, params_max, params_latency, params_timeout;
     uint32_t params_started_ms;
     uint16_t update_instant, update_win_offset, channel_map_instant;
-
-    // Subrating and connection rate control.
-    uint8_t rate_set_queued, rate_request_queued;
-    uint8_t rate_update_pending, rate_req_pending;
-    uint8_t rate_ack_waiting;
-
-    // PHY negotiation.
-    gap_conn_phy phy, preferred_phy, pending_phy;
-    uint8_t phy_status;
-    uint16_t phy_instant;
-    uint32_t phy_started_ms;
 
     // Data-length negotiation.
     uint16_t data_capacity, local_tx_octets;
     gap_data_length data_length, remote_data_length;
     uint8_t length_status;
     uint32_t length_started_ms;
-    uint16_t rate_interval_min, rate_interval_max;
-    uint16_t rate_factor_min, rate_factor_max, rate_latency;
-    uint16_t rate_continuation, rate_timeout, rate_periodicity;
-    uint16_t rate_offsets[4];
-    uint16_t rate_interval, rate_win_offset, rate_instant;
-    uint16_t rate_factor, rate_update_latency, rate_update_continuation;
-    uint16_t rate_update_timeout;
 } gap_conn_procedures;
 
 typedef struct {
-    gap_conn_link_state link_state;
-    gap_conn_link link;
+    struct {
+        uint8_t active, rx_armed, event_replied, channel_selected;
+        uint8_t terminate_after_reply, version_ind_sent;
+        uint8_t terminate_queued, terminate_sent;
+        uint8_t central_role, central_anchor_set;
+    } link_state;
+    struct {
+        uint8_t first_event;
+        uint8_t local_terminate_reason;
+        uint8_t initiator_type, responder_type, initiator[6], responder[6];
+        uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
+        uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
+        uint16_t interval_125us, peer_sca_ppm, event_counter;
+        uint32_t access_address, crc_init, last_rx_ms;
+        uint64_t next_ticks;
+    } link;
     uint8_t authenticated, encryption_key_size;
     uint8_t peer_id_type, peer_id_addr[6];
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
@@ -367,6 +335,20 @@ typedef struct {
         volatile uint8_t length_queued;
     } queue;
     gap_conn_procedures procedures;
+    struct {
+        uint8_t set_queued, request_queued, update_pending;
+        uint8_t req_pending, ack_waiting;
+        uint16_t interval_min, interval_max;
+        uint16_t factor_min, factor_max, latency;
+        uint16_t continuation, timeout, periodicity;
+        uint16_t offsets[4];
+        uint16_t interval, win_offset, instant;
+        uint16_t factor, update_latency, update_continuation;
+        uint16_t update_timeout;
+    } rate;
+    struct {
+        uint16_t interval, latency, supervision_timeout;
+    } params, new_params;
     struct {
         uint16_t factor, continuation;
         uint8_t transition, event_activity, event_received, force_event;
@@ -393,6 +375,14 @@ typedef struct {
         uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } channel;
+    struct {
+        struct {
+            uint8_t tx, rx;
+        } current, preferred, pending;
+        uint8_t status;
+        uint16_t instant;
+        uint32_t started_ms;
+    } phy;
     struct {
         uint8_t update_window_active;
         uint8_t timing_update, channel_map;
@@ -511,14 +501,16 @@ static void gap_smp_receive_complete(void);
 static int gap_access_address_valid(uint32_t address);
 
 static int gap_conn_request_valid(const uint8_t frame[36]) {
-    uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
     uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
-    uint8_t win_size = frame[21], hop = frame[35] & 0x1f;
+    uint8_t win_size = frame[21];
+    uint8_t hop = frame[35] & 0x1f;
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !win_size || win_size > 8 || interval < 6 || interval > 3200 ||
-        win_size >= interval || win_offset > interval || latency > 499 ||
+        win_size >= interval ||
+        ((uint16_t)frame[22] | (uint16_t)frame[23] << 8) > interval ||
+        latency > 499 ||
         timeout < 10 || timeout > 3200 || hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
@@ -544,78 +536,89 @@ static int gap_conn_accept(
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
     gap_conn_slot = (uint8_t)free_slot;
+    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
+    memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
+    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
+    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
+    memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
+    memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
+    gap_conn.subrate.factor = 1;
+
+    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
+    uint8_t count = 0;
+
+    for (uint8_t channel = 0; channel < 37; channel++)
+        if (frame[30 + channel / 8] & (1 << (channel % 8)))
+            gap_conn.link.used_channels[count++] = channel;
+
+    gap_conn.link.access_address = (uint32_t)frame[14] |
+                                    (uint32_t)frame[15] << 8 |
+                                    (uint32_t)frame[16] << 16 |
+                                    (uint32_t)frame[17] << 24;
+    gap_conn.link.crc_init = (uint32_t)frame[18] |
+                            (uint32_t)frame[19] << 8 |
+                            (uint32_t)frame[20] << 16;
+
+    memcpy(gap_conn.link.channel_map, frame + 30, 5);
+    gap_conn.link.used_count = count;
+    gap_conn.link.hop = frame[35] & 0x1f;
+    gap_conn.link.unmapped_channel = 0;
+    gap_conn.link.interval_125us = (uint16_t)(interval * 10);
+    static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
+    gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    gap_conn.link.next_ticks = received_ticks +
+        (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
+            interval_unit_ticks + window_delay_ticks;
+    gap_conn.link.last_rx_ms = GET_MILLIS();
+    gap_conn.link.first_event = 1;
+    gap_conn.link.expected_rx_sn = 0;
+    gap_conn.link.tx_sn = 0;
+    gap_conn.link.tx_pending = 0;
+    gap_conn.link.event_counter = 0;
+    gap_conn.link.initiator_type = (frame[0] >> 6) & 1;
+    gap_conn.link.responder_type = (frame[0] >> 7) & 1;
+    memcpy(gap_conn.link.initiator, frame + 2, 6);
+    memcpy(gap_conn.link.responder, frame + 8, 6);
+
+    gap_conn.params.interval = interval;
+    gap_conn.params.latency = (uint16_t)frame[26] |
+                            (uint16_t)frame[27] << 8;
+    gap_conn.params.supervision_timeout = (uint16_t)frame[28] |
+                                            (uint16_t)frame[29] << 8;
+
+    // Initialize per-link procedures together after setting link parameters.
 #if GAP_EXT_ADV_SUPPORT
     gap_conn.procedures.sync_transfer_queued = 0;
     gap_conn.procedures.sync_transfer_handle = 0;
 #endif
-    uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
-    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
-    uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
-    uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
-    uint8_t win_size = frame[21], hop = frame[35] & 0x1f;
-    uint8_t count = 0;
-    for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            gap_conn.link.used_channels[count++] = channel;
-    gap_conn.link.access_address = (uint32_t)frame[14] |
-        (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
-        (uint32_t)frame[17] << 24;
-    gap_conn.link.crc_init = (uint32_t)frame[18] |
-        (uint32_t)frame[19] << 8 | (uint32_t)frame[20] << 16;
-    memcpy(gap_conn.link.channel_map, frame + 30, 5);
-    gap_conn.link.used_count = count;
-    gap_conn.link.hop = hop;
-    gap_conn.link.unmapped_channel = 0;
-    gap_conn.procedures.params.interval = interval;
-    gap_conn.link.interval_125us = (uint16_t)(interval * 10);
-    gap_conn.procedures.params.latency = latency;
-    gap_conn.procedures.params.supervision_timeout = timeout;
-    memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
-    gap_conn.subrate.factor = 1;
-    static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    gap_conn.procedures.window_size = win_size;
-    gap_conn.link.next_ticks = received_ticks +
-        (uint64_t)win_offset * interval_unit_ticks + window_delay_ticks;
-    gap_conn.link.last_rx_ms = GET_MILLIS();
-    gap_conn.link.first_event = 1;
-    memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
-    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
-    gap_conn.link.expected_rx_sn = 0;
-    gap_conn.link.tx_sn = 0;
-    gap_conn.link.tx_pending = 0;
+    gap_conn.procedures.window_size = frame[21];
     gap_conn.procedures.tx_l2cap_remaining = 0;
-    gap_conn.link.event_counter = 0;
-    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
-    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
-    gap_conn.procedures.rate_set_queued = gap_conn.procedures.rate_request_queued = 0;
-    gap_conn.procedures.rate_update_pending = gap_conn.procedures.rate_req_pending = 0;
-    memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
-    gap_conn.channel.classification_valid = 1;
-    gap_conn.channel.min_spacing_200ms = 5;
-    gap_conn.channel.max_delay_200ms = 5;
-    gap_conn.channel.status_changed_ms = GET_MILLIS();
-    gap_conn.procedures.phy.tx = gap_conn.procedures.phy.rx = GAP_PHY_1M;
-    gap_conn.procedures.preferred_phy.tx = gap_conn.procedures.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
-    gap_conn.procedures.phy_status = 0;
+    gap_conn.rate.set_queued = 0;
+    gap_conn.rate.request_queued = 0;
+    gap_conn.rate.update_pending = 0;
+    gap_conn.rate.req_pending = 0;
     gap_conn.procedures.connection_status = 0;
-    uint16_t capacity = GAP_HW_DATA_MAX();
-    if (capacity < 27) return 0;
-    gap_conn.procedures.data_capacity = capacity < GAP_CONN_DATA_MAX ?
-        capacity : GAP_CONN_DATA_MAX;
+    gap_conn.procedures.data_capacity = GAP_HW_DATA_MAX();
+    if (gap_conn.procedures.data_capacity < 27) return 0;
+    if (gap_conn.procedures.data_capacity > GAP_CONN_DATA_MAX)
+        gap_conn.procedures.data_capacity = GAP_CONN_DATA_MAX;
     gap_conn.procedures.local_tx_octets = 27;
     gap_conn.procedures.data_length = gap_conn.procedures.remote_data_length =
         (gap_data_length){27, 328, 27, 328};
     gap_conn.procedures.length_status = 0;
+
+    gap_conn.channel.classification_valid = 1;
+    gap_conn.channel.min_spacing_200ms = 5;
+    gap_conn.channel.max_delay_200ms = 5;
+    gap_conn.channel.status_changed_ms = GET_MILLIS();
+    gap_conn.phy.current.tx = gap_conn.phy.current.rx = GAP_PHY_1M;
+    gap_conn.phy.preferred.tx = gap_conn.phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
+    gap_conn.phy.status = 0;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
         size_t wipe_len = sizeof(gap_security);
         while (wipe_len--) *wipe_bytes++ = 0;
     }
-    gap_conn.link.initiator_type = (frame[0] >> 6) & 1;
-    gap_conn.link.responder_type = (frame[0] >> 7) & 1;
-    memcpy(gap_conn.link.initiator, frame + 2, 6);
-    memcpy(gap_conn.link.responder, frame + 8, 6);
     gap_conn.peer_id_type = gap_conn.link.initiator_type;
     memcpy(gap_conn.peer_id_addr, gap_conn.link.initiator, 6);
     gap_conn.bond_load_pending = 1;

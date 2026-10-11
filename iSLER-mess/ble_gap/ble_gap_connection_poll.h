@@ -21,7 +21,7 @@ static void gap_conn_send_queued(void) {
         gap_send_phy_request();
     if (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued)
         gap_subrate_start_queued();
-    if (gap_conn.procedures.rate_set_queued || gap_conn.procedures.rate_request_queued)
+    if (gap_conn.rate.set_queued || gap_conn.rate.request_queued)
         gap_conn_rate_start_queued();
     if (gap_conn.channel.report_queued)
         gap_channel_report_start();
@@ -60,7 +60,7 @@ void gap_hw_received(void) {
             conn_anchor_ticks = gap_conn.link.next_ticks;
         } else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
-                gap_phy_packet_airtime_us((uint16_t)frame[1], gap_conn.procedures.phy.rx));
+                gap_phy_packet_airtime_us((uint16_t)frame[1], gap_conn.phy.current.rx));
 
             if (received_ticks < airtime_ticks) {
                 gap_conn_slot = previous_slot;
@@ -128,7 +128,7 @@ void gap_hw_received(void) {
         if (gap_conn.link_state.central_role) {
             gap_conn.link.next_ticks += gap_conn_interval_ticks();
         } else {
-            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_conn.procedures.phy.rx == 2 ?
+            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_conn.phy.current.rx == 2 ?
                                                 ((uint32_t)frame[1] + 11) * 4 :
                                                 ((uint32_t)frame[1] + 10) * 8);
             gap_conn.link.next_ticks = received_ticks - rx_airtime_ticks + gap_conn_interval_ticks();
@@ -152,8 +152,8 @@ void gap_hw_received(void) {
                 gap_conn.procedures.connection_status = 0;
             }
 
-            if (!gap_conn.link_state.central_role && gap_conn.procedures.rate_ack_waiting) {
-                gap_conn.procedures.rate_ack_waiting = 0;
+            if (!gap_conn.link_state.central_role && gap_conn.rate.ack_waiting) {
+                gap_conn.rate.ack_waiting = 0;
             }
             if (gap_conn.link_state.central_role && gap_conn.subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
@@ -164,7 +164,7 @@ void gap_hw_received(void) {
                 gap_conn.subrate.base_event = gap_conn.subrate.pending_base_event;
                 gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
                 gap_conn.subrate.continuation = gap_conn.subrate.pending_continuation;
-                gap_conn.procedures.params.supervision_timeout = gap_conn.subrate.pending_timeout;
+                gap_conn.params.supervision_timeout = gap_conn.subrate.pending_timeout;
                 gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
                 gap_conn.subrate.status = 0;
             }
@@ -639,7 +639,7 @@ static uint64_t gap_conn_event_close_ticks(
     const gap_conn_context *connection, uint32_t now_ms
 ) {
     uint32_t packet_us;
-    if (connection->procedures.phy.tx == GAP_PHY_CODED || connection->procedures.phy.rx == GAP_PHY_CODED) {
+    if (connection->phy.current.tx == GAP_PHY_CODED || connection->phy.current.rx == GAP_PHY_CODED) {
         // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
         // per octet. S=2 packets finish sooner, so this is conservative.
@@ -694,8 +694,8 @@ static void gap_conn_poll(void) {
     }
 
     if (gap_conn.pending.phy_request &&
-        (uint32_t)(now_ms - gap_conn.procedures.phy_started_ms) >= 40000) {
-        gap_conn.procedures.phy_status = 0x22;
+        (uint32_t)(now_ms - gap_conn.phy.started_ms) >= 40000) {
+        gap_conn.phy.status = 0x22;
         gap_conn_end();
         return;
     }
@@ -709,8 +709,8 @@ static void gap_conn_poll(void) {
     }
 
     if ((gap_conn.pending.params || gap_conn.features.request_pending ||
-         gap_conn.features.ext_pending || gap_conn.procedures.rate_req_pending ||
-         gap_conn.procedures.rate_update_pending) &&
+         gap_conn.features.ext_pending || gap_conn.rate.req_pending ||
+         gap_conn.rate.update_pending) &&
         (uint32_t)(now_ms - gap_conn.procedures.params_started_ms) >= 40000
     ) {
         gap_conn.procedures.connection_status = 0x22; // LL response timeout.
@@ -736,7 +736,7 @@ static void gap_conn_poll(void) {
     }
 
     if ((uint32_t)(now_ms - gap_conn.link.last_rx_ms) >=
-        (uint32_t)gap_conn.procedures.params.supervision_timeout * 10
+        (uint32_t)gap_conn.params.supervision_timeout * 10
     ) {
         gap_conn_end();
         return;
@@ -793,7 +793,7 @@ static void gap_conn_poll(void) {
                         (500 + gap_conn.link.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.link.interval_125us
                                 ? gap_conn.link.interval_125us
-                                : (uint16_t)(gap_conn.procedures.params.interval * 10);
+                                : (uint16_t)(gap_conn.params.interval * 10);
     uint32_t widen_max_us = interval_125us * 125 / 2;
     if (widen_us > widen_max_us) widen_us = widen_max_us;
     uint64_t open_ticks = gap_conn.link.next_ticks;
@@ -845,7 +845,7 @@ static void gap_conn_poll(void) {
         if (!transmit) return;
 
         GAP_HW_LINK_CONFIG(gap_conn.link.access_address, channel,
-                            transmit, 1, gap_conn.procedures.phy.tx, gap_conn.procedures.phy.rx);
+                            transmit, 1, gap_conn.phy.current.tx, gap_conn.phy.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
         GAP_HW_LINK_TX();
@@ -855,7 +855,7 @@ static void gap_conn_poll(void) {
     }
 
     GAP_HW_LINK_CONFIG(gap_conn.link.access_address, channel,
-                        NULL, 0, gap_conn.procedures.phy.tx, gap_conn.procedures.phy.rx);
+                        NULL, 0, gap_conn.phy.current.tx, gap_conn.phy.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
     GAP_HW_LINK_RX();

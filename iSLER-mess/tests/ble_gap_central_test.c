@@ -2739,7 +2739,7 @@ static void test_connection_context_slots(void) {
             connection->link.used_channels[channel] = channel;
         connection->link.tx_pending = connection->queue.tx_queued = 0;
         connection->procedures.tx_l2cap_remaining = 0;
-        connection->procedures.phy.tx = connection->procedures.phy.rx = GAP_PHY_1M;
+        connection->phy.current.tx = connection->phy.current.rx = GAP_PHY_1M;
     }
     gap_conn_poll_all();
     assert(gap_connection_slot_valid && gap_connection_slot == 0);
@@ -3368,10 +3368,10 @@ static void test_phy_updates(void) {
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
     assert(gap_tx_frame[2] == 0x18 && gap_tx_frame[3] == 2 &&
            gap_tx_frame[4] == 2);
-    uint16_t instant = gap_conn.procedures.phy_instant;
+    uint16_t instant = gap_conn.phy.instant;
     assert(gap_conn.pending.phy_update && instant < 10);
     while (gap_conn.link.event_counter != instant) {
-        assert(gap_conn.procedures.phy.tx_phy == 1 && gap_conn.procedures.phy.rx_phy == 1);
+        assert(gap_conn.phy.current.tx == 1 && gap_conn.phy.current.rx == 1);
         receive_test_link_packet(1);
     }
     gap_phy_get(&tx, &rx);
@@ -3393,9 +3393,9 @@ static void test_phy_updates(void) {
     receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
     assert(gap_tx_frame[2] == 0x18 && gap_tx_frame[3] == 2 &&
            gap_tx_frame[4] == 0);
-    instant = gap_conn.procedures.phy_instant;
+    instant = gap_conn.phy.instant;
     while (gap_conn.link.event_counter != instant) receive_test_link_packet(1);
-    assert(gap_conn.procedures.phy.tx_phy == 2 && gap_conn.procedures.phy.rx_phy == 1);
+    assert(gap_conn.phy.current.tx == 2 && gap_conn.phy.current.rx == 1);
     gap_conn_end();
 
     // A single identical peer preference cannot yield a new asymmetric link.
@@ -3435,7 +3435,7 @@ static void test_phy_updates(void) {
     // Unsupported UPDATE fields leave that direction unchanged.
     start_test_central_link(); gap_conn.link_state.central_role = 0;
     receive_test_control(0x18, (uint8_t[]){4, 3, 0, 0}, 4);
-    assert(!gap_conn.pending.phy_update && gap_conn.procedures.phy.tx_phy == 1 && gap_conn.procedures.phy.rx_phy == 1);
+    assert(!gap_conn.pending.phy_update && gap_conn.phy.current.tx == 1 && gap_conn.phy.current.rx == 1);
     // Past Instants and unacknowledged Central updates close the link.
     receive_test_control(0x18, (uint8_t[]){2, 2, 0, 0}, 4);
     assert(!gap_conn.link_state.active && gap_phy_status() == 0x28);
@@ -3456,7 +3456,7 @@ static void test_phy_updates(void) {
     assert(gap_phy_status() == 0x20);
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
-    now_ms = gap_conn.procedures.phy_started_ms + 40000;
+    now_ms = gap_conn.phy.started_ms + 40000;
     gap_conn.link.last_rx_ms = now_ms;
     gap_conn_poll();
     assert(!gap_conn.link_state.active && gap_phy_status() == 0x22);
@@ -3490,7 +3490,7 @@ static void test_phy_updates(void) {
     assert(gap_tx_frame[2] == 0x18 &&
            gap_tx_frame[3] == GAP_PHY_CODED &&
            gap_tx_frame[4] == GAP_PHY_CODED);
-    instant = gap_conn.procedures.phy_instant;
+    instant = gap_conn.phy.instant;
     while (gap_conn.link.event_counter != instant) receive_test_link_packet(1);
     gap_phy_get(&tx, &rx);
     assert(tx == GAP_PHY_CODED && rx == GAP_PHY_CODED);

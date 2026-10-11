@@ -2447,14 +2447,14 @@ static void gap_connection_take_radio(void) {
 static int gap_sync_conn_overlap(
     uint64_t start_ticks, uint64_t end_ticks
 ) {
-    if (!gap_conn.link_state.active || !gap_conn.link.next_ticks || !gap_conn.procedures.params.interval)
+    if (!gap_conn.link_state.active || !gap_conn.link.next_ticks || !gap_conn.params.interval)
         return 0;
     uint32_t now_ms = GET_MILLIS();
     uint32_t widen_us =
         ((uint32_t)(now_ms - gap_conn.link.last_rx_ms) *
          (500 + gap_conn.link.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = gap_conn.link.interval_125us ?
-        gap_conn.link.interval_125us : (uint16_t)(gap_conn.procedures.params.interval * 10);
+        gap_conn.link.interval_125us : (uint16_t)(gap_conn.params.interval * 10);
     uint32_t widen_max_us = interval_125us * 125 / 2;
     if (widen_us > widen_max_us) widen_us = widen_max_us;
     uint64_t widening_ticks =
