@@ -4636,12 +4636,12 @@ static void test_secure_connections_just_works(void) {
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll(); // Send the initiator's Pairing Confirm first.
     uint8_t expected_dhkey[32];
-    assert(uECC_shared_secret(gap_smp.pairing.sc.public_key, peer_private,
+    assert(uECC_shared_secret(gap_smp.secure.public_key, peer_private,
                               expected_dhkey, uECC_secp256r1()));
-    assert(!memcmp(gap_smp.pairing.sc.dhkey, expected_dhkey, 32));
+    assert(!memcmp(gap_smp.secure.dhkey, expected_dhkey, 32));
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 70;
-    gap_sc_confirm_value(peer_public, gap_smp.pairing.sc.public_key,
+    gap_sc_confirm_value(peer_public, gap_smp.secure.public_key,
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM);
@@ -4745,8 +4745,8 @@ static void test_secure_connections_just_works(void) {
     for (uint8_t i = 1; i < sizeof(central_nonce); i++)
         central_nonce[i] = (uint8_t)(i + 110);
     uint8_t central_confirm[17] = {3};
-    gap_sc_confirm_value(gap_smp.pairing.sc.peer_public_key,
-                         gap_smp.pairing.sc.public_key, central_nonce + 1, 0,
+    gap_sc_confirm_value(gap_smp.secure.peer_public_key,
+                         gap_smp.secure.public_key, central_nonce + 1, 0,
                          central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
@@ -4805,14 +4805,14 @@ static void assert_test_oob_secrets_cleared(void) {
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
     for (size_t i = 0; i < sizeof(gap_sc_oob_local.private_key); i++)
         assert(!gap_sc_oob_local.private_key[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.pairing.sc.private_key); i++)
-        assert(!gap_smp.pairing.sc.private_key[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.pairing.sc.dhkey); i++)
-        assert(!gap_smp.pairing.sc.dhkey[i]);
-    for (size_t i = 0; i < sizeof(gap_smp.pairing.sc.oob_local_random); i++)
-        assert(!gap_smp.pairing.sc.oob_local_random[i] &&
-               !gap_smp.pairing.sc.oob_peer_random[i] &&
-               !gap_smp.pairing.sc.oob_peer_confirm[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.secure.private_key); i++)
+        assert(!gap_smp.secure.private_key[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.secure.dhkey); i++)
+        assert(!gap_smp.secure.dhkey[i]);
+    for (size_t i = 0; i < sizeof(gap_smp.secure.oob_local_random); i++)
+        assert(!gap_smp.secure.oob_local_random[i] &&
+               !gap_smp.secure.oob_peer_random[i] &&
+               !gap_smp.secure.oob_peer_confirm[i]);
 }
 
 static void test_secure_connections_oob_rejects_bad_commitment(void) {
@@ -4831,8 +4831,8 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
 
     const uint8_t response[7] = {2, GAP_IO_NONE, 0, 8, 16, 0, 0};
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.pairing.sc.oob_active &&
-           gap_smp.pairing.sc.oob_peer_present);
+    assert(gap_smp.secure.oob_active &&
+           gap_smp.secure.oob_peer_present);
 
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 7;
@@ -4874,8 +4874,8 @@ static void test_secure_connections_oob_success(void) {
 
     const uint8_t response[7] = {2, GAP_IO_NONE, 1, 8, 16, 0, 0};
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.pairing.sc.oob_active &&
-           gap_smp.pairing.sc.oob_peer_present);
+    assert(gap_smp.secure.oob_active &&
+           gap_smp.secure.oob_peer_present);
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
     gap_sc_reverse(public_pdu + 1, peer_public, 32);
     gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
@@ -4887,7 +4887,7 @@ static void test_secure_connections_oob_success(void) {
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
         peer_nonce[i] = (uint8_t)(0x70 + i);
-    gap_sc_confirm_value(peer_public, gap_smp.pairing.sc.public_key,
+    gap_sc_confirm_value(peer_public, gap_smp.secure.public_key,
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM);
@@ -4967,7 +4967,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     };
     receive_test_smp(request, sizeof(request), 0);
     assert(gap_smp.pairing.response[2] == 1 &&
-           gap_smp.pairing.sc.oob_active);
+           gap_smp.secure.oob_active);
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll(); // Send Pairing Response.
 
@@ -4984,7 +4984,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     uint8_t central_nonce[17] = {4}, central_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(central_nonce); i++)
         central_nonce[i] = (uint8_t)(i + 130);
-    gap_sc_confirm_value(central_public, gap_smp.pairing.sc.public_key,
+    gap_sc_confirm_value(central_public, gap_smp.secure.public_key,
                          central_nonce + 1, 0, central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
@@ -5054,7 +5054,7 @@ static void test_secure_connections_numeric_comparison(void) {
             2, GAP_IO_DISPLAY_YES_NO, 0, 12, 16, 0, 0
         };
         receive_test_smp(response, sizeof(response), 0);
-        assert(gap_smp.pairing.sc.numeric_required);
+        assert(gap_smp.secure.numeric_required);
         for (uint8_t fragment = 0; fragment < 3; fragment++) {
             gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
             gap_smp_poll();
@@ -5069,7 +5069,7 @@ static void test_secure_connections_numeric_comparison(void) {
         gap_smp_poll(); // Send the initiator's Pairing Confirm.
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 90;
-        gap_sc_confirm_value(peer_public, gap_smp.pairing.sc.public_key,
+        gap_sc_confirm_value(peer_public, gap_smp.secure.public_key,
                              peer_nonce + 1, 0, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
         gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
@@ -5130,8 +5130,8 @@ static void test_secure_connections_numeric_comparison(void) {
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
         peer_nonce[i] = (uint8_t)(i + 110);
-    gap_sc_confirm_value(gap_smp.pairing.sc.peer_public_key,
-                         gap_smp.pairing.sc.public_key, peer_nonce + 1, 0,
+    gap_sc_confirm_value(gap_smp.secure.peer_public_key,
+                         gap_smp.secure.public_key, peer_nonce + 1, 0,
                          peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 3);
@@ -5144,7 +5144,7 @@ static void test_secure_connections_numeric_comparison(void) {
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
-    assert(gap_smp.pairing.sc.peer_check_received &&
+    assert(gap_smp.secure.peer_check_received &&
            gap_smp.pairing.phase == SMP_PHASE_SC_USER);
     uint32_t value;
     assert(gap_numeric_get(&value) && value < 1000000);
@@ -5180,7 +5180,7 @@ static void test_secure_connections_passkey(void) {
         2, GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
     };
     receive_test_smp(response, sizeof(response), 0);
-    assert(gap_smp.pairing.sc.passkey_required &&
+    assert(gap_smp.secure.passkey_required &&
            gap_smp.pairing.passkey_action == GAP_PASSKEY_INPUT);
     assert(gap_passkey_reply(123456));
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
@@ -5200,7 +5200,7 @@ static void test_secure_connections_passkey(void) {
     for (uint8_t round = 0; round < 20; round++) {
         uint8_t z = 0x80 | ((123456u >> round) & 1);
         uint8_t local_confirm[16];
-        gap_sc_confirm_value(gap_smp.pairing.sc.public_key, peer_public,
+        gap_sc_confirm_value(gap_smp.secure.public_key, peer_public,
                              gap_smp.pairing.random, z, local_confirm);
         assert(gap_smp.pairing.phase == SMP_PHASE_SC_CONFIRM &&
                gap_smp.tx[4] == 3 && !memcmp(gap_smp.tx + 5, local_confirm, 16));
@@ -5211,14 +5211,14 @@ static void test_secure_connections_passkey(void) {
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
             peer_nonce[i] = (uint8_t)(round * 7 + i);
-        gap_sc_confirm_value(peer_public, gap_smp.pairing.sc.public_key,
+        gap_sc_confirm_value(peer_public, gap_smp.secure.public_key,
                              peer_nonce + 1, z, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
         assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM && gap_smp.tx[4] == 4);
         gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
         gap_smp_poll();
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
-        assert(gap_smp.pairing.sc.passkey_round ==
+        assert(gap_smp.secure.passkey_round ==
                (round < 19 ? round + 1 : round));
     }
     assert(gap_smp.pairing.phase == SMP_PHASE_SC_DHKEY && gap_smp.tx[4] == 13);
@@ -5246,7 +5246,7 @@ static void test_secure_connections_passkey(void) {
     };
     receive_test_smp(request, sizeof(request), 0);
     uint32_t passkey;
-    assert(gap_smp.pairing.sc.passkey_required &&
+    assert(gap_smp.secure.passkey_required &&
            gap_passkey(&passkey) == GAP_PASSKEY_DISPLAY &&
            passkey < 1000000);
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
@@ -5267,7 +5267,7 @@ static void test_secure_connections_passkey(void) {
         uint8_t central_nonce[17] = {4}, central_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(central_nonce); i++)
             central_nonce[i] = (uint8_t)(round * 9 + i);
-        gap_sc_confirm_value(central_public, gap_smp.pairing.sc.public_key,
+        gap_sc_confirm_value(central_public, gap_smp.secure.public_key,
                              central_nonce + 1, z, central_confirm + 1);
         receive_test_smp(central_confirm, sizeof(central_confirm), 0);
         assert(gap_smp.pairing.confirm_received &&
@@ -5275,7 +5275,7 @@ static void test_secure_connections_passkey(void) {
         gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
         gap_smp_poll();
         uint8_t expected_confirm[16];
-        gap_sc_confirm_value(gap_smp.pairing.sc.public_key, central_public,
+        gap_sc_confirm_value(gap_smp.secure.public_key, central_public,
                              gap_smp.pairing.random, z, expected_confirm);
         assert(gap_smp.pairing.phase == SMP_PHASE_SC_RANDOM &&
                gap_smp.tx[4] == 3 && !memcmp(gap_smp.tx + 5, expected_confirm, 16));
@@ -5323,7 +5323,7 @@ static void test_secure_connections_passkey(void) {
            gap_smp.pairing.passkey_action == GAP_PASSKEY_INPUT);
     uint8_t input_nonce[17] = {4}, input_confirm[17] = {3};
     for (uint8_t i = 1; i < sizeof(input_nonce); i++) input_nonce[i] = i + 40;
-    gap_sc_confirm_value(central_public, gap_smp.pairing.sc.public_key,
+    gap_sc_confirm_value(central_public, gap_smp.secure.public_key,
                          input_nonce + 1, 0x80, input_confirm + 1);
     receive_test_smp(input_confirm, sizeof(input_confirm), 0);
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
