@@ -1745,10 +1745,13 @@ static void gap_smp_poll(void) {
         if (gap_conn.link.tx_pending || gap_conn.queue.tx_queued) return;
 
         gap_smp.bond_tx_waiting = 0;
+        uint8_t key_dist = gap_smp.bearer.pairing.response[
+            gap_conn.link_state.central_role ? 5 : 6];
         if ((gap_conn.link_state.central_role &&
              gap_smp.bearer.pairing.bond_tx_step == 1) ||
             (!gap_conn.link_state.central_role &&
-             gap_smp.bearer.pairing.bond_tx_step == 31)) {
+             gap_smp.bearer.pairing.bond_tx_step == 31)
+        ) {
             uint8_t master_id[10];
             if (gap_conn.link_state.central_role) {
                 memcpy(master_id, gap_conn.bond.ediv, 2);
@@ -1766,30 +1769,35 @@ static void gap_smp_poll(void) {
             gap_smp.bearer.pairing.bond_tx_step =
                 gap_conn.link_state.central_role ? 2 : 32;
         }
-        else if (!gap_conn.link_state.central_role &&
-                 gap_smp.bearer.pairing.bond_tx_step == 32 &&
-                 (gap_smp.bearer.pairing.response[6] &
-                  (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))) {
-            if (gap_smp.bearer.pairing.response[6] & GAP_KEY_DIST_IDENTITY) {
+        else if (((gap_conn.link_state.central_role &&
+                   gap_smp.bearer.pairing.bond_tx_step == 2) ||
+                  (!gap_conn.link_state.central_role &&
+                   gap_smp.bearer.pairing.bond_tx_step == 32)) &&
+                 (key_dist & (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))
+        ) {
+            if (key_dist & GAP_KEY_DIST_IDENTITY) {
                 if (!gap_smp_queue(SMP_IDENTITY_INFORMATION,
                                    gap_conn.bond.local_irk, 16)) {
                     gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                     return;
                 }
-                gap_smp.bearer.pairing.bond_tx_step = 33;
+                gap_smp.bearer.pairing.bond_tx_step =
+                    gap_conn.link_state.central_role ? 3 : 33;
             } else {
                 if (!gap_smp_queue(SMP_SIGNING_INFORMATION,
                                    gap_conn.bond.local_csrk, 16)) {
                     gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                     return;
                 }
-                gap_smp.bearer.pairing.bond_tx_step = 35;
+                gap_smp.bearer.pairing.bond_tx_step =
+                    gap_conn.link_state.central_role ? 5 : 35;
             }
         }
         else if ((!gap_conn.link_state.central_role &&
                   gap_smp.bearer.pairing.bond_tx_step == 33) ||
                  (gap_conn.link_state.central_role &&
-                  gap_smp.bearer.pairing.bond_tx_step == 3)) {
+                  gap_smp.bearer.pairing.bond_tx_step == 3)
+        ) {
             uint8_t irk[16] = {0}, address[7] = {0};
             int available = gap_smp_local_identity(irk, address);
             gap_wipe(irk, sizeof(irk));
@@ -1802,15 +1810,19 @@ static void gap_smp_poll(void) {
             gap_smp.bearer.pairing.bond_tx_step =
                 gap_conn.link_state.central_role ? 4 : 34;
         }
-        else if (!gap_conn.link_state.central_role &&
-                 gap_smp.bearer.pairing.bond_tx_step == 34 &&
-                 (gap_smp.bearer.pairing.response[6] & GAP_KEY_DIST_SIGNING)
+        else if (((gap_conn.link_state.central_role &&
+                   gap_smp.bearer.pairing.bond_tx_step == 4) ||
+                  (!gap_conn.link_state.central_role &&
+                   gap_smp.bearer.pairing.bond_tx_step == 34)) &&
+                 (key_dist & GAP_KEY_DIST_SIGNING)
         ) {
-            if (!gap_smp_queue(SMP_SIGNING_INFORMATION, gap_conn.bond.local_csrk, 16)) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
+            if (!gap_smp_queue(SMP_SIGNING_INFORMATION,
+                               gap_conn.bond.local_csrk, 16)) {
+                gap_smp_fail(SMP_FAIL_UNSPECIFIED);
+                return;
             }
-            gap_smp.bearer.pairing.bond_tx_step = 35;
-
+            gap_smp.bearer.pairing.bond_tx_step =
+                gap_conn.link_state.central_role ? 5 : 35;
         }
         else if (!gap_conn.link_state.central_role &&
                  gap_smp.bearer.pairing.bond_tx_step >= 32
@@ -1822,26 +1834,6 @@ static void gap_smp_poll(void) {
                 smp_bond_rx_complete();
             return;
 
-        }
-        else if (gap_smp.bearer.pairing.bond_tx_step == 2 &&
-                   (gap_smp.bearer.pairing.response[5] & GAP_KEY_DIST_IDENTITY)
-        ) {
-            if (!gap_smp_queue(SMP_IDENTITY_INFORMATION, gap_conn.bond.local_irk, 16)
-            ) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
-            }
-            gap_smp.bearer.pairing.bond_tx_step = 3;
-        }
-        else if ((gap_smp.bearer.pairing.bond_tx_step == 2 ||
-                    gap_smp.bearer.pairing.bond_tx_step == 4) &&
-                   (gap_smp.bearer.pairing.response[5] & GAP_KEY_DIST_SIGNING)
-        ) {
-            if (!gap_smp_queue(SMP_SIGNING_INFORMATION, gap_conn.bond.local_csrk, 16)) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
-            }
-            gap_smp.bearer.pairing.bond_tx_step = 5;
         }
         else {
             if (gap_conn.link_state.central_role &&
