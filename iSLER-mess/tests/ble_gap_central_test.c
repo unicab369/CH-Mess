@@ -4271,8 +4271,8 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn.bond.version = GAP_BOND_VERSION;
     gap_conn.bond.valid = 1;
     gap_conn.bond.key_size = 16;
-    gap_conn.bond.peer_address_type = 0;
-    gap_conn.bond.peer_address[0] = 0x42;
+    gap_conn.bond.peer.type = 0;
+    gap_conn.bond.peer.address[0] = 0x42;
     memset(gap_conn.bond.ltk, 0x51, 16);
     gap_conn.bond.rand[0] = 0x91;
     gap_conn.bond.ediv[0] = 0x19;
@@ -4301,7 +4301,7 @@ static void test_smp_signing_key_distribution(void) {
            !memcmp(gap_conn.bond.peripheral_ltk, peer_ltk + 1, 16) &&
            !memcmp(gap_conn.bond.peer_irk, peer_irk + 1, 16) &&
            !memcmp(gap_conn.bond.peer_csrk, peer_csrk + 1, 16) &&
-           !memcmp(gap_conn.bond.peer_address, peer_identity + 2, 6));
+           !memcmp(gap_conn.bond.peer.address, peer_identity + 2, 6));
     // The Central's set follows the Peripheral's set: encryption key, its
     // Central Identification, then Signing Information.
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
@@ -4331,8 +4331,8 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn.bond.version = GAP_BOND_VERSION;
     gap_conn.bond.valid = 1;
     gap_conn.bond.key_size = 16;
-    gap_conn.bond.peer_address_type = 0;
-    gap_conn.bond.peer_address[0] = 0x42;
+    gap_conn.bond.peer.type = 0;
+    gap_conn.bond.peer.address[0] = 0x42;
     smp_bond_peripheral_start(0);
     assert(gap_smp.pairing.phase == SMP_PHASE_BOND_TX &&
            gap_smp.pairing.bond_tx_step == 31 && gap_smp.tx_len == 21 &&

@@ -205,10 +205,15 @@ typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;
 } gap_data_length;
 
+typedef struct {
+    uint8_t type, address[6];
+} gap_peer_address;
+
 // One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
 // little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
-    uint8_t version, valid, peer_address_type, peer_address[6];
+    uint8_t version, valid;
+    gap_peer_address peer;
     uint8_t ltk[16], rand[8], ediv[2];
     uint8_t peer_irk[16], local_irk[16];
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
@@ -250,9 +255,7 @@ typedef struct {
         uint64_t next_ticks;
     } link;
     // Connection endpoint and peer identity addresses.
-    struct {
-        uint8_t type, address[6];
-    } initiator, responder, peer_id;
+    gap_peer_address initiator, responder, peer_id;
     uint8_t authenticated, encryption_key_size;
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
