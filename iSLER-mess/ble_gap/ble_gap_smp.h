@@ -1475,8 +1475,11 @@ static void gap_smp_receive_complete(void) {
 static void smp_bond_rx_complete(void) {
     if (gap_conn.link_state.central_role) {
         uint8_t keyset = gap_smp.pairing.response[5];
+        gap_smp.pairing.phase = SMP_PHASE_BOND_TX;
+
         if (keyset & GAP_KEY_DIST_IDENTITY) {
             uint8_t address[7] = {0};
+
             if (!gap_smp_local_identity(gap_conn.bond.local_irk, address)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
@@ -1487,36 +1490,32 @@ static void smp_bond_rx_complete(void) {
 
         if ((keyset & GAP_KEY_DIST_SIGNING) &&
             !gap_conn.bond.has_local_csrk) {
-            if (!smp_random_bytes(gap_conn.bond.local_csrk,
-                    sizeof(gap_conn.bond.local_csrk))
-            ) {
+            if (!smp_random_bytes(gap_conn.bond.local_csrk, sizeof(gap_conn.bond.local_csrk))) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
             gap_conn.bond.has_local_csrk = 1;
         }
-
-        gap_smp.pairing.phase = SMP_PHASE_BOND_TX;
         if (keyset & GAP_KEY_DIST_ENCRYPTION) {
             gap_smp.pairing.bond_tx_step = 1;
-            if (!gap_smp_queue(SMP_ENCRYPTION_INFORMATION,
-                               gap_conn.bond.central.ltk, 16)) {
+            if (!gap_smp_queue(SMP_ENCRYPTION_INFORMATION, gap_conn.bond.central.ltk, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
             return;
-        } else if (keyset & GAP_KEY_DIST_IDENTITY) {
+        }
+        else if (keyset & GAP_KEY_DIST_IDENTITY) {
             gap_smp.pairing.bond_tx_step = 3;
-            if (!gap_smp_queue(SMP_IDENTITY_INFORMATION,
-                               gap_conn.bond.local_irk, 16)) {
+            if (!gap_smp_queue(SMP_IDENTITY_INFORMATION, gap_conn.bond.local_irk, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
             return;
-        } else if (keyset & GAP_KEY_DIST_SIGNING) {
+        }
+        else if (keyset & GAP_KEY_DIST_SIGNING) {
             gap_smp.pairing.bond_tx_step = 5;
-            if (!gap_smp_queue(SMP_SIGNING_INFORMATION,
-                               gap_conn.bond.local_csrk, 16)) {
+
+            if (!gap_smp_queue(SMP_SIGNING_INFORMATION, gap_conn.bond.local_csrk, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
@@ -1535,26 +1534,32 @@ static void smp_bond_rx_complete(void) {
 
 static void smp_bond_peripheral_start(void) {
     uint8_t keyset = gap_smp.pairing.response[6];
+    gap_smp.pairing.phase = SMP_PHASE_BOND_TX;
+
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
-        uint8_t material[26], nonzero;
+        gap_bond_key material;
+        uint8_t nonzero;
         uint8_t attempts = 0;
+
         do {
-            if (++attempts > 4 || !smp_random_bytes(material, sizeof(material))
-            ) {
+            if (++attempts > 4 || !smp_random_bytes((uint8_t *)&material, sizeof(material))) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
             nonzero = 0;
-            for (unsigned i = 16; i < sizeof(material); i++) nonzero |= material[i];
+            for (unsigned i = 0; i < sizeof(material.rand); i++)
+                nonzero |= material.rand[i];
+            for (unsigned i = 0; i < sizeof(material.ediv); i++)
+                nonzero |= material.ediv[i];
         } while (!nonzero);
-        memcpy(gap_conn.bond.peripheral.ltk, material, 16);
-        memcpy(gap_conn.bond.peripheral.rand, material + 16, 8);
-        memcpy(gap_conn.bond.peripheral.ediv, material + 24, 2);
+        gap_conn.bond.peripheral = material;
+
         for (unsigned i = gap_smp.pairing.key_size; i < 16; i++)
             gap_conn.bond.peripheral.ltk[i] = 0;
         gap_conn.bond.has_peripheral_ltk = 1;
-        gap_wipe(material, sizeof(material));
+        gap_wipe(&material, sizeof(material));
     }
+
     if (keyset & GAP_KEY_DIST_IDENTITY) {
         uint8_t address[7] = {0};
         if (!gap_smp_local_identity(gap_conn.bond.local_irk, address)) {
@@ -1564,16 +1569,14 @@ static void smp_bond_peripheral_start(void) {
         gap_conn.bond.has_local_irk = 1;
         gap_wipe(address, sizeof(address));
     }
+
     if (keyset & GAP_KEY_DIST_SIGNING) {
-        if (!smp_random_bytes(gap_conn.bond.local_csrk,
-                sizeof(gap_conn.bond.local_csrk))
-        ) {
+        if (!smp_random_bytes(gap_conn.bond.local_csrk, sizeof(gap_conn.bond.local_csrk))) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
             return;
         }
         gap_conn.bond.has_local_csrk = 1;
     }
-    gap_smp.pairing.phase = SMP_PHASE_BOND_TX;
 
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
         gap_smp.pairing.bond_tx_step = 31;
