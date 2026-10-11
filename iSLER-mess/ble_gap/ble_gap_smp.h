@@ -2110,8 +2110,8 @@ static void gap_smp_poll(void) {
                 gap_bond bond = {0};
                 bond.version = GAP_BOND_VERSION;
                 bond.valid = 1;
-                bond.peer_address_type = gap_conn.peer_identity_type;
-                memcpy(bond.peer_address, gap_conn.peer_identity_address, 6);
+                bond.peer_address_type = gap_conn.peer_id_type;
+                memcpy(bond.peer_address, gap_conn.peer_id_addr, 6);
                 memcpy(bond.ltk, gap_smp.bearer.pairing.sc.ltk, 16);
                 bond.key_size = 16;
                 bond.authenticated = gap_smp.bearer.pairing.authenticated;
@@ -2183,9 +2183,9 @@ static void gap_smp_poll(void) {
                 memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
                 gap_conn.bond.version = GAP_BOND_VERSION;
                 gap_conn.bond.valid = 1;
-                gap_conn.bond.peer_address_type = gap_conn.peer_identity_type;
+                gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
                 memcpy(gap_conn.bond.peer_address,
-                       gap_conn.peer_identity_address, 6);
+                       gap_conn.peer_id_addr, 6);
                 gap_conn.bond.key_size = gap_smp.bearer.pairing.key_size;
                 gap_conn.bond.authenticated = gap_smp.bearer.pairing.authenticated;
                 gap_smp_bond_peripheral_start();
@@ -2215,8 +2215,8 @@ static void gap_smp_poll(void) {
             memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
             gap_conn.bond.version = GAP_BOND_VERSION;
             gap_conn.bond.valid = 1;
-            gap_conn.bond.peer_address_type = gap_conn.peer_identity_type;
-            memcpy(gap_conn.bond.peer_address, gap_conn.peer_identity_address, 6);
+            gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
+            memcpy(gap_conn.bond.peer_address, gap_conn.peer_id_addr, 6);
             memcpy(gap_conn.bond.ltk, bond_material, 16);
 
             for (unsigned i = gap_smp.bearer.pairing.key_size; i < 16; i++)
@@ -2378,8 +2378,8 @@ static void gap_smp_poll(void) {
             ) {
                 gap_conn.bond.peer_address_type = p[1];
                 memcpy(gap_conn.bond.peer_address, p + 2, 6);
-                gap_conn.peer_identity_type = p[1];
-                memcpy(gap_conn.peer_identity_address, p + 2, 6);
+                gap_conn.peer_id_type = p[1];
+                memcpy(gap_conn.peer_id_addr, p + 2, 6);
                 gap_smp.bearer.pairing.bond_rx_step = identity_step + 2;
                 if (!signing) gap_smp_bond_rx_complete();
                 return;
@@ -2418,8 +2418,8 @@ static void gap_smp_poll(void) {
             ) {
                 gap_conn.bond.peer_address_type = p[1];
                 memcpy(gap_conn.bond.peer_address, p + 2, 6);
-                gap_conn.peer_identity_type = p[1];
-                memcpy(gap_conn.peer_identity_address, p + 2, 6);
+                gap_conn.peer_id_type = p[1];
+                memcpy(gap_conn.peer_id_addr, p + 2, 6);
                 gap_smp.bearer.pairing.bond_rx_step = 22;
                 if (!signing) gap_smp_bond_rx_complete();
                 return;
@@ -2441,8 +2441,8 @@ static void gap_smp_poll(void) {
                 memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
                 gap_conn.bond.version = GAP_BOND_VERSION;
                 gap_conn.bond.valid = 1;
-                gap_conn.bond.peer_address_type = gap_conn.peer_identity_type;
-                memcpy(gap_conn.bond.peer_address, gap_conn.peer_identity_address, 6);
+                gap_conn.bond.peer_address_type = gap_conn.peer_id_type;
+                memcpy(gap_conn.bond.peer_address, gap_conn.peer_id_addr, 6);
             }
             memcpy(gap_conn.bond.ltk, p + 1, 16);
             gap_conn.bond.key_size = gap_smp.bearer.pairing.key_size;
@@ -2489,8 +2489,8 @@ static void gap_smp_poll(void) {
         ) {
             gap_conn.bond.peer_address_type = p[1];
             memcpy(gap_conn.bond.peer_address, p + 2, 6);
-            gap_conn.peer_identity_type = p[1];
-            memcpy(gap_conn.peer_identity_address, p + 2, 6);
+            gap_conn.peer_id_type = p[1];
+            memcpy(gap_conn.peer_id_addr, p + 2, 6);
             gap_smp.bearer.pairing.bond_rx_step = 4;
             if (!(gap_smp.bearer.pairing.response[5] & GAP_KEY_DIST_SIGNING))
                 gap_smp_bond_rx_complete();

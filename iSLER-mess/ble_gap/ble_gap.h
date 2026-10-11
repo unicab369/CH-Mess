@@ -312,8 +312,8 @@ typedef struct {
     uint8_t local_terminate_reason, central_role, central_anchor_set;
     uint8_t initiator_type, responder_type, initiator[6], responder[6];
     uint8_t authenticated, encryption_key_size;
-    uint8_t peer_identity_type, peer_identity_address[6];
-    uint8_t bond_lookup_pending, bonded, bond_restore_started, bond_restore_attempted;
+    uint8_t peer_id_type, peer_id_addr[6];
+    uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
     uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
     uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
@@ -333,9 +333,9 @@ typedef struct {
     uint8_t params_pending, params_local, connection_status;
     uint8_t features_known, peer_features, peer_features2, peer_features4;
     uint8_t peer_features7;
-    uint8_t feature_request_pending, feature_ext_pending;
+    uint8_t feature_req_pending, feature_ext_pending;
     uint8_t feature_page1_known, rate_set_queued, rate_request_queued;
-    uint8_t rate_update_pending, rate_request_pending;
+    uint8_t rate_update_pending, rate_req_pending;
     uint8_t rate_ack_waiting;
     uint8_t peer_features_page1[8];
     gap_conn_subrate subrate;
@@ -572,7 +572,7 @@ static int gap_conn_accept(
     gap_conn.peer_features7 = 0;
     gap_conn.feature_page1_known = gap_conn.feature_ext_pending = 0;
     gap_conn.rate_set_queued = gap_conn.rate_request_queued = 0;
-    gap_conn.rate_update_pending = gap_conn.rate_request_pending = 0;
+    gap_conn.rate_update_pending = gap_conn.rate_req_pending = 0;
     gap_conn.channel.report_queued = gap_conn.channel.report_pending = 0;
     gap_conn.channel.status_queued = gap_conn.channel.enabled = 0;
     gap_conn.channel.classification_valid = 1;
@@ -592,7 +592,7 @@ static int gap_conn_accept(
     gap_conn.preferred_phy.tx = gap_conn.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
     gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending =
         gap_conn.phy_status = 0;
-    gap_conn.feature_request_pending = gap_conn.connection_status = 0;
+    gap_conn.feature_req_pending = gap_conn.connection_status = 0;
     gap_conn.update_window_active = 0;
     gap_conn.channel_map_pending = gap_conn.local_map_queued = 0;
     gap_conn.terminate_after_reply = 0;
@@ -618,9 +618,9 @@ static int gap_conn_accept(
     gap_conn.responder_type = (frame[0] >> 7) & 1;
     memcpy(gap_conn.initiator, frame + 2, 6);
     memcpy(gap_conn.responder, frame + 8, 6);
-    gap_conn.peer_identity_type = gap_conn.initiator_type;
-    memcpy(gap_conn.peer_identity_address, gap_conn.initiator, 6);
-    gap_conn.bond_lookup_pending = 1;
+    gap_conn.peer_id_type = gap_conn.initiator_type;
+    memcpy(gap_conn.peer_id_addr, gap_conn.initiator, 6);
+    gap_conn.bond_load_pending = 1;
     gap_conn.bonded = gap_conn.bond_restore_started = gap_conn.bond_restore_attempted = 0;
     memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
@@ -653,7 +653,7 @@ static struct {
     uint8_t active, any_peer, selective, auto_connect;
     uint8_t peer_type, peer_address[6], request[36];
     uint32_t deadline_ms;
-} gap_central_conn;
+} gap_central;
 static gap_conn_timing_config gap_conn_timing = {
     24, 0, 200, 1280, 12, 30720
 };
@@ -667,7 +667,7 @@ int gap_conn_timing_set(const gap_conn_timing_config *timing) {
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
-        gap_central_conn.active || timing->background_scan_interval_ms < 3 ||
+        gap_central.active || timing->background_scan_interval_ms < 3 ||
         timing->background_scan_interval_ms >= 40960 ||
         timing->background_scan_window_ms < 3 ||
         timing->background_scan_window_ms > timing->background_scan_interval_ms)
@@ -779,7 +779,7 @@ static int gap_accept_list_nonempty(void) {
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_conn.active ||
+        gap_conn.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int free_slot = -1;
@@ -801,7 +801,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_conn.active)
+        gap_conn.active || gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
@@ -819,7 +819,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 int gap_accept_list_clear(void) {
     if (gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
-        gap_central_conn.active)
+        gap_central.active)
         return 0;
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
     return 1;
@@ -842,7 +842,7 @@ int gap_identity_set(
 ) {
     if (!address || address_type > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_conn.active ||
+        gap_conn.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int slot = -1;
@@ -881,7 +881,7 @@ int gap_identity_privacy(
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn.active ||
-        gap_central_conn.active)
+        gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -947,7 +947,7 @@ int gap_identity_local_key(
 ) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_conn.active)
+        gap_conn.active || gap_central.active)
         return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0 || gap_identities[slot].address_type != address_type ||
@@ -993,7 +993,7 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         gap_conn.active ||
-        gap_central_conn.active || timeout_s > 41400 || (irk && !timeout_s))
+        gap_central.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
     if (!irk && !timeout_s) {
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
@@ -1046,7 +1046,7 @@ int gap_privacy_set_randomized(
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn.active || gap_central_conn.active)
+        gap_conn.active || gap_central.active)
         return 0;
     uint16_t timeout_s;
     if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
@@ -1069,7 +1069,7 @@ int gap_privacy_set_randomized(
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central_conn.active)
+        gap_conn.active || gap_central.active)
         return 0;
     gap_privacy.scan_filter = scan;
     gap_privacy.connection_filter = connection;
@@ -1082,7 +1082,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 int gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        gap_conn.active || gap_central_conn.active ||
+        gap_conn.active || gap_central.active ||
         !gap_static_random_address_valid(address))
         return 0;
     memcpy(gap_random_address, address, 6);
@@ -1097,7 +1097,7 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         gap_conn.active ||
-        gap_central_conn.active)
+        gap_central.active)
         return 0;
     gap_privacy.enabled = 0;
     gap_identity_address_type = gap_own_address_type = 0;
