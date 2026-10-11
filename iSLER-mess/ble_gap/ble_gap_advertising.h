@@ -564,7 +564,7 @@ typedef enum {
 static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
 ) {
-    if (active_scan > 1 || gap_conn.active || gap_scanner.scanning ||
+    if (active_scan > 1 || gap_conn.link.active || gap_scanner.scanning ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
           mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty())
     ) return 0;
@@ -634,7 +634,7 @@ static int gap_conn_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanner.scanning ||
+    if (!peer_address || peer_type > 1 || gap_conn.link.active || gap_scanner.scanning ||
         gap_central.active
     ) return 0;
 

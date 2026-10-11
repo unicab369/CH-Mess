@@ -304,18 +304,32 @@ typedef struct {
     uint32_t status_changed_ms, status_last_sent_ms;
 } gap_channel;
 
+// Link identity, scheduling, and Link Layer radio state.
 typedef struct {
     uint8_t active, first_event, rx_armed, event_replied, channel_selected;
     uint8_t terminate_after_reply, version_ind_sent;
     uint8_t terminate_queued, terminate_sent;
     uint8_t local_terminate_reason, central_role, central_anchor_set;
     uint8_t initiator_type, responder_type, initiator[6], responder[6];
+    uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
+    uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
+    uint16_t interval_125us, peer_sca_ppm, event_counter;
+    uint32_t access_address, crc_init, last_rx_ms;
+    uint64_t next_ticks;
+} gap_conn_link;
+
+// Authentication and bond state associated with the link.
+typedef struct {
     uint8_t authenticated, encryption_key_size;
     uint8_t peer_id_type, peer_id_addr[6];
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
-    uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
-    uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
+} gap_conn_security;
+
+// Queues and negotiated procedures associated with the link.
+typedef struct {
+    // Radio queues and connection data.
+    uint8_t window_size, update_window_active, update_window_size;
     volatile uint8_t tx_queued, rx_ready;
 #if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
@@ -325,11 +339,19 @@ typedef struct {
     uint16_t tx_l2cap_remaining;
     uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
     uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
-    uint8_t window_size, timing_update_pending, update_window_active, update_window_size;
+
+    // Connection parameter and channel-map procedures.
+    uint8_t timing_update_pending;
     uint8_t channel_map_pending, pending_channel_map[5];
     volatile uint8_t local_update_queued, local_params_queued, local_map_queued;
     gap_channel channel;
     uint8_t params_pending, params_local, connection_status;
+    gap_conn_parameters params, new_params;
+    uint16_t params_min, params_max, params_latency, params_timeout;
+    uint32_t params_started_ms;
+    uint16_t update_instant, update_win_offset, channel_map_instant;
+
+    // Peer features, subrating, and connection rate control.
     uint8_t features_known, peer_features, peer_features2, peer_features4;
     uint8_t peer_features7;
     uint8_t feature_req_pending, feature_ext_pending;
@@ -338,22 +360,20 @@ typedef struct {
     uint8_t rate_ack_waiting;
     uint8_t peer_features_page1[8];
     gap_conn_subrate subrate;
+
+    // PHY negotiation.
     gap_conn_phy phy, preferred_phy, pending_phy;
     volatile uint8_t phy_queued;
     uint8_t phy_pending, phy_update_pending, phy_status;
     uint16_t phy_instant;
     uint32_t phy_started_ms;
-    uint16_t params_min, params_max, params_latency, params_timeout;
-    uint32_t params_started_ms;
+
+    // Data-length negotiation.
     uint16_t data_capacity, local_tx_octets;
     gap_data_length data_length, remote_data_length;
     volatile uint8_t length_queued;
     uint8_t length_pending, length_status;
     uint32_t length_started_ms;
-    gap_conn_parameters params, new_params;
-    uint16_t interval_125us, peer_sca_ppm;
-    uint16_t event_counter, update_instant, update_win_offset;
-    uint16_t channel_map_instant;
     uint16_t rate_interval_min, rate_interval_max;
     uint16_t rate_factor_min, rate_factor_max, rate_latency;
     uint16_t rate_continuation, rate_timeout, rate_periodicity;
@@ -361,24 +381,29 @@ typedef struct {
     uint16_t rate_interval, rate_win_offset, rate_instant;
     uint16_t rate_factor, rate_update_latency, rate_update_continuation;
     uint16_t rate_update_timeout;
-    uint32_t access_address, crc_init, last_rx_ms;
-    uint64_t next_ticks;
+} gap_conn_procedures;
+
+typedef struct {
+    gap_conn_link link;
+    gap_conn_security security;
+    gap_conn_procedures procedures;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
-static uint8_t gap_conn_slot;
 
+static uint8_t gap_conn_slot;
 #define gap_conn gap_conn_ctx[gap_conn_slot]
+
 int gap_conn_busy(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (gap_conn_ctx[slot].active) return 1;
+        if (gap_conn_ctx[slot].link.active) return 1;
     return 0;
 }
 
 static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (!gap_conn_ctx[slot].active) return slot;
+        if (!gap_conn_ctx[slot].link.active) return slot;
     return -1;
 }
 // Public connection handles identify a live slot generation, so a handle
@@ -391,7 +416,7 @@ typedef struct {
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        count += gap_conn_ctx[slot].active != 0;
+        count += gap_conn_ctx[slot].link.active != 0;
     return count;
 }
 
@@ -401,7 +426,7 @@ static inline int gap_conn_handle_at(
 ) {
     if (!handle) return 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!gap_conn_ctx[slot].active) continue;
+        if (!gap_conn_ctx[slot].link.active) continue;
         if (index--) continue;
         handle->slot = slot;
         handle->generation = gap_conn_generations[slot];
@@ -415,7 +440,7 @@ static inline int gap_conn_select(
     gap_conn_handle handle
 ) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
-        !gap_conn_ctx[handle.slot].active ||
+        !gap_conn_ctx[handle.slot].link.active ||
         gap_conn_generations[handle.slot] != handle.generation)
         return 0;
     gap_conn_slot = handle.slot;
@@ -426,7 +451,7 @@ static inline int gap_conn_select(
 static inline int gap_conn_current(
     gap_conn_handle *handle
 ) {
-    if (!handle || !gap_conn.active) return 0;
+    if (!handle || !gap_conn.link.active) return 0;
     handle->slot = gap_conn_slot;
     handle->generation = gap_conn_generations[gap_conn_slot];
     return handle->generation != 0;
@@ -506,8 +531,8 @@ static int gap_conn_accept(
     if (free_slot < 0) return 0;
     gap_conn_slot = (uint8_t)free_slot;
 #if GAP_EXT_ADV_SUPPORT
-    gap_conn.sync_transfer_queued = 0;
-    gap_conn.sync_transfer_handle = 0;
+    gap_conn.procedures.sync_transfer_queued = 0;
+    gap_conn.procedures.sync_transfer_handle = 0;
 #endif
     uint16_t win_offset = (uint16_t)frame[22] | (uint16_t)frame[23] << 8;
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
@@ -517,119 +542,119 @@ static int gap_conn_accept(
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            gap_conn.used_channels[count++] = channel;
-    gap_conn.access_address = (uint32_t)frame[14] |
+            gap_conn.link.used_channels[count++] = channel;
+    gap_conn.link.access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
-    gap_conn.crc_init = (uint32_t)frame[18] |
+    gap_conn.link.crc_init = (uint32_t)frame[18] |
         (uint32_t)frame[19] << 8 | (uint32_t)frame[20] << 16;
-    memcpy(gap_conn.channel_map, frame + 30, 5);
-    gap_conn.used_count = count;
-    gap_conn.hop = hop;
-    gap_conn.unmapped_channel = 0;
-    gap_conn.params.interval = interval;
-    gap_conn.interval_125us = (uint16_t)(interval * 10);
-    gap_conn.params.latency = latency;
-    gap_conn.params.supervision_timeout = timeout;
-    gap_conn.subrate.factor = 1;
-    gap_conn.subrate.base_event = 0;
-    gap_conn.subrate.continuation = 0;
-    gap_conn.subrate.latency = 0;
-    gap_conn.subrate.latency_remaining = 0;
-    gap_conn.subrate.continuations = 0;
-    gap_conn.subrate.transition = 0;
-    gap_conn.subrate.event_activity = 0;
-    gap_conn.subrate.event_received = 0;
-    gap_conn.subrate.force_event = 0;
-    gap_conn.subrate.pending = 0;
-    gap_conn.subrate.update_queued = 0;
-    gap_conn.subrate.request_queued = 0;
-    gap_conn.subrate.request_pending = 0;
-    gap_conn.subrate.status = 0;
-    gap_conn.peer_features4 = 0;
+    memcpy(gap_conn.link.channel_map, frame + 30, 5);
+    gap_conn.link.used_count = count;
+    gap_conn.link.hop = hop;
+    gap_conn.link.unmapped_channel = 0;
+    gap_conn.procedures.params.interval = interval;
+    gap_conn.link.interval_125us = (uint16_t)(interval * 10);
+    gap_conn.procedures.params.latency = latency;
+    gap_conn.procedures.params.supervision_timeout = timeout;
+    gap_conn.procedures.subrate.factor = 1;
+    gap_conn.procedures.subrate.base_event = 0;
+    gap_conn.procedures.subrate.continuation = 0;
+    gap_conn.procedures.subrate.latency = 0;
+    gap_conn.procedures.subrate.latency_remaining = 0;
+    gap_conn.procedures.subrate.continuations = 0;
+    gap_conn.procedures.subrate.transition = 0;
+    gap_conn.procedures.subrate.event_activity = 0;
+    gap_conn.procedures.subrate.event_received = 0;
+    gap_conn.procedures.subrate.force_event = 0;
+    gap_conn.procedures.subrate.pending = 0;
+    gap_conn.procedures.subrate.update_queued = 0;
+    gap_conn.procedures.subrate.request_queued = 0;
+    gap_conn.procedures.subrate.request_pending = 0;
+    gap_conn.procedures.subrate.status = 0;
+    gap_conn.procedures.peer_features4 = 0;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    gap_conn.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    gap_conn.window_size = win_size;
-    gap_conn.next_ticks = received_ticks +
+    gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    gap_conn.procedures.window_size = win_size;
+    gap_conn.link.next_ticks = received_ticks +
         (uint64_t)win_offset * interval_unit_ticks + window_delay_ticks;
-    gap_conn.last_rx_ms = GET_MILLIS();
-    gap_conn.first_event = 1;
-    gap_conn.rx_armed = 0;
-    gap_conn.event_replied = 0;
-    gap_conn.channel_selected = 0;
-    gap_conn.expected_rx_sn = 0;
-    gap_conn.tx_sn = 0;
-    gap_conn.tx_pending = 0;
-    gap_conn.tx_queued = 0;
-    gap_conn.tx_l2cap_remaining = 0;
-    gap_conn.rx_ready = 0;
-    gap_conn.event_counter = 0;
-    gap_conn.timing_update_pending = 0;
-    gap_conn.local_update_queued = gap_conn.local_params_queued = 0;
-    gap_conn.params_pending = gap_conn.params_local = 0;
-    gap_conn.features_known = gap_conn.peer_features = gap_conn.peer_features2 = 0;
-    gap_conn.peer_features4 = 0;
-    gap_conn.peer_features7 = 0;
-    gap_conn.feature_page1_known = gap_conn.feature_ext_pending = 0;
-    gap_conn.rate_set_queued = gap_conn.rate_request_queued = 0;
-    gap_conn.rate_update_pending = gap_conn.rate_req_pending = 0;
-    gap_conn.channel.report_queued = gap_conn.channel.report_pending = 0;
-    gap_conn.channel.status_queued = gap_conn.channel.enabled = 0;
-    gap_conn.channel.classification_valid = 1;
-    gap_conn.channel.peer_classification_valid = 0;
-    gap_conn.channel.status_last_sent_valid = 0;
-    gap_conn.channel.min_spacing_200ms = 5;
-    gap_conn.channel.max_delay_200ms = 5;
-    memset(gap_conn.channel.local_classification, 0,
-           sizeof(gap_conn.channel.local_classification));
-    memset(gap_conn.channel.peer_classification, 0,
-           sizeof(gap_conn.channel.peer_classification));
-    gap_conn.channel.status_changed_ms = GET_MILLIS();
-    gap_conn.channel.status_last_sent_ms = 0;
-    memset(gap_conn.peer_features_page1, 0,
-           sizeof(gap_conn.peer_features_page1));
-    gap_conn.phy.tx = gap_conn.phy.rx = GAP_PHY_1M;
-    gap_conn.preferred_phy.tx = gap_conn.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
-    gap_conn.phy_queued = gap_conn.phy_pending = gap_conn.phy_update_pending =
-        gap_conn.phy_status = 0;
-    gap_conn.feature_req_pending = gap_conn.connection_status = 0;
-    gap_conn.update_window_active = 0;
-    gap_conn.channel_map_pending = gap_conn.local_map_queued = 0;
-    gap_conn.terminate_after_reply = 0;
-    gap_conn.version_ind_sent = 0;
-    gap_conn.terminate_queued = 0;
-    gap_conn.terminate_sent = 0;
-    gap_conn.central_role = 0;
-    gap_conn.central_anchor_set = 0;
+    gap_conn.link.last_rx_ms = GET_MILLIS();
+    gap_conn.link.first_event = 1;
+    gap_conn.link.rx_armed = 0;
+    gap_conn.link.event_replied = 0;
+    gap_conn.link.channel_selected = 0;
+    gap_conn.link.expected_rx_sn = 0;
+    gap_conn.link.tx_sn = 0;
+    gap_conn.link.tx_pending = 0;
+    gap_conn.procedures.tx_queued = 0;
+    gap_conn.procedures.tx_l2cap_remaining = 0;
+    gap_conn.procedures.rx_ready = 0;
+    gap_conn.link.event_counter = 0;
+    gap_conn.procedures.timing_update_pending = 0;
+    gap_conn.procedures.local_update_queued = gap_conn.procedures.local_params_queued = 0;
+    gap_conn.procedures.params_pending = gap_conn.procedures.params_local = 0;
+    gap_conn.procedures.features_known = gap_conn.procedures.peer_features = gap_conn.procedures.peer_features2 = 0;
+    gap_conn.procedures.peer_features4 = 0;
+    gap_conn.procedures.peer_features7 = 0;
+    gap_conn.procedures.feature_page1_known = gap_conn.procedures.feature_ext_pending = 0;
+    gap_conn.procedures.rate_set_queued = gap_conn.procedures.rate_request_queued = 0;
+    gap_conn.procedures.rate_update_pending = gap_conn.procedures.rate_req_pending = 0;
+    gap_conn.procedures.channel.report_queued = gap_conn.procedures.channel.report_pending = 0;
+    gap_conn.procedures.channel.status_queued = gap_conn.procedures.channel.enabled = 0;
+    gap_conn.procedures.channel.classification_valid = 1;
+    gap_conn.procedures.channel.peer_classification_valid = 0;
+    gap_conn.procedures.channel.status_last_sent_valid = 0;
+    gap_conn.procedures.channel.min_spacing_200ms = 5;
+    gap_conn.procedures.channel.max_delay_200ms = 5;
+    memset(gap_conn.procedures.channel.local_classification, 0,
+           sizeof(gap_conn.procedures.channel.local_classification));
+    memset(gap_conn.procedures.channel.peer_classification, 0,
+           sizeof(gap_conn.procedures.channel.peer_classification));
+    gap_conn.procedures.channel.status_changed_ms = GET_MILLIS();
+    gap_conn.procedures.channel.status_last_sent_ms = 0;
+    memset(gap_conn.procedures.peer_features_page1, 0,
+           sizeof(gap_conn.procedures.peer_features_page1));
+    gap_conn.procedures.phy.tx = gap_conn.procedures.phy.rx = GAP_PHY_1M;
+    gap_conn.procedures.preferred_phy.tx = gap_conn.procedures.preferred_phy.rx = GAP_HW_PHY_MASK() & 7;
+    gap_conn.procedures.phy_queued = gap_conn.procedures.phy_pending = gap_conn.procedures.phy_update_pending =
+        gap_conn.procedures.phy_status = 0;
+    gap_conn.procedures.feature_req_pending = gap_conn.procedures.connection_status = 0;
+    gap_conn.procedures.update_window_active = 0;
+    gap_conn.procedures.channel_map_pending = gap_conn.procedures.local_map_queued = 0;
+    gap_conn.link.terminate_after_reply = 0;
+    gap_conn.link.version_ind_sent = 0;
+    gap_conn.link.terminate_queued = 0;
+    gap_conn.link.terminate_sent = 0;
+    gap_conn.link.central_role = 0;
+    gap_conn.link.central_anchor_set = 0;
     uint16_t capacity = GAP_HW_DATA_MAX();
     if (capacity < 27) return 0;
-    gap_conn.data_capacity = capacity < GAP_CONN_DATA_MAX ?
+    gap_conn.procedures.data_capacity = capacity < GAP_CONN_DATA_MAX ?
         capacity : GAP_CONN_DATA_MAX;
-    gap_conn.local_tx_octets = 27;
-    gap_conn.data_length = gap_conn.remote_data_length =
+    gap_conn.procedures.local_tx_octets = 27;
+    gap_conn.procedures.data_length = gap_conn.procedures.remote_data_length =
         (gap_data_length){27, 328, 27, 328};
-    gap_conn.length_queued = gap_conn.length_pending = gap_conn.length_status = 0;
+    gap_conn.procedures.length_queued = gap_conn.procedures.length_pending = gap_conn.procedures.length_status = 0;
     {
         volatile uint8_t *wipe_bytes = (volatile uint8_t *)(&gap_security);
         size_t wipe_len = sizeof(gap_security);
         while (wipe_len--) *wipe_bytes++ = 0;
     }
-    gap_conn.initiator_type = (frame[0] >> 6) & 1;
-    gap_conn.responder_type = (frame[0] >> 7) & 1;
-    memcpy(gap_conn.initiator, frame + 2, 6);
-    memcpy(gap_conn.responder, frame + 8, 6);
-    gap_conn.peer_id_type = gap_conn.initiator_type;
-    memcpy(gap_conn.peer_id_addr, gap_conn.initiator, 6);
-    gap_conn.bond_load_pending = 1;
-    gap_conn.bonded = gap_conn.bond_restore_started = gap_conn.bond_restore_attempted = 0;
-    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
-    gap_conn.authenticated = gap_conn.encryption_key_size = 0;
+    gap_conn.link.initiator_type = (frame[0] >> 6) & 1;
+    gap_conn.link.responder_type = (frame[0] >> 7) & 1;
+    memcpy(gap_conn.link.initiator, frame + 2, 6);
+    memcpy(gap_conn.link.responder, frame + 8, 6);
+    gap_conn.security.peer_id_type = gap_conn.link.initiator_type;
+    memcpy(gap_conn.security.peer_id_addr, gap_conn.link.initiator, 6);
+    gap_conn.security.bond_load_pending = 1;
+    gap_conn.security.bonded = gap_conn.security.bond_restore_started = gap_conn.security.bond_restore_attempted = 0;
+    memset(&gap_conn.security.bond, 0, sizeof(gap_conn.security.bond));
+    gap_conn.security.authenticated = gap_conn.security.encryption_key_size = 0;
     gap_security_generation++;
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
-    gap_conn.active = 1;
+    gap_conn.link.active = 1;
     if (!gap_smp_link_init()) {
-        gap_conn.active = 0;
+        gap_conn.link.active = 0;
         return 0;
     }
     gap_adv.enabled = 0;
@@ -666,7 +691,7 @@ int gap_conn_timing_set(const gap_conn_timing_config *timing) {
         timing->latency > 499 || timing->supervision_timeout < 10 ||
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
-        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.link.active ||
         gap_central.active || timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
@@ -779,7 +804,7 @@ static int gap_accept_list_nonempty(void) {
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central.active ||
+        gap_conn.link.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int free_slot = -1;
@@ -801,7 +826,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central.active)
+        gap_conn.link.active || gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
@@ -818,7 +843,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     if (gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active ||
+        gap_conn.link.active ||
         gap_central.active)
         return 0;
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
@@ -842,7 +867,7 @@ int gap_identity_set(
 ) {
     if (!address || address_type > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central.active ||
+        gap_conn.link.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int slot = -1;
@@ -880,7 +905,7 @@ int gap_identity_privacy(
 ) {
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active ||
+        gap_conn.link.active ||
         gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
@@ -947,7 +972,7 @@ int gap_identity_local_key(
 ) {
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central.active)
+        gap_conn.link.active || gap_central.active)
         return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0 || gap_identities[slot].address_type != address_type ||
@@ -992,7 +1017,7 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn.active ||
+        gap_conn.link.active ||
         gap_central.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
     if (!irk && !timeout_s) {
@@ -1046,7 +1071,7 @@ int gap_privacy_set_randomized(
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn.active || gap_central.active)
+        gap_conn.link.active || gap_central.active)
         return 0;
     uint16_t timeout_s;
     if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
@@ -1069,7 +1094,7 @@ int gap_privacy_set_randomized(
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn.active || gap_central.active)
+        gap_conn.link.active || gap_central.active)
         return 0;
     gap_privacy.scan_filter = scan;
     gap_privacy.connection_filter = connection;
@@ -1082,7 +1107,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 int gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        gap_conn.active || gap_central.active ||
+        gap_conn.link.active || gap_central.active ||
         !gap_static_random_address_valid(address))
         return 0;
     memcpy(gap_random_address, address, 6);
@@ -1096,7 +1121,7 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn.active ||
+        gap_conn.link.active ||
         gap_central.active)
         return 0;
     gap_privacy.enabled = 0;
