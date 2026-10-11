@@ -249,14 +249,11 @@ typedef struct {
         uint32_t access_address, crc_init, last_rx_ms;
         uint64_t next_ticks;
     } link;
-    // Connection endpoint addresses used by the Link Layer and SMP.
+    // Connection endpoint and peer identity addresses.
     struct {
         uint8_t type, address[6];
-    } initiator, responder;
+    } initiator, responder, peer_id;
     uint8_t authenticated, encryption_key_size;
-    struct {
-        uint8_t type, address[6];
-    } peer_id;
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
     struct {

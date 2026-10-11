@@ -1935,8 +1935,7 @@ static void gap_smp_poll(void) {
                 gap_conn.bond.version = GAP_BOND_VERSION;
                 gap_conn.bond.valid = 1;
                 gap_conn.bond.peer_address_type = gap_conn.peer_id.type;
-                memcpy(gap_conn.bond.peer_address,
-                       gap_conn.peer_id.address, 6);
+                memcpy(gap_conn.bond.peer_address, gap_conn.peer_id.address, 6);
                 gap_conn.bond.key_size = gap_smp.pairing.key_size;
                 gap_conn.bond.authenticated = gap_smp.pairing.authenticated;
                 smp_bond_peripheral_start();
