@@ -314,7 +314,7 @@ int gap_periodic_adv_pawr_connect(
 ) {
     if (!peer_address || peer_address_type > 1 ||
         set_id >= GAP_EXT_ADV_SET_COUNT || gap_conn.active ||
-        gap_central_conn.active || gap_scanning ||
+        gap_central_conn.active || gap_scanner.scanning ||
         !gap_ext_adv[set_id].periodic_enabled ||
         !gap_ext_adv[set_id].pawr_enabled ||
         subevent >= gap_ext_adv[set_id].pawr_num_subevents ||
@@ -655,14 +655,14 @@ static void gap_ext_adv_report_queue(
     if ((has_address && !gap_peer_allowed(identity_slot, address, address_type)) ||
         (gap_privacy.scan_filter && identity_slot < 0))
         return;
-    if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
+    if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Limited discovery requires the Limited flag; general accepts either.
         uint8_t discoverable = 0;
         for (uint16_t offset = 0; offset < data_len;) {
             uint8_t field_len = data[offset];
             if (field_len >= 2 && data[offset + 1] == 0x01) {
                 discoverable = (data[offset + 2] &
-                    (gap_scan_settings.discovery_mode ==
+                    (gap_scanner.discovery_mode ==
                         GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)) != 0;
                 break;
             }
@@ -680,7 +680,7 @@ static void gap_ext_adv_report_queue(
     for (uint16_t i = 0; i < data_len; i++)
         data_hash = (data_hash ^ data[i]) * 16777619;
 
-    if (gap_scan_settings.filter_duplicates) {
+    if (gap_scanner.filter_duplicates) {
         for (uint8_t i = 0; i < gap_ext_adv_seen_count; i++) {
             if (gap_ext_adv_seen[i].used &&
                 gap_ext_adv_seen[i].address_type == identity_type &&
@@ -740,7 +740,7 @@ static void gap_ext_adv_context_clear(uint8_t slot) {
 int gap_ext_scan_receive(
     uint8_t pdu_kind, const uint8_t *pdu, size_t pdu_len, int8_t rssi
 ) {
-    if (!gap_scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU) return 0;
+    if (!gap_scanner.scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU) return 0;
     gap_ext_adv_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
     uint32_t now = GET_MILLIS();
@@ -922,7 +922,7 @@ int gap_periodic_sync_start(
         if (!gap_periodic_syncs[i].used) { slot = i; break; }
     if (slot < 0) return 0;
 
-    if (!gap_scanning) {
+    if (!gap_scanner.scanning) {
         gap_scan_start(0);
         gap_periodic_sync_owned_scan = 1;
     }
@@ -959,7 +959,7 @@ static void gap_periodic_sync_owned_scan_finish(void) {
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_periodic_syncs[i].used) return;
     gap_periodic_sync_owned_scan = 0;
-    if (gap_scanning) gap_scan_stop();
+    if (gap_scanner.scanning) gap_scan_stop();
 }
 
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
@@ -1455,9 +1455,9 @@ static int gap_periodic_connect_request(
 
     gap_conn.peer_sca_ppm = 500;
     gap_conn.central_role = 0;
-    gap_scanning = gap_active_scanning = 0;
+    gap_scanner.scanning = gap_scanner.active = 0;
     gap_central_conn.active = 0;
-    gap_scan_generation++;
+    gap_scanner.generation++;
     return 1;
 }
 
@@ -1552,8 +1552,8 @@ static int gap_periodic_connect_exchange(
         gap_conn.peer_identity_type = peer_type;
         memcpy(gap_conn.peer_identity_address, peer_address, 6);
     }
-    gap_scanning = gap_active_scanning = 0;
-    gap_scan_generation++;
+    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.generation++;
     return 1;
 }
 

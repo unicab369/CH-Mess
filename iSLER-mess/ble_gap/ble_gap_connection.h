@@ -137,7 +137,7 @@ static void gap_conn_end(void) {
     gap_conn.terminate_sent = 0;
     gap_conn.central_role = 0;
     gap_conn.central_anchor_set = 0;
-    gap_scan.applied_generation = gap_scan_generation - 1;
+    gap_scan.applied_generation = gap_scanner.generation - 1;
 }
 
 // Apply connection or channel-map settings when their Instant event

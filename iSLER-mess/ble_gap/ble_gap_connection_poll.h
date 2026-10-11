@@ -275,36 +275,29 @@ void gap_hw_received(void) {
                 if (!gap_security.phase && gap_tx_frame[1] == 0 &&
                         gap_conn.sync_transfer_queued
                 ) {
-                    int sync_slot = gap_periodic_sync_handle_slot(
+                    int slot = gap_periodic_sync_handle_slot(
                         gap_conn.sync_transfer_handle);
-                    if (sync_slot >= 0 && gap_periodic_sync_transfer_encode(
-                            gap_tx_frame,
-                            gap_conn.sync_transfer_id,
-                            (uint8_t)sync_slot, conn_anchor_ticks,
-                            event_counter)
-                    ) {
-                        gap_conn.sync_transfer_queued = 0;
-                    } else {
-                        gap_conn.sync_transfer_queued = 0;
+                    if (slot >= 0) {
+                        gap_periodic_sync_transfer_encode(
+                            gap_tx_frame, gap_conn.sync_transfer_id,
+                            (uint8_t)slot, conn_anchor_ticks, event_counter);
                     }
+                    gap_conn.sync_transfer_queued = 0;
                 }
 #endif
             }
+
             if (!gap_security.phase) {
                 if (!gap_conn.central_role && gap_conn.channel.status_queued &&
                     gap_conn.channel.enabled
                 ) {
                     uint32_t now_ms = GET_MILLIS();
-                    uint32_t delay_ms =
-                        (uint32_t)gap_conn.channel.max_delay_200ms * 200;
-                    uint32_t spacing_ms =
-                        (uint32_t)gap_conn.channel.min_spacing_200ms * 200;
                     if ((uint32_t)(now_ms - gap_conn.channel.status_changed_ms) >=
-                            delay_ms &&
+                            (uint32_t)gap_conn.channel.max_delay_200ms * 200 &&
                         (!gap_conn.channel.status_last_sent_valid ||
                          (uint32_t)(now_ms - gap_conn.channel.status_last_sent_ms) >=
-                            spacing_ms))
-                        gap_send_channel_status();
+                            (uint32_t)gap_conn.channel.min_spacing_200ms * 200)
+                    ) gap_send_channel_status();
                 }
                 if (gap_tx_frame[1] == 0 && gap_conn.tx_queued &&
                     !gap_conn.terminate_after_reply
@@ -319,44 +312,51 @@ void gap_hw_received(void) {
             // data PDU; a zero-length LL Control PDU is invalid.
             if (gap_tx_frame[1] == 0) gap_tx_frame[0] = 0x01;
         }
+
         if (gap_tx_frame[1]) gap_conn.subrate.event_activity = 1;
         gap_conn_update_apply(1);
         if (!gap_conn.active) {
             gap_conn_slot = previous_slot;
             return;
         }
+
         gap_conn_event_advance();
         gap_conn_update_apply(0);
         if (!gap_conn.active) {
             gap_conn_slot = previous_slot;
             return;
         }
-        gap_tx_frame[0] =
-            (gap_tx_frame[0] & 0x03) |
-            (gap_conn.expected_rx_sn << 2) |
-            (gap_conn.tx_sn << 3);
+
+        gap_tx_frame[0] =   (gap_tx_frame[0] & 0x03) |
+                            (gap_conn.expected_rx_sn << 2) |
+                            (gap_conn.tx_sn << 3);
         gap_conn.tx_pending = 1;
         uint8_t *transmit = gap_security_tx_frame();
         if (!transmit) {
             gap_conn_slot = previous_slot;
             return;
         }
+
         GAP_HW_TX_BUFFER(transmit);
         gap_conn.event_replied = 1;
         GAP_HW_LINK_TX();
         gap_conn_slot = previous_slot;
         return;
     }
+
 #if GAP_EXT_ADV_SUPPORT
     if (gap_ext_adv_scan.waiting && pdu_type == 0x03) {
         if (frame[1] != 12 ||
             ((frame[0] >> 7) & 1) != gap_ext_adv_scan.address_type ||
-            memcmp(frame + 8, gap_ext_adv_scan.address, 6) != 0) {
+            memcmp(frame + 8, gap_ext_adv_scan.address, 6) != 0
+        ) {
             gap_conn_slot = previous_slot;
             return;
         }
+
         uint8_t scanner_type = (frame[0] >> 6) & 1;
         int scanner_slot = gap_identity_find(frame + 2, scanner_type);
+
         if (!gap_peer_allowed(scanner_slot, frame + 2, scanner_type) ||
             (gap_privacy.connection_filter && scanner_slot < 0) ||
             (gap_adv.scan_accept &&
@@ -368,23 +368,26 @@ void gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
+
         gap_ext_adv_scan.response_started = 1;
         GAP_HW_TX_BUFFER(gap_ext_adv_frame);
-        gap_ext_adv_scan.response_ticks = GAP_HW_TICKS() +
-            HW_TICKS_FROM_US(150);
+        gap_ext_adv_scan.response_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(150);
         GAP_HW_LINK_TX();
         gap_conn_slot = previous_slot;
         return;
     }
-    if ((gap_scanning || gap_ext_scan.periodic_listening) &&
+
+    if ((gap_scanner.scanning || gap_ext_scan.periodic_listening) &&
         ((pdu_type == 0x07) ||
          (gap_ext_scan.periodic_listening && pdu_type == 0x05 && frame[1] == 34)) &&
         !gap_ext_scan.ready
     ) {
-        gap_ext_scan.kind = gap_ext_scan.periodic_listening ?
-            GAP_EXT_ADV_PERIODIC_PDU : gap_ext_scan.aux_listening ?
-                GAP_EXT_ADV_AUXILIARY_PDU :
-                GAP_EXT_ADV_PRIMARY_PDU;
+        gap_ext_scan.kind = gap_ext_scan.periodic_listening
+                            ? GAP_EXT_ADV_PERIODIC_PDU
+                            : gap_ext_scan.aux_listening
+                            ? GAP_EXT_ADV_AUXILIARY_PDU
+                            : GAP_EXT_ADV_PRIMARY_PDU;
+
         gap_ext_scan.ticks = received_ticks;
         gap_ext_scan.rssi = GAP_HW_RSSI();
         memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
@@ -488,16 +491,16 @@ void gap_hw_received(void) {
             gap_central_conn.any_peer = 0;
             gap_central_conn.selective = 0;
             gap_central_conn.auto_connect = 0;
-            gap_scanning = 0;
-            gap_active_scanning = 0;
-            gap_scan_generation++;
+            gap_scanner.scanning = 0;
+            gap_scanner.active = 0;
+            gap_scanner.generation++;
             gap_rx.ready = 0;
             GAP_HW_PACKET_CLEAR();
         }
         gap_conn_slot = previous_slot;
         return;
     }
-    if (gap_active_scanning && !gap_adv_radio.rx_event &&
+    if (gap_scanner.active && !gap_adv_radio.rx_event &&
         !gap_active_scan_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
         frame[1] >= 6 && frame[1] <= 37
     ) {
@@ -525,7 +528,7 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-    if (gap_active_scanning && gap_active_scan_pending && pdu_type == 0x04 &&
+    if (gap_scanner.active && gap_active_scan_pending && pdu_type == 0x04 &&
         frame[1] >= 6 && frame[1] <= 37 &&
         ((frame[0] >> 6) & 1) == gap_scan.active_address_type &&
         memcmp(frame + 2, gap_scan.active_address, 6) == 0
@@ -607,7 +610,7 @@ void gap_hw_init(void) {
     gap_poll.slot_valid = 0;
     gap_poll.poll_cursor = 0;
     gap_scan.channel_index = 0;
-    gap_scan.applied_generation = gap_scan_generation - 1;
+    gap_scan.applied_generation = gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
@@ -898,9 +901,9 @@ void gap_hw_scan_poll(void) {
         gap_central_conn.any_peer = 0;
         gap_central_conn.selective = 0;
         gap_central_conn.auto_connect = 0;
-        gap_scanning = 0;
-        gap_active_scanning = 0;
-        gap_scan_generation++;
+        gap_scanner.scanning = 0;
+        gap_scanner.active = 0;
+        gap_scanner.generation++;
     }
 
 #if GAP_EXT_ADV_SUPPORT
@@ -925,14 +928,14 @@ void gap_hw_scan_poll(void) {
         (gap_conn.active && (gap_conn.rx_armed || gap_conn.event_replied)))
         return;
     uint8_t reset_scan = !gap_conn_busy() &&
-        gap_scan.applied_generation != gap_scan_generation;
+        gap_scan.applied_generation != gap_scanner.generation;
     if (reset_scan) {
         if (gap_rx_armed) GAP_HW_STOP();
         gap_rx_armed = 0;
         gap_active_scan_pending = 0;
         gap_scan.channel_index = 0;
         gap_scan.interval_start_ms = now;
-        gap_scan.applied_generation = gap_scan_generation;
+        gap_scan.applied_generation = gap_scanner.generation;
     }
 #if GAP_EXT_ADV_SUPPORT
     if (reset_scan) {
@@ -1083,10 +1086,10 @@ void gap_hw_scan_poll(void) {
     if (gap_active_scan_pending) return;
     uint16_t interval_ms = gap_central_conn.auto_connect ?
         gap_conn_timing.background_scan_interval_ms :
-        (gap_scanning ? gap_scan_settings.interval_ms : 20);
+        (gap_scanner.scanning ? gap_scanner.interval_ms : 20);
     uint16_t window_ms = gap_central_conn.auto_connect ?
         gap_conn_timing.background_scan_window_ms :
-        (gap_scanning ? gap_scan_settings.window_ms : 20);
+        (gap_scanner.scanning ? gap_scanner.window_ms : 20);
     uint32_t elapsed = now - gap_scan.interval_start_ms;
     if (elapsed >= interval_ms) {
         uint32_t intervals = elapsed / interval_ms;
@@ -1108,7 +1111,7 @@ void gap_hw_scan_poll(void) {
     }
     if (!gap_rx_armed) {
         uint8_t channel = 37 + gap_scan.channel_index;
-        if (gap_active_scanning) {
+        if (gap_scanner.active) {
             GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1, GAP_PHY_1M,
                                GAP_PHY_1M);
             GAP_HW_LINK_RX();
@@ -1214,8 +1217,8 @@ int gap_send_due(
                     gap_central_conn.any_peer = 0;
                     gap_central_conn.selective = 0;
                     gap_central_conn.auto_connect = 0;
-                    gap_scanning = gap_active_scanning = 0;
-                    gap_scan_generation++;
+                    gap_scanner.scanning = gap_scanner.active = 0;
+                    gap_scanner.generation++;
                     gap_conn_poll();
                     transmit_result = 2;
                 } else {

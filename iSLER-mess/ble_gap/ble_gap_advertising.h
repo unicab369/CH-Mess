@@ -490,11 +490,6 @@ typedef struct {
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 static uint8_t gap_scan_head, gap_scan_count;
-static uint8_t gap_active_scanning, gap_scan_generation;
-static struct {
-    uint16_t interval_ms, window_ms;
-    uint8_t discovery_mode, filter_duplicates;
-} gap_scan_settings = {20, 20, GAP_DISCOVERY_ALL, 0};
 static struct {
     uint8_t address_type, address[6], pdu_type, data_len;
     uint8_t data[GAP_ADV_DATA_MAX];
@@ -515,9 +510,9 @@ void gap_scan_start(uint8_t active) {
     gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
     gap_central_conn.active = 0;
-    gap_scanning = 1;
-    gap_active_scanning = active;
-    gap_scan_generation++;
+    gap_scanner.scanning = 1;
+    gap_scanner.active = active;
+    gap_scanner.generation++;
 }
 
 // Configure each scan window and the interval between window starts, in ms.
@@ -534,14 +529,14 @@ int gap_scan_configure(
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_scan_reset(0);
 #endif
-    gap_scan_settings.interval_ms = interval_ms;
-    gap_scan_settings.window_ms = window_ms;
-    gap_scan_settings.discovery_mode = discovery_mode;
-    gap_scan_settings.filter_duplicates = !!filter_duplicates;
+    gap_scanner.interval_ms = interval_ms;
+    gap_scanner.window_ms = window_ms;
+    gap_scanner.discovery_mode = discovery_mode;
+    gap_scanner.filter_duplicates = !!filter_duplicates;
     gap_scan_head = gap_scan_count = 0;
     gap_scan_seen_count = gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
-    gap_scan_generation++;
+    gap_scanner.generation++;
     return 1;
 }
 
@@ -550,13 +545,13 @@ void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_scan_reset(1);
 #endif
-    gap_scanning = 0;
-    gap_active_scanning = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_central_conn.active = 0;
     gap_central_conn.any_peer = 0;
     gap_central_conn.selective = 0;
     gap_central_conn.auto_connect = 0;
-    gap_scan_generation++;
+    gap_scanner.generation++;
 }
 
 typedef enum {
@@ -569,7 +564,7 @@ typedef enum {
 static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
 ) {
-    if (active_scan > 1 || gap_conn.active || gap_scanning ||
+    if (active_scan > 1 || gap_conn.active || gap_scanner.scanning ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
           mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty())
     ) return 0;
@@ -623,15 +618,15 @@ static int gap_conn_procedure_start(
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
     if (any_peer || auto_connect) gap_scan_start(active_scan);
-    else gap_scanning = 1;
+    else gap_scanner.scanning = 1;
     gap_central_conn.active = 1;
     gap_central_conn.deadline_ms = auto_connect ? 0 :
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
-        gap_active_scanning = 0;
+        gap_scanner.active = 0;
         gap_scan_head = gap_scan_count = 0;
         gap_scan_seen_count = gap_scan_seen_next = 0;
-        gap_scan_generation++;
+        gap_scanner.generation++;
     }
     return 1;
 }
@@ -639,7 +634,7 @@ static int gap_conn_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanning ||
+    if (!peer_address || peer_type > 1 || gap_conn.active || gap_scanner.scanning ||
         gap_central_conn.active
     ) return 0;
 
@@ -692,7 +687,7 @@ int gap_scan_poll(gap_scan_report *report) {
 static inline void gap_receive_report(
     const uint8_t *frame, uint8_t payload_len, int8_t rssi
 ) {
-    if (!gap_scanning || payload_len < 6 || payload_len > 37) return;
+    if (!gap_scanner.scanning || payload_len < 6 || payload_len > 37) return;
 
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
@@ -711,7 +706,7 @@ static inline void gap_receive_report(
     if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
     if (gap_privacy.scan_filter && slot < 0) return;
 
-    if (gap_scan_settings.discovery_mode != GAP_DISCOVERY_ALL) {
+    if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == 4) {
             if (!gap_scan_response_accepted ||
                 address_type != gap_scan_response_address_type ||
@@ -730,7 +725,7 @@ static inline void gap_receive_report(
                 offset += field_len + 1;
             }
             // Check after scanning so Flags can appear anywhere in the payload.
-            if (!(flags & (gap_scan_settings.discovery_mode ==
+            if (!(flags & (gap_scanner.discovery_mode ==
                 GAP_DISCOVERY_LIMITED ? 0x01 : 0x03))) return;
 
             if (pdu_type == 0 || pdu_type == 6) {
@@ -740,7 +735,7 @@ static inline void gap_receive_report(
             }
         }
     }
-    if (gap_scan_settings.filter_duplicates) {
+    if (gap_scanner.filter_duplicates) {
         const uint8_t *identity = slot >= 0 ? gap_identities[slot].address : frame + 2;
         uint8_t identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
         // For directed advertising, compare the target address too.
