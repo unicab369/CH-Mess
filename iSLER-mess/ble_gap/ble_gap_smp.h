@@ -1764,25 +1764,25 @@ static void gap_smp_poll(void) {
             }
             gap_smp.bearer.pairing.bond_tx_step = 32;
         }
-        else if (!gap_conn.link_state.central_role && gap_smp.bearer.pairing.bond_tx_step == 32 &&
-                   (gap_smp.bearer.pairing.response[6] & GAP_KEY_DIST_IDENTITY)
-        ) {
-            if (!gap_smp_queue(SMP_IDENTITY_INFORMATION, gap_conn.bond.local_irk, 16)) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
+        else if (!gap_conn.link_state.central_role &&
+                 gap_smp.bearer.pairing.bond_tx_step == 32 &&
+                 (gap_smp.bearer.pairing.response[6] &
+                  (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))) {
+            if (gap_smp.bearer.pairing.response[6] & GAP_KEY_DIST_IDENTITY) {
+                if (!gap_smp_queue(SMP_IDENTITY_INFORMATION,
+                                   gap_conn.bond.local_irk, 16)) {
+                    gap_smp_fail(SMP_FAIL_UNSPECIFIED);
+                    return;
+                }
+                gap_smp.bearer.pairing.bond_tx_step = 33;
+            } else {
+                if (!gap_smp_queue(SMP_SIGNING_INFORMATION,
+                                   gap_conn.bond.local_csrk, 16)) {
+                    gap_smp_fail(SMP_FAIL_UNSPECIFIED);
+                    return;
+                }
+                gap_smp.bearer.pairing.bond_tx_step = 35;
             }
-            gap_smp.bearer.pairing.bond_tx_step = 33;
-
-        }
-        else if (!gap_conn.link_state.central_role && gap_smp.bearer.pairing.bond_tx_step == 32 &&
-                   (gap_smp.bearer.pairing.response[6] & GAP_KEY_DIST_SIGNING)
-        ) {
-            if (!gap_smp_queue(SMP_SIGNING_INFORMATION, gap_conn.bond.local_csrk, 16)
-            ) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
-            }
-            gap_smp.bearer.pairing.bond_tx_step = 35;
-
         }
         else if (!gap_conn.link_state.central_role && gap_smp.bearer.pairing.bond_tx_step == 33) {
             uint8_t irk[16] = {0}, address[7] = {0};
