@@ -402,8 +402,7 @@ static inline int smp_take_received(
 static inline int smp_random_bytes(uint8_t *out, unsigned len) {
     if (!out || !len) return 0;
     if (GAP_RANDOM_SECURE_BYTES(out, len)) return 1;
-    volatile uint8_t *wipe = out;
-    while (len--) *wipe++ = 0;
+    gap_wipe(out, len);
     return 0;
 }
 
@@ -423,13 +422,10 @@ static inline int smp_aes128(
     gap_sc_reverse(standard_input, input, sizeof(standard_input));
     AES_ENCRYPT_BLOCK(standard_key, standard_input, standard_output);
     gap_sc_reverse(output, standard_output, sizeof(standard_output));
-    volatile uint8_t *wipe = standard_key;
 
-    for (size_t i = 0; i < sizeof(standard_key); i++) wipe[i] = 0;
-    wipe = standard_input;
-    for (size_t i = 0; i < sizeof(standard_input); i++) wipe[i] = 0;
-    wipe = standard_output;
-    for (size_t i = 0; i < sizeof(standard_output); i++) wipe[i] = 0;
+    gap_wipe(standard_key, sizeof(standard_key));
+    gap_wipe(standard_input, sizeof(standard_input));
+    gap_wipe(standard_output, sizeof(standard_output));
     return 1;
 }
 
@@ -447,8 +443,7 @@ static inline int smp_legacy_s1(
     memcpy(r, initiator_random, 8);
     memcpy(r + 8, responder_random, 8);
     int ok = smp_aes128(smp, tk, r, stk);
-    volatile uint8_t *wipe = r;
-    for (size_t i = 0; i < sizeof(r); i++) wipe[i] = 0;
+    gap_wipe(r, sizeof(r));
     return ok;
 }
 
@@ -461,24 +456,6 @@ static inline int smp_poll(ble_smp *smp) {
     memset(smp->tx, 0, sizeof(smp->tx));
     smp->tx_len = 0;
     return 1;
-}
-
-// End a completed or abandoned SMP procedure, wiping any queued PDU and
-// cancelling its deadline while keeping the bearer and L2CAP
-// registration ready for a later procedure on the same connection.
-static inline void smp_procedure_finish(ble_smp *smp) {
-    if (!smp) return;
-    volatile uint8_t *wipe = smp->tx;
-    for (size_t i = 0; i < sizeof(smp->tx); i++) wipe[i] = 0;
-    wipe = smp->rx;
-    for (size_t i = 0; i < sizeof(smp->rx); i++) wipe[i] = 0;
-    smp->tx_len = 0;
-    smp->rx_len = 0;
-    smp->procedure_active = 0;
-    wipe = (volatile uint8_t *)&smp->pairing;
-    for (size_t i = 0; i < sizeof(smp->pairing); i++) wipe[i] = 0;
-    smp->pairing.phase = SMP_PHASE_IDLE;
-    smp->deadline_ms = 0;
 }
 
 #ifndef BLE_GAP_SMP_CORE_TEST
@@ -550,7 +527,6 @@ static uint8_t gap_bond_repair_pending_contexts[GAP_CONNECTION_COUNT];
 #define gap_bond_repair_pending \
     gap_bond_repair_pending_contexts[gap_conn_slot]
 
-static void gap_smp_bond_abort(void);
 static void gap_smp_finish(uint8_t status);
 
 // Platforms implement durable whole-record bond storage. LOAD returns 1 for
@@ -593,19 +569,9 @@ static int gap_sc_generate_key(void) {
         memcpy(gap_smp.bearer.pairing.sc.private_key, private_key, 32);
         memcpy(gap_smp.bearer.pairing.sc.public_key, public_key, 64);
     } else generated = 0;
-    volatile uint8_t *wipe = private_key;
-    for (size_t i = 0; i < sizeof(private_key); i++) wipe[i] = 0;
-    wipe = public_key;
-    for (size_t i = 0; i < sizeof(public_key); i++) wipe[i] = 0;
+    gap_wipe(private_key, sizeof(private_key));
+    gap_wipe(public_key, sizeof(public_key));
     return generated;
-}
-
-// Erase OOB values and the matching private key after one pairing attempt.
-static void gap_sc_oob_clear(void) {
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
-    for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
-    wipe = (volatile uint8_t *)&gap_sc_oob_peer;
-    for (size_t i = 0; i < sizeof(gap_sc_oob_peer); i++) wipe[i] = 0;
 }
 
 static int gap_sc_accept_key(const uint8_t on_air[64]) {
@@ -628,11 +594,8 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     if (derived && gap_conn.link_state.active && generation == gap_security_generation)
         memcpy(gap_smp.bearer.pairing.sc.dhkey, dhkey, 32);
     else derived = 0;
-    volatile uint8_t *wipe = dhkey;
-    for (size_t i = 0; i < sizeof(dhkey); i++) wipe[i] = 0;
-    wipe = gap_smp.bearer.pairing.sc.private_key;
-    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc.private_key); i++)
-        wipe[i] = 0;
+    gap_wipe(dhkey, sizeof(dhkey));
+    gap_wipe(gap_smp.bearer.pairing.sc.private_key, sizeof(gap_smp.bearer.pairing.sc.private_key));
     return derived;
 }
 
@@ -672,42 +635,36 @@ static inline void gap_sc_f5(
         memset(mac_key, 0, 16);
         memset(ltk, 0, 16);
     }
-    volatile uint8_t *wipe = t;
-    for (size_t i = 0; i < sizeof(t); i++) wipe[i] = 0;
-    wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+    gap_wipe(t, sizeof(t));
+    gap_wipe(message, sizeof(message));
 }
 
 static void gap_sc_confirm_value(
     const uint8_t first_x[32],
-                                 const uint8_t second_x[32],
-                                 const uint8_t nonce_air[16],
-                                 uint8_t z,
-                                 uint8_t confirm_air[16]
+    const uint8_t second_x[32],
+    const uint8_t nonce_air[16],
+    uint8_t confirm_air[16]
 ) {
     uint8_t nonce[16], confirm[16];
     gap_sc_reverse(nonce, nonce_air, 16);
     uint8_t message[65];
     memcpy(message, first_x, 32);
     memcpy(message + 32, second_x, 32);
+    uint32_t passkey = (uint32_t)gap_smp.bearer.pairing.tk[0] |
+        (uint32_t)gap_smp.bearer.pairing.tk[1] << 8 |
+        (uint32_t)gap_smp.bearer.pairing.tk[2] << 16 |
+        (uint32_t)gap_smp.bearer.pairing.tk[3] << 24;
+    // f4 uses zero for other associations and one passkey bit per round.
+    uint8_t z = gap_smp.bearer.pairing.sc.passkey_required ?
+        (uint8_t)(0x80 | ((passkey >>
+            gap_smp.bearer.pairing.sc.passkey_round) & 1)) : 0;
     message[64] = z;
     if (!smp_port_cmac(nonce, message, sizeof(message), confirm))
         memset(confirm, 0, sizeof(confirm));
     gap_sc_reverse(confirm_air, confirm, 16);
-    volatile uint8_t *wipe = nonce;
-    for (size_t i = 0; i < sizeof(nonce); i++) wipe[i] = 0;
-    wipe = confirm;
-    for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
-    wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-}
-
-static uint8_t gap_sc_passkey_z(void) {
-    uint32_t passkey = (uint32_t)gap_smp.bearer.pairing.tk[0] |
-                        (uint32_t)gap_smp.bearer.pairing.tk[1] << 8 |
-                        (uint32_t)gap_smp.bearer.pairing.tk[2] << 16 |
-                        (uint32_t)gap_smp.bearer.pairing.tk[3] << 24;
-    return 0x80 | ((passkey >> gap_smp.bearer.pairing.sc.passkey_round) & 1);
+    gap_wipe(nonce, sizeof(nonce));
+    gap_wipe(confirm, sizeof(confirm));
+    gap_wipe(message, sizeof(message));
 }
 
 static uint32_t gap_sc_numeric_value(void) {
@@ -730,14 +687,10 @@ static uint32_t gap_sc_numeric_value(void) {
             (uint32_t)mac[13] << 16 | (uint32_t)mac[14] << 8 | mac[15];
         value = mac_value % 1000000;
     }
-    volatile uint8_t *wipe = na;
-    for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
-    wipe = nb;
-    for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
-    wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
-    wipe = mac;
-    for (size_t i = 0; i < sizeof(mac); i++) wipe[i] = 0;
+    gap_wipe(na, sizeof(na));
+    gap_wipe(nb, sizeof(nb));
+    gap_wipe(message, sizeof(message));
+    gap_wipe(mac, sizeof(mac));
     return value;
 }
 
@@ -773,16 +726,11 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
                            message, sizeof(message), check))
         memset(check, 0, sizeof(check));
     gap_sc_reverse(out_air, check, 16);
-    volatile uint8_t *wipe = na;
-    for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
-    wipe = nb;
-    for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
-    wipe = check;
-    for (size_t i = 0; i < sizeof(check); i++) wipe[i] = 0;
-    wipe = r;
-    for (size_t i = 0; i < sizeof(r); i++) wipe[i] = 0;
-    wipe = message;
-    for (size_t i = 0; i < sizeof(message); i++) wipe[i] = 0;
+    gap_wipe(na, sizeof(na));
+    gap_wipe(nb, sizeof(nb));
+    gap_wipe(check, sizeof(check));
+    gap_wipe(r, sizeof(r));
+    gap_wipe(message, sizeof(message));
 }
 
 // Bluetooth nonce: little-endian 39-bit counter, Central direction bit, then IV.
@@ -806,8 +754,7 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     if (ok) ok = smp_aes128(&gap_smp.bearer,
         gap_smp.bearer.pairing.tk, confirm, confirm);
     if (!ok) memset(confirm, 0, 16);
-    volatile uint8_t *wipe = block;
-    for (size_t i = 0; i < sizeof(block); i++) wipe[i] = 0;
+    gap_wipe(block, sizeof(block));
 }
 
 static int gap_smp_link_send_pdu(
@@ -826,9 +773,9 @@ static int gap_smp_link_send_pdu(
 }
 
 static int gap_smp_link_init(void) {
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_smp;
-    for (size_t i = 0; i < sizeof(gap_smp); i++) wipe[i] = 0;
-    gap_sc_oob_clear();
+    gap_wipe(&gap_smp, sizeof(gap_smp));
+    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+    gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
     ble_l2cap_ops ops = {
         .send_pdu = gap_smp_link_send_pdu,
         .context = &gap_smp
@@ -881,40 +828,6 @@ static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
     else
         GAP_HW_PUBLIC_ADDRESS(address + 1);
     return 1;
-}
-
-// Stop the procedure and erase temporary secrets on every success/failure path.
-static void gap_smp_finish(uint8_t status) {
-    if (status) gap_smp_bond_abort();
-    uint8_t discard_bond = status && !gap_conn.bonded &&
-                            (gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_TX ||
-                            gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_RX);
-    volatile uint8_t *wipe = gap_smp.tx;
-
-    for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
-    smp_procedure_finish(&gap_smp.bearer);
-    ble_l2cap_reassembler_reset(&gap_smp.l2cap_rx);
-    // A new SMP pairing procedure requires a new physical connection, even
-    // after an unsuccessful attempt; preserve only the connection status.
-
-    gap_smp.blocked = 1;
-    gap_smp.bearer.pairing.user_notified = gap_smp.bearer.pairing.numeric_notified = 0;
-    gap_smp.status = status;
-    gap_smp.encryption_started = 0;
-    gap_smp.tx_len = gap_smp.tx_offset = 0;
-    gap_smp.l2cap_rx_pending = 0;
-    wipe = (volatile uint8_t *)&gap_smp.bearer.pairing.sc;
-
-    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc); i++) wipe[i] = 0;
-    gap_sc_oob_clear();
-    volatile uint8_t *previous_wipe = (volatile uint8_t *)&gap_smp.previous_bond;
-
-    for (size_t i = 0; i < sizeof(gap_smp.previous_bond); i++) previous_wipe[i] = 0;
-    gap_smp.previous_bond_valid = 0;
-    if (discard_bond) {
-        volatile uint8_t *bond_wipe = (volatile uint8_t *)&gap_conn.bond;
-        for (size_t i = 0; i < sizeof(gap_conn.bond); i++) bond_wipe[i] = 0;
-    }
 }
 
 // Finish a failed pairing and notify the peer with the failure reason.
@@ -972,8 +885,7 @@ int gap_bonding_set(uint8_t enabled) {
         for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
             memset(&bond, 0, sizeof(bond));
             int loaded = GAP_BOND_LOAD(slot, &bond);
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             if (loaded < 0) return 0;
         }
     }
@@ -985,7 +897,10 @@ int gap_bonding_set(uint8_t enabled) {
 int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.bearer.pairing.phase) return 0;
     gap_pairing_policy.secure_connections = enabled;
-    if (!enabled) gap_sc_oob_clear();
+    if (!enabled) {
+        gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+        gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
+    }
     return 1;
 }
 
@@ -997,8 +912,7 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
         gap_security.phase
     ) return 0;
 
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_local;
-    for (size_t i = 0; i < sizeof(gap_sc_oob_local); i++) wipe[i] = 0;
+    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
     memset(&gap_smp.bearer.pairing.sc, 0, sizeof(gap_smp.bearer.pairing.sc));
     uint8_t random[16] = {0}, confirm[16] = {0};
     uint32_t generation = gap_security_generation;
@@ -1007,29 +921,23 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
         !smp_random_bytes(random, sizeof(random)) ||
         !gap_conn.link_state.active || generation != gap_security_generation
     ) {
-        volatile uint8_t *secret = (volatile uint8_t *)&gap_smp.bearer.pairing.sc;
-        for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc); i++) secret[i] = 0;
-        wipe = random;
-        for (size_t i = 0; i < sizeof(random); i++) wipe[i] = 0;
-        wipe = confirm;
-        for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+        gap_wipe(&gap_smp.bearer.pairing.sc, sizeof(gap_smp.bearer.pairing.sc));
+        gap_wipe(random, sizeof(random));
+        gap_wipe(confirm, sizeof(confirm));
         return 0;
     }
 
     gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key,
-                         gap_smp.bearer.pairing.sc.public_key, random, 0, confirm);
+                         gap_smp.bearer.pairing.sc.public_key, random, confirm);
     gap_sc_oob_local.valid = 1;
     memcpy(gap_sc_oob_local.private_key, gap_smp.bearer.pairing.sc.private_key, 32);
     memcpy(gap_sc_oob_local.public_key, gap_smp.bearer.pairing.sc.public_key, 64);
     memcpy(gap_sc_oob_local.data.random, random, 16);
     memcpy(gap_sc_oob_local.data.confirm, confirm, 16);
     *out = gap_sc_oob_local.data;
-    wipe = (volatile uint8_t *)&gap_smp.bearer.pairing.sc;
-    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc); i++) wipe[i] = 0;
-    wipe = random;
-    for (size_t i = 0; i < sizeof(random); i++) wipe[i] = 0;
-    wipe = confirm;
-    for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+    gap_wipe(&gap_smp.bearer.pairing.sc, sizeof(gap_smp.bearer.pairing.sc));
+    gap_wipe(random, sizeof(random));
+    gap_wipe(confirm, sizeof(confirm));
     return 1;
 }
 
@@ -1037,8 +945,7 @@ int gap_sc_oob_get(gap_sc_oob_data *out) {
 int gap_sc_oob_set_peer(const gap_sc_oob_data *peer) {
     if (!gap_pairing_policy.secure_connections || gap_smp.bearer.pairing.phase) return 0;
 
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_sc_oob_peer;
-    for (size_t i = 0; i < sizeof(gap_sc_oob_peer); i++) wipe[i] = 0;
+    gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
     if (peer) {
         gap_sc_oob_peer.valid = 1;
         memcpy(&gap_sc_oob_peer.data, peer, sizeof(*peer));
@@ -1143,10 +1050,7 @@ int gap_pair(void) {
     ) return 0;
 
     uint8_t central_role = !!gap_conn.link_state.central_role;
-    volatile uint8_t *pairing_wipe =
-        (volatile uint8_t *)&gap_smp.bearer.pairing;
-    for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing); i++)
-        pairing_wipe[i] = 0;
+    gap_wipe(&gap_smp.bearer.pairing, sizeof(gap_smp.bearer.pairing));
     gap_smp.bearer.pairing.local_is_central = central_role;
     gap_smp.bearer.pairing.phase = central_role ? SMP_PHASE_RESPONSE :
         SMP_PHASE_SECURITY_REQUEST;
@@ -1174,11 +1078,9 @@ int gap_pair(void) {
         if (gap_pairing_policy.bonding &&
             gap_smp_local_identity(identity_irk, identity_address))
             initiator_keys |= GAP_KEY_DIST_IDENTITY;
-        volatile uint8_t *identity_wipe = identity_irk;
 
-        for (size_t i = 0; i < sizeof(identity_irk); i++) identity_wipe[i] = 0;
-        identity_wipe = identity_address;
-        for (size_t i = 0; i < sizeof(identity_address); i++) identity_wipe[i] = 0;
+        gap_wipe(identity_irk, sizeof(identity_irk));
+        gap_wipe(identity_address, sizeof(identity_address));
 
         uint8_t request[7] = {1,
                               gap_pairing_policy.io,
@@ -1262,25 +1164,21 @@ int gap_bond_get(
         memset(&bond, 0, sizeof(bond));
         int loaded = GAP_BOND_LOAD(slot, &bond);
         if (loaded < 0) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             memset(out, 0, sizeof(*out)); return 0;
         }
         if (!loaded || !gap_bond_valid(&bond)) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             continue;
         }
         if (bond.peer_address_type == address_type &&
             memcmp(bond.peer_address, peer_address, 6) == 0
         ) {
             *out = bond;
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             return 1;
         }
-        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+        gap_wipe(&bond, sizeof(bond));
     }
     memset(out, 0, sizeof(*out));
     return 0;
@@ -1311,34 +1209,27 @@ int gap_bond_set(const gap_bond *bond) {
         memset(&current, 0, sizeof(current));
         int loaded = GAP_BOND_LOAD(slot, &current);
         if (loaded < 0) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&current;
-            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
-            wipe = (volatile uint8_t *)&record;
-            for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+            gap_wipe(&current, sizeof(current));
+            gap_wipe(&record, sizeof(record));
             return 0;
         }
         if (!loaded || !gap_bond_valid(&current)) {
             if (free_slot < 0) free_slot = slot;
-            volatile uint8_t *wipe = (volatile uint8_t *)&current;
-            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+            gap_wipe(&current, sizeof(current));
             continue;
         }
         if (current.peer_address_type == record.peer_address_type &&
             memcmp(current.peer_address, record.peer_address, 6) == 0
         ) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&current;
-            for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+            gap_wipe(&current, sizeof(current));
             int saved = GAP_BOND_SAVE(slot, &record);
-            wipe = (volatile uint8_t *)&record;
-            for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+            gap_wipe(&record, sizeof(record));
             return saved;
         }
-        volatile uint8_t *wipe = (volatile uint8_t *)&current;
-        for (size_t i = 0; i < sizeof(current); i++) wipe[i] = 0;
+        gap_wipe(&current, sizeof(current));
     }
     int saved = free_slot >= 0 && GAP_BOND_SAVE((uint8_t)free_slot, &record);
-    volatile uint8_t *wipe = (volatile uint8_t *)&record;
-    for (size_t i = 0; i < sizeof(record); i++) wipe[i] = 0;
+    gap_wipe(&record, sizeof(record));
     return saved;
 }
 
@@ -1354,20 +1245,17 @@ int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
         memset(&bond, 0, sizeof(bond));
         int loaded = GAP_BOND_LOAD(slot, &bond);
         if (loaded < 0) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             return 0;
         }
         if (loaded && gap_bond_valid(&bond) &&
             bond.peer_address_type == address_type &&
             memcmp(bond.peer_address, peer_address, 6) == 0
         ) {
-            volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-            for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+            gap_wipe(&bond, sizeof(bond));
             return GAP_BOND_DELETE(slot);
         }
-        volatile uint8_t *wipe = (volatile uint8_t *)&bond;
-        for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+        gap_wipe(&bond, sizeof(bond));
     }
     return 0;
 }
@@ -1441,13 +1329,11 @@ static int gap_smp_generic_bond_load(
     memset(out, 0, sizeof(*out));
     memset(&generic, 0, sizeof(generic));
     if (!gap_bond_get(address, address_type, &stored)) {
-        volatile uint8_t *wipe = (volatile uint8_t *)&stored;
-        for (size_t i = 0; i < sizeof(stored); i++) wipe[i] = 0;
+        gap_wipe(&stored, sizeof(stored));
         return 0;
     }
     gap_smp_bond_to_generic(&stored, &generic);
-    volatile uint8_t *stored_wipe = (volatile uint8_t *)&stored;
-    for (size_t i = 0; i < sizeof(stored); i++) stored_wipe[i] = 0;
+    gap_wipe(&stored, sizeof(stored));
     if (
         generic.valid != 1 || generic.peer_address_type != address_type ||
         (address_type && (address[5] & 0xc0) != 0xc0) ||
@@ -1477,13 +1363,11 @@ static int gap_smp_generic_bond_load(
          generic.peripheral_ediv[0] || generic.peripheral_ediv[1]))
         goto invalid;
     gap_smp_bond_from_generic(&generic, out);
-    volatile uint8_t *wipe = (volatile uint8_t *)&generic;
-    for (size_t i = 0; i < sizeof(generic); i++) wipe[i] = 0;
+    gap_wipe(&generic, sizeof(generic));
     return 1;
 invalid:
     {
-        volatile uint8_t *wipe = (volatile uint8_t *)&generic;
-        for (size_t i = 0; i < sizeof(generic); i++) wipe[i] = 0;
+        gap_wipe(&generic, sizeof(generic));
     }
     return 0;
 }
@@ -1521,12 +1405,10 @@ static int gap_smp_generic_bond_store(const gap_bond *bond) {
     gap_bond stored;
     gap_smp_bond_from_generic(&generic, &stored);
     result = gap_bond_set(&stored);
-    volatile uint8_t *stored_wipe = (volatile uint8_t *)&stored;
-    for (size_t i = 0; i < sizeof(stored); i++) stored_wipe[i] = 0;
+    gap_wipe(&stored, sizeof(stored));
 done:
     {
-        volatile uint8_t *wipe = (volatile uint8_t *)&generic;
-        for (size_t i = 0; i < sizeof(generic); i++) wipe[i] = 0;
+        gap_wipe(&generic, sizeof(generic));
     }
     return result;
 }
@@ -1555,6 +1437,44 @@ static void gap_smp_bond_abort(void) {
     }
 }
 
+// Stop the procedure and erase temporary secrets on every success/failure path.
+static void gap_smp_finish(uint8_t status) {
+    if (status) gap_smp_bond_abort();
+    uint8_t discard_bond = status && !gap_conn.bonded &&
+                            (gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_TX ||
+                            gap_smp.bearer.pairing.phase == SMP_PHASE_BOND_RX);
+
+    gap_wipe(gap_smp.tx, sizeof(gap_smp.tx));
+    gap_wipe(gap_smp.bearer.tx, sizeof(gap_smp.bearer.tx));
+    gap_wipe(gap_smp.bearer.rx, sizeof(gap_smp.bearer.rx));
+    gap_smp.bearer.tx_len = 0;
+    gap_smp.bearer.rx_len = 0;
+    gap_smp.bearer.procedure_active = 0;
+    gap_wipe(&gap_smp.bearer.pairing, sizeof(gap_smp.bearer.pairing));
+    gap_smp.bearer.pairing.phase = SMP_PHASE_IDLE;
+    gap_smp.bearer.deadline_ms = 0;
+    ble_l2cap_reassembler_reset(&gap_smp.l2cap_rx);
+    // A new SMP pairing procedure requires a new physical connection, even
+    // after an unsuccessful attempt; preserve only the connection status.
+
+    gap_smp.blocked = 1;
+    gap_smp.bearer.pairing.user_notified = gap_smp.bearer.pairing.numeric_notified = 0;
+    gap_smp.status = status;
+    gap_smp.encryption_started = 0;
+    gap_smp.tx_len = gap_smp.tx_offset = 0;
+    gap_smp.l2cap_rx_pending = 0;
+
+    gap_wipe(&gap_smp.bearer.pairing.sc, sizeof(gap_smp.bearer.pairing.sc));
+    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+    gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
+
+    gap_wipe(&gap_smp.previous_bond, sizeof(gap_smp.previous_bond));
+    gap_smp.previous_bond_valid = 0;
+    if (discard_bond) {
+        gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
+    }
+}
+
 // Close pairing state and retain only its final status for the GAP API.
 static void gap_smp_link_close(void) {
     if (gap_conn.link_state.central_role &&
@@ -1574,10 +1494,10 @@ static void gap_smp_link_close(void) {
         gap_bond_repair_pending = 1;
     }
     uint8_t status = gap_smp.bearer.pairing.phase ? 0x08 : gap_smp.status;
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_smp;
-    for (size_t i = 0; i < sizeof(gap_smp); i++) wipe[i] = 0;
+    gap_wipe(&gap_smp, sizeof(gap_smp));
     gap_smp.status = status;
-    gap_sc_oob_clear();
+    gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+    gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
 }
 
 // Handle bond restoration and repair without exposing SMP phase state to GAP.
@@ -1637,8 +1557,7 @@ static void gap_smp_bond_rx_complete(void) {
                 return;
             }
             gap_conn.bond.has_local_irk = 1;
-            volatile uint8_t *wipe = address;
-            for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+            gap_wipe(address, sizeof(address));
         }
 
         if ((keyset & GAP_KEY_DIST_SIGNING) &&
@@ -1681,8 +1600,7 @@ save_bond:
         gap_smp_finish(0);
     } else {
         gap_smp_finish(SMP_FAIL_UNSPECIFIED);
-        volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
-        for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
+        gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
     }
 }
 
@@ -1706,8 +1624,7 @@ static void gap_smp_bond_peripheral_start(void) {
         for (unsigned i = gap_smp.bearer.pairing.key_size; i < 16; i++)
             gap_conn.bond.peripheral_ltk[i] = 0;
         gap_conn.bond.has_peripheral_ltk = 1;
-        volatile uint8_t *wipe = material;
-        for (size_t i = 0; i < sizeof(material); i++) wipe[i] = 0;
+        gap_wipe(material, sizeof(material));
     }
     if (keyset & GAP_KEY_DIST_IDENTITY) {
         uint8_t address[7] = {0};
@@ -1716,8 +1633,7 @@ static void gap_smp_bond_peripheral_start(void) {
             return;
         }
         gap_conn.bond.has_local_irk = 1;
-        volatile uint8_t *wipe = address;
-        for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+        gap_wipe(address, sizeof(address));
     }
     if (keyset & GAP_KEY_DIST_SIGNING) {
         if (!smp_random_bytes(gap_conn.bond.local_csrk,
@@ -1763,10 +1679,8 @@ static void gap_smp_poll(void) {
         ) {
             gap_smp.bearer.procedure_active = 0;
             gap_smp.bearer.deadline_ms = 0;
-            volatile uint8_t *wipe = gap_smp.bearer.tx;
-            for (size_t i = 0; i < sizeof(gap_smp.bearer.tx); i++) wipe[i] = 0;
-            wipe = gap_smp.bearer.rx;
-            for (size_t i = 0; i < sizeof(gap_smp.bearer.rx); i++) wipe[i] = 0;
+            gap_wipe(gap_smp.bearer.tx, sizeof(gap_smp.bearer.tx));
+            gap_wipe(gap_smp.bearer.rx, sizeof(gap_smp.bearer.rx));
             gap_smp.bearer.tx_len = 0;
             gap_smp.bearer.rx_len = 0;
             if (gap_smp.bearer.pairing.phase) gap_smp_finish(0x08);
@@ -1865,8 +1779,7 @@ static void gap_smp_poll(void) {
             };
             int queued =
                 gap_smp_queue(SMP_CENTRAL_IDENTIFICATION, master_id, sizeof(master_id));
-            volatile uint8_t *wipe = master_id;
-            for (size_t i = 0; i < sizeof(master_id); i++) wipe[i] = 0;
+            gap_wipe(master_id, sizeof(master_id));
             if (!queued) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
             }
@@ -1895,17 +1808,14 @@ static void gap_smp_poll(void) {
         else if (!gap_conn.link_state.central_role && gap_smp.bearer.pairing.bond_tx_step == 33) {
             uint8_t irk[16] = {0}, address[7] = {0};
             int available = gap_smp_local_identity(irk, address);
-            volatile uint8_t *wipe = irk;
-            for (size_t i = 0; i < sizeof(irk); i++) wipe[i] = 0;
+            gap_wipe(irk, sizeof(irk));
 
             if (!available ||
                 !gap_smp_queue(SMP_IDENTITY_ADDRESS_INFORMATION, address, 7)) {
-                wipe = address;
-                for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+                gap_wipe(address, sizeof(address));
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
             }
-            wipe = address;
-            for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+            gap_wipe(address, sizeof(address));
             gap_smp.bearer.pairing.bond_tx_step = 34;
         }
         else if (!gap_conn.link_state.central_role && gap_smp.bearer.pairing.bond_tx_step == 34 &&
@@ -1935,8 +1845,7 @@ static void gap_smp_poll(void) {
                 gap_conn.bond.rand[6], gap_conn.bond.rand[7]
             };
             int queued = gap_smp_queue(7, master_id, sizeof(master_id));
-            volatile uint8_t *wipe = master_id;
-            for (unsigned i = 0; i < sizeof(master_id); i++) wipe[i] = 0;
+            gap_wipe(master_id, sizeof(master_id));
             if (!queued) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
@@ -1956,19 +1865,16 @@ static void gap_smp_poll(void) {
         else if (gap_smp.bearer.pairing.bond_tx_step == 3) {
             uint8_t identity_irk[16], identity_address[7];
             int available = gap_smp_local_identity(identity_irk, identity_address);
-            volatile uint8_t *wipe = identity_irk;
-            for (size_t i = 0; i < sizeof(identity_irk); i++) wipe[i] = 0;
+            gap_wipe(identity_irk, sizeof(identity_irk));
             if (!available || !gap_smp_queue(
                 SMP_IDENTITY_ADDRESS_INFORMATION,
                 identity_address, sizeof(identity_address))
             ) {
-                wipe = identity_address;
-                for (size_t i = 0; i < sizeof(identity_address); i++) wipe[i] = 0;
+                gap_wipe(identity_address, sizeof(identity_address));
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
-            wipe = identity_address;
-            for (size_t i = 0; i < sizeof(identity_address); i++) wipe[i] = 0;
+            gap_wipe(identity_address, sizeof(identity_address));
             gap_smp.bearer.pairing.bond_tx_step = 4;
         }
         else if ((gap_smp.bearer.pairing.bond_tx_step == 2 ||
@@ -1984,8 +1890,7 @@ static void gap_smp_poll(void) {
         else {
             if (gap_conn.link_state.central_role && !gap_smp_generic_bond_store(&gap_conn.bond)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                volatile uint8_t *wipe = (volatile uint8_t *)&gap_conn.bond;
-                for (size_t i = 0; i < sizeof(gap_conn.bond); i++) wipe[i] = 0;
+                gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
                 return;
             }
             gap_conn.bonded = 1;
@@ -1999,8 +1904,7 @@ static void gap_smp_poll(void) {
         ) {
             gap_smp.tx_len = 0;
             gap_smp.bond_tx_waiting = 1;
-            volatile uint8_t *wipe = gap_smp.tx;
-            for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
+            gap_wipe(gap_smp.tx, sizeof(gap_smp.tx));
         }
         return;
     }
@@ -2022,8 +1926,7 @@ static void gap_smp_poll(void) {
         gap_smp.tx_offset += (uint8_t)max_len;
         if (gap_smp.tx_offset == gap_smp.tx_len) {
             gap_smp.tx_len = gap_smp.tx_offset = 0;
-            volatile uint8_t *wipe = gap_smp.tx;
-            for (unsigned i = 0; i < sizeof(gap_smp.tx); i++) wipe[i] = 0;
+            gap_wipe(gap_smp.tx, sizeof(gap_smp.tx));
         }
     }
     if (gap_smp.bearer.pairing.phase == SMP_PHASE_SC_PASSKEY &&
@@ -2036,7 +1939,7 @@ static void gap_smp_poll(void) {
         uint8_t confirm[16];
         gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key,
                              gap_smp.bearer.pairing.sc.peer_public_key,
-                             gap_smp.bearer.pairing.random, gap_sc_passkey_z(), confirm);
+                             gap_smp.bearer.pairing.random, confirm);
         gap_smp_queue(3, confirm, sizeof(confirm));
         gap_smp.bearer.pairing.confirm_received = 0;
         gap_smp.bearer.pairing.phase = gap_conn.link_state.central_role ? SMP_PHASE_SC_CONFIRM
@@ -2058,9 +1961,8 @@ static void gap_smp_poll(void) {
                 bond.key_size = 16;
                 bond.authenticated = gap_smp.bearer.pairing.authenticated;
                 memcpy(&gap_conn.bond, &bond, sizeof(bond));
-                volatile uint8_t *wipe = (volatile uint8_t *)&bond;
 
-                for (size_t i = 0; i < sizeof(bond); i++) wipe[i] = 0;
+                gap_wipe(&bond, sizeof(bond));
                 if (gap_conn.link_state.central_role) {
                     gap_smp.bearer.pairing.phase = SMP_PHASE_BOND_RX;
                     gap_smp.bearer.pairing.bond_rx_step = 30;
@@ -2138,14 +2040,12 @@ static void gap_smp_poll(void) {
             do {
                 if (++attempts > 4 ||
                     !smp_random_bytes(bond_material, sizeof(bond_material))) {
-                    volatile uint8_t *wipe = bond_material;
-                    for (unsigned i = 0; i < sizeof(bond_material); i++) wipe[i] = 0;
+                    gap_wipe(bond_material, sizeof(bond_material));
                     gap_smp_finish(8);
                     return;
                 }
                 if (!gap_conn.link_state.active) {
-                    volatile uint8_t *wipe = bond_material;
-                    for (unsigned i = 0; i < sizeof(bond_material); i++) wipe[i] = 0;
+                    gap_wipe(bond_material, sizeof(bond_material));
                     return;
                 }
                 nonzero =   bond_material[16] | bond_material[17] | bond_material[18] |
@@ -2168,8 +2068,7 @@ static void gap_smp_poll(void) {
             gap_conn.bond.key_size = gap_smp.bearer.pairing.key_size;
             gap_conn.bond.authenticated = gap_smp.bearer.pairing.authenticated;
 
-            volatile uint8_t *wipe = bond_material;
-            for (unsigned i = 0; i < sizeof(bond_material); i++) wipe[i] = 0;
+            gap_wipe(bond_material, sizeof(bond_material));
             gap_smp.bearer.pairing.bond_rx_step = 30;
             gap_smp.bearer.pairing.phase = SMP_PHASE_BOND_RX;
             if (!gap_smp.bearer.pairing.response[6]) gap_smp_bond_rx_complete();
@@ -2450,8 +2349,7 @@ static void gap_smp_poll(void) {
         }
 
         gap_smp_fail(0x0a);
-        volatile uint8_t *bond_wipe = (volatile uint8_t *)&gap_conn.bond;
-        for (size_t i = 0; i < sizeof(gap_conn.bond); i++) bond_wipe[i] = 0;
+        gap_wipe(&gap_conn.bond, sizeof(gap_conn.bond));
         return;
     }
 
@@ -2544,9 +2442,6 @@ static void gap_smp_poll(void) {
                 gap_smp_fail(error);
                 return;
             }
-
-            negotiation_error = smp_negotiate_features(&local_features,
-                &peer_features, &feature_policy, &negotiated);
         }
         else {
             local_features.io_capability = gap_pairing_policy.io;
@@ -2557,15 +2452,16 @@ static void gap_smp_poll(void) {
             local_features.max_key_size = 16;
             local_features.init_key_dist = supported_key_distribution;
             local_features.resp_key_dist = supported_key_distribution;
-            negotiation_error = smp_negotiate_features(&local_features,
-                &peer_features, &feature_policy, &negotiated);
         }
 
+        negotiation_error = smp_negotiate_features(&local_features,
+            &peer_features, &feature_policy, &negotiated);
         if (negotiation_error) {
             error = negotiation_error;
             gap_smp_fail(error);
             return;
         }
+
         gap_smp.bearer.pairing.secure_connections = negotiated.secure_connections;
         uint8_t local_auth_req =
             op == 2 ? local_features.auth_req
@@ -2690,9 +2586,7 @@ static void gap_smp_poll(void) {
 
         if (entropy_ready && same_link)
             memcpy(gap_smp.bearer.pairing.random, pairing_random, 16);
-        volatile uint8_t *random_wipe = pairing_random;
-
-        for (unsigned i = 0; i < 16; i++) random_wipe[i] = 0;
+        gap_wipe(pairing_random, sizeof(pairing_random));
         if (!same_link) return;
 
         if (!entropy_ready) {
@@ -2728,7 +2622,8 @@ static void gap_smp_poll(void) {
                     memcpy(gap_smp.bearer.pairing.sc.oob_peer_confirm,
                            gap_sc_oob_peer.data.confirm, 16);
                 }
-                gap_sc_oob_clear();
+                gap_wipe(&gap_sc_oob_local, sizeof(gap_sc_oob_local));
+                gap_wipe(&gap_sc_oob_peer, sizeof(gap_sc_oob_peer));
             }
             else if (!gap_sc_generate_key()) {
                 if (!gap_conn.link_state.active || generation != gap_security_generation)
@@ -2759,8 +2654,7 @@ static void gap_smp_poll(void) {
             value %= 1000000;
             for (unsigned i = 0; i < 4; i++)
                 gap_smp.bearer.pairing.tk[i] = (uint8_t)(value >> (i * 8));
-            volatile uint8_t *wipe = bytes;
-            for (unsigned i = 0; i < 4; i++) wipe[i] = 0;
+            gap_wipe(bytes, 4);
         }
 
         gap_smp.status = GAP_CONNECTION_PENDING;
@@ -2774,10 +2668,8 @@ static void gap_smp_poll(void) {
                 uint8_t irk[16] = {0}, address[7] = {0};
                 if (gap_smp_local_identity(irk, address))
                     responder_keys |= GAP_KEY_DIST_IDENTITY;
-                volatile uint8_t *wipe = irk;
-                for (size_t i = 0; i < sizeof(irk); i++) wipe[i] = 0;
-                wipe = address;
-                for (size_t i = 0; i < sizeof(address); i++) wipe[i] = 0;
+                gap_wipe(irk, sizeof(irk));
+                gap_wipe(address, sizeof(address));
                 responder_keys &= p[6];
             }
 
@@ -2845,11 +2737,10 @@ static void gap_smp_poll(void) {
             uint8_t confirm[16], difference = 0;
             gap_sc_confirm_value(gap_smp.bearer.pairing.sc.peer_public_key,
                                  gap_smp.bearer.pairing.sc.peer_public_key,
-                                 gap_smp.bearer.pairing.sc.oob_peer_random, 0, confirm);
+                                 gap_smp.bearer.pairing.sc.oob_peer_random, confirm);
             for (uint8_t i = 0; i < 16; i++)
                 difference |= confirm[i] ^ gap_smp.bearer.pairing.sc.oob_peer_confirm[i];
-            volatile uint8_t *wipe = confirm;
-            for (size_t i = 0; i < sizeof(confirm); i++) wipe[i] = 0;
+            gap_wipe(confirm, sizeof(confirm));
             if (difference) {
                 error = 4;
                 gap_smp_fail(error);
@@ -2871,7 +2762,7 @@ static void gap_smp_poll(void) {
             uint8_t confirm[16];
             gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key,
                                  gap_smp.bearer.pairing.sc.peer_public_key,
-                                 gap_smp.bearer.pairing.random, 0, confirm);
+                                 gap_smp.bearer.pairing.random, confirm);
             gap_smp_queue(3, confirm, sizeof(confirm));
         }
         return;
@@ -2896,7 +2787,7 @@ static void gap_smp_poll(void) {
             uint8_t confirm[16];
             gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key,
                                  gap_smp.bearer.pairing.sc.peer_public_key,
-                                 gap_smp.bearer.pairing.random, 0, confirm);
+                                 gap_smp.bearer.pairing.random, confirm);
             gap_smp_queue(3, confirm, sizeof(confirm));
         }
         gap_smp.bearer.pairing.phase = SMP_PHASE_SC_RANDOM;
@@ -2909,13 +2800,11 @@ static void gap_smp_poll(void) {
         uint8_t confirm[16], difference = 0;
         gap_sc_confirm_value(gap_smp.bearer.pairing.sc.peer_public_key,
                              gap_smp.bearer.pairing.sc.public_key, p + 1,
-                             gap_smp.bearer.pairing.sc.passkey_required ?
-                                 gap_sc_passkey_z() : 0, confirm);
+                             confirm);
         for (uint8_t i = 0; i < 16; i++)
             difference |= confirm[i] ^ gap_smp.bearer.pairing.peer_confirm[i];
 
-        volatile uint8_t *confirm_wipe = confirm;
-        for (size_t i = 0; i < sizeof(confirm); i++) confirm_wipe[i] = 0;
+        gap_wipe(confirm, sizeof(confirm));
         if (difference) {
             error = 4;
             gap_smp_fail(error);
@@ -2936,8 +2825,7 @@ static void gap_smp_poll(void) {
             if (entropy_ready && same_link)
                 memcpy(gap_smp.bearer.pairing.random, next_nonce, sizeof(next_nonce));
 
-            volatile uint8_t *nonce_wipe = next_nonce;
-            for (size_t i = 0; i < sizeof(next_nonce); i++) nonce_wipe[i] = 0;
+            gap_wipe(next_nonce, sizeof(next_nonce));
             if (!same_link) return;
             if (!entropy_ready) {
                 error = 8;
@@ -2949,8 +2837,7 @@ static void gap_smp_poll(void) {
                 uint8_t confirm[16];
                 gap_sc_confirm_value(gap_smp.bearer.pairing.sc.public_key,
                                      gap_smp.bearer.pairing.sc.peer_public_key,
-                                     gap_smp.bearer.pairing.random, gap_sc_passkey_z(),
-                                     confirm);
+                                     gap_smp.bearer.pairing.random, confirm);
                 gap_smp_queue(3, confirm, sizeof(confirm));
                 gap_smp.bearer.pairing.phase = SMP_PHASE_SC_CONFIRM;
             } else gap_smp.bearer.pairing.phase = SMP_PHASE_SC_PASSKEY;
@@ -2971,15 +2858,11 @@ static void gap_smp_poll(void) {
                   gap_smp.bearer.pairing.sc.mac_key, ltk);
         gap_sc_reverse(gap_smp.bearer.pairing.sc.ltk, ltk, 16);
 
-        volatile uint8_t *wipe = na;
-        for (size_t i = 0; i < sizeof(na); i++) wipe[i] = 0;
-        wipe = nb;
-        for (size_t i = 0; i < sizeof(nb); i++) wipe[i] = 0;
-        wipe = ltk;
-        for (size_t i = 0; i < sizeof(ltk); i++) wipe[i] = 0;
-        wipe = gap_smp.bearer.pairing.sc.dhkey;
+        gap_wipe(na, sizeof(na));
+        gap_wipe(nb, sizeof(nb));
+        gap_wipe(ltk, sizeof(ltk));
 
-        for (size_t i = 0; i < sizeof(gap_smp.bearer.pairing.sc.dhkey); i++) wipe[i] = 0;
+        gap_wipe(gap_smp.bearer.pairing.sc.dhkey, sizeof(gap_smp.bearer.pairing.sc.dhkey));
         if (gap_smp.bearer.pairing.sc.passkey_required)
             gap_smp.bearer.pairing.authenticated = 1;
 
@@ -3076,8 +2959,7 @@ static void gap_smp_poll(void) {
             return;
         }
 
-        volatile uint8_t *tk_wipe = gap_smp.bearer.pairing.tk;
-        for (unsigned i = 0; i < 16; i++) tk_wipe[i] = 0;
+        gap_wipe(gap_smp.bearer.pairing.tk, 16);
         gap_smp.bearer.pairing.passkey_action = 0;
         for (unsigned i = gap_smp.bearer.pairing.key_size; i < 16; i++)
             gap_smp.bearer.pairing.stk[i] = 0;

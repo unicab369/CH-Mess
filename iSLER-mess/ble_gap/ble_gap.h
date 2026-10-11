@@ -440,7 +440,6 @@ static void gap_send_security(void);
 
 // SMP owns pairing state; GAP connection code uses only these operations.
 static void gap_smp_poll(void);
-static int gap_smp_link_init(void);
 static void gap_smp_link_close(void);
 static void gap_smp_bond_restore_poll(void);
 static int gap_smp_blocks_encryption(void);
@@ -482,6 +481,8 @@ static void gap_wipe(volatile void *data, size_t len) {
 }
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
+static int gap_smp_link_init(void);
+
 static int gap_conn_accept(
     const uint8_t frame[36],
     uint64_t received_ticks,
