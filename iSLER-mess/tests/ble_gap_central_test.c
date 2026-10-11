@@ -4249,11 +4249,11 @@ static void test_smp_signing_key_distribution(void) {
            !memcmp(test_bonds[0].peer_csrk, signing_information + 1, 16));
     assert(test_bonds[0].peer_address_type == 0 &&
            !memcmp(test_bonds[0].peer_address, identity_address + 2, 6));
-    assert(!memcmp(test_bonds[0].central_key.ltk,
+    assert(!memcmp(test_bonds[0].central.ltk,
                    encryption_information + 1, 16));
-    assert(test_bonds[0].central_key.ediv[0] == 0x34 &&
-           test_bonds[0].central_key.ediv[1] == 0x12 &&
-           test_bonds[0].central_key.rand[0] == 0x56);
+    assert(test_bonds[0].central.ediv[0] == 0x34 &&
+           test_bonds[0].central.ediv[1] == 0x12 &&
+           test_bonds[0].central.rand[0] == 0x56);
 
     gap_conn_end();
 
@@ -4274,9 +4274,9 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn.bond.key_size = 16;
     gap_conn.bond.peer.type = 0;
     gap_conn.bond.peer.address[0] = 0x42;
-    memset(gap_conn.bond.central_key.ltk, 0x51, 16);
-    gap_conn.bond.central_key.rand[0] = 0x91;
-    gap_conn.bond.central_key.ediv[0] = 0x19;
+    memset(gap_conn.bond.central.ltk, 0x51, 16);
+    gap_conn.bond.central.rand[0] = 0x91;
+    gap_conn.bond.central.ediv[0] = 0x19;
     uint8_t peer_ltk[17] = {SMP_ENCRYPTION_INFORMATION};
     memset(peer_ltk + 1, 0x3a, 16);
     receive_test_smp(peer_ltk, sizeof(peer_ltk), 0);
@@ -4299,7 +4299,7 @@ static void test_smp_signing_key_distribution(void) {
            gap_smp.tx[4] == SMP_ENCRYPTION_INFORMATION &&
            gap_conn.bond.has_peer_irk && gap_conn.bond.has_peer_csrk &&
            gap_conn.bond.has_peripheral_ltk &&
-           !memcmp(gap_conn.bond.peripheral_key.ltk, peer_ltk + 1, 16) &&
+           !memcmp(gap_conn.bond.peripheral.ltk, peer_ltk + 1, 16) &&
            !memcmp(gap_conn.bond.peer_irk, peer_irk + 1, 16) &&
            !memcmp(gap_conn.bond.peer_csrk, peer_csrk + 1, 16) &&
            !memcmp(gap_conn.bond.peer.address, peer_identity + 2, 6));
@@ -4346,7 +4346,7 @@ static void test_smp_signing_key_distribution(void) {
     gap_smp_poll();
     assert(gap_conn.procedures.tx_data[4] == SMP_CENTRAL_IDENTIFICATION);
     uint8_t peripheral_ltk_copy[16], peripheral_csrk_copy[16];
-    memcpy(peripheral_ltk_copy, gap_conn.bond.peripheral_key.ltk, 16);
+    memcpy(peripheral_ltk_copy, gap_conn.bond.peripheral.ltk, 16);
     memcpy(peripheral_csrk_copy, gap_conn.bond.local_csrk, 16);
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll();
@@ -4365,10 +4365,10 @@ static void test_smp_signing_key_distribution(void) {
     receive_test_smp(central_csrk, sizeof(central_csrk), 0);
     assert(!gap_smp.pairing.phase && gap_conn.bonded &&
            gap_conn.bond.has_peripheral_ltk &&
-           !memcmp(gap_conn.bond.peripheral_key.ltk, peripheral_ltk_copy, 16) &&
+           !memcmp(gap_conn.bond.peripheral.ltk, peripheral_ltk_copy, 16) &&
            gap_conn.bond.has_local_csrk &&
            !memcmp(gap_conn.bond.local_csrk, peripheral_csrk_copy, 16) &&
-           !memcmp(gap_conn.bond.central_key.ltk, central_ltk + 1, 16));
+           !memcmp(gap_conn.bond.central.ltk, central_ltk + 1, 16));
     gap_conn_end();
 
     assert(gap_bonding_set(0));

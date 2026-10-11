@@ -218,14 +218,14 @@ typedef struct {
 typedef struct {
     uint8_t version, valid;
     gap_peer_address peer;
-    gap_bond_key central_key;
+    gap_bond_key central;
     uint8_t peer_irk[16], local_irk[16];
     uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
     uint8_t peer_csrk[16], local_csrk[16];
     uint8_t has_peer_csrk, has_local_csrk;
     // LTK and identifiers distributed by the Peripheral are stored separately
     // from the Central-distributed set above.
-    gap_bond_key peripheral_key;
+    gap_bond_key peripheral;
     uint8_t has_peripheral_ltk;
 } gap_bond;
 
