@@ -160,11 +160,11 @@ void gap_hw_received(void) {
                 gap_tx_frame[1] == 11 &&
                 gap_tx_frame[2] == 0x27
             ) {
-                gap_conn.subrate.factor = gap_conn.subrate.pending_factor;
-                gap_conn.subrate.base_event = gap_conn.subrate.pending_base_event;
-                gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
-                gap_conn.subrate.continuation = gap_conn.subrate.pending_continuation;
-                gap_conn.params.supervision_timeout = gap_conn.subrate.pending_timeout;
+                gap_conn.schedule.factor = gap_conn.next_schedule.factor;
+                gap_conn.schedule.base_event = gap_conn.next_schedule.base_event;
+                gap_conn.schedule.latency = gap_conn.next_schedule.latency;
+                gap_conn.schedule.continuation = gap_conn.next_schedule.continuation;
+                gap_conn.schedule.timeout = gap_conn.next_schedule.timeout;
                 gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
                 gap_conn.subrate.status = 0;
             }
@@ -654,7 +654,8 @@ static uint64_t gap_conn_event_close_ticks(
                         (uint32_t)connection->window_size * 1250 : 1000;
     uint32_t widen_us = ((uint32_t)(now_ms - connection->link.last_rx_ms) *
                             (500 + connection->link.peer_sca_ppm) + 999) / 1000;
-    uint32_t widen_max_us = (uint32_t)connection->params.interval * 625;
+    uint32_t widen_max_us =
+        (uint32_t)connection->schedule.interval_125us * 125 / 2;
     if (widen_us > widen_max_us) widen_us = widen_max_us;
 
     return connection->link.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
@@ -736,7 +737,7 @@ static void gap_conn_poll(void) {
     }
 
     if ((uint32_t)(now_ms - gap_conn.link.last_rx_ms) >=
-        (uint32_t)gap_conn.params.supervision_timeout * 10
+        (uint32_t)gap_conn.schedule.timeout * 10
     ) {
         gap_conn_end();
         return;
@@ -791,9 +792,7 @@ static void gap_conn_poll(void) {
 
     uint32_t widen_us = ((uint32_t)(now_ms - gap_conn.link.last_rx_ms) *
                         (500 + gap_conn.link.peer_sca_ppm) + 999) / 1000;
-    uint32_t interval_125us = gap_conn.link.interval_125us
-                                ? gap_conn.link.interval_125us
-                                : (uint16_t)(gap_conn.params.interval * 10);
+    uint32_t interval_125us = gap_conn.schedule.interval_125us;
     uint32_t widen_max_us = interval_125us * 125 / 2;
     if (widen_us > widen_max_us) widen_us = widen_max_us;
     uint64_t open_ticks = gap_conn.link.next_ticks;

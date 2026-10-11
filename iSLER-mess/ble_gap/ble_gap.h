@@ -279,6 +279,11 @@ static struct {
 } gap_rx;
 
 typedef struct {
+    uint16_t interval_125us, factor, latency, continuation, timeout;
+    uint16_t base_event, win_offset, instant;
+} gap_conn_schedule;
+
+typedef struct {
     struct {
         uint8_t active, rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
@@ -290,7 +295,7 @@ typedef struct {
         uint8_t local_terminate_reason;
         uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
         uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
-        uint16_t interval_125us, peer_sca_ppm, event_counter;
+        uint16_t peer_sca_ppm, event_counter;
         uint32_t access_address, crc_init, last_rx_ms;
         uint64_t next_ticks;
     } link;
@@ -330,11 +335,8 @@ typedef struct {
     uint32_t params_started_ms;
     uint16_t update_instant, update_win_offset, channel_map_instant;
 
-    // Data-length negotiation.
-    uint16_t data_capacity, local_tx_octets;
-    gap_data_length data_length, remote_data_length;
-    uint8_t length_status;
-    uint32_t length_started_ms;
+    // Active and pending connection timing and subrate schedules.
+    gap_conn_schedule schedule, next_schedule;
     struct {
         uint8_t set_queued, request_queued, update_pending;
         uint8_t req_pending, ack_waiting;
@@ -342,25 +344,25 @@ typedef struct {
         uint16_t factor_min, factor_max, latency;
         uint16_t continuation, timeout, periodicity;
         uint16_t offsets[4];
-        uint16_t interval, win_offset, instant;
-        uint16_t factor, update_latency, update_continuation;
-        uint16_t update_timeout;
     } rate;
     struct {
         uint16_t interval, latency, supervision_timeout;
-    } params, new_params;
+    } new_params;
     struct {
-        uint16_t factor, continuation;
         uint8_t transition, event_activity, event_received, force_event;
-        uint16_t continuations, latency, latency_remaining;
+        uint16_t continuations, latency_remaining;
         uint8_t pending, update_queued, request_queued, request_pending;
         uint8_t status;
-        uint16_t base_event, pending_factor, pending_base_event, pending_latency;
-        uint16_t pending_continuation, pending_timeout;
         uint16_t request_min, request_max, request_latency, request_continuation;
         uint16_t request_timeout;
         uint32_t started_ms;
     } subrate;
+
+    // Data-length negotiation.
+    uint16_t data_capacity, local_tx_octets;
+    gap_data_length data_length, remote_data_length;
+    uint8_t length_status;
+    uint32_t length_started_ms;
     struct {
         uint8_t known, peer[8];
         uint8_t ext_pending, page1_known, peer_page1[8];
@@ -548,6 +550,8 @@ static int gap_conn_accept(
     gap_wipe(&gap_security, sizeof(gap_security));
     memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
     memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
+    memset(&gap_conn.schedule, 0, sizeof(gap_conn.schedule));
+    memset(&gap_conn.next_schedule, 0, sizeof(gap_conn.next_schedule));
     memset(&gap_conn.features, 0, sizeof(gap_conn.features));
     memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
     memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
@@ -583,7 +587,7 @@ static int gap_conn_accept(
     gap_conn.link.used_count = count;
     gap_conn.link.hop = frame[35] & 0x1f;
     gap_conn.link.unmapped_channel = 0;
-    gap_conn.link.interval_125us = (uint16_t)(interval * 10);
+    gap_conn.schedule.interval_125us = (uint16_t)(interval * 10);
     gap_conn.link.last_rx_ms = GET_MILLIS();
     gap_conn.link.first_event = 1;
     gap_conn.link.expected_rx_sn = 0;
@@ -591,10 +595,9 @@ static int gap_conn_accept(
     gap_conn.link.tx_pending = 0;
     gap_conn.link.event_counter = 0;
 
-    gap_conn.params.interval = interval;
-    gap_conn.params.latency = (uint16_t)frame[26] |
+    gap_conn.schedule.latency = (uint16_t)frame[26] |
                             (uint16_t)frame[27] << 8;
-    gap_conn.params.supervision_timeout = (uint16_t)frame[28] |
+    gap_conn.schedule.timeout = (uint16_t)frame[28] |
                                             (uint16_t)frame[29] << 8;
 
     // Initialize direct connection fields together.
@@ -618,7 +621,7 @@ static int gap_conn_accept(
     gap_conn.authenticated = gap_conn.encryption_key_size = 0;
 
     // Initialize subrate and connection rate state.
-    gap_conn.subrate.factor = 1;
+    gap_conn.schedule.factor = 1;
     gap_conn.rate.set_queued = 0;
     gap_conn.rate.request_queued = 0;
     gap_conn.rate.update_pending = 0;
