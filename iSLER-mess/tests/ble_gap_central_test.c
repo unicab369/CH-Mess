@@ -3530,7 +3530,7 @@ static void test_phy_updates(void) {
 static void test_connection_subrating(void) {
     const uint8_t peer_features[8] = {0, 0, 0, 0, 0x60};
     start_test_central_link();
-    assert(gap_conn.procedures.subrate.factor == 1 && gap_conn.procedures.subrate.continuation == 0);
+    assert(gap_conn.subrate.factor == 1 && gap_conn.subrate.continuation == 0);
     assert(!gap_subrate_set(0, 0, 0, 300));
     assert(!gap_subrate_set(501, 0, 0, 300));
     assert(gap_subrate_set(5, 1, 1, 300));
@@ -3539,11 +3539,11 @@ static void test_connection_subrating(void) {
     assert(gap_tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
     assert(gap_tx_frame[2] == 0x27 && gap_tx_frame[1] == 11);
-    assert(gap_conn.procedures.subrate.transition && gap_conn.procedures.subrate.pending);
+    assert(gap_conn.subrate.transition && gap_conn.subrate.pending);
     assert(gap_tx_frame[3] == 5 && gap_tx_frame[4] == 0);
     assert(gap_tx_frame[7] == 1 && gap_tx_frame[9] == 1);
     receive_test_link_packet(1);
-    assert(gap_conn.procedures.subrate.factor == 5 && !gap_conn.procedures.subrate.transition &&
+    assert(gap_conn.subrate.factor == 5 && !gap_conn.subrate.transition &&
            gap_subrate_status() == 0);
     uint16_t factor, base, latency, continuation, timeout;
     gap_subrate_get(&factor, &base, &latency, &continuation, &timeout);
@@ -3563,8 +3563,8 @@ static void test_connection_subrating(void) {
     assert(gap_tx_frame[3] == 2 && gap_tx_frame[5] == 6);
     uint8_t indication[10] = {6, 0, 4, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x27, indication, sizeof(indication));
-    assert(gap_conn.procedures.subrate.factor == 6 && gap_conn.procedures.subrate.base_event == 4 &&
-           gap_conn.procedures.subrate.latency == 2 && gap_conn.procedures.subrate.continuation == 1 &&
+    assert(gap_conn.subrate.factor == 6 && gap_conn.subrate.base_event == 4 &&
+           gap_conn.subrate.latency == 2 && gap_conn.subrate.continuation == 1 &&
            gap_conn.procedures.params.supervision_timeout == 300 &&
            gap_subrate_status() == 0);
     gap_conn_end();
@@ -3574,10 +3574,10 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     uint8_t request[10] = {2, 0, 6, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x26, request, sizeof(request));
-    assert(gap_tx_frame[2] == 0x27 && gap_conn.procedures.subrate.pending);
-    assert(gap_conn.procedures.subrate.pending_factor == 6);
+    assert(gap_tx_frame[2] == 0x27 && gap_conn.subrate.pending);
+    assert(gap_conn.subrate.pending_factor == 6);
     receive_test_link_packet(1);
-    assert(gap_conn.procedures.subrate.factor == 6 && gap_subrate_status() == 0);
+    assert(gap_conn.subrate.factor == 6 && gap_subrate_status() == 0);
     gap_conn_end();
 
     start_test_central_link();
@@ -3590,7 +3590,7 @@ static void test_connection_subrating(void) {
     // Subrating skips radio work but continues event-counter and channel
     // progression; continuation events remain active between subrated events.
     start_test_central_link();
-    gap_conn.procedures.subrate.factor = 5;
+    gap_conn.subrate.factor = 5;
     assert(!gap_conn_update(gap_conn.procedures.params.interval, 0, 10));
     assert(gap_conn_update(gap_conn.procedures.params.interval + 1, 0, 10));
     gap_conn_end();
@@ -3600,20 +3600,20 @@ static void test_connection_subrating(void) {
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
     assert(gap_subrate_status() == 0x1a &&
-           !gap_conn.procedures.subrate.update_queued);
+           !gap_conn.subrate.update_queued);
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.procedures.subrate.pending = gap_conn.procedures.subrate.transition = 1;
-    gap_conn.procedures.subrate.status = GAP_CONNECTION_PENDING;
-    gap_conn.procedures.subrate.started_ms = now_ms - 40000;
+    gap_conn.subrate.pending = gap_conn.subrate.transition = 1;
+    gap_conn.subrate.status = GAP_CONNECTION_PENDING;
+    gap_conn.subrate.started_ms = now_ms - 40000;
     gap_conn_poll();
     assert(!gap_conn.link_state.active && gap_subrate_status() == 0x22);
 
     start_test_central_link();
-    gap_conn.procedures.subrate.factor = 5;
-    gap_conn.procedures.subrate.base_event = 0;
-    gap_conn.procedures.subrate.continuations = 0;
+    gap_conn.subrate.factor = 5;
+    gap_conn.subrate.base_event = 0;
+    gap_conn.subrate.continuations = 0;
     gap_conn.link.event_counter = 1;
     gap_conn.link.tx_pending = gap_conn.queue.tx_queued = gap_conn.link_state.rx_armed = 0;
     gap_conn.link_state.event_replied = 0;
@@ -3626,7 +3626,7 @@ static void test_connection_subrating(void) {
     assert(gap_conn.link.event_counter == 2 && !gap_conn.link_state.rx_armed &&
            gap_conn.link.unmapped_channel == (previous_channel + gap_conn.link.hop) % 37);
     gap_conn.link.event_counter = 3;
-    gap_conn.procedures.subrate.continuations = 1;
+    gap_conn.subrate.continuations = 1;
     gap_conn.link.next_ticks = fake_radio_ticks;
     gap_conn_poll();
     assert(gap_conn.link_state.rx_armed); // Continuation event.
@@ -3634,21 +3634,21 @@ static void test_connection_subrating(void) {
     gap_conn_end();
 
     gap_conn.link.event_counter = 0xffff;
-    gap_conn.procedures.subrate.factor = 5;
-    gap_conn.procedures.subrate.base_event = 42;
-    gap_conn.procedures.subrate.event_activity = 0;
+    gap_conn.subrate.factor = 5;
+    gap_conn.subrate.base_event = 42;
+    gap_conn.subrate.event_activity = 0;
     assert(gap_subrate_event_is_subrated(65532, 42, 5));
     assert(!gap_subrate_event_is_subrated(0, 42, 5));
     gap_conn_event_advance();
-    assert(gap_conn.link.event_counter == 0 && gap_conn.procedures.subrate.base_event == 1);
-    assert(!gap_subrate_event_is_subrated(0, gap_conn.procedures.subrate.base_event,
-                                          gap_conn.procedures.subrate.factor));
-    assert(gap_subrate_event_is_subrated(1, gap_conn.procedures.subrate.base_event,
-                                         gap_conn.procedures.subrate.factor));
+    assert(gap_conn.link.event_counter == 0 && gap_conn.subrate.base_event == 1);
+    assert(!gap_subrate_event_is_subrated(0, gap_conn.subrate.base_event,
+                                          gap_conn.subrate.factor));
+    assert(gap_subrate_event_is_subrated(1, gap_conn.subrate.base_event,
+                                         gap_conn.subrate.factor));
 
     start_test_central_link();
-    gap_conn.procedures.subrate.factor = 5;
-    gap_conn.procedures.subrate.continuation = 2;
+    gap_conn.subrate.factor = 5;
+    gap_conn.subrate.continuation = 2;
     gap_conn.pending.timing_update = 1;
     gap_conn.procedures.new_params.interval = gap_conn.procedures.params.interval + 1;
     gap_conn.procedures.new_params.latency = 2;
@@ -3656,11 +3656,11 @@ static void test_connection_subrating(void) {
     gap_conn.procedures.update_instant = (uint16_t)(gap_conn.link.event_counter + 1);
     gap_conn_event_advance();
     gap_conn_update_apply(0);
-    assert(gap_conn.procedures.subrate.factor == 1 && gap_conn.procedures.subrate.continuation == 0 &&
-           gap_conn.procedures.subrate.latency == 2 && gap_conn.procedures.subrate.force_event);
+    assert(gap_conn.subrate.factor == 1 && gap_conn.subrate.continuation == 0 &&
+           gap_conn.subrate.latency == 2 && gap_conn.subrate.force_event);
     assert(gap_subrate_event_is_active(gap_conn.link.event_counter));
     gap_conn_event_advance();
-    assert(!gap_conn.procedures.subrate.force_event);
+    assert(!gap_conn.subrate.force_event);
     gap_conn_end();
 }
 
@@ -3710,7 +3710,7 @@ static void test_connection_rate_exchange(void) {
     gap_conn.link.event_counter = instant;
     gap_conn_update_apply(0);
     assert(!gap_conn.procedures.rate_update_pending && gap_conn.link.interval_125us == 80 &&
-           gap_conn.procedures.subrate.factor == 2 && gap_conn.procedures.subrate.continuation == 1 &&
+           gap_conn.subrate.factor == 2 && gap_conn.subrate.continuation == 1 &&
            gap_conn.procedures.params.supervision_timeout == 100 &&
            gap_conn_status() == 0);
     gap_conn_end();
@@ -3740,8 +3740,8 @@ static void test_connection_rate_exchange(void) {
     gap_conn.link.event_counter = gap_conn.procedures.rate_instant;
     gap_conn_update_apply(0);
     assert(!gap_conn.procedures.rate_update_pending && gap_conn.link.interval_125us == 80 &&
-           gap_conn.procedures.subrate.factor == 2 && gap_conn.procedures.subrate.latency == 1 &&
-           gap_conn.procedures.subrate.continuation == 1 &&
+           gap_conn.subrate.factor == 2 && gap_conn.subrate.latency == 1 &&
+           gap_conn.subrate.continuation == 1 &&
            gap_conn.procedures.params.supervision_timeout == 200);
     gap_conn_end();
 

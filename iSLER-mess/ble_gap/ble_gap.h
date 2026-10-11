@@ -288,19 +288,6 @@ typedef struct {
 } gap_conn_phy;
 
 typedef struct {
-    uint16_t factor, continuation;
-    uint8_t transition, event_activity, event_received, force_event;
-    uint16_t continuations, latency, latency_remaining;
-    uint8_t pending, update_queued, request_queued, request_pending;
-    uint8_t status;
-    uint16_t base_event, pending_factor, pending_base_event, pending_latency;
-    uint16_t pending_continuation, pending_timeout;
-    uint16_t request_min, request_max, request_latency, request_continuation;
-    uint16_t request_timeout;
-    uint32_t started_ms;
-} gap_conn_subrate;
-
-typedef struct {
     uint8_t report_queued, report_pending, status_queued;
     uint8_t enabled, classification_valid, peer_classification_valid;
     uint8_t status_last_sent_valid;
@@ -359,7 +346,6 @@ typedef struct {
     uint8_t rate_update_pending, rate_req_pending;
     uint8_t rate_ack_waiting;
     uint8_t peer_features_page1[8];
-    gap_conn_subrate subrate;
 
     // PHY negotiation.
     gap_conn_phy phy, preferred_phy, pending_phy;
@@ -396,6 +382,18 @@ typedef struct {
         volatile uint8_t length_queued;
     } queue;
     gap_conn_procedures procedures;
+    struct {
+        uint16_t factor, continuation;
+        uint8_t transition, event_activity, event_received, force_event;
+        uint16_t continuations, latency, latency_remaining;
+        uint8_t pending, update_queued, request_queued, request_pending;
+        uint8_t status;
+        uint16_t base_event, pending_factor, pending_base_event, pending_latency;
+        uint16_t pending_continuation, pending_timeout;
+        uint16_t request_min, request_max, request_latency, request_continuation;
+        uint16_t request_timeout;
+        uint32_t started_ms;
+    } subrate;
     struct {
         uint8_t update_window_active;
         uint8_t timing_update, channel_map;
@@ -574,21 +572,8 @@ static int gap_conn_accept(
     gap_conn.link.interval_125us = (uint16_t)(interval * 10);
     gap_conn.procedures.params.latency = latency;
     gap_conn.procedures.params.supervision_timeout = timeout;
-    gap_conn.procedures.subrate.factor = 1;
-    gap_conn.procedures.subrate.base_event = 0;
-    gap_conn.procedures.subrate.continuation = 0;
-    gap_conn.procedures.subrate.latency = 0;
-    gap_conn.procedures.subrate.latency_remaining = 0;
-    gap_conn.procedures.subrate.continuations = 0;
-    gap_conn.procedures.subrate.transition = 0;
-    gap_conn.procedures.subrate.event_activity = 0;
-    gap_conn.procedures.subrate.event_received = 0;
-    gap_conn.procedures.subrate.force_event = 0;
-    gap_conn.procedures.subrate.pending = 0;
-    gap_conn.procedures.subrate.update_queued = 0;
-    gap_conn.procedures.subrate.request_queued = 0;
-    gap_conn.procedures.subrate.request_pending = 0;
-    gap_conn.procedures.subrate.status = 0;
+    memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
+    gap_conn.subrate.factor = 1;
     gap_conn.procedures.peer_features4 = 0;
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];

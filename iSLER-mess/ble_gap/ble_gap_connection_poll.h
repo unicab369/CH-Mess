@@ -19,7 +19,7 @@ static void gap_conn_send_queued(void) {
         gap_send_data_length(0x14);
     if (gap_conn.queue.phy_queued)
         gap_send_phy_request();
-    if (gap_conn.procedures.subrate.update_queued || gap_conn.procedures.subrate.request_queued)
+    if (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued)
         gap_subrate_start_queued();
     if (gap_conn.procedures.rate_set_queued || gap_conn.procedures.rate_request_queued)
         gap_conn_rate_start_queued();
@@ -121,8 +121,8 @@ void gap_hw_received(void) {
             return;
         }
         if (frame[1]) {
-            gap_conn.procedures.subrate.event_activity = 1;
-            gap_conn.procedures.subrate.event_received = 1;
+            gap_conn.subrate.event_activity = 1;
+            gap_conn.subrate.event_received = 1;
         }
 
         if (gap_conn.link_state.central_role) {
@@ -155,18 +155,18 @@ void gap_hw_received(void) {
             if (!gap_conn.link_state.central_role && gap_conn.procedures.rate_ack_waiting) {
                 gap_conn.procedures.rate_ack_waiting = 0;
             }
-            if (gap_conn.link_state.central_role && gap_conn.procedures.subrate.pending &&
+            if (gap_conn.link_state.central_role && gap_conn.subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 11 &&
                 gap_tx_frame[2] == 0x27
             ) {
-                gap_conn.procedures.subrate.factor = gap_conn.procedures.subrate.pending_factor;
-                gap_conn.procedures.subrate.base_event = gap_conn.procedures.subrate.pending_base_event;
-                gap_conn.procedures.subrate.latency = gap_conn.procedures.subrate.pending_latency;
-                gap_conn.procedures.subrate.continuation = gap_conn.procedures.subrate.pending_continuation;
-                gap_conn.procedures.params.supervision_timeout = gap_conn.procedures.subrate.pending_timeout;
-                gap_conn.procedures.subrate.pending = gap_conn.procedures.subrate.transition = 0;
-                gap_conn.procedures.subrate.status = 0;
+                gap_conn.subrate.factor = gap_conn.subrate.pending_factor;
+                gap_conn.subrate.base_event = gap_conn.subrate.pending_base_event;
+                gap_conn.subrate.latency = gap_conn.subrate.pending_latency;
+                gap_conn.subrate.continuation = gap_conn.subrate.pending_continuation;
+                gap_conn.procedures.params.supervision_timeout = gap_conn.subrate.pending_timeout;
+                gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
+                gap_conn.subrate.status = 0;
             }
             gap_conn.link.tx_sn ^= 1;
             gap_conn.link.tx_pending = 0;
@@ -307,7 +307,7 @@ void gap_hw_received(void) {
             if (gap_tx_frame[1] == 0) gap_tx_frame[0] = 0x01;
         }
 
-        if (gap_tx_frame[1]) gap_conn.procedures.subrate.event_activity = 1;
+        if (gap_tx_frame[1]) gap_conn.subrate.event_activity = 1;
         gap_conn_update_apply(1);
         if (!gap_conn.link_state.active) {
             gap_conn_slot = previous_slot;
@@ -714,23 +714,23 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - gap_conn.procedures.params_started_ms) >= 40000
     ) {
         gap_conn.procedures.connection_status = 0x22; // LL response timeout.
-        if (gap_conn.procedures.subrate.update_queued || gap_conn.procedures.subrate.request_queued ||
-            gap_conn.procedures.subrate.request_pending
+        if (gap_conn.subrate.update_queued || gap_conn.subrate.request_queued ||
+            gap_conn.subrate.request_pending
         ) {
-            gap_conn.procedures.subrate.update_queued = gap_conn.procedures.subrate.request_queued = 0;
-            gap_conn.procedures.subrate.request_pending = 0;
-            gap_conn.procedures.subrate.status = 0x22;
+            gap_conn.subrate.update_queued = gap_conn.subrate.request_queued = 0;
+            gap_conn.subrate.request_pending = 0;
+            gap_conn.subrate.status = 0x22;
         }
         gap_conn_end();
         return;
     }
 
-    if ((gap_conn.procedures.subrate.pending || gap_conn.procedures.subrate.request_pending) &&
-        (uint32_t)(now_ms - gap_conn.procedures.subrate.started_ms) >= 40000
+    if ((gap_conn.subrate.pending || gap_conn.subrate.request_pending) &&
+        (uint32_t)(now_ms - gap_conn.subrate.started_ms) >= 40000
     ) {
-        gap_conn.procedures.subrate.pending = gap_conn.procedures.subrate.transition = 0;
-        gap_conn.procedures.subrate.request_pending = 0;
-        gap_conn.procedures.subrate.status = 0x22;
+        gap_conn.subrate.pending = gap_conn.subrate.transition = 0;
+        gap_conn.subrate.request_pending = 0;
+        gap_conn.subrate.status = 0x22;
         gap_conn_end();
         return;
     }
