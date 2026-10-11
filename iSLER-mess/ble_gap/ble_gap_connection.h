@@ -18,7 +18,7 @@ static int gap_periodic_sync_transfer_receive(
 typedef struct {
     uint8_t channel_index, applied_generation;
     uint32_t interval_start_ms;
-    volatile uint8_t active_address_type;
+    volatile uint8_t active_pending, active_address_type;
     uint8_t active_address[6];
     uint32_t active_deadline_ms;
     GAP_RADIO_BUFFER_ATTR uint8_t request[14];
@@ -784,7 +784,7 @@ static void gap_send_data_length(uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
     if (!gap_privacy.enabled || gap_conn.active || gap_central.active ||
-        gap_active_scan_pending || gap_adv_radio.rx_event ||
+        gap_scan.active_pending || gap_adv_radio.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0)
         return;
     if (gap_rx_armed) {

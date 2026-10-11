@@ -2490,7 +2490,7 @@ static int gap_ext_send_due(uint32_t now) {
     if ((!gap_conn_busy() ||
          (gap_conn.active && gap_conn.central_role)) &&
         !gap_central.active &&
-        !gap_active_scan_pending
+        !gap_scan.active_pending
     ) {
         uint64_t ticks = GAP_HW_TICKS();
         int periodic_set = -1;
@@ -2575,7 +2575,7 @@ static int gap_ext_send_due(uint32_t now) {
         }
     }
     if (send_extended < 0) return 0;
-    if (gap_active_scan_pending) return 1;
+    if (gap_scan.active_pending) return 1;
     if (gap_rx_armed) {
         GAP_HW_STOP();
         gap_rx_armed = 0;

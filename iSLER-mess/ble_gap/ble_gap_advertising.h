@@ -808,7 +808,7 @@ int gap_scan_take_ad(
     const uint8_t *frame = gap_rx.frame;
     uint8_t payload_len = frame[1];
     int8_t packet_rssi = gap_rx.rssi;
-    if (!gap_active_scan_pending) gap_rx_armed = 0;
+    if (!gap_scan.active_pending) gap_rx_armed = 0;
     gap_rx.ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);

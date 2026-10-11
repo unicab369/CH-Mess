@@ -439,8 +439,8 @@ static void test_connection_timing_configuration(void) {
     assert(gap_conn_timing_get(&timing));
     assert(timing.interval == 24 && timing.latency == 0 &&
            timing.supervision_timeout == 200 &&
-           timing.background_scan_interval_ms == 1280 &&
-           timing.background_scan_window_ms == 12 &&
+           timing.scan_interval_ms == 1280 &&
+           timing.scan_window_ms == 12 &&
            timing.attempt_timeout_ms == 30720);
     assert(!gap_conn_timing_get(NULL));
     gap_conn_timing invalid = timing;
@@ -454,8 +454,8 @@ static void test_connection_timing_configuration(void) {
     invalid.attempt_timeout_ms = 0;
     assert(!gap_conn_timing_set(&invalid));
     invalid = timing;
-    invalid.background_scan_window_ms =
-        invalid.background_scan_interval_ms + 1;
+    invalid.scan_window_ms =
+        invalid.scan_interval_ms + 1;
     assert(!gap_conn_timing_set(&invalid));
 
     timing.interval = 40;
@@ -483,8 +483,8 @@ static void test_connection_timing_configuration(void) {
     timing.interval = 24;
     timing.latency = 0;
     timing.supervision_timeout = 200;
-    timing.background_scan_interval_ms = 1280;
-    timing.background_scan_window_ms = 12;
+    timing.scan_interval_ms = 1280;
+    timing.scan_window_ms = 12;
     timing.attempt_timeout_ms = 30720;
     assert(gap_conn_timing_set(&timing));
 }
@@ -537,10 +537,10 @@ static void test_private_rotation(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_random_address, 6) == 0);
     now_ms = 1000;
-    gap_active_scan_pending = 1;
+    gap_scan.active_pending = 1;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_random_address, 6) == 0);
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_random_address, 6) != 0);
     assert(memcmp(gap_adv.address, gap_random_address, 6) == 0);
@@ -1507,7 +1507,7 @@ static void test_pawr_observer_response(void) {
     gap_scan_stop();
     memset(&gap_conn, 0, sizeof(gap_conn));
     gap_central.active = 0;
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     gap_rx_armed = 0;
     gap_ext_scan.periodic_listening = 0;
     gap_ext_scan.aux_listening = 0;
@@ -1805,7 +1805,7 @@ static void test_coded_aux_receive_timing(void) {
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks = gap_aux_request[0].start_ticks;
     gap_scan.applied_generation = gap_scanner.generation;
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     gap_rx_armed = gap_ext_scan.aux_listening = 0;
     gap_ext_scan.periodic_listening = 0;
     gap_hw_scan_poll();
@@ -1889,7 +1889,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     fake_radio_tick_autoincrement = 0;
     memset(&gap_conn, 0, sizeof(gap_conn));
     memset(gap_syncs, 0, sizeof(gap_syncs));
-    gap_rx_armed = gap_active_scan_pending = 0;
+    gap_rx_armed = gap_scan.active_pending = 0;
     gap_ext_scan.periodic_listening = gap_ext_scan.aux_listening = 0;
     gap_ext_scan.ready = 0;
     gap_scan.applied_generation = gap_scanner.generation;
@@ -2098,13 +2098,13 @@ static void test_radio_privacy_filter(void) {
     rx_frame[2] ^= 1;
     int before = link_tx_count;
     gap_hw_received();
-    assert(link_tx_count == before && !gap_active_scan_pending);
+    assert(link_tx_count == before && !gap_scan.active_pending);
     rx_frame[2] ^= 1;
     gap_hw_received();
-    assert(link_tx_count == before + 1 && gap_active_scan_pending);
+    assert(link_tx_count == before + 1 && gap_scan.active_pending);
     assert(memcmp(tx_buffer + 8, test_rpa, 6) == 0);
     gap_scan_stop();
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     gap_advertising_rx_event = 1;
     gap_adv_frame[0] = 0; // Connectable advertisement with public address
     GAP_HW_PUBLIC_ADDRESS(gap_adv_frame + 2);
@@ -2347,7 +2347,7 @@ static void test_peer_privacy_modes(void) {
     memcpy(rx_frame + 2, test_identity, 6);
     int before = link_tx_count;
     gap_hw_received();
-    assert(link_tx_count == before && !gap_active_scan_pending);
+    assert(link_tx_count == before && !gap_scan.active_pending);
     gap_scan_stop();
 
     // Incoming SCAN_REQ and CONNECT_IND obey the peer mode without filters.
@@ -2433,7 +2433,7 @@ static void test_peer_local_keys(void) {
     gap_scan_start(1);
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     gap_hw_received();
-    assert(gap_active_scan_pending);
+    assert(gap_scan.active_pending);
     gap_address_hash(local_irk, gap_scan_request + 5, hash);
     assert(memcmp(hash, gap_scan_request + 2, 3) == 0);
     memcpy(first, gap_identities[slot].local_address, 6);
@@ -2442,7 +2442,7 @@ static void test_peer_local_keys(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) == 0);
     gap_scan_stop();
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
 
@@ -2572,7 +2572,7 @@ static void test_nonresolvable_private_addresses(void) {
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    assert(gap_active_scan_pending);
+    assert(gap_scan.active_pending);
     assert(memcmp(gap_scan_request + 2, gap_random_address, 6) == 0);
     memcpy(first, gap_random_address, 6);
     now_ms = gap_privacy.next_rotation_ms;
@@ -2580,7 +2580,7 @@ static void test_nonresolvable_private_addresses(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_random_address, 6) == 0);
     gap_scan_stop();
-    gap_active_scan_pending = 0;
+    gap_scan.active_pending = 0;
     before = aes_count;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_random_address, 6) != 0 && aes_count == before);

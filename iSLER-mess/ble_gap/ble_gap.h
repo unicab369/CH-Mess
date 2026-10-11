@@ -259,7 +259,6 @@ typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
 static uint8_t gap_rx_armed;
-static volatile uint8_t gap_active_scan_pending;
 // Advertising captured for an active scan, paired with its receive metadata.
 static struct {
     uint8_t frame[2 + 37];
@@ -646,7 +645,7 @@ static int gap_conn_accept(
 // supervision timeout in 10 ms units, and attempt timeout in milliseconds.
 typedef struct {
     uint16_t interval, latency, supervision_timeout;
-    uint16_t background_scan_interval_ms, background_scan_window_ms;
+    uint16_t scan_interval_ms, scan_window_ms;
     uint32_t attempt_timeout_ms;
 } gap_conn_timing_config;
 
@@ -668,10 +667,10 @@ int gap_conn_timing_set(const gap_conn_timing_config *timing) {
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn.active ||
-        gap_central.active || timing->background_scan_interval_ms < 3 ||
-        timing->background_scan_interval_ms >= 40960 ||
-        timing->background_scan_window_ms < 3 ||
-        timing->background_scan_window_ms > timing->background_scan_interval_ms)
+        gap_central.active || timing->scan_interval_ms < 3 ||
+        timing->scan_interval_ms >= 40960 ||
+        timing->scan_window_ms < 3 ||
+        timing->scan_window_ms > timing->scan_interval_ms)
         return 0;
     if ((uint32_t)timing->supervision_timeout * 4 <=
         (uint32_t)(timing->latency + 1) * timing->interval)
