@@ -4318,10 +4318,10 @@ static void test_smp_signing_key_distribution(void) {
     assert(!smp->pairing.phase && conn->bonded &&
            smp->status == 0);
     assert(test_bonds[0].version == GAP_BOND_VERSION &&
-           test_bonds[0].has_peer_irk &&
-           !memcmp(test_bonds[0].peer_irk, identity_information + 1, 16) &&
-           test_bonds[0].has_peer_csrk &&
-           !memcmp(test_bonds[0].peer_csrk, signing_information + 1, 16));
+           test_bonds[0].peer_irk.present &&
+           !memcmp(test_bonds[0].peer_irk.key, identity_information + 1, 16) &&
+           test_bonds[0].peer_csrk.present &&
+           !memcmp(test_bonds[0].peer_csrk.key, signing_information + 1, 16));
     assert(test_bonds[0].peer_address_type == 0 &&
            !memcmp(test_bonds[0].peer_address, identity_address + 2, 6));
     assert(!memcmp(test_bonds[0].central.ltk,
@@ -4372,11 +4372,11 @@ static void test_smp_signing_key_distribution(void) {
     receive_test_smp(peer_csrk, sizeof(peer_csrk), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx_len == 21 &&
            smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
-           conn->bond.has_peer_irk && conn->bond.has_peer_csrk &&
+           conn->bond.peer_irk.present && conn->bond.peer_csrk.present &&
            conn->bond.has_peripheral_ltk &&
            !memcmp(conn->bond.peripheral.ltk, peer_ltk + 1, 16) &&
-           !memcmp(conn->bond.peer_irk, peer_irk + 1, 16) &&
-           !memcmp(conn->bond.peer_csrk, peer_csrk + 1, 16) &&
+           !memcmp(conn->bond.peer_irk.key, peer_irk + 1, 16) &&
+           !memcmp(conn->bond.peer_csrk.key, peer_csrk + 1, 16) &&
            !memcmp(conn->bond.peer.address, peer_identity + 2, 6));
     // The Central's set follows the Peripheral's set: encryption key, its
     // Central Identification, then Signing Information.
@@ -4414,7 +4414,7 @@ static void test_smp_signing_key_distribution(void) {
            smp->pairing.bond_tx_step == 31 && smp->tx_len == 21 &&
            smp->tx[2] == BLE_L2CAP_CID_SMP &&
            smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
-           conn->bond.has_peripheral_ltk && conn->bond.has_local_csrk);
+           conn->bond.has_peripheral_ltk && conn->bond.local_csrk.present);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
     gap_smp_poll();
     conn->queue.tx_queued = conn->link.tx_pending = 0;
@@ -4422,7 +4422,7 @@ static void test_smp_signing_key_distribution(void) {
     assert(conn->procedures.tx_data[4] == SMP_CENTRAL_IDENTIFICATION);
     uint8_t peripheral_ltk_copy[16], peripheral_csrk_copy[16];
     memcpy(peripheral_ltk_copy, conn->bond.peripheral.ltk, 16);
-    memcpy(peripheral_csrk_copy, conn->bond.local_csrk, 16);
+    memcpy(peripheral_csrk_copy, conn->bond.local_csrk.key, 16);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_SIGNING_INFORMATION);
@@ -4441,8 +4441,8 @@ static void test_smp_signing_key_distribution(void) {
     assert(!smp->pairing.phase && conn->bonded &&
            conn->bond.has_peripheral_ltk &&
            !memcmp(conn->bond.peripheral.ltk, peripheral_ltk_copy, 16) &&
-           conn->bond.has_local_csrk &&
-           !memcmp(conn->bond.local_csrk, peripheral_csrk_copy, 16) &&
+           conn->bond.local_csrk.present &&
+           !memcmp(conn->bond.local_csrk.key, peripheral_csrk_copy, 16) &&
            !memcmp(conn->bond.central.ltk, central_ltk + 1, 16));
     gap_conn_end();
 
@@ -4767,9 +4767,9 @@ static void test_secure_connections_just_works(void) {
     conn->queue.tx_queued = conn->link.tx_pending = 0;
     gap_smp_poll();
     assert(gap_pairing_status() == 0 && !smp->pairing.phase &&
-           conn->bonded && conn->bond.has_peer_irk &&
-           conn->bond.has_local_irk &&
-           !memcmp(conn->bond.peer_irk, sc_peer_irk + 1, 16) &&
+           conn->bonded && conn->bond.peer_irk.present &&
+           conn->bond.local_irk.present &&
+           !memcmp(conn->bond.peer_irk.key, sc_peer_irk + 1, 16) &&
            !conn->authenticated && conn->encryption_key_size == 16);
     gap_conn_end();
     memset(test_bonds, 0, sizeof(test_bonds));
@@ -4874,9 +4874,9 @@ static void test_secure_connections_just_works(void) {
     };
     receive_test_smp(central_identity, sizeof(central_identity), 0);
     assert(gap_pairing_status() == 0 && !smp->pairing.phase &&
-           conn->bonded && conn->bond.has_peer_irk &&
-           conn->bond.has_local_irk &&
-           !memcmp(conn->bond.peer_irk, central_irk + 1, 16) &&
+           conn->bonded && conn->bond.peer_irk.present &&
+           conn->bond.local_irk.present &&
+           !memcmp(conn->bond.peer_irk.key, central_irk + 1, 16) &&
            !conn->authenticated && conn->encryption_key_size == 16);
     gap_conn_end();
     assert(gap_secure_connections_set(0));

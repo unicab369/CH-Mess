@@ -213,16 +213,20 @@ typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
 } gap_bond_key;
 
+typedef struct {
+    uint8_t key[16];
+    uint8_t present;
+} bond_opt_key;
+
 // One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
 // little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
     uint8_t version, valid;
     gap_peer_address peer;
     gap_bond_key central;
-    uint8_t peer_irk[16], local_irk[16];
-    uint8_t key_size, authenticated, has_peer_irk, has_local_irk;
-    uint8_t peer_csrk[16], local_csrk[16];
-    uint8_t has_peer_csrk, has_local_csrk;
+    bond_opt_key peer_irk, local_irk;
+    uint8_t key_size, authenticated;
+    bond_opt_key peer_csrk, local_csrk;
     // LTK and identifiers distributed by the Peripheral are stored separately
     // from the Central-distributed set above.
     gap_bond_key peripheral;
