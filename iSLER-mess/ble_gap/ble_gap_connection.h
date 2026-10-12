@@ -95,9 +95,9 @@ static void gap_conn_end(void) {
 
     // Clear per-link security and bond state.
     conn->authenticated = 0;
-    conn->encryption_key_size = 0;
+    conn->enc_key_size = 0;
     conn->bonded = 0;
-    conn->bond_restore_started = 0;
+    conn->restore_started = 0;
 
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
@@ -349,7 +349,7 @@ static void gap_send_conn_update(void) {
     conn->update_instant = (uint16_t)(conn->link.event_counter +
                                 6 * (conn->schedule.latency + 1) + 1);
     conn->pending.timing_update = 1;
-    conn->queue.local_update_queued = 0;
+    conn->queue.local_update = 0;
     conn->pending.params = conn->pending.params_local = 0;
 
     gap_tx_frame[0] = 0x03;
@@ -376,7 +376,7 @@ static void gap_send_channel_map(void) {
     conn->channel_map_instant = (uint16_t)(conn->link.event_counter +
         6 * (conn->schedule.latency + 1) + 1);
     conn->pending.channel_map = 1;
-    conn->queue.local_map_queued = 0;
+    conn->queue.local_map = 0;
 
     gap_tx_frame[0] = 3;
     gap_tx_frame[1] = 8;
@@ -479,7 +479,7 @@ static void gap_send_conn_request(void) {
     if (gap_tx_frame[1]) return;
 
     if (conn->features.known && !(conn->features.peer[0] & 0x02)) {
-        conn->queue.local_params_queued = 0;
+        conn->queue.local_params = 0;
         conn->connection_status = 0x1a;
         return;
     }
@@ -500,7 +500,7 @@ static void gap_send_conn_request(void) {
         return;
     }
 
-    conn->queue.local_params_queued = 0;
+    conn->queue.local_params = 0;
     conn->pending.params = conn->pending.params_local = 1;
     gap_tx_frame[1] = 24;
     gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
@@ -752,7 +752,7 @@ static void gap_send_data_length(uint8_t opcode) {
     if (gap_tx_frame[1]) return;
 
     if (opcode == 0x14) {
-        conn->queue.length_queued = 0;
+        conn->queue.length = 0;
         conn->pending.length = 1;
         conn->length_started_ms = GET_MILLIS();
     }
@@ -1004,8 +1004,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 conn->update_instant = instant;
                 conn->pending.timing_update = 1;
                 conn->pending.params = conn->pending.params_local = 0;
-                if (conn->queue.local_params_queued) {
-                    conn->queue.local_params_queued = 0;
+                if (conn->queue.local_params) {
+                    conn->queue.local_params = 0;
                     conn->features.request_pending = 0;
                     conn->connection_status = 0x23; // Central wins collision.
                 }
@@ -1077,13 +1077,13 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             goto reject_parameters;
         error = 0x23; // LL procedure collision.
         if (gap_security->phase || gap_conn_rate_busy() ||
-            conn->pending.timing_update || conn->queue.local_update_queued ||
-            conn->pending.channel_map || conn->queue.local_map_queued ||
+            conn->pending.timing_update || conn->queue.local_update ||
+            conn->pending.channel_map || conn->queue.local_map ||
             conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
             (frame[2] == 0x0f &&
              ((conn->pending.params && !conn->pending.params_local) ||
               (conn->is_central &&
-               (conn->pending.params || conn->queue.local_params_queued)))))
+               (conn->pending.params || conn->queue.local_params)))))
             goto reject_parameters;
         if (frame[2] == 0x10) {
             if (minimum < conn->params_min) minimum = conn->params_min;
@@ -1113,10 +1113,10 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         } else {
             // The Central's procedure takes precedence over a
             // simultaneous locally initiated Peripheral request.
-            if (conn->queue.local_params_queued ||
+            if (conn->queue.local_params ||
                 (conn->pending.params && conn->pending.params_local))
                 conn->connection_status = 0x23;
-            conn->queue.local_params_queued = conn->features.request_pending = 0;
+            conn->queue.local_params = conn->features.request_pending = 0;
             conn->pending.params = 1;
             conn->pending.params_local = 0;
             conn->params_started_ms = GET_MILLIS();
@@ -1203,7 +1203,7 @@ reject_parameters:
                 conn->subrate.status = 0x1a;
             }
             conn->pending.params = conn->pending.params_local =
-                conn->queue.local_params_queued = 0;
+                conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[3];
         }
@@ -1295,7 +1295,7 @@ reject_parameters:
               conn->features.request_pending))
         ) {
             conn->pending.params = conn->pending.params_local =
-                conn->queue.local_params_queued = 0;
+                conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[4];
         }
@@ -1438,7 +1438,7 @@ reject_parameters:
                 conn->subrate.request_queued = 0;
                 conn->subrate.status = 0x1a;
             }
-            conn->queue.local_params_queued = conn->pending.params =
+            conn->queue.local_params = conn->pending.params =
                 conn->pending.params_local = 0;
             conn->features.request_pending = 0;
             conn->features.known = 1;
@@ -1456,8 +1456,8 @@ reject_parameters:
         conn->features.peer[7] = frame[10];
         conn->features.request_pending = 0;
         conn->features.ext_pending = 0;
-        if (conn->queue.local_params_queued && !(frame[3] & 0x02)) {
-            conn->queue.local_params_queued = 0;
+        if (conn->queue.local_params && !(frame[3] & 0x02)) {
+            conn->queue.local_params = 0;
             conn->connection_status = 0x1a;
         }
         break;
@@ -1544,15 +1544,15 @@ reject_parameters:
             error = 0x1a;
         } else if (gap_security->phase || gap_conn_rate_busy() ||
             conn->pending.timing_update ||
-            conn->queue.local_update_queued || conn->pending.params ||
-            conn->queue.local_params_queued || conn->subrate.pending ||
+            conn->queue.local_update || conn->pending.params ||
+            conn->queue.local_params || conn->subrate.pending ||
             conn->subrate.update_queued ||
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
             conn->pending.channel_map ||
-            conn->queue.local_map_queued || conn->pending.phy_request ||
+            conn->queue.local_map || conn->pending.phy_request ||
             conn->queue.phy_queued || conn->pending.phy_update ||
-            conn->pending.length || conn->queue.length_queued
+            conn->pending.length || conn->queue.length
         ) {
             error = 0x23;
         } else {
@@ -1613,8 +1613,8 @@ reject_parameters:
             instant == conn->link.event_counter ||
             !(conn->features.peer_page1[1] & 0x01) ||
             conn->rate.update_pending || conn->pending.timing_update ||
-            conn->queue.local_update_queued || conn->pending.params ||
-            conn->queue.local_params_queued || conn->subrate.pending ||
+            conn->queue.local_update || conn->pending.params ||
+            conn->queue.local_params || conn->subrate.pending ||
             conn->subrate.update_queued ||
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
@@ -1672,12 +1672,12 @@ reject_parameters:
             error = 0x23;
             if (!gap_security->phase && !gap_conn_rate_busy() &&
                 !conn->pending.timing_update &&
-                !conn->queue.local_update_queued &&
-                !conn->pending.params && !conn->queue.local_params_queued &&
+                !conn->queue.local_update &&
+                !conn->pending.params && !conn->queue.local_params &&
                 !conn->subrate.pending && !conn->subrate.update_queued &&
-                !conn->pending.channel_map && !conn->queue.local_map_queued &&
+                !conn->pending.channel_map && !conn->queue.local_map &&
                 !conn->queue.phy_queued && !conn->pending.phy_request &&
-                !conn->pending.phy_update && !conn->queue.length_queued &&
+                !conn->pending.phy_update && !conn->queue.length &&
                 !conn->pending.length
             ) {
                 error = 0x20;
@@ -1824,8 +1824,8 @@ reject_parameters:
             if (frame[2] == 0x14) {
                 gap_send_data_length(0x15);
                 // A queued local change is advertised in this response.
-                if (conn->queue.length_queued) {
-                    conn->queue.length_queued = 0;
+                if (conn->queue.length) {
+                    conn->queue.length = 0;
                     conn->length_status = 0;
                 }
             } else {
@@ -1852,9 +1852,9 @@ reject_parameters:
             break;
         }
         if (gap_security->phase || conn->pending.timing_update ||
-            conn->queue.local_update_queued || conn->pending.params ||
-            conn->queue.local_params_queued || conn->pending.channel_map ||
-            conn->queue.local_map_queued || conn->pending.phy_update ||
+            conn->queue.local_update || conn->pending.params ||
+            conn->queue.local_params || conn->pending.channel_map ||
+            conn->queue.local_map || conn->pending.phy_update ||
             (conn->is_central && (conn->pending.phy_request || conn->queue.phy_queued))) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1951,11 +1951,11 @@ int gap_conn_update(
     uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
         conn->schedule.factor : 1;
     if (!gap_connected() || gap_security->phase || !conn->is_central ||
-        conn->link.first_event || conn->queue.local_update_queued ||
+        conn->link.first_event || conn->queue.local_update ||
         conn->pending.timing_update ||
-        gap_conn_rate_busy() || conn->queue.local_params_queued || conn->pending.params ||
-        conn->queue.length_queued || conn->pending.length ||
-        conn->pending.channel_map || conn->queue.local_map_queued ||
+        gap_conn_rate_busy() || conn->queue.local_params || conn->pending.params ||
+        conn->queue.length || conn->pending.length ||
+        conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || interval < 6 || interval > 3200 ||
@@ -1966,7 +1966,7 @@ int gap_conn_update(
     conn->new_params.latency = latency;
     conn->new_params.supervision_timeout = timeout;
     conn->connection_status = GAP_CONNECTION_PENDING;
-    conn->queue.local_update_queued = 1;
+    conn->queue.local_update = 1;
     return 1;
 }
 
@@ -1983,11 +1983,11 @@ int gap_conn_request(
         conn->schedule.interval_125us <= maximum * 10 ?
         conn->schedule.factor : 1;
     if (!gap_connected() || gap_security->phase || conn->link.first_event ||
-        conn->queue.local_update_queued || conn->pending.timing_update ||
+        conn->queue.local_update || conn->pending.timing_update ||
         gap_conn_rate_busy() ||
-        conn->queue.local_params_queued || conn->pending.params ||
-        conn->queue.length_queued || conn->pending.length ||
-        conn->pending.channel_map || conn->queue.local_map_queued ||
+        conn->queue.local_params || conn->pending.params ||
+        conn->queue.length || conn->pending.length ||
+        conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
@@ -2004,7 +2004,7 @@ int gap_conn_request(
     conn->params_latency = latency;
     conn->params_timeout = timeout;
     conn->connection_status = GAP_CONNECTION_PENDING;
-    conn->queue.local_params_queued = 1;
+    conn->queue.local_params = 1;
     return 1;
 }
 
@@ -2024,14 +2024,14 @@ int gap_subrate_set(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || !conn->is_central || conn->link.first_event ||
-        gap_security->phase || conn->queue.local_update_queued ||
+        gap_security->phase || conn->queue.local_update ||
         conn->pending.timing_update ||
         gap_conn_rate_busy() ||
-        conn->queue.local_params_queued || conn->pending.params ||
+        conn->queue.local_params || conn->pending.params ||
         conn->subrate.pending || conn->subrate.update_queued ||
         conn->subrate.request_queued || conn->subrate.request_pending ||
-        conn->queue.length_queued || conn->pending.length ||
-        conn->pending.channel_map || conn->queue.local_map_queued ||
+        conn->queue.length || conn->pending.length ||
+        conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent ||
@@ -2068,14 +2068,14 @@ int gap_subrate_request(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || conn->is_central || conn->link.first_event ||
-        gap_security->phase || conn->queue.local_update_queued ||
+        gap_security->phase || conn->queue.local_update ||
         conn->pending.timing_update ||
         gap_conn_rate_busy() ||
-        conn->queue.local_params_queued || conn->pending.params ||
+        conn->queue.local_params || conn->pending.params ||
         conn->subrate.pending || conn->subrate.update_queued ||
         conn->subrate.request_queued || conn->subrate.request_pending ||
-        conn->queue.length_queued || conn->pending.length ||
-        conn->pending.channel_map || conn->queue.local_map_queued ||
+        conn->queue.length || conn->pending.length ||
+        conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || factor_min < 1 ||
@@ -2138,12 +2138,12 @@ int gap_conn_rate_set(
     if (!gap_connected() || !conn->is_central || conn->link.first_event ||
         gap_security->phase || conn->rate.set_queued ||
         conn->rate.request_queued || conn->rate.update_pending ||
-        conn->rate.req_pending || conn->queue.local_update_queued ||
-        conn->pending.timing_update || conn->queue.local_params_queued ||
+        conn->rate.req_pending || conn->queue.local_update ||
+        conn->pending.timing_update || conn->queue.local_params ||
         conn->pending.params || conn->subrate.pending ||
         conn->subrate.update_queued || conn->subrate.request_queued ||
         conn->subrate.request_pending || conn->pending.channel_map ||
-        conn->queue.local_map_queued || conn->queue.length_queued ||
+        conn->queue.local_map || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
@@ -2173,12 +2173,12 @@ int gap_conn_rate_request(
     if (!gap_connected() || conn->is_central || conn->link.first_event ||
         gap_security->phase || conn->rate.set_queued ||
         conn->rate.request_queued || conn->rate.update_pending ||
-        conn->rate.req_pending || conn->queue.local_update_queued ||
-        conn->pending.timing_update || conn->queue.local_params_queued ||
+        conn->rate.req_pending || conn->queue.local_update ||
+        conn->pending.timing_update || conn->queue.local_params ||
         conn->pending.params || conn->subrate.pending ||
         conn->subrate.update_queued || conn->subrate.request_queued ||
         conn->subrate.request_pending || conn->pending.channel_map ||
-        conn->queue.local_map_queued || conn->queue.length_queued ||
+        conn->queue.local_map || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
@@ -2226,10 +2226,10 @@ int gap_channel_map_set(const uint8_t channels[5]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!channels || !gap_connected() || gap_security->phase || !conn->is_central ||
         conn->link.first_event || conn->queue.phy_queued || conn->pending.phy_request ||
-        conn->pending.phy_update || conn->queue.local_map_queued ||
-        conn->pending.channel_map || conn->queue.local_update_queued ||
-        conn->pending.timing_update || conn->queue.local_params_queued ||
-        conn->pending.params || conn->queue.length_queued || conn->pending.length ||
+        conn->pending.phy_update || conn->queue.local_map ||
+        conn->pending.channel_map || conn->queue.local_update ||
+        conn->pending.timing_update || conn->queue.local_params ||
+        conn->pending.params || conn->queue.length || conn->pending.length ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || (channels[4] & 0xe0))
         return 0;
@@ -2243,7 +2243,7 @@ int gap_channel_map_set(const uint8_t channels[5]) {
     }
     memcpy(conn->pending_channel_map, channels, 5);
     conn->connection_status = GAP_CONNECTION_PENDING;
-    conn->queue.local_map_queued = 1;
+    conn->queue.local_map = 1;
     return 1;
 }
 
@@ -2324,11 +2324,11 @@ int gap_data_length_set(uint16_t octets) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || gap_security->phase || conn->link.first_event ||
-        conn->queue.length_queued || conn->pending.length ||
-        conn->queue.local_update_queued || conn->pending.timing_update ||
-        conn->queue.local_params_queued || conn->pending.params ||
+        conn->queue.length || conn->pending.length ||
+        conn->queue.local_update || conn->pending.timing_update ||
+        conn->queue.local_params || conn->pending.params ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        conn->pending.channel_map || conn->queue.local_map_queued ||
+        conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || octets < 27 ||
         octets > conn->data_capacity)
@@ -2339,7 +2339,7 @@ int gap_data_length_set(uint16_t octets) {
     }
     conn->local_tx_octets = octets;
     conn->length_status = GAP_CONNECTION_PENDING;
-    conn->queue.length_queued = 1;
+    conn->queue.length = 1;
     return 1;
 }
 
@@ -2363,10 +2363,10 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
     if (!gap_connected() || gap_security->phase || conn->link.first_event ||
         !(supported & 6) || !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
-        conn->queue.local_update_queued || conn->pending.timing_update ||
-        conn->queue.local_map_queued || conn->pending.channel_map ||
-        conn->queue.local_params_queued || conn->pending.params ||
-        conn->queue.length_queued || conn->pending.length ||
+        conn->queue.local_update || conn->pending.timing_update ||
+        conn->queue.local_map || conn->pending.channel_map ||
+        conn->queue.local_params || conn->pending.params ||
+        conn->queue.length || conn->pending.length ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply)
         return 0;
@@ -2590,10 +2590,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!ltk || !random || !gap_connected() || !conn->is_central ||
         conn->link.first_event || gap_security->phase || gap_smp_blocks_encryption() ||
-        conn->pending.timing_update || conn->queue.local_update_queued ||
-        conn->queue.local_map_queued || conn->pending.channel_map ||
-        conn->queue.local_params_queued || conn->pending.params ||
-        conn->features.request_pending || conn->queue.length_queued ||
+        conn->pending.timing_update || conn->queue.local_update ||
+        conn->queue.local_map || conn->pending.channel_map ||
+        conn->queue.local_params || conn->pending.params ||
+        conn->features.request_pending || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || conn->link_state.terminate_after_reply)
@@ -2612,10 +2612,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     // Entropy collection may take time: recheck the link and procedures before
     // committing a key, so a disconnect/reconnect cannot apply it to another peer.
     if (!conn->link_state.active || (*gap_security_generation) != generation || gap_security->phase ||
-        conn->pending.timing_update || conn->queue.local_update_queued ||
-        conn->queue.local_map_queued || conn->pending.channel_map ||
-        conn->queue.local_params_queued || conn->pending.params ||
-        conn->features.request_pending || conn->queue.length_queued ||
+        conn->pending.timing_update || conn->queue.local_update ||
+        conn->queue.local_map || conn->pending.channel_map ||
+        conn->queue.local_params || conn->pending.params ||
+        conn->features.request_pending || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || conn->link_state.terminate_after_reply) {
@@ -2627,7 +2627,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
-    conn->authenticated = conn->encryption_key_size = 0;
+    conn->authenticated = conn->enc_key_size = 0;
     memcpy(gap_security->ltk, ltk, 16);
     memcpy(gap_security->random, random, 8);
     gap_security->ediv = ediv;
@@ -2666,7 +2666,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
         return 0;
     }
     if (ltk) {
-        conn->authenticated = conn->encryption_key_size = 0;
+        conn->authenticated = conn->enc_key_size = 0;
         memcpy(gap_security->ltk, ltk, 16);
         gap_security_derive();
         gap_security->phase = GAP_ENC_START_QUEUED;

@@ -381,7 +381,7 @@ static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
 
 static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
 
-static uint8_t gap_bond_repair_pending[GAP_CONNECTION_COUNT];
+static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static void gap_smp_finish(uint8_t status);
 
@@ -955,7 +955,7 @@ int gap_authenticated(void) {
 }
 uint8_t gap_key_size(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return gap_encrypted() ? conn->encryption_key_size : 0;
+    return gap_encrypted() ? conn->enc_key_size : 0;
 }
 
 // Central starts pairing; Peripheral asks its Central to start it.
@@ -1378,11 +1378,10 @@ static void gap_smp_finish(uint8_t status) {
     smp->tx_len = smp->tx_offset = 0;
     smp->l2cap_rx_pending = 0;
 
-    gap_wipe(&gap_oob_locals[gap_conn_slot],
-             sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
     gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
-
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
+
     smp->previous_bond_valid = 0;
     if (discard_bond) {
         gap_wipe(&conn->bond, sizeof(conn->bond));
@@ -1394,6 +1393,7 @@ static void gap_smp_link_close(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (conn->is_central &&
         smp->pairing.phase == SMP_PHASE_BOND_TX &&
         smp->pairing.bond_tx_step == 2
@@ -1401,22 +1401,19 @@ static void gap_smp_link_close(void) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
         smp_bond_abort();
-        gap_bond_repair_pending[gap_conn_slot] = 1;
+        bond_repair_pending[gap_conn_slot] = 1;
     }
-    if (conn->is_central && conn->bond_restore_started &&
+    if (conn->is_central && conn->restore_started &&
         gap_security->status == 0x3d
     ) {
-        gap_bond_remove(conn->bond.peer.address,
-                        conn->bond.peer.type);
-        gap_bond_repair_pending[gap_conn_slot] = 1;
+        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
+        bond_repair_pending[gap_conn_slot] = 1;
     }
     uint8_t status = smp->pairing.phase ? 0x08 : smp->status;
     gap_wipe(smp, sizeof(*smp));
     smp->status = status;
-    gap_wipe(&gap_oob_locals[gap_conn_slot],
-             sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot],
-             sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
 }
 
 // Handle bond restoration and repair without exposing SMP phase state to GAP.
@@ -1424,40 +1421,41 @@ static void smp_bond_restore_poll(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (conn->bond_restore_started && gap_encrypted()) {
+    if (conn->restore_started && gap_encrypted()) {
         conn->authenticated = conn->bond.authenticated;
-        conn->encryption_key_size = conn->bond.key_size;
-        conn->bond_restore_started = 0;
+        conn->enc_key_size = conn->bond.key_size;
+        conn->restore_started = 0;
     }
-    if (conn->bond_restore_started && conn->is_central &&
+
+    if (conn->restore_started && conn->is_central &&
         !gap_security->phase && gap_security->status &&
         gap_security->status != GAP_CONNECTION_PENDING
     ) {
-        gap_bond_remove(conn->bond.peer.address,
-                        conn->bond.peer.type);
+        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
         memset(&conn->bond, 0, sizeof(conn->bond));
-        conn->bonded = conn->bond_restore_started = 0;
-        gap_bond_repair_pending[gap_conn_slot] = 1;
+        conn->bonded = conn->restore_started = 0;
+        bond_repair_pending[gap_conn_slot] = 1;
     }
+
     if (conn->is_central &&
-        gap_bond_repair_pending[gap_conn_slot] &&
+        bond_repair_pending[gap_conn_slot] &&
         !conn->link.first_event && !gap_security->phase &&
         !smp->pairing.phase && !conn->link.tx_pending &&
         !conn->queue.tx_queued && !conn->tx_l2cap_remaining && gap_pair()
     ) {
-        gap_bond_repair_pending[gap_conn_slot] = 0;
+        bond_repair_pending[gap_conn_slot] = 0;
     }
-    if (!gap_bond_repair_pending[gap_conn_slot] && conn->bonded &&
+
+    if (!bond_repair_pending[gap_conn_slot] && conn->bonded &&
         conn->is_central &&
-        !conn->link.first_event && !conn->bond_restore_attempted &&
+        !conn->link.first_event && !conn->restore_attempted &&
         !gap_security->phase && !smp->pairing.phase
     ) {
-        conn->bond_restore_attempted = 1;
+        conn->restore_attempted = 1;
         uint16_t ediv = (uint16_t)conn->bond.central.ediv[0] |
-            (uint16_t)conn->bond.central.ediv[1] << 8;
-        if (gap_encrypt(conn->bond.central.ltk,
-                        conn->bond.central.rand, ediv))
-            conn->bond_restore_started = 1;
+                        (uint16_t)conn->bond.central.ediv[1] << 8;
+        if (gap_encrypt(conn->bond.central.ltk, conn->bond.central.rand, ediv))
+            conn->restore_started = 1;
     }
 }
 
@@ -1866,7 +1864,7 @@ static void gap_smp_poll(void) {
     if (pairing->phase == SMP_PHASE_SC_ENCRYPT) {
         if (gap_encrypted()) {
             conn->authenticated = pairing->authenticated;
-            conn->encryption_key_size = 16;
+            conn->enc_key_size = 16;
 
             if (pairing->bond_requested) {
                 // SC bonds store the f5 LTK and use zero EDIV and Rand.
@@ -1941,7 +1939,7 @@ static void gap_smp_poll(void) {
         }
 
         conn->authenticated = pairing->authenticated;
-        conn->encryption_key_size = pairing->key_size;
+        conn->enc_key_size = pairing->key_size;
         if (!pairing->bond_requested) { gap_smp_finish(0); return; }
         gap_bond_key bond_data = {0};
         uint8_t attempts = 0, nonzero;
@@ -2025,9 +2023,9 @@ static void gap_smp_poll(void) {
     // A saved Peripheral LTK is selected only when both legacy identifiers
     // match the peer's request; otherwise leave the request for the host hook.
     if (!conn->is_central && conn->bonded && !pairing->phase &&
-        !conn->bond_restore_attempted && gap_security->phase == GAP_ENC_KEY_REQUEST
+        !conn->restore_attempted && gap_security->phase == GAP_ENC_KEY_REQUEST
     ) {
-        conn->bond_restore_attempted = 1;
+        conn->restore_attempted = 1;
         uint16_t bond_ediv = (uint16_t)conn->bond.central.ediv[0] |
                              (uint16_t)conn->bond.central.ediv[1] << 8;
 
@@ -2035,7 +2033,7 @@ static void gap_smp_poll(void) {
             gap_key_reply(conn->bond.central.ltk) &&
             gap_security->ediv == bond_ediv
         ) {
-            conn->bond_restore_started = 1;
+            conn->restore_started = 1;
         } else {
             gap_key_reply(NULL);
         }

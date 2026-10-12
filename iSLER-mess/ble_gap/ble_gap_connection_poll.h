@@ -11,13 +11,13 @@ static void gap_conn_send_queued(void) {
     gap_send_security();
     if (gap_security->phase) return;
 
-    if (conn->queue.local_update_queued)
+    if (conn->queue.local_update)
         gap_send_conn_update();
-    if (conn->queue.local_map_queued)
+    if (conn->queue.local_map)
         gap_send_channel_map();
-    if (conn->queue.local_params_queued && !conn->features.request_pending)
+    if (conn->queue.local_params && !conn->features.request_pending)
         gap_send_conn_request();
-    if (conn->queue.length_queued)
+    if (conn->queue.length)
         gap_send_data_length(0x14);
     if (conn->queue.phy_queued)
         gap_send_phy_request();
@@ -675,8 +675,8 @@ static void gap_conn_poll(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!conn->link_state.active) return;
 
-    if (conn->bond_load_pending) {
-        conn->bond_load_pending = 0;
+    if (conn->load_pending) {
+        conn->load_pending = 0;
 
         if (!conn->is_central) {
             int peer_slot = gap_identity_find(conn->initiator.address, conn->initiator.type);

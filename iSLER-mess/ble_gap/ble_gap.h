@@ -261,15 +261,15 @@ typedef struct {
     // Connection endpoint and peer identity addresses.
     gap_peer_address initiator, responder, peer;
     uint8_t is_central;
-    uint8_t authenticated, encryption_key_size;
-    uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
+    uint8_t authenticated, enc_key_size;
+    uint8_t load_pending, bonded, restore_started, restore_attempted;
     gap_bond bond;
     struct {
         volatile uint8_t phy_queued;
         volatile uint8_t tx_queued, rx_ready;
-        volatile uint8_t local_update_queued;
-        volatile uint8_t local_params_queued, local_map_queued;
-        volatile uint8_t length_queued;
+        volatile uint8_t local_update;
+        volatile uint8_t local_params, local_map;
+        volatile uint8_t length;
     } queue;
 
     // Radio queues and connection data.
@@ -1047,11 +1047,11 @@ static int gap_conn_accept(
     conn->connection_status = 0;
     conn->local_tx_octets = 27;
     conn->length_status = 0;
-    conn->bond_load_pending = 1;
+    conn->load_pending = 1;
     conn->bonded = 0;
-    conn->bond_restore_started = 0;
-    conn->bond_restore_attempted = 0;
-    conn->authenticated = conn->encryption_key_size = 0;
+    conn->restore_started = 0;
+    conn->restore_attempted = 0;
+    conn->authenticated = conn->enc_key_size = 0;
 
     // Initialize subrate and connection rate state.
     conn->schedule.factor = 1;
