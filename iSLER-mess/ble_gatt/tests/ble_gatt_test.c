@@ -2,10 +2,6 @@
 #include <stdint.h>
 #include <string.h>
 
-// gap_connection.h is included before gap_security.h in GAP.
-int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type);
-int gap_pair(void);
-
 #include "../../ble_crypto.h"
 #define MESH_GATT_EAD_SUPPORT 1
 #define MESH_GATT_RPA_ONLY_SUPPORT 1

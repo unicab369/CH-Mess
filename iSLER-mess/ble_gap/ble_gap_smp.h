@@ -1013,35 +1013,42 @@ static int gap_bond_valid(const gap_bond *bond) {
         bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
         bond->peer_irk.present > 1 || bond->local_irk.present > 1 ||
         bond->peer_csrk.present > 1 || bond->local_csrk.present > 1 ||
-        bond->has_peripheral_ltk > 1 ||
-        (bond->version == GAP_BOND_VERSION_LEGACY &&
-         (bond->peer_csrk.present || bond->local_csrk.present ||
-          bond->has_peripheral_ltk)) ||
-        (bond->version == GAP_BOND_VERSION_CSRK &&
-         bond->has_peripheral_ltk)
+        bond->has_peripheral_ltk > 1
     ) return 0;
 
+    if (bond->version == GAP_BOND_VERSION_LEGACY &&
+        (bond->peer_csrk.present || bond->local_csrk.present || bond->has_peripheral_ltk)
+    ) return 0;
+
+    if (bond->version == GAP_BOND_VERSION_CSRK && bond->has_peripheral_ltk)
+        return 0;
+
     for (uint8_t i = bond->key_size; i < sizeof(bond->central.ltk); i++)
-        if (bond->central.ltk[i]) return 0;
+        if (bond->central.ltk[i])
+            return 0;
 
     if (!bond->has_peripheral_ltk) {
         for (uint8_t i = 0; i < sizeof(bond->peripheral.ltk); i++)
-            if (bond->peripheral.ltk[i]) return 0;
+            if (bond->peripheral.ltk[i])
+                return 0;
         for (uint8_t i = 0; i < sizeof(bond->peripheral.rand); i++)
-            if (bond->peripheral.rand[i]) return 0;
-        if (bond->peripheral.ediv[0] || bond->peripheral.ediv[1]) return 0;
+            if (bond->peripheral.rand[i])
+                return 0;
+        if (bond->peripheral.ediv[0] || bond->peripheral.ediv[1])
+            return 0;
     }
     else {
         for (uint8_t i = bond->key_size; i < sizeof(bond->peripheral.ltk); i++)
-            if (bond->peripheral.ltk[i]) return 0;
+            if (bond->peripheral.ltk[i])
+                return 0;
     }
     return 1;
 }
 
-int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
-    if (!peer_address || address_type > 1 ||
-        (address_type && (peer_address[5] & 0xc0) != 0xc0)
-    ) return 0;
+int gap_bond_remove(void) {
+    const gap_peer_address *peer = &gap_conn_ctx[gap_conn_slot].bond.peer;
+    if (peer->type > 1 || (peer->type && (peer->address[5] & 0xc0) != 0xc0))
+        return 0;
 
     if (!GAP_BOND_LOAD || !GAP_BOND_DELETE) return 0;
     gap_bond bond;
@@ -1049,13 +1056,14 @@ int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&bond, 0, sizeof(bond));
         int loaded = GAP_BOND_LOAD(slot, &bond);
+
         if (loaded < 0) {
             gap_wipe(&bond, sizeof(bond));
             return 0;
         }
         if (loaded && gap_bond_valid(&bond) &&
-            bond.peer.type == address_type &&
-            memcmp(bond.peer.address, peer_address, 6) == 0
+            bond.peer.type == peer->type &&
+            memcmp(bond.peer.address, peer->address, sizeof(peer->address)) == 0
         ) {
             gap_wipe(&bond, sizeof(bond));
             return GAP_BOND_DELETE(slot);
@@ -1070,14 +1078,15 @@ static int smp_bond_load(
 ) {
     if (!out || address_type > 1 || !address) return 0;
     memset(out, 0, sizeof(*out));
-    if (!GAP_BOND_LOAD ||
-        (address_type && (address[5] & 0xc0) != 0xc0))
+
+    if (!GAP_BOND_LOAD || (address_type && (address[5] & 0xc0) != 0xc0))
         return 0;
 
     gap_bond stored = {0};
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&stored, 0, sizeof(stored));
         int loaded = GAP_BOND_LOAD(slot, &stored);
+
         if (loaded < 0) {
             gap_wipe(&stored, sizeof(stored));
             return 0;
@@ -1086,16 +1095,11 @@ static int smp_bond_load(
             stored.peer.type == address_type &&
             memcmp(stored.peer.address, address, 6) == 0) {
             stored.version = GAP_BOND_VERSION;
-            if (!stored.peer_irk.present)
-                stored.peer_irk = (bond_opt_key){0};
-            if (!stored.local_irk.present)
-                stored.local_irk = (bond_opt_key){0};
-            if (!stored.peer_csrk.present)
-                stored.peer_csrk = (bond_opt_key){0};
-            if (!stored.local_csrk.present)
-                stored.local_csrk = (bond_opt_key){0};
-            if (!stored.has_peripheral_ltk)
-                stored.peripheral = (gap_bond_key){0};
+            if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
+            if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
+            if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
+            if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
+            if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
             *out = stored;
             gap_wipe(&stored, sizeof(stored));
             return 1;
@@ -1110,6 +1114,7 @@ static int smp_bond_store(const gap_bond *bond) {
     gap_bond stored = *bond;
     // Normalize legacy versions before validating the current bond fields.
     stored.version = GAP_BOND_VERSION;
+
     if (stored.valid != 1 || !gap_bond_valid(&stored)) {
         gap_wipe(&stored, sizeof(stored));
         return 0;
@@ -1119,8 +1124,7 @@ static int smp_bond_store(const gap_bond *bond) {
     if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
     if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
     if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
-    if (!stored.has_peripheral_ltk)
-        stored.peripheral = (gap_bond_key){0};
+    if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
 
     if (!GAP_BOND_LOAD || !GAP_BOND_SAVE) {
         gap_wipe(&stored, sizeof(stored));
@@ -1132,16 +1136,19 @@ static int smp_bond_store(const gap_bond *bond) {
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&current, 0, sizeof(current));
         int loaded = GAP_BOND_LOAD(slot, &current);
+
         if (loaded < 0) {
             gap_wipe(&current, sizeof(current));
             gap_wipe(&stored, sizeof(stored));
             return 0;
         }
+
         if (!loaded || !gap_bond_valid(&current)) {
             if (free_slot < 0) free_slot = slot;
             gap_wipe(&current, sizeof(current));
             continue;
         }
+
         if (current.peer.type == stored.peer.type &&
             memcmp(current.peer.address, stored.peer.address, 6) == 0
         ) {
@@ -1174,7 +1181,7 @@ static void smp_bond_abort(void) {
         memcpy(&conn->bond, &smp->previous_bond, sizeof(conn->bond));
         conn->bonded = 1;
     } else {
-        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
+        gap_bond_remove();
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
     }
@@ -1186,8 +1193,10 @@ static void gap_smp_finish(uint8_t status) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (status) smp_bond_abort();
-    uint8_t bond_phase = smp->pairing.phase == SMP_PHASE_BOND_TX ||
-                         smp->pairing.phase == SMP_PHASE_BOND_RX;
+    if (status && !conn->bonded &&
+        (smp->pairing.phase == SMP_PHASE_BOND_TX ||
+         smp->pairing.phase == SMP_PHASE_BOND_RX))
+        gap_wipe(&conn->bond, sizeof(conn->bond));
 
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
@@ -1215,9 +1224,6 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
 
     smp->previous_bond_valid = 0;
-    if (status && !conn->bonded && bond_phase) {
-        gap_wipe(&conn->bond, sizeof(conn->bond));
-    }
 }
 
 // Close pairing state and retain only its final status for the GAP API.
@@ -1239,7 +1245,7 @@ static void gap_smp_link_close(void) {
     if (conn->is_central && conn->restore_started &&
         gap_security->status == 0x3d
     ) {
-        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
+        gap_bond_remove();
         bond_repair_pending[gap_conn_slot] = 1;
     }
     uint8_t status = smp->pairing.phase ? 0x08 : smp->status;
@@ -1254,6 +1260,7 @@ static void smp_bond_restore_poll(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (conn->restore_started && gap_encrypted()) {
         conn->authenticated = conn->bond.authenticated;
         conn->enc_key_size = conn->bond.key_size;
@@ -1264,7 +1271,7 @@ static void smp_bond_restore_poll(void) {
         !gap_security->phase && gap_security->status &&
         gap_security->status != GAP_CONNECTION_PENDING
     ) {
-        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
+        gap_bond_remove();
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = conn->restore_started = 0;
         bond_repair_pending[gap_conn_slot] = 1;
@@ -1281,7 +1288,8 @@ static void smp_bond_restore_poll(void) {
 
     if (!bond_repair_pending[gap_conn_slot] && conn->bonded &&
         conn->is_central &&
-        !conn->link.first_event && !conn->restore_attempted &&
+        !conn->link.first_event &&
+        !conn->restore_attempted &&
         !gap_security->phase && !smp->pairing.phase
     ) {
         conn->restore_attempted = 1;
