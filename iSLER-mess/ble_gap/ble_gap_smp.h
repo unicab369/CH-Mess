@@ -795,29 +795,26 @@ int gap_sc_oob_get(gap_oob_data *out) {
 
     gap_oob_local *local = &gap_oob_locals[gap_conn_slot];
     gap_wipe(local, sizeof(*local));
-    memset(&gap_smp.pairing.sc, 0, sizeof(gap_smp.pairing.sc));
-    gap_oob_data oob = {0};
     uint32_t generation = gap_security_generation;
 
-    if (!gap_sc_generate_key() ||
-        !smp_random_bytes(oob.random, sizeof(oob.random)) ||
-        !gap_conn.link_state.active || generation != gap_security_generation
-    ) {
-        gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
-        gap_wipe(&oob, sizeof(oob));
-        return 0;
+    int generated = gap_sc_generate_key() &&
+        smp_random_bytes(local->oob.data.random, sizeof(local->oob.data.random)) &&
+        gap_conn.link_state.active && generation == gap_security_generation;
+
+    if (generated) {
+        gap_sc_confirm_value(gap_smp.secure.public_key, gap_smp.secure.public_key,
+                             local->oob.data.random, local->oob.data.confirm);
+        local->oob.valid = 1;
+        memcpy(local->private_key, gap_smp.secure.private_key, 32);
+        memcpy(local->public_key, gap_smp.secure.public_key, 64);
+        *out = local->oob.data;
+    } else {
+        gap_wipe(local, sizeof(*local));
     }
 
-    gap_sc_confirm_value(gap_smp.secure.public_key,
-                         gap_smp.secure.public_key, oob.random, oob.confirm);
-    local->oob.valid = 1;
-    memcpy(local->private_key, gap_smp.secure.private_key, 32);
-    memcpy(local->public_key, gap_smp.secure.public_key, 64);
-    local->oob.data = oob;
-    *out = local->oob.data;
-    gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
-    gap_wipe(&oob, sizeof(oob));
-    return 1;
+    gap_wipe(gap_smp.secure.private_key, sizeof(gap_smp.secure.private_key));
+    gap_wipe(gap_smp.secure.public_key, sizeof(gap_smp.secure.public_key));
+    return generated;
 }
 
 // Provide the peer's OOB commitment and random value. Pass NULL to clear it.
@@ -835,11 +832,13 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 // Return DISPLAY (render all six digits, including leading zeros), INPUT, or 0.
 // A display value is generated anew for each pairing; never cache/reuse it.
 uint8_t gap_passkey(uint32_t *value) {
-    if (gap_smp.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value)
+    if (gap_smp.pairing.passkey_action == GAP_PASSKEY_DISPLAY && value) {
         *value = (uint32_t)gap_smp.pairing.tk[0] |
                 (uint32_t)gap_smp.pairing.tk[1] << 8 |
                 (uint32_t)gap_smp.pairing.tk[2] << 16 |
                 (uint32_t)gap_smp.pairing.tk[3] << 24;
+    }
+
     return gap_smp.pairing.passkey_action;
 }
 
@@ -852,7 +851,8 @@ int gap_passkey_reply(uint32_t value) {
            gap_smp.secure.passkey_required &&
            (gap_smp.pairing.phase == SMP_PHASE_SC_PUBLIC_KEY ||
             gap_smp.pairing.phase == SMP_PHASE_SC_PASSKEY))) ||
-        gap_smp.pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999) {
+        gap_smp.pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
+    ) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
@@ -1333,7 +1333,6 @@ static void gap_smp_finish(uint8_t status) {
     gap_smp.tx_len = gap_smp.tx_offset = 0;
     gap_smp.l2cap_rx_pending = 0;
 
-    gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
     gap_wipe(&gap_oob_locals[gap_conn_slot],
              sizeof(gap_oob_locals[gap_conn_slot]));
     gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
