@@ -6,9 +6,10 @@
 
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
+    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     gap_send_security();
-    if (gap_security.phase) return;
+    if (gap_security->phase) return;
 
     if (gap_conn->queue.local_update_queued)
         gap_send_conn_update();
@@ -31,11 +32,13 @@ static void gap_conn_send_queued(void) {
 // Handle the radio callback under its connection context, then restore the
 // application's previously selected handle.
 void gap_hw_received(void) {
+    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
-        gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_conn = &gap_conn_ctx[gap_conn_slot];
 
     const uint8_t *frame = GAP_HW_RX_FRAME();
     uint64_t received_ticks = GAP_HW_TICKS();
@@ -81,19 +84,19 @@ void gap_hw_received(void) {
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
 
         if (frame[1] &&
-            ((gap_security.rx_enabled &&
-              !(duplicate && gap_security.phase == GAP_ENC_WAIT_FINAL &&
+            ((gap_security->rx_enabled &&
+              !(duplicate && gap_security->phase == GAP_ENC_WAIT_FINAL &&
                 frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == 0x05)) ||
-             (duplicate && gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+             (duplicate && gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE &&
               frame[1] == 5 && (frame[0] & 3) == 3))
         ) {
-            uint64_t counter = gap_security.rx_counter;
+            uint64_t counter = gap_security->rx_counter;
 
             if (duplicate && counter) counter--;
             if (frame[1] <= 4 || frame[1] > gap_conn->data_capacity + 4 ||
-                counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security.rx_counter)
+                counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
             ) {
-                gap_security.status = 0x3d;
+                gap_security->status = 0x3d;
                 gap_conn_end();
                 gap_conn_slot = previous_slot;
                 return;
@@ -105,10 +108,10 @@ void gap_hw_received(void) {
             uint8_t nonce[13];
             gap_security_nonce(nonce, counter, !gap_conn->is_central);
 
-            if (!GAP_CCM_DECRYPT(gap_security.session_key, nonce, frame[0] & 0xe3,
+            if (!GAP_CCM_DECRYPT(gap_security->session_key, nonce, frame[0] & 0xe3,
                     plain + 2, plain[1], frame + 2 + plain[1])
             ) {
-                gap_security.status = 0x3d;
+                gap_security->status = 0x3d;
                 gap_conn_end();
                 gap_conn_slot = previous_slot;
                 return;
@@ -173,7 +176,7 @@ void gap_hw_received(void) {
             }
             gap_conn->link.tx_sn ^= 1;
             gap_conn->link.tx_pending = 0;
-            gap_security.tx_sealed = 0;
+            gap_security->tx_sealed = 0;
 
             if (gap_conn->link_state.terminate_sent) {
                 if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
@@ -197,18 +200,18 @@ void gap_hw_received(void) {
              ((llid == 1 || llid == 2) && frame[1] && gap_conn->queue.rx_ready))
         ) new_packet = 0;
 
-        if (new_packet && frame[1] && gap_security.phase &&
-            gap_security.phase != GAP_ENC_QUEUED &&
-            gap_security.phase != GAP_ENC_PAUSE_QUEUED
+        if (new_packet && frame[1] && gap_security->phase &&
+            gap_security->phase != GAP_ENC_QUEUED &&
+            gap_security->phase != GAP_ENC_PAUSE_QUEUED
         ) {
             uint8_t opcode = llid == 3 ? frame[2] : 0xff;
             uint8_t allowed = opcode == 0x02;
-            switch (gap_security.phase) {
+            switch (gap_security->phase) {
                 case GAP_ENC_WAIT_RSP:
                     allowed |= opcode == 0x04; // Fall through for rejection.
                 case GAP_ENC_WAIT_START:
                     allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
-                        (gap_security.phase == GAP_ENC_WAIT_START && opcode == 0x05);
+                        (gap_security->phase == GAP_ENC_WAIT_START && opcode == 0x05);
                     break;
                 case GAP_ENC_KEY_REQUEST:
                     allowed |= opcode == 0x07; break;
@@ -223,7 +226,7 @@ void gap_hw_received(void) {
                 default: break;
             }
             if (!allowed) {
-                gap_security.status = 0x3d;
+                gap_security->status = 0x3d;
                 gap_conn_end();
                 gap_conn_slot = previous_slot;
                 return;
@@ -231,7 +234,7 @@ void gap_hw_received(void) {
         }
 
         if (new_packet) {
-            if (authenticated) gap_security.rx_counter++;
+            if (authenticated) gap_security->rx_counter++;
             if ((llid == 1 || llid == 2) && frame[1]) {
                 gap_conn->rx_llid = llid;
                 gap_conn->rx_len = frame[1];
@@ -269,7 +272,7 @@ void gap_hw_received(void) {
                 gap_conn_send_queued();
 
 #if GAP_EXT_ADV_SUPPORT
-                if (!gap_security.phase && gap_tx_frame[1] == 0 &&
+                if (!gap_security->phase && gap_tx_frame[1] == 0 &&
                         gap_conn->sync_transfer_queued
                 ) {
                     int slot = gap_periodic_sync_handle_slot(
@@ -284,7 +287,7 @@ void gap_hw_received(void) {
 #endif
             }
 
-            if (!gap_security.phase) {
+            if (!gap_security->phase) {
                 if (!gap_conn->is_central && gap_conn->channel.status_queued &&
                     gap_conn->channel.enabled
                 ) {
@@ -606,6 +609,7 @@ void gap_hw_received(void) {
         GAP_HW_PACKET_READY();
     }
     gap_conn_slot = previous_slot;
+    gap_security = &gap_security_contexts[gap_conn_slot];
     gap_conn = &gap_conn_ctx[gap_conn_slot];
 }
 
@@ -667,6 +671,7 @@ static uint64_t gap_conn_event_close_ticks(
 
 
 static void gap_conn_poll(void) {
+    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn->link_state.active) return;
 
@@ -688,13 +693,13 @@ static void gap_conn_poll(void) {
     gap_smp_poll();
     uint32_t now_ms = GET_MILLIS();
 
-    if (gap_security.phase &&
-        gap_security.phase != GAP_ENC_QUEUED &&
-        gap_security.phase != GAP_ENC_PAUSE_QUEUED &&
-        gap_security.phase != GAP_ENC_RESTART_QUEUED &&
-        (uint32_t)(now_ms - gap_security.started_ms) >= 40000
+    if (gap_security->phase &&
+        gap_security->phase != GAP_ENC_QUEUED &&
+        gap_security->phase != GAP_ENC_PAUSE_QUEUED &&
+        gap_security->phase != GAP_ENC_RESTART_QUEUED &&
+        (uint32_t)(now_ms - gap_security->started_ms) >= 40000
     ) {
-        gap_security.status = 0x22;
+        gap_security->status = 0x22;
         gap_conn_end();
         return;
     }
