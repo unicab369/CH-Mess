@@ -1301,14 +1301,12 @@ static void smp_bond_restore_poll(void) {
 }
 
 static int gap_smp_blocks_encryption(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    uint8_t phase = smp->pairing.phase;
+    uint8_t phase = gap_smp_contexts[gap_conn_slot].pairing.phase;
     return phase && phase != SMP_PHASE_ENCRYPT &&  phase != SMP_PHASE_SC_ENCRYPT;
 }
 
 static void gap_smp_receive_complete(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    smp->l2cap_rx_pending = 0;
+    gap_smp_contexts[gap_conn_slot].l2cap_rx_pending = 0;
 }
 
 // The Core orders key distribution Peripheral first, then Central. This
@@ -1332,8 +1330,7 @@ static void smp_bond_rx_complete(void) {
             gap_wipe(address, sizeof(address));
         }
 
-        if ((keyset & GAP_KEY_DIST_SIGNING) &&
-            !conn->bond.local_csrk.present) {
+        if ((keyset & GAP_KEY_DIST_SIGNING) && !conn->bond.local_csrk.present) {
             if (!smp_random_bytes(conn->bond.local_csrk.key, sizeof(conn->bond.local_csrk.key))) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
@@ -1344,7 +1341,6 @@ static void smp_bond_rx_complete(void) {
             smp->pairing.bond_tx_step = 1;
             if (!gap_smp_queue(SMP_ENCRYPTION_INFORMATION, conn->bond.central.ltk, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
             }
             return;
         }
@@ -1352,7 +1348,6 @@ static void smp_bond_rx_complete(void) {
             smp->pairing.bond_tx_step = 3;
             if (!gap_smp_queue(SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
             }
             return;
         }
@@ -1361,7 +1356,6 @@ static void smp_bond_rx_complete(void) {
 
             if (!gap_smp_queue(SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-                return;
             }
             return;
         }
@@ -1451,7 +1445,6 @@ static void smp_bond_peripheral_start(void) {
         if (!smp->pairing.response[5])
             smp_bond_rx_complete();
     }
-    return;
 }
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
