@@ -1989,6 +1989,7 @@ static void gap_smp_poll(void) {
             gap_wipe(bond_data, sizeof(bond_data));
             pairing->bond_rx_step = 30;
             pairing->phase = SMP_PHASE_BOND_RX;
+
             if (!pairing->response[6])
                 smp_bond_rx_complete();
             return;
@@ -2007,7 +2008,9 @@ static void gap_smp_poll(void) {
             smp->encryption_started = 1;
         }
         else if (!conn->is_central && gap_key_request(NULL, NULL)) {
-            uint8_t zero = (uint8_t)gap_security->ediv | (uint8_t)(gap_security->ediv >> 8);
+            uint8_t zero = (uint8_t)gap_security->ediv |
+                            (uint8_t)(gap_security->ediv >> 8);
+            // Check every byte so timing does not reveal where nonzero key data appears.
             for (unsigned i = 0; i < 8; i++)
                 zero |= gap_security->random[i];
             gap_key_reply(zero ? NULL : pairing->stk);
@@ -2019,12 +2022,11 @@ static void gap_smp_poll(void) {
             }
         }
     }
+
     // A saved Peripheral LTK is selected only when both legacy identifiers
     // match the peer's request; otherwise leave the request for the host hook.
-    if (!conn->is_central && conn->bonded &&
-        !pairing->phase &&
-        !conn->bond_restore_attempted &&
-        gap_security->phase == GAP_ENC_KEY_REQUEST
+    if (!conn->is_central && conn->bonded && !pairing->phase &&
+        !conn->bond_restore_attempted && gap_security->phase == GAP_ENC_KEY_REQUEST
     ) {
         conn->bond_restore_attempted = 1;
         uint16_t bond_ediv = (uint16_t)conn->bond.central.ediv[0] |
@@ -2043,30 +2045,22 @@ static void gap_smp_poll(void) {
 
     smp->l2cap_rx_pending = 1;
     uint16_t cid = smp->l2cap_rx.cid;
-
     if (conn->rx_llid == 2 && conn->rx_len >= 4)
         cid = ble_l2cap_read_u16(conn->rx_data + 2);
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
-    int assembled = ble_l2cap_reassembler_feed(&smp->l2cap_rx,
-        conn->rx_llid, conn->rx_data, conn->rx_len,
-        &completed_cid, &sdu, &sdu_len);
+    int assembled = ble_l2cap_reassembler_feed(&smp->l2cap_rx, conn->rx_llid,
+                                            conn->rx_data, conn->rx_len,
+                                            &completed_cid, &sdu, &sdu_len);
 
-    if (assembled < 0) {
+    if (assembled <= 0) {
         if (cid == BLE_L2CAP_CID_SMP) {
             conn->queue.rx_ready = 0;
             smp->l2cap_rx_pending = 0;
-            if (!smp->blocked)
+
+            if (assembled < 0 && !smp->blocked)
                 gap_smp_fail(SMP_FAIL_INVALID_PARAMETERS);
-        }
-        return;
-    }
-
-    if (!assembled) {
-        if (cid == BLE_L2CAP_CID_SMP) {
-            conn->queue.rx_ready = 0;
-            smp->l2cap_rx_pending = 0;
         }
         return;
     }
