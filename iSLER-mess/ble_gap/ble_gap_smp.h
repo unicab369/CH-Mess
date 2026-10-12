@@ -639,8 +639,7 @@ static int gap_smp_link_send_pdu(
     gap_smp_context *ctx = (gap_smp_context *)context;
     if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
         return 0;
-    int encoded = ble_l2cap_encode(ctx->tx, sizeof(ctx->tx), cid,
-                                    payload, len);
+    int encoded = ble_l2cap_encode(ctx->tx, sizeof(ctx->tx), cid, payload, len);
     if (!encoded) return 0;
     ctx->tx_len = (uint8_t)encoded;
     ctx->tx_offset = 0;
@@ -650,10 +649,8 @@ static int gap_smp_link_send_pdu(
 static int smp_link_init(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_wipe(smp, sizeof(*smp));
-    gap_wipe(&gap_oob_locals[gap_conn_slot],
-             sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot],
-             sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
     ble_l2cap_ops ops = {
         .send_pdu = gap_smp_link_send_pdu,
         .context = smp
@@ -902,9 +899,8 @@ int gap_passkey_keypress(uint8_t notification_type) {
 // Show all six digits on both devices and ask the user whether they match.
 int gap_numeric_get(uint32_t *value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    if (!value || smp->pairing.phase != SMP_PHASE_SC_USER ||
-        smp->secure.numeric_reply
-    ) return 0;
+    if (!value || smp->pairing.phase != SMP_PHASE_SC_USER || smp->secure.numeric_reply)
+        return 0;
 
     *value = smp->secure.numeric_value;
     return 1;
@@ -933,12 +929,10 @@ int gap_pair_cancel(void) {
 
 // Report achieved security only after encryption completes, never during pairing.
 int gap_authenticated(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return gap_encrypted() && conn->authenticated;
+    return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
 }
 uint8_t gap_key_size(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return gap_encrypted() ? conn->enc_key_size : 0;
+    return gap_encrypted() ? gap_conn_ctx[gap_conn_slot].enc_key_size : 0;
 }
 
 // Central starts pairing; Peripheral asks its Central to start it.
@@ -953,13 +947,15 @@ int gap_pair(void) {
 
     uint8_t central_role = !!conn->is_central;
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
+    smp->bond_tx_waiting = 0;
     smp->pairing.local_is_central = central_role;
-    smp->pairing.phase = central_role ? SMP_PHASE_RESPONSE :
-        SMP_PHASE_SECURITY_REQUEST;
+    smp->pairing.phase = central_role ? SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
     smp->status = GAP_CONNECTION_PENDING;
-    smp->pairing.bond_requested = smp->pairing.bond_tx_step =
-        smp->bond_tx_waiting = smp->pairing.bond_rx_step = 0;
-    smp->pairing.user_notified = smp->pairing.numeric_notified = 0;
+    smp->pairing.bond_requested = 0;
+    smp->pairing.bond_tx_step = 0;
+    smp->pairing.bond_rx_step = 0;
+    smp->pairing.user_notified = 0;
+    smp->pairing.numeric_notified = 0;
     smp->pairing.keypress_active = 0;
     smp->pairing.secure_connections = 0;
     smp->previous_bond_valid = conn->is_central && conn->bonded;
@@ -972,35 +968,30 @@ int gap_pair(void) {
     if (conn->is_central) {
         uint8_t identity_irk[16] = {0}, identity_address[7] = {0};
         uint8_t initiator_keys = gap_pair_cfg.bonding &&
-            !gap_pair_cfg.secure_connections ?
-            GAP_KEY_DIST_SIGNING : 0;
-        if (gap_pair_cfg.bonding &&
-            !gap_pair_cfg.secure_connections)
+                                !gap_pair_cfg.secure_connections
+                                ? GAP_KEY_DIST_SIGNING : 0;
+        if (gap_pair_cfg.bonding && !gap_pair_cfg.secure_connections)
             initiator_keys |= GAP_KEY_DIST_ENCRYPTION;
-        if (gap_pair_cfg.bonding &&
-            gap_smp_local_identity(identity_irk, identity_address))
+
+        if (gap_pair_cfg.bonding && gap_smp_local_identity(identity_irk, identity_address))
             initiator_keys |= GAP_KEY_DIST_IDENTITY;
 
         gap_wipe(identity_irk, sizeof(identity_irk));
         gap_wipe(identity_address, sizeof(identity_address));
 
-        uint8_t request[7] = {1,
-                              gap_pair_cfg.io,
-                              gap_pair_cfg.secure_connections &&
-                                  gap_oob_peers[gap_conn_slot].valid,
-                              (gap_pair_cfg.authenticated ? 4 : 0) |
-                                  (gap_pair_cfg.bonding ? 1 : 0) |
-                                  (gap_pair_cfg.secure_connections ? 8 : 0) |
-                                  (gap_pair_cfg.keypress_notifications ? 0x10 : 0),
-                              16,
-                              initiator_keys,
-                              0};
-        request[6] = gap_pair_cfg.bonding
-                         ? GAP_KEY_DIST_IDENTITY |
-                               (gap_pair_cfg.secure_connections
-                                    ? 0
-                                    : GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION)
-                         : 0;
+        uint8_t request[7] = {
+                        1,
+                        gap_pair_cfg.io,
+                        gap_pair_cfg.secure_connections && gap_oob_peers[gap_conn_slot].valid,
+                        (gap_pair_cfg.authenticated ? 4 : 0) |
+                            (gap_pair_cfg.bonding ? 1 : 0) |
+                            (gap_pair_cfg.secure_connections ? 8 : 0) |
+                            (gap_pair_cfg.keypress_notifications ? 0x10 : 0),
+                        16,
+                        initiator_keys,
+                        0};
+        request[6] = gap_pair_cfg.bonding ? GAP_KEY_DIST_IDENTITY | (gap_pair_cfg.secure_connections
+                                    ? 0 : GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION) : 0;
         memcpy(smp->pairing.request, request, 7);
         gap_smp_queue(SMP_PAIRING_REQUEST, request + 1, 6);
     } else {
