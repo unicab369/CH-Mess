@@ -2415,8 +2415,7 @@ static void gap_smp_poll(void) {
             return;
         }
 
-        if (pdu[2] &&
-            (!gap_smp->pairing.secure_connections ||
+        if (pdu[2] && (!gap_smp->pairing.secure_connections ||
              !gap_oob_locals[gap_conn_slot].oob.valid)
         ) {
             gap_smp_fail(SMP_FAIL_OOB_NOT_AVAILABLE);
@@ -2425,9 +2424,11 @@ static void gap_smp_poll(void) {
 
         // The local flag means we have the peer's data; pdu[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
-        uint8_t local_oob_flag = op == SMP_PAIRING_REQUEST ?
-                                gap_oob_peers[gap_conn_slot].valid : gap_smp->pairing.request[2];
-        gap_smp->secure.oob_active = gap_smp->pairing.secure_connections && (local_oob_flag || pdu[2]);
+        uint8_t local_oob_flag = (op == SMP_PAIRING_REQUEST)
+                                    ? gap_oob_peers[gap_conn_slot].valid
+                                    : gap_smp->pairing.request[2];
+        gap_smp->secure.oob_active = gap_smp->pairing.secure_connections &&
+                                    (local_oob_flag || pdu[2]);
 
         uint8_t bond_requested = negotiated.bonding && (gap_smp->pairing.secure_connections ||
                                 (peer.init_key_dist & GAP_KEY_DIST_ENCRYPTION));
@@ -2464,12 +2465,13 @@ static void gap_smp_poll(void) {
                     model = SMP_MODEL_NUMERIC_COMPARISON;
                 }
                 else {
-                    uint8_t input = gap_pair_cfg.io == 2 ||
-                        (gap_pair_cfg.io == 4 && (pdu[1] < 2 ||
-                         (!gap_smp->pairing.secure_connections && pdu[1] == 4 &&
-                          !gap_conn->is_central)));
-                    model = input ? SMP_MODEL_PASSKEY_INPUT :
-                                    SMP_MODEL_PASSKEY_DISPLAY;
+                    uint8_t legacy_passkey_input = !gap_smp->pairing.secure_connections && pdu[1] == 4 &&
+                                                    !gap_conn->is_central;
+                    if (gap_pair_cfg.io == 2 ||
+                        (gap_pair_cfg.io == 4 && (pdu[1] < 2 || legacy_passkey_input)))
+                        model = SMP_MODEL_PASSKEY_INPUT;
+                    else
+                        model = SMP_MODEL_PASSKEY_DISPLAY;
                 }
                 if (!gap_smp->pairing.secure_connections)
                     gap_smp->pairing.authenticated = 1;
@@ -2510,12 +2512,11 @@ static void gap_smp_poll(void) {
         if (gap_smp->pairing.secure_connections) {
             if (gap_smp->secure.oob_active) {
                 gap_smp->secure.oob_peer_present = local_oob_flag;
+                gap_oob_local *oob = &gap_oob_locals[gap_conn_slot];
 
-                if (gap_oob_locals[gap_conn_slot].oob.valid) {
-                    memcpy(gap_smp->secure.private_key,
-                           gap_oob_locals[gap_conn_slot].private_key, 32);
-                    memcpy(gap_smp->secure.public_key,
-                           gap_oob_locals[gap_conn_slot].public_key, 64);
+                if (oob->oob.valid) {
+                    memcpy(gap_smp->secure.private_key, oob->private_key, 32);
+                    memcpy(gap_smp->secure.public_key, oob->public_key, 64);
                 }
                 else if (!gap_sc_generate_key()) {
                     if (!gap_conn->link_state.active || generation != (*gap_security_generation))
@@ -2525,12 +2526,11 @@ static void gap_smp_poll(void) {
                 }
 
                 if (pdu[2])
-                    memcpy(gap_smp->secure.oob_local_random,
-                           gap_oob_locals[gap_conn_slot].oob.data.random, 16);
-                if (local_oob_flag) {
+                    memcpy(gap_smp->secure.oob_local_random, oob->oob.data.random, 16);
+                if (local_oob_flag)
                     gap_smp->oob_peer = gap_oob_peers[gap_conn_slot].data;
-                }
-                gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
+
+                gap_wipe(oob, sizeof(*oob));
                 gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
             }
             else if (!gap_sc_generate_key()) {
