@@ -94,15 +94,13 @@ enum {
 typedef struct {
     uint8_t valid, peer_address_type, key_size, authenticated;
     uint8_t peer_address[6];
-    uint8_t ltk[16];
-    uint8_t rand[8];
-    uint16_t ediv;
+    gap_bond_key central;
     // Full LE bond schema: the peer/local key flags make absent keys
     // distinguishable from valid all-zero key material.
     uint8_t version;
     bond_opt_key peer_irk, local_irk;
     bond_opt_key peer_csrk, local_csrk;
-    uint8_t peripheral_ltk[16], peripheral_rand[8], peripheral_ediv[2];
+    gap_bond_key peripheral;
     uint8_t has_peripheral_ltk;
 } ble_smp_bond;
 
@@ -1101,20 +1099,13 @@ static void smp_bond_to_generic(const gap_bond *source, ble_smp_bond *out) {
     out->valid = source->valid;
     out->peer_address_type = source->peer.type;
     memcpy(out->peer_address, source->peer.address, 6);
-    memcpy(out->ltk, source->central.ltk, 16);
-    memcpy(out->rand, source->central.rand, 8);
-    out->ediv = (uint16_t)source->central.ediv[0] |
-                (uint16_t)source->central.ediv[1] << 8;
+    out->central = source->central;
 
-    out->peer_irk = source->peer_irk;
-    out->local_irk = source->local_irk;
-    out->peer_csrk = source->peer_csrk;
-    out->local_csrk = source->local_csrk;
-    if (source->has_peripheral_ltk) {
-        memcpy(out->peripheral_ltk, source->peripheral.ltk, 16);
-        memcpy(out->peripheral_rand, source->peripheral.rand, 8);
-        memcpy(out->peripheral_ediv, source->peripheral.ediv, 2);
-    }
+    if (source->peer_irk.present) out->peer_irk = source->peer_irk;
+    if (source->local_irk.present) out->local_irk = source->local_irk;
+    if (source->peer_csrk.present) out->peer_csrk = source->peer_csrk;
+    if (source->local_csrk.present) out->local_csrk = source->local_csrk;
+    if (source->has_peripheral_ltk) out->peripheral = source->peripheral;
 
     out->key_size = source->key_size;
     out->authenticated = source->authenticated;
@@ -1129,17 +1120,12 @@ static void smp_bond_from_generic(
     out->valid = source->valid;
     out->peer.type = source->peer_address_type;
     memcpy(out->peer.address, source->peer_address, 6);
-    memcpy(out->central.ltk, source->ltk, 16);
-    memcpy(out->central.rand, source->rand, 8);
-    out->central.ediv[0] = (uint8_t)source->ediv;
-    out->central.ediv[1] = (uint8_t)(source->ediv >> 8);
+    out->central = source->central;
     out->peer_irk = source->peer_irk;
     out->local_irk = source->local_irk;
     out->peer_csrk = source->peer_csrk;
     out->local_csrk = source->local_csrk;
-    memcpy(out->peripheral.ltk, source->peripheral_ltk, 16);
-    memcpy(out->peripheral.rand, source->peripheral_rand, 8);
-    memcpy(out->peripheral.ediv, source->peripheral_ediv, 2);
+    out->peripheral = source->peripheral;
     out->key_size = source->key_size;
     out->authenticated = source->authenticated;
     out->has_peripheral_ltk = source->has_peripheral_ltk;
@@ -1186,39 +1172,21 @@ static int smp_bond_load_generic(
         (generic.version && generic.version != SMP_BOND_SCHEMA_VERSION) ||
         generic.peer_irk.present > 1 || generic.local_irk.present > 1 ||
         generic.peer_csrk.present > 1 || generic.local_csrk.present > 1 ||
-        generic.has_peripheral_ltk > 1) {
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
-
-    if ((!generic.peer_irk.present &&
-         memcmp(generic.peer_irk.key, (uint8_t[16]){0}, 16)) ||
-        (!generic.local_irk.present &&
-         memcmp(generic.local_irk.key, (uint8_t[16]){0}, 16)) ||
-        (!generic.peer_csrk.present &&
-         memcmp(generic.peer_csrk.key, (uint8_t[16]){0}, 16)) ||
-        (!generic.local_csrk.present &&
-         memcmp(generic.local_csrk.key, (uint8_t[16]){0}, 16)))
-    {
+        generic.has_peripheral_ltk > 1
+    ) {
         gap_wipe(&generic, sizeof(generic));
         return 0;
     }
 
     for (uint8_t i = generic.key_size; i < 16; i++) {
-        if (generic.ltk[i] || (generic.has_peripheral_ltk &&
-                              generic.peripheral_ltk[i])) {
+        if (generic.central.ltk[i] ||
+            (generic.has_peripheral_ltk && generic.peripheral.ltk[i])
+        ) {
             gap_wipe(&generic, sizeof(generic));
             return 0;
         }
     }
 
-    if (!generic.has_peripheral_ltk &&
-        (memcmp(generic.peripheral_ltk, (uint8_t[16]){0}, 16) ||
-         memcmp(generic.peripheral_rand, (uint8_t[8]){0}, 8) ||
-         generic.peripheral_ediv[0] || generic.peripheral_ediv[1])) {
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
     smp_bond_from_generic(&generic, out);
     gap_wipe(&generic, sizeof(generic));
     return 1;
@@ -1228,7 +1196,6 @@ static int smp_bond_store_generic(const gap_bond *bond) {
     if (!bond) return 0;
     ble_smp_bond generic;
     smp_bond_to_generic(bond, &generic);
-    uint8_t zero_key[16] = {0};
     int result = 0;
 
     if (generic.valid != 1 || generic.peer_address_type > 1 ||
@@ -1238,33 +1205,19 @@ static int smp_bond_store_generic(const gap_bond *bond) {
         (generic.version && generic.version != SMP_BOND_SCHEMA_VERSION) ||
         generic.peer_irk.present > 1 || generic.local_irk.present > 1 ||
         generic.peer_csrk.present > 1 || generic.local_csrk.present > 1 ||
-        generic.has_peripheral_ltk > 1) {
+        generic.has_peripheral_ltk > 1
+    ) {
         gap_wipe(&generic, sizeof(generic));
         return 0;
     }
 
-    for (uint8_t i = generic.key_size; i < sizeof(generic.ltk); i++)
-        if (generic.ltk[i] || (generic.has_peripheral_ltk &&
-                              generic.peripheral_ltk[i])) {
+    for (uint8_t i = generic.key_size; i < sizeof(generic.central.ltk); i++)
+        if (generic.central.ltk[i] ||
+            (generic.has_peripheral_ltk && generic.peripheral.ltk[i])
+        ) {
             gap_wipe(&generic, sizeof(generic));
             return 0;
         }
-
-    if ((!generic.peer_irk.present &&
-         memcmp(generic.peer_irk.key, zero_key, sizeof(zero_key))) ||
-        (!generic.local_irk.present &&
-         memcmp(generic.local_irk.key, zero_key, sizeof(zero_key))) ||
-        (!generic.peer_csrk.present &&
-         memcmp(generic.peer_csrk.key, zero_key, sizeof(zero_key))) ||
-        (!generic.local_csrk.present &&
-         memcmp(generic.local_csrk.key, zero_key, sizeof(zero_key))) ||
-        (!generic.has_peripheral_ltk &&
-         (memcmp(generic.peripheral_ltk, zero_key, sizeof(zero_key)) ||
-          memcmp(generic.peripheral_rand, (uint8_t[8]){0}, 8) ||
-          generic.peripheral_ediv[0] || generic.peripheral_ediv[1]))) {
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
 
     generic.version = SMP_BOND_SCHEMA_VERSION;
     gap_bond stored;
