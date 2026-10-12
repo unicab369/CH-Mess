@@ -75,7 +75,7 @@ int main(void) {
     assert(!smp_random_bytes(secret, 32));
     for (unsigned i = 0; i < 32; i++) assert(secret[i] == 0);
     fake.random_fail = 0;
-    assert(smp_aes128(&smp, key, input, output) && output[0] == 1);
+    assert(smp_aes128(key, input, output) && output[0] == 1);
     assert(ble_smp_cmac(&smp, key, input, sizeof(input), output));
     fake.crypto_fail = 1;
     memset(output, 0xa5, sizeof(output));

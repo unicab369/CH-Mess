@@ -265,10 +265,9 @@ static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len) {
 }
 
 static inline int smp_aes128(
-    ble_smp *smp, const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]
+    const uint8_t key[16], const uint8_t input[16], uint8_t output[16]
 ) {
-    if (!smp || !key || !input || !output) return 0;
+    if (!key || !input || !output) return 0;
 
     uint8_t standard_key[16], standard_input[16], standard_output[16];
     gap_sc_reverse(standard_key, key, sizeof(standard_key));
@@ -622,7 +621,7 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
 
     for (size_t i = 0; i < sizeof(block); i++)
         block[i] ^= random[i];
-    int ok = smp_aes128(&gap_smp.bearer, gap_smp.pairing.tk, block, confirm);
+    int ok = smp_aes128(gap_smp.pairing.tk, block, confirm);
 
     for (size_t i = 0; i < 6; i++) {
         confirm[i] ^= gap_conn.responder.address[i];
@@ -630,7 +629,7 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     }
 
     if (ok)
-        ok = smp_aes128(&gap_smp.bearer, gap_smp.pairing.tk, confirm, confirm);
+        ok = smp_aes128(gap_smp.pairing.tk, confirm, confirm);
     if (!ok)
         memset(confirm, 0, 16);
     gap_wipe(block, sizeof(block));
@@ -2819,12 +2818,9 @@ static void gap_smp_poll(void) {
         }
 
         uint8_t s1_random[16];
-        memcpy(s1_random, gap_conn.link_state.central_role ?
-                gap_smp.random : pdu + 1, 8);
-        memcpy(s1_random + 8, gap_conn.link_state.central_role ?
-                pdu + 1 : gap_smp.random, 8);
-        int stk_ready = smp_aes128(&gap_smp.bearer,
-            gap_smp.pairing.tk, s1_random, gap_smp.pairing.stk);
+        memcpy(s1_random, gap_conn.link_state.central_role ? gap_smp.random : pdu + 1, 8);
+        memcpy(s1_random + 8, gap_conn.link_state.central_role ? pdu + 1 : gap_smp.random, 8);
+        int stk_ready = smp_aes128(gap_smp.pairing.tk, s1_random, gap_smp.pairing.stk);
         gap_wipe(s1_random, sizeof(s1_random));
 
         if (!stk_ready) {
