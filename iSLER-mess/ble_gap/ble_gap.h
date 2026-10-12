@@ -247,7 +247,7 @@ typedef struct {
         uint8_t active, rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
         uint8_t terminate_queued, terminate_sent;
-        uint8_t central_role, central_anchor_set;
+        uint8_t central_anchor_set;
     } link_state;
     struct {
         uint8_t first_event;
@@ -260,6 +260,7 @@ typedef struct {
     } link;
     // Connection endpoint and peer identity addresses.
     gap_peer_address initiator, responder, peer_id;
+    uint8_t is_central;
     uint8_t authenticated, encryption_key_size;
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
     gap_bond bond;
@@ -963,6 +964,7 @@ static int gap_conn_accept(
     gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
     gap_wipe(&gap_security, sizeof(gap_security));
     memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
+    gap_conn.is_central = 0;
     memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
     memset(&gap_conn.schedule, 0, sizeof(gap_conn.schedule));
     memset(&gap_conn.next_schedule, 0, sizeof(gap_conn.next_schedule));

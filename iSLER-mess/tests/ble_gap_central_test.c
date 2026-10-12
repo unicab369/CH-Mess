@@ -414,7 +414,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     rx_frame[1] = 6;
     memcpy(rx_frame + 2, peer_address, sizeof(peer_address));
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role &&
+    assert(gap_conn.link_state.active && gap_conn.is_central &&
            !gap_central.active && !gap_scanner.scanning &&
            !gap_adv.enabled);
     gap_conn_end();
@@ -429,7 +429,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     inject_peripheral_connect_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 2);
     assert(!inject_peripheral_connect_request && gap_conn.link_state.active &&
-           !gap_conn.link_state.central_role && !gap_central.active &&
+           !gap_conn.is_central && !gap_central.active &&
            !gap_scanner.scanning && !gap_adv.enabled);
     gap_conn_end();
 }
@@ -1170,7 +1170,7 @@ static void test_periodic_advertising_with_central_connection(void) {
     // A PAwR advertiser that accepted a connection becomes Central while its
     // periodic advertising state remains active. Transmit in radio gaps.
     gap_conn.link_state.active = 1;
-    gap_conn.link_state.central_role = 1;
+    gap_conn.is_central = 1;
     gap_conn.procedures.params.interval = 24;
     gap_conn.link.last_rx_ms = now_ms;
     gap_conn.link.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(40000);
@@ -1383,7 +1383,7 @@ static void test_pawr_advertiser_connection(void) {
     uint16_t connect_event_counter = set->periodic_event_counter;
     inject_pawr_connect_response = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role &&
+    assert(gap_conn.link_state.active && gap_conn.is_central &&
            !set->pawr_connect_pending && !set->enabled &&
            set->periodic_enabled);
     const uint8_t *request = gap_central.request;
@@ -1472,7 +1472,7 @@ static void test_pawr_connection_accept(void) {
     gap_rx_armed = 1;
     gap_ext_scan_process();
 
-    assert(gap_conn.link_state.active && !gap_conn.link_state.central_role && sync->used &&
+    assert(gap_conn.link_state.active && !gap_conn.is_central && sync->used &&
            !gap_scanner.scanning && captured_extended_count == 1);
     const uint8_t *response = captured_extended_pdus[0];
     assert((response[0] & 0x0f) == 0x07 && response[1] == 14 &&
@@ -2171,7 +2171,7 @@ static void test_connect_by_identity(void) {
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role);
+    assert(gap_conn.link_state.active && gap_conn.is_central);
     assert(!gap_central.active);
     assert(gap_central.request[0] & 0x80);
     assert(memcmp(gap_central.request + 8, test_rpa, 6) == 0);
@@ -2194,7 +2194,7 @@ static void test_general_connection_establishment(void) {
 
     rx_frame[0] = 0x00; // Connectable undirected advertisement.
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role);
+    assert(gap_conn.link_state.active && gap_conn.is_central);
     assert(!gap_central.active && !gap_scanner.scanning);
     assert(memcmp(gap_conn.peer_id_addr, peer, 6) == 0);
     assert(memcmp(gap_central.request + 8, peer, 6) == 0);
@@ -2232,7 +2232,7 @@ static void test_selective_connection_establishment(void) {
     rx_frame[0] = 0x40;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role && !gap_central.active);
+    assert(gap_conn.link_state.active && gap_conn.is_central && !gap_central.active);
     assert(memcmp(gap_conn.peer_id_addr, test_identity, 6) == 0);
     assert(memcmp(gap_central.request + 8, test_rpa, 6) == 0);
     gap_conn_end();
@@ -2261,7 +2261,7 @@ static void test_auto_connection_establishment(void) {
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role && !gap_central.active);
+    assert(gap_conn.link_state.active && gap_conn.is_central && !gap_central.active);
     assert(memcmp(gap_conn.peer_id_addr, test_identity, 6) == 0);
     gap_conn_end();
     assert(gap_accept_list_clear());
@@ -2611,7 +2611,7 @@ static void start_test_central_link(void) {
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role);
+    assert(gap_conn.link_state.active && gap_conn.is_central);
     now_ms += 2;
     gap_conn_poll();
     assert(gap_conn.link_state.rx_armed);
@@ -2650,7 +2650,7 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_accept(request, GAP_HW_TICKS(),
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     assert(gap_conn_slot == 1 && gap_conn.link_state.active &&
-           !gap_conn.link_state.central_role && gap_conn.link.tx_sn == 0);
+           !gap_conn.is_central && gap_conn.link.tx_sn == 0);
     gap_conn_handle second_handle, enumerated_handle;
     assert(gap_conn_current(&second_handle));
     assert(second_handle.slot != first_handle.slot);
@@ -2690,11 +2690,11 @@ static void test_connection_context_slots(void) {
     gap_tx_frame[3] = 0xb1;
 
     assert(gap_conn_select(first_handle));
-    assert(gap_conn.link_state.active && gap_conn.link_state.central_role && gap_conn.link.tx_sn == 1);
+    assert(gap_conn.link_state.active && gap_conn.is_central && gap_conn.link.tx_sn == 1);
     assert(gap_security.tx_counter == 0x12345678 && gap_smp.status == 0x31);
     assert(gap_tx_frame[3] == 0xa0);
     assert(gap_conn_select(second_handle));
-    assert(gap_conn.link_state.active && !gap_conn.link_state.central_role && gap_conn.link.tx_sn == 0);
+    assert(gap_conn.link_state.active && !gap_conn.is_central && gap_conn.link.tx_sn == 0);
     assert(gap_security.tx_counter == 0xabcdef && gap_smp.status == 0x52);
     assert(gap_tx_frame[3] == 0xb1);
 
@@ -2717,7 +2717,7 @@ static void test_connection_context_slots(void) {
     for (uint8_t slot = 0; slot < 2; slot++) {
         gap_conn_context *connection =
             &gap_conn_ctx[slot];
-        connection->link_state.central_role = slot == 0;
+        connection->is_central = slot == 0;
         connection->link_state.central_anchor_set = 1;
         connection->link.first_event = 0;
         connection->link_state.rx_armed = connection->link_state.event_replied = 0;
@@ -2953,9 +2953,9 @@ static void test_connection_timing_updates(void) {
     assert(!gap_conn_update(48, 0, 9));
     assert(!gap_conn_update(48, 0, 3201));
     assert(!gap_conn_update(40, 0, 10)); // Timeout equals 2 intervals.
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(!gap_conn_update(48, 0, 300));
-    gap_conn.link_state.central_role = 1;
+    gap_conn.is_central = 1;
     gap_conn.pending.channel_map = 1;
     assert(!gap_conn_update(48, 0, 300));
     gap_conn.pending.channel_map = 0;
@@ -3059,7 +3059,7 @@ static void test_connection_parameter_requests(void) {
 
     // A Peripheral may initiate the request but waits for the Central's update.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x0e);
@@ -3083,7 +3083,7 @@ static void test_connection_parameter_requests(void) {
 
     // Responding to a Central request sends PARAM_RSP, never UPDATE_IND.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     receive_test_control(0x08, features, sizeof(features));
     assert(gap_tx_frame[2] == 9 && gap_tx_frame[3] == 0x0e);
     assert(gap_conn_request(48, 60, 1, 300));
@@ -3225,7 +3225,7 @@ static void test_data_length(void) {
 
     // Peripheral receives and initiates the same data length procedure.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     limits[0] = limits[4] = 251;
     limits[2] = limits[6] = 0x48; limits[3] = limits[7] = 0x08;
     receive_test_control(0x14, limits, 8);
@@ -3330,7 +3330,7 @@ static void test_channel_map_updates(void) {
 
     // Only the Central may initiate; a Peripheral applies a received update.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(!gap_channel_map_set(channels));
     uint8_t parameters[7] = {3, 0, 0, 0, 0, 0, 0};
     instant = gap_conn.link.event_counter + 7;
@@ -3418,7 +3418,7 @@ static void test_phy_updates(void) {
 
     // Peripheral responds and applies independent directions at the Instant.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
@@ -3433,7 +3433,7 @@ static void test_phy_updates(void) {
     gap_conn_end();
 
     // Unsupported UPDATE fields leave that direction unchanged.
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     receive_test_control(0x18, (uint8_t[]){4, 3, 0, 0}, 4);
     assert(!gap_conn.pending.phy_update && gap_conn.phy.current.tx == 1 && gap_conn.phy.current.rx == 1);
     // Past Instants and unacknowledged Central updates close the link.
@@ -3503,7 +3503,7 @@ static void test_phy_updates(void) {
 
     // A Peripheral accepts a Central-selected Coded PHY at the Instant.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     instant = gap_conn.link.event_counter + 7;
     receive_test_control(0x18, (uint8_t[]){
         GAP_PHY_CODED, GAP_PHY_CODED,
@@ -3553,7 +3553,7 @@ static void test_connection_subrating(void) {
 
     // A Peripheral requests a range, then applies the Central's indication.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(gap_subrate_request(2, 6, 2, 1, 300));
     assert(!gap_subrate_request(1, 6, 2, 1, 300));
     receive_test_link_packet(1);
@@ -3716,7 +3716,7 @@ static void test_connection_rate_exchange(void) {
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(gap_conn_rate_request(60, 120, 2, 4, 1, 1, 200));
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x0e && gap_tx_frame[1] == 9);
@@ -3784,7 +3784,7 @@ static void test_channel_classification_reporting(void) {
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     gap_conn.features.known = 1;
     gap_conn.features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_classification_set(classification));
@@ -3829,7 +3829,7 @@ static void receive_secure_test_pdu(
         ((gap_conn.link.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = (uint8_t)(len + 4);
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (8 * i));
-    if (!gap_conn.link_state.central_role) nonce[4] |= 0x80;
+    if (!gap_conn.is_central) nonce[4] |= 0x80;
     memcpy(nonce + 5, gap_security.iv, 8);
     aad = rx_frame[0] & 0xe3;
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -3943,7 +3943,7 @@ static void test_link_encryption(void) {
     gap_conn_end();
 
     // Peripheral host key lookup, start response and refresh rejection.
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     memcpy(secure_random_forced, peripheral_entropy, 12); secure_random_force = 1;
     uint8_t request[22];
     memcpy(request, encryption_random, 8); request[8] = 0x74; request[9] = 0x24;
@@ -3975,7 +3975,7 @@ static void test_link_encryption(void) {
     secure_random_force = 0;
 
     // Missing key during an initial start rejects without marking the link encrypted.
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
@@ -4027,7 +4027,7 @@ static void test_link_encryption(void) {
     start_test_central_link(); secure_random_available = 0;
     assert(!gap_encrypt(encryption_ltk, encryption_random, 0));
     assert(gap_security_status() == 0x1f && !gap_security.phase);
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1f);
     secure_random_available = 1;
@@ -4090,7 +4090,7 @@ static void test_smp_pairing(void) {
     gap_conn_end();
 
     for (uint8_t central = 0; central < 2; central++) {
-        start_test_central_link(); gap_conn.link_state.central_role = central;
+        start_test_central_link(); gap_conn.is_central = central;
         gap_pairing_set(1);
         assert(gap_pair());
         uint8_t features[7] = {central ? 2 : 1, 3, 0, 0, central ? 16 : 7, 0, 0};
@@ -4127,23 +4127,23 @@ static void test_smp_pairing(void) {
             assert(!gap_smp.pairing.stk[i] && !gap_smp.random[i]);
         gap_conn_end();
     }
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     gap_pairing_set(0);
     uint8_t features[7] = {1,3,0,0,16,0,0};
     receive_test_smp(features, 7, 0);
     assert(gap_smp.status == 5 && gap_smp.tx[4] == 5);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     gap_pairing_set(1);
     features[3] = 4;
     receive_test_smp(features, 7, 0); assert(gap_smp.status == 3);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     features[3] = 0;
     secure_random_available = 0;
     receive_test_smp(features, 7, 0); assert(gap_smp.status == 8);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     secure_random_available = 1;
     receive_test_smp(features, 7, 0);
     uint8_t bad_confirm[17] = {3}, peer_random[17] = {4};
@@ -4151,7 +4151,7 @@ static void test_smp_pairing(void) {
     receive_test_smp(peer_random, 17, 0);
     assert(gap_smp.status == 4 && gap_security.phase == GAP_ENC_IDLE);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     receive_test_smp(features, 7, 0);
     now_ms = gap_smp.started_ms + 30000;
     gap_smp_poll();
@@ -4199,7 +4199,7 @@ static void test_smp_signing_key_distribution(void) {
     gap_conn_end();
 
     start_test_central_link();
-    gap_conn.link_state.central_role = 0; // Receive the Central's set as a Peripheral.
+    gap_conn.is_central = 0; // Receive the Central's set as a Peripheral.
     gap_smp.pairing.phase = SMP_PHASE_BOND_RX;
     gap_smp.started_ms = GET_MILLIS();
     gap_smp.pairing.response[5] = GAP_KEY_DIST_ENCRYPTION |
@@ -4322,7 +4322,7 @@ static void test_smp_signing_key_distribution(void) {
 
     // The Peripheral starts legacy distribution with its own LTK.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     gap_smp.pairing.response[6] = GAP_KEY_DIST_ENCRYPTION |
         GAP_KEY_DIST_SIGNING;
     gap_smp.pairing.response[5] = GAP_KEY_DIST_ENCRYPTION |
@@ -4404,7 +4404,7 @@ static void test_passkey_pairing(void) {
         for (uint8_t local_io = 0; local_io < 5; local_io++) {
             if (local_io == GAP_IO_NONE) continue;
             for (uint8_t peer_io = 0; peer_io < 5; peer_io++) {
-                start_test_central_link(); gap_conn.link_state.central_role = central;
+                start_test_central_link(); gap_conn.is_central = central;
                 assert(gap_security_set(local_io, 1, 16));
                 assert(gap_pair());
                 uint8_t features[7] = {central ? 2 : 1, peer_io, 0, 4, 16, 0, 0};
@@ -4478,19 +4478,19 @@ static void test_passkey_pairing(void) {
             }
         }
     }
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(2, 1, 16));
     uint8_t features[7] = {1,0,0,4,8,0,0};
     receive_test_smp(features, 7, 0); assert(gap_smp.status == 6);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     features[4] = 16;
     assert(gap_security_set(2, 1, 16));
     receive_test_smp(features, 7, 0);
     assert(gap_pair_cancel() && gap_smp.status == 1 && !gap_passkey(NULL));
     assert(!gap_pair_cancel());
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(2, 1, 16));
     receive_test_smp(features, 7, 0);
     assert(gap_passkey_reply(19655)); gap_smp_poll();
@@ -4500,7 +4500,7 @@ static void test_passkey_pairing(void) {
     receive_test_smp(peer_random, 17, 0);
     assert(gap_smp.status == 4 && !gap_authenticated());
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(2, 1, 16));
     receive_test_smp(features, 7, 0);
     now_ms = gap_smp.started_ms + 30000;
@@ -4508,7 +4508,7 @@ static void test_passkey_pairing(void) {
     assert(gap_smp.blocked && !gap_passkey_reply(19655));
     for (unsigned i = 0; i < 16; i++) assert(!gap_smp.pairing.tk[i]);
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(0, 1, 16));
     features[1] = 2;
     secure_random_passkey_fail = 1;
@@ -4516,14 +4516,14 @@ static void test_passkey_pairing(void) {
     assert(gap_smp.status == 8 && !gap_passkey(NULL));
     secure_random_passkey_fail = 0;
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(0, 1, 16));
     secure_random_passkey_reject = 1;
     receive_test_smp(features, 7, 0);
     assert(gap_smp.status == 8); // Bounded rejection sampling, no biased fallback.
     secure_random_passkey_reject = 0;
     gap_conn_end();
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_security_set(0, 1, 16));
     secure_random_disconnect = 1;
     receive_test_smp(features, 7, 0);
@@ -4550,7 +4550,7 @@ static void test_smp_keypress_notifications(void) {
 
     // Local KeyboardOnly Peripheral sends progress events to a display peer.
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     assert(gap_security_set(GAP_IO_KEYBOARD_ONLY, 1, 16));
     assert(gap_pair());
     uint8_t display_request[7] = {
@@ -4719,7 +4719,7 @@ static void test_secure_connections_just_works(void) {
     memset(test_bonds, 0, sizeof(test_bonds));
     test_bond_storage_enabled = 1;
     assert(gap_bonding_set(1));
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_pair());
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll(); // Send Security Request.
@@ -4943,7 +4943,7 @@ static void test_secure_connections_oob_rejects_missing_local_data(void) {
 
 static void test_secure_connections_oob_peripheral_success(void) {
     start_test_central_link();
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     gap_pairing_set(1);
     assert(gap_security_set(GAP_IO_NONE, 0, 16));
     assert(gap_secure_connections_set(1));
@@ -5107,7 +5107,7 @@ static void test_secure_connections_numeric_comparison(void) {
         assert(gap_pairing_status() == 0 && gap_authenticated());
         gap_conn_end();
     }
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_pair());
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll();
@@ -5238,7 +5238,7 @@ static void test_secure_connections_passkey(void) {
     assert(gap_pairing_status() == 0 && gap_authenticated());
     gap_conn_end();
     assert(gap_security_set(GAP_IO_DISPLAY_ONLY, 1, 16));
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_pair());
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll();
@@ -5305,7 +5305,7 @@ static void test_secure_connections_passkey(void) {
     assert(gap_pairing_status() == 0 && gap_authenticated());
     gap_conn_end();
     assert(gap_security_set(GAP_IO_KEYBOARD_ONLY, 1, 16));
-    start_test_central_link(); gap_conn.link_state.central_role = 0;
+    start_test_central_link(); gap_conn.is_central = 0;
     assert(gap_pair());
     gap_conn.queue.tx_queued = gap_conn.link.tx_pending = 0;
     gap_smp_poll();

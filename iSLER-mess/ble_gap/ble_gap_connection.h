@@ -85,6 +85,7 @@ static void gap_conn_end(void) {
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
+    gap_conn.is_central = 0;
     memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
     memset(&gap_conn.features, 0, sizeof(gap_conn.features));
 
@@ -116,7 +117,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     if (gap_conn.rate.update_pending &&
         gap_conn.next_schedule.instant == gap_conn.link.event_counter
     ) {
-        if (gap_conn.link_state.central_role && gap_conn.link.tx_pending &&
+        if (gap_conn.is_central && gap_conn.link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
             gap_tx_frame[2] == 0x3f
         ) {
@@ -154,7 +155,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     ) {
         // Close an unsynchronized Central link instead of retransmitting an
         // unacknowledged timing update once its Instant is no longer in the future.
-        if (gap_conn.link_state.central_role && gap_conn.link.tx_pending &&
+        if (gap_conn.is_central && gap_conn.link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 12 &&
             gap_tx_frame[2] == 0x00
         ) {
@@ -196,7 +197,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 
     // Switch rates at the shared Instant, including events skipped by polling.
     if (gap_conn.pending.phy_update && gap_conn.phy.instant == gap_conn.link.event_counter ) {
-        if (gap_conn.link_state.central_role && gap_conn.link.tx_pending &&
+        if (gap_conn.is_central && gap_conn.link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 5 &&
             gap_tx_frame[2] == 0x18
         ) {
@@ -215,7 +216,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     ) {
         // An unacknowledged map change cannot be retried after its Instant;
         // disconnect rather than let the two devices hop on different maps.
-        if (gap_conn.link_state.central_role && gap_conn.link.tx_pending &&
+        if (gap_conn.is_central && gap_conn.link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 8 &&
             gap_tx_frame[2] == 0x01
         ) {
@@ -229,7 +230,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             if (gap_conn.link.channel_map[channel / 8] & (1 << (channel % 8)))
                 gap_conn.link.used_channels[gap_conn.link.used_count++] = channel;
         gap_conn.pending.channel_map = 0;
-        if (gap_conn.link_state.central_role && gap_conn.connection_status == GAP_CONNECTION_PENDING)
+        if (gap_conn.is_central && gap_conn.connection_status == GAP_CONNECTION_PENDING)
             gap_conn.connection_status = 0;
     }
 }
@@ -242,12 +243,12 @@ static uint8_t gap_subrate_active(uint16_t event) {
          event == (uint16_t)(gap_conn.next_schedule.instant - 1))
     ) return 1;
 
-    if (gap_conn.rate.update_pending && gap_conn.link_state.central_role &&
+    if (gap_conn.rate.update_pending && gap_conn.is_central &&
         gap_conn.link.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
         gap_tx_frame[1] == 15 && gap_tx_frame[2] == 0x3f
     ) return 1;
 
-    if (gap_conn.rate.update_pending && !gap_conn.link_state.central_role &&
+    if (gap_conn.rate.update_pending && !gap_conn.is_central &&
         gap_conn.rate.ack_waiting
     ) {
         if ((uint16_t)(gap_conn.next_schedule.instant - event) < 0x8000)
@@ -261,14 +262,14 @@ static uint8_t gap_subrate_active(uint16_t event) {
     int32_t event_difference = (int32_t)event - (int32_t)gap_conn.schedule.base_event;
     uint8_t subrated = gap_conn.schedule.factor && event_difference % gap_conn.schedule.factor == 0;
 
-    if (gap_conn.link_state.central_role && gap_conn.subrate.transition) {
+    if (gap_conn.is_central && gap_conn.subrate.transition) {
         int32_t pending_offset = (int32_t)event - (int32_t)gap_conn.next_schedule.base_event;
         if (gap_conn.next_schedule.factor &&
             pending_offset % gap_conn.next_schedule.factor == 0)
             subrated = 1;
     }
     if (gap_conn.subrate.continuations) return 1;
-    if (gap_conn.link_state.central_role) return subrated;
+    if (gap_conn.is_central) return subrated;
     return subrated && gap_conn.subrate.latency_remaining == 0;
 }
 
@@ -279,14 +280,14 @@ static void gap_conn_event_advance(void) {
     int32_t event_difference = (int32_t)event - (int32_t)gap_conn.schedule.base_event;
     uint8_t subrated = gap_conn.schedule.factor && event_difference % gap_conn.schedule.factor == 0;
 
-    if (gap_conn.link_state.central_role && gap_conn.subrate.transition) {
+    if (gap_conn.is_central && gap_conn.subrate.transition) {
         int32_t pending_offset = (int32_t)event - (int32_t)gap_conn.next_schedule.base_event;
         if (gap_conn.next_schedule.factor &&
             pending_offset % gap_conn.next_schedule.factor == 0)
             subrated = 1;
     }
 
-    if (!gap_conn.link_state.central_role && subrated && gap_conn.subrate.latency_remaining)
+    if (!gap_conn.is_central && subrated && gap_conn.subrate.latency_remaining)
         gap_conn.subrate.latency_remaining--;
 
     if (subrated) {
@@ -302,7 +303,7 @@ static void gap_conn_event_advance(void) {
             gap_conn.subrate.continuations = gap_conn.schedule.continuation;
     }
 
-    if (!gap_conn.link_state.central_role && subrated && gap_conn.subrate.event_received)
+    if (!gap_conn.is_central && subrated && gap_conn.subrate.event_received)
         gap_conn.subrate.latency_remaining = gap_conn.schedule.latency;
 
     gap_conn.subrate.event_activity = 0;
@@ -317,7 +318,7 @@ static void gap_conn_event_advance(void) {
         gap_conn.schedule.base_event = (uint16_t)(
             gap_conn.schedule.base_event + steps * gap_conn.schedule.factor - 65536);
 
-        if (gap_conn.link_state.central_role && gap_conn.subrate.transition &&
+        if (gap_conn.is_central && gap_conn.subrate.transition &&
             gap_conn.next_schedule.factor > 1
         ) {
             distance = 65536 - gap_conn.next_schedule.base_event;
@@ -475,7 +476,7 @@ static void gap_send_conn_request(void) {
     if (!gap_conn.features.known) {
         uint8_t supported_phys = GAP_HW_PHY_MASK();
         gap_tx_frame[1] = 9;
-        gap_tx_frame[2] = gap_conn.link_state.central_role ? 0x08 : 0x0e;
+        gap_tx_frame[2] = gap_conn.is_central ? 0x08 : 0x0e;
         memset(gap_tx_frame + 3, 0, 8);
         gap_tx_frame[3] = GAP_LL_FEATURES;
         gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
@@ -540,7 +541,7 @@ static void gap_send_conn_feature_request(void) {
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 9;
-    gap_tx_frame[2] = gap_conn.link_state.central_role ? 0x08 : 0x0e;
+    gap_tx_frame[2] = gap_conn.is_central ? 0x08 : 0x0e;
     memset(gap_tx_frame + 3, 0, 8);
     gap_tx_frame[3] = GAP_LL_FEATURES;
     gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
@@ -623,9 +624,9 @@ static void gap_conn_rate_start_queued(void) {
         gap_conn.connection_status = 0x1a;
         return;
     }
-    if (gap_conn.link_state.central_role && gap_conn.rate.set_queued)
+    if (gap_conn.is_central && gap_conn.rate.set_queued)
         gap_conn_rate_send_indication();
-    else if (!gap_conn.link_state.central_role && gap_conn.rate.request_queued) {
+    else if (!gap_conn.is_central && gap_conn.rate.request_queued) {
         gap_tx_frame[0] = 0x03;
         gap_tx_frame[1] = 27;
         gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
@@ -653,7 +654,7 @@ static void gap_conn_rate_start_queued(void) {
 
 static void gap_channel_report_start(void) {
     if (gap_tx_frame[1] || !gap_conn.channel.report_queued ||
-        !gap_conn.link_state.central_role ||
+        !gap_conn.is_central ||
         gap_conn.features.request_pending
     ) return;
 
@@ -699,10 +700,10 @@ static void gap_subrate_start_queued(void) {
         return;
     }
 
-    if (gap_conn.link_state.central_role && gap_conn.subrate.update_queued) {
+    if (gap_conn.is_central && gap_conn.subrate.update_queued) {
         gap_send_subrate_update();
     }
-    else if (!gap_conn.link_state.central_role && gap_conn.subrate.request_queued) {
+    else if (!gap_conn.is_central && gap_conn.subrate.request_queued) {
         gap_conn.subrate.request_queued = 0;
         gap_conn.subrate.request_pending = 1;
         gap_conn.subrate.started_ms = GET_MILLIS();
@@ -821,7 +822,7 @@ static uint8_t gap_conn_rate_parameters_valid(
 static uint16_t gap_conn_rate_min_interval(void) {
     uint32_t rx_time = gap_conn.data_length.rx_time;
     uint32_t coded_limit = (uint32_t)gap_conn.data_length.rx_octets * 64 + 976;
-    uint8_t peripheral_tx_phy = gap_conn.link_state.central_role ? gap_conn.phy.current.rx :
+    uint8_t peripheral_tx_phy = gap_conn.is_central ? gap_conn.phy.current.rx :
         gap_conn.phy.current.tx;
     if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704)
         rx_time = 2704;
@@ -839,7 +840,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     uint16_t connection_event_counter) {
     switch (frame[2]) {
     case 0x03: { // LL_ENC_REQ (Central to Peripheral)
-        if (gap_conn.link_state.central_role || frame[1] != 23) goto unknown_control_pdu;
+        if (gap_conn.is_central || frame[1] != 23) goto unknown_control_pdu;
         uint8_t restart = gap_security.phase == GAP_ENC_PERIPHERAL_RESTART;
         if ((!restart && (gap_security.phase || gap_security.rx_enabled)) ||
             gap_conn.pending.timing_update || gap_conn.pending.channel_map ||
@@ -879,7 +880,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         break;
     }
     case 0x04: // LL_ENC_RSP
-        if (!gap_conn.link_state.central_role || frame[1] != 13 ||
+        if (!gap_conn.is_central || frame[1] != 13 ||
             gap_security.phase != GAP_ENC_WAIT_RSP) goto unknown_control_pdu;
         memcpy(gap_security.skd + 8, frame + 3, 8);
         memcpy(gap_security.iv + 4, frame + 11, 4);
@@ -887,7 +888,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security.phase = GAP_ENC_WAIT_START;
         break;
     case 0x05: // LL_START_ENC_REQ
-        if (!gap_conn.link_state.central_role || frame[1] != 1 ||
+        if (!gap_conn.is_central || frame[1] != 1 ||
             gap_security.phase != GAP_ENC_WAIT_START) goto unknown_control_pdu;
         gap_security.tx_enabled = gap_security.rx_enabled = 1;
         gap_security.phase = GAP_ENC_WAIT_FINAL;
@@ -898,7 +899,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         if (frame[1] != 1 || !authenticated ||
             (gap_security.phase != GAP_ENC_WAIT_FINAL &&
              gap_security.phase != GAP_ENC_PERIPHERAL_START)) goto unknown_control_pdu;
-        if (!gap_conn.link_state.central_role) {
+        if (!gap_conn.is_central) {
             gap_tx_frame[1] = 1;
             gap_tx_frame[2] = 0x06;
         }
@@ -907,7 +908,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security.status = 0;
         break;
     case 0x0a: // LL_PAUSE_ENC_REQ uses the old encrypted session.
-        if (gap_conn.link_state.central_role || frame[1] != 1 || !authenticated ||
+        if (gap_conn.is_central || frame[1] != 1 || !authenticated ||
             gap_security.phase) goto unknown_control_pdu;
         gap_tx_frame[1] = 1;
         gap_tx_frame[2] = 0x0b;
@@ -918,13 +919,13 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         break;
     case 0x0b: // LL_PAUSE_ENC_RSP
         if (frame[1] != 1) goto unknown_control_pdu;
-        if (gap_conn.link_state.central_role && gap_security.phase == GAP_ENC_WAIT_PAUSE &&
+        if (gap_conn.is_central && gap_security.phase == GAP_ENC_WAIT_PAUSE &&
             authenticated) {
             gap_security.tx_enabled = gap_security.rx_enabled = 0;
             gap_tx_frame[1] = 1;
             gap_tx_frame[2] = 0x0b; // Central's final response is plaintext.
             gap_security.phase = GAP_ENC_RESTART_QUEUED;
-        } else if (!gap_conn.link_state.central_role &&
+        } else if (!gap_conn.is_central &&
                    gap_security.phase == GAP_ENC_PERIPHERAL_PAUSE && !authenticated) {
             gap_security.tx_enabled = gap_security.rx_enabled = 0;
             gap_security.phase = GAP_ENC_PERIPHERAL_RESTART;
@@ -938,7 +939,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             goto unknown_control_pdu;
         break;
     case 0x00: { // LL_CONNECTION_UPDATE_IND
-        if (!gap_conn.link_state.central_role && frame[1] == 12 &&
+        if (!gap_conn.is_central && frame[1] == 12 &&
             !gap_conn.pending.timing_update && !gap_conn_rate_busy()
         ) {
             uint8_t win_size = frame[3];
@@ -992,7 +993,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         break;
     }
     case 0x01: { // LL_CHANNEL_MAP_IND
-        if (!gap_conn.link_state.central_role && frame[1] == 8 &&
+        if (!gap_conn.is_central && frame[1] == 8 &&
             !gap_conn.pending.channel_map
         ) {
             uint8_t used_count = 0;
@@ -1021,7 +1022,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     case 0x10: { // LL_CONNECTION_PARAM_RSP (Peripheral to Central only)
         uint8_t error = 0x1e; // Invalid LL parameters.
         if (frame[1] != 24 || (frame[2] == 0x10 &&
-            (!gap_conn.link_state.central_role || !gap_conn.pending.params ||
+            (!gap_conn.is_central || !gap_conn.pending.params ||
              !gap_conn.pending.params_local))) goto reject_parameters;
         uint16_t minimum = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
@@ -1055,7 +1056,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             gap_conn.queue.phy_queued || gap_conn.pending.phy_request || gap_conn.pending.phy_update ||
             (frame[2] == 0x0f &&
              ((gap_conn.pending.params && !gap_conn.pending.params_local) ||
-              (gap_conn.link_state.central_role &&
+              (gap_conn.is_central &&
                (gap_conn.pending.params || gap_conn.queue.local_params_queued)))))
             goto reject_parameters;
         if (frame[2] == 0x10) {
@@ -1064,7 +1065,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             error = 0x20; // Unsupported LL parameter value.
             if (minimum > maximum) goto reject_parameters;
         }
-        if (gap_conn.link_state.central_role) {
+        if (gap_conn.is_central) {
             uint16_t interval = ((gap_conn.schedule.interval_125us + 9) / 10);
             if (interval < minimum || interval > maximum) interval = minimum;
             if (frame[11] && minimum != maximum) {
@@ -1290,8 +1291,8 @@ reject_parameters:
     case 0x08: // LL_FEATURE_REQ
     case 0x0e: // LL_PERIPHERAL_FEATURE_REQ
         if (frame[1] == 9 &&
-            ((frame[2] == 0x08 && !gap_conn.link_state.central_role) ||
-             (frame[2] == 0x0e && gap_conn.link_state.central_role))
+            ((frame[2] == 0x08 && !gap_conn.is_central) ||
+             (frame[2] == 0x0e && gap_conn.is_central))
         ) {
             uint8_t supported_phys = GAP_HW_PHY_MASK();
             gap_conn.features.known = 1;
@@ -1461,7 +1462,7 @@ reject_parameters:
     }
     case 0x3e: { // LL_CONNECTION_RATE_REQ (Peripheral to Central).
         uint8_t error = 0x1e;
-        if (!gap_conn.link_state.central_role) goto unknown_control_pdu;
+        if (!gap_conn.is_central) goto unknown_control_pdu;
         if (frame[1] != 27) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1562,7 +1563,7 @@ reject_parameters:
         break;
     }
     case 0x3f: { // LL_CONNECTION_RATE_IND (Central to Peripheral).
-        if (gap_conn.link_state.central_role) goto unknown_control_pdu;
+        if (gap_conn.is_central) goto unknown_control_pdu;
         if (frame[1] != 15) goto unknown_control_pdu;
         uint16_t win_offset = (uint16_t)frame[3] |
             (uint16_t)frame[4] << 8;
@@ -1613,7 +1614,7 @@ reject_parameters:
         break;
     }
     case 0x26: { // LL_SUBRATE_REQ (Peripheral to Central).
-        if (!gap_conn.link_state.central_role) goto unknown_control_pdu;
+        if (!gap_conn.is_central) goto unknown_control_pdu;
         if (frame[1] != 11) {
             gap_conn.subrate.status = 0x1e;
             gap_tx_frame[1] = 3;
@@ -1682,7 +1683,7 @@ reject_parameters:
         break;
     }
     case 0x27: { // LL_SUBRATE_IND (Central to Peripheral).
-        if (gap_conn.link_state.central_role) goto unknown_control_pdu;
+        if (gap_conn.is_central) goto unknown_control_pdu;
         if (frame[1] != 11) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1729,7 +1730,7 @@ reject_parameters:
         break;
     }
     case 0x28: { // LL_CHANNEL_REPORTING_IND (Central to Peripheral).
-        if (gap_conn.link_state.central_role || frame[1] != 4 ||
+        if (gap_conn.is_central || frame[1] != 4 ||
             !(gap_conn.features.peer[4] &
               GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
             frame[3] > 1 || frame[4] < 5 || frame[4] > 150 ||
@@ -1746,7 +1747,7 @@ reject_parameters:
         break;
     }
     case 0x29: { // LL_CHANNEL_STATUS_IND (Peripheral to Central).
-        if (!gap_conn.link_state.central_role || frame[1] != 11 ||
+        if (!gap_conn.is_central || frame[1] != 11 ||
             !gap_conn.channel.enabled ||
             !(gap_conn.features.peer[4] &
               GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
@@ -1820,7 +1821,7 @@ reject_parameters:
             break;
         }
         if (frame[2] == 0x17) {
-            if (!gap_conn.link_state.central_role || !gap_conn.pending.phy_request) break;
+            if (!gap_conn.is_central || !gap_conn.pending.phy_request) break;
             gap_send_phy_update(frame[3], frame[4]);
             break;
         }
@@ -1828,7 +1829,7 @@ reject_parameters:
             gap_conn.queue.local_update_queued || gap_conn.pending.params ||
             gap_conn.queue.local_params_queued || gap_conn.pending.channel_map ||
             gap_conn.queue.local_map_queued || gap_conn.pending.phy_update ||
-            (gap_conn.link_state.central_role && (gap_conn.pending.phy_request || gap_conn.queue.phy_queued))) {
+            (gap_conn.is_central && (gap_conn.pending.phy_request || gap_conn.queue.phy_queued))) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
             gap_tx_frame[3] = 0x16;
@@ -1836,7 +1837,7 @@ reject_parameters:
                 gap_conn.pending.phy_request || gap_conn.queue.phy_queued ? 0x23 : 0x2a;
             break;
         }
-        if (gap_conn.link_state.central_role) {
+        if (gap_conn.is_central) {
             gap_send_phy_update(frame[3], frame[4]);
         }
         else {
@@ -1851,7 +1852,7 @@ reject_parameters:
         }
         break;
     case 0x18: { // LL_PHY_UPDATE_IND (Central to Peripheral)
-        if (gap_conn.link_state.central_role || frame[1] != 5 ||
+        if (gap_conn.is_central || frame[1] != 5 ||
             !(GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
         if (gap_conn.pending.phy_update) goto unknown_control_pdu;
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
@@ -1908,7 +1909,7 @@ unknown_control_pdu:
 
 // True after Central initiation or the first received Peripheral data packet.
 int gap_connected(void) {
-    return gap_conn.link_state.active && (gap_conn.link_state.central_role || !gap_conn.link.first_event);
+    return gap_conn.link_state.active && (gap_conn.is_central || !gap_conn.link.first_event);
 }
 
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
@@ -1920,7 +1921,7 @@ int gap_conn_update(
 ) {
     uint16_t factor = (uint32_t)interval * 10 == gap_conn.schedule.interval_125us ?
         gap_conn.schedule.factor : 1;
-    if (!gap_connected() || gap_security.phase || !gap_conn.link_state.central_role ||
+    if (!gap_connected() || gap_security.phase || !gap_conn.is_central ||
         gap_conn.link.first_event || gap_conn.queue.local_update_queued ||
         gap_conn.pending.timing_update ||
         gap_conn_rate_busy() || gap_conn.queue.local_params_queued || gap_conn.pending.params ||
@@ -1988,7 +1989,7 @@ int gap_subrate_set(
     uint16_t factor, uint16_t peripheral_latency,
                          uint16_t continuation, uint16_t timeout
 ) {
-    if (!gap_connected() || !gap_conn.link_state.central_role || gap_conn.link.first_event ||
+    if (!gap_connected() || !gap_conn.is_central || gap_conn.link.first_event ||
         gap_security.phase || gap_conn.queue.local_update_queued ||
         gap_conn.pending.timing_update ||
         gap_conn_rate_busy() ||
@@ -2030,7 +2031,7 @@ int gap_subrate_request(
                              uint16_t max_latency, uint16_t continuation,
                              uint16_t timeout
 ) {
-    if (!gap_connected() || gap_conn.link_state.central_role || gap_conn.link.first_event ||
+    if (!gap_connected() || gap_conn.is_central || gap_conn.link.first_event ||
         gap_security.phase || gap_conn.queue.local_update_queued ||
         gap_conn.pending.timing_update ||
         gap_conn_rate_busy() ||
@@ -2094,7 +2095,7 @@ int gap_conn_rate_set(
     uint16_t interval, uint16_t factor,
         uint16_t latency, uint16_t continuation, uint16_t timeout
 ) {
-    if (!gap_connected() || !gap_conn.link_state.central_role || gap_conn.link.first_event ||
+    if (!gap_connected() || !gap_conn.is_central || gap_conn.link.first_event ||
         gap_security.phase || gap_conn.rate.set_queued ||
         gap_conn.rate.request_queued || gap_conn.rate.update_pending ||
         gap_conn.rate.req_pending || gap_conn.queue.local_update_queued ||
@@ -2127,7 +2128,7 @@ int gap_conn_rate_request(
         uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
         uint16_t max_latency, uint16_t continuation, uint16_t timeout
 ) {
-    if (!gap_connected() || gap_conn.link_state.central_role || gap_conn.link.first_event ||
+    if (!gap_connected() || gap_conn.is_central || gap_conn.link.first_event ||
         gap_security.phase || gap_conn.rate.set_queued ||
         gap_conn.rate.request_queued || gap_conn.rate.update_pending ||
         gap_conn.rate.req_pending || gap_conn.queue.local_update_queued ||
@@ -2178,7 +2179,7 @@ void gap_conn_rate_get(
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
 int gap_channel_map_set(const uint8_t channels[5]) {
-    if (!channels || !gap_connected() || gap_security.phase || !gap_conn.link_state.central_role ||
+    if (!channels || !gap_connected() || gap_security.phase || !gap_conn.is_central ||
         gap_conn.link.first_event || gap_conn.queue.phy_queued || gap_conn.pending.phy_request ||
         gap_conn.pending.phy_update || gap_conn.queue.local_map_queued ||
         gap_conn.pending.channel_map || gap_conn.queue.local_update_queued ||
@@ -2207,7 +2208,7 @@ int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms,
                                    uint8_t max_delay_200ms
 ) {
-    if (!gap_connected() || !gap_conn.link_state.central_role || gap_conn.link.first_event ||
+    if (!gap_connected() || !gap_conn.is_central || gap_conn.link.first_event ||
         gap_security.phase || enable > 1 || min_spacing_200ms < 5 ||
         min_spacing_200ms > 150 || max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 || gap_conn.channel.report_queued ||
@@ -2238,7 +2239,7 @@ int gap_channel_classification_set(
            GAP_CHANNEL_CLASSIFICATION_BYTES);
     gap_conn.channel.classification_valid = 1;
     gap_conn.channel.status_changed_ms = GET_MILLIS();
-    if (!gap_conn.link_state.central_role && gap_conn.channel.enabled)
+    if (!gap_conn.is_central && gap_conn.channel.enabled)
         gap_conn.channel.status_queued = 1;
     return 1;
 }
@@ -2259,7 +2260,7 @@ int gap_channel_classification_get(
 int gap_peer_channel_classification_get(
         uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
-    if (!gap_connected() || !gap_conn.link_state.central_role || !classification ||
+    if (!gap_connected() || !gap_conn.is_central || !classification ||
         !gap_conn.channel.peer_classification_valid)
         return 0;
     memcpy(classification, gap_conn.channel.peer_classification,
@@ -2446,7 +2447,7 @@ static uint8_t *gap_security_tx_frame(void) {
         return NULL;
     }
     uint8_t nonce[13];
-    gap_security_nonce(nonce, gap_security.tx_counter, gap_conn.link_state.central_role);
+    gap_security_nonce(nonce, gap_security.tx_counter, gap_conn.is_central);
     memcpy(cipher, gap_tx_frame, gap_tx_frame[1] + 2);
     if (!GAP_CCM_ENCRYPT(gap_security.session_key, nonce,
             gap_tx_frame[0] & 0xe3, cipher + 2,
@@ -2516,7 +2517,7 @@ static void gap_send_security(void) {
 static int gap_smp_blocks_encryption(void);
 
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
-    if (!ltk || !random || !gap_connected() || !gap_conn.link_state.central_role ||
+    if (!ltk || !random || !gap_connected() || !gap_conn.is_central ||
         gap_conn.link.first_event || gap_security.phase || gap_smp_blocks_encryption() ||
         gap_conn.pending.timing_update || gap_conn.queue.local_update_queued ||
         gap_conn.queue.local_map_queued || gap_conn.pending.channel_map ||

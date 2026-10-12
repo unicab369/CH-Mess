@@ -56,7 +56,7 @@ void gap_hw_received(void) {
     }
 
     if (gap_conn.link_state.active && gap_conn.link_state.rx_armed) {
-        if (gap_conn.link_state.central_role) {
+        if (gap_conn.is_central) {
             conn_anchor_ticks = gap_conn.link.next_ticks;
         } else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
@@ -100,7 +100,7 @@ void gap_hw_received(void) {
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
             uint8_t nonce[13];
-            gap_security_nonce(nonce, counter, !gap_conn.link_state.central_role);
+            gap_security_nonce(nonce, counter, !gap_conn.is_central);
 
             if (!GAP_CCM_DECRYPT(gap_security.session_key, nonce, frame[0] & 0xe3,
                     plain + 2, plain[1], frame + 2 + plain[1])
@@ -125,7 +125,7 @@ void gap_hw_received(void) {
             gap_conn.subrate.event_received = 1;
         }
 
-        if (gap_conn.link_state.central_role) {
+        if (gap_conn.is_central) {
             gap_conn.link.next_ticks += gap_conn_interval_ticks();
         } else {
             uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_conn.phy.current.rx == 2 ?
@@ -143,7 +143,7 @@ void gap_hw_received(void) {
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
         if (gap_conn.link.tx_pending && (((frame[0] >> 2) & 1) != gap_conn.link.tx_sn)) {
-            if (gap_conn.link_state.central_role && gap_conn.channel.report_pending &&
+            if (gap_conn.is_central && gap_conn.channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
                 gap_tx_frame[2] == 0x28
@@ -152,10 +152,10 @@ void gap_hw_received(void) {
                 gap_conn.connection_status = 0;
             }
 
-            if (!gap_conn.link_state.central_role && gap_conn.rate.ack_waiting) {
+            if (!gap_conn.is_central && gap_conn.rate.ack_waiting) {
                 gap_conn.rate.ack_waiting = 0;
             }
-            if (gap_conn.link_state.central_role && gap_conn.subrate.pending &&
+            if (gap_conn.is_central && gap_conn.subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 11 &&
                 gap_tx_frame[2] == 0x27
@@ -282,7 +282,7 @@ void gap_hw_received(void) {
             }
 
             if (!gap_security.phase) {
-                if (!gap_conn.link_state.central_role && gap_conn.channel.status_queued &&
+                if (!gap_conn.is_central && gap_conn.channel.status_queued &&
                     gap_conn.channel.enabled
                 ) {
                     uint32_t now_ms = GET_MILLIS();
@@ -476,7 +476,7 @@ void gap_hw_received(void) {
             gap_conn_accept(gap_central.request, GAP_HW_TICKS(), HW_TICKS_FROM_US(1250),
                                   HW_TICKS_FROM_US(1250))
         ) {
-            gap_conn.link_state.central_role = 1;
+            gap_conn.is_central = 1;
             gap_conn.link_state.central_anchor_set = 0;
             gap_conn.link.peer_sca_ppm = 500; // conservative until clock data exists
 
@@ -668,7 +668,7 @@ static void gap_conn_poll(void) {
     if (gap_conn.bond_load_pending) {
         gap_conn.bond_load_pending = 0;
 
-        if (!gap_conn.link_state.central_role) {
+        if (!gap_conn.is_central) {
             int peer_slot = gap_identity_find(gap_conn.initiator.address, gap_conn.initiator.type);
             if (peer_slot >= 0) {
                 gap_conn.peer_id.type = gap_identities[peer_slot].address_type;
@@ -823,7 +823,7 @@ static void gap_conn_poll(void) {
     gap_conn.link.unmapped_channel = unmapped;
     GAP_HW_CRC_INIT(gap_conn.link.crc_init);
 
-    if (gap_conn.link_state.central_role) {
+    if (gap_conn.is_central) {
         if (!gap_conn.link_state.central_anchor_set) {
             gap_conn.link.next_ticks = now;
             gap_conn.link_state.central_anchor_set = 1;

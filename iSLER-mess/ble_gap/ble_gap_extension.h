@@ -1490,7 +1490,7 @@ static int gap_periodic_connect_request(
         return 0;
 
     gap_conn.link.peer_sca_ppm = 500;
-    gap_conn.link_state.central_role = 0;
+    gap_conn.is_central = 0;
     gap_scanner.scanning = gap_scanner.active = 0;
     gap_central.active = 0;
     gap_scanner.generation++;
@@ -1577,7 +1577,7 @@ static int gap_periodic_connect_exchange(
             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
     ) return 0;
 
-    gap_conn.link_state.central_role = 1;
+    gap_conn.is_central = 1;
     gap_conn.link_state.central_anchor_set = 0;
     gap_conn.link.peer_sca_ppm = 500;
     if (peer_slot >= 0) {
@@ -2524,7 +2524,7 @@ static int gap_ext_send_due(uint32_t now) {
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
     if ((!gap_conn_busy() ||
-         (gap_conn.link_state.active && gap_conn.link_state.central_role)) &&
+         (gap_conn.link_state.active && gap_conn.is_central)) &&
         !gap_central.active &&
         !gap_scan.active_pending
     ) {
@@ -2555,7 +2555,7 @@ static int gap_ext_send_due(uint32_t now) {
             set->periodic_event_counter = (uint16_t)(
                 set->periodic_event_counter + missed);
             set->periodic_next_event_ticks += missed * interval;
-            if (gap_conn.link_state.active && gap_conn.link_state.central_role) {
+            if (gap_conn.link_state.active && gap_conn.is_central) {
                 uint32_t event_duration_us =
                     gap_periodic_event_duration_us(set->periodic_data_len,
                                                    set->aux_phy);
