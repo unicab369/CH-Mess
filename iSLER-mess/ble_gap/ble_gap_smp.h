@@ -1283,11 +1283,9 @@ static int smp_bond_store_generic(const gap_bond *bond) {
     if (!stored.has_local_irk) memset(stored.local_irk, 0, sizeof(stored.local_irk));
     if (!stored.has_peer_csrk) memset(stored.peer_csrk, 0, sizeof(stored.peer_csrk));
     if (!stored.has_local_csrk) memset(stored.local_csrk, 0, sizeof(stored.local_csrk));
-    if (!stored.has_peripheral_ltk) {
-        memset(stored.peripheral.ltk, 0, sizeof(stored.peripheral.ltk));
-        memset(stored.peripheral.rand, 0, sizeof(stored.peripheral.rand));
-        memset(stored.peripheral.ediv, 0, sizeof(stored.peripheral.ediv));
-    }
+
+    if (!stored.has_peripheral_ltk)
+        stored.peripheral = (gap_bond_key){0};
 
     gap_bond current;
     int free_slot = -1;
@@ -1308,16 +1306,15 @@ static int smp_bond_store_generic(const gap_bond *bond) {
         if (current.peer.type == stored.peer.type &&
             memcmp(current.peer.address, stored.peer.address, 6) == 0
         ) {
-            gap_wipe(&current, sizeof(current));
             result = GAP_BOND_SAVE(slot, &stored);
+            gap_wipe(&current, sizeof(current));
             gap_wipe(&stored, sizeof(stored));
             gap_wipe(&generic, sizeof(generic));
             return result;
         }
         gap_wipe(&current, sizeof(current));
     }
-    result = free_slot >= 0 &&
-        GAP_BOND_SAVE((uint8_t)free_slot, &stored);
+    result = free_slot >= 0 && GAP_BOND_SAVE((uint8_t)free_slot, &stored);
     gap_wipe(&stored, sizeof(stored));
     gap_wipe(&generic, sizeof(generic));
     return result;
@@ -1328,25 +1325,22 @@ static int smp_bond_store_generic(const gap_bond *bond) {
 static void smp_bond_abort(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t staged_central_bond = conn->is_central &&
-                                  smp->pairing.secure_connections &&
-                                  ((smp->pairing.phase == SMP_PHASE_BOND_TX &&
-                                    smp->pairing.bond_tx_step >= 2) ||
-                                   (smp->pairing.phase == SMP_PHASE_BOND_RX &&
-                                    smp->pairing.bond_rx_step >= 10));
-    if (staged_central_bond) {
-        if (smp->previous_bond_valid) {
-            smp_bond_store_generic(&smp->previous_bond);
-            memcpy(&conn->bond, &smp->previous_bond, sizeof(conn->bond));
-            conn->bonded = 1;
-        } else {
-            gap_bond_remove(conn->bond.peer.address,
-                            conn->bond.peer.type);
-            memset(&conn->bond, 0, sizeof(conn->bond));
-            conn->bonded = 0;
-        }
-        smp->pairing.bond_tx_step = 0;
+
+    if (!conn->is_central || !smp->pairing.secure_connections ||
+        !((smp->pairing.phase == SMP_PHASE_BOND_TX && smp->pairing.bond_tx_step >= 2) ||
+          (smp->pairing.phase == SMP_PHASE_BOND_RX && smp->pairing.bond_rx_step >= 10))
+    ) return;
+
+    if (smp->previous_bond_valid) {
+        smp_bond_store_generic(&smp->previous_bond);
+        memcpy(&conn->bond, &smp->previous_bond, sizeof(conn->bond));
+        conn->bonded = 1;
+    } else {
+        gap_bond_remove(conn->bond.peer.address, conn->bond.peer.type);
+        memset(&conn->bond, 0, sizeof(conn->bond));
+        conn->bonded = 0;
     }
+    smp->pairing.bond_tx_step = 0;
 }
 
 // Stop the procedure and erase temporary secrets on every success/failure path.
@@ -1354,9 +1348,8 @@ static void gap_smp_finish(uint8_t status) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (status) smp_bond_abort();
-    uint8_t discard_bond = status && !conn->bonded &&
-                            (smp->pairing.phase == SMP_PHASE_BOND_TX ||
-                            smp->pairing.phase == SMP_PHASE_BOND_RX);
+    uint8_t bond_phase = smp->pairing.phase == SMP_PHASE_BOND_TX ||
+                         smp->pairing.phase == SMP_PHASE_BOND_RX;
 
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
@@ -1364,15 +1357,16 @@ static void gap_smp_finish(uint8_t status) {
     smp->bearer.tx_len = 0;
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
+    smp->bearer.deadline_ms = 0;
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
     smp->pairing.phase = SMP_PHASE_IDLE;
-    smp->bearer.deadline_ms = 0;
     ble_l2cap_reassembler_reset(&smp->l2cap_rx);
     // A new SMP pairing procedure requires a new physical connection, even
     // after an unsuccessful attempt; preserve only the connection status.
 
     smp->blocked = 1;
-    smp->pairing.user_notified = smp->pairing.numeric_notified = 0;
+    smp->pairing.user_notified = 0;
+    smp->pairing.numeric_notified = 0;
     smp->status = status;
     smp->encryption_started = 0;
     smp->tx_len = smp->tx_offset = 0;
@@ -1383,7 +1377,7 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
 
     smp->previous_bond_valid = 0;
-    if (discard_bond) {
+    if (status && !conn->bonded && bond_phase) {
         gap_wipe(&conn->bond, sizeof(conn->bond));
     }
 }
@@ -1403,6 +1397,7 @@ static void gap_smp_link_close(void) {
         smp_bond_abort();
         bond_repair_pending[gap_conn_slot] = 1;
     }
+
     if (conn->is_central && conn->restore_started &&
         gap_security->status == 0x3d
     ) {
