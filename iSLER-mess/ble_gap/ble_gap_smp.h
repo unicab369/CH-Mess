@@ -1157,8 +1157,7 @@ static void smp_bond_from_generic(
 }
 
 static int smp_bond_load_generic(
-    const uint8_t address[6],
-    uint8_t address_type, gap_bond *out
+    const uint8_t address[6], uint8_t address_type, gap_bond *out
 ) {
     gap_bond stored = {0};
     ble_smp_bond generic;
@@ -1202,24 +1201,24 @@ static int smp_bond_load_generic(
         gap_wipe(&generic, sizeof(generic));
         return 0;
     }
-    if ((!generic.has_peer_irk &&
-         memcmp(generic.irk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_local_irk &&
-         memcmp(generic.local_irk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_peer_csrk &&
-         memcmp(generic.csrk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_local_csrk &&
-         memcmp(generic.local_csrk, (uint8_t[16]){0}, 16)))
+
+    if ((!generic.has_peer_irk && memcmp(generic.irk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_local_irk && memcmp(generic.local_irk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_peer_csrk && memcmp(generic.csrk, (uint8_t[16]){0}, 16)) ||
+        (!generic.has_local_csrk && memcmp(generic.local_csrk, (uint8_t[16]){0}, 16)))
     {
         gap_wipe(&generic, sizeof(generic));
         return 0;
     }
-    for (uint8_t i = generic.key_size; i < 16; i++)
+
+    for (uint8_t i = generic.key_size; i < 16; i++) {
         if (generic.ltk[i] || (generic.has_peripheral_ltk &&
                               generic.peripheral_ltk[i])) {
             gap_wipe(&generic, sizeof(generic));
             return 0;
         }
+    }
+
     if (!generic.has_peripheral_ltk &&
         (memcmp(generic.peripheral_ltk, (uint8_t[16]){0}, 16) ||
          memcmp(generic.peripheral_rand, (uint8_t[8]){0}, 8) ||
@@ -1236,6 +1235,7 @@ static int smp_bond_store_generic(const gap_bond *bond) {
     if (!bond) return 0;
     ble_smp_bond generic;
     smp_bond_to_generic(bond, &generic);
+    uint8_t zero_key[16] = {0};
     int result = 0;
 
     if (generic.valid != 1 || generic.peer_address_type > 1 ||
@@ -1257,12 +1257,12 @@ static int smp_bond_store_generic(const gap_bond *bond) {
             return 0;
         }
 
-    if ((!generic.has_peer_irk && memcmp(generic.irk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_local_irk && memcmp(generic.local_irk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_peer_csrk && memcmp(generic.csrk, (uint8_t[16]){0}, 16)) ||
-        (!generic.has_local_csrk && memcmp(generic.local_csrk, (uint8_t[16]){0}, 16)) ||
+    if ((!generic.has_peer_irk && memcmp(generic.irk, zero_key, sizeof(zero_key))) ||
+        (!generic.has_local_irk && memcmp(generic.local_irk, zero_key, sizeof(zero_key))) ||
+        (!generic.has_peer_csrk && memcmp(generic.csrk, zero_key, sizeof(zero_key))) ||
+        (!generic.has_local_csrk && memcmp(generic.local_csrk, zero_key, sizeof(zero_key))) ||
         (!generic.has_peripheral_ltk &&
-         (memcmp(generic.peripheral_ltk, (uint8_t[16]){0}, 16) ||
+         (memcmp(generic.peripheral_ltk, zero_key, sizeof(zero_key)) ||
           memcmp(generic.peripheral_rand, (uint8_t[8]){0}, 8) ||
           generic.peripheral_ediv[0] || generic.peripheral_ediv[1]))) {
         gap_wipe(&generic, sizeof(generic));
@@ -1281,14 +1281,10 @@ static int smp_bond_store_generic(const gap_bond *bond) {
     stored.version = GAP_BOND_VERSION;
     for (uint8_t i = stored.key_size; i < sizeof(stored.central.ltk); i++)
         stored.central.ltk[i] = 0;
-    if (!stored.peer_irk.present)
-        memset(stored.peer_irk.key, 0, sizeof(stored.peer_irk.key));
-    if (!stored.local_irk.present)
-        memset(stored.local_irk.key, 0, sizeof(stored.local_irk.key));
-    if (!stored.peer_csrk.present)
-        memset(stored.peer_csrk.key, 0, sizeof(stored.peer_csrk.key));
-    if (!stored.local_csrk.present)
-        memset(stored.local_csrk.key, 0, sizeof(stored.local_csrk.key));
+    if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
+    if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
+    if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
+    if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
 
     if (!stored.has_peripheral_ltk)
         stored.peripheral = (gap_bond_key){0};
