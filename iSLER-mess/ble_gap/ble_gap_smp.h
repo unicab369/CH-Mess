@@ -1953,40 +1953,40 @@ static void gap_smp_poll(void) {
                 smp_bond_peripheral_start();
                 return;
             }
-            uint8_t bond_data[26], attempts = 0, nonzero;
+            gap_bond_key bond_data;
+            uint8_t attempts = 0, nonzero;
 
             do {
                 if (++attempts > 4 ||
-                    !smp_random_bytes(bond_data, sizeof(bond_data))
+                    !smp_random_bytes((uint8_t *)&bond_data, sizeof(bond_data))
                 ) {
-                    gap_wipe(bond_data, sizeof(bond_data));
+                    gap_wipe(&bond_data, sizeof(bond_data));
                     gap_smp_finish(SMP_FAIL_UNSPECIFIED);
                     return;
                 }
+
                 if (!conn->link_state.active) {
-                    gap_wipe(bond_data, sizeof(bond_data));
+                    gap_wipe(&bond_data, sizeof(bond_data));
                     return;
                 }
-                nonzero =   bond_data[16] | bond_data[17] | bond_data[18] |
-                            bond_data[19] | bond_data[20] | bond_data[21] |
-                            bond_data[22] | bond_data[23] |
-                            bond_data[24] | bond_data[25];
+                nonzero = 0;
+                for (unsigned i = 0; i < sizeof(bond_data.rand); i++)
+                    nonzero |= bond_data.rand[i];
+                for (unsigned i = 0; i < sizeof(bond_data.ediv); i++)
+                    nonzero |= bond_data.ediv[i];
             } while (!nonzero);
 
             memset(&conn->bond, 0, sizeof(conn->bond));
             conn->bond.version = GAP_BOND_VERSION;
             conn->bond.valid = 1;
             conn->bond.peer = conn->peer;
-            memcpy(conn->bond.central.ltk, bond_data, 16);
-
             for (unsigned i = pairing->key_size; i < 16; i++)
-                conn->bond.central.ltk[i] = 0;
-            memcpy(conn->bond.central.rand, bond_data + 16, 8);
-            memcpy(conn->bond.central.ediv, bond_data + 24, 2);
+                bond_data.ltk[i] = 0;
+            conn->bond.central = bond_data;
             conn->bond.key_size = pairing->key_size;
             conn->bond.authenticated = pairing->authenticated;
 
-            gap_wipe(bond_data, sizeof(bond_data));
+            gap_wipe(&bond_data, sizeof(bond_data));
             pairing->bond_rx_step = 30;
             pairing->phase = SMP_PHASE_BOND_RX;
 
