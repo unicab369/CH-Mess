@@ -259,7 +259,7 @@ typedef struct {
         uint64_t next_ticks;
     } link;
     // Connection endpoint and peer identity addresses.
-    gap_peer_address initiator, responder, peer_id;
+    gap_peer_address initiator, responder, peer;
     uint8_t is_central;
     uint8_t authenticated, encryption_key_size;
     uint8_t bond_load_pending, bonded, bond_restore_started, bond_restore_attempted;
@@ -995,7 +995,7 @@ static int gap_conn_accept(
     conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->initiator.address, frame + 2, 6);
     memcpy(conn->responder.address, frame + 8, 6);
-    memcpy(&conn->peer_id, &conn->initiator, sizeof(conn->peer_id));
+    memcpy(&conn->peer, &conn->initiator, sizeof(conn->peer));
 
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint8_t count = 0;

@@ -487,18 +487,18 @@ void gap_hw_received(void) {
             conn->link.peer_sca_ppm = 500; // conservative until clock data exists
 
             if (peer_slot >= 0) {
-                conn->peer_id.type = gap_identities[peer_slot].address_type;
-                memcpy(conn->peer_id.address, gap_identities[peer_slot].address, 6);
+                conn->peer.type = gap_identities[peer_slot].address_type;
+                memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
             }
             else if (gap_central.any_peer ||
                 gap_central.selective ||
                 gap_central.auto_connect
             ) {
-                conn->peer_id.type = advertiser_type;
-                memcpy(conn->peer_id.address, frame + 2, 6);
+                conn->peer.type = advertiser_type;
+                memcpy(conn->peer.address, frame + 2, 6);
             } else {
-                conn->peer_id.type = gap_central.peer_type;
-                memcpy(conn->peer_id.address, gap_central.peer_address, 6);
+                conn->peer.type = gap_central.peer_type;
+                memcpy(conn->peer.address, gap_central.peer_address, 6);
             }
             gap_central.active = 0;
             gap_central.any_peer = 0;
@@ -681,11 +681,11 @@ static void gap_conn_poll(void) {
         if (!conn->is_central) {
             int peer_slot = gap_identity_find(conn->initiator.address, conn->initiator.type);
             if (peer_slot >= 0) {
-                conn->peer_id.type = gap_identities[peer_slot].address_type;
-                memcpy(conn->peer_id.address, gap_identities[peer_slot].address, 6);
+                conn->peer.type = gap_identities[peer_slot].address_type;
+                memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
             }
         }
-        if (smp_bond_load_generic(conn->peer_id.address, conn->peer_id.type, &conn->bond))
+        if (smp_bond_load_generic(conn->peer.address, conn->peer.type, &conn->bond))
             conn->bonded = 1;
     }
 

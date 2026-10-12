@@ -1586,12 +1586,12 @@ static int gap_periodic_connect_exchange(
     conn->link_state.central_anchor_set = 0;
     conn->link.peer_sca_ppm = 500;
     if (peer_slot >= 0) {
-        conn->peer_id.type = gap_identities[peer_slot].address_type;
-        memcpy(conn->peer_id.address,
+        conn->peer.type = gap_identities[peer_slot].address_type;
+        memcpy(conn->peer.address,
                gap_identities[peer_slot].address, 6);
     } else {
-        conn->peer_id.type = peer_type;
-        memcpy(conn->peer_id.address, peer_address, 6);
+        conn->peer.type = peer_type;
+        memcpy(conn->peer.address, peer_address, 6);
     }
     gap_scanner.scanning = gap_scanner.active = 0;
     gap_scanner.generation++;
