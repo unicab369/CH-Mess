@@ -313,13 +313,14 @@ static inline int smp_poll(ble_smp *smp) {
 #define GAP_IO_KEYBOARD_DISPLAY 4
 #define GAP_PASSKEY_DISPLAY 1
 #define GAP_PASSKEY_INPUT 2
-static uint8_t gap_pairing_enabled;
 static ble_smp_user_request_fn gap_smp_user_request_callback;
 static void *gap_smp_user_request_context;
 static struct {
-    uint8_t io, authenticated, min_key_size, bonding, secure_connections;
+    uint8_t enabled, io, authenticated, min_key_size, bonding;
+    uint8_t secure_connections;
     uint8_t keypress_notifications;
 } gap_pair_cfg = {
+    .enabled = 0,
     .io = GAP_IO_NONE,
     .authenticated = 0,
     .min_key_size = 7,
@@ -717,7 +718,7 @@ static void gap_smp_fail(uint8_t status) {
 }
 
 void gap_pairing_set(uint8_t enabled) {
-    gap_pairing_enabled = enabled;
+    gap_pair_cfg.enabled = enabled;
     if (!enabled && gap_smp.pairing.phase) gap_smp_fail(5);
 }
 
@@ -788,7 +789,7 @@ int gap_secure_connections_set(uint8_t enabled) {
 // Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
 // The application must deliver both values to the peer over its OOB channel.
 int gap_sc_oob_get(gap_oob_data *out) {
-    if (!out || !gap_pairing_enabled || !gap_pair_cfg.secure_connections ||
+    if (!out || !gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
         !gap_connected() || gap_encrypted() || gap_smp.pairing.phase ||
         gap_security.phase
     ) return 0;
@@ -845,12 +846,14 @@ uint8_t gap_passkey(uint32_t *value) {
 // Submit the passkey entered by the user. Confirm exchange resumes on polling.
 int gap_passkey_reply(uint32_t value) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
-    if (!gap_connected() ||
-        (gap_smp.pairing.phase != SMP_PHASE_PASSKEY &&
-         !(gap_smp.pairing.secure_connections &&
-           gap_smp.secure.passkey_required &&
-           (gap_smp.pairing.phase == SMP_PHASE_SC_PUBLIC_KEY ||
-            gap_smp.pairing.phase == SMP_PHASE_SC_PASSKEY))) ||
+    uint8_t passkey_input_phase =
+        gap_smp.pairing.phase == SMP_PHASE_PASSKEY ||
+        (gap_smp.pairing.secure_connections &&
+         gap_smp.secure.passkey_required &&
+         (gap_smp.pairing.phase == SMP_PHASE_SC_PUBLIC_KEY ||
+          gap_smp.pairing.phase == SMP_PHASE_SC_PASSKEY));
+
+    if (!gap_connected() || !passkey_input_phase ||
         gap_smp.pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
     ) {
         GAP_CRITICAL_EXIT(irq_state);
@@ -878,10 +881,10 @@ int gap_passkey_keypress(uint8_t notification_type) {
 
     if (!gap_smp.pairing.keypress_active || !passkey_phase ||
         gap_pair_cfg.io != GAP_IO_KEYBOARD_ONLY ||
-        notification_type > SMP_KEYPRESS_COMPLETED)
-        return 0;
-    return gap_smp_queue(SMP_KEYPRESS_NOTIFICATION,
-                         &notification_type, 1);
+        notification_type > SMP_KEYPRESS_COMPLETED
+    ) return 0;
+
+    return gap_smp_queue(SMP_KEYPRESS_NOTIFICATION, &notification_type, 1);
 }
 
 // Show all six digits on both devices and ask the user whether they match.
@@ -923,7 +926,7 @@ uint8_t gap_key_size(void) {
 
 // Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
-    if (!gap_pairing_enabled || !gap_connected() || gap_smp.pairing.phase ||
+    if (!gap_pair_cfg.enabled || !gap_connected() || gap_smp.pairing.phase ||
         gap_smp.blocked || gap_security.phase || gap_encrypted() ||
         gap_smp.tx_len || gap_smp.bearer.tx_len
     ) return 0;
@@ -2193,7 +2196,7 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (!gap_pairing_enabled) {
+    if (!gap_pair_cfg.enabled) {
         gap_smp_fail(SMP_FAIL_PAIRING_NOT_SUPPORTED);
         return;
     }
