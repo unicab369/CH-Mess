@@ -20,7 +20,6 @@
 #ifndef SMP_TIMEOUT_MS
 #define SMP_TIMEOUT_MS 30000
 #endif
-#define SMP_BOND_SCHEMA_VERSION 1
 
 enum {
     SMP_PAIRING_REQUEST = 0x01,
@@ -90,19 +89,6 @@ enum {
     SMP_USER_NUMERIC_COMPARISON = 3,
     SMP_USER_KEYPRESS = 4
 };
-
-typedef struct {
-    uint8_t valid, peer_address_type, key_size, authenticated;
-    uint8_t peer_address[6];
-    gap_bond_key central;
-    // Full LE bond schema: the peer/local key flags make absent keys
-    // distinguishable from valid all-zero key material.
-    uint8_t version;
-    bond_opt_key peer_irk, local_irk;
-    bond_opt_key peer_csrk, local_csrk;
-    gap_bond_key peripheral;
-    uint8_t has_peripheral_ltk;
-} ble_smp_bond;
 
 // Platform methods used by the SMP procedure. GAP provides these methods;
 // tests can provide a fake implementation without configuring a callback table.
@@ -1093,58 +1079,16 @@ int gap_bond_remove(const uint8_t peer_address[6], uint8_t address_type) {
     return 0;
 }
 
-static void smp_bond_to_generic(const gap_bond *source, ble_smp_bond *out) {
-    memset(out, 0, sizeof(*out));
-    out->version = SMP_BOND_SCHEMA_VERSION;
-    out->valid = source->valid;
-    out->peer_address_type = source->peer.type;
-    memcpy(out->peer_address, source->peer.address, 6);
-    out->central = source->central;
-
-    if (source->peer_irk.present) out->peer_irk = source->peer_irk;
-    if (source->local_irk.present) out->local_irk = source->local_irk;
-    if (source->peer_csrk.present) out->peer_csrk = source->peer_csrk;
-    if (source->local_csrk.present) out->local_csrk = source->local_csrk;
-    if (source->has_peripheral_ltk) out->peripheral = source->peripheral;
-
-    out->key_size = source->key_size;
-    out->authenticated = source->authenticated;
-    out->has_peripheral_ltk = source->has_peripheral_ltk;
-}
-
-static void smp_bond_from_generic(
-    const ble_smp_bond *source, gap_bond *out
-) {
-    memset(out, 0, sizeof(*out));
-    out->version = GAP_BOND_VERSION;
-    out->valid = source->valid;
-    out->peer.type = source->peer_address_type;
-    memcpy(out->peer.address, source->peer_address, 6);
-    out->central = source->central;
-    out->peer_irk = source->peer_irk;
-    out->local_irk = source->local_irk;
-    out->peer_csrk = source->peer_csrk;
-    out->local_csrk = source->local_csrk;
-    out->peripheral = source->peripheral;
-    out->key_size = source->key_size;
-    out->authenticated = source->authenticated;
-    out->has_peripheral_ltk = source->has_peripheral_ltk;
-}
-
-static int smp_bond_load_generic(
+static int smp_bond_load(
     const uint8_t address[6], uint8_t address_type, gap_bond *out
 ) {
-    gap_bond stored = {0};
-    ble_smp_bond generic;
     if (!out || address_type > 1 || !address) return 0;
     memset(out, 0, sizeof(*out));
-    memset(&generic, 0, sizeof(generic));
-
     if (!GAP_BOND_LOAD ||
         (address_type && (address[5] & 0xc0) != 0xc0))
         return 0;
 
-    int found = 0;
+    gap_bond stored = {0};
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&stored, 0, sizeof(stored));
         int loaded = GAP_BOND_LOAD(slot, &stored);
@@ -1152,92 +1096,50 @@ static int smp_bond_load_generic(
             gap_wipe(&stored, sizeof(stored));
             return 0;
         }
-        if (loaded && gap_bond_valid(&stored) &&
+        if (loaded && stored.valid == 1 && gap_bond_valid(&stored) &&
             stored.peer.type == address_type &&
             memcmp(stored.peer.address, address, 6) == 0) {
-            found = 1;
-            break;
+            stored.version = GAP_BOND_VERSION;
+            if (!stored.peer_irk.present)
+                stored.peer_irk = (bond_opt_key){0};
+            if (!stored.local_irk.present)
+                stored.local_irk = (bond_opt_key){0};
+            if (!stored.peer_csrk.present)
+                stored.peer_csrk = (bond_opt_key){0};
+            if (!stored.local_csrk.present)
+                stored.local_csrk = (bond_opt_key){0};
+            if (!stored.has_peripheral_ltk)
+                stored.peripheral = (gap_bond_key){0};
+            *out = stored;
+            gap_wipe(&stored, sizeof(stored));
+            return 1;
         }
         gap_wipe(&stored, sizeof(stored));
     }
-    if (!found) return 0;
-
-    smp_bond_to_generic(&stored, &generic);
-    gap_wipe(&stored, sizeof(stored));
-    if (
-        generic.valid != 1 || generic.peer_address_type != address_type ||
-        (address_type && (address[5] & 0xc0) != 0xc0) ||
-        memcmp(generic.peer_address, address, 6) || generic.key_size < 7 ||
-        generic.key_size > 16 || generic.authenticated > 1 ||
-        (generic.version && generic.version != SMP_BOND_SCHEMA_VERSION) ||
-        generic.peer_irk.present > 1 || generic.local_irk.present > 1 ||
-        generic.peer_csrk.present > 1 || generic.local_csrk.present > 1 ||
-        generic.has_peripheral_ltk > 1
-    ) {
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
-
-    for (uint8_t i = generic.key_size; i < 16; i++) {
-        if (generic.central.ltk[i] ||
-            (generic.has_peripheral_ltk && generic.peripheral.ltk[i])
-        ) {
-            gap_wipe(&generic, sizeof(generic));
-            return 0;
-        }
-    }
-
-    smp_bond_from_generic(&generic, out);
-    gap_wipe(&generic, sizeof(generic));
-    return 1;
+    return 0;
 }
 
-static int smp_bond_store_generic(const gap_bond *bond) {
+static int smp_bond_store(const gap_bond *bond) {
     if (!bond) return 0;
-    ble_smp_bond generic;
-    smp_bond_to_generic(bond, &generic);
-    int result = 0;
-
-    if (generic.valid != 1 || generic.peer_address_type > 1 ||
-        generic.key_size < 7 || generic.key_size > 16 ||
-        generic.authenticated > 1 ||
-        (generic.peer_address_type && (generic.peer_address[5] & 0xc0) != 0xc0) ||
-        (generic.version && generic.version != SMP_BOND_SCHEMA_VERSION) ||
-        generic.peer_irk.present > 1 || generic.local_irk.present > 1 ||
-        generic.peer_csrk.present > 1 || generic.local_csrk.present > 1 ||
-        generic.has_peripheral_ltk > 1
-    ) {
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
-
-    for (uint8_t i = generic.key_size; i < sizeof(generic.central.ltk); i++)
-        if (generic.central.ltk[i] ||
-            (generic.has_peripheral_ltk && generic.peripheral.ltk[i])
-        ) {
-            gap_wipe(&generic, sizeof(generic));
-            return 0;
-        }
-
-    generic.version = SMP_BOND_SCHEMA_VERSION;
-    gap_bond stored;
-    smp_bond_from_generic(&generic, &stored);
-    if (!gap_bond_valid(&stored) || !GAP_BOND_LOAD || !GAP_BOND_SAVE) {
-        gap_wipe(&stored, sizeof(stored));
-        gap_wipe(&generic, sizeof(generic));
-        return 0;
-    }
-
+    gap_bond stored = *bond;
+    // Normalize legacy versions before validating the current bond fields.
     stored.version = GAP_BOND_VERSION;
-    for (uint8_t i = stored.key_size; i < sizeof(stored.central.ltk); i++)
-        stored.central.ltk[i] = 0;
+    if (stored.valid != 1 || !gap_bond_valid(&stored)) {
+        gap_wipe(&stored, sizeof(stored));
+        return 0;
+    }
+
     if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
     if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
     if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
     if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
-
     if (!stored.has_peripheral_ltk)
         stored.peripheral = (gap_bond_key){0};
+
+    if (!GAP_BOND_LOAD || !GAP_BOND_SAVE) {
+        gap_wipe(&stored, sizeof(stored));
+        return 0;
+    }
 
     gap_bond current;
     int free_slot = -1;
@@ -1247,7 +1149,6 @@ static int smp_bond_store_generic(const gap_bond *bond) {
         if (loaded < 0) {
             gap_wipe(&current, sizeof(current));
             gap_wipe(&stored, sizeof(stored));
-            gap_wipe(&generic, sizeof(generic));
             return 0;
         }
         if (!loaded || !gap_bond_valid(&current)) {
@@ -1258,18 +1159,16 @@ static int smp_bond_store_generic(const gap_bond *bond) {
         if (current.peer.type == stored.peer.type &&
             memcmp(current.peer.address, stored.peer.address, 6) == 0
         ) {
-            result = GAP_BOND_SAVE(slot, &stored);
+            int result = GAP_BOND_SAVE(slot, &stored);
             gap_wipe(&current, sizeof(current));
             gap_wipe(&stored, sizeof(stored));
-            gap_wipe(&generic, sizeof(generic));
             return result;
         }
         gap_wipe(&current, sizeof(current));
     }
 
-    result = free_slot >= 0 && GAP_BOND_SAVE((uint8_t)free_slot, &stored);
+    int result = free_slot >= 0 && GAP_BOND_SAVE((uint8_t)free_slot, &stored);
     gap_wipe(&stored, sizeof(stored));
-    gap_wipe(&generic, sizeof(generic));
     return result;
 }
 
@@ -1285,7 +1184,7 @@ static void smp_bond_abort(void) {
     ) return;
 
     if (smp->previous_bond_valid) {
-        smp_bond_store_generic(&smp->previous_bond);
+        smp_bond_store(&smp->previous_bond);
         memcpy(&conn->bond, &smp->previous_bond, sizeof(conn->bond));
         conn->bonded = 1;
     } else {
@@ -1474,7 +1373,7 @@ static void smp_bond_rx_complete(void) {
         }
     }
 
-    if (smp_bond_store_generic(&conn->bond)) {
+    if (smp_bond_store(&conn->bond)) {
         conn->bonded = 1;
         gap_smp_finish(0);
     } else {
@@ -1746,7 +1645,7 @@ static void gap_smp_poll(void) {
 
         }
         else {
-            if (conn->is_central && !smp_bond_store_generic(&conn->bond)) {
+            if (conn->is_central && !smp_bond_store(&conn->bond)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 gap_wipe(&conn->bond, sizeof(conn->bond));
                 return;

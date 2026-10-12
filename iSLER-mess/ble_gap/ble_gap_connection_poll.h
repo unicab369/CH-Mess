@@ -685,7 +685,7 @@ static void gap_conn_poll(void) {
                 memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
             }
         }
-        if (smp_bond_load_generic(conn->peer.address, conn->peer.type, &conn->bond))
+        if (smp_bond_load(conn->peer.address, conn->peer.type, &conn->bond))
             conn->bonded = 1;
     }
 
