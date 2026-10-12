@@ -428,16 +428,17 @@ static void test_full_65_byte_provisioning_pdu(void) {
 }
 
 static void test_mesh_sar_timeout_and_link_cleanup(void) {
+    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     mesh_link_setup();
-    memset(&gap_conn, 0, sizeof(gap_conn));
-    gap_conn.link_state.active = 1;
+    memset(gap_conn, 0, sizeof(*gap_conn));
+    gap_conn->link_state.active = 1;
     mesh_gatt.proxy_rx_active = 1;
     mesh_gatt.proxy_rx_started_ms = 100;
     fake_now_ms = 100 + MESH_GATT_PROXY_SAR_TIMEOUT_MS;
     assert(mesh_gatt_proxy_sar_timeout_poll());
     assert(!mesh_gatt.proxy_rx_active && mesh_gatt.proxy_sar_disconnect_pending);
-    assert(gap_conn.link_state.terminate_queued &&
-           gap_conn.link.local_terminate_reason == 0x13);
+    assert(gap_conn->link_state.terminate_queued &&
+           gap_conn->link.local_terminate_reason == 0x13);
 
     mesh_gatt.filter_type = 1;
     mesh_gatt.filter_count = 1;
