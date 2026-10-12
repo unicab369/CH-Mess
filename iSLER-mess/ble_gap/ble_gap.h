@@ -408,8 +408,8 @@ static inline int gap_conn_select(gap_conn_handle handle) {
 
 // Capture the currently selected link's handle for later API calls.
 static inline int gap_conn_current(gap_conn_handle *handle) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
-    if (!handle || !gap_conn->link_state.active) return 0;
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (!handle || !conn->link_state.active) return 0;
     handle->slot = gap_conn_slot;
     handle->generation = gap_conn_generations[gap_conn_slot];
     return handle->generation != 0;
@@ -493,12 +493,12 @@ static gap_conn_timing_config gap_conn_timing = {
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
 int gap_conn_timing_set(const gap_conn_timing_config *timing) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!timing || timing->interval < 6 || timing->interval > 3200 ||
         timing->latency > 499 || timing->supervision_timeout < 10 ||
         timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
-        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn->link_state.active ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || conn->link_state.active ||
         gap_central.active || timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
@@ -609,10 +609,10 @@ static int gap_accept_list_nonempty(void) {
 
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active || gap_central.active ||
+        conn->link_state.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int free_slot = -1;
@@ -632,10 +632,10 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active || gap_central.active)
+        conn->link_state.active || gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
@@ -651,9 +651,9 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active ||
+        conn->link_state.active ||
         gap_central.active)
         return 0;
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
@@ -675,10 +675,10 @@ int gap_identity_set(
     const uint8_t address[6], uint8_t address_type,
                            const uint8_t irk[16]
 ) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active || gap_central.active ||
+        conn->link_state.active || gap_central.active ||
         (address_type && !gap_static_random_address_valid(address)))
         return 0;
     int slot = -1;
@@ -714,10 +714,10 @@ int gap_identity_privacy(
     const uint8_t address[6], uint8_t address_type,
                                uint8_t mode
 ) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active ||
+        conn->link_state.active ||
         gap_central.active)
         return 0;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
@@ -782,10 +782,10 @@ int gap_identity_local_key(
     const uint8_t address[6], uint8_t address_type,
                                  const uint8_t irk[16]
 ) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active || gap_central.active)
+        conn->link_state.active || gap_central.active)
         return 0;
     int slot = gap_identity_find(address, address_type);
     if (slot < 0 || gap_identities[slot].address_type != address_type ||
@@ -829,9 +829,9 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn->link_state.active ||
+        conn->link_state.active ||
         gap_central.active || timeout_s > 41400 || (irk && !timeout_s))
         return 0;
     if (!irk && !timeout_s) {
@@ -882,11 +882,11 @@ int gap_privacy_set_randomized(
     const uint8_t irk[16], uint16_t min_timeout_s,
                                     uint16_t max_timeout_s
 ) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn->link_state.active || gap_central.active)
+        conn->link_state.active || gap_central.active)
         return 0;
     uint16_t timeout_s;
     if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
@@ -907,10 +907,10 @@ int gap_privacy_set_randomized(
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn->link_state.active || gap_central.active)
+        conn->link_state.active || gap_central.active)
         return 0;
     gap_privacy.scan_filter = scan;
     gap_privacy.connection_filter = connection;
@@ -921,10 +921,10 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
 int gap_set_static_random_address(const uint8_t address[6]) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        gap_conn->link_state.active || gap_central.active ||
+        conn->link_state.active || gap_central.active ||
         !gap_static_random_address_valid(address))
         return 0;
     memcpy(gap_random_address, address, 6);
@@ -937,9 +937,9 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn->link_state.active ||
+        conn->link_state.active ||
         gap_central.active)
         return 0;
     gap_privacy.enabled = 0;
@@ -962,7 +962,7 @@ static int gap_conn_accept(
 ) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
-    gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn_request_valid(frame)) return 0;
     uint16_t data_capacity = GAP_HW_DATA_MAX();
     if (data_capacity < 27) return 0;
@@ -971,111 +971,111 @@ static int gap_conn_accept(
 
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
-    // Must precede gap_conn->data_capacity; gap_conn uses this slot index.
+    // Must precede conn->data_capacity; conn uses this slot index.
     gap_conn_slot = free_slot;
     gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_security_generation = &gap_security_generations[gap_conn_slot];
-    gap_conn = &gap_conn_ctx[gap_conn_slot];
-    gap_conn->data_capacity = data_capacity;
+    conn = &gap_conn_ctx[gap_conn_slot];
+    conn->data_capacity = data_capacity;
 
-    gap_wipe(&gap_conn->queue, sizeof(gap_conn->queue));
+    gap_wipe(&conn->queue, sizeof(conn->queue));
     gap_wipe(gap_security, sizeof(*gap_security));
-    memset(&gap_conn->link_state, 0, sizeof(gap_conn->link_state));
-    gap_conn->is_central = 0;
-    memset(&gap_conn->pending, 0, sizeof(gap_conn->pending));
-    memset(&gap_conn->schedule, 0, sizeof(gap_conn->schedule));
-    memset(&gap_conn->next_schedule, 0, sizeof(gap_conn->next_schedule));
-    memset(&gap_conn->features, 0, sizeof(gap_conn->features));
-    memset(&gap_conn->channel, 0, sizeof(gap_conn->channel));
-    memset(&gap_conn->subrate, 0, sizeof(gap_conn->subrate));
-    memset(&gap_conn->bond, 0, sizeof(gap_conn->bond));
-    memcpy(gap_conn->link.channel_map, frame + 30, 5);
+    memset(&conn->link_state, 0, sizeof(conn->link_state));
+    conn->is_central = 0;
+    memset(&conn->pending, 0, sizeof(conn->pending));
+    memset(&conn->schedule, 0, sizeof(conn->schedule));
+    memset(&conn->next_schedule, 0, sizeof(conn->next_schedule));
+    memset(&conn->features, 0, sizeof(conn->features));
+    memset(&conn->channel, 0, sizeof(conn->channel));
+    memset(&conn->subrate, 0, sizeof(conn->subrate));
+    memset(&conn->bond, 0, sizeof(conn->bond));
+    memcpy(conn->link.channel_map, frame + 30, 5);
 
-    gap_conn->initiator.type = (frame[0] >> 6) & 1;
-    gap_conn->responder.type = (frame[0] >> 7) & 1;
-    memcpy(gap_conn->initiator.address, frame + 2, 6);
-    memcpy(gap_conn->responder.address, frame + 8, 6);
-    memcpy(&gap_conn->peer_id, &gap_conn->initiator, sizeof(gap_conn->peer_id));
+    conn->initiator.type = (frame[0] >> 6) & 1;
+    conn->responder.type = (frame[0] >> 7) & 1;
+    memcpy(conn->initiator.address, frame + 2, 6);
+    memcpy(conn->responder.address, frame + 8, 6);
+    memcpy(&conn->peer_id, &conn->initiator, sizeof(conn->peer_id));
 
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            gap_conn->link.used_channels[count++] = channel;
+            conn->link.used_channels[count++] = channel;
 
-    gap_conn->link.access_address = (uint32_t)frame[14] |
+    conn->link.access_address = (uint32_t)frame[14] |
                                     (uint32_t)frame[15] << 8 |
                                     (uint32_t)frame[16] << 16 |
                                     (uint32_t)frame[17] << 24;
-    gap_conn->link.crc_init = (uint32_t)frame[18] |
+    conn->link.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    gap_conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    gap_conn->link.next_ticks = received_ticks +
+    conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    conn->link.next_ticks = received_ticks +
                 (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
                 interval_unit_ticks + window_delay_ticks;
 
-    gap_conn->link.used_count = count;
-    gap_conn->link.hop = frame[35] & 0x1f;
-    gap_conn->link.unmapped_channel = 0;
-    gap_conn->schedule.interval_125us = (uint16_t)(interval * 10);
-    gap_conn->link.last_rx_ms = GET_MILLIS();
-    gap_conn->link.first_event = 1;
-    gap_conn->link.expected_rx_sn = 0;
-    gap_conn->link.tx_sn = 0;
-    gap_conn->link.tx_pending = 0;
-    gap_conn->link.event_counter = 0;
+    conn->link.used_count = count;
+    conn->link.hop = frame[35] & 0x1f;
+    conn->link.unmapped_channel = 0;
+    conn->schedule.interval_125us = (uint16_t)(interval * 10);
+    conn->link.last_rx_ms = GET_MILLIS();
+    conn->link.first_event = 1;
+    conn->link.expected_rx_sn = 0;
+    conn->link.tx_sn = 0;
+    conn->link.tx_pending = 0;
+    conn->link.event_counter = 0;
 
-    gap_conn->schedule.latency = (uint16_t)frame[26] |
+    conn->schedule.latency = (uint16_t)frame[26] |
                             (uint16_t)frame[27] << 8;
-    gap_conn->schedule.timeout = (uint16_t)frame[28] |
+    conn->schedule.timeout = (uint16_t)frame[28] |
                                             (uint16_t)frame[29] << 8;
 
     // Initialize direct connection fields together.
 #if GAP_EXT_ADV_SUPPORT
-    gap_conn->sync_transfer_queued = 0;
-    gap_conn->sync_transfer_handle = 0;
+    conn->sync_transfer_queued = 0;
+    conn->sync_transfer_handle = 0;
 #endif
 
-    gap_conn->data_length = (gap_data_length){27, 328, 27, 328};
-    gap_conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
+    conn->data_length = (gap_data_length){27, 328, 27, 328};
+    conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
 
-    gap_conn->window_size = frame[21];
-    gap_conn->tx_l2cap_remaining = 0;
-    gap_conn->connection_status = 0;
-    gap_conn->local_tx_octets = 27;
-    gap_conn->length_status = 0;
-    gap_conn->bond_load_pending = 1;
-    gap_conn->bonded = 0;
-    gap_conn->bond_restore_started = 0;
-    gap_conn->bond_restore_attempted = 0;
-    gap_conn->authenticated = gap_conn->encryption_key_size = 0;
+    conn->window_size = frame[21];
+    conn->tx_l2cap_remaining = 0;
+    conn->connection_status = 0;
+    conn->local_tx_octets = 27;
+    conn->length_status = 0;
+    conn->bond_load_pending = 1;
+    conn->bonded = 0;
+    conn->bond_restore_started = 0;
+    conn->bond_restore_attempted = 0;
+    conn->authenticated = conn->encryption_key_size = 0;
 
     // Initialize subrate and connection rate state.
-    gap_conn->schedule.factor = 1;
-    gap_conn->rate.set_queued = 0;
-    gap_conn->rate.request_queued = 0;
-    gap_conn->rate.update_pending = 0;
-    gap_conn->rate.req_pending = 0;
+    conn->schedule.factor = 1;
+    conn->rate.set_queued = 0;
+    conn->rate.request_queued = 0;
+    conn->rate.update_pending = 0;
+    conn->rate.req_pending = 0;
 
     // Initialize channel classification and PHY state.
-    gap_conn->channel.classification_valid = 1;
-    gap_conn->channel.min_spacing_200ms = 5;
-    gap_conn->channel.max_delay_200ms = 5;
-    gap_conn->channel.status_changed_ms = GET_MILLIS();
-    gap_conn->phy.current.tx = gap_conn->phy.current.rx = GAP_PHY_1M;
-    gap_conn->phy.preferred.tx = gap_conn->phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
-    gap_conn->phy.status = 0;
+    conn->channel.classification_valid = 1;
+    conn->channel.min_spacing_200ms = 5;
+    conn->channel.max_delay_200ms = 5;
+    conn->channel.status_changed_ms = GET_MILLIS();
+    conn->phy.current.tx = conn->phy.current.rx = GAP_PHY_1M;
+    conn->phy.preferred.tx = conn->phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
+    conn->phy.status = 0;
     (*gap_security_generation)++;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
-    gap_conn->link_state.active = 1;
+    conn->link_state.active = 1;
     if (!smp_link_init()) {
-        gap_conn->link_state.active = 0;
+        conn->link_state.active = 0;
         return 0;
     }
 
