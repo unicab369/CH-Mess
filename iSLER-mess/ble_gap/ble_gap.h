@@ -432,7 +432,8 @@ typedef struct {
     uint32_t started_ms;
 } gap_security_context;
 
-static gap_security_context gap_security_contexts[GAP_CONNECTION_COUNT];
+static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
+// Per-slot counters invalidate security work after a link ends or is replaced.
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 
@@ -959,7 +960,7 @@ static int gap_conn_accept(
     uint64_t interval_unit_ticks,
     uint64_t window_delay_ticks
 ) {
-    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn_request_valid(frame)) return 0;
@@ -972,7 +973,7 @@ static int gap_conn_accept(
     if (free_slot < 0) return 0;
     // Must precede gap_conn->data_capacity; gap_conn uses this slot index.
     gap_conn_slot = free_slot;
-    gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_security_generation = &gap_security_generations[gap_conn_slot];
     gap_conn = &gap_conn_ctx[gap_conn_slot];
     gap_conn->data_capacity = data_capacity;

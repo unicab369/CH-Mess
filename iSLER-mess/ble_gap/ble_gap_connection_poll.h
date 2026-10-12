@@ -6,7 +6,7 @@
 
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
-    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     gap_send_security();
     if (gap_security->phase) return;
@@ -32,12 +32,12 @@ static void gap_conn_send_queued(void) {
 // Handle the radio callback under its connection context, then restore the
 // application's previously selected handle.
 void gap_hw_received(void) {
-    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
-    gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn = &gap_conn_ctx[gap_conn_slot];
 
     const uint8_t *frame = GAP_HW_RX_FRAME();
@@ -609,7 +609,7 @@ void gap_hw_received(void) {
         GAP_HW_PACKET_READY();
     }
     gap_conn_slot = previous_slot;
-    gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn = &gap_conn_ctx[gap_conn_slot];
 }
 
@@ -671,7 +671,7 @@ static uint64_t gap_conn_event_close_ticks(
 
 
 static void gap_conn_poll(void) {
-    gap_security_context *gap_security = &gap_security_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *gap_conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn->link_state.active) return;
 
