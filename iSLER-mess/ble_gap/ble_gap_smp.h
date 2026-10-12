@@ -1477,6 +1477,7 @@ static void gap_smp_receive_complete(void) {
 static void smp_bond_rx_complete(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (conn->is_central) {
         uint8_t keyset = smp->pairing.response[5];
         smp->pairing.phase = SMP_PHASE_BOND_TX;
@@ -1651,11 +1652,9 @@ static void gap_smp_poll(void) {
     }
 
     if ((pairing->phase == SMP_PHASE_PASSKEY ||
-         (pairing->phase == SMP_PHASE_CONFIRM &&
-            pairing->passkey_action == GAP_PASSKEY_DISPLAY) ||
+         (pairing->phase == SMP_PHASE_CONFIRM && pairing->passkey_action == GAP_PASSKEY_DISPLAY) ||
          (pairing->secure_connections && smp->secure.passkey_required &&
-          (pairing->phase == SMP_PHASE_SC_PUBLIC_KEY ||
-            pairing->phase == SMP_PHASE_SC_PASSKEY))) &&
+          (pairing->phase == SMP_PHASE_SC_PUBLIC_KEY || pairing->phase == SMP_PHASE_SC_PASSKEY))) &&
         pairing->passkey_action &&
         !pairing->user_notified &&
         gap_smp_user_request_callback
@@ -1679,8 +1678,8 @@ static void gap_smp_poll(void) {
         !pairing->numeric_notified && gap_smp_user_request_callback
     ) {
         int decision = gap_smp_user_request_callback(
-            gap_smp_user_request_context, SMP_USER_NUMERIC_COMPARISON,
-            smp->secure.numeric_value);
+                        gap_smp_user_request_context, SMP_USER_NUMERIC_COMPARISON,
+                        smp->secure.numeric_value);
         pairing->numeric_notified = 1;
         if (decision < 0) smp->secure.numeric_reply = 2;
         else if (decision > 0) smp->secure.numeric_reply = 1;
@@ -1704,6 +1703,7 @@ static void gap_smp_poll(void) {
             else if (smp->secure.peer_check_rx) {
                 uint8_t check[16], difference = 0;
                 gap_sc_dhkey_check(1, check);
+
                 for (uint8_t i = 0; i < 16; i++)
                     difference |= check[i] ^ smp->secure.peer_check[i];
 
@@ -1772,13 +1772,13 @@ static void gap_smp_poll(void) {
             int available = gap_smp_local_identity(irk, address);
             gap_wipe(irk, sizeof(irk));
             if (!available || !gap_smp_queue(
-                    SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))) {
+                    SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))
+            ) {
                 gap_wipe(address, sizeof(address));
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
             }
             gap_wipe(address, sizeof(address));
-            pairing->bond_tx_step =
-                conn->is_central ? 4 : 34;
+            pairing->bond_tx_step = conn->is_central ? 4 : 34;
         }
         else if (
             ((conn->is_central && pairing->bond_tx_step == 4) ||
@@ -1800,9 +1800,7 @@ static void gap_smp_poll(void) {
 
         }
         else {
-            if (conn->is_central &&
-                !smp_bond_store_generic(&conn->bond)
-            ) {
+            if (conn->is_central && !smp_bond_store_generic(&conn->bond)) {
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 gap_wipe(&conn->bond, sizeof(conn->bond));
                 return;
@@ -1831,8 +1829,8 @@ static void gap_smp_poll(void) {
 
         size_t max_len = conn->data_length.tx_octets;
         size_t time_len = conn->data_length.tx_time / 8;
-        time_len = time_len > 10 + (gap_security->tx_enabled ? 4 : 0) ?
-                    time_len - 10 - (gap_security->tx_enabled ? 4 : 0) : 0;
+        size_t time_overhead = 10 + (gap_security->tx_enabled ? 4 : 0);
+        time_len = time_len > time_overhead ? time_len - time_overhead : 0;
         if (max_len > time_len) max_len = time_len;
 
         size_t remaining = smp->tx_len - smp->tx_offset;
