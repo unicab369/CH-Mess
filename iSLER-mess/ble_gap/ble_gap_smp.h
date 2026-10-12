@@ -296,9 +296,6 @@ static inline int smp_poll(ble_smp *smp) {
 #ifndef BLE_GAP_SMP_CORE_TEST
 // LE Secure Connections OOB data exchanged through an authenticated channel.
 // Values use SMP byte order.
-typedef struct {
-    uint8_t random[16], confirm[16];
-} gap_oob_data;
 
 #define GAP_BOND_SLOTS 4
 #define GAP_BOND_VERSION_LEGACY 1
@@ -330,6 +327,11 @@ static struct {
     .secure_connections = 0,
     .keypress_notifications = 0
 };
+
+typedef struct {
+    uint8_t random[16], confirm[16];
+} gap_oob_data;
+
 typedef struct {
     uint8_t status, blocked, encryption_started;
     uint8_t bond_tx_waiting;
@@ -775,9 +777,9 @@ int gap_bonding_set(uint8_t enabled) {
 int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp.pairing.phase) return 0;
     gap_pair_cfg.secure_connections = enabled;
+
     if (!enabled) {
-        gap_wipe(&gap_oob_locals[gap_conn_slot],
-                 sizeof(gap_oob_locals[gap_conn_slot]));
+        gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
         gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
     }
     return 1;
@@ -791,35 +793,30 @@ int gap_sc_oob_get(gap_oob_data *out) {
         gap_security.phase
     ) return 0;
 
-    gap_wipe(&gap_oob_locals[gap_conn_slot],
-             sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_oob_local *local = &gap_oob_locals[gap_conn_slot];
+    gap_wipe(local, sizeof(*local));
     memset(&gap_smp.pairing.sc, 0, sizeof(gap_smp.pairing.sc));
-    uint8_t random[16] = {0}, confirm[16] = {0};
+    gap_oob_data oob = {0};
     uint32_t generation = gap_security_generation;
 
     if (!gap_sc_generate_key() ||
-        !smp_random_bytes(random, sizeof(random)) ||
+        !smp_random_bytes(oob.random, sizeof(oob.random)) ||
         !gap_conn.link_state.active || generation != gap_security_generation
     ) {
         gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
-        gap_wipe(random, sizeof(random));
-        gap_wipe(confirm, sizeof(confirm));
+        gap_wipe(&oob, sizeof(oob));
         return 0;
     }
 
     gap_sc_confirm_value(gap_smp.secure.public_key,
-                         gap_smp.secure.public_key, random, confirm);
-    gap_oob_locals[gap_conn_slot].oob.valid = 1;
-    memcpy(gap_oob_locals[gap_conn_slot].private_key,
-           gap_smp.secure.private_key, 32);
-    memcpy(gap_oob_locals[gap_conn_slot].public_key,
-           gap_smp.secure.public_key, 64);
-    memcpy(gap_oob_locals[gap_conn_slot].oob.data.random, random, 16);
-    memcpy(gap_oob_locals[gap_conn_slot].oob.data.confirm, confirm, 16);
-    *out = gap_oob_locals[gap_conn_slot].oob.data;
+                         gap_smp.secure.public_key, oob.random, oob.confirm);
+    local->oob.valid = 1;
+    memcpy(local->private_key, gap_smp.secure.private_key, 32);
+    memcpy(local->public_key, gap_smp.secure.public_key, 64);
+    local->oob.data = oob;
+    *out = local->oob.data;
     gap_wipe(&gap_smp.pairing.sc, sizeof(gap_smp.pairing.sc));
-    gap_wipe(random, sizeof(random));
-    gap_wipe(confirm, sizeof(confirm));
+    gap_wipe(&oob, sizeof(oob));
     return 1;
 }
 

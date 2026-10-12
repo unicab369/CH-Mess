@@ -471,134 +471,6 @@ static void gap_wipe(volatile void *data, size_t len) {
     while (len--) *bytes++ = 0;
 }
 
-// Validate a legacy CONNECT_IND and initialize its data-channel state.
-static int smp_link_init(void);
-
-static int gap_conn_accept(
-    const uint8_t frame[36],
-    uint64_t received_ticks,
-    uint64_t interval_unit_ticks,
-    uint64_t window_delay_ticks
-) {
-    if (!gap_conn_request_valid(frame)) return 0;
-    uint16_t data_capacity = GAP_HW_DATA_MAX();
-    if (data_capacity < 27) return 0;
-    if (data_capacity > GAP_CONN_DATA_MAX)
-        data_capacity = GAP_CONN_DATA_MAX;
-
-    int free_slot = gap_conn_free_slot();
-    if (free_slot < 0) return 0;
-    // Must precede gap_conn.data_capacity; gap_conn uses this slot index.
-    gap_conn_slot = free_slot;
-    gap_conn.data_capacity = data_capacity;
-
-    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
-    gap_wipe(&gap_security, sizeof(gap_security));
-    memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
-    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
-    memset(&gap_conn.schedule, 0, sizeof(gap_conn.schedule));
-    memset(&gap_conn.next_schedule, 0, sizeof(gap_conn.next_schedule));
-    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
-    memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
-    memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
-    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
-    memcpy(gap_conn.link.channel_map, frame + 30, 5);
-
-    gap_conn.initiator.type = (frame[0] >> 6) & 1;
-    gap_conn.responder.type = (frame[0] >> 7) & 1;
-    memcpy(gap_conn.initiator.address, frame + 2, 6);
-    memcpy(gap_conn.responder.address, frame + 8, 6);
-    memcpy(&gap_conn.peer_id, &gap_conn.initiator, sizeof(gap_conn.peer_id));
-
-    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
-    uint8_t count = 0;
-    for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            gap_conn.link.used_channels[count++] = channel;
-
-    gap_conn.link.access_address = (uint32_t)frame[14] |
-                                    (uint32_t)frame[15] << 8 |
-                                    (uint32_t)frame[16] << 16 |
-                                    (uint32_t)frame[17] << 24;
-    gap_conn.link.crc_init = (uint32_t)frame[18] |
-                            (uint32_t)frame[19] << 8 |
-                            (uint32_t)frame[20] << 16;
-
-    static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    gap_conn.link.next_ticks = received_ticks +
-                (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
-                interval_unit_ticks + window_delay_ticks;
-
-    gap_conn.link.used_count = count;
-    gap_conn.link.hop = frame[35] & 0x1f;
-    gap_conn.link.unmapped_channel = 0;
-    gap_conn.schedule.interval_125us = (uint16_t)(interval * 10);
-    gap_conn.link.last_rx_ms = GET_MILLIS();
-    gap_conn.link.first_event = 1;
-    gap_conn.link.expected_rx_sn = 0;
-    gap_conn.link.tx_sn = 0;
-    gap_conn.link.tx_pending = 0;
-    gap_conn.link.event_counter = 0;
-
-    gap_conn.schedule.latency = (uint16_t)frame[26] |
-                            (uint16_t)frame[27] << 8;
-    gap_conn.schedule.timeout = (uint16_t)frame[28] |
-                                            (uint16_t)frame[29] << 8;
-
-    // Initialize direct connection fields together.
-#if GAP_EXT_ADV_SUPPORT
-    gap_conn.sync_transfer_queued = 0;
-    gap_conn.sync_transfer_handle = 0;
-#endif
-
-    gap_conn.data_length = (gap_data_length){27, 328, 27, 328};
-    gap_conn.remote_data_length = (gap_data_length){27, 328, 27, 328};
-
-    gap_conn.window_size = frame[21];
-    gap_conn.tx_l2cap_remaining = 0;
-    gap_conn.connection_status = 0;
-    gap_conn.local_tx_octets = 27;
-    gap_conn.length_status = 0;
-    gap_conn.bond_load_pending = 1;
-    gap_conn.bonded = 0;
-    gap_conn.bond_restore_started = 0;
-    gap_conn.bond_restore_attempted = 0;
-    gap_conn.authenticated = gap_conn.encryption_key_size = 0;
-
-    // Initialize subrate and connection rate state.
-    gap_conn.schedule.factor = 1;
-    gap_conn.rate.set_queued = 0;
-    gap_conn.rate.request_queued = 0;
-    gap_conn.rate.update_pending = 0;
-    gap_conn.rate.req_pending = 0;
-
-    // Initialize channel classification and PHY state.
-    gap_conn.channel.classification_valid = 1;
-    gap_conn.channel.min_spacing_200ms = 5;
-    gap_conn.channel.max_delay_200ms = 5;
-    gap_conn.channel.status_changed_ms = GET_MILLIS();
-    gap_conn.phy.current.tx = gap_conn.phy.current.rx = GAP_PHY_1M;
-    gap_conn.phy.preferred.tx = gap_conn.phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
-    gap_conn.phy.status = 0;
-    gap_security_generation++;
-
-    if (++gap_conn_generations[gap_conn_slot] == 0)
-        gap_conn_generations[gap_conn_slot] = 1;
-
-    gap_conn.link_state.active = 1;
-    if (!smp_link_init()) {
-        gap_conn.link_state.active = 0;
-        return 0;
-    }
-
-    gap_adv.enabled = 0;
-#if GAP_EXT_ADV_SUPPORT
-    gap_ext_adv_connection_accept();
-#endif
-    return 1;
-}
-
 // Central initiation timing and configuration.
 // Initial LE connection settings. Connection interval is in 1.25 ms units,
 // supervision timeout in 10 ms units, and attempt timeout in milliseconds.
@@ -1068,6 +940,133 @@ int gap_use_public_address(void) {
 #include "ble_gap_connection.h"
 
 #include "ble_gap_smp.h"
+
+// Validate a legacy CONNECT_IND and initialize its data-channel state.
+static int gap_conn_accept(
+    const uint8_t frame[36],
+    uint64_t received_ticks,
+    uint64_t interval_unit_ticks,
+    uint64_t window_delay_ticks
+) {
+    if (!gap_conn_request_valid(frame)) return 0;
+    uint16_t data_capacity = GAP_HW_DATA_MAX();
+    if (data_capacity < 27) return 0;
+    if (data_capacity > GAP_CONN_DATA_MAX)
+        data_capacity = GAP_CONN_DATA_MAX;
+
+    int free_slot = gap_conn_free_slot();
+    if (free_slot < 0) return 0;
+    // Must precede gap_conn.data_capacity; gap_conn uses this slot index.
+    gap_conn_slot = free_slot;
+    gap_conn.data_capacity = data_capacity;
+
+    gap_wipe(&gap_conn.queue, sizeof(gap_conn.queue));
+    gap_wipe(&gap_security, sizeof(gap_security));
+    memset(&gap_conn.link_state, 0, sizeof(gap_conn.link_state));
+    memset(&gap_conn.pending, 0, sizeof(gap_conn.pending));
+    memset(&gap_conn.schedule, 0, sizeof(gap_conn.schedule));
+    memset(&gap_conn.next_schedule, 0, sizeof(gap_conn.next_schedule));
+    memset(&gap_conn.features, 0, sizeof(gap_conn.features));
+    memset(&gap_conn.channel, 0, sizeof(gap_conn.channel));
+    memset(&gap_conn.subrate, 0, sizeof(gap_conn.subrate));
+    memset(&gap_conn.bond, 0, sizeof(gap_conn.bond));
+    memcpy(gap_conn.link.channel_map, frame + 30, 5);
+
+    gap_conn.initiator.type = (frame[0] >> 6) & 1;
+    gap_conn.responder.type = (frame[0] >> 7) & 1;
+    memcpy(gap_conn.initiator.address, frame + 2, 6);
+    memcpy(gap_conn.responder.address, frame + 8, 6);
+    memcpy(&gap_conn.peer_id, &gap_conn.initiator, sizeof(gap_conn.peer_id));
+
+    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
+    uint8_t count = 0;
+    for (uint8_t channel = 0; channel < 37; channel++)
+        if (frame[30 + channel / 8] & (1 << (channel % 8)))
+            gap_conn.link.used_channels[count++] = channel;
+
+    gap_conn.link.access_address = (uint32_t)frame[14] |
+                                    (uint32_t)frame[15] << 8 |
+                                    (uint32_t)frame[16] << 16 |
+                                    (uint32_t)frame[17] << 24;
+    gap_conn.link.crc_init = (uint32_t)frame[18] |
+                            (uint32_t)frame[19] << 8 |
+                            (uint32_t)frame[20] << 16;
+
+    static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
+    gap_conn.link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    gap_conn.link.next_ticks = received_ticks +
+                (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
+                interval_unit_ticks + window_delay_ticks;
+
+    gap_conn.link.used_count = count;
+    gap_conn.link.hop = frame[35] & 0x1f;
+    gap_conn.link.unmapped_channel = 0;
+    gap_conn.schedule.interval_125us = (uint16_t)(interval * 10);
+    gap_conn.link.last_rx_ms = GET_MILLIS();
+    gap_conn.link.first_event = 1;
+    gap_conn.link.expected_rx_sn = 0;
+    gap_conn.link.tx_sn = 0;
+    gap_conn.link.tx_pending = 0;
+    gap_conn.link.event_counter = 0;
+
+    gap_conn.schedule.latency = (uint16_t)frame[26] |
+                            (uint16_t)frame[27] << 8;
+    gap_conn.schedule.timeout = (uint16_t)frame[28] |
+                                            (uint16_t)frame[29] << 8;
+
+    // Initialize direct connection fields together.
+#if GAP_EXT_ADV_SUPPORT
+    gap_conn.sync_transfer_queued = 0;
+    gap_conn.sync_transfer_handle = 0;
+#endif
+
+    gap_conn.data_length = (gap_data_length){27, 328, 27, 328};
+    gap_conn.remote_data_length = (gap_data_length){27, 328, 27, 328};
+
+    gap_conn.window_size = frame[21];
+    gap_conn.tx_l2cap_remaining = 0;
+    gap_conn.connection_status = 0;
+    gap_conn.local_tx_octets = 27;
+    gap_conn.length_status = 0;
+    gap_conn.bond_load_pending = 1;
+    gap_conn.bonded = 0;
+    gap_conn.bond_restore_started = 0;
+    gap_conn.bond_restore_attempted = 0;
+    gap_conn.authenticated = gap_conn.encryption_key_size = 0;
+
+    // Initialize subrate and connection rate state.
+    gap_conn.schedule.factor = 1;
+    gap_conn.rate.set_queued = 0;
+    gap_conn.rate.request_queued = 0;
+    gap_conn.rate.update_pending = 0;
+    gap_conn.rate.req_pending = 0;
+
+    // Initialize channel classification and PHY state.
+    gap_conn.channel.classification_valid = 1;
+    gap_conn.channel.min_spacing_200ms = 5;
+    gap_conn.channel.max_delay_200ms = 5;
+    gap_conn.channel.status_changed_ms = GET_MILLIS();
+    gap_conn.phy.current.tx = gap_conn.phy.current.rx = GAP_PHY_1M;
+    gap_conn.phy.preferred.tx = gap_conn.phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
+    gap_conn.phy.status = 0;
+    gap_security_generation++;
+
+    if (++gap_conn_generations[gap_conn_slot] == 0)
+        gap_conn_generations[gap_conn_slot] = 1;
+
+    gap_conn.link_state.active = 1;
+    if (!smp_link_init()) {
+        gap_conn.link_state.active = 0;
+        return 0;
+    }
+
+    gap_adv.enabled = 0;
+#if GAP_EXT_ADV_SUPPORT
+    gap_ext_adv_connection_accept();
+#endif
+    return 1;
+}
+
 
 #include "ble_gap_connection_poll.h"
 
