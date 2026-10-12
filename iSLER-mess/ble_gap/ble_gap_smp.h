@@ -1934,67 +1934,67 @@ static void gap_smp_poll(void) {
             return;
         }
     }
-    if (pairing->phase == SMP_PHASE_ENCRYPT) {
-        if (gap_encrypted()) {
-            if (!smp->encryption_started) {
-                gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
-            }
+    if (pairing->phase == SMP_PHASE_ENCRYPT && gap_encrypted()) {
+        if (!smp->encryption_started) {
+            gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
+        }
 
-            conn->authenticated = pairing->authenticated;
-            conn->encryption_key_size = pairing->key_size;
-            if (!pairing->bond_requested) { gap_smp_finish(0); return; }
-            if (!conn->is_central) {
-                memset(&conn->bond, 0, sizeof(conn->bond));
-                conn->bond.version = GAP_BOND_VERSION;
-                conn->bond.valid = 1;
-                conn->bond.peer = conn->peer;
-                conn->bond.key_size = pairing->key_size;
-                conn->bond.authenticated = pairing->authenticated;
-                smp_bond_peripheral_start();
-                return;
-            }
-            gap_bond_key bond_data;
-            uint8_t attempts = 0, nonzero;
-
-            do {
-                if (++attempts > 4 ||
-                    !smp_random_bytes((uint8_t *)&bond_data, sizeof(bond_data))
-                ) {
-                    gap_wipe(&bond_data, sizeof(bond_data));
-                    gap_smp_finish(SMP_FAIL_UNSPECIFIED);
-                    return;
-                }
-
-                if (!conn->link_state.active) {
-                    gap_wipe(&bond_data, sizeof(bond_data));
-                    return;
-                }
-                nonzero = 0;
-                for (unsigned i = 0; i < sizeof(bond_data.rand); i++)
-                    nonzero |= bond_data.rand[i];
-                for (unsigned i = 0; i < sizeof(bond_data.ediv); i++)
-                    nonzero |= bond_data.ediv[i];
-            } while (!nonzero);
-
+        conn->authenticated = pairing->authenticated;
+        conn->encryption_key_size = pairing->key_size;
+        if (!pairing->bond_requested) { gap_smp_finish(0); return; }
+        if (!conn->is_central) {
             memset(&conn->bond, 0, sizeof(conn->bond));
             conn->bond.version = GAP_BOND_VERSION;
             conn->bond.valid = 1;
             conn->bond.peer = conn->peer;
-            for (unsigned i = pairing->key_size; i < 16; i++)
-                bond_data.ltk[i] = 0;
-            conn->bond.central = bond_data;
             conn->bond.key_size = pairing->key_size;
             conn->bond.authenticated = pairing->authenticated;
-
-            gap_wipe(&bond_data, sizeof(bond_data));
-            pairing->bond_rx_step = 30;
-            pairing->phase = SMP_PHASE_BOND_RX;
-
-            if (!pairing->response[6])
-                smp_bond_rx_complete();
+            smp_bond_peripheral_start();
             return;
         }
+        gap_bond_key bond_data;
+        uint8_t attempts = 0, nonzero;
 
+        do {
+            if (++attempts > 4 ||
+                !smp_random_bytes((uint8_t *)&bond_data, sizeof(bond_data))
+            ) {
+                gap_wipe(&bond_data, sizeof(bond_data));
+                gap_smp_finish(SMP_FAIL_UNSPECIFIED);
+                return;
+            }
+
+            if (!conn->link_state.active) {
+                gap_wipe(&bond_data, sizeof(bond_data));
+                return;
+            }
+            nonzero = 0;
+            for (unsigned i = 0; i < sizeof(bond_data.rand); i++)
+                nonzero |= bond_data.rand[i];
+            for (unsigned i = 0; i < sizeof(bond_data.ediv); i++)
+                nonzero |= bond_data.ediv[i];
+        } while (!nonzero);
+
+        memset(&conn->bond, 0, sizeof(conn->bond));
+        conn->bond.version = GAP_BOND_VERSION;
+        conn->bond.valid = 1;
+        conn->bond.peer = conn->peer;
+        for (unsigned i = pairing->key_size; i < 16; i++)
+            bond_data.ltk[i] = 0;
+        conn->bond.central = bond_data;
+        conn->bond.key_size = pairing->key_size;
+        conn->bond.authenticated = pairing->authenticated;
+
+        gap_wipe(&bond_data, sizeof(bond_data));
+        pairing->bond_rx_step = 30;
+        pairing->phase = SMP_PHASE_BOND_RX;
+
+        if (!pairing->response[6])
+            smp_bond_rx_complete();
+        return;
+    }
+
+    if (pairing->phase == SMP_PHASE_ENCRYPT) {
         if (smp->encryption_started && !gap_security->phase && gap_security->status) {
             gap_smp_finish(SMP_FAIL_UNSPECIFIED);
             return;
