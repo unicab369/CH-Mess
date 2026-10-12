@@ -1422,21 +1422,18 @@ static void smp_bond_peripheral_start(void) {
         smp->pairing.bond_tx_step = 31;
         if (!gap_smp_queue(SMP_ENCRYPTION_INFORMATION, conn->bond.peripheral.ltk, 16)) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-            return;
         }
     }
     else if (keyset & GAP_KEY_DIST_IDENTITY) {
         smp->pairing.bond_tx_step = 33;
         if (!gap_smp_queue(SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-            return;
         }
     }
     else if (keyset & GAP_KEY_DIST_SIGNING) {
         smp->pairing.bond_tx_step = 35;
         if (!gap_smp_queue(SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
-            return;
         }
     }
     else {
@@ -1476,9 +1473,7 @@ static void gap_smp_poll(void) {
         }
     }
 
-    if (pairing->phase &&
-        (uint32_t)(GET_MILLIS() - smp->started_ms) >= 30000
-    ) {
+    if (pairing->phase && GET_MILLIS() - smp->started_ms >= 30000u) {
         gap_smp_finish(SMP_FAIL_UNSPECIFIED);
         smp->blocked = 1; // SMP cannot restart until a new physical link.
     }
@@ -1516,6 +1511,7 @@ static void gap_smp_poll(void) {
         if (decision < 0) smp->secure.numeric_reply = 2;
         else if (decision > 0) smp->secure.numeric_reply = 1;
     }
+
     if (!smp->tx_len && smp->bearer.tx_len)
         (void)smp_poll(&smp->bearer);
 
@@ -1604,7 +1600,7 @@ static void gap_smp_poll(void) {
             int available = gap_smp_local_identity(irk, address);
             gap_wipe(irk, sizeof(irk));
             if (!available || !gap_smp_queue(
-                    SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))
+                SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))
             ) {
                 gap_wipe(address, sizeof(address));
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED); return;
@@ -1774,7 +1770,10 @@ static void gap_smp_poll(void) {
 
         conn->authenticated = pairing->authenticated;
         conn->enc_key_size = pairing->key_size;
-        if (!pairing->bond_requested) { gap_smp_finish(0); return; }
+
+        if (!pairing->bond_requested)
+            gap_smp_finish(0); return;
+
         gap_bond_key bond_data = {0};
         uint8_t attempts = 0, nonzero;
 
@@ -1793,8 +1792,10 @@ static void gap_smp_poll(void) {
                     return;
                 }
                 nonzero = 0;
+
                 for (unsigned i = 0; i < sizeof(bond_data.rand); i++)
                     nonzero |= bond_data.rand[i];
+
                 for (unsigned i = 0; i < sizeof(bond_data.ediv); i++)
                     nonzero |= bond_data.ediv[i];
             } while (!nonzero);
@@ -1844,6 +1845,7 @@ static void gap_smp_poll(void) {
             // Check every byte so timing does not reveal where nonzero key data appears.
             for (unsigned i = 0; i < 8; i++)
                 zero |= gap_security->random[i];
+
             gap_key_reply(zero ? NULL : pairing->stk);
             smp->encryption_started = 1;
 
@@ -2093,8 +2095,7 @@ static void gap_smp_poll(void) {
                 pairing->request[3] |= 4;
                 smp->tx[7] |= 4;
             }
-            if ((pdu[1] & 0x10) &&
-                gap_pair_cfg.keypress_notifications) {
+            if ((pdu[1] & 0x10) && gap_pair_cfg.keypress_notifications) {
                 pairing->request[3] |= 0x10;
                 smp->tx[7] |= 0x10;
             }
@@ -2535,6 +2536,7 @@ static void gap_smp_poll(void) {
         uint8_t confirm[16], difference = 0;
         gap_sc_confirm_value(smp->secure.peer_public_key,
                              smp->secure.public_key, pdu + 1, confirm);
+
         for (uint8_t i = 0; i < 16; i++)
             difference |= confirm[i] ^ pairing->peer_confirm[i];
         gap_wipe(confirm, sizeof(confirm));
@@ -2553,6 +2555,7 @@ static void gap_smp_poll(void) {
             uint8_t next_nonce[16];
             uint32_t generation = (*gap_security_generation);
             int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
+
             if (!conn->link_state.active || generation != (*gap_security_generation)) {
                 gap_wipe(next_nonce, sizeof(next_nonce));
                 return;
