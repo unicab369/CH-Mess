@@ -93,6 +93,7 @@ int gap_ad_add_uuid32_list(
     uint8_t value[252];
     if (complete > 1 || (!uuids && count) || count > sizeof(value) / 4)
         return 0;
+
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
     for (size_t i = 0; i < count; i++)
         for (uint8_t b = 0; b < 4; b++)
@@ -204,8 +205,7 @@ int gap_ead_key_get(uint8_t out[24]) {
 
 // Erase the EAD key material so encrypted advertising cannot be produced.
 void gap_ead_key_clear(void) {
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_ead_key;
-    for (size_t i = 0; i < sizeof(gap_ead_key); i++) wipe[i] = 0;
+    gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 }
 
 static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
@@ -215,9 +215,10 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
 
     while (offset < len) {
         uint8_t type;
-        const uint8_t *value;
         size_t value_len;
+        const uint8_t *value;
         int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
+
         if (parse_result < 0) return 0;
         if (parse_result == 0) break;
         structures++;
@@ -310,6 +311,7 @@ static int gap_access_address_valid(uint32_t address) {
 
     for (uint8_t bit = 1; bit < 32; bit++) {
         uint8_t value = (address >> bit) & 1;
+
         if (value != previous) {
             transitions++;
             run = 1;
@@ -354,10 +356,12 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
 
         if (!field_len) {
             for (; offset < len; offset++)
-                if (data[offset]) return 0;
+                if (data[offset])
+                    return 0;
             break;
         }
-        if (offset + (size_t)field_len + 1 > len) return 0;
+        if (offset + (size_t)field_len + 1 > len)
+            return 0;
         offset += (size_t)field_len + 1;
     }
     return 1;
@@ -577,8 +581,8 @@ static int gap_conn_procedure_start(
           mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty())
     ) return 0;
 
-    uint8_t peer_type = mode == GAP_CONN_MODE_DIRECT ? gap_central.peer_type : 0;
-    const uint8_t *peer_address = mode == GAP_CONN_MODE_DIRECT ?
+    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer_type : 0;
+    const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
                                 gap_central.peer_address : NULL;
     uint32_t access_address;
     if (!gap_access_address_generate(&access_address)) return 0;
