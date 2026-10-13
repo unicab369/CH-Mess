@@ -462,7 +462,7 @@ static int gap_sc_derive_keys(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t ini_nonce[16], resp_nonce[16];
     uint8_t ini_address[7], resp_address[7];
-    uint8_t t[16], message[53] = {0}, ltk[16];
+    uint8_t t[16], message[53], ltk[16];
 
     static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
     static const uint8_t salt[16] = {
@@ -480,17 +480,18 @@ static int gap_sc_derive_keys(void) {
     resp_address[0] = conn->responder.type;
     gap_sc_reverse(resp_address + 1, conn->responder.address, 6);
 
+    memcpy(message + 1, key_id, sizeof(key_id));
+    memcpy(message + 5, ini_nonce, sizeof(ini_nonce));
+    memcpy(message + 21, resp_nonce, sizeof(resp_nonce));
+    memcpy(message + 37, ini_address, sizeof(ini_address));
+    memcpy(message + 44, resp_address, sizeof(resp_address));
+    message[51] = 1;
+    message[52] = 0;
+
     int ok = smp_port_cmac(salt, smp->secure.dhkey, 32, t);
 
     for (uint8_t counter = 0; ok && counter < 2; counter++) {
         message[0] = counter;
-        memcpy(message + 1, key_id, sizeof(key_id));
-        memcpy(message + 5, ini_nonce, sizeof(ini_nonce));
-        memcpy(message + 21, resp_nonce, sizeof(resp_nonce));
-        memcpy(message + 37, ini_address, sizeof(ini_address));
-        memcpy(message + 44, resp_address, sizeof(resp_address));
-        message[51] = 1;
-        message[52] = 0;
         ok = smp_port_cmac(t, message, sizeof(message),
                             counter ? ltk : smp->secure.mac_key);
     }
