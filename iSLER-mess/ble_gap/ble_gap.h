@@ -1044,34 +1044,26 @@ static int gap_conn_accept(
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->link.next_ticks = received_ticks +
-                            (uint64_t)((uint16_t)frame[22] |
-                            (uint16_t)frame[23] << 8) *
-                            unit_ticks + delay_ticks;
-
+    conn->link.next_ticks = received_ticks + (uint64_t)((uint16_t)frame[22] |
+                            (uint16_t)frame[23] << 8) * unit_ticks + delay_ticks;
     conn->link.used_count = count;
     conn->link.hop = frame[35] & 0x1f;
     conn->link.last_rx_ms = GET_MILLIS();
     conn->link.first_event = 1;
 
+    conn->schedule.factor = 1;
     conn->schedule.interval_125us = ((uint16_t)frame[24] |
                                     (uint16_t)frame[25] << 8) * 10;
     conn->schedule.latency = (uint16_t)frame[26] |
                             (uint16_t)frame[27] << 8;
     conn->schedule.timeout = (uint16_t)frame[28] |
                             (uint16_t)frame[29] << 8;
-
     conn->data_length = (gap_data_length){27, 328, 27, 328};
     conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
-
     conn->window_size = frame[21];
     conn->local_tx_octets = 27;
     conn->load_pending = 1;
 
-    // Initialize subrate and connection rate state.
-    conn->schedule.factor = 1;
-
-    // Initialize channel classification and PHY state.
     conn->channel.classification_valid = 1;
     conn->channel.min_spacing_200ms = 5;
     conn->channel.max_delay_200ms = 5;
