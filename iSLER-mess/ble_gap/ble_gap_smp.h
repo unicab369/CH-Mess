@@ -966,13 +966,6 @@ int gap_pair(void) {
     smp->pairing.local_is_central = conn->is_central;
     smp->pairing.phase = conn->is_central ?
                     SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
-    smp->pairing.bond_requested = 0;
-    smp->pairing.bond_tx_step = 0;
-    smp->pairing.bond_rx_step = 0;
-    smp->pairing.user_notified = 0;
-    smp->pairing.numeric_notified = 0;
-    smp->pairing.keypress_active = 0;
-    smp->pairing.secure_connections = 0;
     smp->previous_bond_valid = conn->is_central && conn->bonded;
     smp->previous_bond = (smp->previous_bond_valid) ? conn->bond : (gap_bond){0};
     smp->status = GAP_CONNECTION_PENDING;
@@ -1205,7 +1198,6 @@ static void smp_bond_abort(void) {
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
     }
-    smp->pairing.bond_tx_step = 0;
 }
 
 // Stop the procedure and erase temporary secrets on every success/failure path.
@@ -1218,6 +1210,10 @@ static void gap_smp_finish(uint8_t status) {
         (smp->pairing.phase == SMP_PHASE_BOND_TX ||
          smp->pairing.phase == SMP_PHASE_BOND_RX)
     ) gap_wipe(&conn->bond, sizeof(conn->bond));
+
+    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
 
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
@@ -1235,11 +1231,6 @@ static void gap_smp_finish(uint8_t status) {
     smp->status = status;
     smp->encryption_started = 0;
     smp->l2cap_rx_pending = 0;
-
-    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
-    gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
-
     smp->previous_bond_valid = 0;
 }
 
@@ -1492,7 +1483,6 @@ static void gap_smp_poll(void) {
 
     if (pairing->phase && GET_MILLIS() - smp->started_ms >= 30000u) {
         gap_smp_finish(SMP_FAIL_UNSPECIFIED);
-        smp->blocked = 1; // SMP cannot restart until a new physical link.
     }
 
     if ((pairing->phase == SMP_PHASE_PASSKEY ||
