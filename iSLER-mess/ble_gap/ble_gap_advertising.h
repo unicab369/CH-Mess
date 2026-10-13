@@ -408,11 +408,9 @@ static inline int gap_adv_start_payload(
 #endif
 
     if (gap_conn_busy() || gap_central.active ||
-        (pdu_type != 0x00 && pdu_type != 0x02 && pdu_type != 0x06) ||
         !gap_ad_data_valid(data, data_len) ||
         !gap_ad_data_valid(scan_response, resp_len) ||
-        interval_ms < 100 || interval_ms > 10240 ||
-        (pdu_type == 0x02 && resp_len)
+        interval_ms < 100 || interval_ms > 10240
     ) {
         return 0;
     }
