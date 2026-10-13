@@ -509,10 +509,12 @@ static uint16_t gap_conn_rate_min_interval(void) {
     uint32_t rx_time = conn->data_length.rx_time;
     uint32_t coded_limit = (uint32_t)conn->data_length.rx_octets * 64 + 976;
     uint8_t peripheral_tx_phy = conn->is_central ? conn->phy.current.rx :
-        conn->phy.current.tx;
+                                conn->phy.current.tx;
     if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704)
         rx_time = 2704;
-    if (coded_limit < rx_time) rx_time = coded_limit;
+    if (coded_limit < rx_time)
+        rx_time = coded_limit;
+
     uint32_t required = 300 + rx_time +
         ((conn->phy.current.tx == GAP_PHY_CODED ||
           conn->phy.current.rx == GAP_PHY_CODED) ? 2704 : 328);
@@ -521,24 +523,37 @@ static uint16_t gap_conn_rate_min_interval(void) {
 
 static void gap_security_derive(void);
 
+static uint8_t gap_conn_unknown_response(uint8_t opcode) {
+    gap_tx_frame[1] = 2;
+    gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
+    gap_tx_frame[3] = opcode;
+    return 0;
+}
+
 static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     uint8_t authenticated, uint64_t connection_anchor_ticks,
-    uint16_t connection_event_counter) {
+    uint16_t connection_event_counter
+) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     switch (frame[2]) {
     case 0x03: { // LL_ENC_REQ (Central to Peripheral)
-        if (conn->is_central || frame[1] != 23) goto unknown_control_pdu;
         uint8_t restart = gap_security->phase == GAP_ENC_PERIPHERAL_RESTART;
-        if ((!restart && (gap_security->phase || gap_security->rx_enabled)) ||
+
+        if (conn->is_central || frame[1] != 23 ||
+            (!restart && (gap_security->phase || gap_security->rx_enabled)) ||
             conn->pending.timing_update || conn->pending.channel_map ||
-            conn->pending.phy_update) goto unknown_control_pdu;
+            conn->pending.phy_update
+        ) return gap_conn_unknown_response(frame[2]);
+
         uint8_t entropy[12];
         if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
             gap_tx_frame[3] = 0x03;
             gap_tx_frame[4] = gap_security->status = 0x1f;
+
             if (restart) {
                 conn->link_state.terminate_after_reply = 1;
                 gap_tx_frame[1] = 2;
@@ -547,53 +562,68 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             }
             break;
         }
+
         gap_security->refreshing = restart;
-        memcpy(gap_security->random, frame + 3, 8);
         gap_security->ediv = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
+        memcpy(gap_security->random, frame + 3, 8);
         memcpy(gap_security->skd, frame + 13, 8);
         memcpy(gap_security->skd + 8, entropy, 8);
         memcpy(gap_security->iv, frame + 21, 4);
         memcpy(gap_security->iv + 4, entropy + 8, 4);
+
         gap_tx_frame[1] = 13;
         gap_tx_frame[2] = 0x04; // LL_ENC_RSP
         memcpy(gap_tx_frame + 3, entropy, 12);
         gap_wipe(entropy, sizeof(entropy));
         gap_security->status = GAP_CONNECTION_PENDING;
-        gap_security->started_ms = GET_MILLIS();
         gap_security->phase = GAP_ENC_KEY_REQUEST;
+        gap_security->started_ms = GET_MILLIS();
         break;
     }
     case 0x04: // LL_ENC_RSP
         if (!conn->is_central || frame[1] != 13 ||
-            gap_security->phase != GAP_ENC_WAIT_RSP) goto unknown_control_pdu;
+            gap_security->phase != GAP_ENC_WAIT_RSP
+        ) return gap_conn_unknown_response(frame[2]);
+
         memcpy(gap_security->skd + 8, frame + 3, 8);
         memcpy(gap_security->iv + 4, frame + 11, 4);
         gap_security_derive();
         gap_security->phase = GAP_ENC_WAIT_START;
         break;
+
     case 0x05: // LL_START_ENC_REQ
         if (!conn->is_central || frame[1] != 1 ||
-            gap_security->phase != GAP_ENC_WAIT_START) goto unknown_control_pdu;
-        gap_security->tx_enabled = gap_security->rx_enabled = 1;
+            gap_security->phase != GAP_ENC_WAIT_START
+        ) return gap_conn_unknown_response(frame[2]);
+
+        gap_security->tx_enabled = 1;
+        gap_security->rx_enabled = 1;
         gap_security->phase = GAP_ENC_WAIT_FINAL;
         gap_tx_frame[1] = 1;
         gap_tx_frame[2] = 0x06; // Encrypted LL_START_ENC_RSP.
         break;
+
     case 0x06: // LL_START_ENC_RSP
         if (frame[1] != 1 || !authenticated ||
             (gap_security->phase != GAP_ENC_WAIT_FINAL &&
-             gap_security->phase != GAP_ENC_PERIPHERAL_START)) goto unknown_control_pdu;
+             gap_security->phase != GAP_ENC_PERIPHERAL_START)
+        ) return gap_conn_unknown_response(frame[2]);
+
         if (!conn->is_central) {
             gap_tx_frame[1] = 1;
             gap_tx_frame[2] = 0x06;
         }
-        gap_security->tx_enabled = gap_security->rx_enabled = 1;
+        gap_security->tx_enabled = 1;
+        gap_security->rx_enabled = 1;
         gap_security->phase = GAP_ENC_IDLE;
         gap_security->status = 0;
         break;
+
     case 0x0a: // LL_PAUSE_ENC_REQ uses the old encrypted session.
-        if (conn->is_central || frame[1] != 1 || !authenticated ||
-            gap_security->phase) goto unknown_control_pdu;
+        if (conn->is_central || frame[1] != 1 ||
+            !authenticated || gap_security->phase
+        ) return gap_conn_unknown_response(frame[2]);
+
         gap_tx_frame[1] = 1;
         gap_tx_frame[2] = 0x0b;
         gap_security->rx_enabled = 0;
@@ -601,62 +631,61 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security->started_ms = GET_MILLIS();
         gap_security->status = GAP_CONNECTION_PENDING;
         break;
+
     case 0x0b: // LL_PAUSE_ENC_RSP
-        if (frame[1] != 1) goto unknown_control_pdu;
-        if (conn->is_central && gap_security->phase == GAP_ENC_WAIT_PAUSE &&
-            authenticated) {
+        if (frame[1] != 1)
+            return gap_conn_unknown_response(frame[2]);
+        if (conn->is_central && authenticated &&
+            gap_security->phase == GAP_ENC_WAIT_PAUSE
+        ) {
             gap_security->tx_enabled = gap_security->rx_enabled = 0;
             gap_tx_frame[1] = 1;
             gap_tx_frame[2] = 0x0b; // Central's final response is plaintext.
             gap_security->phase = GAP_ENC_RESTART_QUEUED;
-        } else if (!conn->is_central &&
-                   gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE && !authenticated) {
+        }
+        else if (!conn->is_central && !authenticated &&
+            gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE
+        ) {
             gap_security->tx_enabled = gap_security->rx_enabled = 0;
             gap_security->phase = GAP_ENC_PERIPHERAL_RESTART;
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
-        } else
-            goto unknown_control_pdu;
+        }
+        else return gap_conn_unknown_response(frame[2]);
         break;
+
     case 0x00: { // LL_CONNECTION_UPDATE_IND
         if (!conn->is_central && frame[1] == 12 &&
             !conn->pending.timing_update && !gap_conn_rate_busy()
         ) {
             uint8_t win_size = frame[3];
-            uint16_t win_offset = (uint16_t)frame[4] |
-                (uint16_t)frame[5] << 8;
-            uint16_t interval = (uint16_t)frame[6] |
-                (uint16_t)frame[7] << 8;
-            uint16_t latency = (uint16_t)frame[8] |
-                (uint16_t)frame[9] << 8;
-            uint16_t timeout = (uint16_t)frame[10] |
-                (uint16_t)frame[11] << 8;
-            uint16_t instant = (uint16_t)frame[12] |
-                (uint16_t)frame[13] << 8;
-            uint16_t factor = (uint32_t)interval * 10 ==
-                conn->schedule.interval_125us ?
-                conn->schedule.factor : 1;
+            uint16_t win_offset = (uint16_t)frame[4] | (uint16_t)frame[5] << 8;
+            uint16_t interval = (uint16_t)frame[6] | (uint16_t)frame[7] << 8;
+            uint16_t latency = (uint16_t)frame[8] | (uint16_t)frame[9] << 8;
+            uint16_t timeout = (uint16_t)frame[10] | (uint16_t)frame[11] << 8;
+            uint16_t instant = (uint16_t)frame[12] | (uint16_t)frame[13] << 8;
+            uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
+                                conn->schedule.factor : 1;
+
             if (win_size && win_size <= 8 && interval >= 6 &&
                 interval <= 3200 && win_size < interval &&
                 win_offset <= interval && latency <= 499 &&
                 timeout >= 10 && timeout <= 3200 &&
-                (uint32_t)timeout * 80 >
-                    2 * (uint32_t)(latency + 1) * interval *
-                        10 * factor
+                (uint32_t)timeout * 80 > 2 * (uint32_t)(latency + 1) * interval * 10 * factor
             ) {
-                if ((uint16_t)(instant - conn->link.event_counter) >=
-                    0x8000
-                ) {
+                if ((uint16_t)(instant - conn->link.event_counter) >= 0x8000) {
                     gap_conn_end();
                     return 1;
                 }
+
                 conn->update_window_size = win_size;
                 conn->update_win_offset = win_offset;
+                conn->update_instant = instant;
                 conn->new_params.interval = interval;
                 conn->new_params.latency = latency;
                 conn->new_params.supervision_timeout = timeout;
-                conn->update_instant = instant;
                 conn->pending.timing_update = 1;
                 conn->pending.params = conn->pending.params_local = 0;
+
                 if (conn->queue.local_params) {
                     conn->queue.local_params = 0;
                     conn->features.request_pending = 0;
@@ -676,11 +705,13 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             !conn->pending.channel_map
         ) {
             uint8_t used_count = 0;
+
             for (uint8_t channel = 0; channel < 37; channel++)
                 if (frame[3 + channel / 8] &
                     (1 << (channel % 8))) used_count++;
-            uint16_t instant = (uint16_t)frame[8] |
-                (uint16_t)frame[9] << 8;
+
+            uint16_t instant = (uint16_t)frame[8] | (uint16_t)frame[9] << 8;
+
             if (used_count >= 2 && !(frame[7] & 0xe0) &&
                 (uint16_t)(instant - conn->link.event_counter) < 0x8000 &&
                 instant != conn->link.event_counter
@@ -702,7 +733,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         uint8_t error = 0x1e; // Invalid LL parameters.
         if (frame[1] != 24 || (frame[2] == 0x10 &&
             (!conn->is_central || !conn->pending.params ||
-             !conn->pending.params_local))) goto reject_parameters;
+             !conn->pending.params_local))
+        ) goto reject_parameters;
+
         uint16_t minimum = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
         uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
@@ -975,9 +1008,9 @@ reject_parameters:
                 frame[10];
             break;
         }
-        goto unknown_control_pdu;
+        return gap_conn_unknown_response(frame[2]);
     case 0x0c: // LL_VERSION_IND
-        if (frame[1] != 6) goto unknown_control_pdu;
+        if (frame[1] != 6) return gap_conn_unknown_response(frame[2]);
         if (!conn->link_state.version_ind_sent) {
             gap_tx_frame[1] = 6;
             gap_tx_frame[2] = 0x0c;
@@ -990,7 +1023,7 @@ reject_parameters:
         }
         break;
     case 0x07: // LL_UNKNOWN_RSP
-        if (frame[1] != 2) goto unknown_control_pdu;
+        if (frame[1] != 2) return gap_conn_unknown_response(frame[2]);
         if (frame[3] == 0x28 &&
             conn->channel.report_pending
         ) {
@@ -1074,7 +1107,7 @@ reject_parameters:
         }
         break;
     case 0x09: // LL_FEATURE_RSP
-        if (frame[1] != 9) goto unknown_control_pdu;
+        if (frame[1] != 9) return gap_conn_unknown_response(frame[2]);
         conn->features.known = 1;
         conn->features.peer[0] = frame[3];
         conn->features.peer[1] = frame[4];
@@ -1091,10 +1124,10 @@ reject_parameters:
     case 0x2c: { // LL_FEATURE_EXT_RSP
         if (frame[1] != 11 ||
             !(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED))
-            goto unknown_control_pdu;
+            return gap_conn_unknown_response(frame[2]);
         uint8_t page = frame[4];
         if (page != 1)
-            goto unknown_control_pdu;
+            return gap_conn_unknown_response(frame[2]);
         if (frame[2] == 0x2b) {
             gap_tx_frame[1] = 11;
             gap_tx_frame[2] = 0x2c;
@@ -1105,7 +1138,7 @@ reject_parameters:
                 GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
         } else {
             if (!conn->features.ext_pending || page != 1)
-                goto unknown_control_pdu;
+                return gap_conn_unknown_response(frame[2]);
             memcpy(conn->features.peer_page1, frame + 5, 8);
             conn->features.page1_known = 1;
             conn->features.ext_pending = 0;
@@ -1114,7 +1147,7 @@ reject_parameters:
     }
     case 0x3e: { // LL_CONNECTION_RATE_REQ (Peripheral to Central).
         uint8_t error = 0x1e;
-        if (!conn->is_central) goto unknown_control_pdu;
+        if (!conn->is_central) return gap_conn_unknown_response(frame[2]);
         if (frame[1] != 27) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1215,8 +1248,8 @@ reject_parameters:
         break;
     }
     case 0x3f: { // LL_CONNECTION_RATE_IND (Central to Peripheral).
-        if (conn->is_central) goto unknown_control_pdu;
-        if (frame[1] != 15) goto unknown_control_pdu;
+        if (conn->is_central) return gap_conn_unknown_response(frame[2]);
+        if (frame[1] != 15) return gap_conn_unknown_response(frame[2]);
         uint16_t win_offset = (uint16_t)frame[3] |
             (uint16_t)frame[4] << 8;
         uint16_t interval = (uint16_t)frame[5] |
@@ -1266,7 +1299,7 @@ reject_parameters:
         break;
     }
     case 0x26: { // LL_SUBRATE_REQ (Peripheral to Central).
-        if (!conn->is_central) goto unknown_control_pdu;
+        if (!conn->is_central) return gap_conn_unknown_response(frame[2]);
         if (frame[1] != 11) {
             conn->subrate.status = 0x1e;
             gap_tx_frame[1] = 3;
@@ -1335,7 +1368,7 @@ reject_parameters:
         break;
     }
     case 0x27: { // LL_SUBRATE_IND (Central to Peripheral).
-        if (conn->is_central) goto unknown_control_pdu;
+        if (conn->is_central) return gap_conn_unknown_response(frame[2]);
         if (frame[1] != 11) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1388,7 +1421,7 @@ reject_parameters:
             frame[3] > 1 || frame[4] < 5 || frame[4] > 150 ||
             frame[5] < frame[4] || frame[5] > 150
         ) {
-            goto unknown_control_pdu;
+            return gap_conn_unknown_response(frame[2]);
         }
         conn->channel.enabled = frame[3];
         conn->channel.min_spacing_200ms = frame[4];
@@ -1405,7 +1438,7 @@ reject_parameters:
               GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
             !gap_class_valid(frame + 3)
         ) {
-            goto unknown_control_pdu;
+            return gap_conn_unknown_response(frame[2]);
         }
         memcpy(conn->channel.peer_classification, frame + 3,
                GAP_CHANNEL_CLASSIFICATION_BYTES);
@@ -1414,7 +1447,7 @@ reject_parameters:
     }
     case 0x14: // LL_LENGTH_REQ
     case 0x15: // LL_LENGTH_RSP
-        if (frame[1] != 9) goto unknown_control_pdu;
+        if (frame[1] != 9) return gap_conn_unknown_response(frame[2]);
         {
             uint16_t values[4];
             for (uint8_t i = 0; i < 4; i++)
@@ -1462,7 +1495,7 @@ reject_parameters:
         break;
     case 0x16: // LL_PHY_REQ
     case 0x17: // LL_PHY_RSP
-        if (!(GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
+        if (!(GAP_HW_PHY_MASK() & 6)) return gap_conn_unknown_response(frame[2]);
         if (frame[1] != 3 || !frame[3] || !frame[4] ||
             (frame[3] & ~7) || (frame[4] & ~7)
         ) {
@@ -1531,8 +1564,8 @@ reject_parameters:
         break;
     case 0x18: { // LL_PHY_UPDATE_IND (Central to Peripheral)
         if (conn->is_central || frame[1] != 5 ||
-            !(GAP_HW_PHY_MASK() & 6)) goto unknown_control_pdu;
-        if (conn->pending.phy_update) goto unknown_control_pdu;
+            !(GAP_HW_PHY_MASK() & 6)) return gap_conn_unknown_response(frame[2]);
+        if (conn->pending.phy_update) return gap_conn_unknown_response(frame[2]);
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
         uint8_t tx = frame[4], rx = frame[3];
         // Invalid or unsupported selections leave that direction unchanged.
@@ -1558,14 +1591,14 @@ reject_parameters:
     }
 #if GAP_EXT_ADV_SUPPORT
     case 0x1c: // LL_PERIODIC_SYNC_IND
-        if (frame[1] != 35) goto unknown_control_pdu;
+        if (frame[1] != 35) return gap_conn_unknown_response(frame[2]);
         (void)gap_periodic_sync_transfer_receive(frame,
             connection_anchor_ticks,
             connection_event_counter);
         break;
 #else
     case 0x1c:
-        goto unknown_control_pdu;
+        return gap_conn_unknown_response(frame[2]);
 #endif
     // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
     // Optional newer control procedures are not advertised.
@@ -1574,13 +1607,9 @@ reject_parameters:
     case 0x1f: case 0x20: case 0x21: case 0x22:
     case 0x23: case 0x24: case 0x25:
     case 0x2a:
-        goto unknown_control_pdu;
+        return gap_conn_unknown_response(frame[2]);
     default:
-unknown_control_pdu:
-        gap_tx_frame[1] = 2;
-        gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
-        gap_tx_frame[3] = frame[2];
-        break;
+        return gap_conn_unknown_response(frame[2]);
     }
     return 0;
 }
