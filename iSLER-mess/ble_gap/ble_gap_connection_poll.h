@@ -810,14 +810,44 @@ static void gap_conn_poll(void) {
     if (open_ticks > early_ticks) open_ticks -= early_ticks;
     if (conn->link_state.rx_armed || now < open_ticks) return;
 
-    if (!gap_subrate_active(conn->link.event_counter)) {
-        // Skipping radio work does not skip the connection event counter or
-        // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
-        conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
-        conn->link.next_ticks += gap_conn_interval_ticks();
-        gap_conn_event_advance();
-        gap_conn_update_apply(0);
-        return;
+    // During a Central's subrate update, wake for either the old or new
+    // subrated events until the indication is acknowledged.
+    uint16_t event = conn->link.event_counter;
+    if (!(conn->subrate.force_event ||
+        (conn->rate.update_pending &&
+         (event == conn->next_schedule.instant ||
+          event == (uint16_t)(conn->next_schedule.instant - 1))) ||
+        (conn->rate.update_pending && conn->is_central &&
+         conn->link.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
+         gap_tx_frame[1] == 15 && gap_tx_frame[2] == 0x3f) ||
+        (conn->rate.update_pending && !conn->is_central &&
+         conn->rate.ack_waiting &&
+         (uint16_t)(conn->next_schedule.instant - event) < 0x8000) ||
+        (conn->pending.timing_update &&
+         (event == conn->update_instant ||
+          event == (uint16_t)(conn->update_instant - 1))))
+    ) {
+        int32_t event_difference = (int32_t)event - (int32_t)conn->schedule.base_event;
+        uint8_t subrated = conn->schedule.factor &&
+            event_difference % conn->schedule.factor == 0;
+
+        if (conn->is_central && conn->subrate.transition) {
+            int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
+            if (conn->next_schedule.factor &&
+                pending_offset % conn->next_schedule.factor == 0)
+                subrated = 1;
+        }
+        if (!conn->subrate.continuations &&
+            (!subrated || (!conn->is_central && conn->subrate.latency_remaining))
+        ) {
+            // Skipping radio work does not skip the connection event counter or
+            // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
+            conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
+            conn->link.next_ticks += gap_conn_interval_ticks();
+            gap_conn_event_advance();
+            gap_conn_update_apply(0);
+            return;
+        }
     }
 
 #if GAP_EXT_ADV_SUPPORT

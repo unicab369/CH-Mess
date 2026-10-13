@@ -170,8 +170,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             conn->link.next_ticks = conn->link.next_ticks - gap_conn_interval_ticks() +
                     (uint64_t)conn->new_params.interval * HW_TICKS_FROM_US(1250);
         } else {
-            conn->link.next_ticks +=
-                (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
+            conn->link.next_ticks += (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
         }
 
         if ((uint32_t)conn->new_params.interval * 10 != conn->schedule.interval_125us ) {
@@ -179,9 +178,10 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             // continuation events at the connection update Instant.
             conn->schedule.factor = 1;
             conn->schedule.continuation = 0;
-            conn->subrate.continuations =
-                conn->subrate.latency_remaining = 0;
-            conn->subrate.transition = conn->subrate.pending = 0;
+            conn->subrate.continuations = 0;
+            conn->subrate.latency_remaining = 0;
+            conn->subrate.transition = 0;
+            conn->subrate.pending = 0;
             conn->subrate.update_queued = 0;
         }
 
@@ -235,45 +235,6 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         if (conn->is_central && conn->connection_status == GAP_CONNECTION_PENDING)
             conn->connection_status = 0;
     }
-}
-
-// Choose the events on which this role must wake. During a Central's subrate
-// update, use the union of old and new subrated events until the IND is ACKed.
-static uint8_t gap_subrate_active(uint16_t event) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (conn->subrate.force_event) return 1;
-    if (conn->rate.update_pending && (event == conn->next_schedule.instant ||
-         event == (uint16_t)(conn->next_schedule.instant - 1))
-    ) return 1;
-
-    if (conn->rate.update_pending && conn->is_central &&
-        conn->link.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
-        gap_tx_frame[1] == 15 && gap_tx_frame[2] == 0x3f
-    ) return 1;
-
-    if (conn->rate.update_pending && !conn->is_central &&
-        conn->rate.ack_waiting
-    ) {
-        if ((uint16_t)(conn->next_schedule.instant - event) < 0x8000)
-            return 1;
-    }
-
-    if (conn->pending.timing_update && (event == conn->update_instant ||
-         event == (uint16_t)(conn->update_instant - 1))
-    ) return 1;
-
-    int32_t event_difference = (int32_t)event - (int32_t)conn->schedule.base_event;
-    uint8_t subrated = conn->schedule.factor && event_difference % conn->schedule.factor == 0;
-
-    if (conn->is_central && conn->subrate.transition) {
-        int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-        if (conn->next_schedule.factor &&
-            pending_offset % conn->next_schedule.factor == 0)
-            subrated = 1;
-    }
-    if (conn->subrate.continuations) return 1;
-    if (conn->is_central) return subrated;
-    return subrated && conn->subrate.latency_remaining == 0;
 }
 
 // Advance one connection event, including events skipped by subrating. The
