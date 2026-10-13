@@ -1009,7 +1009,7 @@ uint8_t gap_pairing_status(void) {
 static int gap_bond_valid(const gap_bond *bond) {
     if (!bond || (bond->version != GAP_BOND_VERSION &&
         bond->version != GAP_BOND_VERSION_CSRK &&
-        bond->version != GAP_BOND_VERSION_LEGACY) || !bond->valid ||
+        bond->version != GAP_BOND_VERSION_LEGACY) || bond->valid != 1 ||
         bond->peer.type > 1 ||
         (bond->peer.type && (bond->peer.address[5] & 0xc0) != 0xc0) ||
         bond->key_size < 7 || bond->key_size > 16 || bond->authenticated > 1 ||
@@ -1093,7 +1093,7 @@ static int smp_bond_load(void) {
             return 0;
         }
 
-        if (loaded && stored.valid == 1 && gap_bond_valid(&stored) &&
+        if (loaded && gap_bond_valid(&stored) &&
             stored.peer.type == conn->peer.type &&
             memcmp(stored.peer.address, conn->peer.address,
                    sizeof(conn->peer.address)) == 0
@@ -1119,7 +1119,7 @@ static int smp_bond_store(const gap_bond *bond) {
     // Normalize legacy versions before validating the current bond fields.
     stored.version = GAP_BOND_VERSION;
 
-    if (stored.valid != 1 || !gap_bond_valid(&stored)) {
+    if (!gap_bond_valid(&stored)) {
         gap_wipe(&stored, sizeof(stored));
         return 0;
     }
