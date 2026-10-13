@@ -561,43 +561,45 @@ static uint32_t gap_sc_numeric_value(void) {
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t na[16], nb[16], a1[7], a2[7], check[16], r[16] = {0};
+    uint8_t check[16], message[65];
+    uint8_t local_first = !!from_central == !!conn->is_central;
+
+    // Bytes 0-15: first nonce.
+    gap_sc_reverse(message, local_first ? smp->random : smp->peer_random, 16);
+    // Bytes 16-31: second nonce.
+    gap_sc_reverse(message + 16, local_first ? smp->peer_random : smp->random, 16);
+    // Bytes 32-47: R (OOB random, passkey, or zero).
+    memset(message + 32, 0, 16);
 
     if (smp->secure.oob_active) {
-        const uint8_t *oob_random = from_central == conn->is_central ?
+        const uint8_t *oob_random = local_first ?
                 smp->secure.oob_local_random : smp->oob_peer.random;
-        gap_sc_reverse(r, oob_random, 16);
+        gap_sc_reverse(message + 32, oob_random, 16);
     }
     else if (smp->secure.passkey_required) {
-        r[12] = smp->pairing.tk[3];
-        r[13] = smp->pairing.tk[2];
-        r[14] = smp->pairing.tk[1];
-        r[15] = smp->pairing.tk[0];
+        message[44] = smp->pairing.tk[3];
+        message[45] = smp->pairing.tk[2];
+        message[46] = smp->pairing.tk[1];
+        message[47] = smp->pairing.tk[0];
     }
 
-    gap_sc_reverse(na, conn->is_central ? smp->random : smp->peer_random, 16);
-    gap_sc_reverse(nb, conn->is_central ? smp->peer_random : smp->random, 16);
-    a1[0] = conn->initiator.type;
-    gap_sc_reverse(a1 + 1, conn->initiator.address, 6);
-    a2[0] = conn->responder.type;
-    gap_sc_reverse(a2 + 1, conn->responder.address, 6);
     const uint8_t *iocap = from_central ? smp->pairing.request + 1 :
                                         smp->pairing.response + 1;
-    uint8_t message[65];
-    memcpy(message, from_central ? na : nb, 16);
-    memcpy(message + 16, from_central ? nb : na, 16);
-    memcpy(message + 32, r, 16);
+    // Bytes 48-50: IO capabilities.
     memcpy(message + 48, iocap, 3);
-    memcpy(message + 51, from_central ? a1 : a2, 7);
-    memcpy(message + 58, from_central ? a2 : a1, 7);
+    // Bytes 51-57: first address (type + 6 address bytes).
+    message[51] = from_central ? conn->initiator.type : conn->responder.type;
+    gap_sc_reverse(message + 52, from_central ? conn->initiator.address :
+                   conn->responder.address, 6);
+    // Bytes 58-64: second address (type + 6 address bytes).
+    message[58] = from_central ? conn->responder.type : conn->initiator.type;
+    gap_sc_reverse(message + 59, from_central ? conn->responder.address :
+                   conn->initiator.address, 6);
 
     if (!smp_port_cmac(smp->secure.mac_key, message, sizeof(message), check))
         memset(check, 0, sizeof(check));
     gap_sc_reverse(out_air, check, 16);
-    gap_wipe(na, sizeof(na));
-    gap_wipe(nb, sizeof(nb));
     gap_wipe(check, sizeof(check));
-    gap_wipe(r, sizeof(r));
     gap_wipe(message, sizeof(message));
 }
 
