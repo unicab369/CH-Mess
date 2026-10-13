@@ -32,13 +32,11 @@ static void gap_conn_send_queued(void) {
 // Handle the radio callback under its connection context, then restore the
 // application's previously selected handle.
 void gap_hw_received(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
-    gap_security = &gap_sec_contexts[gap_conn_slot];
-    conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     const uint8_t *frame = GAP_HW_RX_FRAME();
     uint64_t received_ticks = GAP_HW_TICKS();
@@ -609,8 +607,6 @@ void gap_hw_received(void) {
         GAP_HW_PACKET_READY();
     }
     gap_conn_slot = previous_slot;
-    gap_security = &gap_sec_contexts[gap_conn_slot];
-    conn = &gap_conn_ctx[gap_conn_slot];
 }
 
 
@@ -1199,7 +1195,6 @@ int gap_send_due(
     else if (len)
         memcpy(gap_adv_state.adv_frame + 8, data, len);
 
-    gap_rx_armed = 0;
     int transmit_result = 1;
 
     if (pdu_type == 0x02) {
