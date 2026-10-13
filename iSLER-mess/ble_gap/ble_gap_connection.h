@@ -523,7 +523,6 @@ static uint16_t gap_conn_rate_min_interval(void) {
 
 static void gap_security_derive(void);
 
-// Link Layer control PDU opcodes used by the connection handler.
 enum {
     LL_CONNECTION_UPDATE_IND = 0x00,
     LL_CHANNEL_MAP_IND = 0x01,
@@ -574,7 +573,6 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-// Link Layer error codes used by the connection handler.
 enum {
     GAP_LL_ERROR_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE = 0x11,
     GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE = 0x1a,
@@ -587,7 +585,7 @@ enum {
 
 static uint8_t gap_conn_unknown_response(uint8_t opcode) {
     gap_tx_frame[1] = 2;
-    gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+    gap_tx_frame[2] = LL_UNKNOWN_RSP;
     gap_tx_frame[3] = opcode;
     return 0;
 }
@@ -595,7 +593,7 @@ static uint8_t gap_conn_unknown_response(uint8_t opcode) {
 static uint8_t gap_conn_reject_parameters(uint8_t opcode, uint8_t error) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_tx_frame[1] = 3;
-    gap_tx_frame[2] = LL_REJECT_EXT_IND; // LL_REJECT_EXT_IND
+    gap_tx_frame[2] = LL_REJECT_EXT_IND;
     gap_tx_frame[3] = opcode;
     gap_tx_frame[4] = error;
     if (opcode == LL_CONNECTION_PARAM_RSP &&
@@ -629,7 +627,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = LL_REJECT_EXT_IND;
             gap_tx_frame[3] = LL_ENC_REQ;
-            gap_tx_frame[4] = gap_security->status = GAP_LL_ERROR_UNSPECIFIED;
+            gap_security->status = GAP_LL_ERROR_UNSPECIFIED;
+            gap_tx_frame[4] = GAP_LL_ERROR_UNSPECIFIED;
 
             if (restart) {
                 conn->link_state.terminate_after_reply = 1;
@@ -649,7 +648,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         memcpy(gap_security->iv + 4, entropy + 8, 4);
 
         gap_tx_frame[1] = 13;
-        gap_tx_frame[2] = LL_ENC_RSP; // LL_ENC_RSP
+        gap_tx_frame[2] = LL_ENC_RSP;
         memcpy(gap_tx_frame + 3, entropy, 12);
         gap_wipe(entropy, sizeof(entropy));
         gap_security->status = GAP_CONNECTION_PENDING;
@@ -657,7 +656,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security->started_ms = GET_MILLIS();
         break;
     }
-    case LL_ENC_RSP: // LL_ENC_RSP
+    case LL_ENC_RSP:
         if (!conn->is_central || frame[1] != 13 ||
             gap_security->phase != GAP_ENC_WAIT_RSP
         ) return gap_conn_unknown_response(frame[2]);
@@ -668,7 +667,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security->phase = GAP_ENC_WAIT_START;
         break;
 
-    case LL_START_ENC_REQ: // LL_START_ENC_REQ
+    case LL_START_ENC_REQ:
         if (!conn->is_central || frame[1] != 1 ||
             gap_security->phase != GAP_ENC_WAIT_START
         ) return gap_conn_unknown_response(frame[2]);
@@ -680,7 +679,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_tx_frame[2] = LL_START_ENC_RSP; // Encrypted LL_START_ENC_RSP.
         break;
 
-    case LL_START_ENC_RSP: // LL_START_ENC_RSP
+    case LL_START_ENC_RSP:
         if (frame[1] != 1 || !authenticated ||
             (gap_security->phase != GAP_ENC_WAIT_FINAL &&
              gap_security->phase != GAP_ENC_PERIPHERAL_START)
@@ -709,13 +708,14 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_security->status = GAP_CONNECTION_PENDING;
         break;
 
-    case LL_PAUSE_ENC_RSP: // LL_PAUSE_ENC_RSP
+    case LL_PAUSE_ENC_RSP:
         if (frame[1] != 1)
             return gap_conn_unknown_response(frame[2]);
         if (conn->is_central && authenticated &&
             gap_security->phase == GAP_ENC_WAIT_PAUSE
         ) {
-            gap_security->tx_enabled = gap_security->rx_enabled = 0;
+            gap_security->tx_enabled = 0;
+            gap_security->rx_enabled = 0;
             gap_tx_frame[1] = 1;
             gap_tx_frame[2] = LL_PAUSE_ENC_RSP; // Central's final response is plaintext.
             gap_security->phase = GAP_ENC_RESTART_QUEUED;
@@ -723,14 +723,15 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         else if (!conn->is_central && !authenticated &&
             gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE
         ) {
-            gap_security->tx_enabled = gap_security->rx_enabled = 0;
+            gap_security->tx_enabled = 0;
+            gap_security->rx_enabled = 0;
             gap_security->phase = GAP_ENC_PERIPHERAL_RESTART;
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
         else return gap_conn_unknown_response(frame[2]);
         break;
 
-    case LL_CONNECTION_UPDATE_IND: { // LL_CONNECTION_UPDATE_IND
+    case LL_CONNECTION_UPDATE_IND: {
         if (!conn->is_central && frame[1] == 12 &&
             !conn->pending.timing_update && !gap_conn_rate_busy()
         ) {
@@ -761,7 +762,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 conn->new_params.latency = latency;
                 conn->new_params.supervision_timeout = timeout;
                 conn->pending.timing_update = 1;
-                conn->pending.params = conn->pending.params_local = 0;
+                conn->pending.params = 0;
+                conn->pending.params_local = 0;
 
                 if (conn->queue.local_params) {
                     conn->queue.local_params = 0;
@@ -773,11 +775,11 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             }
         }
         gap_tx_frame[1] = 2;
-        gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+        gap_tx_frame[2] = LL_UNKNOWN_RSP;
         gap_tx_frame[3] = LL_CONNECTION_UPDATE_IND;
         break;
     }
-    case LL_CHANNEL_MAP_IND: { // LL_CHANNEL_MAP_IND
+    case LL_CHANNEL_MAP_IND: {
         if (!conn->is_central && frame[1] == 8 &&
             !conn->pending.channel_map
         ) {
@@ -801,11 +803,11 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             }
         }
         gap_tx_frame[1] = 2;
-        gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+        gap_tx_frame[2] = LL_UNKNOWN_RSP;
         gap_tx_frame[3] = LL_CHANNEL_MAP_IND;
         break;
     }
-    case LL_CONNECTION_PARAM_REQ: // LL_CONNECTION_PARAM_REQ
+    case LL_CONNECTION_PARAM_REQ:
     case LL_CONNECTION_PARAM_RSP: { // LL_CONNECTION_PARAM_RSP (Peripheral to Central only)
         uint8_t error = GAP_LL_ERROR_INVALID_LL_PARAMETERS; // Invalid LL parameters.
         if (frame[1] != 24 || (frame[2] == LL_CONNECTION_PARAM_RSP &&
@@ -891,17 +893,18 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             if (conn->queue.local_params ||
                 (conn->pending.params && conn->pending.params_local))
                 conn->connection_status = GAP_LL_ERROR_PROCEDURE_COLLISION;
-            conn->queue.local_params = conn->features.request_pending = 0;
+            conn->queue.local_params = 0;
+            conn->features.request_pending = 0;
             conn->pending.params = 1;
             conn->pending.params_local = 0;
             conn->params_started_ms = GET_MILLIS();
             gap_tx_frame[1] = 24;
             memcpy(gap_tx_frame + 2, frame + 2, 24);
-            gap_tx_frame[2] = LL_CONNECTION_PARAM_RSP; // LL_CONNECTION_PARAM_RSP
+            gap_tx_frame[2] = LL_CONNECTION_PARAM_RSP;
         }
         break;
     }
-    case LL_TERMINATE_IND: // LL_TERMINATE_IND
+    case LL_TERMINATE_IND:
         if (frame[1] == 2) {
             // The empty response acknowledges termination in NESN.
             conn->link_state.terminate_after_reply = 1;
@@ -909,30 +912,30 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             break;
         }
         gap_tx_frame[1] = 2;
-        gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+        gap_tx_frame[2] = LL_UNKNOWN_RSP;
         gap_tx_frame[3] = LL_TERMINATE_IND;
         break;
 
-    case LL_PING_REQ: // LL_PING_REQ
+    case LL_PING_REQ:
         if (frame[1] == 1) {
             gap_tx_frame[1] = 1;
-            gap_tx_frame[2] = LL_PING_RSP; // LL_PING_RSP
+            gap_tx_frame[2] = LL_PING_RSP;
             break;
         }
         gap_tx_frame[1] = 2;
-        gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+        gap_tx_frame[2] = LL_UNKNOWN_RSP;
         gap_tx_frame[3] = LL_PING_REQ;
         break;
 
-    case LL_PING_RSP: // LL_PING_RSP
+    case LL_PING_RSP:
         if (frame[1] != 1) {
             gap_tx_frame[1] = 2;
-            gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP
+            gap_tx_frame[2] = LL_UNKNOWN_RSP;
             gap_tx_frame[3] = LL_PING_RSP;
         }
         break;
 
-    case LL_REJECT_IND: // LL_REJECT_IND
+    case LL_REJECT_IND:
         if (frame[1] != 2)
             return gap_conn_unknown_response(frame[2]);
 
@@ -968,8 +971,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 conn->subrate.request_queued = 0;
                 conn->subrate.status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
             }
-            conn->pending.params = conn->pending.params_local =
-                                    conn->queue.local_params = 0;
+            conn->pending.params = 0;
+            conn->pending.params_local = 0;
+            conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[3];
         }
@@ -979,7 +983,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         }
         break;
 
-    case LL_REJECT_EXT_IND: // LL_REJECT_EXT_IND
+    case LL_REJECT_EXT_IND:
         if (frame[1] != 3)
             return gap_conn_unknown_response(frame[2]);
 
@@ -989,7 +993,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
             memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
-            conn->rate.set_queued = conn->rate.request_queued = 0;
+            conn->rate.set_queued = 0;
+            conn->rate.request_queued = 0;
             conn->connection_status = frame[4];
         }
         if (frame[3] == LL_CONNECTION_RATE_REQ && conn->rate.req_pending) {
@@ -1004,9 +1009,13 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         }
         if (frame[3] == LL_ENC_REQ &&
             (gap_security->phase == GAP_ENC_WAIT_RSP ||
-             gap_security->phase == GAP_ENC_WAIT_START)) {
+             gap_security->phase == GAP_ENC_WAIT_START)
+        ) {
             gap_security->status = frame[4];
-            if (gap_security->refreshing) { gap_conn_end(); return 1; }
+            if (gap_security->refreshing) {
+                gap_conn_end();
+                return 1;
+            }
             gap_security->phase = GAP_ENC_IDLE;
             gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
@@ -1019,45 +1028,41 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->pending.length = 0;
             conn->length_status = frame[4];
         }
-        if (frame[3] == LL_SUBRATE_REQ &&
-            conn->subrate.request_pending
-        ) {
+        if (frame[3] == LL_SUBRATE_REQ && conn->subrate.request_pending) {
             conn->subrate.request_pending = 0;
             conn->subrate.status = frame[4];
         }
-        if (frame[3] == LL_SUBRATE_IND &&
-            conn->subrate.pending
-        ) {
-            conn->subrate.pending = conn->subrate.transition = 0;
+        if (frame[3] == LL_SUBRATE_IND && conn->subrate.pending) {
+            conn->subrate.pending = 0;
+            conn->subrate.transition = 0;
             conn->subrate.status = frame[4];
         }
-        if (frame[3] == LL_CHANNEL_REPORTING_IND &&
-            conn->channel.report_pending
-        ) {
+        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->channel.report_pending) {
             conn->channel.report_pending = 0;
             conn->channel.report_queued = 0;
             conn->connection_status = frame[4];
         }
-        if ((frame[3] == LL_CONNECTION_PARAM_REQ && conn->pending.params && conn->pending.params_local) ||
+        if ((frame[3] == LL_CONNECTION_PARAM_REQ &&
+                conn->pending.params && conn->pending.params_local) ||
              ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
               conn->features.request_pending)
         ) {
-            conn->pending.params = conn->pending.params_local =
-                conn->queue.local_params = 0;
+            conn->pending.params = 0;
+            conn->pending.params_local = 0;
+            conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[4];
         }
         if ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
-            (conn->subrate.update_queued ||
-             conn->subrate.request_queued)
+            (conn->subrate.update_queued || conn->subrate.request_queued)
         ) {
             conn->subrate.update_queued = 0;
             conn->subrate.request_queued = 0;
             conn->subrate.status = frame[4];
         }
         break;
-    case LL_FEATURE_REQ: // LL_FEATURE_REQ
-    case LL_PERIPHERAL_FEATURE_REQ: // LL_PERIPHERAL_FEATURE_REQ
+    case LL_FEATURE_REQ:
+    case LL_PERIPHERAL_FEATURE_REQ:
         if (frame[1] == 9 &&
             ((frame[2] == LL_FEATURE_REQ && !conn->is_central) ||
              (frame[2] == LL_PERIPHERAL_FEATURE_REQ && conn->is_central))
@@ -1068,23 +1073,25 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->features.peer[1] = frame[4];
             conn->features.peer[4] = frame[7];
             conn->features.peer[7] = frame[10];
+
             gap_tx_frame[1] = 9;
             gap_tx_frame[2] = LL_FEATURE_RSP;
             memset(gap_tx_frame + 3, 0, 8);
             gap_tx_frame[3] = GAP_LL_FEATURES & frame[3];
-            gap_tx_frame[4] =
-                ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
-                ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
+            gap_tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
+                                ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
             gap_tx_frame[7] = (GAP_LL_FEATURES_SUBRATING |
-                GAP_LL_FEATURES_SUBRATING_HOST |
-                GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) & frame[7];
-            gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED &
-                frame[10];
+                                GAP_LL_FEATURES_SUBRATING_HOST |
+                                GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) & frame[7];
+            gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED & frame[10];
             break;
         }
         return gap_conn_unknown_response(frame[2]);
-    case LL_VERSION_IND: // LL_VERSION_IND
-        if (frame[1] != 6) return gap_conn_unknown_response(frame[2]);
+
+    case LL_VERSION_IND:
+        if (frame[1] != 6)
+            return gap_conn_unknown_response(frame[2]);
+
         if (!conn->link_state.version_ind_sent) {
             gap_tx_frame[1] = 6;
             gap_tx_frame[2] = LL_VERSION_IND;
@@ -1096,8 +1103,11 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->link_state.version_ind_sent = 1;
         }
         break;
-    case LL_UNKNOWN_RSP: // LL_UNKNOWN_RSP
-        if (frame[1] != 2) return gap_conn_unknown_response(frame[2]);
+
+    case LL_UNKNOWN_RSP:
+        if (frame[1] != 2)
+            return gap_conn_unknown_response(frame[2]);
+
         if (frame[3] == LL_CHANNEL_REPORTING_IND &&
             conn->channel.report_pending
         ) {
@@ -1105,22 +1115,24 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->channel.report_queued = 0;
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
+
         if ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
             conn->features.request_pending
         ) {
             conn->features.request_pending = 0;
             conn->features.known = 1;
-            conn->features.peer[0] = conn->features.peer[1] =
-                conn->features.peer[4] = conn->features.peer[7] = 0;
-            conn->rate.set_queued =
-                conn->rate.request_queued = 0;
+            conn->features.peer[0] = 0;
+            conn->features.peer[1] = 0;
+            conn->features.peer[4] = 0;
+            conn->features.peer[7] = 0;
+            conn->rate.set_queued = 0;
+            conn->rate.request_queued = 0;
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         if (frame[3] == LL_FEATURE_EXT_REQ && conn->features.ext_pending) {
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
-            memset(conn->features.peer_page1, 0,
-                   sizeof(conn->features.peer_page1));
+            memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
             conn->rate.set_queued =
                 conn->rate.request_queued = 0;
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
@@ -1155,7 +1167,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->subrate.status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         if (frame[3] == LL_SUBRATE_IND && conn->subrate.pending) {
-            conn->subrate.pending = conn->subrate.transition = 0;
+            conn->subrate.pending = 0;
+            conn->subrate.transition = 0;
             conn->subrate.status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         if ((frame[3] == LL_CONNECTION_PARAM_REQ && conn->pending.params &&
@@ -1171,8 +1184,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 conn->subrate.request_queued = 0;
                 conn->subrate.status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
             }
-            conn->queue.local_params = conn->pending.params =
-                conn->pending.params_local = 0;
+            conn->queue.local_params = 0;
+            conn->pending.params = 0;
+            conn->pending.params_local = 0;
             conn->features.request_pending = 0;
             conn->features.known = 1;
             conn->features.peer[0] = 0;
@@ -1180,7 +1194,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE; // Unsupported remote feature.
         }
         break;
-    case LL_FEATURE_RSP: // LL_FEATURE_RSP
+    case LL_FEATURE_RSP:
         if (frame[1] != 9) return gap_conn_unknown_response(frame[2]);
         conn->features.known = 1;
         conn->features.peer[0] = frame[3];
@@ -1194,8 +1208,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         break;
-    case LL_FEATURE_EXT_REQ: // LL_FEATURE_EXT_REQ
-    case LL_FEATURE_EXT_RSP: { // LL_FEATURE_EXT_RSP
+    case LL_FEATURE_EXT_REQ:
+    case LL_FEATURE_EXT_RSP: {
         if (frame[1] != 11 ||
             !(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED))
             return gap_conn_unknown_response(frame[2]);
@@ -1315,7 +1329,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             error = GAP_LL_ERROR_UNSUPPORTED_LL_PARAMETER_VALUE;
         }
         gap_tx_frame[1] = 3;
-        gap_tx_frame[2] = LL_REJECT_EXT_IND; // LL_REJECT_EXT_IND.
+        gap_tx_frame[2] = LL_REJECT_EXT_IND;
         gap_tx_frame[3] = LL_CONNECTION_RATE_REQ;
         gap_tx_frame[4] = error;
         conn->connection_status = error;
@@ -1355,7 +1369,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->pending.phy_update
         ) {
             gap_tx_frame[1] = 2;
-            gap_tx_frame[2] = LL_UNKNOWN_RSP; // LL_UNKNOWN_RSP.
+            gap_tx_frame[2] = LL_UNKNOWN_RSP;
             gap_tx_frame[3] = LL_CONNECTION_RATE_IND;
             break;
         }
@@ -1435,7 +1449,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             }
         }
         gap_tx_frame[1] = 3;
-        gap_tx_frame[2] = LL_REJECT_EXT_IND; // LL_REJECT_EXT_IND.
+        gap_tx_frame[2] = LL_REJECT_EXT_IND;
         gap_tx_frame[3] = LL_SUBRATE_REQ;
         gap_tx_frame[4] = error;
         conn->subrate.status = error;
@@ -1483,7 +1497,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         conn->subrate.latency_remaining = 0;
         conn->schedule.continuation = continuation;
         conn->schedule.timeout = timeout;
-        conn->subrate.pending = conn->subrate.transition = 0;
+        conn->subrate.pending = 0;
+            conn->subrate.transition = 0;
         conn->subrate.request_pending = 0;
         conn->subrate.status = 0;
         break;
@@ -1519,8 +1534,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         conn->channel.peer_classification_valid = 1;
         break;
     }
-    case LL_LENGTH_REQ: // LL_LENGTH_REQ
-    case LL_LENGTH_RSP: // LL_LENGTH_RSP
+    case LL_LENGTH_REQ:
+    case LL_LENGTH_RSP:
         if (frame[1] != 9) return gap_conn_unknown_response(frame[2]);
         {
             uint16_t values[4];
@@ -1533,7 +1548,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 values[3] < 328 || values[3] > 2128
             ) {
                 gap_tx_frame[1] = 3;
-                gap_tx_frame[2] = LL_REJECT_EXT_IND; // LL_REJECT_EXT_IND
+                gap_tx_frame[2] = LL_REJECT_EXT_IND;
                 gap_tx_frame[3] = frame[2];
                 gap_tx_frame[4] = GAP_LL_ERROR_INVALID_LL_PARAMETERS; // Invalid LL parameters.
                 break;
@@ -1567,8 +1582,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             }
         }
         break;
-    case LL_PHY_REQ: // LL_PHY_REQ
-    case LL_PHY_RSP: // LL_PHY_RSP
+    case LL_PHY_REQ:
+    case LL_PHY_RSP:
         if (!(GAP_HW_PHY_MASK() & 6)) return gap_conn_unknown_response(frame[2]);
         if (frame[1] != 3 || !frame[3] || !frame[4] ||
             (frame[3] & ~7) || (frame[4] & ~7)
@@ -1607,21 +1622,27 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                      peer_tx == GAP_PHY_CODED) &&
                     ((tx ? tx : conn->phy.current.tx) != peer_tx ||
                      (rx ? rx : conn->phy.current.rx) != peer_rx)
-                ) tx = rx = 0;
+                ) {
+                    tx = 0;
+                    rx = 0;
+                }
 
                 if (tx == conn->phy.current.tx) tx = 0;
                 if (rx == conn->phy.current.rx) rx = 0;
                 conn->phy.instant = tx || rx ? (uint16_t)(conn->link.event_counter +
                     6 * (conn->schedule.latency + 1) + 1) : 0;
-                conn->queue.phy_queued = conn->pending.phy_request = 0;
+                conn->queue.phy_queued = 0;
+                conn->pending.phy_request = 0;
                 conn->pending.phy_update = tx || rx;
                 if (!conn->pending.phy_update) conn->phy.status = 0;
 
                 gap_tx_frame[0] = 3;
                 gap_tx_frame[1] = 5;
-                gap_tx_frame[2] = LL_PHY_UPDATE_IND; // LL_PHY_UPDATE_IND
-                gap_tx_frame[3] = conn->phy.pending.tx = tx;
-                gap_tx_frame[4] = conn->phy.pending.rx = rx;
+                gap_tx_frame[2] = LL_PHY_UPDATE_IND;
+                conn->phy.pending.tx = tx;
+                gap_tx_frame[3] = tx;
+                conn->phy.pending.rx = rx;
+                gap_tx_frame[4] = rx;
                 gap_tx_frame[5] = (uint8_t)conn->phy.instant;
                 gap_tx_frame[6] = (uint8_t)(conn->phy.instant >> 8);
             }
@@ -1647,7 +1668,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported)) rx = 0;
         if (tx == conn->phy.current.tx) tx = 0;
         if (rx == conn->phy.current.rx) rx = 0;
-        conn->pending.phy_request = conn->queue.phy_queued = 0;
+        conn->pending.phy_request = 0;
+        conn->queue.phy_queued = 0;
         if (!tx && !rx) { conn->phy.status = 0; break; }
         uint16_t instant = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
         if ((uint16_t)(instant - conn->link.event_counter) >= 0x8000 ||
@@ -1664,7 +1686,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         break;
     }
 #if GAP_EXT_ADV_SUPPORT
-    case LL_PERIODIC_SYNC_IND: // LL_PERIODIC_SYNC_IND
+    case LL_PERIODIC_SYNC_IND:
         if (frame[1] != 35) return gap_conn_unknown_response(frame[2]);
         (void)gap_periodic_sync_transfer_receive(frame,
             connection_anchor_ticks,
@@ -1687,7 +1709,6 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     }
     return 0;
 }
-
 // True after Central initiation or the first received Peripheral data packet.
 int gap_connected(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
