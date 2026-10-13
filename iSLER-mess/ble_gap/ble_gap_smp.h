@@ -2379,11 +2379,14 @@ static void gap_smp_poll(void) {
 
             do {
                 if (++attempts > 8 || !smp_random_bytes(bytes, 4)) {
+                    gap_wipe(bytes, sizeof(bytes));
                     gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                     return;
                 }
-                if (!conn->link_state.active || generation != *security_gen)
+                if (!conn->link_state.active || generation != *security_gen) {
+                    gap_wipe(bytes, sizeof(bytes));
                     return;
+                }
 
                 value = (uint32_t)bytes[0] |
                         (uint32_t)bytes[1] << 8 |
