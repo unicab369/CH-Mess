@@ -13,8 +13,20 @@ static void gap_conn_send_queued(void) {
 
     if (conn->queue.local_update)
         gap_send_conn_update();
-    if (conn->queue.local_map)
-        gap_send_channel_map();
+    if (conn->queue.local_map && !gap_tx_frame[1]) {
+        // Choose the Instant when the TX slot opens so it stays ahead of retries.
+        conn->channel_map_instant = (uint16_t)(conn->link.event_counter +
+            6 * (conn->schedule.latency + 1) + 1);
+        conn->pending.channel_map = 1;
+        conn->queue.local_map = 0;
+
+        gap_tx_frame[0] = 3;
+        gap_tx_frame[1] = 8;
+        gap_tx_frame[2] = 0x01; // LL_CHANNEL_MAP_IND
+        memcpy(gap_tx_frame + 3, conn->pending_channel_map, 5);
+        gap_tx_frame[8] = (uint8_t)conn->channel_map_instant;
+        gap_tx_frame[9] = (uint8_t)(conn->channel_map_instant >> 8);
+    }
     if (conn->queue.local_params && !conn->features.request_pending)
         gap_send_conn_request();
     if (conn->queue.length)
@@ -290,12 +302,23 @@ void gap_hw_received(void) {
                     conn->channel.enabled
                 ) {
                     uint32_t now_ms = GET_MILLIS();
-                    if ((uint32_t)(now_ms - conn->channel.status_changed_ms) >=
+                    if (!gap_tx_frame[1] &&
+                        (uint32_t)(now_ms - conn->channel.status_changed_ms) >=
                             (uint32_t)conn->channel.max_delay_200ms * 200 &&
                         (!conn->channel.status_last_sent_valid ||
                          (uint32_t)(now_ms - conn->channel.status_last_sent_ms) >=
                             (uint32_t)conn->channel.min_spacing_200ms * 200)
-                    ) gap_send_channel_status();
+                    ) {
+                        conn->channel.status_queued = 0;
+                        conn->channel.status_last_sent_ms = now_ms;
+                        conn->channel.status_last_sent_valid = 1;
+
+                        gap_tx_frame[0] = 0x03;
+                        gap_tx_frame[1] = 11;
+                        gap_tx_frame[2] = 0x29; // LL_CHANNEL_STATUS_IND.
+                        memcpy(gap_tx_frame + 3, conn->channel.local_classification,
+                               GAP_CHANNEL_CLASSIFICATION_BYTES);
+                    }
                 }
                 if (gap_tx_frame[1] == 0 && conn->queue.tx_queued &&
                     !conn->link_state.terminate_after_reply

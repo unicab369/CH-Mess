@@ -325,25 +325,6 @@ static void gap_send_conn_update(void) {
     gap_tx_frame[13] = (uint8_t)(conn->update_instant >> 8);
 }
 
-// Build a Central channel-map update when the TX slot becomes available.
-// Choosing the Instant here keeps it ahead of retries of earlier packets.
-static void gap_send_channel_map(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    conn->channel_map_instant = (uint16_t)(conn->link.event_counter +
-        6 * (conn->schedule.latency + 1) + 1);
-    conn->pending.channel_map = 1;
-    conn->queue.local_map = 0;
-
-    gap_tx_frame[0] = 3;
-    gap_tx_frame[1] = 8;
-    gap_tx_frame[2] = 0x01; // LL_CHANNEL_MAP_IND
-    memcpy(gap_tx_frame + 3, conn->pending_channel_map, 5);
-    gap_tx_frame[8] = (uint8_t)conn->channel_map_instant;
-    gap_tx_frame[9] = (uint8_t)(conn->channel_map_instant >> 8);
-}
-
 static uint8_t gap_class_valid(const uint8_t *class) {
     if (!class || (class[9] & 0xfc)) return 0;
 
@@ -352,21 +333,6 @@ static uint8_t gap_class_valid(const uint8_t *class) {
             return 0;
     }
     return 1;
-}
-
-static void gap_send_channel_status(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    conn->channel.status_queued = 0;
-    conn->channel.status_last_sent_ms = GET_MILLIS();
-    conn->channel.status_last_sent_valid = 1;
-
-    gap_tx_frame[0] = 0x03;
-    gap_tx_frame[1] = 11;
-    gap_tx_frame[2] = 0x29; // LL_CHANNEL_STATUS_IND.
-    memcpy(gap_tx_frame + 3, conn->channel.local_classification,
-           GAP_CHANNEL_CLASSIFICATION_BYTES);
 }
 
 // Encode local preferences in either role once earlier TX has been acknowledged.
