@@ -662,7 +662,7 @@ static int gap_conn_procedure_start(
     gap_central.deadline_ms = auto_connect ? 0 :
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
-        gap_scanner.active = 0;
+        gap_scanner.active = active_scan;
         gap_scan_head = gap_scan_count = 0;
         gap_scan_seen_count = gap_scan_seen_next = 0;
         gap_scanner.generation++;

@@ -514,7 +514,8 @@ void gap_hw_received(void) {
 
     if (gap_scanner.active && !gap_adv_state.rx_event &&
         !gap_scan.active_pending && (pdu_type == 0x00 || pdu_type == 0x06) &&
-        frame[1] >= 6 && frame[1] <= 37
+        frame[1] >= 6 && frame[1] <= 37 &&
+        (!gap_central.selective || peer_matches)
     ) {
         if (gap_privacy.scan_filter && peer_slot < 0) {
             gap_conn_slot = previous_slot;
