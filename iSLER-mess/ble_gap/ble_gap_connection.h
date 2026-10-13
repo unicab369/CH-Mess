@@ -209,7 +209,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         }
         if (conn->phy.pending.tx) conn->phy.current.tx = conn->phy.pending.tx;
         if (conn->phy.pending.rx) conn->phy.current.rx = conn->phy.pending.rx;
-        conn->pending.phy_update = conn->pending.phy_request = 0;
+        conn->pending.phy_update = 0;
+        conn->pending.phy_request = 0;
         conn->phy.status = 0;
     }
 
@@ -307,7 +308,8 @@ static void gap_send_conn_update(void) {
                             6 * (conn->schedule.latency + 1) + 1);
     conn->pending.timing_update = 1;
     conn->queue.local_update = 0;
-    conn->pending.params = conn->pending.params_local = 0;
+    conn->pending.params = 0;
+    conn->pending.params_local = 0;
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 12;
@@ -599,7 +601,8 @@ static uint8_t gap_conn_reject_parameters(uint8_t opcode, uint8_t error) {
     if (opcode == LL_CONNECTION_PARAM_RSP &&
         conn->pending.params && conn->pending.params_local
     ) {
-        conn->pending.params = conn->pending.params_local = 0;
+        conn->pending.params = 0;
+        conn->pending.params_local = 0;
         conn->connection_status = error;
     }
     return 0;
@@ -1133,8 +1136,8 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
             memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
-            conn->rate.set_queued =
-                conn->rate.request_queued = 0;
+            conn->rate.set_queued = 0;
+            conn->rate.request_queued = 0;
             conn->connection_status = GAP_LL_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         if (frame[3] == LL_CONNECTION_RATE_REQ && conn->rate.req_pending) {
@@ -2240,7 +2243,8 @@ static void gap_security_derive(void) {
         diversifier[i] = gap_security->skd[15 - i];
     }
     AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
-    gap_security->tx_counter = gap_security->rx_counter = 0;
+    gap_security->tx_counter = 0;
+    gap_security->rx_counter = 0;
     gap_wipe(key, sizeof(key));
     gap_wipe(diversifier, sizeof(diversifier));
     gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
@@ -2373,7 +2377,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
-    conn->authenticated = conn->enc_key_size = 0;
+    conn->authenticated = 0;
+    conn->enc_key_size = 0;
     memcpy(gap_security->ltk, ltk, 16);
     memcpy(gap_security->random, random, 8);
     gap_security->ediv = ediv;
@@ -2408,7 +2413,8 @@ int gap_key_reply(const uint8_t ltk[16]) {
         return 0;
     }
     if (ltk) {
-        conn->authenticated = conn->enc_key_size = 0;
+        conn->authenticated = 0;
+        conn->enc_key_size = 0;
         memcpy(gap_security->ltk, ltk, 16);
         gap_security_derive();
         gap_security->phase = GAP_ENC_START_QUEUED;

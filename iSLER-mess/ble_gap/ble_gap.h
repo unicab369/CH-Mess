@@ -868,7 +868,8 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
 
     if (!irk && !timeout_s) {
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
-        gap_privacy.enabled = gap_privacy.resolvable = 0;
+        gap_privacy.enabled = 0;
+        gap_privacy.resolvable = 0;
         gap_own_address_type = 0;
         return 1;
     }
@@ -882,9 +883,11 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
 
     gap_privacy.resolvable = irk != NULL;
     memcpy(gap_random_address, address, 6);
-    gap_privacy.enabled = (gap_own_address_type = 1);
+    gap_own_address_type = 1;
+    gap_privacy.enabled = 1;
     gap_privacy.timeout_s = timeout_s;
-    gap_privacy.timeout_min_s = gap_privacy.timeout_max_s = timeout_s;
+    gap_privacy.timeout_min_s = timeout_s;
+    gap_privacy.timeout_max_s = timeout_s;
     gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
     return 1;
 }
@@ -987,7 +990,8 @@ int gap_use_public_address(void) {
     ) return 0;
 
     gap_privacy.enabled = 0;
-    gap_identity_address_type = gap_own_address_type = 0;
+    gap_identity_address_type = 0;
+    gap_own_address_type = 0;
     return 1;
 }
 
@@ -1068,8 +1072,10 @@ static int gap_conn_accept(
     conn->channel.min_spacing_200ms = 5;
     conn->channel.max_delay_200ms = 5;
     conn->channel.status_changed_ms = GET_MILLIS();
-    conn->phy.current.tx = conn->phy.current.rx = GAP_PHY_1M;
-    conn->phy.preferred.tx = conn->phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
+    conn->phy.current.tx = GAP_PHY_1M;
+    conn->phy.current.rx = GAP_PHY_1M;
+    conn->phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
+    conn->phy.preferred.rx = conn->phy.preferred.tx;
     gap_security_generations[gap_conn_slot]++;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)

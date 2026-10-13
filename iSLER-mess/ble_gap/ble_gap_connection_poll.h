@@ -40,7 +40,8 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[0] = 3;
             conn->params_started_ms = GET_MILLIS();
             conn->queue.local_params = 0;
-            conn->pending.params = conn->pending.params_local = 1;
+            conn->pending.params = 1;
+            conn->pending.params_local = 1;
             gap_tx_frame[1] = 24;
             gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
             gap_tx_frame[3] = (uint8_t)conn->params_min;
@@ -52,7 +53,8 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[9] = (uint8_t)conn->params_timeout;
             gap_tx_frame[10] = (uint8_t)(conn->params_timeout >> 8);
             gap_tx_frame[11] = 0; // No preferred periodicity.
-            gap_tx_frame[12] = gap_tx_frame[13] = 0;
+            gap_tx_frame[12] = 0;
+            gap_tx_frame[13] = 0;
             memset(gap_tx_frame + 14, 0xff, 12); // No anchor offset preference.
         }
     }
@@ -80,7 +82,8 @@ static void gap_conn_send_queued(void) {
             const uint8_t required =
                 GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
             if ((conn->features.peer[4] & required) != required) {
-                conn->subrate.update_queued = conn->subrate.request_queued = 0;
+                conn->subrate.update_queued = 0;
+                conn->subrate.request_queued = 0;
                 conn->subrate.status = 0x1a;
             } else if (conn->is_central && conn->subrate.update_queued) {
                 gap_send_subrate_update();
@@ -114,7 +117,8 @@ static void gap_conn_send_queued(void) {
         if (!conn->features.known) {
             gap_send_conn_feature_request();
         } else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
-            conn->rate.set_queued = conn->rate.request_queued = 0;
+            conn->rate.set_queued = 0;
+            conn->rate.request_queued = 0;
             conn->connection_status = 0x1a;
         } else if (!conn->features.page1_known) {
             // Exchange page 1 after the legacy page advertised extended features.
@@ -129,7 +133,8 @@ static void gap_conn_send_queued(void) {
             memset(gap_tx_frame + 5, 0, 8);
             gap_tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
         } else if (!(conn->features.peer_page1[1] & 0x02)) {
-            conn->rate.set_queued = conn->rate.request_queued = 0;
+            conn->rate.set_queued = 0;
+            conn->rate.request_queued = 0;
             conn->connection_status = 0x1a;
         } else if (conn->is_central && conn->rate.set_queued) {
             gap_send_rate_ind();
@@ -322,7 +327,8 @@ void gap_hw_received(void) {
                 conn->schedule.latency = conn->next_schedule.latency;
                 conn->schedule.continuation = conn->next_schedule.continuation;
                 conn->schedule.timeout = conn->next_schedule.timeout;
-                conn->subrate.pending = conn->subrate.transition = 0;
+                conn->subrate.pending = 0;
+                conn->subrate.transition = 0;
                 conn->subrate.status = 0;
             }
             conn->link.tx_sn ^= 1;
@@ -892,7 +898,8 @@ static void gap_conn_poll(void) {
         if (conn->subrate.update_queued || conn->subrate.request_queued ||
             conn->subrate.request_pending
         ) {
-            conn->subrate.update_queued = conn->subrate.request_queued = 0;
+            conn->subrate.update_queued = 0;
+            conn->subrate.request_queued = 0;
             conn->subrate.request_pending = 0;
             conn->subrate.status = 0x22;
         }
@@ -903,7 +910,8 @@ static void gap_conn_poll(void) {
     if ((conn->subrate.pending || conn->subrate.request_pending) &&
         (uint32_t)(now_ms - conn->subrate.started_ms) >= 40000
     ) {
-        conn->subrate.pending = conn->subrate.transition = 0;
+        conn->subrate.pending = 0;
+        conn->subrate.transition = 0;
         conn->subrate.request_pending = 0;
         conn->subrate.status = 0x22;
         gap_conn_end();
@@ -1444,7 +1452,8 @@ int gap_send_due(
                     gap_central.any_peer = 0;
                     gap_central.selective = 0;
                     gap_central.auto_connect = 0;
-                    gap_scanner.scanning = gap_scanner.active = 0;
+                    gap_scanner.scanning = 0;
+                    gap_scanner.active = 0;
                     gap_scanner.generation++;
                     gap_conn_poll();
                     transmit_result = 2;

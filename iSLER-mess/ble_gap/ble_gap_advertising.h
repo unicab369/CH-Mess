@@ -536,8 +536,10 @@ void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_scan_reset(1);
 #endif
-    gap_scan_head = gap_scan_count = 0;
-    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_head = 0;
+    gap_scan_count = 0;
+    gap_scan_seen_count = 0;
+    gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
     gap_central.active = 0;
     gap_scanner.scanning = 1;
@@ -563,8 +565,10 @@ int gap_scan_configure(
     gap_scanner.window_ms = window_ms;
     gap_scanner.discovery_mode = discovery_mode;
     gap_scanner.filter_duplicates = !!filter_duplicates;
-    gap_scan_head = gap_scan_count = 0;
-    gap_scan_seen_count = gap_scan_seen_next = 0;
+    gap_scan_head = 0;
+    gap_scan_count = 0;
+    gap_scan_seen_count = 0;
+    gap_scan_seen_next = 0;
     gap_scan_response_accepted = 0;
     gap_scanner.generation++;
     return 1;
@@ -663,8 +667,10 @@ static int gap_conn_procedure_start(
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!any_peer && !auto_connect) {
         gap_scanner.active = active_scan;
-        gap_scan_head = gap_scan_count = 0;
-        gap_scan_seen_count = gap_scan_seen_next = 0;
+        gap_scan_head = 0;
+        gap_scan_count = 0;
+        gap_scan_seen_count = 0;
+        gap_scan_seen_next = 0;
         gap_scanner.generation++;
     }
     return 1;

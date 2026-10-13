@@ -507,8 +507,10 @@ static uint8_t gap_ext_adv_report_head, gap_ext_adv_report_count;
 static void gap_ext_scan_reset(uint8_t clear_owned_scan) {
     if (clear_owned_scan) gap_sync_owned_scan = 0;
     memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
-    gap_ext_adv_report_head = gap_ext_adv_report_count = 0;
-    gap_ext_adv_seen_count = gap_ext_adv_seen_next = 0;
+    gap_ext_adv_report_head = 0;
+    gap_ext_adv_report_count = 0;
+    gap_ext_adv_seen_count = 0;
+    gap_ext_adv_seen_next = 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -1484,7 +1486,8 @@ static int gap_periodic_connect_request(
 
     conn->link.peer_sca_ppm = 500;
     conn->is_central = 0;
-    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_central.active = 0;
     gap_scanner.generation++;
     return 1;
@@ -1582,7 +1585,8 @@ static int gap_periodic_connect_exchange(
         conn->peer.type = peer_type;
         memcpy(conn->peer.address, peer_address, 6);
     }
-    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_scanner.generation++;
     return 1;
 }

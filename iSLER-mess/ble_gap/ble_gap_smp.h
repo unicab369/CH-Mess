@@ -1274,7 +1274,8 @@ static void smp_bond_restore_poll(void) {
     ) {
         gap_bond_remove();
         memset(&conn->bond, 0, sizeof(conn->bond));
-        conn->bonded = conn->restore_started = 0;
+        conn->bonded = 0;
+        conn->restore_started = 0;
         bond_repair_pending[gap_conn_slot] = 1;
     }
 
@@ -1667,7 +1668,8 @@ static void gap_smp_poll(void) {
 
         smp->tx_offset += (uint8_t)max_len;
         if (smp->tx_offset == smp->tx_len) {
-            smp->tx_len = smp->tx_offset = 0;
+            smp->tx_len = 0;
+            smp->tx_offset = 0;
             gap_wipe(smp->tx, sizeof(smp->tx));
         }
     }
