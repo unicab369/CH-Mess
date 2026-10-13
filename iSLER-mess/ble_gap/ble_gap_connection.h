@@ -916,8 +916,10 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         break;
 
     case 0x11: // LL_REJECT_EXT_IND
-        if (frame[1] == 3 &&
-            (frame[3] == 0x2b || frame[3] == 0x2c) &&
+        if (frame[1] != 3)
+            return gap_conn_unknown_response(frame[2]);
+
+        if ((frame[3] == 0x2b || frame[3] == 0x2c) &&
             conn->features.ext_pending
         ) {
             conn->features.ext_pending = 0;
@@ -926,17 +928,17 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->rate.set_queued = conn->rate.request_queued = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x3e && conn->rate.req_pending) {
+        if (frame[3] == 0x3e && conn->rate.req_pending) {
             conn->rate.req_pending = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x3f &&
+        if (frame[3] == 0x3f &&
             conn->rate.update_pending
         ) {
             conn->rate.update_pending = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x03 &&
+        if (frame[3] == 0x03 &&
             (gap_security->phase == GAP_ENC_WAIT_RSP ||
              gap_security->phase == GAP_ENC_WAIT_START)) {
             gap_security->status = frame[4];
@@ -945,56 +947,49 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
-        if (frame[1] == 3 && frame[3] == 0x16 && conn->pending.phy_request) {
+        if (frame[3] == 0x16 && conn->pending.phy_request) {
             conn->pending.phy_request = 0;
             conn->phy.status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x14 && conn->pending.length) {
+        if (frame[3] == 0x14 && conn->pending.length) {
             conn->pending.length = 0;
             conn->length_status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x26 &&
+        if (frame[3] == 0x26 &&
             conn->subrate.request_pending
         ) {
             conn->subrate.request_pending = 0;
             conn->subrate.status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x27 &&
+        if (frame[3] == 0x27 &&
             conn->subrate.pending
         ) {
             conn->subrate.pending = conn->subrate.transition = 0;
             conn->subrate.status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x28 &&
+        if (frame[3] == 0x28 &&
             conn->channel.report_pending
         ) {
             conn->channel.report_pending = 0;
             conn->channel.report_queued = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 &&
-            ((frame[3] == 0x0f && conn->pending.params && conn->pending.params_local) ||
+        if ((frame[3] == 0x0f && conn->pending.params && conn->pending.params_local) ||
              ((frame[3] == 0x08 || frame[3] == 0x0e) &&
-              conn->features.request_pending))
+              conn->features.request_pending)
         ) {
             conn->pending.params = conn->pending.params_local =
                 conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 &&
-            (frame[3] == 0x08 || frame[3] == 0x0e) &&
+        if ((frame[3] == 0x08 || frame[3] == 0x0e) &&
             (conn->subrate.update_queued ||
              conn->subrate.request_queued)
         ) {
             conn->subrate.update_queued = 0;
             conn->subrate.request_queued = 0;
             conn->subrate.status = frame[4];
-        }
-        if (frame[1] != 3) {
-            gap_tx_frame[1] = 2;
-            gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
-            gap_tx_frame[3] = 0x11;
         }
         break;
     case 0x08: // LL_FEATURE_REQ
