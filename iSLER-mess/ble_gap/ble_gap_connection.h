@@ -76,9 +76,7 @@ static void gap_conn_end(void) {
                                 0x08 : gap_security->status;
 
     // Wipe per-link keys, packet buffers, and queued data together.
-    gap_wipe(gap_tx_frame, sizeof(gap_tx_frame));
-    gap_wipe(gap_conn_buff[gap_conn_slot].cipher, sizeof(gap_conn_buff[gap_conn_slot].cipher));
-    gap_wipe(gap_conn_buff[gap_conn_slot].plain, sizeof(gap_conn_buff[gap_conn_slot].plain));
+    gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
     gap_wipe(&conn->bond, sizeof(conn->bond));
     gap_wipe(conn->tx_data, sizeof(conn->tx_data));
     gap_wipe(conn->rx_data, sizeof(conn->rx_data));
