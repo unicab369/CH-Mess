@@ -953,20 +953,19 @@ uint8_t gap_key_size(void) {
 
 // Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!gap_pair_cfg.enabled || !gap_connected() || smp->pairing.phase ||
-        smp->blocked || gap_security->phase || gap_encrypted() ||
-        smp->tx_len || smp->bearer.tx_len
+        smp->blocked || gap_sec_contexts[gap_conn_slot].phase ||
+        gap_encrypted() || smp->tx_len || smp->bearer.tx_len
     ) return 0;
 
-    uint8_t central_role = !!conn->is_central;
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
     smp->bond_tx_waiting = 0;
-    smp->pairing.local_is_central = central_role;
-    smp->pairing.phase = central_role ? SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
-    smp->status = GAP_CONNECTION_PENDING;
+    smp->pairing.local_is_central = conn->is_central;
+    smp->pairing.phase = conn->is_central ?
+                    SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
     smp->pairing.bond_requested = 0;
     smp->pairing.bond_tx_step = 0;
     smp->pairing.bond_rx_step = 0;
@@ -975,7 +974,8 @@ int gap_pair(void) {
     smp->pairing.keypress_active = 0;
     smp->pairing.secure_connections = 0;
     smp->previous_bond_valid = conn->is_central && conn->bonded;
-    smp->previous_bond = smp->previous_bond_valid ? conn->bond : (gap_bond){0};
+    smp->previous_bond = (smp->previous_bond_valid) ? conn->bond : (gap_bond){0};
+    smp->status = GAP_CONNECTION_PENDING;
 
     if (conn->is_central) {
         uint8_t identity_irk[16] = {0}, identity_address[7] = {0};
@@ -1089,13 +1089,12 @@ int gap_bond_remove(void) {
     return 0;
 }
 
-static int smp_bond_load(
-    const uint8_t address[6], uint8_t address_type, gap_bond *out
-) {
-    if (!out || address_type > 1 || !address) return 0;
-    memset(out, 0, sizeof(*out));
+static int smp_bond_load(void) {
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    memset(&conn->bond, 0, sizeof(conn->bond));
 
-    if (!GAP_BOND_LOAD || (address_type && (address[5] & 0xc0) != 0xc0))
+    if (!GAP_BOND_LOAD || conn->peer.type > 1 ||
+        (conn->peer.type && (conn->peer.address[5] & 0xc0) != 0xc0))
         return 0;
 
     gap_bond stored = {0};
@@ -1107,16 +1106,19 @@ static int smp_bond_load(
             gap_wipe(&stored, sizeof(stored));
             return 0;
         }
+
         if (loaded && stored.valid == 1 && gap_bond_valid(&stored) &&
-            stored.peer.type == address_type &&
-            memcmp(stored.peer.address, address, 6) == 0) {
+            stored.peer.type == conn->peer.type &&
+            memcmp(stored.peer.address, conn->peer.address,
+                   sizeof(conn->peer.address)) == 0
+        ) {
             stored.version = GAP_BOND_VERSION;
             if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
             if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
             if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
             if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
             if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
-            *out = stored;
+            conn->bond = stored;
             gap_wipe(&stored, sizeof(stored));
             return 1;
         }
@@ -1149,6 +1151,7 @@ static int smp_bond_store(const gap_bond *bond) {
 
     gap_bond current;
     int free_slot = -1;
+
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
         memset(&current, 0, sizeof(current));
         int loaded = GAP_BOND_LOAD(slot, &current);
@@ -1196,7 +1199,8 @@ static void smp_bond_abort(void) {
         smp_bond_store(&smp->previous_bond);
         memcpy(&conn->bond, &smp->previous_bond, sizeof(conn->bond));
         conn->bonded = 1;
-    } else {
+    }
+    else {
         gap_bond_remove();
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
@@ -1208,31 +1212,29 @@ static void smp_bond_abort(void) {
 static void gap_smp_finish(uint8_t status) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (status) smp_bond_abort();
     if (status && !conn->bonded &&
         (smp->pairing.phase == SMP_PHASE_BOND_TX ||
-         smp->pairing.phase == SMP_PHASE_BOND_RX))
-        gap_wipe(&conn->bond, sizeof(conn->bond));
+         smp->pairing.phase == SMP_PHASE_BOND_RX)
+    ) gap_wipe(&conn->bond, sizeof(conn->bond));
 
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
+    gap_wipe(&smp->pairing, sizeof(smp->pairing));
+    smp->pairing.phase = SMP_PHASE_IDLE;
     smp->bearer.tx_len = 0;
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
     smp->bearer.deadline_ms = 0;
-    gap_wipe(&smp->pairing, sizeof(smp->pairing));
-    smp->pairing.phase = SMP_PHASE_IDLE;
     ble_l2cap_reassembler_reset(&smp->l2cap_rx);
     // A new SMP pairing procedure requires a new physical connection, even
     // after an unsuccessful attempt; preserve only the connection status.
 
     smp->blocked = 1;
-    smp->pairing.user_notified = 0;
-    smp->pairing.numeric_notified = 0;
     smp->status = status;
     smp->encryption_started = 0;
-    smp->tx_len = smp->tx_offset = 0;
     smp->l2cap_rx_pending = 0;
 
     gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
