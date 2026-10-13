@@ -228,6 +228,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         }
         memcpy(conn->link.channel_map, conn->pending_channel_map, sizeof(conn->link.channel_map));
         conn->link.used_count = 0;
+
         for (uint8_t channel = 0; channel < 37; channel++)
             if (conn->link.channel_map[channel / 8] & (1 << (channel % 8)))
                 conn->link.used_channels[conn->link.used_count++] = channel;
@@ -247,8 +248,7 @@ static void gap_conn_event_advance(void) {
 
     if (conn->is_central && conn->subrate.transition) {
         int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-        if (conn->next_schedule.factor &&
-            pending_offset % conn->next_schedule.factor == 0)
+        if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
             subrated = 1;
     }
 
@@ -259,7 +259,7 @@ static void gap_conn_event_advance(void) {
         // A new subrated event starts a fresh continuation window; activity
         // before it cannot keep later events active.
         conn->subrate.continuations = conn->subrate.event_activity ?
-            conn->schedule.continuation : 0;
+                                        conn->schedule.continuation : 0;
     }
     else {
         if (conn->subrate.continuations)
@@ -286,9 +286,8 @@ static void gap_conn_event_advance(void) {
         if (conn->is_central && conn->subrate.transition &&
             conn->next_schedule.factor > 1
         ) {
-            distance = 65536 - conn->next_schedule.base_event;
-            steps = (distance + conn->next_schedule.factor - 1) /
-                    conn->next_schedule.factor;
+            steps = (65536 - conn->next_schedule.base_event +
+                     conn->next_schedule.factor - 1) / conn->next_schedule.factor;
             conn->next_schedule.base_event = (uint16_t)(
                     conn->next_schedule.base_event +
                     steps * conn->next_schedule.factor - 65536);
@@ -305,7 +304,7 @@ static void gap_send_conn_update(void) {
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
     conn->update_instant = (uint16_t)(conn->link.event_counter +
-                                6 * (conn->schedule.latency + 1) + 1);
+                            6 * (conn->schedule.latency + 1) + 1);
     conn->pending.timing_update = 1;
     conn->queue.local_update = 0;
     conn->pending.params = conn->pending.params_local = 0;
@@ -314,7 +313,8 @@ static void gap_send_conn_update(void) {
     gap_tx_frame[1] = 12;
     gap_tx_frame[2] = 0x00; // LL_CONNECTION_UPDATE_IND
     gap_tx_frame[3] = conn->update_window_size;
-    gap_tx_frame[4] = gap_tx_frame[5] = 0; // WinOffset
+    gap_tx_frame[4] = 0;
+    gap_tx_frame[5] = 0; // WinOffset
     gap_tx_frame[6] = (uint8_t)conn->new_params.interval;
     gap_tx_frame[7] = (uint8_t)(conn->new_params.interval >> 8);
     gap_tx_frame[8] = (uint8_t)conn->new_params.latency;
