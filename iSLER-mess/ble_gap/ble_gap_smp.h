@@ -335,7 +335,6 @@ typedef struct {
     } secure;
     gap_oob_data oob_peer;
     uint8_t l2cap_ready, l2cap_rx_pending;
-    uint32_t started_ms;
 } gap_smp_context;
 
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
@@ -693,9 +692,7 @@ static int gap_smp_queue(
         smp->bearer.deadline_ms = smp->bearer.now_ms + SMP_TIMEOUT_MS;
     }
 
-    int queued = smp_poll();
-    smp->started_ms = GET_MILLIS();
-    return queued;
+    return smp_poll();
 }
 
 // Only advertise identity-key distribution when a persistent local IRK has
@@ -1479,10 +1476,6 @@ static void gap_smp_poll(void) {
         }
     }
 
-    if (pairing->phase && GET_MILLIS() - smp->started_ms >= 30000u) {
-        gap_smp_finish(SMP_FAIL_UNSPECIFIED);
-    }
-
     if ((pairing->phase == SMP_PHASE_PASSKEY ||
          (pairing->phase == SMP_PHASE_CONFIRM && pairing->passkey_action == GAP_PASSKEY_DISPLAY) ||
          (pairing->secure_connections && smp->secure.passkey_required &&
@@ -2232,7 +2225,7 @@ static void gap_smp_poll(void) {
         }
 
         if (pairing->secure_connections &&
-            ((pdu[5] | pdu[6]) & (GAP_KEY_DIST_ENCRYPTION | GAP_KEY_DIST_SIGNING))
+            ((pdu[5] | pdu[6]) & GAP_KEY_DIST_SIGNING)
         ) {
             gap_smp_fail(SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
             return;
