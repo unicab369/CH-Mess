@@ -2099,9 +2099,7 @@ int gap_conn_rate_set(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || !conn->is_central || conn->link.first_event ||
-        gap_security->phase || conn->rate.set_queued ||
-        conn->rate.request_queued || conn->rate.update_pending ||
-        conn->rate.req_pending || conn->queue.local_update ||
+        gap_security->phase || gap_conn_rate_busy() || conn->queue.local_update ||
         conn->pending.timing_update || conn->queue.local_params ||
         conn->pending.params || conn->subrate.pending ||
         conn->subrate.update_queued || conn->subrate.request_queued ||
@@ -2134,9 +2132,7 @@ int gap_conn_rate_request(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || conn->is_central || conn->link.first_event ||
-        gap_security->phase || conn->rate.set_queued ||
-        conn->rate.request_queued || conn->rate.update_pending ||
-        conn->rate.req_pending || conn->queue.local_update ||
+        gap_security->phase || gap_conn_rate_busy() || conn->queue.local_update ||
         conn->pending.timing_update || conn->queue.local_params ||
         conn->pending.params || conn->subrate.pending ||
         conn->subrate.update_queued || conn->subrate.request_queued ||
