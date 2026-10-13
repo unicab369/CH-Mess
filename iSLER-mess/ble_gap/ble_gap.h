@@ -1013,6 +1013,7 @@ static int gap_conn_accept(
 
     int free_slot = gap_conn_free_slot();
     if (free_slot < 0) return 0;
+
     // Must precede conn->data_capacity; conn uses this slot index.
     gap_conn_slot = free_slot;
     gap_security = &gap_sec_contexts[gap_conn_slot];
@@ -1038,7 +1039,6 @@ static int gap_conn_accept(
     memcpy(conn->responder.address, frame + 8, 6);
     memcpy(&conn->peer, &conn->initiator, sizeof(conn->peer));
 
-    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1 << (channel % 8)))
@@ -1061,7 +1061,6 @@ static int gap_conn_accept(
     conn->link.used_count = count;
     conn->link.hop = frame[35] & 0x1f;
     conn->link.unmapped_channel = 0;
-    conn->schedule.interval_125us = (uint16_t)(interval * 10);
     conn->link.last_rx_ms = GET_MILLIS();
     conn->link.first_event = 1;
     conn->link.expected_rx_sn = 0;
@@ -1069,10 +1068,12 @@ static int gap_conn_accept(
     conn->link.tx_pending = 0;
     conn->link.event_counter = 0;
 
+    conn->schedule.interval_125us = ((uint16_t)frame[24] |
+                                    (uint16_t)frame[25] << 8) * 10;
     conn->schedule.latency = (uint16_t)frame[26] |
                             (uint16_t)frame[27] << 8;
     conn->schedule.timeout = (uint16_t)frame[28] |
-                                            (uint16_t)frame[29] << 8;
+                            (uint16_t)frame[29] << 8;
 
     // Initialize direct connection fields together.
 #if GAP_EXT_ADV_SUPPORT
