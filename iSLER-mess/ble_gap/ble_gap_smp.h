@@ -1384,6 +1384,7 @@ static void smp_bond_peripheral_start(void) {
 
         do {
             if (++attempts > 4 || !smp_random_bytes((uint8_t *)&material, sizeof(material))) {
+                gap_wipe(&material, sizeof(material));
                 gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
