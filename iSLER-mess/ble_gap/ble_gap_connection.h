@@ -1991,14 +1991,9 @@ int gap_subrate_set(
         !gap_subrate_parameters_valid(factor, peripheral_latency,
                                       continuation, timeout))
         return 0;
+    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
     if (conn->features.known &&
-        (conn->features.peer[4] & GAP_LL_FEATURES_SUBRATING) == 0
-    ) {
-        conn->subrate.status = 0x1a;
-        return 0;
-    }
-    if (conn->features.known &&
-        (conn->features.peer[4] & GAP_LL_FEATURES_SUBRATING_HOST) == 0
+        (conn->features.peer[4] & required) != required
     ) {
         conn->subrate.status = 0x1a;
         return 0;
@@ -2039,14 +2034,9 @@ int gap_subrate_request(
             2 * (uint32_t)conn->schedule.interval_125us * factor_min *
                 (max_latency + 1))
         return 0;
+    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
     if (conn->features.known &&
-        (conn->features.peer[4] & GAP_LL_FEATURES_SUBRATING) == 0
-    ) {
-        conn->subrate.status = 0x1a;
-        return 0;
-    }
-    if (conn->features.known &&
-        (conn->features.peer[4] & GAP_LL_FEATURES_SUBRATING_HOST) == 0
+        (conn->features.peer[4] & required) != required
     ) {
         conn->subrate.status = 0x1a;
         return 0;
