@@ -66,7 +66,7 @@ int gap_ad_add_local_name(
     gap_ad_builder *builder, const uint8_t *name,
     size_t len, uint8_t complete
 ) {
-    if (complete > 1 || (!name && len)) return 0;
+    if (complete > 1) return 0;
     uint8_t type = complete ? GAP_AD_NAME_COMPLETE : GAP_AD_NAME_SHORT;
     return gap_ad_append(builder, type, name, len);
 }
@@ -105,7 +105,7 @@ int gap_ad_add_uuid128_list(
     gap_ad_builder *builder, const uint8_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if (complete > 1 || (count && !uuids) || count > 254 / 16) return 0;
+    if (complete > 1 || count > 254 / 16) return 0;
     uint8_t type = complete ? GAP_AD_UUID128_COMPLETE : GAP_AD_UUID128_INCOMPLETE;
     return gap_ad_append(builder, type, uuids, count * 16);
 }
@@ -287,8 +287,7 @@ int gap_ead_decrypt(
                             ead + 7 + plaintext_len,
                             GAP_EAD_MIC_LEN, out);
     if (decrypt_result != CCM_OK || !gap_ead_plaintext_valid(out, plaintext_len)) {
-        volatile uint8_t *wipe = out;
-        for (size_t i = 0; i < plaintext_len; i++) wipe[i] = 0;
+        gap_wipe(out, plaintext_len);
         return 0;
     }
     *out_len = plaintext_len;
