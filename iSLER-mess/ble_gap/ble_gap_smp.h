@@ -244,7 +244,8 @@ static inline int smp_random_bytes(uint8_t *out, unsigned len) {
 
 // SMP uses little-endian AES inputs/outputs, unlike the generic AES interface.
 static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len) {
-    for (size_t i = 0; i < len; i++) out[i] = in[len - 1 - i];
+    for (size_t i = 0; i < len; i++)
+        out[i] = in[len - 1 - i];
 }
 
 static inline int smp_aes128(
@@ -252,26 +253,15 @@ static inline int smp_aes128(
 ) {
     if (!key || !input || !output) return 0;
 
-    uint8_t standard_key[16], standard_input[16], standard_output[16];
-    gap_sc_reverse(standard_key, key, sizeof(standard_key));
-    gap_sc_reverse(standard_input, input, sizeof(standard_input));
-    AES_ENCRYPT_BLOCK(standard_key, standard_input, standard_output);
-    gap_sc_reverse(output, standard_output, sizeof(standard_output));
+    uint8_t aes_key[16], aes_input[16], aes_output[16];
+    gap_sc_reverse(aes_key, key, sizeof(aes_key));
+    gap_sc_reverse(aes_input, input, sizeof(aes_input));
+    AES_ENCRYPT_BLOCK(aes_key, aes_input, aes_output);
+    gap_sc_reverse(output, aes_output, sizeof(aes_output));
 
-    gap_wipe(standard_key, sizeof(standard_key));
-    gap_wipe(standard_input, sizeof(standard_input));
-    gap_wipe(standard_output, sizeof(standard_output));
-    return 1;
-}
-
-static inline int smp_poll(ble_smp *smp) {
-    if (!smp || !smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu)
-        return 0;
-    if (!smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
-            BLE_L2CAP_CID_SMP, smp->tx, smp->tx_len))
-        return 0;
-    memset(smp->tx, 0, sizeof(smp->tx));
-    smp->tx_len = 0;
+    gap_wipe(aes_key, sizeof(aes_key));
+    gap_wipe(aes_input, sizeof(aes_input));
+    gap_wipe(aes_output, sizeof(aes_output));
     return 1;
 }
 
@@ -349,6 +339,19 @@ typedef struct {
 } gap_smp_context;
 
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
+
+static inline int smp_poll(void) {
+    ble_smp *bearer = &gap_smp_contexts[gap_conn_slot].bearer;
+    if (!bearer->l2cap || !bearer->tx_len || !bearer->l2cap->ops.send_pdu)
+        return 0;
+    if (!bearer->l2cap->ops.send_pdu(bearer->l2cap->ops.context,
+            BLE_L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
+    ) return 0;
+
+    memset(bearer->tx, 0, sizeof(bearer->tx));
+    bearer->tx_len = 0;
+    return 1;
+}
 
 typedef struct {
     uint8_t valid;
@@ -683,7 +686,7 @@ static int gap_smp_queue(uint8_t opcode, const uint8_t *data, uint8_t len) {
         smp->bearer.procedure_active = 1;
     if (smp->bearer.procedure_active)
         smp->bearer.deadline_ms = smp->bearer.now_ms + SMP_TIMEOUT_MS;
-    int queued = smp_poll(&smp->bearer);
+    int queued = smp_poll();
     smp->started_ms = GET_MILLIS();
     return queued;
 }
@@ -1513,7 +1516,7 @@ static void gap_smp_poll(void) {
     }
 
     if (!smp->tx_len && smp->bearer.tx_len)
-        (void)smp_poll(&smp->bearer);
+        (void)smp_poll();
 
     if (pairing->phase == SMP_PHASE_SC_USER && smp->secure.numeric_reply) {
         if (smp->secure.numeric_reply == 2) {
