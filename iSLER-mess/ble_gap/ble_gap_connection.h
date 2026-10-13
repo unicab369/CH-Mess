@@ -530,6 +530,19 @@ static uint8_t gap_conn_unknown_response(uint8_t opcode) {
     return 0;
 }
 
+static uint8_t gap_conn_reject_parameters(uint8_t opcode, uint8_t error) {
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_tx_frame[1] = 3;
+    gap_tx_frame[2] = 0x11; // LL_REJECT_EXT_IND
+    gap_tx_frame[3] = opcode;
+    gap_tx_frame[4] = error;
+    if (opcode == 0x10 && conn->pending.params && conn->pending.params_local) {
+        conn->pending.params = conn->pending.params_local = 0;
+        conn->connection_status = error;
+    }
+    return 0;
+}
+
 static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     uint8_t authenticated, uint64_t connection_anchor_ticks,
     uint16_t connection_event_counter
@@ -734,7 +747,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         if (frame[1] != 24 || (frame[2] == 0x10 &&
             (!conn->is_central || !conn->pending.params ||
              !conn->pending.params_local))
-        ) goto reject_parameters;
+        ) return gap_conn_reject_parameters(frame[2], error);
 
         uint16_t minimum = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
@@ -743,40 +756,50 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         if (minimum < 6 || maximum > 3200 || minimum > maximum ||
             latency > 499 || timeout < 10 || timeout > 3200 ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
-                2 * (uint32_t)(latency + 1) * maximum * 10)
-            goto reject_parameters;
+                2 * (uint32_t)(latency + 1) * maximum * 10
+        ) return gap_conn_reject_parameters(frame[2], error);
+
         // Offset hints must be unique, below Interval_Max, and
         // ordered before unspecified (0xffff) offsets.
         uint8_t unspecified = 0, has_offset = 0;
         for (uint8_t i = 0; i < 6; i++) {
             uint16_t offset = (uint16_t)frame[14 + i * 2] |
-                (uint16_t)frame[15 + i * 2] << 8;
-            if (offset == 0xffff) { unspecified = 1; continue; }
-            if (unspecified || offset >= maximum) goto reject_parameters;
+                            (uint16_t)frame[15 + i * 2] << 8;
+            if (offset == 0xffff) {
+                unspecified = 1;
+                continue;
+            }
+            if (unspecified || offset >= maximum)
+                return gap_conn_reject_parameters(frame[2], error);
+
             for (uint8_t j = 0; j < i; j++)
                 if (frame[14 + j * 2] == (uint8_t)offset &&
-                    frame[15 + j * 2] == (uint8_t)(offset >> 8))
-                    goto reject_parameters;
+                    frame[15 + j * 2] == (uint8_t)(offset >> 8)
+                ) return gap_conn_reject_parameters(frame[2], error);
             has_offset = 1;
         }
+
         if (has_offset && minimum != maximum && !frame[11])
-            goto reject_parameters;
+            return gap_conn_reject_parameters(frame[2], error);
         error = 0x23; // LL procedure collision.
+
         if (gap_security->phase || gap_conn_rate_busy() ||
             conn->pending.timing_update || conn->queue.local_update ||
             conn->pending.channel_map || conn->queue.local_map ||
-            conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
-            (frame[2] == 0x0f &&
-             ((conn->pending.params && !conn->pending.params_local) ||
-              (conn->is_central &&
-               (conn->pending.params || conn->queue.local_params)))))
-            goto reject_parameters;
+            conn->queue.phy_queued || conn->pending.phy_request ||
+            conn->pending.phy_update ||
+            (frame[2] == 0x0f && ((conn->pending.params && !conn->pending.params_local) ||
+              (conn->is_central && (conn->pending.params || conn->queue.local_params))))
+        ) return gap_conn_reject_parameters(frame[2], error);
+
         if (frame[2] == 0x10) {
             if (minimum < conn->params_min) minimum = conn->params_min;
             if (maximum > conn->params_max) maximum = conn->params_max;
             error = 0x20; // Unsupported LL parameter value.
-            if (minimum > maximum) goto reject_parameters;
+            if (minimum > maximum)
+                return gap_conn_reject_parameters(frame[2], error);
         }
+
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
             if (interval < minimum || interval > maximum) interval = minimum;
@@ -786,17 +809,19 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 if (preferred <= maximum) interval = preferred;
             }
             uint16_t factor = (uint32_t)interval * 10 ==
-                conn->schedule.interval_125us ?
-                conn->schedule.factor : 1;
+                                conn->schedule.interval_125us ?
+                                conn->schedule.factor : 1;
             error = 0x20;
             if ((uint32_t)timeout * 80 <= 2 *
-                (uint32_t)(latency + 1) * interval * 10 * factor)
-                goto reject_parameters;
+                (uint32_t)(latency + 1) * interval * 10 * factor
+            ) return gap_conn_reject_parameters(frame[2], error);
+
             conn->new_params.interval = interval;
             conn->new_params.latency = latency;
             conn->new_params.supervision_timeout = timeout;
             gap_send_conn_update();
-        } else {
+        }
+        else {
             // The Central's procedure takes precedence over a
             // simultaneous locally initiated Peripheral request.
             if (conn->queue.local_params ||
@@ -811,16 +836,6 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             gap_tx_frame[2] = 0x10; // LL_CONNECTION_PARAM_RSP
         }
         break;
-reject_parameters:
-        gap_tx_frame[1] = 3;
-        gap_tx_frame[2] = 0x11; // LL_REJECT_EXT_IND
-        gap_tx_frame[3] = frame[2];
-        gap_tx_frame[4] = error;
-        if (frame[2] == 0x10 && conn->pending.params && conn->pending.params_local) {
-            conn->pending.params = conn->pending.params_local = 0;
-            conn->connection_status = error;
-        }
-        break;
     }
     case 0x02: // LL_TERMINATE_IND
         if (frame[1] == 2) {
@@ -833,6 +848,7 @@ reject_parameters:
         gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
         gap_tx_frame[3] = 0x02;
         break;
+
     case 0x12: // LL_PING_REQ
         if (frame[1] == 1) {
             gap_tx_frame[1] = 1;
@@ -843,6 +859,7 @@ reject_parameters:
         gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
         gap_tx_frame[3] = 0x12;
         break;
+
     case 0x13: // LL_PING_RSP
         if (frame[1] != 1) {
             gap_tx_frame[1] = 2;
@@ -850,26 +867,34 @@ reject_parameters:
             gap_tx_frame[3] = 0x13;
         }
         break;
+
     case 0x0d: // LL_REJECT_IND
-        if (frame[1] == 2 && (gap_security->phase == GAP_ENC_WAIT_RSP ||
-            gap_security->phase == GAP_ENC_WAIT_START)
+        if (frame[1] != 2)
+            return gap_conn_unknown_response(frame[2]);
+
+        if (gap_security->phase == GAP_ENC_WAIT_RSP ||
+            gap_security->phase == GAP_ENC_WAIT_START
         ) {
             gap_security->status = frame[3];
-            if (gap_security->refreshing) { gap_conn_end(); return 1; }
+            if (gap_security->refreshing) {
+                gap_conn_end();
+                return 1;
+            }
+
             gap_security->phase = GAP_ENC_IDLE;
             gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
-        if (frame[1] == 2 && conn->pending.phy_request) {
+        if (conn->pending.phy_request) {
             conn->pending.phy_request = 0;
             conn->phy.status = frame[3];
         }
-        if (frame[1] == 2 && conn->pending.length) {
+        if (conn->pending.length) {
             conn->pending.length = 0;
             conn->length_status = frame[3];
         }
-        if (frame[1] == 2 && ((conn->pending.params && conn->pending.params_local) ||
-            conn->features.request_pending)
+        if ((conn->pending.params && conn->pending.params_local) ||
+            conn->features.request_pending
         ) {
             if (conn->features.request_pending &&
                 (conn->subrate.update_queued ||
@@ -880,22 +905,16 @@ reject_parameters:
                 conn->subrate.status = 0x1a;
             }
             conn->pending.params = conn->pending.params_local =
-                conn->queue.local_params = 0;
+                                    conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[3];
         }
-        if (frame[1] == 2 && frame[3] == 0x26 &&
-            conn->subrate.request_pending
-        ) {
+        if (frame[3] == 0x26 && conn->subrate.request_pending) {
             conn->subrate.request_pending = 0;
             conn->subrate.status = 0x1a;
         }
-        if (frame[1] != 2) {
-            gap_tx_frame[1] = 2;
-            gap_tx_frame[2] = 0x07; // LL_UNKNOWN_RSP
-            gap_tx_frame[3] = 0x0d;
-        }
         break;
+
     case 0x11: // LL_REJECT_EXT_IND
         if (frame[1] == 3 &&
             (frame[3] == 0x2b || frame[3] == 0x2c) &&
@@ -903,15 +922,11 @@ reject_parameters:
         ) {
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
-            memset(conn->features.peer_page1, 0,
-                   sizeof(conn->features.peer_page1));
-            conn->rate.set_queued =
-                conn->rate.request_queued = 0;
+            memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
+            conn->rate.set_queued = conn->rate.request_queued = 0;
             conn->connection_status = frame[4];
         }
-        if (frame[1] == 3 && frame[3] == 0x3e &&
-            conn->rate.req_pending
-        ) {
+        if (frame[1] == 3 && frame[3] == 0x3e && conn->rate.req_pending) {
             conn->rate.req_pending = 0;
             conn->connection_status = frame[4];
         }
