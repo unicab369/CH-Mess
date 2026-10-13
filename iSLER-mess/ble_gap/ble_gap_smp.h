@@ -1863,8 +1863,8 @@ static void gap_smp_poll(void) {
         }
     }
 
-    // A saved Peripheral LTK is selected only when both legacy identifiers
-    // match the peer's request; otherwise leave the request for the host hook.
+    // Select the saved Peripheral LTK only when both legacy identifiers match;
+    // otherwise reject the key request.
     if (!conn->is_central && conn->bonded && !pairing->phase &&
         !conn->restore_attempted && gap_security->phase == GAP_ENC_KEY_REQUEST
     ) {
@@ -1873,8 +1873,8 @@ static void gap_smp_poll(void) {
                              (uint16_t)conn->bond.central.ediv[1] << 8;
 
         if (!memcmp(gap_security->random, conn->bond.central.rand, 8) &&
-            gap_key_reply(conn->bond.central.ltk) &&
-            gap_security->ediv == bond_ediv
+            gap_security->ediv == bond_ediv &&
+            gap_key_reply(conn->bond.central.ltk)
         ) {
             conn->restore_started = 1;
         } else {
