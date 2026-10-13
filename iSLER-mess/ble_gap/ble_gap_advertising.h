@@ -274,7 +274,7 @@ int gap_ead_encrypt(
         encrypted_data, encrypted_data + plaintext_len, GAP_EAD_MIC_LEN
     );
     if (encrypt_result != CCM_OK) {
-        memset(encrypted_data, 0, plaintext_len + GAP_EAD_MIC_LEN);
+        gap_wipe(encrypted_data, plaintext_len + GAP_EAD_MIC_LEN);
         return 0;
     }
     out[0] = (uint8_t)(plaintext_len + 10);
