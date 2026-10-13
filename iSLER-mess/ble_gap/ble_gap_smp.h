@@ -1459,7 +1459,6 @@ static void gap_smp_poll(void) {
     if (!conn->link_state.active) return;
 
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     typeof(smp->pairing) *pairing = &smp->pairing;
 

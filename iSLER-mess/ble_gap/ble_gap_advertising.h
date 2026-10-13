@@ -50,9 +50,10 @@ int gap_ad_append(
         value_len + 2 > builder->capacity - builder->len
     ) return 0;
 
+    // Copy first so value may overlap the builder buffer.
+    if (value_len) memmove(builder->data + builder->len + 2, value, value_len);
     builder->data[builder->len] = (uint8_t)(value_len + 1);
     builder->data[builder->len + 1] = type;
-    if (value_len) memcpy(builder->data + builder->len + 2, value, value_len);
     builder->len += value_len + 2;
     return 1;
 }
@@ -75,30 +76,43 @@ int gap_ad_add_uuid16_list(
     gap_ad_builder *builder, const uint16_t *uuids,
     size_t count, uint8_t complete
 ) {
-    uint8_t value[254];
-    if (complete > 1 || (!uuids && count) || count > sizeof(value) / 2)
+    if (complete > 1 || (!uuids && count) || count > 254 / 2)
         return 0;
     uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
+    size_t value_len = count * 2;
+    if (!gap_ad_append(builder, type, (const uint8_t *)uuids, value_len))
+        return 0;
+
+    uint8_t *value = builder->data + builder->len - value_len;
     for (size_t i = 0; i < count; i++) {
-        value[i * 2] = (uint8_t)uuids[i];
-        value[i * 2 + 1] = (uint8_t)(uuids[i] >> 8);
+        uint16_t uuid;
+        memcpy(&uuid, value + i * 2, sizeof(uuid));
+        value[i * 2] = (uint8_t)uuid;
+        value[i * 2 + 1] = (uint8_t)(uuid >> 8);
     }
-    return gap_ad_append(builder, type, value, count * 2);
+    return 1;
 }
 
 int gap_ad_add_uuid32_list(
     gap_ad_builder *builder, const uint32_t *uuids,
     size_t count, uint8_t complete
 ) {
-    uint8_t value[252];
-    if (complete > 1 || (!uuids && count) || count > sizeof(value) / 4)
+    if (complete > 1 || (!uuids && count) || count > 252 / 4)
         return 0;
 
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
-    for (size_t i = 0; i < count; i++)
+    size_t value_len = count * 4;
+    if (!gap_ad_append(builder, type, (const uint8_t *)uuids, value_len))
+        return 0;
+
+    uint8_t *value = builder->data + builder->len - value_len;
+    for (size_t i = 0; i < count; i++) {
+        uint32_t uuid;
+        memcpy(&uuid, value + i * 4, sizeof(uuid));
         for (uint8_t b = 0; b < 4; b++)
-            value[i * 4 + b] = (uint8_t)(uuids[i] >> (8 * b));
-    return gap_ad_append(builder, type, value, count * 4);
+            value[i * 4 + b] = (uint8_t)(uuid >> (8 * b));
+    }
+    return 1;
 }
 
 int gap_ad_add_uuid128_list(
@@ -121,7 +135,6 @@ int gap_ad_add_service_data(
     gap_ad_builder *builder, const uint8_t *uuid, size_t uuid_len,
     const uint8_t *data, size_t len
 ) {
-    uint8_t value[254];
     uint8_t type;
     switch (uuid_len) {
         case 2: type = GAP_AD_SERVICE_DATA16; break;
@@ -130,11 +143,20 @@ int gap_ad_add_service_data(
         default: return 0;
     }
 
-    if (!builder || !uuid || (!data && len) || len > sizeof(value) - uuid_len)
+    if (!builder || !builder->data || !uuid || (!data && len) ||
+        len > 254 - uuid_len || builder->len > builder->capacity ||
+        uuid_len + len + 2 > builder->capacity - builder->len)
         return 0;
-    memcpy(value, uuid, uuid_len);
-    if (len) memcpy(value + uuid_len, data, len);
-    return gap_ad_append(builder, type, value, uuid_len + len);
+
+    uint8_t uuid_copy[16];
+    memcpy(uuid_copy, uuid, uuid_len);
+    uint8_t *out = builder->data + builder->len;
+    if (len) memmove(out + 2 + uuid_len, data, len);
+    memcpy(out + 2, uuid_copy, uuid_len);
+    out[0] = (uint8_t)(uuid_len + len + 1);
+    out[1] = type;
+    builder->len += uuid_len + len + 2;
+    return 1;
 }
 
 // Parse the next AD structure: 1 means a value was returned, 0 means end,
