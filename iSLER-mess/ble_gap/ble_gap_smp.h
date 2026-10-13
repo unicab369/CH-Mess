@@ -348,7 +348,7 @@ static inline int smp_poll(void) {
             BLE_L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
     ) return 0;
 
-    memset(bearer->tx, 0, sizeof(bearer->tx));
+    gap_wipe(bearer->tx, sizeof(bearer->tx));
     bearer->tx_len = 0;
     return 1;
 }
@@ -680,16 +680,18 @@ static int gap_smp_queue(
     uint8_t opcode, const uint8_t *data, size_t len
 ) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    uint8_t pdu[SMP_PDU_MAX];
-    if (len > sizeof(pdu) - 1 || (len && !data)) return 0;
-    if (len) memcpy(pdu + 1, data, len);
+    uint8_t *pdu = smp->bearer.tx;
+    if (smp->bearer.tx_len || len > sizeof(smp->bearer.tx) - 1 ||
+        (len && !data)) return 0;
+    if (len) memmove(pdu + 1, data, len);
     pdu[0] = opcode;
 
     uint16_t pdu_len = (uint16_t)(len + 1);
-    if (!smp_pdu_valid(pdu, pdu_len) || smp->bearer.tx_len)
+    if (!smp_pdu_valid(pdu, pdu_len)) {
+        gap_wipe(pdu, pdu_len);
         return 0;
+    }
 
-    memcpy(smp->bearer.tx, pdu, pdu_len);
     smp->bearer.tx_len = (uint8_t)pdu_len;
 
     if (opcode == SMP_PAIRING_REQUEST || opcode == SMP_SECURITY_REQUEST)
