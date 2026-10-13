@@ -576,9 +576,14 @@ static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t accept_list_nonempty = 0;
+
+    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
+        accept_list_nonempty |= gap_accept_list[i].used;
+
     if (active_scan > 1 || conn->link_state.active || gap_scanner.scanning ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
-          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_nonempty())
+          mode == GAP_CONN_MODE_AUTO) && !accept_list_nonempty)
     ) return 0;
 
     uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer_type : 0;
@@ -589,13 +594,16 @@ static int gap_conn_procedure_start(
 
     memset(gap_central.request, 0, sizeof(gap_central.request));
     uint8_t local_type;
-    int peer_slot = peer_address ? gap_identity_find(peer_address, peer_type) : -1;
+    int peer_slot = -1;
+
+    if (peer_address) {
+        peer_slot = gap_identity_find(peer_address, peer_type);
+        memcpy(gap_central.request + 8, peer_address, 6);
+    }
     gap_local_address_select(peer_slot, gap_central.request + 2, &local_type);
     gap_central.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central.request[1] = 34;
 
-    if (peer_address)
-        memcpy(gap_central.request + 8, peer_address, 6);
     gap_central.request[14] = (uint8_t)access_address;
     gap_central.request[15] = (uint8_t)(access_address >> 8);
     gap_central.request[16] = (uint8_t)(access_address >> 16);
