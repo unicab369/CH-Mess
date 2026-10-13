@@ -1214,11 +1214,11 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
     gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
-
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
+
     smp->bearer.tx_len = 0;
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
@@ -1236,7 +1236,6 @@ static void gap_smp_finish(uint8_t status) {
 
 // Close pairing state and retain only its final status for the GAP API.
 static void gap_smp_link_close(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -1251,7 +1250,7 @@ static void gap_smp_link_close(void) {
     }
 
     if (conn->is_central && conn->restore_started &&
-        gap_security->status == 0x3d
+        gap_sec_contexts[gap_conn_slot].status == 0x3d
     ) {
         gap_bond_remove();
         bond_repair_pending[gap_conn_slot] = 1;

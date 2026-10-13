@@ -289,10 +289,10 @@ int gap_periodic_adv_pawr_set(
 
     uint32_t subevent_interval_us = (uint32_t)(num_subevents > 1 ?
         subevent_interval : set->periodic_interval) * 1250;
-    if (gap_periodic_tx_duration_us(set->periodic_data_len, set->aux_phy) >=
-            subevent_interval_us ||
-        gap_periodic_tx_duration_us(set->periodic_data_len, set->aux_phy) + 150 >=
-            (uint32_t)response_slot_delay * 1250
+    uint32_t tx_duration_us =
+        gap_periodic_tx_duration_us(set->periodic_data_len, set->aux_phy);
+    if (tx_duration_us >= subevent_interval_us ||
+        tx_duration_us + 150 >= (uint32_t)response_slot_delay * 1250
     ) return 0;
 
     if (!gap_access_address_generate(&set->periodic_response_access_address))
@@ -354,8 +354,7 @@ int gap_periodic_adv_pawr_connect(
         gap_central.active || gap_scanner.scanning ||
         !gap_ext_adv[set_id].periodic_enabled ||
         !gap_ext_adv[set_id].pawr_enabled ||
-        subevent >= gap_ext_adv[set_id].pawr_num_subevents ||
-        gap_ext_adv[set_id].pawr_connect_pending
+        subevent >= gap_ext_adv[set_id].pawr_num_subevents
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
@@ -670,15 +669,6 @@ static int gap_ext_adv_decode(
     return fields->data_len <= GAP_EXT_ADV_DATA_MAX;
 }
 
-static int gap_ext_adv_data_valid(const uint8_t *data, uint16_t len) {
-    for (uint16_t offset = 0; offset < len;) {
-        uint8_t field_len = data[offset];
-        if (!field_len || (uint32_t)offset + field_len + 1 > len) return 0;
-        offset += field_len + 1;
-    }
-    return 1;
-}
-
 // Queue one fully reassembled extended report after privacy/discovery filters.
 static void gap_ext_adv_report_queue(
     const uint8_t *address, uint8_t has_address,
@@ -687,7 +677,7 @@ static void gap_ext_adv_report_queue(
 ) {
     uint8_t zero_address[6] = {0};
     if (!address) address = zero_address;
-    if (!gap_ext_adv_data_valid(data, data_len)) return;
+    if (!gap_ext_ad_data_valid(data, data_len)) return;
     int identity_slot = has_address ? gap_identity_find(address, address_type) : -1;
     if ((has_address && !gap_peer_allowed(identity_slot, address, address_type)) ||
         (gap_privacy.scan_filter && identity_slot < 0))
@@ -768,8 +758,7 @@ static void gap_ext_adv_report_queue(
 }
 
 static void gap_ext_adv_context_clear(uint8_t slot) {
-    volatile uint8_t *wipe = (volatile uint8_t *)&gap_ext_adv_contexts[slot];
-    for (size_t i = 0; i < sizeof(gap_ext_adv_contexts[slot]); i++) wipe[i] = 0;
+    gap_wipe(&gap_ext_adv_contexts[slot], sizeof(gap_ext_adv_contexts[slot]));
 }
 
 // Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
@@ -792,7 +781,7 @@ int gap_ext_scan_receive(
         if (fields.has_aux_ptr && !fields.has_adi) return 0;
         if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
         if (!fields.has_aux_ptr) {
-            if (!gap_ext_adv_data_valid(fields.data, fields.data_len)) return 0;
+            if (!gap_ext_ad_data_valid(fields.data, fields.data_len)) return 0;
             gap_ext_adv_report_queue(
                 fields.address, fields.has_address,
                 fields.address_type, fields.has_adi, fields.adi,
@@ -882,7 +871,7 @@ int gap_ext_scan_receive(
     }
     if (fields.mode == 0)
         gap_ext_adv_contexts[slot].await_scan_response = 0;
-    if (!gap_ext_adv_data_valid(gap_ext_adv_contexts[slot].data,
+    if (!gap_ext_ad_data_valid(gap_ext_adv_contexts[slot].data,
                                 gap_ext_adv_contexts[slot].data_len)
     ) {
         gap_ext_adv_context_clear((uint8_t)slot);
@@ -1305,7 +1294,7 @@ static int gap_periodic_sync_receive(
         return 1;
     }
     gap_syncs[slot].event_data_active = 0;
-    if (!gap_ext_adv_data_valid(gap_syncs[slot].data,
+    if (!gap_ext_ad_data_valid(gap_syncs[slot].data,
                                 gap_syncs[slot].data_len)
     ) {
         gap_syncs[slot].data_len = 0;
