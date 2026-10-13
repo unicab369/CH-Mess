@@ -362,8 +362,8 @@ int gap_periodic_adv_pawr_connect(
         if (gap_ext_adv[i].pawr_connect_pending) return 0;
 
     if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
-                          peer_address, peer_address_type)
-    ) return 0;
+                          peer_address, peer_address_type))
+        return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
     set->pawr_connect_subevent = subevent;

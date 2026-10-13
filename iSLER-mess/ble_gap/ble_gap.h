@@ -690,8 +690,9 @@ int gap_identity_set(
     if (!address || address_type > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         conn->link_state.active || gap_central.active ||
-        (address_type && !gap_static_addr_valid(address)))
-        return 0;
+        (address_type && !gap_static_addr_valid(address))
+    ) return 0;
+
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -707,13 +708,17 @@ int gap_identity_set(
         }
         if (!gap_identities[i].used && slot < 0) slot = i;
     }
+
     if (!irk || slot < 0) return 0;
     if (!gap_identities[slot].used)
         gap_identities[slot].privacy_mode = GAP_PRIVACY_NETWORK;
+
     gap_identities[slot].used = 1;
     gap_identities[slot].has_irk = 0;
+
     for (uint8_t i = 0; i < 16; i++)
         if (irk[i]) gap_identities[slot].has_irk = 1;
+
     gap_identities[slot].address_type = address_type;
     memcpy(gap_identities[slot].address, address, 6);
     memcpy(gap_identities[slot].irk, irk, 16);
@@ -722,15 +727,15 @@ int gap_identity_set(
 
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(
-    const uint8_t address[6], uint8_t address_type,
-                               uint8_t mode
+    const uint8_t address[6], uint8_t address_type, uint8_t mode
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         conn->link_state.active ||
-        gap_central.active)
-        return 0;
+        gap_central.active
+    ) return 0;
+
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
             gap_identities[i].address_type == address_type &&
@@ -746,9 +751,11 @@ int gap_identity_privacy(
 // Resolve without replacing the received address, which is needed on the air.
 int gap_resolve(
     const uint8_t address[6], uint8_t address_type,
-                      uint8_t identity[6], uint8_t *identity_type
+    uint8_t identity[6], uint8_t *identity_type
 ) {
-    if (!address || address_type > 1 || !identity || !identity_type) return 0;
+    if (!address || address_type > 1 || !identity || !identity_type)
+        return 0;
+
     int slot = gap_identity_find(address, address_type);
     if (slot < 0) return 0;
     memcpy(identity, gap_identities[slot].address, 6);
@@ -757,23 +764,24 @@ int gap_resolve(
 }
 
 static int gap_private_address_generate(
-    const uint8_t irk[16],
-                                         uint8_t address[6],
-                                         const uint8_t previous[6]
+    const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
 ) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         if (irk) {
             GAP_HW_RANDOM_BYTES(address + 3, 3);
             address[5] = (address[5] & 0x3f) | 0x40;
             uint32_t random = (uint32_t)address[3] |
-                (uint32_t)address[4] << 8 | (uint32_t)(address[5] & 0x3f) << 16;
+                            (uint32_t)address[4] << 8 |
+                            (uint32_t)(address[5] & 0x3f) << 16;
             if (!random || random == 0x3fffff) continue;
             gap_address_hash(irk, address + 3, address);
-        } else {
+        }
+        else {
             // NRPA: 46 random bits with address bits 47:46 cleared; no AES.
             GAP_HW_RANDOM_BYTES(address, 6);
             address[5] &= 0x3f;
             uint8_t all_zero = 1, all_one = 1, public_address[6];
+
             for (uint8_t i = 0; i < 6; i++) {
                 if (address[i]) all_zero = 0;
                 if (address[i] != (i == 5 ? 0x3f : 0xff)) all_one = 0;
@@ -790,47 +798,57 @@ static int gap_private_address_generate(
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(
-    const uint8_t address[6], uint8_t address_type,
-                                 const uint8_t irk[16]
+    const uint8_t address[6], uint8_t address_type, const uint8_t irk[16]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        conn->link_state.active || gap_central.active)
-        return 0;
+        conn->link_state.active || gap_central.active
+    ) return 0;
+
     int slot = gap_identity_find(address, address_type);
-    if (slot < 0 || gap_identities[slot].address_type != address_type ||
-        memcmp(address, gap_identities[slot].address, 6) != 0)
-        return 0;
+    if (slot < 0) return 0;
+    gap_identity *identity = &gap_identities[slot];
+    if (identity->address_type != address_type ||
+        memcmp(address, identity->address, 6) != 0) return 0;
+
     uint8_t key_bits = 0, local[6] = {0};
-    if (irk) for (uint8_t i = 0; i < 16; i++) key_bits |= irk[i];
-    if (key_bits && !gap_private_address_generate(irk, local,
-            gap_identities[slot].local_address))
+    if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
+        key_bits |= irk[i];
+
+    if (key_bits && !gap_private_address_generate(irk, local, identity->local_address))
         return 0;
-    if (irk) memcpy(gap_identities[slot].local_irk, irk, 16);
-    else memset(gap_identities[slot].local_irk, 0, 16);
-    memcpy(gap_identities[slot].local_address, local, 6);
-    gap_identities[slot].local_key_set = irk != NULL;
-    gap_identities[slot].has_local_irk = key_bits != 0;
+
+    if (irk) memcpy(identity->local_irk, irk, sizeof(identity->local_irk));
+    else memset(identity->local_irk, 0, sizeof(identity->local_irk));
+
+    memcpy(identity->local_address, local, sizeof(identity->local_address));
+    identity->local_key_set = (irk != NULL);
+    identity->has_local_irk = (key_bits != 0);
     return 1;
 }
 
 // Select the peer's cached local RPA, our identity for its zero local IRK,
 // or the global address when that peer has no local key override.
-static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type) {
-    if (gap_privacy.enabled && gap_privacy.resolvable && slot >= 0 &&
+static void gap_local_address_select(
+    int slot, uint8_t address[6], uint8_t *type
+) {
+    if (gap_privacy.enabled &&
+        gap_privacy.resolvable && slot >= 0 &&
         gap_identities[slot].local_key_set
     ) {
         if (gap_identities[slot].has_local_irk) {
             *type = 1;
             memcpy(address, gap_identities[slot].local_address, 6);
-        } else {
+        }
+        else {
             *type = gap_identity_address_type;
             if (*type) memcpy(address, gap_identity_address, 6);
             else GAP_HW_PUBLIC_ADDRESS(address);
         }
         return;
     }
+
     *type = gap_own_address_type;
     if (*type) memcpy(address, gap_random_address, 6);
     else GAP_HW_PUBLIC_ADDRESS(address);
@@ -841,23 +859,29 @@ static void gap_local_address_select(int slot, uint8_t address[6], uint8_t *type
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         conn->link_state.active ||
-        gap_central.active || timeout_s > 41400 || (irk && !timeout_s))
-        return 0;
+        gap_central.active || timeout_s > 41400 || (irk && !timeout_s)
+    ) return 0;
+
     if (!irk && !timeout_s) {
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
         gap_privacy.enabled = gap_privacy.resolvable = 0;
         gap_own_address_type = 0;
         return 1;
     }
+
     uint8_t address[6];
-    if (!gap_private_address_generate(irk, address, gap_random_address)) return 0;
+    if (!gap_private_address_generate(irk, address, gap_random_address))
+        return 0;
+
     if (irk) memcpy(gap_privacy.irk, irk, 16);
     else memset(gap_privacy.irk, 0, 16);
+
     gap_privacy.resolvable = irk != NULL;
     memcpy(gap_random_address, address, 6);
-    gap_privacy.enabled = gap_own_address_type = 1;
+    gap_privacy.enabled = (gap_own_address_type = 1);
     gap_privacy.timeout_s = timeout_s;
     gap_privacy.timeout_min_s = gap_privacy.timeout_max_s = timeout_s;
     gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
