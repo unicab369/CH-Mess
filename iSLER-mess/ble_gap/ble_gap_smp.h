@@ -532,19 +532,19 @@ static void gap_sc_confirm_value(
 static uint32_t gap_sc_numeric_value(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     uint8_t is_central = gap_conn_ctx[gap_conn_slot].is_central;
-    uint8_t na[16], nb[16];
+    uint8_t na[16];
 
     const uint8_t *central = is_central ?
                     smp->secure.public_key : smp->secure.peer_public_key;
     const uint8_t *peripheral = is_central ?
                     smp->secure.peer_public_key : smp->secure.public_key;
     gap_sc_reverse(na, is_central ? smp->random : smp->peer_random, 16);
-    gap_sc_reverse(nb, is_central ? smp->peer_random : smp->random, 16);
 
     uint8_t message[80], mac[16];
     memcpy(message, central, 32);
     memcpy(message + 32, peripheral, 32);
-    memcpy(message + 64, nb, 16);
+    gap_sc_reverse(message + 64,
+                   is_central ? smp->peer_random : smp->random, 16);
 
     uint32_t value = 0;
     if (smp_port_cmac(na, message, sizeof(message), mac)) {
@@ -553,7 +553,6 @@ static uint32_t gap_sc_numeric_value(void) {
                  (uint32_t)mac[14] << 8 | mac[15]) % 1000000;
     }
     gap_wipe(na, sizeof(na));
-    gap_wipe(nb, sizeof(nb));
     gap_wipe(message, sizeof(message));
     gap_wipe(mac, sizeof(mac));
     return value;
