@@ -1223,7 +1223,6 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
-    smp->pairing.phase = SMP_PHASE_IDLE;
     smp->bearer.tx_len = 0;
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
