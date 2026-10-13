@@ -370,14 +370,18 @@ void gap_hw_received(void) {
                     allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
                         (gap_security->phase == GAP_ENC_WAIT_START && opcode == 0x05);
                     break;
+
                 case GAP_ENC_KEY_REQUEST:
                     allowed |= opcode == 0x07; break;
+
                 case GAP_ENC_WAIT_FINAL:
                 case GAP_ENC_PERIPHERAL_START:
                     allowed |= opcode == 0x06; break;
+
                 case GAP_ENC_WAIT_PAUSE:
                 case GAP_ENC_PERIPHERAL_PAUSE:
                     allowed |= opcode == 0x0b; break;
+
                 case GAP_ENC_PERIPHERAL_RESTART:
                     allowed |= opcode == 0x03; break;
                 default: break;

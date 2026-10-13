@@ -807,7 +807,10 @@ int gap_ext_scan_receive(
         }
         if (slot < 0) {
             for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                if (!gap_ext_adv_contexts[i].active) { slot = i; break; }
+                if (!gap_ext_adv_contexts[i].active) {
+                    slot = i;
+                    break;
+                }
         }
         if (slot < 0) slot = 0;
         gap_ext_adv_context_clear((uint8_t)slot);
@@ -948,7 +951,10 @@ int gap_periodic_sync_start(
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
-        if (!gap_syncs[i].used) { slot = i; break; }
+        if (!gap_syncs[i].used) {
+            slot = i;
+            break;
+        }
     if (slot < 0) return 0;
 
     if (!gap_scanner.scanning) {
