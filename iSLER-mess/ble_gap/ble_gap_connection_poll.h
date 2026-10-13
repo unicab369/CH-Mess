@@ -421,17 +421,21 @@ void gap_hw_received(void) {
     uint8_t advertiser_type = (frame[0] >> 6) & 1;
     int peer_matches = 0;
 
-    if (gap_central.any_peer) {
-        peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
-    }
-    else if (gap_central.selective || gap_central.auto_connect) {
-        peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
-    }
-    else {
-        int target_slot = gap_identity_find(gap_central.peer_address, gap_central.peer_type);
-        peer_matches = (advertiser_type == gap_central.peer_type &&
-                        memcmp(frame + 2, gap_central.peer_address, 6) == 0) ||
-                        (peer_slot >= 0 && peer_slot == target_slot);
+    if ((gap_central.active || (gap_scanner.active && gap_central.selective)) &&
+        pdu_type <= 0x06 && frame[1] >= 6 && frame[1] <= 37
+    ) {
+        if (gap_central.any_peer) {
+            peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
+        }
+        else if (gap_central.selective || gap_central.auto_connect) {
+            peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
+        }
+        else {
+            int target_slot = gap_identity_find(gap_central.peer_address, gap_central.peer_type);
+            peer_matches = (advertiser_type == gap_central.peer_type &&
+                            memcmp(frame + 2, gap_central.peer_address, 6) == 0) ||
+                            (peer_slot >= 0 && peer_slot == target_slot);
+        }
     }
 
     if (gap_central.active &&
@@ -522,7 +526,6 @@ void gap_hw_received(void) {
             return;
         }
 
-        uint8_t advertiser_type = (frame[0] >> 6) & 1;
         memcpy(gap_scan.active_address, frame + 2, 6);
         gap_scan.active_address_type = advertiser_type;
         gap_scan.active_deadline_ms = GET_MILLIS() + 10;
@@ -1187,9 +1190,7 @@ int gap_send_due(
     gap_adv_state.adv_frame[1] = pdu_type == 0x01 ? 12 : 6 + len;
 
     const uint8_t *address = random_address ? random_address : public_address;
-    for (uint8_t i = 0; i < 6; i++) {
-        gap_adv_state.adv_frame[2 + i] = address[i];
-    }
+    memcpy(gap_adv_state.adv_frame + 2, address, 6);
 
     if (pdu_type == 0x01)
         memcpy(gap_adv_state.adv_frame + 8, gap_adv.target_address, 6);
