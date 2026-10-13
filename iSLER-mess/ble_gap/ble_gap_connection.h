@@ -483,9 +483,9 @@ static void gap_privacy_poll(uint32_t now) {
     if (gap_adv.enabled) {
         gap_local_address_select(gap_adv.peer_slot, gap_adv.address,
                                  &gap_adv.address_type);
-        int slot = gap_adv.peer_slot;
-        if (gap_privacy.resolvable && slot >= 0 && gap_identities[slot].has_irk &&
-            gap_private_address_generate(gap_identities[slot].irk, address,
+        if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
+            gap_identities[gap_adv.peer_slot].has_irk &&
+            gap_private_address_generate(gap_identities[gap_adv.peer_slot].irk, address,
                                           gap_adv.target_address))
             memcpy(gap_adv.target_address, address, 6);
     }
@@ -493,32 +493,15 @@ static void gap_privacy_poll(uint32_t now) {
     gap_privacy.next_rotation_ms = now + (uint32_t)next_timeout_s * 1000;
 }
 
-
-
-static uint8_t gap_subrate_parameters_valid(
-    uint16_t factor, uint16_t latency,
+static uint8_t gap_rate_parameters_valid(
+    uint16_t interval, uint16_t factor, uint16_t latency,
     uint16_t continuation, uint16_t timeout
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return factor >= 1 && factor <= 500 && latency <= 499 &&
+    return interval >= 3 && interval <= 32000 &&
+        factor >= 1 && factor <= 500 && latency <= 499 &&
         continuation < factor && factor * (latency + 1) <= 500 &&
         timeout >= 10 && timeout <= 3200 &&
-        (uint32_t)timeout * 80 >
-            2 * (uint32_t)conn->schedule.interval_125us * factor * (latency + 1);
-}
-
-// Process one acknowledged LL control PDU and prepare its response.
-// Return nonzero when handling the PDU ended the connection.
-static uint8_t gap_conn_rate_parameters_valid(
-    uint16_t interval,
-    uint16_t factor, uint16_t latency, uint16_t continuation,
-    uint16_t timeout
-) {
-    return interval >= 3 && interval <= 32000 && factor >= 1 &&
-        factor <= 500 && latency <= 499 && continuation < factor &&
-        factor * (latency + 1) <= 500 && timeout >= 10 && timeout <= 3200 &&
-        (uint32_t)timeout * 80 >
-            2 * (uint32_t)interval * factor * (latency + 1);
+        (uint32_t)timeout * 80 > 2 * (uint32_t)interval * factor * (latency + 1);
 }
 
 static uint16_t gap_conn_rate_min_interval(void) {
@@ -1211,7 +1194,7 @@ reject_parameters:
             if (interval < gap_conn_rate_min_interval())
                 interval = gap_conn_rate_min_interval();
             if (interval <= maximum &&
-                gap_conn_rate_parameters_valid(interval,
+                gap_rate_parameters_valid(interval,
                     factor_max, latency, continuation, timeout)
             ) {
                 conn->next_schedule.interval_125us = interval;
@@ -1248,7 +1231,7 @@ reject_parameters:
             (uint16_t)frame[14] << 8;
         uint16_t timeout = (uint16_t)frame[15] |
             (uint16_t)frame[16] << 8;
-        if (!gap_conn_rate_parameters_valid(interval, factor,
+        if (!gap_rate_parameters_valid(interval, factor,
                 latency, continuation, timeout) ||
             interval < gap_conn_rate_min_interval() ||
             win_offset > interval ||
@@ -1326,13 +1309,13 @@ reject_parameters:
                 error = 0x20;
                 uint16_t factor = max_factor;
                 while (factor >= min_factor &&
-                    !gap_subrate_parameters_valid(factor, max_latency,
-                        continuation, timeout)) {
+                    !gap_rate_parameters_valid(conn->schedule.interval_125us,
+                        factor, max_latency, continuation, timeout)) {
                     if (factor == min_factor) break;
                     factor--;
                 }
-                if (gap_subrate_parameters_valid(factor,
-                        max_latency, continuation, timeout)
+                if (gap_rate_parameters_valid(conn->schedule.interval_125us,
+                        factor, max_latency, continuation, timeout)
                 ) {
                     conn->next_schedule.factor = factor;
                     conn->next_schedule.latency = max_latency;
@@ -1372,8 +1355,8 @@ reject_parameters:
         uint16_t timeout = (uint16_t)frame[11] |
             (uint16_t)frame[12] << 8;
         if (gap_conn_rate_busy() ||
-            !gap_subrate_parameters_valid(factor, latency,
-                continuation, timeout)
+            !gap_rate_parameters_valid(conn->schedule.interval_125us,
+                factor, latency, continuation, timeout)
         ) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = 0x11;
@@ -1704,8 +1687,8 @@ int gap_subrate_set(
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent ||
-        !gap_subrate_parameters_valid(factor, peripheral_latency,
-                                      continuation, timeout))
+        !gap_rate_parameters_valid(conn->schedule.interval_125us,
+            factor, peripheral_latency, continuation, timeout))
         return 0;
     const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
     if (conn->features.known &&
@@ -1804,7 +1787,7 @@ int gap_conn_rate_set(
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        !gap_conn_rate_parameters_valid(interval, factor, latency,
+        !gap_rate_parameters_valid(interval, factor, latency,
                                                continuation, timeout))
         return 0;
     if (interval < gap_conn_rate_min_interval()) return 0;
