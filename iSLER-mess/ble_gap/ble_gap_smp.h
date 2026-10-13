@@ -2226,14 +2226,6 @@ static void gap_smp_poll(void) {
                             ? local.auth_req : configured_auth_req;
         pairing->keypress_active = (auth_req & 0x10) && (peer.auth_req & 0x10);
 
-        if (op == SMP_PAIRING_RESPONSE && ((peer.init_key_dist &
-                (uint8_t)~pairing->request[5]) ||
-            (peer.resp_key_dist & (uint8_t)~pairing->request[6]))
-        ) {
-            gap_smp_fail(SMP_FAIL_INVALID_PARAMETERS);
-            return;
-        }
-
         if (pairing->secure_connections && negotiated.max_key_size != 16) {
             gap_smp_fail(SMP_FAIL_ENCRYPTION_KEY_SIZE);
             return;
