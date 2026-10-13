@@ -460,8 +460,6 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
 static int gap_sc_derive_keys(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t ini_nonce[16], resp_nonce[16];
-    uint8_t ini_address[7], resp_address[7];
     uint8_t t[16], message[53], ltk[16];
 
     static const uint8_t key_id[4] = {'b', 't', 'l', 'e'};
@@ -472,19 +470,14 @@ static int gap_sc_derive_keys(void) {
 
     const uint8_t *ini_random = conn->is_central ? smp->random : smp->peer_random;
     const uint8_t *resp_random = conn->is_central ? smp->peer_random : smp->random;
-    gap_sc_reverse(ini_nonce, ini_random, sizeof(ini_nonce));
-    gap_sc_reverse(resp_nonce, resp_random, sizeof(resp_nonce));
-
-    ini_address[0] = conn->initiator.type;
-    gap_sc_reverse(ini_address + 1, conn->initiator.address, 6);
-    resp_address[0] = conn->responder.type;
-    gap_sc_reverse(resp_address + 1, conn->responder.address, 6);
 
     memcpy(message + 1, key_id, sizeof(key_id));
-    memcpy(message + 5, ini_nonce, sizeof(ini_nonce));
-    memcpy(message + 21, resp_nonce, sizeof(resp_nonce));
-    memcpy(message + 37, ini_address, sizeof(ini_address));
-    memcpy(message + 44, resp_address, sizeof(resp_address));
+    gap_sc_reverse(message + 5, ini_random, 16);
+    gap_sc_reverse(message + 21, resp_random, 16);
+    message[37] = conn->initiator.type;
+    gap_sc_reverse(message + 38, conn->initiator.address, 6);
+    message[44] = conn->responder.type;
+    gap_sc_reverse(message + 45, conn->responder.address, 6);
     message[51] = 1;
     message[52] = 0;
 
@@ -502,10 +495,6 @@ static int gap_sc_derive_keys(void) {
         memset(smp->secure.mac_key, 0, sizeof(smp->secure.mac_key));
         memset(smp->secure.ltk, 0, sizeof(smp->secure.ltk));
     }
-    gap_wipe(ini_nonce, sizeof(ini_nonce));
-    gap_wipe(resp_nonce, sizeof(resp_nonce));
-    gap_wipe(ini_address, sizeof(ini_address));
-    gap_wipe(resp_address, sizeof(resp_address));
     gap_wipe(t, sizeof(t));
     gap_wipe(message, sizeof(message));
     gap_wipe(ltk, sizeof(ltk));
