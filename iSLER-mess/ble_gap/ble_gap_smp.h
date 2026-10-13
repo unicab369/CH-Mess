@@ -1210,7 +1210,11 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
+    gap_wipe(smp->random, sizeof(smp->random));
+    gap_wipe(smp->peer_random, sizeof(smp->peer_random));
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
+    gap_wipe(&smp->secure, sizeof(smp->secure));
+    gap_wipe(&smp->oob_peer, sizeof(smp->oob_peer));
 
     smp->bearer.tx_len = 0;
     smp->bearer.rx_len = 0;
@@ -1452,6 +1456,7 @@ static void gap_smp_poll(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!conn->link_state.active) return;
 
+    uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     typeof(smp->pairing) *pairing = &smp->pairing;
@@ -1771,8 +1776,10 @@ static void gap_smp_poll(void) {
         conn->authenticated = pairing->authenticated;
         conn->enc_key_size = pairing->key_size;
 
-        if (!pairing->bond_requested)
-            gap_smp_finish(0); return;
+        if (!pairing->bond_requested) {
+            gap_smp_finish(0);
+            return;
+        }
 
         gap_bond_key bond_data = {0};
         uint8_t attempts = 0, nonzero;
