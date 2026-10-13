@@ -34,7 +34,8 @@ static void gap_conn_send_queued(void) {
         if (conn->features.known && !(conn->features.peer[0] & 0x02)) {
             conn->queue.local_params = 0;
             conn->connection_status = 0x1a;
-        } else if (!conn->features.known) {
+        }
+        else if (!conn->features.known) {
             gap_send_conn_feature_request();
         } else {
             gap_tx_frame[0] = 3;
@@ -85,9 +86,11 @@ static void gap_conn_send_queued(void) {
                 conn->subrate.update_queued = 0;
                 conn->subrate.request_queued = 0;
                 conn->subrate.status = 0x1a;
-            } else if (conn->is_central && conn->subrate.update_queued) {
+            }
+            else if (conn->is_central && conn->subrate.update_queued) {
                 gap_send_subrate_update();
-            } else if (!conn->is_central && conn->subrate.request_queued) {
+            }
+            else if (!conn->is_central && conn->subrate.request_queued) {
                 conn->subrate.request_queued = 0;
                 conn->subrate.request_pending = 1;
                 conn->subrate.started_ms = GET_MILLIS();
@@ -116,11 +119,13 @@ static void gap_conn_send_queued(void) {
     ) {
         if (!conn->features.known) {
             gap_send_conn_feature_request();
-        } else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
+        }
+        else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
             conn->rate.set_queued = 0;
             conn->rate.request_queued = 0;
             conn->connection_status = 0x1a;
-        } else if (!conn->features.page1_known) {
+        }
+        else if (!conn->features.page1_known) {
             // Exchange page 1 after the legacy page advertised extended features.
             conn->features.ext_pending = 1;
             conn->params_started_ms = GET_MILLIS();
@@ -132,13 +137,16 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[4] = 1;    // PageNumber.
             memset(gap_tx_frame + 5, 0, 8);
             gap_tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
-        } else if (!(conn->features.peer_page1[1] & 0x02)) {
+        }
+        else if (!(conn->features.peer_page1[1] & 0x02)) {
             conn->rate.set_queued = 0;
             conn->rate.request_queued = 0;
             conn->connection_status = 0x1a;
-        } else if (conn->is_central && conn->rate.set_queued) {
+        }
+        else if (conn->is_central && conn->rate.set_queued) {
             gap_send_rate_ind();
-        } else if (!conn->is_central && conn->rate.request_queued) {
+        }
+        else if (!conn->is_central && conn->rate.request_queued) {
             gap_tx_frame[0] = 0x03;
             gap_tx_frame[1] = 27;
             gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
@@ -168,7 +176,8 @@ static void gap_conn_send_queued(void) {
     ) {
         if (!conn->features.known) {
             gap_send_conn_feature_request();
-        } else if (!(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
+        }
+        else if (!(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
             conn->channel.report_queued = 0;
             conn->channel.report_pending = 0;
             conn->connection_status = 0x1a;

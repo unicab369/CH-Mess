@@ -337,7 +337,8 @@ static int gap_access_address_valid(uint32_t address) {
             transitions++;
             run = 1;
             if (bit >= 27) msb_transitions++;
-        } else if (++run > 6) {
+        }
+        else if (++run > 6) {
             return 0;
         }
         previous = value;
@@ -803,7 +804,8 @@ static inline void gap_receive_report(
         if (seen_slot == GAP_SCAN_SEEN_COUNT) {
             seen_slot = gap_scan_seen_next;
             gap_scan_seen_next = (gap_scan_seen_next + 1) % GAP_SCAN_SEEN_COUNT;
-        } else if (seen_slot == gap_scan_seen_count) {
+        }
+        else if (seen_slot == gap_scan_seen_count) {
             gap_scan_seen_count++;
         }
         gap_scan_seen[seen_slot].address_type = identity_type;

@@ -2372,13 +2372,16 @@ static int gap_periodic_sync_transfer_encode(
     if (offset_us < 245700) {
         offset_unit = 0;
         offset_base = (uint16_t)(offset_us / 30);
-    } else if (offset_us <= 2457300) {
+    }
+    else if (offset_us <= 2457300) {
         offset_unit = 1;
         offset_base = (uint16_t)(offset_us / 300);
-    } else if (offset_us < 2457600) {
+    }
+    else if (offset_us < 2457600) {
         offset_unit = 1;
         offset_base = 0x1fff;
-    } else if (offset_us >= 2457600 && offset_us <= 4914900) {
+    }
+    else if (offset_us >= 2457600 && offset_us <= 4914900) {
         offset_unit = 1;
         offset_adjust = 1;
         offset_base = (uint16_t)((offset_us - 2457600) / 300);
