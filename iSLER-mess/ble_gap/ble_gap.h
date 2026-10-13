@@ -1018,19 +1018,9 @@ static int gap_conn_accept(
     gap_conn_slot = free_slot;
     gap_security = &gap_sec_contexts[gap_conn_slot];
     conn = &gap_conn_ctx[gap_conn_slot];
-    conn->data_capacity = data_capacity;
-
-    gap_wipe(&conn->queue, sizeof(conn->queue));
+    gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));
-    memset(&conn->link_state, 0, sizeof(conn->link_state));
-    conn->is_central = 0;
-    memset(&conn->pending, 0, sizeof(conn->pending));
-    memset(&conn->schedule, 0, sizeof(conn->schedule));
-    memset(&conn->next_schedule, 0, sizeof(conn->next_schedule));
-    memset(&conn->features, 0, sizeof(conn->features));
-    memset(&conn->channel, 0, sizeof(conn->channel));
-    memset(&conn->subrate, 0, sizeof(conn->subrate));
-    memset(&conn->bond, 0, sizeof(conn->bond));
+    conn->data_capacity = data_capacity;
     memcpy(conn->link.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;
@@ -1045,9 +1035,9 @@ static int gap_conn_accept(
             conn->link.used_channels[count++] = channel;
 
     conn->link.access_address = (uint32_t)frame[14] |
-                                    (uint32_t)frame[15] << 8 |
-                                    (uint32_t)frame[16] << 16 |
-                                    (uint32_t)frame[17] << 24;
+                                (uint32_t)frame[15] << 8 |
+                                (uint32_t)frame[16] << 16 |
+                                (uint32_t)frame[17] << 24;
     conn->link.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
@@ -1055,18 +1045,14 @@ static int gap_conn_accept(
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     conn->link.next_ticks = received_ticks +
-                (uint64_t)((uint16_t)frame[22] | (uint16_t)frame[23] << 8) *
-                unit_ticks + delay_ticks;
+                            (uint64_t)((uint16_t)frame[22] |
+                            (uint16_t)frame[23] << 8) *
+                            unit_ticks + delay_ticks;
 
     conn->link.used_count = count;
     conn->link.hop = frame[35] & 0x1f;
-    conn->link.unmapped_channel = 0;
     conn->link.last_rx_ms = GET_MILLIS();
     conn->link.first_event = 1;
-    conn->link.expected_rx_sn = 0;
-    conn->link.tx_sn = 0;
-    conn->link.tx_pending = 0;
-    conn->link.event_counter = 0;
 
     conn->schedule.interval_125us = ((uint16_t)frame[24] |
                                     (uint16_t)frame[25] << 8) * 10;
@@ -1075,32 +1061,15 @@ static int gap_conn_accept(
     conn->schedule.timeout = (uint16_t)frame[28] |
                             (uint16_t)frame[29] << 8;
 
-    // Initialize direct connection fields together.
-#if GAP_EXT_ADV_SUPPORT
-    conn->sync_transfer_queued = 0;
-    conn->sync_transfer_handle = 0;
-#endif
-
     conn->data_length = (gap_data_length){27, 328, 27, 328};
     conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
 
     conn->window_size = frame[21];
-    conn->tx_l2cap_remaining = 0;
-    conn->connection_status = 0;
     conn->local_tx_octets = 27;
-    conn->length_status = 0;
     conn->load_pending = 1;
-    conn->bonded = 0;
-    conn->restore_started = 0;
-    conn->restore_attempted = 0;
-    conn->authenticated = conn->enc_key_size = 0;
 
     // Initialize subrate and connection rate state.
     conn->schedule.factor = 1;
-    conn->rate.set_queued = 0;
-    conn->rate.request_queued = 0;
-    conn->rate.update_pending = 0;
-    conn->rate.req_pending = 0;
 
     // Initialize channel classification and PHY state.
     conn->channel.classification_valid = 1;
@@ -1109,7 +1078,6 @@ static int gap_conn_accept(
     conn->channel.status_changed_ms = GET_MILLIS();
     conn->phy.current.tx = conn->phy.current.rx = GAP_PHY_1M;
     conn->phy.preferred.tx = conn->phy.preferred.rx = GAP_HW_PHY_MASK() & 7;
-    conn->phy.status = 0;
     gap_security_generations[gap_conn_slot]++;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)
