@@ -50,8 +50,7 @@ static gap_conn_buffer gap_conn_buff[GAP_CONNECTION_COUNT];
 
 // Convert the shared connection schedule interval to hardware timer ticks.
 static uint64_t gap_conn_interval_ticks(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t interval = conn->schedule.interval_125us;
+    uint16_t interval = gap_conn_ctx[gap_conn_slot].schedule.interval_125us;
     return HW_TICKS_FROM_US((uint32_t)interval * 125);
 }
 
