@@ -1284,26 +1284,27 @@ static void smp_bond_restore_poll(void) {
         bond_repair_pending[gap_conn_slot] = 1;
     }
 
-    if (conn->is_central &&
-        bond_repair_pending[gap_conn_slot] &&
-        !conn->link.first_event && !gap_security->phase &&
-        !smp->pairing.phase && !conn->link.tx_pending &&
-        !conn->queue.tx_queued && !conn->tx_l2cap_remaining && gap_pair()
-    ) {
-        bond_repair_pending[gap_conn_slot] = 0;
-    }
-
-    if (!bond_repair_pending[gap_conn_slot] && conn->bonded &&
-        conn->is_central &&
-        !conn->link.first_event &&
-        !conn->restore_attempted &&
+    if (conn->is_central && !conn->link.first_event &&
         !gap_security->phase && !smp->pairing.phase
     ) {
-        conn->restore_attempted = 1;
-        uint16_t ediv = (uint16_t)conn->bond.central.ediv[0] |
-                        (uint16_t)conn->bond.central.ediv[1] << 8;
-        if (gap_encrypt(conn->bond.central.ltk, conn->bond.central.rand, ediv))
-            conn->restore_started = 1;
+        if (bond_repair_pending[gap_conn_slot] &&
+            !conn->link.tx_pending && !conn->queue.tx_queued &&
+            !conn->tx_l2cap_remaining && gap_pair()
+        ) {
+            bond_repair_pending[gap_conn_slot] = 0;
+        }
+
+        // Pairing may have started above, so recheck both procedure states.
+        if (!bond_repair_pending[gap_conn_slot] && conn->bonded &&
+            !conn->restore_attempted &&
+            !gap_security->phase && !smp->pairing.phase
+        ) {
+            conn->restore_attempted = 1;
+            uint16_t ediv = (uint16_t)conn->bond.central.ediv[0] |
+                            (uint16_t)conn->bond.central.ediv[1] << 8;
+            if (gap_encrypt(conn->bond.central.ltk, conn->bond.central.rand, ediv))
+                conn->restore_started = 1;
+        }
     }
 }
 

@@ -895,11 +895,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         gap_tx_frame[1] = 13;
         gap_tx_frame[2] = 0x04; // LL_ENC_RSP
         memcpy(gap_tx_frame + 3, entropy, 12);
-        {
-            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
-            size_t wipe_len = sizeof(entropy);
-            while (wipe_len--) *wipe_bytes++ = 0;
-        }
+        gap_wipe(entropy, sizeof(entropy));
         gap_security->status = GAP_CONNECTION_PENDING;
         gap_security->started_ms = GET_MILLIS();
         gap_security->phase = GAP_ENC_KEY_REQUEST;
@@ -955,12 +951,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                    gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE && !authenticated) {
             gap_security->tx_enabled = gap_security->rx_enabled = 0;
             gap_security->phase = GAP_ENC_PERIPHERAL_RESTART;
-            {
-                volatile uint8_t *wipe_bytes =
-                    (volatile uint8_t *)(gap_security->session_key);
-                size_t wipe_len = sizeof(gap_security->session_key);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
+            gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         } else
             goto unknown_control_pdu;
         break;
@@ -1171,17 +1162,8 @@ reject_parameters:
             gap_security->status = frame[3];
             if (gap_security->refreshing) { gap_conn_end(); return 1; }
             gap_security->phase = GAP_ENC_IDLE;
-            {
-                volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security->ltk);
-                size_t wipe_len = sizeof(gap_security->ltk);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
-            {
-                volatile uint8_t *wipe_bytes =
-                    (volatile uint8_t *)(gap_security->session_key);
-                size_t wipe_len = sizeof(gap_security->session_key);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
+            gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
+            gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
         if (frame[1] == 2 && conn->pending.phy_request) {
             conn->pending.phy_request = 0;
@@ -1250,17 +1232,8 @@ reject_parameters:
             gap_security->status = frame[4];
             if (gap_security->refreshing) { gap_conn_end(); return 1; }
             gap_security->phase = GAP_ENC_IDLE;
-            {
-                volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security->ltk);
-                size_t wipe_len = sizeof(gap_security->ltk);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
-            {
-                volatile uint8_t *wipe_bytes =
-                    (volatile uint8_t *)(gap_security->session_key);
-                size_t wipe_len = sizeof(gap_security->session_key);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
+            gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
+            gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
         if (frame[1] == 3 && frame[3] == 0x16 && conn->pending.phy_request) {
             conn->pending.phy_request = 0;
@@ -1397,17 +1370,8 @@ reject_parameters:
             gap_security->status = 0x1a;
             if (gap_security->refreshing) { gap_conn_end(); return 1; }
             gap_security->phase = GAP_ENC_IDLE;
-            {
-                volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security->ltk);
-                size_t wipe_len = sizeof(gap_security->ltk);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
-            {
-                volatile uint8_t *wipe_bytes =
-                    (volatile uint8_t *)(gap_security->session_key);
-                size_t wipe_len = sizeof(gap_security->session_key);
-                while (wipe_len--) *wipe_bytes++ = 0;
-            }
+            gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
+            gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
         if (frame[3] == 0x16 && conn->pending.phy_request) {
             conn->pending.phy_request = 0;
@@ -2479,21 +2443,9 @@ static void gap_security_derive(void) {
     }
     AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
     gap_security->tx_counter = gap_security->rx_counter = 0;
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(key);
-        size_t wipe_len = sizeof(key);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(diversifier);
-        size_t wipe_len = sizeof(diversifier);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(gap_security->ltk);
-        size_t wipe_len = sizeof(gap_security->ltk);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
+    gap_wipe(key, sizeof(key));
+    gap_wipe(diversifier, sizeof(diversifier));
+    gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
 }
 
 // Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
@@ -2619,11 +2571,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent || conn->link_state.terminate_after_reply) {
-        {
-            volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
-            size_t wipe_len = sizeof(entropy);
-            while (wipe_len--) *wipe_bytes++ = 0;
-        }
+        gap_wipe(entropy, sizeof(entropy));
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
@@ -2633,11 +2581,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_security->ediv = ediv;
     memcpy(gap_security->next_skd, entropy, 8);
     memcpy(gap_security->next_iv, entropy + 8, 4);
-    {
-        volatile uint8_t *wipe_bytes = (volatile uint8_t *)(entropy);
-        size_t wipe_len = sizeof(entropy);
-        while (wipe_len--) *wipe_bytes++ = 0;
-    }
+    gap_wipe(entropy, sizeof(entropy));
     gap_security->refreshing = gap_security->tx_enabled;
     gap_security->started_ms = GET_MILLIS();
     gap_security->status = GAP_CONNECTION_PENDING;
