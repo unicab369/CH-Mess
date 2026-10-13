@@ -541,27 +541,26 @@ static void gap_sc_confirm_value(
 
 static uint32_t gap_sc_numeric_value(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t central_role = conn->is_central;
+    uint8_t is_central = gap_conn_ctx[gap_conn_slot].is_central;
     uint8_t na[16], nb[16];
-    const uint8_t *central_key = central_role ?
+
+    const uint8_t *central = is_central ?
                     smp->secure.public_key : smp->secure.peer_public_key;
-    const uint8_t *peripheral_key = central_role ?
+    const uint8_t *peripheral = is_central ?
                     smp->secure.peer_public_key : smp->secure.public_key;
-    gap_sc_reverse(na, central_role ? smp->random : smp->peer_random, 16);
-    gap_sc_reverse(nb, central_role ? smp->peer_random : smp->random, 16);
+    gap_sc_reverse(na, is_central ? smp->random : smp->peer_random, 16);
+    gap_sc_reverse(nb, is_central ? smp->peer_random : smp->random, 16);
 
     uint8_t message[80], mac[16];
-    memcpy(message, central_key, 32);
-    memcpy(message + 32, peripheral_key, 32);
+    memcpy(message, central, 32);
+    memcpy(message + 32, peripheral, 32);
     memcpy(message + 64, nb, 16);
 
     uint32_t value = 0;
     if (smp_port_cmac(na, message, sizeof(message), mac)) {
-        uint32_t mac_value = (uint32_t)mac[12] << 24 |
-                            (uint32_t)mac[13] << 16 |
-                            (uint32_t)mac[14] << 8 | mac[15];
-        value = mac_value % 1000000;
+        value = ((uint32_t)mac[12] << 24 |
+                 (uint32_t)mac[13] << 16 |
+                 (uint32_t)mac[14] << 8 | mac[15]) % 1000000;
     }
     gap_wipe(na, sizeof(na));
     gap_wipe(nb, sizeof(nb));
@@ -573,21 +572,22 @@ static uint32_t gap_sc_numeric_value(void) {
 static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t central_role = conn->is_central;
     uint8_t na[16], nb[16], a1[7], a2[7], check[16], r[16] = {0};
 
     if (smp->secure.oob_active) {
-        const uint8_t *oob_random = from_central == central_role ?
+        const uint8_t *oob_random = from_central == conn->is_central ?
                 smp->secure.oob_local_random : smp->oob_peer.random;
         gap_sc_reverse(r, oob_random, 16);
     }
     else if (smp->secure.passkey_required) {
-        r[12] = smp->pairing.tk[3]; r[13] = smp->pairing.tk[2];
-        r[14] = smp->pairing.tk[1]; r[15] = smp->pairing.tk[0];
+        r[12] = smp->pairing.tk[3];
+        r[13] = smp->pairing.tk[2];
+        r[14] = smp->pairing.tk[1];
+        r[15] = smp->pairing.tk[0];
     }
 
-    gap_sc_reverse(na, central_role ? smp->random : smp->peer_random, 16);
-    gap_sc_reverse(nb, central_role ? smp->peer_random : smp->random, 16);
+    gap_sc_reverse(na, conn->is_central ? smp->random : smp->peer_random, 16);
+    gap_sc_reverse(nb, conn->is_central ? smp->peer_random : smp->random, 16);
     a1[0] = conn->initiator.type;
     gap_sc_reverse(a1 + 1, conn->initiator.address, 6);
     a2[0] = conn->responder.type;
