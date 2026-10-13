@@ -27,18 +27,159 @@ static void gap_conn_send_queued(void) {
         gap_tx_frame[8] = (uint8_t)conn->channel_map_instant;
         gap_tx_frame[9] = (uint8_t)(conn->channel_map_instant >> 8);
     }
-    if (conn->queue.local_params && !conn->features.request_pending)
-        gap_send_conn_request();
+    if (conn->queue.local_params && !conn->features.request_pending &&
+        !gap_tx_frame[1]
+    ) {
+        // Exchange features before sending the application's timing range.
+        if (conn->features.known && !(conn->features.peer[0] & 0x02)) {
+            conn->queue.local_params = 0;
+            conn->connection_status = 0x1a;
+        } else if (!conn->features.known) {
+            gap_send_conn_feature_request();
+        } else {
+            gap_tx_frame[0] = 3;
+            conn->params_started_ms = GET_MILLIS();
+            conn->queue.local_params = 0;
+            conn->pending.params = conn->pending.params_local = 1;
+            gap_tx_frame[1] = 24;
+            gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
+            gap_tx_frame[3] = (uint8_t)conn->params_min;
+            gap_tx_frame[4] = (uint8_t)(conn->params_min >> 8);
+            gap_tx_frame[5] = (uint8_t)conn->params_max;
+            gap_tx_frame[6] = (uint8_t)(conn->params_max >> 8);
+            gap_tx_frame[7] = (uint8_t)conn->params_latency;
+            gap_tx_frame[8] = (uint8_t)(conn->params_latency >> 8);
+            gap_tx_frame[9] = (uint8_t)conn->params_timeout;
+            gap_tx_frame[10] = (uint8_t)(conn->params_timeout >> 8);
+            gap_tx_frame[11] = 0; // No preferred periodicity.
+            gap_tx_frame[12] = gap_tx_frame[13] = 0;
+            memset(gap_tx_frame + 14, 0xff, 12); // No anchor offset preference.
+        }
+    }
     if (conn->queue.length)
         gap_send_data_length(0x14);
-    if (conn->queue.phy_queued)
-        gap_send_phy_request();
-    if (conn->subrate.update_queued || conn->subrate.request_queued)
-        gap_subrate_start_queued();
-    if (conn->rate.set_queued || conn->rate.request_queued)
-        gap_conn_rate_start_queued();
-    if (conn->channel.report_queued)
-        gap_channel_report_start();
+    if (conn->queue.phy_queued && !gap_tx_frame[1]) {
+        // Encode local preferences once earlier TX has been acknowledged.
+        conn->queue.phy_queued = 0;
+        conn->pending.phy_request = 1;
+        conn->phy.started_ms = GET_MILLIS();
+
+        gap_tx_frame[0] = 3;
+        gap_tx_frame[1] = 3;
+        gap_tx_frame[2] = 0x16; // LL_PHY_REQ
+        gap_tx_frame[3] = conn->phy.preferred.tx;
+        gap_tx_frame[4] = conn->phy.preferred.rx;
+    }
+    if ((conn->subrate.update_queued || conn->subrate.request_queued) &&
+        !gap_tx_frame[1] && !conn->features.request_pending
+    ) {
+        // Wait for the peer Link Layer and Host to confirm subrating support.
+        if (!conn->features.known) {
+            gap_send_conn_feature_request();
+        } else {
+            const uint8_t required =
+                GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
+            if ((conn->features.peer[4] & required) != required) {
+                conn->subrate.update_queued = conn->subrate.request_queued = 0;
+                conn->subrate.status = 0x1a;
+            } else if (conn->is_central && conn->subrate.update_queued) {
+                gap_send_subrate_update();
+            } else if (!conn->is_central && conn->subrate.request_queued) {
+                conn->subrate.request_queued = 0;
+                conn->subrate.request_pending = 1;
+                conn->subrate.started_ms = GET_MILLIS();
+
+                gap_tx_frame[0] = 0x03;
+                gap_tx_frame[1] = 11;
+                gap_tx_frame[2] = 0x26; // LL_SUBRATE_REQ.
+
+                const uint16_t values[5] = {
+                    conn->subrate.request_min,
+                    conn->subrate.request_max,
+                    conn->subrate.request_latency,
+                    conn->subrate.request_continuation,
+                    conn->subrate.request_timeout
+                };
+                for (uint8_t i = 0; i < 5; i++) {
+                    gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
+                    gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
+                }
+            }
+        }
+    }
+    if ((conn->rate.set_queued || conn->rate.request_queued) &&
+        !gap_tx_frame[1] && !conn->features.request_pending &&
+        !conn->features.ext_pending
+    ) {
+        if (!conn->features.known) {
+            gap_send_conn_feature_request();
+        } else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
+            conn->rate.set_queued = conn->rate.request_queued = 0;
+            conn->connection_status = 0x1a;
+        } else if (!conn->features.page1_known) {
+            // Exchange page 1 after the legacy page advertised extended features.
+            conn->features.ext_pending = 1;
+            conn->params_started_ms = GET_MILLIS();
+
+            gap_tx_frame[0] = 0x03;
+            gap_tx_frame[1] = 11;
+            gap_tx_frame[2] = 0x2b; // LL_FEATURE_EXT_REQ.
+            gap_tx_frame[3] = 1;    // MaxPage.
+            gap_tx_frame[4] = 1;    // PageNumber.
+            memset(gap_tx_frame + 5, 0, 8);
+            gap_tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
+        } else if (!(conn->features.peer_page1[1] & 0x02)) {
+            conn->rate.set_queued = conn->rate.request_queued = 0;
+            conn->connection_status = 0x1a;
+        } else if (conn->is_central && conn->rate.set_queued) {
+            gap_send_rate_ind();
+        } else if (!conn->is_central && conn->rate.request_queued) {
+            gap_tx_frame[0] = 0x03;
+            gap_tx_frame[1] = 27;
+            gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
+
+            const uint16_t values[9] = {
+                conn->rate.interval_min, conn->rate.interval_max,
+                conn->rate.factor_min, conn->rate.factor_max,
+                conn->rate.latency, conn->rate.continuation,
+                conn->rate.timeout, conn->rate.periodicity,
+                conn->link.event_counter
+            };
+            for (uint8_t i = 0; i < 9; i++) {
+                gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
+                gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
+            }
+            for (uint8_t i = 0; i < 4; i++) {
+                gap_tx_frame[21 + i * 2] = (uint8_t)conn->rate.offsets[i];
+                gap_tx_frame[22 + i * 2] = (uint8_t)(conn->rate.offsets[i] >> 8);
+            }
+            conn->rate.request_queued = 0;
+            conn->rate.req_pending = 1;
+            conn->params_started_ms = GET_MILLIS();
+        }
+    }
+    if (conn->channel.report_queued && !gap_tx_frame[1] &&
+        conn->is_central && !conn->features.request_pending
+    ) {
+        if (!conn->features.known) {
+            gap_send_conn_feature_request();
+        } else if (!(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
+            conn->channel.report_queued = 0;
+            conn->channel.report_pending = 0;
+            conn->connection_status = 0x1a;
+        } else {
+            conn->channel.report_queued = 0;
+            conn->channel.report_pending = 1;
+            conn->connection_status = GAP_CONNECTION_PENDING;
+
+            gap_tx_frame[0] = 0x03;
+            gap_tx_frame[1] = 4;
+            gap_tx_frame[2] = 0x28; // LL_CHANNEL_REPORTING_IND.
+            gap_tx_frame[3] = conn->channel.enabled;
+            gap_tx_frame[4] = conn->channel.min_spacing_200ms;
+            gap_tx_frame[5] = conn->channel.max_delay_200ms;
+        }
+    }
 }
 
 // Handle the radio callback under its connection context, then restore the

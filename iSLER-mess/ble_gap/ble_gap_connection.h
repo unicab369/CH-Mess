@@ -335,65 +335,12 @@ static uint8_t gap_class_valid(const uint8_t *class) {
     return 1;
 }
 
-// Encode local preferences in either role once earlier TX has been acknowledged.
-static void gap_send_phy_request(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    conn->queue.phy_queued = 0;
-    conn->pending.phy_request = 1;
-    conn->phy.started_ms = GET_MILLIS();
-
-    gap_tx_frame[0] = 3;
-    gap_tx_frame[1] = 3;
-    gap_tx_frame[2] = 0x16; // LL_PHY_REQ
-    gap_tx_frame[3] = conn->phy.preferred.tx;
-    gap_tx_frame[4] = conn->phy.preferred.rx;
-}
-
 // Select one PHY from a negotiated preference mask. Prefer the highest rate,
 // then the mandatory 1M PHY; coded airtime is accounted for conservatively.
 static uint8_t gap_phy_preferred(uint8_t mask) {
     if (mask & GAP_PHY_2M) return GAP_PHY_2M;
     if (mask & GAP_PHY_CODED) return GAP_PHY_CODED;
     return mask & GAP_PHY_1M;
-}
-
-// The Central chooses a rate per direction from intersecting preferences.
-// An empty intersection leaves that direction unchanged; prefer 2M, then Coded.
-static void gap_send_phy_update(uint8_t peer_tx, uint8_t peer_rx) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    uint8_t tx = conn->phy.preferred.tx & peer_rx;
-    uint8_t rx = conn->phy.preferred.rx & peer_tx;
-    tx = gap_phy_preferred(tx);
-    rx = gap_phy_preferred(rx);
-
-    // A single identical peer preference requests symmetry: choose it in
-    // both directions or leave both unchanged, as required by PHY negotiation.
-    if (peer_tx == peer_rx &&
-        (peer_tx == GAP_PHY_1M || peer_tx == GAP_PHY_2M ||
-         peer_tx == GAP_PHY_CODED) &&
-        ((tx ? tx : conn->phy.current.tx) != peer_tx ||
-         (rx ? rx : conn->phy.current.rx) != peer_rx)
-    ) tx = rx = 0;
-
-    if (tx == conn->phy.current.tx) tx = 0;
-    if (rx == conn->phy.current.rx) rx = 0;
-    conn->phy.instant = tx || rx ? (uint16_t)(conn->link.event_counter +
-        6 * (conn->schedule.latency + 1) + 1) : 0;
-    conn->queue.phy_queued = conn->pending.phy_request = 0;
-    conn->pending.phy_update = tx || rx;
-    if (!conn->pending.phy_update) conn->phy.status = 0;
-
-    gap_tx_frame[0] = 3;
-    gap_tx_frame[1] = 5;
-    gap_tx_frame[2] = 0x18; // LL_PHY_UPDATE_IND
-    gap_tx_frame[3] = conn->phy.pending.tx = tx;
-    gap_tx_frame[4] = conn->phy.pending.rx = rx;
-    gap_tx_frame[5] = (uint8_t)conn->phy.instant;
-    gap_tx_frame[6] = (uint8_t)(conn->phy.instant >> 8);
 }
 
 // Exchange the full feature octets so Connection Subrating and Host Support
@@ -417,41 +364,6 @@ static void gap_send_conn_feature_request(void) {
                         GAP_LL_FEATURES_SUBRATING_HOST |
                         GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
-}
-
-// Start feature exchange if needed, then send the application's timing range.
-// Offset hints are unspecified; packet retries use the existing LL TX slot.
-static void gap_send_conn_request(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    if (conn->features.known && !(conn->features.peer[0] & 0x02)) {
-        conn->queue.local_params = 0;
-        conn->connection_status = 0x1a;
-        return;
-    }
-    if (!conn->features.known) {
-        gap_send_conn_feature_request();
-        return;
-    }
-
-    gap_tx_frame[0] = 3;
-    conn->params_started_ms = GET_MILLIS();
-    conn->queue.local_params = 0;
-    conn->pending.params = conn->pending.params_local = 1;
-    gap_tx_frame[1] = 24;
-    gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
-    gap_tx_frame[3] = (uint8_t)conn->params_min;
-    gap_tx_frame[4] = (uint8_t)(conn->params_min >> 8);
-    gap_tx_frame[5] = (uint8_t)conn->params_max;
-    gap_tx_frame[6] = (uint8_t)(conn->params_max >> 8);
-    gap_tx_frame[7] = (uint8_t)conn->params_latency;
-    gap_tx_frame[8] = (uint8_t)(conn->params_latency >> 8);
-    gap_tx_frame[9] = (uint8_t)conn->params_timeout;
-    gap_tx_frame[10] = (uint8_t)(conn->params_timeout >> 8);
-    gap_tx_frame[11] = 0; // No preferred periodicity.
-    gap_tx_frame[12] = gap_tx_frame[13] = 0;
-    memset(gap_tx_frame + 14, 0xff, 12); // No anchor offset preference.
 }
 
 // Queue the Central's update. The new schedule takes effect locally only
@@ -481,32 +393,13 @@ static void gap_send_subrate_update(void) {
     gap_tx_frame[12] = (uint8_t)(conn->next_schedule.timeout >> 8);
 }
 
-// Exchange Core 6.2 feature page 1 after the legacy feature page advertised
-// LL Extended Feature Set support (bit 63).
-static void gap_send_conn_feature_ext_request(void) {
+static void gap_send_rate_ind(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
-    conn->features.ext_pending = 1;
-    conn->params_started_ms = GET_MILLIS();
-
-    gap_tx_frame[0] = 0x03;
-    gap_tx_frame[1] = 11;
-    gap_tx_frame[2] = 0x2b; // LL_FEATURE_EXT_REQ.
-    gap_tx_frame[3] = 1;    // MaxPage.
-    gap_tx_frame[4] = 1;    // PageNumber.
-    memset(gap_tx_frame + 5, 0, 8);
-    gap_tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
-}
-
-static void gap_conn_rate_send_indication(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    uint32_t active_events = (uint32_t)conn->next_schedule.factor *
-        (conn->next_schedule.latency + 1);
     conn->next_schedule.instant = (uint16_t)(conn->link.event_counter +
-        6 * active_events + 1);
+                                6 * (uint32_t)conn->next_schedule.factor *
+                                (conn->next_schedule.latency + 1) + 1);
     conn->next_schedule.win_offset = 0;
     conn->rate.update_pending = 1;
     conn->rate.set_queued = 0;
@@ -529,134 +422,6 @@ static void gap_conn_rate_send_indication(void) {
     for (uint8_t i = 0; i < 7; i++) {
         gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
         gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
-    }
-}
-
-static void gap_conn_rate_start_queued(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1] ||
-        (!conn->rate.set_queued && !conn->rate.request_queued) ||
-        conn->features.request_pending || conn->features.ext_pending)
-        return;
-    if (!conn->features.known) {
-        gap_send_conn_feature_request();
-        return;
-    }
-    if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
-        conn->rate.set_queued = conn->rate.request_queued = 0;
-        conn->connection_status = 0x1a;
-        return;
-    }
-    if (!conn->features.page1_known) {
-        gap_send_conn_feature_ext_request();
-        return;
-    }
-    if (!(conn->features.peer_page1[1] & 0x02)) {
-        conn->rate.set_queued = conn->rate.request_queued = 0;
-        conn->connection_status = 0x1a;
-        return;
-    }
-    if (conn->is_central && conn->rate.set_queued)
-        gap_conn_rate_send_indication();
-    else if (!conn->is_central && conn->rate.request_queued) {
-        gap_tx_frame[0] = 0x03;
-        gap_tx_frame[1] = 27;
-        gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
-
-        const uint16_t values[9] = {
-            conn->rate.interval_min, conn->rate.interval_max,
-            conn->rate.factor_min, conn->rate.factor_max,
-            conn->rate.latency, conn->rate.continuation,
-            conn->rate.timeout, conn->rate.periodicity,
-            conn->link.event_counter
-        };
-        for (uint8_t i = 0; i < 9; i++) {
-            gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
-            gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
-        }
-        for (uint8_t i = 0; i < 4; i++) {
-            gap_tx_frame[21 + i * 2] = (uint8_t)conn->rate.offsets[i];
-            gap_tx_frame[22 + i * 2] = (uint8_t)(conn->rate.offsets[i] >> 8);
-        }
-        conn->rate.request_queued = 0;
-        conn->rate.req_pending = 1;
-        conn->params_started_ms = GET_MILLIS();
-    }
-}
-
-static void gap_channel_report_start(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1] || !conn->channel.report_queued ||
-        !conn->is_central ||
-        conn->features.request_pending
-    ) return;
-
-    if (!conn->features.known) {
-        gap_send_conn_feature_request();
-        return;
-    }
-
-    if (!(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
-        conn->channel.report_queued = 0;
-        conn->channel.report_pending = 0;
-        conn->connection_status = 0x1a;
-        return;
-    }
-    conn->channel.report_queued = 0;
-    conn->channel.report_pending = 1;
-    conn->connection_status = GAP_CONNECTION_PENDING;
-
-    gap_tx_frame[0] = 0x03;
-    gap_tx_frame[1] = 4;
-    gap_tx_frame[2] = 0x28; // LL_CHANNEL_REPORTING_IND.
-    gap_tx_frame[3] = conn->channel.enabled;
-    gap_tx_frame[4] = conn->channel.min_spacing_200ms;
-    gap_tx_frame[5] = conn->channel.max_delay_200ms;
-}
-
-// Start one queued subrate procedure after the feature exchange confirms that
-// the remote Link Layer and Host both support Connection Subrating.
-static void gap_subrate_start_queued(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1] || conn->features.request_pending ||
-        (!conn->subrate.update_queued && !conn->subrate.request_queued)
-    ) return;
-
-    if (!conn->features.known) {
-        gap_send_conn_feature_request();
-        return;
-    }
-
-    const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
-    if ((conn->features.peer[4] & required) != required) {
-        conn->subrate.update_queued = conn->subrate.request_queued = 0;
-        conn->subrate.status = 0x1a;
-        return;
-    }
-
-    if (conn->is_central && conn->subrate.update_queued) {
-        gap_send_subrate_update();
-    }
-    else if (!conn->is_central && conn->subrate.request_queued) {
-        conn->subrate.request_queued = 0;
-        conn->subrate.request_pending = 1;
-        conn->subrate.started_ms = GET_MILLIS();
-
-        gap_tx_frame[0] = 0x03;
-        gap_tx_frame[1] = 11;
-        gap_tx_frame[2] = 0x26; // LL_SUBRATE_REQ.
-
-        const uint16_t values[5] = {
-            conn->subrate.request_min,
-            conn->subrate.request_max,
-            conn->subrate.request_latency,
-            conn->subrate.request_continuation,
-            conn->subrate.request_timeout
-        };
-        for (uint8_t i = 0; i < 5; i++) {
-            gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
-            gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
-        }
     }
 }
 
@@ -1454,7 +1219,7 @@ reject_parameters:
                 conn->next_schedule.latency = latency;
                 conn->next_schedule.continuation = continuation;
                 conn->next_schedule.timeout = timeout;
-                gap_conn_rate_send_indication();
+                gap_send_rate_ind();
                 break;
             }
             error = 0x20;
@@ -1726,10 +1491,7 @@ reject_parameters:
         }
         if (frame[2] == 0x17) {
             if (!conn->is_central || !conn->pending.phy_request) break;
-            gap_send_phy_update(frame[3], frame[4]);
-            break;
-        }
-        if (gap_security->phase || conn->pending.timing_update ||
+        } else if (gap_security->phase || conn->pending.timing_update ||
             conn->queue.local_update || conn->pending.params ||
             conn->queue.local_params || conn->pending.channel_map ||
             conn->queue.local_map || conn->pending.phy_update ||
@@ -1742,9 +1504,38 @@ reject_parameters:
             break;
         }
         if (conn->is_central) {
-            gap_send_phy_update(frame[3], frame[4]);
-        }
-        else {
+            if (!gap_tx_frame[1]) {
+                uint8_t peer_tx = frame[3], peer_rx = frame[4];
+                // An empty intersection leaves that direction unchanged.
+                uint8_t tx = gap_phy_preferred(conn->phy.preferred.tx & peer_rx);
+                uint8_t rx = gap_phy_preferred(conn->phy.preferred.rx & peer_tx);
+
+                // A single identical peer preference requests symmetry: choose it in
+                // both directions or leave both unchanged, as required by PHY negotiation.
+                if (peer_tx == peer_rx &&
+                    (peer_tx == GAP_PHY_1M || peer_tx == GAP_PHY_2M ||
+                     peer_tx == GAP_PHY_CODED) &&
+                    ((tx ? tx : conn->phy.current.tx) != peer_tx ||
+                     (rx ? rx : conn->phy.current.rx) != peer_rx)
+                ) tx = rx = 0;
+
+                if (tx == conn->phy.current.tx) tx = 0;
+                if (rx == conn->phy.current.rx) rx = 0;
+                conn->phy.instant = tx || rx ? (uint16_t)(conn->link.event_counter +
+                    6 * (conn->schedule.latency + 1) + 1) : 0;
+                conn->queue.phy_queued = conn->pending.phy_request = 0;
+                conn->pending.phy_update = tx || rx;
+                if (!conn->pending.phy_update) conn->phy.status = 0;
+
+                gap_tx_frame[0] = 3;
+                gap_tx_frame[1] = 5;
+                gap_tx_frame[2] = 0x18; // LL_PHY_UPDATE_IND
+                gap_tx_frame[3] = conn->phy.pending.tx = tx;
+                gap_tx_frame[4] = conn->phy.pending.rx = rx;
+                gap_tx_frame[5] = (uint8_t)conn->phy.instant;
+                gap_tx_frame[6] = (uint8_t)(conn->phy.instant >> 8);
+            }
+        } else {
             // The Central's request wins simultaneous requests.
             conn->queue.phy_queued = 0;
             conn->pending.phy_request = 1;
