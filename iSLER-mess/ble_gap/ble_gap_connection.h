@@ -471,6 +471,29 @@ static void gap_send_phy_update(uint8_t peer_tx, uint8_t peer_rx) {
     gap_tx_frame[6] = (uint8_t)(conn->phy.instant >> 8);
 }
 
+// Exchange the full feature octets so Connection Subrating and Host Support
+// are visible to the peer that is deciding whether to start the procedure.
+static void gap_send_conn_feature_request(void) {
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (gap_tx_frame[1]) return;
+
+    uint8_t supported_phys = GAP_HW_PHY_MASK();
+    conn->features.request_pending = 1;
+    conn->params_started_ms = GET_MILLIS();
+
+    gap_tx_frame[0] = 0x03;
+    gap_tx_frame[1] = 9;
+    gap_tx_frame[2] = conn->is_central ? 0x08 : 0x0e;
+    memset(gap_tx_frame + 3, 0, 8);
+    gap_tx_frame[3] = GAP_LL_FEATURES;
+    gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
+                        ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
+    gap_tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
+                        GAP_LL_FEATURES_SUBRATING_HOST |
+                        GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
+}
+
 // Start feature exchange if needed, then send the application's timing range.
 // Offset hints are unspecified; packet retries use the existing LL TX slot.
 static void gap_send_conn_request(void) {
@@ -482,23 +505,13 @@ static void gap_send_conn_request(void) {
         conn->connection_status = 0x1a;
         return;
     }
-    gap_tx_frame[0] = 3;
-    conn->params_started_ms = GET_MILLIS();
-
     if (!conn->features.known) {
-        uint8_t supported_phys = GAP_HW_PHY_MASK();
-        gap_tx_frame[1] = 9;
-        gap_tx_frame[2] = conn->is_central ? 0x08 : 0x0e;
-        memset(gap_tx_frame + 3, 0, 8);
-        gap_tx_frame[3] = GAP_LL_FEATURES;
-        gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
-                            ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
-        gap_tx_frame[7] = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
-        gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
-        conn->features.request_pending = 1;
+        gap_send_conn_feature_request();
         return;
     }
 
+    gap_tx_frame[0] = 3;
+    conn->params_started_ms = GET_MILLIS();
     conn->queue.local_params = 0;
     conn->pending.params = conn->pending.params_local = 1;
     gap_tx_frame[1] = 24;
@@ -541,29 +554,6 @@ static void gap_send_subrate_update(void) {
     gap_tx_frame[10] = (uint8_t)(conn->next_schedule.continuation >> 8);
     gap_tx_frame[11] = (uint8_t)conn->next_schedule.timeout;
     gap_tx_frame[12] = (uint8_t)(conn->next_schedule.timeout >> 8);
-}
-
-// Exchange the full feature octets so Connection Subrating and Host Support
-// are visible to the peer that is deciding whether to start the procedure.
-static void gap_send_conn_feature_request(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
-
-    uint8_t supported_phys = GAP_HW_PHY_MASK();
-    conn->features.request_pending = 1;
-    conn->params_started_ms = GET_MILLIS();
-
-    gap_tx_frame[0] = 0x03;
-    gap_tx_frame[1] = 9;
-    gap_tx_frame[2] = conn->is_central ? 0x08 : 0x0e;
-    memset(gap_tx_frame + 3, 0, 8);
-    gap_tx_frame[3] = GAP_LL_FEATURES;
-    gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
-                        ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
-    gap_tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
-                        GAP_LL_FEATURES_SUBRATING_HOST |
-                        GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
-    gap_tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
 }
 
 // Exchange Core 6.2 feature page 1 after the legacy feature page advertised
