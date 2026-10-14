@@ -893,12 +893,12 @@ static void test_extended_advertising_transmit(void) {
     assert(fake_radio_ticks >= 1000480);
     assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
         primary, captured_extended_pdu_lengths[0], -40));
-    assert(gap_ext_adv_contexts[0].active &&
-           gap_ext_adv_contexts[0].identity.adi ==
+    assert(gap_ext_ctx[0].active &&
+           gap_ext_ctx[0].identity.adi ==
                ((uint16_t)primary[4] | (uint16_t)primary[5] << 8));
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         auxiliary, captured_extended_pdu_lengths[1], -40));
-    assert(!gap_ext_adv_contexts[0].active);
+    assert(!gap_ext_ctx[0].active);
     assert(gap_ext_scan_poll(&report));
     assert(report.addr.has_address && report.sid == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
@@ -2046,8 +2046,8 @@ static void test_extended_scannable_advertising(void) {
         auxiliary, captured_extended_pdu_lengths[1], -40));
     for (uint8_t i = 2; i < captured_extended_count; i++) {
         if (i == 8) {
-            assert(gap_ext_adv_contexts[0].data_len == 1470);
-            assert(!memcmp(gap_ext_adv_contexts[0].data, data, 1470));
+            assert(gap_ext_ctx[0].data_len == 1470);
+            assert(!memcmp(gap_ext_ctx[0].data, data, 1470));
             assert(!memcmp(captured_extended_pdus[i] + 6, data + 1470, 180));
         }
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,

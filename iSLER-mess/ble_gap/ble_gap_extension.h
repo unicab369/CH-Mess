@@ -73,7 +73,7 @@ static struct {
     int8_t rssi;
     uint32_t deadline_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_adv_contexts[GAP_EXT_ADV_CONTEXT_COUNT];
+} gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
 typedef struct {
     uint8_t used, address_type, address[6], has_adi, sid;
     uint16_t did, data_len;
@@ -528,7 +528,7 @@ static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
 
 static void gap_ext_scan_reset(uint8_t clear_owned_scan) {
     if (clear_owned_scan) gap_sync_owned_scan = 0;
-    memset(gap_ext_adv_contexts, 0, sizeof(gap_ext_adv_contexts));
+    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
 }
 
@@ -796,9 +796,7 @@ static void gap_ext_report_queue(
                     gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
-    report->addr.has_address = identity->addr.has_address;
-    report->addr.address_type = identity->addr.address_type;
-    memcpy(report->addr.address, identity->addr.address, 6);
+    report->addr = identity->addr;
     report->resolved = identity_slot >= 0;
     report->identity_type = identity_type;
     memcpy(report->identity_address, identity_address, 6);
@@ -812,7 +810,7 @@ static void gap_ext_report_queue(
 }
 
 static void gap_ext_adv_context_clear(uint8_t slot) {
-    gap_wipe(&gap_ext_adv_contexts[slot], sizeof(gap_ext_adv_contexts[slot]));
+    gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
 }
 
 // Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
@@ -820,35 +818,37 @@ static void gap_ext_adv_context_clear(uint8_t slot) {
 int gap_ext_scan_receive(
     uint8_t pdu_kind, const uint8_t *pdu, size_t pdu_len, int8_t rssi
 ) {
-    if (!gap_scanner.scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU) return 0;
+    if (!gap_scanner.scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU)
+        return 0;
     gap_ext_fields fields;
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
     uint32_t now = GET_MILLIS();
 
     for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-        if (gap_ext_adv_contexts[i].active &&
-            (int32_t)(now - gap_ext_adv_contexts[i].deadline_ms) >= 0
+        if (gap_ext_ctx[i].active &&
+            (int32_t)(now - gap_ext_ctx[i].deadline_ms) >= 0
         ) gap_ext_adv_context_clear(i);
 
     int slot = -1;
     if (pdu_kind == GAP_EXT_ADV_PRIMARY_PDU) {
         if (fields.has_aux_ptr && !fields.identity.has_adi) return 0;
         if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
+
         if (!fields.has_aux_ptr) {
-            if (!gap_ext_ad_data_valid(fields.payload.data, fields.payload.len)) return 0;
+            if (!gap_ext_ad_data_valid(fields.payload.data, fields.payload.len))
+                return 0;
             if (!fields.identity.has_adi) fields.identity.sid = 0xff;
-            gap_ext_report_queue(
-                &fields.identity, fields.payload.data, fields.payload.len, rssi);
+            gap_ext_report_queue(&fields.identity, fields.payload.data, fields.payload.len, rssi);
             return 1;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (gap_ext_adv_contexts[i].active &&
-                gap_ext_adv_contexts[i].identity.has_adi &&
-                gap_ext_adv_contexts[i].identity.adi == fields.identity.adi &&
-                gap_ext_adv_contexts[i].identity.addr.has_address == fields.identity.addr.has_address &&
+            if (gap_ext_ctx[i].active &&
+                gap_ext_ctx[i].identity.has_adi &&
+                gap_ext_ctx[i].identity.adi == fields.identity.adi &&
+                gap_ext_ctx[i].identity.addr.has_address == fields.identity.addr.has_address &&
                 (!fields.identity.addr.has_address ||
-                 (gap_ext_adv_contexts[i].identity.addr.address_type == fields.identity.addr.address_type &&
-                  !memcmp(gap_ext_adv_contexts[i].identity.addr.address, fields.identity.addr.address, 6)))
+                 (gap_ext_ctx[i].identity.addr.address_type == fields.identity.addr.address_type &&
+                  !memcmp(gap_ext_ctx[i].identity.addr.address, fields.identity.addr.address, 6)))
             ) {
                 slot = i;
                 break;
@@ -857,7 +857,7 @@ int gap_ext_scan_receive(
 
         if (slot < 0) {
             for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                if (!gap_ext_adv_contexts[i].active) {
+                if (!gap_ext_ctx[i].active) {
                     slot = i;
                     break;
                 }
@@ -865,23 +865,23 @@ int gap_ext_scan_receive(
 
         if (slot < 0) slot = 0;
         gap_ext_adv_context_clear((uint8_t)slot);
-        gap_ext_adv_contexts[slot].active = 1;
-        gap_ext_adv_contexts[slot].identity.addr.has_address = fields.identity.addr.has_address;
-        gap_ext_adv_contexts[slot].identity.addr.address_type = fields.identity.addr.address_type;
-        memcpy(gap_ext_adv_contexts[slot].identity.addr.address, fields.identity.addr.address, 6);
-        gap_ext_adv_contexts[slot].identity.has_adi = fields.identity.has_adi;
-        gap_ext_adv_contexts[slot].identity.adi = fields.identity.adi;
-        gap_ext_adv_contexts[slot].identity.sid = fields.identity.sid;
-        gap_ext_adv_contexts[slot].await_scan_response = fields.mode == 2;
-        gap_ext_adv_contexts[slot].rssi = rssi;
+        gap_ext_ctx[slot].active = 1;
+        gap_ext_ctx[slot].identity.addr.has_address = fields.identity.addr.has_address;
+        gap_ext_ctx[slot].identity.addr.address_type = fields.identity.addr.address_type;
+        memcpy(gap_ext_ctx[slot].identity.addr.address, fields.identity.addr.address, 6);
+        gap_ext_ctx[slot].identity.has_adi = fields.identity.has_adi;
+        gap_ext_ctx[slot].identity.adi = fields.identity.adi;
+        gap_ext_ctx[slot].identity.sid = fields.identity.sid;
+        gap_ext_ctx[slot].await_scan_response = fields.mode == 2;
+        gap_ext_ctx[slot].rssi = rssi;
     } else {
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (!gap_ext_adv_contexts[i].active) continue;
-            if (fields.identity.has_adi && (!gap_ext_adv_contexts[i].identity.has_adi ||
-                gap_ext_adv_contexts[i].identity.adi != fields.identity.adi)) continue;
-            if (fields.identity.addr.has_address && gap_ext_adv_contexts[i].identity.addr.has_address &&
-                (fields.identity.addr.address_type != gap_ext_adv_contexts[i].identity.addr.address_type ||
-                 memcmp(fields.identity.addr.address, gap_ext_adv_contexts[i].identity.addr.address, 6)))
+            if (!gap_ext_ctx[i].active) continue;
+            if (fields.identity.has_adi && (!gap_ext_ctx[i].identity.has_adi ||
+                gap_ext_ctx[i].identity.adi != fields.identity.adi)) continue;
+            if (fields.identity.addr.has_address && gap_ext_ctx[i].identity.addr.has_address &&
+                (fields.identity.addr.address_type != gap_ext_ctx[i].identity.addr.address_type ||
+                 memcmp(fields.identity.addr.address, gap_ext_ctx[i].identity.addr.address, 6)))
                 continue;
             if (slot >= 0) return 0; // No ADI and ambiguous active chains.
             slot = i;
@@ -889,29 +889,29 @@ int gap_ext_scan_receive(
 
         if (slot < 0) return 0;
         if (fields.identity.addr.has_address) {
-            gap_ext_adv_contexts[slot].identity.addr.has_address = 1;
-            gap_ext_adv_contexts[slot].identity.addr.address_type = fields.identity.addr.address_type;
-            memcpy(gap_ext_adv_contexts[slot].identity.addr.address, fields.identity.addr.address, 6);
+            gap_ext_ctx[slot].identity.addr.has_address = 1;
+            gap_ext_ctx[slot].identity.addr.address_type = fields.identity.addr.address_type;
+            memcpy(gap_ext_ctx[slot].identity.addr.address, fields.identity.addr.address, 6);
         }
 
         if (fields.identity.has_adi) {
-            gap_ext_adv_contexts[slot].identity.has_adi = 1;
-            gap_ext_adv_contexts[slot].identity.adi = fields.identity.adi;
-            gap_ext_adv_contexts[slot].identity.sid = fields.identity.sid;
+            gap_ext_ctx[slot].identity.has_adi = 1;
+            gap_ext_ctx[slot].identity.adi = fields.identity.adi;
+            gap_ext_ctx[slot].identity.sid = fields.identity.sid;
         }
-        gap_ext_adv_contexts[slot].rssi = rssi;
+        gap_ext_ctx[slot].rssi = rssi;
     }
 
     if (fields.payload.len > GAP_EXT_ADV_DATA_MAX -
-            gap_ext_adv_contexts[slot].data_len) {
+            gap_ext_ctx[slot].data_len) {
         gap_ext_adv_context_clear((uint8_t)slot);
         return 0;
     }
 
     if (fields.payload.len) {
-        memcpy(gap_ext_adv_contexts[slot].data +
-            gap_ext_adv_contexts[slot].data_len, fields.payload.data, fields.payload.len);
-        gap_ext_adv_contexts[slot].data_len += fields.payload.len;
+        memcpy(gap_ext_ctx[slot].data +
+            gap_ext_ctx[slot].data_len, fields.payload.data, fields.payload.len);
+        gap_ext_ctx[slot].data_len += fields.payload.len;
     }
 
     if (fields.has_aux_ptr) {
@@ -919,32 +919,32 @@ int gap_ext_scan_receive(
             gap_ext_adv_context_clear((uint8_t)slot);
             return 1;
         }
-        gap_ext_adv_contexts[slot].deadline_ms =
+        gap_ext_ctx[slot].deadline_ms =
             now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
         return 1;
     }
 
-    if (gap_ext_adv_contexts[slot].await_scan_response && fields.mode == 2) {
+    if (gap_ext_ctx[slot].await_scan_response && fields.mode == 2) {
         // AUX_ADV_IND starts a scannable event; its data arrives in a later
         // AUX_SCAN_RSP, which may itself be followed by AUX_CHAIN_IND packets.
-        gap_ext_adv_contexts[slot].deadline_ms =
+        gap_ext_ctx[slot].deadline_ms =
             now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
         return 1;
     }
 
     if (fields.mode == 0)
-        gap_ext_adv_contexts[slot].await_scan_response = 0;
-    if (!gap_ext_ad_data_valid(gap_ext_adv_contexts[slot].data,
-                                gap_ext_adv_contexts[slot].data_len)
+        gap_ext_ctx[slot].await_scan_response = 0;
+    if (!gap_ext_ad_data_valid(gap_ext_ctx[slot].data,
+                                gap_ext_ctx[slot].data_len)
     ) {
         gap_ext_adv_context_clear((uint8_t)slot);
         return 0;
     }
     gap_ext_report_queue(
-        &gap_ext_adv_contexts[slot].identity,
-        gap_ext_adv_contexts[slot].data,
-        gap_ext_adv_contexts[slot].data_len,
-        gap_ext_adv_contexts[slot].rssi);
+        &gap_ext_ctx[slot].identity,
+        gap_ext_ctx[slot].data,
+        gap_ext_ctx[slot].data_len,
+        gap_ext_ctx[slot].rssi);
     gap_ext_adv_context_clear((uint8_t)slot);
     return 1;
 }
