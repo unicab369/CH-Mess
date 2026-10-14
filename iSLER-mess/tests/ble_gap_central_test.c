@@ -1528,7 +1528,7 @@ static void test_pawr_observer_response(void) {
     sync->event_counter = 12;
     sync->anchor_ticks = 2000000;
     sync->access_address = 0x12345678;
-    sync->pawr.response_access_addr = 0x78563412;
+    sync->pawr.resp_access_addr = 0x78563412;
     sync->crc_init = 0x123456;
     sync->phy = GAP_PHY_1M;
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
@@ -1578,7 +1578,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.ready = 1;
     gap_ext_scan_process();
     assert(captured_extended_count == 1 &&
-           configured_access_address == sync->pawr.response_access_addr &&
+           configured_access_address == sync->pawr.resp_access_addr &&
            captured_extended_pdu_lengths[0] == 7 &&
            captured_extended_pdus[0][0] == 0x07 &&
            captured_extended_pdus[0][2] == 1 &&
@@ -1707,7 +1707,7 @@ static void test_periodic_advertising_sync(void) {
            gap_syncs[0].pawr.subevent_interval == 6 &&
            gap_syncs[0].pawr.resp_delay == 1 &&
            gap_syncs[0].pawr.resp_spacing == 2 &&
-           gap_syncs[0].pawr.response_access_addr == 0x78563412);
+           gap_syncs[0].pawr.resp_access_addr == 0x78563412);
 
     uint64_t first_event = gap_syncs[0].next_event_ticks;
     fake_radio_ticks = gap_syncs[0].start_ticks;
@@ -1865,11 +1865,11 @@ static void test_pawr_timing_decode(void) {
 
     gap_ext_fields fields;
     assert(gap_ext_adv_decode(pdu, sizeof(pdu), &fields));
-    assert(fields.has_pawr_timing && fields.response_access_addr ==
-        0x78563412 && fields.pawr_num_subevents == 2 &&
-        fields.pawr_subevent_interval == 6 &&
-        fields.pawr_response_slot_delay == 1 &&
-        fields.pawr_response_slot_spacing == 2);
+    assert(fields.pawr.has_timing && fields.pawr.resp_access_addr ==
+        0x78563412 && fields.pawr.subevents == 2 &&
+        fields.pawr.subevent_interval == 6 &&
+        fields.pawr.resp_delay == 1 &&
+        fields.pawr.resp_spacing == 2);
 
     pdu[36] = 0;
     assert(!gap_ext_adv_decode(pdu, sizeof(pdu), &fields));
@@ -2950,9 +2950,9 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
         transferred_fields.sid == 6 &&
-        transferred_fields.sync_interval == 8 &&
-        transferred_fields.sync_access_address == 0x12345678 &&
-        transferred_fields.sync_crc_init == 0x123456);
+        transferred_fields.sync.interval == 8 &&
+        transferred_fields.sync.access_address == 0x12345678 &&
+        transferred_fields.sync.crc_init == 0x123456);
     assert(gap_periodic_sync_stop(1, 1));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED);
