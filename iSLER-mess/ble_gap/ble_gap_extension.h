@@ -819,137 +819,6 @@ static void gap_ext_report_queue(
     gap_ext_scan_idx.report_count++;
 }
 
-// Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
-// Auxiliary packets must be passed in the order indicated by their AuxPtr fields.
-int gap_ext_scan_receive(
-    uint8_t pdu_kind, const uint8_t *pdu, size_t pdu_len, int8_t rssi
-) {
-    if (!gap_scanner.scanning || pdu_kind > GAP_EXT_ADV_AUXILIARY_PDU)
-        return 0;
-    gap_ext_fields fields;
-    if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
-    uint32_t now = GET_MILLIS();
-
-    for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-        gap_ext_context *ctx = &gap_ext_ctx[i];
-
-        if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
-            gap_wipe(&gap_ext_ctx[i], sizeof(gap_ext_ctx[i]));
-    }
-
-    int slot = -1;
-    if (pdu_kind == GAP_EXT_ADV_PRIMARY_PDU) {
-        if (fields.has_aux_ptr && !fields.identity.has_adi) return 0;
-        if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
-
-        if (!fields.has_aux_ptr) {
-            if (!gap_ext_ad_data_valid(fields.payload.data, fields.payload.len))
-                return 0;
-            if (!fields.identity.has_adi) fields.identity.sid = 0xff;
-            gap_ext_report_queue(&fields.identity, fields.payload.data, fields.payload.len, rssi);
-            return 1;
-        }
-        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            gap_ext_context *ctx = &gap_ext_ctx[i];
-
-            if (ctx->active &&
-                ctx->identity.has_adi &&
-                ctx->identity.adi == fields.identity.adi &&
-                ctx->identity.addr.has_address == fields.identity.addr.has_address &&
-                (!fields.identity.addr.has_address ||
-                 (ctx->identity.addr.address_type == fields.identity.addr.address_type &&
-                  !memcmp(ctx->identity.addr.address, fields.identity.addr.address, 6)))
-            ) {
-                slot = i;
-                break;
-            }
-        }
-
-        if (slot < 0) {
-            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                if (!gap_ext_ctx[i].active) {
-                    slot = i;
-                    break;
-                }
-        }
-
-        if (slot < 0) slot = 0;
-        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-        gap_ext_ctx[slot].active = 1;
-        gap_ext_ctx[slot].identity = fields.identity;
-        gap_ext_ctx[slot].await_scan_response = fields.mode == 2;
-        gap_ext_ctx[slot].rssi = rssi;
-    } else {
-        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            gap_ext_context *ctx = &gap_ext_ctx[i];
-
-            if (!ctx->active ||
-                (fields.identity.has_adi &&
-                 (!ctx->identity.has_adi || ctx->identity.adi != fields.identity.adi)) ||
-                (fields.identity.addr.has_address && ctx->identity.addr.has_address &&
-                 memcmp(&fields.identity.addr, &ctx->identity.addr, sizeof(fields.identity.addr)) != 0)
-            ) continue;
-
-            if (slot >= 0) return 0; // No ADI and ambiguous active chains.
-            slot = i;
-        }
-
-        if (slot < 0) return 0;
-        if (fields.identity.addr.has_address) {
-            gap_ext_ctx[slot].identity.addr = fields.identity.addr;
-        }
-
-        if (fields.identity.has_adi) {
-            gap_ext_ctx[slot].identity.has_adi = 1;
-            gap_ext_ctx[slot].identity.adi = fields.identity.adi;
-            gap_ext_ctx[slot].identity.sid = fields.identity.sid;
-        }
-        gap_ext_ctx[slot].rssi = rssi;
-    }
-
-    if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - gap_ext_ctx[slot].data_len) {
-        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-        return 0;
-    }
-
-    if (fields.payload.len) {
-        memcpy(gap_ext_ctx[slot].data +
-            gap_ext_ctx[slot].data_len, fields.payload.data, fields.payload.len);
-        gap_ext_ctx[slot].data_len += fields.payload.len;
-    }
-
-    if (fields.has_aux_ptr) {
-        if (fields.aux_offset_zero) {
-            gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-            return 1;
-        }
-        gap_ext_ctx[slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
-        return 1;
-    }
-
-    if (gap_ext_ctx[slot].await_scan_response && fields.mode == 2) {
-        // AUX_ADV_IND starts a scannable event; its data arrives in a later
-        // AUX_SCAN_RSP, which may itself be followed by AUX_CHAIN_IND packets.
-        gap_ext_ctx[slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
-        return 1;
-    }
-
-    if (fields.mode == 0)
-        gap_ext_ctx[slot].await_scan_response = 0;
-
-    if (!gap_ext_ad_data_valid(gap_ext_ctx[slot].data, gap_ext_ctx[slot].data_len)) {
-        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-        return 0;
-    }
-
-    gap_ext_report_queue(&gap_ext_ctx[slot].identity,
-                        gap_ext_ctx[slot].data,
-                        gap_ext_ctx[slot].data_len,
-                        gap_ext_ctx[slot].rssi);
-    gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-    return 1;
-}
-
 // Return one complete reassembled extended advertising report.
 int gap_ext_scan_poll(gap_ext_report *report) {
     if (!report || !gap_ext_scan_idx.report_count) return 0;
@@ -2186,7 +2055,147 @@ static void gap_ext_scan_process(void) {
         }
         return;
     }
-    (void)gap_ext_scan_receive(kind, pdu, pdu_len, gap_ext_scan.rssi);
+
+    uint32_t now = GET_MILLIS();
+
+    do {
+        if (!gap_scanner.scanning || kind > GAP_EXT_ADV_AUXILIARY_PDU) break;
+
+        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+            gap_ext_context *ctx = &gap_ext_ctx[i];
+
+            if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
+                gap_wipe(&gap_ext_ctx[i], sizeof(gap_ext_ctx[i]));
+        }
+
+        int context_slot = -1;
+        if (kind == GAP_EXT_ADV_PRIMARY_PDU) {
+            if (fields.has_aux_ptr) {
+                if (!fields.identity.has_adi || fields.aux_offset_zero)
+                    break;
+            } else {
+                if (!gap_ext_ad_data_valid(fields.payload.data, fields.payload.len))
+                    break;
+                if (!fields.identity.has_adi)
+                    fields.identity.sid = 0xff;
+                gap_ext_report_queue(&fields.identity, fields.payload.data,
+                                     fields.payload.len, gap_ext_scan.rssi);
+                break;
+            }
+
+            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+                gap_ext_context *ctx = &gap_ext_ctx[i];
+
+                if (ctx->active &&
+                    ctx->identity.has_adi &&
+                    ctx->identity.adi == fields.identity.adi &&
+                    ctx->identity.addr.has_address == fields.identity.addr.has_address &&
+                    (!fields.identity.addr.has_address ||
+                     (ctx->identity.addr.address_type == fields.identity.addr.address_type &&
+                      !memcmp(ctx->identity.addr.address, fields.identity.addr.address, 6)))
+                ) {
+                    context_slot = i;
+                    break;
+                }
+            }
+
+            if (context_slot < 0) {
+                for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
+                    if (!gap_ext_ctx[i].active) {
+                        context_slot = i;
+                        break;
+                    }
+            }
+
+            if (context_slot < 0) context_slot = 0;
+            gap_wipe(&gap_ext_ctx[context_slot],
+                     sizeof(gap_ext_ctx[context_slot]));
+            gap_ext_ctx[context_slot].active = 1;
+            gap_ext_ctx[context_slot].identity = fields.identity;
+            gap_ext_ctx[context_slot].await_scan_response = fields.mode == 2;
+            gap_ext_ctx[context_slot].rssi = gap_ext_scan.rssi;
+        } else {
+            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+                gap_ext_context *ctx = &gap_ext_ctx[i];
+
+                if (!ctx->active ||
+                    (fields.identity.has_adi &&
+                     (!ctx->identity.has_adi ||
+                      ctx->identity.adi != fields.identity.adi)) ||
+                    (fields.identity.addr.has_address &&
+                     ctx->identity.addr.has_address &&
+                     memcmp(&fields.identity.addr, &ctx->identity.addr,
+                            sizeof(fields.identity.addr)) != 0)
+                ) continue;
+
+                if (context_slot >= 0) {
+                    context_slot = -1;
+                    break;
+                }
+                context_slot = i;
+            }
+
+            if (context_slot < 0) break;
+            if (fields.identity.addr.has_address)
+                gap_ext_ctx[context_slot].identity.addr = fields.identity.addr;
+
+            if (fields.identity.has_adi) {
+                gap_ext_ctx[context_slot].identity.has_adi = 1;
+                gap_ext_ctx[context_slot].identity.adi = fields.identity.adi;
+                gap_ext_ctx[context_slot].identity.sid = fields.identity.sid;
+            }
+            gap_ext_ctx[context_slot].rssi = gap_ext_scan.rssi;
+        }
+
+        if (fields.payload.len >
+            GAP_EXT_ADV_DATA_MAX - gap_ext_ctx[context_slot].data_len
+        ) {
+            gap_wipe(&gap_ext_ctx[context_slot],
+                     sizeof(gap_ext_ctx[context_slot]));
+            break;
+        }
+
+        if (fields.payload.len) {
+            memcpy(gap_ext_ctx[context_slot].data +
+                       gap_ext_ctx[context_slot].data_len,
+                   fields.payload.data, fields.payload.len);
+            gap_ext_ctx[context_slot].data_len += fields.payload.len;
+        }
+
+        if (fields.has_aux_ptr) {
+            if (fields.aux_offset_zero) {
+                gap_wipe(&gap_ext_ctx[context_slot],
+                         sizeof(gap_ext_ctx[context_slot]));
+                    break;
+            }
+            gap_ext_ctx[context_slot].deadline_ms =
+                now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+            break;
+        }
+
+        if (gap_ext_ctx[context_slot].await_scan_response && fields.mode == 2) {
+            gap_ext_ctx[context_slot].deadline_ms =
+                now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+            break;
+        }
+
+        if (fields.mode == 0)
+            gap_ext_ctx[context_slot].await_scan_response = 0;
+
+        if (!gap_ext_ad_data_valid(gap_ext_ctx[context_slot].data,
+                                   gap_ext_ctx[context_slot].data_len)) {
+            gap_wipe(&gap_ext_ctx[context_slot],
+                     sizeof(gap_ext_ctx[context_slot]));
+            break;
+        }
+
+        gap_ext_report_queue(&gap_ext_ctx[context_slot].identity,
+                             gap_ext_ctx[context_slot].data,
+                             gap_ext_ctx[context_slot].data_len,
+                             gap_ext_ctx[context_slot].rssi);
+        gap_wipe(&gap_ext_ctx[context_slot],
+                 sizeof(gap_ext_ctx[context_slot]));
+    } while (0);
 
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.sync.has_info)
         (void)gap_sync_info_accept(&fields, pdu[1], packet_phy,
