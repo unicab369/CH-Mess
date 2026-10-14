@@ -22,13 +22,13 @@
 #endif
 
 typedef int (*ble_gatt_client_send_fn)(void *context,
-                                       const uint8_t *pdu, uint16_t len);
+    const uint8_t *pdu, uint16_t len);
 typedef int (*ble_gatt_client_sign_fn)(void *context,
     const uint8_t *signed_pdu, uint16_t signed_len, uint8_t signature[12]);
 typedef void (*ble_gatt_client_result_fn)(void *context, uint8_t status,
-                                          const uint8_t *pdu, uint16_t len);
+    const uint8_t *pdu, uint16_t len);
 typedef void (*ble_gatt_client_event_fn)(void *context, uint16_t handle,
-                                         const uint8_t *value, uint16_t len);
+    const uint8_t *value, uint16_t len);
 
 enum {
     BLE_GATT_CLIENT_IDLE = 0,
@@ -58,6 +58,9 @@ typedef struct {
     void *context;
 } ble_gatt_client;
 
+// =============================================================================
+// Transaction state and response validation
+// =============================================================================
 static inline void ble_gatt_client_init(
     ble_gatt_client *client,
     ble_gatt_client_send_fn send, ble_gatt_client_result_fn result,
@@ -137,7 +140,7 @@ static inline uint16_t ble_gatt_client_get_u16(const uint8_t *p) {
 
 static inline uint16_t ble_gatt_client_uuid_assigned16(
     const uint8_t *uuid,
-                                                       uint8_t uuid_len
+    uint8_t uuid_len
 ) {
     static const uint8_t base_prefix[14] = {
         0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00,
@@ -150,6 +153,7 @@ static inline uint16_t ble_gatt_client_uuid_assigned16(
     return 0;
 }
 
+// Validate response layout and handles against the outstanding request.
 static inline int ble_gatt_client_response_valid(
     const ble_gatt_client *client,
     const uint8_t *pdu, uint16_t len
@@ -377,6 +381,9 @@ static inline int ble_gatt_client_range_valid(uint16_t start, uint16_t end) {
     return start != 0 && start <= end;
 }
 
+// =============================================================================
+// Standard GATT request builders
+// =============================================================================
 static inline int ble_gatt_client_exchange_mtu(
     ble_gatt_client *client,
     uint16_t mtu, uint32_t now_ms
@@ -665,7 +672,7 @@ static inline int ble_gatt_client_write_long_next(ble_gatt_client *client) {
 // is poisoned at timeout and must be replaced before more traffic.
 static inline int ble_gatt_client_poll(
     ble_gatt_client *client,
-                                      uint32_t now_ms
+    uint32_t now_ms
 ) {
     if (!client) return 0;
     client->now_ms = now_ms;

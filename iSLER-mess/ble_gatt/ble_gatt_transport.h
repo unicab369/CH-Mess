@@ -114,6 +114,9 @@ struct ble_gatt_transport {
 #endif
 };
 
+// =============================================================================
+// L2CAP transport and bearer setup
+// =============================================================================
 static inline int ble_gatt_transport_is_client_pdu(uint8_t opcode);
 
 static inline void ble_gatt_transport_reset(ble_gatt_transport *transport) {
@@ -198,7 +201,7 @@ static inline void ble_gatt_transport_server_state_load(
 
 static inline ble_gatt_transport_eatt_context *
 ble_gatt_transport_eatt_context_for(ble_gatt_transport *transport,
-                                     uint16_t cid
+    uint16_t cid
 ) {
     int slot = ble_gatt_transport_eatt_context_find(transport, cid);
     return slot < 0 ? NULL : &transport->eatt_contexts[slot];
@@ -317,8 +320,12 @@ static inline void ble_gatt_transport_eatt_context_opened(
 ) {
     int slot = ble_gatt_transport_eatt_context_find(transport, cid);
     if (slot < 0) {
-        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
-            if (!transport->eatt_contexts[i].cid) { slot = i; break; }
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+            if (!transport->eatt_contexts[i].cid) {
+                slot = i;
+                break;
+            }
+        }
     }
     if (slot < 0) return;
     ble_gatt_transport_eatt_context *bearer =
@@ -638,7 +645,7 @@ static inline int ble_gatt_transport_send_client(
 
 static inline void ble_gatt_transport_set_client(
     ble_gatt_transport *transport,
-                                                 ble_gatt_client *client
+    ble_gatt_client *client
 ) {
     if (!transport) return;
     transport->client = client;

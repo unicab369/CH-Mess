@@ -299,8 +299,9 @@ typedef struct {
     uint16_t sync_transfer_id;
 #endif
     uint16_t tx_l2cap_remaining;
-    uint8_t tx_llid, tx_len, tx_data[GAP_CONN_DATA_MAX];
-    uint8_t rx_llid, rx_len, rx_data[GAP_CONN_DATA_MAX];
+    struct {
+        uint8_t llid, len, data[GAP_CONN_DATA_MAX];
+    } tx, rx;
 
     // Connection parameter and channel-map procedures.
     uint8_t pending_channel_map[5];

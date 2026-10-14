@@ -65,6 +65,9 @@ typedef struct {
     uint8_t encrypted;
 } ble_gatt_eatt;
 
+// =============================================================================
+// Bearer state and channel lifecycle
+// =============================================================================
 static inline void ble_gatt_eatt_init(
     ble_gatt_eatt *eatt,
     const ble_gatt_eatt_ops *ops, uint16_t local_mtu
@@ -80,7 +83,7 @@ static inline void ble_gatt_eatt_init(
 
 static inline void ble_gatt_eatt_set_encrypted(
     ble_gatt_eatt *eatt,
-                                               int encrypted
+    int encrypted
 ) {
     if (!eatt) return;
     eatt->encrypted = (uint8_t)(encrypted != 0);
@@ -96,7 +99,7 @@ static inline void ble_gatt_eatt_set_encrypted(
 
 static inline int ble_gatt_eatt_find(
     const ble_gatt_eatt *eatt,
-                                      uint16_t cid
+    uint16_t cid
 ) {
     if (!eatt || !cid) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
@@ -165,9 +168,14 @@ static inline int ble_gatt_eatt_channel_opened(
     }
     int slot = existing;
     if (slot < 0) {
-        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             if (eatt->bearers[i].state == BLE_GATT_EATT_OPENING &&
-                !eatt->bearers[i].cid) { slot = i; break; }
+                !eatt->bearers[i].cid
+            ) {
+                slot = i;
+                break;
+            }
+        }
     }
     if (slot < 0) slot = ble_gatt_eatt_free_slot(eatt);
     if (slot < 0) {

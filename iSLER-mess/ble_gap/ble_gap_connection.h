@@ -113,7 +113,6 @@ static uint8_t gap_conn_rate_busy(void) {
 static void gap_smp_link_close(void);
 
 static void gap_conn_end(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!conn->link_state.active) return;
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
@@ -122,17 +121,17 @@ static void gap_conn_end(void) {
     }
     gap_smp_link_close();
     // Preserve the final status while clearing the rest of the security state.
-    uint8_t security_status = gap_security->status == GAP_CONNECTION_PENDING ?
-                                0x08 : gap_security->status;
+    uint8_t security_status = gap_sec_contexts[gap_conn_slot].status ==
+        GAP_CONNECTION_PENDING ? 0x08 : gap_sec_contexts[gap_conn_slot].status;
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
     gap_wipe(&conn->bond, sizeof(conn->bond));
-    gap_wipe(conn->tx_data, sizeof(conn->tx_data));
-    gap_wipe(conn->rx_data, sizeof(conn->rx_data));
+    gap_wipe(&conn->tx, sizeof(conn->tx));
+    gap_wipe(&conn->rx, sizeof(conn->rx));
     gap_wipe(&conn->queue, sizeof(conn->queue));
-    gap_wipe(gap_security, sizeof(*gap_security));
-    gap_security->status = security_status;
+    gap_wipe(&gap_sec_contexts[gap_conn_slot], sizeof(gap_sec_contexts[gap_conn_slot]));
+    gap_sec_contexts[gap_conn_slot].status = security_status;
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
@@ -2261,9 +2260,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         conn->tx_l2cap_remaining = len < conn->tx_l2cap_remaining ?
                                     (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
     }
-    conn->tx_llid = llid;
-    conn->tx_len = (uint8_t)len;
-    memcpy(conn->tx_data, data, len);
+    conn->tx.llid = llid;
+    conn->tx.len = (uint8_t)len;
+    memcpy(conn->tx.data, data, len);
     conn->queue.tx_queued = 1;
     return 1;
 }
@@ -2290,11 +2289,11 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_smp_poll();
     if (!data || !len || !conn->queue.rx_ready) return 0;
-    if (*len < conn->rx_len) return -1;
-    if (llid) *llid = conn->rx_llid;
+    if (*len < conn->rx.len) return -1;
+    if (llid) *llid = conn->rx.llid;
 
-    *len = conn->rx_len;
-    memcpy(data, conn->rx_data, conn->rx_len);
+    *len = conn->rx.len;
+    memcpy(data, conn->rx.data, conn->rx.len);
     conn->queue.rx_ready = 0;
     gap_smp_receive_complete();
     return 1;

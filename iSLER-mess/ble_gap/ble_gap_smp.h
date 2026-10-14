@@ -1887,13 +1887,13 @@ static void gap_smp_poll(void) {
 
     smp->l2cap_rx_pending = 1;
     uint16_t cid = smp->l2cap_rx.cid;
-    if (conn->rx_llid == 2 && conn->rx_len >= 4)
-        cid = ble_l2cap_read_u16(conn->rx_data + 2);
+    if (conn->rx.llid == 2 && conn->rx.len >= 4)
+        cid = ble_l2cap_read_u16(conn->rx.data + 2);
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
-    int assembled = ble_l2cap_reassembler_feed(&smp->l2cap_rx, conn->rx_llid,
-                                            conn->rx_data, conn->rx_len,
+    int assembled = ble_l2cap_reassembler_feed(&smp->l2cap_rx, conn->rx.llid,
+                                            conn->rx.data, conn->rx.len,
                                             &completed_cid, &sdu, &sdu_len);
 
     if (assembled <= 0) {
