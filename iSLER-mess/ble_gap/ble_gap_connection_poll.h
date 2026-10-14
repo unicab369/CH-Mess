@@ -47,14 +47,18 @@ static void gap_conn_send_queued(void) {
             conn->pending.params_local = 1;
             gap_tx_frame[1] = 24;
             gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
-            gap_tx_frame[3] = (uint8_t)conn->params_min;
-            gap_tx_frame[4] = (uint8_t)(conn->params_min >> 8);
-            gap_tx_frame[5] = (uint8_t)conn->params_max;
-            gap_tx_frame[6] = (uint8_t)(conn->params_max >> 8);
-            gap_tx_frame[7] = (uint8_t)conn->params_latency;
-            gap_tx_frame[8] = (uint8_t)(conn->params_latency >> 8);
-            gap_tx_frame[9] = (uint8_t)conn->params_timeout;
-            gap_tx_frame[10] = (uint8_t)(conn->params_timeout >> 8);
+
+            uint16_t values[] = {
+                conn->params_min,
+                conn->params_max,
+                conn->params_latency,
+                conn->params_timeout
+            };
+            for (uint8_t i = 0; i < 4; i++) {
+                gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
+                gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
+            }
+
             gap_tx_frame[11] = 0; // No preferred periodicity.
             gap_tx_frame[12] = 0;
             gap_tx_frame[13] = 0;
@@ -158,10 +162,14 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
 
             const uint16_t values[9] = {
-                conn->rate.interval_min, conn->rate.interval_max,
-                conn->rate.factor_min, conn->rate.factor_max,
-                conn->rate.latency, conn->rate.continuation,
-                conn->rate.timeout, conn->rate.periodicity,
+                conn->rate.interval_min,
+                conn->rate.interval_max,
+                conn->rate.factor_min,
+                conn->rate.factor_max,
+                conn->rate.latency,
+                conn->rate.continuation,
+                conn->rate.timeout,
+                conn->rate.periodicity,
                 conn->link.event_counter
             };
             for (uint8_t i = 0; i < 9; i++) {
