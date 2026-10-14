@@ -346,7 +346,7 @@ static int gap_access_address_valid(uint32_t address) {
     return transitions <= 24 && msb_transitions >= 2;
 }
 
-static int gap_access_address_generate(uint32_t *address) {
+static int gap_access_addr(uint32_t *address) {
     if (!address) return 0;
 
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
@@ -607,7 +607,7 @@ static int gap_conn_procedure_start(
     const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
                                 gap_central.peer_address : NULL;
     uint32_t access_address;
-    if (!gap_access_address_generate(&access_address)) return 0;
+    if (!gap_access_addr(&access_address)) return 0;
 
     memset(gap_central.request, 0, sizeof(gap_central.request));
     uint8_t local_type;
