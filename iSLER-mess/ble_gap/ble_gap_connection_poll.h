@@ -6,28 +6,30 @@
 
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_send_security();
-    if (gap_security->phase) return;
+    if (gap_sec_contexts[gap_conn_slot].phase) return;
 
     if (conn->queue.local_update)
         gap_send_conn_update();
+
     if (conn->queue.local_map && !gap_tx_frame[1]) {
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
         conn->channel_map_instant = (uint16_t)(conn->link.event_counter +
-            6 * (conn->schedule.latency + 1) + 1);
+                                    6 * (conn->schedule.latency + 1) + 1);
         conn->pending.channel_map = 1;
         conn->queue.local_map = 0;
 
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 8;
-        gap_tx_frame[2] = 0x01; // LL_CHANNEL_MAP_IND
+        gap_tx_frame[2] = LL_CHANNEL_MAP_IND;
         memcpy(gap_tx_frame + 3, conn->pending_channel_map, 5);
         gap_tx_frame[8] = (uint8_t)conn->channel_map_instant;
         gap_tx_frame[9] = (uint8_t)(conn->channel_map_instant >> 8);
     }
-    if (conn->queue.local_params && !conn->features.request_pending &&
+
+    if (conn->queue.local_params &&
+        !conn->features.request_pending &&
         !gap_tx_frame[1]
     ) {
         // Exchange features before sending the application's timing range.
@@ -59,8 +61,10 @@ static void gap_conn_send_queued(void) {
             memset(gap_tx_frame + 14, 0xff, 12); // No anchor offset preference.
         }
     }
+
     if (conn->queue.length)
         gap_send_data_length(0x14);
+
     if (conn->queue.phy_queued && !gap_tx_frame[1]) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queue.phy_queued = 0;
@@ -73,6 +77,7 @@ static void gap_conn_send_queued(void) {
         gap_tx_frame[3] = conn->phy.preferred.tx;
         gap_tx_frame[4] = conn->phy.preferred.rx;
     }
+
     if ((conn->subrate.update_queued || conn->subrate.request_queued) &&
         !gap_tx_frame[1] && !conn->features.request_pending
     ) {
@@ -113,6 +118,7 @@ static void gap_conn_send_queued(void) {
             }
         }
     }
+
     if ((conn->rate.set_queued || conn->rate.request_queued) &&
         !gap_tx_frame[1] && !conn->features.request_pending &&
         !conn->features.ext_pending
@@ -171,6 +177,7 @@ static void gap_conn_send_queued(void) {
             conn->params_started_ms = GET_MILLIS();
         }
     }
+
     if (conn->channel.report_queued && !gap_tx_frame[1] &&
         conn->is_central && !conn->features.request_pending
     ) {
@@ -291,6 +298,7 @@ void gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
+
         if (frame[1]) {
             conn->subrate.event_activity = 1;
             conn->subrate.event_received = 1;
@@ -326,6 +334,7 @@ void gap_hw_received(void) {
             if (!conn->is_central && conn->rate.ack_waiting) {
                 conn->rate.ack_waiting = 0;
             }
+
             if (conn->is_central && conn->subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 11 &&
@@ -395,6 +404,7 @@ void gap_hw_received(void) {
                     allowed |= opcode == 0x03; break;
                 default: break;
             }
+
             if (!allowed) {
                 gap_security->status = 0x3d;
                 gap_conn_end();
@@ -428,6 +438,7 @@ void gap_hw_received(void) {
                     return;
                 }
             }
+
             if (!conn->link_state.terminate_after_reply) {
                 if (gap_tx_frame[1] == 0 && conn->link_state.terminate_queued) {
                     gap_tx_frame[0] = 0x03;
@@ -480,6 +491,7 @@ void gap_hw_received(void) {
                                GAP_CHANNEL_CLASSIFICATION_BYTES);
                     }
                 }
+
                 if (gap_tx_frame[1] == 0 && conn->queue.tx_queued &&
                     !conn->link_state.terminate_after_reply
                 ) {
@@ -585,6 +597,7 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+
     if (gap_ext_scan.aux_listening) {
         gap_conn_slot = previous_slot;
         return;
@@ -651,6 +664,7 @@ void gap_hw_received(void) {
                     target_matches = memcmp(frame + 8, hash, 3) == 0;
                 }
             }
+
             if (!target_matches) {
                 gap_conn_slot = previous_slot;
                 return;
@@ -729,6 +743,7 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+
     if (gap_scanner.active && gap_scan.active_pending && pdu_type == 0x04 &&
         frame[1] >= 6 && frame[1] <= 37 &&
         ((frame[0] >> 6) & 1) == gap_scan.active_address_type &&
@@ -742,6 +757,7 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+
     if (gap_adv_state.rx_event &&
         (gap_adv_state.adv_frame[0] & 0x0f) != 0x01 &&
         frame[1] == 12 &&
@@ -868,6 +884,7 @@ static void gap_conn_poll(void) {
                 memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
             }
         }
+
         if (smp_bond_load())
             conn->bonded = 1;
     }
@@ -1019,6 +1036,7 @@ static void gap_conn_poll(void) {
             if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
                 subrated = 1;
         }
+
         if (!conn->subrate.continuations &&
             (!subrated || (!conn->is_central && conn->subrate.latency_remaining))
         ) {
@@ -1050,6 +1068,7 @@ static void gap_conn_poll(void) {
             conn->link.next_ticks = now;
             conn->link_state.central_anchor_set = 1;
         }
+
         if (!conn->link.tx_pending) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
@@ -1294,6 +1313,7 @@ void gap_hw_scan_poll(void) {
             gap_rx_armed = 1;
             return;
         }
+
         if (slot >= 0 && !select_periodic) {
             if (ticks > gap_aux_request[slot].end_ticks) {
                 gap_aux_request[slot].active = 0;
@@ -1502,6 +1522,7 @@ int gap_send_due(
         gap_adv.next_event_ms = completed_at + gap_adv.interval_ms + event_jitter;
         return 0;
     }
+
     if (sent_at) *sent_at = completed_at;
     if (jitter) *jitter = event_jitter;
     return 1;

@@ -707,6 +707,7 @@ int gap_identity_set(
             slot = i;
             break;
         }
+
         if (!gap_identities[i].used && slot < 0) slot = i;
     }
 
@@ -791,6 +792,7 @@ static int gap_private_address_generate(
             if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
                 continue;
         }
+
         if (!previous || memcmp(address, previous, 6) != 0) return 1;
     }
     return 0;

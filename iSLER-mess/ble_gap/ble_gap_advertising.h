@@ -382,6 +382,7 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
                     return 0;
             break;
         }
+
         if (offset + (size_t)field_len + 1 > len)
             return 0;
         offset += (size_t)field_len + 1;
@@ -415,6 +416,7 @@ static inline int gap_adv_start_payload(
     ) {
         return 0;
     }
+
     if (data_len) memcpy(gap_adv.data, data, data_len);
     if (resp_len)
         memcpy(gap_adv.scan_response, scan_response, resp_len);
@@ -782,6 +784,7 @@ static inline void gap_receive_report(
             }
         }
     }
+
     if (gap_scanner.filter_duplicates) {
         const uint8_t *identity = slot >= 0 ? gap_identities[slot].address : frame + 2;
         uint8_t identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
@@ -801,6 +804,7 @@ static inline void gap_receive_report(
                 break;
             }
         }
+
         if (seen_slot == GAP_SCAN_SEEN_COUNT) {
             seen_slot = gap_scan_seen_next;
             gap_scan_seen_next = (gap_scan_seen_next + 1) % GAP_SCAN_SEEN_COUNT;
@@ -851,6 +855,7 @@ int gap_scan_take_ad(
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;
     }
+
     if (!types || !ad || !len || !gap_rx.ready) return 0;
 
     const uint8_t *frame = gap_rx.frame;
