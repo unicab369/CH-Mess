@@ -40,6 +40,27 @@ enum {
 };
 
 typedef struct {
+    uint16_t len;
+    uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
+    uint8_t pending;
+    uint8_t opcode;
+    uint8_t expected_opcode;
+    uint32_t deadline_ms;
+    uint32_t now_ms;
+} ble_gatt_client_request_state;
+
+typedef struct {
+    uint8_t kind;
+    uint16_t handle;
+    uint16_t offset;
+    uint16_t total;
+    uint16_t chunk;
+    uint8_t error[5];
+    uint16_t value_len;
+    uint8_t value[BLE_GATT_CLIENT_VALUE_MAX];
+} ble_gatt_client_operation_state;
+
+typedef struct {
     // ATT bearer configuration and health.
     uint16_t mtu;
     uint16_t local_mtu;
@@ -47,23 +68,10 @@ typedef struct {
     uint8_t bearer_failed;
 
     // Outstanding request and timeout tracking.
-    uint16_t request_len;
-    uint8_t request_pdu[BLE_GATT_CLIENT_MTU_MAX];
-    uint8_t pending;
-    uint8_t request_opcode;
-    uint8_t expected_opcode;
-    uint32_t deadline_ms;
-    uint32_t now_ms;
+    ble_gatt_client_request_state request;
 
     // Long read/write operation state and accumulated value.
-    uint8_t operation;
-    uint16_t operation_handle;
-    uint16_t operation_offset;
-    uint16_t operation_total;
-    uint16_t operation_chunk;
-    uint8_t operation_error[5];
-    uint16_t long_value_len;
-    uint8_t long_value[BLE_GATT_CLIENT_VALUE_MAX];
+    ble_gatt_client_operation_state operation;
 
     // Application callbacks.
     ble_gatt_client_send_fn send;
@@ -102,18 +110,18 @@ static inline void ble_gatt_client_set_signer(
 
 static inline void ble_gatt_client_reset(ble_gatt_client *client) {
     if (!client) return;
-    uint8_t cancelled = client->pending;
+    uint8_t cancelled = client->request.pending;
     client->mtu = client->local_mtu = 23;
-    client->pending = 0;
+    client->request.pending = 0;
     client->bearer_failed = 0;
-    client->request_opcode = client->expected_opcode = 0;
+    client->request.opcode = client->request.expected_opcode = 0;
     client->mtu_exchanged = 0;
-    client->request_len = 0;
-    client->deadline_ms = 0;
-    client->operation = 0;
-    client->operation_handle = client->operation_offset = 0;
-    client->operation_total = client->operation_chunk = 0;
-    client->long_value_len = 0;
+    client->request.len = 0;
+    client->request.deadline_ms = 0;
+    client->operation.kind = 0;
+    client->operation.handle = client->operation.offset = 0;
+    client->operation.total = client->operation.chunk = 0;
+    client->operation.value_len = 0;
     if (cancelled && client->result)
         client->result(client->context, BLE_GATT_CLIENT_DISCONNECTED,
                        NULL, 0);
@@ -128,25 +136,25 @@ static inline int ble_gatt_client_request(
 ) {
     if (!client || client->bearer_failed || !client->send ||
         !client->result || !pdu || !len ||
-        len > client->mtu || !expected_opcode || client->pending)
+        len > client->mtu || !expected_opcode || client->request.pending)
         return 0;
     if (pdu[0] == 0x02 && client->mtu_exchanged) return 0;
     if (ble_att_response_opcode(pdu[0]) != expected_opcode) return 0;
     if (!client->send(client->context, pdu, len)) return 0;
     if (pdu[0] == 0x02) client->mtu_exchanged = 1;
-    memcpy(client->request_pdu, pdu, len);
-    client->request_len = len;
-    client->request_opcode = pdu[0];
+    memcpy(client->request.pdu, pdu, len);
+    client->request.len = len;
+    client->request.opcode = pdu[0];
     if (pdu[0] == 0x02 && len == 3) {
         uint16_t requested = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
         client->local_mtu = requested < 23 ? 23 :
             (requested > BLE_GATT_CLIENT_MTU_MAX ?
              BLE_GATT_CLIENT_MTU_MAX : requested);
     }
-    client->expected_opcode = expected_opcode;
-    client->deadline_ms = now_ms + BLE_GATT_CLIENT_TIMEOUT_MS;
-    client->now_ms = now_ms;
-    client->pending = 1;
+    client->request.expected_opcode = expected_opcode;
+    client->request.deadline_ms = now_ms + BLE_GATT_CLIENT_TIMEOUT_MS;
+    client->request.now_ms = now_ms;
+    client->request.pending = 1;
     return 1;
 }
 
@@ -179,13 +187,13 @@ static inline int ble_gatt_client_response_valid(
     case 0x03:
         return len == 3;
     case 0x05:
-        if (client->request_len != 5 || client->request_pdu[0] != 0x04 ||
+        if (client->request.len != 5 || client->request.pdu[0] != 0x04 ||
             len < 6 || (pdu[1] != 1 && pdu[1] != 2) ||
             (pdu[1] == 1 ? (len - 2) % 4 != 0 : (len - 2) % 18 != 0))
             return 0;
         {
-            uint16_t first = ble_gatt_client_get_u16(client->request_pdu + 1);
-            uint16_t last = ble_gatt_client_get_u16(client->request_pdu + 3);
+            uint16_t first = ble_gatt_client_get_u16(client->request.pdu + 1);
+            uint16_t last = ble_gatt_client_get_u16(client->request.pdu + 3);
             if (!first || first > last) return 0;
             uint16_t previous = 0;
             uint8_t entry_len = pdu[1] == 1 ? 4 : 18;
@@ -199,13 +207,13 @@ static inline int ble_gatt_client_response_valid(
             return 1;
         }
     case 0x07: {
-        if (client->request_len < 7 || client->request_pdu[0] != 0x06 ||
+        if (client->request.len < 7 || client->request.pdu[0] != 0x06 ||
             len < 5 || (len - 1) % 4)
             return 0;
-        uint16_t first = ble_gatt_client_get_u16(client->request_pdu + 1);
-        uint16_t last = ble_gatt_client_get_u16(client->request_pdu + 3);
+        uint16_t first = ble_gatt_client_get_u16(client->request.pdu + 1);
+        uint16_t last = ble_gatt_client_get_u16(client->request.pdu + 3);
         if (!first || first > last) return 0;
-        uint16_t type = ble_gatt_client_get_u16(client->request_pdu + 5);
+        uint16_t type = ble_gatt_client_get_u16(client->request.pdu + 5);
         uint16_t previous_end = 0;
         for (uint16_t offset = 1; offset < len; offset += 4) {
             uint16_t found = ble_gatt_client_get_u16(pdu + offset);
@@ -219,14 +227,14 @@ static inline int ble_gatt_client_response_valid(
         return 1;
     }
     case 0x09: {
-        if ((client->request_len != 7 && client->request_len != 21) ||
-            client->request_pdu[0] != 0x08 ||
+        if ((client->request.len != 7 && client->request.len != 21) ||
+            client->request.pdu[0] != 0x08 ||
             len < 4 || pdu[1] < 2 || (len - 2) % pdu[1])
             return 0;
-        uint16_t first = ble_gatt_client_get_u16(client->request_pdu + 1);
-        uint16_t last = ble_gatt_client_get_u16(client->request_pdu + 3);
+        uint16_t first = ble_gatt_client_get_u16(client->request.pdu + 1);
+        uint16_t last = ble_gatt_client_get_u16(client->request.pdu + 3);
         uint16_t type = ble_gatt_client_uuid_assigned16(
-            client->request_pdu + 5, (uint8_t)(client->request_len - 5));
+            client->request.pdu + 5, (uint8_t)(client->request.len - 5));
         if (!first || first > last) return 0;
         // Read By Type's entry size includes the two-byte attribute handle.
         // Characteristic declarations have 5- or 19-byte values; included
@@ -259,23 +267,23 @@ static inline int ble_gatt_client_response_valid(
     case 0x0b:
         return len - 1 <= BLE_GATT_ATT_VALUE_MAX;
     case 0x0d: {
-        if (len - 1 > BLE_GATT_ATT_VALUE_MAX || client->request_len != 5 ||
-            client->request_pdu[0] != 0x0c)
+        if (len - 1 > BLE_GATT_ATT_VALUE_MAX || client->request.len != 5 ||
+            client->request.pdu[0] != 0x0c)
             return 0;
-        uint16_t offset = ble_gatt_client_get_u16(client->request_pdu + 3);
+        uint16_t offset = ble_gatt_client_get_u16(client->request.pdu + 3);
         return offset <= BLE_GATT_ATT_VALUE_MAX &&
                (uint32_t)offset + len - 1 <= BLE_GATT_ATT_VALUE_MAX;
     }
     case 0x0f:
         return 1;
     case 0x11: {
-        if ((client->request_len != 7 && client->request_len != 21) ||
-            client->request_pdu[0] != 0x10 ||
+        if ((client->request.len != 7 && client->request.len != 21) ||
+            client->request.pdu[0] != 0x10 ||
             len < 8 || (pdu[1] != 6 && pdu[1] != 20) ||
             (len - 2) % pdu[1])
             return 0;
-        uint16_t first = ble_gatt_client_get_u16(client->request_pdu + 1);
-        uint16_t last = ble_gatt_client_get_u16(client->request_pdu + 3);
+        uint16_t first = ble_gatt_client_get_u16(client->request.pdu + 1);
+        uint16_t last = ble_gatt_client_get_u16(client->request.pdu + 3);
         if (!first || first > last) return 0;
         uint16_t previous_end = 0;
         for (uint16_t offset = 2; offset < len; offset += pdu[1]) {
@@ -291,16 +299,16 @@ static inline int ble_gatt_client_response_valid(
     case 0x13: case 0x19:
         return len == 1;
     case 0x17:
-        return client->request_len == len && len >= 5 &&
-               !memcmp(client->request_pdu + 1, pdu + 1, len - 1);
+        return client->request.len == len && len >= 5 &&
+               !memcmp(client->request.pdu + 1, pdu + 1, len - 1);
     case 0x21: {
         uint16_t offset = 1;
         uint16_t tuples = 0;
-        if (!client->request_len || client->request_pdu[0] != 0x20 ||
-            client->request_len < 5 ||
-            ((client->request_len - 1) & 1))
+        if (!client->request.len || client->request.pdu[0] != 0x20 ||
+            client->request.len < 5 ||
+            ((client->request.len - 1) & 1))
             return 0;
-        uint16_t requested = (client->request_len - 1) / 2;
+        uint16_t requested = (client->request.len - 1) / 2;
         if (len < 3) return 0;
         while (offset < len) {
             if (len - offset < 2) return 0;
@@ -324,28 +332,28 @@ static inline int ble_gatt_client_error_handle_valid(
     const ble_gatt_client *client, const uint8_t *pdu
 ) {
     uint16_t error_handle = ble_gatt_client_get_u16(pdu + 2);
-    uint8_t request = client->request_opcode;
+    uint8_t request = client->request.opcode;
     if (!error_handle) {
         if (pdu[4] == 0x04 || pdu[4] == 0x06 || request == 0x02 ||
             request == 0x18)
             return 1;
         switch (request) {
         case 0x0a: case 0x12:
-            return client->request_len >= 3 &&
-                !ble_gatt_client_get_u16(client->request_pdu + 1);
+            return client->request.len >= 3 &&
+                !ble_gatt_client_get_u16(client->request.pdu + 1);
         case 0x0c: case 0x16:
-            return client->request_len >= 5 &&
-                !ble_gatt_client_get_u16(client->request_pdu + 1);
+            return client->request.len >= 5 &&
+                !ble_gatt_client_get_u16(client->request.pdu + 1);
         case 0x04: case 0x06: case 0x08: case 0x10:
-            return client->request_len >= 5 &&
-                !ble_gatt_client_get_u16(client->request_pdu + 1);
+            return client->request.len >= 5 &&
+                !ble_gatt_client_get_u16(client->request.pdu + 1);
         case 0x0e: case 0x20:
-            if (client->request_len < 5 ||
-                ((client->request_len - 1) & 1))
+            if (client->request.len < 5 ||
+                ((client->request.len - 1) & 1))
                 return 0;
-            for (uint16_t offset = 1; offset < client->request_len;
+            for (uint16_t offset = 1; offset < client->request.len;
                  offset += 2)
-                if (!ble_gatt_client_get_u16(client->request_pdu + offset))
+                if (!ble_gatt_client_get_u16(client->request.pdu + offset))
                     return 1;
             return 0;
         default:
@@ -354,20 +362,20 @@ static inline int ble_gatt_client_error_handle_valid(
     }
     switch (request) {
     case 0x0a: case 0x12:
-        return client->request_len >= 3 && error_handle ==
-            ble_gatt_client_get_u16(client->request_pdu + 1);
+        return client->request.len >= 3 && error_handle ==
+            ble_gatt_client_get_u16(client->request.pdu + 1);
     case 0x0c:
-        return client->request_len >= 5 && error_handle ==
-            ble_gatt_client_get_u16(client->request_pdu + 1);
+        return client->request.len >= 5 && error_handle ==
+            ble_gatt_client_get_u16(client->request.pdu + 1);
     case 0x16:
-        return client->request_len >= 5 && error_handle ==
-            ble_gatt_client_get_u16(client->request_pdu + 1);
+        return client->request.len >= 5 && error_handle ==
+            ble_gatt_client_get_u16(client->request.pdu + 1);
     case 0x0e: case 0x20:
-        if (client->request_len < 5 || ((client->request_len - 1) & 1))
+        if (client->request.len < 5 || ((client->request.len - 1) & 1))
             return 0;
-        for (uint16_t offset = 1; offset < client->request_len; offset += 2)
+        for (uint16_t offset = 1; offset < client->request.len; offset += 2)
             if (error_handle == ble_gatt_client_get_u16(
-                    client->request_pdu + offset))
+                    client->request.pdu + offset))
                 return 1;
         return 0;
     case 0x18:
@@ -376,10 +384,10 @@ static inline int ble_gatt_client_error_handle_valid(
         // retained by this transaction primitive.
         return 1;
     case 0x04: case 0x06: case 0x08: case 0x10:
-        if (client->request_len < 5) return 0;
+        if (client->request.len < 5) return 0;
         {
-            uint16_t first = ble_gatt_client_get_u16(client->request_pdu + 1);
-            uint16_t last = ble_gatt_client_get_u16(client->request_pdu + 3);
+            uint16_t first = ble_gatt_client_get_u16(client->request.pdu + 1);
+            uint16_t last = ble_gatt_client_get_u16(client->request.pdu + 3);
             return error_handle == first ||
                 (first <= last && error_handle >= first &&
                  error_handle <= last);
@@ -485,20 +493,20 @@ static inline int ble_gatt_client_read(
 }
 
 // Automatically fetch successive Read Blob chunks. The assembled value is
-// available in client->long_value/client->long_value_len at the completion
+// available in client->operation.value/client->operation.value_len at the completion
 // callback; the ordinary response callback fires once for the whole read.
 static inline int ble_gatt_client_read_long(
     ble_gatt_client *client,
     uint16_t handle, uint32_t now_ms
 ) {
-    if (!client || !handle || client->operation) return 0;
-    client->operation = 1;
-    client->operation_handle = handle;
-    client->operation_offset = client->long_value_len = 0;
+    if (!client || !handle || client->operation.kind) return 0;
+    client->operation.kind = 1;
+    client->operation.handle = handle;
+    client->operation.offset = client->operation.value_len = 0;
     uint8_t pdu[3] = {0x0a};
     ble_gatt_client_put_u16(pdu + 1, handle);
     if (!ble_gatt_client_request(client, pdu, sizeof(pdu), 0x0b, now_ms)) {
-        client->operation = 0;
+        client->operation.kind = 0;
         return 0;
     }
     return 1;
@@ -577,25 +585,25 @@ static inline int ble_gatt_client_write_long(
     uint16_t handle, const uint8_t *value, uint16_t len, uint32_t now_ms
 ) {
     if (!client || !handle || (!value && len) ||
-        len > BLE_GATT_CLIENT_VALUE_MAX || client->operation)
+        len > BLE_GATT_CLIENT_VALUE_MAX || client->operation.kind)
         return 0;
     if (len <= client->mtu - 3)
         return ble_gatt_client_write(client, handle, value, len, now_ms);
-    memcpy(client->long_value, value, len);
-    client->long_value_len = len;
-    client->operation = 2;
-    client->operation_handle = handle;
-    client->operation_offset = 0;
-    client->operation_total = len;
+    memcpy(client->operation.value, value, len);
+    client->operation.value_len = len;
+    client->operation.kind = 2;
+    client->operation.handle = handle;
+    client->operation.offset = 0;
+    client->operation.total = len;
     uint16_t chunk = client->mtu - 5;
     if (chunk > len) chunk = len;
-    client->operation_chunk = chunk;
+    client->operation.chunk = chunk;
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {0x16};
     ble_gatt_client_put_u16(pdu + 1, handle);
-    if (chunk) memcpy(pdu + 5, client->long_value, chunk);
+    if (chunk) memcpy(pdu + 5, client->operation.value, chunk);
     if (!ble_gatt_client_request(client, pdu, chunk + 5, 0x17, now_ms)) {
-        client->operation = 0;
-        client->operation_total = client->operation_chunk = 0;
+        client->operation.kind = 0;
+        client->operation.total = client->operation.chunk = 0;
         return 0;
     }
     return 1;
@@ -664,21 +672,21 @@ static inline int ble_gatt_client_execute_write(
 }
 
 static inline int ble_gatt_client_write_long_next(ble_gatt_client *client) {
-    if (client->operation_offset < client->operation_total) {
-        uint16_t remaining = client->operation_total - client->operation_offset;
+    if (client->operation.offset < client->operation.total) {
+        uint16_t remaining = client->operation.total - client->operation.offset;
         uint16_t chunk = client->mtu - 5;
         if (chunk > remaining) chunk = remaining;
         uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {0x16};
-        ble_gatt_client_put_u16(pdu + 1, client->operation_handle);
-        ble_gatt_client_put_u16(pdu + 3, client->operation_offset);
-        memcpy(pdu + 5, client->long_value + client->operation_offset, chunk);
-        client->operation_chunk = chunk;
+        ble_gatt_client_put_u16(pdu + 1, client->operation.handle);
+        ble_gatt_client_put_u16(pdu + 3, client->operation.offset);
+        memcpy(pdu + 5, client->operation.value + client->operation.offset, chunk);
+        client->operation.chunk = chunk;
         return ble_gatt_client_request(client, pdu, chunk + 5, 0x17,
-                                       client->now_ms);
+                                       client->request.now_ms);
     }
     const uint8_t execute[2] = {0x18, 1};
     return ble_gatt_client_request(client, execute, sizeof(execute), 0x19,
-                                   client->now_ms);
+                                   client->request.now_ms);
 }
 
 // Call from the connection loop with a monotonic millisecond tick. Refreshing
@@ -691,14 +699,14 @@ static inline int ble_gatt_client_poll(
     uint32_t now_ms
 ) {
     if (!client) return 0;
-    client->now_ms = now_ms;
-    if (!client->pending ||
-        (int32_t)(now_ms - client->deadline_ms) < 0)
+    client->request.now_ms = now_ms;
+    if (!client->request.pending ||
+        (int32_t)(now_ms - client->request.deadline_ms) < 0)
         return 0;
-    client->pending = 0;
-    client->request_opcode = client->expected_opcode = 0;
-    client->request_len = 0;
-    client->operation = 0;
+    client->request.pending = 0;
+    client->request.opcode = client->request.expected_opcode = 0;
+    client->request.len = 0;
+    client->operation.kind = 0;
     client->bearer_failed = 1;
     if (client->result)
         client->result(client->context, BLE_GATT_CLIENT_TIMEOUT, NULL, 0);
@@ -762,7 +770,7 @@ static inline int ble_gatt_client_receive(
         }
         return 1;
     }
-    if (!client->pending) {
+    if (!client->request.pending) {
         switch (opcode) {
         case 0x01: case 0x03: case 0x05: case 0x07: case 0x09:
         case 0x0b: case 0x0d: case 0x0f: case 0x11: case 0x13:
@@ -774,75 +782,75 @@ static inline int ble_gatt_client_receive(
     }
 
     if (opcode == 0x01) {
-        if (len != 5 || pdu[1] != client->request_opcode || !pdu[4]) {
-            client->pending = 0;
-            client->request_opcode = client->expected_opcode = 0;
-            client->request_len = 0;
-            client->operation = 0;
+        if (len != 5 || pdu[1] != client->request.opcode || !pdu[4]) {
+            client->request.pending = 0;
+            client->request.opcode = client->request.expected_opcode = 0;
+            client->request.len = 0;
+            client->operation.kind = 0;
             client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                            pdu, len);
             return -1;
         }
         if (!ble_gatt_client_error_handle_valid(client, pdu)) {
-            client->pending = 0;
-            client->request_opcode = client->expected_opcode = 0;
-            client->request_len = 0;
-            client->operation = 0;
+            client->request.pending = 0;
+            client->request.opcode = client->request.expected_opcode = 0;
+            client->request.len = 0;
+            client->operation.kind = 0;
             client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                            pdu, len);
             return -1;
         }
-        uint8_t request_opcode = client->request_opcode;
+        uint8_t request_opcode = client->request.opcode;
         const uint8_t *reported_error = pdu;
         uint16_t reported_len = len;
-        client->pending = 0;
-        client->request_opcode = client->expected_opcode = 0;
-        client->request_len = 0;
-        if (client->operation == 1 && request_opcode == 0x0c &&
+        client->request.pending = 0;
+        client->request.opcode = client->request.expected_opcode = 0;
+        client->request.len = 0;
+        if (client->operation.kind == 1 && request_opcode == 0x0c &&
             (pdu[4] == 0x07 || pdu[4] == 0x0b)) {
-            client->operation = 0;
+            client->operation.kind = 0;
             client->result(client->context, 0, pdu, len);
             return 1;
         }
-        if (client->operation == 2 && request_opcode == 0x16) {
-            memcpy(client->operation_error, pdu, 5);
-            client->operation = 3;
+        if (client->operation.kind == 2 && request_opcode == 0x16) {
+            memcpy(client->operation.error, pdu, 5);
+            client->operation.kind = 3;
             const uint8_t cancel[2] = {0x18, 0};
             if (ble_gatt_client_request(client, cancel, sizeof(cancel),
-                                        0x19, client->now_ms))
+                                        0x19, client->request.now_ms))
                 return 1;
-            client->operation = 0;
-        } else if (client->operation == 3) {
-            reported_error = client->operation_error;
+            client->operation.kind = 0;
+        } else if (client->operation.kind == 3) {
+            reported_error = client->operation.error;
             reported_len = 5;
-            client->operation = 0;
+            client->operation.kind = 0;
         } else {
-            client->operation = 0;
+            client->operation.kind = 0;
         }
         client->result(client->context, BLE_GATT_CLIENT_REMOTE_ERROR,
                        reported_error, reported_len);
         return 1;
     }
-    if (opcode != client->expected_opcode) {
-        client->pending = 0;
-        client->request_opcode = client->expected_opcode = 0;
-        client->request_len = 0;
-        client->operation = 0;
+    if (opcode != client->request.expected_opcode) {
+        client->request.pending = 0;
+        client->request.opcode = client->request.expected_opcode = 0;
+        client->request.len = 0;
+        client->operation.kind = 0;
         client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                        pdu, len);
         return -1;
     }
-    uint8_t operation = client->operation;
-    client->pending = 0;
-    client->request_opcode = client->expected_opcode = 0;
+    uint8_t operation = client->operation.kind;
+    client->request.pending = 0;
+    client->request.opcode = client->request.expected_opcode = 0;
     if (!ble_gatt_client_response_valid(client, pdu, len)) {
-        client->request_len = 0;
-        client->operation = 0;
+        client->request.len = 0;
+        client->operation.kind = 0;
         client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                        pdu, len);
         return -1;
     }
-    client->request_len = 0;
+    client->request.len = 0;
     if (opcode == 0x03) {
         uint16_t peer_mtu = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
         client->mtu = peer_mtu < 23 ? 23 :
@@ -850,37 +858,37 @@ static inline int ble_gatt_client_receive(
     }
     if (operation == 1 && (opcode == 0x0b || opcode == 0x0d)) {
         uint16_t part_len = len - 1;
-        if (part_len > BLE_GATT_CLIENT_VALUE_MAX - client->long_value_len) {
-            client->operation = 0;
+        if (part_len > BLE_GATT_CLIENT_VALUE_MAX - client->operation.value_len) {
+            client->operation.kind = 0;
             client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                            pdu, len);
             return -1;
         }
-        if (part_len) memcpy(client->long_value + client->long_value_len,
+        if (part_len) memcpy(client->operation.value + client->operation.value_len,
                              pdu + 1, part_len);
-        client->long_value_len += part_len;
+        client->operation.value_len += part_len;
         if (part_len == client->mtu - 1 &&
-            client->long_value_len < BLE_GATT_CLIENT_VALUE_MAX) {
+            client->operation.value_len < BLE_GATT_CLIENT_VALUE_MAX) {
             uint8_t blob[5] = {0x0c};
-            ble_gatt_client_put_u16(blob + 1, client->operation_handle);
-            ble_gatt_client_put_u16(blob + 3, client->long_value_len);
+            ble_gatt_client_put_u16(blob + 1, client->operation.handle);
+            ble_gatt_client_put_u16(blob + 3, client->operation.value_len);
             if (!ble_gatt_client_request(client, blob, sizeof(blob), 0x0d,
-                                         client->now_ms)) {
-                client->operation = 0;
+                                         client->request.now_ms)) {
+                client->operation.kind = 0;
                 client->result(client->context,
                     BLE_GATT_CLIENT_PROTOCOL_ERROR, pdu, len);
                 return -1;
             }
             return 1;
         }
-        client->operation = 0;
+        client->operation.kind = 0;
         client->result(client->context, 0, pdu, len);
         return 1;
     }
     if (operation == 2 && opcode == 0x17) {
-        client->operation_offset += client->operation_chunk;
+        client->operation.offset += client->operation.chunk;
         if (!ble_gatt_client_write_long_next(client)) {
-            client->operation = 0;
+            client->operation.kind = 0;
             client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
                            pdu, len);
             return -1;
@@ -888,15 +896,15 @@ static inline int ble_gatt_client_receive(
         return 1;
     }
     if (operation == 2 && opcode == 0x19) {
-        client->operation = 0;
-        client->operation_total = client->operation_chunk = 0;
+        client->operation.kind = 0;
+        client->operation.total = client->operation.chunk = 0;
         client->result(client->context, 0, pdu, len);
         return 1;
     }
     if (operation == 3 && opcode == 0x19) {
-        client->operation = 0;
+        client->operation.kind = 0;
         client->result(client->context, BLE_GATT_CLIENT_REMOTE_ERROR,
-                       client->operation_error, 5);
+                       client->operation.error, 5);
         return 1;
     }
     client->result(client->context, 0, pdu, len);

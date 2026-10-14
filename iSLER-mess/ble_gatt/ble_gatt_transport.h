@@ -431,8 +431,8 @@ static inline int ble_gatt_transport_eatt_receive_att(
     if (ble_gatt_transport_is_client_pdu(pdu[0])) {
         if (bearer->client_enabled) {
             uint8_t mtu_response = pdu[0] == 0x03 &&
-                bearer->client.pending &&
-                bearer->client.request_opcode == 0x02;
+                bearer->client.request.pending &&
+                bearer->client.request.opcode == 0x02;
             int result = ble_gatt_client_receive(&bearer->client, pdu, len);
             if (mtu_response && result > 0 && transport->server) {
                 bearer->server.mtu = bearer->client.mtu;
@@ -450,7 +450,7 @@ static inline int ble_gatt_transport_eatt_receive_att(
         uint16_t response_len = 0;
         uint8_t mtu_request = pdu[0] == 0x02;
         uint8_t client_mtu_pending = bearer->client_enabled &&
-            bearer->client.pending && bearer->client.request_opcode == 0x02;
+            bearer->client.request.pending && bearer->client.request.opcode == 0x02;
         uint16_t previous_mtu = bearer->server.mtu;
         ble_gatt_transport_server_bearer active;
         ble_gatt_transport_server_state_capture(transport->server, &active);
@@ -816,8 +816,8 @@ static inline int ble_gatt_transport_receive_att(
     if (att_len && ble_gatt_transport_is_client_pdu(att[0])) {
         dispatched_to_client = 1;
         uint8_t client_mtu_response = transport->client && att[0] == 0x03 &&
-            transport->client->pending &&
-            transport->client->request_opcode == 0x02;
+            transport->client->request.pending &&
+            transport->client->request.opcode == 0x02;
         has_response = transport->client ?
             ble_gatt_client_receive(transport->client, att, att_len) : 0;
         if (client_mtu_response && has_response > 0 && transport->server) {
@@ -828,8 +828,8 @@ static inline int ble_gatt_transport_receive_att(
     } else if (transport->server) {
         uint8_t server_mtu_request = att_len && att[0] == 0x02;
         uint8_t client_mtu_pending = transport->client &&
-            transport->client->pending &&
-            transport->client->request_opcode == 0x02;
+            transport->client->request.pending &&
+            transport->client->request.opcode == 0x02;
         uint16_t previous_server_mtu = transport->server->mtu;
         has_response = ble_gatt_server_att(transport->server, att,
             att_len, response, sizeof(response), &response_len);
@@ -932,8 +932,8 @@ static inline int ble_gatt_transport_poll(
                 if (slot < 0 || !transport->l2cap.channels[slot].tx_len) {
                     bearer->client_tx_pending = 0;
                     if (slot >= 0 && bearer->client_enabled &&
-                        bearer->client.pending)
-                        bearer->client.deadline_ms = now_ms +
+                        bearer->client.request.pending)
+                        bearer->client.request.deadline_ms = now_ms +
                             BLE_GATT_CLIENT_TIMEOUT_MS;
                 }
             }
@@ -953,22 +953,22 @@ static inline int ble_gatt_transport_poll(
         if (transport->tx_offset == transport->tx_len) {
             transport->tx_len = transport->tx_offset = 0;
             if (transport->tx_client_request && transport->client &&
-                transport->client->pending)
-                transport->client->deadline_ms = now_ms +
+                transport->client->request.pending)
+                transport->client->request.deadline_ms = now_ms +
                     BLE_GATT_CLIENT_TIMEOUT_MS;
             transport->tx_client_request = 0;
         }
         return 1;
     }
 
-    if (transport->client) transport->client->now_ms = now_ms;
+    if (transport->client) transport->client->request.now_ms = now_ms;
 #if BLE_GATT_ENABLE_EATT
     if (transport->eatt_enabled)
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             ble_gatt_transport_eatt_context *bearer =
                 &transport->eatt_contexts[i];
             if (!bearer->cid || !bearer->client_enabled) continue;
-            bearer->client.now_ms = now_ms;
+            bearer->client.request.now_ms = now_ms;
         }
 #endif
     int received = ble_gatt_transport_receive(transport);
@@ -998,8 +998,8 @@ static inline int ble_gatt_transport_poll(
     }
 #endif
     uint8_t mtu_exchange_pending = transport->client &&
-        transport->client->pending &&
-        transport->client->request_opcode == 0x02;
+        transport->client->request.pending &&
+        transport->client->request.opcode == 0x02;
     int event_result = transport->server && !mtu_exchange_pending ?
         ble_gatt_server_poll_event(transport->server, now_ms, event,
                                    sizeof(event), &event_len) : 0;

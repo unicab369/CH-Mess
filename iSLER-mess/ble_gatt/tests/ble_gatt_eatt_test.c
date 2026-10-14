@@ -263,14 +263,14 @@ int main(void) {
     second->tx_len = second->tx_offset = 0;
     assert(ble_gatt_client_read(client_one, value_handle, 100));
     assert(ble_gatt_client_read(client_two, value_handle, 100));
-    assert(client_one->pending && client_two->pending);
+    assert(client_one->request.pending && client_two->request.pending);
     uint8_t read_response[] = {0x0b, 0x42};
     assert(ble_gatt_transport_eatt_receive_att(&transport, second->local_cid,
         read_response, sizeof(read_response)) == 1);
-    assert(!client_two->pending && client_one->pending);
+    assert(!client_two->request.pending && client_one->request.pending);
     assert(ble_gatt_transport_eatt_receive_att(&transport, local_cid,
         read_response, sizeof(read_response)) == 1);
-    assert(!client_one->pending && !client_two->pending &&
+    assert(!client_one->request.pending && !client_two->request.pending &&
            lower.client_results == 2 && lower.client_status == 0 &&
            lower.last_result_cid == local_cid);
 
@@ -331,7 +331,7 @@ int main(void) {
                BLE_L2CAP_CHANNEL_OPEN);
     assert(ble_gatt_eatt_find(&transport.eatt, local_cid) >= 0);
     ble_gatt_transport_reset(&transport);
-    assert(!client_one->pending && !client_two->pending &&
+    assert(!client_one->request.pending && !client_two->request.pending &&
            !transport.eatt_contexts[bearer_slot].cid &&
            !transport.eatt_contexts[second_bearer_slot].cid);
     return 0;

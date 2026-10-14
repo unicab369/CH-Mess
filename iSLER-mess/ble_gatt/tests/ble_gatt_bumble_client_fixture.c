@@ -43,11 +43,11 @@ static void on_result(
 ) {
     (void)context;
     if (active_command == 10) {
-        if (client.long_value_len != 70)
+        if (client.operation.value_len != 70)
             status = BLE_GATT_CLIENT_PROTOCOL_ERROR;
         else
-            for (uint16_t i = 0; i < client.long_value_len; i++)
-                if (client.long_value[i] != (uint8_t)i)
+            for (uint16_t i = 0; i < client.operation.value_len; i++)
+                if (client.operation.value[i] != (uint8_t)i)
                     status = BLE_GATT_CLIENT_PROTOCOL_ERROR;
     }
     uint8_t header[4] = {2, status, (uint8_t)len, (uint8_t)(len >> 8)};
@@ -223,7 +223,7 @@ int main(void) {
                 return 5;
             if (ble_gatt_client_receive(&client, response, response_len) < 0)
                 return 6;
-        } while (client.pending);
+        } while (client.request.pending);
         now_ms += 1;
     }
     return 0;

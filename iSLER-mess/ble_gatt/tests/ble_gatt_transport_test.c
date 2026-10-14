@@ -196,11 +196,11 @@ static void test_client_timeout_terminates_fixed_bearer(void) {
     link.block_tx = 1;
     assert(ble_gatt_transport_poll(&transport, 101) == 0);
     assert(ble_gatt_transport_poll(&transport, 30100) == 0);
-    assert(client.pending && !transport.bearer_failed);
+    assert(client.request.pending && !transport.bearer_failed);
     link.block_tx = 0;
     assert(ble_gatt_transport_poll(&transport, 50000) == 1);
-    assert(!transport.tx_len && client.pending);
-    assert(client.deadline_ms == 80000);
+    assert(!transport.tx_len && client.request.pending);
+    assert(client.request.deadline_ms == 80000);
     assert(ble_gatt_transport_poll(&transport, 79999) == 0);
     assert(ble_gatt_transport_poll(&transport, 80000) == -1);
     assert(client_result_count == 1 &&
@@ -239,7 +239,7 @@ static void test_client_only_transport(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, read_response,
                   sizeof(read_response), 27);
     assert(ble_gatt_transport_poll(&transport, 4) == 1);
-    assert(!client.pending && client_result_count == 1 &&
+    assert(!client.request.pending && client_result_count == 1 &&
            client_result_status == 0);
 
     link.tx_count = 0;
@@ -414,14 +414,14 @@ static void test_simultaneous_client_and_server(void) {
     uint8_t packet[64];
     uint16_t packet_len = collect_tx(&link, packet);
     assert(packet_len == 6 && packet[4] == 0x0b && packet[5] == initial);
-    assert(client.pending && client_result_count == 0);
+    assert(client.request.pending && client_result_count == 0);
 
     link.tx_count = 0;
     const uint8_t client_response[] = {0x0b, 0x77};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, client_response,
                   sizeof(client_response), 27);
     assert(ble_gatt_transport_poll(&transport, 6) == 1);
-    assert(!client.pending && client_result_count == 1 &&
+    assert(!client.request.pending && client_result_count == 1 &&
            client_result_status == 0);
 
     const uint8_t indication[] = {0x1d, 2, 0, 0x66};
@@ -473,7 +473,7 @@ static void test_dual_role_mtu_synchronization(void) {
                                        sizeof(value_data), 0));
     assert(server.events[0].len == sizeof(value_data));
     assert(!ble_gatt_client_exchange_mtu(&client, 64, 2));
-    assert(!client.pending && !transport.tx_len);
+    assert(!client.request.pending && !transport.tx_len);
     assert(ble_gatt_client_exchange_mtu(&client, 100, 3));
     while (transport.tx_len)
         assert(ble_gatt_transport_poll(&transport, 4) == 1);
@@ -487,7 +487,7 @@ static void test_dual_role_mtu_synchronization(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_mtu_response,
                   sizeof(peer_mtu_response), 27);
     assert(ble_gatt_transport_poll(&transport, 6) == 1);
-    assert(!client.pending && client.mtu == 80 && server.mtu == 80 &&
+    assert(!client.request.pending && client.mtu == 80 && server.mtu == 80 &&
            server.mtu_exchanged && client.mtu_exchanged);
     assert(transport.tx_len);
     while (transport.tx_len)
@@ -528,7 +528,7 @@ static void test_dual_role_mtu_synchronization(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_mtu_request,
                   sizeof(peer_mtu_request), 27);
     assert(ble_gatt_transport_poll(&transport, 17) == 1);
-    assert(client.pending && client.mtu == 23 && server.mtu == 23 &&
+    assert(client.request.pending && client.mtu == 23 && server.mtu == 23 &&
            server.mtu_exchanged);
     while (transport.tx_len)
         assert(ble_gatt_transport_poll(&transport, 18) == 1);
@@ -536,7 +536,7 @@ static void test_dual_role_mtu_synchronization(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, crossover_response,
                   sizeof(crossover_response), 27);
     assert(ble_gatt_transport_poll(&transport, 19) == 1);
-    assert(!client.pending && client.mtu == 80 && server.mtu == 80);
+    assert(!client.request.pending && client.mtu == 80 && server.mtu == 80);
 }
 
 static void test_bonded_cccd_restore(void) {

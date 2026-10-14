@@ -60,7 +60,7 @@ static void test_long_operation_deadlines_refresh(void) {
     memset(response + 1, 0x5a, 22);
     assert(ble_gatt_client_receive(&client, response, 23) == 1);
     assert(sent_len == 5 && sent[0] == 0x0c &&
-           client.deadline_ms == 50000);
+           client.request.deadline_ms == 50000);
 
     ble_gatt_client_reset(&client);
     uint8_t value[40] = {0};
@@ -70,7 +70,7 @@ static void test_long_operation_deadlines_refresh(void) {
     memcpy(response, sent, sent_len);
     response[0] = 0x17;
     assert(ble_gatt_client_receive(&client, response, sent_len) == 1);
-    assert(sent[0] == 0x16 && client.deadline_ms == 50000);
+    assert(sent[0] == 0x16 && client.request.deadline_ms == 50000);
 }
 
 static void test_mtu_peer_below_default_keeps_default(void) {
@@ -79,7 +79,7 @@ static void test_mtu_peer_below_default_keeps_default(void) {
     assert(ble_gatt_client_exchange_mtu(&client, 100, 1));
     const uint8_t response[] = {0x03, 22, 0};
     assert(ble_gatt_client_receive(&client, response, sizeof(response)) == 1);
-    assert(!client.pending && client.mtu_exchanged &&
+    assert(!client.request.pending && client.mtu_exchanged &&
            client.local_mtu == 100 && client.mtu == 23 && result_status == 0);
 }
 
@@ -152,7 +152,7 @@ static void test_error_response_handle_matching(void) {
     const uint8_t wrong_handle[] = {0x01, 0x0a, 2, 0, 0x01};
     assert(ble_gatt_client_receive(&client, wrong_handle,
         sizeof(wrong_handle)) == -1);
-    assert(!client.pending && result_count == 1 &&
+    assert(!client.request.pending && result_count == 1 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     const uint16_t handles[] = {1, 2};
@@ -160,21 +160,21 @@ static void test_error_response_handle_matching(void) {
     const uint8_t matching_list_handle[] = {0x01, 0x0e, 2, 0, 0x02};
     assert(ble_gatt_client_receive(&client, matching_list_handle,
         sizeof(matching_list_handle)) == 1);
-    assert(!client.pending && result_count == 2 &&
+    assert(!client.request.pending && result_count == 2 &&
            result_status == BLE_GATT_CLIENT_REMOTE_ERROR);
 
     assert(ble_gatt_client_read_multiple(&client, handles, 2, 0, 3));
     const uint8_t wrong_list_handle[] = {0x01, 0x0e, 3, 0, 0x02};
     assert(ble_gatt_client_receive(&client, wrong_list_handle,
         sizeof(wrong_list_handle)) == -1);
-    assert(!client.pending && result_count == 3 &&
+    assert(!client.request.pending && result_count == 3 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     assert(ble_gatt_client_exchange_mtu(&client, 23, 4));
     const uint8_t unsupported_mtu[] = {0x01, 0x02, 0, 0, 0x06};
     assert(ble_gatt_client_receive(&client, unsupported_mtu,
         sizeof(unsupported_mtu)) == 1);
-    assert(!client.pending && result_count == 4 &&
+    assert(!client.request.pending && result_count == 4 &&
            result_status == BLE_GATT_CLIENT_REMOTE_ERROR);
 
     const uint8_t invalid_handle_read[] = {0x0a, 0, 0};
@@ -183,14 +183,14 @@ static void test_error_response_handle_matching(void) {
     const uint8_t invalid_handle_error[] = {0x01, 0x0a, 0, 0, 0x01};
     assert(ble_gatt_client_receive(&client, invalid_handle_error,
         sizeof(invalid_handle_error)) == 1);
-    assert(!client.pending && result_count == 5 &&
+    assert(!client.request.pending && result_count == 5 &&
            result_status == BLE_GATT_CLIENT_REMOTE_ERROR);
 
     assert(ble_gatt_client_read(&client, 1, 6));
     const uint8_t truncated_error[] = {0x01, 0x0a, 1, 0};
     assert(ble_gatt_client_receive(&client, truncated_error,
         sizeof(truncated_error)) == -1);
-    assert(!client.pending && result_count == 6 &&
+    assert(!client.request.pending && result_count == 6 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     assert(ble_gatt_client_execute_write(&client, 1, 7));
@@ -199,7 +199,7 @@ static void test_error_response_handle_matching(void) {
     };
     assert(ble_gatt_client_receive(&client, execute_application_error,
         sizeof(execute_application_error)) == 1);
-    assert(!client.pending && result_count == 7 &&
+    assert(!client.request.pending && result_count == 7 &&
            result_status == BLE_GATT_CLIENT_REMOTE_ERROR);
 }
 
@@ -212,7 +212,7 @@ static void test_unexpected_response_fails_transaction(void) {
     const uint8_t wrong_response[] = {0x13}; // Write Response to a Read.
     assert(ble_gatt_client_receive(&client, wrong_response,
         sizeof(wrong_response)) == -1);
-    assert(!client.pending && !client.request_len && !client.operation &&
+    assert(!client.request.pending && !client.request.len && !client.operation.kind &&
            result_count == 1 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 }
@@ -235,12 +235,12 @@ int main(void) {
     const uint8_t request[] = {0x0a, 0x01, 0x00};
     assert(ble_gatt_client_request(&client, request, sizeof(request),
                                    0x0b, 100));
-    assert(client.pending && sent_len == sizeof(request));
+    assert(client.request.pending && sent_len == sizeof(request));
     assert(!ble_gatt_client_request(&client, request, sizeof(request),
                                     0x0b, 100));
     const uint8_t response[] = {0x0b, 0x42};
     assert(ble_gatt_client_receive(&client, response, sizeof(response)) == 1);
-    assert(!client.pending && result_count == 1 && result_status == 0);
+    assert(!client.request.pending && result_count == 1 && result_status == 0);
 
     assert(ble_gatt_client_request(&client, request, sizeof(request),
                                    0x0b, 200));
@@ -350,13 +350,13 @@ int main(void) {
         first_long_part[i] = i;
     assert(ble_gatt_client_receive(&client, first_long_part,
                                    sizeof(first_long_part)) == 1);
-    assert(client.pending && sent_len == 5 && sent[0] == 0x0c &&
+    assert(client.request.pending && sent_len == 5 && sent[0] == 0x0c &&
            sent[3] == 79);
     const uint8_t last_long_part[] = {0x0d, 0xa1, 0xa2};
     assert(ble_gatt_client_receive(&client, last_long_part,
                                    sizeof(last_long_part)) == 1);
-    assert(client.long_value_len == 81 && client.long_value[78] == 79 &&
-           client.long_value[79] == 0xa1 && client.long_value[80] == 0xa2 &&
+    assert(client.operation.value_len == 81 && client.operation.value[78] == 79 &&
+           client.operation.value[79] == 0xa1 && client.operation.value[80] == 0xa2 &&
            result_count == 10);
 
     uint8_t long_write[100];
@@ -368,12 +368,12 @@ int main(void) {
     memcpy(prepare_echo, sent, sent_len);
     prepare_echo[0] = 0x17;
     assert(ble_gatt_client_receive(&client, prepare_echo, sent_len) == 1);
-    assert(client.pending && sent_len == 30 && sent[0] == 0x16 &&
+    assert(client.request.pending && sent_len == 30 && sent[0] == 0x16 &&
            sent[3] == 75 && sent[5] == 75);
     memcpy(prepare_echo, sent, sent_len);
     prepare_echo[0] = 0x17;
     assert(ble_gatt_client_receive(&client, prepare_echo, sent_len) == 1);
-    assert(client.pending && sent_len == 2 && sent[0] == 0x18 && sent[1] == 1);
+    assert(client.request.pending && sent_len == 2 && sent[0] == 0x18 && sent[1] == 1);
     assert(ble_gatt_client_receive(&client, execute_response,
                                    sizeof(execute_response)) == 1);
     assert(result_count == 11 && result_status == 0);
@@ -383,7 +383,7 @@ int main(void) {
     const uint8_t prepare_error[] = {0x01, 0x16, 4, 0, 0x0d};
     assert(ble_gatt_client_receive(&client, prepare_error,
                                    sizeof(prepare_error)) == 1);
-    assert(client.pending && sent_len == 2 && sent[0] == 0x18 && sent[1] == 0);
+    assert(client.request.pending && sent_len == 2 && sent[0] == 0x18 && sent[1] == 0);
     assert(ble_gatt_client_receive(&client, execute_response,
                                    sizeof(execute_response)) == 1);
     assert(result_count == 12 &&
@@ -393,7 +393,7 @@ int main(void) {
     const uint8_t malformed_info[] = {0x05, 0x01, 0x01, 0x00};
     assert(ble_gatt_client_receive(&client, malformed_info,
                                    sizeof(malformed_info)) == -1);
-    assert(!client.pending && result_count == 13 &&
+    assert(!client.request.pending && result_count == 13 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     assert(ble_gatt_client_discover_descriptors(&client, 1, 2, 45100));
@@ -402,7 +402,7 @@ int main(void) {
     };
     assert(ble_gatt_client_receive(&client, descending_info,
         sizeof(descending_info)) == -1);
-    assert(!client.pending && result_count == 14 &&
+    assert(!client.request.pending && result_count == 14 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     assert(ble_gatt_client_discover_services(&client, 1, 0xffff, NULL, 0,
@@ -412,11 +412,11 @@ int main(void) {
     };
     assert(ble_gatt_client_receive(&client, invalid_group_range,
         sizeof(invalid_group_range)) == -1);
-    assert(!client.pending && result_count == 15 &&
+    assert(!client.request.pending && result_count == 15 &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     ble_gatt_client_reset(&client);
-    assert(client.mtu == 23 && !client.pending);
+    assert(client.mtu == 23 && !client.request.pending);
     assert(ble_gatt_client_read(&client, 1, 50000));
     ble_gatt_client_reset(&client);
     assert(result_count == 16 &&
@@ -429,14 +429,14 @@ int main(void) {
     memset(truncated_multiple + 3, 0x5a, sizeof(truncated_multiple) - 3);
     assert(ble_gatt_client_receive(&client, truncated_multiple,
                                    sizeof(truncated_multiple)) == 1);
-    assert(!client.pending && result_status == 0);
+    assert(!client.request.pending && result_status == 0);
 
     assert(ble_gatt_client_read_multiple(&client, multiple_handles, 2, 1,
                                          51100));
     const uint8_t short_truncated_multiple[] = {0x21, 30, 0, 0x5a};
     assert(ble_gatt_client_receive(&client, short_truncated_multiple,
         sizeof(short_truncated_multiple)) == -1);
-    assert(!client.pending &&
+    assert(!client.request.pending &&
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     const uint8_t empty_value_uuid[] = {0x34, 0x12};
