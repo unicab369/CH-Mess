@@ -40,21 +40,37 @@ enum {
 };
 
 typedef struct {
-    uint16_t mtu, local_mtu;
+    // ATT bearer configuration and health.
+    uint16_t mtu;
+    uint16_t local_mtu;
+    uint8_t mtu_exchanged;
+    uint8_t bearer_failed;
+
+    // Outstanding request and timeout tracking.
     uint16_t request_len;
     uint8_t request_pdu[BLE_GATT_CLIENT_MTU_MAX];
-    uint8_t operation, operation_error[5];
-    uint16_t operation_handle, operation_offset, operation_total;
-    uint16_t operation_chunk, long_value_len;
-    uint32_t now_ms;
-    uint8_t long_value[BLE_GATT_CLIENT_VALUE_MAX];
-    uint8_t pending, request_opcode, expected_opcode, mtu_exchanged;
-    uint8_t bearer_failed;
+    uint8_t pending;
+    uint8_t request_opcode;
+    uint8_t expected_opcode;
     uint32_t deadline_ms;
+    uint32_t now_ms;
+
+    // Long read/write operation state and accumulated value.
+    uint8_t operation;
+    uint16_t operation_handle;
+    uint16_t operation_offset;
+    uint16_t operation_total;
+    uint16_t operation_chunk;
+    uint8_t operation_error[5];
+    uint16_t long_value_len;
+    uint8_t long_value[BLE_GATT_CLIENT_VALUE_MAX];
+
+    // Application callbacks.
     ble_gatt_client_send_fn send;
     ble_gatt_client_sign_fn sign;
     ble_gatt_client_result_fn result;
-    ble_gatt_client_event_fn notification, indication;
+    ble_gatt_client_event_fn notification;
+    ble_gatt_client_event_fn indication;
     void *context;
 } ble_gatt_client;
 
