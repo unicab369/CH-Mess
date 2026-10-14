@@ -57,15 +57,15 @@ int main(void) {
         connected, receive_fragment, send_fragment, max_tx_payload, NULL, NULL
     };
     ble_gatt_server server;
-    ble_gatt_server_init(&server, 23);
+    gatt_server_init(&server, 23);
     ble_gatt_transport transport;
-    assert(ble_gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_init(&transport, &server, &ops));
     assert(transport.server == &server && !transport.client);
 
     ble_gatt_client client;
-    ble_gatt_client_init(&client, send_att, on_result, NULL, NULL, NULL);
-    assert(ble_gatt_transport_init(&transport, NULL, &ops));
-    ble_gatt_transport_set_client(&transport, &client);
+    gatt_client_init(&client, send_att, on_result, NULL, NULL, NULL);
+    assert(gatt_transport_init(&transport, NULL, &ops));
+    gatt_transport_set_client(&transport, &client);
     assert(!transport.server && transport.client == &client);
     return 0;
 }

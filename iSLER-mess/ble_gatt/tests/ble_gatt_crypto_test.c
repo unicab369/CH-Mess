@@ -21,10 +21,10 @@ static const uint8_t message[64] = {
 static void check_cmac(size_t length, const uint8_t expected[16]) {
     ble_gatt_cmac cmac;
     uint8_t actual[16];
-    ble_gatt_cmac_init(&cmac, key);
+    gatt_cmac_init(&cmac, key);
     for (size_t i = 0; i < length; i++)
-        ble_gatt_cmac_update(&cmac, message + i, 1);
-    ble_gatt_cmac_final(&cmac, actual);
+        gatt_cmac_update(&cmac, message + i, 1);
+    gatt_cmac_final(&cmac, actual);
     assert(memcmp(actual, expected, sizeof(actual)) == 0);
 }
 

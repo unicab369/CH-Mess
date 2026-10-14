@@ -18,10 +18,10 @@ static int sign_with_test_csrk(
     const uint8_t counter[4] = {1, 0, 0, 0};
     uint8_t mac[16];
     ble_gatt_cmac cmac;
-    ble_gatt_cmac_init(&cmac, csrk);
-    ble_gatt_cmac_update(&cmac, pdu, len);
-    ble_gatt_cmac_update(&cmac, counter, sizeof(counter));
-    ble_gatt_cmac_final(&cmac, mac);
+    gatt_cmac_init(&cmac, csrk);
+    gatt_cmac_update(&cmac, pdu, len);
+    gatt_cmac_update(&cmac, counter, sizeof(counter));
+    gatt_cmac_final(&cmac, mac);
     memcpy(signature, counter, sizeof(counter));
     for (uint8_t i = 0; i < 8; i++) signature[4 + i] = mac[7 - i];
     return 1;
@@ -71,9 +71,9 @@ static void on_event(
 }
 
 int main(void) {
-    ble_gatt_client_init(&client, send_pdu, on_result, on_event, on_event,
+    gatt_client_init(&client, send_pdu, on_result, on_event, on_event,
                          NULL);
-    ble_gatt_client_set_signer(&client, sign_with_test_csrk);
+    gatt_client_set_signer(&client, sign_with_test_csrk);
     uint32_t now_ms = 0;
     for (;;) {
         int command = fgetc(stdin);
@@ -91,100 +91,100 @@ int main(void) {
         int started = 0;
         switch (command) {
         case 1:
-            started = ble_gatt_client_exchange_mtu(&client, 64, now_ms);
+            started = gatt_client_mtu(&client, 64, now_ms);
             break;
         case 2:
-            started = ble_gatt_client_discover_services(&client, 1, 0xffff,
+            started = gatt_client_services(&client, 1, 0xffff,
                                                         NULL, 0, now_ms);
             break;
         case 3: {
             const uint8_t uuid[] = {0x0f, 0x18};
-            started = ble_gatt_client_discover_services(&client, 1, 0xffff,
+            started = gatt_client_services(&client, 1, 0xffff,
                                                         uuid, 2, now_ms);
             break;
         }
         case 4:
-            started = ble_gatt_client_discover_characteristics(&client,
+            started = gatt_client_characteristics(&client,
                 1, 4, NULL, 0, now_ms);
             break;
         case 5:
-            started = ble_gatt_client_discover_descriptors(&client, 4, 4,
+            started = gatt_client_discover_descriptors(&client, 4, 4,
                                                             now_ms);
             break;
         case 6:
-            started = ble_gatt_client_read(&client, 3, now_ms);
+            started = gatt_client_read(&client, 3, now_ms);
             break;
         case 7: {
             const uint8_t value = 0x77;
-            started = ble_gatt_client_write(&client, 3, &value, 1, now_ms);
+            started = gatt_client_write(&client, 3, &value, 1, now_ms);
             break;
         }
         case 8: {
             const uint8_t value = 0x55;
-            started = ble_gatt_client_prepare_write(&client, 3, 0, &value,
+            started = gatt_client_prepare_write(&client, 3, 0, &value,
                                                       1, now_ms);
             break;
         }
         case 9:
-            started = ble_gatt_client_execute_write(&client, 1, now_ms);
+            started = gatt_client_execute_write(&client, 1, now_ms);
             break;
         case 10:
-            started = ble_gatt_client_read_long(&client, 3, now_ms);
+            started = gatt_client_read_long(&client, 3, now_ms);
             break;
         case 11: {
             uint8_t value[70];
             for (uint8_t i = 0; i < sizeof(value); i++)
                 value[i] = (uint8_t)(0x80 + i);
-            started = ble_gatt_client_write_long(&client, 3, value,
+            started = gatt_client_write_long(&client, 3, value,
                 sizeof(value), now_ms);
             break;
         }
         case 12: {
             const uint8_t value = 0x44;
-            started = ble_gatt_client_write_command(&client, 3, &value, 1);
+            started = gatt_client_write_command(&client, 3, &value, 1);
             break;
         }
         case 13:
-            started = ble_gatt_client_set_cccd(&client, 5, 1, 1, now_ms);
+            started = gatt_client_set_cccd(&client, 5, 1, 1, now_ms);
             break;
         case 14: case 15:
             started = 1;
             break;
         case 16:
-            started = ble_gatt_client_read(&client, 7, now_ms);
+            started = gatt_client_read(&client, 7, now_ms);
             break;
         case 17:
-            started = ble_gatt_client_read(&client, 9, now_ms);
+            started = gatt_client_read(&client, 9, now_ms);
             break;
         case 18: {
             const uint16_t handles[] = {3, 4};
-            started = ble_gatt_client_read_multiple(&client, handles, 2, 0,
+            started = gatt_client_read_multiple(&client, handles, 2, 0,
                                                      now_ms);
             break;
         }
         case 19: {
             const uint8_t uuid[] = {0x01, 0x29};
-            started = ble_gatt_client_read_by_uuid(&client, 1, 0xffff,
+            started = gatt_client_read_by_uuid(&client, 1, 0xffff,
                 uuid, sizeof(uuid), now_ms);
             break;
         }
         case 20:
-            started = ble_gatt_client_discover_included_services(&client,
+            started = gatt_client_included(&client,
                 11, 11, now_ms);
             break;
         case 21: {
             const uint16_t handles[] = {3, 4};
-            started = ble_gatt_client_read_multiple(&client, handles, 2, 1,
+            started = gatt_client_read_multiple(&client, handles, 2, 1,
                                                      now_ms);
             break;
         }
         case 22: {
             const uint8_t value = 0x37;
-            started = ble_gatt_client_write_signed(&client, 3, &value, 1);
+            started = gatt_client_write_signed(&client, 3, &value, 1);
             break;
         }
         case 23: case 24:
-            started = ble_gatt_client_read(&client, requested_handle, now_ms);
+            started = gatt_client_read(&client, requested_handle, now_ms);
             break;
         default:
             return 2;
@@ -209,7 +209,7 @@ int main(void) {
             if (!pdu_len || pdu_len > sizeof(pdu) ||
                 fread(pdu, 1, pdu_len, stdin) != pdu_len)
                 return 9;
-            if (ble_gatt_client_receive(&client, pdu, pdu_len) < 0) return 10;
+            if (gatt_client_receive(&client, pdu, pdu_len) < 0) return 10;
             continue;
         }
 
@@ -221,7 +221,7 @@ int main(void) {
             if (response_len > sizeof(response) ||
                 fread(response, 1, response_len, stdin) != response_len)
                 return 5;
-            if (ble_gatt_client_receive(&client, response, response_len) < 0)
+            if (gatt_client_receive(&client, response, response_len) < 0)
                 return 6;
         } while (client.request.pending);
         now_ms += 1;

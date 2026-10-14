@@ -2,7 +2,7 @@
 #define BLE_GATT_SERVER_H
 
 // Transport-independent GATT/ATT server core. Applications register attributes
-// and call ble_gatt_server_att() with each complete ATT PDU; the GAP/L2CAP
+// and call gatt_server_att() with each complete ATT PDU; the GAP/L2CAP
 // adapter is responsible for carrying the returned response.
 #include <stddef.h>
 #include <stdint.h>
@@ -194,36 +194,36 @@ typedef struct {
     uint32_t indication_started_ms;
 } ble_gatt_server;
 
-static void ble_gatt_server_prepare_cancel_all(
+static void gatt_server_prepare_cancel_all(
     ble_gatt_server *server,
     uint16_t extra_handle);
-static ble_gatt_attribute *ble_gatt_server_find(
+static ble_gatt_attribute *gatt_server_find(
     ble_gatt_server *server,
     uint16_t handle);
-static inline int ble_gatt_server_check_database_version(
+static inline int gatt_server_check_database_version(
     ble_gatt_server *server);
 
 // =============================================================================
 // UUID and attribute helpers
 // =============================================================================
-static uint16_t ble_gatt_server_u16(const uint8_t *p) {
+static uint16_t gatt_server_u16(const uint8_t *p) {
     return ble_att_get_u16(p);
 }
 
-static void ble_gatt_server_put_u16(uint8_t *p, uint16_t value) {
+static void gatt_server_put_u16(uint8_t *p, uint16_t value) {
     ble_att_put_u16(p, value);
 }
 
-static int ble_gatt_uuid_valid(const ble_gatt_uuid *uuid) {
+static int gatt_uuid_valid(const ble_gatt_uuid *uuid) {
     return uuid && (uuid->len == BLE_GATT_UUID16_LEN ||
                     uuid->len == BLE_GATT_UUID128_LEN);
 }
 
-static int ble_gatt_uuid_equal(
+static int gatt_uuid_equal(
     const ble_gatt_uuid *a,
     const ble_gatt_uuid *b
 ) {
-    if (!ble_gatt_uuid_valid(a) || !ble_gatt_uuid_valid(b)) return 0;
+    if (!gatt_uuid_valid(a) || !gatt_uuid_valid(b)) return 0;
     if (a->len == b->len) return !memcmp(a->value, b->value, a->len);
     const ble_gatt_uuid *short_uuid = a->len == 2 ? a : b;
     const ble_gatt_uuid *long_uuid = a->len == 16 ? a : b;
@@ -236,13 +236,13 @@ static int ble_gatt_uuid_equal(
            !memcmp(long_uuid->value + 14, short_uuid->value, 2);
 }
 
-static uint16_t ble_gatt_uuid_assigned16(const ble_gatt_uuid *uuid) {
-    if (uuid->len == 2) return ble_gatt_server_u16(uuid->value);
-    if (uuid->len == 16) return ble_gatt_server_u16(uuid->value + 14);
+static uint16_t gatt_uuid_assigned16(const ble_gatt_uuid *uuid) {
+    if (uuid->len == 2) return gatt_server_u16(uuid->value);
+    if (uuid->len == 16) return gatt_server_u16(uuid->value + 14);
     return 0;
 }
 
-static uint8_t *ble_gatt_attribute_value(
+static uint8_t *gatt_attribute_value(
     ble_gatt_server *server,
     ble_gatt_attribute *attribute
 ) {
@@ -258,7 +258,7 @@ static uint8_t *ble_gatt_attribute_value(
 // =============================================================================
 // Return 1 when only handle/type are hashed, 2 when the value is also hashed,
 // and 0 for attribute types omitted by Core GATT Database Hash calculation.
-static uint8_t ble_gatt_server_hash_attribute_kind(
+static uint8_t gatt_server_hash_attribute_kind(
     const ble_gatt_attribute *attribute
 ) {
     static const uint16_t value_types[] = {
@@ -270,34 +270,34 @@ static uint8_t ble_gatt_server_hash_attribute_kind(
     for (size_t i = 0; i < sizeof(value_types) / sizeof(value_types[0]); i++) {
         uint16_t value = value_types[i];
         ble_gatt_uuid type = {2, {(uint8_t)value, (uint8_t)(value >> 8)}};
-        if (ble_gatt_uuid_equal(&attribute->uuid, &type)) return 2;
+        if (gatt_uuid_equal(&attribute->uuid, &type)) return 2;
     }
     for (size_t i = 0; i < sizeof(handle_only_types) /
          sizeof(handle_only_types[0]); i++) {
         uint16_t value = handle_only_types[i];
         ble_gatt_uuid type = {2, {(uint8_t)value, (uint8_t)(value >> 8)}};
-        if (ble_gatt_uuid_equal(&attribute->uuid, &type)) return 1;
+        if (gatt_uuid_equal(&attribute->uuid, &type)) return 1;
     }
     return 0;
 }
 
 // Compute the Core GATT Database Hash over the currently registered
 // attributes. The output uses the AES-CMAC byte order defined by Core GATT.
-static inline int ble_gatt_server_compute_database_hash(
+static inline int gatt_server_compute_database_hash(
     ble_gatt_server *server, uint8_t hash[16]
 ) {
     if (!server || !hash) return 0;
     static const uint8_t zero_key[16] = {0};
     ble_gatt_cmac cmac;
-    ble_gatt_cmac_init(&cmac, zero_key);
+    gatt_cmac_init(&cmac, zero_key);
     for (uint16_t i = 0; i < server->count; i++) {
         const ble_gatt_attribute *attribute = &server->attributes[i];
-        uint8_t kind = ble_gatt_server_hash_attribute_kind(attribute);
+        uint8_t kind = gatt_server_hash_attribute_kind(attribute);
         if (!kind) continue;
         uint8_t handle[2] = {(uint8_t)attribute->handle,
                              (uint8_t)(attribute->handle >> 8)};
-        ble_gatt_cmac_update(&cmac, handle, sizeof(handle));
-        ble_gatt_cmac_update(&cmac, attribute->uuid.value,
+        gatt_cmac_update(&cmac, handle, sizeof(handle));
+        gatt_cmac_update(&cmac, attribute->uuid.value,
                              attribute->uuid.len);
         if (kind != 2 || !attribute->value_len) continue;
         if (attribute->value_len > BLE_GATT_ATT_VALUE_MAX) {
@@ -305,20 +305,20 @@ static inline int ble_gatt_server_compute_database_hash(
             return 0;
         }
 
-        uint8_t *value = ble_gatt_attribute_value(server,
+        uint8_t *value = gatt_attribute_value(server,
             (ble_gatt_attribute *)attribute);
         if (!value) {
             memset(&cmac, 0, sizeof(cmac));
             return 0;
         }
 
-        ble_gatt_cmac_update(&cmac, value, attribute->value_len);
+        gatt_cmac_update(&cmac, value, attribute->value_len);
     }
-    ble_gatt_cmac_final(&cmac, hash);
+    gatt_cmac_final(&cmac, hash);
     return 1;
 }
 
-static int ble_gatt_server_multiple_notifications_enabled(
+static int gatt_server_multiple_notifications_enabled(
     ble_gatt_server *server
 ) {
     if (!server) return 0;
@@ -326,14 +326,14 @@ static int ble_gatt_server_multiple_notifications_enabled(
         ble_gatt_attribute *attribute = &server->attributes[i];
         if (!(attribute->flags &
               BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES)) continue;
-        const uint8_t *value = ble_gatt_attribute_value(server, attribute);
+        const uint8_t *value = gatt_attribute_value(server, attribute);
         return value && attribute->value_len == 1 &&
             (value[0] & BLE_GATT_CLIENT_FEATURE_MULTIPLE_HANDLE_NOTIFICATIONS);
     }
     return 0;
 }
 
-static inline void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
+static inline void gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
     if (!server) return;
     memset(server, 0, sizeof(*server));
     if (local_mtu < 23) local_mtu = 23;
@@ -344,9 +344,9 @@ static inline void ble_gatt_server_init(ble_gatt_server *server, uint16_t local_
     server->next_handle = 1;
 }
 
-static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
+static inline void gatt_server_link_reset(ble_gatt_server *server) {
     if (!server) return;
-    ble_gatt_server_prepare_cancel_all(server, 0);
+    gatt_server_prepare_cancel_all(server, 0);
     server->mtu = 23;
     server->mtu_exchanged = 0;
     server->encrypted = server->authenticated = 0;
@@ -365,7 +365,7 @@ static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
             server->attributes[i].cccd = 0;
         if (server->attributes[i].flags &
             BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES) {
-            uint8_t *features = ble_gatt_attribute_value(server,
+            uint8_t *features = gatt_attribute_value(server,
                 &server->attributes[i]);
             if (features) features[0] = 0;
             server->attributes[i].value_len = 1;
@@ -373,7 +373,7 @@ static inline void ble_gatt_server_link_reset(ble_gatt_server *server) {
     }
 }
 
-static inline void ble_gatt_server_set_security(
+static inline void gatt_server_set_security(
     ble_gatt_server *server, int encrypted,
     int authenticated
 ) {
@@ -383,7 +383,7 @@ static inline void ble_gatt_server_set_security(
     if (!server->encrypted) server->encryption_key_size = 0;
 }
 
-static inline void ble_gatt_server_set_encryption_key_size(
+static inline void gatt_server_set_encryption_key_size(
     ble_gatt_server *server, uint8_t octets
 ) {
     if (server) server->encryption_key_size =
@@ -392,13 +392,13 @@ static inline void ble_gatt_server_set_encryption_key_size(
 
 // Set the minimum LE encryption key size required for an attribute (7-16
 // octets). Configure it while building the database, before sealing it.
-static inline int ble_gatt_server_set_min_key_size(
+static inline int gatt_server_set_min_key_size(
     ble_gatt_server *server,
     uint16_t handle, uint8_t octets
 ) {
     if (!server || server->database_sealed || octets < 7 || octets > 16)
         return 0;
-    ble_gatt_attribute *attribute = ble_gatt_server_find(server, handle);
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
     if (!attribute) return 0;
     attribute->min_key_size = octets;
     return 1;
@@ -407,12 +407,12 @@ static inline int ble_gatt_server_set_min_key_size(
 // Configure server-owned attribute storage as variable or fixed length.
 // Storage with spare capacity is variable by default; a write callback owns
 // its own length semantics and cannot be reconfigured here.
-static inline int ble_gatt_server_set_variable_length(
+static inline int gatt_server_set_variable_length(
     ble_gatt_server *server,
     uint16_t handle, int variable
 ) {
     if (!server || server->database_sealed) return 0;
-    ble_gatt_attribute *attribute = ble_gatt_server_find(server, handle);
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
     if (!attribute || attribute->write || attribute->prepare ||
         attribute->execute ||
         (attribute->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
@@ -425,7 +425,7 @@ static inline int ble_gatt_server_set_variable_length(
     return 1;
 }
 
-static ble_gatt_attribute *ble_gatt_server_find(
+static ble_gatt_attribute *gatt_server_find(
     ble_gatt_server *server,
     uint16_t handle
 ) {
@@ -436,37 +436,37 @@ static ble_gatt_attribute *ble_gatt_server_find(
     return NULL;
 }
 
-static int ble_gatt_server_user_description_writable(
+static int gatt_server_user_description_writable(
     ble_gatt_server *server, const ble_gatt_attribute *description
 ) {
-    if (ble_gatt_uuid_assigned16(&description->uuid) != 0x2901) return 1;
+    if (gatt_uuid_assigned16(&description->uuid) != 0x2901) return 1;
     for (uint16_t i = 0; i < server->count; i++) {
         ble_gatt_attribute *extended = &server->attributes[i];
-        if (ble_gatt_uuid_assigned16(&extended->uuid) != 0x2900 ||
+        if (gatt_uuid_assigned16(&extended->uuid) != 0x2900 ||
             extended->parent_handle != description->parent_handle ||
             extended->value_len != 2) continue;
-        const uint8_t *value = ble_gatt_attribute_value(server, extended);
-        return value && (ble_gatt_server_u16(value) & 0x0002);
+        const uint8_t *value = gatt_attribute_value(server, extended);
+        return value && (gatt_server_u16(value) & 0x0002);
     }
     return 0;
 }
 
-static int ble_gatt_server_is_service_changed(
+static int gatt_server_is_service_changed(
     ble_gatt_server *server,
     uint16_t handle
 ) {
-    ble_gatt_attribute *attribute = ble_gatt_server_find(server, handle);
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
     ble_gatt_uuid changed_uuid = {2, {0x05, 0x2a}};
     return attribute && (attribute->properties & BLE_GATT_PROP_INDICATE) &&
-        ble_gatt_uuid_equal(&attribute->uuid, &changed_uuid);
+        gatt_uuid_equal(&attribute->uuid, &changed_uuid);
 }
 
-static inline int ble_gatt_server_set_transaction_callbacks(
+static inline int gatt_server_set_transaction_callbacks(
     ble_gatt_server *server, uint16_t handle,
     ble_gatt_prepare_fn prepare, ble_gatt_execute_fn execute
 ) {
     if (!server) return 0;
-    ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+    ble_gatt_attribute *a = gatt_server_find(server, handle);
     if (!a || !prepare || !execute || server->prepare_count ||
         !(a->permissions & (BLE_GATT_PERM_WRITE |
                             BLE_GATT_PERM_WRITE_ENCRYPTED |
@@ -478,7 +478,7 @@ static inline int ble_gatt_server_set_transaction_callbacks(
     return 1;
 }
 
-static void ble_gatt_server_prepare_cancel_all(
+static void gatt_server_prepare_cancel_all(
     ble_gatt_server *server,
     uint16_t extra_handle
 ) {
@@ -491,16 +491,16 @@ static void ble_gatt_server_prepare_cancel_all(
             if (server->prepared[j].handle == handle) first = 0;
         if (!first) continue;
         if (handle == extra_handle) extra_seen = 1;
-        ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+        ble_gatt_attribute *a = gatt_server_find(server, handle);
         if (a && a->execute) a->execute(a->context, 0);
     }
     if (extra_handle && !extra_seen) {
-        ble_gatt_attribute *a = ble_gatt_server_find(server, extra_handle);
+        ble_gatt_attribute *a = gatt_server_find(server, extra_handle);
         if (a && a->execute) a->execute(a->context, 0);
     }
 }
 
-static int ble_gatt_server_add(
+static int gatt_server_add(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid, uint16_t permissions,
     uint8_t properties, uint8_t flags,
@@ -510,7 +510,7 @@ static int ble_gatt_server_add(
     ble_gatt_write_fn write, void *context,
     uint16_t *handle_out
 ) {
-    if (!server || server->database_sealed || !ble_gatt_uuid_valid(uuid) ||
+    if (!server || server->database_sealed || !gatt_uuid_valid(uuid) ||
         server->count >= BLE_GATT_SERVER_MAX_ATTRIBUTES ||
         server->next_handle == 0 || value_len > value_capacity ||
         value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
@@ -538,7 +538,7 @@ static int ble_gatt_server_add(
     return 1;
 }
 
-static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
+static inline int gatt_server_seal_database(ble_gatt_server *server) {
     if (!server || server->database_sealed) return server != NULL;
     const uint16_t attribute_read_permissions = BLE_GATT_PERM_READ |
         BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_READ_AUTHENTICATED |
@@ -551,11 +551,11 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
     for (uint16_t i = 0; i < server->count; i++) {
         ble_gatt_attribute *declaration = &server->attributes[i];
         if (!(declaration->flags & BLE_GATT_ATTRIBUTE_CHARACTERISTIC)) continue;
-        uint8_t *declaration_value = ble_gatt_attribute_value(server,
+        uint8_t *declaration_value = gatt_attribute_value(server,
                                                                declaration);
         if (!declaration_value || declaration->value_len < 5) return 0;
         uint8_t properties = declaration_value[0];
-        uint16_t value_handle = ble_gatt_server_u16(declaration_value + 1);
+        uint16_t value_handle = gatt_server_u16(declaration_value + 1);
         uint8_t uuid_len = (uint8_t)(declaration->value_len - 3);
         ble_gatt_attribute *value_attribute = i + 1 < server->count ?
             &server->attributes[i + 1] : NULL;
@@ -583,7 +583,7 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
             if (candidate->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
                 BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE |
                 BLE_GATT_ATTRIBUTE_CHARACTERISTIC)) break;
-            uint16_t type = ble_gatt_uuid_assigned16(&candidate->uuid);
+            uint16_t type = gatt_uuid_assigned16(&candidate->uuid);
             if (type == 0x2901) {
                 if (++user_description_count > 1) return 0;
                 candidate->parent_handle = value_handle;
@@ -593,9 +593,9 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
             if (type != 0x2900 && type != 0x2902 && type != 0x2903) continue;
             if (candidate->value_len != 2) return 0;
             const uint8_t *descriptor_value =
-                ble_gatt_attribute_value(server, candidate);
+                gatt_attribute_value(server, candidate);
             if (!descriptor_value) return 0;
-            uint16_t bits = ble_gatt_server_u16(descriptor_value);
+            uint16_t bits = gatt_server_u16(descriptor_value);
             if (type == 0x2902) {
                 uint16_t allowed = (uint16_t)(
                     (properties & BLE_GATT_PROP_NOTIFY ? 1 : 0) |
@@ -636,9 +636,9 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
                 if (candidate->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
                     BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE |
                     BLE_GATT_ATTRIBUTE_CHARACTERISTIC)) break;
-                if (ble_gatt_uuid_assigned16(&candidate->uuid) == 0x2901 &&
+                if (gatt_uuid_assigned16(&candidate->uuid) == 0x2901 &&
                     (candidate->permissions & write_permissions) &&
-                    !ble_gatt_server_user_description_writable(server,
+                    !gatt_server_user_description_writable(server,
                                                                candidate))
                     return 0;
             }
@@ -659,7 +659,7 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
                 if (candidate->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
                     BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE |
                     BLE_GATT_ATTRIBUTE_CHARACTERISTIC)) break;
-                if (ble_gatt_uuid_assigned16(&candidate->uuid) != required[r])
+                if (gatt_uuid_assigned16(&candidate->uuid) != required[r])
                     continue;
                 if (required[r] == 0x2902 &&
                     (!(candidate->flags & BLE_GATT_ATTRIBUTE_CCCD) ||
@@ -668,9 +668,9 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
                 if (required[r] == 0x2900 || required[r] == 0x2903) {
                     if (candidate->value_len != 2) return 0;
                     const uint8_t *descriptor_value =
-                        ble_gatt_attribute_value(server, candidate);
+                        gatt_attribute_value(server, candidate);
                     if (!descriptor_value) return 0;
-                    uint16_t bits = ble_gatt_server_u16(descriptor_value);
+                    uint16_t bits = gatt_server_u16(descriptor_value);
                     uint16_t allowed = required[r] == 0x2900 ? 0x0003 : 0x0001;
                     if ((bits & (uint16_t)~allowed) ||
                         (required[r] == 0x2903 && (bits & 1) &&
@@ -695,9 +695,9 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
         ble_gatt_attribute *service = &server->attributes[i];
         if (!(service->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
                                 BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)) ||
-            ble_gatt_uuid_assigned16(&service->uuid) != 0x2800 ||
+            gatt_uuid_assigned16(&service->uuid) != 0x2800 ||
             service->value_len != gatt_service_uuid.len ||
-            memcmp(ble_gatt_attribute_value(server, service),
+            memcmp(gatt_attribute_value(server, service),
                    gatt_service_uuid.value, gatt_service_uuid.len))
             continue;
         if (++gatt_service_count > 1) return 0;
@@ -711,11 +711,11 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
                 continue;
             if (j + 1 >= server->count) return 0;
             ble_gatt_attribute *value = &server->attributes[j + 1];
-            if (ble_gatt_uuid_equal(&value->uuid, &service_changed_uuid))
+            if (gatt_uuid_equal(&value->uuid, &service_changed_uuid))
                 has_changed = 1;
-            else if (ble_gatt_uuid_equal(&value->uuid, &database_hash_uuid))
+            else if (gatt_uuid_equal(&value->uuid, &database_hash_uuid))
                 has_hash = 1;
-            else if (ble_gatt_uuid_equal(&value->uuid,
+            else if (gatt_uuid_equal(&value->uuid,
                                          &client_features_uuid)) {
                 if (++feature_count > 1 ||
                     value->properties != (BLE_GATT_PROP_READ |
@@ -724,7 +724,7 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
                                            BLE_GATT_PERM_WRITE) ||
                     value->value_len != 1 || value->value_capacity != 1 ||
                     value->read || value->write || value->prepare ||
-                    value->execute || !ble_gatt_attribute_value(server, value))
+                    value->execute || !gatt_attribute_value(server, value))
                     return 0;
                 client_features_attribute = value;
             }
@@ -734,7 +734,7 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
     ble_gatt_attribute *database_hash = NULL;
     for (uint16_t i = 0; i < server->count; i++) {
         ble_gatt_attribute *attribute = &server->attributes[i];
-        if (!ble_gatt_uuid_equal(&attribute->uuid, &database_hash_uuid))
+        if (!gatt_uuid_equal(&attribute->uuid, &database_hash_uuid))
             continue;
         if (database_hash || i == 0 ||
             !(server->attributes[i - 1].flags & BLE_GATT_ATTRIBUTE_CHARACTERISTIC) ||
@@ -748,8 +748,8 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
     }
     if (database_hash) {
         uint8_t hash[16];
-        if (!ble_gatt_server_compute_database_hash(server, hash)) return 0;
-        memcpy(ble_gatt_attribute_value(server, database_hash), hash,
+        if (!gatt_server_compute_database_hash(server, hash)) return 0;
+        memcpy(gatt_attribute_value(server, database_hash), hash,
                sizeof(hash));
         memcpy(server->database_hash, hash, sizeof(hash));
         server->database_hash_available = 1;
@@ -762,7 +762,7 @@ static inline int ble_gatt_server_seal_database(ble_gatt_server *server) {
     return 1;
 }
 
-static inline void ble_gatt_server_set_signed_write_verifier(
+static inline void gatt_server_set_signed_write_verifier(
     ble_gatt_server *server, ble_gatt_signed_verify_fn verify, void *context
 ) {
     if (!server) return;
@@ -770,7 +770,7 @@ static inline void ble_gatt_server_set_signed_write_verifier(
     server->signed_context = context;
 }
 
-static inline void ble_gatt_server_set_authorizer(
+static inline void gatt_server_set_authorizer(
     ble_gatt_server *server,
     ble_gatt_authorize_fn authorize, void *context
 ) {
@@ -781,7 +781,7 @@ static inline void ble_gatt_server_set_authorizer(
 
 // App-owned CCCD persistence. Callbacks use their context to identify the
 // current peer; load returns zero for peers without a bonded stored value.
-static inline void ble_gatt_server_set_cccd_persistence(
+static inline void gatt_server_set_cccd_persistence(
     ble_gatt_server *server,
     ble_gatt_cccd_load_fn load, ble_gatt_cccd_store_fn store, void *context
 ) {
@@ -794,7 +794,7 @@ static inline void ble_gatt_server_set_cccd_persistence(
 // Optional per-peer database-version persistence. Install callbacks with a
 // context identifying the current bonded peer before its connection starts.
 // The new hash is stored after a Service Changed indication is confirmed.
-static inline void ble_gatt_server_set_database_hash_persistence(
+static inline void gatt_server_set_database_hash_persistence(
     ble_gatt_server *server, ble_gatt_database_hash_load_fn load,
     ble_gatt_database_hash_store_fn store, void *context
 ) {
@@ -807,7 +807,7 @@ static inline void ble_gatt_server_set_database_hash_persistence(
 // Client Supported Features is scoped to the connected client. These
 // callbacks let the application persist it for bonded peers; the context
 // should identify the current peer. Without a load callback it resets to zero.
-static inline void ble_gatt_server_set_client_features_persistence(
+static inline void gatt_server_set_client_features_persistence(
     ble_gatt_server *server, ble_gatt_client_features_load_fn load,
     ble_gatt_client_features_store_fn store, void *context
 ) {
@@ -821,9 +821,9 @@ static inline void ble_gatt_server_set_client_features_persistence(
 // Database builders
 // =============================================================================
 // Server-owned static storage is variable length when value_capacity exceeds
-// value_len; call ble_gatt_server_set_variable_length(..., 0) to make it fixed.
+// value_len; call gatt_server_set_variable_length(..., 0) to make it fixed.
 // When a write callback is supplied, the application owns value-length rules.
-static inline int ble_gatt_server_add_attribute(
+static inline int gatt_server_add_attribute(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
     uint16_t permissions, const uint8_t *value,
@@ -832,23 +832,23 @@ static inline int ble_gatt_server_add_attribute(
     ble_gatt_write_fn write, void *context,
     uint16_t *handle_out
 ) {
-    return ble_gatt_server_add(server, uuid, permissions, 0, 0, value,
+    return gatt_server_add(server, uuid, permissions, 0, 0, value,
         value_len, value_capacity, read, write, context, handle_out);
 }
 
-static ble_gatt_uuid ble_gatt_uuid16(uint16_t value) {
+static ble_gatt_uuid gatt_uuid16(uint16_t value) {
     ble_gatt_uuid uuid = {2, {(uint8_t)value, (uint8_t)(value >> 8)}};
     return uuid;
 }
 
-static inline int ble_gatt_server_add_service(
+static inline int gatt_server_add_service(
     ble_gatt_server *server,
     const ble_gatt_uuid *service_uuid,
     int primary, uint16_t *service_handle
 ) {
-    if (!ble_gatt_uuid_valid(service_uuid)) return 0;
-    ble_gatt_uuid type = ble_gatt_uuid16(primary ? 0x2800 : 0x2801);
-    return ble_gatt_server_add(server, &type, BLE_GATT_PERM_READ, 0,
+    if (!gatt_uuid_valid(service_uuid)) return 0;
+    ble_gatt_uuid type = gatt_uuid16(primary ? 0x2800 : 0x2801);
+    return gatt_server_add(server, &type, BLE_GATT_PERM_READ, 0,
         primary ? BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE :
                   BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE,
         service_uuid->value, service_uuid->len, service_uuid->len,
@@ -858,12 +858,12 @@ static inline int ble_gatt_server_add_service(
 // Add an Include declaration to the current service. The referenced service
 // must already be closed by a later service declaration so its end handle is
 // stable. ATT includes carry the UUID only for 16-bit service UUIDs.
-static inline int ble_gatt_server_add_included_service(
+static inline int gatt_server_add_included_service(
     ble_gatt_server *server, uint16_t included_service_handle,
     uint16_t *include_handle
 ) {
     if (!server || !included_service_handle) return 0;
-    ble_gatt_attribute *service = ble_gatt_server_find(server,
+    ble_gatt_attribute *service = gatt_server_find(server,
                                                        included_service_handle);
     if (!service || !(service->flags & (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
                                         BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)))
@@ -897,23 +897,23 @@ static inline int ble_gatt_server_add_included_service(
     if (!end_handle) return 0;
 
     uint8_t value[6];
-    ble_gatt_server_put_u16(value, included_service_handle);
-    ble_gatt_server_put_u16(value + 2, end_handle);
+    gatt_server_put_u16(value, included_service_handle);
+    gatt_server_put_u16(value + 2, end_handle);
     uint16_t value_len = 4;
     if (service->value_len == 2) {
-        memcpy(value + 4, ble_gatt_attribute_value(server, service), 2);
+        memcpy(value + 4, gatt_attribute_value(server, service), 2);
         value_len = 6;
     }
 
-    ble_gatt_uuid include_uuid = ble_gatt_uuid16(0x2802);
-    if (!ble_gatt_server_add(server, &include_uuid, BLE_GATT_PERM_READ, 0,
+    ble_gatt_uuid include_uuid = gatt_uuid16(0x2802);
+    if (!gatt_server_add(server, &include_uuid, BLE_GATT_PERM_READ, 0,
             BLE_GATT_ATTRIBUTE_INCLUDED_SERVICE, value, value_len, value_len,
             NULL, NULL, NULL, include_handle))
         return 0;
     return 1;
 }
 
-static inline int ble_gatt_server_add_characteristic(
+static inline int gatt_server_add_characteristic(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
     uint8_t properties,
@@ -933,7 +933,7 @@ static inline int ble_gatt_server_add_characteristic(
     uint16_t write_permissions = BLE_GATT_PERM_WRITE |
         BLE_GATT_PERM_WRITE_ENCRYPTED | BLE_GATT_PERM_WRITE_AUTHENTICATED |
         BLE_GATT_PERM_WRITE_AUTHORIZED;
-    if (!server || !ble_gatt_uuid_valid(uuid) ||
+    if (!server || !gatt_uuid_valid(uuid) ||
         value_len > value_capacity || value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
         (value_len && !initial_value) ||
         ((properties & BLE_GATT_PROP_READ) && !(permissions & read_permissions)) ||
@@ -955,15 +955,15 @@ static inline int ble_gatt_server_add_characteristic(
     uint16_t value_checkpoint = server->value_used;
     uint8_t decl[3 + BLE_GATT_UUID128_LEN];
     decl[0] = properties;
-    ble_gatt_server_put_u16(decl + 1, val_h);
+    gatt_server_put_u16(decl + 1, val_h);
     memcpy(decl + 3, uuid->value, uuid->len);
-    ble_gatt_uuid declaration_uuid = ble_gatt_uuid16(0x2803);
-    if (!ble_gatt_server_add(server, &declaration_uuid, BLE_GATT_PERM_READ,
+    ble_gatt_uuid declaration_uuid = gatt_uuid16(0x2803);
+    if (!gatt_server_add(server, &declaration_uuid, BLE_GATT_PERM_READ,
             0, BLE_GATT_ATTRIBUTE_CHARACTERISTIC, decl,
             (uint16_t)(3 + uuid->len), (uint16_t)(3 + uuid->len),
             NULL, NULL, NULL, declaration_handle))
         return 0;
-    if (!ble_gatt_server_add(server, uuid, permissions, properties, 0,
+    if (!gatt_server_add(server, uuid, permissions, properties, 0,
             initial_value, value_len, value_capacity, read, write, context,
             value_handle)) {
         memset(&server->attributes[server->count - 1], 0,
@@ -979,7 +979,7 @@ static inline int ble_gatt_server_add_characteristic(
     return 1;
 }
 
-static inline int ble_gatt_server_add_descriptor(
+static inline int gatt_server_add_descriptor(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
     uint16_t permissions, const uint8_t *value,
@@ -988,7 +988,7 @@ static inline int ble_gatt_server_add_descriptor(
     ble_gatt_write_fn write, void *context,
     uint16_t *handle_out
 ) {
-    if (uuid && uuid->len == 2 && ble_gatt_server_u16(uuid->value) == 0x2902) {
+    if (uuid && uuid->len == 2 && gatt_server_u16(uuid->value) == 0x2902) {
         if (!server || !server->count ||
             (server->attributes[server->count - 1].flags &
              BLE_GATT_ATTRIBUTE_CCCD) ||
@@ -996,7 +996,7 @@ static inline int ble_gatt_server_add_descriptor(
               (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE)))
             return 0;
         uint8_t zero[2] = {0, 0};
-        int added = ble_gatt_server_add(server, uuid,
+        int added = gatt_server_add(server, uuid,
             permissions | BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, 0,
             BLE_GATT_ATTRIBUTE_CCCD, zero, 2, 2, NULL, NULL, context,
             handle_out);
@@ -1010,7 +1010,7 @@ static inline int ble_gatt_server_add_descriptor(
         return added;
     }
 
-    return ble_gatt_server_add_attribute(server, uuid, permissions, value,
+    return gatt_server_add_attribute(server, uuid, permissions, value,
         value_len, value_capacity, read, write, context, handle_out);
 }
 
@@ -1018,7 +1018,7 @@ static inline int ble_gatt_server_add_descriptor(
 // Hash, and Client Supported Features characteristics. Sealing the database
 // calculates the hash. The application owns per-peer bonded-state persistence
 // and decides when a known service change should be indicated to each peer.
-static inline int ble_gatt_server_add_standard_gatt_service(
+static inline int gatt_server_add_standard_gatt_service(
     ble_gatt_server *server, ble_gatt_standard_service_handles *handles
 ) {
     if (!server || !handles || server->database_sealed) return 0;
@@ -1028,7 +1028,7 @@ static inline int ble_gatt_server_add_standard_gatt_service(
     ble_gatt_uuid client_features_uuid = {2, {0x29, 0x2b}};
     ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
     for (uint16_t i = 0; i < server->count; i++)
-        if (ble_gatt_uuid_equal(&server->attributes[i].uuid, &service_uuid) &&
+        if (gatt_uuid_equal(&server->attributes[i].uuid, &service_uuid) &&
             (server->attributes[i].flags &
              (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
               BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)))
@@ -1041,20 +1041,20 @@ static inline int ble_gatt_server_add_standard_gatt_service(
     uint8_t hash_initial[16] = {0};
     uint8_t client_features_initial[1] = {0};
     uint16_t service, changed, cccd, hash, client_features, declaration;
-    int added = ble_gatt_server_add_service(server, &service_uuid, 1,
+    int added = gatt_server_add_service(server, &service_uuid, 1,
                                              &service) &&
-        ble_gatt_server_add_characteristic(server, &changed_uuid,
+        gatt_server_add_characteristic(server, &changed_uuid,
             BLE_GATT_PROP_INDICATE, 0, service_changed_initial,
             sizeof(service_changed_initial), sizeof(service_changed_initial),
             NULL, NULL, NULL, &declaration, &changed) &&
-        ble_gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_server_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &cccd) &&
-        ble_gatt_server_add_characteristic(server, &hash_uuid,
+        gatt_server_add_characteristic(server, &hash_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ, hash_initial,
             sizeof(hash_initial), sizeof(hash_initial), NULL, NULL, NULL,
             &declaration, &hash) &&
-        ble_gatt_server_add_characteristic(server, &client_features_uuid,
+        gatt_server_add_characteristic(server, &client_features_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             client_features_initial, sizeof(client_features_initial),
@@ -1084,7 +1084,7 @@ static inline int ble_gatt_server_add_standard_gatt_service(
 // =============================================================================
 // ATT access checks and read/write procedures
 // =============================================================================
-static uint8_t ble_gatt_server_authorization_error(
+static uint8_t gatt_server_authorization_error(
     const ble_gatt_server *server, const ble_gatt_attribute *attribute,
     uint8_t write
 ) {
@@ -1097,7 +1097,7 @@ static uint8_t ble_gatt_server_authorization_error(
     return 0;
 }
 
-static uint8_t ble_gatt_server_access_security_error(
+static uint8_t gatt_server_access_security_error(
     const ble_gatt_server *server, const ble_gatt_attribute *attribute,
     uint8_t write
 ) {
@@ -1107,7 +1107,7 @@ static uint8_t ble_gatt_server_access_security_error(
                                  BLE_GATT_PERM_READ_ENCRYPTED;
     if ((attribute->permissions & authenticated) && !server->authenticated)
         return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION;
-    uint8_t error = ble_gatt_server_authorization_error(server, attribute,
+    uint8_t error = gatt_server_authorization_error(server, attribute,
                                                          write);
     if (error) return error;
     if ((attribute->permissions & encrypted) && !server->encrypted)
@@ -1121,12 +1121,12 @@ static uint8_t ble_gatt_server_access_security_error(
     return 0;
 }
 
-static uint8_t ble_gatt_server_read(
+static uint8_t gatt_server_read(
     ble_gatt_server *server,
     ble_gatt_attribute *a, uint16_t offset,
     uint8_t *out, uint16_t *out_len
 ) {
-    uint8_t security = ble_gatt_server_access_security_error(server, a, 0);
+    uint8_t security = gatt_server_access_security_error(server, a, 0);
     if (security) return security;
     if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) && a->properties &&
         !(a->properties & BLE_GATT_PROP_READ))
@@ -1138,7 +1138,7 @@ static uint8_t ble_gatt_server_read(
         return BLE_GATT_ATT_ERR_READ_NOT_PERMITTED;
     if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
         uint8_t value[2];
-        ble_gatt_server_put_u16(value, a->cccd);
+        gatt_server_put_u16(value, a->cccd);
         if (offset > 2) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
         uint16_t size = (uint16_t)(2 - offset);
         if (size > *out_len) size = *out_len;
@@ -1159,12 +1159,12 @@ static uint8_t ble_gatt_server_read(
     if (offset > a->value_len) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     uint16_t size = (uint16_t)(a->value_len - offset);
     if (size > *out_len) size = *out_len;
-    if (size) memcpy(out, ble_gatt_attribute_value(server, a) + offset, size);
+    if (size) memcpy(out, gatt_attribute_value(server, a) + offset, size);
     *out_len = size;
     return 0;
 }
 
-static void ble_gatt_server_remove_event(
+static void gatt_server_remove_event(
     ble_gatt_server *server,
     uint16_t index
 ) {
@@ -1185,7 +1185,7 @@ static void ble_gatt_server_remove_event(
            sizeof(server->events[server->event_count]));
 }
 
-static void ble_gatt_server_drop_disabled_events(
+static void gatt_server_drop_disabled_events(
     ble_gatt_server *server,
     uint16_t value_handle, uint16_t configuration
 ) {
@@ -1193,7 +1193,7 @@ static void ble_gatt_server_drop_disabled_events(
         ble_gatt_server_event *event = &server->events[i];
         uint16_t bit = event->indication ? 2 : 1;
         if (event->handle == value_handle && !(configuration & bit))
-            ble_gatt_server_remove_event(server, i);
+            gatt_server_remove_event(server, i);
         else
             i++;
     }
@@ -1201,7 +1201,7 @@ static void ble_gatt_server_drop_disabled_events(
         ble_gatt_uuid changed_uuid = {2, {0x05, 0x2a}};
         uint16_t changed_handle = 0;
         for (uint16_t i = 0; i < server->count; i++)
-            if (ble_gatt_uuid_equal(&server->attributes[i].uuid,
+            if (gatt_uuid_equal(&server->attributes[i].uuid,
                                     &changed_uuid))
                 changed_handle = server->attributes[i].handle;
         if (changed_handle == value_handle && !(configuration & 2) &&
@@ -1216,7 +1216,7 @@ static void ble_gatt_server_drop_disabled_events(
     }
 }
 
-static uint8_t ble_gatt_server_write(
+static uint8_t gatt_server_write(
     ble_gatt_server *server,
     ble_gatt_attribute *a, uint16_t offset,
     const uint8_t *value, uint16_t len,
@@ -1224,8 +1224,8 @@ static uint8_t ble_gatt_server_write(
 ) {
     uint8_t signed_command = command == 2;
     uint8_t access_error = signed_command ?
-        ble_gatt_server_authorization_error(server, a, 1) :
-        ble_gatt_server_access_security_error(server, a, 1);
+        gatt_server_authorization_error(server, a, 1) :
+        gatt_server_access_security_error(server, a, 1);
     if (access_error) return access_error;
     if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) && a->properties &&
         !(a->properties & (signed_command ? BLE_GATT_PROP_AUTH_SIGNED_WRITE :
@@ -1240,7 +1240,7 @@ static uint8_t ble_gatt_server_write(
     if (a->flags & BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES) {
         if (offset || len != 1)
             return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-        uint8_t *stored = ble_gatt_attribute_value(server, a);
+        uint8_t *stored = gatt_attribute_value(server, a);
         if (!stored) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
         uint8_t features = value[0];
         if ((features & (uint8_t)~BLE_GATT_CLIENT_FEATURE_MASK) ||
@@ -1254,31 +1254,31 @@ static uint8_t ble_gatt_server_write(
         return 0;
     }
 
-    if (!ble_gatt_server_user_description_writable(server, a))
+    if (!gatt_server_user_description_writable(server, a))
         return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
     if (len > BLE_GATT_ATT_VALUE_MAX)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
         if (offset || len != 2) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-        uint16_t bits = ble_gatt_server_u16(value);
+        uint16_t bits = gatt_server_u16(value);
         uint16_t allowed = (uint16_t)((a->properties & BLE_GATT_PROP_NOTIFY ? 1 : 0) |
                                       (a->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
         if (bits & (uint16_t)~allowed) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
         a->cccd = bits;
-        ble_gatt_server_drop_disabled_events(server, a->parent_handle, bits);
+        gatt_server_drop_disabled_events(server, a->parent_handle, bits);
         if (server->cccd_store)
             server->cccd_store(server->cccd_context, a->parent_handle, bits);
-        if ((bits & 2) && ble_gatt_server_is_service_changed(server,
+        if ((bits & 2) && gatt_server_is_service_changed(server,
                 a->parent_handle))
-            (void)ble_gatt_server_check_database_version(server);
+            (void)gatt_server_check_database_version(server);
         return 0;
     }
 
-    if (ble_gatt_uuid_assigned16(&a->uuid) == 0x2903) {
+    if (gatt_uuid_assigned16(&a->uuid) == 0x2903) {
         if (offset || len != 2)
             return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-        uint16_t bits = ble_gatt_server_u16(value);
-        ble_gatt_attribute *characteristic = ble_gatt_server_find(
+        uint16_t bits = gatt_server_u16(value);
+        ble_gatt_attribute *characteristic = gatt_server_find(
             server, a->parent_handle);
         if ((bits & (uint16_t)~1u) ||
             ((bits & 1) && (!characteristic ||
@@ -1297,7 +1297,7 @@ static uint8_t ble_gatt_server_write(
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (offset && offset + len > a->value_len)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (len) memcpy(ble_gatt_attribute_value(server, a) + offset, value, len);
+    if (len) memcpy(gatt_attribute_value(server, a) + offset, value, len);
     if (a->flags & BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH) {
         if (!offset) a->value_len = len;
         else if (offset + len > a->value_len) a->value_len = offset + len;
@@ -1306,7 +1306,7 @@ static uint8_t ble_gatt_server_write(
     return 0;
 }
 
-static ble_gatt_attribute *ble_gatt_server_cccd_for(
+static ble_gatt_attribute *gatt_server_cccd_for(
     ble_gatt_server *server, uint16_t value_handle
 ) {
     for (uint16_t i = 0; i < server->count; i++) {
@@ -1318,30 +1318,30 @@ static ble_gatt_attribute *ble_gatt_server_cccd_for(
     return NULL;
 }
 
-static inline int ble_gatt_server_set_cccd(
+static inline int gatt_server_set_cccd(
     ble_gatt_server *server,
     uint16_t value_handle, uint16_t configuration
 ) {
     if (!server) return 0;
-    ble_gatt_attribute *characteristic = ble_gatt_server_find(server,
+    ble_gatt_attribute *characteristic = gatt_server_find(server,
                                                                value_handle);
-    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
     if (!characteristic || !cccd) return 0;
     uint16_t allowed = (uint16_t)(
         (characteristic->properties & BLE_GATT_PROP_NOTIFY ? 1 : 0) |
         (characteristic->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
     if (configuration & (uint16_t)~allowed) return 0;
     cccd->cccd = configuration;
-    ble_gatt_server_drop_disabled_events(server, value_handle, configuration);
+    gatt_server_drop_disabled_events(server, value_handle, configuration);
     if ((configuration & 2) &&
-        ble_gatt_server_is_service_changed(server, value_handle))
-        (void)ble_gatt_server_check_database_version(server);
+        gatt_server_is_service_changed(server, value_handle))
+        (void)gatt_server_check_database_version(server);
     return 1;
 }
 
 // Restore bonded-peer subscriptions after link_reset and before ATT traffic.
 // The application callback must return zero for non-bonded peers.
-static inline void ble_gatt_server_restore_cccds(ble_gatt_server *server) {
+static inline void gatt_server_restore_cccds(ble_gatt_server *server) {
     if (!server || !server->cccd_load) return;
     for (uint16_t i = 0; i < server->count; i++) {
         ble_gatt_attribute *cccd = &server->attributes[i];
@@ -1349,13 +1349,13 @@ static inline void ble_gatt_server_restore_cccds(ble_gatt_server *server) {
         uint16_t value_handle = cccd->parent_handle;
         uint16_t configuration = server->cccd_load(server->cccd_context,
                                                     value_handle);
-        (void)ble_gatt_server_set_cccd(server, value_handle, configuration);
+        (void)gatt_server_set_cccd(server, value_handle, configuration);
     }
 }
 
 // Restore the Client Supported Features octet after link reset and before ATT
 // traffic. Unknown/reserved bits in application storage are discarded.
-static inline void ble_gatt_server_restore_client_features(
+static inline void gatt_server_restore_client_features(
     ble_gatt_server *server
 ) {
     if (!server) return;
@@ -1363,7 +1363,7 @@ static inline void ble_gatt_server_restore_client_features(
         ble_gatt_attribute *attribute = &server->attributes[i];
         if (!(attribute->flags &
               BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES)) continue;
-        uint8_t *value = ble_gatt_attribute_value(server, attribute);
+        uint8_t *value = gatt_attribute_value(server, attribute);
         if (!value || attribute->value_capacity < 1) continue;
         value[0] = server->client_features_load ?
             (uint8_t)(server->client_features_load(
@@ -1378,7 +1378,7 @@ static inline void ble_gatt_server_restore_client_features(
 // =============================================================================
 // Build one Handle Value Notification. The application supplies the current
 // value; values are capped at 512 octets and truncated to ATT_MTU - 3 bytes.
-static inline int ble_gatt_server_notify(
+static inline int gatt_server_notify(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
     uint8_t *att, uint16_t att_capacity, uint16_t *att_len
@@ -1386,18 +1386,18 @@ static inline int ble_gatt_server_notify(
     if (!server || !att || !att_len || (value_len && !value)) return -1;
     *att_len = 0;
     ble_gatt_attribute *characteristic =
-        ble_gatt_server_find(server, value_handle);
-    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+        gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
     if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
         !cccd || !(cccd->cccd & 1))
         return 0;
-    if (ble_gatt_server_access_security_error(server, characteristic, 0))
+    if (gatt_server_access_security_error(server, characteristic, 0))
         return 0;
     if (value_len > BLE_GATT_ATT_VALUE_MAX) return 0;
     if (value_len > server->mtu - 3) value_len = server->mtu - 3;
     if (att_capacity < value_len + 3) return 0;
     att[0] = 0x1b;
-    ble_gatt_server_put_u16(att + 1, value_handle);
+    gatt_server_put_u16(att + 1, value_handle);
     if (value_len) memcpy(att + 3, value, value_len);
     *att_len = value_len + 3;
     return 1;
@@ -1406,7 +1406,7 @@ static inline int ble_gatt_server_notify(
 // Build one Handle Value Indication. Values are capped at 512 octets and
 // truncated to ATT_MTU - 3; only one indication may await confirmation. For
 // direct sends, poll_event starts timeout tracking on its next call.
-static inline int ble_gatt_server_indicate(
+static inline int gatt_server_indicate(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
     uint8_t *att, uint16_t att_capacity, uint16_t *att_len
@@ -1414,18 +1414,18 @@ static inline int ble_gatt_server_indicate(
     if (!server || !att || !att_len || (value_len && !value)) return -1;
     *att_len = 0;
     ble_gatt_attribute *characteristic =
-        ble_gatt_server_find(server, value_handle);
-    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+        gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
     if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_INDICATE) ||
         !cccd || !(cccd->cccd & 2) || server->indication_pending)
         return 0;
-    if (ble_gatt_server_access_security_error(server, characteristic, 0))
+    if (gatt_server_access_security_error(server, characteristic, 0))
         return 0;
     if (value_len > BLE_GATT_ATT_VALUE_MAX) return 0;
     if (value_len > server->mtu - 3) value_len = server->mtu - 3;
     if (att_capacity < value_len + 3) return 0;
     att[0] = 0x1d;
-    ble_gatt_server_put_u16(att + 1, value_handle);
+    gatt_server_put_u16(att + 1, value_handle);
     if (value_len) memcpy(att + 3, value, value_len);
     *att_len = value_len + 3;
     server->indication_pending = 1;
@@ -1438,7 +1438,7 @@ static inline int ble_gatt_server_indicate(
 // at 512 octets and truncated to ATT_MTU - 3. The application calls poll_event
 // from its connection event loop with a monotonic millisecond tick; a timed-out
 // indication is cleared and reported as -1.
-static inline int ble_gatt_server_queue_event(
+static inline int gatt_server_queue_event(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
     int indication
@@ -1449,13 +1449,13 @@ static inline int ble_gatt_server_queue_event(
         return 0;
     if (value_len > BLE_GATT_SERVER_EVENT_BYTES - server->event_used) return 0;
     ble_gatt_attribute *characteristic =
-        ble_gatt_server_find(server, value_handle);
-    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, value_handle);
+        gatt_server_find(server, value_handle);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
     uint8_t bit = indication ? 2 : 1;
     uint8_t property = indication ? BLE_GATT_PROP_INDICATE : BLE_GATT_PROP_NOTIFY;
     if (!characteristic || !(characteristic->properties & property) ||
         !cccd || !(cccd->cccd & bit) ||
-        ble_gatt_server_access_security_error(server, characteristic, 0))
+        gatt_server_access_security_error(server, characteristic, 0))
         return 0;
     ble_gatt_server_event *event = &server->events[server->event_count++];
     event->handle = value_handle;
@@ -1471,7 +1471,7 @@ static inline int ble_gatt_server_queue_event(
 // database change. The caller supplies the changed inclusive handle range;
 // CCCD persistence and deciding which bonded peers need this range are owned
 // by the application.
-static inline int ble_gatt_server_service_changed(
+static inline int gatt_server_service_changed(
     ble_gatt_server *server,
     uint16_t start_handle, uint16_t end_handle
 ) {
@@ -1479,13 +1479,13 @@ static inline int ble_gatt_server_service_changed(
     ble_gatt_uuid changed_uuid = {2, {0x05, 0x2a}};
     for (uint16_t i = 0; i < server->count; i++) {
         ble_gatt_attribute *attribute = &server->attributes[i];
-        if (!ble_gatt_uuid_equal(&attribute->uuid, &changed_uuid) ||
+        if (!gatt_uuid_equal(&attribute->uuid, &changed_uuid) ||
             !(attribute->properties & BLE_GATT_PROP_INDICATE)) continue;
         uint8_t range[4] = {
             (uint8_t)start_handle, (uint8_t)(start_handle >> 8),
             (uint8_t)end_handle, (uint8_t)(end_handle >> 8)
         };
-        return ble_gatt_server_queue_event(server, attribute->handle, range,
+        return gatt_server_queue_event(server, attribute->handle, range,
                                            sizeof(range), 1);
     }
     return 0;
@@ -1495,7 +1495,7 @@ static inline int ble_gatt_server_service_changed(
 // current peer. Call after restoring that peer's CCCDs on connection. A new
 // peer gets a baseline without an indication; a changed database queues a
 // full-range indication only when the peer has enabled Service Changed.
-static inline int ble_gatt_server_check_database_version(
+static inline int gatt_server_check_database_version(
     ble_gatt_server *server
 ) {
     if (!server || !server->database_hash_available ||
@@ -1510,12 +1510,12 @@ static inline int ble_gatt_server_check_database_version(
     }
 
     if (!memcmp(previous, server->database_hash, sizeof(previous))) return 1;
-    if (ble_gatt_server_service_changed(server, 1, 0xffff) != 1) return 0;
+    if (gatt_server_service_changed(server, 1, 0xffff) != 1) return 0;
     server->database_hash_update_pending = 1;
     return 1;
 }
 
-static inline int ble_gatt_server_poll_event(
+static inline int gatt_server_poll_event(
     ble_gatt_server *server,
     uint32_t now_ms, uint8_t *att, uint16_t att_capacity, uint16_t *att_len
 ) {
@@ -1540,22 +1540,22 @@ static inline int ble_gatt_server_poll_event(
 
     if (!server->event_count) return 0;
     ble_gatt_server_event event = server->events[0];
-    ble_gatt_attribute *characteristic = ble_gatt_server_find(server,
+    ble_gatt_attribute *characteristic = gatt_server_find(server,
                                                                event.handle);
-    ble_gatt_attribute *cccd = ble_gatt_server_cccd_for(server, event.handle);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, event.handle);
     uint16_t bit = event.indication ? 2 : 1;
     uint8_t property = event.indication ? BLE_GATT_PROP_INDICATE :
                                          BLE_GATT_PROP_NOTIFY;
     if (!characteristic || !(characteristic->properties & property) ||
         !cccd || !(cccd->cccd & bit) ||
-        ble_gatt_server_access_security_error(server, characteristic, 0)) {
-        ble_gatt_server_remove_event(server, 0);
+        gatt_server_access_security_error(server, characteristic, 0)) {
+        gatt_server_remove_event(server, 0);
         return 0;
     }
 
     const uint8_t *value = server->event_data + event.data_offset;
     if (!event.indication &&
-        ble_gatt_server_multiple_notifications_enabled(server)) {
+        gatt_server_multiple_notifications_enabled(server)) {
         uint16_t packet_limit = att_capacity < server->mtu ?
             att_capacity : server->mtu;
         uint16_t encoded = 1;
@@ -1564,13 +1564,13 @@ static inline int ble_gatt_server_poll_event(
             ble_gatt_server_event *candidate = &server->events[i];
             if (candidate->indication) break;
             ble_gatt_attribute *characteristic =
-                ble_gatt_server_find(server, candidate->handle);
+                gatt_server_find(server, candidate->handle);
             ble_gatt_attribute *candidate_cccd =
-                ble_gatt_server_cccd_for(server, candidate->handle);
+                gatt_server_cccd_for(server, candidate->handle);
             if (!characteristic ||
                 !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
                 !candidate_cccd || !(candidate_cccd->cccd & 1) ||
-                ble_gatt_server_access_security_error(server,
+                gatt_server_access_security_error(server,
                                                        characteristic, 0))
                 break;
             uint16_t tuple_len = (uint16_t)(4 + candidate->len);
@@ -1584,8 +1584,8 @@ static inline int ble_gatt_server_poll_event(
             uint16_t offset = 1;
             for (uint16_t i = 0; i < count; i++) {
                 ble_gatt_server_event *candidate = &server->events[i];
-                ble_gatt_server_put_u16(att + offset, candidate->handle);
-                ble_gatt_server_put_u16(att + offset + 2, candidate->len);
+                gatt_server_put_u16(att + offset, candidate->handle);
+                gatt_server_put_u16(att + offset + 2, candidate->len);
                 if (candidate->len)
                     memcpy(att + offset + 4,
                         server->event_data + candidate->data_offset,
@@ -1593,15 +1593,15 @@ static inline int ble_gatt_server_poll_event(
                 offset = (uint16_t)(offset + 4 + candidate->len);
             }
             *att_len = offset;
-            while (count--) ble_gatt_server_remove_event(server, 0);
+            while (count--) gatt_server_remove_event(server, 0);
             return 1;
         }
     }
 
     int result = event.indication ?
-        ble_gatt_server_indicate(server, event.handle, value, event.len,
+        gatt_server_indicate(server, event.handle, value, event.len,
                                   att, att_capacity, att_len) :
-        ble_gatt_server_notify(server, event.handle, value, event.len,
+        gatt_server_notify(server, event.handle, value, event.len,
                                 att, att_capacity, att_len);
     if (result <= 0) return result;
     server->event_count--;
@@ -1621,17 +1621,17 @@ static inline int ble_gatt_server_poll_event(
 // =============================================================================
 // Prepared writes and ATT dispatch
 // =============================================================================
-static void ble_gatt_server_prepare_clear(ble_gatt_server *server) {
+static void gatt_server_prepare_clear(ble_gatt_server *server) {
     memset(server->prepare_data, 0, server->prepare_used);
     server->prepare_count = 0;
     server->prepare_used = 0;
 }
 
-static void ble_gatt_server_prepare_cccd_value(
+static void gatt_server_prepare_cccd_value(
     const ble_gatt_server *server, const ble_gatt_attribute *attribute,
     uint8_t value[2]
 ) {
-    ble_gatt_server_put_u16(value, attribute->cccd);
+    gatt_server_put_u16(value, attribute->cccd);
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         const ble_gatt_prepared_write *part = &server->prepared[i];
         if (part->handle != attribute->handle) continue;
@@ -1641,10 +1641,10 @@ static void ble_gatt_server_prepare_cccd_value(
     }
 }
 
-static void ble_gatt_server_prepare_static_u16_value(
+static void gatt_server_prepare_static_u16_value(
     ble_gatt_server *server, ble_gatt_attribute *attribute, uint8_t value[2]
 ) {
-    uint8_t *stored = ble_gatt_attribute_value(server, attribute);
+    uint8_t *stored = gatt_attribute_value(server, attribute);
     value[0] = stored[0];
     value[1] = stored[1];
     for (uint16_t i = 0; i < server->prepare_count; i++) {
@@ -1656,13 +1656,13 @@ static void ble_gatt_server_prepare_static_u16_value(
     }
 }
 
-static uint8_t ble_gatt_server_prepare_validate(
+static uint8_t gatt_server_prepare_validate(
     ble_gatt_server *server,
     ble_gatt_attribute *a, uint16_t offset, uint16_t len,
     uint8_t validate_value
 ) {
     uint8_t access_error =
-        ble_gatt_server_access_security_error(server, a, 1);
+        gatt_server_access_security_error(server, a, 1);
     if (access_error) return access_error;
     if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) && a->properties &&
         !(a->properties & BLE_GATT_PROP_WRITE))
@@ -1674,7 +1674,7 @@ static uint8_t ble_gatt_server_prepare_validate(
         return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
     if (a->flags & BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES)
         return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
-    if (!ble_gatt_server_user_description_writable(server, a))
+    if (!gatt_server_user_description_writable(server, a))
         return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
     if (validate_value && (offset > BLE_GATT_ATT_VALUE_MAX ||
         len > BLE_GATT_ATT_VALUE_MAX - offset))
@@ -1696,20 +1696,20 @@ static uint8_t ble_gatt_server_prepare_validate(
     return 0;
 }
 
-static uint8_t ble_gatt_server_prepare_execute(
+static uint8_t gatt_server_prepare_execute(
     ble_gatt_server *server,
     uint16_t *error_handle
 ) {
     // Validate the full batch before changing any attribute.
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
         if (!a) {
             *error_handle = p->handle;
             return BLE_GATT_ATT_ERR_INVALID_HANDLE;
         }
 
-        uint8_t error = ble_gatt_server_prepare_validate(server, a,
+        uint8_t error = gatt_server_prepare_validate(server, a,
                                                    p->offset, p->len, 1);
         if (error) {
             *error_handle = p->handle;
@@ -1720,19 +1720,19 @@ static uint8_t ble_gatt_server_prepare_execute(
     // been checked, since a prepared update may span both octets.
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
         if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) &&
-            ble_gatt_uuid_assigned16(&a->uuid) != 0x2903) continue;
+            gatt_uuid_assigned16(&a->uuid) != 0x2903) continue;
         uint8_t first = 1;
         for (uint16_t j = 0; j < i; j++)
             if (server->prepared[j].handle == p->handle) first = 0;
         if (!first) continue;
         uint8_t value[2];
         if (a->flags & BLE_GATT_ATTRIBUTE_CCCD)
-            ble_gatt_server_prepare_cccd_value(server, a, value);
+            gatt_server_prepare_cccd_value(server, a, value);
         else
-            ble_gatt_server_prepare_static_u16_value(server, a, value);
-        uint16_t bits = ble_gatt_server_u16(value);
+            gatt_server_prepare_static_u16_value(server, a, value);
+        uint16_t bits = gatt_server_u16(value);
         uint8_t invalid = 0;
         if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
             uint16_t allowed = (uint16_t)(
@@ -1740,7 +1740,7 @@ static uint8_t ble_gatt_server_prepare_execute(
                 (a->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
             invalid = (bits & (uint16_t)~allowed) != 0;
         } else {
-            ble_gatt_attribute *characteristic = ble_gatt_server_find(
+            ble_gatt_attribute *characteristic = gatt_server_find(
                 server, a->parent_handle);
             invalid = (bits & (uint16_t)~1u) != 0 ||
                 ((bits & 1) && (!characteristic ||
@@ -1756,7 +1756,7 @@ static uint8_t ble_gatt_server_prepare_execute(
     // prevents stale bytes from becoming visible through gaps in queued writes.
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
         if (a->execute) continue;
         uint16_t end = a->value_len;
         for (uint16_t j = 0; j < server->prepare_count; j++)
@@ -1787,13 +1787,13 @@ static uint8_t ble_gatt_server_prepare_execute(
         for (uint16_t j = 0; j < i; j++)
             if (server->prepared[j].handle == handle) first = 0;
         if (!first) continue;
-        ble_gatt_attribute *a = ble_gatt_server_find(server, handle);
+        ble_gatt_attribute *a = gatt_server_find(server, handle);
         if (a && a->execute) a->execute(a->context, 1);
     }
     // Static commits are bounded copies into registered storage.
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = ble_gatt_server_find(server, p->handle);
+        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
         if (a->execute) continue;
         if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
             uint8_t first = 1;
@@ -1801,8 +1801,8 @@ static uint8_t ble_gatt_server_prepare_execute(
                 if (server->prepared[j].handle == p->handle) first = 0;
             if (!first) continue;
             uint8_t value[2];
-            ble_gatt_server_prepare_cccd_value(server, a, value);
-            uint8_t error = ble_gatt_server_write(server, a, 0, value,
+            gatt_server_prepare_cccd_value(server, a, value);
+            uint8_t error = gatt_server_write(server, a, 0, value,
                                                    sizeof(value), 0);
             if (error) {
                 *error_handle = p->handle;
@@ -1812,7 +1812,7 @@ static uint8_t ble_gatt_server_prepare_execute(
             continue;
         }
 
-        uint8_t *value = ble_gatt_attribute_value(server, a);
+        uint8_t *value = gatt_attribute_value(server, a);
         if (p->len) memcpy(value + p->offset,
                            server->prepare_data + p->data_offset, p->len);
         if (p->offset + p->len > a->value_len)
@@ -1828,7 +1828,7 @@ static inline int ble_att_server_process(
 
 #include "../ble_att/ble_att_server.h"
 
-static inline int ble_gatt_server_att(
+static inline int gatt_server_att(
     ble_gatt_server *server,
     const uint8_t *req, uint16_t req_len, uint8_t *rsp,
     uint16_t rsp_capacity, uint16_t *rsp_len

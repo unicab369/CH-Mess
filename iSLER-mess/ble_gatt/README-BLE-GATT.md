@@ -22,7 +22,7 @@ fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
-`ble_gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
+`gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
 and SDU delivery to that manager. EATT is optional at compile time and keeps
 per-bearer ATT transaction state while sharing the connection's GATT database.
 
@@ -33,7 +33,7 @@ per-bearer ATT transaction state while sharing the connection's GATT database.
 1. [x] Bind EATT to the shared LE L2CAP ECFC manager on PSM 0x0027. Register
    the PSM, require an encrypted link before accepting or opening a channel,
    and route EATT channel open/close/data events through the bearer manager.
-   `ble_gatt_transport_eatt_init()` attaches it.
+   `gatt_transport_eatt_init()` attaches it.
 2. [x] Give each ATT bearer its own CID, negotiated MTU, TX/RX state, and
    failure state while sharing the connection's GATT database and security.
 3. [x] Keep ATT client request matching, timeout, and indication confirmation

@@ -270,17 +270,17 @@ static int mesh_gatt_transport_init(
         NULL,
         mesh_gatt_gap_security_state
     };
-    return ble_gatt_transport_init(transport, server, &ops);
+    return gatt_transport_init(transport, server, &ops);
 }
 
 static uint8_t mesh_gatt_proxy_cccd(void) {
-    ble_gatt_attribute *cccd = ble_gatt_server_find(&mesh_gatt.server,
+    ble_gatt_attribute *cccd = gatt_server_find(&mesh_gatt.server,
         MESH_GATT_HANDLE_DATA_OUT_CCCD);
     return cccd ? (uint8_t)cccd->cccd : 0;
 }
 
 static uint8_t mesh_gatt_provisioning_cccd(void) {
-    ble_gatt_attribute *cccd = ble_gatt_server_find(&mesh_gatt.server,
+    ble_gatt_attribute *cccd = gatt_server_find(&mesh_gatt.server,
         MESH_GATT_HANDLE_PROVISIONING_DATA_OUT_CCCD);
     return cccd ? (uint8_t)cccd->cccd : 0;
 }
@@ -344,7 +344,7 @@ static uint8_t mesh_gatt_proxy_write_context;
 static uint8_t mesh_gatt_provisioning_write_context = 1;
 
 static int mesh_gatt_register_services(void) {
-    ble_gatt_server_init(&mesh_gatt.server, MESH_GATT_ATT_MTU_MAX);
+    gatt_server_init(&mesh_gatt.server, MESH_GATT_ATT_MTU_MAX);
     size_t device_name_len = sizeof(MESH_GATT_DEVICE_NAME) - 1;
     if (!mesh_gatt_gap_device_name_valid(
             (const uint8_t *)MESH_GATT_DEVICE_NAME, device_name_len))
@@ -378,27 +378,27 @@ static int mesh_gatt_register_services(void) {
 #endif
     ble_gatt_uuid cccd = mesh_gatt_uuid16(0x2902);
     uint16_t service, decl, value, descriptor;
-    if (!ble_gatt_server_add_service(&mesh_gatt.server, &proxy_service, 1,
+    if (!gatt_server_add_service(&mesh_gatt.server, &proxy_service, 1,
             &service) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server, &proxy_in,
+        !gatt_server_add_characteristic(&mesh_gatt.server, &proxy_in,
             BLE_GATT_PROP_WRITE_NO_RSP, BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, mesh_gatt_data_in_write,
             &mesh_gatt_proxy_write_context, &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server, &proxy_out,
+        !gatt_server_add_characteristic(&mesh_gatt.server, &proxy_out,
             BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL,
             &decl, &value) ||
-        !ble_gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
+        !gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
             0, NULL, 0, 0, NULL, NULL, NULL, &descriptor) ||
-        !ble_gatt_server_add_service(&mesh_gatt.server,
+        !gatt_server_add_service(&mesh_gatt.server,
             &provisioning_service, 1, &service) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &provisioning_in, BLE_GATT_PROP_WRITE_NO_RSP,
             BLE_GATT_PERM_WRITE, NULL, 0, 0, NULL, mesh_gatt_data_in_write,
             &mesh_gatt_provisioning_write_context, &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &provisioning_out, BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0,
             NULL, NULL, NULL, &decl, &value) ||
-        !ble_gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
+        !gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
             0, NULL, 0, 0, NULL, NULL, NULL, &descriptor))
         return 0;
     uint8_t appearance[2] = {
@@ -418,26 +418,26 @@ static int mesh_gatt_register_services(void) {
     // after bonding; zero is the sole defined value for this characteristic.
     const uint8_t gap_rpa_only_value = 0;
 #endif
-    if (!ble_gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
+    if (!gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
             &service) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_device_name, BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHENTICATED,
             NULL, 0, 0, mesh_gatt_gap_device_name_read, NULL, NULL,
             &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_appearance, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             appearance, sizeof(appearance), sizeof(appearance), NULL, NULL,
             NULL, &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_ppcp, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             ppcp, sizeof(ppcp), sizeof(ppcp), NULL, NULL, NULL,
             &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_car,
+        !gatt_server_add_characteristic(&mesh_gatt.server, &gap_car,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &central_address_resolution, 1, 1, NULL, NULL, NULL,
             &decl, &value) ||
-        !ble_gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_security_levels, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             gap_security_level_requirements,
             sizeof(gap_security_level_requirements),
@@ -445,7 +445,7 @@ static int mesh_gatt_register_services(void) {
             &decl, &value))
         return 0;
 #if MESH_GATT_RPA_ONLY_SUPPORT
-    if (!ble_gatt_server_add_characteristic(&mesh_gatt.server,
+    if (!gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_rpa_only_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &gap_rpa_only_value, 1, 1, NULL, NULL, NULL,
@@ -453,7 +453,7 @@ static int mesh_gatt_register_services(void) {
         return 0;
 #endif
 #if MESH_GATT_EAD_SUPPORT
-    if (!ble_gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
+    if (!gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
             BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
             NULL, 0, 24, mesh_gatt_gap_edkm_read, NULL, NULL,
@@ -479,7 +479,7 @@ static int mesh_gatt_ensure_initialized(void) {
 // Encrypted Data Key Material. Without an authorizer, authorized reads fail.
 int mesh_gatt_set_authorizer(ble_gatt_authorize_fn authorize, void *context) {
     if (!mesh_gatt_ensure_initialized()) return 0;
-    ble_gatt_server_set_authorizer(&mesh_gatt.server, authorize, context);
+    gatt_server_set_authorizer(&mesh_gatt.server, authorize, context);
     return 1;
 }
 
@@ -527,7 +527,7 @@ static int mesh_gatt_gap_discoverable(void) {
 
 // Refresh Device Name access permissions from the active Flags AD structure.
 static void mesh_gatt_gap_policy_update(void) {
-    ble_gatt_attribute *name = ble_gatt_server_find(&mesh_gatt.server,
+    ble_gatt_attribute *name = gatt_server_find(&mesh_gatt.server,
         MESH_GATT_HANDLE_GAP_DEVICE_NAME);
     if (!name) return;
     name->permissions = mesh_gatt_gap_discoverable() ? BLE_GATT_PERM_READ :
@@ -767,7 +767,7 @@ static void mesh_gatt_notify_poll(void) {
            mesh_gatt.proxy_tx[slot].offset, chunk);
     uint16_t handle = provisioning ? MESH_GATT_HANDLE_PROVISIONING_DATA_OUT :
                                      MESH_GATT_HANDLE_DATA_OUT;
-    if (!ble_gatt_server_queue_event(&mesh_gatt.server, handle, value,
+    if (!gatt_server_queue_event(&mesh_gatt.server, handle, value,
                                       chunk + 1, 0))
         return;
     if (sar == 1) {
@@ -801,7 +801,7 @@ void mesh_gatt_poll(void) {
             mesh_gatt_provisioning_link_notify(0);
             mesh_gatt_link_reset();
         }
-        ble_gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
+        gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
         return;
     }
     if (!mesh_gatt.connected) {
@@ -811,7 +811,7 @@ void mesh_gatt_poll(void) {
     }
     if (mesh_gatt_proxy_sar_timeout_poll()) return;
     mesh_gatt_notify_poll();
-    ble_gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
+    gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
 }
 
 #endif

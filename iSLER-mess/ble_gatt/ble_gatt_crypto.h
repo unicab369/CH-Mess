@@ -36,7 +36,7 @@ static const uint8_t ble_gatt_aes_sbox[256] = {
 // =============================================================================
 // AES-128 block cipher
 // =============================================================================
-static inline void ble_gatt_aes128_expand(
+static inline void gatt_aes128_expand(
     const uint8_t key[16],
     uint8_t round_keys[176]
 ) {
@@ -62,11 +62,11 @@ static inline void ble_gatt_aes128_expand(
     }
 }
 
-static inline uint8_t ble_gatt_aes_xtime(uint8_t value) {
+static inline uint8_t gatt_aes_xtime(uint8_t value) {
     return (uint8_t)((value << 1) ^ ((value & 0x80) ? 0x1b : 0));
 }
 
-static inline void ble_gatt_aes128_encrypt_expanded(
+static inline void gatt_aes128_encrypt_expanded(
     const uint8_t round_keys[176], const uint8_t input[16], uint8_t output[16]
 ) {
     uint8_t state[16];
@@ -90,10 +90,10 @@ static inline void ble_gatt_aes128_encrypt_expanded(
                 uint8_t *s = state + 4 * col;
                 uint8_t all = s[0] ^ s[1] ^ s[2] ^ s[3];
                 uint8_t first = s[0];
-                s[0] ^= all ^ ble_gatt_aes_xtime(s[0] ^ s[1]);
-                s[1] ^= all ^ ble_gatt_aes_xtime(s[1] ^ s[2]);
-                s[2] ^= all ^ ble_gatt_aes_xtime(s[2] ^ s[3]);
-                s[3] ^= all ^ ble_gatt_aes_xtime(s[3] ^ first);
+                s[0] ^= all ^ gatt_aes_xtime(s[0] ^ s[1]);
+                s[1] ^= all ^ gatt_aes_xtime(s[1] ^ s[2]);
+                s[2] ^= all ^ gatt_aes_xtime(s[2] ^ s[3]);
+                s[3] ^= all ^ gatt_aes_xtime(s[3] ^ first);
             }
         }
 
@@ -105,45 +105,45 @@ static inline void ble_gatt_aes128_encrypt_expanded(
     memcpy(output, state, sizeof(state));
 }
 
-static inline void ble_gatt_aes128_encrypt(
+static inline void gatt_aes128_encrypt(
     const uint8_t key[16],
     const uint8_t input[16], uint8_t output[16]
 ) {
     uint8_t round_keys[176];
-    ble_gatt_aes128_expand(key, round_keys);
-    ble_gatt_aes128_encrypt_expanded(round_keys, input, output);
+    gatt_aes128_expand(key, round_keys);
+    gatt_aes128_encrypt_expanded(round_keys, input, output);
     memset(round_keys, 0, sizeof(round_keys));
 }
 
 // =============================================================================
 // Streaming AES-CMAC
 // =============================================================================
-static inline void ble_gatt_cmac_init(
+static inline void gatt_cmac_init(
     ble_gatt_cmac *cmac,
     const uint8_t key[16]
 ) {
     if (!cmac || !key) return;
     memset(cmac, 0, sizeof(*cmac));
-    ble_gatt_aes128_expand(key, cmac->round_keys);
+    gatt_aes128_expand(key, cmac->round_keys);
 }
 
-static inline void ble_gatt_cmac_block(ble_gatt_cmac *cmac) {
+static inline void gatt_cmac_block(ble_gatt_cmac *cmac) {
     uint8_t input[16];
     for (uint8_t i = 0; i < 16; i++) {
         input[i] = cmac->state[i] ^ cmac->block[i];
     }
-    ble_gatt_aes128_encrypt_expanded(cmac->round_keys, input, cmac->state);
+    gatt_aes128_encrypt_expanded(cmac->round_keys, input, cmac->state);
     memset(cmac->block, 0, sizeof(cmac->block));
     cmac->used = 0;
 }
 
-static inline void ble_gatt_cmac_update(
+static inline void gatt_cmac_update(
     ble_gatt_cmac *cmac,
     const uint8_t *data, size_t len
 ) {
     if (!cmac || (!data && len)) return;
     while (len) {
-        if (cmac->used == 16) ble_gatt_cmac_block(cmac);
+        if (cmac->used == 16) gatt_cmac_block(cmac);
         size_t count = 16u - cmac->used;
         if (count > len) count = len;
         memcpy(cmac->block + cmac->used, data, count);
@@ -153,7 +153,7 @@ static inline void ble_gatt_cmac_update(
     }
 }
 
-static inline void ble_gatt_cmac_double(uint8_t block[16]) {
+static inline void gatt_cmac_double(uint8_t block[16]) {
     uint8_t carry = (uint8_t)(block[0] >> 7);
     for (uint8_t i = 0; i < 15; i++) {
         block[i] = (uint8_t)((block[i] << 1) | (block[i + 1] >> 7));
@@ -161,17 +161,17 @@ static inline void ble_gatt_cmac_double(uint8_t block[16]) {
     block[15] = (uint8_t)((block[15] << 1) ^ (carry ? 0x87 : 0));
 }
 
-static inline void ble_gatt_cmac_final(ble_gatt_cmac *cmac, uint8_t mac[16]) {
+static inline void gatt_cmac_final(ble_gatt_cmac *cmac, uint8_t mac[16]) {
     if (!cmac || !mac) return;
     uint8_t subkey[16] = {0}, zero[16] = {0};
-    ble_gatt_aes128_encrypt_expanded(cmac->round_keys, zero, subkey);
-    ble_gatt_cmac_double(subkey);
-    if (cmac->used != 16) ble_gatt_cmac_double(subkey);
+    gatt_aes128_encrypt_expanded(cmac->round_keys, zero, subkey);
+    gatt_cmac_double(subkey);
+    if (cmac->used != 16) gatt_cmac_double(subkey);
     if (cmac->used < 16) cmac->block[cmac->used] = 0x80;
     for (uint8_t i = 0; i < 16; i++) {
         cmac->block[i] ^= subkey[i] ^ cmac->state[i];
     }
-    ble_gatt_aes128_encrypt_expanded(cmac->round_keys, cmac->block, mac);
+    gatt_aes128_encrypt_expanded(cmac->round_keys, cmac->block, mac);
     memset(cmac, 0, sizeof(*cmac));
     memset(subkey, 0, sizeof(subkey));
 }
