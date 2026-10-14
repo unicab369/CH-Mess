@@ -330,7 +330,9 @@ void gap_hw_received(void) {
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
-        if (conn->link.tx_pending && (((frame[0] >> 2) & 1) != conn->link.tx_sn)) {
+        if (conn->link.tx_pending &&
+            (((frame[0] >> 2) & 1) != conn->link.tx_sn)
+        ) {
             if (conn->is_central && conn->channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
@@ -363,7 +365,9 @@ void gap_hw_received(void) {
             gap_security->tx_sealed = 0;
 
             if (conn->link_state.terminate_sent) {
-                if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != LL_TERMINATE_IND) {
+                if ((frame[0] & 3) != 3 ||
+                    frame[1] != 2 || frame[2] != LL_TERMINATE_IND
+                ) {
                     gap_conn_end();
                     gap_conn_slot = previous_slot;
                     return;
@@ -374,8 +378,7 @@ void gap_hw_received(void) {
         }
 
         uint8_t llid = frame[0] & 3;
-        uint8_t remote_sn = (frame[0] >> 3) & 1;
-        uint8_t new_packet = remote_sn == conn->link.expected_rx_sn;
+        uint8_t new_packet = ((frame[0] >> 3) & 1) == conn->link.expected_rx_sn;
 
         // Reject control PDUs without a payload or reply slot, and data PDUs
         // while the receive slot is occupied, so they remain unacknowledged.
@@ -390,6 +393,7 @@ void gap_hw_received(void) {
         ) {
             uint8_t opcode = llid == 3 ? frame[2] : 0xff;
             uint8_t allowed = opcode == LL_TERMINATE_IND;
+
             switch (gap_security->phase) {
                 case GAP_ENC_WAIT_RSP:
                     allowed |= opcode == LL_ENC_RSP; // Fall through for rejection.
@@ -470,8 +474,7 @@ void gap_hw_received(void) {
                 if (!gap_security->phase && gap_tx_frame[1] == 0 &&
                         conn->sync_transfer_queued
                 ) {
-                    int slot = gap_periodic_sync_handle_slot(
-                        conn->sync_transfer_handle);
+                    int slot = gap_periodic_sync_handle_slot(conn->sync_transfer_handle);
                     if (slot >= 0) {
                         gap_periodic_sync_transfer_encode(
                             gap_tx_frame, conn->sync_transfer_id,
@@ -534,7 +537,7 @@ void gap_hw_received(void) {
             return;
         }
 
-        gap_tx_frame[0] =   (gap_tx_frame[0] & 0x03) |
+        gap_tx_frame[0] = (gap_tx_frame[0] & 0x03) |
                             (conn->link.expected_rx_sn << 2) |
                             (conn->link.tx_sn << 3);
         conn->link.tx_pending = 1;
