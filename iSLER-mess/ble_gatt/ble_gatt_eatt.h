@@ -140,6 +140,7 @@ static inline int ble_gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
             eatt->ops.reject(eatt->ops.context, cid, 0x0005u);
         return 0;
     }
+
     int slot = ble_gatt_eatt_free_slot(eatt);
     if (!eatt->ops.accept(eatt->ops.context, cid, eatt->local_mtu)) return 0;
     eatt->bearers[slot].cid = cid;
@@ -166,6 +167,7 @@ static inline int ble_gatt_eatt_channel_opened(
             memset(&eatt->bearers[existing], 0, sizeof(eatt->bearers[existing]));
         return 0;
     }
+
     int slot = existing;
     if (slot < 0) {
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
@@ -177,11 +179,13 @@ static inline int ble_gatt_eatt_channel_opened(
             }
         }
     }
+
     if (slot < 0) slot = ble_gatt_eatt_free_slot(eatt);
     if (slot < 0) {
         if (eatt->ops.close) eatt->ops.close(eatt->ops.context, cid);
         return 0;
     }
+
     ble_gatt_eatt_bearer *b = &eatt->bearers[slot];
     b->cid = cid;
     b->mtu = negotiated_mtu < eatt->local_mtu ?

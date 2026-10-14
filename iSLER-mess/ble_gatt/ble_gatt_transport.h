@@ -327,6 +327,7 @@ static inline void ble_gatt_transport_eatt_context_opened(
             }
         }
     }
+
     if (slot < 0) return;
     ble_gatt_transport_eatt_context *bearer =
         &transport->eatt_contexts[slot];
@@ -338,6 +339,7 @@ static inline void ble_gatt_transport_eatt_context_opened(
         bearer->server.local_mtu = transport->server->local_mtu < mtu ?
             transport->server->local_mtu : mtu;
     }
+
     ble_gatt_transport_eatt_client_init(transport, bearer);
 }
 
@@ -355,6 +357,7 @@ static inline void ble_gatt_transport_eatt_context_close(
         ble_gatt_server_prepare_cancel_all(transport->server, 0);
         ble_gatt_transport_server_state_load(transport->server, &active);
     }
+
     if (bearer->client_enabled) ble_gatt_client_reset(&bearer->client);
     memset(bearer, 0, sizeof(*bearer));
 }
@@ -438,13 +441,16 @@ static inline int ble_gatt_transport_eatt_receive_att(
                 bearer->server.mtu = bearer->client.mtu;
                 bearer->server.mtu_exchanged = 1;
             }
+
             return result;
         }
+
         if (transport->eatt_receive_att)
             return transport->eatt_receive_att(transport->eatt_context,
                                                 cid, pdu, len);
         return -1;
     }
+
     if (transport->server) {
         uint8_t response[BLE_GATT_EATT_MTU_MAX];
         uint16_t response_len = 0;
@@ -466,6 +472,7 @@ static inline int ble_gatt_transport_eatt_receive_att(
                 bearer->client.mtu_exchanged = 1;
             }
         }
+
         ble_gatt_transport_server_state_capture(transport->server,
                                                  &bearer->server);
         ble_gatt_transport_server_state_load(transport->server, &active);
@@ -475,6 +482,7 @@ static inline int ble_gatt_transport_eatt_receive_att(
             return -1;
         return 1;
     }
+
     if (transport->eatt_receive_att)
         return transport->eatt_receive_att(transport->eatt_context,
                                             cid, pdu, len);
@@ -560,6 +568,7 @@ static inline int ble_gatt_transport_eatt_init(
         transport->eatt_context = NULL;
         return 0;
     }
+
     transport->l2cap.local_mtu = transport->eatt.local_mtu;
     transport->l2cap.ops.authorize_psm = ble_gatt_transport_authorize_psm;
     transport->l2cap.ops.channel_opened = ble_gatt_transport_channel_opened;
@@ -703,6 +712,7 @@ static inline void ble_gatt_transport_eatt_poll_tx(
             bearer->client_tx_pending = 0;
             continue;
         }
+
         ble_l2cap_channel *channel = &transport->l2cap.channels[l2cap_slot];
         if (bearer->tx_count && !channel->tx_len) {
             uint16_t len = bearer->tx_len[bearer->tx_head];
@@ -753,11 +763,13 @@ static inline int ble_gatt_transport_eatt_poll_server_event(
             (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
             return -1;
         }
+
         if (result == 1 && !ble_gatt_transport_eatt_queue_pdu(
                 bearer, att, att_len)) {
             (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
             return -1;
         }
+
         if (result == 1) return 1;
     }
     return 0;
@@ -781,6 +793,7 @@ static inline int ble_gatt_transport_fail_bearer(
         if (transport->terminate_link)
             transport->terminate_link(transport->ops.context);
     }
+
     return -1;
 }
 
@@ -843,6 +856,7 @@ static inline int ble_gatt_transport_receive_att(
     } else {
         has_response = 0;
     }
+
     if (has_response < 0) return -1;
     if (!dispatched_to_client && has_response > 0)
         ble_gatt_transport_send_att(transport, response, response_len);
@@ -860,6 +874,7 @@ static inline int ble_gatt_transport_receive(ble_gatt_transport *transport) {
         ble_l2cap_reassembler_reset(&transport->l2cap_rx);
         return 0;
     }
+
     uint16_t cid = 0, att_len = 0;
     const uint8_t *att = NULL;
     int complete = ble_l2cap_reassembler_feed(&transport->l2cap_rx,
@@ -896,6 +911,7 @@ static inline int ble_gatt_transport_poll(
             (void)ble_gatt_server_check_database_version(transport->server);
         }
     }
+
     if (!connected) return 0;
     if (transport->bearer_failed) return -1;
     (void)ble_l2cap_connection_tick(&transport->l2cap, now_ms);
@@ -911,6 +927,7 @@ static inline int ble_gatt_transport_poll(
             ble_gatt_eatt_set_encrypted(&transport->eatt, encrypted);
 #endif
     }
+
     if (transport->server && transport->encryption_key_size)
         ble_gatt_server_set_encryption_key_size(transport->server,
             transport->server->encrypted ? transport->encryption_key_size(
@@ -958,6 +975,7 @@ static inline int ble_gatt_transport_poll(
                     BLE_GATT_CLIENT_TIMEOUT_MS;
             transport->tx_client_request = 0;
         }
+
         return 1;
     }
 
@@ -996,6 +1014,7 @@ static inline int ble_gatt_transport_poll(
         ble_gatt_transport_eatt_poll_tx(transport);
         return received;
     }
+
 #endif
     uint8_t mtu_exchange_pending = transport->client &&
         transport->client->request.pending &&

@@ -54,6 +54,7 @@ static inline void ble_gatt_aes128_expand(
             temp[2] = ble_gatt_aes_sbox[temp[3]];
             temp[3] = ble_gatt_aes_sbox[first];
         }
+
         for (uint8_t i = 0; i < 4; i++) {
             round_keys[generated] = round_keys[generated - 16] ^ temp[i];
             generated++;
@@ -95,6 +96,7 @@ static inline void ble_gatt_aes128_encrypt_expanded(
                 s[3] ^= all ^ ble_gatt_aes_xtime(s[3] ^ first);
             }
         }
+
         const uint8_t *key = round_keys + 16 * round;
         for (uint8_t i = 0; i < 16; i++) {
             state[i] ^= key[i];

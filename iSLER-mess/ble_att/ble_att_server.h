@@ -63,6 +63,7 @@ static inline int ble_att_server_process(
         if (op == 0x1e) return -1;
         goto invalid_pdu;
     }
+
     if (op == 0x1e) { // Handle Value Confirmation
         if (req_len != 1) return -1;
         uint16_t confirmed_handle = server->indication_handle;
@@ -87,8 +88,10 @@ static inline int ble_att_server_process(
                 server->database_hash_update_pending = 0;
             }
         }
+
         return 0;
     }
+
     if (op == 0x02) { // Exchange MTU Request
         if (req_len != 3)
             return ble_gatt_server_error_rsp(op, 0, BLE_GATT_ATT_ERR_INVALID_PDU,
@@ -105,6 +108,7 @@ static inline int ble_att_server_process(
         *rsp_len = 3;
         return 1;
     }
+
     if (op == 0x10 || op == 0x06 || op == 0x08) {
         uint8_t group = op == 0x10;
         uint8_t find = op == 0x06;
@@ -156,6 +160,7 @@ static inline int ble_att_server_process(
             *rsp_len = n;
             return 1;
         }
+
         if (uuid_len != 2 && uuid_len != 16) goto invalid_pdu;
         if (!ble_gatt_server_uuid_from_wire(req + 5, uuid_len, &type)) goto invalid_pdu;
         uint16_t group_type = ble_gatt_uuid_assigned16(&type);
@@ -193,11 +198,13 @@ static inline int ble_att_server_process(
                     error, rsp, rsp_capacity, rsp_len);
                 break;
             }
+
             uint16_t this_len = (uint16_t)(group ? 4 + value_len : 2 + value_len);
             if (!entry_len) {
                 entry_len = this_len;
                 rsp[1] = entry_len;
             }
+
             if (entry_len != this_len || n + this_len > mtu ||
                 n + this_len > rsp_capacity) break;
             ble_gatt_server_put_u16(rsp + n, a->handle);
@@ -207,6 +214,7 @@ static inline int ble_att_server_process(
                 ble_gatt_server_put_u16(rsp + n, end);
                 n += 2;
             }
+
             if (value_len) memcpy(rsp + n, value, value_len);
             n += value_len;
         }
@@ -215,6 +223,7 @@ static inline int ble_att_server_process(
         *rsp_len = n;
         return 1;
     }
+
     if (op == 0x04) { // Find Information Request
         if (req_len != 5) goto invalid_pdu;
         uint16_t first = ble_gatt_server_u16(req + 1);
@@ -236,6 +245,7 @@ static inline int ble_att_server_process(
                 format = f;
                 rsp[1] = f;
             }
+
             if (n + entry > mtu || n + entry > rsp_capacity) break;
             ble_gatt_server_put_u16(rsp + n, a->handle);
             n += 2;
@@ -247,6 +257,7 @@ static inline int ble_att_server_process(
         *rsp_len = n;
         return 1;
     }
+
     if (op == 0x0a || op == 0x0c) { // Read / Read Blob
         if (req_len != (op == 0x0a ? 3 : 5)) goto invalid_pdu;
         uint16_t h = ble_gatt_server_u16(req + 1);
@@ -265,6 +276,7 @@ static inline int ble_att_server_process(
         *rsp_len = value_len + 1;
         return 1;
     }
+
     if (op == 0x0e || op == 0x20) { // Read Multiple / Read Multiple Variable
         uint8_t variable = op == 0x20;
         if (req_len < 5 || ((req_len - 1) & 1)) goto invalid_pdu;
@@ -293,6 +305,7 @@ static inline int ble_att_server_process(
                 n += copy_len;
                 continue;
             }
+
             if (n >= packet_limit) {
                 uint8_t discarded[BLE_GATT_SERVER_VALUE_MAX];
                 uint16_t discarded_len = sizeof(discarded);
@@ -302,6 +315,7 @@ static inline int ble_att_server_process(
                     rsp, rsp_capacity, rsp_len);
                 continue;
             }
+
             uint16_t len = packet_limit - n;
             uint8_t error = ble_gatt_server_read(server, a, 0, rsp + n, &len);
             if (error) return ble_gatt_server_error_rsp(op, h, error,
@@ -313,6 +327,7 @@ static inline int ble_att_server_process(
         *rsp_len = n;
         return 1;
     }
+
     if (op == 0x16) { // Prepare Write Request
         if (req_len < 5) goto invalid_pdu;
         if (rsp_capacity < req_len) return 0;
@@ -337,6 +352,7 @@ static inline int ble_att_server_process(
                 return ble_gatt_server_error_rsp(op, h, error, rsp,
                     rsp_capacity, rsp_len);
         }
+
         ble_gatt_prepared_write *queued =
             &server->prepared[server->prepare_count++];
         queued->handle = h;
@@ -351,6 +367,7 @@ static inline int ble_att_server_process(
         *rsp_len = req_len;
         return 1;
     }
+
     if (op == 0x18) { // Execute Write Request
         if (req_len != 2 || req[1] > 1) goto invalid_pdu;
         if (rsp_capacity < 1) return 0;
@@ -367,11 +384,13 @@ static inline int ble_att_server_process(
         } else {
             ble_gatt_server_prepare_cancel_all(server, 0);
         }
+
         ble_gatt_server_prepare_clear(server);
         rsp[0] = 0x19;
         *rsp_len = 1;
         return 1;
     }
+
     if (op == 0xd2) { // Signed Write Command
         if (req_len < 15 || server->encrypted || !server->signed_verify)
             return 0;
@@ -387,6 +406,7 @@ static inline int ble_att_server_process(
             (void)ble_gatt_server_write(server, a, 0, req + 3, value_len, 2);
         return 0;
     }
+
     if (op == 0x12 || op == 0x52) { // Write Request / Write Command
         uint8_t command = op == 0x52;
         if (!command && rsp_capacity < 1) return 0;
@@ -394,6 +414,7 @@ static inline int ble_att_server_process(
             if (command) return 0;
             goto invalid_pdu;
         }
+
         uint16_t h = ble_gatt_server_u16(req + 1);
         ble_gatt_attribute *a = ble_gatt_server_find(server, h);
         if (!a) {
@@ -401,6 +422,7 @@ static inline int ble_att_server_process(
             return ble_gatt_server_error_rsp(op, h,
                 BLE_GATT_ATT_ERR_INVALID_HANDLE, rsp, rsp_capacity, rsp_len);
         }
+
         uint8_t error = ble_gatt_server_write(server, a, 0, req + 3,
             req_len - 3, command);
         if (command) return 0;
@@ -410,6 +432,7 @@ static inline int ble_att_server_process(
         *rsp_len = 1;
         return 1;
     }
+
     if (op & 0x40) return 0; // ATT commands never receive a response.
     return ble_gatt_server_error_rsp(op, 0,
         BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED, rsp, rsp_capacity, rsp_len);

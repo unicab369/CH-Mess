@@ -409,7 +409,7 @@ static void gap_send_conn_feature_request(void) {
     gap_tx_frame[2] = conn->is_central ? LL_FEATURE_REQ : LL_PERIPHERAL_FEATURE_REQ;
     memset(gap_tx_frame + 3, 0, 8);
     gap_tx_frame[3] = GAP_LL_FEATURES;
-    gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
+    gap_tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
                         ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
     gap_tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
                         GAP_LL_FEATURES_SUBRATING_HOST |
