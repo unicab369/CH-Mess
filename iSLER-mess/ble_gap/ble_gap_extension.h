@@ -871,10 +871,7 @@ int gap_ext_scan_receive(
         if (slot < 0) slot = 0;
         gap_ext_adv_context_clear((uint8_t)slot);
         gap_ext_ctx[slot].active = 1;
-        gap_ext_ctx[slot].identity.addr = fields.identity.addr;
-        gap_ext_ctx[slot].identity.has_adi = fields.identity.has_adi;
-        gap_ext_ctx[slot].identity.adi = fields.identity.adi;
-        gap_ext_ctx[slot].identity.sid = fields.identity.sid;
+        gap_ext_ctx[slot].identity = fields.identity;
         gap_ext_ctx[slot].await_scan_response = fields.mode == 2;
         gap_ext_ctx[slot].rssi = rssi;
     } else {
@@ -883,10 +880,9 @@ int gap_ext_scan_receive(
 
             if (!ctx->active ||
                 (fields.identity.has_adi &&
-                 (!ctx->identity.has_adi ||
-                  ctx->identity.adi != fields.identity.adi)) ||
+                 (!ctx->identity.has_adi || ctx->identity.adi != fields.identity.adi)) ||
                 (fields.identity.addr.has_address && ctx->identity.addr.has_address &&
-                 memcmp(&fields.identity.addr, &ctx->identity.addr, sizeof(fields.identity.addr)))
+                 memcmp(&fields.identity.addr, &ctx->identity.addr, sizeof(fields.identity.addr)) != 0)
             ) continue;
 
             if (slot >= 0) return 0; // No ADI and ambiguous active chains.
