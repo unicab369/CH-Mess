@@ -894,7 +894,7 @@ static void test_extended_advertising_transmit(void) {
     assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
         primary, captured_extended_pdu_lengths[0], -40));
     assert(gap_ext_adv_contexts[0].active &&
-           gap_ext_adv_contexts[0].adi ==
+           gap_ext_adv_contexts[0].identity.adi ==
                ((uint16_t)primary[4] | (uint16_t)primary[5] << 8));
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         auxiliary, captured_extended_pdu_lengths[1], -40));
@@ -2949,7 +2949,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_ext_fields transferred_fields;
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
-        transferred_fields.sid == 6 &&
+        transferred_fields.identity.sid == 6 &&
         transferred_fields.sync.interval == 8 &&
         transferred_fields.sync.access_address == 0x12345678 &&
         transferred_fields.sync.crc_init == 0x123456);
