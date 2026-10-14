@@ -741,10 +741,9 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
                                 conn->schedule.factor : 1;
 
-            if (win_size && win_size <= 8 && interval >= 6 &&
-                interval <= 3200 && win_size < interval &&
-                win_offset <= interval && latency <= 499 &&
-                timeout >= 10 && timeout <= 3200 &&
+            if (win_size && win_size <= 8 &&
+                gap_conn_timing_bounds_valid(interval, interval, latency, timeout) &&
+                win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2 * (uint32_t)(latency + 1) * interval * 10 * factor
             ) {
                 if ((uint16_t)(instant - conn->link.event_counter) >= 0x8000) {
@@ -816,8 +815,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
         uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
         uint16_t timeout = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        if (minimum < 6 || maximum > 3200 || minimum > maximum ||
-            latency > 499 || timeout < 10 || timeout > 3200 ||
+        if (!gap_conn_timing_bounds_valid(minimum, maximum, latency, timeout) ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
                 2 * (uint32_t)(latency + 1) * maximum * 10
         ) return gap_conn_reject_parameters(frame[2], error);
@@ -1786,8 +1784,8 @@ int gap_conn_update(
         conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || interval < 6 || interval > 3200 ||
-        latency > 499 || timeout < 10 || timeout > 3200 ||
+        conn->link_state.terminate_sent ||
+        !gap_conn_timing_bounds_valid(interval, interval, latency, timeout) ||
         (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * interval * 10 * factor)
         return 0;
     conn->new_params.interval = interval;
@@ -1820,8 +1818,8 @@ int gap_conn_request(
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        minimum < 6 || maximum > 3200 || minimum > maximum || latency > 499 ||
-        timeout < 10 || timeout > 3200 || (uint32_t)timeout * 80 <=
+        !gap_conn_timing_bounds_valid(minimum, maximum, latency, timeout) ||
+        (uint32_t)timeout * 80 <=
             2 * (uint32_t)(latency + 1) * maximum * 10 * factor
     ) return 0;
 

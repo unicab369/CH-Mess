@@ -153,10 +153,6 @@ static inline int ble_gatt_client_request(
     return 1;
 }
 
-static inline void ble_gatt_client_put_u16(uint8_t *p, uint16_t value) {
-    ble_att_put_u16(p, value);
-}
-
 static inline int ble_gatt_client_range_valid(uint16_t start, uint16_t end) {
     return start != 0 && start <= end;
 }
@@ -170,7 +166,7 @@ static inline int ble_gatt_client_exchange_mtu(
 ) {
     uint8_t pdu[3] = {0x02};
     if (mtu < 23 || mtu > BLE_GATT_CLIENT_MTU_MAX) return 0;
-    ble_gatt_client_put_u16(pdu + 1, mtu);
+    ble_att_put_u16(pdu + 1, mtu);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x03, now_ms);
 }
 
@@ -185,16 +181,16 @@ static inline int ble_gatt_client_discover_services(
         return 0;
     if (!uuid) {
         pdu[0] = 0x10;
-        ble_gatt_client_put_u16(pdu + 1, start);
-        ble_gatt_client_put_u16(pdu + 3, end);
-        ble_gatt_client_put_u16(pdu + 5, 0x2800);
+        ble_att_put_u16(pdu + 1, start);
+        ble_att_put_u16(pdu + 3, end);
+        ble_att_put_u16(pdu + 5, 0x2800);
         return ble_gatt_client_request(client, pdu, 7, 0x11, now_ms);
     }
 
     pdu[0] = 0x06;
-    ble_gatt_client_put_u16(pdu + 1, start);
-    ble_gatt_client_put_u16(pdu + 3, end);
-    ble_gatt_client_put_u16(pdu + 5, 0x2800);
+    ble_att_put_u16(pdu + 1, start);
+    ble_att_put_u16(pdu + 3, end);
+    ble_att_put_u16(pdu + 5, 0x2800);
     memcpy(pdu + 7, uuid, uuid_len);
     return ble_gatt_client_request(client, pdu, 7 + uuid_len, 0x07, now_ms);
 }
@@ -204,9 +200,9 @@ static inline int ble_gatt_client_discover_included_services(
 ) {
     uint8_t pdu[7] = {0x08};
     if (!ble_gatt_client_range_valid(start, end)) return 0;
-    ble_gatt_client_put_u16(pdu + 1, start);
-    ble_gatt_client_put_u16(pdu + 3, end);
-    ble_gatt_client_put_u16(pdu + 5, 0x2802);
+    ble_att_put_u16(pdu + 1, start);
+    ble_att_put_u16(pdu + 3, end);
+    ble_att_put_u16(pdu + 5, 0x2802);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x09, now_ms);
 }
 
@@ -218,14 +214,14 @@ static inline int ble_gatt_client_discover_characteristics(
     if (!ble_gatt_client_range_valid(start, end) ||
         (uuid && uuid_len != 2 && uuid_len != 16) || (!uuid && uuid_len))
         return 0;
-    ble_gatt_client_put_u16(pdu + 1, start);
-    ble_gatt_client_put_u16(pdu + 3, end);
+    ble_att_put_u16(pdu + 1, start);
+    ble_att_put_u16(pdu + 3, end);
     if (uuid) {
         memcpy(pdu + 5, uuid, uuid_len);
         return ble_gatt_client_request(client, pdu, 5 + uuid_len, 0x09, now_ms);
     }
 
-    ble_gatt_client_put_u16(pdu + 5, 0x2803);
+    ble_att_put_u16(pdu + 5, 0x2803);
     return ble_gatt_client_request(client, pdu, 7, 0x09, now_ms);
 }
 
@@ -235,8 +231,8 @@ static inline int ble_gatt_client_discover_descriptors(
 ) {
     uint8_t pdu[5] = {0x04};
     if (!ble_gatt_client_range_valid(start, end)) return 0;
-    ble_gatt_client_put_u16(pdu + 1, start);
-    ble_gatt_client_put_u16(pdu + 3, end);
+    ble_att_put_u16(pdu + 1, start);
+    ble_att_put_u16(pdu + 3, end);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x05, now_ms);
 }
 
@@ -246,7 +242,7 @@ static inline int ble_gatt_client_read(
 ) {
     uint8_t pdu[3] = {0x0a};
     if (!handle) return 0;
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x0b, now_ms);
 }
 
@@ -262,7 +258,7 @@ static inline int ble_gatt_client_read_long(
     client->operation.handle = handle;
     client->operation.offset = client->operation.value_len = 0;
     uint8_t pdu[3] = {0x0a};
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     if (!ble_gatt_client_request(client, pdu, sizeof(pdu), 0x0b, now_ms)) {
         client->operation.kind = 0;
         return 0;
@@ -277,8 +273,8 @@ static inline int ble_gatt_client_read_blob(
 ) {
     uint8_t pdu[5] = {0x0c};
     if (!handle || offset > BLE_GATT_ATT_VALUE_MAX) return 0;
-    ble_gatt_client_put_u16(pdu + 1, handle);
-    ble_gatt_client_put_u16(pdu + 3, offset);
+    ble_att_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 3, offset);
     return ble_gatt_client_request(client, pdu, sizeof(pdu), 0x0d, now_ms);
 }
 
@@ -291,8 +287,8 @@ static inline int ble_gatt_client_read_by_uuid(
     if (!ble_gatt_client_range_valid(start, end) || !uuid ||
         (uuid_len != 2 && uuid_len != 16))
         return 0;
-    ble_gatt_client_put_u16(pdu + 1, start);
-    ble_gatt_client_put_u16(pdu + 3, end);
+    ble_att_put_u16(pdu + 1, start);
+    ble_att_put_u16(pdu + 3, end);
     memcpy(pdu + 5, uuid, uuid_len);
     return ble_gatt_client_request(client, pdu, 5 + uuid_len, 0x09, now_ms);
 }
@@ -308,7 +304,7 @@ static inline int ble_gatt_client_read_multiple(
     pdu[0] = variable ? 0x20 : 0x0e;
     for (uint8_t i = 0; i < count; i++) {
         if (!handles[i]) return 0;
-        ble_gatt_client_put_u16(pdu + 1 + 2 * i, handles[i]);
+        ble_att_put_u16(pdu + 1 + 2 * i, handles[i]);
     }
     return ble_gatt_client_request(client, pdu, 1 + 2 * count,
                                    variable ? 0x21 : 0x0f, now_ms);
@@ -323,7 +319,7 @@ static inline int ble_gatt_client_write(
         len > BLE_GATT_ATT_VALUE_MAX || len > client->mtu - 3)
         return 0;
     pdu[0] = 0x12;
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
     return ble_gatt_client_request(client, pdu, len + 3, 0x13, now_ms);
 }
@@ -358,7 +354,7 @@ static inline int ble_gatt_client_write_long(
     if (chunk > len) chunk = len;
     client->operation.chunk = chunk;
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {0x16};
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     if (chunk) memcpy(pdu + 5, client->operation.value, chunk);
     if (!ble_gatt_client_request(client, pdu, chunk + 5, 0x17, now_ms)) {
         client->operation.kind = 0;
@@ -381,7 +377,7 @@ static inline int ble_gatt_client_write_command(
         len > client->mtu - 3)
         return 0;
     pdu[0] = 0x52;
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
     return client->send(client->context, pdu, len + 3);
 }
@@ -398,7 +394,7 @@ static inline int ble_gatt_client_write_signed(
         (!value && len) || len > client->mtu - 15)
         return 0;
     pdu[0] = 0xd2;
-    ble_gatt_client_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
     uint16_t signed_len = len + 3;
     if (!client->sign(client->context, pdu, signed_len, pdu + signed_len))
@@ -417,8 +413,8 @@ static inline int ble_gatt_client_prepare_write(
         len > client->mtu - 5)
         return 0;
     pdu[0] = 0x16;
-    ble_gatt_client_put_u16(pdu + 1, handle);
-    ble_gatt_client_put_u16(pdu + 3, offset);
+    ble_att_put_u16(pdu + 1, handle);
+    ble_att_put_u16(pdu + 3, offset);
     if (len) memcpy(pdu + 5, value, len);
     return ble_gatt_client_request(client, pdu, len + 5, 0x17, now_ms);
 }
@@ -437,8 +433,8 @@ static inline int ble_gatt_client_write_long_next(ble_gatt_client *client) {
         uint16_t chunk = client->mtu - 5;
         if (chunk > remaining) chunk = remaining;
         uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {0x16};
-        ble_gatt_client_put_u16(pdu + 1, client->operation.handle);
-        ble_gatt_client_put_u16(pdu + 3, client->operation.offset);
+        ble_att_put_u16(pdu + 1, client->operation.handle);
+        ble_att_put_u16(pdu + 3, client->operation.offset);
         memcpy(pdu + 5, client->operation.value + client->operation.offset, chunk);
         client->operation.chunk = chunk;
         return ble_gatt_client_request(client, pdu, chunk + 5, 0x17,
@@ -881,8 +877,8 @@ static inline int ble_gatt_client_receive(
         if (part_len == client->mtu - 1 &&
             client->operation.value_len < BLE_GATT_CLIENT_VALUE_MAX) {
             uint8_t blob[5] = {0x0c};
-            ble_gatt_client_put_u16(blob + 1, client->operation.handle);
-            ble_gatt_client_put_u16(blob + 3, client->operation.value_len);
+            ble_att_put_u16(blob + 1, client->operation.handle);
+            ble_att_put_u16(blob + 3, client->operation.value_len);
             if (!ble_gatt_client_request(client, blob, sizeof(blob), 0x0d,
                                          client->now_ms)) {
                 client->operation.kind = 0;

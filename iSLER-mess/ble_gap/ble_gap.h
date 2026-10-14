@@ -460,6 +460,13 @@ static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 // Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
 static int gap_access_address_valid(uint32_t address);
 
+static uint8_t gap_conn_timing_bounds_valid(
+    uint16_t minimum, uint16_t maximum, uint16_t latency, uint16_t timeout
+) {
+    return minimum >= 6 && minimum <= maximum && maximum <= 3200 &&
+        latency <= 499 && timeout >= 10 && timeout <= 3200;
+}
+
 static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -467,11 +474,11 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint8_t win_size = frame[21];
     uint8_t hop = frame[35] & 0x1f;
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
-        !win_size || win_size > 8 || interval < 6 || interval > 3200 ||
+        !win_size || win_size > 8 ||
+        !gap_conn_timing_bounds_valid(interval, interval, latency, timeout) ||
         win_size >= interval ||
         ((uint16_t)frame[22] | (uint16_t)frame[23] << 8) > interval ||
-        latency > 499 ||
-        timeout < 10 || timeout > 3200 || hop < 5 || hop > 16 ||
+        hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
             2 * (uint32_t)(latency + 1) * interval)
@@ -521,9 +528,9 @@ static gap_timing_cfg gap_conn_timing = {
 // used by Direct, General, and Selective Connection Establishment.
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!timing || timing->interval < 6 || timing->interval > 3200 ||
-        timing->latency > 499 || timing->supervision_timeout < 10 ||
-        timing->supervision_timeout > 3200 || !timing->attempt_timeout_ms ||
+    if (!timing || !gap_conn_timing_bounds_valid(
+            timing->interval, timing->interval, timing->latency,
+            timing->supervision_timeout) || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || conn->link_state.active ||
         gap_central.active || timing->scan_interval_ms < 3 ||
