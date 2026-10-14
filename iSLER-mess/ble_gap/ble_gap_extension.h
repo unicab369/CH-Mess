@@ -734,13 +734,13 @@ static void gap_ext_report_queue(
 ) {
     if (!identity || !gap_ext_ad_data_valid(data, data_len))
         return;
-    int identity_slot = identity->addr.has_address ?
-        gap_identity_find(identity->addr.address, identity->addr.address_type) : -1;
-
-    if ((identity->addr.has_address && !gap_peer_allowed(
-            identity_slot, identity->addr.address, identity->addr.address_type)) ||
-        (gap_privacy.scan_filter && identity_slot < 0)
-    ) return;
+    int identity_slot = -1;
+    if (identity->addr.has_address) {
+        identity_slot = gap_identity_find(identity->addr.address, identity->addr.address_type);
+        if (!gap_peer_allowed(identity_slot, identity->addr.address, identity->addr.address_type))
+            return;
+    }
+    if (gap_privacy.scan_filter && identity_slot < 0) return;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Limited discovery requires the Limited flag; general accepts either.
