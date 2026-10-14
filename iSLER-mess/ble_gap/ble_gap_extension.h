@@ -799,8 +799,7 @@ static void gap_ext_report_queue(
     }
 
     if (gap_ext_scan_idx.report_count == GAP_EXT_ADV_REPORT_COUNT) {
-        gap_ext_scan_idx.report_head =
-            (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
+        gap_ext_scan_idx.report_head = (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
         gap_ext_scan_idx.report_count--;
     }
     uint8_t slot = (gap_ext_scan_idx.report_head +
@@ -820,10 +819,6 @@ static void gap_ext_report_queue(
     gap_ext_scan_idx.report_count++;
 }
 
-static void gap_ext_adv_context_clear(uint8_t slot) {
-    gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
-}
-
 // Accept an ADV_EXT_IND or a subordinate auxiliary PDU from the radio adapter.
 // Auxiliary packets must be passed in the order indicated by their AuxPtr fields.
 int gap_ext_scan_receive(
@@ -839,7 +834,7 @@ int gap_ext_scan_receive(
         gap_ext_context *ctx = &gap_ext_ctx[i];
 
         if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
-            gap_ext_adv_context_clear(i);
+            gap_wipe(&gap_ext_ctx[i], sizeof(gap_ext_ctx[i]));
     }
 
     int slot = -1;
@@ -879,7 +874,7 @@ int gap_ext_scan_receive(
         }
 
         if (slot < 0) slot = 0;
-        gap_ext_adv_context_clear((uint8_t)slot);
+        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
         gap_ext_ctx[slot].active = 1;
         gap_ext_ctx[slot].identity = fields.identity;
         gap_ext_ctx[slot].await_scan_response = fields.mode == 2;
@@ -913,7 +908,7 @@ int gap_ext_scan_receive(
     }
 
     if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - gap_ext_ctx[slot].data_len) {
-        gap_ext_adv_context_clear((uint8_t)slot);
+        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
         return 0;
     }
 
@@ -925,7 +920,7 @@ int gap_ext_scan_receive(
 
     if (fields.has_aux_ptr) {
         if (fields.aux_offset_zero) {
-            gap_ext_adv_context_clear((uint8_t)slot);
+            gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
             return 1;
         }
         gap_ext_ctx[slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
@@ -943,7 +938,7 @@ int gap_ext_scan_receive(
         gap_ext_ctx[slot].await_scan_response = 0;
 
     if (!gap_ext_ad_data_valid(gap_ext_ctx[slot].data, gap_ext_ctx[slot].data_len)) {
-        gap_ext_adv_context_clear((uint8_t)slot);
+        gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
         return 0;
     }
 
@@ -951,7 +946,7 @@ int gap_ext_scan_receive(
                         gap_ext_ctx[slot].data,
                         gap_ext_ctx[slot].data_len,
                         gap_ext_ctx[slot].rssi);
-    gap_ext_adv_context_clear((uint8_t)slot);
+    gap_wipe(&gap_ext_ctx[slot], sizeof(gap_ext_ctx[slot]));
     return 1;
 }
 
