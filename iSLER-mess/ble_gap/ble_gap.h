@@ -78,6 +78,13 @@ enum {
     ADV_EXT_IND = 0x07
 };
 
+typedef enum {
+    GAP_CONN_MODE_DIRECT,
+    GAP_CONN_MODE_GENERAL,
+    GAP_CONN_MODE_SELECTIVE,
+    GAP_CONN_MODE_AUTO
+} gap_conn_mode;
+
 #ifndef GAP_CONN_DATA_MAX
     #if GAP_EXT_ADV_SUPPORT
         #define GAP_CONN_DATA_MAX 35
@@ -485,7 +492,8 @@ static void gap_wipe(volatile void *data, size_t len) {
 
 
 static struct {
-    uint8_t active, any_peer, selective, auto_connect;
+    uint8_t active;
+    gap_conn_mode mode;
     uint8_t peer_type, peer_address[6], request[36];
     uint32_t deadline_ms;
 } gap_central;

@@ -585,18 +585,9 @@ void gap_scan_stop(void) {
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
     gap_central.active = 0;
-    gap_central.any_peer = 0;
-    gap_central.selective = 0;
-    gap_central.auto_connect = 0;
+    gap_central.mode = GAP_CONN_MODE_DIRECT;
     gap_scanner.generation++;
 }
-
-typedef enum {
-    GAP_CONN_MODE_DIRECT,
-    GAP_CONN_MODE_GENERAL,
-    GAP_CONN_MODE_SELECTIVE,
-    GAP_CONN_MODE_AUTO
-} gap_conn_mode;
 
 static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
@@ -650,12 +641,7 @@ static int gap_conn_procedure_start(
     gap_central.request[34] = 0x1f; // data channels 0 through 36
     gap_central.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
 
-    uint8_t any_peer = mode == GAP_CONN_MODE_GENERAL;
-    uint8_t selective = mode == GAP_CONN_MODE_SELECTIVE;
-    uint8_t auto_connect = mode == GAP_CONN_MODE_AUTO;
-    gap_central.any_peer = any_peer;
-    gap_central.selective = selective;
-    gap_central.auto_connect = auto_connect;
+    gap_central.mode = mode;
     gap_central.peer_type = peer_type;
 
     if (mode != GAP_CONN_MODE_DIRECT)
@@ -663,12 +649,13 @@ static int gap_conn_procedure_start(
 
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
-    if (any_peer || auto_connect) gap_scan_start(active_scan);
+    if (mode == GAP_CONN_MODE_GENERAL || mode == GAP_CONN_MODE_AUTO)
+        gap_scan_start(active_scan);
     else gap_scanner.scanning = 1;
     gap_central.active = 1;
-    gap_central.deadline_ms = auto_connect ? 0 :
+    gap_central.deadline_ms = mode == GAP_CONN_MODE_AUTO ? 0 :
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
-    if (!any_peer && !auto_connect) {
+    if (mode != GAP_CONN_MODE_GENERAL && mode != GAP_CONN_MODE_AUTO) {
         gap_scanner.active = active_scan;
         gap_scan_head = 0;
         gap_scan_count = 0;
