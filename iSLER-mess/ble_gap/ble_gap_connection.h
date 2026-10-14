@@ -5,6 +5,8 @@
 #error "Include gap_connection.h through ble_gap.h"
 #endif
 
+#include "../ble_crypto.h"
+
 enum {
     LL_CONNECTION_UPDATE_IND = 0x00,
     LL_CHANNEL_MAP_IND = 0x01,
@@ -562,12 +564,28 @@ static uint16_t gap_conn_rate_min_interval(void) {
         rx_time = coded_limit;
 
     uint32_t required = 300 + rx_time +
-        ((conn->phy.current.tx == GAP_PHY_CODED ||
-          conn->phy.current.rx == GAP_PHY_CODED) ? 2704 : 328);
+                        ((conn->phy.current.tx == GAP_PHY_CODED ||
+                        conn->phy.current.rx == GAP_PHY_CODED) ? 2704 : 328);
     return (uint16_t)((required + 124) / 125);
 }
 
-static void gap_security_derive(void);
+// Bluetooth e uses little-endian inputs; the AES/CCM hooks use standard byte order.
+static void gap_security_derive(void) {
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    uint8_t key[16], diversifier[16];
+
+    for (uint8_t i = 0; i < 16; i++) {
+        key[i] = gap_security->ltk[15 - i];
+        diversifier[i] = gap_security->skd[15 - i];
+    }
+
+    AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
+    gap_security->tx_counter = 0;
+    gap_security->rx_counter = 0;
+    gap_wipe(key, sizeof(key));
+    gap_wipe(diversifier, sizeof(diversifier));
+    gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
+}
 
 enum {
     GAP_LL_ERROR_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE = 0x11,
@@ -2290,7 +2308,6 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 }
 
 // Link encryption procedures for the active LE connection.
-#include "../ble_crypto.h"
 #include "../micro-ecc/uECC.h"
 
 static void gap_security_nonce(
@@ -2300,24 +2317,6 @@ static void gap_security_nonce(
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));
     nonce[4] |= central ? 0x80 : 0;
     memcpy(nonce + 5, gap_security->iv, 8);
-}
-
-// Bluetooth e uses little-endian inputs; the AES/CCM hooks use standard byte order.
-static void gap_security_derive(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    uint8_t key[16], diversifier[16];
-
-    for (uint8_t i = 0; i < 16; i++) {
-        key[i] = gap_security->ltk[15 - i];
-        diversifier[i] = gap_security->skd[15 - i];
-    }
-
-    AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
-    gap_security->tx_counter = 0;
-    gap_security->rx_counter = 0;
-    gap_wipe(key, sizeof(key));
-    gap_wipe(diversifier, sizeof(diversifier));
-    gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
 }
 
 // Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
