@@ -81,12 +81,12 @@ static struct {
 
 static struct {
     GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
-    GAP_RADIO_BUFFER_ATTR uint8_t scan_response_frame[8 + GAP_ADV_DATA_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
     volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
     uint8_t connect_request_frame[36];
     uint64_t connect_request_ticks;
-} gap_adv_state;
+} adv_evt;
 
 typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
@@ -507,7 +507,7 @@ static void gap_send_data_length(uint8_t opcode) {
 static void gap_privacy_poll(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_privacy.enabled || conn->link_state.active || gap_central.active ||
-        gap_scan.active_pending || gap_adv_state.rx_event ||
+        gap_scan.active_pending || adv_evt.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0)
         return;
     if (gap_rx_armed) {
