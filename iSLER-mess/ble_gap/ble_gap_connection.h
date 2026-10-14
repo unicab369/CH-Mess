@@ -55,7 +55,7 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-static int gap_periodic_sync_transfer_receive(
+static int gap_past_receive(
     const uint8_t *frame,
     uint64_t connection_anchor_ticks, uint16_t connection_event_counter
 );
@@ -1744,7 +1744,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
     case LL_PERIODIC_SYNC_IND:
         if (frame[1] != 35)
             return gap_conn_unknown_response(frame[2]);
-        (void)gap_periodic_sync_transfer_receive(frame,
+        (void)gap_past_receive(frame,
             connection_anchor_ticks,
             connection_event_counter);
         break;
