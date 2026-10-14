@@ -1052,8 +1052,9 @@ static void gap_conn_poll(void) {
          (event == conn->update_instant ||
           event == (uint16_t)(conn->update_instant - 1))))
     ) {
-        int32_t event_difference = (int32_t)event - (int32_t)conn->schedule.base_event;
-        uint8_t subrated = conn->schedule.factor && event_difference % conn->schedule.factor == 0;
+        uint8_t subrated = conn->schedule.factor &&
+            ((int32_t)event - (int32_t)conn->schedule.base_event) %
+                conn->schedule.factor == 0;
 
         if (conn->is_central && conn->subrate.transition) {
             int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;

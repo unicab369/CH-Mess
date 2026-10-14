@@ -60,7 +60,7 @@ static void test_long_operation_deadlines_refresh(void) {
     memset(response + 1, 0x5a, 22);
     assert(ble_gatt_client_receive(&client, response, 23) == 1);
     assert(sent_len == 5 && sent[0] == 0x0c &&
-           client.request.deadline_ms == 50000);
+           client.deadline_ms == 50000);
 
     ble_gatt_client_reset(&client);
     uint8_t value[40] = {0};
@@ -70,7 +70,7 @@ static void test_long_operation_deadlines_refresh(void) {
     memcpy(response, sent, sent_len);
     response[0] = 0x17;
     assert(ble_gatt_client_receive(&client, response, sent_len) == 1);
-    assert(sent[0] == 0x16 && client.request.deadline_ms == 50000);
+    assert(sent[0] == 0x16 && client.deadline_ms == 50000);
 }
 
 static void test_mtu_peer_below_default_keeps_default(void) {

@@ -200,7 +200,7 @@ static void test_client_timeout_terminates_fixed_bearer(void) {
     link.block_tx = 0;
     assert(ble_gatt_transport_poll(&transport, 50000) == 1);
     assert(!transport.tx_len && client.request.pending);
-    assert(client.request.deadline_ms == 80000);
+    assert(client.deadline_ms == 80000);
     assert(ble_gatt_transport_poll(&transport, 79999) == 0);
     assert(ble_gatt_transport_poll(&transport, 80000) == -1);
     assert(client_result_count == 1 &&

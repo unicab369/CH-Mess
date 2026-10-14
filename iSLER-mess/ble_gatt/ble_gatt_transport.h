@@ -933,7 +933,7 @@ static inline int ble_gatt_transport_poll(
                     bearer->client_tx_pending = 0;
                     if (slot >= 0 && bearer->client_enabled &&
                         bearer->client.request.pending)
-                        bearer->client.request.deadline_ms = now_ms +
+                        bearer->client.deadline_ms = now_ms +
                             BLE_GATT_CLIENT_TIMEOUT_MS;
                 }
             }
@@ -954,21 +954,21 @@ static inline int ble_gatt_transport_poll(
             transport->tx_len = transport->tx_offset = 0;
             if (transport->tx_client_request && transport->client &&
                 transport->client->request.pending)
-                transport->client->request.deadline_ms = now_ms +
+                transport->client->deadline_ms = now_ms +
                     BLE_GATT_CLIENT_TIMEOUT_MS;
             transport->tx_client_request = 0;
         }
         return 1;
     }
 
-    if (transport->client) transport->client->request.now_ms = now_ms;
+    if (transport->client) transport->client->now_ms = now_ms;
 #if BLE_GATT_ENABLE_EATT
     if (transport->eatt_enabled)
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             ble_gatt_transport_eatt_context *bearer =
                 &transport->eatt_contexts[i];
             if (!bearer->cid || !bearer->client_enabled) continue;
-            bearer->client.request.now_ms = now_ms;
+            bearer->client.now_ms = now_ms;
         }
 #endif
     int received = ble_gatt_transport_receive(transport);
