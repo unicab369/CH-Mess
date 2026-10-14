@@ -491,6 +491,11 @@ static void gap_wipe(volatile void *data, size_t len) {
     while (len--) *bytes++ = 0;
 }
 
+static void gap_write_u16_le(uint8_t *dst, uint16_t value) {
+    dst[0] = (uint8_t)value;
+    dst[1] = (uint8_t)(value >> 8);
+}
+
 
 static struct {
     uint8_t active;

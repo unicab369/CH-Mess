@@ -106,14 +106,19 @@ static inline void ble_gatt_client_set_signer(
 
 static inline void ble_gatt_client_reset(ble_gatt_client *client) {
     if (!client) return;
-    uint8_t cancelled = client->request.pending;
     client->mtu = client->local_mtu = 23;
     client->bearer_failed = 0;
     client->mtu_exchanged = 0;
-    memset(&client->request, 0, sizeof(client->request));
+    client->request.opcode = 0;
+    client->request.expected_opcode = 0;
+    client->request.len = 0;
     memset(&client->operation, 0, sizeof(client->operation));
-    if (cancelled && client->result)
-        client->result(client->context, BLE_GATT_CLIENT_DISCONNECTED, NULL, 0);
+    if (client->request.pending) {
+        client->request.pending = 0;
+        if (client->result)
+            client->result(client->context, BLE_GATT_CLIENT_DISCONNECTED,
+                           NULL, 0);
+    }
 }
 
 // Begin one ATT request. Responses are delivered intact to `result`; helpers

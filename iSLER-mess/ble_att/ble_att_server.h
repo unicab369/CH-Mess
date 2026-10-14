@@ -167,10 +167,9 @@ static inline int ble_att_server_process(
                 BLE_GATT_ATT_ERR_UNSUPPORTED_GROUP_TYPE, rsp,
                 rsp_capacity, rsp_len);
         if (rsp_capacity < 2) return 0;
-        uint8_t response_op = group ? 0x11 : 0x09;
         uint16_t n = 2;
         uint8_t entry_len = 0;
-        rsp[0] = response_op;
+        rsp[0] = group ? 0x11 : 0x09;
         for (uint16_t i = 0; i < server->count; i++) {
             ble_gatt_attribute *a = &server->attributes[i];
             if (a->handle < first || a->handle > last) continue;

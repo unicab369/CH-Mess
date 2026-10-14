@@ -370,14 +370,10 @@ static void gap_send_conn_update(void) {
     gap_tx_frame[3] = conn->update_window_size;
     gap_tx_frame[4] = 0;
     gap_tx_frame[5] = 0; // WinOffset
-    gap_tx_frame[6] = (uint8_t)conn->new_params.interval;
-    gap_tx_frame[7] = (uint8_t)(conn->new_params.interval >> 8);
-    gap_tx_frame[8] = (uint8_t)conn->new_params.latency;
-    gap_tx_frame[9] = (uint8_t)(conn->new_params.latency >> 8);
-    gap_tx_frame[10] = (uint8_t)conn->new_params.supervision_timeout;
-    gap_tx_frame[11] = (uint8_t)(conn->new_params.supervision_timeout >> 8);
-    gap_tx_frame[12] = (uint8_t)conn->update_instant;
-    gap_tx_frame[13] = (uint8_t)(conn->update_instant >> 8);
+    gap_write_u16_le(gap_tx_frame + 6, conn->new_params.interval);
+    gap_write_u16_le(gap_tx_frame + 8, conn->new_params.latency);
+    gap_write_u16_le(gap_tx_frame + 10, conn->new_params.supervision_timeout);
+    gap_write_u16_le(gap_tx_frame + 12, conn->update_instant);
 }
 
 static uint8_t gap_class_valid(const uint8_t *class) {
@@ -436,16 +432,11 @@ static void gap_send_subrate_update(void) {
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 11;
     gap_tx_frame[2] = LL_SUBRATE_IND;
-    gap_tx_frame[3] = (uint8_t)conn->next_schedule.factor;
-    gap_tx_frame[4] = (uint8_t)(conn->next_schedule.factor >> 8);
-    gap_tx_frame[5] = (uint8_t)conn->next_schedule.base_event;
-    gap_tx_frame[6] = (uint8_t)(conn->next_schedule.base_event >> 8);
-    gap_tx_frame[7] = (uint8_t)conn->next_schedule.latency;
-    gap_tx_frame[8] = (uint8_t)(conn->next_schedule.latency >> 8);
-    gap_tx_frame[9] = (uint8_t)conn->next_schedule.continuation;
-    gap_tx_frame[10] = (uint8_t)(conn->next_schedule.continuation >> 8);
-    gap_tx_frame[11] = (uint8_t)conn->next_schedule.timeout;
-    gap_tx_frame[12] = (uint8_t)(conn->next_schedule.timeout >> 8);
+    gap_write_u16_le(gap_tx_frame + 3, conn->next_schedule.factor);
+    gap_write_u16_le(gap_tx_frame + 5, conn->next_schedule.base_event);
+    gap_write_u16_le(gap_tx_frame + 7, conn->next_schedule.latency);
+    gap_write_u16_le(gap_tx_frame + 9, conn->next_schedule.continuation);
+    gap_write_u16_le(gap_tx_frame + 11, conn->next_schedule.timeout);
 }
 
 static void gap_send_rate_ind(void) {
@@ -475,8 +466,7 @@ static void gap_send_rate_ind(void) {
         conn->next_schedule.timeout
     };
     for (uint8_t i = 0; i < 7; i++) {
-        gap_tx_frame[3 + i * 2] = (uint8_t)values[i];
-        gap_tx_frame[4 + i * 2] = (uint8_t)(values[i] >> 8);
+        gap_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
     }
 }
 
@@ -494,14 +484,10 @@ static void gap_send_data_length(uint8_t opcode) {
     gap_tx_frame[0] = 3;
     gap_tx_frame[1] = 9;
     gap_tx_frame[2] = opcode;
-    gap_tx_frame[3] = (uint8_t)conn->data_capacity;
-    gap_tx_frame[4] = (uint8_t)(conn->data_capacity >> 8);
-    gap_tx_frame[5] = (uint8_t)((conn->data_capacity + 14) * 8);
-    gap_tx_frame[6] = (uint8_t)(((conn->data_capacity + 14) * 8) >> 8);
-    gap_tx_frame[7] = (uint8_t)conn->local_tx_octets;
-    gap_tx_frame[8] = (uint8_t)(conn->local_tx_octets >> 8);
-    gap_tx_frame[9] = (uint8_t)((conn->local_tx_octets + 14) * 8);
-    gap_tx_frame[10] = (uint8_t)(((conn->local_tx_octets + 14) * 8) >> 8);
+    gap_write_u16_le(gap_tx_frame + 3, conn->data_capacity);
+    gap_write_u16_le(gap_tx_frame + 5, (conn->data_capacity + 14) * 8);
+    gap_write_u16_le(gap_tx_frame + 7, conn->local_tx_octets);
+    gap_write_u16_le(gap_tx_frame + 9, (conn->local_tx_octets + 14) * 8);
 }
 
 // Rotate between radio exchanges; preserve addresses throughout initiation,
@@ -1691,8 +1677,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
                 gap_tx_frame[2] = LL_PHY_UPDATE_IND;
                 gap_tx_frame[3] = tx;
                 gap_tx_frame[4] = rx;
-                gap_tx_frame[5] = (uint8_t)conn->phy.instant;
-                gap_tx_frame[6] = (uint8_t)(conn->phy.instant >> 8);
+                gap_write_u16_le(gap_tx_frame + 5, conn->phy.instant);
             }
         } else {
             // The Central's request wins simultaneous requests.
@@ -2388,8 +2373,7 @@ static void gap_send_security(void) {
         gap_tx_frame[1] = 23;
         gap_tx_frame[2] = LL_ENC_REQ;
         memcpy(gap_tx_frame + 3, gap_security->random, 8);
-        gap_tx_frame[11] = (uint8_t)gap_security->ediv;
-        gap_tx_frame[12] = (uint8_t)(gap_security->ediv >> 8);
+        gap_write_u16_le(gap_tx_frame + 11, gap_security->ediv);
         memcpy(gap_tx_frame + 13, gap_security->skd, 8);
         memcpy(gap_tx_frame + 21, gap_security->iv, 4);
         gap_security->phase = GAP_ENC_WAIT_RSP;
