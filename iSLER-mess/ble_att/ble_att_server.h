@@ -29,6 +29,19 @@ static int ble_gatt_server_uuid_from_wire(
     return 1;
 }
 
+static uint16_t ble_att_server_group_end(
+    const ble_gatt_server *server, uint16_t index, uint16_t handle
+) {
+    for (uint16_t i = index + 1; i < server->count; i++) {
+        if (server->attributes[i].flags &
+            (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
+             BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE))
+            break;
+        handle = server->attributes[i].handle;
+    }
+    return handle;
+}
+
 // =============================================================================
 // ATT request parsing and response encoding
 // =============================================================================
@@ -62,11 +75,12 @@ static inline int ble_att_server_process(
         if (service_changed_confirmed) {
             ble_gatt_uuid changed_uuid = {2, {0x05, 0x2a}};
             service_changed_confirmed = 0;
-            for (uint16_t i = 0; i < server->count; i++)
+            for (uint16_t i = 0; i < server->count; i++) {
                 if (ble_gatt_uuid_equal(&server->attributes[i].uuid,
                                         &changed_uuid) &&
                     server->attributes[i].handle == confirmed_handle)
                     service_changed_confirmed = 1;
+            }
             if (service_changed_confirmed && server->database_hash_store) {
                 server->database_hash_store(server->database_hash_context,
                                             server->database_hash);
@@ -99,9 +113,8 @@ static inline int ble_att_server_process(
             (!group && !find && req_len != 7 && req_len != 21)) goto invalid_pdu;
         uint16_t first = ble_gatt_server_u16(req + 1);
         uint16_t last = ble_gatt_server_u16(req + 3);
-        uint8_t uuid_len = group ? (uint8_t)(req_len - 5) :
-                           find ? (uint8_t)(req_len - 7) :
-                           (uint8_t)(req_len - 5);
+        uint8_t uuid_len = (uint8_t)(req_len - 5);
+        if (find) uuid_len = (uint8_t)(req_len - 7);
         if (first == 0 || first > last)
             return ble_gatt_server_error_rsp(op, first, 0x01, rsp,
                                               rsp_capacity, rsp_len);
@@ -129,22 +142,19 @@ static inline int ble_att_server_process(
                     value_len != sought_len ||
                     (sought_len && memcmp(value, sought_value, sought_len))) continue;
                 if (n + 4 > rsp_capacity || n + 4 > mtu) break;
-                ble_gatt_server_put_u16(rsp + n, a->handle); n += 2;
+                ble_gatt_server_put_u16(rsp + n, a->handle);
+                n += 2;
                 uint16_t end = a->handle;
                 uint16_t type16 = ble_gatt_server_u16(type.value);
-                if (type16 == 0x2800 || type16 == 0x2801) {
-                    for (uint16_t j = i + 1; j < server->count; j++) {
-                        if (server->attributes[j].flags &
-                            (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
-                             BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)) break;
-                        end = server->attributes[j].handle;
-                    }
-                }
-                ble_gatt_server_put_u16(rsp + n, end); n += 2;
+                if (type16 == 0x2800 || type16 == 0x2801)
+                    end = ble_att_server_group_end(server, i, end);
+                ble_gatt_server_put_u16(rsp + n, end);
+                n += 2;
             }
             if (n == 1) return ble_gatt_server_error_rsp(op, first,
                 BLE_GATT_ATT_ERR_ATTRIBUTE_NOT_FOUND, rsp, rsp_capacity, rsp_len);
-            *rsp_len = n; return 1;
+            *rsp_len = n;
+            return 1;
         }
         if (uuid_len != 2 && uuid_len != 16) goto invalid_pdu;
         if (!ble_gatt_server_uuid_from_wire(req + 5, uuid_len, &type)) goto invalid_pdu;
@@ -191,16 +201,12 @@ static inline int ble_att_server_process(
             }
             if (entry_len != this_len || n + this_len > mtu ||
                 n + this_len > rsp_capacity) break;
-            ble_gatt_server_put_u16(rsp + n, a->handle); n += 2;
+            ble_gatt_server_put_u16(rsp + n, a->handle);
+            n += 2;
             if (group) {
-                uint16_t end = a->handle;
-                for (uint16_t j = i + 1; j < server->count; j++) {
-                    if (server->attributes[j].flags &
-                        (BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE |
-                         BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE)) break;
-                    end = server->attributes[j].handle;
-                }
-                ble_gatt_server_put_u16(rsp + n, end); n += 2;
+                uint16_t end = ble_att_server_group_end(server, i, a->handle);
+                ble_gatt_server_put_u16(rsp + n, end);
+                n += 2;
             }
             if (value_len) memcpy(rsp + n, value, value_len);
             n += value_len;
@@ -212,10 +218,11 @@ static inline int ble_att_server_process(
     }
     if (op == 0x04) { // Find Information Request
         if (req_len != 5) goto invalid_pdu;
-        uint16_t first = ble_gatt_server_u16(req + 1),
-                 last = ble_gatt_server_u16(req + 3);
-        if (!first || first > last) return ble_gatt_server_error_rsp(op, first, 0x01,
-            rsp, rsp_capacity, rsp_len);
+        uint16_t first = ble_gatt_server_u16(req + 1);
+        uint16_t last = ble_gatt_server_u16(req + 3);
+        if (!first || first > last)
+            return ble_gatt_server_error_rsp(op, first, 0x01,
+                rsp, rsp_capacity, rsp_len);
         if (rsp_capacity < 2) return 0;
         uint8_t format = 0;
         uint16_t n = 2;
@@ -231,8 +238,10 @@ static inline int ble_att_server_process(
                 rsp[1] = f;
             }
             if (n + entry > mtu || n + entry > rsp_capacity) break;
-            ble_gatt_server_put_u16(rsp + n, a->handle); n += 2;
-            memcpy(rsp + n, a->uuid.value, a->uuid.len); n += a->uuid.len;
+            ble_gatt_server_put_u16(rsp + n, a->handle);
+            n += 2;
+            memcpy(rsp + n, a->uuid.value, a->uuid.len);
+            n += a->uuid.len;
         }
         if (n == 2) return ble_gatt_server_error_rsp(op, first,
             BLE_GATT_ATT_ERR_ATTRIBUTE_NOT_FOUND, rsp, rsp_capacity, rsp_len);
@@ -249,9 +258,10 @@ static inline int ble_att_server_process(
         if (rsp_capacity < 1) return 0;
         uint16_t value_len = rsp_capacity - 1;
         if (value_len > mtu - 1) value_len = mtu - 1;
-        uint8_t error = ble_gatt_server_read(server, a, offset, rsp + 1, &value_len);
+        uint8_t error = ble_gatt_server_read(
+            server, a, offset, rsp + 1, &value_len);
         if (error) return ble_gatt_server_error_rsp(op, h, error, rsp,
-                                                    rsp_capacity, rsp_len);
+            rsp_capacity, rsp_len);
         rsp[0] = op == 0x0a ? 0x0b : 0x0d;
         *rsp_len = value_len + 1;
         return 1;
@@ -272,7 +282,7 @@ static inline int ble_att_server_process(
                 uint8_t value[BLE_GATT_SERVER_VALUE_MAX];
                 uint16_t value_len = sizeof(value);
                 uint8_t error = ble_gatt_server_read(server, a, 0, value,
-                                                      &value_len);
+                    &value_len);
                 if (error) return ble_gatt_server_error_rsp(op, h, error,
                     rsp, rsp_capacity, rsp_len);
                 if (n >= packet_limit || packet_limit - n < 2) continue;
@@ -296,7 +306,7 @@ static inline int ble_att_server_process(
             uint16_t len = packet_limit - n;
             uint8_t error = ble_gatt_server_read(server, a, 0, rsp + n, &len);
             if (error) return ble_gatt_server_error_rsp(op, h, error,
-                                                         rsp, rsp_capacity, rsp_len);
+                rsp, rsp_capacity, rsp_len);
             n += len;
         }
         if (n == 1) return ble_gatt_server_error_rsp(op, 0,
@@ -313,10 +323,10 @@ static inline int ble_att_server_process(
         ble_gatt_attribute *a = ble_gatt_server_find(server, h);
         if (!a) return ble_gatt_server_error_rsp(op, h,
             BLE_GATT_ATT_ERR_INVALID_HANDLE, rsp, rsp_capacity, rsp_len);
-        uint8_t error = ble_gatt_server_prepare_validate(server, a, offset,
-                                                          value_len, 0);
+        uint8_t error = ble_gatt_server_prepare_validate(
+            server, a, offset, value_len, 0);
         if (error) return ble_gatt_server_error_rsp(op, h, error, rsp,
-                                                     rsp_capacity, rsp_len);
+            rsp_capacity, rsp_len);
         if (server->prepare_count >= BLE_GATT_SERVER_PREPARE_QUEUE_SIZE ||
             value_len > BLE_GATT_SERVER_PREPARE_BYTES - server->prepare_used)
             return ble_gatt_server_error_rsp(op, h,
@@ -326,7 +336,7 @@ static inline int ble_att_server_process(
             error = a->prepare(a->context, offset, req + 5, value_len);
             if (error)
                 return ble_gatt_server_error_rsp(op, h, error, rsp,
-                                                  rsp_capacity, rsp_len);
+                    rsp_capacity, rsp_len);
         }
         ble_gatt_prepared_write *queued =
             &server->prepared[server->prepare_count++];
@@ -348,12 +358,12 @@ static inline int ble_att_server_process(
         if (req[1]) {
             uint16_t error_handle = 0;
             uint8_t error = ble_gatt_server_prepare_execute(server,
-                                                            &error_handle);
+                &error_handle);
             if (error) {
                 ble_gatt_server_prepare_cancel_all(server, 0);
                 ble_gatt_server_prepare_clear(server);
                 return ble_gatt_server_error_rsp(op, error_handle, error, rsp,
-                                                  rsp_capacity, rsp_len);
+                    rsp_capacity, rsp_len);
             }
         } else {
             ble_gatt_server_prepare_cancel_all(server, 0);
@@ -374,7 +384,7 @@ static inline int ble_att_server_process(
         uint16_t value_len = req_len - 15;
         uint16_t signed_len = req_len - 12;
         if (server->signed_verify(server->signed_context, req, signed_len,
-                                  req + signed_len))
+                req + signed_len))
             (void)ble_gatt_server_write(server, a, 0, req + 3, value_len, 2);
         return 0;
     }
@@ -393,10 +403,10 @@ static inline int ble_att_server_process(
                 BLE_GATT_ATT_ERR_INVALID_HANDLE, rsp, rsp_capacity, rsp_len);
         }
         uint8_t error = ble_gatt_server_write(server, a, 0, req + 3,
-                                                req_len - 3, command);
+            req_len - 3, command);
         if (command) return 0;
         if (error) return ble_gatt_server_error_rsp(op, h, error, rsp,
-                                                    rsp_capacity, rsp_len);
+            rsp_capacity, rsp_len);
         rsp[0] = 0x13;
         *rsp_len = 1;
         return 1;
@@ -407,7 +417,7 @@ static inline int ble_att_server_process(
 
 invalid_pdu:
     return ble_gatt_server_error_rsp(op, 0, BLE_GATT_ATT_ERR_INVALID_PDU,
-                                      rsp, rsp_capacity, rsp_len);
+        rsp, rsp_capacity, rsp_len);
 }
 
 #endif

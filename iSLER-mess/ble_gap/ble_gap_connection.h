@@ -247,7 +247,9 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     }
 
     // Switch rates at the shared Instant, including events skipped by polling.
-    if (conn->pending.phy_update && conn->phy.instant == conn->link.event_counter ) {
+    if (conn->pending.phy_update &&
+        conn->phy.instant == conn->link.event_counter
+    ) {
         if (conn->is_central && conn->link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 5 &&
             gap_tx_frame[2] == LL_PHY_UPDATE_IND
