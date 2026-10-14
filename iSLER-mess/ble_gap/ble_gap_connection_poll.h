@@ -46,7 +46,7 @@ static void gap_conn_send_queued(void) {
             conn->pending.params = 1;
             conn->pending.params_local = 1;
             gap_tx_frame[1] = 24;
-            gap_tx_frame[2] = 0x0f; // LL_CONNECTION_PARAM_REQ
+            gap_tx_frame[2] = LL_CONNECTION_PARAM_REQ;
 
             uint16_t values[] = {
                 conn->params_min,
@@ -67,7 +67,7 @@ static void gap_conn_send_queued(void) {
     }
 
     if (conn->queue.length)
-        gap_send_data_length(0x14);
+        gap_send_data_length(LL_LENGTH_REQ);
 
     if (conn->queue.phy_queued && !gap_tx_frame[1]) {
         // Encode local preferences once earlier TX has been acknowledged.
@@ -77,7 +77,7 @@ static void gap_conn_send_queued(void) {
 
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 3;
-        gap_tx_frame[2] = 0x16; // LL_PHY_REQ
+        gap_tx_frame[2] = LL_PHY_REQ;
         gap_tx_frame[3] = conn->phy.preferred.tx;
         gap_tx_frame[4] = conn->phy.preferred.rx;
     }
@@ -106,7 +106,7 @@ static void gap_conn_send_queued(void) {
 
                 gap_tx_frame[0] = 0x03;
                 gap_tx_frame[1] = 11;
-                gap_tx_frame[2] = 0x26; // LL_SUBRATE_REQ.
+                gap_tx_frame[2] = LL_SUBRATE_REQ;
 
                 const uint16_t values[5] = {
                     conn->subrate.request_min,
@@ -142,7 +142,7 @@ static void gap_conn_send_queued(void) {
 
             gap_tx_frame[0] = 0x03;
             gap_tx_frame[1] = 11;
-            gap_tx_frame[2] = 0x2b; // LL_FEATURE_EXT_REQ.
+            gap_tx_frame[2] = LL_FEATURE_EXT_REQ;
             gap_tx_frame[3] = 1;    // MaxPage.
             gap_tx_frame[4] = 1;    // PageNumber.
             memset(gap_tx_frame + 5, 0, 8);
@@ -159,7 +159,7 @@ static void gap_conn_send_queued(void) {
         else if (!conn->is_central && conn->rate.request_queued) {
             gap_tx_frame[0] = 0x03;
             gap_tx_frame[1] = 27;
-            gap_tx_frame[2] = 0x3e; // LL_CONNECTION_RATE_REQ.
+            gap_tx_frame[2] = LL_CONNECTION_RATE_REQ;
 
             const uint16_t values[9] = {
                 conn->rate.interval_min,
@@ -203,7 +203,7 @@ static void gap_conn_send_queued(void) {
 
             gap_tx_frame[0] = 0x03;
             gap_tx_frame[1] = 4;
-            gap_tx_frame[2] = 0x28; // LL_CHANNEL_REPORTING_IND.
+            gap_tx_frame[2] = LL_CHANNEL_REPORTING_IND;
             gap_tx_frame[3] = conn->channel.enabled;
             gap_tx_frame[4] = conn->channel.min_spacing_200ms;
             gap_tx_frame[5] = conn->channel.max_delay_200ms;
@@ -266,15 +266,15 @@ void gap_hw_received(void) {
         if (frame[1] &&
             ((gap_security->rx_enabled &&
               !(duplicate && gap_security->phase == GAP_ENC_WAIT_FINAL &&
-                frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == 0x05)) ||
+                frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == LL_START_ENC_REQ)) ||
              (duplicate && gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE &&
               frame[1] == 5 && (frame[0] & 3) == 3))
         ) {
-            uint64_t counter = gap_security->rx_counter;
+            uint64_t cnt = gap_security->rx_counter;
 
-            if (duplicate && counter) counter--;
+            if (duplicate && cnt) cnt--;
             if (frame[1] <= 4 || frame[1] > conn->data_capacity + 4 ||
-                counter >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
+                cnt >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
             ) {
                 gap_security->status = 0x3d;
                 gap_conn_end();
@@ -286,7 +286,7 @@ void gap_hw_received(void) {
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
             uint8_t nonce[13];
-            gap_security_nonce(nonce, counter, !conn->is_central);
+            gap_security_nonce(nonce, cnt, !conn->is_central);
 
             if (!GAP_CCM_DECRYPT(gap_security->session_key, nonce, frame[0] & 0xe3,
                     plain + 2, plain[1], frame + 2 + plain[1])
@@ -299,6 +299,7 @@ void gap_hw_received(void) {
             frame = plain;
             authenticated = 1;
         }
+
         // Extended LL control PDUs (including PAST) can exceed 27 bytes after
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
         if (frame[1] > conn->data_length.rx_octets) {
@@ -333,7 +334,7 @@ void gap_hw_received(void) {
             if (conn->is_central && conn->channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
-                gap_tx_frame[2] == 0x28
+                gap_tx_frame[2] == LL_CHANNEL_REPORTING_IND
             ) {
                 conn->channel.report_pending = 0;
                 conn->connection_status = 0;
@@ -346,7 +347,7 @@ void gap_hw_received(void) {
             if (conn->is_central && conn->subrate.pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 11 &&
-                gap_tx_frame[2] == 0x27
+                gap_tx_frame[2] == LL_SUBRATE_IND
             ) {
                 conn->schedule.factor = conn->next_schedule.factor;
                 conn->schedule.base_event = conn->next_schedule.base_event;
@@ -362,7 +363,7 @@ void gap_hw_received(void) {
             gap_security->tx_sealed = 0;
 
             if (conn->link_state.terminate_sent) {
-                if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != 0x02) {
+                if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != LL_TERMINATE_IND) {
                     gap_conn_end();
                     gap_conn_slot = previous_slot;
                     return;
@@ -388,28 +389,33 @@ void gap_hw_received(void) {
             gap_security->phase != GAP_ENC_PAUSE_QUEUED
         ) {
             uint8_t opcode = llid == 3 ? frame[2] : 0xff;
-            uint8_t allowed = opcode == 0x02;
+            uint8_t allowed = opcode == LL_TERMINATE_IND;
             switch (gap_security->phase) {
                 case GAP_ENC_WAIT_RSP:
-                    allowed |= opcode == 0x04; // Fall through for rejection.
+                    allowed |= opcode == LL_ENC_RSP; // Fall through for rejection.
                 case GAP_ENC_WAIT_START:
-                    allowed |= opcode == 0x07 || opcode == 0x0d || opcode == 0x11 ||
-                        (gap_security->phase == GAP_ENC_WAIT_START && opcode == 0x05);
+                    allowed |= opcode == LL_UNKNOWN_RSP ||
+                        opcode == LL_REJECT_IND || opcode == LL_REJECT_EXT_IND ||
+                        (gap_security->phase == GAP_ENC_WAIT_START && opcode == LL_START_ENC_REQ);
                     break;
 
                 case GAP_ENC_KEY_REQUEST:
-                    allowed |= opcode == 0x07; break;
+                    allowed |= opcode == LL_UNKNOWN_RSP;
+                    break;
 
                 case GAP_ENC_WAIT_FINAL:
                 case GAP_ENC_PERIPHERAL_START:
-                    allowed |= opcode == 0x06; break;
+                    allowed |= opcode == LL_START_ENC_RSP;
+                    break;
 
                 case GAP_ENC_WAIT_PAUSE:
                 case GAP_ENC_PERIPHERAL_PAUSE:
-                    allowed |= opcode == 0x0b; break;
+                    allowed |= opcode == LL_PAUSE_ENC_RSP;
+                    break;
 
                 case GAP_ENC_PERIPHERAL_RESTART:
-                    allowed |= opcode == 0x03; break;
+                    allowed |= opcode == LL_ENC_REQ;
+                    break;
                 default: break;
             }
 
@@ -451,7 +457,7 @@ void gap_hw_received(void) {
                 if (gap_tx_frame[1] == 0 && conn->link_state.terminate_queued) {
                     gap_tx_frame[0] = 0x03;
                     gap_tx_frame[1] = 2;
-                    gap_tx_frame[2] = 0x02; // LL_TERMINATE_IND
+                    gap_tx_frame[2] = LL_TERMINATE_IND;
                     gap_tx_frame[3] = conn->link.local_terminate_reason;
                     conn->link_state.terminate_queued = 0;
                     conn->link_state.terminate_sent = 1;
@@ -494,7 +500,7 @@ void gap_hw_received(void) {
 
                         gap_tx_frame[0] = 0x03;
                         gap_tx_frame[1] = 11;
-                        gap_tx_frame[2] = 0x29; // LL_CHANNEL_STATUS_IND.
+                        gap_tx_frame[2] = LL_CHANNEL_STATUS_IND;
                         memcpy(gap_tx_frame + 3, conn->channel.local_classification,
                                GAP_CHANNEL_CLASSIFICATION_BYTES);
                     }
@@ -1029,7 +1035,7 @@ static void gap_conn_poll(void) {
           event == (uint16_t)(conn->next_schedule.instant - 1) ||
           (conn->is_central && conn->link.tx_pending &&
            (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
-           gap_tx_frame[2] == 0x3f) ||
+           gap_tx_frame[2] == LL_CONNECTION_RATE_IND) ||
           (!conn->is_central && conn->rate.ack_waiting &&
            (uint16_t)(conn->next_schedule.instant - event) < 0x8000))) ||
         (conn->pending.timing_update &&

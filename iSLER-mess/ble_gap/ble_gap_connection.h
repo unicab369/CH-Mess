@@ -5,6 +5,56 @@
 #error "Include gap_connection.h through ble_gap.h"
 #endif
 
+enum {
+    LL_CONNECTION_UPDATE_IND = 0x00,
+    LL_CHANNEL_MAP_IND = 0x01,
+    LL_TERMINATE_IND = 0x02,
+    LL_ENC_REQ = 0x03,
+    LL_ENC_RSP = 0x04,
+    LL_START_ENC_REQ = 0x05,
+    LL_START_ENC_RSP = 0x06,
+    LL_UNKNOWN_RSP = 0x07,
+    LL_FEATURE_REQ = 0x08,
+    LL_FEATURE_RSP = 0x09,
+    LL_PAUSE_ENC_REQ = 0x0a,
+    LL_PAUSE_ENC_RSP = 0x0b,
+    LL_VERSION_IND = 0x0c,
+    LL_REJECT_IND = 0x0d,
+    LL_PERIPHERAL_FEATURE_REQ = 0x0e,
+    LL_CONNECTION_PARAM_REQ = 0x0f,
+    LL_CONNECTION_PARAM_RSP = 0x10,
+    LL_REJECT_EXT_IND = 0x11,
+    LL_PING_REQ = 0x12,
+    LL_PING_RSP = 0x13,
+    LL_LENGTH_REQ = 0x14,
+    LL_LENGTH_RSP = 0x15,
+    LL_PHY_REQ = 0x16,
+    LL_PHY_RSP = 0x17,
+    LL_PHY_UPDATE_IND = 0x18,
+    LL_MIN_USED_CHANNELS_IND = 0x19,
+    LL_CTE_REQ = 0x1a,
+    LL_CTE_RSP = 0x1b,
+    LL_PERIODIC_SYNC_IND = 0x1c,
+    LL_CLOCK_ACCURACY_REQ = 0x1d,
+    LL_CLOCK_ACCURACY_RSP = 0x1e,
+    LL_CIS_REQ = 0x1f,
+    LL_CIS_RSP = 0x20,
+    LL_CIS_IND = 0x21,
+    LL_CIS_TERMINATE_IND = 0x22,
+    LL_POWER_CONTROL_REQ = 0x23,
+    LL_POWER_CONTROL_RSP = 0x24,
+    LL_POWER_CHANGE_IND = 0x25,
+    LL_SUBRATE_REQ = 0x26,
+    LL_SUBRATE_IND = 0x27,
+    LL_CHANNEL_REPORTING_IND = 0x28,
+    LL_CHANNEL_STATUS_IND = 0x29,
+    LL_PERIODIC_SYNC_WR_IND = 0x2a,
+    LL_FEATURE_EXT_REQ = 0x2b,
+    LL_FEATURE_EXT_RSP = 0x2c,
+    LL_CONNECTION_RATE_REQ = 0x3e,
+    LL_CONNECTION_RATE_IND = 0x3f
+};
+
 static int gap_periodic_sync_transfer_receive(
     const uint8_t *frame,
     uint64_t connection_anchor_ticks, uint16_t connection_event_counter
@@ -121,7 +171,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     ) {
         if (conn->is_central && conn->link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
-            gap_tx_frame[2] == 0x3f
+            gap_tx_frame[2] == LL_CONNECTION_RATE_IND
         ) {
             conn->connection_status = 0x28;
             gap_conn_end();
@@ -159,7 +209,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         // unacknowledged timing update once its Instant is no longer in the future.
         if (conn->is_central && conn->link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 12 &&
-            gap_tx_frame[2] == 0x00
+            gap_tx_frame[2] == LL_CONNECTION_UPDATE_IND
         ) {
             gap_conn_end();
             return;
@@ -201,7 +251,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     if (conn->pending.phy_update && conn->phy.instant == conn->link.event_counter ) {
         if (conn->is_central && conn->link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 5 &&
-            gap_tx_frame[2] == 0x18
+            gap_tx_frame[2] == LL_PHY_UPDATE_IND
         ) {
             conn->phy.status = 0x28;
             gap_conn_end();
@@ -222,7 +272,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         // disconnect rather than let the two devices hop on different maps.
         if (conn->is_central && conn->link.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 8 &&
-            gap_tx_frame[2] == 0x01
+            gap_tx_frame[2] == LL_CHANNEL_MAP_IND
         ) {
             conn->connection_status = 0x28; // Instant passed.
             gap_conn_end();
@@ -314,7 +364,7 @@ static void gap_send_conn_update(void) {
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 12;
-    gap_tx_frame[2] = 0x00; // LL_CONNECTION_UPDATE_IND
+    gap_tx_frame[2] = LL_CONNECTION_UPDATE_IND;
     gap_tx_frame[3] = conn->update_window_size;
     gap_tx_frame[4] = 0;
     gap_tx_frame[5] = 0; // WinOffset
@@ -358,7 +408,7 @@ static void gap_send_conn_feature_request(void) {
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 9;
-    gap_tx_frame[2] = conn->is_central ? 0x08 : 0x0e;
+    gap_tx_frame[2] = conn->is_central ? LL_FEATURE_REQ : LL_PERIPHERAL_FEATURE_REQ;
     memset(gap_tx_frame + 3, 0, 8);
     gap_tx_frame[3] = GAP_LL_FEATURES;
     gap_tx_frame[4] =   ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
@@ -383,7 +433,7 @@ static void gap_send_subrate_update(void) {
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 11;
-    gap_tx_frame[2] = 0x27; // LL_SUBRATE_IND.
+    gap_tx_frame[2] = LL_SUBRATE_IND;
     gap_tx_frame[3] = (uint8_t)conn->next_schedule.factor;
     gap_tx_frame[4] = (uint8_t)(conn->next_schedule.factor >> 8);
     gap_tx_frame[5] = (uint8_t)conn->next_schedule.base_event;
@@ -411,7 +461,7 @@ static void gap_send_rate_ind(void) {
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 15;
-    gap_tx_frame[2] = 0x3f; // LL_CONNECTION_RATE_IND.
+    gap_tx_frame[2] = LL_CONNECTION_RATE_IND;
 
     const uint16_t values[7] = {
         conn->next_schedule.win_offset,
@@ -433,7 +483,7 @@ static void gap_send_data_length(uint8_t opcode) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
-    if (opcode == 0x14) {
+    if (opcode == LL_LENGTH_REQ) {
         conn->queue.length = 0;
         conn->pending.length = 1;
         conn->length_started_ms = GET_MILLIS();
@@ -526,56 +576,6 @@ static uint16_t gap_conn_rate_min_interval(void) {
 }
 
 static void gap_security_derive(void);
-
-enum {
-    LL_CONNECTION_UPDATE_IND = 0x00,
-    LL_CHANNEL_MAP_IND = 0x01,
-    LL_TERMINATE_IND = 0x02,
-    LL_ENC_REQ = 0x03,
-    LL_ENC_RSP = 0x04,
-    LL_START_ENC_REQ = 0x05,
-    LL_START_ENC_RSP = 0x06,
-    LL_UNKNOWN_RSP = 0x07,
-    LL_FEATURE_REQ = 0x08,
-    LL_FEATURE_RSP = 0x09,
-    LL_PAUSE_ENC_REQ = 0x0a,
-    LL_PAUSE_ENC_RSP = 0x0b,
-    LL_VERSION_IND = 0x0c,
-    LL_REJECT_IND = 0x0d,
-    LL_PERIPHERAL_FEATURE_REQ = 0x0e,
-    LL_CONNECTION_PARAM_REQ = 0x0f,
-    LL_CONNECTION_PARAM_RSP = 0x10,
-    LL_REJECT_EXT_IND = 0x11,
-    LL_PING_REQ = 0x12,
-    LL_PING_RSP = 0x13,
-    LL_LENGTH_REQ = 0x14,
-    LL_LENGTH_RSP = 0x15,
-    LL_PHY_REQ = 0x16,
-    LL_PHY_RSP = 0x17,
-    LL_PHY_UPDATE_IND = 0x18,
-    LL_MIN_USED_CHANNELS_IND = 0x19,
-    LL_CTE_REQ = 0x1a,
-    LL_CTE_RSP = 0x1b,
-    LL_PERIODIC_SYNC_IND = 0x1c,
-    LL_CLOCK_ACCURACY_REQ = 0x1d,
-    LL_CLOCK_ACCURACY_RSP = 0x1e,
-    LL_CIS_REQ = 0x1f,
-    LL_CIS_RSP = 0x20,
-    LL_CIS_IND = 0x21,
-    LL_CIS_TERMINATE_IND = 0x22,
-    LL_POWER_CONTROL_REQ = 0x23,
-    LL_POWER_CONTROL_RSP = 0x24,
-    LL_POWER_CHANGE_IND = 0x25,
-    LL_SUBRATE_REQ = 0x26,
-    LL_SUBRATE_IND = 0x27,
-    LL_CHANNEL_REPORTING_IND = 0x28,
-    LL_CHANNEL_STATUS_IND = 0x29,
-    LL_PERIODIC_SYNC_WR_IND = 0x2a,
-    LL_FEATURE_EXT_REQ = 0x2b,
-    LL_FEATURE_EXT_RSP = 0x2c,
-    LL_CONNECTION_RATE_REQ = 0x3e,
-    LL_CONNECTION_RATE_IND = 0x3f
-};
 
 enum {
     GAP_LL_ERROR_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE = 0x11,
@@ -1609,7 +1609,7 @@ static uint8_t gap_conn_control_pdu_process(const uint8_t *frame,
             conn->data_length.rx_time = rx_time < remote.tx_time ? rx_time : remote.tx_time;
 
             if (frame[2] == LL_LENGTH_REQ) {
-                gap_send_data_length(0x15);
+                gap_send_data_length(LL_LENGTH_RSP);
 
                 // A queued local change is advertised in this response.
                 if (conn->queue.length) {
@@ -2384,7 +2384,7 @@ static void gap_send_security(void) {
         memcpy(gap_security->iv, gap_security->next_iv, 4);
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 23;
-        gap_tx_frame[2] = 0x03; // LL_ENC_REQ
+        gap_tx_frame[2] = LL_ENC_REQ;
         memcpy(gap_tx_frame + 3, gap_security->random, 8);
         gap_tx_frame[11] = (uint8_t)gap_security->ediv;
         gap_tx_frame[12] = (uint8_t)(gap_security->ediv >> 8);
@@ -2397,13 +2397,13 @@ static void gap_send_security(void) {
         gap_tx_frame[0] = 3;
         if (gap_security->refreshing) {
             gap_tx_frame[1] = 2;
-            gap_tx_frame[2] = 0x02;
+            gap_tx_frame[2] = LL_TERMINATE_IND;
             gap_tx_frame[3] = 0x06;
             conn->link_state.terminate_sent = 1;
         } else {
             gap_tx_frame[1] = 3;
-            gap_tx_frame[2] = 0x11;
-            gap_tx_frame[3] = 0x03;
+            gap_tx_frame[2] = LL_REJECT_EXT_IND;
+            gap_tx_frame[3] = LL_ENC_REQ;
             gap_tx_frame[4] = 0x06;
         }
         gap_security->phase = GAP_ENC_IDLE;
@@ -2411,14 +2411,14 @@ static void gap_send_security(void) {
     else if (phase == GAP_ENC_START_QUEUED) {
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 1;
-        gap_tx_frame[2] = 0x05; // LL_START_ENC_REQ is unencrypted.
+        gap_tx_frame[2] = LL_START_ENC_REQ;
         gap_security->rx_enabled = 1;
         gap_security->phase = GAP_ENC_PERIPHERAL_START;
     }
     else if (phase == GAP_ENC_PAUSE_QUEUED) {
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 1;
-        gap_tx_frame[2] = 0x0a; // LL_PAUSE_ENC_REQ uses the old session.
+        gap_tx_frame[2] = LL_PAUSE_ENC_REQ;
         gap_security->phase = GAP_ENC_WAIT_PAUSE;
         gap_security->started_ms = GET_MILLIS();
     }
