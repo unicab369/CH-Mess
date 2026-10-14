@@ -552,6 +552,16 @@ static uint8_t gap_rate_parameters_valid(
             2ull * interval * factor * (latency + 1);
 }
 
+static uint8_t gap_subrate_parameters_valid(
+    uint16_t min_factor, uint16_t max_factor, uint16_t max_latency,
+    uint16_t continuation, uint16_t timeout
+) {
+    return min_factor >= 1 && min_factor <= max_factor && max_factor <= 500 &&
+        max_latency <= 499 && continuation < min_factor &&
+        max_factor * (max_latency + 1) <= 500 &&
+        timeout >= 10 && timeout <= 3200;
+}
+
 static uint16_t gap_conn_rate_min_interval(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t rx_time = conn->data_length.rx_time;
@@ -1323,11 +1333,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         }
 
         if (minimum < 3 || maximum > 32000 || minimum > maximum ||
-            factor_min < 1 || factor_max > 500 ||
-            factor_min > factor_max || latency > 499 ||
-            continuation >= factor_min ||
-            factor_max * (latency + 1) > 500 ||
-            timeout < 10 || timeout > 3200 ||
+            !gap_subrate_parameters_valid(factor_min, factor_max, latency,
+                                         continuation, timeout) ||
             periodicity > maximum || !offsets_valid ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum *
                 factor_max * (latency + 1)
@@ -1462,13 +1469,10 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         uint16_t timeout = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
         uint8_t error = GAP_LL_ERR_INVALID_PARAMS;
 
-        if (min_factor >= 1 && max_factor <= 500 &&
-            min_factor <= max_factor && max_latency <= 499 &&
-            continuation < min_factor &&
-            max_factor * (max_latency + 1) <= 500 &&
-            timeout >= 10 && timeout <= 3200 &&
-            (uint32_t)timeout * 80 > 2 *
-                (uint32_t)conn->schedule.interval_125us * min_factor * (max_latency + 1)
+        if (gap_subrate_parameters_valid(min_factor, max_factor, max_latency,
+                                         continuation, timeout) &&
+            (uint64_t)timeout * 80 > 2ull *
+                conn->schedule.interval_125us * min_factor * (max_latency + 1)
         ) {
             error = GAP_LL_ERR_COLLISION;
             if (!gap_security->phase && !gap_conn_rate_busy() &&
@@ -1662,11 +1666,17 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         if (frame[2] == LL_PHY_RSP) {
             if (!conn->is_central || !conn->pending.phy_request) break;
         }
-        else if (gap_security->phase || conn->pending.timing_update ||
-            conn->queue.local_update || conn->pending.params ||
-            conn->queue.local_params || conn->pending.channel_map ||
-            conn->queue.local_map || conn->pending.phy_update ||
-            (conn->is_central && (conn->pending.phy_request || conn->queue.phy_queued))
+        else if (gap_security->phase ||
+            conn->pending.timing_update ||
+            conn->pending.params ||
+            conn->pending.channel_map ||
+            conn->pending.phy_update ||
+            conn->queue.local_update ||
+            conn->queue.local_params ||
+            conn->queue.local_map ||
+            (conn->is_central &&
+                (conn->pending.phy_request ||
+                 conn->queue.phy_queued))
         ) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = LL_REJECT_EXT_IND;
@@ -1727,8 +1737,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
     case LL_PHY_UPDATE_IND: { // LL_PHY_UPDATE_IND (Central to Peripheral)
         if (conn->is_central || frame[1] != 5 ||
             !(GAP_HW_PHY_MASK() & 6) || conn->pending.phy_update
-        )
-            return gap_conn_unknown_response(frame[2]);
+        ) return gap_conn_unknown_response(frame[2]);
 
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
         uint8_t tx = frame[4], rx = frame[3];
@@ -1800,13 +1809,12 @@ int gap_connected(void) {
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
-int gap_conn_update(
-    uint16_t interval, uint16_t latency, uint16_t timeout
-) {
+int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
         conn->schedule.factor : 1;
+
     if (!gap_connected() || gap_security->phase || !conn->is_central ||
         conn->link.first_event || conn->queue.local_update ||
         conn->pending.timing_update ||
@@ -1934,12 +1942,11 @@ int gap_subrate_request(
         conn->pending.channel_map || conn->queue.local_map ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
         conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || factor_min < 1 ||
-        factor_max > 500 || factor_min > factor_max || max_latency > 499 ||
-        continuation >= factor_min ||
-        factor_max * (max_latency + 1) > 500 || timeout < 10 || timeout > 3200 ||
-        (uint32_t)timeout * 80 <=
-            2 * (uint32_t)conn->schedule.interval_125us * factor_min *
+        conn->link_state.terminate_sent ||
+        !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
+                                      continuation, timeout) ||
+        (uint64_t)timeout * 80 <=
+            2ull * conn->schedule.interval_125us * factor_min *
                 (max_latency + 1)
     ) return 0;
 
@@ -2032,10 +2039,9 @@ int gap_conn_rate_request(
         conn->pending.phy_update || conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
         interval_min < 3 || interval_max > 32000 || interval_min > interval_max ||
-        factor_min < 1 || factor_max > 500 || factor_min > factor_max ||
-        max_latency > 499 || continuation >= factor_min ||
-        factor_max * (max_latency + 1) > 500 || timeout < 10 || timeout > 3200 ||
-        (uint32_t)timeout * 80 <= 2 * (uint32_t)interval_max *
+        !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
+                                      continuation, timeout) ||
+        (uint64_t)timeout * 80 <= 2ull * interval_max *
             factor_max * (max_latency + 1)
     ) return 0;
 
