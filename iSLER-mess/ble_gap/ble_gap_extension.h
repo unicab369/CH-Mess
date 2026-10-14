@@ -181,7 +181,8 @@ static int gap_ext_ad_data_valid(const uint8_t *data, size_t len) {
 
     for (size_t offset = 0; offset < len;) {
         uint8_t field_len = data[offset];
-        if (!field_len || offset + (size_t)field_len + 1 > len) return 0;
+        if (!field_len || offset + (size_t)field_len + 1 > len)
+            return 0;
         offset += (size_t)field_len + 1;
     }
     return 1;
@@ -226,16 +227,16 @@ static uint32_t gap_periodic_airtime_us(size_t data_len, uint8_t phy) {
 int gap_periodic_adv_start(
     uint8_t set_id, const uint8_t *data, size_t len, uint16_t interval
 ) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
-        !gap_ext_adv[set_id].enabled ||
-        gap_ext_adv[set_id].scannable ||
-        gap_ext_adv[set_id].periodic.enabled || interval < 6 ||
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+
+    if (!set->enabled || set->scannable ||
+        set->periodic.enabled || interval < 6 ||
         !gap_ext_ad_data_valid(data, len) ||
         (uint32_t)interval * 1250 <
-        gap_periodic_airtime_us(len, gap_ext_adv[set_id].aux_phy)
+        gap_periodic_airtime_us(len, set->aux_phy)
     ) return 0;
 
-    gap_ext_adv_set *set = &gap_ext_adv[set_id];
     uint8_t random[3];
 
     if (!gap_access_addr(&set->periodic.access_address)) return 0;
@@ -358,23 +359,24 @@ int gap_periodic_pawr_connect(
     uint8_t set_id, uint8_t subevent,
     uint8_t peer_address_type, const uint8_t peer_address[6]
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+
     if (!peer_address || peer_address_type > 1 ||
-        set_id >= GAP_EXT_ADV_SET_COUNT || conn->link_state.active ||
+        gap_conn_ctx[gap_conn_slot].link_state.active ||
         gap_central.active || gap_scanner.scanning ||
-        !gap_ext_adv[set_id].periodic.enabled ||
-        !gap_ext_adv[set_id].pawr.enabled ||
-        subevent >= gap_ext_adv[set_id].pawr.subevents
+        !set->periodic.enabled || !set->pawr.enabled ||
+        subevent >= set->pawr.subevents
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        if (gap_ext_adv[i].pawr_connect.pending) return 0;
+        if (gap_ext_adv[i].pawr_connect.pending)
+            return 0;
 
     if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
                           peer_address, peer_address_type))
         return 0;
 
-    gap_ext_adv_set *set = &gap_ext_adv[set_id];
     set->pawr_connect.subevent = subevent;
     set->pawr_connect.peer_type = peer_address_type;
     memcpy(set->pawr_connect.peer_address, peer_address, 6);
@@ -386,14 +388,13 @@ int gap_periodic_adv_update(
     uint8_t set_id, const uint8_t *data, size_t len
 ) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
-
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
+
     if (!set->periodic.enabled || !gap_ext_ad_data_valid(data, len))
         return 0;
 
     uint32_t airtime_us = gap_periodic_airtime_us(len, set->aux_phy);
-    uint32_t periodic_interval_us = (uint32_t)set->periodic.interval * 1250;
-    if (periodic_interval_us < airtime_us)
+    if ((uint32_t)set->periodic.interval * 1250 < airtime_us)
         return 0;
 
     if (set->pawr.enabled) {
@@ -401,29 +402,29 @@ int gap_periodic_adv_update(
             return 0;
 
         uint16_t subevent_interval = set->pawr.subevents > 1 ?
-            set->pawr.subevent_int : set->periodic.interval;
-        uint32_t subevent_interval_us = (uint32_t)subevent_interval * 1250;
-        uint32_t response_slot_delay_us = (uint32_t)set->pawr.resp_delay * 1250;
-        if (airtime_us >= subevent_interval_us ||
-            airtime_us + 150 >= response_slot_delay_us
+                        set->pawr.subevent_int : set->periodic.interval;
+        if (airtime_us >= (uint32_t)subevent_interval * 1250 ||
+            airtime_us + 150 >= (uint32_t)set->pawr.resp_delay * 1250
         ) return 0;
     }
 
-    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
     if (len) memcpy(set->periodic.data, data, len);
+    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
     set->periodic.data_len = (uint16_t)len;
-    if (set->pawr.enabled) set->pawr.data_pending = len != 0;
+    if (set->pawr.enabled)
+        set->pawr.data_pending = len != 0;
     return 1;
 }
 
 int gap_periodic_adv_stop(uint8_t set_id) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT || !gap_ext_adv[set_id].periodic.enabled)
-        return 0;
-    gap_ext_adv[set_id].periodic.enabled = 0;
-    memset(&gap_ext_adv[set_id].pawr, 0, sizeof(gap_ext_adv[set_id].pawr));
-    memset(&gap_ext_adv[set_id].pawr_connect, 0,
-           sizeof(gap_ext_adv[set_id].pawr_connect));
-    gap_ext_adv[set_id].periodic.response_access = 0;
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    if (!set->periodic.enabled) return 0;
+
+    memset(&set->pawr, 0, sizeof(set->pawr));
+    memset(&set->pawr_connect, 0, sizeof(set->pawr_connect));
+    set->periodic.response_access = 0;
+    set->periodic.enabled = 0;
     return 1;
 }
 
@@ -432,10 +433,12 @@ int gap_ext_adv_start_phy(
     uint8_t set_id, const uint8_t *data, size_t len,
     uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
 ) {
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
     if (gap_conn_busy() || gap_central.active ||
-        gap_adv.enabled || set_id >= GAP_EXT_ADV_SET_COUNT ||
-        gap_ext_adv[set_id].enabled ||
-        gap_ext_adv[set_id].periodic.enabled || sid > 15 ||
+        gap_adv.enabled || set->enabled ||
+        set->periodic.enabled || sid > 15 ||
         !gap_ext_ad_data_valid(data, len) ||
         interval_ms < 100 || interval_ms > 10240 ||
         (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M &&
@@ -443,7 +446,6 @@ int gap_ext_adv_start_phy(
         !(GAP_HW_ADV_PHY_MASK() & aux_phy)
     ) return 0;
 
-    gap_ext_adv_set *set = &gap_ext_adv[set_id];
     set->did = gap_ext_did_next(
         set->did, set->periodic.did);
     if (len) memcpy(set->data, data, len);
