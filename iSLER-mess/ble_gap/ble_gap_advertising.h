@@ -741,13 +741,17 @@ static inline void gap_receive_report(
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
-    if (pdu_type != 0 && pdu_type != 1 && pdu_type != 2 &&
-        pdu_type != 4 && pdu_type != 6
+    if (pdu_type != ADV_IND &&
+        pdu_type != ADV_DIRECT_IND &&
+        pdu_type != ADV_NONCONN_IND &&
+        pdu_type != SCAN_RSP &&
+        pdu_type != ADV_SCAN_IND
     ) return;
 
-    if (pdu_type == 1 && payload_len != 12) return;
+    if (pdu_type == ADV_DIRECT_IND && payload_len != 12) return;
     uint8_t data_len = payload_len - 6;
-    if (pdu_type == 1) data_len = 0; // ADV_DIRECT_IND has a second address.
+    if (pdu_type == ADV_DIRECT_IND)
+        data_len = 0; // ADV_DIRECT_IND has a second address.
     if (data_len > GAP_ADV_DATA_MAX) return;
 
     uint8_t address_type = (frame[0] >> 6) & 1;
@@ -756,14 +760,16 @@ static inline void gap_receive_report(
     if (gap_privacy.scan_filter && slot < 0) return;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
-        if (pdu_type == 4) {
+        if (pdu_type == SCAN_RSP) {
             if (!gap_scan_response_accepted ||
                 address_type != gap_scan_response_address_type ||
                 memcmp(frame + 2, gap_scan_response_address, 6) != 0
             ) return;
 
         } else {
-            if (pdu_type == 0 || pdu_type == 6) gap_scan_response_accepted = 0;
+            if (pdu_type == ADV_IND ||
+                pdu_type == ADV_SCAN_IND
+            ) gap_scan_response_accepted = 0;
             uint8_t flags = 0;
 
             for (uint8_t offset = 0; offset < data_len;) {
@@ -777,7 +783,9 @@ static inline void gap_receive_report(
             if (!(flags & (gap_scanner.discovery_mode ==
                 GAP_DISCOVERY_LIMITED ? 0x01 : 0x03))) return;
 
-            if (pdu_type == 0 || pdu_type == 6) {
+            if (pdu_type == ADV_IND ||
+                pdu_type == ADV_SCAN_IND
+            ) {
                 gap_scan_response_accepted = 1;
                 gap_scan_response_address_type = address_type;
                 memcpy(gap_scan_response_address, frame + 2, 6);
@@ -789,7 +797,7 @@ static inline void gap_receive_report(
         const uint8_t *identity = slot >= 0 ? gap_identities[slot].address : frame + 2;
         uint8_t identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
         // For directed advertising, compare the target address too.
-        uint8_t seen_len = pdu_type == 1 ? 6 : data_len;
+        uint8_t seen_len = pdu_type == ADV_DIRECT_IND ? 6 : data_len;
         uint8_t seen_slot = gap_scan_seen_count;
 
         for (uint8_t i = 0; i < gap_scan_seen_count; i++) {
@@ -831,7 +839,7 @@ static inline void gap_receive_report(
     report->address_type = address_type;
     report->resolved = slot >= 0;
     report->identity_type = slot >= 0 ? gap_identities[slot].address_type : address_type;
-    report->has_target = pdu_type == 1;
+    report->has_target = pdu_type == ADV_DIRECT_IND;
     report->target_address_type = (frame[0] >> 7) & 1;
     report->rssi = rssi;
     report->data_len = data_len;
@@ -867,7 +875,9 @@ int gap_scan_take_ad(
     gap_receive_report(frame, payload_len, packet_rssi);
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
-    if ((frame[0] & 0x0f) != 0x02 || payload_len < 8 || payload_len > 37)
+    if ((frame[0] & 0x0f) != ADV_NONCONN_IND ||
+        payload_len < 8 || payload_len > 37
+    )
         return 0;
     size_t end = (size_t)payload_len + 2;
 

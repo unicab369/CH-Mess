@@ -537,7 +537,8 @@ typedef struct {
 static int gap_ext_adv_decode(
     const uint8_t *pdu, size_t pdu_len, gap_ext_adv_fields *fields
 ) {
-    if (!pdu || !fields || pdu_len < 3 || (pdu[0] & 0x0f) != 0x07 ||
+    if (!pdu || !fields || pdu_len < 3 ||
+        (pdu[0] & 0x0f) != ADV_EXT_IND ||
         pdu_len != (size_t)pdu[1] + 2
     ) return 0;
 
@@ -1489,7 +1490,8 @@ static int gap_periodic_connect_request(
     // AUX_CONNECT_RSP carries the synchronized device's AdvA and the
     // advertiser's TargetA. Both PDUs use the periodic train's access address.
     uint8_t *response = gap_ext_adv_frame;
-    response[0] = 0x07 | (local_type << 6) | (initiator_type << 7);
+    response[0] = ADV_EXT_IND | (local_type << 6) |
+                  (initiator_type << 7);
     response[1] = 14;
     response[2] = 13; // AdvMode=non-connectable, ExtHdrLen=13.
     response[3] = 0x03; // AdvA and TargetA.
@@ -1595,7 +1597,7 @@ static int gap_periodic_connect_exchange(
         return 0;
 
     const uint8_t *response = gap_ext_pawr.connect.response;
-    if ((response[0] & 0x0f) != 0x07 || response[1] != 14 ||
+    if ((response[0] & 0x0f) != ADV_EXT_IND || response[1] != 14 ||
         response[2] != 13 || response[3] != 0x03 ||
         ((response[0] >> 6) & 1) != peer_type ||
         ((response[0] >> 7) & 1) != local_type ||
@@ -1690,7 +1692,8 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             }
             uint16_t data_len = set->pawr_data_pending ?
                 set->periodic_data_len : 0;
-            frame[0] = 0x07; // AUX_SYNC_SUBEVENT_IND uses extended format.
+            // AUX_SYNC_SUBEVENT_IND uses the extended advertising PDU format.
+            frame[0] = ADV_EXT_IND;
             frame[1] = (uint8_t)(1 + 3 + data_len);
             frame[2] = 3; // Flags and ADI.
             frame[3] = 0x08; // ADI; no AuxPtr, SyncInfo, or ACAD here.
@@ -1756,7 +1759,8 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
         uint8_t ext_len = has_chain ? 6 : 3;
         uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
             remaining;
-        frame[0] = 0x07; // AUX_SYNC_IND for the first PDU, AUX_CHAIN_IND later.
+        // AUX_SYNC_IND starts the train; later packets use AUX_CHAIN_IND.
+        frame[0] = ADV_EXT_IND;
         frame[1] = (uint8_t)(1 + ext_len + chunk);
         frame[2] = ext_len;
         frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
@@ -1796,14 +1800,14 @@ static int gap_hw_transmit_extended_advertising(
     if (set->scannable) {
         // Scannable extended events carry no AdvData in AUX_ADV_IND. The data
         // is sent in AUX_SCAN_RSP after a scanner requests it.
-        primary[0] = 0x07 | (address_type ? 0x40 : 0);
+        primary[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         primary[1] = 7;
         primary[2] = 0x86; // AdvMode=scannable, ExtHdrLen=6.
         primary[3] = 0x18; // ADI and AuxPtr.
         primary[4] = (uint8_t)adi;
         primary[5] = (uint8_t)(adi >> 8);
         gap_ext_aux_ptr_write_phy(primary + 6, 0, 480, set->aux_phy);
-        frame[0] = 0x07 | (address_type ? 0x40 : 0);
+        frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         frame[1] = 10;
         frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
         frame[3] = 0x09; // AdvA and ADI.
@@ -1822,7 +1826,7 @@ static int gap_hw_transmit_extended_advertising(
         uint16_t first_chunk = has_chain ? GAP_EXT_ADV_FIRST_PDU_DATA_MAX :
             remaining;
         uint8_t ext_len = has_chain ? 12 : 9;
-        frame[0] = 0x07 | (address_type ? 0x40 : 0);
+        frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         frame[1] = (uint8_t)(1 + ext_len + first_chunk);
         frame[2] = ext_len;
         frame[3] = has_chain ? 0x19 : 0x09; // AdvA, ADI, optional AuxPtr.
@@ -1870,7 +1874,7 @@ static int gap_hw_transmit_extended_advertising(
             uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
                 remaining;
             ext_len = has_chain ? 6 : 3;
-            frame[0] = 0x07 | (address_type ? 0x40 : 0);
+            frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
             frame[1] = (uint8_t)(1 + ext_len + chunk);
             frame[2] = ext_len;
             frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
@@ -1899,7 +1903,7 @@ static int gap_hw_transmit_extended_advertising(
     }
 
     // ADV_EXT_IND carries the ADI and points to the first AUX_ADV_IND at 480 us.
-    primary[0] = 0x07 | (address_type ? 0x40 : 0);
+    primary[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
     primary[1] = 7;
     primary[2] = 6; // AdvMode=non-connectable, ExtHdrLen=6.
     primary[3] = 0x18; // ADI and AuxPtr.
@@ -1920,7 +1924,7 @@ static int gap_hw_transmit_extended_advertising(
     uint16_t first_chunk = has_chain ? first_limit : remaining;
 
     // AUX_ADV_IND includes AdvA and the first part of the advertising data.
-    frame[0] = 0x07 | (address_type ? 0x40 : 0);
+    frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
     frame[1] = (uint8_t)(1 + (has_chain ? chain_ext_len : first_ext_len) +
                          first_chunk);
     frame[2] = has_chain ? chain_ext_len : first_ext_len;
@@ -2022,7 +2026,7 @@ static int gap_hw_transmit_extended_advertising(
         uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
             remaining;
         uint8_t ext_len = has_chain ? 6 : 3;
-        frame[0] = 0x07 | (address_type ? 0x40 : 0);
+        frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         frame[1] = (uint8_t)(1 + ext_len + chunk);
         frame[2] = ext_len;
         frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
@@ -2077,7 +2081,7 @@ static void gap_ext_scan_process(void) {
         gap_ext_scan.aux_rx_phy : periodic ? gap_ext_scan.periodic_rx_phy : GAP_PHY_1M;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
-    if (periodic && (pdu[0] & 0x0f) == 0x05) {
+    if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
         (void)gap_periodic_connect_request((uint8_t)slot, pdu,
             pdu_len, gap_ext_scan.ticks);
         return;
@@ -2113,7 +2117,8 @@ static void gap_ext_scan_process(void) {
 
             if (may_respond && slot < GAP_PERIODIC_SYNC_COUNT) {
                 uint8_t *response = gap_ext_adv_frame;
-                response[0] = 0x07; // AUX_SYNC_SUBEVENT_RSP extended format.
+                // AUX_SYNC_SUBEVENT_RSP uses the extended advertising PDU format.
+                response[0] = ADV_EXT_IND;
                 response[1] = (uint8_t)(2 + sync->pawr_response_data_len);
                 response[2] = 1; // No AdvA or ADI.
                 response[3] = 0;
@@ -2252,7 +2257,7 @@ static int gap_periodic_sync_transfer_receive(
 
     // Reuse the extended-header decoder for the 18-byte SyncInfo structure.
     uint8_t pdu[30] = {0};
-    pdu[0] = 0x07 | (address_type << 6);
+    pdu[0] = ADV_EXT_IND | (address_type << 6);
     pdu[1] = 28;
     pdu[2] = 27;
     pdu[3] = 0x29; // AdvA, ADI, SyncInfo.

@@ -67,6 +67,17 @@ int GAP_CCM_DECRYPT(
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
 
+enum {
+    ADV_IND = 0x00,
+    ADV_DIRECT_IND = 0x01,
+    ADV_NONCONN_IND = 0x02,
+    SCAN_REQ = 0x03,
+    SCAN_RSP = 0x04,
+    CONNECT_IND = 0x05,
+    ADV_SCAN_IND = 0x06,
+    ADV_EXT_IND = 0x07
+};
+
 #ifndef GAP_CONN_DATA_MAX
     #if GAP_EXT_ADV_SUPPORT
         #define GAP_CONN_DATA_MAX 35
