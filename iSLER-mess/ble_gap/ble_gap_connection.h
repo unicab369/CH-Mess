@@ -332,8 +332,8 @@ static void gap_conn_event_advance(void) {
 
     if (!conn->link.event_counter && conn->schedule.factor > 1) {
         // Preserve the event phase across the 16-bit counter wrap.
-        uint32_t distance = 65536 - conn->schedule.base_event;
-        uint32_t steps = (distance + conn->schedule.factor - 1) / conn->schedule.factor;
+        uint32_t steps = (65536 - conn->schedule.base_event +
+                          conn->schedule.factor - 1) / conn->schedule.factor;
         conn->schedule.base_event = (uint16_t)(
             conn->schedule.base_event + steps * conn->schedule.factor - 65536);
 
