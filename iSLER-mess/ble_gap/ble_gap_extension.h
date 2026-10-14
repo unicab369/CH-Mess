@@ -1156,9 +1156,7 @@ int gap_periodic_report_poll(gap_periodic_report *report) {
     return 1;
 }
 
-int gap_pawr_report_poll(
-    gap_pawr_report *report
-) {
+int gap_pawr_report_poll(gap_pawr_report *report) {
     if (!report || !gap_pawr_reports.count) return 0;
     *report = gap_pawr_reports.items[gap_pawr_reports.head];
     gap_pawr_reports.head = (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
@@ -1166,7 +1164,7 @@ int gap_pawr_report_poll(
     return 1;
 }
 
-static int gap_periodic_sync_info_accept(
+static int gap_sync_info_accept(
     const gap_ext_fields *fields,
     uint8_t packet_len, uint8_t packet_phy, uint64_t packet_end_ticks
 ) {
@@ -1178,8 +1176,8 @@ static int gap_periodic_sync_info_accept(
 
     if (fields->pawr.has_timing && fields->pawr.subevents > 1 &&
         (uint32_t)fields->pawr.subevents * fields->pawr.subevent_interval >
-            fields->sync.interval)
-        return 0;
+            fields->sync.interval
+    ) return 0;
 
     uint8_t used_channels = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
@@ -1200,11 +1198,9 @@ static int gap_periodic_sync_info_accept(
             gap_syncs[i].sid == fields->identity.sid &&
             ((gap_syncs[i].address_type == fields->identity.address_type &&
               !memcmp(gap_syncs[i].address, fields->identity.address, 6)) ||
-             (identity_slot >= 0 &&
-              gap_syncs[i].address_type ==
+             (identity_slot >= 0 && gap_syncs[i].address_type ==
                   gap_identities[identity_slot].address_type &&
-              !memcmp(gap_syncs[i].address,
-                      gap_identities[identity_slot].address, 6)))) {
+              !memcmp(gap_syncs[i].address, gap_identities[identity_slot].address, 6)))) {
             slot = i;
             break;
         }
@@ -1212,15 +1208,11 @@ static int gap_periodic_sync_info_accept(
 
     if (slot < 0) return 0;
 
-    uint64_t packet_start = packet_end_ticks - HW_TICKS_FROM_US(airtime_us);
-    uint64_t target = packet_start + HW_TICKS_FROM_US(fields->sync.offset_us);
+    uint64_t target = packet_end_ticks + HW_TICKS_FROM_US(fields->sync.offset_us - airtime_us);
     uint32_t unit_us = fields->sync.offset_unit ? 300 : 30;
 
-    uint32_t widen_us =
-        (uint32_t)(((uint64_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500) *
-                        (fields->sync.offset_us + unit_us) +
-                    999999) /
-                   1000000) +
+    uint32_t widen_us = (uint32_t)(((uint64_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500) *
+                        (fields->sync.offset_us + unit_us) + 999999) / 1000000) +
         2;
     uint64_t window_start = target > HW_TICKS_FROM_US(widen_us)
                                 ? target - HW_TICKS_FROM_US(widen_us)
@@ -1235,13 +1227,12 @@ static int gap_periodic_sync_info_accept(
         target += HW_TICKS_FROM_US(interval_us);
         event_counter++;
         skipped++;
-        uint32_t elapsed_us =
-            fields->sync.offset_us + (uint32_t)skipped * interval_us + unit_us;
+        uint32_t elapsed_us = fields->sync.offset_us + (uint32_t)skipped * interval_us + unit_us;
         widen_us = (uint32_t)(((uint64_t)(
                         gap_periodic_sca_ppm[fields->sync.sca] + 500) * elapsed_us +
                         999999) / 1000000) + 2;
         window_start = target > HW_TICKS_FROM_US(widen_us) ?
-                                target - HW_TICKS_FROM_US(widen_us) : 0;
+                            target - HW_TICKS_FROM_US(widen_us) : 0;
         window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
     }
     // Sync acquisition expires after six consecutive periodic events are missed.
@@ -1266,7 +1257,8 @@ static int gap_periodic_sync_info_accept(
     gap_syncs[slot].access_address = fields->sync.access_address;
     gap_syncs[slot].crc_init = fields->sync.crc_init;
     gap_syncs[slot].did = fields->identity.adi & 0x0fff;
-    gap_syncs[slot].anchor_ticks = packet_start;
+    gap_syncs[slot].anchor_ticks =
+        packet_end_ticks - HW_TICKS_FROM_US(airtime_us);
     gap_syncs[slot].next_ticks = target;
     gap_syncs[slot].start_ticks = window_start;
     gap_syncs[slot].end_ticks = window_end;
@@ -2202,7 +2194,7 @@ static void gap_ext_scan_process(void) {
     (void)gap_ext_scan_receive(kind, pdu, pdu_len, gap_ext_scan.rssi);
 
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.sync.has_info)
-        (void)gap_periodic_sync_info_accept(&fields, pdu[1], packet_phy,
+        (void)gap_sync_info_accept(&fields, pdu[1], packet_phy,
                                             gap_ext_scan.ticks);
 
     if (fields.has_aux_ptr && !fields.aux_offset_zero &&
