@@ -65,7 +65,7 @@ typedef struct {
     uint16_t adi;
 } gap_ext_identity;
 
-static struct {
+typedef struct {
     uint8_t active;
     gap_ext_identity identity;
     uint8_t await_scan_response;
@@ -73,7 +73,8 @@ static struct {
     int8_t rssi;
     uint32_t deadline_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
+} gap_ext_context;
+static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
 typedef struct {
     uint8_t used, address_type, address[6], has_adi, sid;
     uint16_t did, data_len;
@@ -824,10 +825,12 @@ int gap_ext_scan_receive(
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return 0;
     uint32_t now = GET_MILLIS();
 
-    for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-        if (gap_ext_ctx[i].active &&
-            (int32_t)(now - gap_ext_ctx[i].deadline_ms) >= 0
-        ) gap_ext_adv_context_clear(i);
+    for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+        gap_ext_context *ctx = &gap_ext_ctx[i];
+
+        if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
+            gap_ext_adv_context_clear(i);
+    }
 
     int slot = -1;
     if (pdu_kind == GAP_EXT_ADV_PRIMARY_PDU) {
@@ -842,13 +845,15 @@ int gap_ext_scan_receive(
             return 1;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (gap_ext_ctx[i].active &&
-                gap_ext_ctx[i].identity.has_adi &&
-                gap_ext_ctx[i].identity.adi == fields.identity.adi &&
-                gap_ext_ctx[i].identity.addr.has_address == fields.identity.addr.has_address &&
+            gap_ext_context *ctx = &gap_ext_ctx[i];
+
+            if (ctx->active &&
+                ctx->identity.has_adi &&
+                ctx->identity.adi == fields.identity.adi &&
+                ctx->identity.addr.has_address == fields.identity.addr.has_address &&
                 (!fields.identity.addr.has_address ||
-                 (gap_ext_ctx[i].identity.addr.address_type == fields.identity.addr.address_type &&
-                  !memcmp(gap_ext_ctx[i].identity.addr.address, fields.identity.addr.address, 6)))
+                 (ctx->identity.addr.address_type == fields.identity.addr.address_type &&
+                  !memcmp(ctx->identity.addr.address, fields.identity.addr.address, 6)))
             ) {
                 slot = i;
                 break;
@@ -866,9 +871,7 @@ int gap_ext_scan_receive(
         if (slot < 0) slot = 0;
         gap_ext_adv_context_clear((uint8_t)slot);
         gap_ext_ctx[slot].active = 1;
-        gap_ext_ctx[slot].identity.addr.has_address = fields.identity.addr.has_address;
-        gap_ext_ctx[slot].identity.addr.address_type = fields.identity.addr.address_type;
-        memcpy(gap_ext_ctx[slot].identity.addr.address, fields.identity.addr.address, 6);
+        gap_ext_ctx[slot].identity.addr = fields.identity.addr;
         gap_ext_ctx[slot].identity.has_adi = fields.identity.has_adi;
         gap_ext_ctx[slot].identity.adi = fields.identity.adi;
         gap_ext_ctx[slot].identity.sid = fields.identity.sid;
@@ -876,12 +879,14 @@ int gap_ext_scan_receive(
         gap_ext_ctx[slot].rssi = rssi;
     } else {
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            if (!gap_ext_ctx[i].active) continue;
-            if (fields.identity.has_adi && (!gap_ext_ctx[i].identity.has_adi ||
-                gap_ext_ctx[i].identity.adi != fields.identity.adi)) continue;
-            if (fields.identity.addr.has_address && gap_ext_ctx[i].identity.addr.has_address &&
-                (fields.identity.addr.address_type != gap_ext_ctx[i].identity.addr.address_type ||
-                 memcmp(fields.identity.addr.address, gap_ext_ctx[i].identity.addr.address, 6)))
+            gap_ext_context *ctx = &gap_ext_ctx[i];
+
+            if (!ctx->active) continue;
+            if (fields.identity.has_adi && (!ctx->identity.has_adi ||
+                ctx->identity.adi != fields.identity.adi)) continue;
+            if (fields.identity.addr.has_address && ctx->identity.addr.has_address &&
+                (fields.identity.addr.address_type != ctx->identity.addr.address_type ||
+                 memcmp(fields.identity.addr.address, ctx->identity.addr.address, 6)))
                 continue;
             if (slot >= 0) return 0; // No ADI and ambiguous active chains.
             slot = i;
