@@ -624,7 +624,7 @@ static void test_extended_advertising_reassembly(void) {
     static const uint8_t chain[] = {
         0x07, 6, 3, 0x08, 0x34, 0x20, 0x01, 0x06
     };
-    gap_ext_scan_report report;
+    gap_ext_report report;
     gap_scan_start(0);
     assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
         primary, sizeof(primary) - 1, -45) == 0); // Truncated PDU.
@@ -763,7 +763,7 @@ static void test_extended_advertising_radio_followup(void) {
     static const uint8_t chain[] = {
         0x07, 6, 3, 0x08, 0x34, 0x20, 0x01, 0x06
     };
-    gap_ext_scan_report report;
+    gap_ext_report report;
     now_ms = 25;
     fake_radio_ticks = 500000;
     fake_radio_ticks_enabled = 1;
@@ -860,7 +860,7 @@ static void test_extended_advertising_transmit(void) {
     static const uint8_t local_address[6] = {
         0x31, 0x32, 0x33, 0x34, 0x35, 0xc6
     };
-    gap_ext_scan_report report;
+    gap_ext_report report;
     now_ms = 500;
     fake_radio_ticks = 1000000;
     fake_radio_ticks_enabled = 1;
@@ -980,7 +980,7 @@ static void test_extended_advertising_chain_transmit(void) {
         memset(data + offset + 2, 'X', chunk - 2);
         offset += chunk;
     }
-    gap_ext_scan_report report;
+    gap_ext_report report;
     now_ms = 750;
     fake_radio_ticks = 2000000;
     fake_radio_ticks_enabled = 1;
@@ -1427,10 +1427,10 @@ static void test_pawr_connection_accept(void) {
     sync->address_type = 0;
     memcpy(sync->address, advertiser, sizeof(advertiser));
     sync->sid = 4;
-    sync->has_pawr_timing = 1;
-    sync->pawr_num_subevents = 2;
-    sync->pawr_subevent_interval = 6;
-    sync->pawr_subevent = 1;
+    sync->pawr.has_timing = 1;
+    sync->pawr.subevents = 2;
+    sync->pawr.subevent_interval = 6;
+    sync->pawr.subevent = 1;
     sync->last_event_counter = 20;
     sync->access_address = 0x12345678;
     sync->crc_init = 0x123456;
@@ -1528,24 +1528,24 @@ static void test_pawr_observer_response(void) {
     sync->event_counter = 12;
     sync->anchor_ticks = 2000000;
     sync->access_address = 0x12345678;
-    sync->response_access_addr = 0x78563412;
+    sync->pawr.response_access_addr = 0x78563412;
     sync->crc_init = 0x123456;
     sync->phy = GAP_PHY_1M;
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
-    sync->has_pawr_timing = 1;
-    sync->pawr_num_subevents = 3;
-    sync->pawr_subevent_interval = 6;
-    sync->pawr_response_slot_delay = 1;
-    sync->pawr_response_slot_spacing = 3;
+    sync->pawr.has_timing = 1;
+    sync->pawr.subevents = 3;
+    sync->pawr.subevent_interval = 6;
+    sync->pawr.resp_delay = 1;
+    sync->pawr.resp_spacing = 3;
     sync->last_event_ms = now_ms;
     sync->timeout_ms = 1000;
-    assert(!sync->pawr_repeat);
+    assert(!sync->pawr.repeat);
     assert(gap_periodic_sync_pawr_repeat(1, 1));
     assert(!gap_periodic_sync_pawr_repeat(1, 2));
     assert(gap_periodic_sync_pawr_respond(1, 2, 0, response_data,
                                                 sizeof(response_data)));
-    assert(sync->pawr_subevent == 2 && sync->pawr_pending &&
+    assert(sync->pawr.subevent == 2 && sync->pawr.pending &&
            sync->next_event_ticks == sync->anchor_ticks + 45000);
     assert(!gap_periodic_sync_pawr_respond(1, 3, 0, response_data,
                                                 sizeof(response_data)));
@@ -1578,7 +1578,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.ready = 1;
     gap_ext_scan_process();
     assert(captured_extended_count == 1 &&
-           configured_access_address == sync->response_access_addr &&
+           configured_access_address == sync->pawr.response_access_addr &&
            captured_extended_pdu_lengths[0] == 7 &&
            captured_extended_pdus[0][0] == 0x07 &&
            captured_extended_pdus[0][2] == 1 &&
@@ -1590,7 +1590,7 @@ static void test_pawr_observer_response(void) {
                                     (uint16_t)(12 ^ 2)));
     assert(captured_extended_ticks[0] >= selected_subevent_start + 1250 &&
            captured_extended_ticks[0] <= selected_subevent_start + 1253);
-    assert(sync->pawr_pending && sync->event_counter == 13 &&
+    assert(sync->pawr.pending && sync->event_counter == 13 &&
            !sync->event_data_active &&
            sync->next_event_ticks == selected_subevent_start + 30000);
     assert(gap_periodic_report_poll(&report) && report.handle == 1 &&
@@ -1606,7 +1606,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
     gap_ext_scan_process();
-    assert(captured_extended_count == 2 && sync->pawr_pending &&
+    assert(captured_extended_count == 2 && sync->pawr.pending &&
            sync->event_counter == 14);
 
     // Disabling repeat leaves one final transmission, then consumes the data.
@@ -1619,7 +1619,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.rssi = -42;
     gap_ext_scan.ready = 1;
     gap_ext_scan_process();
-    assert(captured_extended_count == 3 && !sync->pawr_pending &&
+    assert(captured_extended_count == 3 && !sync->pawr.pending &&
            sync->event_counter == 15);
     gap_periodic_head = gap_periodic_count = 0;
     fake_radio_tick_autoincrement = 0;
@@ -1684,7 +1684,7 @@ static void test_periodic_advertising_sync(void) {
     gap_hw_scan_poll();
     assert(!gap_syncs[0].window_active);
 
-    gap_ext_adv_fields decoded_sync_info;
+    gap_ext_fields decoded_sync_info;
     sync_info_pdu[13] = 0x20; // 300 us units are invalid for this short offset.
     assert(!gap_ext_adv_decode(sync_info_pdu, sizeof(sync_info_pdu),
                                &decoded_sync_info));
@@ -1702,12 +1702,12 @@ static void test_periodic_advertising_sync(void) {
            !gap_syncs[0].established &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].access_address == 0x12345678 &&
-           gap_syncs[0].has_pawr_timing &&
-           gap_syncs[0].pawr_num_subevents == 2 &&
-           gap_syncs[0].pawr_subevent_interval == 6 &&
-           gap_syncs[0].pawr_response_slot_delay == 1 &&
-           gap_syncs[0].pawr_response_slot_spacing == 2 &&
-           gap_syncs[0].response_access_addr == 0x78563412);
+           gap_syncs[0].pawr.has_timing &&
+           gap_syncs[0].pawr.subevents == 2 &&
+           gap_syncs[0].pawr.subevent_interval == 6 &&
+           gap_syncs[0].pawr.resp_delay == 1 &&
+           gap_syncs[0].pawr.resp_spacing == 2 &&
+           gap_syncs[0].pawr.response_access_addr == 0x78563412);
 
     uint64_t first_event = gap_syncs[0].next_event_ticks;
     fake_radio_ticks = gap_syncs[0].start_ticks;
@@ -1786,7 +1786,7 @@ static void test_periodic_advertising_sync(void) {
 }
 
 static void test_coded_aux_receive_timing(void) {
-    gap_ext_adv_fields fields = {0};
+    gap_ext_fields fields = {0};
     uint8_t old_phy_mask = radio_phy_mask;
     assert(gap_phy_airtime_us(27, GAP_PHY_CODED) == 2704);
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
@@ -1863,7 +1863,7 @@ static void test_pawr_timing_decode(void) {
     memcpy(pdu + 32, (uint8_t[]){0x12, 0x34, 0x56, 0x78,
         2, 6, 1, 2}, 8);
 
-    gap_ext_adv_fields fields;
+    gap_ext_fields fields;
     assert(gap_ext_adv_decode(pdu, sizeof(pdu), &fields));
     assert(fields.has_pawr_timing && fields.response_access_addr ==
         0x78563412 && fields.pawr_num_subevents == 2 &&
@@ -2008,7 +2008,7 @@ static void test_extended_scannable_advertising(void) {
         offset += chunk;
     }
 
-    gap_ext_scan_report report;
+    gap_ext_report report;
     now_ms = 1100;
     fake_radio_ticks = 4000000;
     fake_radio_ticks_enabled = 1;
@@ -2946,7 +2946,7 @@ static void test_periodic_sync_transfer_receive(void) {
     memcpy(transferred_sync_info + 4, tx_buffer + 29, 6);
     transferred_sync_info[11] = (uint8_t)(tx_buffer[27] & 0x0f) << 4;
     memcpy(transferred_sync_info + 12, tx_buffer + 5, 18);
-    gap_ext_adv_fields transferred_fields;
+    gap_ext_fields transferred_fields;
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
         transferred_fields.sid == 6 &&

@@ -796,7 +796,7 @@ void gap_hw_received(void) {
             (frame[0] & 0x0f) == SCAN_REQ &&
             (!gap_adv.scan_accept || peer_in_accept_list)
         ) {
-            uint8_t response_len = gap_adv.scan_response_len;
+            uint8_t response_len = gap_adv.scan_resp_len;
             adv_evt.scan_frame[0] = SCAN_RSP | (adv_evt.adv_frame[0] & 0x40);
             adv_evt.scan_frame[1] = 6 + response_len;
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
@@ -1320,7 +1320,7 @@ void gap_hw_scan_poll(void) {
                     gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
                     GAP_HW_CRC_INIT(sync->crc_init);
 
-                    uint16_t event = sync->event_counter ^ (sync->has_pawr_timing ? sync->pawr_subevent : 0);
+                    uint16_t event = sync->event_counter ^ (sync->pawr.has_timing ? sync->pawr.subevent : 0);
                     uint8_t channel = sync->window_chain ? sync->aux_channel :
                             gap_periodic_channel_for(sync->access_address, sync->channel_map, event);
                     uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
@@ -1444,7 +1444,7 @@ int gap_send_due(
          pdu_type != ADV_SCAN_IND) || (!data && len) ||
         len > GAP_ADV_DATA_MAX ||
         target_type > 1 || (pdu_type == ADV_DIRECT_IND && len) ||
-        (pdu_type == ADV_SCAN_IND && !gap_adv.scan_response_len)
+        (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len)
     ) return -1;
 
     uint8_t public_address[6];

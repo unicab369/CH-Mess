@@ -423,7 +423,7 @@ static inline int gap_adv_start_payload(
 
     gap_adv.target_type = 0;
     gap_adv.data_len = (uint8_t)data_len;
-    gap_adv.scan_response_len = (uint8_t)resp_len;
+    gap_adv.scan_resp_len = (uint8_t)resp_len;
     gap_adv_enable(pdu_type, interval_ms, -1);
     return 1;
 }
@@ -477,7 +477,7 @@ int gap_adv_start_directed(
     gap_adv.target_type = address_type;
     memcpy(gap_adv.target_address, target, sizeof(target));
     gap_adv.data_len = 0;
-    gap_adv.scan_response_len = 0;
+    gap_adv.scan_resp_len = 0;
     gap_adv_enable(0x01, interval_ms, slot);
     return 1;
 }
