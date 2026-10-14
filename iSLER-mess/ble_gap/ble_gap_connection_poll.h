@@ -1300,43 +1300,43 @@ void gap_hw_scan_poll(void) {
             ) sync_slot = i;
         }
 
-        if (sync_slot >= 0 &&
-            (ticks > gap_syncs[sync_slot].end_ticks ||
-            (conn->link_state.active &&
-                ticks >= gap_syncs[sync_slot].start_ticks &&
-                gap_sync_conn_overlap(gap_syncs[sync_slot].start_ticks,
-                                        gap_syncs[sync_slot].end_ticks)
-            ))
-        ) {
-            gap_sync_window_missed((uint8_t)sync_slot);
-            sync_slot = -1;
-        }
+        uint8_t select_periodic = 0;
+        if (sync_slot >= 0) {
+            uint64_t start_ticks = gap_syncs[sync_slot].start_ticks;
+            uint64_t end_ticks = gap_syncs[sync_slot].end_ticks;
 
-        if (sync_slot >= 0 &&
-            (slot < 0 ||
-             gap_syncs[sync_slot].start_ticks <= gap_aux_request[slot].start_ticks) &&
-            ticks >= gap_syncs[sync_slot].start_ticks &&
-            ticks <= gap_syncs[sync_slot].end_ticks
-        ) {
-            gap_sync_context *sync = &gap_syncs[sync_slot];
-            if (gap_rx_armed) GAP_HW_STOP();
-            gap_ext_scan.periodic_slot = (uint8_t)sync_slot;
-            gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-            GAP_HW_CRC_INIT(sync->crc_init);
+            if (ticks > end_ticks ||
+                (conn->link_state.active &&
+                 ticks >= start_ticks &&
+                 gap_sync_conn_overlap(start_ticks, end_ticks))
+            ) {
+                gap_sync_window_missed((uint8_t)sync_slot);
+                sync_slot = -1;
+            }
+            else if (slot < 0 || start_ticks <= gap_aux_request[slot].start_ticks
+            ) {
+                select_periodic = 1;
+                if (ticks >= start_ticks && ticks <= end_ticks
+                ) {
+                    gap_sync_context *sync = &gap_syncs[sync_slot];
+                    if (gap_rx_armed) GAP_HW_STOP();
+                    gap_ext_scan.periodic_slot = (uint8_t)sync_slot;
+                    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
+                    GAP_HW_CRC_INIT(sync->crc_init);
 
-            uint16_t event = sync->event_counter ^
-                (sync->has_pawr_timing ? sync->pawr_subevent : 0);
-            uint8_t channel = sync->window_chain ?
-                sync->aux_channel :
-                gap_periodic_channel_for( sync->access_address, sync->channel_map, event);
-            uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
+                    uint16_t event = sync->event_counter ^ (sync->has_pawr_timing ? sync->pawr_subevent : 0);
+                    uint8_t channel = sync->window_chain ? sync->aux_channel :
+                            gap_periodic_channel_for(sync->access_address, sync->channel_map, event);
+                    uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
 
-            gap_ext_scan.periodic_rx_phy = phy;
-            GAP_HW_LINK_CONFIG(sync->access_address, channel, NULL, 0, phy, phy);
-            GAP_HW_LINK_RX();
-            gap_ext_scan.periodic_listening = 1;
-            gap_rx_armed = 1;
-            return;
+                    gap_ext_scan.periodic_rx_phy = phy;
+                    GAP_HW_LINK_CONFIG(sync->access_address, channel, NULL, 0, phy, phy);
+                    GAP_HW_LINK_RX();
+                    gap_ext_scan.periodic_listening = 1;
+                    gap_rx_armed = 1;
+                    return;
+                }
+            }
         }
 
         if (slot >= 0 && !select_periodic) {
