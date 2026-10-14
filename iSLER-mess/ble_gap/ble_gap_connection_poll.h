@@ -1424,12 +1424,19 @@ int gap_send_due(
         gap_rx_armed = 0;
     }
 
-    const uint8_t *data = send_gap ? gap_adv.data : fallback_ad;
-    const uint8_t *random_address = send_gap && gap_adv.address_type ? gap_adv.address : NULL;
+    const uint8_t *data = fallback_ad;
+    const uint8_t *random_address = NULL;
+    uint8_t target_type = 0;
+    uint8_t pdu_type = ADV_NONCONN_IND;
+    uint8_t len = fallback_len;
 
-    uint8_t target_type = send_gap ? gap_adv.target_type : 0;
-    uint8_t pdu_type = send_gap ? gap_adv.pdu_type : ADV_NONCONN_IND;
-    uint8_t len = send_gap ? gap_adv.data_len : fallback_len;
+    if (send_gap) {
+        data = gap_adv.data;
+        random_address = gap_adv.address_type ? gap_adv.address : NULL;
+        target_type = gap_adv.target_type;
+        pdu_type = gap_adv.pdu_type;
+        len = gap_adv.data_len;
+    }
 
     if ((pdu_type != ADV_IND &&
          pdu_type != ADV_DIRECT_IND &&
@@ -1443,10 +1450,8 @@ int gap_send_due(
     uint8_t public_address[6];
     GAP_HW_PUBLIC_ADDRESS(public_address);
     adv_evt.adv_frame[0] = pdu_type | (random_address ? 0x40 : 0) |
-                                (pdu_type == ADV_DIRECT_IND ?
-                                    target_type << 7 : 0);
-    adv_evt.adv_frame[1] =
-        pdu_type == ADV_DIRECT_IND ? 12 : 6 + len;
+                        (pdu_type == ADV_DIRECT_IND ? target_type << 7 : 0);
+    adv_evt.adv_frame[1] = (pdu_type == ADV_DIRECT_IND) ? 12 : 6 + len;
 
     const uint8_t *address = random_address ? random_address : public_address;
     memcpy(adv_evt.adv_frame + 2, address, 6);
@@ -1465,7 +1470,8 @@ int gap_send_due(
                 break;
             }
         }
-    } else {
+    }
+    else {
         adv_evt.rx_event = 1;
 
         for (uint8_t channel = 37; channel <= 39; channel++) {
@@ -1474,7 +1480,7 @@ int gap_send_due(
             adv_evt.conn_req_ready = 0;
 
             GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel,
-                adv_evt.adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
+                            adv_evt.adv_frame, 1, GAP_PHY_1M, GAP_PHY_1M);
             GAP_HW_LINK_TX();
             int timeout = HW_TICKS_FROM_US(1000);
             while (!GAP_HW_TX_DONE() && timeout-- > 0) {}
