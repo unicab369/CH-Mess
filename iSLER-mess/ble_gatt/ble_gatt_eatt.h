@@ -106,6 +106,7 @@ static inline int ble_gatt_eatt_find(
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED &&
             eatt->bearers[i].cid == cid)
             return i;
+    return -1;
 }
 
 static inline int ble_gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
@@ -121,9 +122,11 @@ static inline int ble_gatt_eatt_open(ble_gatt_eatt *eatt) {
     if (!eatt || !eatt->encrypted || !eatt->ops.open ||
         ble_gatt_eatt_free_slot(eatt) < 0)
         return 0;
+    int slot = ble_gatt_eatt_free_slot(eatt);
     if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_PSM,
                         eatt->local_mtu))
         return 0;
+    eatt->bearers[slot].state = BLE_GATT_EATT_OPENING;
     return 1;
 }
 
@@ -202,6 +205,7 @@ static inline int ble_gatt_eatt_reconfigure(
     if (slot < 0 || negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
         negotiated_mtu > BLE_GATT_EATT_MTU_MAX)
         return 0;
+    eatt->bearers[slot].mtu = negotiated_mtu < eatt->local_mtu ?
         negotiated_mtu : eatt->local_mtu;
     return 1;
 }
@@ -214,6 +218,7 @@ static inline int ble_gatt_eatt_send(
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || !eatt->ops.send)
         return 0;
+    return eatt->ops.send(eatt->ops.context, cid, pdu, len);
 }
 
 // Deliver one complete ATT SDU from ECFC. EATT does not carry ATT Signed
@@ -227,6 +232,7 @@ static inline int ble_gatt_eatt_receive(
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
         !eatt->ops.receive_att)
         return 0;
+    return eatt->ops.receive_att(eatt->ops.context, cid, pdu, len);
 }
 
 static inline void ble_gatt_eatt_channel_closed(

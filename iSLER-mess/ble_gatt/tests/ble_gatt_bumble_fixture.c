@@ -138,6 +138,7 @@ int main(void) {
         !ble_gatt_server_set_min_key_size(&server, authorized_value, 12) ||
         !ble_gatt_server_seal_database(&server))
         return 2;
+    (void)signed_declaration;
     ble_gatt_server_set_authorizer(&server,
         authorize_application_access, NULL);
     ble_gatt_server_set_signed_write_verifier(&server,
@@ -153,6 +154,7 @@ int main(void) {
         if (!request_len || request_len > sizeof(request) ||
             fread(request, 1, request_len, stdin) != request_len)
             return 3;
+        uint16_t response_len = 0;
         int has_response;
         // Harness-only link state control; this is not an ATT PDU sent by a
         // peer. It lets interop tests exercise security error selection.
@@ -181,10 +183,12 @@ int main(void) {
         if (fwrite(output_size, 1, 2, stdout) != 2 ||
             (output_len && fwrite(response, 1, output_len, stdout) != output_len))
             return 4;
+        uint8_t event_size[2] = {(uint8_t)event_len,
                                  (uint8_t)(event_len >> 8)};
         if (fwrite(event_size, 1, 2, stdout) != 2 ||
             (event_len && fwrite(event, 1, event_len, stdout) != event_len))
             return 5;
+        fflush(stdout);
     }
     return 0;
 }
