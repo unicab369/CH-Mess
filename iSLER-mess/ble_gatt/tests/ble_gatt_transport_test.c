@@ -182,7 +182,7 @@ static void test_client_timeout_terminates_fixed_bearer(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     gatt_transport_set_terminate_callback(&transport,
@@ -225,7 +225,7 @@ static void test_client_only_transport(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, NULL, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     client_result_count = client_event_count = 0;
@@ -271,7 +271,7 @@ static void test_malformed_att_closes_fixed_bearer(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, NULL, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     gatt_transport_set_terminate_callback(&transport,
@@ -330,7 +330,7 @@ static void test_wrong_client_response_closes_fixed_bearer(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, NULL, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     gatt_transport_set_terminate_callback(&transport,
@@ -391,7 +391,7 @@ static void test_simultaneous_client_and_server(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     client_result_count = client_event_count = 0;
@@ -458,7 +458,7 @@ static void test_dual_role_mtu_synchronization(void) {
         fake_security_state
     };
     assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_client_init(&client, ble_gatt_transport_send_client,
+    gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     assert(client.local_mtu == server.local_mtu);

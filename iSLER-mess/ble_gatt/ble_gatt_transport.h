@@ -376,14 +376,14 @@ static inline void gatt_transport_eatt_client_init(
     if (transport->server && bearer->server.local_mtu < local_mtu)
         local_mtu = bearer->server.local_mtu;
     gatt_client_init(&bearer->client,
-        ble_gatt_transport_eatt_client_send,
-        ble_gatt_transport_eatt_client_result,
-        ble_gatt_transport_eatt_client_notification,
-        ble_gatt_transport_eatt_client_indication, bearer);
+        gatt_transport_eatt_client_send,
+        gatt_transport_eatt_client_result,
+        gatt_transport_eatt_client_notification,
+        gatt_transport_eatt_client_indication, bearer);
     bearer->client.local_mtu = local_mtu;
     if (transport->eatt_sign || (transport->client && transport->client->sign))
         gatt_client_set_signer(&bearer->client,
-            ble_gatt_transport_eatt_client_sign);
+            gatt_transport_eatt_client_sign);
     bearer->client_enabled = transport->eatt_result != NULL ||
         (transport->client && transport->client->result != NULL);
 }
@@ -553,10 +553,10 @@ static inline int gatt_transport_eatt_init(
         return 0;
     if (transport->l2cap.local_mps < BLE_L2CAP_ECFC_MPS_MIN) return 0;
     ble_gatt_eatt_ops eatt_ops = {0};
-    eatt_ops.open = ble_gatt_transport_eatt_open_channel;
-    eatt_ops.send = ble_gatt_transport_eatt_send_sdu;
-    eatt_ops.close = ble_gatt_transport_eatt_close_channel;
-    eatt_ops.receive_att = ble_gatt_transport_eatt_receive_att;
+    eatt_ops.open = gatt_transport_eatt_open_channel;
+    eatt_ops.send = gatt_transport_eatt_send_sdu;
+    eatt_ops.close = gatt_transport_eatt_close_channel;
+    eatt_ops.receive_att = gatt_transport_eatt_receive_att;
     eatt_ops.context = transport;
     gatt_eatt_init(&transport->eatt, &eatt_ops, local_mtu);
     transport->eatt_receive_att = receive_att;
@@ -569,10 +569,10 @@ static inline int gatt_transport_eatt_init(
     }
 
     transport->l2cap.local_mtu = transport->eatt.local_mtu;
-    transport->l2cap.ops.authorize_psm = ble_gatt_transport_authorize_psm;
-    transport->l2cap.ops.channel_opened = ble_gatt_transport_channel_opened;
-    transport->l2cap.ops.channel_closed = ble_gatt_transport_channel_closed;
-    transport->l2cap.ops.channel_data = ble_gatt_transport_channel_data;
+    transport->l2cap.ops.authorize_psm = gatt_transport_authorize_psm;
+    transport->l2cap.ops.channel_opened = gatt_transport_channel_opened;
+    transport->l2cap.ops.channel_closed = gatt_transport_channel_closed;
+    transport->l2cap.ops.channel_data = gatt_transport_channel_data;
     transport->eatt_enabled = 1;
     return 1;
 }
@@ -603,14 +603,14 @@ static inline int gatt_transport_init(
     transport->ops = *ops;
     if (server && !gatt_server_seal_database(server)) return 0;
     ble_l2cap_ops l2cap_ops = {0};
-    l2cap_ops.send_pdu = ble_gatt_transport_send_l2cap_pdu;
+    l2cap_ops.send_pdu = gatt_transport_send_l2cap_pdu;
     l2cap_ops.context = transport;
     uint16_t mps = BLE_L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
         BLE_L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
     if (!ble_l2cap_connection_init(&transport->l2cap, &l2cap_ops,
             BLE_GATT_TRANSPORT_MTU_MAX, mps, BLE_L2CAP_INITIAL_CREDITS) ||
         !ble_l2cap_connection_register_fixed(&transport->l2cap,
-            BLE_GATT_TRANSPORT_ATT_CID, ble_gatt_transport_receive_att,
+            BLE_GATT_TRANSPORT_ATT_CID, gatt_transport_receive_att,
             transport))
         return 0;
     return 1;
