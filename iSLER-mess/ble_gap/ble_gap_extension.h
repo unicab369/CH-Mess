@@ -75,6 +75,7 @@ typedef struct {
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 } gap_ext_context;
 static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
+
 typedef struct {
     uint8_t used, address_type, address[6], has_adi, sid;
     uint16_t did, data_len;
@@ -147,14 +148,23 @@ typedef struct {
 } gap_sync_context;
 static gap_sync_context gap_syncs[GAP_PERIODIC_SYNC_COUNT];
 
-static gap_periodic_sync_event gap_sync_events[GAP_PERIODIC_SYNC_EVENT_COUNT];
-static uint8_t gap_sync_head, gap_sync_event_count;
-static gap_periodic_report gap_periodic_reports[GAP_PERIODIC_REPORT_COUNT];
-static uint8_t gap_periodic_head, gap_periodic_count;
-static gap_pawr_report gap_pawr_reports[GAP_PAWR_RESPONSE_REPORT_COUNT];
-static uint8_t gap_pawr_head, gap_pawr_count;
-static uint8_t gap_sync_owned_scan, gap_past_enabled;
-static uint32_t gap_past_timeout_ms = 10000;
+static struct {
+    gap_periodic_sync_event items[GAP_PERIODIC_SYNC_EVENT_COUNT];
+    uint8_t head, count;
+} gap_sync_events;
+static struct {
+    gap_periodic_report items[GAP_PERIODIC_REPORT_COUNT];
+    uint8_t head, count;
+} gap_periodic_reports;
+static struct {
+    gap_pawr_report items[GAP_PAWR_RESPONSE_REPORT_COUNT];
+    uint8_t head, count;
+} gap_pawr_reports;
+static uint8_t gap_sync_owned_scan;
+static struct {
+    uint8_t enabled;
+    uint32_t timeout_ms;
+} gap_past = { .timeout_ms = 10000 };
 
 // -----------------------------------------------------------------------------
 // Extended scan and periodic radio state
@@ -966,15 +976,15 @@ static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
     event.address_type = gap_syncs[slot].address_type;
     memcpy(event.address, gap_syncs[slot].address, 6);
 
-    if (gap_sync_event_count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
-        gap_sync_head = (gap_sync_head + 1) %
-            GAP_PERIODIC_SYNC_EVENT_COUNT;
-        gap_sync_event_count--;
+    if (gap_sync_events.count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
+        gap_sync_events.head =
+            (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
+        gap_sync_events.count--;
     }
-    uint8_t tail = (gap_sync_head +
-        gap_sync_event_count) % GAP_PERIODIC_SYNC_EVENT_COUNT;
-    gap_sync_events[tail] = event;
-    gap_sync_event_count++;
+    uint8_t tail = (gap_sync_events.head + gap_sync_events.count) %
+        GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_sync_events.items[tail] = event;
+    gap_sync_events.count++;
 }
 
 // Request synchronization to one advertiser and SID. Scanning is started
@@ -1025,8 +1035,8 @@ int gap_periodic_sync_enable(
 ) {
     if (enabled > 1 || (enabled && (timeout_ms < 100 || timeout_ms > 163840)))
         return 0;
-    gap_past_enabled = enabled;
-    if (enabled) gap_past_timeout_ms = timeout_ms;
+    gap_past.enabled = enabled;
+    if (enabled) gap_past.timeout_ms = timeout_ms;
     return 1;
 }
 
@@ -1139,33 +1149,34 @@ int gap_periodic_sync_pawr_connect_accept(
 }
 
 int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
-    if (!event || !gap_sync_event_count) return 0;
+    if (!event || !gap_sync_events.count) return 0;
 
-    *event = gap_sync_events[gap_sync_head];
-    gap_sync_head =
-        (gap_sync_head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
-    gap_sync_event_count--;
+    *event = gap_sync_events.items[gap_sync_events.head];
+    gap_sync_events.head =
+        (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_sync_events.count--;
     return 1;
 }
 
 int gap_periodic_report_poll(gap_periodic_report *report) {
-    if (!report || !gap_periodic_count) return 0;
+    if (!report || !gap_periodic_reports.count) return 0;
 
-    *report = gap_periodic_reports[gap_periodic_head];
-    gap_periodic_head = (gap_periodic_head + 1) % GAP_PERIODIC_REPORT_COUNT;
-    gap_periodic_count--;
+    *report = gap_periodic_reports.items[gap_periodic_reports.head];
+    gap_periodic_reports.head =
+        (gap_periodic_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
+    gap_periodic_reports.count--;
     return 1;
 }
 
 int gap_periodic_response_report_poll(
     gap_pawr_report *report
 ) {
-    if (!report || !gap_pawr_count) return 0;
+    if (!report || !gap_pawr_reports.count) return 0;
 
-    *report = gap_pawr_reports[gap_pawr_head];
-    gap_pawr_head =
-        (gap_pawr_head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
-    gap_pawr_count--;
+    *report = gap_pawr_reports.items[gap_pawr_reports.head];
+    gap_pawr_reports.head =
+        (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
+    gap_pawr_reports.count--;
     return 1;
 }
 
@@ -1359,14 +1370,14 @@ static int gap_periodic_sync_receive(
         return 0;
     }
 
-    if (gap_periodic_count == GAP_PERIODIC_REPORT_COUNT) {
-        gap_periodic_head = (gap_periodic_head + 1) %
+    if (gap_periodic_reports.count == GAP_PERIODIC_REPORT_COUNT) {
+        gap_periodic_reports.head = (gap_periodic_reports.head + 1) %
             GAP_PERIODIC_REPORT_COUNT;
-        gap_periodic_count--;
+        gap_periodic_reports.count--;
     }
-    uint8_t tail = (gap_periodic_head + gap_periodic_count) %
-        GAP_PERIODIC_REPORT_COUNT;
-    gap_periodic_report *report = &gap_periodic_reports[tail];
+    uint8_t tail = (gap_periodic_reports.head + gap_periodic_reports.count) %
+                   GAP_PERIODIC_REPORT_COUNT;
+    gap_periodic_report *report = &gap_periodic_reports.items[tail];
     report->handle = gap_syncs[slot].handle;
     report->sid = gap_syncs[slot].sid;
     report->event_counter = gap_syncs[slot].last_event_counter;
@@ -1375,7 +1386,7 @@ static int gap_periodic_sync_receive(
     report->data_len = gap_syncs[slot].data_len;
     if (report->data_len)
         memcpy(report->data, gap_syncs[slot].data, report->data_len);
-    gap_periodic_count++;
+    gap_periodic_reports.count++;
     gap_syncs[slot].data_len = 0;
     return 1;
 }
@@ -1451,15 +1462,15 @@ static void gap_pawr_response_report_push(
                 fields.payload.len <= GAP_PAWR_RESPONSE_DATA_MAX &&
                 gap_ext_ad_data_valid(fields.payload.data, fields.payload.len)
             ) {
-                if (gap_pawr_count == GAP_PAWR_RESPONSE_REPORT_COUNT) {
-                    gap_pawr_head = (gap_pawr_head + 1) %
-                                                    GAP_PAWR_RESPONSE_REPORT_COUNT;
-                    gap_pawr_count--;
+                if (gap_pawr_reports.count == GAP_PAWR_RESPONSE_REPORT_COUNT) {
+                    gap_pawr_reports.head = (gap_pawr_reports.head + 1) %
+                        GAP_PAWR_RESPONSE_REPORT_COUNT;
+                    gap_pawr_reports.count--;
                 }
-                uint8_t tail =
-                    (gap_pawr_head + gap_pawr_count) %
+                uint8_t tail = (gap_pawr_reports.head +
+                    gap_pawr_reports.count) %
                     GAP_PAWR_RESPONSE_REPORT_COUNT;
-                gap_pawr_report *report = &gap_pawr_reports[tail];
+                gap_pawr_report *report = &gap_pawr_reports.items[tail];
                 memset(report, 0, sizeof(*report));
                 report->set_id = set_id;
                 report->sid = gap_ext_adv[set_id].sid;
@@ -1471,7 +1482,7 @@ static void gap_pawr_response_report_push(
                 report->rssi = gap_ext_pawr.response.rssi;
                 if (fields.payload.len)
                     memcpy(report->data, fields.payload.data, fields.payload.len);
-                gap_pawr_count++;
+                gap_pawr_reports.count++;
             }
             break;
         }
@@ -2266,7 +2277,7 @@ static int gap_periodic_sync_transfer_receive(
     uint64_t connection_anchor_ticks, uint16_t connection_event_counter
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_past_enabled || !frame || frame[1] != 35)
+    if (!gap_past.enabled || !frame || frame[1] != 35)
         return 0;
     uint8_t address_type = (frame[27] >> 4) & 1;
     uint8_t sid = frame[27] & 0x0f;
@@ -2392,8 +2403,7 @@ static int gap_periodic_sync_transfer_receive(
     gap_syncs[free_slot].start_ticks = window_start;
     gap_syncs[free_slot].end_ticks = window_end;
     gap_syncs[free_slot].window_active = 1;
-    gap_syncs[free_slot].timeout_ms =
-        gap_past_timeout_ms;
+    gap_syncs[free_slot].timeout_ms = gap_past.timeout_ms;
     gap_syncs[free_slot].last_event_ms = GET_MILLIS();
     return 1;
 }

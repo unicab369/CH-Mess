@@ -1519,7 +1519,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.aux_listening = 0;
     gap_scan.applied_generation = gap_scanner.generation;
     memset(gap_syncs, 0, sizeof(gap_syncs));
-    gap_periodic_head = gap_periodic_count = 0;
+    gap_periodic_reports.head = gap_periodic_reports.count = 0;
     memset(sync, 0, sizeof(*sync));
     sync->used = sync->established = 1;
     sync->handle = 1;
@@ -1621,7 +1621,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan_process();
     assert(captured_extended_count == 3 && !sync->pawr.pending &&
            sync->event_counter == 15);
-    gap_periodic_head = gap_periodic_count = 0;
+    gap_periodic_reports.head = gap_periodic_reports.count = 0;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
     gap_rx_armed = 0;
