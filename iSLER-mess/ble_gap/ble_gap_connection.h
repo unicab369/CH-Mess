@@ -546,7 +546,8 @@ static uint8_t gap_rate_parameters_valid(
         factor >= 1 && factor <= 500 && latency <= 499 &&
         continuation < factor && factor * (latency + 1) <= 500 &&
         timeout >= 10 && timeout <= 3200 &&
-        (uint32_t)timeout * 80 > 2 * (uint32_t)interval * factor * (latency + 1);
+        (uint64_t)timeout * 80 >
+            2ull * interval * factor * (latency + 1);
 }
 
 static uint16_t gap_conn_rate_min_interval(void) {

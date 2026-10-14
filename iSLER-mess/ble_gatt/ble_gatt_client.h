@@ -153,75 +153,6 @@ static inline int ble_gatt_client_request(
     return 1;
 }
 
-static inline int ble_gatt_client_error_handle_valid(
-    const ble_gatt_client *client, const uint8_t *pdu
-) {
-    uint16_t error_handle = ble_att_get_u16(pdu + 2);
-    uint8_t request = client->request.opcode;
-    if (!error_handle) {
-        if (pdu[4] == 0x04 || pdu[4] == 0x06 || request == 0x02 ||
-            request == 0x18)
-            return 1;
-        switch (request) {
-        case 0x0a: case 0x12:
-            return client->request.len >= 3 &&
-                !ble_att_get_u16(client->request_pdu + 1);
-        case 0x0c: case 0x16:
-            return client->request.len >= 5 &&
-                !ble_att_get_u16(client->request_pdu + 1);
-        case 0x04: case 0x06: case 0x08: case 0x10:
-            return client->request.len >= 5 &&
-                !ble_att_get_u16(client->request_pdu + 1);
-        case 0x0e: case 0x20:
-            if (client->request.len < 5 ||
-                ((client->request.len - 1) & 1))
-                return 0;
-            for (uint16_t offset = 1; offset < client->request.len;
-                 offset += 2)
-                if (!ble_att_get_u16(client->request_pdu + offset)) return 1;
-            return 0;
-        default:
-            return 0;
-        }
-    }
-
-    switch (request) {
-    case 0x0a: case 0x12:
-        return client->request.len >= 3 && error_handle ==
-            ble_att_get_u16(client->request_pdu + 1);
-    case 0x0c:
-        return client->request.len >= 5 && error_handle ==
-            ble_att_get_u16(client->request_pdu + 1);
-    case 0x16:
-        return client->request.len >= 5 && error_handle ==
-            ble_att_get_u16(client->request_pdu + 1);
-    case 0x0e: case 0x20:
-        if (client->request.len < 5 || ((client->request.len - 1) & 1))
-            return 0;
-        for (uint16_t offset = 1; offset < client->request.len; offset += 2)
-            if (error_handle == ble_att_get_u16(
-                    client->request_pdu + offset))
-                return 1;
-        return 0;
-    case 0x18:
-        // Execute Write has no handle in its request. An application error
-        // may identify the queued attribute that failed, whose handle is not
-        // retained by this transaction primitive.
-        return 1;
-    case 0x04: case 0x06: case 0x08: case 0x10:
-        if (client->request.len < 5) return 0;
-        {
-            uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-            uint16_t last = ble_att_get_u16(client->request_pdu + 3);
-            return error_handle == first ||
-                (first <= last && error_handle >= first &&
-                 error_handle <= last);
-        }
-    default:
-        return 0;
-    }
-}
-
 static inline void ble_gatt_client_put_u16(uint8_t *p, uint16_t value) {
     ble_att_put_u16(p, value);
 }
@@ -624,7 +555,79 @@ static inline int ble_gatt_client_receive(
             return -1;
         }
 
-        if (!ble_gatt_client_error_handle_valid(client, pdu)) {
+        uint16_t error_handle = ble_att_get_u16(pdu + 2);
+        uint8_t request = client->request.opcode;
+        uint8_t error_handle_valid = 0;
+        if (!error_handle) {
+            if (pdu[4] == 0x04 || pdu[4] == 0x06 || request == 0x02 ||
+                request == 0x18) {
+                error_handle_valid = 1;
+            } else {
+                switch (request) {
+                case 0x0a: case 0x12:
+                    error_handle_valid = client->request.len >= 3 &&
+                        !ble_att_get_u16(client->request_pdu + 1);
+                    break;
+                case 0x0c: case 0x16:
+                case 0x04: case 0x06: case 0x08: case 0x10:
+                    error_handle_valid = client->request.len >= 5 &&
+                        !ble_att_get_u16(client->request_pdu + 1);
+                    break;
+                case 0x0e: case 0x20:
+                    if (client->request.len >= 5 &&
+                        !((client->request.len - 1) & 1)) {
+                        for (uint16_t offset = 1;
+                             offset < client->request.len; offset += 2) {
+                            if (!ble_att_get_u16(client->request_pdu + offset)) {
+                                error_handle_valid = 1;
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        } else {
+            switch (request) {
+            case 0x0a: case 0x12:
+                error_handle_valid = client->request.len >= 3 &&
+                    error_handle == ble_att_get_u16(client->request_pdu + 1);
+                break;
+            case 0x0c: case 0x16:
+                error_handle_valid = client->request.len >= 5 &&
+                    error_handle == ble_att_get_u16(client->request_pdu + 1);
+                break;
+            case 0x0e: case 0x20:
+                if (client->request.len >= 5 &&
+                    !((client->request.len - 1) & 1)) {
+                    for (uint16_t offset = 1;
+                         offset < client->request.len; offset += 2) {
+                        if (error_handle == ble_att_get_u16(
+                                client->request_pdu + offset)) {
+                            error_handle_valid = 1;
+                            break;
+                        }
+                    }
+                }
+                break;
+            case 0x18:
+                // The execute-write request has no handle for comparison.
+                error_handle_valid = 1;
+                break;
+            case 0x04: case 0x06: case 0x08: case 0x10: {
+                if (client->request.len >= 5) {
+                    uint16_t first = ble_att_get_u16(client->request_pdu + 1);
+                    uint16_t last = ble_att_get_u16(client->request_pdu + 3);
+                    error_handle_valid = error_handle == first ||
+                        (first <= last && error_handle >= first &&
+                         error_handle <= last);
+                }
+                break;
+            }
+            }
+        }
+
+        if (!error_handle_valid) {
             memset(&client->request, 0, sizeof(client->request));
             client->operation.kind = 0;
             client->result(client->context, BLE_GATT_CLIENT_PROTOCOL_ERROR,
