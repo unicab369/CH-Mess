@@ -636,8 +636,8 @@ static void test_extended_advertising_reassembly(void) {
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         chain, sizeof(chain), -50) == 1);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.address_type == 1 &&
-           !memcmp(report.address, auxiliary + 4, 6));
+    assert(report.addr.has_address && report.addr.address_type == 1 &&
+           !memcmp(report.addr.address, auxiliary + 4, 6));
     assert(report.sid == 2 && report.data_len == 3 && report.rssi == -50 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
     assert(!gap_ext_scan_poll(&report));
@@ -664,7 +664,7 @@ static void test_extended_advertising_reassembly(void) {
         chain_b, sizeof(chain_b), -45) == 1);
     assert(gap_ext_scan_poll(&report) && report.sid == 2);
     assert(gap_ext_scan_poll(&report) && report.sid == 3 &&
-           !memcmp(report.address, auxiliary_b + 4, 6));
+           !memcmp(report.addr.address, auxiliary_b + 4, 6));
 
     gap_scan_stop();
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_GENERAL, 1));
@@ -797,7 +797,7 @@ static void test_extended_advertising_radio_followup(void) {
     gap_hw_received();
     gap_hw_scan_poll();
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 2 && report.data_len == 3 &&
+    assert(report.addr.has_address && report.sid == 2 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){0x02, 0x01, 0x06}, 3));
 
     gap_scan_stop();
@@ -900,7 +900,7 @@ static void test_extended_advertising_transmit(void) {
         auxiliary, captured_extended_pdu_lengths[1], -40));
     assert(!gap_ext_adv_contexts[0].active);
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 4 && report.data_len == 3 &&
+    assert(report.addr.has_address && report.sid == 4 && report.data_len == 3 &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));
     gap_scan_stop();
@@ -1030,7 +1030,7 @@ static void test_extended_advertising_chain_transmit(void) {
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     assert(gap_ext_scan_poll(&report));
-    assert(report.has_address && report.sid == 5 &&
+    assert(report.addr.has_address && report.sid == 5 &&
            report.data_len == sizeof(data) &&
            !memcmp(report.data, data, sizeof(data)));
     assert(gap_ext_adv_stop(0));

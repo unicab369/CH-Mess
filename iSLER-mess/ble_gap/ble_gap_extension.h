@@ -57,6 +57,10 @@ enum {
 };
 typedef struct {
     uint8_t has_address, address_type, address[6];
+} gap_ext_address;
+
+typedef struct {
+    gap_ext_address addr;
     uint8_t has_adi, sid;
     uint16_t adi;
 } gap_ext_identity;
@@ -104,7 +108,7 @@ typedef struct {
 } gap_periodic_report;
 typedef struct {
     uint8_t set_id, sid, subevent, response_slot;
-    uint8_t has_address, address_type, address[6];
+    gap_ext_address addr;
     uint16_t event_counter, data_len;
     int8_t rssi;
     uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
@@ -511,7 +515,7 @@ int gap_ext_adv_stop(uint8_t set_id) {
 // Extended scan report state
 // -----------------------------------------------------------------------------
 typedef struct {
-    uint8_t has_address, address_type, address[6];
+    gap_ext_address addr;
     uint8_t resolved, identity_type, identity_address[6];
     uint8_t has_adi, sid;
     uint16_t did;
@@ -714,17 +718,16 @@ static int gap_ext_adv_decode(
 
 // Queue one fully reassembled extended report after privacy/discovery filters.
 static void gap_ext_report_queue(
-    const uint8_t *address, uint8_t has_address,
-    uint8_t address_type, uint8_t has_adi, uint16_t adi, uint8_t sid,
+    const gap_ext_identity *identity,
     const uint8_t *data, uint16_t data_len, int8_t rssi
 ) {
-    uint8_t zero_address[6] = {0};
-    if (!address) address = zero_address;
-    if (!gap_ext_ad_data_valid(data, data_len))
+    if (!identity || !gap_ext_ad_data_valid(data, data_len))
         return;
-    int identity_slot = has_address ? gap_identity_find(address, address_type) : -1;
+    int identity_slot = identity->addr.has_address ?
+        gap_identity_find(identity->addr.address, identity->addr.address_type) : -1;
 
-    if ((has_address && !gap_peer_allowed(identity_slot, address, address_type)) ||
+    if ((identity->addr.has_address && !gap_peer_allowed(
+            identity_slot, identity->addr.address, identity->addr.address_type)) ||
         (gap_privacy.scan_filter && identity_slot < 0)
     ) return;
 
@@ -745,10 +748,10 @@ static void gap_ext_report_queue(
         if (!discoverable) return;
     }
 
-    uint8_t identity_type =
-        identity_slot >= 0 ? gap_identities[identity_slot].address_type : address_type;
-    const uint8_t *identity =
-        identity_slot >= 0 ? gap_identities[identity_slot].address : address;
+    uint8_t identity_type = identity_slot >= 0 ?
+                gap_identities[identity_slot].address_type : identity->addr.address_type;
+    const uint8_t *identity_address = identity_slot >= 0 ?
+                gap_identities[identity_slot].address : identity->addr.address;
     uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
 
     for (uint16_t i = 0; i < data_len; i++)
@@ -759,10 +762,11 @@ static void gap_ext_report_queue(
             gap_ext_adv_seen_entry *seen = &gap_ext_adv_seen[i];
 
             if (seen->used && seen->address_type == identity_type &&
-                seen->sid == sid && !memcmp(seen->address, identity, 6) &&
-                seen->has_adi == has_adi &&
-                ((has_adi && seen->did == (adi & 0x0fff)) ||
-                 (!has_adi && seen->data_len == data_len &&
+                seen->sid == identity->sid &&
+                !memcmp(seen->address, identity_address, 6) &&
+                seen->has_adi == identity->has_adi &&
+                ((identity->has_adi && seen->did == (identity->adi & 0x0fff)) ||
+                 (!identity->has_adi && seen->data_len == data_len &&
                   seen->data_hash == data_hash))
             ) return;
         }
@@ -775,10 +779,10 @@ static void gap_ext_report_queue(
         gap_ext_adv_seen_entry *seen = &gap_ext_adv_seen[slot];
         seen->used = 1;
         seen->address_type = identity_type;
-        memcpy(seen->address, identity, 6);
-        seen->has_adi = has_adi;
-        seen->sid = sid;
-        seen->did = adi & 0x0fff;
+        memcpy(seen->address, identity_address, 6);
+        seen->has_adi = identity->has_adi;
+        seen->sid = identity->sid;
+        seen->did = identity->adi & 0x0fff;
         seen->data_len = data_len;
         seen->data_hash = data_hash;
     }
@@ -788,18 +792,19 @@ static void gap_ext_report_queue(
             (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
         gap_ext_scan_idx.report_count--;
     }
-    uint8_t slot =
-        (gap_ext_scan_idx.report_head + gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
+    uint8_t slot = (gap_ext_scan_idx.report_head +
+                    gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
-    report->has_address = has_address;
-    report->address_type = address_type;
-    memcpy(report->address, address, 6);
+
+    report->addr.has_address = identity->addr.has_address;
+    report->addr.address_type = identity->addr.address_type;
+    memcpy(report->addr.address, identity->addr.address, 6);
     report->resolved = identity_slot >= 0;
     report->identity_type = identity_type;
-    memcpy(report->identity_address, identity, 6);
-    report->has_adi = has_adi;
-    report->sid = sid;
-    report->did = adi & 0x0fff;
+    memcpy(report->identity_address, identity_address, 6);
+    report->has_adi = identity->has_adi;
+    report->sid = identity->sid;
+    report->did = identity->adi & 0x0fff;
     report->rssi = rssi;
     report->data_len = data_len;
     if (data_len) memcpy(report->data, data, data_len);
@@ -831,26 +836,19 @@ int gap_ext_scan_receive(
         if (fields.has_aux_ptr && fields.aux_offset_zero) return 0;
         if (!fields.has_aux_ptr) {
             if (!gap_ext_ad_data_valid(fields.payload.data, fields.payload.len)) return 0;
+            if (!fields.identity.has_adi) fields.identity.sid = 0xff;
             gap_ext_report_queue(
-                fields.identity.address,
-                fields.identity.has_address,
-                fields.identity.address_type,
-                fields.identity.has_adi,
-                fields.identity.adi,
-                fields.identity.has_adi ? fields.identity.sid : 0xff,
-                fields.payload.data,
-                fields.payload.len, rssi
-            );
+                &fields.identity, fields.payload.data, fields.payload.len, rssi);
             return 1;
         }
         for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
             if (gap_ext_adv_contexts[i].active &&
                 gap_ext_adv_contexts[i].identity.has_adi &&
                 gap_ext_adv_contexts[i].identity.adi == fields.identity.adi &&
-                gap_ext_adv_contexts[i].identity.has_address == fields.identity.has_address &&
-                (!fields.identity.has_address ||
-                 (gap_ext_adv_contexts[i].identity.address_type == fields.identity.address_type &&
-                  !memcmp(gap_ext_adv_contexts[i].identity.address, fields.identity.address, 6)))
+                gap_ext_adv_contexts[i].identity.addr.has_address == fields.identity.addr.has_address &&
+                (!fields.identity.addr.has_address ||
+                 (gap_ext_adv_contexts[i].identity.addr.address_type == fields.identity.addr.address_type &&
+                  !memcmp(gap_ext_adv_contexts[i].identity.addr.address, fields.identity.addr.address, 6)))
             ) {
                 slot = i;
                 break;
@@ -868,9 +866,9 @@ int gap_ext_scan_receive(
         if (slot < 0) slot = 0;
         gap_ext_adv_context_clear((uint8_t)slot);
         gap_ext_adv_contexts[slot].active = 1;
-        gap_ext_adv_contexts[slot].identity.has_address = fields.identity.has_address;
-        gap_ext_adv_contexts[slot].identity.address_type = fields.identity.address_type;
-        memcpy(gap_ext_adv_contexts[slot].identity.address, fields.identity.address, 6);
+        gap_ext_adv_contexts[slot].identity.addr.has_address = fields.identity.addr.has_address;
+        gap_ext_adv_contexts[slot].identity.addr.address_type = fields.identity.addr.address_type;
+        memcpy(gap_ext_adv_contexts[slot].identity.addr.address, fields.identity.addr.address, 6);
         gap_ext_adv_contexts[slot].identity.has_adi = fields.identity.has_adi;
         gap_ext_adv_contexts[slot].identity.adi = fields.identity.adi;
         gap_ext_adv_contexts[slot].identity.sid = fields.identity.sid;
@@ -881,19 +879,19 @@ int gap_ext_scan_receive(
             if (!gap_ext_adv_contexts[i].active) continue;
             if (fields.identity.has_adi && (!gap_ext_adv_contexts[i].identity.has_adi ||
                 gap_ext_adv_contexts[i].identity.adi != fields.identity.adi)) continue;
-            if (fields.identity.has_address && gap_ext_adv_contexts[i].identity.has_address &&
-                (fields.identity.address_type != gap_ext_adv_contexts[i].identity.address_type ||
-                 memcmp(fields.identity.address, gap_ext_adv_contexts[i].identity.address, 6)))
+            if (fields.identity.addr.has_address && gap_ext_adv_contexts[i].identity.addr.has_address &&
+                (fields.identity.addr.address_type != gap_ext_adv_contexts[i].identity.addr.address_type ||
+                 memcmp(fields.identity.addr.address, gap_ext_adv_contexts[i].identity.addr.address, 6)))
                 continue;
             if (slot >= 0) return 0; // No ADI and ambiguous active chains.
             slot = i;
         }
 
         if (slot < 0) return 0;
-        if (fields.identity.has_address) {
-            gap_ext_adv_contexts[slot].identity.has_address = 1;
-            gap_ext_adv_contexts[slot].identity.address_type = fields.identity.address_type;
-            memcpy(gap_ext_adv_contexts[slot].identity.address, fields.identity.address, 6);
+        if (fields.identity.addr.has_address) {
+            gap_ext_adv_contexts[slot].identity.addr.has_address = 1;
+            gap_ext_adv_contexts[slot].identity.addr.address_type = fields.identity.addr.address_type;
+            memcpy(gap_ext_adv_contexts[slot].identity.addr.address, fields.identity.addr.address, 6);
         }
 
         if (fields.identity.has_adi) {
@@ -943,12 +941,7 @@ int gap_ext_scan_receive(
         return 0;
     }
     gap_ext_report_queue(
-        gap_ext_adv_contexts[slot].identity.address,
-        gap_ext_adv_contexts[slot].identity.has_address,
-        gap_ext_adv_contexts[slot].identity.address_type,
-        gap_ext_adv_contexts[slot].identity.has_adi,
-        gap_ext_adv_contexts[slot].identity.adi,
-        gap_ext_adv_contexts[slot].identity.sid,
+        &gap_ext_adv_contexts[slot].identity,
         gap_ext_adv_contexts[slot].data,
         gap_ext_adv_contexts[slot].data_len,
         gap_ext_adv_contexts[slot].rssi);
@@ -1482,10 +1475,7 @@ static void gap_pawr_response_report_push(
                 report->event_counter = event_counter;
                 report->subevent = subevent;
                 report->response_slot = response_slot;
-                report->has_address = fields.identity.has_address;
-                report->address_type = fields.identity.address_type;
-                if (fields.identity.has_address)
-                    memcpy(report->address, fields.identity.address, 6);
+                report->addr = fields.identity.addr;
                 report->data_len = fields.payload.len;
                 report->rssi = gap_ext_pawr.response.rssi;
                 if (fields.payload.len)
@@ -2308,7 +2298,7 @@ static int gap_periodic_sync_transfer_receive(
     gap_ext_fields fields;
 
     if (!gap_ext_adv_decode(pdu, sizeof(pdu), &fields) ||
-        !fields.identity.has_address || !fields.identity.has_adi || !fields.sync.has_info ||
+        !fields.identity.addr.has_address || !fields.identity.has_adi || !fields.sync.has_info ||
         !gap_access_address_valid(fields.sync.access_address) ||
         fields.sync.interval < 6
     ) return 0;
