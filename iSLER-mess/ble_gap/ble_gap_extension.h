@@ -20,8 +20,9 @@ typedef struct {
         uint8_t resp_slots;
         uint8_t resp_delay, resp_spacing;
     } pawr;
-    uint8_t pawr_connect_pending, pawr_connect_subevent;
-    uint8_t pawr_connect_peer_type, pawr_connect_peer_address[6];
+    struct {
+        uint8_t pending, subevent, peer_type, peer_address[6];
+    } pawr_connect;
     uint16_t data_len, scan_response_len, interval_ms, did;
     uint32_t next_event_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
@@ -188,7 +189,7 @@ static int gap_ext_ad_data_valid(const uint8_t *data, size_t len) {
 
 // Generate a fresh DID and keep the advertising-set and periodic-train DIDs
 // distinct. The Link Layer random source also avoids reusing the last value.
-static uint16_t gap_ext_data_id_generate(uint16_t previous, uint16_t other) {
+static uint16_t gap_ext_did_next(uint16_t previous, uint16_t other) {
     uint8_t random[2];
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
     uint16_t did = ((uint16_t)random[0] | ((uint16_t)random[1] << 8)) & 0x0fff;
@@ -242,8 +243,8 @@ int gap_periodic_adv_start(
     set->periodic.crc_init = (uint32_t)random[0] |
                             (uint32_t)random[1] << 8 |
                             (uint32_t)random[2] << 16;
-    set->periodic.did = gap_ext_data_id_generate(set->periodic.did, set->did);
-    set->did = gap_ext_data_id_generate(set->did, set->periodic.did);
+    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
+    set->did = gap_ext_did_next(set->did, set->periodic.did);
 
     if (len) memcpy(set->periodic.data, data, len);
     set->periodic.data_len = (uint16_t)len;
@@ -269,7 +270,7 @@ int gap_periodic_adv_start(
 // Enable PAwR subevent transmission for an active periodic advertising set.
 // Timing values use the Core units: 1.25 ms for subevent interval and response
 // slot delay, and 0.125 ms for response slot spacing.
-int gap_periodic_adv_pawr_set(
+int gap_periodic_pawr_set(
     uint8_t set_id, uint8_t subevents, uint8_t subevent_int,
     uint8_t resp_delay, uint8_t resp_spacing
 ) {
@@ -332,7 +333,7 @@ int gap_periodic_adv_pawr_set(
 
 // Configure how many response slots the advertiser listens to per subevent.
 // PRTI advertises their timing; the slot count is local product configuration.
-int gap_periodic_adv_pawr_slots_set(
+int gap_periodic_pawr_slots_set(
     uint8_t set_id, uint8_t count
 ) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
@@ -353,7 +354,7 @@ int gap_periodic_adv_pawr_slots_set(
 
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
-int gap_periodic_adv_pawr_connect(
+int gap_periodic_pawr_connect(
     uint8_t set_id, uint8_t subevent,
     uint8_t peer_address_type, const uint8_t peer_address[6]
 ) {
@@ -367,17 +368,17 @@ int gap_periodic_adv_pawr_connect(
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        if (gap_ext_adv[i].pawr_connect_pending) return 0;
+        if (gap_ext_adv[i].pawr_connect.pending) return 0;
 
     if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
                           peer_address, peer_address_type))
         return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    set->pawr_connect_subevent = subevent;
-    set->pawr_connect_peer_type = peer_address_type;
-    memcpy(set->pawr_connect_peer_address, peer_address, 6);
-    set->pawr_connect_pending = 1;
+    set->pawr_connect.subevent = subevent;
+    set->pawr_connect.peer_type = peer_address_type;
+    memcpy(set->pawr_connect.peer_address, peer_address, 6);
+    set->pawr_connect.pending = 1;
     return 1;
 }
 
@@ -408,7 +409,7 @@ int gap_periodic_adv_update(
         ) return 0;
     }
 
-    set->periodic.did = gap_ext_data_id_generate(set->periodic.did, set->did);
+    set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
     if (len) memcpy(set->periodic.data, data, len);
     set->periodic.data_len = (uint16_t)len;
     if (set->pawr.enabled) set->pawr.data_pending = len != 0;
@@ -420,9 +421,8 @@ int gap_periodic_adv_stop(uint8_t set_id) {
         return 0;
     gap_ext_adv[set_id].periodic.enabled = 0;
     memset(&gap_ext_adv[set_id].pawr, 0, sizeof(gap_ext_adv[set_id].pawr));
-    gap_ext_adv[set_id].pawr_connect_pending = 0;
-    memset(gap_ext_adv[set_id].pawr_connect_peer_address, 0,
-           sizeof(gap_ext_adv[set_id].pawr_connect_peer_address));
+    memset(&gap_ext_adv[set_id].pawr_connect, 0,
+           sizeof(gap_ext_adv[set_id].pawr_connect));
     gap_ext_adv[set_id].periodic.response_access = 0;
     return 1;
 }
@@ -444,7 +444,7 @@ int gap_ext_adv_start_phy(
     ) return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    set->did = gap_ext_data_id_generate(
+    set->did = gap_ext_did_next(
         set->did, set->periodic.did);
     if (len) memcpy(set->data, data, len);
     set->data_len = (uint16_t)len;
@@ -1535,18 +1535,18 @@ static int gap_periodic_connect_exchange(
     uint64_t request_start_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!set || !set->pawr_connect_pending || conn->link_state.active || GAP_HW_DATA_MAX() < 27)
+    if (!set || !set->pawr_connect.pending || conn->link_state.active || GAP_HW_DATA_MAX() < 27)
         return 0;
 
     uint8_t *request = gap_central.request;
-    uint8_t peer_type = set->pawr_connect_peer_type;
-    const uint8_t *peer_address = set->pawr_connect_peer_address;
+    uint8_t peer_type = set->pawr_connect.peer_type;
+    const uint8_t *peer_address = set->pawr_connect.peer_address;
     int peer_slot = gap_identity_find(peer_address, peer_type);
     uint8_t local_address[6], local_type, crc_init[3];
     uint32_t access_address;
     gap_local_address_select(peer_slot, local_address, &local_type);
     if (!gap_access_addr(&access_address)) {
-        set->pawr_connect_pending = 0;
+        set->pawr_connect.pending = 0;
         return 0;
     }
 
@@ -1572,7 +1572,7 @@ static int gap_periodic_connect_exchange(
     request[34] = 0x1f;
     request[35] = 5;
     if (!gap_conn_request_valid(request)) {
-        set->pawr_connect_pending = 0;
+        set->pawr_connect.pending = 0;
         return 0;
     }
 
@@ -1593,7 +1593,7 @@ static int gap_periodic_connect_exchange(
     while (GAP_HW_TX_DONE() && !gap_ext_pawr.connect.response_ready &&
            GAP_HW_TICKS() < response_deadline) {}
     gap_ext_pawr.connect.waiting = 0;
-    set->pawr_connect_pending = 0;
+    set->pawr_connect.pending = 0;
     GAP_HW_STOP();
     if (!GAP_HW_TX_DONE() || !gap_ext_pawr.connect.response_ready)
         return 0;
@@ -1684,8 +1684,8 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             uint8_t channel = gap_periodic_channel_for(
                 set->periodic.access_address, set->periodic.channel_map,
                 (uint16_t)(set->periodic.event_counter ^ subevent));
-            if (set->pawr_connect_pending &&
-                subevent == set->pawr_connect_subevent
+            if (set->pawr_connect.pending &&
+                subevent == set->pawr_connect.subevent
             ) {
                 if (gap_periodic_connect_exchange(
                         set, channel, subevent_start)) return 1;
