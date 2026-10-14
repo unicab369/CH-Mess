@@ -7,12 +7,14 @@
 typedef struct {
     uint8_t enabled, sid, scannable, periodic_enabled, aux_phy;
     uint8_t periodic_sync_info_sent;
-    uint8_t pawr_enabled, pawr_data_pending;
+    struct {
+        uint8_t enabled, data_pending;
+        uint8_t num_subevents, subevent_interval;
+        uint8_t num_response_slots;
+        uint8_t response_slot_delay, response_slot_spacing;
+    } pawr;
     uint8_t pawr_connect_pending, pawr_connect_subevent;
     uint8_t pawr_connect_peer_type, pawr_connect_peer_address[6];
-    uint8_t pawr_num_subevents, pawr_subevent_interval;
-    uint8_t pawr_num_response_slots;
-    uint8_t pawr_response_slot_delay, pawr_response_slot_spacing;
     uint16_t data_len, scan_response_len, interval_ms;
     uint16_t periodic_data_len, periodic_interval, periodic_event_counter;
     uint16_t did, periodic_did;
@@ -92,24 +94,34 @@ typedef struct {
     uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
 } gap_pawr_report;
 typedef struct {
+    // Synchronization identity and radio parameters.
     uint8_t used, established, handle, sid, address_type, address[6];
-    uint8_t channel_map[5], sca, phy, missed_events, window_active, window_chain;
+    uint8_t channel_map[5], sca, phy;
+    uint16_t interval;
+    uint32_t access_address, crc_init;
+
+    // Event counters, receive windows, and clock tracking.
+    uint8_t missed_events, window_active, window_chain;
     uint8_t aux_channel, aux_phy;
+    uint16_t event_counter, last_event_counter, widening_ppm;
+    uint64_t anchor_ticks, next_ticks;
+    uint64_t start_ticks, end_ticks;
+    uint32_t timeout_ms, last_event_ms;
+
+    // Most recently received periodic event data.
+    uint8_t event_data_active;
+    uint16_t did, data_len;
+    int8_t rssi;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+
+    // PAwR configuration, queued response, and connection state.
     uint8_t has_pawr_timing, pawr_num_subevents;
     uint8_t pawr_subevent_interval, pawr_response_slot_delay;
     uint8_t pawr_response_slot_spacing;
     uint8_t pawr_subevent, pawr_slot;
-    uint8_t pawr_pending, pawr_repeat;
-    uint8_t pawr_connect_accept, event_data_active;
-    uint16_t interval, event_counter, last_event_counter, did, data_len;
-    uint16_t widening_ppm;
-    uint32_t access_address, crc_init, response_access_addr;
-    uint32_t timeout_ms, last_event_ms;
+    uint8_t pawr_pending, pawr_repeat, pawr_connect_accept;
     uint16_t pawr_response_data_len;
-    uint64_t anchor_ticks, next_ticks;
-    uint64_t start_ticks, end_ticks;
-    int8_t rssi;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    uint32_t response_access_addr;
     uint8_t pawr_response_data[GAP_PAWR_RESPONSE_DATA_MAX];
 } gap_sync_context;
 static gap_sync_context gap_syncs[GAP_PERIODIC_SYNC_COUNT];
@@ -228,7 +240,8 @@ int gap_periodic_adv_start(
     if (!gap_access_address_generate(&set->periodic_access_address)) return 0;
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
     set->periodic_crc_init = (uint32_t)random[0] |
-        (uint32_t)random[1] << 8 | (uint32_t)random[2] << 16;
+                            (uint32_t)random[1] << 8 |
+                            (uint32_t)random[2] << 16;
     set->periodic_did = gap_ext_data_id_generate(set->periodic_did, set->did);
     set->did = gap_ext_data_id_generate(set->did, set->periodic_did);
 
@@ -236,13 +249,7 @@ int gap_periodic_adv_start(
     set->periodic_data_len = (uint16_t)len;
     set->periodic_interval = interval;
     set->periodic_event_counter = 0;
-    set->pawr_enabled = 0;
-    set->pawr_data_pending = 0;
-    set->pawr_num_subevents = 0;
-    set->pawr_subevent_interval = 0;
-    set->pawr_num_response_slots = 0;
-    set->pawr_response_slot_delay = 0;
-    set->pawr_response_slot_spacing = 0;
+    memset(&set->pawr, 0, sizeof(set->pawr));
     set->periodic_response_access_address = 0;
 
     // All 37 data channels enabled; SCA code zero advertises 500 ppm.
@@ -312,13 +319,13 @@ int gap_periodic_adv_pawr_set(
         if (!found_distinct_address) return 0;
     }
 
-    set->pawr_num_subevents = num_subevents;
-    set->pawr_subevent_interval = subevent_interval;
-    set->pawr_num_response_slots = 1;
-    set->pawr_response_slot_delay = response_slot_delay;
-    set->pawr_response_slot_spacing = response_slot_spacing;
-    set->pawr_enabled = 1;
-    set->pawr_data_pending = set->periodic_data_len != 0;
+    set->pawr.num_subevents = num_subevents;
+    set->pawr.subevent_interval = subevent_interval;
+    set->pawr.num_response_slots = 1;
+    set->pawr.response_slot_delay = response_slot_delay;
+    set->pawr.response_slot_spacing = response_slot_spacing;
+    set->pawr.enabled = 1;
+    set->pawr.data_pending = set->periodic_data_len != 0;
     return 1;
 }
 
@@ -328,18 +335,18 @@ int gap_periodic_adv_pawr_slots_set(
     uint8_t set_id, uint8_t count
 ) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT ||
-        !gap_ext_adv[set_id].pawr_enabled || !count
+        !gap_ext_adv[set_id].pawr.enabled || !count
     ) return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    uint32_t subevent_interval_units = set->pawr_num_subevents > 1 ?
-            set->pawr_subevent_interval : set->periodic_interval;
+    uint32_t subevent_interval_units = set->pawr.num_subevents > 1 ?
+            set->pawr.subevent_interval : set->periodic_interval;
     uint32_t available_spacing_units =
-            (subevent_interval_units - set->pawr_response_slot_delay) * 10;
-    if ((uint32_t)count * set->pawr_response_slot_spacing > available_spacing_units)
+            (subevent_interval_units - set->pawr.response_slot_delay) * 10;
+    if ((uint32_t)count * set->pawr.response_slot_spacing > available_spacing_units)
         return 0;
 
-    set->pawr_num_response_slots = count;
+    set->pawr.num_response_slots = count;
     return 1;
 }
 
@@ -354,8 +361,8 @@ int gap_periodic_adv_pawr_connect(
         set_id >= GAP_EXT_ADV_SET_COUNT || conn->link_state.active ||
         gap_central.active || gap_scanner.scanning ||
         !gap_ext_adv[set_id].periodic_enabled ||
-        !gap_ext_adv[set_id].pawr_enabled ||
-        subevent >= gap_ext_adv[set_id].pawr_num_subevents
+        !gap_ext_adv[set_id].pawr.enabled ||
+        subevent >= gap_ext_adv[set_id].pawr.num_subevents
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
@@ -387,14 +394,14 @@ int gap_periodic_adv_update(
     if (periodic_interval_us < tx_duration_us)
         return 0;
 
-    if (set->pawr_enabled) {
+    if (set->pawr.enabled) {
         if (len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
             return 0;
 
-        uint16_t subevent_interval = set->pawr_num_subevents > 1 ?
-            set->pawr_subevent_interval : set->periodic_interval;
+        uint16_t subevent_interval = set->pawr.num_subevents > 1 ?
+            set->pawr.subevent_interval : set->periodic_interval;
         uint32_t subevent_interval_us = (uint32_t)subevent_interval * 1250;
-        uint32_t response_slot_delay_us = (uint32_t)set->pawr_response_slot_delay * 1250;
+        uint32_t response_slot_delay_us = (uint32_t)set->pawr.response_slot_delay * 1250;
         if (tx_duration_us >= subevent_interval_us ||
             tx_duration_us + 150 >= response_slot_delay_us
         ) return 0;
@@ -403,7 +410,7 @@ int gap_periodic_adv_update(
     set->periodic_did = gap_ext_data_id_generate(set->periodic_did, set->did);
     if (len) memcpy(set->periodic_data, data, len);
     set->periodic_data_len = (uint16_t)len;
-    if (set->pawr_enabled) set->pawr_data_pending = len != 0;
+    if (set->pawr.enabled) set->pawr.data_pending = len != 0;
     return 1;
 }
 
@@ -411,16 +418,10 @@ int gap_periodic_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT || !gap_ext_adv[set_id].periodic_enabled)
         return 0;
     gap_ext_adv[set_id].periodic_enabled = 0;
-    gap_ext_adv[set_id].pawr_enabled = 0;
-    gap_ext_adv[set_id].pawr_data_pending = 0;
+    memset(&gap_ext_adv[set_id].pawr, 0, sizeof(gap_ext_adv[set_id].pawr));
     gap_ext_adv[set_id].pawr_connect_pending = 0;
     memset(gap_ext_adv[set_id].pawr_connect_peer_address, 0,
            sizeof(gap_ext_adv[set_id].pawr_connect_peer_address));
-    gap_ext_adv[set_id].pawr_num_subevents = 0;
-    gap_ext_adv[set_id].pawr_num_response_slots = 0;
-    gap_ext_adv[set_id].pawr_subevent_interval = 0;
-    gap_ext_adv[set_id].pawr_response_slot_delay = 0;
-    gap_ext_adv[set_id].pawr_response_slot_spacing = 0;
     gap_ext_adv[set_id].periodic_response_access_address = 0;
     return 1;
 }
@@ -482,8 +483,8 @@ int gap_ext_adv_stop(uint8_t set_id) {
     set->enabled = 0;
     if (!set->periodic_sync_info_sent) {
         set->periodic_enabled = 0;
-        set->pawr_enabled = 0;
-        set->pawr_data_pending = 0;
+        set->pawr.enabled = 0;
+        set->pawr.data_pending = 0;
     }
     return 1;
 }
@@ -1405,13 +1406,13 @@ static void gap_pawr_response_report_push(
         HW_TICKS_FROM_US(airtime_us) ? gap_ext_pawr.response.ticks -
         HW_TICKS_FROM_US(airtime_us) : 0;
 
-    for (uint8_t response_slot = 0; response_slot < set->pawr_num_response_slots;
+    for (uint8_t response_slot = 0; response_slot < set->pawr.num_response_slots;
          response_slot++) {
         uint64_t slot_start_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
-            (uint32_t)set->pawr_response_slot_delay * 1250 +
-            (uint32_t)response_slot * set->pawr_response_slot_spacing * 125);
+            (uint32_t)set->pawr.response_slot_delay * 1250 +
+            (uint32_t)response_slot * set->pawr.response_slot_spacing * 125);
         uint64_t slot_end_ticks = slot_start_ticks + HW_TICKS_FROM_US(
-            (uint32_t)set->pawr_response_slot_spacing * 125);
+            (uint32_t)set->pawr.response_slot_spacing * 125);
         uint64_t packet_end_ticks = packet_start_ticks + HW_TICKS_FROM_US(airtime_us);
 
         if (packet_start_ticks + HW_TICKS_FROM_US(150) >= slot_start_ticks &&
@@ -1668,14 +1669,14 @@ static int gap_periodic_tx(
 
 // Send one periodic event, chaining AUX_CHAIN_IND packets when data needs it.
 static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
-    if (set->pawr_enabled) {
+    if (set->pawr.enabled) {
         uint8_t *frame = gap_ext_adv_frame;
         uint16_t adi = (uint16_t)((set->sid << 12) | set->periodic_did);
         uint32_t subevent_interval_us = (uint32_t)(
-            set->pawr_num_subevents > 1 ? set->pawr_subevent_interval :
+            set->pawr.num_subevents > 1 ? set->pawr.subevent_interval :
                                          set->periodic_interval) * 1250;
         uint64_t event_start = set->periodic_next_event_ticks;
-        for (uint8_t subevent = 0; subevent < set->pawr_num_subevents;
+        for (uint8_t subevent = 0; subevent < set->pawr.num_subevents;
              subevent++) {
             uint64_t subevent_start = event_start + HW_TICKS_FROM_US(
                 (uint32_t)subevent * subevent_interval_us);
@@ -1690,7 +1691,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
                 continue;
             }
-            uint16_t data_len = set->pawr_data_pending ?
+            uint16_t data_len = set->pawr.data_pending ?
                 set->periodic_data_len : 0;
             // AUX_SYNC_SUBEVENT_IND uses the extended advertising PDU format.
             frame[0] = ADV_EXT_IND;
@@ -1710,13 +1711,13 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
                 return 0;
             // PAwR data is sent once, then later subevents are empty until the
             // Host queues another payload with periodic_advertising_update_set.
-            set->pawr_data_pending = 0;
+            set->pawr.data_pending = 0;
             // Listen continuously so adjacent response slots have no retune gap.
             uint64_t first_slot_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
-                (uint32_t)set->pawr_response_slot_delay * 1250);
+                (uint32_t)set->pawr.response_slot_delay * 1250);
             uint64_t end_ticks = first_slot_ticks + HW_TICKS_FROM_US(
-                (uint32_t)set->pawr_num_response_slots *
-                set->pawr_response_slot_spacing * 125);
+                (uint32_t)set->pawr.num_response_slots *
+                set->pawr.response_slot_spacing * 125);
             uint64_t listen_start_ticks = first_slot_ticks >
                 HW_TICKS_FROM_US(150) ?
                 first_slot_ticks - HW_TICKS_FROM_US(150) : 0;
@@ -1914,7 +1915,7 @@ static int gap_hw_transmit_extended_advertising(
     uint16_t data_offset = 0;
     uint16_t remaining = set->data_len;
     uint8_t has_sync_info = set->periodic_enabled;
-    uint8_t has_pawr = set->pawr_enabled;
+    uint8_t has_pawr = set->pawr.enabled;
     uint8_t first_ext_len = (uint8_t)(9 + (has_sync_info ? 18 : 0) +
                                       (has_pawr ? 10 : 0));
     uint8_t chain_ext_len = (uint8_t)(12 + (has_sync_info ? 18 : 0) +
@@ -1956,10 +1957,10 @@ static int gap_hw_transmit_extended_advertising(
         timing[3] = (uint8_t)(set->periodic_response_access_address >> 8);
         timing[4] = (uint8_t)(set->periodic_response_access_address >> 16);
         timing[5] = (uint8_t)(set->periodic_response_access_address >> 24);
-        timing[6] = set->pawr_num_subevents;
-        timing[7] = set->pawr_subevent_interval;
-        timing[8] = set->pawr_response_slot_delay;
-        timing[9] = set->pawr_response_slot_spacing;
+        timing[6] = set->pawr.num_subevents;
+        timing[7] = set->pawr.subevent_interval;
+        timing[8] = set->pawr.response_slot_delay;
+        timing[9] = set->pawr.response_slot_spacing;
         header_offset += 10;
     }
 
@@ -2613,17 +2614,17 @@ static int gap_ext_send_due(uint32_t now) {
                 uint32_t event_duration_us =
                     gap_periodic_event_duration_us(set->periodic_data_len,
                                                    set->aux_phy);
-                if (set->pawr_enabled) {
+                if (set->pawr.enabled) {
                     uint32_t subevent_interval_us =
-                        (uint32_t)(set->pawr_num_subevents > 1 ?
-                            set->pawr_subevent_interval :
+                        (uint32_t)(set->pawr.num_subevents > 1 ?
+                            set->pawr.subevent_interval :
                             set->periodic_interval) * 1250;
                     uint32_t response_end_us =
-                        (uint32_t)(set->pawr_num_subevents - 1) *
+                        (uint32_t)(set->pawr.num_subevents - 1) *
                             subevent_interval_us +
-                        (uint32_t)set->pawr_response_slot_delay * 1250 +
-                        (uint32_t)set->pawr_num_response_slots *
-                            set->pawr_response_slot_spacing * 125;
+                        (uint32_t)set->pawr.response_slot_delay * 1250 +
+                        (uint32_t)set->pawr.num_response_slots *
+                            set->pawr.response_slot_spacing * 125;
                     if (response_end_us > event_duration_us)
                         event_duration_us = response_end_us;
                 }
