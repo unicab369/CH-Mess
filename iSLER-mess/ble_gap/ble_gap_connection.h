@@ -496,21 +496,24 @@ static void gap_privacy_poll(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_privacy.enabled || conn->link_state.active || gap_central.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
-        (int32_t)(now - gap_privacy.next_rotation_ms) < 0)
-        return;
+        (int32_t)(now - gap_privacy.next_rotation_ms) < 0
+    ) return;
+
     if (gap_rx_armed) {
         GAP_HW_STOP();
         gap_rx_armed = 0;
     }
     uint8_t address[6];
     if (!gap_private_address_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
-                                      address, gap_random_address))
-        return;
+                                      address, gap_random_address)
+    ) return;
+
     uint16_t next_timeout_s;
     if (!gap_privacy_timeout_pick(gap_privacy.timeout_min_s,
                                   gap_privacy.timeout_max_s,
-                                  &next_timeout_s))
-        return;
+                                  &next_timeout_s)
+    ) return;
+
     memcpy(gap_random_address, address, 6);
     // Refresh cached local RPAs outside the RX interrupt, between exchanges.
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
