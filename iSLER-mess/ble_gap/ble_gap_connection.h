@@ -2153,14 +2153,12 @@ int gap_data_length_set(uint16_t octets) {
 }
 
 gap_data_length gap_data_length_get(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return conn->data_length;
+    return gap_conn_ctx[gap_conn_slot].data_length;
 }
 
 // 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
 uint8_t gap_data_length_status(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return conn->length_status;
+    return gap_conn_ctx[gap_conn_slot].length_status;
 }
 
 // Request preferred transmit and receive PHY masks (1M=1, 2M=2, Coded=4).
@@ -2169,6 +2167,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t supported = GAP_HW_PHY_MASK() & 7;
+
     if (!gap_connected() || gap_security->phase || conn->link.first_event ||
         !(supported & 6) || !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
         conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
@@ -2177,18 +2176,21 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
         conn->queue.local_params || conn->pending.params ||
         conn->queue.length || conn->pending.length ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        conn->link_state.terminate_after_reply)
-        return 0;
+        conn->link_state.terminate_after_reply
+    ) return 0;
+
     if (conn->features.known) {
         uint8_t peer_supported = GAP_PHY_1M |
-            ((conn->features.peer[1] & 0x01) ? GAP_PHY_2M : 0) |
-            ((conn->features.peer[1] & 0x08) ? GAP_PHY_CODED : 0);
+                                ((conn->features.peer[1] & 0x01) ? GAP_PHY_2M : 0) |
+                                ((conn->features.peer[1] & 0x08) ? GAP_PHY_CODED : 0);
         if (!(peer_supported & 6) || !(tx & peer_supported) ||
-            !(rx & peer_supported)) {
+            !(rx & peer_supported)
+        ) {
             conn->phy.status = 0x1a;
             return 0;
         }
     }
+
     conn->phy.preferred.tx = tx;
     conn->phy.preferred.rx = rx;
     conn->phy.status = GAP_CONNECTION_PENDING;
@@ -2204,8 +2206,7 @@ void gap_phy_get(uint8_t *tx, uint8_t *rx) {
 }
 
 uint8_t gap_phy_status(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return conn->phy.status;
+    return gap_conn_ctx[gap_conn_slot].phy.status;
 }
 
     // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
@@ -2214,22 +2215,23 @@ uint8_t gap_phy_status(void) {
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!gap_connected() || gap_security->phase || conn->queue.tx_queued ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply || !data || (llid != 1 && llid != 2) || !len ||
         len > conn->data_length.tx_octets ||
         (len + 10 + (gap_security->tx_enabled ? 4 : 0)) * 8 >
-            conn->data_length.tx_time ||
-        (llid == 2 && len < 4))
-        return 0;
+            conn->data_length.tx_time || (llid == 2 && len < 4)
+    ) return 0;
+
     // SMP may only send between complete application L2CAP PDUs.
     if (llid == 2) {
         uint16_t pdu_len = (uint16_t)data[0] | (uint16_t)data[1] << 8;
         conn->tx_l2cap_remaining = (size_t)pdu_len + 4 > len ?
-            (uint16_t)((size_t)pdu_len + 4 - len) : 0;
+                                    (uint16_t)((size_t)pdu_len + 4 - len) : 0;
     } else {
         conn->tx_l2cap_remaining = len < conn->tx_l2cap_remaining ?
-            (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
+                                    (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
     }
     conn->tx_llid = llid;
     conn->tx_len = (uint8_t)len;
@@ -2242,9 +2244,11 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
 int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!gap_connected() || !reason || conn->link_state.terminate_after_reply ||
-        conn->link_state.terminate_queued || conn->link_state.terminate_sent)
-        return 0;
+        conn->link_state.terminate_queued || conn->link_state.terminate_sent
+    ) return 0;
+
     conn->link.local_terminate_reason = reason;
     conn->link_state.terminate_queued = 1;
     return 1;
@@ -2260,6 +2264,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     if (!data || !len || !conn->queue.rx_ready) return 0;
     if (*len < conn->rx_len) return -1;
     if (llid) *llid = conn->rx_llid;
+
     *len = conn->rx_len;
     memcpy(data, conn->rx_data, conn->rx_len);
     conn->queue.rx_ready = 0;
@@ -2271,7 +2276,9 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 #include "../ble_crypto.h"
 #include "../micro-ecc/uECC.h"
 
-static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t central) {
+static void gap_security_nonce(
+    uint8_t nonce[13], uint64_t counter, uint8_t central
+) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));
     nonce[4] |= central ? 0x80 : 0;
@@ -2282,10 +2289,12 @@ static void gap_security_nonce(uint8_t nonce[13], uint64_t counter, uint8_t cent
 static void gap_security_derive(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint8_t key[16], diversifier[16];
+
     for (uint8_t i = 0; i < 16; i++) {
         key[i] = gap_security->ltk[15 - i];
         diversifier[i] = gap_security->skd[15 - i];
     }
+
     AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
     gap_security->tx_counter = 0;
     gap_security->rx_counter = 0;
@@ -2300,19 +2309,25 @@ static uint8_t *gap_security_tx_frame(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t *cipher = gap_conn_buff[gap_conn_slot].cipher;
+
     if (gap_security->tx_sealed) {
         cipher[0] = gap_tx_frame[0];
         return cipher;
     }
-    if (!gap_security->tx_enabled || !gap_tx_frame[1]) return gap_tx_frame;
+
+    if (!gap_security->tx_enabled || !gap_tx_frame[1])
+        return gap_tx_frame;
+
     if (gap_security->tx_counter >= (UINT64_C(1) << 39)) {
         gap_security->status = 0x3d;
         gap_conn_end();
         return NULL;
     }
+
     uint8_t nonce[13];
     gap_security_nonce(nonce, gap_security->tx_counter, conn->is_central);
     memcpy(cipher, gap_tx_frame, gap_tx_frame[1] + 2);
+
     if (!GAP_CCM_ENCRYPT(gap_security->session_key, nonce,
             gap_tx_frame[0] & 0xe3, cipher + 2,
             gap_tx_frame[1], cipher + 2 + gap_tx_frame[1])
@@ -2321,6 +2336,7 @@ static uint8_t *gap_security_tx_frame(void) {
         gap_conn_end();
         return NULL;
     }
+
     cipher[1] += 4;
     gap_security->tx_counter++;
     gap_security->tx_sealed = 1;
@@ -2397,18 +2413,21 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         conn->features.request_pending || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || conn->link_state.terminate_after_reply)
-        return 0;
+        conn->link_state.terminate_sent || conn->link_state.terminate_after_reply
+    ) return 0;
+
     if (conn->features.known && !(conn->features.peer[0] & 1)) {
         gap_security->status = 0x1a;
         return 0;
     }
+
     uint32_t generation = (*gap_security_generation);
     uint8_t entropy[12];
     if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
         gap_security->status = 0x1f;
         return 0;
     }
+
     uint32_t irq_state = GAP_CRITICAL_ENTER();
     // Entropy collection may take time: recheck the link and procedures before
     // committing a key, so a disconnect/reconnect cannot apply it to another peer.
@@ -2419,11 +2438,13 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         conn->features.request_pending || conn->queue.length ||
         conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
         conn->pending.phy_update || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || conn->link_state.terminate_after_reply) {
+        conn->link_state.terminate_sent || conn->link_state.terminate_after_reply
+    ) {
         gap_wipe(entropy, sizeof(entropy));
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
+
     conn->authenticated = 0;
     conn->enc_key_size = 0;
     memcpy(gap_security->ltk, ltk, 16);
@@ -2445,7 +2466,9 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!conn->link_state.active || gap_security->phase != GAP_ENC_KEY_REQUEST) return 0;
+
+    if (!conn->link_state.active || gap_security->phase != GAP_ENC_KEY_REQUEST)
+        return 0;
     if (random) memcpy(random, gap_security->random, 8);
     if (ediv) *ediv = gap_security->ediv;
     return 1;
@@ -2459,6 +2482,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
+
     if (ltk) {
         conn->authenticated = 0;
         conn->enc_key_size = 0;
@@ -2482,8 +2506,7 @@ int gap_encrypted(void) {
 }
 
 uint8_t gap_security_status(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    return gap_security->status;
+    return gap_sec_contexts[gap_conn_slot].status;
 }
 
 #endif // GAP_CONNECTION_H
