@@ -117,7 +117,6 @@ static uint8_t transaction_prepare(
     if ((len && value[0] == 0xee) || offset > sizeof(state->staged) ||
         len > sizeof(state->staged) - offset)
         return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
-    for (uint16_t i = 0; i < len; i++) {
         state->staged[offset + i] = value[i];
         state->touched[offset + i] = 1;
     }
@@ -463,7 +462,6 @@ static int verify_signed(
     if (len != 4 || pdu[0] != 0xd2 || signature[0] != 0xa5 ||
         counter <= state->last_counter)
         return 0;
-    state->last_counter = counter;
     state->accepted++;
     return 1;
 }

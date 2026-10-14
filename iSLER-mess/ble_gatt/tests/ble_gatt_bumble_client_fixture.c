@@ -33,7 +33,6 @@ static int send_pdu(void *context, const uint8_t *pdu, uint16_t len) {
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
         fwrite(pdu, 1, len, stdout) != len)
         return 0;
-    fflush(stdout);
     return 1;
 }
 
@@ -52,8 +51,7 @@ static void on_result(
     }
     uint8_t header[4] = {2, status, (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-        (len && fwrite(pdu, 1, len, stdout) != len))
-        return;
+        (len && fwrite(pdu, 1, len, stdout) != len)) return;
     fflush(stdout);
 }
 
@@ -65,8 +63,7 @@ static void on_event(
     uint8_t header[5] = {3, (uint8_t)handle, (uint8_t)(handle >> 8),
                          (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
-        (len && fwrite(value, 1, len, stdout) != len))
-        return;
+        (len && fwrite(value, 1, len, stdout) != len)) return;
     fflush(stdout);
 }
 
@@ -85,7 +82,6 @@ int main(void) {
             if (fread(handle_bytes, 1, sizeof(handle_bytes), stdin) !=
                 sizeof(handle_bytes))
                 return 11;
-            requested_handle = (uint16_t)handle_bytes[0] |
                 (uint16_t)handle_bytes[1] << 8;
         }
         int started = 0;
@@ -195,7 +191,6 @@ int main(void) {
             const uint8_t result[4] = {2, 0, 0, 0};
             if (fwrite(result, 1, sizeof(result), stdout) != sizeof(result))
                 return 7;
-            fflush(stdout);
             continue;
         }
 
@@ -204,12 +199,10 @@ int main(void) {
             if (fread(size_bytes, 1, sizeof(size_bytes), stdin) !=
                 sizeof(size_bytes))
                 return 8;
-            uint16_t pdu_len = (uint16_t)size_bytes[0] |
                                (uint16_t)size_bytes[1] << 8;
             if (!pdu_len || pdu_len > sizeof(pdu) ||
                 fread(pdu, 1, pdu_len, stdin) != pdu_len)
                 return 9;
-            if (ble_gatt_client_receive(&client, pdu, pdu_len) < 0) return 10;
             continue;
         }
 
@@ -221,8 +214,6 @@ int main(void) {
             if (response_len > sizeof(response) ||
                 fread(response, 1, response_len, stdin) != response_len)
                 return 5;
-            if (ble_gatt_client_receive(&client, response, response_len) < 0)
-                return 6;
         } while (client.request.pending);
         now_ms += 1;
     }
