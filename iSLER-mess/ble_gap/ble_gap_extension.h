@@ -1040,13 +1040,13 @@ int gap_periodic_sync_enable(
     return 1;
 }
 
-static int gap_periodic_sync_handle_slot(uint8_t handle) {
+static int gap_sync_slot_from_handle(uint8_t handle) {
     if (!handle || handle > GAP_PERIODIC_SYNC_COUNT) return -1;
     uint8_t slot = (uint8_t)(handle - 1);
     return gap_syncs[slot].used ? slot : -1;
 }
 
-static void gap_periodic_sync_owned_scan_finish(void) {
+static void gap_sync_finish_owned_scan(void) {
     if (!gap_sync_owned_scan) return;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used) return;
@@ -1057,7 +1057,7 @@ static void gap_periodic_sync_owned_scan_finish(void) {
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
 int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
-    int slot = gap_periodic_sync_handle_slot(handle);
+    int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || terminate > 1 ||
         gap_syncs[slot].established != terminate
     ) return 0;
@@ -1065,43 +1065,40 @@ int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     gap_periodic_sync_event_post((uint8_t)slot, terminate ?
         GAP_PERIODIC_SYNC_TERMINATED : GAP_PERIODIC_SYNC_CANCELLED);
     memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-    gap_periodic_sync_owned_scan_finish();
+    gap_sync_finish_owned_scan();
     return 1;
 }
 
 // Select one PAwR subevent and queue one response for its selected slot.
 // The configuration stays selected for later events; each queued response is
 // consumed after transmission. Pass zero data bytes to send an empty response.
-int gap_periodic_sync_pawr_respond(
+int gap_sync_pawr_respond(
     uint8_t handle, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len
 ) {
-    int slot = gap_periodic_sync_handle_slot(handle);
-    if (slot < 0 || !gap_syncs[slot].established ||
-        !gap_syncs[slot].pawr.has_timing ||
-        subevent >= gap_syncs[slot].pawr.subevents ||
-        (gap_syncs[slot].phy != GAP_PHY_1M &&
-         gap_syncs[slot].phy != GAP_PHY_2M &&
-         gap_syncs[slot].phy != GAP_PHY_CODED) ||
-        !(GAP_HW_PHY_MASK() & gap_syncs[slot].phy) ||
-        len > GAP_PAWR_RESPONSE_DATA_MAX ||
-        !gap_ext_ad_data_valid(data, len)
-    ) return 0;
+    int slot = gap_sync_slot_from_handle(handle);
+    if (slot < 0) return 0;
 
     gap_sync_context *sync = &gap_syncs[slot];
-    uint32_t subevent_units = sync->pawr.subevents > 1 ?
-        sync->pawr.subevent_interval : sync->interval;
-    uint32_t response_start_125us =
-        (uint32_t)sync->pawr.resp_delay * 10 +
-        (uint32_t)response_slot * sync->pawr.resp_spacing;
-    uint32_t subevent_duration_125us = subevent_units * 10;
+    if (!sync->established || !sync->pawr.has_timing ||
+        subevent >= sync->pawr.subevents ||
+        (sync->phy != GAP_PHY_1M &&
+         sync->phy != GAP_PHY_2M &&
+         sync->phy != GAP_PHY_CODED) ||
+         len > GAP_PAWR_RESPONSE_DATA_MAX ||
+         !gap_ext_ad_data_valid(data, len) ||
+         !(GAP_HW_PHY_MASK() & sync->phy)
+    ) return 0;
+
+    uint32_t response_start_125us = (uint32_t)sync->pawr.resp_delay * 10 +
+                                (uint32_t)response_slot * sync->pawr.resp_spacing;
+    uint32_t subevent_duration_125us = (sync->pawr.subevents > 1 ?
+                                sync->pawr.subevent_interval : sync->interval) * 10;
     uint32_t packet_duration_us = gap_phy_airtime_us((uint16_t)len, sync->phy);
-    uint32_t slot_spacing_us = (uint32_t)sync->pawr.resp_spacing * 125;
 
     if (response_start_125us >= subevent_duration_125us ||
-        packet_duration_us + 150 >= slot_spacing_us ||
-        response_start_125us * 125 + packet_duration_us >=
-            subevent_duration_125us * 125
+        packet_duration_us + 150 >= (uint32_t)sync->pawr.resp_spacing * 125 ||
+        response_start_125us * 125 + packet_duration_us >= subevent_duration_125us * 125
     ) return 0;
 
     sync->pawr.subevent = subevent;
@@ -1111,8 +1108,7 @@ int gap_periodic_sync_pawr_respond(
     sync->pawr.pending = 1;
 
     if (!sync->window_active)
-        sync->next_ticks =
-            sync->anchor_ticks +
+        sync->next_ticks = sync->anchor_ticks +
             HW_TICKS_FROM_US((uint32_t)sync->interval * 1250 +
                              (uint32_t)subevent * sync->pawr.subevent_interval * 1250);
     return 1;
@@ -1121,10 +1117,8 @@ int gap_periodic_sync_pawr_respond(
 // Repeat the queued PAwR response at matching subevents until disabled.
 // Responses remain one-shot by default; disabling repeat consumes the
 // existing response after it is sent once more.
-int gap_periodic_sync_pawr_repeat(
-    uint8_t handle, uint8_t enabled
-) {
-    int slot = gap_periodic_sync_handle_slot(handle);
+int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
+    int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing || enabled > 1
     ) return 0;
@@ -1134,11 +1128,9 @@ int gap_periodic_sync_pawr_repeat(
 }
 
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
-int gap_periodic_sync_pawr_connect_accept(
-    uint8_t handle, uint8_t enabled
-) {
+int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    int slot = gap_periodic_sync_handle_slot(handle);
+    int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing || enabled > 1 ||
         conn->link_state.active || gap_central.active
@@ -1150,32 +1142,26 @@ int gap_periodic_sync_pawr_connect_accept(
 
 int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
     if (!event || !gap_sync_events.count) return 0;
-
     *event = gap_sync_events.items[gap_sync_events.head];
-    gap_sync_events.head =
-        (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
+    gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.count--;
     return 1;
 }
 
 int gap_periodic_report_poll(gap_periodic_report *report) {
     if (!report || !gap_periodic_reports.count) return 0;
-
     *report = gap_periodic_reports.items[gap_periodic_reports.head];
-    gap_periodic_reports.head =
-        (gap_periodic_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
+    gap_periodic_reports.head = (gap_periodic_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_reports.count--;
     return 1;
 }
 
-int gap_periodic_response_report_poll(
+int gap_pawr_report_poll(
     gap_pawr_report *report
 ) {
     if (!report || !gap_pawr_reports.count) return 0;
-
     *report = gap_pawr_reports.items[gap_pawr_reports.head];
-    gap_pawr_reports.head =
-        (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
+    gap_pawr_reports.head = (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
     gap_pawr_reports.count--;
     return 1;
 }
@@ -2499,7 +2485,7 @@ static int gap_periodic_sync_transfer_encode(
 // Queue a PAST LL control PDU for the active connection.
 int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    int sync_slot = gap_periodic_sync_handle_slot(handle);
+    int sync_slot = gap_sync_slot_from_handle(handle);
     if (!conn->link_state.active || sync_slot < 0 ||
         !gap_syncs[sync_slot].established ||
         conn->sync_transfer_queued ||
@@ -2529,7 +2515,7 @@ static void gap_sync_window_missed(uint8_t slot) {
         ) {
             gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
             memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-            gap_periodic_sync_owned_scan_finish();
+            gap_sync_finish_owned_scan();
             return;
         }
     }

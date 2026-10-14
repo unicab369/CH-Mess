@@ -474,7 +474,7 @@ void gap_hw_received(void) {
                 if (!gap_security->phase && gap_tx_frame[1] == 0 &&
                         conn->sync_transfer_queued
                 ) {
-                    int slot = gap_periodic_sync_handle_slot(conn->sync_transfer_handle);
+                    int slot = gap_sync_slot_from_handle(conn->sync_transfer_handle);
                     if (slot >= 0) {
                         gap_periodic_sync_transfer_encode(
                             gap_tx_frame, conn->sync_transfer_id,
@@ -1200,7 +1200,7 @@ void gap_hw_scan_poll(void) {
         }
         gap_periodic_sync_event_post(i, GAP_PERIODIC_SYNC_LOST);
         memset(&gap_syncs[i], 0, sizeof(gap_syncs[i]));
-        gap_periodic_sync_owned_scan_finish();
+        gap_sync_finish_owned_scan();
     }
 #endif
     // The connection poll owns an armed connection event. Only schedule a
