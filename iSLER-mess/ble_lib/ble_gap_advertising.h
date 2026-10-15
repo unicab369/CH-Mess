@@ -331,36 +331,6 @@ int gap_ead_decrypt(
     return 1;
 }
 
-static int gap_access_address_valid(uint32_t address) {
-    uint32_t address_xor = address ^ BLE_ADV_ACCESS_ADDRESS;
-    if (address_xor == 0 || (address_xor & (address_xor - 1)) == 0)
-        return 0;
-
-    uint8_t bytes_equal = 1;
-    for (uint8_t i = 1; i < 4; i++)
-        if ((uint8_t)(address >> (8 * i)) != (uint8_t)address)
-            bytes_equal = 0;
-    if (bytes_equal) return 0;
-
-    uint8_t transitions = 0, msb_transitions = 0, run = 1;
-    uint8_t previous = address & 1;
-
-    for (uint8_t bit = 1; bit < 32; bit++) {
-        uint8_t value = (address >> bit) & 1;
-
-        if (value != previous) {
-            transitions++;
-            run = 1;
-            if (bit >= 27) msb_transitions++;
-        }
-        else if (++run > 6) {
-            return 0;
-        }
-        previous = value;
-    }
-    return transitions <= 24 && msb_transitions >= 2;
-}
-
 static int gap_access_addr(uint32_t *address) {
     if (!address) return 0;
 

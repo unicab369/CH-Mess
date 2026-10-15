@@ -456,8 +456,9 @@ static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
 static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(handle.slot)) ||
-        gap_conn_generations[handle.slot] != handle.generation)
-        return 0;
+        gap_conn_generations[handle.slot] != handle.generation
+    ) return 0;
+
     gap_conn_slot = handle.slot;
     return 1;
 }
@@ -494,8 +495,36 @@ static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 
-// Validate the LLData and addresses in CONNECT_IND or AUX_CONNECT_REQ.
-static int gap_access_address_valid(uint32_t address);
+// Validate a data-channel access address against the Bluetooth Core rules.
+static int gap_access_address_valid(uint32_t address) {
+    uint32_t address_xor = address ^ BLE_ADV_ACCESS_ADDRESS;
+    if (address_xor == 0 || (address_xor & (address_xor - 1)) == 0)
+        return 0;
+
+    uint8_t bytes_equal = 1;
+    for (uint8_t i = 1; i < 4; i++)
+        if ((uint8_t)(address >> (8 * i)) != (uint8_t)address)
+            bytes_equal = 0;
+    if (bytes_equal) return 0;
+
+    uint8_t transitions = 0, msb_transitions = 0, run = 1;
+    uint8_t previous = address & 1;
+
+    for (uint8_t bit = 1; bit < 32; bit++) {
+        uint8_t value = (address >> bit) & 1;
+
+        if (value != previous) {
+            transitions++;
+            run = 1;
+            if (bit >= 27) msb_transitions++;
+        }
+        else if (++run > 6) {
+            return 0;
+        }
+        previous = value;
+    }
+    return transitions <= 24 && msb_transitions >= 2;
+}
 
 static uint8_t gap_timing_valid(
     uint16_t minimum, uint16_t maximum, uint16_t latency, uint16_t timeout
