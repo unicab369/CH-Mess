@@ -1207,4 +1207,176 @@ static inline int gatt_weight_scale_service_add(
     return 1;
 }
 
+typedef struct {
+    uint16_t service_handle, control_point_handle, feature_handle;
+} ble_gatt_bond_management_service;
+
+// Add Bond Management attributes. The application must implement the control
+// point's bond deletion procedures and enforce the requested authorization.
+static inline int gatt_bond_management_service_add(
+    ble_gatt_server *server, ble_gatt_bond_management_service *service,
+    const uint8_t *features, uint16_t feature_len,
+    uint16_t control_point_capacity
+) {
+    if (!service || !features || !feature_len || feature_len > 3 ||
+        !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2aa4, BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_WRITE_AUTHENTICATED, NULL, 0,
+            control_point_capacity, 1},
+        {0x2aa5, BLE_GATT_PROP_READ, 0,
+            BLE_GATT_PERM_READ_AUTHENTICATED, features, feature_len}
+    };
+    uint16_t values[2];
+    if (!gatt_sig_service_add(server, 0x181e, chars, 2,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->control_point_handle = values[0];
+    service->feature_handle = values[1];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, configuration_handle, latitude_handle;
+    uint16_t longitude_handle;
+} ble_gatt_indoor_positioning_service;
+
+// Add the mandatory Indoor Positioning attributes. Values are the one-octet
+// configuration and four-octet signed coordinates in Bluetooth byte order.
+static inline int gatt_indoor_positioning_service_add(
+    ble_gatt_server *server, ble_gatt_indoor_positioning_service *service,
+    uint8_t configuration, const uint8_t latitude[4],
+    const uint8_t longitude[4]
+) {
+    if (!service || !latitude || !longitude) return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2aad, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            &configuration, 1},
+        {0x2aae, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, latitude, 4},
+        {0x2aaf, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, longitude, 4}
+    };
+    uint16_t values[3];
+    if (!gatt_sig_service_add(server, 0x1821, chars, 3,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->configuration_handle = values[0];
+    service->latitude_handle = values[1];
+    service->longitude_handle = values[2];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, spot_check_handle, spot_check_cccd_handle;
+    uint16_t continuous_handle, continuous_cccd_handle, feature_handle;
+    uint16_t record_access_handle, record_access_cccd_handle;
+} ble_gatt_pulse_oximeter_service;
+
+// Add a Pulse Oximeter database. At least one measurement mode is required;
+// include_record_access should be set when spot-check records are stored.
+static inline int gatt_pulse_oximeter_service_add(
+    ble_gatt_server *server, ble_gatt_pulse_oximeter_service *service,
+    uint16_t features, uint8_t spot_check, uint8_t continuous,
+    uint8_t include_record_access
+) {
+    if (!service || (!spot_check && !continuous)) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[2] = {(uint8_t)features, (uint8_t)(features >> 8)};
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[4];
+    uint8_t count = 0;
+    if (spot_check)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a5e, BLE_GATT_PROP_INDICATE, 1, 0,
+            &unused_value, 0, 0, 1};
+    if (continuous)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a5f, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &unused_value, 0, 0, 1};
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a60, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        feature, sizeof(feature)};
+    if (include_record_access)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE,
+            &unused_value, 0, 0, 1};
+    uint16_t values[4], cccds[4];
+    if (!gatt_sig_service_add(server, 0x1822, chars, count,
+                              &service->service_handle, values, cccds))
+        return 0;
+    uint8_t i = 0;
+    if (spot_check) {
+        service->spot_check_handle = values[i];
+        service->spot_check_cccd_handle = cccds[i++];
+    }
+    if (continuous) {
+        service->continuous_handle = values[i];
+        service->continuous_cccd_handle = cccds[i++];
+    }
+    service->feature_handle = values[i++];
+    if (include_record_access) {
+        service->record_access_handle = values[i];
+        service->record_access_cccd_handle = cccds[i];
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, uri_handle, headers_handle;
+    uint16_t status_code_handle, entity_body_handle;
+    uint16_t control_point_handle, https_security_handle;
+} ble_gatt_http_proxy_service;
+
+// Add the HTTP Proxy attribute database. The application owns HTTP request,
+// response, and transport behavior for these characteristics.
+static inline int gatt_http_proxy_service_add(
+    ble_gatt_server *server, ble_gatt_http_proxy_service *service,
+    uint16_t uri_capacity, uint16_t headers_capacity,
+    uint16_t entity_body_capacity, uint16_t control_point_capacity
+) {
+    if (!service || !uri_capacity || !headers_capacity ||
+        !entity_body_capacity || !control_point_capacity ||
+        uri_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        headers_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        entity_body_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2ab6, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &unused_value, 0, uri_capacity, 1},
+        {0x2ab7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            &unused_value, 0, headers_capacity, 1},
+        {0x2ab8, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &unused_value, 0, 0, 1},
+        {0x2ab9, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            &unused_value, 0, entity_body_capacity, 1},
+        {0x2aba, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &unused_value, 0, control_point_capacity, 1},
+        {0x2abb, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            &unused_value, 1}
+    };
+    uint16_t values[6], cccds[6];
+    if (!gatt_sig_service_add(server, 0x1823, chars, 6,
+                              &service->service_handle, values, cccds))
+        return 0;
+    service->uri_handle = values[0];
+    service->headers_handle = values[1];
+    service->status_code_handle = values[2];
+    service->entity_body_handle = values[3];
+    service->control_point_handle = values[4];
+    service->https_security_handle = values[5];
+    return 1;
+}
+
 #endif

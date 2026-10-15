@@ -4,7 +4,8 @@ The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
 `ble_gatt_services.h` provides reusable Bluetooth SIG Battery, Device
-Information, Generic Access, and Heart Rate Service builders.
+Information, Generic Access, Heart Rate, and additional standard service
+database builders.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
@@ -95,6 +96,18 @@ The next service builders cover:
 These are database builders. The application supplies record storage,
 control-point behavior, and correctly formatted measurement payloads; the
 builders do not implement those profile procedures.
+
+Additional builders cover Bond Management, Indoor Positioning, Pulse Oximeter,
+and HTTP Proxy. Bond Management requires authenticated access to its control
+point and feature value; the application still performs the bond-management
+procedures. Indoor Positioning adds the three mandatory characteristics, and
+the application supplies and validates coordinate updates. Pulse Oximeter
+adds either or both measurement modes, its feature value, and an optional
+Record Access Control Point when records are stored. HTTP Proxy takes value
+capacities for URI, headers, entity body, and control point; those allocations
+count against the server's configured value pool. The application implements
+HTTP handling and queues status/response events. These helpers register
+attributes and do not by themselves provide full profile conformance.
 
 ## GAP connection integration
 
