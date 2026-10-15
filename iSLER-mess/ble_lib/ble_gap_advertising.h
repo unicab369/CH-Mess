@@ -442,28 +442,28 @@ int gap_adv_start_connectable(
 // Application facing
 // Low duty cycle directed advertising to one peer; address bytes are PDU order.
 int gap_adv_start_directed(
-    const uint8_t address[6], uint8_t address_type, uint16_t interval_ms
+    const uint8_t address[6], uint8_t type, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
     if (gap_central.active || !address ||
-        address_type > 1 || interval_ms < 100 || interval_ms > 10240 ||
+        type > 1 || interval_ms < 100 || interval_ms > 10240 ||
         (gap_privacy.enabled && !gap_privacy.resolvable)
     ) return 0;
 
     uint8_t target[6];
     memcpy(target, address, sizeof(target));
-    int slot = gap_identity_find(address, address_type);
+    int slot = gap_identity_find(address, type);
 
     if (gap_privacy.enabled && gap_privacy.resolvable &&
         slot >= 0 && gap_identities[slot].has_irk
     ) {
         if (!gap_private_address_generate(gap_identities[slot].irk, target, address))
             return 0;
-        address_type = 1;
+        type = 1;
     }
-    gap_adv.target_type = address_type;
+    gap_adv.target_type = type;
     memcpy(gap_adv.target_address, target, sizeof(target));
     gap_adv.data_len = 0;
     gap_adv.scan_resp_len = 0;

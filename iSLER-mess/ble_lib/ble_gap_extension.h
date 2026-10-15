@@ -391,12 +391,12 @@ int gap_periodic_pawr_slots_set(
 // request replaces the selected subevent in the next periodic event.
 int gap_periodic_pawr_connect(
     uint8_t set_id, uint8_t subevent,
-    uint8_t peer_address_type, const uint8_t peer_address[6]
+    uint8_t type, const uint8_t peer_address[6]
 ) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!peer_address || peer_address_type > 1 ||
+    if (!peer_address || type > 1 ||
         gap_conn_slot_active(gap_conn_slot) ||
         (gap_central.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
@@ -407,12 +407,12 @@ int gap_periodic_pawr_connect(
         if (gap_ext_adv[i].pawr_connect.pending)
             return 0;
 
-    if (!gap_peer_allowed(gap_identity_find(peer_address, peer_address_type),
-                          peer_address, peer_address_type))
+    if (!gap_peer_allowed(gap_identity_find(peer_address, type),
+                          peer_address, type))
         return 0;
 
     set->pawr_connect.subevent = subevent;
-    set->pawr_connect.peer_type = peer_address_type;
+    set->pawr_connect.peer_type = type;
     memcpy(set->pawr_connect.peer_address, peer_address, 6);
     set->pawr_connect.pending = 1;
     return 1;
@@ -865,18 +865,18 @@ static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned handle identifies later events.
 int gap_periodic_sync_start(
-    uint8_t address_type,
+    uint8_t type,
     const uint8_t address[6], uint8_t sid, uint32_t timeout_ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!address || address_type > 1 || sid > 15 || timeout_ms < 100 ||
+    if (!address || type > 1 || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 || gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
-            gap_syncs[i].address_type == address_type &&
+            gap_syncs[i].address_type == type &&
             !memcmp(gap_syncs[i].address, address, 6)
         ) return 0;
 
@@ -897,7 +897,7 @@ int gap_periodic_sync_start(
     gap_syncs[slot].used = 1;
     gap_syncs[slot].handle = (uint8_t)(slot + 1);
     gap_syncs[slot].sid = sid;
-    gap_syncs[slot].address_type = address_type;
+    gap_syncs[slot].address_type = type;
     memcpy(gap_syncs[slot].address, address, 6);
     gap_syncs[slot].timeout_ms = timeout_ms;
     gap_syncs[slot].last_event_ms = GET_MILLIS();
