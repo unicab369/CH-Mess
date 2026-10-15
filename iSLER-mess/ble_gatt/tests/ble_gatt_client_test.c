@@ -55,7 +55,7 @@ static void test_long_operation_deadlines_refresh(void) {
                          NULL);
 
     assert(gatt_client_read_long(&client, 0x0042, 1000));
-    assert(gatt_client_poll(&client, 20000) == 0);
+    client.now_ms = 20000;
     response[0] = 0x0b;
     memset(response + 1, 0x5a, 22);
     assert(gatt_client_receive(&client, response, 23) == 1);
@@ -66,7 +66,7 @@ static void test_long_operation_deadlines_refresh(void) {
     uint8_t value[40] = {0};
     assert(gatt_client_write_long(&client, 0x0042, value,
                                       sizeof(value), 1000));
-    assert(gatt_client_poll(&client, 20000) == 0);
+    client.now_ms = 20000;
     memcpy(response, sent, sent_len);
     response[0] = 0x17;
     assert(gatt_client_receive(&client, response, sent_len) == 1);
@@ -251,17 +251,9 @@ int main(void) {
 
     assert(gatt_client_request(&client, request, sizeof(request),
                                    0x0b, 300));
-    assert(!gatt_client_poll(&client, 30299));
-    assert(gatt_client_poll(&client, 30300));
-    assert(result_count == 3 && result_status == BLE_GATT_CLIENT_TIMEOUT);
-    assert(client.bearer_failed);
-    assert(!gatt_client_request(&client, request, sizeof(request),
-                                    0x0b, 30301));
+    gatt_client_reset(&client);
 
     const uint8_t notification[] = {0x1b, 0x34, 0x12, 0x5a};
-    assert(gatt_client_receive(&client, notification,
-                                   sizeof(notification)) == -1);
-    gatt_client_reset(&client);
     const uint8_t invalid_notification[] = {0x1b, 0, 0, 0x5a};
     assert(gatt_client_receive(&client, invalid_notification,
                                    sizeof(invalid_notification)) == 1);

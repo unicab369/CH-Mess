@@ -239,7 +239,7 @@ static inline int gatt_transport_eatt_client_send(
         return 0;
     ble_gatt_transport *transport = bearer->transport;
     if (pdu[0] == 0x02 && transport->server &&
-        (len != 3 || gatt_server_u16(pdu + 1) != bearer->server.local_mtu))
+        (len != 3 || ble_att_get_u16(pdu + 1) != bearer->server.local_mtu))
         return 0;
     if (bearer->client_tx_pending && ble_att_response_opcode(pdu[0])) return 0;
     if (!gatt_transport_eatt_queue_pdu(bearer, pdu, len)) return 0;
@@ -643,7 +643,7 @@ static inline int gatt_transport_send_client(
         att_len > BLE_GATT_TRANSPORT_MTU_MAX || transport->tx_len)
         return 0;
     if (transport->server && att[0] == 0x02 &&
-        (att_len != 3 || gatt_server_u16(att + 1) !=
+        (att_len != 3 || ble_att_get_u16(att + 1) !=
                          transport->server->local_mtu))
         return 0;
     gatt_transport_send_att(transport, att, att_len);
@@ -793,6 +793,24 @@ static inline int gatt_transport_fail_bearer(
     }
 
     return -1;
+}
+
+// Advance one ATT client and report whether its request timed out.
+static inline int gatt_transport_client_poll(
+    ble_gatt_client *client, uint32_t now_ms
+) {
+    if (!client) return 0;
+    client->now_ms = now_ms;
+    if (!client->request.pending ||
+        (int32_t)(now_ms - client->deadline_ms) < 0
+    ) return 0;
+
+    memset(&client->request, 0, sizeof(client->request));
+    client->operation.kind = 0;
+    client->bearer_failed = 1;
+    if (client->result)
+        client->result(client->context, BLE_GATT_CLIENT_TIMEOUT, NULL, 0);
+    return 1;
 }
 
 // Optional platform hook returning the current LE encryption key size in
@@ -996,12 +1014,12 @@ static inline int gatt_transport_poll(
             ble_gatt_transport_eatt_context *bearer =
                 &transport->eatt_contexts[i];
             if (bearer->cid && bearer->client_enabled &&
-                gatt_client_poll(&bearer->client, now_ms))
+                gatt_transport_client_poll(&bearer->client, now_ms))
                 (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
         }
 #endif
     if (transport->client &&
-        gatt_client_poll(transport->client, now_ms))
+        gatt_transport_client_poll(transport->client, now_ms))
         return gatt_transport_fail_bearer(transport);
     uint8_t event[BLE_GATT_TRANSPORT_MTU_MAX];
     uint16_t event_len = 0;
