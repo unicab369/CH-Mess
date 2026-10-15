@@ -13,5 +13,6 @@
 #define RANDOM_STRENGTH           2
 
 #define GAP_CONNECTION_COUNT      1
+#define GAP_SMP_SUPPORT           0
 
 #endif

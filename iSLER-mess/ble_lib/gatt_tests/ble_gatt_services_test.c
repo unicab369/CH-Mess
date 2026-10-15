@@ -103,5 +103,34 @@ int main(void) {
     assert(server.attributes[binary_sensor.response_handle - 1].properties ==
            BLE_GATT_PROP_INDICATE);
 
+    const uint8_t cgm_feature[] = {0x01, 0x00};
+    const uint8_t cgm_status[] = {0x00, 0x00, 0x00};
+    const uint8_t cgm_start_time[] = {0};
+    const uint8_t cgm_run_time[] = {0x2c, 0x01};
+    ble_gatt_cgm_config cgm_config = {
+        .feature = cgm_feature,
+        .feature_len = sizeof(cgm_feature),
+        .status = cgm_status,
+        .status_len = sizeof(cgm_status),
+        .session_start_time = cgm_start_time,
+        .session_start_time_len = sizeof(cgm_start_time),
+        .session_run_time = cgm_run_time,
+        .session_run_time_len = sizeof(cgm_run_time),
+        .measurement_capacity = 24,
+        .control_point_capacity = 20,
+        .feature_indicate = 1
+    };
+    ble_gatt_cgm_service cgm = {0};
+    assert(gatt_cgm_service_add(&server, &cgm, &cgm_config));
+    assert(cgm.measurement_handle && cgm.measurement_cccd_handle &&
+           cgm.feature_handle && cgm.feature_cccd_handle && cgm.status_handle &&
+           cgm.session_start_time_handle && cgm.session_run_time_handle &&
+           cgm.record_access_handle && cgm.record_access_cccd_handle &&
+           cgm.specific_ops_handle && cgm.specific_ops_cccd_handle);
+    assert(gatt_server_find(&server, cgm.measurement_handle)->value_capacity ==
+           cgm_config.measurement_capacity);
+    assert(gatt_server_find(&server, cgm.record_access_cccd_handle)->permissions ==
+           (BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_AUTHENTICATED));
+
     return 0;
 }

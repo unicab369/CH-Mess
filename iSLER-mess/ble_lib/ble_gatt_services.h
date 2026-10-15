@@ -520,6 +520,28 @@ typedef struct {
     uint16_t feature_handle;
 } ble_gatt_weight_scale_service;
 
+typedef struct {
+    const uint8_t *feature;
+    uint16_t feature_len;
+    const uint8_t *status;
+    uint16_t status_len;
+    const uint8_t *session_start_time;
+    uint16_t session_start_time_len;
+    const uint8_t *session_run_time;
+    uint16_t session_run_time_len;
+    uint16_t measurement_capacity, control_point_capacity;
+    uint8_t feature_indicate;
+} ble_gatt_cgm_config;
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t measurement_handle, measurement_cccd_handle;
+    uint16_t feature_handle, feature_cccd_handle;
+    uint16_t status_handle, session_start_time_handle, session_run_time_handle;
+    uint16_t record_access_handle, record_access_cccd_handle;
+    uint16_t specific_ops_handle, specific_ops_cccd_handle;
+} ble_gatt_cgm_service;
+
 static inline int gatt_immediate_alert_service_add(
     ble_gatt_server *server, ble_gatt_immediate_alert_service *service,
     uint8_t alert_level
@@ -1386,6 +1408,84 @@ static inline int gatt_mesh_proxy_service_add(
     service->data_in_handle = values[0];
     service->data_out_handle = values[1];
     service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
+// Add the Continuous Glucose Monitoring attribute database. The application
+// supplies encoded static values and implements record storage and control
+// point procedures. Variable-value capacities are configurable because the
+// payloads depend on the device's supported feature set.
+static inline int gatt_cgm_service_add(
+    ble_gatt_server *server, ble_gatt_cgm_service *service,
+    const ble_gatt_cgm_config *config
+) {
+    if (!server || !service || !config || !config->feature ||
+        !config->feature_len || !config->status || !config->status_len ||
+        !config->session_start_time || !config->session_start_time_len ||
+        !config->session_run_time || !config->session_run_time_len ||
+        !config->measurement_capacity || !config->control_point_capacity ||
+        config->feature_indicate > 1 ||
+        config->measurement_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        config->control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        config->feature_len > BLE_GATT_SERVER_VALUE_MAX ||
+        config->status_len > BLE_GATT_SERVER_VALUE_MAX ||
+        config->session_start_time_len > BLE_GATT_SERVER_VALUE_MAX ||
+        config->session_run_time_len > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2aa7, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0,
+         config->measurement_capacity, 1},
+        {0x2aa8, BLE_GATT_PROP_READ |
+            (config->feature_indicate ? BLE_GATT_PROP_INDICATE : 0),
+         config->feature_indicate, BLE_GATT_PERM_READ_AUTHENTICATED,
+         config->feature, config->feature_len},
+        {0x2aa9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHENTICATED,
+         config->status, config->status_len},
+        {0x2aaa, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+         BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_WRITE_AUTHENTICATED,
+         config->session_start_time, config->session_start_time_len},
+        {0x2aab, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHENTICATED,
+         config->session_run_time, config->session_run_time_len},
+        {0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+         BLE_GATT_PERM_WRITE_AUTHENTICATED, &unused_value, 0,
+         config->control_point_capacity, 1},
+        {0x2aac, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+         BLE_GATT_PERM_WRITE_AUTHENTICATED, &unused_value, 0,
+         config->control_point_capacity, 1}
+    };
+    uint16_t values[7], cccds[7];
+    if (!gatt_sig_service_add(server, 0x181f, chars, 7,
+            &service->service_handle, values, cccds))
+        return 0;
+
+    service->measurement_handle = values[0];
+    service->measurement_cccd_handle = cccds[0];
+    service->feature_handle = values[1];
+    service->feature_cccd_handle = cccds[1];
+    service->status_handle = values[2];
+    service->session_start_time_handle = values[3];
+    service->session_run_time_handle = values[4];
+    service->record_access_handle = values[5];
+    service->record_access_cccd_handle = cccds[5];
+    service->specific_ops_handle = values[6];
+    service->specific_ops_cccd_handle = cccds[6];
+
+    const uint16_t cccd_handles[] = {
+        service->measurement_cccd_handle,
+        service->feature_cccd_handle,
+        service->record_access_cccd_handle,
+        service->specific_ops_cccd_handle
+    };
+    for (uint8_t i = 0; i < sizeof(cccd_handles) / sizeof(cccd_handles[0]); i++) {
+        if (!cccd_handles[i]) continue;
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
+        if (cccd)
+            cccd->permissions = BLE_GATT_PERM_READ |
+                                BLE_GATT_PERM_WRITE_AUTHENTICATED;
+    }
     return 1;
 }
 

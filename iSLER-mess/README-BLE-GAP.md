@@ -18,6 +18,12 @@ Status meanings:
 - `[ ] Hardware TODO` Verify on the target radio and with independent peers.
 - `N/A` Excluded from this product's supported feature set.
 
+`GAP_SMP_SUPPORT` defaults to `1`. Set it to `0` before including
+`ble_gap.h` to omit SMP pairing/bonding procedures and their per-link protocol
+contexts. GATT and unsecured connections remain available; pairing, bonding,
+and SMP-based authentication are unavailable in that build. The application
+may still start Link Layer encryption with an externally provisioned key.
+
 An `[x]` is not evidence of Bluetooth qualification. The device owner will do
 target hardware verification.
 

@@ -906,12 +906,16 @@ static void gap_conn_poll(void) {
             }
         }
 
+#if GAP_SMP_SUPPORT
         if (smp_bond_load())
             conn->bonded = 1;
+#endif
     }
 
+#if GAP_SMP_SUPPORT
     smp_bond_restore_poll();
     gap_smp_poll();
+#endif
     uint32_t now_ms = GET_MILLIS();
 
     if (gap_security->phase &&

@@ -103,7 +103,9 @@ static uint8_t gap_conn_rate_busy(void) {
         conn->rate.update_pending || conn->rate.req_pending;
 }
 
+#if GAP_SMP_SUPPORT
 static void gap_smp_link_close(void);
+#endif
 
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -113,7 +115,9 @@ static void gap_conn_end(void) {
         gap_poll.slot_valid = 0;
         gap_rx_armed = 0;
     }
+#if GAP_SMP_SUPPORT
     gap_smp_link_close();
+#endif
     // Preserve the final status while clearing the rest of the security state.
     uint8_t security_status = gap_sec_contexts[gap_conn_slot].status ==
         GAP_CONNECTION_PENDING ? 0x08 : gap_sec_contexts[gap_conn_slot].status;
@@ -2231,12 +2235,16 @@ int gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
+#if GAP_SMP_SUPPORT
 static void gap_smp_poll(void);
 static void gap_smp_receive_complete(void);
+#endif
 
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_SMP_SUPPORT
     gap_smp_poll();
+#endif
     if (!data || !len || !conn->queue.rx_ready) return 0;
     if (*len < conn->rx.len) return -1;
     if (llid) *llid = conn->rx.llid;
@@ -2244,7 +2252,9 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     *len = conn->rx.len;
     memcpy(data, conn->rx.data, conn->rx.len);
     conn->queue.rx_ready = 0;
+#if GAP_SMP_SUPPORT
     gap_smp_receive_complete();
+#endif
     return 1;
 }
 
@@ -2355,14 +2365,19 @@ static void gap_send_security(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
+#if GAP_SMP_SUPPORT
 static int gap_smp_blocks_encryption(void);
+#endif
 
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!ltk || !random || gap_conn_procedure_busy() || !conn->is_central ||
-        gap_smp_blocks_encryption() || conn->features.request_pending
+        conn->features.request_pending
+#if GAP_SMP_SUPPORT
+        || gap_smp_blocks_encryption()
+#endif
     ) return 0;
 
     if (conn->features.known && !(conn->features.peer[0] & 1)) {

@@ -23,6 +23,7 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Battery (`0x180F`)
 - [x] Blood Pressure (`0x1810`)
 - [x] Alert Notification (`0x1811`)
+- [x] Continuous Glucose Monitoring (`0x181F`)
 - [x] Scan Parameters (`0x1813`)
 - [x] Running Speed and Cadence (`0x1814`)
 - [x] Automation IO (`0x1815`)
@@ -44,7 +45,6 @@ automatically provide each service's application protocol or profile behavior.
 ## Remaining assigned services
 
 - [ ] Human Interface Device (`0x1812`)
-- [ ] Continuous Glucose Monitoring (`0x181F`)
 - [ ] Internet Protocol Support (`0x1820`)
 - [ ] Transport Discovery (`0x1824`)
 - [ ] Object Transfer (`0x1825`)

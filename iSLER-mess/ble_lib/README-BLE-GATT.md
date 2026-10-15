@@ -70,10 +70,14 @@ use the server's notify/indicate APIs with those handles. Multi-byte values
 passed to builders are in Bluetooth little-endian byte order. Use a separate
 service state object for each server/connection.
 
-The next service builders cover:
+Additional service builders include:
 
 - `gatt_glucose_service_add()` for Glucose Measurement, optional Measurement
   Context, Glucose Feature, and the authenticated Record Access Control Point.
+- `gatt_cgm_service_add()` for Continuous Glucose Monitoring measurements,
+  authenticated feature/status/session values, and both control points. The
+  application supplies encoded static values and implements record storage
+  and control-point behavior.
 - `gatt_alert_notification_service_add()` for supported categories, new and
   unread alert notifications, and the Alert Notification Control Point.
 - `gatt_scan_parameters_service_add()` for Scan Interval Window and Scan

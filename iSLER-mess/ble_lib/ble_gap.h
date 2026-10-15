@@ -117,6 +117,14 @@ typedef enum {
 #error "GAP_CONNECTION_COUNT must be between 1 and 4"
 #endif
 
+// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
+#ifndef GAP_SMP_SUPPORT
+#define GAP_SMP_SUPPORT 1
+#endif
+#if GAP_SMP_SUPPORT != 0 && GAP_SMP_SUPPORT != 1
+#error "GAP_SMP_SUPPORT must be 0 or 1"
+#endif
+
 // Advertising payload limits and extended advertising storage.
 #define GAP_ADV_DATA_MAX 31
 #define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
@@ -1044,7 +1052,9 @@ int gap_use_public_address(void) {
 
 #include "ble_gap_connection.h"
 
+#if GAP_SMP_SUPPORT
 #include "ble_gap_smp.h"
+#endif
 
 // Validate a legacy CONNECT_IND and initialize its data-channel state.
 static int gap_conn_accept(
@@ -1127,10 +1137,12 @@ static int gap_conn_accept(
         gap_conn_generations[gap_conn_slot] = 1;
 
     conn->link_state.active = 1;
+#if GAP_SMP_SUPPORT
     if (!smp_link_init()) {
         conn->link_state.active = 0;
         return 0;
     }
+#endif
 
     gap_adv.enabled = 0;
 #if GAP_EXT_ADV_SUPPORT
