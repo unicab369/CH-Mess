@@ -1625,12 +1625,6 @@ static inline int gatt_server_poll_event(
 // =============================================================================
 // Prepared writes and ATT dispatch
 // =============================================================================
-static void gatt_server_prepare_clear(ble_gatt_server *server) {
-    memset(server->prepare_data, 0, server->prepare_used);
-    server->prepare_count = 0;
-    server->prepare_used = 0;
-}
-
 static void gatt_server_prepare_cccd_value(
     const ble_gatt_server *server, const ble_gatt_attribute *attribute,
     uint8_t value[2]
@@ -1638,21 +1632,6 @@ static void gatt_server_prepare_cccd_value(
     ble_put_le16(value, attribute->cccd);
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         const ble_gatt_prepared_write *part = &server->prepared[i];
-        if (part->handle != attribute->handle) continue;
-        for (uint16_t j = 0; j < part->len; j++)
-            value[part->offset + j] =
-                server->prepare_data[part->data_offset + j];
-    }
-}
-
-static void gatt_server_prepare_static_u16_value(
-    ble_gatt_server *server, ble_gatt_attribute *attribute, uint8_t value[2]
-) {
-    uint8_t *stored = gatt_attribute_value(server, attribute);
-    value[0] = stored[0];
-    value[1] = stored[1];
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        ble_gatt_prepared_write *part = &server->prepared[i];
         if (part->handle != attribute->handle) continue;
         for (uint16_t j = 0; j < part->len; j++)
             value[part->offset + j] =
@@ -1700,130 +1679,6 @@ static uint8_t gatt_server_prepare_validate(
     return 0;
 }
 
-static uint8_t gatt_server_prepare_execute(
-    ble_gatt_server *server,
-    uint16_t *error_handle
-) {
-    // Validate the full batch before changing any attribute.
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
-        if (!a) {
-            *error_handle = p->handle;
-            return BLE_GATT_ATT_ERR_INVALID_HANDLE;
-        }
-
-        uint8_t error = gatt_server_prepare_validate(server, a,
-                                                   p->offset, p->len, 1);
-        if (error) {
-            *error_handle = p->handle;
-            return error;
-        }
-    }
-    // Validate each resulting CCCD value only after all fragment ranges have
-    // been checked, since a prepared update may span both octets.
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
-        if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) &&
-            gatt_uuid_assigned16(&a->uuid) != 0x2903) continue;
-        uint8_t first = 1;
-        for (uint16_t j = 0; j < i; j++)
-            if (server->prepared[j].handle == p->handle) first = 0;
-        if (!first) continue;
-        uint8_t value[2];
-        if (a->flags & BLE_GATT_ATTRIBUTE_CCCD)
-            gatt_server_prepare_cccd_value(server, a, value);
-        else
-            gatt_server_prepare_static_u16_value(server, a, value);
-        uint16_t bits = ble_get_le16(value);
-        uint8_t invalid = 0;
-        if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
-            uint16_t allowed = (uint16_t)(
-                (a->properties & BLE_GATT_PROP_NOTIFY ? 1 : 0) |
-                (a->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
-            invalid = (bits & (uint16_t)~allowed) != 0;
-        } else {
-            ble_gatt_attribute *characteristic = gatt_server_find(
-                server, a->parent_handle);
-            invalid = (bits & (uint16_t)~1u) != 0 ||
-                ((bits & 1) && (!characteristic ||
-                 !(characteristic->properties & BLE_GATT_PROP_BROADCAST)));
-        }
-
-        if (invalid) {
-            *error_handle = p->handle;
-            return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
-        }
-    }
-    // New bytes must be covered continuously from the old value length; this
-    // prevents stale bytes from becoming visible through gaps in queued writes.
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
-        if (a->execute) continue;
-        uint16_t end = a->value_len;
-        for (uint16_t j = 0; j < server->prepare_count; j++)
-            if (server->prepared[j].handle == p->handle &&
-                server->prepared[j].offset + server->prepared[j].len > end)
-                end = server->prepared[j].offset + server->prepared[j].len;
-        uint16_t covered = a->value_len;
-        while (covered < end) {
-            uint16_t next = covered;
-            for (uint16_t j = 0; j < server->prepare_count; j++) {
-                ble_gatt_prepared_write *part = &server->prepared[j];
-                uint16_t part_end = part->offset + part->len;
-                if (part->handle == p->handle && part->offset <= covered &&
-                    part_end > next) next = part_end;
-            }
-            if (next == covered) {
-                *error_handle = p->handle;
-                return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-            }
-
-            covered = next;
-        }
-    }
-    // Callback commits are contractually infallible after their prepare phase.
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        uint16_t handle = server->prepared[i].handle;
-        uint8_t first = 1;
-        for (uint16_t j = 0; j < i; j++)
-            if (server->prepared[j].handle == handle) first = 0;
-        if (!first) continue;
-        ble_gatt_attribute *a = gatt_server_find(server, handle);
-        if (a && a->execute) a->execute(a->context, 1);
-    }
-    // Static commits are bounded copies into registered storage.
-    for (uint16_t i = 0; i < server->prepare_count; i++) {
-        ble_gatt_prepared_write *p = &server->prepared[i];
-        ble_gatt_attribute *a = gatt_server_find(server, p->handle);
-        if (a->execute) continue;
-        if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
-            uint8_t first = 1;
-            for (uint16_t j = 0; j < i; j++)
-                if (server->prepared[j].handle == p->handle) first = 0;
-            if (!first) continue;
-            uint8_t value[2];
-            gatt_server_prepare_cccd_value(server, a, value);
-            uint8_t error = gatt_server_write(server, a, 0, value,
-                                                   sizeof(value), 0);
-            if (error) {
-                *error_handle = p->handle;
-                return error;
-            }
-
-            continue;
-        }
-
-        uint8_t *value = gatt_attribute_value(server, a);
-        if (p->len) memcpy(value + p->offset,
-                           server->prepare_data + p->data_offset, p->len);
-        if (p->offset + p->len > a->value_len)
-            a->value_len = p->offset + p->len;
-    }
-    return 0;
-}
 
 static int gatt_server_error_rsp(
     uint8_t request, uint16_t handle,
@@ -1867,7 +1722,7 @@ static uint16_t ble_att_server_group_end(
 // =============================================================================
 // Process one complete ATT PDU. Returns 1 when a response is present, 0 for
 // one-way PDUs, and -1 for bad arguments or malformed one-way PDUs.
-static inline int ble_att_server_process(
+static inline int gatt_server_att(
     ble_gatt_server *server, const uint8_t *req,
     uint16_t req_len, uint8_t *rsp, uint16_t rsp_capacity,
     uint16_t *rsp_len
@@ -2194,19 +2049,157 @@ static inline int ble_att_server_process(
         if (rsp_capacity < 1) return 0;
         if (req[1]) {
             uint16_t error_handle = 0;
-            uint8_t error = gatt_server_prepare_execute(server,
-                &error_handle);
-            if (error) {
-                gatt_server_prepare_cancel_all(server, 0);
-                gatt_server_prepare_clear(server);
-                return gatt_server_error_rsp(op, error_handle, error, rsp,
-                    rsp_capacity, rsp_len);
+            uint8_t error = 0;
+            // Validate the full batch before changing any attribute.
+            for (uint16_t i = 0; i < server->prepare_count; i++) {
+                ble_gatt_prepared_write *p = &server->prepared[i];
+                ble_gatt_attribute *a = gatt_server_find(server, p->handle);
+                if (!a) {
+                    error_handle = p->handle;
+                    error = BLE_GATT_ATT_ERR_INVALID_HANDLE;
+                    goto prepare_error;
+                }
+
+                uint8_t validation_error = gatt_server_prepare_validate(
+                    server, a, p->offset, p->len, 1);
+                if (validation_error) {
+                    error_handle = p->handle;
+                    error = validation_error;
+                    goto prepare_error;
+                }
             }
+            // Validate resulting CCCD values after checking all fragment ranges,
+            // since a prepared update may span both octets.
+            for (uint16_t i = 0; i < server->prepare_count; i++) {
+                ble_gatt_prepared_write *p = &server->prepared[i];
+                ble_gatt_attribute *a = gatt_server_find(server, p->handle);
+                if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) &&
+                    gatt_uuid_assigned16(&a->uuid) != 0x2903) continue;
+                uint8_t first = 1;
+                for (uint16_t j = 0; j < i; j++)
+                    if (server->prepared[j].handle == p->handle) first = 0;
+                if (!first) continue;
+                uint8_t value[2];
+                if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
+                    gatt_server_prepare_cccd_value(server, a, value);
+                } else {
+                    uint8_t *stored = gatt_attribute_value(server, a);
+                    value[0] = stored[0];
+                    value[1] = stored[1];
+                    for (uint16_t j = 0; j < server->prepare_count; j++) {
+                        ble_gatt_prepared_write *part = &server->prepared[j];
+                        if (part->handle != a->handle) continue;
+                        for (uint16_t k = 0; k < part->len; k++)
+                            value[part->offset + k] =
+                                server->prepare_data[part->data_offset + k];
+                    }
+                }
+                uint16_t bits = ble_get_le16(value);
+                uint8_t invalid = 0;
+                if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
+                    uint16_t allowed = (uint16_t)(
+                        (a->properties & BLE_GATT_PROP_NOTIFY ? 1 : 0) |
+                        (a->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
+                    invalid = (bits & (uint16_t)~allowed) != 0;
+                } else {
+                    ble_gatt_attribute *characteristic = gatt_server_find(
+                        server, a->parent_handle);
+                    invalid = (bits & (uint16_t)~1u) != 0 ||
+                        ((bits & 1) && (!characteristic ||
+                         !(characteristic->properties & BLE_GATT_PROP_BROADCAST)));
+                }
+
+                if (invalid) {
+                    error_handle = p->handle;
+                    error = BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+                    goto prepare_error;
+                }
+            }
+            // New bytes must be covered continuously from the old value length,
+            // preventing stale bytes from becoming visible through gaps.
+            for (uint16_t i = 0; i < server->prepare_count; i++) {
+                ble_gatt_prepared_write *p = &server->prepared[i];
+                ble_gatt_attribute *a = gatt_server_find(server, p->handle);
+                if (a->execute) continue;
+                uint16_t end = a->value_len;
+                for (uint16_t j = 0; j < server->prepare_count; j++)
+                    if (server->prepared[j].handle == p->handle &&
+                        server->prepared[j].offset + server->prepared[j].len > end)
+                        end = server->prepared[j].offset + server->prepared[j].len;
+                uint16_t covered = a->value_len;
+                while (covered < end) {
+                    uint16_t next = covered;
+                    for (uint16_t j = 0; j < server->prepare_count; j++) {
+                        ble_gatt_prepared_write *part = &server->prepared[j];
+                        uint16_t part_end = part->offset + part->len;
+                        if (part->handle == p->handle && part->offset <= covered &&
+                            part_end > next) next = part_end;
+                    }
+                    if (next == covered) {
+                        error_handle = p->handle;
+                        error = BLE_GATT_ATT_ERR_INVALID_OFFSET;
+                        goto prepare_error;
+                    }
+
+                    covered = next;
+                }
+            }
+            // Callback commits are infallible after their prepare phase.
+            for (uint16_t i = 0; i < server->prepare_count; i++) {
+                uint16_t handle = server->prepared[i].handle;
+                uint8_t first = 1;
+                for (uint16_t j = 0; j < i; j++)
+                    if (server->prepared[j].handle == handle) first = 0;
+                if (!first) continue;
+                ble_gatt_attribute *a = gatt_server_find(server, handle);
+                if (a && a->execute) a->execute(a->context, 1);
+            }
+            // Static commits are bounded copies into registered storage.
+            for (uint16_t i = 0; i < server->prepare_count; i++) {
+                ble_gatt_prepared_write *p = &server->prepared[i];
+                ble_gatt_attribute *a = gatt_server_find(server, p->handle);
+                if (a->execute) continue;
+                if (a->flags & BLE_GATT_ATTRIBUTE_CCCD) {
+                    uint8_t first = 1;
+                    for (uint16_t j = 0; j < i; j++)
+                        if (server->prepared[j].handle == p->handle) first = 0;
+                    if (!first) continue;
+                    uint8_t value[2];
+                    gatt_server_prepare_cccd_value(server, a, value);
+                    uint8_t write_error = gatt_server_write(server, a, 0, value,
+                                                             sizeof(value), 0);
+                    if (write_error) {
+                        error_handle = p->handle;
+                        error = write_error;
+                        goto prepare_error;
+                    }
+
+                    continue;
+                }
+
+                uint8_t *value = gatt_attribute_value(server, a);
+                if (p->len) memcpy(value + p->offset,
+                                   server->prepare_data + p->data_offset, p->len);
+                if (p->offset + p->len > a->value_len)
+                    a->value_len = p->offset + p->len;
+            }
+            goto prepare_done;
+prepare_error:
+            gatt_server_prepare_cancel_all(server, 0);
+            memset(server->prepare_data, 0, server->prepare_used);
+            server->prepare_count = 0;
+            server->prepare_used = 0;
+            return gatt_server_error_rsp(op, error_handle, error, rsp,
+                rsp_capacity, rsp_len);
+prepare_done:
+            ;
         } else {
             gatt_server_prepare_cancel_all(server, 0);
         }
 
-        gatt_server_prepare_clear(server);
+        memset(server->prepare_data, 0, server->prepare_used);
+        server->prepare_count = 0;
+        server->prepare_used = 0;
         rsp[0] = 0x19;
         *rsp_len = 1;
         return 1;
@@ -2261,15 +2254,6 @@ static inline int ble_att_server_process(
 invalid_pdu:
     return gatt_server_error_rsp(op, 0, BLE_GATT_ATT_ERR_INVALID_PDU,
         rsp, rsp_capacity, rsp_len);
-}
-
-static inline int gatt_server_att(
-    ble_gatt_server *server,
-    const uint8_t *req, uint16_t req_len, uint8_t *rsp,
-    uint16_t rsp_capacity, uint16_t *rsp_len
-) {
-    return ble_att_server_process(server, req, req_len, rsp, rsp_capacity,
-                                  rsp_len);
 }
 
 #endif
