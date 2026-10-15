@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "../ble_gap/ble_gap.h"
-#include "../ble_gatt.h"
+#include "../ble_gatt/ble_gatt.h"
 
 #ifndef MESH_GATT_ATT_MTU_MAX
 #define MESH_GATT_ATT_MTU_MAX 247

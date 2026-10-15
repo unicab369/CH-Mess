@@ -5,8 +5,7 @@ provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes. It
 does not include Bluetooth SIG service profiles.
 
-`ble_gatt.h` is the generic include (`../ble_gatt.h` is the compatibility
-entry point, matching the GAP module layout). The client API is defined there;
+`ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att/ble_att.h` owns shared ATT opcodes,
 errors, value limits, byte-order helpers, and request/response matching.
 `ble_att/ble_att_server.h` handles ATT server PDU procedures and response

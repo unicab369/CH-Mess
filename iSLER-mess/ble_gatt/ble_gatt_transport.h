@@ -122,7 +122,28 @@ struct ble_gatt_transport {
 // =============================================================================
 // Shared L2CAP transport helpers
 // =============================================================================
-static inline int gatt_transport_is_client_pdu(uint8_t opcode);
+static inline int gatt_transport_is_client_pdu(uint8_t opcode) {
+    switch (opcode) {
+    case 0x01:
+    case 0x03:
+    case 0x05:
+    case 0x07:
+    case 0x09:
+    case 0x0b:
+    case 0x0d:
+    case 0x0f:
+    case 0x13:
+    case 0x17:
+    case 0x19:
+    case 0x21:
+    case 0x1b:
+    case 0x1d:
+    case 0x23:
+        return 1;
+    default:
+        return 0;
+    }
+}
 
 // Reset the fixed bearer after disconnect or link replacement.
 static inline void gatt_transport_reset(ble_gatt_transport *transport) {
@@ -137,10 +158,6 @@ static inline void gatt_transport_reset(ble_gatt_transport *transport) {
     transport->tx_client_request = 0;
     memset(transport->tx, 0, sizeof(transport->tx));
 }
-
-static inline int gatt_transport_receive_att(
-    void *context, uint16_t cid,
-    const uint8_t *att, uint16_t att_len);
 
 // Queue any L2CAP channel PDU through this transport's LL-fragment TX path.
 static inline int gatt_transport_send_l2cap_pdu(
@@ -615,6 +632,74 @@ static inline void gatt_transport_eatt_set_encrypted(
 }
 #endif
 
+static inline void gatt_transport_sync_mtu_from_server(
+    ble_gatt_transport *transport
+) {
+    if (!transport || !transport->server || !transport->client)
+        return;
+    transport->client->local_mtu = transport->server->local_mtu;
+    transport->client->mtu = transport->server->mtu;
+    transport->client->mtu_exchanged = transport->server->mtu_exchanged;
+}
+
+static inline void gatt_transport_send_att(
+    ble_gatt_transport *transport,
+    const uint8_t *att, uint16_t att_len
+) {
+    (void)gatt_transport_send_l2cap_pdu(
+        transport, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
+    );
+}
+
+static inline int gatt_transport_receive_att(
+    void *context, uint16_t cid,
+    const uint8_t *att, uint16_t att_len
+) {
+    ble_gatt_transport *transport = (ble_gatt_transport *)context;
+    (void)cid;
+    uint8_t response[BLE_GATT_TRANSPORT_MTU_MAX];
+    uint16_t response_len = 0;
+    int has_response;
+    uint8_t dispatched_to_client = 0;
+    if (att_len && gatt_transport_is_client_pdu(att[0])) {
+        dispatched_to_client = 1;
+        uint8_t client_mtu_response = transport->client && att[0] == 0x03 &&
+            transport->client->request.pending &&
+            transport->client->request.opcode == 0x02;
+        has_response = transport->client ?
+            gatt_client_receive(transport->client, att, att_len) : 0;
+        if (client_mtu_response && has_response > 0 && transport->server) {
+            transport->server->mtu = transport->client->mtu;
+            transport->server->mtu_exchanged = 1;
+            gatt_transport_sync_mtu_from_server(transport);
+        }
+    } else if (transport->server) {
+        uint8_t server_mtu_request = att_len && att[0] == 0x02;
+        uint8_t client_mtu_pending = transport->client &&
+            transport->client->request.pending &&
+            transport->client->request.opcode == 0x02;
+        uint16_t previous_server_mtu = transport->server->mtu;
+        has_response = gatt_server_att(
+            transport->server, att, att_len,
+            response, sizeof(response), &response_len
+        );
+        if (server_mtu_request && has_response > 0 && response[0] == 0x03) {
+            if (client_mtu_pending) {
+                transport->server->mtu = previous_server_mtu;
+            } else {
+                gatt_transport_sync_mtu_from_server(transport);
+            }
+        }
+    } else {
+        has_response = 0;
+    }
+
+    if (has_response < 0) return -1;
+    if (!dispatched_to_client && has_response > 0)
+        gatt_transport_send_att(transport, response, response_len);
+    return 1;
+}
+
 // Initialize the ATT fixed bearer and its shared L2CAP connection.
 static inline int gatt_transport_init(
     ble_gatt_transport *transport,
@@ -648,24 +733,6 @@ static inline int gatt_transport_init(
 // =============================================================================
 // Fixed ATT bearer and client integration
 // =============================================================================
-static inline void gatt_transport_sync_mtu_from_server(
-    ble_gatt_transport *transport
-) {
-    if (!transport || !transport->server || !transport->client)
-        return;
-    transport->client->local_mtu = transport->server->local_mtu;
-    transport->client->mtu = transport->server->mtu;
-    transport->client->mtu_exchanged = transport->server->mtu_exchanged;
-}
-
-static inline void gatt_transport_send_att(
-    ble_gatt_transport *transport,
-    const uint8_t *att, uint16_t att_len
-) {
-    (void)gatt_transport_send_l2cap_pdu(
-        transport, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
-    );
-}
 
 static inline int gatt_transport_send_client(
     void *context,
@@ -862,78 +929,6 @@ static inline void gatt_transport_set_key_size_callback(
     ble_gatt_transport *transport, ble_gatt_transport_key_size_fn callback
 ) {
     if (transport) transport->encryption_key_size = callback;
-}
-
-static inline int gatt_transport_is_client_pdu(uint8_t opcode) {
-    switch (opcode) {
-    case 0x01:
-    case 0x03:
-    case 0x05:
-    case 0x07:
-    case 0x09:
-    case 0x0b:
-    case 0x0d:
-    case 0x0f:
-    case 0x13:
-    case 0x17:
-    case 0x19:
-    case 0x21:
-    case 0x1b:
-    case 0x1d:
-    case 0x23:
-        return 1;
-    default:
-        return 0;
-    }
-}
-
-static inline int gatt_transport_receive_att(
-    void *context, uint16_t cid,
-    const uint8_t *att, uint16_t att_len
-) {
-    ble_gatt_transport *transport = (ble_gatt_transport *)context;
-    (void)cid;
-    uint8_t response[BLE_GATT_TRANSPORT_MTU_MAX];
-    uint16_t response_len = 0;
-    int has_response;
-    uint8_t dispatched_to_client = 0;
-    if (att_len && gatt_transport_is_client_pdu(att[0])) {
-        dispatched_to_client = 1;
-        uint8_t client_mtu_response = transport->client && att[0] == 0x03 &&
-            transport->client->request.pending &&
-            transport->client->request.opcode == 0x02;
-        has_response = transport->client ?
-            gatt_client_receive(transport->client, att, att_len) : 0;
-        if (client_mtu_response && has_response > 0 && transport->server) {
-            transport->server->mtu = transport->client->mtu;
-            transport->server->mtu_exchanged = 1;
-            gatt_transport_sync_mtu_from_server(transport);
-        }
-    } else if (transport->server) {
-        uint8_t server_mtu_request = att_len && att[0] == 0x02;
-        uint8_t client_mtu_pending = transport->client &&
-            transport->client->request.pending &&
-            transport->client->request.opcode == 0x02;
-        uint16_t previous_server_mtu = transport->server->mtu;
-        has_response = gatt_server_att(
-            transport->server, att, att_len,
-            response, sizeof(response), &response_len
-        );
-        if (server_mtu_request && has_response > 0 && response[0] == 0x03) {
-            if (client_mtu_pending) {
-                transport->server->mtu = previous_server_mtu;
-            } else {
-                gatt_transport_sync_mtu_from_server(transport);
-            }
-        }
-    } else {
-        has_response = 0;
-    }
-
-    if (has_response < 0) return -1;
-    if (!dispatched_to_client && has_response > 0)
-        gatt_transport_send_att(transport, response, response_len);
-    return 1;
 }
 
 // Consume one LL fragment; return 1 when one complete ATT PDU was dispatched.
