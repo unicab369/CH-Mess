@@ -636,8 +636,19 @@ static inline void gatt_transport_set_connected(
     if (transport->client) gatt_client_reset(transport->client);
     gatt_transport_sync_mtu_from_server(transport);
     if (connected && transport->server) {
-        gatt_server_restore_cccds(transport->server);
-        (void)gatt_server_check_database_version(transport->server);
+        ble_gatt_server *server = transport->server;
+        if (server->cccd_load) {
+            for (uint16_t i = 0; i < server->count; i++) {
+                ble_gatt_attribute *cccd = &server->attributes[i];
+                if (!(cccd->flags & BLE_GATT_ATTRIBUTE_CCCD)) continue;
+                uint16_t value_handle = cccd->parent_handle;
+                uint16_t configuration = server->cccd_load(
+                    server->cccd_context, value_handle);
+                (void)gatt_server_set_cccd(server, value_handle,
+                                           configuration);
+            }
+        }
+        (void)gatt_server_check_database_version(server);
     }
 }
 
@@ -652,10 +663,12 @@ static inline void gatt_transport_set_security(
     transport->authenticated = authenticated != 0;
     transport->key_size = transport->encrypted ? key_size : 0;
     if (transport->server) {
-        gatt_server_set_security(transport->server,
-            transport->encrypted, transport->authenticated);
-        gatt_server_set_encryption_key_size(transport->server,
-                                            transport->key_size);
+        ble_gatt_server *server = transport->server;
+        server->encrypted = transport->encrypted || transport->authenticated;
+        server->authenticated = transport->authenticated;
+        server->encryption_key_size = transport->key_size >= 7 &&
+            transport->key_size <= 16 ? transport->key_size : 0;
+        if (!server->encrypted) server->encryption_key_size = 0;
     }
 #if BLE_GATT_ENABLE_EATT
     if (transport->eatt_enabled && encryption_changed)

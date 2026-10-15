@@ -30,13 +30,10 @@ int main(void) {
         sizeof(initial_hash), sizeof(initial_hash), NULL, NULL, NULL,
         &hash_declaration, &hash_handle));
 
-    uint8_t hash[16];
-    assert(gatt_server_compute_database_hash(&server, hash));
-    assert(memcmp(hash, expected, sizeof(hash)) == 0);
     assert(gatt_server_seal_database(&server));
+    assert(memcmp(server.database_hash, expected, sizeof(expected)) == 0);
     ble_gatt_attribute *attribute = gatt_server_find(&server, hash_handle);
     assert(attribute && memcmp(gatt_attribute_value(&server, attribute),
                                expected, sizeof(expected)) == 0);
-    assert(!gatt_server_compute_database_hash(&server, NULL));
     return 0;
 }

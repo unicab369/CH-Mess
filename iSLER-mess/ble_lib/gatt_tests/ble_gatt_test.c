@@ -192,7 +192,9 @@ static void test_gap_service_characteristics(void) {
     uint8_t allow_authorization = 1;
     assert(mesh_gatt_set_authorizer(authorize_gatt_access,
                                     &allow_authorization));
-    gatt_server_set_security(&mesh_gatt.server, 1, 1);
+    mesh_gatt.server.encrypted = 1;
+    mesh_gatt.server.authenticated = 1;
+    if (!mesh_gatt.server.encrypted) mesh_gatt.server.encryption_key_size = 0;
     const uint8_t read_edkm[] = {0x0a, MESH_GATT_HANDLE_GAP_EDKM, 0};
     assert(gatt_server_att(&mesh_gatt.server, read_edkm,
         sizeof(read_edkm), response, sizeof(response), &response_len) == 1);
@@ -211,7 +213,9 @@ static void test_gap_service_characteristics(void) {
     assert(response[0] == 0x01 && response[4] ==
            BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     assert(mesh_gatt_set_authorizer(NULL, NULL));
-    gatt_server_set_security(&mesh_gatt.server, 0, 0);
+    mesh_gatt.server.encrypted = 0;
+    mesh_gatt.server.authenticated = 0;
+    if (!mesh_gatt.server.encrypted) mesh_gatt.server.encryption_key_size = 0;
     gap_ead_key_clear();
 
     gap_adv_stop();

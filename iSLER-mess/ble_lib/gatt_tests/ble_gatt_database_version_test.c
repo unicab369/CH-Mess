@@ -41,7 +41,8 @@ int main(void) {
     gatt_server_set_cccd_persistence(&server, load_cccd, NULL, &peer);
 
     // A first connection records a baseline without sending Service Changed.
-    gatt_server_restore_cccds(&server);
+    assert(gatt_server_set_cccd(&server,
+        handles.service_changed_handle, peer.service_changed_cccd));
     assert(gatt_server_check_database_version(&server));
     assert(peer.valid && peer.stores == 1 &&
            memcmp(peer.hash, server.database_hash, 16) == 0 &&
@@ -50,7 +51,8 @@ int main(void) {
     // A changed database is retained as pending until its indication confirms.
     peer.hash[0] ^= 0x80;
     gatt_server_link_reset(&server);
-    gatt_server_restore_cccds(&server);
+    assert(gatt_server_set_cccd(&server,
+        handles.service_changed_handle, peer.service_changed_cccd));
     assert(server.database_hash_update_pending && server.event_count == 1 &&
            peer.stores == 1);
     assert(gatt_server_set_cccd(&server,
@@ -70,9 +72,11 @@ int main(void) {
     // A disconnect before confirmation leaves the old version persisted.
     gatt_server_link_reset(&server);
     assert(server.database_hash_update_pending == 0 && peer.stores == 1);
-    gatt_server_restore_cccds(&server);
+    assert(gatt_server_set_cccd(&server,
+        handles.service_changed_handle, peer.service_changed_cccd));
     peer.service_changed_cccd = 0;
-    gatt_server_restore_cccds(&server);
+    assert(gatt_server_set_cccd(&server,
+        handles.service_changed_handle, peer.service_changed_cccd));
     assert(!gatt_server_check_database_version(&server));
     assert(peer.stores == 1 && !server.event_count);
 

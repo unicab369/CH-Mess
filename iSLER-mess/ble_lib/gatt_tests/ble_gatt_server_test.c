@@ -509,7 +509,9 @@ static void test_signed_write_command(void) {
            gatt_attribute_value(&server, value)[0] == 0x77);
 
     request[12] = 2;
-    gatt_server_set_security(&server, 1, 0);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(gatt_server_att(&server, request, sizeof(request), response,
         sizeof(response), &response_len) == 0);
     assert(state.accepted == 1);
@@ -575,10 +577,14 @@ static void test_security_and_authorization_check_order(void) {
 
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
-    gatt_server_set_security(&server, 1, 0);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
-    gatt_server_set_security(&server, 1, 1);
+    server.encrypted = 1;
+    server.authenticated = 1;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     allow = 1;
@@ -603,7 +609,9 @@ static void test_security_and_authorization_check_order(void) {
     assert(att(&server, authz_read, sizeof(authz_read), response,
                &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION);
-    gatt_server_set_security(&server, 1, 0);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, authz_read, sizeof(authz_read), response,
                &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == initial);
@@ -627,7 +635,9 @@ static void test_security_and_authorization_check_order(void) {
     assert(att(&server, prepare, sizeof(prepare), response, &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
-    gatt_server_set_security(&server, 1, 1);
+    server.encrypted = 1;
+    server.authenticated = 1;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, prepare, sizeof(prepare), response, &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
@@ -651,15 +661,17 @@ static void test_minimum_encryption_key_size(void) {
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION);
 
-    gatt_server_set_security(&server, 1, 0);
-    gatt_server_set_encryption_key_size(&server, 10);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
+    server.encryption_key_size = 10;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_ENCRYPTION_KEY_SIZE_TOO_SHORT);
     uint8_t write[] = {0x12, (uint8_t)handle, (uint8_t)(handle >> 8), 0x44};
     assert(att(&server, write, sizeof(write), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_ENCRYPTION_KEY_SIZE_TOO_SHORT);
 
-    gatt_server_set_encryption_key_size(&server, 12);
+    server.encryption_key_size = 12;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == value);
     assert(att(&server, write, sizeof(write), response, &response_len) == 1);
@@ -1217,12 +1229,16 @@ static void test_writes_cccd_and_permissions(void) {
                &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
-    gatt_server_set_security(&server, 1, 0);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, read_secure, sizeof(read_secure), response,
                &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
-    gatt_server_set_security(&server, 1, 1);
+    server.encrypted = 1;
+    server.authenticated = 1;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(att(&server, read_secure, sizeof(read_secure), response,
                &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == initial);
@@ -1545,14 +1561,18 @@ static void test_attribute_value_limit_and_notification_truncation(void) {
         att_pdu, sizeof(att_pdu), &att_len));
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
-    gatt_server_set_security(&server, 1, 0);
-    gatt_server_set_encryption_key_size(&server, 10);
+    server.encrypted = 1;
+    server.authenticated = 0;
+    if (!server.encrypted) server.encryption_key_size = 0;
+    server.encryption_key_size = 10;
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
-    gatt_server_set_encryption_key_size(&server, 12);
+    server.encryption_key_size = 12;
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
-    gatt_server_set_security(&server, 1, 1);
+    server.encrypted = 1;
+    server.authenticated = 1;
+    if (!server.encrypted) server.encryption_key_size = 0;
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
     allow_notify = 1;
@@ -1582,10 +1602,10 @@ static void test_attribute_value_limit_and_notification_truncation(void) {
     assert(att_len == 23 && !memcmp(att_pdu + 3, value, 20));
     assert(!gatt_server_indicate(&server, indicate, value,
         BLE_GATT_ATT_VALUE_MAX + 1, att_pdu, sizeof(att_pdu), &att_len));
-    gatt_server_set_encryption_key_size(&server, 10);
+    server.encryption_key_size = 10;
     assert(!gatt_server_indicate(&server, indicate, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
-    gatt_server_set_encryption_key_size(&server, 12);
+    server.encryption_key_size = 12;
     allow_notify = 0;
     assert(!gatt_server_indicate(&server, indicate, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
@@ -1597,9 +1617,9 @@ static void test_attribute_value_limit_and_notification_truncation(void) {
     assert(att(&server, confirmation, sizeof(confirmation), att_pdu,
                &response_len) == 0);
 
-    gatt_server_set_encryption_key_size(&server, 10);
+    server.encryption_key_size = 10;
     assert(!gatt_server_queue_event(&server, notify, value, 1, 0));
-    gatt_server_set_encryption_key_size(&server, 12);
+    server.encryption_key_size = 12;
     allow_notify = 0;
     assert(!gatt_server_queue_event(&server, notify, value, 1, 0));
     allow_notify = 1;
