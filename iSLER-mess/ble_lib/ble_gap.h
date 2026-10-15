@@ -501,6 +501,7 @@ static int gap_access_address_valid(uint32_t address) {
     if (address_xor == 0 || (address_xor & (address_xor - 1)) == 0)
         return 0;
 
+    // Reject access addresses whose four octets are identical.
     uint8_t bytes_equal = 1;
     for (uint8_t i = 1; i < 4; i++)
         if ((uint8_t)(address >> (8 * i)) != (uint8_t)address)
@@ -510,6 +511,7 @@ static int gap_access_address_valid(uint32_t address) {
     uint8_t transitions = 0, msb_transitions = 0, run = 1;
     uint8_t previous = address & 1;
 
+    // Check bit transitions and runs against Bluetooth access-address limits.
     for (uint8_t bit = 1; bit < 32; bit++) {
         uint8_t value = (address >> bit) & 1;
 
@@ -539,6 +541,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
     uint8_t win_size = frame[21];
     uint8_t hop = frame[35] & 0x1f;
+
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !win_size || win_size > 8 ||
         !gap_timing_valid(interval, interval, latency, timeout) ||
@@ -549,9 +552,13 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
         (uint32_t)timeout * 8 <=
             2 * (uint32_t)(latency + 1) * interval)
         return 0;
+
     uint8_t count = 0;
-    for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1 << (channel % 8))) count++;
+    for (uint8_t channel = 0; channel < 37; channel++) {
+        if (frame[30 + channel / 8] & (1 << (channel % 8)) && ++count == 2)
+            break;
+    }
+
     uint32_t access_address = (uint32_t)frame[14] |
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
