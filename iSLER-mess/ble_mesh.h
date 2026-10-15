@@ -3,7 +3,7 @@ void gap_hw_radio_transmitted(void);
 #define ISLER_CALLBACK_TX gap_hw_radio_transmitted
 #define ISLER_CALLBACK_RX gap_hw_received
 #include "iSLER.h"
-#include "ble_crypto.h"
+#include "ble_lib/ble_crypto.h"
 #include "aes_cmm.h"
 #include "ble_mesh/mesh_provisioning.h"
 #include "ble_mesh/mesh_1network.h"
@@ -66,7 +66,7 @@ uint32_t GET_MILLIS(void) {
 }
 
 #define GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
-#include "ble_gap/ble_gap.h"
+#include "ble_lib/ble_gap.h"
 #include "ble_mesh/mesh_gatt.h"
 
 // Supply a trusted monotonic second count that survives reboot. Until a clock
@@ -152,7 +152,7 @@ static void mesh_adv_queue_clear(uint8_t ad_type) {
 }
 
 
-#include "ble_gap/ports/ch58x_isler.h"
+#include "ble_lib/gap_ports/ch58x_isler.h"
 
 static int mesh_proxy_gatt_receive(
     uint8_t type, const uint8_t *pdu,

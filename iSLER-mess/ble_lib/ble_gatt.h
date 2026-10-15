@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "../ble_att/ble_att.h"
+#include "ble_att.h"
 
 #ifndef BLE_GATT_CLIENT_MTU_MAX
 #define BLE_GATT_CLIENT_MTU_MAX 517

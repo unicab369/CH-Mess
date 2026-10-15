@@ -2,7 +2,7 @@
 #define ISLER_MESH_CRYPTO_TEST_H
 
 #include <stdio.h>
-#include "../ble_crypto.h"
+#include "../ble_lib/ble_crypto.h"
 #include "../micro-ecc/uECC.h"
 
 static int mesh_test_ecc(void) {

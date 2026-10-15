@@ -1,5 +1,5 @@
 // CH58x/iSLER implementation of the GAP platform hooks.
-// Include after ble_gap/ble_gap.h, iSLER.h, ble_crypto.h, and aes_cmm.h.
+// Include after ble_lib/ble_gap.h, iSLER.h, ble_lib/ble_crypto.h, and aes_cmm.h.
 #ifndef GAP_PORT_CH58X_ISLER_H
 #define GAP_PORT_CH58X_ISLER_H
 

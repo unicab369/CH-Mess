@@ -6,10 +6,10 @@ EATT, and lets an application register its own services and attributes. It
 does not include Bluetooth SIG service profiles.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
-the server and transport remain in focused headers. `ble_att/ble_att.h` owns shared ATT opcodes,
+the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
 errors, value limits, byte-order helpers, and request/response matching.
-`ble_att/ble_att_server.h` handles ATT server PDU procedures and response
-encoding against the GATT server's attribute database. The GATT modules own
+`ble_gatt_server.h` handles ATT server PDU procedures against its attribute
+database. The GATT modules own
 attribute storage, service construction, client-side GATT operations, and
 transport integration. `ble_l2cap.h` owns LE L2CAP framing,
 signaling, fixed-CID dispatch, and LE credit-based dynamic channels; its link
@@ -43,7 +43,7 @@ per-bearer ATT transaction state while sharing the connection's GATT database.
 5. [x] Add deterministic multi-bearer tests for negotiation, concurrent
    client/server traffic, per-bearer indications, MTU boundaries, timeouts,
    recovery, and disconnect cleanup. ECFC credit handling is covered by
-   `../tests/ble_l2cap_test.c`.
+   `l2cap_tests/ble_l2cap_test.c`.
 6. [x] Exercise an independent EATT client against GATT server procedures
    with Bumble's Enhanced Bearer API and the local C server fixture. This is
    host-side ATT bearer interoperability; real ECFC/hardware verification is
@@ -216,15 +216,15 @@ Items 2–6 are software work; item 7 requires a radio and target firmware.
   requires a BLE radio and target firmware.
 
 The optional independent tests use Bumble and a local C fixture (no Bluetooth
-radio is needed). From `iSLER-mess/ble_gatt`, create the test environment once,
+radio is needed). From `iSLER-mess/ble_lib`, create the test environment once,
 install the pinned requirements there, and run the interop checks:
 
 ```sh
 python3 -m venv .venv-ble-gatt
-./.venv-ble-gatt/bin/python -m pip install -r tests/requirements-ble-gatt-interop.txt
-./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_interop.py
-./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_client_interop.py
-./.venv-ble-gatt/bin/python tests/ble_gatt_bumble_eatt_interop.py
+./.venv-ble-gatt/bin/python -m pip install -r gatt_tests/requirements-ble-gatt-interop.txt
+./.venv-ble-gatt/bin/python gatt_tests/ble_gatt_bumble_interop.py
+./.venv-ble-gatt/bin/python gatt_tests/ble_gatt_bumble_client_interop.py
+./.venv-ble-gatt/bin/python gatt_tests/ble_gatt_bumble_eatt_interop.py
 ```
 
 ### EATT completion checklist
@@ -236,7 +236,7 @@ to omit EATT code and per-bearer storage.
 
 - [x] Add the `BLE_GATT_ENABLE_EATT` compile-time option, default it off, and
   verify EATT-specific code and storage are excluded from fixed-bearer-only
-  builds. See `tests/ble_gatt_eatt_test.c` for an EATT-enabled compile and the
+  builds. See `gatt_tests/ble_gatt_eatt_test.c` for an EATT-enabled compile and the
   fixed-bearer-only include check.
 - [x] Define platform callbacks for opening, accepting, sending on, and
   closing LE Credit Based Flow Control channels used by EATT. EATT remains
@@ -262,9 +262,9 @@ to omit EATT code and per-bearer storage.
   concurrent client requests, simultaneous client/server roles, per-bearer
   indication confirmation and timeout, shared attribute writes, MTU boundaries,
   timeout/recovery, and disconnect cleanup with deterministic fake L2CAP
-  channels. ECFC credit paths are exercised by `../tests/ble_l2cap_test.c`.
+  channels. ECFC credit paths are exercised by `l2cap_tests/ble_l2cap_test.c`.
 - [x] Verify ATT procedures through Bumble's EATT Enhanced Bearer client API
-  against the C server fixture using `tests/ble_gatt_bumble_eatt_interop.py`.
+  against the C server fixture using `gatt_tests/ble_gatt_bumble_eatt_interop.py`.
   This host test does not exercise an actual radio or the ECFC setup exchange.
 - [x] Build and run the host suite with EATT disabled and enabled, including
   the fixed-bearer-only transport tests.

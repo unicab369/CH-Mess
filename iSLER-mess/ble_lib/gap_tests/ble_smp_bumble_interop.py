@@ -9,7 +9,7 @@ from bumble import smp
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "tests" / "ble_smp_bumble_fixture.c"
+FIXTURE = pathlib.Path(__file__).with_name("ble_smp_bumble_fixture.c")
 
 
 def read_record(stream):

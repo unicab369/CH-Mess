@@ -12,7 +12,7 @@
 // together because GAP is the only runtime user of SMP in this stack.
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
-#include "../ble_l2cap.h"
+#include "ble_l2cap.h"
 
 #ifndef SMP_PDU_MAX
 #define SMP_PDU_MAX 65

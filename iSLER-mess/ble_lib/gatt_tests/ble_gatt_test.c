@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../../ble_crypto.h"
+#include "../ble_crypto.h"
 #define MESH_GATT_EAD_SUPPORT 1
 #define MESH_GATT_RPA_ONLY_SUPPORT 1
 #include "../../ble_mesh/mesh_gatt.h"

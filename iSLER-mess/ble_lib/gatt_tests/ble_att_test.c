@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
-#include "../ble_att/ble_att.h"
+#include "../ble_att.h"
 
 int main(void) {
     uint8_t encoded[2];

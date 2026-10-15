@@ -5,7 +5,7 @@
 #error "Include gap_connection.h through ble_gap.h"
 #endif
 
-#include "../ble_crypto.h"
+#include "ble_crypto.h"
 
 enum {
     LL_CONNECTION_UPDATE_IND = 0x00,

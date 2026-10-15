@@ -35,7 +35,7 @@
 #ifndef BLE_L2CAP_SDU_MAX
 #define BLE_L2CAP_SDU_MAX BLE_GATT_TRANSPORT_MTU_MAX
 #endif
-#include "../ble_l2cap.h"
+#include "ble_l2cap.h"
 
 #define BLE_GATT_TRANSPORT_ATT_CID BLE_L2CAP_CID_ATT
 

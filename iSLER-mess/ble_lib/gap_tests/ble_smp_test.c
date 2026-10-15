@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #define BLE_GAP_SMP_CORE_TEST
-#include "../ble_gap/ble_gap_smp.h"
+#include "../ble_gap_smp.h"
 
 typedef struct {
     uint8_t blocked, sent;

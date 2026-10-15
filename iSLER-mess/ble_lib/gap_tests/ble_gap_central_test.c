@@ -4,11 +4,11 @@
 #include <string.h>
 
 #define GAP_EXT_ADV_SUPPORT 1
-#include "../ble_gap/ble_gap.h"
+#include "../ble_gap.h"
 #include "../ble_crypto.h"
 #include <openssl/evp.h>
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
-#include "mesh_crypto_test.h"
+#include "../../tests/mesh_crypto_test.h"
 
 static uint8_t test_bond_storage_enabled;
 static gap_bond test_bonds[GAP_BOND_SLOTS];

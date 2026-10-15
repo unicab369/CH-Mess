@@ -9,7 +9,7 @@ from bumble import l2cap
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "tests" / "ble_l2cap_bumble_fixture.c"
+FIXTURE = pathlib.Path(__file__).with_name("ble_l2cap_bumble_fixture.c")
 
 
 def read_record(stream):

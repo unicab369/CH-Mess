@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #define BLE_GAP_SMP_CORE_TEST
-#include "../ble_gap/ble_gap_smp.h"
+#include "../ble_gap_smp.h"
 
 static uint8_t outbound[BLE_L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
