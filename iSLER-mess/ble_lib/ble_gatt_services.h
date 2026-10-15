@@ -333,4 +333,402 @@ static inline int gatt_heart_rate_measurement_encode(
     return 1;
 }
 
+typedef struct {
+    uint16_t uuid;
+    uint8_t properties, cccd;
+    uint16_t permissions;
+    const uint8_t *value;
+    uint16_t value_len;
+} ble_gatt_sig_characteristic;
+
+// Internal transactional builder shared by the standard service helpers.
+static int gatt_sig_service_add(
+    ble_gatt_server *server, uint16_t service_uuid16,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count,
+    uint16_t *service_handle, uint16_t *value_handles,
+    uint16_t *cccd_handles
+) {
+    if (!server || !characteristics || !count || !service_handle ||
+        !value_handles || server->database_sealed)
+        return 0;
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    ble_gatt_uuid service_uuid = {
+        2, {(uint8_t)service_uuid16, (uint8_t)(service_uuid16 >> 8)}
+    };
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
+    memset(value_handles, 0, (size_t)count * sizeof(*value_handles));
+    if (cccd_handles)
+        memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
+
+    int added = gatt_server_add_service(server, &service_uuid, 1,
+                                         service_handle);
+    for (uint8_t i = 0; added && i < count; i++) {
+        ble_gatt_uuid uuid = {
+            2, {(uint8_t)characteristics[i].uuid,
+                (uint8_t)(characteristics[i].uuid >> 8)}
+        };
+        added = gatt_server_add_characteristic(server, &uuid,
+            characteristics[i].properties, characteristics[i].permissions,
+            characteristics[i].value, characteristics[i].value_len,
+            characteristics[i].value_len, NULL, NULL, NULL, NULL,
+            &value_handles[i]);
+        if (added && characteristics[i].cccd) {
+            if (!cccd_handles) {
+                added = 0;
+            } else {
+                added = gatt_server_add_descriptor(server, &cccd_uuid,
+                    BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+                    NULL, 0, 0, NULL, NULL, NULL, &cccd_handles[i]);
+            }
+        }
+    }
+
+    if (!added) {
+        memset(server->attributes + old_count, 0,
+               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->value_pool + old_value_used, 0,
+               server->value_used - old_value_used);
+        server->count = old_count;
+        server->next_handle = old_next_handle;
+        server->value_used = old_value_used;
+        memset(value_handles, 0, (size_t)count * sizeof(*value_handles));
+        if (cccd_handles)
+            memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
+        *service_handle = 0;
+        return 0;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, alert_level_handle;
+} ble_gatt_immediate_alert_service;
+
+typedef struct {
+    uint16_t service_handle, alert_level_handle;
+} ble_gatt_link_loss_service;
+
+typedef struct {
+    uint16_t service_handle, tx_power_level_handle;
+} ble_gatt_tx_power_service;
+
+typedef struct {
+    uint16_t service_handle, current_time_handle;
+    uint16_t local_time_info_handle, reference_time_info_handle;
+} ble_gatt_current_time_service;
+
+typedef struct {
+    uint16_t service_handle, control_point_handle, state_handle;
+} ble_gatt_reference_time_update_service;
+
+typedef struct {
+    uint16_t service_handle, time_with_dst_handle;
+} ble_gatt_next_dst_change_service;
+
+typedef struct {
+    uint16_t service_handle, alert_status_handle, alert_status_cccd_handle;
+    uint16_t ringer_setting_handle, ringer_control_point_handle;
+} ble_gatt_phone_alert_status_service;
+
+typedef struct {
+    uint16_t service_handle, measurement_handle, measurement_cccd_handle;
+    uint16_t intermediate_temperature_handle;
+    uint16_t intermediate_temperature_cccd_handle, temperature_type_handle;
+} ble_gatt_health_thermometer_service;
+
+typedef struct {
+    uint16_t service_handle, measurement_handle, measurement_cccd_handle;
+    uint16_t intermediate_cuff_pressure_handle;
+    uint16_t intermediate_cuff_pressure_cccd_handle, feature_handle;
+} ble_gatt_blood_pressure_service;
+
+typedef struct {
+    uint16_t service_handle, measurement_handle, measurement_cccd_handle;
+    uint16_t feature_handle, sensor_location_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+} ble_gatt_rsc_service;
+
+static inline int gatt_immediate_alert_service_add(
+    ble_gatt_server *server, ble_gatt_immediate_alert_service *service,
+    uint8_t alert_level
+) {
+    if (!service || alert_level > 2) return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a06, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &alert_level, 1}
+    };
+    uint16_t values[1];
+    if (!gatt_sig_service_add(server, 0x1802, chars, 1,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->alert_level_handle = values[0];
+    return 1;
+}
+
+static inline int gatt_link_loss_service_add(
+    ble_gatt_server *server, ble_gatt_link_loss_service *service,
+    uint8_t alert_level
+) {
+    if (!service || alert_level > 2) return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a06, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, &alert_level, 1}
+    };
+    uint16_t values[1];
+    if (!gatt_sig_service_add(server, 0x1803, chars, 1,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->alert_level_handle = values[0];
+    return 1;
+}
+
+static inline int gatt_tx_power_service_add(
+    ble_gatt_server *server, ble_gatt_tx_power_service *service,
+    int8_t tx_power_dbm
+) {
+    if (!service) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t value = (uint8_t)tx_power_dbm;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a07, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, &value, 1}
+    };
+    uint16_t values[1];
+    if (!gatt_sig_service_add(server, 0x1804, chars, 1,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->tx_power_level_handle = values[0];
+    return 1;
+}
+
+static inline int gatt_current_time_service_add(
+    ble_gatt_server *server, ble_gatt_current_time_service *service,
+    const uint8_t current_time[10], const uint8_t local_time_info[2],
+    const uint8_t reference_time_info[4]
+) {
+    if (!service || !current_time) return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[3];
+    uint8_t count = 0;
+    uint8_t local_time_index = 0xff, reference_time_index = 0xff;
+    chars[count++] = (ble_gatt_sig_characteristic)
+        {0x2a2b, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, current_time, 10};
+    if (local_time_info) {
+        local_time_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic)
+            {0x2a0f, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, local_time_info, 2};
+    }
+    if (reference_time_info) {
+        reference_time_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic)
+            {0x2a14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+             reference_time_info, 4};
+    }
+    uint16_t values[3];
+    if (!gatt_sig_service_add(server, 0x1805, chars, count,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->current_time_handle = values[0];
+    if (local_time_index != 0xff)
+        service->local_time_info_handle = values[local_time_index];
+    if (reference_time_index != 0xff)
+        service->reference_time_info_handle = values[reference_time_index];
+    return 1;
+}
+
+static inline int gatt_reference_time_update_service_add(
+    ble_gatt_server *server, ble_gatt_reference_time_update_service *service,
+    const uint8_t state[2]
+) {
+    if (!service || !state) return 0;
+    memset(service, 0, sizeof(*service));
+    static const uint8_t control_point = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a16, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+         &control_point, 1},
+        {0x2a17, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, state, 2}
+    };
+    uint16_t values[2];
+    if (!gatt_sig_service_add(server, 0x1806, chars, 2,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->control_point_handle = values[0];
+    service->state_handle = values[1];
+    return 1;
+}
+
+static inline int gatt_next_dst_change_service_add(
+    ble_gatt_server *server, ble_gatt_next_dst_change_service *service,
+    const uint8_t time_with_dst[7]
+) {
+    if (!service || !time_with_dst) return 0;
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a11, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+         time_with_dst, 7}
+    };
+    uint16_t values[1];
+    if (!gatt_sig_service_add(server, 0x1807, chars, 1,
+                              &service->service_handle, values, NULL))
+        return 0;
+    service->time_with_dst_handle = values[0];
+    return 1;
+}
+
+static inline int gatt_phone_alert_status_service_add(
+    ble_gatt_server *server, ble_gatt_phone_alert_status_service *service,
+    const uint8_t alert_status[1], uint8_t ringer_setting
+) {
+    if (!service || !alert_status || ringer_setting > 1) return 0;
+    memset(service, 0, sizeof(*service));
+    static const uint8_t ringer_control_point = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a3f, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+         BLE_GATT_PERM_READ, alert_status, 1},
+        {0x2a41, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, &ringer_setting, 1},
+        {0x2a40, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &ringer_control_point, 1}
+    };
+    uint16_t values[3], cccds[3];
+    if (!gatt_sig_service_add(server, 0x180e, chars, 3,
+                              &service->service_handle, values, cccds))
+        return 0;
+    service->alert_status_handle = values[0];
+    service->alert_status_cccd_handle = cccds[0];
+    service->ringer_setting_handle = values[1];
+    service->ringer_control_point_handle = values[2];
+    return 1;
+}
+
+static inline int gatt_health_thermometer_service_add(
+    ble_gatt_server *server, ble_gatt_health_thermometer_service *service,
+    uint8_t temperature_type, int include_intermediate_temperature
+) {
+    if (!service ||
+        (temperature_type != 0xff &&
+        (temperature_type < 1 || temperature_type > 10))) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[3];
+    uint8_t count = 0;
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a1c, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0
+    };
+    if (include_intermediate_temperature) {
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a1e, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+        };
+    }
+    if (temperature_type != 0xff) {
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a1d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            &temperature_type, 1
+        };
+    }
+    uint16_t values[3], cccds[3];
+    if (!gatt_sig_service_add(server, 0x1809, chars, count,
+                              &service->service_handle, values, cccds))
+        return 0;
+    uint8_t i = 0;
+    service->measurement_handle = values[i];
+    service->measurement_cccd_handle = cccds[i++];
+    if (include_intermediate_temperature) {
+        service->intermediate_temperature_handle = values[i];
+        service->intermediate_temperature_cccd_handle = cccds[i++];
+    }
+    if (temperature_type != 0xff)
+        service->temperature_type_handle = values[i];
+    return 1;
+}
+
+static inline int gatt_blood_pressure_service_add(
+    ble_gatt_server *server, ble_gatt_blood_pressure_service *service,
+    uint16_t blood_pressure_feature, int include_intermediate_cuff_pressure
+) {
+    if (!service || (blood_pressure_feature & (uint16_t)~0x003f)) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[2] = {
+        (uint8_t)blood_pressure_feature,
+        (uint8_t)(blood_pressure_feature >> 8)
+    };
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[3];
+    uint8_t count = 0;
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a35, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0
+    };
+    if (include_intermediate_cuff_pressure) {
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a36, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+        };
+    }
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a49, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2
+    };
+    uint16_t values[3], cccds[3];
+    if (!gatt_sig_service_add(server, 0x1810, chars, count,
+                              &service->service_handle, values, cccds))
+        return 0;
+    uint8_t i = 0;
+    service->measurement_handle = values[i];
+    service->measurement_cccd_handle = cccds[i++];
+    if (include_intermediate_cuff_pressure) {
+        service->intermediate_cuff_pressure_handle = values[i];
+        service->intermediate_cuff_pressure_cccd_handle = cccds[i++];
+    }
+    service->feature_handle = values[i];
+    return 1;
+}
+
+static inline int gatt_rsc_service_add(
+    ble_gatt_server *server, ble_gatt_rsc_service *service,
+    uint16_t features, uint8_t sensor_location
+) {
+    if (!service || sensor_location > 16 || (features & (uint16_t)~0x001f))
+        return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[2] = {(uint8_t)features, (uint8_t)(features >> 8)};
+    uint8_t unused_value = 0;
+    static const uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic chars[4];
+    uint8_t count = 0;
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a53, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+    };
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a54, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2
+    };
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a5d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        &sensor_location, 1
+    };
+    uint8_t control_point_index = 0xff;
+    if (features & 0x0018) {
+        control_point_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a55, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 1
+        };
+    }
+    uint16_t values[4], cccds[4];
+    if (!gatt_sig_service_add(server, 0x1814, chars, count,
+                              &service->service_handle, values, cccds))
+        return 0;
+    service->measurement_handle = values[0];
+    service->measurement_cccd_handle = cccds[0];
+    service->feature_handle = values[1];
+    service->sensor_location_handle = values[2];
+    if (control_point_index != 0xff) {
+        service->control_point_handle = values[control_point_index];
+        service->control_point_cccd_handle = cccds[control_point_index];
+    }
+    return 1;
+}
+
 #endif

@@ -43,6 +43,32 @@ can optionally add Body Sensor Location. Encode each measurement with
 to the current server's `mtu - 3` so optional RR Interval entries are omitted
 as whole 16-bit values when they do not fit.
 
+Additional service database builders are available:
+
+- `gatt_immediate_alert_service_add()` and `gatt_link_loss_service_add()`
+  register Alert Level.
+- `gatt_tx_power_service_add()` registers the signed Tx Power Level.
+- `gatt_current_time_service_add()` registers Current Time and optionally
+  Local Time Information and Reference Time Information.
+- `gatt_reference_time_update_service_add()` and
+  `gatt_next_dst_change_service_add()` register the time update and DST
+  characteristics.
+- `gatt_phone_alert_status_service_add()` registers Alert Status with a CCCD,
+  Ringer Setting, and Ringer Control Point.
+- `gatt_health_thermometer_service_add()` registers Temperature Measurement
+  with an indication CCCD and optional Intermediate Temperature notification
+  and Temperature Type.
+- `gatt_blood_pressure_service_add()` registers Blood Pressure Measurement,
+  optional Intermediate Cuff Pressure, and Blood Pressure Feature.
+- `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
+  Location.
+
+These builders add service and characteristic database entries and return
+their handles. Applications supply profile-specific measurement payloads and
+use the server's notify/indicate APIs with those handles. Multi-byte values
+passed to builders are in Bluetooth little-endian byte order. Use a separate
+service state object for each server/connection.
+
 ## GAP connection integration
 
 `ble_gap_gatt.h` polls the fixed ATT bearer for each configured GAP link. Give
