@@ -10,6 +10,46 @@
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
 #include "../../tests/mesh_crypto_test.h"
 
+static gap_peer_address test_peer_address(const uint8_t address[6], uint8_t type) {
+    gap_peer_address peer = {.type = type};
+    if (address) memcpy(peer.address, address, sizeof(peer.address));
+    return peer;
+}
+
+static int test_gap_identity_set(
+    const uint8_t address[6], uint8_t type, const uint8_t irk[16]
+) {
+    gap_peer_address peer = test_peer_address(address, type);
+    return gap_identity_set(address ? &peer : NULL, irk);
+}
+
+static int test_gap_identity_privacy(
+    const uint8_t address[6], uint8_t type, uint8_t mode
+) {
+    gap_peer_address peer = test_peer_address(address, type);
+    return gap_identity_privacy(address ? &peer : NULL, mode);
+}
+
+static int test_gap_resolve(
+    const uint8_t address[6], uint8_t type,
+    uint8_t identity[6], uint8_t *identity_type
+) {
+    gap_peer_address peer = test_peer_address(address, type);
+    return gap_resolve(address ? &peer : NULL, identity, identity_type);
+}
+
+static int test_gap_identity_local_key(
+    const uint8_t address[6], uint8_t type, const uint8_t irk[16]
+) {
+    gap_peer_address peer = test_peer_address(address, type);
+    return gap_identity_local_key(address ? &peer : NULL, irk);
+}
+
+#define gap_identity_set test_gap_identity_set
+#define gap_identity_privacy test_gap_identity_privacy
+#define gap_resolve test_gap_resolve
+#define gap_identity_local_key test_gap_identity_local_key
+
 static uint8_t test_bond_storage_enabled;
 static gap_bond test_bonds[GAP_BOND_SLOTS];
 typedef struct {

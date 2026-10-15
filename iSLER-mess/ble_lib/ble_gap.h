@@ -799,20 +799,19 @@ int gap_accept_list_clear(void) {
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
 int gap_identity_set(
-    const uint8_t address[6], uint8_t type, const uint8_t irk[16]
+    const gap_peer_address *peer, const uint8_t irk[16]
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!address || type > 1 || gap_scanner.scanning ||
+    if (!peer || peer->type > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
-        (type && !gap_static_addr_valid(address))
+        (peer->type && !gap_static_addr_valid(peer->address))
     ) return 0;
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].peer.type == type &&
-            memcmp(gap_identities[i].peer.address, address, 6) == 0
+            gap_identities[i].peer.type == peer->type &&
+            memcmp(gap_identities[i].peer.address, peer->address, 6) == 0
         ) {
             if (!irk) {
                 memset(&gap_identities[i], 0, sizeof(gap_identities[i]));
@@ -835,8 +834,7 @@ int gap_identity_set(
     for (uint8_t i = 0; i < 16; i++)
         if (irk[i]) gap_identities[slot].has_irk = 1;
 
-    gap_identities[slot].peer.type = type;
-    memcpy(gap_identities[slot].peer.address, address, 6);
+    gap_identities[slot].peer = *peer;
     memcpy(gap_identities[slot].irk, irk, 16);
     return 1;
 }
@@ -844,10 +842,9 @@ int gap_identity_set(
 // Application facing
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(
-    const uint8_t address[6], uint8_t type, uint8_t mode
+    const gap_peer_address *peer, uint8_t mode
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!address || type > 1 || mode > GAP_PRIVACY_DEVICE ||
+    if (!peer || peer->type > 1 || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active
@@ -855,8 +852,8 @@ int gap_identity_privacy(
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].peer.type == type &&
-            memcmp(gap_identities[i].peer.address, address, 6) == 0
+            gap_identities[i].peer.type == peer->type &&
+            memcmp(gap_identities[i].peer.address, peer->address, 6) == 0
         ) {
             gap_identities[i].privacy_mode = mode;
             return 1;
@@ -868,13 +865,13 @@ int gap_identity_privacy(
 // Application facing
 // Resolve without replacing the received address, which is needed on the air.
 int gap_resolve(
-    const uint8_t address[6], uint8_t type,
+    const gap_peer_address *peer,
     uint8_t identity[6], uint8_t *identity_type
 ) {
-    if (!address || type > 1 || !identity || !identity_type)
+    if (!peer || peer->type > 1 || !identity || !identity_type)
         return 0;
 
-    int slot = gap_identity_find(address, type);
+    int slot = gap_identity_find(peer->address, peer->type);
     if (slot < 0) return 0;
     memcpy(identity, gap_identities[slot].peer.address, 6);
     *identity_type = gap_identities[slot].peer.type;
@@ -918,19 +915,18 @@ static int gap_private_address_generate(
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(
-    const uint8_t address[6], uint8_t type, const uint8_t irk[16]
+    const gap_peer_address *peer, const uint8_t irk[16]
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!address || type > 1 || gap_scanner.scanning || gap_adv.enabled ||
+    if (!peer || peer->type > 1 || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
-    int slot = gap_identity_find(address, type);
+    int slot = gap_identity_find(peer->address, peer->type);
     if (slot < 0) return 0;
     gap_identity *identity = &gap_identities[slot];
-    if (identity->peer.type != type ||
-        memcmp(address, identity->peer.address, 6) != 0) return 0;
+    if (identity->peer.type != peer->type ||
+        memcmp(peer->address, identity->peer.address, 6) != 0) return 0;
 
     uint8_t key_bits = 0, local[6] = {0};
     if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
