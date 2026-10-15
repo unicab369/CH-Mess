@@ -69,15 +69,6 @@ static int gap_past_receive(
 #endif
 
 static struct {
-    uint8_t channel_index, applied_generation;
-    uint32_t interval_start_ms;
-    volatile uint8_t active_pending, active_address_type;
-    uint8_t active_address[6];
-    uint32_t active_deadline_ms;
-    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
-} gap_scan;
-
-static struct {
     uint8_t slot, slot_valid, poll_cursor;
 } gap_poll;
 

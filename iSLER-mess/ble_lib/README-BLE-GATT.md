@@ -98,8 +98,15 @@ control-point behavior, and correctly formatted measurement payloads; the
 builders do not implement those profile procedures.
 
 Additional builders cover Bond Management, Indoor Positioning, Pulse Oximeter,
-and HTTP Proxy. Bond Management requires authenticated access to its control
-point and feature value; the application still performs the bond-management
+HTTP Proxy, Automation IO, Binary Sensor, Mesh Provisioning, and Mesh Proxy.
+`gatt_automation_io_service_add()` accepts caller-defined Digital and Analog
+channels and can add an Aggregate value containing their handles. Mesh Data In
+uses a fixed 65-octet capacity for Provisioning and 66 octets for Proxy. The
+application handles the bearer protocol and sends Data Out notifications using
+the returned CCCD. The Binary Sensor builder registers its Control Point and
+indicated Response; the application implements the BSS command protocol. Bond
+Management requires authenticated access to its control point and feature value;
+the application still performs the bond-management
 procedures. Indoor Positioning adds the three mandatory characteristics, and
 the application supplies and validates coordinate updates. Pulse Oximeter
 adds either or both measurement modes, its feature value, and an optional

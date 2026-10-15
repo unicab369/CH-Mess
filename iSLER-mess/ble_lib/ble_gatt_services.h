@@ -1211,6 +1211,184 @@ typedef struct {
     uint16_t service_handle, control_point_handle, feature_handle;
 } ble_gatt_bond_management_service;
 
+typedef struct {
+    uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
+    uint8_t channel_count;
+    uint16_t channel_handles[8], channel_cccd_handles[8];
+} ble_gatt_automation_io_service;
+
+typedef struct {
+    uint16_t service_handle, control_point_handle;
+    uint16_t response_handle, response_cccd_handle;
+} ble_gatt_binary_sensor_service;
+
+// Add the Binary Sensor Control Point and Response attributes. The application
+// implements the BSS message protocol and sends Response indications.
+static inline int gatt_binary_sensor_service_add(
+    ble_gatt_server *server, ble_gatt_binary_sensor_service *service
+) {
+    if (!service) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2b2b, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 20, 1},
+        {0x2b2c, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+    if (!gatt_sig_service_add(server, 0x183b, chars, 2,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->control_point_handle = values[0];
+    service->response_handle = values[1];
+    service->response_cccd_handle = cccds[1];
+    return 1;
+}
+
+// Add Automation IO Digital and Analog characteristics, optionally including
+// an Aggregate characteristic whose value lists the channel value handles.
+static inline int gatt_automation_io_service_add(
+    ble_gatt_server *server, ble_gatt_automation_io_service *service,
+    const ble_gatt_sig_characteristic *channels, uint8_t channel_count,
+    uint8_t include_aggregate, uint8_t aggregate_properties
+) {
+    if (!server || !service || !channels || !channel_count ||
+        channel_count > 8 || include_aggregate > 1)
+        return 0;
+
+    uint8_t aggregate_notify = aggregate_properties &
+        (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE);
+    if (include_aggregate &&
+        (!(aggregate_properties & BLE_GATT_PROP_READ) ||
+         (aggregate_properties & (BLE_GATT_PROP_WRITE |
+                                  BLE_GATT_PROP_WRITE_NO_RSP |
+                                  BLE_GATT_PROP_BROADCAST |
+                                  BLE_GATT_PROP_AUTH_SIGNED_WRITE |
+                                  BLE_GATT_PROP_EXTENDED)) ||
+         (aggregate_notify == (BLE_GATT_PROP_NOTIFY |
+                               BLE_GATT_PROP_INDICATE))))
+        return 0;
+
+    for (uint8_t i = 0; i < channel_count; i++) {
+        uint8_t notify = channels[i].properties &
+            (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE);
+        if ((channels[i].uuid != 0x2a56 && channels[i].uuid != 0x2a58) ||
+            (channels[i].properties & (BLE_GATT_PROP_BROADCAST |
+                                       BLE_GATT_PROP_AUTH_SIGNED_WRITE |
+                                       BLE_GATT_PROP_EXTENDED)) ||
+            (notify == (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE)) ||
+            (channels[i].cccd != !!notify) ||
+            (!include_aggregate && aggregate_properties) ||
+            (include_aggregate && notify) ||
+            ((channels[i].properties & BLE_GATT_PROP_READ) &&
+             !(channels[i].permissions & BLE_GATT_PERM_READ)) ||
+            ((channels[i].properties & (BLE_GATT_PROP_WRITE |
+                                        BLE_GATT_PROP_WRITE_NO_RSP)) &&
+             !(channels[i].permissions & BLE_GATT_PERM_WRITE)) ||
+            (channels[i].value_len && !channels[i].value))
+            return 0;
+    }
+
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic characteristics[9];
+    memcpy(characteristics, channels,
+           (size_t)channel_count * sizeof(*channels));
+    uint8_t count = channel_count;
+    uint8_t aggregate_value[16] = {0};
+    if (include_aggregate) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            .uuid = 0x2a5a,
+            .properties = aggregate_properties,
+            .cccd = !!aggregate_notify,
+            .permissions = BLE_GATT_PERM_READ,
+            .value = aggregate_value,
+            .value_len = (uint16_t)(channel_count * 2),
+            .value_capacity = (uint16_t)(channel_count * 2)
+        };
+    }
+
+    uint16_t values[9], cccds[9];
+    if (!gatt_sig_service_add(server, 0x1815, characteristics, count,
+            &service->service_handle, values, cccds))
+        return 0;
+
+    service->channel_count = channel_count;
+    for (uint8_t i = 0; i < channel_count; i++) {
+        service->channel_handles[i] = values[i];
+        service->channel_cccd_handles[i] = cccds[i];
+    }
+    if (include_aggregate) {
+        service->aggregate_handle = values[channel_count];
+        service->aggregate_cccd_handle = cccds[channel_count];
+        ble_gatt_attribute *aggregate = gatt_server_find(
+            server, service->aggregate_handle);
+        uint8_t *value = aggregate ? gatt_attribute_value(server, aggregate) : NULL;
+        if (!value) return 0;
+        for (uint8_t i = 0; i < channel_count; i++) {
+            value[i * 2] = (uint8_t)values[i];
+            value[i * 2 + 1] = (uint8_t)(values[i] >> 8);
+        }
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_provisioning_service;
+
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_proxy_service;
+
+// Add the Bluetooth Mesh Provisioning Service. The application handles the
+// provisioning protocol and sends Data Out notifications through the returned
+// characteristic and CCCD handles.
+static inline int gatt_mesh_provisioning_service_add(
+    ble_gatt_server *server, ble_gatt_mesh_provisioning_service *service
+) {
+    if (!service) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2adb, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 65, 1},
+        {0x2adc, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+    if (!gatt_sig_service_add(server, 0x1827, chars, 2,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
+// Add the Bluetooth Mesh Proxy Service. The application handles proxy PDU
+// processing and sends Data Out notifications using the returned handles.
+static inline int gatt_mesh_proxy_service_add(
+    ble_gatt_server *server, ble_gatt_mesh_proxy_service *service
+) {
+    if (!service) return 0;
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2add, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 66, 1},
+        {0x2ade, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+    if (!gatt_sig_service_add(server, 0x1828, chars, 2,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
 // Add Bond Management attributes. The application must implement the control
 // point's bond deletion procedures and enforce the requested authorization.
 static inline int gatt_bond_management_service_add(
