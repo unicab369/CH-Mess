@@ -437,15 +437,13 @@ static void test_central_initiation_while_connectable_advertising(void) {
 }
 
 static void test_connection_timing_configuration(void) {
-    gap_conn_timing timing;
-    assert(gap_conn_timing_get(&timing));
+    gap_timing_cfg timing = gap_conn_timing;
     assert(timing.interval == 24 && timing.latency == 0 &&
            timing.supervision_timeout == 200 &&
            timing.scan_interval_ms == 1280 &&
            timing.scan_window_ms == 12 &&
            timing.attempt_timeout_ms == 30720);
-    assert(!gap_conn_timing_get(NULL));
-    gap_conn_timing invalid = timing;
+    gap_timing_cfg invalid = timing;
     invalid.interval = 5;
     assert(!gap_conn_timing_set(&invalid));
     invalid = timing;

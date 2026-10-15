@@ -601,7 +601,6 @@ static gap_timing_cfg gap_conn_timing = {
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!timing || !gap_timing_valid(
             timing->interval, timing->interval, timing->latency,
             timing->supervision_timeout) || !timing->attempt_timeout_ms ||
@@ -616,14 +615,6 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         (uint32_t)(timing->latency + 1) * timing->interval)
         return 0;
     gap_conn_timing = *timing;
-    return 1;
-}
-
-// Application facing
-// Read the current initial connection and attempt timing settings.
-int gap_conn_timing_get(gap_timing_cfg *timing) {
-    if (!timing) return 0;
-    *timing = gap_conn_timing;
     return 1;
 }
 
