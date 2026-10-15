@@ -169,7 +169,7 @@ static inline int gatt_client_mtu(
 ) {
     uint8_t pdu[3] = {ATT_OP_EXCHANGE_MTU_REQ};
     if (mtu < 23 || mtu > BLE_GATT_CLIENT_MTU_MAX) return 0;
-    ble_att_put_u16(pdu + 1, mtu);
+    ble_put_le16(pdu + 1, mtu);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                 ATT_OP_EXCHANGE_MTU_RSP, now_ms);
 }
@@ -187,17 +187,17 @@ static inline int gatt_client_services(
 
     if (!uuid) {
         pdu[0] = ATT_OP_READ_BY_GROUP_TYPE_REQ;
-        ble_att_put_u16(pdu + 1, start);
-        ble_att_put_u16(pdu + 3, end);
-        ble_att_put_u16(pdu + 5, 0x2800);
+        ble_put_le16(pdu + 1, start);
+        ble_put_le16(pdu + 3, end);
+        ble_put_le16(pdu + 5, 0x2800);
         return gatt_client_request(client, pdu, 7,
                                    ATT_OP_READ_BY_GROUP_TYPE_RSP, now_ms);
     }
 
     pdu[0] = ATT_OP_FIND_BY_TYPE_VALUE_REQ;
-    ble_att_put_u16(pdu + 1, start);
-    ble_att_put_u16(pdu + 3, end);
-    ble_att_put_u16(pdu + 5, 0x2800);
+    ble_put_le16(pdu + 1, start);
+    ble_put_le16(pdu + 3, end);
+    ble_put_le16(pdu + 5, 0x2800);
     memcpy(pdu + 7, uuid, uuid_len);
     return gatt_client_request(client, pdu, 7 + uuid_len,
                                ATT_OP_FIND_BY_TYPE_VALUE_RSP, now_ms);
@@ -208,9 +208,9 @@ static inline int gatt_client_included(
 ) {
     uint8_t pdu[7] = {ATT_OP_READ_BY_TYPE_REQ};
     if (!start || start > end) return 0;
-    ble_att_put_u16(pdu + 1, start);
-    ble_att_put_u16(pdu + 3, end);
-    ble_att_put_u16(pdu + 5, 0x2802);
+    ble_put_le16(pdu + 1, start);
+    ble_put_le16(pdu + 3, end);
+    ble_put_le16(pdu + 5, 0x2802);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
 }
@@ -224,8 +224,8 @@ static inline int gatt_client_characteristics(
         (uuid && uuid_len != 2 && uuid_len != 16) || (!uuid && uuid_len)
     ) return 0;
 
-    ble_att_put_u16(pdu + 1, start);
-    ble_att_put_u16(pdu + 3, end);
+    ble_put_le16(pdu + 1, start);
+    ble_put_le16(pdu + 3, end);
 
     if (uuid) {
         memcpy(pdu + 5, uuid, uuid_len);
@@ -233,7 +233,7 @@ static inline int gatt_client_characteristics(
                                    ATT_OP_READ_BY_TYPE_RSP, now_ms);
     }
 
-    ble_att_put_u16(pdu + 5, 0x2803);
+    ble_put_le16(pdu + 5, 0x2803);
     return gatt_client_request(client, pdu, 7,
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
 }
@@ -244,8 +244,8 @@ static inline int gatt_client_discover_descriptors(
 ) {
     uint8_t pdu[5] = {ATT_OP_FIND_INFO_REQ};
     if (!start || start > end) return 0;
-    ble_att_put_u16(pdu + 1, start);
-    ble_att_put_u16(pdu + 3, end);
+    ble_put_le16(pdu + 1, start);
+    ble_put_le16(pdu + 3, end);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                ATT_OP_FIND_INFO_RSP, now_ms);
 }
@@ -255,7 +255,7 @@ static inline int gatt_client_read(
 ) {
     uint8_t pdu[3] = {ATT_OP_READ_REQ};
     if (!handle) return 0;
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                ATT_OP_READ_RSP, now_ms);
 }
@@ -274,7 +274,7 @@ static inline int gatt_client_read_long(
     client->operation.offset = client->operation.value_len = 0;
 
     uint8_t pdu[3] = {ATT_OP_READ_REQ};
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
 
     if (!gatt_client_request(client, pdu, sizeof(pdu), ATT_OP_READ_RSP, now_ms)) {
         client->operation.kind = 0;
@@ -289,8 +289,8 @@ static inline int gatt_client_read_blob(
 ) {
     uint8_t pdu[5] = {ATT_OP_READ_BLOB_REQ};
     if (!handle || offset > BLE_GATT_ATT_VALUE_MAX) return 0;
-    ble_att_put_u16(pdu + 1, handle);
-    ble_att_put_u16(pdu + 3, offset);
+    ble_put_le16(pdu + 1, handle);
+    ble_put_le16(pdu + 3, offset);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                ATT_OP_READ_BLOB_RSP, now_ms);
 }
@@ -305,8 +305,8 @@ static inline int gatt_client_read_by_uuid(
         (uuid_len != 2 && uuid_len != 16)
     ) return 0;
 
-    ble_att_put_u16(pdu + 1, start);
-    ble_att_put_u16(pdu + 3, end);
+    ble_put_le16(pdu + 1, start);
+    ble_put_le16(pdu + 3, end);
     memcpy(pdu + 5, uuid, uuid_len);
     return gatt_client_request(client, pdu, 5 + uuid_len,
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
@@ -324,7 +324,7 @@ static inline int gatt_client_read_multiple(
 
     for (uint8_t i = 0; i < count; i++) {
         if (!handles[i]) return 0;
-        ble_att_put_u16(pdu + 1 + 2 * i, handles[i]);
+        ble_put_le16(pdu + 1 + 2 * i, handles[i]);
     }
     return gatt_client_request(client, pdu, 1 + 2 * count,
             variable ? ATT_OP_READ_MULT_VAR_RSP : ATT_OP_READ_MULTIPLE_RSP, now_ms);
@@ -341,7 +341,7 @@ static inline int gatt_client_write(
     ) return 0;
 
     pdu[0] = ATT_OP_WRITE_REQ;
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
     return gatt_client_request(client, pdu, len + 3, ATT_OP_WRITE_RSP, now_ms);
 }
@@ -379,7 +379,7 @@ static inline int gatt_client_write_long(
     client->operation.chunk = chunk;
 
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {ATT_OP_PREPARE_WRITE_REQ};
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
 
     if (chunk) memcpy(pdu + 5, client->operation.value, chunk);
     if (!gatt_client_request(client, pdu, chunk + 5,
@@ -407,7 +407,7 @@ static inline int gatt_client_write_command(
     ) return 0;
     pdu[0] = ATT_OP_WRITE_COMMAND;
 
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
     return client->send(client->context, pdu, len + 3);
 }
@@ -426,7 +426,7 @@ static inline int gatt_client_write_signed(
     ) return 0;
 
     pdu[0] = ATT_OP_SIGNED_WRITE_COMMAND;
-    ble_att_put_u16(pdu + 1, handle);
+    ble_put_le16(pdu + 1, handle);
     if (len) memcpy(pdu + 3, value, len);
 
     uint16_t signed_len = len + 3;
@@ -447,8 +447,8 @@ static inline int gatt_client_prepare_write(
     ) return 0;
 
     pdu[0] = ATT_OP_PREPARE_WRITE_REQ;
-    ble_att_put_u16(pdu + 1, handle);
-    ble_att_put_u16(pdu + 3, offset);
+    ble_put_le16(pdu + 1, handle);
+    ble_put_le16(pdu + 3, offset);
     if (len) memcpy(pdu + 5, value, len);
     return gatt_client_request(client, pdu, len + 5,
                                ATT_OP_PREPARE_WRITE_RSP, now_ms);
@@ -505,7 +505,7 @@ static inline int gatt_client_receive(
 
         while (offset < len) {
             if (len - offset < 4) return -1;
-            uint16_t value_len = ble_att_get_u16(pdu + offset + 2);
+            uint16_t value_len = ble_get_le16(pdu + offset + 2);
             offset += 4;
             if (value_len > len - offset) return -1;
             offset += value_len;
@@ -517,8 +517,8 @@ static inline int gatt_client_receive(
             offset = 1;
 
             while (offset < len) {
-                uint16_t handle = ble_att_get_u16(pdu + offset);
-                uint16_t value_len = ble_att_get_u16(pdu + offset + 2);
+                uint16_t handle = ble_get_le16(pdu + offset);
+                uint16_t value_len = ble_get_le16(pdu + offset + 2);
                 offset += 4;
                 if (handle && value_len <= BLE_GATT_ATT_VALUE_MAX)
                     client->notification(client->context, handle,
@@ -555,7 +555,7 @@ static inline int gatt_client_receive(
             return -1;
         }
 
-        uint16_t error_handle = ble_att_get_u16(pdu + 2);
+        uint16_t error_handle = ble_get_le16(pdu + 2);
         uint8_t request = client->request.opcode;
         uint8_t error_handle_valid = 0;
 
@@ -569,14 +569,14 @@ static inline int gatt_client_receive(
                 switch (request) {
                 case ATT_OP_READ_REQ: case ATT_OP_WRITE_REQ:
                     error_handle_valid = client->request.len >= 3 &&
-                        !ble_att_get_u16(client->request_pdu + 1);
+                        !ble_get_le16(client->request_pdu + 1);
                     break;
                 case ATT_OP_READ_BLOB_REQ: case ATT_OP_PREPARE_WRITE_REQ:
                 case ATT_OP_FIND_INFO_REQ: case ATT_OP_FIND_BY_TYPE_VALUE_REQ:
                 case ATT_OP_READ_BY_TYPE_REQ:
                 case ATT_OP_READ_BY_GROUP_TYPE_REQ:
                     error_handle_valid = client->request.len >= 5 &&
-                        !ble_att_get_u16(client->request_pdu + 1);
+                        !ble_get_le16(client->request_pdu + 1);
                     break;
                 case ATT_OP_READ_MULTIPLE_REQ:
                 case ATT_OP_READ_MULTIPLE_VARIABLE_REQ:
@@ -584,7 +584,7 @@ static inline int gatt_client_receive(
                         !((client->request.len - 1) & 1)) {
                         for (uint16_t offset = 1;
                              offset < client->request.len; offset += 2) {
-                            if (!ble_att_get_u16(client->request_pdu + offset)) {
+                            if (!ble_get_le16(client->request_pdu + offset)) {
                                 error_handle_valid = 1;
                                 break;
                             }
@@ -597,11 +597,11 @@ static inline int gatt_client_receive(
             switch (request) {
             case ATT_OP_READ_REQ: case ATT_OP_WRITE_REQ:
                 error_handle_valid = client->request.len >= 3 &&
-                    error_handle == ble_att_get_u16(client->request_pdu + 1);
+                    error_handle == ble_get_le16(client->request_pdu + 1);
                 break;
             case ATT_OP_READ_BLOB_REQ: case ATT_OP_PREPARE_WRITE_REQ:
                 error_handle_valid = client->request.len >= 5 &&
-                    error_handle == ble_att_get_u16(client->request_pdu + 1);
+                    error_handle == ble_get_le16(client->request_pdu + 1);
                 break;
             case ATT_OP_READ_MULTIPLE_REQ:
             case ATT_OP_READ_MULTIPLE_VARIABLE_REQ:
@@ -609,7 +609,7 @@ static inline int gatt_client_receive(
                     !((client->request.len - 1) & 1)) {
                     for (uint16_t offset = 1;
                          offset < client->request.len; offset += 2) {
-                        if (error_handle == ble_att_get_u16(
+                        if (error_handle == ble_get_le16(
                                 client->request_pdu + offset)) {
                             error_handle_valid = 1;
                             break;
@@ -626,8 +626,8 @@ static inline int gatt_client_receive(
             case ATT_OP_READ_BY_TYPE_REQ:
             case ATT_OP_READ_BY_GROUP_TYPE_REQ: {
                 if (client->request.len >= 5) {
-                    uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-                    uint16_t last = ble_att_get_u16(client->request_pdu + 3);
+                    uint16_t first = ble_get_le16(client->request_pdu + 1);
+                    uint16_t last = ble_get_le16(client->request_pdu + 3);
                     error_handle_valid = error_handle == first ||
                         (first <= last && error_handle >= first &&
                          error_handle <= last);
@@ -706,8 +706,8 @@ static inline int gatt_client_receive(
                 (pdu[1] == 1 ? (len - 2) % 4 == 0 : (len - 2) % 18 == 0);
 
             if (response_valid) {
-                uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-                uint16_t last = ble_att_get_u16(client->request_pdu + 3);
+                uint16_t first = ble_get_le16(client->request_pdu + 1);
+                uint16_t last = ble_get_le16(client->request_pdu + 3);
                 uint16_t previous = 0;
                 uint8_t entry_len = pdu[1] == 1 ? 4 : 18;
                 response_valid = first && first <= last;
@@ -715,7 +715,7 @@ static inline int gatt_client_receive(
                 for (uint16_t offset = 2;
                      response_valid && offset < len; offset += entry_len
                 ) {
-                    uint16_t handle = ble_att_get_u16(pdu + offset);
+                    uint16_t handle = ble_get_le16(pdu + offset);
                     if (!handle || handle < first || handle > last || handle <= previous)
                         response_valid = 0;
                     previous = handle;
@@ -728,15 +728,15 @@ static inline int gatt_client_receive(
                 len >= 5 && (len - 1) % 4 == 0;
 
             if (response_valid) {
-                uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-                uint16_t last = ble_att_get_u16(client->request_pdu + 3);
-                uint16_t type = ble_att_get_u16(client->request_pdu + 5);
+                uint16_t first = ble_get_le16(client->request_pdu + 1);
+                uint16_t last = ble_get_le16(client->request_pdu + 3);
+                uint16_t type = ble_get_le16(client->request_pdu + 5);
                 uint16_t previous_end = 0;
                 response_valid = first && first <= last;
 
                 for (uint16_t offset = 1; response_valid && offset < len; offset += 4) {
-                    uint16_t found = ble_att_get_u16(pdu + offset);
-                    uint16_t group_end = ble_att_get_u16(pdu + offset + 2);
+                    uint16_t found = ble_get_le16(pdu + offset);
+                    uint16_t group_end = ble_get_le16(pdu + offset + 2);
 
                     if (!found || found < first || found > last ||
                         group_end < found || found <= previous_end ||
@@ -755,8 +755,8 @@ static inline int gatt_client_receive(
                             (len - 2) % pdu[1] == 0;
 
             if (response_valid) {
-                uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-                uint16_t last = ble_att_get_u16(client->request_pdu + 3);
+                uint16_t first = ble_get_le16(client->request_pdu + 1);
+                uint16_t last = ble_get_le16(client->request_pdu + 3);
                 const uint8_t *uuid = client->request_pdu + 5;
                 uint8_t uuid_len = (uint8_t)(client->request.len - 5);
 
@@ -764,10 +764,10 @@ static inline int gatt_client_receive(
                     0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00,
                     0x80, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00
                 };
-                uint16_t type = uuid_len == 2 ? ble_att_get_u16(uuid) :
+                uint16_t type = uuid_len == 2 ? ble_get_le16(uuid) :
                     uuid_len == 16 &&
                     !memcmp(uuid, base_prefix, sizeof(base_prefix)) ?
-                        ble_att_get_u16(uuid + 14) : 0;
+                        ble_get_le16(uuid + 14) : 0;
                 uint16_t previous = 0;
 
                 response_valid = first && first <= last &&
@@ -777,18 +777,18 @@ static inline int gatt_client_receive(
                 for (uint16_t offset = 2;
                      response_valid && offset < len; offset += pdu[1]
                 ) {
-                    uint16_t handle = ble_att_get_u16(pdu + offset);
+                    uint16_t handle = ble_get_le16(pdu + offset);
                     if (!handle || handle < first || handle > last || handle <= previous) {
                         response_valid = 0;
                     }
                     else if (type == 0x2803) {
-                        uint16_t value_handle = ble_att_get_u16(pdu + offset + 3);
+                        uint16_t value_handle = ble_get_le16(pdu + offset + 3);
                         if (!value_handle || value_handle <= handle)
                             response_valid = 0;
                     }
                     else if (type == 0x2802) {
-                        uint16_t service_start = ble_att_get_u16(pdu + offset + 2);
-                        uint16_t service_end = ble_att_get_u16(pdu + offset + 4);
+                        uint16_t service_start = ble_get_le16(pdu + offset + 2);
+                        uint16_t service_end = ble_get_le16(pdu + offset + 4);
                         if (!service_start || service_start > service_end)
                             response_valid = 0;
                     }
@@ -806,7 +806,7 @@ static inline int gatt_client_receive(
                             client->request.len == 5 &&
                             client->request_pdu[0] == ATT_OP_READ_BLOB_REQ;
             if (response_valid) {
-                uint16_t offset = ble_att_get_u16(client->request_pdu + 3);
+                uint16_t offset = ble_get_le16(client->request_pdu + 3);
                 response_valid = offset <= BLE_GATT_ATT_VALUE_MAX &&
                                 (uint32_t)offset + len - 1 <= BLE_GATT_ATT_VALUE_MAX;
             }
@@ -823,14 +823,14 @@ static inline int gatt_client_receive(
                             (pdu[1] == 6 || pdu[1] == 20) && (len - 2) % pdu[1] == 0;
 
             if (response_valid) {
-                uint16_t first = ble_att_get_u16(client->request_pdu + 1);
-                uint16_t last = ble_att_get_u16(client->request_pdu + 3);
+                uint16_t first = ble_get_le16(client->request_pdu + 1);
+                uint16_t last = ble_get_le16(client->request_pdu + 3);
                 uint16_t previous_end = 0;
                 response_valid = first && first <= last;
 
                 for (uint16_t offset = 2; response_valid && offset < len; offset += pdu[1]) {
-                    uint16_t start = ble_att_get_u16(pdu + offset);
-                    uint16_t end = ble_att_get_u16(pdu + offset + 2);
+                    uint16_t start = ble_get_le16(pdu + offset);
+                    uint16_t end = ble_get_le16(pdu + offset + 2);
 
                     if (!start || start < first || start > last || end < start ||
                         start <= previous_end
@@ -922,8 +922,8 @@ static inline int gatt_client_receive(
         if (part_len == client->mtu - 1 &&
             client->operation.value_len < BLE_GATT_CLIENT_VALUE_MAX) {
             uint8_t blob[5] = {ATT_OP_READ_BLOB_REQ};
-            ble_att_put_u16(blob + 1, client->operation.handle);
-            ble_att_put_u16(blob + 3, client->operation.value_len);
+            ble_put_le16(blob + 1, client->operation.handle);
+            ble_put_le16(blob + 3, client->operation.value_len);
 
             if (!gatt_client_request(client, blob, sizeof(blob),
                                      ATT_OP_READ_BLOB_RSP, client->now_ms)) {
@@ -951,8 +951,8 @@ static inline int gatt_client_receive(
             uint8_t next_pdu[BLE_GATT_CLIENT_MTU_MAX] = {
                 ATT_OP_PREPARE_WRITE_REQ
             };
-            ble_att_put_u16(next_pdu + 1, client->operation.handle);
-            ble_att_put_u16(next_pdu + 3, client->operation.offset);
+            ble_put_le16(next_pdu + 1, client->operation.handle);
+            ble_put_le16(next_pdu + 3, client->operation.offset);
             memcpy(next_pdu + 5,
                    client->operation.value + client->operation.offset, chunk);
             client->operation.chunk = chunk;

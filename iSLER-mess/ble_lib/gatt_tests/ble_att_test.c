@@ -4,9 +4,9 @@
 
 int main(void) {
     uint8_t encoded[2];
-    ble_att_put_u16(encoded, 0x1234);
+    ble_put_le16(encoded, 0x1234);
     assert(encoded[0] == 0x34 && encoded[1] == 0x12);
-    assert(ble_att_get_u16(encoded) == 0x1234);
+    assert(ble_get_le16(encoded) == 0x1234);
 
     static const struct {
         uint8_t request;

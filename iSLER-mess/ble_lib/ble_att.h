@@ -56,11 +56,11 @@ enum {
     ATT_OP_READ_MULT_VAR_RSP = 0x21
 };
 
-static inline uint16_t ble_att_get_u16(const uint8_t *p) {
+static inline uint16_t ble_get_le16(const uint8_t *p) {
     return (uint16_t)p[0] | (uint16_t)p[1] << 8;
 }
 
-static inline void ble_att_put_u16(uint8_t *p, uint16_t value) {
+static inline void ble_put_le16(uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)value;
     p[1] = (uint8_t)(value >> 8);
 }

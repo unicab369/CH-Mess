@@ -178,7 +178,7 @@ static inline int gatt_transport_eatt_client_send(
         return 0;
     ble_gatt_transport *transport = bearer->transport;
     if (pdu[0] == 0x02 && transport->server &&
-        (len != 3 || ble_att_get_u16(pdu + 1) != bearer->server.local_mtu)
+        (len != 3 || ble_get_le16(pdu + 1) != bearer->server.local_mtu)
     )
         return 0;
     if (bearer->client_tx_pending && ble_att_response_opcode(pdu[0]))
@@ -677,7 +677,7 @@ static inline int gatt_transport_send_client(
     )
         return 0;
     if (transport->server && att[0] == 0x02 &&
-        (att_len != 3 || ble_att_get_u16(att + 1) !=
+        (att_len != 3 || ble_get_le16(att + 1) !=
                          transport->server->local_mtu)
     )
         return 0;
