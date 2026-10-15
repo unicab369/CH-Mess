@@ -49,11 +49,11 @@ enum {
     ATT_OP_HANDLE_VALUE_CONFIRMATION = 0x1e,
     ATT_OP_WRITE_COMMAND = 0x52,
     ATT_OP_SIGNED_WRITE_COMMAND = 0xd2,
-    ATT_OP_MULTIPLE_HANDLE_VALUE_NOTIFICATION = 0x23,
+    ATT_OP_MULT_HANDLE_VALUE_NOTIFICATION = 0x23,
     ATT_OP_READ_MULTIPLE_REQ = 0x0e,
     ATT_OP_READ_MULTIPLE_RSP = 0x0f,
     ATT_OP_READ_MULTIPLE_VARIABLE_REQ = 0x20,
-    ATT_OP_READ_MULTIPLE_VARIABLE_RSP = 0x21
+    ATT_OP_READ_MULT_VAR_RSP = 0x21
 };
 
 static inline uint16_t ble_att_get_u16(const uint8_t *p) {
@@ -123,7 +123,7 @@ static inline uint8_t ble_att_response_opcode(uint8_t request_opcode) {
     case ATT_OP_PREPARE_WRITE_REQ: return ATT_OP_PREPARE_WRITE_RSP;
     case ATT_OP_EXECUTE_WRITE_REQ: return ATT_OP_EXECUTE_WRITE_RSP;
     case ATT_OP_READ_MULTIPLE_VARIABLE_REQ:
-        return ATT_OP_READ_MULTIPLE_VARIABLE_RSP;
+        return ATT_OP_READ_MULT_VAR_RSP;
     default: return 0;
     }
 }

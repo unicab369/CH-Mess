@@ -327,7 +327,7 @@ static inline int gatt_client_read_multiple(
         ble_att_put_u16(pdu + 1 + 2 * i, handles[i]);
     }
     return gatt_client_request(client, pdu, 1 + 2 * count,
-            variable ? ATT_OP_READ_MULTIPLE_VARIABLE_RSP : ATT_OP_READ_MULTIPLE_RSP, now_ms);
+            variable ? ATT_OP_READ_MULT_VAR_RSP : ATT_OP_READ_MULTIPLE_RSP, now_ms);
 }
 
 static inline int gatt_client_write(
@@ -499,7 +499,7 @@ static inline int gatt_client_receive(
         return 1;
     }
 
-    if (opcode == ATT_OP_MULTIPLE_HANDLE_VALUE_NOTIFICATION) {
+    if (opcode == ATT_OP_MULT_HANDLE_VALUE_NOTIFICATION) {
         if (len < 9 || len > client->mtu) return -1;
         uint16_t offset = 1, tuple_count = 0;
 
@@ -539,7 +539,7 @@ static inline int gatt_client_receive(
         case ATT_OP_READ_BY_GROUP_TYPE_RSP: case ATT_OP_WRITE_RSP:
         case ATT_OP_PREPARE_WRITE_RSP:
         case ATT_OP_EXECUTE_WRITE_RSP:
-        case ATT_OP_READ_MULTIPLE_VARIABLE_RSP:
+        case ATT_OP_READ_MULT_VAR_RSP:
             return -1; // A response without an outstanding request is invalid.
         default:
             return 0;
@@ -850,7 +850,7 @@ static inline int gatt_client_receive(
                             !memcmp(client->request_pdu + 1, pdu + 1, len - 1);
             break;
 
-        case ATT_OP_READ_MULTIPLE_VARIABLE_RSP: {
+        case ATT_OP_READ_MULT_VAR_RSP: {
             uint16_t offset = 1;
             uint16_t tuples = 0;
             response_valid = client->request.len &&

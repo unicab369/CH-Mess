@@ -330,7 +330,8 @@ int main(void) {
            transport.l2cap.channels[channel_slot].state ==
                BLE_L2CAP_CHANNEL_OPEN);
     assert(gatt_eatt_find(&transport.eatt, local_cid) >= 0);
-    gatt_transport_reset(&transport);
+    transport.connected = 0;
+    assert(gatt_transport_poll(&transport, 0) == 0);
     assert(!client_one->request.pending && !client_two->request.pending &&
            !transport.eatt_contexts[bearer_slot].cid &&
            !transport.eatt_contexts[second_bearer_slot].cid);

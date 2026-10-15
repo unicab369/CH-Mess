@@ -115,39 +115,25 @@ struct ble_gatt_transport {
 // =============================================================================
 static inline int gatt_transport_is_client_pdu(uint8_t opcode) {
     switch (opcode) {
-    case 0x01:
-    case 0x03:
-    case 0x05:
-    case 0x07:
-    case 0x09:
-    case 0x0b:
-    case 0x0d:
-    case 0x0f:
-    case 0x13:
-    case 0x17:
-    case 0x19:
-    case 0x21:
-    case 0x1b:
-    case 0x1d:
-    case 0x23:
+    case ATT_OP_ERROR_RSP:
+    case ATT_OP_EXCHANGE_MTU_RSP:
+    case ATT_OP_FIND_INFO_RSP:
+    case ATT_OP_FIND_BY_TYPE_VALUE_RSP:
+    case ATT_OP_READ_BY_TYPE_RSP:
+    case ATT_OP_READ_RSP:
+    case ATT_OP_READ_BLOB_RSP:
+    case ATT_OP_READ_MULTIPLE_RSP:
+    case ATT_OP_WRITE_RSP:
+    case ATT_OP_PREPARE_WRITE_RSP:
+    case ATT_OP_EXECUTE_WRITE_RSP:
+    case ATT_OP_READ_MULT_VAR_RSP:
+    case ATT_OP_HANDLE_VALUE_NOTIFICATION:
+    case ATT_OP_HANDLE_VALUE_INDICATION:
+    case ATT_OP_MULT_HANDLE_VALUE_NOTIFICATION:
         return 1;
     default:
         return 0;
     }
-}
-
-// Reset the fixed bearer after disconnect or link replacement.
-static inline void gatt_transport_reset(ble_gatt_transport *transport) {
-    ble_l2cap_connection_reset(&transport->l2cap, 0);
-#if BLE_GATT_ENABLE_EATT
-    if (transport->eatt_enabled)
-        gatt_eatt_set_encrypted(&transport->eatt, 0);
-#endif
-    ble_l2cap_reassembler_reset(&transport->l2cap_rx);
-    transport->tx_len = transport->tx_offset = 0;
-    transport->bearer_failed = 0;
-    transport->tx_client_request = 0;
-    memset(transport->tx, 0, sizeof(transport->tx));
 }
 
 // Queue any L2CAP channel PDU through this transport's LL-fragment TX path.
@@ -611,15 +597,6 @@ static inline void gatt_transport_sync_mtu_from_server(
     transport->client->mtu_exchanged = transport->server->mtu_exchanged;
 }
 
-static inline void gatt_transport_send_att(
-    ble_gatt_transport *transport,
-    const uint8_t *att, uint16_t att_len
-) {
-    (void)gatt_transport_send_l2cap_pdu(
-        transport, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
-    );
-}
-
 static inline int gatt_transport_receive_att(
     void *context, uint16_t cid,
     const uint8_t *att, uint16_t att_len
@@ -665,7 +642,9 @@ static inline int gatt_transport_receive_att(
 
     if (has_response < 0) return -1;
     if (!dispatched_to_client && has_response > 0)
-        gatt_transport_send_att(transport, response, response_len);
+        (void)gatt_transport_send_l2cap_pdu(
+            transport, BLE_GATT_TRANSPORT_ATT_CID, response, response_len
+        );
     return 1;
 }
 
@@ -717,7 +696,9 @@ static inline int gatt_transport_send_client(
                          transport->server->local_mtu)
     )
         return 0;
-    gatt_transport_send_att(transport, att, att_len);
+    (void)gatt_transport_send_l2cap_pdu(
+        transport, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
+    );
     transport->tx_client_request = 1;
     return 1;
 }
@@ -941,7 +922,16 @@ static inline int gatt_transport_poll(
     uint8_t connected = transport->ops.connected(transport->ops.context) != 0;
     if (connected != transport->connected) {
         transport->connected = connected;
-        gatt_transport_reset(transport);
+        ble_l2cap_connection_reset(&transport->l2cap, 0);
+#if BLE_GATT_ENABLE_EATT
+        if (transport->eatt_enabled)
+            gatt_eatt_set_encrypted(&transport->eatt, 0);
+#endif
+        ble_l2cap_reassembler_reset(&transport->l2cap_rx);
+        transport->tx_len = transport->tx_offset = 0;
+        transport->bearer_failed = 0;
+        transport->tx_client_request = 0;
+        memset(transport->tx, 0, sizeof(transport->tx));
         if (transport->server)
             gatt_server_link_reset(transport->server);
         if (transport->client) gatt_client_reset(transport->client);
@@ -1063,8 +1053,10 @@ static inline int gatt_transport_poll(
     int event_result = transport->server && !mtu_exchange_pending ?
         gatt_server_poll_event(transport->server, now_ms, event,
                                    sizeof(event), &event_len) : 0;
-    if (event_result == 1) gatt_transport_send_att(transport, event,
-                                                        event_len);
+    if (event_result == 1)
+        (void)gatt_transport_send_l2cap_pdu(
+            transport, BLE_GATT_TRANSPORT_ATT_CID, event, event_len
+        );
     if (event_result < 0) return gatt_transport_fail_bearer(transport);
     return received;
 }
