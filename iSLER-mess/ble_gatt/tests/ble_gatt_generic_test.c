@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "../ble_gatt.h"
+#include "ble_gatt_transport_test_adapter.h"
 
 static int connected(void *context) {
     (void)context;
@@ -53,18 +53,18 @@ static void on_result(
 }
 
 int main(void) {
-    const ble_gatt_transport_ops ops = {
+    const ble_gatt_transport_test_ops ops = {
         connected, receive_fragment, send_fragment, max_tx_payload, NULL, NULL
     };
     ble_gatt_server server;
     gatt_server_init(&server, 23);
     ble_gatt_transport transport;
-    assert(gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_test_init(&transport, &server, &ops));
     assert(transport.server == &server && !transport.client);
 
     ble_gatt_client client;
     gatt_client_init(&client, send_att, on_result, NULL, NULL, NULL);
-    assert(gatt_transport_init(&transport, NULL, &ops));
+    assert(gatt_transport_test_init(&transport, NULL, &ops));
     gatt_transport_set_client(&transport, &client);
     assert(!transport.server && transport.client == &client);
     return 0;

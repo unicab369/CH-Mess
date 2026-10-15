@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../ble_gatt.h"
+#include "ble_gatt_transport_test_adapter.h"
 
 #define FAKE_RX_COUNT 16
 typedef struct {
@@ -177,41 +177,41 @@ static void test_client_timeout_terminates_fixed_bearer(void) {
     fake_link link = {0};
     link.max_payload = 27;
     gatt_server_init(&server, 23);
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_test_init(&transport, &server, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
-    gatt_transport_set_terminate_callback(&transport,
+    gatt_transport_test_set_terminate_callback(&transport,
                                                fake_terminate_link);
     client_result_count = 0;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
 
     const uint8_t read[] = {0x0a, 1, 0};
     assert(gatt_client_request(&client, read, sizeof(read), 0x0b, 100));
     link.block_tx = 1;
-    assert(gatt_transport_poll(&transport, 101) == 0);
-    assert(gatt_transport_poll(&transport, 30100) == 0);
+    assert(gatt_transport_test_poll(&transport, 101) == 0);
+    assert(gatt_transport_test_poll(&transport, 30100) == 0);
     assert(client.request.pending && !transport.bearer_failed);
     link.block_tx = 0;
-    assert(gatt_transport_poll(&transport, 50000) == 1);
+    assert(gatt_transport_test_poll(&transport, 50000) == 1);
     assert(!transport.tx_len && client.request.pending);
     assert(client.deadline_ms == 80000);
-    assert(gatt_transport_poll(&transport, 79999) == 0);
-    assert(gatt_transport_poll(&transport, 80000) == -1);
+    assert(gatt_transport_test_poll(&transport, 79999) == 0);
+    assert(gatt_transport_test_poll(&transport, 80000) == -1);
     assert(client_result_count == 1 &&
            client_result_status == BLE_GATT_CLIENT_TIMEOUT);
     assert(transport.bearer_failed && link.termination_count == 1 &&
            !link.connected);
-    assert(gatt_transport_poll(&transport, 80001) == 0);
+    assert(gatt_transport_test_poll(&transport, 80001) == 0);
     assert(!transport.bearer_failed && !client.bearer_failed);
 
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 80002) == 0);
+    assert(gatt_transport_test_poll(&transport, 80002) == 0);
     assert(gatt_client_request(&client, read, sizeof(read), 0x0b, 80003));
 }
 
@@ -220,25 +220,25 @@ static void test_client_only_transport(void) {
     ble_gatt_client client;
     fake_link link = {0};
     link.max_payload = 27;
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, NULL, &ops));
+    assert(gatt_transport_test_init(&transport, NULL, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     client_result_count = client_event_count = 0;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
 
     assert(gatt_client_read(&client, 3, 2));
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 3) == 1);
+        assert(gatt_transport_test_poll(&transport, 3) == 1);
     const uint8_t read_response[] = {0x0b, 0x5a};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, read_response,
                   sizeof(read_response), 27);
-    assert(gatt_transport_poll(&transport, 4) == 1);
+    assert(gatt_transport_test_poll(&transport, 4) == 1);
     assert(!client.request.pending && client_result_count == 1 &&
            client_result_status == 0);
 
@@ -248,15 +248,15 @@ static void test_client_only_transport(void) {
     };
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, multiple_notification,
                   sizeof(multiple_notification), 27);
-    assert(gatt_transport_poll(&transport, 5) == 1);
+    assert(gatt_transport_test_poll(&transport, 5) == 1);
     assert(client_event_count == 2 && !transport.tx_len);
 
     const uint8_t invalid_indication[] = {0x1d, 0, 0, 0x5a};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, invalid_indication,
                   sizeof(invalid_indication), 27);
-    assert(gatt_transport_poll(&transport, 6) == 1);
+    assert(gatt_transport_test_poll(&transport, 6) == 1);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 7) == 1);
+        assert(gatt_transport_test_poll(&transport, 7) == 1);
     uint8_t packet[16];
     assert(collect_tx(&link, packet) == 5 && packet[4] == 0x1e);
 }
@@ -266,23 +266,23 @@ static void test_malformed_att_closes_fixed_bearer(void) {
     ble_gatt_client client;
     fake_link link = {0};
     link.max_payload = 27;
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, NULL, &ops));
+    assert(gatt_transport_test_init(&transport, NULL, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
-    gatt_transport_set_terminate_callback(&transport,
+    gatt_transport_test_set_terminate_callback(&transport,
                                                fake_terminate_link);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
 
     const uint8_t malformed_indication[] = {0x1d, 1};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID,
                   malformed_indication, sizeof(malformed_indication), 27);
-    assert(gatt_transport_poll(&transport, 2) == -1);
+    assert(gatt_transport_test_poll(&transport, 2) == -1);
     assert(transport.bearer_failed && client.bearer_failed &&
            link.termination_count == 1 && !link.connected);
     assert(!transport.tx_len);
@@ -301,21 +301,21 @@ static void test_malformed_confirmation_closes_without_response(void) {
 
     fake_link link = {0};
     link.max_payload = 27;
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
     gatt_server_init(&server, 23);
-    assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_transport_set_terminate_callback(&transport,
+    assert(gatt_transport_test_init(&transport, &server, &ops));
+    gatt_transport_test_set_terminate_callback(&transport,
                                                fake_terminate_link);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
 
     const uint8_t malformed_confirmation[] = {0x1e, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID,
                   malformed_confirmation, sizeof(malformed_confirmation), 27);
-    assert(gatt_transport_poll(&transport, 2) == -1);
+    assert(gatt_transport_test_poll(&transport, 2) == -1);
     assert(transport.bearer_failed && link.termination_count == 1 &&
            !link.connected && !link.tx_count && !transport.tx_len);
 }
@@ -325,26 +325,26 @@ static void test_wrong_client_response_closes_fixed_bearer(void) {
     ble_gatt_client client;
     fake_link link = {0};
     link.max_payload = 27;
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, NULL, &ops));
+    assert(gatt_transport_test_init(&transport, NULL, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
-    gatt_transport_set_terminate_callback(&transport,
+    gatt_transport_test_set_terminate_callback(&transport,
                                                fake_terminate_link);
     client_result_count = 0;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
     assert(gatt_client_read(&client, 1, 2));
-    assert(gatt_transport_poll(&transport, 2) == 1);
+    assert(gatt_transport_test_poll(&transport, 2) == 1);
 
     const uint8_t wrong_response[] = {0x13};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, wrong_response,
                   sizeof(wrong_response), 27);
-    assert(gatt_transport_poll(&transport, 3) == -1);
+    assert(gatt_transport_test_poll(&transport, 3) == -1);
     assert(transport.bearer_failed && client.bearer_failed &&
            client_result_count == 1 &&
            client_result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR &&
@@ -364,11 +364,11 @@ static void test_transport_rejects_incomplete_gatt_database(void) {
     assert(gatt_server_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL,
         &declaration, &value));
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(!gatt_transport_init(&transport, &server, &ops));
+    assert(!gatt_transport_test_init(&transport, &server, &ops));
     assert(!server.database_sealed);
 }
 
@@ -386,21 +386,21 @@ static void test_simultaneous_client_and_server(void) {
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
     assert(gatt_server_add_attribute(&server, &value_uuid,
         BLE_GATT_PERM_READ, &initial, 1, 1, NULL, NULL, NULL, &value_handle));
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_test_init(&transport, &server, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     client_result_count = client_event_count = 0;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
 
     assert(gatt_client_read(&client, value_handle, 2));
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 3) == 1);
+        assert(gatt_transport_test_poll(&transport, 3) == 1);
     link.tx_count = 0;
 
     // A peer request still reaches the local server while our client request
@@ -408,9 +408,9 @@ static void test_simultaneous_client_and_server(void) {
     const uint8_t peer_read[] = {0x0a, (uint8_t)value_handle, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_read,
                   sizeof(peer_read), 27);
-    assert(gatt_transport_poll(&transport, 4) == 1);
+    assert(gatt_transport_test_poll(&transport, 4) == 1);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 5) == 1);
+        assert(gatt_transport_test_poll(&transport, 5) == 1);
     uint8_t packet[64];
     uint16_t packet_len = collect_tx(&link, packet);
     assert(packet_len == 6 && packet[4] == 0x0b && packet[5] == initial);
@@ -420,17 +420,17 @@ static void test_simultaneous_client_and_server(void) {
     const uint8_t client_response[] = {0x0b, 0x77};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, client_response,
                   sizeof(client_response), 27);
-    assert(gatt_transport_poll(&transport, 6) == 1);
+    assert(gatt_transport_test_poll(&transport, 6) == 1);
     assert(!client.request.pending && client_result_count == 1 &&
            client_result_status == 0);
 
     const uint8_t indication[] = {0x1d, 2, 0, 0x66};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, indication,
                   sizeof(indication), 27);
-    assert(gatt_transport_poll(&transport, 7) == 1);
+    assert(gatt_transport_test_poll(&transport, 7) == 1);
     assert(client_event_count == 1 && transport.tx_len == 5);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 8) == 1);
+        assert(gatt_transport_test_poll(&transport, 8) == 1);
     packet_len = collect_tx(&link, packet);
     assert(packet_len == 5 && packet[4] == 0x1e);
 }
@@ -453,18 +453,18 @@ static void test_dual_role_mtu_synchronization(void) {
         &initial, 1, 1, NULL, NULL, NULL, &declaration, &value));
     assert(gatt_server_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
         NULL, NULL, NULL, &cccd));
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_test_init(&transport, &server, &ops));
     gatt_client_init(&client, gatt_transport_send_client,
         client_result, client_event, client_event, &transport);
     gatt_transport_set_client(&transport, &client);
     assert(client.local_mtu == server.local_mtu);
     client_result_count = 0;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
     assert(gatt_server_set_cccd(&server, value, 1));
 
     uint8_t value_data[30];
@@ -476,66 +476,66 @@ static void test_dual_role_mtu_synchronization(void) {
     assert(!client.request.pending && !transport.tx_len);
     assert(gatt_client_mtu(&client, 100, 3));
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 4) == 1);
+        assert(gatt_transport_test_poll(&transport, 4) == 1);
     assert(link.tx_count == 1 && link.tx_data[0][4] == 0x02 &&
            link.tx_data[0][5] == 100 && link.tx_data[0][6] == 0);
     link.tx_count = 0;
-    assert(gatt_transport_poll(&transport, 5) == 0);
+    assert(gatt_transport_test_poll(&transport, 5) == 0);
     assert(server.event_count == 1 && !transport.tx_len);
 
     const uint8_t peer_mtu_response[] = {0x03, 80, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_mtu_response,
                   sizeof(peer_mtu_response), 27);
-    assert(gatt_transport_poll(&transport, 6) == 1);
+    assert(gatt_transport_test_poll(&transport, 6) == 1);
     assert(!client.request.pending && client.mtu == 80 && server.mtu == 80 &&
            server.mtu_exchanged && client.mtu_exchanged);
     assert(transport.tx_len);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 7) == 1);
+        assert(gatt_transport_test_poll(&transport, 7) == 1);
     uint8_t packet[64];
     uint16_t packet_len = collect_tx(&link, packet);
     assert(packet_len == 37 && packet[4] == 0x1b &&
            gatt_server_u16(packet + 5) == value);
 
     link.connected = 0;
-    assert(gatt_transport_poll(&transport, 8) == 0);
+    assert(gatt_transport_test_poll(&transport, 8) == 0);
     assert(client.local_mtu == server.local_mtu && !client.mtu_exchanged &&
            !server.mtu_exchanged);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 9) == 0);
+    assert(gatt_transport_test_poll(&transport, 9) == 0);
     link.tx_count = 0;
     const uint8_t peer_mtu_request[] = {0x02, 64, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_mtu_request,
                   sizeof(peer_mtu_request), 27);
-    assert(gatt_transport_poll(&transport, 10) == 1);
+    assert(gatt_transport_test_poll(&transport, 10) == 1);
     assert(client.mtu == 64 && server.mtu == 64 &&
            client.mtu_exchanged && server.mtu_exchanged);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 11) == 1);
+        assert(gatt_transport_test_poll(&transport, 11) == 1);
     packet_len = collect_tx(&link, packet);
     assert(packet_len == 7 && packet[4] == 0x03 &&
            packet[5] == 100 && packet[6] == 0);
     assert(!gatt_client_mtu(&client, 100, 12));
 
     link.connected = 0;
-    assert(gatt_transport_poll(&transport, 13) == 0);
+    assert(gatt_transport_test_poll(&transport, 13) == 0);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 14) == 0);
+    assert(gatt_transport_test_poll(&transport, 14) == 0);
     link.tx_count = 0;
     assert(gatt_client_mtu(&client, 100, 15));
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 16) == 1);
+        assert(gatt_transport_test_poll(&transport, 16) == 1);
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, peer_mtu_request,
                   sizeof(peer_mtu_request), 27);
-    assert(gatt_transport_poll(&transport, 17) == 1);
+    assert(gatt_transport_test_poll(&transport, 17) == 1);
     assert(client.request.pending && client.mtu == 23 && server.mtu == 23 &&
            server.mtu_exchanged);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 18) == 1);
+        assert(gatt_transport_test_poll(&transport, 18) == 1);
     const uint8_t crossover_response[] = {0x03, 80, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, crossover_response,
                   sizeof(crossover_response), 27);
-    assert(gatt_transport_poll(&transport, 19) == 1);
+    assert(gatt_transport_test_poll(&transport, 19) == 1);
     assert(!client.request.pending && client.mtu == 80 && server.mtu == 80);
 }
 
@@ -563,14 +563,14 @@ static void test_bonded_cccd_restore(void) {
     link.cccd_value = 1;
     gatt_server_set_cccd_persistence(&server, fake_cccd_load,
                                           fake_cccd_store, &link);
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
+    assert(gatt_transport_test_init(&transport, &server, &ops));
 
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
     assert(link.cccd_loads == 1 &&
            gatt_server_cccd_for(&server, value_handle)->cccd == 1);
 
@@ -578,25 +578,25 @@ static void test_bonded_cccd_restore(void) {
         (uint8_t)(cccd_handle >> 8), 3, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, set_both,
                   sizeof(set_both), sizeof(set_both) + 4);
-    assert(gatt_transport_poll(&transport, 2) == 1);
+    assert(gatt_transport_test_poll(&transport, 2) == 1);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 3) == 1);
+        assert(gatt_transport_test_poll(&transport, 3) == 1);
     assert(link.cccd_stores == 1 && link.cccd_value == 3 &&
            gatt_server_cccd_for(&server, value_handle)->cccd == 3);
 
     link.connected = 0;
-    assert(gatt_transport_poll(&transport, 4) == 0);
+    assert(gatt_transport_test_poll(&transport, 4) == 0);
     assert(gatt_server_cccd_for(&server, value_handle)->cccd == 0);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 5) == 0);
+    assert(gatt_transport_test_poll(&transport, 5) == 0);
     assert(link.cccd_loads == 2 &&
            gatt_server_cccd_for(&server, value_handle)->cccd == 3);
 
     link.bonded = 0;
     link.connected = 0;
-    assert(gatt_transport_poll(&transport, 6) == 0);
+    assert(gatt_transport_test_poll(&transport, 6) == 0);
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 7) == 0);
+    assert(gatt_transport_test_poll(&transport, 7) == 0);
     assert(gatt_server_cccd_for(&server, value_handle)->cccd == 0);
 }
 
@@ -616,19 +616,19 @@ static void test_database_version_reconnect_flow(void) {
                                          fake_cccd_store, &link);
     gatt_server_set_database_hash_persistence(&server,
         fake_database_hash_load, fake_database_hash_store, &link);
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_transport_set_terminate_callback(&transport,
+    assert(gatt_transport_test_init(&transport, &server, &ops));
+    gatt_transport_test_set_terminate_callback(&transport,
                                                fake_terminate_link);
     link.cccd_handle = handles.service_changed_handle;
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
     assert(server.database_hash_update_pending && transport.tx_len);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 2) == 1);
+        assert(gatt_transport_test_poll(&transport, 2) == 1);
     assert(link.tx_count == 1 && link.tx_data[0][4] == 0x1d &&
            gatt_server_u16(link.tx_data[0] + 7) == 1 &&
            gatt_server_u16(link.tx_data[0] + 9) == 0xffff);
@@ -636,7 +636,7 @@ static void test_database_version_reconnect_flow(void) {
     const uint8_t confirmation[] = {0x1e};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, confirmation,
                   sizeof(confirmation), 27);
-    assert(gatt_transport_poll(&transport, 3) == 1);
+    assert(gatt_transport_test_poll(&transport, 3) == 1);
     assert(!server.database_hash_update_pending &&
            link.database_hash_stores == 1 &&
            memcmp(link.database_hash, server.database_hash, 16) == 0);
@@ -668,34 +668,34 @@ int main(void) {
         BLE_GATT_PERM_READ, value, sizeof(value), sizeof(value), NULL, NULL,
         NULL, &value_handle));
     assert(gatt_server_set_min_key_size(&server, value_handle, 12));
-    ble_gatt_transport_ops ops = {
+    ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
     };
-    assert(gatt_transport_init(&transport, &server, &ops));
-    gatt_transport_set_key_size_callback(&transport, fake_key_size);
+    assert(gatt_transport_test_init(&transport, &server, &ops));
+    gatt_transport_test_set_key_size_callback(&transport, fake_key_size);
 
     link.connected = 1;
-    assert(gatt_transport_poll(&transport, 1) == 0);
+    assert(gatt_transport_test_poll(&transport, 1) == 0);
     assert(!server.encrypted && !server.authenticated);
     link.encrypted = 1;
     link.key_size = 10;
-    assert(gatt_transport_poll(&transport, 2) == 0);
+    assert(gatt_transport_test_poll(&transport, 2) == 0);
     assert(server.encrypted && !server.authenticated &&
            server.encryption_key_size == 10);
     link.authenticated = 1;
     link.key_size = 12;
-    assert(gatt_transport_poll(&transport, 3) == 0);
+    assert(gatt_transport_test_poll(&transport, 3) == 0);
     assert(server.encrypted && server.authenticated &&
            server.encryption_key_size == 12);
     uint8_t read_req[] = {0x0a, (uint8_t)value_handle, 0};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, read_req,
                   sizeof(read_req), 5);
-    assert(gatt_transport_poll(&transport, 4) == 0);
-    assert(gatt_transport_poll(&transport, 5) == 1);
+    assert(gatt_transport_test_poll(&transport, 4) == 0);
+    assert(gatt_transport_test_poll(&transport, 5) == 1);
     assert(transport.tx_len == sizeof(value) + 5);
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 4) == 1);
+        assert(gatt_transport_test_poll(&transport, 4) == 1);
     uint8_t response[4 + BLE_GATT_SERVER_MTU_MAX];
     uint16_t response_len = collect_tx(&link, response);
     assert(response_len == 4 + sizeof(value) + 1);
@@ -709,12 +709,12 @@ int main(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, mtu_req,
                   sizeof(mtu_req), 5);
     while (link.rx_count || transport.l2cap_rx.expected || !transport.tx_len) {
-        int status = gatt_transport_poll(&transport, 10);
+        int status = gatt_transport_test_poll(&transport, 10);
         assert(status >= 0);
         if (transport.tx_len) break;
     }
     while (transport.tx_len)
-        assert(gatt_transport_poll(&transport, 11) == 1);
+        assert(gatt_transport_test_poll(&transport, 11) == 1);
     response_len = collect_tx(&link, response);
     assert(response_len == 7 && response[4] == 0x03);
 
@@ -725,18 +725,18 @@ int main(void) {
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID,
                   unsolicited_read_response, sizeof(unsolicited_read_response),
                   27);
-    assert(gatt_transport_poll(&transport, 12) == 1);
+    assert(gatt_transport_test_poll(&transport, 12) == 1);
     assert(!transport.tx_len && link.tx_count == 0);
 
     // Link loss clears partial PDUs and all per-link GATT state.
     transport.l2cap_rx.expected = 10;
     server.mtu_exchanged = 1;
     link.connected = 0;
-    assert(gatt_transport_poll(&transport, 12) == 0);
+    assert(gatt_transport_test_poll(&transport, 12) == 0);
     assert(!transport.l2cap_rx.expected && !server.mtu_exchanged);
     link.connected = 1;
     server.mtu_exchanged = 1;
-    assert(gatt_transport_poll(&transport, 13) == 0);
+    assert(gatt_transport_test_poll(&transport, 13) == 0);
     assert(!server.mtu_exchanged);
     return 0;
 }

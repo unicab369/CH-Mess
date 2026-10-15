@@ -221,58 +221,6 @@ static uint8_t mesh_gatt_gap_edkm_read(
 }
 #endif
 
-// Bind the generic L2CAP/ATT transport to this application's GAP API. The
-// generic transport itself depends only on the operations supplied here.
-static int mesh_gatt_gap_connected(void *context) {
-    (void)context;
-    return gap_connected();
-}
-
-static int mesh_gatt_gap_receive(
-    void *context, uint8_t *llid,
-                                 uint8_t *data, size_t *len
-) {
-    (void)context;
-    return gap_receive_data(llid, data, len);
-}
-
-static int mesh_gatt_gap_send(
-    void *context, uint8_t llid,
-                              const uint8_t *data, size_t len
-) {
-    (void)context;
-    return gap_send_data(llid, data, len);
-}
-
-static uint16_t mesh_gatt_gap_max_payload(void *context) {
-    (void)context;
-    return gap_data_length_get().tx_octets;
-}
-
-static void mesh_gatt_gap_security_state(
-    void *context, uint8_t *encrypted,
-                                        uint8_t *authenticated
-) {
-    (void)context;
-    if (encrypted) *encrypted = gap_encrypted() != 0;
-    if (authenticated) *authenticated = gap_authenticated() != 0;
-}
-
-static int mesh_gatt_transport_init(
-    ble_gatt_transport *transport,
-                                    ble_gatt_server *server
-) {
-    const ble_gatt_transport_ops ops = {
-        mesh_gatt_gap_connected,
-        mesh_gatt_gap_receive,
-        mesh_gatt_gap_send,
-        mesh_gatt_gap_max_payload,
-        NULL,
-        mesh_gatt_gap_security_state
-    };
-    return gatt_transport_init(transport, server, &ops);
-}
-
 static uint8_t mesh_gatt_proxy_cccd(void) {
     ble_gatt_attribute *cccd = gatt_server_find(&mesh_gatt.server,
         MESH_GATT_HANDLE_DATA_OUT_CCCD);
@@ -460,8 +408,7 @@ static int mesh_gatt_register_services(void) {
             &decl, &value))
         return 0;
 #endif
-    if (!mesh_gatt_transport_init(&mesh_gatt.transport,
-                                  &mesh_gatt.server))
+    if (!gatt_transport_init(&mesh_gatt.transport, &mesh_gatt.server))
         return 0;
     return mesh_gatt.server.next_handle ==
         24 + (MESH_GATT_RPA_ONLY_SUPPORT ? 2 : 0) +
@@ -796,12 +743,15 @@ void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized()) return;
     mesh_gatt_gap_policy_update();
     uint8_t connected = gap_connected() != 0;
+    gatt_transport_set_connected(&mesh_gatt.transport, connected);
+    gatt_transport_set_security(&mesh_gatt.transport,
+        gap_encrypted(), gap_authenticated(), gap_key_size());
     if (!connected) {
         if (mesh_gatt.connected) {
             mesh_gatt_provisioning_link_notify(0);
             mesh_gatt_link_reset();
         }
-        gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
+        (void)gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
         return;
     }
     if (!mesh_gatt.connected) {
@@ -811,7 +761,40 @@ void mesh_gatt_poll(void) {
     }
     if (mesh_gatt_proxy_sar_timeout_poll()) return;
     mesh_gatt_notify_poll();
-    gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
+    uint32_t now_ms = GET_MILLIS();
+
+    if (!mesh_gatt.transport.tx_len) {
+        uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
+        size_t len = sizeof(fragment);
+        int received = gap_receive_data(&llid, fragment, &len);
+        if (received < 0 || (received > 0 &&
+            gatt_transport_receive_fragment(
+                &mesh_gatt.transport, llid, fragment, len) < 0
+        )) {
+            (void)gap_disconnect(0x13);
+            return;
+        }
+    }
+
+    int status = gatt_transport_poll(&mesh_gatt.transport, now_ms);
+    if (status < 0) {
+        (void)gap_disconnect(0x13);
+        return;
+    }
+
+    if (mesh_gatt.transport.tx_len) {
+        uint8_t llid;
+        const uint8_t *fragment;
+        uint16_t len;
+        int ready = gatt_transport_tx_peek(&mesh_gatt.transport,
+            gap_data_length_get().tx_octets, &llid, &fragment, &len);
+        if (ready < 0) {
+            (void)gap_disconnect(0x13);
+        } else if (ready && gap_send_data(llid, fragment, len)) {
+            (void)gatt_transport_tx_sent(&mesh_gatt.transport, len, now_ms);
+        }
+        return;
+    }
 }
 
 #endif

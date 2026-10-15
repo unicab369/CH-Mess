@@ -71,7 +71,7 @@ Items 2–6 are software work; item 7 requires a radio and target firmware.
   configured security for notifications and indications, and reset
   per-connection state on disconnect.
 - [x] Enforce per-attribute minimum LE encryption key sizes; the platform can
-  supply the live key size through the optional transport callback, including
+  supply the live key size through the transport security setter, including
   before notifications and indications are sent.
 - [x] Restore and store CCCD settings through application callbacks for bonded
   peers; non-bonded peers start with the default disabled configuration.
@@ -164,8 +164,8 @@ Items 2–6 are software work; item 7 requires a radio and target firmware.
 
 ### Generic transport and validation
 
-- [x] Carry ATT CID 4 over platform-supplied LE link callbacks, with bounded
-  L2CAP reassembly and fragmentation implemented in `ble_l2cap.h`.
+- [x] Carry ATT CID 4 through explicit LL fragment input/output APIs, with
+  bounded L2CAP reassembly and fragmentation implemented in `ble_l2cap.h`.
 - [x] Allow client-only or server-only transport setups without requiring
   storage for the opposite GATT role.
 - [x] Route both client and server ATT traffic so one connection may use both
@@ -175,10 +175,11 @@ Items 2–6 are software work; item 7 requires a radio and target firmware.
   until an outgoing MTU exchange completes; keep the default MTU when either
   peer advertises an invalid value below 23.
 - [x] Stop ATT traffic after a client transaction or server indication
-  timeout; the transport marks the bearer failed and can notify the platform
-  to terminate the LE connection before another bearer is used.
+  timeout; the transport marks the bearer failed and returns an error so the
+  platform can terminate the LE connection before another bearer is used.
 - [x] Fail the fixed bearer on malformed incoming ATT PDUs rejected by the
-  client or server, and invoke the optional link-termination callback.
+  client or server; the platform handles link termination from the returned
+  error status.
 - [x] Verify common MTU, discovery, read, Write Request/Command, and
   reliable-write behavior against Bumble in both directions, including
   Find By Type Value, long reads/writes, Read By UUID, included-service

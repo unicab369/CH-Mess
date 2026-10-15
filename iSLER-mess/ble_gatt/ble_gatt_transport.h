@@ -1,9 +1,8 @@
 #ifndef BLE_GATT_TRANSPORT_H
 #define BLE_GATT_TRANSPORT_H
 
-// One-link ATT/L2CAP adapter. Create one instance per LE connection and supply
-// its operations from the GAP layer; LL fragments remain owned by that layer.
-// Server and client roles are optional; attach at least one.
+// One-link ATT/L2CAP adapter. Feed received LL fragments in and drain outgoing
+// fragments from the link layer. Server and client roles are optional.
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -41,22 +40,8 @@
 #define BLE_GATT_TRANSPORT_ATT_CID BLE_L2CAP_CID_ATT
 
 // =============================================================================
-// Transport callbacks and state
+// Transport state
 // =============================================================================
-typedef struct {
-    int (*connected)(void *context);
-    // Receive one LL data fragment: LLID 2 starts an L2CAP PDU; LLID 1 continues.
-    int (*receive)(void *context, uint8_t *llid, uint8_t *data, size_t *len);
-    // Queue one LL fragment. Return nonzero when accepted.
-    int (*send)(void *context, uint8_t llid, const uint8_t *data, size_t len);
-    uint16_t (*max_tx_payload)(void *context);
-    void *context;
-    // Optional per-link security snapshot, refreshed before ATT processing.
-    void (*security_state)(void *context, uint8_t *encrypted,
-                           uint8_t *authenticated);
-} ble_gatt_transport_ops;
-
-typedef uint8_t (*ble_gatt_transport_key_size_fn)(void *context);
 typedef struct ble_gatt_transport ble_gatt_transport;
 
 #if BLE_GATT_ENABLE_EATT
@@ -85,13 +70,11 @@ typedef struct {
 #endif
 
 struct ble_gatt_transport {
-    ble_gatt_transport_ops ops;
-    ble_gatt_transport_key_size_fn encryption_key_size;
     ble_gatt_server *server;
     ble_gatt_client *client;
     ble_l2cap_connection l2cap;
-    uint8_t connected, bearer_failed, tx_client_request;
-    void (*terminate_link)(void *context);
+    uint8_t connected, encrypted, authenticated, key_size;
+    uint8_t bearer_failed, tx_client_request;
     ble_l2cap_reassembler l2cap_rx;
     uint16_t tx_len, tx_offset;
     uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
@@ -541,13 +524,6 @@ static inline int gatt_transport_eatt_open(ble_gatt_transport *transport) {
         gatt_eatt_open(&transport->eatt);
 }
 
-// Use when link security is managed outside the transport's security callback.
-static inline void gatt_transport_eatt_set_encrypted(
-    ble_gatt_transport *transport, int encrypted
-) {
-    if (transport && transport->eatt_enabled)
-        gatt_eatt_set_encrypted(&transport->eatt, encrypted);
-}
 #endif
 
 static inline void gatt_transport_sync_mtu_from_server(
@@ -614,15 +590,11 @@ static inline int gatt_transport_receive_att(
 // Initialize the ATT fixed bearer and its shared L2CAP connection.
 static inline int gatt_transport_init(
     ble_gatt_transport *transport,
-    ble_gatt_server *server, const ble_gatt_transport_ops *ops
+    ble_gatt_server *server
 ) {
-    if (!transport || !ops || !ops->connected || !ops->receive ||
-        !ops->send || !ops->max_tx_payload
-    )
-        return 0;
+    if (!transport) return 0;
     memset(transport, 0, sizeof(*transport));
     transport->server = server;
-    transport->ops = *ops;
     if (server && !gatt_server_seal_database(server)) return 0;
     ble_l2cap_ops l2cap_ops = {0};
     l2cap_ops.send_pdu = gatt_transport_send_l2cap_pdu;
@@ -639,6 +611,56 @@ static inline int gatt_transport_init(
         )
     ) return 0;
     return 1;
+}
+
+// Update link state when the owning BLE layer reports a connection change.
+static inline void gatt_transport_set_connected(
+    ble_gatt_transport *transport, int connected
+) {
+    if (!transport) return;
+    connected = connected != 0;
+    if (connected == transport->connected) return;
+    transport->connected = (uint8_t)connected;
+    ble_l2cap_connection_reset(&transport->l2cap, 0);
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled)
+        gatt_eatt_set_encrypted(&transport->eatt, 0);
+#endif
+    ble_l2cap_reassembler_reset(&transport->l2cap_rx);
+    transport->tx_len = transport->tx_offset = 0;
+    transport->bearer_failed = 0;
+    transport->tx_client_request = 0;
+    transport->encrypted = transport->authenticated = transport->key_size = 0;
+    memset(transport->tx, 0, sizeof(transport->tx));
+    if (transport->server) gatt_server_link_reset(transport->server);
+    if (transport->client) gatt_client_reset(transport->client);
+    gatt_transport_sync_mtu_from_server(transport);
+    if (connected && transport->server) {
+        gatt_server_restore_cccds(transport->server);
+        (void)gatt_server_check_database_version(transport->server);
+    }
+}
+
+// Update security state supplied by the owning BLE layer.
+static inline void gatt_transport_set_security(
+    ble_gatt_transport *transport,
+    int encrypted, int authenticated, uint8_t key_size
+) {
+    if (!transport) return;
+    uint8_t encryption_changed = transport->encrypted != (encrypted != 0);
+    transport->encrypted = encrypted != 0;
+    transport->authenticated = authenticated != 0;
+    transport->key_size = transport->encrypted ? key_size : 0;
+    if (transport->server) {
+        gatt_server_set_security(transport->server,
+            transport->encrypted, transport->authenticated);
+        gatt_server_set_encryption_key_size(transport->server,
+                                            transport->key_size);
+    }
+#if BLE_GATT_ENABLE_EATT
+    if (transport->eatt_enabled && encryption_changed)
+        gatt_eatt_set_encrypted(&transport->eatt, transport->encrypted);
+#endif
 }
 
 // =============================================================================
@@ -754,22 +776,12 @@ static inline void gatt_transport_eatt_poll_tx(
 // =============================================================================
 // ATT request timeout and receive handling
 // =============================================================================
-// Called when ATT requires this bearer to stop after a transaction timeout.
-// On LE fixed ATT, the platform should terminate the connection.
-static inline void gatt_transport_set_terminate_callback(
-    ble_gatt_transport *transport, void (*terminate_link)(void *context)
-) {
-    if (transport) transport->terminate_link = terminate_link;
-}
-
 static inline int gatt_transport_fail_bearer(
     ble_gatt_transport *transport
 ) {
     if (!transport->bearer_failed) {
         transport->bearer_failed = 1;
         if (transport->client) transport->client->bearer_failed = 1;
-        if (transport->terminate_link)
-            transport->terminate_link(transport->ops.context);
     }
 
     return -1;
@@ -793,42 +805,69 @@ static inline int gatt_transport_client_poll(
     return 1;
 }
 
-// Optional platform hook returning the current LE encryption key size in
-// octets. Supply this when any registered attribute has a minimum key size.
-static inline void gatt_transport_set_key_size_callback(
-    ble_gatt_transport *transport, ble_gatt_transport_key_size_fn callback
+// Feed one received LL fragment. Return 1 when it completes an L2CAP PDU.
+static inline int gatt_transport_receive_fragment(
+    ble_gatt_transport *transport, uint8_t llid,
+    const uint8_t *fragment, size_t len
 ) {
-    if (transport) transport->encryption_key_size = callback;
-}
-
-// Consume one LL fragment; return 1 when one complete ATT PDU was dispatched.
-static inline int gatt_transport_receive(ble_gatt_transport *transport) {
-    uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
-    size_t len = sizeof(fragment);
-    int result = transport->ops.receive(
-        transport->ops.context, &llid, fragment, &len
-    );
-    if (result <= 0) return result;
-    if (!len || len > sizeof(fragment) || (llid != 1 && llid != 2)) {
+    if (!transport || !transport->connected) return 0;
+    if (!fragment || !len || len > BLE_GATT_TRANSPORT_LL_MAX ||
+        (llid != 1 && llid != 2)
+    ) {
         ble_l2cap_reassembler_reset(&transport->l2cap_rx);
         return 0;
     }
-
+    if (transport->bearer_failed) return -1;
     uint16_t cid = 0, att_len = 0;
     const uint8_t *att = NULL;
     int complete = ble_l2cap_reassembler_feed(
         &transport->l2cap_rx, llid, fragment, len, &cid, &att, &att_len
     );
     if (complete <= 0) return complete;
-    return ble_l2cap_connection_receive(
+    int result = ble_l2cap_connection_receive(
         &transport->l2cap, cid, att, att_len
     );
+    return result < 0 ? gatt_transport_fail_bearer(transport) : result;
 }
 
-// Service at most one LL fragment per call. Call repeatedly from the link
-// event loop; `now_ms` is a monotonic millisecond tick for transaction
-// timeouts. Returns -1 after an ATT timeout; install the terminate callback
-// so the platform closes the LE connection and establishes a fresh bearer.
+// Return the next LL fragment without consuming it. Call tx_sent only after
+// the link layer accepts the fragment.
+static inline int gatt_transport_tx_peek(
+    ble_gatt_transport *transport, uint16_t max_payload,
+    uint8_t *llid, const uint8_t **fragment, uint16_t *len
+) {
+    if (!transport || !llid || !fragment || !len) return -1;
+    if (!transport->connected || !transport->tx_len) return 0;
+    if (max_payload < 4 || max_payload > BLE_GATT_TRANSPORT_LL_MAX)
+        return -1;
+    uint16_t remaining = transport->tx_len - transport->tx_offset;
+    *llid = transport->tx_offset ? 1 : 2;
+    *fragment = transport->tx + transport->tx_offset;
+    *len = remaining < max_payload ? remaining : max_payload;
+    return 1;
+}
+
+static inline int gatt_transport_tx_sent(
+    ble_gatt_transport *transport, uint16_t len, uint32_t now_ms
+) {
+    if (!transport || !len || !transport->tx_len ||
+        len > transport->tx_len - transport->tx_offset
+    ) return 0;
+    transport->tx_offset += len;
+    if (transport->tx_offset == transport->tx_len) {
+        transport->tx_len = transport->tx_offset = 0;
+        if (transport->tx_client_request && transport->client &&
+            transport->client->request.pending
+        )
+            transport->client->deadline_ms = now_ms +
+                BLE_GATT_CLIENT_TIMEOUT_MS;
+        transport->tx_client_request = 0;
+    }
+    return 1;
+}
+
+// Service timers and queue outgoing work. A negative result means the link
+// layer should close the connection.
 static inline int gatt_transport_poll(
     ble_gatt_transport *transport, uint32_t now_ms
 ) {
@@ -839,49 +878,9 @@ static inline int gatt_transport_poll(
 #else
     if (!transport->server && !transport->client) return -1;
 #endif
-    uint8_t connected = transport->ops.connected(transport->ops.context) != 0;
-    if (connected != transport->connected) {
-        transport->connected = connected;
-        ble_l2cap_connection_reset(&transport->l2cap, 0);
-#if BLE_GATT_ENABLE_EATT
-        if (transport->eatt_enabled)
-            gatt_eatt_set_encrypted(&transport->eatt, 0);
-#endif
-        ble_l2cap_reassembler_reset(&transport->l2cap_rx);
-        transport->tx_len = transport->tx_offset = 0;
-        transport->bearer_failed = 0;
-        transport->tx_client_request = 0;
-        memset(transport->tx, 0, sizeof(transport->tx));
-        if (transport->server)
-            gatt_server_link_reset(transport->server);
-        if (transport->client) gatt_client_reset(transport->client);
-        gatt_transport_sync_mtu_from_server(transport);
-        if (connected && transport->server) {
-            gatt_server_restore_cccds(transport->server);
-            (void)gatt_server_check_database_version(transport->server);
-        }
-    }
-
-    if (!connected) return 0;
+    if (!transport->connected) return 0;
     if (transport->bearer_failed) return -1;
     (void)ble_l2cap_connection_tick(&transport->l2cap, now_ms);
-    if (transport->ops.security_state) {
-        uint8_t encrypted = 0, authenticated = 0;
-        transport->ops.security_state(transport->ops.context, &encrypted,
-                                      &authenticated);
-        if (transport->server)
-            gatt_server_set_security(transport->server, encrypted,
-                                         authenticated);
-#if BLE_GATT_ENABLE_EATT
-        if (transport->eatt_enabled)
-            gatt_eatt_set_encrypted(&transport->eatt, encrypted);
-#endif
-    }
-
-    if (transport->server && transport->encryption_key_size)
-        gatt_server_set_encryption_key_size(transport->server,
-            transport->server->encrypted ? transport->encryption_key_size(
-                transport->ops.context) : 0);
 
 #if BLE_GATT_ENABLE_EATT
     gatt_transport_eatt_poll_tx(transport);
@@ -908,27 +907,7 @@ static inline int gatt_transport_poll(
 #endif
     }
 
-    if (transport->tx_len) {
-        uint16_t max_len = transport->ops.max_tx_payload(transport->ops.context);
-        if (max_len < 4 || max_len > BLE_GATT_TRANSPORT_LL_MAX) return -1;
-        uint16_t remaining = transport->tx_len - transport->tx_offset;
-        uint16_t chunk = remaining < max_len ? remaining : max_len;
-        uint8_t llid = transport->tx_offset ? 1 : 2;
-        if (!transport->ops.send(transport->ops.context, llid,
-            transport->tx + transport->tx_offset, chunk))
-            return 0;
-        transport->tx_offset += chunk;
-        if (transport->tx_offset == transport->tx_len) {
-            transport->tx_len = transport->tx_offset = 0;
-            if (transport->tx_client_request && transport->client &&
-                transport->client->request.pending)
-                transport->client->deadline_ms = now_ms +
-                    BLE_GATT_CLIENT_TIMEOUT_MS;
-            transport->tx_client_request = 0;
-        }
-
-        return 1;
-    }
+    if (transport->tx_len) return 1;
 
     if (transport->client) transport->client->now_ms = now_ms;
 #if BLE_GATT_ENABLE_EATT
@@ -940,9 +919,6 @@ static inline int gatt_transport_poll(
             bearer->client.now_ms = now_ms;
         }
 #endif
-    int received = gatt_transport_receive(transport);
-    if (received < 0) return gatt_transport_fail_bearer(transport);
-    if (transport->tx_len) return 1;
 #if BLE_GATT_ENABLE_EATT
     if (transport->eatt_enabled)
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
@@ -1010,7 +986,7 @@ static inline int gatt_transport_poll(
     }
     if (eatt_event_result == 1) {
         gatt_transport_eatt_poll_tx(transport);
-        return received;
+        return 0;
     }
 
 #endif
@@ -1025,7 +1001,7 @@ static inline int gatt_transport_poll(
             transport, BLE_GATT_TRANSPORT_ATT_CID, event, event_len
         );
     if (event_result < 0) return gatt_transport_fail_bearer(transport);
-    return received;
+    return 0;
 }
 
 #endif
