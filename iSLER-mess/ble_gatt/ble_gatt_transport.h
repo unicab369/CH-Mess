@@ -158,32 +158,6 @@ static inline int gatt_transport_send_l2cap_pdu(
 // =============================================================================
 // EATT bearer state and callbacks
 // =============================================================================
-static inline void gatt_transport_server_state_capture(
-    const ble_gatt_server *server,
-    ble_gatt_transport_server_bearer *state
-) {
-    *state = server->bearer;
-}
-
-static inline void gatt_transport_server_state_load(
-    ble_gatt_server *server,
-    const ble_gatt_transport_server_bearer *state
-) {
-    server->bearer = *state;
-}
-
-// Resolve a per-CID transport bearer.
-static inline ble_gatt_transport_eatt_context *
-gatt_transport_eatt_context_for(
-    ble_gatt_transport *transport, uint16_t cid
-) {
-    if (!transport || !cid) return NULL;
-    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
-        if (transport->eatt_contexts[i].cid == cid)
-            return &transport->eatt_contexts[i];
-    return NULL;
-}
-
 // Send immediately when possible; otherwise queue one complete ATT PDU.
 static inline int gatt_transport_eatt_queue_pdu(
     ble_gatt_transport_eatt_context *bearer,
@@ -297,63 +271,6 @@ static inline int gatt_transport_eatt_client_sign(
 
 static inline void gatt_transport_eatt_client_init(
     ble_gatt_transport *transport,
-    ble_gatt_transport_eatt_context *bearer);
-
-static inline void gatt_transport_eatt_context_opened(
-    ble_gatt_transport *transport, uint16_t cid, uint16_t mtu
-) {
-    int slot = -1;
-    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
-        if (transport->eatt_contexts[i].cid == cid) {
-            slot = i;
-            break;
-        }
-    }
-    if (slot < 0) {
-        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
-            if (!transport->eatt_contexts[i].cid) {
-                slot = i;
-                break;
-            }
-        }
-    }
-
-    if (slot < 0) return;
-    ble_gatt_transport_eatt_context *bearer =
-        &transport->eatt_contexts[slot];
-    memset(bearer, 0, sizeof(*bearer));
-    bearer->transport = transport;
-    bearer->cid = cid;
-    if (transport->server) {
-        bearer->server.mtu = 23;
-        bearer->server.local_mtu = transport->server->local_mtu < mtu ?
-            transport->server->local_mtu : mtu;
-    }
-
-    gatt_transport_eatt_client_init(transport, bearer);
-}
-
-static inline void gatt_transport_eatt_context_close(
-    ble_gatt_transport *transport, uint16_t cid
-) {
-    ble_gatt_transport_eatt_context *bearer =
-        gatt_transport_eatt_context_for(transport, cid);
-    if (!bearer) return;
-    if (transport->server) {
-        ble_gatt_transport_server_bearer active;
-        gatt_transport_server_state_capture(transport->server, &active);
-        gatt_transport_server_state_load(transport->server,
-                                         &bearer->server);
-        gatt_server_prepare_cancel_all(transport->server, 0);
-        gatt_transport_server_state_load(transport->server, &active);
-    }
-
-    if (bearer->client_enabled) gatt_client_reset(&bearer->client);
-    memset(bearer, 0, sizeof(*bearer));
-}
-
-static inline void gatt_transport_eatt_client_init(
-    ble_gatt_transport *transport,
     ble_gatt_transport_eatt_context *bearer
 ) {
     if (!transport || !bearer ||
@@ -421,9 +338,14 @@ static inline int gatt_transport_eatt_receive_att(
     const uint8_t *pdu, uint16_t len
 ) {
     ble_gatt_transport *transport = context;
-    ble_gatt_transport_eatt_context *bearer =
-        gatt_transport_eatt_context_for(transport, cid);
-    if (!transport || !bearer || !pdu || !len) return -1;
+    if (!transport || !cid || !pdu || !len) return -1;
+    ble_gatt_transport_eatt_context *bearer = NULL;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        if (transport->eatt_contexts[i].cid == cid) {
+            bearer = &transport->eatt_contexts[i];
+            break;
+        }
+    if (!bearer) return -1;
     if (gatt_transport_is_client_pdu(pdu[0])) {
         if (bearer->client_enabled) {
             uint8_t mtu_response = pdu[0] == 0x03 &&
@@ -453,9 +375,8 @@ static inline int gatt_transport_eatt_receive_att(
             bearer->client.request.opcode == 0x02;
         uint16_t previous_mtu = bearer->server.mtu;
         ble_gatt_transport_server_bearer active;
-        gatt_transport_server_state_capture(transport->server, &active);
-        gatt_transport_server_state_load(transport->server,
-                                         &bearer->server);
+        active = transport->server->bearer;
+        transport->server->bearer = bearer->server;
         int result = gatt_server_att(transport->server, pdu, len,
             response, sizeof(response), &response_len);
         if (mtu_request && result > 0 && response[0] == 0x03) {
@@ -467,9 +388,8 @@ static inline int gatt_transport_eatt_receive_att(
             }
         }
 
-        gatt_transport_server_state_capture(transport->server,
-                                            &bearer->server);
-        gatt_transport_server_state_load(transport->server, &active);
+        bearer->server = transport->server->bearer;
+        transport->server->bearer = active;
         if (result < 0) return result;
         if (result > 0 && !gatt_transport_eatt_queue_pdu(
                 bearer, response, response_len))
@@ -508,10 +428,36 @@ static inline void gatt_transport_channel_opened(
     uint16_t mtu = local_mtu;
     if (slot >= 0 && transport->l2cap.channels[slot].remote_mtu < mtu)
         mtu = transport->l2cap.channels[slot].remote_mtu;
-    if (gatt_eatt_channel_opened(
+    if (!gatt_eatt_channel_opened(
             &transport->eatt, local_cid, mtu, transport->eatt.encrypted, 1
         ))
-        gatt_transport_eatt_context_opened(transport, local_cid, mtu);
+        return;
+
+    int bearer_slot = -1;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        if (transport->eatt_contexts[i].cid == local_cid) {
+            bearer_slot = i;
+            break;
+        }
+    if (bearer_slot < 0)
+        for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+            if (!transport->eatt_contexts[i].cid) {
+                bearer_slot = i;
+                break;
+            }
+    if (bearer_slot < 0) return;
+
+    ble_gatt_transport_eatt_context *bearer =
+        &transport->eatt_contexts[bearer_slot];
+    memset(bearer, 0, sizeof(*bearer));
+    bearer->transport = transport;
+    bearer->cid = local_cid;
+    if (transport->server) {
+        bearer->server.mtu = 23;
+        bearer->server.local_mtu = transport->server->local_mtu < mtu ?
+            transport->server->local_mtu : mtu;
+    }
+    gatt_transport_eatt_client_init(transport, bearer);
 }
 
 static inline void gatt_transport_channel_closed(
@@ -521,7 +467,24 @@ static inline void gatt_transport_channel_closed(
     ble_gatt_transport *transport = context;
     (void)remote_cid;
     if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM) {
-        gatt_transport_eatt_context_close(transport, local_cid);
+        if (local_cid) {
+            for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+                ble_gatt_transport_eatt_context *bearer =
+                    &transport->eatt_contexts[i];
+                if (bearer->cid != local_cid) continue;
+                if (transport->server) {
+                    ble_gatt_transport_server_bearer active;
+                    active = transport->server->bearer;
+                    transport->server->bearer = bearer->server;
+                    gatt_server_prepare_cancel_all(transport->server, 0);
+                    transport->server->bearer = active;
+                }
+                if (bearer->client_enabled)
+                    gatt_client_reset(&bearer->client);
+                memset(bearer, 0, sizeof(*bearer));
+                break;
+            }
+        }
         gatt_eatt_channel_closed(&transport->eatt, local_cid, reason);
     }
 }
@@ -728,8 +691,13 @@ static inline void gatt_transport_set_client(
 static inline ble_gatt_client *gatt_transport_eatt_client_get(
     ble_gatt_transport *transport, uint16_t cid
 ) {
-    ble_gatt_transport_eatt_context *bearer =
-        gatt_transport_eatt_context_for(transport, cid);
+    if (!transport || !cid) return NULL;
+    ble_gatt_transport_eatt_context *bearer = NULL;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        if (transport->eatt_contexts[i].cid == cid) {
+            bearer = &transport->eatt_contexts[i];
+            break;
+        }
     return bearer && bearer->client_enabled ? &bearer->client : NULL;
 }
 
@@ -781,54 +749,6 @@ static inline void gatt_transport_eatt_poll_tx(
     }
 }
 
-static inline int gatt_transport_eatt_poll_server_event(
-    ble_gatt_transport *transport, uint32_t now_ms
-) {
-    if (!transport || !transport->server || !transport->eatt_enabled) return 0;
-    uint8_t start = transport->eatt_event_cursor;
-    for (uint8_t n = 0; n < BLE_GATT_EATT_MAX_BEARERS; n++) {
-        uint8_t i = (uint8_t)((start + n) %
-            BLE_GATT_EATT_MAX_BEARERS);
-        ble_gatt_transport_eatt_context *bearer =
-            &transport->eatt_contexts[i];
-        if (!bearer->cid) continue;
-        int slot = gatt_eatt_find(&transport->eatt, bearer->cid);
-        if (slot < 0) continue;
-        int channel_slot = ble_l2cap_channel_find_local(&transport->l2cap,
-                                                        bearer->cid);
-        if (channel_slot < 0) continue;
-        if (transport->server->event_count &&
-            bearer->tx_count >= BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE &&
-            !bearer->server.indication_pending
-        ) continue;
-        uint8_t att[BLE_GATT_EATT_MTU_MAX];
-        uint16_t att_len = 0;
-        ble_gatt_transport_server_bearer active;
-        gatt_transport_server_state_capture(transport->server, &active);
-        gatt_transport_server_state_load(transport->server,
-                                         &bearer->server);
-        int result = gatt_server_poll_event(transport->server, now_ms,
-            att, sizeof(att), &att_len);
-        gatt_transport_server_state_capture(transport->server,
-                                            &bearer->server);
-        gatt_transport_server_state_load(transport->server, &active);
-        transport->eatt_event_cursor = (uint8_t)((i + 1) %
-            BLE_GATT_EATT_MAX_BEARERS);
-        if (result < 0) {
-            (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
-            return -1;
-        }
-
-        if (result == 1 && !gatt_transport_eatt_queue_pdu(
-                bearer, att, att_len)) {
-            (void)ble_l2cap_channel_close(&transport->l2cap, bearer->cid);
-            return -1;
-        }
-
-        if (result == 1) return 1;
-    }
-    return 0;
-}
 #endif
 
 // =============================================================================
@@ -1039,8 +959,55 @@ static inline int gatt_transport_poll(
     uint8_t event[BLE_GATT_TRANSPORT_MTU_MAX];
     uint16_t event_len = 0;
 #if BLE_GATT_ENABLE_EATT
-    int eatt_event_result = transport->eatt_enabled ?
-        gatt_transport_eatt_poll_server_event(transport, now_ms) : 0;
+    int eatt_event_result = 0;
+    if (transport->eatt_enabled && transport->server) {
+        uint8_t start = transport->eatt_event_cursor;
+        for (uint8_t n = 0; n < BLE_GATT_EATT_MAX_BEARERS; n++) {
+            uint8_t i = (uint8_t)((start + n) %
+                BLE_GATT_EATT_MAX_BEARERS);
+            ble_gatt_transport_eatt_context *bearer =
+                &transport->eatt_contexts[i];
+            if (!bearer->cid) continue;
+            int slot = gatt_eatt_find(&transport->eatt, bearer->cid);
+            if (slot < 0) continue;
+            int channel_slot = ble_l2cap_channel_find_local(
+                &transport->l2cap, bearer->cid);
+            if (channel_slot < 0) continue;
+            if (transport->server->event_count &&
+                bearer->tx_count >= BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE &&
+                !bearer->server.indication_pending
+            ) continue;
+
+            uint8_t att[BLE_GATT_EATT_MTU_MAX];
+            uint16_t att_len = 0;
+            ble_gatt_transport_server_bearer active =
+                transport->server->bearer;
+            transport->server->bearer = bearer->server;
+            int result = gatt_server_poll_event(transport->server, now_ms,
+                att, sizeof(att), &att_len);
+            bearer->server = transport->server->bearer;
+            transport->server->bearer = active;
+            transport->eatt_event_cursor = (uint8_t)((i + 1) %
+                BLE_GATT_EATT_MAX_BEARERS);
+            if (result < 0) {
+                (void)ble_l2cap_channel_close(&transport->l2cap,
+                                              bearer->cid);
+                eatt_event_result = -1;
+                break;
+            }
+            if (result == 1 && !gatt_transport_eatt_queue_pdu(
+                    bearer, att, att_len)) {
+                (void)ble_l2cap_channel_close(&transport->l2cap,
+                                              bearer->cid);
+                eatt_event_result = -1;
+                break;
+            }
+            if (result == 1) {
+                eatt_event_result = 1;
+                break;
+            }
+        }
+    }
     if (eatt_event_result == 1) {
         gatt_transport_eatt_poll_tx(transport);
         return received;

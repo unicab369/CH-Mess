@@ -289,7 +289,7 @@ int main(void) {
     const uint8_t indication_value[] = {0x5a};
     assert(gatt_server_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
-    assert(gatt_transport_eatt_poll_server_event(&transport, 100) == 1);
+    assert(gatt_transport_poll(&transport, 100) == 0);
     assert(channel->tx_len == sizeof(indication_value) + 3 &&
            channel->tx_data[0] == 0x1d &&
            transport.eatt_contexts[bearer_slot].server.indication_pending);
@@ -297,7 +297,7 @@ int main(void) {
     assert(gatt_server_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)bearer_slot;
-    assert(gatt_transport_eatt_poll_server_event(&transport, 101) == 1);
+    assert(gatt_transport_poll(&transport, 101) == 0);
     int second_channel_slot = ble_l2cap_channel_find_local(&transport.l2cap,
                                                            second->local_cid);
     assert(second_channel_slot >= 0 &&
@@ -319,10 +319,10 @@ int main(void) {
     assert(gatt_server_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)second_bearer_slot;
-    assert(gatt_transport_eatt_poll_server_event(&transport, 200) == 1);
-    assert(gatt_transport_eatt_poll_server_event(&transport, 201) == 0);
-    assert(gatt_transport_eatt_poll_server_event(&transport,
-        201 + BLE_GATT_SERVER_INDICATION_TIMEOUT_MS) == -1);
+    assert(gatt_transport_poll(&transport, 200) == 0);
+    assert(gatt_transport_poll(&transport, 201) == 0);
+    assert(gatt_transport_poll(&transport,
+        201 + BLE_GATT_SERVER_INDICATION_TIMEOUT_MS) == 0);
     transport.tx_len = transport.tx_offset = 0;
     assert(second_channel_slot >= 0 &&
            transport.l2cap.channels[second_channel_slot].state ==
