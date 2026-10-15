@@ -624,13 +624,16 @@ static uint8_t gap_own_address_type;
 static uint8_t gap_random_address[6];
 static uint8_t gap_identity_address_type, gap_identity_address[6];
 static struct {
-    uint8_t used, address_type, address[6];
+    uint8_t used;
+    gap_peer_address peer;
 } gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
 // Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
 // Addresses use PDU byte order; IRKs use standard AES byte order.
 typedef struct {
-    uint8_t used, address_type, address[6], irk[16];
+    uint8_t used;
+    gap_peer_address peer;
+    uint8_t irk[16];
     uint8_t privacy_mode, has_irk;
     uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
 } gap_identity;
@@ -660,8 +663,8 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (!gap_identities[i].used) continue;
 
-        if (address_type == gap_identities[i].address_type &&
-            memcmp(address, gap_identities[i].address, 6) == 0
+        if (address_type == gap_identities[i].peer.type &&
+            memcmp(address, gap_identities[i].peer.address, 6) == 0
         ) return i;
 
         if (address_type == 1 && (address[5] & 0xc0) == 0x40) {
@@ -702,14 +705,14 @@ static int gap_accept_list_match(
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!gap_accept_list[i].used) continue;
 
-        if (gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0
+        if (gap_accept_list[i].peer.type == address_type &&
+            memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
-        if (!identity || identity->address_type != gap_accept_list[i].address_type)
+        if (!identity || identity->peer.type != gap_accept_list[i].peer.type)
             continue;
 
-        if (memcmp(identity->address, gap_accept_list[i].address, 6) == 0)
+        if (memcmp(identity->peer.address, gap_accept_list[i].peer.address, 6) == 0)
             return 1;
     }
 
@@ -730,8 +733,8 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
-            gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0
+            gap_accept_list[i].peer.type == address_type &&
+            memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
         if (!gap_accept_list[i].used && free_slot < 0)
@@ -740,8 +743,8 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 
     if (free_slot < 0) return 0;
     gap_accept_list[free_slot].used = 1;
-    gap_accept_list[free_slot].address_type = address_type;
-    memcpy(gap_accept_list[free_slot].address, address, 6);
+    gap_accept_list[free_slot].peer.type = address_type;
+    memcpy(gap_accept_list[free_slot].peer.address, address, 6);
     return 1;
 }
 
@@ -757,8 +760,8 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
-            gap_accept_list[i].address_type == address_type &&
-            memcmp(gap_accept_list[i].address, address, 6) == 0
+            gap_accept_list[i].peer.type == address_type &&
+            memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) {
             memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
             return 1;
@@ -788,8 +791,8 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 
     return !identity->has_irk ||
         identity->privacy_mode == GAP_PRIVACY_DEVICE ||
-        type != identity->address_type ||
-        memcmp(address, identity->address, 6) != 0;
+        type != identity->peer.type ||
+        memcmp(address, identity->peer.address, 6) != 0;
 }
 
 // Application facing
@@ -808,8 +811,8 @@ int gap_identity_set(
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].address_type == address_type &&
-            memcmp(gap_identities[i].address, address, 6) == 0
+            gap_identities[i].peer.type == address_type &&
+            memcmp(gap_identities[i].peer.address, address, 6) == 0
         ) {
             if (!irk) {
                 memset(&gap_identities[i], 0, sizeof(gap_identities[i]));
@@ -832,8 +835,8 @@ int gap_identity_set(
     for (uint8_t i = 0; i < 16; i++)
         if (irk[i]) gap_identities[slot].has_irk = 1;
 
-    gap_identities[slot].address_type = address_type;
-    memcpy(gap_identities[slot].address, address, 6);
+    gap_identities[slot].peer.type = address_type;
+    memcpy(gap_identities[slot].peer.address, address, 6);
     memcpy(gap_identities[slot].irk, irk, 16);
     return 1;
 }
@@ -852,8 +855,8 @@ int gap_identity_privacy(
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].address_type == address_type &&
-            memcmp(gap_identities[i].address, address, 6) == 0
+            gap_identities[i].peer.type == address_type &&
+            memcmp(gap_identities[i].peer.address, address, 6) == 0
         ) {
             gap_identities[i].privacy_mode = mode;
             return 1;
@@ -873,8 +876,8 @@ int gap_resolve(
 
     int slot = gap_identity_find(address, address_type);
     if (slot < 0) return 0;
-    memcpy(identity, gap_identities[slot].address, 6);
-    *identity_type = gap_identities[slot].address_type;
+    memcpy(identity, gap_identities[slot].peer.address, 6);
+    *identity_type = gap_identities[slot].peer.type;
     return 1;
 }
 
@@ -926,8 +929,8 @@ int gap_identity_local_key(
     int slot = gap_identity_find(address, address_type);
     if (slot < 0) return 0;
     gap_identity *identity = &gap_identities[slot];
-    if (identity->address_type != address_type ||
-        memcmp(address, identity->address, 6) != 0) return 0;
+    if (identity->peer.type != address_type ||
+        memcmp(address, identity->peer.address, 6) != 0) return 0;
 
     uint8_t key_bits = 0, local[6] = {0};
     if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)

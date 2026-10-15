@@ -711,8 +711,8 @@ void gap_hw_received(void) {
             conn->link.peer_sca_ppm = 500; // conservative until clock data exists
 
             if (peer_slot >= 0) {
-                conn->peer.type = gap_identities[peer_slot].address_type;
-                memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
+                conn->peer.type = gap_identities[peer_slot].peer.type;
+                memcpy(conn->peer.address, gap_identities[peer_slot].peer.address, 6);
             }
             else if (gap_central.mode != GAP_CONN_MODE_DIRECT
             ) {
@@ -904,8 +904,8 @@ static void gap_conn_poll(void) {
             int peer_slot = gap_identity_find(conn->initiator.address,
                                               conn->initiator.type);
             if (peer_slot >= 0) {
-                conn->peer.type = gap_identities[peer_slot].address_type;
-                memcpy(conn->peer.address, gap_identities[peer_slot].address, 6);
+                conn->peer.type = gap_identities[peer_slot].peer.type;
+                memcpy(conn->peer.address, gap_identities[peer_slot].peer.address, 6);
             }
         }
 

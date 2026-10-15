@@ -769,9 +769,9 @@ static void gap_ext_report_queue(
     }
 
     uint8_t identity_type = identity_slot >= 0 ?
-                gap_identities[identity_slot].address_type : identity->addr.address_type;
+                gap_identities[identity_slot].peer.type : identity->addr.address_type;
     const uint8_t *identity_address = identity_slot >= 0 ?
-                gap_identities[identity_slot].address : identity->addr.address;
+                gap_identities[identity_slot].peer.address : identity->addr.address;
     uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
 
     for (uint16_t i = 0; i < data_len; i++)
@@ -1082,8 +1082,8 @@ static int gap_sync_info_accept(
             ((gap_syncs[i].address_type == fields->identity.address_type &&
               !memcmp(gap_syncs[i].address, fields->identity.address, 6)) ||
              (identity_slot >= 0 && gap_syncs[i].address_type ==
-                  gap_identities[identity_slot].address_type &&
-              !memcmp(gap_syncs[i].address, gap_identities[identity_slot].address, 6)))) {
+                  gap_identities[identity_slot].peer.type &&
+              !memcmp(gap_syncs[i].address, gap_identities[identity_slot].peer.address, 6)))) {
             slot = i;
             break;
         }
@@ -1505,9 +1505,9 @@ static int gap_periodic_connect_exchange(
     conn->link_state.central_anchor_set = 0;
     conn->link.peer_sca_ppm = 500;
     if (peer_slot >= 0) {
-        conn->peer.type = gap_identities[peer_slot].address_type;
+        conn->peer.type = gap_identities[peer_slot].peer.type;
         memcpy(conn->peer.address,
-               gap_identities[peer_slot].address, 6);
+               gap_identities[peer_slot].peer.address, 6);
     } else {
         conn->peer.type = peer_type;
         memcpy(conn->peer.address, peer_address, 6);
