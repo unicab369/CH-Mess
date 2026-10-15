@@ -20,42 +20,49 @@ typedef struct {
 
 #define AES ((AES_Type *) AES_BASE)
 
-void doAES(uint32_t * key, uint32_t * in, uint32_t * out, uint8_t enc) {
+void doAES(const uint8_t *key, const uint8_t *in, uint8_t *out, uint8_t enc) {
+	uint32_t word;
+
 	// Serialize shared AES hardware against GAP address resolution in the RX ISR.
 	uint32_t irq_state = __get_MSTATUS();
 	__disable_irq();
 	AES->CFG = 0x100; // Don't know what it does, maybe enables the peripheral or clock for it
 	AES->CFG = enc?0:2; // Type of operation
-	AES->key[0] = key[0];
-	AES->key[1] = key[1];
-	AES->key[2] = key[2];
-	AES->key[3] = key[3];
-	AES->data[0] = in[0];
-	AES->data[1] = in[1];
-	AES->data[2] = in[2];
-	AES->data[3] = in[3];
+	memcpy(&word, key, sizeof(word));
+	AES->key[0] = word;
+	memcpy(&word, key + 4, sizeof(word));
+	AES->key[1] = word;
+	memcpy(&word, key + 8, sizeof(word));
+	AES->key[2] = word;
+	memcpy(&word, key + 12, sizeof(word));
+	AES->key[3] = word;
+	memcpy(&word, in, sizeof(word));
+	AES->data[0] = word;
+	memcpy(&word, in + 4, sizeof(word));
+	AES->data[1] = word;
+	memcpy(&word, in + 8, sizeof(word));
+	AES->data[2] = word;
+	memcpy(&word, in + 12, sizeof(word));
+	AES->data[3] = word;
 	// AES->STA &= 0xfffffffd;
 	// AES->STA |= 1;
 	AES->CFG |= 1; // Start process
 
 	while(AES->CFG & 1); // Wait for it to finish
 
-	out[0] = AES->data[0];
-	out[1] = AES->data[1];
-	out[2] = AES->data[2];
-	out[3] = AES->data[3];
+	word = AES->data[0];
+	memcpy(out, &word, sizeof(word));
+	word = AES->data[1];
+	memcpy(out + 4, &word, sizeof(word));
+	word = AES->data[2];
+	memcpy(out + 8, &word, sizeof(word));
+	word = AES->data[3];
+	memcpy(out + 12, &word, sizeof(word));
 	__set_MSTATUS(irq_state);
 }
 
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out) {
-      uint32_t key_words[4];
-      uint32_t input_words[4];
-      uint32_t output_words[4];
-
-      memcpy(key_words, key, 16);
-      memcpy(input_words, in, 16);
-      doAES(key_words, input_words, output_words, 1);
-      memcpy(out, output_words, 16);
+      doAES(key, in, out, 1);
 }
 
 
