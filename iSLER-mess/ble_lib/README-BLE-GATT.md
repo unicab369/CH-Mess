@@ -3,8 +3,8 @@
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
-`ble_gatt_services.h` provides reusable Bluetooth SIG services, starting with
-the Battery Service.
+`ble_gatt_services.h` provides reusable Bluetooth SIG Battery and Device
+Information Service builders.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
@@ -22,8 +22,54 @@ fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
 
 The Battery Service helper adds a read-only Battery Level characteristic.
-Keep its `ble_gatt_battery_service` state alive while the server may read it,
-and update the percentage with `gatt_battery_service_set_level()`.
+Keep one `ble_gatt_battery_service` state alive per server/connection while
+the server may read it, and update the percentage with
+`gatt_battery_service_set_level()`.
+
+`gatt_device_information_service_add()` adds the standard Device Information
+Service with optional manufacturer, model, serial, hardware, firmware, and
+software strings, plus optional System ID and PnP ID values. The helper copies
+provided values into the server database, so the input strings and IDs can be
+temporary during registration. Keep one handle-state object per server.
+
+## GAP connection integration
+
+`ble_gap_gatt.h` polls the fixed ATT bearer for each configured GAP link. Give
+each connection slot its own server, transport, client (when used), and service
+state. Register services before binding because transport initialization seals
+the server database. This adapter reads GAP fragments directly, so do not also
+poll `ble_gap_l2cap` for the same links.
+
+```c
+#include "ble_gatt_services.h"
+#include "ble_gap_gatt.h"
+
+static ble_gap_gatt gatt_links;
+static ble_gatt_server servers[GAP_CONNECTION_COUNT];
+static ble_gatt_transport transports[GAP_CONNECTION_COUNT];
+static ble_gatt_battery_service batteries[GAP_CONNECTION_COUNT];
+
+static int gatt_services_init(void) {
+    ble_gap_gatt_init(&gatt_links);
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
+        gatt_server_init(&servers[slot], 23);
+        if (!gatt_battery_service_add(&servers[slot], &batteries[slot], 100) ||
+            !ble_gap_gatt_bind_slot(&gatt_links, slot, &transports[slot],
+                                    &servers[slot], NULL))
+            return 0;
+    }
+    return 1;
+}
+
+// Call from the application's main loop after GAP polling.
+(void)ble_gap_gatt_poll(&gatt_links);
+```
+
+The manager selects each live GAP handle while moving received LL fragments,
+updating transport security, and sending queued ATT traffic. Per-connection
+server state keeps CCCDs, MTU, prepared writes, and indications isolated.
+Applications can obtain a link's transport with
+`ble_gap_gatt_transport_for()` and its current `gap_conn_handle`.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
 `gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
