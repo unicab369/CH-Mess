@@ -120,6 +120,7 @@ static void gap_conn_end(void) {
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
         GAP_HW_STOP();
         gap_poll.slot_valid = 0;
+        gap_rx_armed = 0;
     }
     gap_smp_link_close();
     // Preserve the final status while clearing the rest of the security state.

@@ -409,7 +409,7 @@ static inline int gap_adv_start_payload(
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
 
-    if (gap_conn_busy() || gap_central.active ||
+    if (gap_central.active ||
         !gap_ad_data_valid(data, data_len) ||
         !gap_ad_data_valid(scan_response, resp_len) ||
         interval_ms < 100 || interval_ms > 10240
@@ -458,7 +458,7 @@ int gap_adv_start_directed(
 #if GAP_EXT_ADV_SUPPORT
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
-    if (gap_conn_busy() || gap_central.active || !address ||
+    if (gap_central.active || !address ||
         address_type > 1 || interval_ms < 100 || interval_ms > 10240 ||
         (gap_privacy.enabled && !gap_privacy.resolvable)
     ) return 0;
@@ -592,13 +592,13 @@ void gap_scan_stop(void) {
 static int gap_conn_procedure_start(
     gap_conn_mode mode, uint8_t active_scan
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t accept_list_nonempty = 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
         accept_list_nonempty |= gap_accept_list[i].used;
 
-    if (active_scan > 1 || conn->link_state.active || gap_scanner.scanning ||
+    if (active_scan > 1 || gap_conn_free_slot() < 0 || gap_central.active ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
           mode == GAP_CONN_MODE_AUTO) && !accept_list_nonempty)
     ) return 0;
@@ -669,8 +669,7 @@ static int gap_conn_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!peer_address || peer_type > 1 || conn->link_state.active || gap_scanner.scanning ||
+    if (!peer_address || peer_type > 1 || gap_conn_free_slot() < 0 || gap_scanner.scanning ||
         gap_central.active
     ) return 0;
 
