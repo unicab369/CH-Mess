@@ -647,9 +647,12 @@ static void gap_address_hash(
     const uint8_t irk[16], const uint8_t prand[3], uint8_t hash[3]
 ) {
     uint8_t input[16] = {0}, output[16];
-    for (uint8_t i = 0; i < 3; i++) input[15 - i] = prand[i];
+    for (uint8_t i = 0; i < 3; i++)
+        input[15 - i] = prand[i];
     AES_ENCRYPT_BLOCK(irk, input, output);
-    for (uint8_t i = 0; i < 3; i++) hash[i] = output[15 - i];
+
+    for (uint8_t i = 0; i < 3; i++)
+        hash[i] = output[15 - i];
 }
 
 // Return the known identity slot for an identity address or matching RPA.
@@ -681,8 +684,10 @@ static int gap_static_addr_valid(const uint8_t address[6]) {
     static const uint8_t ones[5] = {0xff, 0xff, 0xff, 0xff, 0xff};
     uint8_t random_bits = address[5] & 0x3f;
 
-    if ((!memcmp(address, zero, sizeof(zero)) && !random_bits) ||
-        (!memcmp(address, ones, sizeof(ones)) && random_bits == 0x3f))
+    // Check the remaining bytes only if the top six bits could complete an
+    // all-zero or all-one random part.
+    if ((!random_bits && !memcmp(address, zero, sizeof(zero))) ||
+        (random_bits == 0x3f && !memcmp(address, ones, sizeof(ones))))
         return 0;
     return 1;
 }
@@ -691,6 +696,9 @@ static int gap_static_addr_valid(const uint8_t address[6]) {
 static int gap_accept_list_match(
     const uint8_t address[6], uint8_t address_type, int identity_slot
 ) {
+    const gap_identity *identity = identity_slot >= 0 ?
+                                    &gap_identities[identity_slot] : NULL;
+
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!gap_accept_list[i].used) continue;
 
@@ -698,10 +706,11 @@ static int gap_accept_list_match(
             memcmp(gap_accept_list[i].address, address, 6) == 0
         ) return 1;
 
-        if (identity_slot >= 0 &&
-            gap_identities[identity_slot].address_type == gap_accept_list[i].address_type &&
-            memcmp(gap_identities[identity_slot].address, gap_accept_list[i].address, 6) == 0
-        ) return 1;
+        if (!identity || identity->address_type != gap_accept_list[i].address_type)
+            continue;
+
+        if (memcmp(identity->address, gap_accept_list[i].address, 6) == 0)
+            return 1;
     }
 
     return 0;
