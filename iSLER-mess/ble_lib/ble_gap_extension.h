@@ -398,7 +398,7 @@ int gap_periodic_pawr_connect(
 
     if (!peer_address || peer_address_type > 1 ||
         gap_conn_slot_active(gap_conn_slot) ||
-        gap_central.active || gap_scanner.scanning ||
+        (gap_central.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
     ) return 0;

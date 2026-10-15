@@ -391,7 +391,8 @@ static void test_central_initiation_while_connectable_advertising(void) {
     gap_conn_slot_set_active(gap_conn_slot, 0);
     memset(conn, 0, sizeof(*conn));
     memset(&gap_central, 0, sizeof(gap_central));
-    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_adv.enabled = 0;
     radio_data_max = GAP_CONN_DATA_MAX;
     now_ms = 330;
@@ -1340,7 +1341,8 @@ static void test_pawr_advertiser_connection(void) {
     gap_conn_slot_set_active(gap_conn_slot, 0);
     memset(conn, 0, sizeof(*conn));
     memset(&gap_central, 0, sizeof(gap_central));
-    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_conn_timing = (gap_conn_timing){24, 0, 200,
         1280, 12, 30720};
     radio_data_max = GAP_CONN_DATA_MAX;
@@ -1423,7 +1425,8 @@ static void test_pawr_connection_accept(void) {
     memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
     gap_own_address_type = 0;
     gap_privacy.connection_filter = 0;
-    gap_scanner.scanning = gap_scanner.active = 0;
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     sync->used = sync->established = 1;
     sync->handle = 1;
     sync->address_type = 0;

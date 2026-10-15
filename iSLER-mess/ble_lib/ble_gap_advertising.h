@@ -591,8 +591,9 @@ static int gap_conn_procedure_start(
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
         accept_list_nonempty |= gap_accept_list[i].used;
 
-    if (active_scan > 1 || gap_conn_free_slot() < 0 || gap_central.active ||
-        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
+    if (active_scan > 1 || gap_conn_free_slot() < 0 ||
+        (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
+        GAP_EXT_ADVERTISING_ENABLED ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
           mode == GAP_CONN_MODE_AUTO) && !accept_list_nonempty)
     ) return 0;
@@ -664,8 +665,8 @@ static int gap_conn_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || peer_type > 1 || gap_conn_free_slot() < 0 || gap_scanner.scanning ||
-        gap_central.active
+    if (!peer_address || peer_type > 1 || gap_conn_free_slot() < 0 ||
+        (gap_scanner.scanning || gap_central.active)
     ) return 0;
 
     memcpy(gap_central.peer_address, peer_address, 6);
@@ -700,7 +701,7 @@ int gap_conn_start_auto(void) {
 
 // Application facing
 int gap_conn_initiating(void) {
-    return gap_central.active;
+    return gap_central.active != 0;
 }
 
 // Application facing

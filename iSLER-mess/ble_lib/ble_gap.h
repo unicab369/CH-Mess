@@ -678,6 +678,18 @@ static int gap_identity_find(const uint8_t address[6], uint8_t address_type) {
     return -1;
 }
 
+// Network privacy rejects a known peer's identity address when it has an IRK.
+// Device privacy accepts it; unknown peers still follow the configured filters.
+static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
+    if (slot < 0) return 1;
+    gap_identity *identity = &gap_identities[slot];
+
+    return !identity->has_irk ||
+        identity->privacy_mode == GAP_PRIVACY_DEVICE ||
+        type != identity->peer.type ||
+        memcmp(address, identity->peer.address, 6) != 0;
+}
+
 // A static random address has 11 type bits and a nonzero, non-all-ones 46-bit
 // random part. Identity and Filter Accept List entries use the same rule.
 static int gap_static_addr_valid(const uint8_t address[6]) {
@@ -722,7 +734,7 @@ static int gap_accept_list_match(
 // Application facing
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
-    // NOTE: This API treats address type as a flag: zero is public, nonzero is random.
+    // NOTE: Zero is public; any nonzero address type is treated as random.
     address_type = address_type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
@@ -751,7 +763,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 // Application facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
-    // NOTE: Match the same public/nonzero-random convention used by add.
+    // NOTE: Use the same public/nonzero-random convention as add.
     address_type = address_type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
@@ -781,18 +793,6 @@ int gap_accept_list_clear(void) {
 
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
     return 1;
-}
-
-// Network privacy rejects a known peer's identity address when it has an IRK.
-// Device privacy accepts it; unknown peers still follow the configured filters.
-static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
-    if (slot < 0) return 1;
-    gap_identity *identity = &gap_identities[slot];
-
-    return !identity->has_irk ||
-        identity->privacy_mode == GAP_PRIVACY_DEVICE ||
-        type != identity->peer.type ||
-        memcmp(address, identity->peer.address, 6) != 0;
 }
 
 // Application facing

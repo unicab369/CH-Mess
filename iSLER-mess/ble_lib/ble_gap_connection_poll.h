@@ -593,7 +593,8 @@ void gap_hw_received(void) {
         return;
     }
 
-    if ((gap_scanner.scanning || gap_ext_scan.periodic_listening) &&
+    if ((gap_scanner.scanning ||
+         gap_ext_scan.periodic_listening) &&
         ((pdu_type == ADV_EXT_IND) ||
          (gap_ext_scan.periodic_listening &&
           pdu_type == CONNECT_IND && frame[1] == 34)) &&
@@ -1431,7 +1432,8 @@ int gap_send_due(
     if (extended_result == 1) return 0;
     if (extended_result) return extended_result;
 #endif
-    int send_gap = gap_adv.enabled && (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    int send_gap = gap_adv.enabled != 0 &&
+                   (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad) return 0;
     if (gap_rx_armed) {
         GAP_HW_STOP();
