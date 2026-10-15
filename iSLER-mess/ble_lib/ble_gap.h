@@ -722,9 +722,9 @@ static int gap_accept_list_match(
 // Application facing
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
-    if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
+    // NOTE: This API treats address type as a flag: zero is public, nonzero is random.
+    address_type = address_type != 0;
+    if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
         (address_type && !gap_static_addr_valid(address))
@@ -751,9 +751,9 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 // Application facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
-    if (!address || address_type > 1 || gap_scanner.scanning || gap_adv.enabled ||
+    // NOTE: Match the same public/nonzero-random convention used by add.
+    address_type = address_type != 0;
+    if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
