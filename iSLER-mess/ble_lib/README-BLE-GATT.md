@@ -69,6 +69,33 @@ use the server's notify/indicate APIs with those handles. Multi-byte values
 passed to builders are in Bluetooth little-endian byte order. Use a separate
 service state object for each server/connection.
 
+The next service builders cover:
+
+- `gatt_glucose_service_add()` for Glucose Measurement, optional Measurement
+  Context, Glucose Feature, and the authenticated Record Access Control Point.
+- `gatt_alert_notification_service_add()` for supported categories, new and
+  unread alert notifications, and the Alert Notification Control Point.
+- `gatt_scan_parameters_service_add()` for Scan Interval Window and Scan
+  Refresh.
+- `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
+  Sensor Location, and the conditional SC Control Point.
+- `gatt_cycling_power_service_add()` for Power Measurement and Feature, with
+  optional Vector, Sensor Location, and Control Point characteristics.
+- `gatt_location_navigation_service_add()` for LN Feature and Location and
+  Speed, with optional Navigation, Position Quality, and Control Point.
+- `gatt_environmental_sensing_service_add()` for caller-selected permitted
+  environmental measurement characteristics.
+- `gatt_body_composition_service_add()` for Body Composition Measurement and
+  Feature.
+- `gatt_user_data_service_add()` for Database Change Increment, User Index,
+  and User Control Point.
+- `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
+  Feature.
+
+These are database builders. The application supplies record storage,
+control-point behavior, and correctly formatted measurement payloads; the
+builders do not implement those profile procedures.
+
 ## GAP connection integration
 
 `ble_gap_gatt.h` polls the fixed ATT bearer for each configured GAP link. Give
