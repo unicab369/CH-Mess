@@ -906,13 +906,13 @@ static void gap_conn_poll(void) {
             }
         }
 
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
         if (smp_bond_load())
             conn->bonded = 1;
 #endif
     }
 
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
     smp_bond_restore_poll();
     gap_smp_poll();
 #endif

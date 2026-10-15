@@ -932,15 +932,6 @@ int gap_pair_cancel(void) {
     return 1;
 }
 
-// Report achieved security only after encryption completes, never during pairing.
-int gap_authenticated(void) {
-    return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
-}
-
-uint8_t gap_key_size(void) {
-    return gap_encrypted() ? gap_conn_ctx[gap_conn_slot].enc_key_size : 0;
-}
-
 // Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];

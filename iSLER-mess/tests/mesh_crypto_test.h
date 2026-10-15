@@ -45,6 +45,7 @@ static int aes_cmac_test(void) {
     return memcmp(actual, expected, sizeof(expected)) == 0 ? 0 : -1;
 }
 
+#if GAP_SMP_SUPPORT > 0
 static int ble_sc_crypto_test(void) {
     // Exercise the direct GAP SMP crypto methods without requiring a link.
     // Bluetooth Core Specification, Vol 3, Part H, Appendix D, vectors D.2-D.5.
@@ -106,5 +107,6 @@ static int ble_sc_crypto_test(void) {
     if (gap_sc_g2(u, v, expected_g2_x, expected_g2) != 938554) return -4;
     return 0;
 }
+#endif
 
 #endif // ISLER_MESH_CRYPTO_TEST_H

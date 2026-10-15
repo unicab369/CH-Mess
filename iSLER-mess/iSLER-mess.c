@@ -91,7 +91,9 @@ int main()
 	printf(".~ ch32fun iSLER ~.\n");
 	printf("micro-ecc self-test: %s\n", mesh_test_ecc() == 0 ? "PASS" : "FAIL");
 	printf("AES-CMAC self-test: %s\n", aes_cmac_test() == 0 ? "PASS" : "FAIL");
+#if GAP_SMP_SUPPORT > 0
 	printf("BLE Secure Connections crypto self-test: %s\n", ble_sc_crypto_test() == 0 ? "PASS" : "FAIL");
+#endif
 
     funPinMode(INPUT1_PIN, GPIO_CFGLR_IN_PUPD);
     funDigitalWrite(INPUT1_PIN, 1);

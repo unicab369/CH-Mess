@@ -246,6 +246,7 @@ typedef struct {
     uint8_t type, address[6];
 } gap_peer_address;
 
+#if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
 } gap_bond_key;
@@ -269,6 +270,7 @@ typedef struct {
 
 typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
                                        uint32_t value);
+#endif
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
@@ -300,8 +302,11 @@ typedef struct {
     gap_peer_address initiator, responder, peer;
     uint8_t is_central;
     uint8_t authenticated, enc_key_size;
-    uint8_t load_pending, bonded, restore_started, restore_attempted;
+    uint8_t load_pending;
+#if GAP_SMP_SUPPORT > 0
+    uint8_t bonded, restore_started, restore_attempted;
     gap_bond bond;
+#endif
     struct {
         volatile uint8_t phy_queued;
         volatile uint8_t tx_queued, rx_ready;
@@ -1052,7 +1057,7 @@ int gap_use_public_address(void) {
 
 #include "ble_gap_connection.h"
 
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
 #include "ble_gap_smp.h"
 #endif
 
@@ -1137,7 +1142,7 @@ static int gap_conn_accept(
         gap_conn_generations[gap_conn_slot] = 1;
 
     conn->link_state.active = 1;
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
     if (!smp_link_init()) {
         conn->link_state.active = 0;
         return 0;

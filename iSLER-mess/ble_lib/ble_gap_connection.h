@@ -103,7 +103,7 @@ static uint8_t gap_conn_rate_busy(void) {
         conn->rate.update_pending || conn->rate.req_pending;
 }
 
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
 static void gap_smp_link_close(void);
 #endif
 
@@ -115,7 +115,7 @@ static void gap_conn_end(void) {
         gap_poll.slot_valid = 0;
         gap_rx_armed = 0;
     }
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
     gap_smp_link_close();
 #endif
     // Preserve the final status while clearing the rest of the security state.
@@ -124,7 +124,9 @@ static void gap_conn_end(void) {
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
+#if GAP_SMP_SUPPORT > 0
     gap_wipe(&conn->bond, sizeof(conn->bond));
+#endif
     gap_wipe(&conn->tx, sizeof(conn->tx));
     gap_wipe(&conn->rx, sizeof(conn->rx));
     gap_wipe(&conn->queue, sizeof(conn->queue));
@@ -140,8 +142,10 @@ static void gap_conn_end(void) {
     // Clear per-link security and bond state.
     conn->authenticated = 0;
     conn->enc_key_size = 0;
+#if GAP_SMP_SUPPORT > 0
     conn->bonded = 0;
     conn->restore_started = 0;
+#endif
 
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
@@ -2235,14 +2239,14 @@ int gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
 static void gap_smp_poll(void);
 static void gap_smp_receive_complete(void);
 #endif
 
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
     gap_smp_poll();
 #endif
     if (!data || !len || !conn->queue.rx_ready) return 0;
@@ -2252,7 +2256,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     *len = conn->rx.len;
     memcpy(data, conn->rx.data, conn->rx.len);
     conn->queue.rx_ready = 0;
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
     gap_smp_receive_complete();
 #endif
     return 1;
@@ -2365,7 +2369,7 @@ static void gap_send_security(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
 static int gap_smp_blocks_encryption(void);
 #endif
 
@@ -2375,7 +2379,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!ltk || !random || gap_conn_procedure_busy() || !conn->is_central ||
         conn->features.request_pending
-#if GAP_SMP_SUPPORT
+#if GAP_SMP_SUPPORT > 0
         || gap_smp_blocks_encryption()
 #endif
     ) return 0;
@@ -2467,6 +2471,15 @@ int gap_encrypted(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     return gap_connected() && !gap_security->phase &&
         gap_security->tx_enabled && gap_security->rx_enabled;
+}
+
+// Report achieved security only after encryption completes, never during pairing.
+int gap_authenticated(void) {
+    return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
+}
+
+uint8_t gap_key_size(void) {
+    return gap_encrypted() ? gap_conn_ctx[gap_conn_slot].enc_key_size : 0;
 }
 
 uint8_t gap_security_status(void) {

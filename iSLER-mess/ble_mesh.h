@@ -1,7 +1,13 @@
 #include "ch32fun.h"
+void gap_hw_received(void);
 void gap_hw_radio_transmitted(void);
+volatile uint32_t rx_ready;
 #define ISLER_CALLBACK_TX gap_hw_radio_transmitted
-#define ISLER_CALLBACK_RX gap_hw_received
+static void ble_mesh_rx_received(void) {
+    gap_hw_received();
+    rx_ready = 1;
+}
+#define ISLER_CALLBACK_RX ble_mesh_rx_received
 #include "iSLER.h"
 #include "ble_lib/ble_crypto.h"
 #include "aes_cmm.h"
