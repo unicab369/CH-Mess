@@ -109,7 +109,7 @@ static void gap_smp_link_close(void);
 
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!conn->link_state.active) return;
+    if (!gap_conn_slot_active(gap_conn_slot)) return;
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
         GAP_HW_STOP();
         gap_poll.slot_valid = 0;
@@ -135,6 +135,7 @@ static void gap_conn_end(void) {
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
+    gap_conn_slot_set_active(gap_conn_slot, 0);
     conn->is_central = 0;
     memset(&conn->pending, 0, sizeof(conn->pending));
     memset(&conn->features, 0, sizeof(conn->features));
@@ -496,7 +497,7 @@ static void gap_send_data_length(uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_privacy.enabled || conn->link_state.active || gap_central.active ||
+    if (!gap_privacy.enabled || gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0
     ) return;
@@ -1804,7 +1805,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 // Application facing
 int gap_connected(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return conn->link_state.active && (conn->is_central || !conn->link.first_event);
+    return gap_conn_slot_active(gap_conn_slot) && (conn->is_central || !conn->link.first_event);
 }
 
 static uint8_t gap_conn_procedure_busy(void) {
@@ -2425,7 +2426,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
     // Entropy collection may take time: recheck the link and procedures before
     // committing a key, so a disconnect/reconnect cannot apply it to another peer.
-    if (!conn->link_state.active || (*gap_security_generation) != generation || gap_security->phase ||
+    if (!gap_conn_slot_active(gap_conn_slot) || (*gap_security_generation) != generation || gap_security->phase ||
         conn->pending.timing_update || conn->queue.local_update ||
         conn->queue.local_map || conn->pending.channel_map ||
         conn->queue.local_params || conn->pending.params ||
@@ -2462,7 +2463,7 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!conn->link_state.active || gap_security->phase != GAP_ENC_KEY_REQUEST)
+    if (!gap_conn_slot_active(gap_conn_slot) || gap_security->phase != GAP_ENC_KEY_REQUEST)
         return 0;
     if (random) memcpy(random, gap_security->random, 8);
     if (ediv) *ediv = gap_security->ediv;
@@ -2474,7 +2475,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
-    if (!conn->link_state.active || gap_security->phase != GAP_ENC_KEY_REQUEST) {
+    if (!gap_conn_slot_active(gap_conn_slot) || gap_security->phase != GAP_ENC_KEY_REQUEST) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }

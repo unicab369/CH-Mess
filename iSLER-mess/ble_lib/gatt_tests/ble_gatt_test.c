@@ -430,8 +430,9 @@ static void test_full_65_byte_provisioning_pdu(void) {
 static void test_mesh_sar_timeout_and_link_cleanup(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     mesh_link_setup();
+    gap_conn_slot_set_active(gap_conn_slot, 0);
     memset(conn, 0, sizeof(*conn));
-    conn->link_state.active = 1;
+    gap_conn_slot_set_active(gap_conn_slot, 1);
     mesh_gatt.proxy_rx_active = 1;
     mesh_gatt.proxy_rx_started_ms = 100;
     fake_now_ms = 100 + MESH_GATT_PROXY_SAR_TIMEOUT_MS;

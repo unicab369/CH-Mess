@@ -237,7 +237,7 @@ void gap_hw_received(void) {
         return;
     }
 
-    if (conn->link_state.active && conn->link_state.rx_armed) {
+    if (gap_conn_slot_active(gap_conn_slot) && conn->link_state.rx_armed) {
         if (conn->is_central) {
             conn_anchor_ticks = conn->link.next_ticks;
         } else {
@@ -253,7 +253,7 @@ void gap_hw_received(void) {
         event_counter = conn->link.event_counter;
     }
 #endif
-    if (conn->link_state.active && conn->link_state.rx_armed) {
+    if (gap_conn_slot_active(gap_conn_slot) && conn->link_state.rx_armed) {
         uint8_t authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
@@ -521,14 +521,14 @@ void gap_hw_received(void) {
 
         if (gap_tx_frame[1]) conn->subrate.event_activity = 1;
         gap_conn_update_apply(1);
-        if (!conn->link_state.active) {
+        if (!gap_conn_slot_active(gap_conn_slot)) {
             gap_conn_slot = previous_slot;
             return;
         }
 
         gap_conn_event_advance();
         gap_conn_update_apply(0);
-        if (!conn->link_state.active) {
+        if (!gap_conn_slot_active(gap_conn_slot)) {
             gap_conn_slot = previous_slot;
             return;
         }
@@ -894,7 +894,7 @@ static uint64_t gap_conn_event_close_ticks(
 static void gap_conn_poll(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!conn->link_state.active) return;
+    if (!gap_conn_slot_active(gap_conn_slot)) return;
 
     if (conn->load_pending) {
         conn->load_pending = 0;
@@ -1022,7 +1022,7 @@ static void gap_conn_poll(void) {
             conn->link.next_ticks += gap_conn_interval_ticks();
             gap_conn_event_advance();
             gap_conn_update_apply(0);
-            if (!conn->link_state.active) return;
+            if (!gap_conn_slot_active(gap_conn_slot)) return;
             skipped++;
         } while (now >= gap_conn_event_close_ticks(conn, now_ms));
         uint32_t extra_hops = skipped - conn->link_state.channel_selected;
@@ -1152,7 +1152,7 @@ static inline void gap_conn_poll_all(void) {
 
     for (uint8_t offset = 0; offset < GAP_CONNECTION_COUNT; offset++) {
         uint8_t slot = (uint8_t)((gap_poll.poll_cursor + offset) % GAP_CONNECTION_COUNT);
-        if (!gap_conn_ctx[slot].link_state.active) continue;
+        if (!gap_conn_slot_active(slot)) continue;
         uint64_t deadline = gap_conn_event_close_ticks(&gap_conn_ctx[slot], now_ms);
         uint8_t position = count;
 
@@ -1221,7 +1221,7 @@ void gap_hw_scan_poll(void) {
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
     if (gap_poll.slot_valid ||
-        (conn->link_state.active && (conn->link_state.rx_armed || conn->link_state.event_replied))
+        (gap_conn_slot_active(gap_conn_slot) && (conn->link_state.rx_armed || conn->link_state.event_replied))
     ) return;
 
     uint8_t reset_scan = gap_scan.applied_generation != gap_scanner.generation;
@@ -1318,7 +1318,7 @@ void gap_hw_scan_poll(void) {
             uint64_t end_ticks = gap_syncs[sync_slot].end_ticks;
 
             if (ticks > end_ticks ||
-                (conn->link_state.active && ticks >= start_ticks &&
+                (gap_conn_slot_active(gap_conn_slot) && ticks >= start_ticks &&
                  gap_sync_conn_overlap(start_ticks, end_ticks))
             ) {
                 gap_sync_window_missed((uint8_t)sync_slot);

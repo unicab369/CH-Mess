@@ -397,7 +397,7 @@ int gap_periodic_pawr_connect(
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
     if (!peer_address || peer_address_type > 1 ||
-        gap_conn_ctx[gap_conn_slot].link_state.active ||
+        gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active || gap_scanner.scanning ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
@@ -473,7 +473,7 @@ int gap_ext_adv_start_phy(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
-    if (gap_conn_busy() || gap_central.active ||
+    if ((gap_conn_slot_mask != 0) || gap_central.active ||
         gap_adv.enabled || set->enabled ||
         set->periodic.enabled || sid > 15 ||
         !gap_ext_ad_data_valid(data, len) ||
@@ -870,7 +870,7 @@ int gap_periodic_sync_start(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!address || address_type > 1 || sid > 15 || timeout_ms < 100 ||
-        timeout_ms > 163840 || conn->link_state.active || gap_central.active
+        timeout_ms > 163840 || gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
@@ -1013,7 +1013,7 @@ int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
     int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing || enabled > 1 ||
-        conn->link_state.active || gap_central.active
+        gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
     gap_syncs[slot].pawr.connect_accept = enabled;
@@ -1359,7 +1359,7 @@ static int gap_periodic_connect_request(
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
-        conn->link_state.active || gap_central.active ||
+        gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request)
     ) return 0;
@@ -1427,7 +1427,7 @@ static int gap_periodic_connect_exchange(
     uint64_t request_start_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!set || !set->pawr_connect.pending || conn->link_state.active || GAP_HW_DATA_MAX() < 27)
+    if (!set || !set->pawr_connect.pending || gap_conn_slot_active(gap_conn_slot) || GAP_HW_DATA_MAX() < 27)
         return 0;
 
     uint8_t *request = gap_central.request;
@@ -2477,7 +2477,7 @@ int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     int sync_slot = gap_sync_slot_from_handle(handle);
 
-    if (!conn->link_state.active || sync_slot < 0 ||
+    if (!gap_conn_slot_active(gap_conn_slot) || sync_slot < 0 ||
         !gap_syncs[sync_slot].established ||
         conn->sync_transfer_queued ||
         conn->data_length.tx_octets < 35 ||
@@ -2550,7 +2550,7 @@ static int gap_sync_conn_overlap(
     uint64_t start_ticks, uint64_t end_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!conn->link_state.active ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
         !conn->link.next_ticks || !conn->schedule.interval_125us
     ) return 0;
 
@@ -2591,8 +2591,8 @@ static int gap_ext_send_due(uint32_t now) {
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
-    if ((!gap_conn_busy() ||
-         (conn->link_state.active && conn->is_central)) &&
+    if ((gap_conn_slot_mask == 0 ||
+         (gap_conn_slot_active(gap_conn_slot) && conn->is_central)) &&
         !gap_central.active &&
         !gap_scan.active_pending
     ) {
@@ -2624,7 +2624,7 @@ static int gap_ext_send_due(uint32_t now) {
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_event_ticks += missed * interval;
 
-            if (conn->link_state.active && conn->is_central) {
+            if (gap_conn_slot_active(gap_conn_slot) && conn->is_central) {
                 uint32_t event_duration_us = gap_periodic_event_duration_us(set->periodic.data_len,
                                                    set->aux_phy);
                 if (set->pawr.enabled) {
