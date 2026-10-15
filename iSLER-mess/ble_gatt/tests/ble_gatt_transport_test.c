@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../ble_gatt_transport.h"
+#include "../ble_gatt.h"
 
 #define FAKE_RX_COUNT 16
 typedef struct {

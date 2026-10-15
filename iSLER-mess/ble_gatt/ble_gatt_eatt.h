@@ -1,9 +1,8 @@
 #ifndef BLE_GATT_EATT_H
 #define BLE_GATT_EATT_H
 
-// Optional Enhanced ATT bearer manager. ble_gatt_transport can bind its
-// channel lifecycle to the shared L2CAP ECFC manager. Enable with
-// -DBLE_GATT_ENABLE_EATT=1.
+// Optional Enhanced ATT bearer manager, bound to L2CAP ECFC by
+// ble_gatt_transport. Enable with -DBLE_GATT_ENABLE_EATT=1.
 #include <stdint.h>
 #include <string.h>
 
@@ -13,6 +12,9 @@
 
 #if BLE_GATT_ENABLE_EATT
 
+// =============================================================================
+// Configuration and bearer state
+// =============================================================================
 #ifndef BLE_GATT_EATT_MAX_BEARERS
 #define BLE_GATT_EATT_MAX_BEARERS 4
 #endif
@@ -43,8 +45,8 @@ typedef struct {
 
 typedef struct {
     // Map these callbacks to ble_l2cap_connection's ECFC channel APIs.
-    // `open` requests one EATT channel on PSM 0x0027; `accept`/`reject` apply
-    // incoming-channel policy. Deliver completed SDUs to receive_att.
+    // open requests one EATT channel; accept/reject apply incoming policy.
+    // Deliver completed SDUs to receive_att.
     int (*open)(void *context, uint16_t psm, uint16_t mtu);
     int (*accept)(void *context, uint16_t cid, uint16_t mtu);
     void (*reject)(void *context, uint16_t cid, uint16_t reason);
@@ -68,6 +70,7 @@ typedef struct {
 // =============================================================================
 // Bearer state and channel lifecycle
 // =============================================================================
+// Initialize the EATT manager and clamp its requested local MTU.
 static inline void gatt_eatt_init(
     ble_gatt_eatt *eatt,
     const ble_gatt_eatt_ops *ops, uint16_t local_mtu
@@ -81,6 +84,7 @@ static inline void gatt_eatt_init(
         eatt->local_mtu = BLE_GATT_EATT_MTU_MAX;
 }
 
+// Close active bearers when link encryption is lost.
 static inline void gatt_eatt_set_encrypted(
     ble_gatt_eatt *eatt,
     int encrypted
@@ -89,14 +93,19 @@ static inline void gatt_eatt_set_encrypted(
     eatt->encrypted = (uint8_t)(encrypted != 0);
     if (!eatt->encrypted) {
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
-            ble_gatt_eatt_bearer *b = &eatt->bearers[i];
-            if (b->state != BLE_GATT_EATT_CLOSED && b->cid && eatt->ops.close)
-                eatt->ops.close(eatt->ops.context, b->cid);
-            memset(b, 0, sizeof(*b));
+            ble_gatt_eatt_bearer *bearer = &eatt->bearers[i];
+            if (bearer->state != BLE_GATT_EATT_CLOSED && bearer->cid &&
+                eatt->ops.close
+            ) eatt->ops.close(eatt->ops.context, bearer->cid);
+            memset(bearer, 0, sizeof(*bearer));
         }
     }
 }
 
+// =============================================================================
+// Bearer lookup and channel lifecycle
+// =============================================================================
+// Find a non-closed bearer by its local channel ID.
 static inline int gatt_eatt_find(
     const ble_gatt_eatt *eatt,
     uint16_t cid
@@ -109,6 +118,7 @@ static inline int gatt_eatt_find(
     return -1;
 }
 
+// Find an unused bearer slot.
 static inline int gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
     if (!eatt) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
@@ -119,10 +129,10 @@ static inline int gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
 // Ask the platform ECFC implementation to create a channel. Completion is
 // asynchronous and reported through gatt_eatt_channel_opened().
 static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
-    if (!eatt || !eatt->encrypted || !eatt->ops.open ||
-        gatt_eatt_free_slot(eatt) < 0)
-        return 0;
+    if (!eatt || !eatt->encrypted || !eatt->ops.open) return 0;
     int slot = gatt_eatt_free_slot(eatt);
+    if (slot < 0) return 0;
+
     if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_PSM,
                         eatt->local_mtu))
         return 0;
@@ -135,13 +145,20 @@ static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
 static inline int gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
     if (!eatt || !cid || !eatt->ops.accept ||
         gatt_eatt_find(eatt, cid) >= 0 ||
-        gatt_eatt_free_slot(eatt) < 0 || !eatt->encrypted) {
+        !eatt->encrypted
+    ) {
         if (eatt && eatt->ops.reject && cid)
             eatt->ops.reject(eatt->ops.context, cid, 0x0005u);
         return 0;
     }
 
     int slot = gatt_eatt_free_slot(eatt);
+    if (slot < 0) {
+        if (eatt->ops.reject)
+            eatt->ops.reject(eatt->ops.context, cid, 0x0005u);
+        return 0;
+    }
+
     if (!eatt->ops.accept(eatt->ops.context, cid, eatt->local_mtu)) return 0;
     eatt->bearers[slot].cid = cid;
     eatt->bearers[slot].state = BLE_GATT_EATT_OPENING;
@@ -156,12 +173,14 @@ static inline int gatt_eatt_channel_opened(
 ) {
     if (!eatt || !cid) return 0;
     int existing = gatt_eatt_find(eatt, cid);
-    if (existing >= 0 && eatt->bearers[existing].state != BLE_GATT_EATT_OPENING)
-        existing = -1;
+    if (existing >= 0 &&
+        eatt->bearers[existing].state != BLE_GATT_EATT_OPENING
+    ) existing = -1;
     if (!success || !encrypted || !eatt->encrypted ||
         negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
         negotiated_mtu > BLE_GATT_EATT_MTU_MAX ||
-        (gatt_eatt_find(eatt, cid) >= 0 && existing < 0)) {
+        (gatt_eatt_find(eatt, cid) >= 0 && existing < 0)
+    ) {
         if (eatt->ops.close) eatt->ops.close(eatt->ops.context, cid);
         if (existing >= 0)
             memset(&eatt->bearers[existing], 0, sizeof(eatt->bearers[existing]));
@@ -186,13 +205,13 @@ static inline int gatt_eatt_channel_opened(
         return 0;
     }
 
-    ble_gatt_eatt_bearer *b = &eatt->bearers[slot];
-    b->cid = cid;
-    b->mtu = negotiated_mtu < eatt->local_mtu ?
+    ble_gatt_eatt_bearer *bearer = &eatt->bearers[slot];
+    bearer->cid = cid;
+    bearer->mtu = negotiated_mtu < eatt->local_mtu ?
         negotiated_mtu : eatt->local_mtu;
-    b->state = BLE_GATT_EATT_OPEN;
+    bearer->state = BLE_GATT_EATT_OPEN;
     if (eatt->ops.channel_ready)
-        eatt->ops.channel_ready(eatt->ops.context, cid, b->mtu);
+        eatt->ops.channel_ready(eatt->ops.context, cid, bearer->mtu);
     return 1;
 }
 
@@ -203,20 +222,25 @@ static inline int gatt_eatt_reconfigure(
 ) {
     int slot = gatt_eatt_find(eatt, cid);
     if (slot < 0 || negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
-        negotiated_mtu > BLE_GATT_EATT_MTU_MAX)
+        negotiated_mtu > BLE_GATT_EATT_MTU_MAX
+    )
         return 0;
     eatt->bearers[slot].mtu = negotiated_mtu < eatt->local_mtu ?
         negotiated_mtu : eatt->local_mtu;
     return 1;
 }
 
+// =============================================================================
+// ATT SDU send and receive
+// =============================================================================
 static inline int gatt_eatt_send(
     ble_gatt_eatt *eatt, uint16_t cid,
     const uint8_t *pdu, uint16_t len
 ) {
     int slot = gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
-        len > eatt->bearers[slot].mtu || !eatt->ops.send)
+        len > eatt->bearers[slot].mtu || !eatt->ops.send
+    )
         return 0;
     return eatt->ops.send(eatt->ops.context, cid, pdu, len);
 }
@@ -230,11 +254,16 @@ static inline int gatt_eatt_receive(
     int slot = gatt_eatt_find(eatt, cid);
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
-        !eatt->ops.receive_att)
+        !eatt->ops.receive_att
+    )
         return 0;
     return eatt->ops.receive_att(eatt->ops.context, cid, pdu, len);
 }
 
+// =============================================================================
+// Bearer teardown
+// =============================================================================
+// Clear a closed bearer and notify the host.
 static inline void gatt_eatt_channel_closed(
     ble_gatt_eatt *eatt,
     uint16_t cid, int reason
@@ -246,12 +275,14 @@ static inline void gatt_eatt_channel_closed(
         eatt->ops.channel_closed(eatt->ops.context, cid, reason);
 }
 
+// Close every bearer and clear the link's encryption state.
 static inline void gatt_eatt_disconnect(ble_gatt_eatt *eatt) {
     if (!eatt) return;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
         uint16_t cid = eatt->bearers[i].cid;
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED) {
-            if (cid && eatt->ops.close) eatt->ops.close(eatt->ops.context, cid);
+            if (cid && eatt->ops.close)
+                eatt->ops.close(eatt->ops.context, cid);
             if (cid) gatt_eatt_channel_closed(eatt, cid, 0);
             else memset(&eatt->bearers[i], 0, sizeof(eatt->bearers[i]));
         }

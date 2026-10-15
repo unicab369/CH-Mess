@@ -7,8 +7,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
 #include "../ble_att/ble_att.h"
 #include "ble_gatt_crypto.h"
+
+// =============================================================================
+// Server limits
+// =============================================================================
 #ifndef BLE_GATT_SERVER_MAX_ATTRIBUTES
 #define BLE_GATT_SERVER_MAX_ATTRIBUTES 64
 #endif
@@ -46,6 +51,9 @@
 #define BLE_GATT_UUID16_LEN 2
 #define BLE_GATT_UUID128_LEN 16
 
+// =============================================================================
+// Attribute permissions, properties, and flags
+// =============================================================================
 enum {
     BLE_GATT_PERM_READ = 1u << 0,
     BLE_GATT_PERM_WRITE = 1u << 1,
@@ -86,22 +94,29 @@ enum {
     BLE_GATT_CLIENT_FEATURE_MASK = 0x07
 };
 
+// =============================================================================
+// Attribute and callback types
+// =============================================================================
 typedef struct {
     uint8_t len;
     uint8_t value[BLE_GATT_UUID128_LEN];
 } ble_gatt_uuid;
 
 struct ble_gatt_attribute;
-typedef uint8_t (*ble_gatt_read_fn)(void *context, uint16_t offset,
-    uint8_t *out, uint16_t *inout_len);
+typedef uint8_t (*ble_gatt_read_fn)(
+    void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
+);
 // `command` is nonzero for an ATT Write Command.
-typedef uint8_t (*ble_gatt_write_fn)(void *context, uint16_t offset,
-    const uint8_t *value, uint16_t len, uint8_t command);
+typedef uint8_t (*ble_gatt_write_fn)(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 // Prepare validates and stages one fragment without publishing it. If it
 // returns an error, it must leave its staging state unchanged. Execute is
 // called once at commit (commit=1) or cancel (commit=0); commit must not fail.
-typedef uint8_t (*ble_gatt_prepare_fn)(void *context, uint16_t offset,
-    const uint8_t *value, uint16_t len);
+typedef uint8_t (*ble_gatt_prepare_fn)(
+    void *context, uint16_t offset, const uint8_t *value, uint16_t len
+);
 typedef void (*ble_gatt_execute_fn)(void *context, uint8_t commit);
 // Verify the exact ATT Signed Write Command bytes excluding its final
 // 12-byte authentication signature. The callback must check and persist the
@@ -109,18 +124,25 @@ typedef void (*ble_gatt_execute_fn)(void *context, uint8_t commit);
 typedef int (*ble_gatt_signed_verify_fn)(void *context,
     const uint8_t *signed_pdu, uint16_t signed_len,
     const uint8_t signature[12]);
-typedef int (*ble_gatt_authorize_fn)(void *context, uint16_t handle,
-    uint8_t write);
-typedef uint16_t (*ble_gatt_cccd_load_fn)(void *context,
-    uint16_t value_handle);
-typedef void (*ble_gatt_cccd_store_fn)(void *context, uint16_t value_handle,
-    uint16_t configuration);
-typedef int (*ble_gatt_database_hash_load_fn)(void *context, uint8_t hash[16]);
-typedef void (*ble_gatt_database_hash_store_fn)(void *context,
-    const uint8_t hash[16]);
+typedef int (*ble_gatt_authorize_fn)(
+    void *context, uint16_t handle, uint8_t write
+);
+typedef uint16_t (*ble_gatt_cccd_load_fn)(
+    void *context, uint16_t value_handle
+);
+typedef void (*ble_gatt_cccd_store_fn)(
+    void *context, uint16_t value_handle, uint16_t configuration
+);
+typedef int (*ble_gatt_database_hash_load_fn)(
+    void *context, uint8_t hash[16]
+);
+typedef void (*ble_gatt_database_hash_store_fn)(
+    void *context, const uint8_t hash[16]
+);
 typedef uint8_t (*ble_gatt_client_features_load_fn)(void *context);
-typedef void (*ble_gatt_client_features_store_fn)(void *context,
-    uint8_t features);
+typedef void (*ble_gatt_client_features_store_fn)(
+    void *context, uint8_t features
+);
 
 typedef struct ble_gatt_attribute {
     uint16_t handle;
@@ -161,22 +183,31 @@ typedef struct {
 // Server database and link state
 // =============================================================================
 typedef struct {
+    // Registered database and its server-owned value storage.
     ble_gatt_attribute attributes[BLE_GATT_SERVER_MAX_ATTRIBUTES];
-    uint16_t count, next_handle, mtu, local_mtu;
+    uint16_t count;
+    uint16_t next_handle;
+    uint16_t mtu, local_mtu;
     uint16_t value_used;
     uint8_t value_pool[BLE_GATT_SERVER_VALUE_POOL_SIZE];
+
+    // Per-link prepared writes and queued notifications/indications.
     ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
     uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
     uint16_t prepare_count, prepare_used;
     ble_gatt_server_event events[BLE_GATT_SERVER_EVENT_QUEUE_SIZE];
     uint8_t event_data[BLE_GATT_SERVER_EVENT_BYTES];
     uint16_t event_count, event_used;
+
+    // Per-link security, negotiated features, and database hash state.
     uint8_t database_sealed;
     uint8_t mtu_exchanged, encrypted, authenticated, indication_pending;
     uint8_t indication_timeout_armed;
     uint8_t encryption_key_size;
     uint8_t database_hash[16];
     uint8_t database_hash_available, database_hash_update_pending;
+
+    // Application callbacks and their shared contexts.
     ble_gatt_signed_verify_fn signed_verify;
     void *signed_context;
     ble_gatt_authorize_fn authorize;
@@ -190,6 +221,8 @@ typedef struct {
     ble_gatt_client_features_load_fn client_features_load;
     ble_gatt_client_features_store_fn client_features_store;
     void *client_features_context;
+
+    // Outstanding indication timing.
     uint16_t indication_handle;
     uint32_t indication_started_ms;
 } ble_gatt_server;
@@ -297,16 +330,16 @@ static inline int gatt_server_compute_database_hash(
         uint8_t handle[2] = {(uint8_t)attribute->handle,
                              (uint8_t)(attribute->handle >> 8)};
         gatt_cmac_update(&cmac, handle, sizeof(handle));
-        gatt_cmac_update(&cmac, attribute->uuid.value,
-                             attribute->uuid.len);
+        gatt_cmac_update(&cmac, attribute->uuid.value, attribute->uuid.len);
         if (kind != 2 || !attribute->value_len) continue;
         if (attribute->value_len > BLE_GATT_ATT_VALUE_MAX) {
             memset(&cmac, 0, sizeof(cmac));
             return 0;
         }
 
-        uint8_t *value = gatt_attribute_value(server,
-            (ble_gatt_attribute *)attribute);
+        uint8_t *value = gatt_attribute_value(
+            server, (ble_gatt_attribute *)attribute
+        );
         if (!value) {
             memset(&cmac, 0, sizeof(cmac));
             return 0;
@@ -345,11 +378,13 @@ static inline void gatt_server_init(ble_gatt_server *server, uint16_t local_mtu)
 }
 
 static inline void gatt_server_link_reset(ble_gatt_server *server) {
-    if (!server) return;
+    if (!server)
+        return;
     gatt_server_prepare_cancel_all(server, 0);
     server->mtu = 23;
     server->mtu_exchanged = 0;
-    server->encrypted = server->authenticated = 0;
+    server->encrypted = 0;
+    server->authenticated = 0;
     server->encryption_key_size = 0;
     server->indication_pending = 0;
     server->indication_timeout_armed = 0;
@@ -357,9 +392,11 @@ static inline void gatt_server_link_reset(ble_gatt_server *server) {
     server->indication_started_ms = 0;
     server->database_hash_update_pending = 0;
     memset(server->event_data, 0, server->event_used);
-    server->event_count = server->event_used = 0;
+    server->event_count = 0;
+    server->event_used = 0;
     memset(server->prepare_data, 0, sizeof(server->prepare_data));
-    server->prepare_count = server->prepare_used = 0;
+    server->prepare_count = 0;
+    server->prepare_used = 0;
     for (uint16_t i = 0; i < server->count; i++) {
         if (server->attributes[i].flags & BLE_GATT_ATTRIBUTE_CCCD)
             server->attributes[i].cccd = 0;
@@ -377,10 +414,12 @@ static inline void gatt_server_set_security(
     ble_gatt_server *server, int encrypted,
     int authenticated
 ) {
-    if (!server) return;
+    if (!server)
+        return;
     server->encrypted = encrypted != 0 || authenticated != 0;
     server->authenticated = authenticated != 0;
-    if (!server->encrypted) server->encryption_key_size = 0;
+    if (!server->encrypted)
+        server->encryption_key_size = 0;
 }
 
 static inline void gatt_server_set_encryption_key_size(

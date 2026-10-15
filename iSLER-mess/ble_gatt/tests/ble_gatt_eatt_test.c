@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #define BLE_GATT_EATT_MAX_BEARERS 2
-#include "../ble_gatt_transport.h"
+#include "../ble_gatt.h"
 
 typedef struct {
     uint16_t last_psm, last_mtu, last_cid, sent_len, closed;

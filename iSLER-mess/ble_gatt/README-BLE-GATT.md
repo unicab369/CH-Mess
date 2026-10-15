@@ -6,17 +6,17 @@ EATT, and lets an application register its own services and attributes. It
 does not include Bluetooth SIG service profiles.
 
 `ble_gatt.h` is the generic include (`../ble_gatt.h` is the compatibility
-entry point, matching the GAP module layout). The implementation is split
-across focused headers in this directory. `ble_att/ble_att.h` owns shared ATT opcodes,
+entry point, matching the GAP module layout). The client API is defined there;
+the server and transport remain in focused headers. `ble_att/ble_att.h` owns shared ATT opcodes,
 errors, value limits, byte-order helpers, and request/response matching.
 `ble_att/ble_att_server.h` handles ATT server PDU procedures and response
 encoding against the GATT server's attribute database. The GATT modules own
 attribute storage, service construction, client-side GATT operations, and
 transport integration. `ble_l2cap.h` owns LE L2CAP framing,
 signaling, fixed-CID dispatch, and LE credit-based dynamic channels; its link
-adapter handles LL-fragment reassembly. The ATT/GATT server and client live in
-`ble_gatt_server.h` and `ble_gatt_client.h`, while
-`ble_gatt_transport.h` routes the fixed ATT CID between them and platform link
+adapter handles LL-fragment reassembly. The GATT server lives in
+`ble_gatt_server.h`, while `ble_gatt_transport.h` routes the fixed ATT CID
+between client and server and platform link
 callbacks. The GAP security manager uses the same L2CAP header helpers for
 fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.

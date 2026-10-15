@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
-#include "../ble_gatt_client.h"
+#include "../ble_gatt.h"
 #include "../ble_gatt_crypto.h"
 
 static ble_gatt_client client;

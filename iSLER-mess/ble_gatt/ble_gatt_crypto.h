@@ -1,8 +1,8 @@
 #ifndef BLE_GATT_CRYPTO_H
 #define BLE_GATT_CRYPTO_H
 
-// Small, portable AES-128 and streaming AES-CMAC primitives for generic GATT
-// features such as the Database Hash. This module has no Mesh dependency.
+// Portable AES-128 and streaming AES-CMAC primitives for GATT features such
+// as the Database Hash. This module has no Mesh dependency.
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -14,6 +14,9 @@ typedef struct {
     uint8_t used;
 } ble_gatt_cmac;
 
+// =============================================================================
+// AES-128
+// =============================================================================
 static const uint8_t ble_gatt_aes_sbox[256] = {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -33,9 +36,6 @@ static const uint8_t ble_gatt_aes_sbox[256] = {
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
-// =============================================================================
-// AES-128 block cipher
-// =============================================================================
 static inline void gatt_aes128_expand(
     const uint8_t key[16],
     uint8_t round_keys[176]
@@ -44,7 +44,9 @@ static inline void gatt_aes128_expand(
         0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36
     };
     memcpy(round_keys, key, 16);
-    uint8_t generated = 16, round = 0, temp[4];
+    uint8_t generated = 16;
+    uint8_t round = 0;
+    uint8_t temp[4];
     while (generated < 176) {
         memcpy(temp, round_keys + generated - 4, 4);
         if ((generated & 15u) == 0) {
@@ -63,7 +65,8 @@ static inline void gatt_aes128_expand(
 }
 
 static inline uint8_t gatt_aes_xtime(uint8_t value) {
-    return (uint8_t)((value << 1) ^ ((value & 0x80) ? 0x1b : 0));
+    uint8_t reduction = (value & 0x80) ? 0x1b : 0;
+    return (uint8_t)((value << 1) ^ reduction);
 }
 
 static inline void gatt_aes128_encrypt_expanded(
@@ -107,7 +110,8 @@ static inline void gatt_aes128_encrypt_expanded(
 
 static inline void gatt_aes128_encrypt(
     const uint8_t key[16],
-    const uint8_t input[16], uint8_t output[16]
+    const uint8_t input[16],
+    uint8_t output[16]
 ) {
     uint8_t round_keys[176];
     gatt_aes128_expand(key, round_keys);
@@ -119,10 +123,10 @@ static inline void gatt_aes128_encrypt(
 // Streaming AES-CMAC
 // =============================================================================
 static inline void gatt_cmac_init(
-    ble_gatt_cmac *cmac,
-    const uint8_t key[16]
+    ble_gatt_cmac *cmac, const uint8_t key[16]
 ) {
-    if (!cmac || !key) return;
+    if (!cmac || !key)
+        return;
     memset(cmac, 0, sizeof(*cmac));
     gatt_aes128_expand(key, cmac->round_keys);
 }
@@ -141,9 +145,11 @@ static inline void gatt_cmac_update(
     ble_gatt_cmac *cmac,
     const uint8_t *data, size_t len
 ) {
-    if (!cmac || (!data && len)) return;
+    if (!cmac || (!data && len))
+        return;
     while (len) {
-        if (cmac->used == 16) gatt_cmac_block(cmac);
+        if (cmac->used == 16)
+            gatt_cmac_block(cmac);
         size_t count = 16u - cmac->used;
         if (count > len) count = len;
         memcpy(cmac->block + cmac->used, data, count);
@@ -162,12 +168,17 @@ static inline void gatt_cmac_double(uint8_t block[16]) {
 }
 
 static inline void gatt_cmac_final(ble_gatt_cmac *cmac, uint8_t mac[16]) {
-    if (!cmac || !mac) return;
-    uint8_t subkey[16] = {0}, zero[16] = {0};
+    if (!cmac || !mac)
+        return;
+
+    uint8_t subkey[16] = {0};
+    uint8_t zero[16] = {0};
     gatt_aes128_encrypt_expanded(cmac->round_keys, zero, subkey);
     gatt_cmac_double(subkey);
-    if (cmac->used != 16) gatt_cmac_double(subkey);
-    if (cmac->used < 16) cmac->block[cmac->used] = 0x80;
+    if (cmac->used != 16)
+        gatt_cmac_double(subkey);
+    if (cmac->used < 16)
+        cmac->block[cmac->used] = 0x80;
     for (uint8_t i = 0; i < 16; i++) {
         cmac->block[i] ^= subkey[i] ^ cmac->state[i];
     }

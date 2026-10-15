@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <string.h>
-#include "../ble_gatt_client.h"
+#include "../ble_gatt.h"
 
 static uint8_t sent[BLE_GATT_CLIENT_MTU_MAX];
 static uint16_t sent_len, result_count, event_count;
