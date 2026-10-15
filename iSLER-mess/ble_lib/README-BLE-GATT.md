@@ -3,8 +3,8 @@
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
-`ble_gatt_services.h` provides reusable Bluetooth SIG Battery and Device
-Information Service builders.
+`ble_gatt_services.h` provides reusable Bluetooth SIG Battery, Device
+Information, Generic Access, and Heart Rate Service builders.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
@@ -31,6 +31,17 @@ Service with optional manufacturer, model, serial, hardware, firmware, and
 software strings, plus optional System ID and PnP ID values. The helper copies
 provided values into the server database, so the input strings and IDs can be
 temporary during registration. Keep one handle-state object per server.
+
+`gatt_gap_service_add()` adds the Generic Access Service with a read-only
+Device Name and Appearance. The supplied UTF-8 name is copied into the
+database and must be 1–248 octets.
+
+`gatt_heart_rate_service_add()` adds Heart Rate Measurement with its CCCD and
+can optionally add Body Sensor Location. Encode each measurement with
+`gatt_heart_rate_measurement_encode()` and pass the result to
+`gatt_server_notify()` using the measurement handle. Set the encoder capacity
+to the current server's `mtu - 3` so optional RR Interval entries are omitted
+as whole 16-bit values when they do not fit.
 
 ## GAP connection integration
 
