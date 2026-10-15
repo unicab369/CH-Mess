@@ -67,11 +67,11 @@ typedef struct {
     uint8_t encrypted;
 } ble_gatt_eatt;
 
+// Application facing
 // =============================================================================
 // Bearer state and channel lifecycle
 // =============================================================================
 // Initialize the EATT manager and clamp its requested local MTU.
-// Application facing
 static inline void gatt_eatt_init(
     ble_gatt_eatt *eatt,
     const ble_gatt_eatt_ops *ops, uint16_t local_mtu
@@ -85,8 +85,8 @@ static inline void gatt_eatt_init(
         eatt->local_mtu = BLE_GATT_EATT_MTU_MAX;
 }
 
-// Close active bearers when link encryption is lost.
 // Application facing
+// Close active bearers when link encryption is lost.
 static inline void gatt_eatt_set_encrypted(
     ble_gatt_eatt *eatt,
     int encrypted
@@ -128,9 +128,9 @@ static inline int gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
     return -1;
 }
 
+// Application facing
 // Ask the platform ECFC implementation to create a channel. Completion is
 // asynchronous and reported through gatt_eatt_channel_opened().
-// Application facing
 static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
     if (!eatt || !eatt->encrypted || !eatt->ops.open) return 0;
     int slot = gatt_eatt_free_slot(eatt);
@@ -143,9 +143,9 @@ static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
     return 1;
 }
 
+// Application facing
 // Handle an incoming ECFC channel request. The L2CAP layer calls this only
 // after decoding the request's PSM and assigning its local dynamic CID.
-// Application facing
 static inline int gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
     if (!eatt || !cid || !eatt->ops.accept ||
         gatt_eatt_find(eatt, cid) >= 0 ||
@@ -169,9 +169,9 @@ static inline int gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
     return 1;
 }
 
+// Application facing
 // Report completion of outgoing or incoming ECFC negotiation. Failed,
 // unencrypted, duplicate-CID, and undersized channels are closed/rejected.
-// Application facing
 static inline int gatt_eatt_channel_opened(
     ble_gatt_eatt *eatt,
     uint16_t cid, uint16_t negotiated_mtu, int encrypted, int success
@@ -220,8 +220,8 @@ static inline int gatt_eatt_channel_opened(
     return 1;
 }
 
-// An ECFC reconfiguration must still provide a valid EATT MTU.
 // Application facing
+// An ECFC reconfiguration must still provide a valid EATT MTU.
 static inline int gatt_eatt_reconfigure(
     ble_gatt_eatt *eatt,
     uint16_t cid, uint16_t negotiated_mtu
@@ -236,10 +236,10 @@ static inline int gatt_eatt_reconfigure(
     return 1;
 }
 
+// Application facing
 // =============================================================================
 // ATT SDU send and receive
 // =============================================================================
-// Application facing
 static inline int gatt_eatt_send(
     ble_gatt_eatt *eatt, uint16_t cid,
     const uint8_t *pdu, uint16_t len
@@ -252,9 +252,9 @@ static inline int gatt_eatt_send(
     return eatt->ops.send(eatt->ops.context, cid, pdu, len);
 }
 
+// Application facing
 // Deliver one complete ATT SDU from ECFC. EATT does not carry ATT Signed
 // Write Commands (opcode 0xd2); reject those before invoking the GATT core.
-// Application facing
 static inline int gatt_eatt_receive(
     ble_gatt_eatt *eatt, uint16_t cid,
     const uint8_t *pdu, uint16_t len
@@ -268,11 +268,11 @@ static inline int gatt_eatt_receive(
     return eatt->ops.receive_att(eatt->ops.context, cid, pdu, len);
 }
 
+// Application facing
 // =============================================================================
 // Bearer teardown
 // =============================================================================
 // Clear a closed bearer and notify the host.
-// Application facing
 static inline void gatt_eatt_channel_closed(
     ble_gatt_eatt *eatt,
     uint16_t cid, int reason
@@ -284,8 +284,8 @@ static inline void gatt_eatt_channel_closed(
         eatt->ops.channel_closed(eatt->ops.context, cid, reason);
 }
 
-// Close every bearer and clear the link's encryption state.
 // Application facing
+// Close every bearer and clear the link's encryption state.
 static inline void gatt_eatt_disconnect(ble_gatt_eatt *eatt) {
     if (!eatt) return;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {

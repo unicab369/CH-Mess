@@ -23,9 +23,9 @@ static inline void ble_gap_gatt_init(ble_gap_gatt *manager) {
     if (manager) memset(manager, 0, sizeof(*manager));
 }
 
+// Application facing
 // Bind a transport already configured with this link's server and/or client.
 // Keep the transport, server, client, and service state alive while bound.
-// Application facing
 static inline int ble_gap_gatt_bind_slot(
     ble_gap_gatt *manager, uint8_t slot, ble_gatt_transport *transport,
     ble_gatt_server *server, ble_gatt_client *client
@@ -42,10 +42,10 @@ static inline int ble_gap_gatt_bind_slot(
     return 1;
 }
 
+// Application facing
 // Poll every live connection, moving one GAP LL fragment in each direction.
 // A negative result means at least one GATT bearer failed and its link was
 // asked to disconnect; positive values count processed fragments/work.
-// Application facing
 static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     if (!manager) return -1;
 
@@ -121,8 +121,8 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     return failed ? -1 : work;
 }
 
-// Find the transport attached to a currently live connection handle.
 // Application facing
+// Find the transport attached to a currently live connection handle.
 static inline ble_gatt_transport *ble_gap_gatt_transport_for(
     ble_gap_gatt *manager, gap_conn_handle handle
 ) {

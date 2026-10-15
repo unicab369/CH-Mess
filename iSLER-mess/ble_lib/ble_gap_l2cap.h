@@ -61,9 +61,9 @@ static inline int ble_gap_l2cap_init(
     return 1;
 }
 
+// Application facing
 // Poll every live link. Each peer keeps independent L2CAP channels, fragment
 // assembly, and transmit state while GAP arbitrates access to the radio.
-// Application facing
 static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     if (!manager) return -1;
 
@@ -120,8 +120,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     return work;
 }
 
-// Return a live connection's L2CAP instance for channel registration and use.
 // Application facing
+// Return a live connection's L2CAP instance for channel registration and use.
 static inline ble_l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {

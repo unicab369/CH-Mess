@@ -78,10 +78,10 @@ typedef struct {
     void *context;
 } ble_gatt_client;
 
+// Application facing
 // =============================================================================
 // Transaction state and response validation
 // =============================================================================
-// Application facing
 static inline void gatt_client_init(
     ble_gatt_client *client,
     ble_gatt_client_send_fn send, ble_gatt_client_result_fn result,
@@ -163,10 +163,10 @@ static inline int gatt_client_request(
     return 1;
 }
 
+// Application facing
 // =============================================================================
 // Standard GATT request builders
 // =============================================================================
-// Application facing
 static inline int gatt_client_mtu(
     ble_gatt_client *client,
     uint16_t mtu, uint32_t now_ms
@@ -269,10 +269,10 @@ static inline int gatt_client_read(
                                ATT_OP_READ_RSP, now_ms);
 }
 
+// Application facing
 // Automatically fetch successive Read Blob chunks. The assembled value is
 // available in client->operation.value/client->operation.value_len at the completion
 // callback; the ordinary response callback fires once for the whole read.
-// Application facing
 static inline int gatt_client_read_long(
     ble_gatt_client *client,
     uint16_t handle, uint32_t now_ms
@@ -409,9 +409,9 @@ static inline int gatt_client_write_long(
     return 1;
 }
 
+// Application facing
 // Commands do not receive an ATT response and therefore do not occupy the
 // request/response transaction slot.
-// Application facing
 static inline int gatt_client_write_command(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value, uint16_t len
@@ -429,9 +429,9 @@ static inline int gatt_client_write_command(
     return client->send(client->context, pdu, len + 3);
 }
 
+// Application facing
 // Signed Write is a command (no ATT response). The signer owns the bonded
 // CSRK and monotonically increasing sign counter.
-// Application facing
 static inline int gatt_client_write_signed(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value, uint16_t len

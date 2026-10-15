@@ -29,8 +29,8 @@ typedef struct {
     size_t capacity, len;
 } gap_ad_builder;
 
-// Start building AD structures in caller-owned storage.
 // Application facing
+// Start building AD structures in caller-owned storage.
 int gap_ad_builder_init(
     gap_ad_builder *builder, uint8_t *data, size_t capacity
 ) {
@@ -41,8 +41,8 @@ int gap_ad_builder_init(
     return 1;
 }
 
-// Append one length-type-value AD structure. Values are stored in BLE byte order.
 // Application facing
+// Append one length-type-value AD structure. Values are stored in BLE byte order.
 int gap_ad_append(
     gap_ad_builder *builder, uint8_t type,
     const uint8_t *value, size_t value_len
@@ -137,9 +137,9 @@ int gap_ad_add_tx_power(gap_ad_builder *builder, int8_t dbm) {
     return gap_ad_append(builder, GAP_AD_TX_POWER, &value, 1);
 }
 
+// Application facing
 // Append service data with a 16-, 32-, or 128-bit UUID already encoded in
 // Bluetooth little-endian byte order.
-// Application facing
 int gap_ad_add_service_data(
     gap_ad_builder *builder, const uint8_t *uuid, size_t uuid_len,
     const uint8_t *data, size_t len
@@ -168,9 +168,9 @@ int gap_ad_add_service_data(
     return 1;
 }
 
+// Application facing
 // Parse the next AD structure: 1 means a value was returned, 0 means end,
 // and -1 means malformed input. A zero length byte terminates padded data.
-// Application facing
 int gap_ad_parse_next(
     const uint8_t *data, size_t len, size_t *offset, uint8_t *type,
     const uint8_t **value, size_t *value_len
@@ -210,10 +210,10 @@ static struct {
     uint8_t set;
 } gap_ead_key;
 
+// Application facing
 // Install the session key and IV shared with EAD receivers. The key must come
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
-// Application facing
 int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
     if (!session_key || !iv) return 0;
 
@@ -228,8 +228,8 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
     return 1;
 }
 
-// Copy the current EAD session key and IV for application key distribution.
 // Application facing
+// Copy the current EAD session key and IV for application key distribution.
 int gap_ead_key_get(uint8_t out[24]) {
     if (!out || !gap_ead_key.set) return 0;
     memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
@@ -237,8 +237,8 @@ int gap_ead_key_get(uint8_t out[24]) {
     return 1;
 }
 
-// Erase the EAD key material so encrypted advertising cannot be produced.
 // Application facing
+// Erase the EAD key material so encrypted advertising cannot be produced.
 void gap_ead_key_clear(void) {
     gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 }
@@ -261,10 +261,10 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
     return structures != 0;
 }
 
+// Application facing
 // Encrypt concatenated AD structures into one Encrypted Data AD structure.
 // Output includes the length and 0x31 type bytes. Secure entropy supplies the
 // five-octet randomizer; output capacity must allow plaintext length + 11.
-// Application facing
 int gap_ead_encrypt(
     const uint8_t *plaintext, size_t plaintext_len,
     uint8_t *out, size_t out_capacity, size_t *out_len
@@ -298,8 +298,8 @@ int gap_ead_encrypt(
     return 1;
 }
 
-// Authenticate and decrypt one complete Encrypted Data AD structure.
 // Application facing
+// Authenticate and decrypt one complete Encrypted Data AD structure.
 int gap_ead_decrypt(
     const uint8_t *ead, size_t ead_len,
     uint8_t *out, size_t out_capacity, size_t *out_len
@@ -443,14 +443,14 @@ static inline int gap_adv_start_payload(
     return 1;
 }
 
-// Start legacy non-connectable, non-scannable advertising.
 // Application facing
+// Start legacy non-connectable, non-scannable advertising.
 int gap_adv_start(const uint8_t *data, size_t len, uint16_t interval_ms) {
     return gap_adv_start_payload(0x02, data, len, NULL, 0, interval_ms);
 }
 
-// Start legacy scannable advertising with the AD data returned in SCAN_RSP.
 // Application facing
+// Start legacy scannable advertising with the AD data returned in SCAN_RSP.
 int gap_adv_start_scannable(
     const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
@@ -459,9 +459,9 @@ int gap_adv_start_scannable(
     return gap_adv_start_payload(0x06, data, len, scan_response, resp_len, interval_ms);
 }
 
+// Application facing
 // Advertise as a connectable, scannable Peripheral. The platform polling loop
 // must run continuously to service connection events; GATT data is not handled yet.
-// Application facing
 int gap_adv_start_connectable(
     const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
@@ -469,8 +469,8 @@ int gap_adv_start_connectable(
     return gap_adv_start_payload(0x00, data, len, scan_response, resp_len, interval_ms);
 }
 
-// Low duty cycle directed advertising to one peer; address bytes are PDU order.
 // Application facing
+// Low duty cycle directed advertising to one peer; address bytes are PDU order.
 int gap_adv_start_directed(
     const uint8_t address[6], uint8_t address_type, uint16_t interval_ms
 ) {
@@ -506,9 +506,9 @@ void gap_adv_stop(void) {
     gap_adv.enabled = 0;
 }
 
+// Application facing
 // Restrict Peripheral scan and connection requests to peers in the Filter
 // Accept List. This is advertising policy, separate from privacy resolution.
-// Application facing
 int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
     if (scan_accept > 1 || connection_accept > 1) return 0;
     gap_adv.scan_accept = scan_accept;
@@ -572,9 +572,9 @@ void gap_scan_start(uint8_t active) {
     gap_scanner.generation++;
 }
 
+// Application facing
 // Configure each scan window and the interval between window starts, in ms.
 // General discovery accepts general and limited devices; limited accepts only limited.
-// Application facing
 int gap_scan_configure(
     uint16_t interval_ms, uint16_t window_ms,
     uint8_t discovery_mode, uint8_t filter_duplicates
@@ -600,8 +600,8 @@ int gap_scan_configure(
     return 1;
 }
 
-// Start scanning; active mode requests scan-response data from advertisers.
 // Application facing
+// Start scanning; active mode requests scan-response data from advertisers.
 void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_scan_reset(1);
@@ -690,9 +690,9 @@ static int gap_conn_procedure_start(
     return 1;
 }
 
+// Application facing
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
-// Application facing
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
     if (!peer_address || peer_type > 1 || gap_conn_free_slot() < 0 || gap_scanner.scanning ||
         gap_central.active
@@ -708,22 +708,22 @@ int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
     return 0;
 }
 
+// Application facing
 // General Connection Establishment: scan and connect to the first acceptable
 // connectable advertiser. `active_scan` requests scan-response data as well.
-// Application facing
 int gap_conn_start_general(uint8_t active_scan) {
     return gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, active_scan);
 }
 
-// Selective Connection Establishment scans for an advertiser in the accept list.
 // Application facing
+// Selective Connection Establishment scans for an advertiser in the accept list.
 int gap_conn_start_selective(uint8_t active_scan) {
     return gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, active_scan);
 }
 
+// Application facing
 // Auto Connection Establishment scans in the background until a listed peer
 // connects or the application cancels; it does not time out after one attempt.
-// Application facing
 int gap_conn_start_auto(void) {
     return gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0);
 }
@@ -738,8 +738,8 @@ void gap_conn_cancel(void) {
     if (gap_central.active) gap_scan_stop();
 }
 
-// Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 // Application facing
+// Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 int gap_scan_poll(gap_scan_report *report) {
     if (!report || !gap_scan_count) return 0;
 
@@ -870,9 +870,9 @@ static inline void gap_receive_report(
     gap_scan_count++;
 }
 
+// Application facing
 // Take one advertising packet and copy the first AD structure with a requested type.
 // Return 1 when found, 0 when absent, or -1 when the output is too small.
-// Application facing
 int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi

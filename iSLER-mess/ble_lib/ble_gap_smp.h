@@ -728,9 +728,9 @@ void gap_pairing_set(uint8_t enabled) {
         gap_smp_fail(5);
 }
 
+// Application facing
 // Install an optional application notification callback for passkey and
 // numeric-comparison requests. Replies remain asynchronous through the GAP API.
-// Application facing
 int gap_smp_user_request_set(
     ble_smp_user_request_fn callback, void *context
 ) {
@@ -747,9 +747,9 @@ int gap_keypress_notifications_set(uint8_t enabled) {
     return 1;
 }
 
+// Application facing
 // Configure UI capabilities and reject pairing below the application's security
 // requirements. Settings cannot change during a pairing procedure.
-// Application facing
 int gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
     if (io > GAP_IO_KEYBOARD_DISPLAY || authenticated > 1 ||
         min_key_size < 7 || min_key_size > 16 ||
@@ -763,8 +763,8 @@ int gap_security_set(uint8_t io, uint8_t authenticated, uint8_t min_key_size) {
     return 1;
 }
 
-// Request bonded pairing; it fails if bond storage cannot commit the key.
 // Application facing
+// Request bonded pairing; it fails if bond storage cannot commit the key.
 int gap_bonding_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp_contexts[gap_conn_slot].pairing.phase) return 0;
 
@@ -784,8 +784,8 @@ int gap_bonding_set(uint8_t enabled) {
     return 1;
 }
 
-// Configure Secure Connections association methods and bond behavior.
 // Application facing
+// Configure Secure Connections association methods and bond behavior.
 int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp_contexts[gap_conn_slot].pairing.phase) return 0;
     gap_pair_cfg.secure_connections = enabled;
@@ -797,9 +797,9 @@ int gap_secure_connections_set(uint8_t enabled) {
     return 1;
 }
 
+// Application facing
 // Generate fresh OOB data tied to the P-256 key used by the next OOB pairing.
 // The application must deliver both values to the peer over its OOB channel.
-// Application facing
 int gap_sc_oob_get(gap_oob_data *out) {
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
@@ -833,8 +833,8 @@ int gap_sc_oob_get(gap_oob_data *out) {
     return generated;
 }
 
-// Provide the peer's OOB commitment and random value. Pass NULL to clear it.
 // Application facing
+// Provide the peer's OOB commitment and random value. Pass NULL to clear it.
 int gap_sc_oob_set_peer(const gap_oob_data *peer) {
     if (!gap_pair_cfg.secure_connections ||
         gap_smp_contexts[gap_conn_slot].pairing.phase
@@ -848,9 +848,9 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
     return 1;
 }
 
+// Application facing
 // Return DISPLAY (render all six digits, including leading zeros), INPUT, or 0.
 // A display value is generated anew for each pairing; never cache/reuse it.
-// Application facing
 uint8_t gap_passkey(uint32_t *value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
 
@@ -864,8 +864,8 @@ uint8_t gap_passkey(uint32_t *value) {
     return smp->pairing.passkey_action;
 }
 
-// Submit the passkey entered by the user. Confirm exchange resumes on polling.
 // Application facing
+// Submit the passkey entered by the user. Confirm exchange resumes on polling.
 int gap_passkey_reply(uint32_t value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
@@ -889,8 +889,8 @@ int gap_passkey_reply(uint32_t value) {
     return 1;
 }
 
-// Send a passkey-entry progress event from a local keyboard-only device.
 // Application facing
+// Send a passkey-entry progress event from a local keyboard-only device.
 int gap_passkey_keypress(uint8_t notification_type) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     uint8_t passkey_phase = smp->pairing.phase == SMP_PHASE_PASSKEY ||
@@ -911,8 +911,8 @@ int gap_passkey_keypress(uint8_t notification_type) {
     return gap_smp_queue(SMP_KEYPRESS_NOTIFICATION, &notification_type, 1);
 }
 
-// Show all six digits on both devices and ask the user whether they match.
 // Application facing
+// Show all six digits on both devices and ask the user whether they match.
 int gap_numeric_get(uint32_t *value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     if (!value || smp->pairing.phase != SMP_PHASE_SC_USER || smp->secure.numeric_reply)
@@ -946,8 +946,8 @@ int gap_pair_cancel(void) {
     return 1;
 }
 
-// Central starts pairing; Peripheral asks its Central to start it.
 // Application facing
+// Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];

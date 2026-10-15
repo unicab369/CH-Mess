@@ -1801,8 +1801,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
     return 0;
 }
 
-// True after Central initiation or the first received Peripheral data packet.
 // Application facing
+// True after Central initiation or the first received Peripheral data packet.
 int gap_connected(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     return gap_conn_slot_active(gap_conn_slot) && (conn->is_central || !conn->link.first_event);
@@ -1821,10 +1821,10 @@ static uint8_t gap_conn_procedure_busy(void) {
         conn->link_state.terminate_queued || conn->link_state.terminate_sent;
 }
 
+// Application facing
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
-// Application facing
 int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
@@ -1844,10 +1844,10 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     return 1;
 }
 
+// Application facing
 // Request a timing range in either role. Intervals use 1.25 ms units,
 // latency counts skipped events, and timeout uses 10 ms units.
 // Feature exchange runs first; the Central ultimately selects the new timing.
-// Application facing
 int gap_conn_request(
     uint16_t minimum, uint16_t maximum,
     uint16_t latency, uint16_t timeout
@@ -1876,16 +1876,16 @@ int gap_conn_request(
     return 1;
 }
 
+// Application facing
 // Last local timing, channel-map, or connection-rate operation: 0 means
 // success, 0xff pending, otherwise a Bluetooth Link Layer error.
-// Application facing
 uint8_t gap_conn_status(void) {
     return gap_conn_ctx[gap_conn_slot].connection_status;
 }
 
+// Application facing
 // Request a subrate update as the Central. The Peripheral can request a
 // range with gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
-// Application facing
 int gap_subrate_set(
     uint16_t factor, uint16_t peripheral_latency,
     uint16_t continuation, uint16_t timeout
@@ -1913,8 +1913,8 @@ int gap_subrate_set(
     return 1;
 }
 
-// Request subrating as the Peripheral. The Central selects the final values.
 // Application facing
+// Request subrating as the Peripheral. The Central selects the final values.
 int gap_subrate_request(
     uint16_t factor_min, uint16_t factor_max,
     uint16_t max_latency, uint16_t continuation,
@@ -1948,8 +1948,8 @@ int gap_subrate_request(
     return 1;
 }
 
-// Report the applied or pending Link Layer subrate settings.
 // Application facing
+// Report the applied or pending Link Layer subrate settings.
 void gap_subrate_get(
     uint16_t *factor, uint16_t *base_event,
     uint16_t *peripheral_latency,
@@ -1968,9 +1968,9 @@ uint8_t gap_subrate_status(void) {
     return gap_conn_ctx[gap_conn_slot].subrate.status;
 }
 
+// Application facing
 // Queue a Central-selected interval (125-us units) and subrate tuple. Both
 // devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
-// Application facing
 int gap_conn_rate_set(
     uint16_t interval, uint16_t factor,
     uint16_t latency, uint16_t continuation, uint16_t timeout
@@ -1992,9 +1992,9 @@ int gap_conn_rate_set(
     return 1;
 }
 
+// Application facing
 // Request a Core 6.2 connection-rate range as the Peripheral. The Central
 // selects the interval and subrate values; the anchor offset is unspecified.
-// Application facing
 int gap_conn_rate_request(
     uint16_t interval_min,
     uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
@@ -2023,9 +2023,9 @@ int gap_conn_rate_request(
     return 1;
 }
 
+// Application facing
 // Read the applied rate tuple. Interval uses 125-us units; other values match
 // the Connection Subrating fields. Pass NULL for fields the caller does not need.
-// Application facing
 void gap_conn_rate_get(
     uint16_t *interval, uint16_t *factor,
     uint16_t *peripheral_latency, uint16_t *continuation,
@@ -2039,10 +2039,10 @@ void gap_conn_rate_get(
     if (timeout) *timeout = conn->schedule.timeout;
 }
 
+// Application facing
 // Queue a Central data-channel map: bits 0..36 select channels, at least two
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
-// Application facing
 int gap_channel_map_set(const uint8_t channels[5]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -2066,9 +2066,9 @@ int gap_channel_map_set(const uint8_t channels[5]) {
     return 1;
 }
 
+// Application facing
 // Enable or disable Peripheral channel reports. Spacing and delay use 200-ms
 // units, as required by LL_CHANNEL_REPORTING_IND; status is connection_status.
-// Application facing
 int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms,
     uint8_t max_delay_200ms
@@ -2091,10 +2091,10 @@ int gap_channel_reporting_set(
     return 1;
 }
 
+// Application facing
 // Supply local channel classifications packed as four 2-bit values per byte,
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
 // A Peripheral reports changes only after the Central enables reporting.
-// Application facing
 int gap_channel_classification_set(
     const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
@@ -2116,8 +2116,8 @@ int gap_channel_classification_set(
     return 1;
 }
 
-// Read the local classifications supplied by the Host/adapter.
 // Application facing
+// Read the local classifications supplied by the Host/adapter.
 int gap_channel_classification_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
@@ -2129,8 +2129,8 @@ int gap_channel_classification_get(
     return 1;
 }
 
-// Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
 // Application facing
+// Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
 int gap_peer_channel_classification_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
@@ -2143,9 +2143,9 @@ int gap_peer_channel_classification_get(
     return 1;
 }
 
+// Application facing
 // Request a transmit payload limit in either role; packet time is derived for
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
-// Application facing
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() || octets < 27 ||
@@ -2167,15 +2167,15 @@ gap_data_length gap_data_length_get(void) {
     return gap_conn_ctx[gap_conn_slot].data_length;
 }
 
-// 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
 // Application facing
+// 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
 uint8_t gap_data_length_status(void) {
     return gap_conn_ctx[gap_conn_slot].length_status;
 }
 
+// Application facing
 // Request preferred transmit and receive PHY masks (1M=1, 2M=2, Coded=4).
 // The Central chooses the final rates; the connection switches at a shared Instant.
-// Application facing
 int gap_phy_set(uint8_t tx, uint8_t rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t supported = GAP_HW_PHY_MASK() & 7;
@@ -2203,8 +2203,8 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
     return 1;
 }
 
-// Return the current rate in each direction; values are GAP_PHY_*.
 // Application facing
+// Return the current rate in each direction; values are GAP_PHY_*.
 void gap_phy_get(uint8_t *tx, uint8_t *rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (tx) *tx = conn->phy.current.tx;
@@ -2216,10 +2216,10 @@ uint8_t gap_phy_status(void) {
     return gap_conn_ctx[gap_conn_slot].phy.status;
 }
 
+// Application facing
     // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
-// Application facing
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2248,9 +2248,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     return 1;
 }
 
+// Application facing
 // Gracefully terminate the active Peripheral connection after sending the
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
-// Application facing
 int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -2456,9 +2456,9 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     return 1;
 }
 
+// Application facing
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
-// Application facing
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2503,8 +2503,8 @@ int gap_encrypted(void) {
         gap_security->tx_enabled && gap_security->rx_enabled;
 }
 
-// Report achieved security only after encryption completes, never during pairing.
 // Application facing
+// Report achieved security only after encryption completes, never during pairing.
 int gap_authenticated(void) {
     return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
 }
