@@ -254,6 +254,7 @@ static uint32_t gap_periodic_airtime_us(size_t data_len, uint8_t phy) {
 // Start periodic advertising on an active, nonscannable extended set. The
 // interval is in 1.25 ms units (6..65535); periodic data is a sequence of AD
 // structures and may be chained across AUX_SYNC_IND/AUX_CHAIN_IND packets.
+// Application facing
 int gap_periodic_adv_start(
     uint8_t set_id, const uint8_t *data, size_t len, uint16_t interval
 ) {
@@ -301,6 +302,7 @@ int gap_periodic_adv_start(
 // Enable PAwR subevent transmission for an active periodic advertising set.
 // Timing values use the Core units: 1.25 ms for subevent interval and response
 // slot delay, and 0.125 ms for response slot spacing.
+// Application facing
 int gap_periodic_pawr_set(
     uint8_t set_id, uint8_t subevents, uint8_t subevent_int,
     uint8_t resp_delay, uint8_t resp_spacing
@@ -364,6 +366,7 @@ int gap_periodic_pawr_set(
 
 // Configure how many response slots the advertiser listens to per subevent.
 // PRTI advertises their timing; the slot count is local product configuration.
+// Application facing
 int gap_periodic_pawr_slots_set(
     uint8_t set_id, uint8_t count
 ) {
@@ -385,6 +388,7 @@ int gap_periodic_pawr_slots_set(
 
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
+// Application facing
 int gap_periodic_pawr_connect(
     uint8_t set_id, uint8_t subevent,
     uint8_t peer_address_type, const uint8_t peer_address[6]
@@ -414,6 +418,7 @@ int gap_periodic_pawr_connect(
     return 1;
 }
 
+// Application facing
 int gap_periodic_adv_update(
     uint8_t set_id, const uint8_t *data, size_t len
 ) {
@@ -446,6 +451,7 @@ int gap_periodic_adv_update(
     return 1;
 }
 
+// Application facing
 int gap_periodic_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
@@ -459,6 +465,7 @@ int gap_periodic_adv_stop(uint8_t set_id) {
 }
 
 // Configure and start one extended advertising set.
+// Application facing
 int gap_ext_adv_start_phy(
     uint8_t set_id, const uint8_t *data, size_t len,
     uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
@@ -491,6 +498,7 @@ int gap_ext_adv_start_phy(
 
 // Start an extended scannable set; its advertising data is returned only in
 // AUX_SCAN_RSP, as required for scannable extended advertising.
+// Application facing
 int gap_ext_adv_scannable_start_phy(
     uint8_t set_id, const uint8_t *scan_response,
     size_t scan_resp_len, uint8_t sid,
@@ -508,6 +516,7 @@ int gap_ext_adv_scannable_start_phy(
     return 1;
 }
 
+// Application facing
 int gap_ext_adv_stop(uint8_t set_id) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
 
@@ -820,6 +829,7 @@ static void gap_ext_report_queue(
 }
 
 // Return one complete reassembled extended advertising report.
+// Application facing
 int gap_ext_scan_poll(gap_ext_report *report) {
     if (!report || !gap_ext_scan_idx.report_count) return 0;
     *report = gap_ext_adv_reports[gap_ext_scan_idx.report_head];
@@ -853,6 +863,7 @@ static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
 
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned handle identifies later events.
+// Application facing
 int gap_periodic_sync_start(
     uint8_t address_type,
     const uint8_t address[6], uint8_t sid, uint32_t timeout_ms
@@ -894,6 +905,7 @@ int gap_periodic_sync_start(
 }
 
 // Enable receipt of periodic sync transfers from connected peers.
+// Application facing
 int gap_periodic_sync_enable(
     uint8_t enabled, uint32_t timeout_ms
 ) {
@@ -920,6 +932,7 @@ static void gap_sync_finish_owned_scan(void) {
 
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
+// Application facing
 int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || terminate > 1 ||
@@ -936,6 +949,7 @@ int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
 // Select one PAwR subevent and queue one response for its selected slot.
 // The configuration stays selected for later events; each queued response is
 // consumed after transmission. Pass zero data bytes to send an empty response.
+// Application facing
 int gap_sync_pawr_respond(
     uint8_t handle, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len
@@ -981,6 +995,7 @@ int gap_sync_pawr_respond(
 // Repeat the queued PAwR response at matching subevents until disabled.
 // Responses remain one-shot by default; disabling repeat consumes the
 // existing response after it is sent once more.
+// Application facing
 int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
     int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || !gap_syncs[slot].established ||
@@ -992,6 +1007,7 @@ int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
 }
 
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
+// Application facing
 int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     int slot = gap_sync_slot_from_handle(handle);
@@ -1004,6 +1020,7 @@ int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
     return 1;
 }
 
+// Application facing
 int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
     if (!event || !gap_sync_events.count) return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
@@ -1012,6 +1029,7 @@ int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
     return 1;
 }
 
+// Application facing
 int gap_periodic_report_poll(gap_periodic_report *report) {
     if (!report || !gap_periodic_reports.count) return 0;
     *report = gap_periodic_reports.items[gap_periodic_reports.head];
@@ -1020,6 +1038,7 @@ int gap_periodic_report_poll(gap_periodic_report *report) {
     return 1;
 }
 
+// Application facing
 int gap_pawr_report_poll(gap_pawr_report *report) {
     if (!report || !gap_pawr_reports.count) return 0;
     *report = gap_pawr_reports.items[gap_pawr_reports.head];
@@ -2453,6 +2472,7 @@ static int gap_past_encode(
 }
 
 // Queue a PAST LL control PDU for the active connection.
+// Application facing
 int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     int sync_slot = gap_sync_slot_from_handle(handle);

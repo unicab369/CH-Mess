@@ -401,6 +401,7 @@ static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 
 static uint8_t gap_conn_slot;
 
+// Application facing
 int gap_conn_busy(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         if (gap_conn_ctx[slot].link_state.active) return 1;
@@ -419,6 +420,7 @@ typedef struct {
     uint16_t generation;
 } gap_conn_handle;
 
+// Application facing
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
@@ -427,6 +429,7 @@ static inline uint8_t gap_conn_count(void) {
 }
 
 // Return the handle for the active connection at this zero-based list index.
+// Application facing
 static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
     if (!handle) return 0;
 
@@ -441,6 +444,7 @@ static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
 }
 
 // Select a live link for the existing connection-specific GAP operations.
+// Application facing
 static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
         !gap_conn_ctx[handle.slot].link_state.active ||
@@ -451,6 +455,7 @@ static inline int gap_conn_select(gap_conn_handle handle) {
 }
 
 // Capture the currently selected link's handle for later API calls.
+// Application facing
 static inline int gap_conn_current(gap_conn_handle *handle) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!handle || !conn->link_state.active) return 0;
@@ -550,6 +555,7 @@ static gap_timing_cfg gap_conn_timing = {
 
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
+// Application facing
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!timing || !gap_timing_valid(
@@ -570,6 +576,7 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
 }
 
 // Read the current initial connection and attempt timing settings.
+// Application facing
 int gap_conn_timing_get(gap_timing_cfg *timing) {
     if (!timing) return 0;
     *timing = gap_conn_timing;
@@ -666,6 +673,7 @@ static int gap_accept_list_match(
 }
 
 // Add an identity address to the bounded Filter Accept List while GAP is idle.
+// Application facing
 int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -694,6 +702,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t address_type) {
 }
 
 // Remove an identity address from the Filter Accept List while GAP is idle.
+// Application facing
 int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -715,6 +724,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t address_type) {
 }
 
 // Empty the Filter Accept List while GAP is idle.
+// Application facing
 int gap_accept_list_clear(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_scanner.scanning || gap_adv.enabled ||
@@ -740,6 +750,7 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
+// Application facing
 int gap_identity_set(
     const uint8_t address[6], uint8_t address_type, const uint8_t irk[16]
 ) {
@@ -784,6 +795,7 @@ int gap_identity_set(
 }
 
 // Set a listed peer's network/device privacy mode while GAP is idle.
+// Application facing
 int gap_identity_privacy(
     const uint8_t address[6], uint8_t address_type, uint8_t mode
 ) {
@@ -807,6 +819,7 @@ int gap_identity_privacy(
 }
 
 // Resolve without replacing the received address, which is needed on the air.
+// Application facing
 int gap_resolve(
     const uint8_t address[6], uint8_t address_type,
     uint8_t identity[6], uint8_t *identity_type
@@ -856,6 +869,7 @@ static int gap_private_address_generate(
 
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
+// Application facing
 int gap_identity_local_key(
     const uint8_t address[6], uint8_t address_type, const uint8_t irk[16]
 ) {
@@ -916,6 +930,7 @@ static void gap_local_address_select(
 // Set rotating private addresses while GAP is idle: an IRK selects RPAs,
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
+// Application facing
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -978,6 +993,7 @@ static int gap_privacy_timeout_pick(
 
 // Generate local RPAs using a uniformly selected timeout for every rotation.
 // Bounds follow HCI LE Set Resolvable Private Address Timeout v2: 1..3600 s.
+// Application facing
 int gap_privacy_set_randomized(
     const uint8_t irk[16], uint16_t min_timeout_s, uint16_t max_timeout_s
 ) {
@@ -1010,6 +1026,7 @@ int gap_privacy_set_randomized(
 
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
+// Application facing
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
@@ -1024,6 +1041,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
+// Application facing
 int gap_set_static_random_address(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
@@ -1040,6 +1058,7 @@ int gap_set_static_random_address(const uint8_t address[6]) {
 }
 
 // Use the controller's factory public address for GAP advertising and scanning.
+// Application facing
 int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||

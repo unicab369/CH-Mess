@@ -9,3 +9,4 @@ advertisement repeats every 100 ms. Its `funconfig.h` sets
 `GAP_CONNECTION_COUNT` to 1 and disables SMP with `GAP_SMP_SUPPORT` because
 this advertiser does not accept connections or pair. Set `GAP_SMP_SUPPORT` to
 1 in applications that need pairing, bonding, or SMP-based authentication.
+Identity and accept-list capacities are also reduced to one for this example.

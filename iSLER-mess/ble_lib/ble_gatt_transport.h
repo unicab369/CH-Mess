@@ -588,6 +588,7 @@ static inline int gatt_transport_receive_att(
 }
 
 // Initialize the ATT fixed bearer and its shared L2CAP connection.
+// Application facing
 static inline int gatt_transport_init(
     ble_gatt_transport *transport,
     ble_gatt_server *server
@@ -614,6 +615,7 @@ static inline int gatt_transport_init(
 }
 
 // Update link state when the owning BLE layer reports a connection change.
+// Application facing
 static inline void gatt_transport_set_connected(
     ble_gatt_transport *transport, int connected
 ) {
@@ -653,6 +655,7 @@ static inline void gatt_transport_set_connected(
 }
 
 // Update security state supplied by the owning BLE layer.
+// Application facing
 static inline void gatt_transport_set_security(
     ble_gatt_transport *transport,
     int encrypted, int authenticated, uint8_t key_size
@@ -680,6 +683,7 @@ static inline void gatt_transport_set_security(
 // Fixed ATT bearer and client integration
 // =============================================================================
 
+// Application facing
 static inline int gatt_transport_send_client(
     void *context,
     const uint8_t *att, uint16_t att_len
@@ -701,6 +705,7 @@ static inline int gatt_transport_send_client(
     return 1;
 }
 
+// Application facing
 static inline void gatt_transport_set_client(
     ble_gatt_transport *transport,
     ble_gatt_client *client
@@ -723,6 +728,7 @@ static inline void gatt_transport_set_client(
 // EATT client integration and event queues
 // =============================================================================
 // Return the client transaction state for one open EATT bearer, if attached.
+// Application facing
 static inline ble_gatt_client *gatt_transport_eatt_client_get(
     ble_gatt_transport *transport, uint16_t cid
 ) {
@@ -737,6 +743,7 @@ static inline ble_gatt_client *gatt_transport_eatt_client_get(
 }
 
 // Install EATT client callbacks that identify the bearer for each event.
+// Application facing
 static inline void gatt_transport_set_eatt_client_callbacks(
     ble_gatt_transport *transport, ble_gatt_transport_eatt_sign_fn sign,
     ble_gatt_transport_eatt_result_fn result,
@@ -819,6 +826,7 @@ static inline int gatt_transport_client_poll(
 }
 
 // Feed one received LL fragment. Return 1 when it completes an L2CAP PDU.
+// Application facing
 static inline int gatt_transport_receive_fragment(
     ble_gatt_transport *transport, uint8_t llid,
     const uint8_t *fragment, size_t len
@@ -845,6 +853,7 @@ static inline int gatt_transport_receive_fragment(
 
 // Return the next LL fragment without consuming it. Call tx_sent only after
 // the link layer accepts the fragment.
+// Application facing
 static inline int gatt_transport_tx_peek(
     ble_gatt_transport *transport, uint16_t max_payload,
     uint8_t *llid, const uint8_t **fragment, uint16_t *len
@@ -860,6 +869,7 @@ static inline int gatt_transport_tx_peek(
     return 1;
 }
 
+// Application facing
 static inline int gatt_transport_tx_sent(
     ble_gatt_transport *transport, uint16_t len, uint32_t now_ms
 ) {
@@ -881,6 +891,7 @@ static inline int gatt_transport_tx_sent(
 
 // Service timers and queue outgoing work. A negative result means the link
 // layer should close the connection.
+// Application facing
 static inline int gatt_transport_poll(
     ble_gatt_transport *transport, uint32_t now_ms
 ) {

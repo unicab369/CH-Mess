@@ -81,6 +81,7 @@ typedef struct {
 // =============================================================================
 // Transaction state and response validation
 // =============================================================================
+// Application facing
 static inline void gatt_client_init(
     ble_gatt_client *client,
     ble_gatt_client_send_fn send, ble_gatt_client_result_fn result,
@@ -97,6 +98,7 @@ static inline void gatt_client_init(
     client->context = context;
 }
 
+// Application facing
 static inline void gatt_client_set_signer(
     ble_gatt_client *client,
     ble_gatt_client_sign_fn sign
@@ -104,6 +106,7 @@ static inline void gatt_client_set_signer(
     if (client) client->sign = sign;
 }
 
+// Application facing
 static inline void gatt_client_reset(ble_gatt_client *client) {
     if (!client) return;
     client->mtu = client->local_mtu = 23;
@@ -163,6 +166,7 @@ static inline int gatt_client_request(
 // =============================================================================
 // Standard GATT request builders
 // =============================================================================
+// Application facing
 static inline int gatt_client_mtu(
     ble_gatt_client *client,
     uint16_t mtu, uint32_t now_ms
@@ -174,6 +178,7 @@ static inline int gatt_client_mtu(
                                 ATT_OP_EXCHANGE_MTU_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_services(
     ble_gatt_client *client,
     uint16_t start, uint16_t end,
@@ -203,6 +208,7 @@ static inline int gatt_client_services(
                                ATT_OP_FIND_BY_TYPE_VALUE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_included(
     ble_gatt_client *client, uint16_t start, uint16_t end, uint32_t now_ms
 ) {
@@ -215,6 +221,7 @@ static inline int gatt_client_included(
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_characteristics(
     ble_gatt_client *client, uint16_t start, uint16_t end,
     const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms
@@ -238,6 +245,7 @@ static inline int gatt_client_characteristics(
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_discover_descriptors(
     ble_gatt_client *client,
     uint16_t start, uint16_t end, uint32_t now_ms
@@ -250,6 +258,7 @@ static inline int gatt_client_discover_descriptors(
                                ATT_OP_FIND_INFO_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_read(
     ble_gatt_client *client, uint16_t handle, uint32_t now_ms
 ) {
@@ -263,6 +272,7 @@ static inline int gatt_client_read(
 // Automatically fetch successive Read Blob chunks. The assembled value is
 // available in client->operation.value/client->operation.value_len at the completion
 // callback; the ordinary response callback fires once for the whole read.
+// Application facing
 static inline int gatt_client_read_long(
     ble_gatt_client *client,
     uint16_t handle, uint32_t now_ms
@@ -283,6 +293,7 @@ static inline int gatt_client_read_long(
     return 1;
 }
 
+// Application facing
 static inline int gatt_client_read_blob(
     ble_gatt_client *client, uint16_t handle,
     uint16_t offset, uint32_t now_ms
@@ -295,6 +306,7 @@ static inline int gatt_client_read_blob(
                                ATT_OP_READ_BLOB_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_read_by_uuid(
     ble_gatt_client *client,
     uint16_t start, uint16_t end,
@@ -312,6 +324,7 @@ static inline int gatt_client_read_by_uuid(
                                ATT_OP_READ_BY_TYPE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_read_multiple(
     ble_gatt_client *client,
     const uint16_t *handles, uint8_t count, uint8_t variable,
@@ -330,6 +343,7 @@ static inline int gatt_client_read_multiple(
             variable ? ATT_OP_READ_MULT_VAR_RSP : ATT_OP_READ_MULTIPLE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_write(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value,
@@ -346,6 +360,7 @@ static inline int gatt_client_write(
     return gatt_client_request(client, pdu, len + 3, ATT_OP_WRITE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_set_cccd(
     ble_gatt_client *client,
     uint16_t cccd_handle, uint8_t notifications,
@@ -356,6 +371,7 @@ static inline int gatt_client_set_cccd(
     return gatt_client_write(client, cccd_handle, value, sizeof(value), now_ms);
 }
 
+// Application facing
 static inline int gatt_client_write_long(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value,
@@ -395,6 +411,7 @@ static inline int gatt_client_write_long(
 
 // Commands do not receive an ATT response and therefore do not occupy the
 // request/response transaction slot.
+// Application facing
 static inline int gatt_client_write_command(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value, uint16_t len
@@ -414,6 +431,7 @@ static inline int gatt_client_write_command(
 
 // Signed Write is a command (no ATT response). The signer owns the bonded
 // CSRK and monotonically increasing sign counter.
+// Application facing
 static inline int gatt_client_write_signed(
     ble_gatt_client *client,
     uint16_t handle, const uint8_t *value, uint16_t len
@@ -435,6 +453,7 @@ static inline int gatt_client_write_signed(
     return client->send(client->context, pdu, signed_len + 12);
 }
 
+// Application facing
 static inline int gatt_client_prepare_write(
     ble_gatt_client *client,
     uint16_t handle, uint16_t offset,
@@ -454,6 +473,7 @@ static inline int gatt_client_prepare_write(
                                ATT_OP_PREPARE_WRITE_RSP, now_ms);
 }
 
+// Application facing
 static inline int gatt_client_execute_write(
     ble_gatt_client *client, uint8_t commit, uint32_t now_ms
 ) {

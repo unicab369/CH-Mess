@@ -322,6 +322,7 @@ static uint8_t *gatt_attribute_value(
 // =============================================================================
 // Database hash and server lifecycle
 // =============================================================================
+// Application facing
 static inline void gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
     if (!server) return;
     memset(server, 0, sizeof(*server));
@@ -333,6 +334,7 @@ static inline void gatt_server_init(ble_gatt_server *server, uint16_t local_mtu)
     server->next_handle = 1;
 }
 
+// Application facing
 static inline void gatt_server_link_reset(ble_gatt_server *server) {
     if (!server)
         return;
@@ -368,6 +370,7 @@ static inline void gatt_server_link_reset(ble_gatt_server *server) {
 
 // Set the minimum LE encryption key size required for an attribute (7-16
 // octets). Configure it while building the database, before sealing it.
+// Application facing
 static inline int gatt_server_set_min_key_size(
     ble_gatt_server *server,
     uint16_t handle, uint8_t octets
@@ -383,6 +386,7 @@ static inline int gatt_server_set_min_key_size(
 // Configure server-owned attribute storage as variable or fixed length.
 // Storage with spare capacity is variable by default; a write callback owns
 // its own length semantics and cannot be reconfigured here.
+// Application facing
 static inline int gatt_server_set_variable_length(
     ble_gatt_server *server,
     uint16_t handle, int variable
@@ -426,6 +430,7 @@ static int gatt_server_is_service_changed(
         gatt_uuid_equal(&attribute->uuid, &changed_uuid);
 }
 
+// Application facing
 static inline int gatt_server_set_transaction_callbacks(
     ble_gatt_server *server, uint16_t handle,
     ble_gatt_prepare_fn prepare, ble_gatt_execute_fn execute
@@ -483,6 +488,7 @@ static int gatt_server_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_server_seal_database(ble_gatt_server *server) {
     if (!server || server->database_sealed) return server != NULL;
     const uint16_t attribute_read_permissions = BLE_GATT_PERM_READ |
@@ -762,6 +768,7 @@ static inline int gatt_server_seal_database(ble_gatt_server *server) {
     return 1;
 }
 
+// Application facing
 static inline void gatt_server_set_signed_write_verifier(
     ble_gatt_server *server, ble_gatt_signed_verify_fn verify, void *context
 ) {
@@ -770,6 +777,7 @@ static inline void gatt_server_set_signed_write_verifier(
     server->signed_context = context;
 }
 
+// Application facing
 static inline void gatt_server_set_authorizer(
     ble_gatt_server *server,
     ble_gatt_authorize_fn authorize, void *context
@@ -781,6 +789,7 @@ static inline void gatt_server_set_authorizer(
 
 // App-owned CCCD persistence. Callbacks use their context to identify the
 // current peer; load returns zero for peers without a bonded stored value.
+// Application facing
 static inline void gatt_server_set_cccd_persistence(
     ble_gatt_server *server,
     ble_gatt_cccd_load_fn load, ble_gatt_cccd_store_fn store, void *context
@@ -794,6 +803,7 @@ static inline void gatt_server_set_cccd_persistence(
 // Optional per-peer database-version persistence. Install callbacks with a
 // context identifying the current bonded peer before its connection starts.
 // The new hash is stored after a Service Changed indication is confirmed.
+// Application facing
 static inline void gatt_server_set_database_hash_persistence(
     ble_gatt_server *server, ble_gatt_database_hash_load_fn load,
     ble_gatt_database_hash_store_fn store, void *context
@@ -807,6 +817,7 @@ static inline void gatt_server_set_database_hash_persistence(
 // Client Supported Features is scoped to the connected client. These
 // callbacks let the application persist it for bonded peers; the context
 // should identify the current peer. Without a load callback it resets to zero.
+// Application facing
 static inline void gatt_server_set_client_features_persistence(
     ble_gatt_server *server, ble_gatt_client_features_load_fn load,
     ble_gatt_client_features_store_fn store, void *context
@@ -823,6 +834,7 @@ static inline void gatt_server_set_client_features_persistence(
 // Server-owned static storage is variable length when value_capacity exceeds
 // value_len; call gatt_server_set_variable_length(..., 0) to make it fixed.
 // When a write callback is supplied, the application owns value-length rules.
+// Application facing
 static inline int gatt_server_add_attribute(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
@@ -841,6 +853,7 @@ static ble_gatt_uuid gatt_uuid16(uint16_t value) {
     return uuid;
 }
 
+// Application facing
 static inline int gatt_server_add_service(
     ble_gatt_server *server,
     const ble_gatt_uuid *service_uuid,
@@ -861,6 +874,7 @@ static inline int gatt_server_add_service(
 // Add an Include declaration to the current service. The referenced service
 // must already be closed by a later service declaration so its end handle is
 // stable. ATT includes carry the UUID only for 16-bit service UUIDs.
+// Application facing
 static inline int gatt_server_add_included_service(
     ble_gatt_server *server, uint16_t included_service_handle,
     uint16_t *include_handle
@@ -916,6 +930,7 @@ static inline int gatt_server_add_included_service(
     return 1;
 }
 
+// Application facing
 static inline int gatt_server_add_characteristic(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
@@ -984,6 +999,7 @@ static inline int gatt_server_add_characteristic(
     return 1;
 }
 
+// Application facing
 static inline int gatt_server_add_descriptor(
     ble_gatt_server *server,
     const ble_gatt_uuid *uuid,
@@ -1023,6 +1039,7 @@ static inline int gatt_server_add_descriptor(
 // Hash, and Client Supported Features characteristics. Sealing the database
 // calculates the hash. The application owns per-peer bonded-state persistence
 // and decides when a known service change should be indicated to each peer.
+// Application facing
 static inline int gatt_server_add_standard_gatt_service(
     ble_gatt_server *server, ble_gatt_standard_service_handles *handles
 ) {
@@ -1237,6 +1254,7 @@ static ble_gatt_attribute *gatt_server_cccd_for(
 // at 512 octets and truncated to ATT_MTU - 3. The application calls poll_event
 // from its connection event loop with a monotonic millisecond tick; a timed-out
 // indication is cleared and reported as -1.
+// Application facing
 static inline int gatt_server_queue_event(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
@@ -1270,6 +1288,7 @@ static inline int gatt_server_queue_event(
 // database change. The caller supplies the changed inclusive handle range;
 // CCCD persistence and deciding which bonded peers need this range are owned
 // by the application.
+// Application facing
 static inline int gatt_server_service_changed(
     ble_gatt_server *server,
     uint16_t start_handle, uint16_t end_handle
@@ -1294,6 +1313,7 @@ static inline int gatt_server_service_changed(
 // current peer. Call after restoring that peer's CCCDs on connection. A new
 // peer gets a baseline without an indication; a changed database queues a
 // full-range indication only when the peer has enabled Service Changed.
+// Application facing
 static inline int gatt_server_check_database_version(
     ble_gatt_server *server
 ) {
@@ -1404,6 +1424,7 @@ static uint8_t gatt_server_write(
     return 0;
 }
 
+// Application facing
 static inline int gatt_server_set_cccd(
     ble_gatt_server *server,
     uint16_t value_handle, uint16_t configuration
@@ -1427,6 +1448,7 @@ static inline int gatt_server_set_cccd(
 
 // Restore the Client Supported Features octet after link reset and before ATT
 // traffic. Unknown/reserved bits in application storage are discarded.
+// Application facing
 static inline void gatt_server_restore_client_features(
     ble_gatt_server *server
 ) {
@@ -1450,6 +1472,7 @@ static inline void gatt_server_restore_client_features(
 // =============================================================================
 // Build one Handle Value Notification. The application supplies the current
 // value; values are capped at 512 octets and truncated to ATT_MTU - 3 bytes.
+// Application facing
 static inline int gatt_server_notify(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
@@ -1478,6 +1501,7 @@ static inline int gatt_server_notify(
 // Build one Handle Value Indication. Values are capped at 512 octets and
 // truncated to ATT_MTU - 3; only one indication may await confirmation. For
 // direct sends, poll_event starts timeout tracking on its next call.
+// Application facing
 static inline int gatt_server_indicate(
     ble_gatt_server *server,
     uint16_t value_handle, const uint8_t *value, uint16_t value_len,
@@ -1506,6 +1530,7 @@ static inline int gatt_server_indicate(
     return 1;
 }
 
+// Application facing
 static inline int gatt_server_poll_event(
     ble_gatt_server *server,
     uint32_t now_ms, uint8_t *att, uint16_t att_capacity, uint16_t *att_len

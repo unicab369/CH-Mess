@@ -14,5 +14,7 @@
 
 #define GAP_CONNECTION_COUNT      1
 #define GAP_SMP_SUPPORT           0
+#define GAP_IDENTITY_COUNT        1
+#define GAP_ACCEPT_LIST_COUNT     1
 
 #endif

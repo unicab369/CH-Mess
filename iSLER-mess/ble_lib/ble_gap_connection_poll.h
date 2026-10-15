@@ -834,6 +834,7 @@ void gap_hw_received(void) {
 }
 
 
+// Application facing
 void gap_hw_init(void) {
     GAP_HW_INIT();
 #if GAP_EXT_ADV_SUPPORT

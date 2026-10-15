@@ -44,6 +44,7 @@ static inline uint16_t ble_gap_l2cap_max_tx(void *context) {
     return gap_data_length_get().tx_octets;
 }
 
+// Application facing
 static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const ble_l2cap_ops *upper,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
@@ -62,6 +63,7 @@ static inline int ble_gap_l2cap_init(
 
 // Poll every live link. Each peer keeps independent L2CAP channels, fragment
 // assembly, and transmit state while GAP arbitrates access to the radio.
+// Application facing
 static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     if (!manager) return -1;
 
@@ -119,6 +121,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 }
 
 // Return a live connection's L2CAP instance for channel registration and use.
+// Application facing
 static inline ble_l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {

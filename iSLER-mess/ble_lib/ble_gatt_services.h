@@ -28,6 +28,7 @@ static uint8_t gatt_battery_level_read(
 // Add the standard Battery Service with a read-only Battery Level value.
 // Keep one service state per GATT server/connection and keep it alive while
 // that server may read the characteristic.
+// Application facing
 static inline int gatt_battery_service_add(
     ble_gatt_server *server,
     ble_gatt_battery_service *battery,
@@ -62,6 +63,7 @@ static inline int gatt_battery_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_battery_service_set_level(
     ble_gatt_battery_service *battery, uint8_t level
 ) {
@@ -122,6 +124,7 @@ static int gatt_device_info_add_string(
 // Add the standard Device Information Service. Optional strings and IDs are
 // copied into the server database; omitted fields have a zero handle. IDs use
 // the Bluetooth-defined 8-byte System ID and 7-byte PnP ID formats.
+// Application facing
 static inline int gatt_device_information_service_add(
     ble_gatt_server *server,
     ble_gatt_device_information_service *service,
@@ -193,6 +196,7 @@ typedef struct {
 // Add the Generic Access Service with read-only Device Name and Appearance.
 // The name is UTF-8 and follows GAP's 248-octet maximum; values are copied to
 // the server database during registration.
+// Application facing
 static inline int gatt_gap_service_add(
     ble_gatt_server *server, ble_gatt_gap_service *service,
     const char *device_name, uint16_t appearance
@@ -248,6 +252,7 @@ typedef struct {
 
 // Add the standard Heart Rate Service. Set body_sensor_location to 0xff to
 // omit the optional characteristic; otherwise use the assigned value 0..6.
+// Application facing
 static inline int gatt_heart_rate_service_add(
     ble_gatt_server *server, ble_gatt_heart_rate_service *service,
     uint8_t body_sensor_location
@@ -298,6 +303,7 @@ static inline int gatt_heart_rate_service_add(
 
 // Encode a Heart Rate Measurement value. The output capacity bounds optional
 // RR Interval entries, and only complete 16-bit values are written.
+// Application facing
 static inline int gatt_heart_rate_measurement_encode(
     uint16_t heart_rate, int energy_expended_present,
     uint16_t energy_expended, const uint16_t *rr_intervals,
@@ -542,6 +548,7 @@ typedef struct {
     uint16_t specific_ops_handle, specific_ops_cccd_handle;
 } ble_gatt_cgm_service;
 
+// Application facing
 static inline int gatt_immediate_alert_service_add(
     ble_gatt_server *server, ble_gatt_immediate_alert_service *service,
     uint8_t alert_level
@@ -560,6 +567,7 @@ static inline int gatt_immediate_alert_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_link_loss_service_add(
     ble_gatt_server *server, ble_gatt_link_loss_service *service,
     uint8_t alert_level
@@ -578,6 +586,7 @@ static inline int gatt_link_loss_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_tx_power_service_add(
     ble_gatt_server *server, ble_gatt_tx_power_service *service,
     int8_t tx_power_dbm
@@ -596,6 +605,7 @@ static inline int gatt_tx_power_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_current_time_service_add(
     ble_gatt_server *server, ble_gatt_current_time_service *service,
     const uint8_t current_time[10], const uint8_t local_time_info[2],
@@ -633,6 +643,7 @@ static inline int gatt_current_time_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_reference_time_update_service_add(
     ble_gatt_server *server, ble_gatt_reference_time_update_service *service,
     const uint8_t state[2]
@@ -654,6 +665,7 @@ static inline int gatt_reference_time_update_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_next_dst_change_service_add(
     ble_gatt_server *server, ble_gatt_next_dst_change_service *service,
     const uint8_t time_with_dst[7]
@@ -672,6 +684,7 @@ static inline int gatt_next_dst_change_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_phone_alert_status_service_add(
     ble_gatt_server *server, ble_gatt_phone_alert_status_service *service,
     const uint8_t alert_status[1], uint8_t ringer_setting
@@ -698,6 +711,7 @@ static inline int gatt_phone_alert_status_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_health_thermometer_service_add(
     ble_gatt_server *server, ble_gatt_health_thermometer_service *service,
     uint8_t temperature_type, int include_intermediate_temperature
@@ -739,6 +753,7 @@ static inline int gatt_health_thermometer_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_blood_pressure_service_add(
     ble_gatt_server *server, ble_gatt_blood_pressure_service *service,
     uint16_t blood_pressure_feature, int include_intermediate_cuff_pressure
@@ -778,6 +793,7 @@ static inline int gatt_blood_pressure_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_rsc_service_add(
     ble_gatt_server *server, ble_gatt_rsc_service *service,
     uint16_t features, uint8_t sensor_location
@@ -829,6 +845,7 @@ static inline int gatt_rsc_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_glucose_service_add(
     ble_gatt_server *server, ble_gatt_glucose_service *service,
     uint16_t features, int include_context
@@ -878,6 +895,7 @@ static inline int gatt_glucose_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_alert_notification_service_add(
     ble_gatt_server *server, ble_gatt_alert_notification_service *service,
     uint16_t supported_new_alerts, uint16_t supported_unread_alerts
@@ -918,6 +936,7 @@ static inline int gatt_alert_notification_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_scan_parameters_service_add(
     ble_gatt_server *server, ble_gatt_scan_parameters_service *service,
     const uint8_t scan_interval_window[4]
@@ -940,6 +959,7 @@ static inline int gatt_scan_parameters_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_csc_service_add(
     ble_gatt_server *server, ble_gatt_csc_service *service,
     uint16_t features, uint8_t sensor_location
@@ -991,6 +1011,7 @@ static inline int gatt_csc_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_cycling_power_service_add(
     ble_gatt_server *server, ble_gatt_cycling_power_service *service,
     uint32_t features, uint8_t sensor_location,
@@ -1055,6 +1076,7 @@ static inline int gatt_cycling_power_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_location_navigation_service_add(
     ble_gatt_server *server, ble_gatt_location_navigation_service *service,
     uint32_t features, int include_navigation,
@@ -1127,6 +1149,7 @@ static inline int gatt_location_navigation_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_environmental_sensing_service_add(
     ble_gatt_server *server, ble_gatt_environmental_sensing_service *service,
     const ble_gatt_sig_characteristic *measurements, uint8_t count
@@ -1143,6 +1166,7 @@ static inline int gatt_environmental_sensing_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_body_composition_service_add(
     ble_gatt_server *server, ble_gatt_body_composition_service *service,
     uint32_t features
@@ -1168,6 +1192,7 @@ static inline int gatt_body_composition_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_user_data_service_add(
     ble_gatt_server *server, ble_gatt_user_data_service *service,
     uint32_t database_change_increment, uint8_t user_index
@@ -1207,6 +1232,7 @@ static inline int gatt_user_data_service_add(
     return 1;
 }
 
+// Application facing
 static inline int gatt_weight_scale_service_add(
     ble_gatt_server *server, ble_gatt_weight_scale_service *service,
     uint16_t features
@@ -1246,6 +1272,7 @@ typedef struct {
 
 // Add the Binary Sensor Control Point and Response attributes. The application
 // implements the BSS message protocol and sends Response indications.
+// Application facing
 static inline int gatt_binary_sensor_service_add(
     ble_gatt_server *server, ble_gatt_binary_sensor_service *service
 ) {
@@ -1269,6 +1296,7 @@ static inline int gatt_binary_sensor_service_add(
 
 // Add Automation IO Digital and Analog characteristics, optionally including
 // an Aggregate characteristic whose value lists the channel value handles.
+// Application facing
 static inline int gatt_automation_io_service_add(
     ble_gatt_server *server, ble_gatt_automation_io_service *service,
     const ble_gatt_sig_characteristic *channels, uint8_t channel_count,
@@ -1367,6 +1395,7 @@ typedef struct {
 // Add the Bluetooth Mesh Provisioning Service. The application handles the
 // provisioning protocol and sends Data Out notifications through the returned
 // characteristic and CCCD handles.
+// Application facing
 static inline int gatt_mesh_provisioning_service_add(
     ble_gatt_server *server, ble_gatt_mesh_provisioning_service *service
 ) {
@@ -1390,6 +1419,7 @@ static inline int gatt_mesh_provisioning_service_add(
 
 // Add the Bluetooth Mesh Proxy Service. The application handles proxy PDU
 // processing and sends Data Out notifications using the returned handles.
+// Application facing
 static inline int gatt_mesh_proxy_service_add(
     ble_gatt_server *server, ble_gatt_mesh_proxy_service *service
 ) {
@@ -1415,6 +1445,7 @@ static inline int gatt_mesh_proxy_service_add(
 // supplies encoded static values and implements record storage and control
 // point procedures. Variable-value capacities are configurable because the
 // payloads depend on the device's supported feature set.
+// Application facing
 static inline int gatt_cgm_service_add(
     ble_gatt_server *server, ble_gatt_cgm_service *service,
     const ble_gatt_cgm_config *config
@@ -1491,6 +1522,7 @@ static inline int gatt_cgm_service_add(
 
 // Add Bond Management attributes. The application must implement the control
 // point's bond deletion procedures and enforce the requested authorization.
+// Application facing
 static inline int gatt_bond_management_service_add(
     ble_gatt_server *server, ble_gatt_bond_management_service *service,
     const uint8_t *features, uint16_t feature_len,
@@ -1524,6 +1556,7 @@ typedef struct {
 
 // Add the mandatory Indoor Positioning attributes. Values are the one-octet
 // configuration and four-octet signed coordinates in Bluetooth byte order.
+// Application facing
 static inline int gatt_indoor_positioning_service_add(
     ble_gatt_server *server, ble_gatt_indoor_positioning_service *service,
     uint8_t configuration, const uint8_t latitude[4],
@@ -1558,6 +1591,7 @@ typedef struct {
 
 // Add a Pulse Oximeter database. At least one measurement mode is required;
 // include_record_access should be set when spot-check records are stored.
+// Application facing
 static inline int gatt_pulse_oximeter_service_add(
     ble_gatt_server *server, ble_gatt_pulse_oximeter_service *service,
     uint16_t features, uint8_t spot_check, uint8_t continuous,
@@ -1614,6 +1648,7 @@ typedef struct {
 
 // Add the HTTP Proxy attribute database. The application owns HTTP request,
 // response, and transport behavior for these characteristics.
+// Application facing
 static inline int gatt_http_proxy_service_add(
     ble_gatt_server *server, ble_gatt_http_proxy_service *service,
     uint16_t uri_capacity, uint16_t headers_capacity,
