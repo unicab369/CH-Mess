@@ -1809,7 +1809,7 @@ int gap_connected(void) {
 static uint8_t gap_conn_procedure_busy(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     return !gap_connected() || gap_sec_contexts[gap_conn_slot].phase ||
-        conn->link.first_event || gap_conn_rate_busy() ||
+        conn->link.first_event ||
         conn->pending.timing_update || conn->pending.params ||
         conn->pending.length || conn->pending.channel_map ||
         conn->pending.phy_request || conn->pending.phy_update ||
@@ -1827,7 +1827,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
                         conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy() || !conn->is_central ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
         !gap_timing_valid(interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * interval * 10 * factor
@@ -1853,7 +1853,7 @@ int gap_conn_request(
                     conn->schedule.interval_125us <= maximum * 10 ?
                     conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() ||
         !gap_timing_valid(minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * maximum * 10 * factor
@@ -1886,7 +1886,7 @@ int gap_subrate_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy() || !conn->is_central ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
         !gap_rate_parameters_valid(conn->schedule.interval_125us,
             factor, peripheral_latency, continuation, timeout)
     ) return 0;
@@ -1915,7 +1915,7 @@ int gap_subrate_request(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy() || conn->is_central ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() || conn->is_central ||
         !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
         (uint64_t)timeout * 80 <=
@@ -1967,7 +1967,7 @@ int gap_conn_rate_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy() || !conn->is_central ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
         !gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
         interval < gap_conn_rate_min_interval()
     ) return 0;
@@ -1990,7 +1990,7 @@ int gap_conn_rate_request(
     uint16_t max_latency, uint16_t continuation, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy() || conn->is_central ||
+    if (gap_conn_procedure_busy() || gap_conn_rate_busy() || conn->is_central ||
         interval_min < 3 || interval_max > 32000 || interval_min > interval_max ||
         !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
@@ -2031,17 +2031,10 @@ void gap_conn_rate_get(
 // must be enabled, and bits 37..39 must be zero. Advertising channels are separate.
 // The live map changes only at the shared Instant; status uses connection_status.
 int gap_channel_map_set(const uint8_t channels[5]) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!channels || !gap_connected() || gap_security->phase || !conn->is_central ||
-        conn->link.first_event || conn->queue.phy_queued || conn->pending.phy_request ||
-        conn->pending.phy_update || conn->queue.local_map ||
-        conn->pending.channel_map || conn->queue.local_update ||
-        conn->pending.timing_update || conn->queue.local_params ||
-        conn->pending.params || conn->queue.length || conn->pending.length ||
-        conn->link_state.terminate_after_reply || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || (channels[4] & 0xe0)
+    if (!channels || gap_conn_procedure_busy() || !conn->is_central ||
+        (channels[4] & 0xe0)
     ) return 0;
 
     uint8_t count = 0;
@@ -2136,16 +2129,8 @@ int gap_peer_channel_classification_get(
 // Request a transmit payload limit in either role; packet time is derived for
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int gap_data_length_set(uint16_t octets) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_connected() || gap_security->phase || conn->link.first_event ||
-        conn->queue.length || conn->pending.length ||
-        conn->queue.local_update || conn->pending.timing_update ||
-        conn->queue.local_params || conn->pending.params ||
-        conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        conn->pending.channel_map || conn->queue.local_map ||
-        conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
-        conn->link_state.terminate_after_reply || octets < 27 ||
+    if (gap_conn_procedure_busy() || octets < 27 ||
         octets > conn->data_capacity
     ) return 0;
 
@@ -2171,19 +2156,11 @@ uint8_t gap_data_length_status(void) {
 // Request preferred transmit and receive PHY masks (1M=1, 2M=2, Coded=4).
 // The Central chooses the final rates; the connection switches at a shared Instant.
 int gap_phy_set(uint8_t tx, uint8_t rx) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t supported = GAP_HW_PHY_MASK() & 7;
 
-    if (!gap_connected() || gap_security->phase || conn->link.first_event ||
-        !(supported & 6) || !tx || !rx || (tx & ~supported) || (rx & ~supported) ||
-        conn->queue.phy_queued || conn->pending.phy_request || conn->pending.phy_update ||
-        conn->queue.local_update || conn->pending.timing_update ||
-        conn->queue.local_map || conn->pending.channel_map ||
-        conn->queue.local_params || conn->pending.params ||
-        conn->queue.length || conn->pending.length ||
-        conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        conn->link_state.terminate_after_reply
+    if (gap_conn_procedure_busy() || !(supported & 6) || !tx || !rx ||
+        (tx & ~supported) || (rx & ~supported)
     ) return 0;
 
     if (conn->features.known) {
@@ -2392,15 +2369,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!ltk || !random || !gap_connected() || !conn->is_central ||
-        conn->link.first_event || gap_security->phase || gap_smp_blocks_encryption() ||
-        conn->pending.timing_update || conn->queue.local_update ||
-        conn->queue.local_map || conn->pending.channel_map ||
-        conn->queue.local_params || conn->pending.params ||
-        conn->features.request_pending || conn->queue.length ||
-        conn->pending.length || conn->queue.phy_queued || conn->pending.phy_request ||
-        conn->pending.phy_update || conn->link_state.terminate_queued ||
-        conn->link_state.terminate_sent || conn->link_state.terminate_after_reply
+    if (!ltk || !random || gap_conn_procedure_busy() || !conn->is_central ||
+        gap_smp_blocks_encryption() || conn->features.request_pending
     ) return 0;
 
     if (conn->features.known && !(conn->features.peer[0] & 1)) {
