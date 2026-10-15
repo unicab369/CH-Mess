@@ -69,16 +69,7 @@ typedef void (*ble_gatt_transport_eatt_result_fn)(void *context, uint16_t cid,
 typedef void (*ble_gatt_transport_eatt_event_fn)(void *context, uint16_t cid,
     uint16_t handle, const uint8_t *value, uint16_t len);
 
-typedef struct {
-    uint16_t mtu, local_mtu;
-    ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
-    uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
-    uint16_t prepare_count, prepare_used;
-    uint8_t mtu_exchanged, indication_pending;
-    uint8_t indication_timeout_armed;
-    uint16_t indication_handle;
-    uint32_t indication_started_ms;
-} ble_gatt_transport_server_bearer;
+typedef ble_gatt_server_bearer_state ble_gatt_transport_server_bearer;
 
 typedef struct {
     ble_gatt_transport *transport;
@@ -181,49 +172,18 @@ static inline int gatt_transport_send_l2cap_pdu(
 // =============================================================================
 // EATT bearer state and callbacks
 // =============================================================================
-static inline int gatt_transport_eatt_context_find(
-    const ble_gatt_transport *transport, uint16_t cid
-) {
-    if (!transport || !cid) return -1;
-    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
-        if (transport->eatt_contexts[i].cid == cid) return i;
-    return -1;
-}
-
 static inline void gatt_transport_server_state_capture(
     const ble_gatt_server *server,
     ble_gatt_transport_server_bearer *state
 ) {
-    state->mtu = server->mtu;
-    state->local_mtu = server->local_mtu;
-    state->prepare_count = server->prepare_count;
-    state->prepare_used = server->prepare_used;
-    state->mtu_exchanged = server->mtu_exchanged;
-    state->indication_pending = server->indication_pending;
-    state->indication_timeout_armed = server->indication_timeout_armed;
-    state->indication_handle = server->indication_handle;
-    state->indication_started_ms = server->indication_started_ms;
-    memcpy(state->prepared, server->prepared, sizeof(state->prepared));
-    memcpy(state->prepare_data, server->prepare_data,
-           sizeof(state->prepare_data));
+    *state = server->bearer;
 }
 
 static inline void gatt_transport_server_state_load(
     ble_gatt_server *server,
     const ble_gatt_transport_server_bearer *state
 ) {
-    server->mtu = state->mtu;
-    server->local_mtu = state->local_mtu;
-    server->prepare_count = state->prepare_count;
-    server->prepare_used = state->prepare_used;
-    server->mtu_exchanged = state->mtu_exchanged;
-    server->indication_pending = state->indication_pending;
-    server->indication_timeout_armed = state->indication_timeout_armed;
-    server->indication_handle = state->indication_handle;
-    server->indication_started_ms = state->indication_started_ms;
-    memcpy(server->prepared, state->prepared, sizeof(state->prepared));
-    memcpy(server->prepare_data, state->prepare_data,
-           sizeof(state->prepare_data));
+    server->bearer = *state;
 }
 
 // Resolve a per-CID transport bearer.
@@ -231,8 +191,11 @@ static inline ble_gatt_transport_eatt_context *
 gatt_transport_eatt_context_for(
     ble_gatt_transport *transport, uint16_t cid
 ) {
-    int slot = gatt_transport_eatt_context_find(transport, cid);
-    return slot < 0 ? NULL : &transport->eatt_contexts[slot];
+    if (!transport || !cid) return NULL;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
+        if (transport->eatt_contexts[i].cid == cid)
+            return &transport->eatt_contexts[i];
+    return NULL;
 }
 
 // Send immediately when possible; otherwise queue one complete ATT PDU.
@@ -353,7 +316,13 @@ static inline void gatt_transport_eatt_client_init(
 static inline void gatt_transport_eatt_context_opened(
     ble_gatt_transport *transport, uint16_t cid, uint16_t mtu
 ) {
-    int slot = gatt_transport_eatt_context_find(transport, cid);
+    int slot = -1;
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+        if (transport->eatt_contexts[i].cid == cid) {
+            slot = i;
+            break;
+        }
+    }
     if (slot < 0) {
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             if (!transport->eatt_contexts[i].cid) {

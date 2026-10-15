@@ -179,6 +179,17 @@ typedef struct {
     uint8_t indication;
 } ble_gatt_server_event;
 
+typedef struct {
+    uint16_t mtu, local_mtu;
+    ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
+    uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
+    uint16_t prepare_count, prepare_used;
+    uint8_t mtu_exchanged, indication_pending;
+    uint8_t indication_timeout_armed;
+    uint16_t indication_handle;
+    uint32_t indication_started_ms;
+} ble_gatt_server_bearer_state;
+
 // =============================================================================
 // Server database and link state
 // =============================================================================
@@ -187,22 +198,33 @@ typedef struct {
     ble_gatt_attribute attributes[BLE_GATT_SERVER_MAX_ATTRIBUTES];
     uint16_t count;
     uint16_t next_handle;
-    uint16_t mtu, local_mtu;
     uint16_t value_used;
     uint8_t value_pool[BLE_GATT_SERVER_VALUE_POOL_SIZE];
 
-    // Per-link prepared writes and queued notifications/indications.
-    ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
-    uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
-    uint16_t prepare_count, prepare_used;
+    // ATT bearer state. Anonymous aliases keep the server API field names
+    // while allowing EATT to copy this shared state as one value.
+    union {
+        ble_gatt_server_bearer_state bearer;
+        struct {
+            uint16_t mtu, local_mtu;
+            ble_gatt_prepared_write prepared[BLE_GATT_SERVER_PREPARE_QUEUE_SIZE];
+            uint8_t prepare_data[BLE_GATT_SERVER_PREPARE_BYTES];
+            uint16_t prepare_count, prepare_used;
+            uint8_t mtu_exchanged, indication_pending;
+            uint8_t indication_timeout_armed;
+            uint16_t indication_handle;
+            uint32_t indication_started_ms;
+        };
+    };
+
+    // Queued notifications and indications.
     ble_gatt_server_event events[BLE_GATT_SERVER_EVENT_QUEUE_SIZE];
     uint8_t event_data[BLE_GATT_SERVER_EVENT_BYTES];
     uint16_t event_count, event_used;
 
     // Per-link security, negotiated features, and database hash state.
     uint8_t database_sealed;
-    uint8_t mtu_exchanged, encrypted, authenticated, indication_pending;
-    uint8_t indication_timeout_armed;
+    uint8_t encrypted, authenticated;
     uint8_t encryption_key_size;
     uint8_t database_hash[16];
     uint8_t database_hash_available, database_hash_update_pending;
@@ -222,9 +244,6 @@ typedef struct {
     ble_gatt_client_features_store_fn client_features_store;
     void *client_features_context;
 
-    // Outstanding indication timing.
-    uint16_t indication_handle;
-    uint32_t indication_started_ms;
 } ble_gatt_server;
 
 static void gatt_server_prepare_cancel_all(
