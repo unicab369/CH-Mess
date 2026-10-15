@@ -2,8 +2,9 @@
 
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
-EATT, and lets an application register its own services and attributes. It
-does not include Bluetooth SIG service profiles.
+EATT, and lets an application register its own services and attributes.
+`ble_gatt_services.h` provides reusable Bluetooth SIG services, starting with
+the Battery Service.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
@@ -19,6 +20,10 @@ between client and server and platform link
 callbacks. The GAP security manager uses the same L2CAP header helpers for
 fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
+
+The Battery Service helper adds a read-only Battery Level characteristic.
+Keep its `ble_gatt_battery_service` state alive while the server may read it,
+and update the percentage with `gatt_battery_service_set_level()`.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
 `gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
