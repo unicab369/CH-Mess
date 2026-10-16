@@ -152,10 +152,12 @@ int gap_ad_service_data(
     }
 
     if (!builder || !builder->data || !uuid || (!data && len) ||
-        len > 254 - uuid_len || builder->len > builder->capacity ||
-        uuid_len + len + 2 > builder->capacity - builder->len)
-        return 0;
+        len > 254 - uuid_len ||
+        builder->len > builder->capacity ||
+        uuid_len + len + 2 > builder->capacity - builder->len
+    ) return 0;
 
+    // Preserve the UUID if it overlaps the output being appended.
     uint8_t uuid_copy[16];
     memcpy(uuid_copy, uuid, uuid_len);
     uint8_t *out = builder->data + builder->len;

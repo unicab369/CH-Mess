@@ -1500,6 +1500,67 @@ static inline int gatt_gaming_audio_service_add(
 }
 
 typedef struct {
+    uint16_t service_handle;
+    uint16_t features_handle;
+    uint16_t object_name_handle;
+    uint16_t object_type_handle;
+    uint16_t object_size_handle;
+    uint16_t object_properties_handle;
+    uint16_t action_control_point_handle;
+    uint16_t action_control_point_cccd_handle;
+} ble_gatt_object_transfer_service;
+
+// Application facing
+// Add the single-object OTS layout. Multi-object servers also need Object ID,
+// OLCP, and the Object List Filter characteristics. The application handles
+// OACP procedures and the separate L2CAP object-transfer channel.
+static inline int gatt_object_transfer_service_add(
+    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    const uint8_t features[8], const uint8_t *object_name,
+    uint16_t object_name_len, const uint8_t *object_type,
+    uint8_t object_type_len, const uint8_t object_size[8],
+    const uint8_t object_properties[4]
+) {
+    uint16_t object_name_capacity = BLE_GATT_SERVER_VALUE_MAX < 120 ?
+        BLE_GATT_SERVER_VALUE_MAX : 120;
+    if (!server || !service || !features || !object_size ||
+        !object_properties || (object_name_len && !object_name) ||
+        object_name_len > object_name_capacity || !object_type ||
+        (object_type_len != 2 && object_type_len != 16))
+        return 0;
+
+    uint8_t action_control_point = 0;
+    ble_gatt_sig_characteristic characteristics[6] = {
+        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            features, 8},
+        {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            object_name, object_name_len, object_name_capacity, 1},
+        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_type, object_type_len},
+        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_size, 8},
+        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_properties, 4},
+        {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_ENCRYPTED, &action_control_point, 0, 20, 1}
+    };
+    uint16_t value_handles[6], cccd_handles[6];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1825, characteristics, 6,
+            &service->service_handle, value_handles, cccd_handles))
+        return 0;
+    service->features_handle = value_handles[0];
+    service->object_name_handle = value_handles[1];
+    service->object_type_handle = value_handles[2];
+    service->object_size_handle = value_handles[3];
+    service->object_properties_handle = value_handles[4];
+    service->action_control_point_handle = value_handles[5];
+    service->action_control_point_cccd_handle = cccd_handles[5];
+    return 1;
+}
+
+typedef struct {
     uint16_t service_handle, control_point_handle, control_point_cccd_handle;
 } ble_gatt_transport_discovery_service;
 

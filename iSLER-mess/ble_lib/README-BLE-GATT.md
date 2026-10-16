@@ -94,6 +94,11 @@ session state and handles measurement and session-control procedures.
 Features characteristic for a device that does not expose preset control.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
+`gatt_object_transfer_service_add()` registers the single-object OTS metadata
+and OACP characteristics. The caller supplies the initial metadata values;
+the application implements OACP procedures and the separate L2CAP object
+transfer channel. Multi-object OTS needs additional Object ID, OLCP, and Object
+List Filter characteristics, which this builder does not add.
 
 Additional service database builders are available:
 

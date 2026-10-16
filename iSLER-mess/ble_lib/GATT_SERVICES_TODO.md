@@ -52,7 +52,7 @@ count that generic path as implementation of a standard service.
 - [x] Human Interface Device (`0x1812`)
 - [x] Internet Protocol Support (`0x1820`)
 - [x] Transport Discovery (`0x1824`)
-- [ ] Object Transfer (`0x1825`)
+- [x] Object Transfer (`0x1825`), single-object metadata and OACP layout
 - [ ] Fitness Machine (`0x1826`)
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [ ] Insulin Delivery (`0x183A`)
