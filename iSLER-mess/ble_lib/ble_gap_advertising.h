@@ -93,7 +93,7 @@ int gap_ad_uuid16_list(
     for (size_t i = 0; i < count; i++) {
         uint16_t uuid;
         memcpy(&uuid, value + i * 2, sizeof(uuid));
-        gap_write_u16_le(value + i * 2, uuid);
+        ble_write_u16_le(value + i * 2, uuid);
     }
     return 1;
 }
@@ -617,9 +617,9 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_central.request + 18, crc_init, sizeof(crc_init));
     gap_central.request[21] = 1; // transmit window size: 1.25 ms
-    gap_write_u16_le(gap_central.request + 24, gap_conn_timing.interval);
-    gap_write_u16_le(gap_central.request + 26, gap_conn_timing.latency);
-    gap_write_u16_le(gap_central.request + 28, gap_conn_timing.supervision_timeout);
+    ble_write_u16_le(gap_central.request + 24, gap_conn_timing.interval);
+    ble_write_u16_le(gap_central.request + 26, gap_conn_timing.latency);
+    ble_write_u16_le(gap_central.request + 28, gap_conn_timing.supervision_timeout);
 
     memset(gap_central.request + 30, 0xff, 4);
     gap_central.request[34] = 0x1f; // data channels 0 through 36

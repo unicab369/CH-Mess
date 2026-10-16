@@ -66,8 +66,8 @@ int main(void) {
     int packet_len = ble_l2cap_encode(packet, sizeof(packet),
         BLE_L2CAP_CID_ATT, pdu, sizeof(pdu));
     assert(packet_len == 7);
-    assert(ble_l2cap_read_u16(packet) == sizeof(pdu));
-    assert(ble_l2cap_read_u16(packet + 2) == BLE_L2CAP_CID_ATT);
+    assert(ble_read_u16_le(packet) == sizeof(pdu));
+    assert(ble_read_u16_le(packet + 2) == BLE_L2CAP_CID_ATT);
     memcpy(first, packet, sizeof(first));
     uint16_t cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
@@ -149,7 +149,7 @@ int main(void) {
     assert(ble_l2cap_connection_receive(&conn, BLE_L2CAP_CID_LE_SIGNALING,
         incoming_reconfigure, sizeof(incoming_reconfigure)));
     assert(fake.pdu[0] == BLE_L2CAP_SIG_ECFC_RECONFIGURE_RESPONSE &&
-           ble_l2cap_read_u16(fake.pdu + 4) == 0);
+           ble_read_u16_le(fake.pdu + 4) == 0);
     int inbound_slot = ble_l2cap_channel_find_remote(&conn, 0x0045);
     assert(inbound_slot >= 0);
     uint16_t inbound_local = conn.channels[inbound_slot].local_cid;
@@ -164,7 +164,7 @@ int main(void) {
     assert(ble_l2cap_ecfc_send(&conn, local_cid, outgoing, sizeof(outgoing)));
     assert(ble_l2cap_ecfc_pump(&conn));
     assert(fake.cid == 0x44 && fake.len == 64 &&
-           ble_l2cap_read_u16(fake.pdu) == sizeof(outgoing));
+           ble_read_u16_le(fake.pdu) == sizeof(outgoing));
     assert(ble_l2cap_ecfc_pump(&conn));
     assert(fake.cid == 0x44 && fake.len == 38);
     uint8_t kframe1[] = {4, 0, 0xaa, 0xbb};
@@ -180,8 +180,8 @@ int main(void) {
     assert(ble_l2cap_ecfc_pump(&conn));
     assert(fake.cid == BLE_L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
            BLE_L2CAP_SIG_FLOW_CONTROL_CREDIT);
-    assert(ble_l2cap_read_u16(fake.pdu + 4) == 0x44);
-    assert(ble_l2cap_read_u16(fake.pdu + 6) == 2);
+    assert(ble_read_u16_le(fake.pdu + 4) == 0x44);
+    assert(ble_read_u16_le(fake.pdu + 6) == 2);
     assert(ble_l2cap_channel_close(&conn, local_cid));
     assert(fake.pdu[0] == BLE_L2CAP_SIG_DISCONNECTION_REQUEST);
     uint8_t disconnect_response[] = {
@@ -221,14 +221,14 @@ int main(void) {
         BLE_L2CAP_CID_LE_SIGNALING, incoming_partial,
         sizeof(incoming_partial)));
     assert(partial_fake.pdu[0] == BLE_L2CAP_SIG_ECFC_CONNECTION_RESPONSE &&
-           ble_l2cap_read_u16(partial_fake.pdu + 10) == 9 &&
-           ble_l2cap_read_u16(partial_fake.pdu + 12) == 0 &&
-           ble_l2cap_read_u16(partial_fake.pdu + 14) != 0 &&
+           ble_read_u16_le(partial_fake.pdu + 10) == 9 &&
+           ble_read_u16_le(partial_fake.pdu + 12) == 0 &&
+           ble_read_u16_le(partial_fake.pdu + 14) != 0 &&
            partial_fake.opened == 1);
     uint16_t multi_cids[2];
     assert(ble_l2cap_ecfc_open_many(&multi, 0x0027, multi_cids, 2));
     assert(multi_fake.pdu[0] == BLE_L2CAP_SIG_ECFC_CONNECTION_REQUEST &&
-           ble_l2cap_read_u16(multi_fake.pdu + 2) == 12);
+           ble_read_u16_le(multi_fake.pdu + 2) == 12);
     uint8_t multi_response[] = {BLE_L2CAP_SIG_ECFC_CONNECTION_RESPONSE,
         multi_fake.pdu[1], 12, 0, 80, 0, 64, 0, 2, 0, 0, 0,
         0x46, 0, 0x47, 0};
@@ -260,7 +260,7 @@ int main(void) {
     assert(ble_l2cap_connection_receive(&multi, BLE_L2CAP_CID_LE_SIGNALING,
         denied_open, sizeof(denied_open)));
     assert(multi_fake.pdu[0] == BLE_L2CAP_SIG_LE_CREDIT_CONNECTION_RESPONSE &&
-           ble_l2cap_read_u16(multi_fake.pdu + 12) == 8);
+           ble_read_u16_le(multi_fake.pdu + 12) == 8);
     uint8_t bad_ecfc_parameters[] = {
         BLE_L2CAP_SIG_ECFC_CONNECTION_REQUEST, 22, 10, 0,
         0x27, 0, 23, 0, 23, 0, 1, 0, 0x48, 0
@@ -268,7 +268,7 @@ int main(void) {
     assert(ble_l2cap_connection_receive(&multi, BLE_L2CAP_CID_LE_SIGNALING,
         bad_ecfc_parameters, sizeof(bad_ecfc_parameters)));
     assert(multi_fake.pdu[0] == BLE_L2CAP_SIG_ECFC_CONNECTION_RESPONSE &&
-           ble_l2cap_read_u16(multi_fake.pdu + 10) == 11);
+           ble_read_u16_le(multi_fake.pdu + 10) == 11);
     int overflow_slot = ble_l2cap_channel_find_local(&multi, multi_cids[0]);
     assert(overflow_slot >= 0);
     multi.channels[overflow_slot].tx_credits = 65535;
@@ -332,7 +332,7 @@ int main(void) {
                                        sizeof(unknown_signal)));
     assert(reject_fake.pdu[0] == BLE_L2CAP_SIG_COMMAND_REJECT &&
            reject_fake.pdu[1] == 12 &&
-           ble_l2cap_read_u16(reject_fake.pdu + 6) == 0);
+           ble_read_u16_le(reject_fake.pdu + 6) == 0);
     uint8_t malformed_signal[] = {BLE_L2CAP_SIG_CONNECTION_PARAMETER_UPDATE_REQUEST,
         13, 4, 0, 1, 0, 2, 0};
     assert(ble_l2cap_signaling_receive(&reject_conn, malformed_signal,

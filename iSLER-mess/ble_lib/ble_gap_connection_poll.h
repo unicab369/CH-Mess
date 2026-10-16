@@ -24,7 +24,7 @@ static void gap_conn_send_queued(void) {
         gap_tx_frame[1] = 8;
         gap_tx_frame[2] = LL_CHANNEL_MAP_IND;
         memcpy(gap_tx_frame + 3, conn->pending_channel_map, 5);
-        gap_write_u16_le(gap_tx_frame + 8, conn->channel_map_instant);
+        ble_write_u16_le(gap_tx_frame + 8, conn->channel_map_instant);
     }
 
     if (conn->queue.local_params &&
@@ -54,7 +54,7 @@ static void gap_conn_send_queued(void) {
                 conn->params_timeout
             };
             for (uint8_t i = 0; i < 4; i++) {
-                gap_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
+                ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
             }
 
             gap_tx_frame[11] = 0; // No preferred periodicity.
@@ -114,7 +114,7 @@ static void gap_conn_send_queued(void) {
                     conn->subrate.request_timeout
                 };
                 for (uint8_t i = 0; i < 5; i++) {
-                    gap_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
+                    ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
                 }
             }
         }
@@ -170,10 +170,10 @@ static void gap_conn_send_queued(void) {
                 conn->link.event_counter
             };
             for (uint8_t i = 0; i < 9; i++) {
-                gap_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
+                ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
             }
             for (uint8_t i = 0; i < 4; i++) {
-                gap_write_u16_le(gap_tx_frame + 21 + i * 2,
+                ble_write_u16_le(gap_tx_frame + 21 + i * 2,
                                  conn->rate.offsets[i]);
             }
             conn->rate.request_queued = 0;

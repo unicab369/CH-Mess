@@ -1923,7 +1923,7 @@ static void gap_smp_poll(void) {
     smp->l2cap_rx_pending = 1;
     uint16_t cid = smp->l2cap_rx.cid;
     if (conn->rx.llid == 2 && conn->rx.len >= 4)
-        cid = ble_l2cap_read_u16(conn->rx.data + 2);
+        cid = ble_read_u16_le(conn->rx.data + 2);
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
