@@ -34,7 +34,7 @@ typedef struct {
 int gap_ad_builder_init(
     gap_ad_builder *builder, uint8_t *data, size_t capacity
 ) {
-    if (!builder || (!data && capacity)) return 0;
+    if (!builder || !data) return 0;
     builder->data = data;
     builder->capacity = capacity;
     builder->len = 0;
@@ -67,11 +67,11 @@ int gap_ad_add_flags(gap_ad_builder *builder, uint8_t flags) {
 }
 
 // Application facing
+// NOTE: A nonzero complete value selects the complete AD type.
 int gap_ad_add_local_name(
     gap_ad_builder *builder, const uint8_t *name,
     size_t len, uint8_t complete
 ) {
-    if (complete > 1) return 0;
     uint8_t type = complete ? GAP_AD_NAME_COMPLETE : GAP_AD_NAME_SHORT;
     return gap_ad_append(builder, type, name, len);
 }
@@ -81,8 +81,8 @@ int gap_ad_add_uuid16_list(
     gap_ad_builder *builder, const uint16_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if (complete > 1 || (!uuids && count) || count > 254 / 2)
-        return 0;
+    if ((!uuids && count) || count > 254 / 2) return 0;
+
     uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
     size_t value_len = count * 2;
     if (!gap_ad_append(builder, type, (const uint8_t *)uuids, value_len))
@@ -103,7 +103,7 @@ int gap_ad_add_uuid32_list(
     gap_ad_builder *builder, const uint32_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if (complete > 1 || (!uuids && count) || count > 252 / 4)
+    if ((!uuids && count) || count > 252 / 4)
         return 0;
 
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
@@ -126,7 +126,7 @@ int gap_ad_add_uuid128_list(
     gap_ad_builder *builder, const uint8_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if (complete > 1 || count > 254 / 16) return 0;
+    if (count > 254 / 16) return 0;
     uint8_t type = complete ? GAP_AD_UUID128_COMPLETE : GAP_AD_UUID128_INCOMPLETE;
     return gap_ad_append(builder, type, uuids, count * 16);
 }

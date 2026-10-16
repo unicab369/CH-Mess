@@ -54,8 +54,36 @@ Time. `gatt_microphone_control_service_add()` registers encrypted MICS Mute,
 and `gatt_volume_control_service_add()` registers encrypted VCS state, control
 point, and flags. These builders add the database; applications still handle
 service-specific control point behavior and notifications.
-`gatt_reconnection_configuration_service_add()` registers the mandatory RC
-Feature value; pass its five-byte wire value, including the CRC field.
+`gatt_volume_offset_control_service_add()` registers an encrypted VOCS
+secondary service. Add it before its parent and include it from the parent;
+the application handles control-point procedures and value notifications.
+`gatt_reconnection_configuration_service_add()` registers a base RCS with no
+optional features. Its five-byte RC Feature value must contain CRC `0xffff`
+and three zero feature bytes.
+`gatt_device_time_service_add()` registers the mandatory DTS characteristics
+for a basic device that supports one epoch and does not enable optional time
+logging. The application supplies encoded values and handles the control point.
+`gatt_coordinated_set_identification_service_add()` registers CSIS SIRK and
+optional size, lock, and rank characteristics with encrypted permissions. The
+application implements SIRK protection and the lock protocol.
+`gatt_audio_input_control_service_add()` registers the encrypted AICS secondary
+service. Register it before its parent, then place the Include declaration in
+the parent before the parent's characteristics.
+`gatt_telephony_and_media_audio_service_add()` registers TMAS with the
+application's supported TMAP Role bits.
+`gatt_common_audio_service_add()` registers the no-characteristic CAS and can
+include a previously registered CSIS service.
+`gatt_broadcast_audio_scan_service_add()` registers the encrypted BASS control
+point and caller-selected variable-length receive-state instances. The
+application handles synchronization procedures and updates their values.
+`gatt_constant_tone_extension_service_add()` registers the required CTE Enable
+value and, when requested, the five advertising-channel controls.
+`gatt_ranging_service_add()` registers mandatory RAS characteristics and adds
+Real-time Ranging Data when feature bit 0 is set. The application supplies the
+Channel Sounding integration and implements RAS procedures and data transfer.
+`gatt_generic_health_sensor_service_add()` registers the live-observation-only
+GHS layout and its control point. The application encodes and streams the
+observations and handles start/stop commands.
 
 Additional service database builders are available:
 
@@ -141,11 +169,10 @@ transactionally and returns their handles. This registers the database only:
 the application remains responsible for choosing the specification-correct
 characteristics and implementing service procedures.
 
-Some additional assigned UUIDs have generic UUID-pinned registration entry
-points in `ble_gatt_services.h`. Those are convenience wrappers around
-`gatt_sig_service_add()`; they are not complete standard service builders and
-do not validate the characteristic layout. The remaining layouts are tracked
-in `GATT_SERVICES_TODO.md`.
+For an unfinished service, `gatt_sig_service_add()` can register a
+caller-supplied characteristic list. It does not validate that list against
+the Bluetooth specification; the remaining standard layouts are tracked in
+`GATT_SERVICES_TODO.md`.
 
 ## GAP connection integration
 

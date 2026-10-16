@@ -44,50 +44,55 @@ automatically provide each service's application protocol or profile behavior.
 
 ## Remaining assigned-service layouts
 
-The entries below are not complete standard service builders. A generic
-UUID-pinned registration function exists for many, but it does not provide the
-standard characteristic layout or validate properties and permissions. Do not
-count those as implemented until a concrete builder is added.
+The entries below are not complete standard service builders. The generic
+`gatt_sig_service_add()` can register caller-supplied attributes for them, but
+it does not provide or validate the standard characteristic layout. Do not
+count that generic path as implementation of a standard service.
 
 - [x] Human Interface Device (`0x1812`)
 - [x] Internet Protocol Support (`0x1820`)
 - [x] Transport Discovery (`0x1824`)
 - [ ] Object Transfer (`0x1825`)
 - [ ] Fitness Machine (`0x1826`)
-- [x] Reconnection Configuration (`0x1829`), mandatory RC Feature only
+- [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [ ] Insulin Delivery (`0x183A`)
 - [x] Emergency Configuration (`0x183C`)
 - [ ] Authorization Control (`0x183D`)
 - [ ] Physical Activity Monitor (`0x183E`)
 - [x] Elapsed Time (`0x183F`)
-- [ ] Generic Health Sensor (`0x1840`)
-- [ ] Audio Input Control (`0x1843`)
+- [x] Generic Health Sensor (`0x1840`), live-observation-only layout
+- [x] Audio Input Control (`0x1843`), secondary service builder
 - [x] Volume Control (`0x1844`)
-- [ ] Volume Offset Control (`0x1845`)
-- [ ] Coordinated Set Identification (`0x1846`)
-- [ ] Device Time (`0x1847`)
+- [x] Volume Offset Control (`0x1845`), secondary service builder
+- [x] Coordinated Set Identification (`0x1846`)
+- [x] Device Time (`0x1847`), base mandatory layout without optional logging
 - [ ] Media Control (`0x1848`)
 - [ ] Generic Media Control (`0x1849`)
-- [ ] Constant Tone Extension (`0x184A`)
+- [x] Constant Tone Extension (`0x184A`)
 - [ ] Telephone Bearer (`0x184B`)
 - [ ] Generic Telephone Bearer (`0x184C`)
 - [x] Microphone Control (`0x184D`)
 - [ ] Audio Stream Control (`0x184E`)
-- [ ] Broadcast Audio Scan (`0x184F`)
+- [x] Broadcast Audio Scan (`0x184F`), variable Receive State instances
 - [ ] Published Audio Capabilities (`0x1850`)
-- [ ] Basic Audio Announcement (`0x1851`)
-- [ ] Broadcast Audio Announcement (`0x1852`)
-- [ ] Common Audio (`0x1853`)
+- [n/a] Basic Audio Announcement (`0x1851`), advertising service data
+- [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
+- [x] Common Audio (`0x1853`)
 - [ ] Hearing Access (`0x1854`)
-- [ ] Telephony and Media Audio (`0x1855`)
-- [ ] Public Broadcast Announcement (`0x1856`)
+- [x] Telephony and Media Audio (`0x1855`)
+- [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [ ] Electronic Shelf Label (`0x1857`)
 - [ ] Gaming Audio (`0x1858`)
 - [ ] Mesh Proxy Solicitation (`0x1859`)
 - [ ] Industrial Measurement Device (`0x185A`)
-- [ ] Ranging (`0x185B`)
+- [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data
 - [ ] HID ISO (`0x185C`)
 - [ ] Cookware (`0x185D`)
 - [ ] Voice Assistant (`0x185E`)
 - [ ] Generic Voice Assistant (`0x185F`)
 - [ ] Tire Pressure Monitoring System (`0x1860`)
+
+The Basic Audio, Broadcast Audio, and Public Broadcast Announcement UUIDs
+identify service data carried in periodic/extended advertising; their profile
+specifications do not define GATT attributes for these announcements. Their
+encoders belong with GAP advertising support, not in the GATT service database.

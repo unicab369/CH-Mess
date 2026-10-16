@@ -478,14 +478,16 @@ typedef struct {
 } ble_gatt_reconnection_configuration_service;
 
 // Application facing
-// Add the mandatory RC Feature characteristic. Its five-byte input is the
-// little-endian CRC field followed by the three-byte feature bit field.
+// Add the base RCS instance with no optional features. Its five-byte input is
+// the 0xffff CRC followed by a zero three-byte feature bit field.
 static inline int gatt_reconnection_configuration_service_add(
     ble_gatt_server *server,
     ble_gatt_reconnection_configuration_service *service,
     const uint8_t feature[5]
 ) {
-    if (!server || !service || !feature) return 0;
+    if (!server || !service || !feature || ble_get_le16(feature) != 0xffff ||
+        feature[2] || feature[3] || feature[4])
+        return 0;
     ble_gatt_sig_characteristic characteristic = {
         0x2b1d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 5
     };
@@ -534,6 +536,539 @@ static inline int gatt_volume_control_service_add(
     service->control_point_handle = values[1];
     service->volume_flags_handle = values[2];
     service->volume_flags_cccd_handle = cccds[2];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, state_handle, state_cccd_handle;
+    uint16_t audio_location_handle, audio_location_cccd_handle;
+    uint16_t control_point_handle, description_handle, description_cccd_handle;
+} ble_gatt_volume_offset_control_service;
+
+// Application facing
+// Add one VOCS secondary service. Register it before the parent service and
+// include it there. The application implements control-point writes and
+// updates/notifies the state, location, and description values.
+static inline int gatt_volume_offset_control_service_add(
+    ble_gatt_server *server,
+    ble_gatt_volume_offset_control_service *service,
+    const uint8_t state[3], const uint8_t audio_location[4],
+    uint8_t control_point_capacity, const uint8_t *description,
+    uint16_t description_len, uint16_t description_capacity
+) {
+    if (!server || !service || !state || !audio_location || !description ||
+        !control_point_capacity || control_point_capacity > 3 ||
+        description_len > description_capacity ||
+        description_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    uint16_t declaration;
+    uint8_t control_point_initial = 0;
+    uint16_t service_handle, state_handle, state_cccd;
+    uint16_t location_handle, location_cccd;
+    uint16_t control_point_handle, description_handle, description_cccd;
+    ble_gatt_uuid service_uuid = {2, {0x45, 0x18}};
+    ble_gatt_uuid state_uuid = {2, {0x80, 0x2b}};
+    ble_gatt_uuid location_uuid = {2, {0x81, 0x2b}};
+    ble_gatt_uuid control_point_uuid = {2, {0x82, 0x2b}};
+    ble_gatt_uuid description_uuid = {2, {0x83, 0x2b}};
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
+    memset(service, 0, sizeof(*service));
+
+    int added = gatt_server_add_service(server, &service_uuid, 0,
+                                         &service_handle) &&
+        gatt_server_add_characteristic(server, &state_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, state, 3, 3, NULL, NULL, NULL,
+            &declaration, &state_handle) &&
+        gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
+        gatt_server_add_characteristic(server, &location_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, audio_location, 4, 4,
+            NULL, NULL, NULL, &declaration, &location_handle) &&
+        gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &location_cccd) &&
+        gatt_server_add_characteristic(server, &control_point_uuid,
+            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENCRYPTED,
+            &control_point_initial, 0, control_point_capacity,
+            NULL, NULL, NULL, &declaration, &control_point_handle);
+    if (added)
+        server->attributes[server->count - 1].flags |=
+            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+    if (added)
+        added = gatt_server_add_characteristic(server, &description_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, description, description_len,
+            description_capacity, NULL, NULL, NULL, &declaration,
+            &description_handle);
+    if (added)
+        added = gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &description_cccd);
+    if (added && description_capacity > description_len)
+        server->attributes[server->count - 2].flags |=
+            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+
+    if (!added) {
+        memset(server->attributes + old_count, 0,
+               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->value_pool + old_value_used, 0,
+               server->value_used - old_value_used);
+        server->count = old_count;
+        server->next_handle = old_next_handle;
+        server->value_used = old_value_used;
+        return 0;
+    }
+    service->service_handle = service_handle;
+    service->state_handle = state_handle;
+    service->state_cccd_handle = state_cccd;
+    service->audio_location_handle = location_handle;
+    service->audio_location_cccd_handle = location_cccd;
+    service->control_point_handle = control_point_handle;
+    service->description_handle = description_handle;
+    service->description_cccd_handle = description_cccd;
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, feature_handle;
+    uint16_t feature_cccd_handle;
+    uint16_t parameters_handle, parameters_cccd_handle;
+    uint16_t device_time_handle, device_time_cccd_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+} ble_gatt_device_time_service;
+
+// Application facing
+// Add DTS mandatory characteristics. Feature is the four-byte CRC/feature
+// value; device_time is the fixed eight-byte base time and status value.
+// The application supplies Device Time Parameters and handles DTCP procedures.
+static inline int gatt_device_time_service_add(
+    ble_gatt_server *server, ble_gatt_device_time_service *service,
+    const uint8_t feature[4], const uint8_t *parameters,
+    uint16_t parameters_len, const uint8_t device_time[8],
+    uint8_t feature_changeable, uint8_t parameters_changeable,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || !feature || !parameters ||
+        !parameters_len || !device_time ||
+        !control_point_capacity || control_point_capacity > 20)
+        return 0;
+    uint16_t feature_bits = ble_get_le16(feature + 2);
+    if ((feature_bits != 0x0200 && feature_bits != 0x0400) ||
+        ble_get_le16(feature) != 0xffff)
+        return 0;
+
+    ble_gatt_sig_characteristic characteristics[4] = {
+        {0x2b8e, BLE_GATT_PROP_READ |
+            (feature_changeable ? BLE_GATT_PROP_INDICATE : 0),
+            feature_changeable, BLE_GATT_PERM_READ, feature, 4},
+        {0x2b8f, BLE_GATT_PROP_READ |
+            (parameters_changeable ? BLE_GATT_PROP_INDICATE : 0),
+            parameters_changeable, BLE_GATT_PERM_READ,
+            parameters, parameters_len},
+        {0x2b90, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ, device_time, 8},
+        {0x2b91, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, NULL, 0, control_point_capacity, 1}
+    };
+    uint16_t values[4], cccds[4];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1847, characteristics, 4,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->feature_handle = values[0];
+    service->feature_cccd_handle = cccds[0];
+    service->parameters_handle = values[1];
+    service->parameters_cccd_handle = cccds[1];
+    service->device_time_handle = values[2];
+    service->device_time_cccd_handle = cccds[2];
+    service->control_point_handle = values[3];
+    service->control_point_cccd_handle = cccds[3];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, sirk_handle, sirk_cccd_handle;
+    uint16_t set_size_handle, set_size_cccd_handle;
+    uint16_t member_lock_handle, member_lock_cccd_handle;
+    uint16_t member_rank_handle;
+} ble_gatt_coordinated_set_identification_service;
+
+// Application facing
+// Add CSIS with a 17-byte SIRK value and optional size, lock, and rank.
+// Encrypted access is required; the application implements lock arbitration,
+// timeout, persistence, SIRK encryption, and any resulting notifications.
+static inline int gatt_coordinated_set_identification_service_add(
+    ble_gatt_server *server,
+    ble_gatt_coordinated_set_identification_service *service,
+    const uint8_t sirk[17], uint8_t sirk_notify,
+    uint8_t set_size, uint8_t size_notify,
+    uint8_t member_lock, uint8_t member_rank
+) {
+    if (!server || !service || !sirk || sirk[0] > 1 ||
+        sirk_notify > 1 || size_notify > 1 ||
+        (set_size == 0 && size_notify) ||
+        (member_lock && member_lock != 1 && member_lock != 2) ||
+        (member_lock && !member_rank) || (member_rank && !member_lock) ||
+        (set_size && member_rank > set_size))
+        return 0;
+
+    ble_gatt_sig_characteristic characteristics[4];
+    uint8_t count = 0;
+    characteristics[count++] = (ble_gatt_sig_characteristic){
+        0x2b84, BLE_GATT_PROP_READ |
+            (sirk_notify ? BLE_GATT_PROP_NOTIFY : 0), sirk_notify,
+        BLE_GATT_PERM_READ_ENCRYPTED, sirk, 17
+    };
+    if (set_size) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b85, BLE_GATT_PROP_READ |
+                (size_notify ? BLE_GATT_PROP_NOTIFY : 0), size_notify,
+            BLE_GATT_PERM_READ_ENCRYPTED, &set_size, 1
+        };
+    }
+    if (member_lock) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b86, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
+                BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            &member_lock, 1
+        };
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b87, BLE_GATT_PROP_READ, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED, &member_rank, 1
+        };
+    }
+    uint16_t values[4], cccds[4];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1846, characteristics, count,
+            &service->service_handle, values, cccds))
+        return 0;
+    uint8_t i = 0;
+    service->sirk_handle = values[i];
+    service->sirk_cccd_handle = cccds[i++];
+    if (set_size) {
+        service->set_size_handle = values[i];
+        service->set_size_cccd_handle = cccds[i++];
+    }
+    if (member_lock) {
+        service->member_lock_handle = values[i];
+        service->member_lock_cccd_handle = cccds[i++];
+        service->member_rank_handle = values[i];
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t state_handle, state_cccd_handle;
+    uint16_t gain_properties_handle, input_type_handle;
+    uint16_t status_handle, status_cccd_handle;
+    uint16_t control_point_handle;
+    uint16_t description_handle, description_cccd_handle;
+} ble_gatt_audio_input_control_service;
+
+// Application facing
+// Add an AICS secondary service. Add it before its parent service, then add
+// its Include declaration to the parent before the parent's characteristics.
+// The application validates control-point writes and emits changed values.
+static inline int gatt_audio_input_control_service_add(
+    ble_gatt_server *server, ble_gatt_audio_input_control_service *service,
+    const uint8_t state[4], const uint8_t gain_properties[3],
+    uint8_t input_type, uint8_t status, const uint8_t *description,
+    uint16_t description_len, uint16_t description_capacity,
+    uint8_t description_writable, uint16_t control_point_capacity
+) {
+    if (!server || !service || !state || !gain_properties || !description ||
+        description_len > description_capacity ||
+        description_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        description_writable > 1 || !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    uint16_t declaration;
+    uint8_t control_point_initial = 0;
+    ble_gatt_uuid service_uuid = {2, {0x43, 0x18}};
+    ble_gatt_uuid state_uuid = {2, {0x77, 0x2b}};
+    ble_gatt_uuid gain_uuid = {2, {0x78, 0x2b}};
+    ble_gatt_uuid type_uuid = {2, {0x79, 0x2b}};
+    ble_gatt_uuid status_uuid = {2, {0x7a, 0x2b}};
+    ble_gatt_uuid control_uuid = {2, {0x7b, 0x2b}};
+    ble_gatt_uuid description_uuid = {2, {0x7c, 0x2b}};
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
+    uint16_t service_handle, state_handle, state_cccd;
+    uint16_t gain_handle, type_handle, status_handle, status_cccd;
+    uint16_t control_handle, description_handle, description_cccd;
+
+    memset(service, 0, sizeof(*service));
+    int added = gatt_server_add_service(server, &service_uuid, 0,
+                                         &service_handle) &&
+        gatt_server_add_characteristic(server, &state_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, state, 4, 4, NULL, NULL, NULL,
+            &declaration, &state_handle) &&
+        gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
+        gatt_server_add_characteristic(server, &gain_uuid,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENCRYPTED,
+            gain_properties, 3, 3, NULL, NULL, NULL, &declaration,
+            &gain_handle) &&
+        gatt_server_add_characteristic(server, &type_uuid,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENCRYPTED,
+            &input_type, 1, 1, NULL, NULL, NULL, &declaration, &type_handle) &&
+        gatt_server_add_characteristic(server, &status_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, &status, 1, 1, NULL, NULL, NULL,
+            &declaration, &status_handle) &&
+        gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &status_cccd) &&
+        gatt_server_add_characteristic(server, &control_uuid,
+            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENCRYPTED,
+            &control_point_initial, 0, control_point_capacity,
+            NULL, NULL, NULL, &declaration, &control_handle);
+    if (added)
+        server->attributes[server->count - 1].flags |=
+            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+    if (added)
+        added = gatt_server_add_characteristic(server, &description_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY |
+                (description_writable ? BLE_GATT_PROP_WRITE_NO_RSP : 0),
+            BLE_GATT_PERM_READ_ENCRYPTED |
+                (description_writable ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0),
+            description, description_len, description_capacity,
+            NULL, NULL, NULL, &declaration, &description_handle);
+    if (added)
+        added = gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &description_cccd);
+    if (added && description_capacity > description_len)
+        server->attributes[server->count - 2].flags |=
+            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+
+    if (!added) {
+        memset(server->attributes + old_count, 0,
+               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->value_pool + old_value_used, 0,
+               server->value_used - old_value_used);
+        server->count = old_count;
+        server->next_handle = old_next_handle;
+        server->value_used = old_value_used;
+        return 0;
+    }
+    service->service_handle = service_handle;
+    service->state_handle = state_handle;
+    service->state_cccd_handle = state_cccd;
+    service->gain_properties_handle = gain_handle;
+    service->input_type_handle = type_handle;
+    service->status_handle = status_handle;
+    service->status_cccd_handle = status_cccd;
+    service->control_point_handle = control_handle;
+    service->description_handle = description_handle;
+    service->description_cccd_handle = description_cccd;
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, role_handle;
+} ble_gatt_telephony_and_media_audio_service;
+
+// Application facing
+// Add TMAS with the read-only TMAP Role bit field. At least one role bit must
+// be set; the application supplies the roles this device supports.
+static inline int gatt_telephony_and_media_audio_service_add(
+    ble_gatt_server *server,
+    ble_gatt_telephony_and_media_audio_service *service,
+    uint8_t tmap_role
+) {
+    if (!server || !service || !tmap_role) return 0;
+    ble_gatt_sig_characteristic characteristic = {
+        0x2b51, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        &tmap_role, 1
+    };
+    uint16_t values[1];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1855, &characteristic, 1,
+            &service->service_handle, values, NULL))
+        return 0;
+    service->role_handle = values[0];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, csis_include_handle;
+} ble_gatt_common_audio_service;
+
+// Application facing
+// Add CAS, which has no characteristics. Pass a prior CSIS service handle to
+// include it when this device is a member of a Coordinated Set.
+static inline int gatt_common_audio_service_add(
+    ble_gatt_server *server, ble_gatt_common_audio_service *service,
+    uint16_t csis_service_handle
+) {
+    if (!server || !service || server->database_sealed) return 0;
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    ble_gatt_uuid uuid = {2, {0x53, 0x18}};
+    memset(service, 0, sizeof(*service));
+    int added = gatt_server_add_service(server, &uuid, 1,
+                                         &service->service_handle);
+    if (added && csis_service_handle)
+        added = gatt_server_add_included_service(server, csis_service_handle,
+            &service->csis_include_handle);
+    if (!added) {
+        memset(server->attributes + old_count, 0,
+               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->value_pool + old_value_used, 0,
+               server->value_used - old_value_used);
+        server->count = old_count;
+        server->next_handle = old_next_handle;
+        server->value_used = old_value_used;
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, control_point_handle;
+} ble_gatt_broadcast_audio_scan_service;
+
+// Application facing
+// Add BASS with one or more empty, variable-length Broadcast Receive State
+// values. The application implements scan-control operations and state updates.
+static inline int gatt_broadcast_audio_scan_service_add(
+    ble_gatt_server *server, ble_gatt_broadcast_audio_scan_service *service,
+    uint16_t control_point_capacity, uint8_t receive_state_count,
+    uint16_t receive_state_capacity, uint16_t *receive_state_handles,
+    uint16_t *receive_state_cccd_handles
+) {
+    if (!server || !service || !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !receive_state_count || !receive_state_capacity ||
+        receive_state_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !receive_state_handles || !receive_state_cccd_handles)
+        return 0;
+
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    ble_gatt_uuid service_uuid = {2, {0x4f, 0x18}};
+    ble_gatt_uuid control_uuid = {2, {0xc7, 0x2b}};
+    ble_gatt_uuid state_uuid = {2, {0xc8, 0x2b}};
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
+    uint16_t declaration;
+    memset(service, 0, sizeof(*service));
+    memset(receive_state_handles, 0,
+           (size_t)receive_state_count * sizeof(*receive_state_handles));
+    memset(receive_state_cccd_handles, 0,
+           (size_t)receive_state_count * sizeof(*receive_state_cccd_handles));
+
+    int added = gatt_server_add_service(server, &service_uuid, 1,
+                                         &service->service_handle) &&
+        gatt_server_add_characteristic(server, &control_uuid,
+            BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP,
+            BLE_GATT_PERM_WRITE_ENCRYPTED, NULL, 0,
+            control_point_capacity, NULL, NULL, NULL, &declaration,
+            &service->control_point_handle);
+    if (added)
+        server->attributes[server->count - 1].flags |=
+            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+    for (uint8_t i = 0; added && i < receive_state_count; i++) {
+        added = gatt_server_add_characteristic(server, &state_uuid,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+            BLE_GATT_PERM_READ_ENCRYPTED, NULL, 0,
+            receive_state_capacity, NULL, NULL, NULL, &declaration,
+            &receive_state_handles[i]);
+        if (added)
+            server->attributes[server->count - 1].flags |=
+                BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+        if (added)
+            added = gatt_server_add_descriptor(server, &cccd_uuid,
+                BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+                NULL, 0, 0, NULL, NULL, NULL,
+                &receive_state_cccd_handles[i]);
+    }
+
+    if (!added) {
+        memset(server->attributes + old_count, 0,
+               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->value_pool + old_value_used, 0,
+               server->value_used - old_value_used);
+        server->count = old_count;
+        server->next_handle = old_next_handle;
+        server->value_used = old_value_used;
+        memset(service, 0, sizeof(*service));
+        memset(receive_state_handles, 0,
+               (size_t)receive_state_count * sizeof(*receive_state_handles));
+        memset(receive_state_cccd_handles, 0,
+               (size_t)receive_state_count * sizeof(*receive_state_cccd_handles));
+        return 0;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, enable_handle;
+    uint16_t minimum_length_handle, minimum_transmit_count_handle;
+    uint16_t transmit_duration_handle, interval_handle, phy_handle;
+} ble_gatt_constant_tone_extension_service;
+
+// Application facing
+// Add CTES, including advertising-channel controls when supported. The
+// application applies accepted writes to the Link Layer/advertising setup.
+static inline int gatt_constant_tone_extension_service_add(
+    ble_gatt_server *server, ble_gatt_constant_tone_extension_service *service,
+    uint8_t enable, uint8_t advertising_cte,
+    uint8_t minimum_length, uint8_t minimum_transmit_count,
+    uint8_t transmit_duration, uint16_t interval, uint8_t phy
+) {
+    if (!server || !service || (enable & 0xfc) || advertising_cte > 1 ||
+        (advertising_cte && (minimum_length < 2 || minimum_length > 20 ||
+            !minimum_transmit_count || minimum_transmit_count > 15 ||
+            interval < 6 || phy < 1 || phy > 3)))
+        return 0;
+
+    uint8_t interval_value[2] = {
+        (uint8_t)interval, (uint8_t)(interval >> 8)
+    };
+    ble_gatt_sig_characteristic characteristics[6] = {
+        {0x2bad, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE, &enable, 1},
+        {0x2bae, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &minimum_length, 1},
+        {0x2baf, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &minimum_transmit_count, 1},
+        {0x2bb0, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &transmit_duration, 1},
+        {0x2bb1, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            interval_value, 2},
+        {0x2bb2, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE, &phy, 1}
+    };
+    uint8_t count = advertising_cte ? 6 : 1;
+    uint16_t values[6];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x184a, characteristics, count,
+            &service->service_handle, values, NULL))
+        return 0;
+    service->enable_handle = values[0];
+    if (advertising_cte) {
+        service->minimum_length_handle = values[1];
+        service->minimum_transmit_count_handle = values[2];
+        service->transmit_duration_handle = values[3];
+        service->interval_handle = values[4];
+        service->phy_handle = values[5];
+    }
     return 1;
 }
 
@@ -619,6 +1154,134 @@ static inline int gatt_hid_service_add(
         service->report_handles[i] = values[4 + i];
         service->report_cccd_handles[i] = cccds[4 + i];
     }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, features_handle;
+    uint16_t realtime_data_handle, realtime_data_cccd_handle;
+    uint16_t ondemand_data_handle, ondemand_data_cccd_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t data_ready_handle, data_ready_cccd_handle;
+    uint16_t data_overwritten_handle, data_overwritten_cccd_handle;
+} ble_gatt_ranging_service;
+
+// Application facing
+// Add the mandatory RAS characteristics and optional real-time data. Values
+// are initialized empty/zero; the application handles Channel Sounding data,
+// client-specific CCCDs, control-point procedures, and notifications.
+static inline int gatt_ranging_service_add(
+    ble_gatt_server *server, ble_gatt_ranging_service *service,
+    uint32_t features, uint16_t ranging_data_capacity,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || (features & ~0x0fu) ||
+        !ranging_data_capacity ||
+        ranging_data_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t feature_value[4] = {
+        (uint8_t)features, (uint8_t)(features >> 8),
+        (uint8_t)(features >> 16), (uint8_t)(features >> 24)
+    };
+    uint8_t counter[2] = {0};
+    uint8_t control_point_initial = 0;
+    uint8_t data_initial = 0;
+    uint8_t include_realtime = (features & 1u) != 0;
+    uint8_t count = include_realtime ? 6 : 5;
+    ble_gatt_sig_characteristic characteristics[6] = {0};
+    uint8_t i = 0;
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        feature_value, sizeof(feature_value)
+    };
+    if (include_realtime)
+        characteristics[i++] = (ble_gatt_sig_characteristic){
+            0x2c15, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED, &data_initial, 0,
+            ranging_data_capacity, 1
+        };
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c16, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
+        BLE_GATT_PERM_READ_ENCRYPTED, &data_initial, 0,
+        ranging_data_capacity, 1
+    };
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c17, BLE_GATT_PROP_WRITE_NO_RSP | BLE_GATT_PROP_INDICATE, 1,
+        BLE_GATT_PERM_WRITE_ENCRYPTED, &control_point_initial, 0,
+        control_point_capacity, 1
+    };
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c18, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+        BLE_GATT_PERM_READ_ENCRYPTED, counter, sizeof(counter)
+    };
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c19, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+        BLE_GATT_PERM_READ_ENCRYPTED, counter, sizeof(counter)
+    };
+
+    uint16_t values[6], cccds[6];
+    uint16_t service_handle;
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x185b, characteristics, count,
+            &service_handle, values, cccds))
+        return 0;
+    service->service_handle = service_handle;
+    i = 0;
+    service->features_handle = values[i++];
+    if (include_realtime) {
+        service->realtime_data_handle = values[i];
+        service->realtime_data_cccd_handle = cccds[i++];
+    }
+    service->ondemand_data_handle = values[i];
+    service->ondemand_data_cccd_handle = cccds[i++];
+    service->control_point_handle = values[i];
+    service->control_point_cccd_handle = cccds[i++];
+    service->data_ready_handle = values[i];
+    service->data_ready_cccd_handle = cccds[i++];
+    service->data_overwritten_handle = values[i];
+    service->data_overwritten_cccd_handle = cccds[i];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, live_observations_handle;
+    uint16_t live_observations_cccd_handle, control_point_handle;
+    uint16_t control_point_cccd_handle;
+} ble_gatt_generic_health_sensor_service;
+
+// Application facing
+// Add the live-observation-only GHS layout. This includes its required GHS
+// Control Point; the application implements observation encoding, streaming,
+// and the start/stop control-point procedure.
+static inline int gatt_generic_health_sensor_service_add(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint16_t observation_capacity
+) {
+    if (!server || !service || !observation_capacity ||
+        observation_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t observation_initial = 0;
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[2] = {
+        {0x2b8b, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+            &observation_initial, 0, observation_capacity, 1},
+        {0x2bf4, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 1, 1}
+    };
+    uint16_t values[2], cccds[2];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1840, characteristics, 2,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->live_observations_handle = values[0];
+    service->live_observations_cccd_handle = cccds[0];
+    service->control_point_handle = values[1];
+    service->control_point_cccd_handle = cccds[1];
     return 1;
 }
 
