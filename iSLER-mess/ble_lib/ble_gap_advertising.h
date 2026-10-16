@@ -513,14 +513,13 @@ typedef struct {
     uint8_t head, count;
     uint8_t seen_count, seen_next;
     uint8_t response_accepted;
+    gap_peer_address response_peer;
 } gap_scan_ctx;
 static gap_scan_ctx gap_scan;
 static struct {
     uint8_t address_type, address[6], pdu_type, data_len;
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];
-static uint8_t gap_scan_response_address_type;
-static uint8_t gap_scan_response_address[6];
 
 #if GAP_EXT_ADV_SUPPORT
 static void gap_ext_scan_reset(uint8_t clear_owned_scan);
@@ -702,6 +701,9 @@ int gap_scan_poll(gap_scan_report *report) {
     (1u << ADV_NONCONN_IND) | (1u << SCAN_RSP) | \
     (1u << ADV_SCAN_IND))
 
+#define GAP_SCANNABLE_ADV_PDU_MASK \
+    ((1u << ADV_IND) | (1u << ADV_SCAN_IND))
+
 // Keep the newest advertising observation when the application falls behind.
 static inline void gap_receive_report(
     const uint8_t *frame, uint8_t payload_len, int8_t rssi
@@ -727,33 +729,33 @@ static inline void gap_receive_report(
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {
             if (!gap_scan.response_accepted ||
-                address_type != gap_scan_response_address_type ||
-                memcmp(frame + 2, gap_scan_response_address, 6) != 0
+                gap_scan.response_peer.type != address_type ||
+                memcmp(gap_scan.response_peer.address, frame + 2, 6) != 0
             ) return;
 
         } else {
-            if (pdu_type == ADV_IND ||
-                pdu_type == ADV_SCAN_IND
-            ) gap_scan.response_accepted = 0;
             uint8_t flags = 0;
+
+            if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type))
+                gap_scan.response_accepted = 0;
 
             for (uint8_t offset = 0; offset < data_len;) {
                 uint8_t field_len = frame[8 + offset];
+
                 if (!field_len || (uint16_t)offset + field_len + 1 > data_len) break;
                 if (field_len >= 2 && frame[9 + offset] == 0x01)
                     flags = frame[10 + offset];
                 offset += field_len + 1;
             }
+
             // Check after scanning so Flags can appear anywhere in the payload.
             if (!(flags & (gap_scanner.discovery_mode ==
                 GAP_DISCOVERY_LIMITED ? 0x01 : 0x03))) return;
 
-            if (pdu_type == ADV_IND ||
-                pdu_type == ADV_SCAN_IND
-            ) {
+            if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type)) {
                 gap_scan.response_accepted = 1;
-                gap_scan_response_address_type = address_type;
-                memcpy(gap_scan_response_address, frame + 2, 6);
+                gap_scan.response_peer.type = address_type;
+                memcpy(gap_scan.response_peer.address, frame + 2, 6);
             }
         }
     }

@@ -160,4 +160,53 @@ static inline int gatt_phone_alert_status_service_add(
     return 1;
 }
 
+// Application facing
+static inline int gatt_phone_alert_status_service_set_alert_status(
+    ble_gatt_phone_alert_status_service *service, uint8_t alert_status
+) {
+    if (!service || !service->alert_status_handle ||
+        (alert_status & (uint8_t)~0x07))
+        return 0;
+    service->alert_status = alert_status;
+    return 1;
+}
+
+// Application facing
+// Update Alert Status and queue its notification.
+static inline int gatt_phone_alert_status_service_notify_alert_status(
+    ble_gatt_server *server, ble_gatt_phone_alert_status_service *service,
+    uint8_t alert_status
+) {
+    if (!server ||
+        !gatt_phone_alert_status_service_set_alert_status(service,
+            alert_status))
+        return 0;
+    return gatt_server_queue_event(server, service->alert_status_handle,
+        &service->alert_status, 1, 0);
+}
+
+// Application facing
+static inline int gatt_phone_alert_status_service_set_ringer_setting(
+    ble_gatt_phone_alert_status_service *service, uint8_t ringer_setting
+) {
+    if (!service || !service->ringer_setting_handle || ringer_setting > 1)
+        return 0;
+    service->ringer_setting = ringer_setting;
+    return 1;
+}
+
+// Application facing
+// Update Ringer Setting and queue its notification.
+static inline int gatt_phone_alert_status_service_notify_ringer_setting(
+    ble_gatt_server *server, ble_gatt_phone_alert_status_service *service,
+    uint8_t ringer_setting
+) {
+    if (!server ||
+        !gatt_phone_alert_status_service_set_ringer_setting(service,
+            ringer_setting))
+        return 0;
+    return gatt_server_queue_event(server, service->ringer_setting_handle,
+        &service->ringer_setting, 1, 0);
+}
+
 #endif

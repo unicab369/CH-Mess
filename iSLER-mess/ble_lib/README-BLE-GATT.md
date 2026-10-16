@@ -45,6 +45,10 @@ reusable buffer and queues the notification. Set its capacity to the current
 server's `mtu - 3` so optional RR Interval entries are omitted as whole
 16-bit values when they do not fit.
 
+`gatt_phone_alert_status_service_add()` handles Ringer Control Point writes.
+Use its Alert Status and Ringer Setting setters to update readable values, or
+their corresponding notification helpers to update and queue a notification.
+
 Additional concrete builders include `gatt_hid_service_add()` for the HID
 core characteristics and caller-provided Report Map/Reports,
 `gatt_internet_protocol_support_service_add()` for the characteristic-free
@@ -212,10 +216,15 @@ Additional service builders include:
 - `gatt_alert_notification_service_add()` for supported categories, new and
   unread alert notifications, and the Alert Notification Control Point. The
   control point validates commands and updates per-category enable masks; the
-  application supplies alert records and notification payloads.
+  application supplies alert records. Use
+  `gatt_alert_notification_service_notify_new()` and
+  `gatt_alert_notification_service_notify_unread()` to format and queue
+  notifications for enabled categories.
 - `gatt_scan_parameters_service_add()` for Scan Interval Window and Scan
   Refresh. The Scan Interval Window handler validates the Bluetooth ranges
   and updates the service state; the application applies it to its scanner.
+  Call `gatt_scan_parameters_service_notify_refresh()` when the client should
+  refresh its scan parameters.
 - `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
   `gatt_csc_service_notify_measurement()` encodes and queues feature-checked

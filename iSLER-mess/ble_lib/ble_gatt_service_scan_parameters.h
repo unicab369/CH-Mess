@@ -66,4 +66,16 @@ static inline int gatt_scan_parameters_service_add(
     return 1;
 }
 
+// Application facing
+// Notify the client that it should refresh its scan parameters.
+static inline int gatt_scan_parameters_service_notify_refresh(
+    ble_gatt_server *server,
+    const ble_gatt_scan_parameters_service *service
+) {
+    if (!server || !service || !service->scan_refresh_handle) return 0;
+    const uint8_t refresh = 0;
+    return gatt_server_queue_event(server, service->scan_refresh_handle,
+        &refresh, sizeof(refresh), 0);
+}
+
 #endif

@@ -95,4 +95,45 @@ static inline int gatt_alert_notification_service_add(
     return 1;
 }
 
+// Application facing
+// Queue a New Alert notification for an enabled, supported category. Text is
+// optional and limited to the 18 octets allowed by the characteristic format.
+static inline int gatt_alert_notification_service_notify_new(
+    ble_gatt_server *server,
+    const ble_gatt_alert_notification_service *service,
+    uint8_t category, uint8_t count, const uint8_t *text, uint16_t text_len
+) {
+    if (!server || !service || category > 9 || text_len > 18 ||
+        (text_len && !text))
+        return 0;
+    uint16_t category_bit = (uint16_t)(1u << category);
+    if (!(service->supported_new_alerts & category_bit) ||
+        !(service->enabled_new_alerts & category_bit))
+        return 0;
+
+    uint8_t value[20] = {category, count};
+    if (text_len) memcpy(value + 2, text, text_len);
+    return gatt_server_queue_event(server, service->new_alert_handle,
+        value, (uint16_t)(2 + text_len), 0);
+}
+
+// Application facing
+// Queue an Unread Alert Status notification for an enabled, supported
+// category.
+static inline int gatt_alert_notification_service_notify_unread(
+    ble_gatt_server *server,
+    const ble_gatt_alert_notification_service *service,
+    uint8_t category, uint8_t count
+) {
+    if (!server || !service || category > 9) return 0;
+    uint16_t category_bit = (uint16_t)(1u << category);
+    if (!(service->supported_unread_alerts & category_bit) ||
+        !(service->enabled_unread_alerts & category_bit))
+        return 0;
+
+    uint8_t value[2] = {category, count};
+    return gatt_server_queue_event(server, service->unread_alert_status_handle,
+        value, sizeof(value), 0);
+}
+
 #endif
