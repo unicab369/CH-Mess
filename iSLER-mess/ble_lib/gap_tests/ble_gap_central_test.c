@@ -4723,8 +4723,8 @@ static void test_secure_connections_just_works(void) {
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 7;
     assert(uECC_compute_public_key(peer_private, peer_public, uECC_secp256r1()));
-    gap_sc_reverse(public_pdu + 1, peer_public, 32);
-    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+    gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && smp->tx[4] == 3);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
@@ -4935,8 +4935,8 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
     peer_private[31] = 7;
     assert(uECC_compute_public_key(peer_private, peer_public,
                                    uECC_secp256r1()));
-    gap_sc_reverse(public_pdu + 1, peer_public, 32);
-    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+    gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(gap_pairing_status() == 4);
     assert(!smp->pairing.phase && !gap_authenticated());
@@ -4977,8 +4977,8 @@ static void test_secure_connections_oob_success(void) {
     assert(smp->secure.oob_active &&
            smp->secure.oob_peer_present);
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
-    gap_sc_reverse(public_pdu + 1, peer_public, 32);
-    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+    gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
@@ -5077,8 +5077,8 @@ static void test_secure_connections_oob_peripheral_success(void) {
     gap_smp_poll(); // Send Pairing Response.
 
     uint8_t central_pdu[65] = {12};
-    gap_sc_reverse(central_pdu + 1, central_public, 32);
-    gap_sc_reverse(central_pdu + 33, central_public + 32, 32);
+    gap_bytes_reverse(central_pdu + 1, central_public, 32);
+    gap_bytes_reverse(central_pdu + 33, central_public + 32, 32);
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && smp->tx[4] == 12);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
@@ -5171,8 +5171,8 @@ static void test_secure_connections_numeric_comparison(void) {
         uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
         peer_private[31] = 9;
         assert(uECC_compute_public_key(peer_private, peer_public, uECC_secp256r1()));
-        gap_sc_reverse(public_pdu + 1, peer_public, 32);
-        gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+        gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+        gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
         receive_test_smp(public_pdu, sizeof(public_pdu), 0);
         conn->queue.tx_queued = conn->link.tx_pending = 0;
         gap_smp_poll(); // Send the initiator's Pairing Confirm.
@@ -5228,8 +5228,8 @@ static void test_secure_connections_numeric_comparison(void) {
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 11;
     assert(uECC_compute_public_key(peer_private, peer_public, uECC_secp256r1()));
-    gap_sc_reverse(public_pdu + 1, peer_public, 32);
-    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+    gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         conn->queue.tx_queued = conn->link.tx_pending = 0;
@@ -5302,8 +5302,8 @@ static void test_secure_connections_passkey(void) {
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 13;
     assert(uECC_compute_public_key(peer_private, peer_public, uECC_secp256r1()));
-    gap_sc_reverse(public_pdu + 1, peer_public, 32);
-    gap_sc_reverse(public_pdu + 33, peer_public + 32, 32);
+    gap_bytes_reverse(public_pdu + 1, peer_public, 32);
+    gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_PASSKEY);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
@@ -5366,8 +5366,8 @@ static void test_secure_connections_passkey(void) {
     uint8_t central_private[32] = {0}, central_public[64], central_pdu[65] = {12};
     central_private[31] = 15;
     assert(uECC_compute_public_key(central_private, central_public, uECC_secp256r1()));
-    gap_sc_reverse(central_pdu + 1, central_public, 32);
-    gap_sc_reverse(central_pdu + 33, central_public + 32, 32);
+    gap_bytes_reverse(central_pdu + 1, central_public, 32);
+    gap_bytes_reverse(central_pdu + 33, central_public + 32, 32);
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         conn->queue.tx_queued = conn->link.tx_pending = 0;

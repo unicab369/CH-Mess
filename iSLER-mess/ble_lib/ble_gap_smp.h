@@ -242,22 +242,16 @@ static inline int smp_random_bytes(uint8_t *out, unsigned len) {
     return 0;
 }
 
-// SMP uses little-endian AES inputs/outputs, unlike the generic AES interface.
-static void gap_sc_reverse(uint8_t *out, const uint8_t *in, size_t len) {
-    for (size_t i = 0; i < len; i++)
-        out[i] = in[len - 1 - i];
-}
-
 static inline int smp_aes128(
     const uint8_t key[16], const uint8_t input[16], uint8_t output[16]
 ) {
     if (!key || !input || !output) return 0;
 
     uint8_t aes_key[16], aes_input[16], aes_output[16];
-    gap_sc_reverse(aes_key, key, sizeof(aes_key));
-    gap_sc_reverse(aes_input, input, sizeof(aes_input));
+    gap_bytes_reverse(aes_key, key, sizeof(aes_key));
+    gap_bytes_reverse(aes_input, input, sizeof(aes_input));
     AES_ENCRYPT_BLOCK(aes_key, aes_input, aes_output);
-    gap_sc_reverse(output, aes_output, sizeof(aes_output));
+    gap_bytes_reverse(output, aes_output, sizeof(aes_output));
 
     gap_wipe(aes_key, sizeof(aes_key));
     gap_wipe(aes_input, sizeof(aes_input));
@@ -430,7 +424,7 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
-        gap_sc_reverse(smp->secure.peer_public_key + 32 * coordinate,
+        gap_bytes_reverse(smp->secure.peer_public_key + 32 * coordinate,
                        on_air + 32 * coordinate, 32);
     }
 
@@ -471,12 +465,12 @@ static int gap_sc_derive_keys(void) {
     const uint8_t *resp_random = conn->is_central ? smp->peer_random : smp->random;
 
     memcpy(message + 1, key_id, sizeof(key_id));
-    gap_sc_reverse(message + 5, ini_random, 16);
-    gap_sc_reverse(message + 21, resp_random, 16);
+    gap_bytes_reverse(message + 5, ini_random, 16);
+    gap_bytes_reverse(message + 21, resp_random, 16);
     message[37] = conn->initiator.type;
-    gap_sc_reverse(message + 38, conn->initiator.address, 6);
+    gap_bytes_reverse(message + 38, conn->initiator.address, 6);
     message[44] = conn->responder.type;
-    gap_sc_reverse(message + 45, conn->responder.address, 6);
+    gap_bytes_reverse(message + 45, conn->responder.address, 6);
     message[51] = 1;
     message[52] = 0;
 
@@ -489,7 +483,7 @@ static int gap_sc_derive_keys(void) {
     }
 
     if (ok)
-        gap_sc_reverse(smp->secure.ltk, ltk, sizeof(ltk));
+        gap_bytes_reverse(smp->secure.ltk, ltk, sizeof(ltk));
     else {
         memset(smp->secure.mac_key, 0, sizeof(smp->secure.mac_key));
         memset(smp->secure.ltk, 0, sizeof(smp->secure.ltk));
@@ -517,12 +511,12 @@ static void gap_sc_confirm_value(
                               (smp->secure.passkey_round % 8)) & 1);
 
     uint8_t nonce[16], confirm[16];
-    gap_sc_reverse(nonce, nonce_air, sizeof(nonce));
+    gap_bytes_reverse(nonce, nonce_air, sizeof(nonce));
 
     if (!smp_port_cmac(nonce, message, sizeof(message), confirm))
         memset(confirm, 0, sizeof(confirm));
 
-    gap_sc_reverse(confirm_air, confirm, 16);
+    gap_bytes_reverse(confirm_air, confirm, 16);
     gap_wipe(nonce, sizeof(nonce));
     gap_wipe(confirm, sizeof(confirm));
     gap_wipe(message, sizeof(message));
@@ -537,12 +531,12 @@ static uint32_t gap_sc_numeric_value(void) {
                     smp->secure.public_key : smp->secure.peer_public_key;
     const uint8_t *peripheral = is_central ?
                     smp->secure.peer_public_key : smp->secure.public_key;
-    gap_sc_reverse(na, is_central ? smp->random : smp->peer_random, 16);
+    gap_bytes_reverse(na, is_central ? smp->random : smp->peer_random, 16);
 
     uint8_t message[80], mac[16];
     memcpy(message, central, 32);
     memcpy(message + 32, peripheral, 32);
-    gap_sc_reverse(message + 64,
+    gap_bytes_reverse(message + 64,
                    is_central ? smp->peer_random : smp->random, 16);
 
     uint32_t value = 0;
@@ -564,16 +558,16 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     uint8_t local_first = !!from_central == !!conn->is_central;
 
     // Bytes 0-15: first nonce.
-    gap_sc_reverse(message, local_first ? smp->random : smp->peer_random, 16);
+    gap_bytes_reverse(message, local_first ? smp->random : smp->peer_random, 16);
     // Bytes 16-31: second nonce.
-    gap_sc_reverse(message + 16, local_first ? smp->peer_random : smp->random, 16);
+    gap_bytes_reverse(message + 16, local_first ? smp->peer_random : smp->random, 16);
     // Bytes 32-47: R (OOB random, passkey, or zero).
     memset(message + 32, 0, 16);
 
     if (smp->secure.oob_active) {
         const uint8_t *oob_random = local_first ?
                 smp->secure.oob_local_random : smp->oob_peer.random;
-        gap_sc_reverse(message + 32, oob_random, 16);
+        gap_bytes_reverse(message + 32, oob_random, 16);
     }
     else if (smp->secure.passkey_required) {
         message[44] = smp->pairing.tk[3];
@@ -588,16 +582,16 @@ static void gap_sc_dhkey_check(uint8_t from_central, uint8_t out_air[16]) {
     memcpy(message + 48, iocap, 3);
     // Bytes 51-57: first address (type + 6 address bytes).
     message[51] = from_central ? conn->initiator.type : conn->responder.type;
-    gap_sc_reverse(message + 52, from_central ? conn->initiator.address :
+    gap_bytes_reverse(message + 52, from_central ? conn->initiator.address :
                    conn->responder.address, 6);
     // Bytes 58-64: second address (type + 6 address bytes).
     message[58] = from_central ? conn->responder.type : conn->initiator.type;
-    gap_sc_reverse(message + 59, from_central ? conn->responder.address :
+    gap_bytes_reverse(message + 59, from_central ? conn->responder.address :
                    conn->initiator.address, 6);
 
     if (!smp_port_cmac(smp->secure.mac_key, message, sizeof(message), check))
         memset(check, 0, sizeof(check));
-    gap_sc_reverse(out_air, check, 16);
+    gap_bytes_reverse(out_air, check, 16);
     gap_wipe(check, sizeof(check));
     gap_wipe(message, sizeof(message));
 }
@@ -2449,7 +2443,7 @@ static void gap_smp_poll(void) {
                 uint8_t public_key[64];
 
                 for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
-                    gap_sc_reverse(public_key + 32 * coordinate,
+                    gap_bytes_reverse(public_key + 32 * coordinate,
                                    smp->secure.public_key + 32 * coordinate, 32);
                 gap_smp_queue(SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
             }
@@ -2500,7 +2494,7 @@ static void gap_smp_poll(void) {
             uint8_t public_key[64];
 
             for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
-                gap_sc_reverse(public_key + 32 * coordinate,
+                gap_bytes_reverse(public_key + 32 * coordinate,
                                smp->secure.public_key + 32 * coordinate, 32);
             gap_smp_queue(SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
         }

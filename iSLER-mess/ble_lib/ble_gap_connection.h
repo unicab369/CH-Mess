@@ -508,7 +508,7 @@ static void gap_privacy_poll(uint32_t now) {
         gap_rx_armed = 0;
     }
     uint8_t address[6];
-    if (!gap_private_address_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
+    if (!gap_private_addr_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
                                       address, gap_random_address)
     ) return;
 
@@ -524,7 +524,7 @@ static void gap_privacy_poll(uint32_t now) {
         if (gap_privacy.resolvable && gap_identities[i].used &&
             gap_identities[i].local_key_set &&
             gap_identities[i].has_local_irk &&
-            gap_private_address_generate(gap_identities[i].local_irk, address,
+            gap_private_addr_generate(gap_identities[i].local_irk, address,
                                           gap_identities[i].local_address))
             memcpy(gap_identities[i].local_address, address, 6);
     }
@@ -534,7 +534,7 @@ static void gap_privacy_poll(uint32_t now) {
                                  &gap_adv.address_type);
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&
-            gap_private_address_generate(gap_identities[gap_adv.peer_slot].irk, address,
+            gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
                                           gap_adv.target_address))
             memcpy(gap_adv.target_address, address, 6);
     }
@@ -586,10 +586,8 @@ static void gap_security_derive(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     uint8_t key[16], diversifier[16];
 
-    for (uint8_t i = 0; i < 16; i++) {
-        key[i] = gap_security->ltk[15 - i];
-        diversifier[i] = gap_security->skd[15 - i];
-    }
+    gap_bytes_reverse(key, gap_security->ltk, sizeof(key));
+    gap_bytes_reverse(diversifier, gap_security->skd, sizeof(diversifier));
 
     AES_ENCRYPT_BLOCK(key, diversifier, gap_security->session_key);
     gap_security->tx_counter = 0;

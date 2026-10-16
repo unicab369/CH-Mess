@@ -571,6 +571,13 @@ static void gap_wipe(volatile void *data, size_t len) {
     while (len--) *bytes++ = 0;
 }
 
+static inline void gap_bytes_reverse(
+    uint8_t *out, const uint8_t *in, size_t len
+) {
+    for (size_t i = 0; i < len; i++)
+        out[i] = in[len - 1 - i];
+}
+
 static void gap_write_u16_le(uint8_t *dst, uint16_t value) {
     dst[0] = (uint8_t)value;
     dst[1] = (uint8_t)(value >> 8);
@@ -650,12 +657,9 @@ static void gap_address_hash(
     const uint8_t irk[16], const uint8_t prand[3], uint8_t hash[3]
 ) {
     uint8_t input[16] = {0}, output[16];
-    for (uint8_t i = 0; i < 3; i++)
-        input[15 - i] = prand[i];
+    gap_bytes_reverse(input + 13, prand, 3);
     AES_ENCRYPT_BLOCK(irk, input, output);
-
-    for (uint8_t i = 0; i < 3; i++)
-        hash[i] = output[15 - i];
+    gap_bytes_reverse(hash, output + 13, 3);
 }
 
 // Return the known identity slot for an identity address or matching RPA.
@@ -879,7 +883,7 @@ int gap_resolve(
     return 1;
 }
 
-static int gap_private_address_generate(
+static int gap_private_addr_generate(
     const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
 ) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
@@ -933,7 +937,7 @@ int gap_identity_local_key(
     if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
         key_bits |= irk[i];
 
-    if (key_bits && !gap_private_address_generate(irk, local, identity->local_address))
+    if (key_bits && !gap_private_addr_generate(irk, local, identity->local_address))
         return 0;
 
     if (irk) memcpy(identity->local_irk, irk, sizeof(identity->local_irk));
@@ -992,7 +996,7 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     }
 
     uint8_t address[6];
-    if (!gap_private_address_generate(irk, address, gap_random_address))
+    if (!gap_private_addr_generate(irk, address, gap_random_address))
         return 0;
 
     if (irk) memcpy(gap_privacy.irk, irk, 16);
@@ -1053,7 +1057,7 @@ int gap_privacy_set_randomized(
         return 0;
 
     uint8_t address[6];
-    if (!gap_private_address_generate(irk, address, gap_random_address))
+    if (!gap_private_addr_generate(irk, address, gap_random_address))
         return 0;
 
     memcpy(gap_privacy.irk, irk, sizeof(gap_privacy.irk));
