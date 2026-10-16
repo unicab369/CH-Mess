@@ -215,6 +215,7 @@ static inline int mesh_models_init(void) {
         if (!mesh_label_add(mesh_models.state.virtual[i].label))
             return 0;
     }
+
     for (uint8_t i = 0; i < mesh_models.state.group_count; i++) {
         mesh_model_group *group = &mesh_models.state.groups[i];
         if (group->element >= mesh_network.state.element_count ||

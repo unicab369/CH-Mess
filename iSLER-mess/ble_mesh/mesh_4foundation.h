@@ -1017,6 +1017,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 reply[size++] = (uint8_t)entry->address;
                 reply[size++] = (uint8_t)(entry->address >> 8);
             }
+
             for (uint8_t i = 0; i < mesh_models.state.virtual_count; i++) {
                 mesh_model_label *entry = &mesh_models.state.virtual[i];
                 if (entry->element != index || entry->model != model)

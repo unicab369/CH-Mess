@@ -31,7 +31,6 @@ static uint8_t gatt_alert_level_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -54,7 +53,6 @@ static uint8_t gatt_immediate_alert_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -79,7 +77,6 @@ static uint8_t gatt_phone_ringer_control_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 

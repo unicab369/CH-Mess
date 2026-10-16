@@ -28,6 +28,7 @@ int main(void) {
         {ATT_OP_READ_MULTIPLE_VARIABLE_REQ,
          ATT_OP_READ_MULT_VAR_RSP},
     };
+
     for (unsigned i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++)
         assert(ble_att_response_opcode(pairs[i].request) == pairs[i].response);
 

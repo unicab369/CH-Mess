@@ -180,7 +180,6 @@ static inline int gatt_transport_eatt_client_send(
     const uint8_t *pdu, uint16_t len
 ) {
     ble_gatt_transport_eatt_context *bearer = context;
-
     if (!bearer || !bearer->transport || !pdu || !len ||
         len > BLE_GATT_EATT_MTU_MAX
     ) return 0;
@@ -340,7 +339,6 @@ static inline void gatt_transport_eatt_close_channel(
     uint16_t cid
 ) {
     ble_gatt_transport *transport = context;
-
     if (transport && transport->eatt_enabled)
         (void)l2cap_channel_close(&transport->l2cap, cid);
 }
@@ -350,7 +348,6 @@ static inline int gatt_transport_eatt_receive_att(
     const uint8_t *pdu, uint16_t len
 ) {
     ble_gatt_transport *transport = context;
-
     if (!transport || !cid || !pdu || !len)
         return -1;
 
@@ -430,7 +427,6 @@ static inline uint16_t gatt_transport_authorize_psm(
     void *context, uint16_t psm
 ) {
     ble_gatt_transport *transport = context;
-
     if (!transport || !transport->eatt_enabled ||
         psm != BLE_GATT_EATT_PSM
     ) return 0;
@@ -533,7 +529,6 @@ static inline int gatt_transport_channel_data(
     uint16_t local_cid, const uint8_t *sdu, uint16_t len
 ) {
     ble_gatt_transport *transport = context;
-
     if (!transport || !transport->eatt_enabled)
         return 0;
 
@@ -783,7 +778,6 @@ static inline int gatt_transport_send_client(
     const uint8_t *att, uint16_t att_len
 ) {
     ble_gatt_transport *transport = (ble_gatt_transport *)context;
-
     if (!transport || !transport->connected || !att || !att_len ||
         att_len > BLE_GATT_TRANSPORT_MTU_MAX || transport->tx_len
     ) return 0;

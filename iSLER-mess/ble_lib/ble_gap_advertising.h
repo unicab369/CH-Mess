@@ -414,7 +414,6 @@ static inline int gap_adv_start_payload(
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
-
     if (GAP_EXT_ADVERTISING_ENABLED)
         return 0;
 
@@ -477,7 +476,6 @@ int gap_adv_start_directed(
     const uint8_t address[6], uint8_t type, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
-
     if (GAP_EXT_ADVERTISING_ENABLED)
         return 0;
 
@@ -912,7 +910,6 @@ int gap_scan_take_ad(
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
     if (!types || !ad || !len) return 0;
-
     if (gap_adv_scan.ready) {
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;

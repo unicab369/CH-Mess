@@ -355,7 +355,6 @@ static int pb_tx_send_once(
 
 static int pb_tx_poll(uint32_t now) {
     if (!tx.active) return 0;
-
     if ((uint32_t)(now - tx.started_ms) >= tx.timeout_ms) {
         int failed = tx.fail_on_timeout;
         tx.active = 0;

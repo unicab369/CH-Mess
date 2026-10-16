@@ -25,6 +25,199 @@ typedef struct {
     uint8_t extended_flags;
 } ble_gatt_glucose_context;
 
+enum {
+    GATT_GLUCOSE_RACP_REPORT_STORED_RECORDS = 0x01,
+    GATT_GLUCOSE_RACP_DELETE_STORED_RECORDS = 0x02,
+    GATT_GLUCOSE_RACP_ABORT_OPERATION = 0x03,
+    GATT_GLUCOSE_RACP_REPORT_NUMBER_OF_RECORDS = 0x04,
+    GATT_GLUCOSE_RACP_NUMBER_OF_RECORDS_RESPONSE = 0x05,
+    GATT_GLUCOSE_RACP_RESPONSE_CODE = 0x06,
+    GATT_GLUCOSE_RACP_OPERATOR_NULL = 0x00,
+    GATT_GLUCOSE_RACP_OPERATOR_ALL = 0x01,
+    GATT_GLUCOSE_RACP_OPERATOR_LESS_OR_EQUAL = 0x02,
+    GATT_GLUCOSE_RACP_OPERATOR_GREATER_OR_EQUAL = 0x03,
+    GATT_GLUCOSE_RACP_OPERATOR_WITHIN_RANGE = 0x04,
+    GATT_GLUCOSE_RACP_OPERATOR_FIRST = 0x05,
+    GATT_GLUCOSE_RACP_OPERATOR_LAST = 0x06,
+    GATT_GLUCOSE_RACP_FILTER_SEQUENCE_NUMBER = 0x01,
+    GATT_GLUCOSE_RACP_FILTER_USER_FACING_TIME = 0x02,
+    GATT_GLUCOSE_RACP_RESPONSE_SUCCESS = 0x01
+};
+
+// Internal: queue a protocol response for an invalid RACP procedure request.
+static inline uint8_t gatt_glucose_racp_reject(
+    ble_gatt_glucose_service *service, uint8_t opcode, uint8_t response_code
+) {
+    if (service->server->indication_pending)
+        return 0x80;
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication)
+            return 0x80;
+    uint8_t response[4] = {
+        GATT_GLUCOSE_RACP_RESPONSE_CODE,
+        GATT_GLUCOSE_RACP_OPERATOR_NULL,
+        opcode,
+        response_code
+    };
+    return gatt_server_queue_event(service->server,
+        service->record_access_handle, response, sizeof(response), 1) > 0 ?
+        0 : BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+}
+
+// Internal: capture a valid request for the application's persistent record store.
+static inline uint8_t gatt_glucose_racp_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_glucose_service *service = context;
+
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command)
+        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len < 2 || len > sizeof(service->racp_request))
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_attribute *racp_cccd = gatt_server_cccd_for(
+        service->server, service->record_access_handle);
+    if (!racp_cccd || !(racp_cccd->cccd & 2))
+        return 0x81; // Client Characteristic Configuration improperly configured.
+
+    uint8_t opcode = value[0], oper = value[1];
+    uint8_t operand_len = (uint8_t)(len - 2);
+    if (opcode == GATT_GLUCOSE_RACP_ABORT_OPERATION) {
+        if (oper != GATT_GLUCOSE_RACP_OPERATOR_NULL || operand_len)
+            return gatt_glucose_racp_reject(service, opcode, 5);
+    }
+    else if (opcode == GATT_GLUCOSE_RACP_REPORT_STORED_RECORDS ||
+             opcode == GATT_GLUCOSE_RACP_DELETE_STORED_RECORDS ||
+             opcode == GATT_GLUCOSE_RACP_REPORT_NUMBER_OF_RECORDS) {
+        if (oper == GATT_GLUCOSE_RACP_OPERATOR_ALL ||
+            oper == GATT_GLUCOSE_RACP_OPERATOR_FIRST ||
+            oper == GATT_GLUCOSE_RACP_OPERATOR_LAST) {
+            if (operand_len)
+                return gatt_glucose_racp_reject(service, opcode, 5);
+        }
+        else if (oper == GATT_GLUCOSE_RACP_OPERATOR_LESS_OR_EQUAL ||
+                 oper == GATT_GLUCOSE_RACP_OPERATOR_GREATER_OR_EQUAL ||
+                 oper == GATT_GLUCOSE_RACP_OPERATOR_WITHIN_RANGE) {
+            if (!operand_len)
+                return gatt_glucose_racp_reject(service, opcode, 5);
+            uint8_t filter = value[2];
+            uint8_t width = filter == GATT_GLUCOSE_RACP_FILTER_SEQUENCE_NUMBER ?
+                2 : filter == GATT_GLUCOSE_RACP_FILTER_USER_FACING_TIME ? 7 : 0;
+            uint8_t expected = width ?
+                (oper == GATT_GLUCOSE_RACP_OPERATOR_WITHIN_RANGE ?
+                    (uint8_t)(1 + 2 * width) : (uint8_t)(1 + width)) : 0;
+            if (!expected)
+                return gatt_glucose_racp_reject(service, opcode, 9);
+            if (operand_len != expected)
+                return gatt_glucose_racp_reject(service, opcode, 5);
+            if (oper == GATT_GLUCOSE_RACP_OPERATOR_WITHIN_RANGE) {
+                int reversed = 0;
+                if (width == 2)
+                    reversed = ble_get_le16(value + 3) >
+                               ble_get_le16(value + 5);
+                else {
+                    uint16_t min_year = ble_get_le16(value + 3);
+                    uint16_t max_year = ble_get_le16(value + 3 + width);
+                    reversed = min_year > max_year ||
+                        (min_year == max_year &&
+                         memcmp(value + 5, value + 5 + width,
+                                width - 2) > 0);
+                }
+                if (reversed)
+                    return gatt_glucose_racp_reject(service, opcode, 5);
+            }
+        }
+        else {
+            return gatt_glucose_racp_reject(service, opcode, 3);
+        }
+    }
+    else {
+        return gatt_glucose_racp_reject(service, opcode, 2);
+    }
+    if (opcode == GATT_GLUCOSE_RACP_REPORT_STORED_RECORDS) {
+        ble_gatt_attribute *measurement_cccd = gatt_server_cccd_for(
+            service->server, service->measurement_handle);
+        ble_gatt_attribute *context_cccd = service->context_handle ?
+            gatt_server_cccd_for(service->server, service->context_handle) :
+            NULL;
+        if (!measurement_cccd || !(measurement_cccd->cccd & 1) ||
+            (service->context_handle &&
+             (!context_cccd || !(context_cccd->cccd & 1))))
+            return 0x81;
+    }
+    if (service->racp_pending &&
+        opcode != GATT_GLUCOSE_RACP_ABORT_OPERATION)
+        return 0x80; // Procedure already in progress.
+    if (service->server->indication_pending)
+        return 0x80;
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication)
+            return 0x80;
+
+    if (service->racp_pending &&
+        opcode == GATT_GLUCOSE_RACP_ABORT_OPERATION) {
+        service->racp_aborted_opcode = service->racp_opcode;
+        service->racp_opcode = opcode;
+        service->racp_operator = oper;
+        service->racp_request_len = 2;
+        service->racp_request[0] = opcode;
+        service->racp_request[1] = oper;
+        service->racp_abort_requested = 1;
+        return 0;
+    }
+    memcpy(service->racp_request, value, len);
+    service->racp_request_len = (uint8_t)len;
+    service->racp_opcode = opcode;
+    service->racp_operator = oper;
+    service->racp_pending = 1;
+    service->racp_aborted_opcode = 0;
+    service->racp_abort_requested = 0;
+    return 0;
+}
+
+// Complete a captured RACP request after application-owned record handling.
+// For a successful Report Number request, supply the count in record_count.
+static inline int gatt_glucose_service_racp_complete(
+    ble_gatt_server *server, ble_gatt_glucose_service *service,
+    uint8_t response_code, uint16_t record_count
+) {
+    if (!server || !service || service->server != server ||
+        !service->racp_pending || !response_code || response_code > 10 ||
+        (service->racp_opcode != GATT_GLUCOSE_RACP_REPORT_NUMBER_OF_RECORDS &&
+         record_count))
+        return 0;
+
+    uint8_t response[4];
+    uint16_t response_len;
+    if (service->racp_opcode == GATT_GLUCOSE_RACP_REPORT_NUMBER_OF_RECORDS &&
+        response_code == GATT_GLUCOSE_RACP_RESPONSE_SUCCESS) {
+        response[0] = GATT_GLUCOSE_RACP_NUMBER_OF_RECORDS_RESPONSE;
+        response[1] = GATT_GLUCOSE_RACP_OPERATOR_NULL;
+        ble_put_le16(response + 2, record_count);
+        response_len = 4;
+    }
+    else {
+        response[0] = GATT_GLUCOSE_RACP_RESPONSE_CODE;
+        response[1] = GATT_GLUCOSE_RACP_OPERATOR_NULL;
+        response[2] = service->racp_opcode;
+        response[3] = response_code;
+        response_len = 4;
+    }
+    int queued = gatt_server_queue_event(server,
+        service->record_access_handle, response, response_len, 1);
+    if (queued > 0) {
+        service->racp_pending = 0;
+        service->racp_abort_requested = 0;
+        service->racp_aborted_opcode = 0;
+    }
+    return queued;
+}
+
 // Internal
 static inline int gatt_glucose_feature16(
     ble_gatt_server *server, uint16_t handle, uint16_t *features

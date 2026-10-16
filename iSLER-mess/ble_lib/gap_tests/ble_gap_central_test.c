@@ -106,6 +106,7 @@ int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
         memcpy(out, secure_random_forced, 12);
         return 1;
     }
+
     for (size_t i = 0; i < len; i++) out[i] = secure_random_seed++;
     return 1;
 }
@@ -937,6 +938,7 @@ static void test_extended_advertising_transmit(void) {
         maximum_data[offset + 1] = 0x09;
         offset += chunk;
     }
+
     for (size_t offset = 0; offset < sizeof(oversized_data);) {
         size_t chunk = sizeof(oversized_data) - offset;
         if (chunk > 256) chunk = 256;

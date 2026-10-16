@@ -379,7 +379,6 @@ static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 
 static inline int smp_poll(void) {
     ble_smp *bearer = &gap_smp_contexts[gap_conn_slot].bearer;
-
     if (!bearer->l2cap || !bearer->tx_len || !bearer->l2cap->ops.send_pdu)
         return 0;
 
@@ -682,7 +681,6 @@ static int gap_smp_link_send_pdu(
     void *context, uint16_t cid, const uint8_t *payload, uint16_t len
 ) {
     gap_smp_context *ctx = context;
-
     if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
         return 0;
 
@@ -785,7 +783,6 @@ static void gap_smp_fail(uint8_t status) {
 // Application facing
 void gap_pairing_set(uint8_t enabled) {
     gap_pair_cfg.enabled = enabled;
-
     if (!enabled && gap_smp_contexts[gap_conn_slot].pairing.phase)
         gap_smp_fail(5);
 }
@@ -925,7 +922,6 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 // A display value is generated anew for each pairing; never cache/reuse it.
 uint8_t gap_passkey(uint32_t *value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-
     if (smp->pairing.passkey_action == GAP_PASSKEY_DISPLAY && value) {
         *value = (uint32_t)smp->pairing.tk[0] |
                 (uint32_t)smp->pairing.tk[1] << 8 |
@@ -987,7 +983,6 @@ int gap_passkey_keypress(uint8_t notification_type) {
 // Show all six digits on both devices and ask the user whether they match.
 int gap_numeric_get(uint32_t *value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-
     if (!value || smp->pairing.phase != SMP_PHASE_SC_USER || smp->secure.numeric_reply)
         return 0;
 
@@ -1014,7 +1009,6 @@ int gap_numeric_reply(uint8_t accept) {
 // Application facing
 int gap_pair_cancel(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-
     if (!smp->pairing.phase || smp->blocked)
         return 0;
 
@@ -1132,7 +1126,6 @@ static int gap_bond_valid(const gap_bond *bond) {
 // Application facing
 int gap_bond_remove(void) {
     const gap_peer_address *peer = &gap_conn_ctx[gap_conn_slot].bond.peer;
-
     if (peer->type > 1 || (peer->type && (peer->address[5] & 0xc0) != 0xc0))
         return 0;
 
@@ -1565,7 +1558,6 @@ static void smp_bond_peripheral_start(void) {
 // Called from connection polling and before an application takes an RX fragment.
 static void gap_smp_poll(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (!gap_conn_slot_active(gap_conn_slot))
         return;
 

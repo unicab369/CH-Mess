@@ -1022,6 +1022,7 @@ static inline int l2cap_signaling_receive(
                         channel_result[i] = 10;
                         continue;
                     }
+
                     for (uint8_t j = 0; j < i; j++)
                         if (remote == ble_read_u16_le(p + 8 + j * 2))
                             channel_result[i] = 10;
@@ -1144,6 +1145,7 @@ static inline int l2cap_signaling_receive(
                     result = 3;
                     break;
                 }
+
                 for (uint8_t j = 0; j < i; j++)
                     if (ble_read_u16_le(p + 4 + j * 2) == cid)
                         result = 3;
@@ -1253,6 +1255,7 @@ static inline int l2cap_signaling_receive(
                         conn->pending_deadline_ms = 0;
                         return 0;
                     }
+
                     for (uint8_t i = 0; i < conn->pending_count; i++) {
                         uint16_t remote = ble_read_u16_le(p + 8 + i * 2);
                         int slot = l2cap_channel_find_local(conn,
@@ -1428,7 +1431,6 @@ static inline int l2cap_connection_receive(
     uint16_t cid, const uint8_t *sdu, uint16_t len
 ) {
     if (!conn || !sdu || !len) return 0;
-
     if (cid == L2CAP_CID_LE_SIGNALING)
         return l2cap_signaling_receive(conn, sdu, len);
 
@@ -1478,6 +1480,7 @@ static inline int l2cap_connection_receive(
         (void)l2cap_ecfc_send_pending_credit(conn, ch);
         return 1;
     }
+
     for (size_t i = 0; i < 2; i++) {
         if (conn->fixed[i].cid == cid && conn->fixed[i].receive)
             return conn->fixed[i].receive(conn->fixed[i].context,

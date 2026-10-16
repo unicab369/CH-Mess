@@ -78,6 +78,7 @@ static inline void gatt_aes128_encrypt_expanded(
     for (uint8_t i = 0; i < 16; i++) {
         state[i] ^= round_keys[i];
     }
+
     for (uint8_t round = 1; round <= 10; round++) {
         for (uint8_t i = 0; i < 16; i++) {
             state[i] = ble_gatt_aes_sbox[state[i]];

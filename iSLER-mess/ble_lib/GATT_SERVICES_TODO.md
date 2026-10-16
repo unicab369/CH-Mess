@@ -1,7 +1,7 @@
 # Bluetooth SIG GATT service builders
 
 Checklist based on the Bluetooth SIG Assigned Numbers document dated
-2026-10-14 (GATT service assignments last modified 2026-09-22). A checked
+2026-10-08 (GATT service assignments last modified 2026-09-22). A checked
 service has a database builder or is handled by the GATT core. Builders do not
 automatically provide each service's application protocol or profile behavior.
 
@@ -15,7 +15,9 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Current Time (`0x1805`)
 - [x] Reference Time Update (`0x1806`)
 - [x] Next DST Change (`0x1807`)
-- [x] Glucose (`0x1808`)
+- [x] Glucose (`0x1808`), full Sensor Status-to-Feature mapping, paired
+  sequence-checked Measurement Context notifications, and validated RACP request
+  capture/completion
 - [x] Health Thermometer (`0x1809`)
 - [x] Device Information (`0x180A`)
 - [x] Heart Rate (`0x180D`)

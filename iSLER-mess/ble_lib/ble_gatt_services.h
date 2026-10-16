@@ -376,6 +376,7 @@ static inline int gatt_heart_rate_measurement_encode(
         out[offset++] = (uint8_t)energy_expended;
         out[offset++] = (uint8_t)(energy_expended >> 8);
     }
+
     for (uint16_t i = 0; i < count; i++) {
         out[offset++] = (uint8_t)rr_intervals[i];
         out[offset++] = (uint8_t)(rr_intervals[i] >> 8);
@@ -393,7 +394,6 @@ static inline int gatt_heart_rate_service_notify_measurement(
     uint8_t rr_interval_count, uint8_t *buffer, uint16_t capacity
 ) {
     uint16_t len;
-
     if (!server || !service || !buffer ||
         !gatt_heart_rate_measurement_encode(heart_rate,
             energy_expended_present, energy_expended, rr_intervals,
@@ -1282,14 +1282,12 @@ static uint8_t gatt_aics_control_point_write(
     }
     case 2:
     case 3:
-
         if (next[1] == 2) return GATT_AICS_ATT_ERR_MUTE_DISABLED;
 
         next[1] = opcode == 2 ? 0 : 1;
         break;
     case 4:
     case 5:
-
         if (next[2] < 2)
             return GATT_AICS_ATT_ERR_GAIN_MODE_CHANGE_NOT_ALLOWED;
 
@@ -2969,7 +2967,6 @@ static inline uint8_t gatt_has_control_point_write(
     switch (opcode) {
     case 0x01: required_len = 3; break;
     case 0x04:
-
         if (!(service->features & 0x20))
             return GATT_HAS_ATT_ERR_INVALID_OPCODE;
 
@@ -2980,7 +2977,6 @@ static inline uint8_t gatt_has_control_point_write(
     case 0x05: case 0x08: required_len = 2; break;
     case 0x06: case 0x07: required_len = 1; break;
     case 0x09: case 0x0a:
-
         if (!(service->features & 0x04))
             return GATT_HAS_ATT_ERR_INVALID_OPCODE;
 
@@ -3824,6 +3820,7 @@ static inline int gatt_media_control_service_add_full(
         }
         extra_index++;
     }
+
     for (uint8_t i = 0; i < 7; i++) {
         if (object_indexes[i] == 0xff ||
             (i != GATT_MCS_OBJECT_CURRENT_TRACK &&
@@ -3908,6 +3905,7 @@ static inline int gatt_media_control_service_add_full(
             supported_mcp_opcodes;
         service->control_point_opcodes_handle = value_handles[value_index];
     }
+
     for (uint8_t i = 0; i < 7; i++) {
         if (object_indexes[i] == 0xff)
             continue;
@@ -4317,6 +4315,7 @@ static inline int gatt_audio_stream_control_service_add(
         service->sink_handles[i] = value_handles[endpoint_indexes[i]];
         service->sink_cccd_handles[i] = cccd_handles[endpoint_indexes[i]];
     }
+
     for (uint8_t i = 0; i < config->source_count; i++) {
         uint8_t value_index = endpoint_indexes[source_start + i];
         service->source_handles[i] = value_handles[value_index];
@@ -4416,7 +4415,6 @@ static int gatt_tbs_value_is_valid(
     case GATT_TBS_STATUS_FLAGS:
         return len == 2 && !(value[0] & 0xfc) && value[1] == 0;
     case GATT_TBS_CALL_STATE:
-
         if (len % 3) return 0;
 
         for (uint16_t i = 0; i < len; i += 3) {
@@ -5292,7 +5290,6 @@ static uint8_t gatt_fitness_machine_control_write(
     uint16_t len, uint8_t command
 ) {
     ble_gatt_fitness_machine_controlled_service *service = context;
-
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -5790,7 +5787,16 @@ typedef struct {
     ble_gatt_server *server;
     uint16_t last_measurement_sequence;
     uint8_t measurement_context_pending;
+    uint8_t racp_pending, racp_opcode, racp_operator, racp_request_len;
+    uint8_t racp_aborted_opcode;
+    uint8_t racp_abort_requested;
+    uint8_t racp_request[18];
 } ble_gatt_glucose_service;
+
+static inline uint8_t gatt_glucose_racp_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 
 typedef struct {
     uint16_t service_handle, supported_new_alerts_handle;
@@ -6356,6 +6362,7 @@ static inline int gatt_glucose_service_add(
     chars[count++] = (ble_gatt_sig_characteristic){
         0x2a51, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2
     };
+    uint8_t racp_index = count;
     chars[count++] = (ble_gatt_sig_characteristic){
         .uuid = 0x2a52,
         .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
@@ -6363,13 +6370,16 @@ static inline int gatt_glucose_service_add(
         .permissions = BLE_GATT_PERM_WRITE_AUTHENTICATED,
         .value = &racp_initial,
         .value_len = 0,
-        .value_capacity = 16,
+        .value_capacity = 17,
         .variable_length = 1
     };
+    ble_gatt_sig_handlers handlers[4] = {0};
+    handlers[racp_index].write = gatt_glucose_racp_write;
+    handlers[racp_index].context = service;
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add(server, 0x1808, chars, count,
-                              &service->service_handle, values, cccds)
+    if (!gatt_sig_service_add_with_handlers(server, 0x1808, chars, count,
+            &service->service_handle, values, cccds, handlers)
     ) return 0;
 
     uint8_t i = 0;
@@ -6757,7 +6767,6 @@ static inline int gatt_location_navigation_service_add(
     int include_control_point
 ) {
     uint16_t position_quality_flags = 0;
-
     if (position_quality && position_quality_len >= 2)
         position_quality_flags = ble_get_le16(position_quality);
     uint16_t position_quality_features =
@@ -6914,7 +6923,6 @@ static uint8_t gatt_user_data_database_change_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -6946,7 +6954,6 @@ static uint8_t gatt_user_data_control_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -7483,6 +7490,7 @@ static inline int gatt_cgm_service_add(
         service->record_access_cccd_handle,
         service->specific_ops_cccd_handle
     };
+
     for (uint8_t i = 0; i < sizeof(cccd_handles) / sizeof(cccd_handles[0]); i++) {
         if (!cccd_handles[i]) continue;
 

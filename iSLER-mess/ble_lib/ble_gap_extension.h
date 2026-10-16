@@ -1019,7 +1019,6 @@ static void gap_sync_finish_owned_scan(void) {
 // established synchronization.
 int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     int slot = gap_sync_slot_from_handle(handle);
-
     if (slot < 0 || terminate > 1 ||
         gap_syncs[slot].established != terminate
     ) return 0;
@@ -1040,7 +1039,6 @@ int gap_sync_pawr_respond(
     uint8_t response_slot, const uint8_t *data, size_t len
 ) {
     int slot = gap_sync_slot_from_handle(handle);
-
     if (slot < 0) return 0;
 
     gap_sync_context *sync = &gap_syncs[slot];
@@ -1087,7 +1085,6 @@ int gap_sync_pawr_respond(
 // existing response after it is sent once more.
 int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
     int slot = gap_sync_slot_from_handle(handle);
-
     if (slot < 0 || !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing || enabled > 1
     ) return 0;
@@ -1478,7 +1475,6 @@ static int gap_periodic_connect_request(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
@@ -1556,7 +1552,6 @@ static int gap_periodic_connect_exchange(
     uint64_t request_start_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (!set || !set->pawr_connect.pending || gap_conn_slot_active(gap_conn_slot) || GAP_HW_DATA_MAX() < 27)
         return 0;
 
@@ -2444,7 +2439,6 @@ static int gap_past_receive(
     uint64_t connection_anchor_ticks, uint16_t connection_event_counter
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (!gap_past.enabled || !frame || frame[1] != 35)
         return 0;
 
@@ -2689,7 +2683,6 @@ int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
 
 static void gap_sync_window_missed(uint8_t slot) {
     if (!gap_syncs[slot].used) return;
-
     if (gap_syncs[slot].window_chain) {
         gap_syncs[slot].event_data_active = 0;
         gap_syncs[slot].data_len = 0;
@@ -2750,7 +2743,6 @@ static int gap_sync_conn_overlap(
     uint64_t start_ticks, uint64_t end_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (!gap_conn_slot_active(gap_conn_slot) ||
         !conn->link.next_ticks || !conn->schedule.interval_125us
     ) return 0;
@@ -2797,7 +2789,6 @@ static int gap_ext_send_due(uint32_t now) {
     // Periodic events use controller ticks so their interval does not inherit
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
-
     if ((gap_conn_slot_mask == 0 ||
          (gap_conn_slot_active(gap_conn_slot) && conn->is_central)) &&
         !gap_central.active &&

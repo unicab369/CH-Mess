@@ -565,6 +565,7 @@ static inline int mesh_network_init(const mesh_net_state *state) {
     if (state->has_new_key) {
         mesh_derive_keys(state->new_net_key, &mesh_network.new_key);
     }
+
     for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++) {
         const mesh_additional_subnet *sub = &state->additional_subnets[i];
         memset(&mesh_network.additional_old[i], 0,
@@ -884,7 +885,6 @@ static inline int mesh_net_queue_with_credentials(
         const mesh_credentials *key
 ) {
     mesh_net_state *state = &mesh_network.state;
-
     if (!mesh_network.ready || !mesh_local_element(src) || !transport ||
         dst == 0 || ctl > 1 ||
         ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
@@ -1001,6 +1001,7 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
             candidate_idx = sub->index;
             phase = sub->key_refresh_phase;
         }
+
         for (uint8_t version = 0; version < 2; version++) {
             if (!version && phase == 2)
                 continue;
@@ -1110,6 +1111,7 @@ static inline int mesh_net_receive(
             if (!sub->used) continue;
             candidate_idx = sub->index;
         }
+
         for (uint8_t version = 0; version < 2; version++) {
             const mesh_credentials *key = mesh_runtime_netkey(
                 &mesh_network.state, candidate_idx, version);
@@ -1146,6 +1148,7 @@ static inline int mesh_net_receive(
         }
         }
     }
+
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS && !authenticated; i++) {
         const mesh_friendship *friendship =
             &mesh_network.friendships[i];

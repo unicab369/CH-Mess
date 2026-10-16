@@ -1321,7 +1321,6 @@ static uint8_t gatt_server_event_security_error(
     const ble_gatt_server *server, const ble_gatt_attribute *attribute
 ) {
     uint16_t permissions = attribute->permissions;
-
     if ((permissions & BLE_GATT_PERM_EVENT_AUTHENTICATED) &&
         !server->authenticated
     ) return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION;
@@ -1364,7 +1363,6 @@ static uint8_t gatt_server_read(
     uint8_t *out, uint16_t *out_len
 ) {
     uint8_t security = gatt_server_access_security_error(server, a, 0);
-
     if (security) return security;
 
     if (!(a->flags & BLE_GATT_ATTRIBUTE_CCCD) && a->properties &&
@@ -1455,7 +1453,6 @@ static void gatt_server_drop_disabled_events(
         else
             i++;
     }
-
     if (server->database_hash_update_pending) {
         ble_gatt_uuid changed_uuid = {2, {0x05, 0x2a}};
         uint16_t changed_handle = 0;

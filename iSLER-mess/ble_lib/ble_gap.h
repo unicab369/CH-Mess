@@ -405,7 +405,6 @@ static inline uint8_t gap_conn_slot_active(uint8_t slot) {
 
 static inline void gap_conn_slot_set_active(uint8_t slot, uint8_t active) {
     uint8_t bit = GAP_CONN_SLOT_BIT(slot);
-
     if (active)
         gap_conn_slot_mask |= bit;
     else
@@ -500,7 +499,6 @@ static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 // Validate a data-channel access address against the Bluetooth Core rules.
 static int gap_access_address_valid(uint32_t address) {
     uint32_t address_xor = address ^ BLE_ADV_ACCESS_ADDRESS;
-
     if (address_xor == 0 || (address_xor & (address_xor - 1)) == 0)
         return 0;
 
@@ -751,7 +749,6 @@ static int gap_accept_list_match(
 int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
     // NOTE: Zero is public; any nonzero address type is treated as random.
     type = type != 0;
-
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
@@ -784,7 +781,6 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
 int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     // NOTE: Use the same public/nonzero-random convention as add.
     type = type != 0;
-
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
@@ -809,7 +805,6 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
@@ -827,7 +822,6 @@ int gap_identity_set(
     const uint8_t address[6], uint8_t type, const uint8_t irk[16]
 ) {
     uint8_t random_type = type != 0;
-
     if (!address || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
@@ -876,7 +870,6 @@ int gap_identity_privacy(
     const uint8_t address[6], uint8_t type, uint8_t mode
 ) {
     uint8_t random_type = type != 0;
-
     if (!address || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) ||
@@ -960,7 +953,6 @@ int gap_identity_local_key(
     const uint8_t address[6], uint8_t type, const uint8_t irk[16]
 ) {
     uint8_t random_type = type != 0;
-
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
@@ -1072,7 +1064,6 @@ static int gap_privacy_timeout_pick(
     uint16_t min_s, uint16_t max_s, uint16_t *timeout_s
 ) {
     uint32_t range = (uint32_t)max_s - min_s + 1;
-
     if (range == 1) {
         *timeout_s = min_s;
         return 1;

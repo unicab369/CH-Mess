@@ -615,6 +615,7 @@ int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
         memcpy(key, record.state.dev_key, 16);
         return 1;
     }
+
     for (uint8_t i = 0; i < record.node_count; i++) {
         const mesh_node_record *node = &record.nodes[i];
         if (address >= node->unicast_address &&

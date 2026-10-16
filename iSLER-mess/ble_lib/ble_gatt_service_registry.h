@@ -122,6 +122,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                     NULL, 0, 0, NULL, NULL, NULL, &cccd_handles[i]);
             }
         }
+
         for (uint8_t j = 0; added &&
              j < characteristics[i].descriptor_count; j++) {
             const ble_gatt_sig_descriptor *descriptor =

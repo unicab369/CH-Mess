@@ -56,6 +56,7 @@ static void gap_conn_send_queued(void) {
                 conn->params_latency,
                 conn->params_timeout
             };
+
             for (uint8_t i = 0; i < 4; i++) {
                 ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
             }
@@ -117,6 +118,7 @@ static void gap_conn_send_queued(void) {
                     conn->subrate.request_continuation,
                     conn->subrate.request_timeout
                 };
+
                 for (uint8_t i = 0; i < 5; i++) {
                     ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
                 }
@@ -173,9 +175,11 @@ static void gap_conn_send_queued(void) {
                 conn->rate.periodicity,
                 conn->link.event_counter
             };
+
             for (uint8_t i = 0; i < 9; i++) {
                 ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
             }
+
             for (uint8_t i = 0; i < 4; i++) {
                 ble_write_u16_le(gap_tx_frame + 21 + i * 2,
                                  conn->rate.offsets[i]);
@@ -216,7 +220,6 @@ static void gap_conn_send_queued(void) {
 // application's previously selected handle.
 void gap_hw_received(void) {
     uint8_t previous_slot = gap_conn_slot;
-
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
@@ -891,7 +894,6 @@ static uint64_t gap_conn_event_close_ticks(
     const gap_conn_context *connection, uint32_t now_ms
 ) {
     uint32_t packet_us;
-
     if (connection->phy.current.tx == GAP_PHY_CODED || connection->phy.current.rx == GAP_PHY_CODED) {
         // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us

@@ -290,7 +290,6 @@ static inline int gatt_eatt_receive(
     const uint8_t *pdu, uint16_t len
 ) {
     int slot = gatt_eatt_find(eatt, cid);
-
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
         !eatt->ops.receive_att
@@ -309,7 +308,6 @@ static inline void gatt_eatt_channel_closed(
     uint16_t cid, int reason
 ) {
     int slot = gatt_eatt_find(eatt, cid);
-
     if (slot < 0) return;
 
     memset(&eatt->bearers[slot], 0, sizeof(eatt->bearers[slot]));

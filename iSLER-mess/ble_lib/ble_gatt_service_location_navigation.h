@@ -203,7 +203,6 @@ static inline uint8_t gatt_lns_control_response(
     uint8_t response_code, const uint8_t *parameters, uint16_t parameter_len
 ) {
     uint8_t response[BLE_GATT_ATT_VALUE_MAX];
-
     if (!server || !handle || parameter_len > sizeof(response) - 3 ||
         server->mtu < 6 ||
         parameter_len > server->mtu - 6 ||
@@ -361,7 +360,6 @@ static inline int gatt_location_navigation_service_control_point_complete(
     uint8_t response, const uint8_t *parameters, uint16_t parameter_len
 ) {
     uint8_t opcode = service ? service->control_point_pending_opcode : 0;
-
     if (!server || !service || service->server != server ||
         !service->control_point_pending_opcode || response < 1 || response > 4 ||
         (parameter_len && !parameters) ||

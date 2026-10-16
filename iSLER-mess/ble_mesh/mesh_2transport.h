@@ -360,6 +360,7 @@ static inline void mesh_friend_disable(void) {
             transport_friend_offers[i].lpn_address,
             mesh_network.state.unicast_address);
     }
+
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++)
         mesh_friend_queue_clear(&transport_friend_offers[i]);
     memset(transport_friend_offers, 0, sizeof(transport_friend_offers));

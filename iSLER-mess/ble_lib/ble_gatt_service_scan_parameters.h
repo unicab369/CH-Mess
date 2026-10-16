@@ -9,7 +9,6 @@ static uint8_t gatt_scan_parameters_window_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 

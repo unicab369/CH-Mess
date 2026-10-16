@@ -285,9 +285,14 @@ Additional service database builders are available:
   and `gatt_pulse_oximeter_service_notify_continuous()` encode optional fields
   and check them against the service feature bits.
 - `gatt_glucose_service_notify_measurement()` encodes Glucose Measurement
-  notifications. If the record has context, set its context-follows flag and
-  then queue the matching sequence number with
-  `gatt_glucose_service_notify_context()`.
+  notifications and maps the twelve Sensor Status Annunciation bits to the
+  supported Glucose Feature bits. If the record has context, set its
+  context-follows flag and then queue the matching sequence number with
+  `gatt_glucose_service_notify_context()`; the service enforces that pairing.
+  The authenticated Record Access Control Point validates supported filter
+  layouts and captures requests in the service state; the application runs
+  its record operation and calls `gatt_glucose_service_racp_complete()` with
+  the result (and record count for Report Number).
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_service_notify_measurement()` encodes and queues
   feature-checked measurements. Its SC Control Point validates and applies
