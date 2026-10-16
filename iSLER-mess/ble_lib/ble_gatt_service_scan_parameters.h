@@ -11,6 +11,7 @@ static uint8_t gatt_scan_parameters_window_write(
     (void)command;
     if (!context || !value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (len != 4) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint16_t interval = ble_get_le16(value);

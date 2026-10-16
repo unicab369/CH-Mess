@@ -70,39 +70,49 @@ static inline int gatt_body_composition_service_indicate_measurement(
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
     }
+
     if (measurement->flags & 0x0004) value[len++] = measurement->user_id;
+
     if (measurement->flags & 0x0008) {
         ble_put_le16(value + len, measurement->basal_metabolism);
         len += 2;
     }
+
     if (measurement->flags & 0x0010) {
         ble_put_le16(value + len, measurement->muscle_percentage);
         len += 2;
     }
+
     if (measurement->flags & 0x0020) {
         ble_put_le16(value + len, measurement->muscle_mass);
         len += 2;
     }
+
     if (measurement->flags & 0x0040) {
         ble_put_le16(value + len, measurement->fat_free_mass);
         len += 2;
     }
+
     if (measurement->flags & 0x0080) {
         ble_put_le16(value + len, measurement->soft_lean_mass);
         len += 2;
     }
+
     if (measurement->flags & 0x0100) {
         ble_put_le16(value + len, measurement->body_water_mass);
         len += 2;
     }
+
     if (measurement->flags & 0x0200) {
         ble_put_le16(value + len, measurement->impedance);
         len += 2;
     }
+
     if (measurement->flags & 0x0400) {
         ble_put_le16(value + len, measurement->weight);
         len += 2;
     }
+
     if (measurement->flags & 0x0800) {
         ble_put_le16(value + len, measurement->height);
         len += 2;

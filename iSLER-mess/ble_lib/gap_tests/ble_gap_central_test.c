@@ -30,6 +30,7 @@ static int test_smp_user_request(
 int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
     if (!test_bond_storage_enabled || slot >= GAP_BOND_SLOTS) return -1;
     if (!test_bonds[slot].valid) return 0;
+
     if (bond) *bond = test_bonds[slot];
     return 1;
 }
@@ -87,11 +88,14 @@ static uint8_t ead_randomizer_forced[5], ead_randomizer_force;
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
     if (!secure_random_available || (len == 4 && secure_random_passkey_fail)) return 0;
     if (len == 4 && secure_random_passkey_reject) { memset(out, 0xff, 4); return 1; }
+
     if (secure_random_disconnect) gap_conn_end();
+
     if (len == sizeof(ead_randomizer_forced) && ead_randomizer_force) {
         memcpy(out, ead_randomizer_forced, sizeof(ead_randomizer_forced));
         return 1;
     }
+
     if (secure_random_force) {
         assert(len == 12);
         memcpy(out, secure_random_forced, 12);
@@ -222,6 +226,7 @@ void GAP_HW_LINK_TX(void) {
         inject_peripheral_connect_request = 0;
         gap_hw_received();
     }
+
     if (inject_pawr_connect_response && gap_ext_pawr.connect.waiting &&
         tx_buffer == gap_central.request) {
         const uint8_t *request = gap_central.request;
@@ -239,6 +244,7 @@ void GAP_HW_LINK_TX(void) {
         corrupt_pawr_connect_response = 0;
         gap_hw_received();
     }
+
     if (configured_access_address != BLE_ADV_ACCESS_ADDRESS &&
         tx_buffer == gap_ext_adv_frame && captured_extended_count < 16) {
         uint8_t *frame = (uint8_t *)tx_buffer;
@@ -248,6 +254,7 @@ void GAP_HW_LINK_TX(void) {
         captured_extended_channels[slot] = configured_radio_channel;
         captured_extended_ticks[slot] = fake_radio_ticks;
     }
+
     if (gap_ext_adv_scan.waiting && gap_ext_adv_scan.response_started &&
         captured_extended_count < 16) {
         uint8_t *frame = (uint8_t *)tx_buffer;
@@ -293,6 +300,7 @@ void GAP_HW_LINK_RX(void) {
         inject_pawr_response = 0;
         gap_hw_received();
     }
+
     if (force_aux_scan_request && gap_ext_adv_scan.waiting) {
         static const uint8_t scanner_address[6] = {
             0x21, 0x22, 0x23, 0x24, 0x25, 0x26
@@ -319,6 +327,7 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
         captured_extended_channels[slot] = channel;
         captured_extended_ticks[slot] = fake_radio_ticks;
     }
+
     if (fake_radio_ticks_enabled && fake_radio_tick_autoincrement)
         fake_radio_ticks += ((uint32_t)len + 8u) * 8u;
     return 1;
@@ -4523,12 +4532,14 @@ static void test_passkey_pairing(void) {
                     assert(smp->pairing.phase == SMP_PHASE_PASSKEY &&
                            smp->pairing.confirm_received);
                 }
+
                 if (input) {
                     assert(!gap_passkey_reply(1000000));
                     assert(gap_passkey_reply(passkey));
                     gap_smp_poll();
                     assert(!gap_passkey_reply(passkey));
                 }
+
                 if (!(input && !central)) receive_test_smp(confirm, 17, 0);
                 assert(smp->pairing.phase == SMP_PHASE_RANDOM);
                 uint8_t expected_key[16], s1_input[16], key[16] = {0};

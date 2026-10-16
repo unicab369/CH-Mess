@@ -823,6 +823,7 @@ int gap_identity_set(
     }
 
     if (!irk || slot < 0) return 0;
+
     if (!gap_identities[slot].used)
         gap_identities[slot].privacy_mode = GAP_PRIVACY_NETWORK;
 
@@ -933,6 +934,7 @@ int gap_identity_local_key(
             break;
         }
     }
+
     if (slot < 0) return 0;
     gap_identity *identity = &gap_identities[slot];
 

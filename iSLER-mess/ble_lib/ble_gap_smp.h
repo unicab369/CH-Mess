@@ -255,6 +255,7 @@ static inline int smp_receive_sdu(
     if (!smp || cid != L2CAP_CID_SMP || !sdu || !len) return 0;
     // Reserved command codes are ignored by SMP, as required by the spec.
     if (!smp_opcode_known(sdu[0])) return 1;
+
     if (len > sizeof(smp->rx) || !smp_pdu_valid(sdu, len) || smp->rx_len)
         return 0;
 
@@ -1134,8 +1135,10 @@ static int smp_bond_load(void) {
             stored.version = GAP_BOND_VERSION;
             if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
             if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
+
             if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
             if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
+
             if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
             conn->bond = stored;
             gap_wipe(&stored, sizeof(stored));
@@ -1159,8 +1162,10 @@ static int smp_bond_store(const gap_bond *bond) {
 
     if (!stored.peer_irk.present) stored.peer_irk = (bond_opt_key){0};
     if (!stored.local_irk.present) stored.local_irk = (bond_opt_key){0};
+
     if (!stored.peer_csrk.present) stored.peer_csrk = (bond_opt_key){0};
     if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
+
     if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
 
     if (!GAP_BOND_LOAD || !GAP_BOND_SAVE) {
@@ -1232,6 +1237,7 @@ static void gap_smp_finish(uint8_t status) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (status) smp_bond_abort();
+
     if (status && !conn->bonded &&
         (smp->pairing.phase == SMP_PHASE_BOND_TX ||
          smp->pairing.phase == SMP_PHASE_BOND_RX)
@@ -1700,6 +1706,7 @@ static void gap_smp_poll(void) {
 
         size_t remaining = smp->tx_len - smp->tx_offset;
         if (max_len > remaining) max_len = remaining;
+
         if (!max_len || !gap_send_data(smp->tx_offset ? 1 : 2,
                 smp->tx + smp->tx_offset, max_len)
         ) return;

@@ -63,15 +63,18 @@ static inline int gatt_pulse_oximeter_service_indicate_spot_check(
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
     }
+
     if (measurement->flags & 0x02) {
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;
     }
+
     if (measurement->flags & 0x04) {
         value[len++] = (uint8_t)measurement->device_sensor_status;
         value[len++] = (uint8_t)(measurement->device_sensor_status >> 8);
         value[len++] = (uint8_t)(measurement->device_sensor_status >> 16);
     }
+
     if (measurement->flags & 0x08) {
         ble_put_le16(value + len, measurement->pulse_amplitude_index);
         len += 2;
@@ -110,20 +113,24 @@ static inline int gatt_pulse_oximeter_service_notify_continuous(
         ble_put_le16(value + len + 2, measurement->fast_pulse_rate);
         len += 4;
     }
+
     if (measurement->flags & 0x02) {
         ble_put_le16(value + len, measurement->slow_spo2);
         ble_put_le16(value + len + 2, measurement->slow_pulse_rate);
         len += 4;
     }
+
     if (measurement->flags & 0x04) {
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;
     }
+
     if (measurement->flags & 0x08) {
         value[len++] = (uint8_t)measurement->device_sensor_status;
         value[len++] = (uint8_t)(measurement->device_sensor_status >> 8);
         value[len++] = (uint8_t)(measurement->device_sensor_status >> 16);
     }
+
     if (measurement->flags & 0x10) {
         ble_put_le16(value + len, measurement->pulse_amplitude_index);
         len += 2;

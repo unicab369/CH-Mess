@@ -63,11 +63,13 @@ static inline int gatt_glucose_service_notify_measurement(
         ble_put_le16(value + len, (uint16_t)measurement->time_offset);
         len += 2;
     }
+
     if (measurement->flags & 0x02) {
         ble_put_le16(value + len, measurement->concentration);
         value[len + 2] = measurement->type_sample_location;
         len += 3;
     }
+
     if (measurement->flags & 0x08) {
         ble_put_le16(value + len, measurement->sensor_status);
         len += 2;
@@ -96,22 +98,27 @@ static inline int gatt_glucose_service_notify_context(
         ble_put_le16(value + len, context->carbohydrate);
         len += 2;
     }
+
     if (context->flags & 0x02) value[len++] = context->meal;
     if (context->flags & 0x04) value[len++] = context->tester_health;
+
     if (context->flags & 0x08) {
         ble_put_le16(value + len, context->exercise_duration);
         value[len + 2] = context->exercise_intensity;
         len += 3;
     }
+
     if (context->flags & 0x10) {
         value[len++] = context->medication_id;
         ble_put_le16(value + len, context->medication);
         len += 2;
     }
+
     if (context->flags & 0x40) {
         ble_put_le16(value + len, context->hba1c);
         len += 2;
     }
+
     if (context->flags & 0x80) value[len++] = context->extended_flags;
     return gatt_server_queue_event(server, service->context_handle,
                                    value, len, 0);

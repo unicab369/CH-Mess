@@ -383,6 +383,7 @@ static inline int l2cap_ecfc_open_many(
 
             for (uint8_t j = 0; j < i; j++)
                 if (slots[j] == slot) used = 1;
+
             if (!used) {
                 slots[i] = slot;
                 break;
@@ -460,6 +461,7 @@ static inline int l2cap_le_credit_open(
     uint8_t id = l2cap_identifier_alloc(conn);
 
     if (!id) return 0;
+
     if (!l2cap_send_signal(conn, L2CAP_LE_CREDIT_CONNECTION_REQUEST,
                                id, payload, sizeof(payload))
     ) return 0;
@@ -514,6 +516,7 @@ static inline int l2cap_channel_close(
 
     uint8_t id = l2cap_identifier_alloc(conn);
     if (!id) return 0;
+
     if (!l2cap_send_signal(conn, L2CAP_DISCONNECTION_REQUEST,
                                id, payload, sizeof(payload))
     ) return 0;
@@ -562,6 +565,7 @@ static inline int l2cap_ecfc_reconfigure(
 
     uint8_t id = l2cap_identifier_alloc(conn);
     if (!id) return 0;
+
     if (!l2cap_send_signal(conn, L2CAP_ECFC_RECONFIGURE_REQUEST,
         id, payload, (uint16_t)(4 + count * 2)))
         return 0;
@@ -596,6 +600,7 @@ static inline int l2cap_connection_update_request(
     uint8_t id = l2cap_identifier_alloc(conn);
 
     if (!id) return 0;
+
     if (!l2cap_send_signal(conn,
         L2CAP_CONNECTION_PARAMETER_UPDATE_REQUEST, id,
         payload, sizeof(payload))
@@ -671,6 +676,7 @@ static inline int l2cap_ecfc_send_pending_credit(
 
     uint8_t id = l2cap_identifier_alloc(conn);
     if (!id) return 0;
+
     if (!l2cap_send_signal(conn, L2CAP_FLOW_CONTROL_CREDIT,
                                id, payload, sizeof(payload))
     ) return 0;
@@ -743,6 +749,7 @@ static inline int l2cap_signaling_receive(
     const uint8_t *sdu, uint16_t len
 ) {
     if (!conn || !sdu || !len) return 0;
+
     if (len > L2CAP_SIGNALING_MTU)
         return len >= 2 ? l2cap_signal_reject(conn, sdu[1], 2) : 0;
     uint16_t offset = 0;
@@ -752,6 +759,7 @@ static inline int l2cap_signaling_receive(
         uint16_t command_len = ble_read_u16_le(sdu + offset + 2);
         offset += 4;
         if (!identifier) return 0;
+
         if (command_len > len - offset)
             return l2cap_signal_reject(conn, identifier, 0);
         const uint8_t *p = sdu + offset;
@@ -804,6 +812,7 @@ static inline int l2cap_signaling_receive(
             handled = 0;
             break;
         }
+
         if (!handled) {
             if (!l2cap_signal_reject(conn, identifier, 0)) return 0;
             offset = (uint16_t)(offset + command_len);
@@ -814,6 +823,7 @@ static inline int l2cap_signaling_receive(
             uint16_t result = 0, psm = 0, remote_cid = 0;
             uint16_t mtu = 0, mps = 0, credits = 0;
             if (command_len != 10) result = 0x000b;
+
             if (!result) {
                 psm = ble_read_u16_le(p);
                 remote_cid = ble_read_u16_le(p + 2);
@@ -849,6 +859,7 @@ static inline int l2cap_signaling_receive(
             } else {
                 ble_write_u16_le(response + 8, result);
             }
+
             if (!l2cap_send_signal(conn,
                 L2CAP_LE_CREDIT_CONNECTION_RESPONSE, identifier,
                 response, sizeof(response)))
@@ -944,6 +955,7 @@ static inline int l2cap_signaling_receive(
                         channel_result[i] = 9;
                         continue;
                     }
+
                     if (l2cap_channel_find_remote(conn, remote) >= 0) {
                         channel_result[i] = 10;
                         continue;
@@ -961,6 +973,7 @@ static inline int l2cap_signaling_receive(
                             break;
                         }
                     }
+
                     if (slots[i] < 0) {
                         channel_result[i] = 4;
                         continue;
@@ -1031,6 +1044,7 @@ static inline int l2cap_signaling_receive(
                     conn->ops.channel_opened(conn->ops.context, psm,
                         ch->local_cid, ch->remote_cid, ch->local_mtu);
                 }
+
             if (!sent) return 0;
             break;
         }
@@ -1039,6 +1053,7 @@ static inline int l2cap_signaling_receive(
             uint8_t count = 0;
             int slots[7];
             if (command_len < 6 || ((command_len - 4) & 1)) result = 1;
+
             if (!result) {
                 mtu = ble_read_u16_le(p);
                 mps = ble_read_u16_le(p + 2);
@@ -1058,11 +1073,13 @@ static inline int l2cap_signaling_receive(
                 }
                 for (uint8_t j = 0; j < i; j++)
                     if (ble_read_u16_le(p + 4 + j * 2) == cid) result = 3;
+
                 if (conn->channels[slots[i]].remote_mtu > greatest_mtu)
                     greatest_mtu = conn->channels[slots[i]].remote_mtu;
                 if (conn->channels[slots[i]].remote_mps > greatest_mps)
                     greatest_mps = conn->channels[slots[i]].remote_mps;
             }
+
             if (!result && mtu < greatest_mtu) result = 1;
             if (!result && count > 1 && mps < greatest_mps) result = 2;
             uint8_t response[2];
@@ -1122,18 +1139,22 @@ static inline int l2cap_signaling_receive(
                             invalid = 1;
                             break;
                         }
+
                         if (!remote && partial) continue;
+
                         if (remote < L2CAP_DYNAMIC_CID_MIN ||
                             remote > L2CAP_DYNAMIC_CID_MAX) {
                             invalid = 1;
                             break;
                         }
+
                         if (l2cap_channel_find_remote(conn, remote) >= 0)
                             invalid = 1;
                         for (uint8_t j = 0; j < i; j++)
                             if (remote == ble_read_u16_le(p + 8 + j * 2))
                                 invalid = 1;
                     }
+
                     if (invalid) {
                         for (uint8_t i = 0; i < conn->pending_count; i++) {
                             int slot = l2cap_channel_find_local(conn,
@@ -1176,6 +1197,7 @@ static inline int l2cap_signaling_receive(
                 uint16_t credits = ble_read_u16_le(p + 2);
                 int slot = l2cap_channel_find_remote(conn, remote);
                 if (slot < 0) return 0;
+
                 if (!credits || (uint32_t)conn->channels[slot].tx_credits +
                     credits > 65535u) {
                     l2cap_channel_clear(conn, (uint8_t)slot, 3);
@@ -1270,6 +1292,7 @@ static inline int l2cap_signaling_receive(
                 conn->pending_code != L2CAP_ECFC_RECONFIGURE_REQUEST)
                 return 0;
             if (ble_read_u16_le(p) > 4) return 0;
+
             if (ble_read_u16_le(p) == 0)
                 for (uint8_t i = 0; i < conn->pending_count; i++) {
                     int slot = l2cap_channel_find_local(conn,
@@ -1286,6 +1309,7 @@ static inline int l2cap_signaling_receive(
             handled = 0;
             break;
         }
+
         if (!handled) {
             if (!l2cap_signal_reject(conn, identifier, 0)) return 0;
         }
@@ -1302,6 +1326,7 @@ static inline int l2cap_connection_receive(
     uint16_t cid, const uint8_t *sdu, uint16_t len
 ) {
     if (!conn || !sdu || !len) return 0;
+
     if (cid == L2CAP_CID_LE_SIGNALING)
         return l2cap_signaling_receive(conn, sdu, len);
     int slot = l2cap_channel_find_local(conn, cid);
@@ -1385,6 +1410,7 @@ static inline int l2cap_reassembler_feed(
     uint16_t *cid, const uint8_t **sdu, uint16_t *sdu_len
 ) {
     if (!rx || !fragment || !len || (llid != 1 && llid != 2)) return -1;
+
     if (llid == 2) {
         rx->expected = rx->used = rx->discard_remaining = 0;
         if (len < 4) return -1;
@@ -1415,6 +1441,7 @@ static inline int l2cap_reassembler_feed(
     rx->used = (uint16_t)(rx->used + len);
     if (rx->used != rx->expected) return 0;
     if (cid) *cid = rx->cid;
+
     if (sdu) *sdu = rx->data + 4;
     if (sdu_len) *sdu_len = (uint16_t)(rx->expected - 4);
     rx->expected = rx->used = 0;

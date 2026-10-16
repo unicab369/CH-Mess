@@ -46,7 +46,9 @@ static inline int gatt_weight_scale_service_indicate_measurement(
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
     }
+
     if (measurement->flags & 0x04) value[len++] = measurement->user_id;
+
     if (measurement->flags & 0x08) {
         ble_put_le16(value + len, measurement->bmi);
         ble_put_le16(value + len + 2, measurement->height);

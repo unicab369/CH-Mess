@@ -724,7 +724,6 @@ static inline void gap_receive_report(
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
     if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type))) return;
-
     if (pdu_type == ADV_DIRECT_IND && payload_len != 12) return;
     uint8_t data_len = payload_len - 6;
     if (pdu_type == ADV_DIRECT_IND)
@@ -738,6 +737,7 @@ static inline void gap_receive_report(
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {
+
             if (!gap_scan.response_accepted ||
                 gap_scan.response_peer.type != address_type ||
                 memcmp(gap_scan.response_peer.address, frame + 2, 6) != 0
@@ -753,6 +753,7 @@ static inline void gap_receive_report(
                 uint8_t field_len = frame[8 + offset];
 
                 if (!field_len || (uint16_t)offset + field_len + 1 > data_len) break;
+
                 if (field_len >= 2 && frame[9 + offset] == 0x01)
                     flags = frame[10 + offset];
                 offset += field_len + 1;

@@ -180,15 +180,21 @@ and history protocols.
 `gatt_media_control_service_add()` registers mandatory MCS or GMCS metadata
 from initial values. Set `generic_service` for GMCS, which also requires Media
 Player Name notifications. Use `gatt_media_control_service_add_full()` to add
-Playback Speed, Seeking Speed, Playing Order, Playing Orders Supported, and
-the paired Media Control Point/Supported Opcodes characteristics. The builder
-validates the supported opcode and playing-order bitfields. Control Point
-writes are captured in `control_point_opcode` and
-`control_point_parameter`; the application performs the action and completes
-it with `gatt_media_control_service_control_point_complete()`. Optional
-notification changes use `gatt_media_control_service_notify_optional()`.
-Object ID characteristics (which require an included OTS) and search remain
-application-owned.
+optional playback/order values, the paired Media Control Point and Supported
+Opcodes, OTS-backed Object IDs, Icon URL, and Search Control Point/Results.
+Register OTS first as a secondary service with
+`gatt_object_transfer_service_add_secondary()` or
+`gatt_object_transfer_service_add_multi_object_secondary()` and pass its handle
+in the MCS optional config; the builder inserts the Include declaration. The
+builder validates feature dependencies, Object ID sizes, supported opcode and
+playing-order bitfields, and search request framing. Control Point and Search
+requests are captured in service state for the application to perform and
+complete with `gatt_media_control_service_control_point_complete()` and
+`gatt_media_control_service_search_complete()`. Set and notify populated
+Search Results with `gatt_media_control_service_set_search_results_object_id()`.
+The app handles the media player actions and OTS object storage; notify changed
+MCS values with `gatt_media_control_service_notify_optional()` and update
+notified Object IDs with `gatt_media_control_service_notify_object_id()`.
 `gatt_telephone_bearer_service_add()` registers mandatory TBS or GTBS call
 state characteristics with encrypted permissions. Its config selects GTBS
 and supplies the initial encoded values; the application implements call

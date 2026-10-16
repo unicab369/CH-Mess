@@ -121,6 +121,7 @@ static inline int gatt_cycling_power_service_notify_measurement(
         ble_put_le16(value + len, measurement->accumulated_torque);
         len += 2;
     }
+
     if (flags & 0x0004) {
         uint32_t revolutions = measurement->cumulative_wheel_revolutions;
         value[len++] = (uint8_t)revolutions;
@@ -130,40 +131,48 @@ static inline int gatt_cycling_power_service_notify_measurement(
         ble_put_le16(value + len, measurement->last_wheel_event_time);
         len += 2;
     }
+
     if (flags & 0x0008) {
         ble_put_le16(value + len, measurement->cumulative_crank_revolutions);
         len += 2;
         ble_put_le16(value + len, measurement->last_crank_event_time);
         len += 2;
     }
+
     if (flags & 0x0010) {
         ble_put_le16(value + len, measurement->maximum_force);
         ble_put_le16(value + len + 2, measurement->minimum_force);
         len += 4;
     }
+
     if (flags & 0x0020) {
         ble_put_le16(value + len, measurement->maximum_torque);
         ble_put_le16(value + len + 2, measurement->minimum_torque);
         len += 4;
     }
+
     if (flags & 0x0040) {
         value[len++] = (uint8_t)measurement->maximum_angle;
         value[len++] = (uint8_t)((measurement->maximum_angle >> 8) |
                                  (measurement->minimum_angle << 4));
         value[len++] = (uint8_t)(measurement->minimum_angle >> 4);
     }
+
     if (flags & 0x0080) {
         ble_put_le16(value + len, measurement->top_dead_spot_angle);
         len += 2;
     }
+
     if (flags & 0x0100) {
         ble_put_le16(value + len, measurement->bottom_dead_spot_angle);
         len += 2;
     }
+
     if (flags & 0x0200) {
         ble_put_le16(value + len, measurement->accumulated_energy);
         len += 2;
     }
+
     if (flags & 0x1000) {
         ble_put_le16(value + len, measurement->offset_compensation_indicator);
         len += 2;
@@ -202,16 +211,19 @@ static inline int gatt_cycling_power_service_notify_vector(
         ble_put_le16(value + len + 2, vector->last_crank_event_time);
         len += 4;
     }
+
     if (vector->flags & 0x02) {
         ble_put_le16(value + len, vector->first_crank_measurement_angle);
         len += 2;
     }
+
     if (vector->flags & 0x04) {
         for (uint8_t i = 0; i < vector->force_count; i++) {
             ble_put_le16(value + len, (uint16_t)vector->force_magnitudes[i]);
             len += 2;
         }
     }
+
     if (vector->flags & 0x08) {
         for (uint8_t i = 0; i < vector->torque_count; i++) {
             ble_put_le16(value + len, (uint16_t)vector->torque_magnitudes[i]);
@@ -303,6 +315,7 @@ static inline uint8_t gatt_rsc_control_point_write(
     uint8_t error = gatt_sport_control_ready(server,
                                               service->control_point_handle);
     if (error) return error;
+
     if (service->calibration_pending)
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     uint8_t opcode = value[0];
@@ -434,6 +447,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
     uint8_t error = gatt_sport_control_ready(server,
                                               service->control_point_handle);
     if (error) return error;
+
     if (service->control_point_pending_opcode)
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     uint8_t opcode = value[0];
@@ -677,6 +691,7 @@ static inline int gatt_rsc_service_notify_measurement(
         ble_put_le16(value + len, measurement->stride_length);
         len += 2;
     }
+
     if (measurement->flags & 0x02) {
         uint32_t distance = measurement->total_distance;
         value[len++] = (uint8_t)distance;
@@ -715,6 +730,7 @@ static inline int gatt_csc_service_notify_measurement(
         ble_put_le16(value + len, measurement->last_wheel_event_time);
         len += 2;
     }
+
     if (measurement->flags & 0x02) {
         ble_put_le16(value + len, measurement->cumulative_crank_revolutions);
         len += 2;

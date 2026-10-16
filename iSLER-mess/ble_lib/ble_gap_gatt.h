@@ -36,6 +36,7 @@ static inline int ble_gap_gatt_bind_slot(
     ble_gap_gatt_peer *peer = &manager->peers[slot];
     if (peer->bound || peer->connected) return 0;
     if (!gatt_transport_init(transport, server)) return 0;
+
     if (client) gatt_transport_set_client(transport, client);
     peer->transport = transport;
     peer->bound = 1;
@@ -67,6 +68,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
         }
         peer->handle = handle;
         if (!gap_conn_select(handle) || !gap_connected()) continue;
+
         if (!peer->connected) {
             gatt_transport_set_connected(peer->transport, 1);
             peer->connected = 1;

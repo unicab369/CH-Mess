@@ -12,6 +12,7 @@ static uint8_t gatt_alert_u8_read(
     if (!context || !out || !inout_len)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset > 1) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (!offset && *inout_len) {
         out[0] = *(uint8_t *)context;
         *inout_len = 1;
@@ -29,6 +30,7 @@ static uint8_t gatt_alert_level_write(
     (void)command;
     if (!context || !value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] > 2) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
     *(uint8_t *)context = value[0];
@@ -43,6 +45,7 @@ static uint8_t gatt_immediate_alert_write(
     (void)command;
     if (!context || !value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] > 2) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
     ble_gatt_immediate_alert_service *service = context;
@@ -59,7 +62,9 @@ static uint8_t gatt_phone_ringer_control_write(
     (void)command;
     if (!context || !value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
     if (value[0] < 1 || value[0] > 3)
         return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
     ble_gatt_phone_alert_status_service *service = context;

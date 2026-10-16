@@ -398,6 +398,7 @@ static inline int gatt_client_write_long(
     ble_put_le16(pdu + 1, handle);
 
     if (chunk) memcpy(pdu + 5, client->operation.value, chunk);
+
     if (!gatt_client_request(client, pdu, chunk + 5,
                              ATT_OP_PREPARE_WRITE_RSP, now_ms)
     ) {
@@ -510,6 +511,7 @@ static inline int gatt_client_receive(
         ble_gatt_client_event_fn event = opcode == ATT_OP_HANDLE_VALUE_NOTIFICATION ?
                                 client->notification : client->indication;
         if (event) event(client->context, handle, pdu + 3, len - 3);
+
         if (opcode == ATT_OP_HANDLE_VALUE_INDICATION) {
             const uint8_t confirmation = ATT_OP_HANDLE_VALUE_CONFIRMATION;
             if (!client->send || !client->send(client->context, &confirmation, 1))
@@ -533,6 +535,7 @@ static inline int gatt_client_receive(
         }
 
         if (offset != len || tuple_count < 2) return -1;
+
         if (client->notification) {
             offset = 1;
 

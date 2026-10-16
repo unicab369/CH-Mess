@@ -62,6 +62,7 @@ static inline uint8_t gatt_lns_control_point_write(
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         server, service->control_point_handle);
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+
     if (gatt_lns_control_busy(server, service->control_point_handle) ||
         service->control_point_pending_opcode)
         return 0xfe;

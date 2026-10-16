@@ -85,6 +85,7 @@ static uint8_t bounded_read(
 ) {
     bounded_read_state *state = context;
     if (offset > sizeof(state->value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (state->over_report) {
         *inout_len = (uint16_t)(*inout_len + 1);
         return 0;

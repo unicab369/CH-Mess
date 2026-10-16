@@ -187,6 +187,7 @@ static inline int gatt_eatt_channel_opened(
         (gatt_eatt_find(eatt, cid) >= 0 && existing < 0)
     ) {
         if (eatt->ops.close) eatt->ops.close(eatt->ops.context, cid);
+
         if (existing >= 0)
             memset(&eatt->bearers[existing], 0, sizeof(eatt->bearers[existing]));
         return 0;
@@ -205,6 +206,7 @@ static inline int gatt_eatt_channel_opened(
     }
 
     if (slot < 0) slot = gatt_eatt_free_slot(eatt);
+
     if (slot < 0) {
         if (eatt->ops.close) eatt->ops.close(eatt->ops.context, cid);
         return 0;

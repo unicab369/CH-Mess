@@ -49,6 +49,7 @@ static inline int gatt_health_thermometer_measurement_encode(
         memcpy(value + *len, measurement->timestamp, 7);
         *len += 7;
     }
+
     if (measurement->flags & 0x04)
         value[(*len)++] = measurement->temperature_type;
     return 1;
@@ -127,11 +128,14 @@ static inline int gatt_blood_pressure_service_indicate(
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
     }
+
     if (measurement->flags & 0x04) {
         ble_put_le16(value + len, measurement->pulse_rate);
         len += 2;
     }
+
     if (measurement->flags & 0x08) value[len++] = measurement->user_id;
+
     if (measurement->flags & 0x10) {
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;
@@ -168,11 +172,14 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
     }
+
     if (measurement->flags & 0x04) {
         ble_put_le16(value + len, measurement->pulse_rate);
         len += 2;
     }
+
     if (measurement->flags & 0x08) value[len++] = measurement->user_id;
+
     if (measurement->flags & 0x10) {
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;

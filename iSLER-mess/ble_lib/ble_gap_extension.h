@@ -751,6 +751,7 @@ static void gap_ext_report_queue(
         if (!gap_peer_allowed(identity_slot, identity->addr.address, identity->addr.address_type))
             return;
     }
+
     if (gap_privacy.scan_filter && identity_slot < 0) return;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
@@ -1408,6 +1409,7 @@ static int gap_periodic_connect_request(
     GAP_HW_LINK_TX();
     uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
+
     if (!GAP_HW_TX_DONE()) return 0;
 
     if (!gap_conn_accept(request, received_ticks, HW_TICKS_FROM_US(1250),
@@ -1479,6 +1481,7 @@ static int gap_periodic_connect_exchange(
     GAP_HW_LINK_TX();
     uint64_t tx_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline) {}
+
     if (GAP_HW_TX_DONE())
         gap_ext_pawr.connect.request_end_ticks = GAP_HW_TICKS();
     uint64_t response_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
@@ -1553,6 +1556,7 @@ static int gap_periodic_tx(
     GAP_HW_LINK_CONFIG(set->periodic.access_address, channel, frame, 0,
                        set->aux_phy, set->aux_phy);
     while (GAP_HW_TICKS() < start_ticks) {}
+
     if (actual_start) *actual_start = GAP_HW_TICKS();
     GAP_HW_LINK_TX();
     uint64_t deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
@@ -1713,6 +1717,7 @@ static int gap_hw_transmit_extended_advertising(
             return 0;
         while (GAP_HW_TICKS() <
             primary_start + HW_TICKS_FROM_US(480)) {}
+
         if (!GAP_HW_ADV_TX_PHY(frame, 12, 0, set->aux_phy)) return 0;
 
         uint16_t remaining = set->scan_resp_len;
@@ -1754,6 +1759,7 @@ static int gap_hw_transmit_extended_advertising(
             HW_TICKS_FROM_US(1000);
         while (!GAP_HW_TX_DONE() &&
                GAP_HW_TICKS() < tx_deadline_ticks) {}
+
         if (!GAP_HW_TX_DONE()) return 0;
         if (!has_chain) return 1;
 
@@ -2084,6 +2090,7 @@ static void gap_ext_scan_process(void) {
         int context_slot = -1;
         if (kind == GAP_EXT_ADV_PRIMARY_PDU) {
             if (fields.has_aux_ptr) {
+
                 if (!fields.identity.has_adi || fields.aux_offset_zero)
                     break;
             } else {
@@ -2146,6 +2153,7 @@ static void gap_ext_scan_process(void) {
             }
 
             if (context_slot < 0) break;
+
             if (fields.identity.addr.has_address)
                 gap_ext_ctx[context_slot].identity.addr = fields.identity.addr;
 
@@ -2672,6 +2680,7 @@ static int gap_ext_send_due(uint32_t now) {
 
     if (send_extended < 0) return 0;
     if (gap_scan.active_pending) return 1;
+
     if (gap_rx_armed) {
         GAP_HW_STOP();
         gap_rx_armed = 0;

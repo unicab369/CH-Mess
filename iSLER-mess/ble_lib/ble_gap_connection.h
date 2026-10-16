@@ -110,6 +110,7 @@ static void gap_smp_link_close(void);
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn_slot_active(gap_conn_slot)) return;
+
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
         GAP_HW_STOP();
         gap_poll.slot_valid = 0;
@@ -896,6 +897,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
             if (interval < minimum || interval > maximum) interval = minimum;
+
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t)
                     ((minimum + frame[11] - 1) / frame[11]) * frame[11];
@@ -1746,6 +1748,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         // Invalid or unsupported selections leave that direction unchanged.
         if ((tx != 1 && tx != 2 && tx != 4) || !(tx & supported)) tx = 0;
         if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported)) rx = 0;
+
         if (tx == conn->phy.current.tx) tx = 0;
         if (rx == conn->phy.current.rx) rx = 0;
         conn->pending.phy_request = 0;
@@ -1961,8 +1964,10 @@ void gap_subrate_get(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (factor)     *factor = conn->schedule.factor;
     if (base_event) *base_event = conn->schedule.base_event;
+
     if (peripheral_latency) *peripheral_latency = conn->schedule.latency;
     if (continuation)       *continuation = conn->schedule.continuation;
+
     if (timeout)    *timeout = conn->schedule.timeout;
 }
 
@@ -2037,8 +2042,10 @@ void gap_conn_rate_get(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (interval) *interval = conn->schedule.interval_125us;
     if (factor) *factor = conn->schedule.factor;
+
     if (peripheral_latency) *peripheral_latency = conn->schedule.latency;
     if (continuation) *continuation = conn->schedule.continuation;
+
     if (timeout) *timeout = conn->schedule.timeout;
 }
 
@@ -2056,8 +2063,8 @@ int gap_channel_map_set(const uint8_t channels[5]) {
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (channels[channel / 8] & (1 << (channel % 8))) count++;
-
     if (count < 2) return 0;
+
     if (memcmp(channels, conn->link.channel_map, 5) == 0) {
         conn->connection_status = 0;
         return 1;
@@ -2280,6 +2287,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 #endif
     if (!data || !len || !conn->queue.rx_ready) return 0;
     if (*len < conn->rx.len) return -1;
+
     if (llid) *llid = conn->rx.llid;
 
     *len = conn->rx.len;

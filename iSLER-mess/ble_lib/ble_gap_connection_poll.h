@@ -269,6 +269,7 @@ void gap_hw_received(void) {
             uint64_t cnt = gap_security->rx_counter;
 
             if (duplicate && cnt) cnt--;
+
             if (frame[1] <= 4 || frame[1] > conn->data_capacity + 4 ||
                 cnt >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
             ) {
@@ -429,6 +430,7 @@ void gap_hw_received(void) {
 
         if (new_packet) {
             if (authenticated) gap_security->rx_counter++;
+
             if ((llid == 1 || llid == 2) && frame[1]) {
                 conn->rx.llid = llid;
                 conn->rx.len = frame[1];
@@ -993,6 +995,7 @@ static void gap_conn_poll(void) {
 
     if (conn->link_state.event_replied) {
         if (!GAP_HW_TX_DONE()) {
+
             if (now > conn->link.next_ticks)
                 gap_conn_end();
             return;
@@ -1015,6 +1018,7 @@ static void gap_conn_poll(void) {
             GAP_HW_STOP();
             gap_rx_armed = 0;
         }
+
         if (gap_poll.slot_valid &&
             gap_poll.slot == gap_conn_slot)
             gap_poll.slot_valid = 0;
@@ -1434,6 +1438,7 @@ int gap_send_due(
     int send_gap = gap_adv.enabled != 0 &&
                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad) return 0;
+
     if (gap_rx_armed) {
         GAP_HW_STOP();
         gap_rx_armed = 0;

@@ -35,8 +35,8 @@ typedef struct {
 // Add a 16-bit UUID service and its caller-defined characteristics as one
 // transaction. The caller supplies the assigned characteristic UUIDs,
 // properties, permissions, values, and optional CCCDs.
-static inline int gatt_sig_service_add_with_includes_and_handlers(
-    ble_gatt_server *server, uint16_t service_uuid16,
+static inline int gatt_sig_service_register_with_includes_and_handlers(
+    ble_gatt_server *server, uint16_t service_uuid16, uint8_t primary_service,
     const uint16_t *included_service_handles, uint8_t include_count,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
     uint16_t *service_handle, uint16_t *value_handles,
@@ -61,7 +61,8 @@ static inline int gatt_sig_service_add_with_includes_and_handlers(
     if (cccd_handles)
         memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
 
-    int added = gatt_server_add_service(server, &service_uuid, 1,
+    int added = gatt_server_add_service(server, &service_uuid,
+                                         primary_service,
                                          service_handle);
     for (uint8_t i = 0; added && i < include_count; i++)
         added = gatt_server_add_included_service(server,
@@ -100,6 +101,7 @@ static inline int gatt_sig_service_add_with_includes_and_handlers(
                 }
             }
         }
+
         if (added && characteristics[i].variable_length)
             server->attributes[server->count - 1].flags |=
                 BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
@@ -145,6 +147,21 @@ static inline int gatt_sig_service_add_with_includes_and_handlers(
 }
 
 // Application facing
+// Add a primary service with included services and per-characteristic handlers.
+static inline int gatt_sig_service_add_with_includes_and_handlers(
+    ble_gatt_server *server, uint16_t service_uuid16,
+    const uint16_t *included_service_handles, uint8_t include_count,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count,
+    uint16_t *service_handle, uint16_t *value_handles,
+    uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
+) {
+    return gatt_sig_service_register_with_includes_and_handlers(server,
+        service_uuid16, 1, included_service_handles, include_count,
+        characteristics, count, service_handle, value_handles,
+        cccd_handles, handlers);
+}
+
+// Application facing
 // Add a service with caller-selected included services and per-characteristic
 // ATT handlers as one rollback-safe database operation.
 static inline int gatt_sig_service_add_with_handlers(
@@ -155,6 +172,19 @@ static inline int gatt_sig_service_add_with_handlers(
 ) {
     return gatt_sig_service_add_with_includes_and_handlers(server,
         service_uuid16, NULL, 0, characteristics, count, service_handle,
+        value_handles, cccd_handles, handlers);
+}
+
+// Application facing
+// Add a secondary service with caller-supplied characteristics and handlers.
+static inline int gatt_sig_secondary_service_add_with_handlers(
+    ble_gatt_server *server, uint16_t service_uuid16,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count,
+    uint16_t *service_handle, uint16_t *value_handles,
+    uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
+) {
+    return gatt_sig_service_register_with_includes_and_handlers(server,
+        service_uuid16, 0, NULL, 0, characteristics, count, service_handle,
         value_handles, cccd_handles, handlers);
 }
 

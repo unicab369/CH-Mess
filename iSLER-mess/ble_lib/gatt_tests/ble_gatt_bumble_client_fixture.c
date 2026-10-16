@@ -189,6 +189,7 @@ int main(void) {
         default:
             return 2;
         }
+
         if (!started) return 3;
 
         if (command == 12 || command == 22) {
