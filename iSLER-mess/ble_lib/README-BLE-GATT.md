@@ -156,10 +156,13 @@ Additional service database builders are available:
   request counter so repeated writes can trigger repeated device actions.
 - `gatt_tx_power_service_add()` registers the signed Tx Power Level.
 - `gatt_current_time_service_add()` registers Current Time and optionally
-  Local Time Information and Reference Time Information.
-- `gatt_reference_time_update_service_add()` and
-  `gatt_next_dst_change_service_add()` register the time update and DST
-  characteristics.
+  Local Time Information and Reference Time Information. The Current Time
+  value supports notifications; `gatt_current_time_service_notify()` updates
+  the readable value and queues one.
+- `gatt_reference_time_update_service_add()` handles Get/Cancel commands and
+  exposes pending state. The application completes an asynchronous request
+  with `gatt_reference_time_update_service_complete()` and a result code.
+  `gatt_next_dst_change_service_add()` registers the DST characteristic.
 - `gatt_phone_alert_status_service_add()` registers Alert Status with a CCCD,
   Ringer Setting with a CCCD, and Ringer Control Point. The control point
   validates its opcode and updates service state; the application performs

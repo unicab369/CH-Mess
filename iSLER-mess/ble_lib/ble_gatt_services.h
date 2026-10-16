@@ -2198,12 +2198,14 @@ typedef struct {
 } ble_gatt_tx_power_service;
 
 typedef struct {
-    uint16_t service_handle, current_time_handle;
+    uint16_t service_handle, current_time_handle, current_time_cccd_handle;
     uint16_t local_time_info_handle, reference_time_info_handle;
 } ble_gatt_current_time_service;
 
 typedef struct {
     uint16_t service_handle, control_point_handle, state_handle;
+    ble_gatt_server *server;
+    uint8_t last_command, request_count;
 } ble_gatt_reference_time_update_service;
 
 typedef struct {
@@ -2377,7 +2379,8 @@ static inline int gatt_current_time_service_add(
     uint8_t count = 0;
     uint8_t local_time_index = 0xff, reference_time_index = 0xff;
     chars[count++] = (ble_gatt_sig_characteristic)
-        {0x2a2b, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+        {0x2a2b, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
+            BLE_GATT_PROP_NOTIFY, 1,
          BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, current_time, 10};
     if (local_time_info) {
         local_time_index = count;
@@ -2391,11 +2394,12 @@ static inline int gatt_current_time_service_add(
             {0x2a14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
              reference_time_info, 4};
     }
-    uint16_t values[3];
+    uint16_t values[3], cccds[3];
     if (!gatt_sig_service_add(server, 0x1805, chars, count,
-                              &service->service_handle, values, NULL))
+                              &service->service_handle, values, cccds))
         return 0;
     service->current_time_handle = values[0];
+    service->current_time_cccd_handle = cccds[0];
     if (local_time_index != 0xff)
         service->local_time_info_handle = values[local_time_index];
     if (reference_time_index != 0xff)
@@ -2404,12 +2408,63 @@ static inline int gatt_current_time_service_add(
 }
 
 // Application facing
+// Update the readable Current Time value and queue its notification.
+static inline int gatt_current_time_service_notify(
+    ble_gatt_server *server, const ble_gatt_current_time_service *service,
+    const uint8_t current_time[10]
+) {
+    if (!server || !service || !current_time) return 0;
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->current_time_handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!stored || attribute->value_len != 10 ||
+        attribute->value_capacity < 10) return 0;
+    memcpy(stored, current_time, 10);
+    return gatt_server_queue_event(server, service->current_time_handle,
+                                   current_time, 10, 0);
+}
+
+// Internal
+static uint8_t gatt_reference_time_update_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_reference_time_update_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (value[0] != 0x01 && value[0] != 0x02) return 0;
+
+    ble_gatt_attribute *attribute =
+        gatt_server_find(service->server, service->state_handle);
+    uint8_t *state = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!state || attribute->value_len != 2 ||
+        attribute->value_capacity < 2)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
+    if (value[0] == 0x01) {
+        state[0] = 1;
+    } else if (state[0] == 1) {
+        state[0] = 0;
+        state[1] = 1;
+    }
+    service->last_command = value[0];
+    service->request_count++;
+    return 0;
+}
+
+// Application facing
 static inline int gatt_reference_time_update_service_add(
     ble_gatt_server *server, ble_gatt_reference_time_update_service *service,
     const uint8_t state[2]
 ) {
-    if (!service || !state) return 0;
+    if (!server || !service || !state || state[0] > 1 || state[1] > 5)
+        return 0;
     memset(service, 0, sizeof(*service));
+    service->server = server;
     static const uint8_t control_point = 0;
     ble_gatt_sig_characteristic chars[] = {
         {0x2a16, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
@@ -2417,11 +2472,34 @@ static inline int gatt_reference_time_update_service_add(
         {0x2a17, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, state, 2}
     };
     uint16_t values[2];
-    if (!gatt_sig_service_add(server, 0x1806, chars, 2,
-                              &service->service_handle, values, NULL))
+    ble_gatt_sig_handlers handlers[2] = {0};
+    handlers[0].write = gatt_reference_time_update_write;
+    handlers[0].context = service;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1806, chars, 2,
+            &service->service_handle, values, NULL, handlers)) {
+        memset(service, 0, sizeof(*service));
         return 0;
+    }
     service->control_point_handle = values[0];
     service->state_handle = values[1];
+    return 1;
+}
+
+// Application facing
+// Finish a pending update with its Reference Time Update result code.
+static inline int gatt_reference_time_update_service_complete(
+    ble_gatt_server *server,
+    const ble_gatt_reference_time_update_service *service,
+    uint8_t result
+) {
+    if (!server || !service || service->server != server || result > 5)
+        return 0;
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->state_handle);
+    uint8_t *state = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!state || attribute->value_len != 2 || state[0] != 1) return 0;
+    state[0] = 0;
+    state[1] = result;
     return 1;
 }
 

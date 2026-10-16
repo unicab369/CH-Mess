@@ -576,7 +576,7 @@ void gap_scan_stop(void) {
 }
 
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
-    if (active_scan > 1 || gap_conn_free_slot() < 0 ||
+    if (gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
         GAP_EXT_ADVERTISING_ENABLED ||
         ((mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) &&
@@ -723,6 +723,10 @@ static inline void gap_receive_report(
     int slot = gap_identity_find(frame + 2, address_type);
     if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
     if (gap_privacy.scan_filter && slot < 0) return;
+    const uint8_t *identity_address = slot >= 0 ?
+        gap_identities[slot].peer.address : frame + 2;
+    uint8_t identity_type = slot >= 0 ?
+        gap_identities[slot].peer.type : address_type;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {
@@ -759,8 +763,6 @@ static inline void gap_receive_report(
     }
 
     if (gap_scanner.filter_duplicates) {
-        const uint8_t *identity = slot >= 0 ? gap_identities[slot].peer.address : frame + 2;
-        uint8_t identity_type = slot >= 0 ? gap_identities[slot].peer.type : address_type;
         // For directed advertising, compare the target address too.
         uint8_t seen_len = pdu_type == ADV_DIRECT_IND ? 6 : data_len;
         uint8_t seen_slot = gap_scan.seen_count;
@@ -768,7 +770,7 @@ static inline void gap_receive_report(
         for (uint8_t i = 0; i < gap_scan.seen_count; i++) {
             if (gap_scan_seen[i].address_type == identity_type &&
                 gap_scan_seen[i].pdu_type == pdu_type &&
-                memcmp(gap_scan_seen[i].address, identity, 6) == 0
+                memcmp(gap_scan_seen[i].address, identity_address, 6) == 0
             ) {
                 seen_slot = i;
                 if (gap_scan_seen[i].data_len == seen_len &&
@@ -788,7 +790,7 @@ static inline void gap_receive_report(
         gap_scan_seen[seen_slot].address_type = identity_type;
         gap_scan_seen[seen_slot].pdu_type = pdu_type;
         gap_scan_seen[seen_slot].data_len = seen_len;
-        memcpy(gap_scan_seen[seen_slot].address, identity, 6);
+        memcpy(gap_scan_seen[seen_slot].address, identity_address, 6);
         if (seen_len)
             memcpy(gap_scan_seen[seen_slot].data, frame + 8, seen_len);
     }
@@ -803,14 +805,14 @@ static inline void gap_receive_report(
     report->pdu_type = pdu_type;
     report->address_type = address_type;
     report->resolved = slot >= 0;
-    report->identity_type = slot >= 0 ? gap_identities[slot].peer.type : address_type;
+    report->identity_type = identity_type;
     report->has_target = pdu_type == ADV_DIRECT_IND;
     report->target_address_type = (frame[0] >> 7) & 1;
     report->rssi = rssi;
     report->data_len = data_len;
 
     memcpy(report->address, frame + 2, 6);
-    memcpy(report->identity_address, slot >= 0 ? gap_identities[slot].peer.address : frame + 2, 6);
+    memcpy(report->identity_address, identity_address, 6);
     if (report->has_target)
         memcpy(report->target_address, frame + 8, 6);
     if (data_len)
