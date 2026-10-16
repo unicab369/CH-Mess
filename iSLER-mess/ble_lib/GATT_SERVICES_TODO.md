@@ -31,7 +31,7 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Cycling Speed and Cadence (`0x1816`), feature-gated Control Point
   procedures and Measurement encoding
 - [x] Cycling Power (`0x1818`), Control Point request/completion handling,
-  correctly mapped Measurement/Vector flags, ATT-sized Vector encoding,
+  correctly mapped Measurement/Vector flags, MTU-bounded Vector packets,
   feature-gated fields, and connection-scoped content masks
 - [x] Location and Navigation (`0x1819`), Control Point route request handling
 - [x] Environmental Sensing (`0x181A`)

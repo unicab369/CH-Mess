@@ -35,8 +35,10 @@ static inline int ble_gap_gatt_bind_slot(
         (!server && !client)
     ) return 0;
     ble_gap_gatt_peer *peer = &manager->peers[slot];
+
     if (peer->bound || peer->connected)
         return 0;
+
     if (!gatt_transport_init(transport, server))
         return 0;
 
@@ -52,8 +54,7 @@ static inline int ble_gap_gatt_bind_slot(
 // A negative result means at least one GATT bearer failed and its link was
 // asked to disconnect; positive values count processed fragments/work.
 static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
-    if (!manager)
-        return -1;
+    if (!manager) return -1;
 
     uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
@@ -65,14 +66,15 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     for (uint8_t index = 0; gap_conn_handle_at(index, &handle); index++) {
         ble_gap_gatt_peer *peer = &manager->peers[handle.slot];
         seen[handle.slot] = 1;
-        if (!peer->bound)
-            continue;
+
+        if (!peer->bound) continue;
 
         if (peer->connected && peer->handle.generation != handle.generation) {
             gatt_transport_set_connected(peer->transport, 0);
             peer->connected = 0;
         }
         peer->handle = handle;
+
         if (!gap_conn_select(handle) || !gap_connected())
             continue;
 
@@ -87,6 +89,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
         size_t fragment_len = sizeof(fragment);
         uint8_t llid = 0;
         int received = gap_receive_data(&llid, fragment, &fragment_len);
+
         if (received < 0 || (received &&
             gatt_transport_receive_fragment(peer->transport, llid,
                                              fragment, fragment_len) < 0)) {
@@ -97,6 +100,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
         work += received > 0;
 
         int result = gatt_transport_poll(peer->transport, GET_MILLIS());
+
         if (result < 0) {
             (void)gap_disconnect(0x13);
             failed = 1;
@@ -105,10 +109,12 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
         work += result;
 
         uint16_t max_payload = gap_data_length_get().tx_octets;
+
         if (max_payload > (uint16_t)sizeof(fragment))
             max_payload = (uint16_t)sizeof(fragment);
         const uint8_t *tx_fragment = NULL;
         uint16_t tx_len = 0;
+
         if (gatt_transport_tx_peek(peer->transport, max_payload, &llid,
                                    &tx_fragment, &tx_len) > 0 &&
             gap_send_data(llid, tx_fragment, tx_len)) {
@@ -120,6 +126,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         ble_gap_gatt_peer *peer = &manager->peers[slot];
+
         if (!peer->bound || !peer->connected || seen[slot])
             continue;
         gatt_transport_set_connected(peer->transport, 0);
@@ -140,6 +147,7 @@ static inline ble_gatt_transport *ble_gap_gatt_transport_for(
         return NULL;
 
     ble_gap_gatt_peer *peer = &manager->peers[handle.slot];
+
     if (!peer->bound || !peer->connected ||
         peer->handle.generation != handle.generation
     ) return NULL;

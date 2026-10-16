@@ -58,6 +58,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
     };
     ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
     memset(value_handles, 0, (size_t)count * sizeof(*value_handles));
+
     if (cccd_handles)
         memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
 
@@ -82,6 +83,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
             handlers ? handlers[i].write : NULL,
             handlers ? handlers[i].context : NULL, NULL,
             &value_handles[i]);
+
         if (added && handlers && (handlers[i].prepare ||
                                   handlers[i].execute)) {
             if (!handlers[i].prepare || !handlers[i].execute) {
@@ -105,6 +107,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
         if (added && characteristics[i].variable_length)
             server->attributes[server->count - 1].flags |=
                 BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+
         if (added && characteristics[i].cccd) {
             if (!cccd_handles) {
                 added = 0;

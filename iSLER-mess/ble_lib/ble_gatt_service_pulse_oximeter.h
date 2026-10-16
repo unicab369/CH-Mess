@@ -29,11 +29,12 @@ static inline int gatt_pulse_oximeter_feature16(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 2)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -45,6 +46,7 @@ static inline int gatt_pulse_oximeter_service_indicate_spot_check(
     const ble_gatt_pulse_oximeter_spot_check *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->device_sensor_status & 0xff000000u) ||
@@ -62,6 +64,7 @@ static inline int gatt_pulse_oximeter_service_indicate_spot_check(
     ble_put_le16(value + len, measurement->spo2);
     ble_put_le16(value + len + 2, measurement->pulse_rate);
     len += 4;
+
     if (measurement->flags & 0x01) {
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
@@ -93,6 +96,7 @@ static inline int gatt_pulse_oximeter_service_notify_continuous(
     const ble_gatt_pulse_oximeter_continuous *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->device_sensor_status & 0xff000000u) ||
@@ -111,6 +115,7 @@ static inline int gatt_pulse_oximeter_service_notify_continuous(
     ble_put_le16(value + len, measurement->spo2);
     ble_put_le16(value + len + 2, measurement->pulse_rate);
     len += 4;
+
     if (measurement->flags & 0x01) {
         ble_put_le16(value + len, measurement->fast_spo2);
         ble_put_le16(value + len + 2, measurement->fast_pulse_rate);

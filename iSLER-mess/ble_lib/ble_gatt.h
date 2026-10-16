@@ -88,8 +88,7 @@ static inline void gatt_client_init(
     ble_gatt_client_event_fn notification,
     ble_gatt_client_event_fn indication, void *context
 ) {
-    if (!client)
-        return;
+    if (!client) return;
     memset(client, 0, sizeof(*client));
     client->mtu = client->local_mtu = 23;
     client->send = send;
@@ -104,14 +103,12 @@ static inline void gatt_client_set_signer(
     ble_gatt_client *client,
     ble_gatt_client_sign_fn sign
 ) {
-    if (client)
-        client->sign = sign;
+    if (client) client->sign = sign;
 }
 
 // Application facing
 static inline void gatt_client_reset(ble_gatt_client *client) {
-    if (!client)
-        return;
+    if (!client) return;
     client->mtu = client->local_mtu = 23;
     client->bearer_failed = 0;
     client->mtu_exchanged = 0;
@@ -142,10 +139,13 @@ static inline int gatt_client_request(
 
     if (pdu[0] == ATT_OP_EXCHANGE_MTU_REQ && client->mtu_exchanged)
         return 0;
+
     if (ble_att_response_opcode(pdu[0]) != expected_opcode)
         return 0;
+
     if (!client->send(client->context, pdu, len))
         return 0;
+
     if (pdu[0] == ATT_OP_EXCHANGE_MTU_REQ)
         client->mtu_exchanged = 1;
 
@@ -176,6 +176,7 @@ static inline int gatt_client_mtu(
     uint16_t mtu, uint32_t now_ms
 ) {
     uint8_t pdu[3] = {ATT_OP_EXCHANGE_MTU_REQ};
+
     if (mtu < 23 || mtu > BLE_GATT_CLIENT_MTU_MAX)
         return 0;
     ble_put_le16(pdu + 1, mtu);
@@ -190,6 +191,7 @@ static inline int gatt_client_services(
     const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms
 ) {
     uint8_t pdu[23];
+
     if (!start || start > end ||
         (!uuid && uuid_len) ||
         (uuid && uuid_len != 2 && uuid_len != 16)
@@ -218,8 +220,8 @@ static inline int gatt_client_included(
     ble_gatt_client *client, uint16_t start, uint16_t end, uint32_t now_ms
 ) {
     uint8_t pdu[7] = {ATT_OP_READ_BY_TYPE_REQ};
-    if (!start || start > end)
-        return 0;
+
+    if (!start || start > end) return 0;
     ble_put_le16(pdu + 1, start);
     ble_put_le16(pdu + 3, end);
     ble_put_le16(pdu + 5, 0x2802);
@@ -233,6 +235,7 @@ static inline int gatt_client_characteristics(
     const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms
 ) {
     uint8_t pdu[21] = {ATT_OP_READ_BY_TYPE_REQ};
+
     if (!start || start > end ||
         (uuid && uuid_len != 2 && uuid_len != 16) || (!uuid && uuid_len)
     ) return 0;
@@ -257,8 +260,8 @@ static inline int gatt_client_discover_descriptors(
     uint16_t start, uint16_t end, uint32_t now_ms
 ) {
     uint8_t pdu[5] = {ATT_OP_FIND_INFO_REQ};
-    if (!start || start > end)
-        return 0;
+
+    if (!start || start > end) return 0;
     ble_put_le16(pdu + 1, start);
     ble_put_le16(pdu + 3, end);
     return gatt_client_request(client, pdu, sizeof(pdu),
@@ -270,8 +273,8 @@ static inline int gatt_client_read(
     ble_gatt_client *client, uint16_t handle, uint32_t now_ms
 ) {
     uint8_t pdu[3] = {ATT_OP_READ_REQ};
-    if (!handle)
-        return 0;
+
+    if (!handle) return 0;
     ble_put_le16(pdu + 1, handle);
     return gatt_client_request(client, pdu, sizeof(pdu),
                                ATT_OP_READ_RSP, now_ms);
@@ -307,6 +310,7 @@ static inline int gatt_client_read_blob(
     uint16_t offset, uint32_t now_ms
 ) {
     uint8_t pdu[5] = {ATT_OP_READ_BLOB_REQ};
+
     if (!handle || offset > BLE_GATT_ATT_VALUE_MAX)
         return 0;
     ble_put_le16(pdu + 1, handle);
@@ -322,6 +326,7 @@ static inline int gatt_client_read_by_uuid(
     const uint8_t *uuid, uint8_t uuid_len, uint32_t now_ms
 ) {
     uint8_t pdu[21] = {ATT_OP_READ_BY_TYPE_REQ};
+
     if (!start || start > end || !uuid ||
         (uuid_len != 2 && uuid_len != 16)
     ) return 0;
@@ -340,13 +345,13 @@ static inline int gatt_client_read_multiple(
     uint32_t now_ms
 ) {
     uint8_t pdu[1 + 2 * (BLE_GATT_CLIENT_MTU_MAX / 2)];
+
     if (!handles || count < 2 || count > (client ? (client->mtu - 1) / 2 : 0))
         return 0;
     pdu[0] = variable ? ATT_OP_READ_MULTIPLE_VARIABLE_REQ : ATT_OP_READ_MULTIPLE_REQ;
 
     for (uint8_t i = 0; i < count; i++) {
-        if (!handles[i])
-            return 0;
+        if (!handles[i]) return 0;
         ble_put_le16(pdu + 1 + 2 * i, handles[i]);
     }
     return gatt_client_request(client, pdu, 1 + 2 * count,
@@ -360,12 +365,14 @@ static inline int gatt_client_write(
     uint16_t len, uint32_t now_ms
 ) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
+
     if (!client || !handle || (!value && len) ||
         len > BLE_GATT_ATT_VALUE_MAX || len > client->mtu - 3
     ) return 0;
 
     pdu[0] = ATT_OP_WRITE_REQ;
     ble_put_le16(pdu + 1, handle);
+
     if (len)
         memcpy(pdu + 3, value, len);
     return gatt_client_request(client, pdu, len + 3, ATT_OP_WRITE_RSP, now_ms);
@@ -402,8 +409,8 @@ static inline int gatt_client_write_long(
     client->operation.offset = 0;
     client->operation.total = len;
     uint16_t chunk = client->mtu - 5;
-    if (chunk > len)
-        chunk = len;
+
+    if (chunk > len) chunk = len;
     client->operation.chunk = chunk;
 
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX] = {ATT_OP_PREPARE_WRITE_REQ};
@@ -431,6 +438,7 @@ static inline int gatt_client_write_command(
     uint16_t handle, const uint8_t *value, uint16_t len
 ) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
+
     if (!client || client->bearer_failed ||
         !client->send || !handle ||
         (!value && len) || len > BLE_GATT_ATT_VALUE_MAX ||
@@ -439,6 +447,7 @@ static inline int gatt_client_write_command(
     pdu[0] = ATT_OP_WRITE_COMMAND;
 
     ble_put_le16(pdu + 1, handle);
+
     if (len)
         memcpy(pdu + 3, value, len);
     return client->send(client->context, pdu, len + 3);
@@ -452,6 +461,7 @@ static inline int gatt_client_write_signed(
     uint16_t handle, const uint8_t *value, uint16_t len
 ) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
+
     if (!client || client->bearer_failed ||
         !client->send || !client->sign ||
         !handle ||
@@ -460,10 +470,12 @@ static inline int gatt_client_write_signed(
 
     pdu[0] = ATT_OP_SIGNED_WRITE_COMMAND;
     ble_put_le16(pdu + 1, handle);
+
     if (len)
         memcpy(pdu + 3, value, len);
 
     uint16_t signed_len = len + 3;
+
     if (!client->sign(client->context, pdu, signed_len, pdu + signed_len))
         return 0;
     return client->send(client->context, pdu, signed_len + 12);
@@ -476,6 +488,7 @@ static inline int gatt_client_prepare_write(
     const uint8_t *value, uint16_t len, uint32_t now_ms
 ) {
     uint8_t pdu[BLE_GATT_CLIENT_MTU_MAX];
+
     if (!client || !handle || (!value && len) ||
         (uint32_t)offset + len > BLE_GATT_ATT_VALUE_MAX ||
         len > client->mtu - 5
@@ -484,6 +497,7 @@ static inline int gatt_client_prepare_write(
     pdu[0] = ATT_OP_PREPARE_WRITE_REQ;
     ble_put_le16(pdu + 1, handle);
     ble_put_le16(pdu + 3, offset);
+
     if (len)
         memcpy(pdu + 5, value, len);
     return gatt_client_request(client, pdu, len + 5,
@@ -507,6 +521,7 @@ static inline int gatt_client_receive(
     if (!client || client->bearer_failed || !pdu || !len)
         return -1;
     uint8_t opcode = pdu[0];
+
     if ((opcode == ATT_OP_HANDLE_VALUE_NOTIFICATION ||
          opcode == ATT_OP_HANDLE_VALUE_INDICATION) &&
         (len < 3 || len > client->mtu)
@@ -739,6 +754,7 @@ static inline int gatt_client_receive(
     }
 
     uint8_t response_valid = 0;
+
     if (client && pdu && len && len <= client->mtu) {
         switch (pdu[0]) {
         case ATT_OP_EXCHANGE_MTU_RSP:
@@ -945,6 +961,7 @@ static inline int gatt_client_receive(
     }
 
     memset(&client->request, 0, sizeof(client->request));
+
     if (opcode == ATT_OP_EXCHANGE_MTU_RSP) {
         uint16_t peer_mtu = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
         client->mtu = peer_mtu < 23 ? 23 :

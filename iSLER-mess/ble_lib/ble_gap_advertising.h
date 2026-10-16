@@ -34,8 +34,7 @@ typedef struct {
 int gap_ad_builder_init(
     gap_ad_builder *builder, uint8_t *data, size_t capacity
 ) {
-    if (!builder || !data)
-        return 0;
+    if (!builder || !data) return 0;
     builder->data = data;
     builder->capacity = capacity;
     builder->len = 0;
@@ -55,6 +54,7 @@ int gap_ad_append(
 
     // Copy first so value may overlap the builder buffer.
     uint8_t *ad = builder->data + builder->len;
+
     if (value_len)
         memmove(ad + 2, value, value_len);
     ad[0] = (uint8_t)(value_len + 1);
@@ -65,8 +65,7 @@ int gap_ad_append(
 
 // Application facing
 int gap_ad_flags(gap_ad_builder *builder, uint8_t flags) {
-    if (flags & 0xe0)
-        return 0;
+    if (flags & 0xe0) return 0;
     return gap_ad_append(builder, GAP_AD_FLAGS, &flags, 1);
 }
 
@@ -90,6 +89,7 @@ int gap_ad_uuid16_list(
 
     uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
     size_t value_len = count * 2;
+
     if (!gap_ad_append(builder, type, (const uint8_t *)uuids, value_len))
         return 0;
 
@@ -112,6 +112,7 @@ int gap_ad_uuid32_list(
 
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
     size_t value_len = count * 4;
+
     if (!gap_ad_append(builder, type, (const uint8_t *)uuids, value_len))
         return 0;
 
@@ -129,8 +130,7 @@ int gap_ad_uuid128_list(
     gap_ad_builder *builder, const uint8_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if (count > 254 / 16)
-        return 0;
+    if (count > 254 / 16) return 0;
     uint8_t type = complete ? GAP_AD_UUID128_COMPLETE : GAP_AD_UUID128_INCOMPLETE;
     return gap_ad_append(builder, type, uuids, count * 16);
 }
@@ -187,9 +187,9 @@ int gap_ad_parse_next(
         !value || !value_len || *offset > len
     ) return -1;
 
-    if (*offset == len)
-        return 0;
+    if (*offset == len) return 0;
     uint8_t field_len = data[*offset];
+
     if (!field_len) {
         *offset = len; return 0;
     }
@@ -228,14 +228,13 @@ static struct {
 // from a secure application source; key and IV are consumed as byte strings in
 // CCM key and nonce order, respectively.
 int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
-    if (!session_key || !iv)
-        return 0;
+    if (!session_key || !iv) return 0;
 
     uint8_t key_bits = 0;
     for (size_t i = 0; i < GAP_EAD_KEY_LEN; i++)
         key_bits |= session_key[i];
-    if (!key_bits)
-        return 0;
+
+    if (!key_bits) return 0;
 
     memcpy(gap_ead_key.session_key, session_key, GAP_EAD_KEY_LEN);
     memcpy(gap_ead_key.iv, iv, GAP_EAD_IV_LEN);
@@ -265,10 +264,9 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
         const uint8_t *value;
         int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
 
-        if (parse_result < 0)
-            return 0;
-        if (parse_result == 0)
-            break;
+        if (parse_result < 0) return 0;
+
+        if (parse_result == 0) break;
         structures++;
     }
     return structures != 0;
@@ -288,6 +286,7 @@ int gap_ead_encrypt(
     ) return 0;
 
     uint8_t randomizer[GAP_EAD_RANDOMIZER_LEN];
+
     if (!GAP_RANDOM_SECURE_BYTES(randomizer, sizeof(randomizer)))
         return 0;
     uint8_t nonce[13], aad = 0xea;
@@ -325,6 +324,7 @@ int gap_ead_decrypt(
     ) return 0;
 
     size_t plaintext_len = ead_len - 11;
+
     if (plaintext_len > GAP_EAD_PLAINTEXT_MAX || plaintext_len > out_capacity)
         return 0;
 
@@ -347,12 +347,12 @@ int gap_ead_decrypt(
 }
 
 static inline int gap_access_addr(uint32_t *address) {
-    if (!address)
-        return 0;
+    if (!address) return 0;
 
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         // This is a random value, so little-endian conversion is not required.
         GAP_HW_RANDOM_BYTES((uint8_t *)address, sizeof(*address));
+
         if (gap_access_address_valid(*address))
             return 1;
     }
@@ -379,6 +379,7 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
         }
 
         // The length byte counts the type and value bytes that follow it.
+
         if (offset + (size_t)field_len + 1 > len)
             return 0;
         offset += (size_t)field_len + 1;
@@ -402,6 +403,7 @@ static inline int gap_adv_start_payload(
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
+
     if (GAP_EXT_ADVERTISING_ENABLED)
         return 0;
 #endif
@@ -418,6 +420,7 @@ static inline int gap_adv_start_payload(
     if (data_len)
         memcpy(gap_adv.data, data, data_len);
     // Save the payload to send when this device receives a scan request.
+
     if (resp_len)
         memcpy(gap_adv.scan_response, scan_response, resp_len);
 
@@ -461,9 +464,11 @@ int gap_adv_start_directed(
     const uint8_t address[6], uint8_t type, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
+
     if (GAP_EXT_ADVERTISING_ENABLED)
         return 0;
 #endif
+
     if (gap_central.active || !address ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
@@ -620,6 +625,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
                                   gap_central.peer.address : NULL;
     uint32_t access_address;
+
     if (!gap_access_addr(&access_address))
         return 0;
 
@@ -657,6 +663,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
+
     if (mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO)) {
         gap_scan_start(active_scan);
     } else {
@@ -682,6 +689,7 @@ int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
 
     gap_central.peer.type = peer_type != 0;
     memcpy(gap_central.peer.address, peer_address, 6);
+
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 
@@ -750,20 +758,26 @@ static inline void gap_receive_report(
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
+
     if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type)))
         return;
+
     if (pdu_type == ADV_DIRECT_IND && payload_len != 12)
         return;
     uint8_t data_len = payload_len - 6;
+
     if (pdu_type == ADV_DIRECT_IND)
         data_len = 0; // ADV_DIRECT_IND has a second address.
+
     if (data_len > GAP_ADV_DATA_MAX)
         return;
 
     uint8_t address_type = (frame[0] >> 6) & 1;
     int slot = gap_identity_find(frame + 2, address_type);
+
     if (!gap_peer_allowed(slot, frame + 2, address_type))
         return;
+
     if (gap_privacy.scan_filter && slot < 0)
         return;
 
@@ -861,8 +875,10 @@ static inline void gap_receive_report(
 
     memcpy(report->address, frame + 2, 6);
     memcpy(report->identity_address, identity_address, 6);
+
     if (report->has_target)
         memcpy(report->target_address, frame + 8, 6);
+
     if (data_len)
         memcpy(report->data, frame + 8, data_len);
     gap_scan.count++;
@@ -875,20 +891,19 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
-    if (!types || !ad || !len)
-        return 0;
+    if (!types || !ad || !len) return 0;
 
     if (gap_adv_scan.ready) {
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;
     }
 
-    if (!gap_rx.ready)
-        return 0;
+    if (!gap_rx.ready) return 0;
 
     const uint8_t *frame = gap_rx.frame;
     uint8_t payload_len = frame[1];
     int8_t packet_rssi = gap_rx.rssi;
+
     if (!gap_scan.active_pending)
         gap_rx_armed = 0;
 
@@ -897,6 +912,7 @@ int gap_scan_take_ad(
     gap_receive_report(frame, payload_len, packet_rssi);
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
+
     if ((frame[0] & 0x0f) != ADV_NONCONN_IND ||
         payload_len < 8 || payload_len > 37
     ) return 0;
@@ -906,17 +922,20 @@ int gap_scan_take_ad(
     // Walk the AD structures and look for one of the requested types.
     for (size_t offset = 8; offset < end;) {
         uint8_t ad_len = frame[offset];
+
         if (!ad_len || offset + ad_len + 1 > end)
             break;
 
         for (size_t i = 0; i < type_count; i++) {
             if (frame[offset + 1] != types[i])
                 continue;
+
             if ((size_t)ad_len + 1 > *len)
                 return -1;
 
             memcpy(ad, frame + offset, (size_t)ad_len + 1);
             *len = (size_t)ad_len + 1;
+
             if (rssi)
                 *rssi = packet_rssi;
             return 1;

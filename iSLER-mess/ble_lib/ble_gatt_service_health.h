@@ -46,6 +46,7 @@ static inline int gatt_health_thermometer_measurement_encode(
     value[(*len)++] = (uint8_t)(measurement->temperature >> 8);
     value[(*len)++] = (uint8_t)(measurement->temperature >> 16);
     value[(*len)++] = (uint8_t)(measurement->temperature >> 24);
+
     if (measurement->flags & 0x02) {
         memcpy(value + *len, measurement->timestamp, 7);
         *len += 7;
@@ -65,6 +66,7 @@ static inline int gatt_health_thermometer_service_indicate(
 ) {
     uint8_t value[13];
     uint16_t len;
+
     if (!server || !service ||
         !gatt_health_thermometer_measurement_encode(measurement, value, &len)
     ) return 0;
@@ -81,6 +83,7 @@ static inline int gatt_health_thermometer_service_notify_intermediate(
 ) {
     uint8_t value[13];
     uint16_t len;
+
     if (!server || !service || !service->intermediate_temperature_handle ||
         !gatt_health_thermometer_measurement_encode(measurement, value, &len)
     ) return 0;
@@ -95,11 +98,12 @@ static inline int gatt_blood_pressure_feature16(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 2)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -112,6 +116,7 @@ static inline int gatt_blood_pressure_service_indicate(
     const ble_gatt_blood_pressure_measurement *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
@@ -129,6 +134,7 @@ static inline int gatt_blood_pressure_service_indicate(
     ble_put_le16(value + len + 2, measurement->diastolic);
     ble_put_le16(value + len + 4, measurement->mean_arterial_pressure);
     len += 6;
+
     if (measurement->flags & 0x02) {
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;
@@ -158,6 +164,7 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
     const ble_gatt_intermediate_cuff_pressure *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || !service->intermediate_cuff_pressure_handle ||
         !measurement || (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
@@ -175,6 +182,7 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
     ble_put_le16(value + len + 2, 0x07ff);
     ble_put_le16(value + len + 4, 0x07ff);
     len += 6;
+
     if (measurement->flags & 0x02) {
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;

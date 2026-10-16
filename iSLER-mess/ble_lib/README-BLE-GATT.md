@@ -329,8 +329,9 @@ Additional service builders include:
   Feature, Sensor Location, and optional Vector and Control Point
   characteristics. `gatt_cycling_power_service_notify_measurement()` encodes
   all defined measurement fields and checks them against the Feature value.
-  `gatt_cycling_power_service_notify_vector()` encodes crank data and force or
-  torque arrays up to the ATT value limit for the optional Vector characteristic. Its
+  `gatt_cycling_power_service_notify_vector()` encodes one MTU-bounded Vector
+  packet. For continuation packets, pass the remaining samples and clear the
+  First Crank Measurement Angle flag. Its
   Control Point handles cumulative wheel count, sensor location, crank/chain
   settings, measurement content masking, sampling-rate and calibration-date
   requests. Offset compensation procedures are completed by the application
@@ -346,7 +347,9 @@ Additional service builders include:
   Control Point handles distance, content mask, navigation command, fix rate,
   and elevation requests. Route operations are completed through
   `gatt_location_navigation_service_control_point_complete()`; the requested
-  route number is kept in the service state.
+  route number is kept in the service state. The Navigation characteristic
+  uses notifications, and each Control Point operation is gated by its LN
+  Feature bit or optional Navigation characteristic as required.
 - `gatt_environmental_sensing_service_add()` for caller-selected permitted
   environmental measurement characteristics. Use
   `gatt_environmental_sensing_service_set_value()` to update a stored

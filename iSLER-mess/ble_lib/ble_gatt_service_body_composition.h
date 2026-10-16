@@ -30,11 +30,12 @@ static inline int gatt_body_composition_feature32(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 4)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
         (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
     return 1;
@@ -47,6 +48,7 @@ static inline int gatt_body_composition_service_indicate_measurement(
     const ble_gatt_body_composition_measurement *measurement
 ) {
     uint32_t features;
+
     if (!service || !measurement || (measurement->flags & 0xf000) ||
         !gatt_body_composition_feature32(server, service->feature_handle,
                                          &features) ||
@@ -69,6 +71,7 @@ static inline int gatt_body_composition_service_indicate_measurement(
     len += 2;
     ble_put_le16(value + len, measurement->body_fat_percentage);
     len += 2;
+
     if (measurement->flags & 0x0002) {
         memcpy(value + len, measurement->timestamp, 7);
         len += 7;

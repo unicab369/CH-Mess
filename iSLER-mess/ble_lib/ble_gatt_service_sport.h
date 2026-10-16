@@ -55,11 +55,12 @@ static inline int gatt_sport_feature16(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 2)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -71,11 +72,12 @@ static inline int gatt_sport_feature32(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 4)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
         (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
     return 1;
@@ -107,13 +109,21 @@ static inline uint16_t gatt_cycling_power_apply_content_mask(
     uint16_t flags, uint16_t mask
 ) {
     if (mask & (1u << 0)) flags &= (uint16_t)~0x0003;
+
     if (mask & (1u << 1)) flags &= (uint16_t)~0x000c;
+
     if (mask & (1u << 2)) flags &= (uint16_t)~0x0010;
+
     if (mask & (1u << 3)) flags &= (uint16_t)~0x0020;
+
     if (mask & (1u << 4)) flags &= (uint16_t)~0x00c0;
+
     if (mask & (1u << 5)) flags &= (uint16_t)~0x0100;
+
     if (mask & (1u << 6)) flags &= (uint16_t)~0x0200;
+
     if (mask & (1u << 7)) flags &= (uint16_t)~0x0400;
+
     if (mask & (1u << 8)) flags &= (uint16_t)~0x0800;
     return flags;
 }
@@ -126,6 +136,7 @@ static inline int gatt_cycling_power_service_notify_measurement(
     const ble_gatt_cycling_power_measurement *measurement
 ) {
     uint32_t features;
+
     if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint16_t)~0x1fff) ||
         !gatt_sport_feature32(server, service->feature_handle, &features) ||
@@ -147,8 +158,10 @@ static inline int gatt_cycling_power_service_notify_measurement(
     len += 2;
     ble_put_le16(value + len, (uint16_t)measurement->instantaneous_power);
     len += 2;
+
     if (flags & 0x0001)
         value[len++] = measurement->pedal_power_balance;
+
     if (flags & 0x0004) {
         ble_put_le16(value + len, measurement->accumulated_torque);
         len += 2;
@@ -221,6 +234,7 @@ static inline int gatt_cycling_power_service_notify_vector(
     const ble_gatt_cycling_power_vector *vector
 ) {
     uint32_t features;
+
     if (!server || !service || service->server != server ||
         !service->vector_handle || !vector ||
         !gatt_sport_feature32(server, service->feature_handle, &features) ||
@@ -238,16 +252,10 @@ static inline int gatt_cycling_power_service_notify_vector(
         (!(vector->flags & 0x08) && vector->torque_count)
     ) return 0;
 
-    uint32_t encoded_len = 1 +
-        ((vector->flags & 0x01) ? 4u : 0u) +
-        ((vector->flags & 0x02) ? 2u : 0u) +
-        ((vector->flags & 0x04) ? (uint32_t)vector->force_count * 2u : 0u) +
-        ((vector->flags & 0x08) ? (uint32_t)vector->torque_count * 2u : 0u);
-    if (encoded_len > BLE_GATT_ATT_VALUE_MAX) return 0;
-
     uint8_t value[BLE_GATT_ATT_VALUE_MAX];
     uint16_t len = 0;
     value[len++] = vector->flags;
+
     if (vector->flags & 0x01) {
         ble_put_le16(value + len, vector->cumulative_crank_revolutions);
         ble_put_le16(value + len + 2, vector->last_crank_event_time);
@@ -272,6 +280,8 @@ static inline int gatt_cycling_power_service_notify_vector(
             len += 2;
         }
     }
+
+    if (len > server->mtu - 3) return 0;
     return gatt_server_queue_event(server, service->vector_handle,
                                    value, len, 0);
 }
@@ -296,12 +306,14 @@ static inline uint8_t gatt_sport_control_point_response(
     const uint8_t *parameters, uint16_t parameter_len
 ) {
     uint8_t response[20];
+
     if (parameter_len > sizeof(response) - 3 ||
         (parameter_len && !parameters)
     ) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     response[0] = response_opcode;
     response[1] = request_opcode;
     response[2] = response_code;
+
     if (parameter_len)
         memcpy(response + 3, parameters, parameter_len);
     return gatt_server_queue_event(server, handle, response,
@@ -314,8 +326,10 @@ static inline uint8_t gatt_sport_control_ready(
     ble_gatt_server *server, uint16_t handle
 ) {
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, handle);
+
     if (!cccd || !(cccd->cccd & 2))
         return GATT_SC_ERR_CCCD_IMPROPERLY_CONFIGURED;
+
     if (gatt_sport_control_busy(server, handle))
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     return 0;
@@ -327,6 +341,7 @@ static inline int gatt_sport_supported_locations_valid(
 ) {
     if (current_location > 16 || (locations & ~0x1ffffu))
         return 0;
+
     if (!(locations & (1u << current_location)))
         return 0;
     return locations && (locations & (locations - 1u));
@@ -338,6 +353,7 @@ static inline int gatt_sport_sensor_location_store(
 ) {
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
     uint8_t *value = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
     if (!value || !attribute->value_capacity)
         return 0;
     value[0] = location;
@@ -352,18 +368,21 @@ static inline uint8_t gatt_rsc_control_point_write(
 ) {
     (void)command;
     ble_gatt_rsc_service *service = context;
+
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     uint8_t error = gatt_sport_control_ready(server,
                                               service->control_point_handle);
-    if (error)
-        return error;
+
+    if (error) return error;
 
     if (service->calibration_pending)
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
@@ -373,13 +392,13 @@ static inline uint8_t gatt_rsc_control_point_write(
     uint16_t location_count = 0;
     uint8_t feature_ok = 0;
     uint16_t features = 0;
+
     if (!gatt_sport_feature16(server, service->feature_handle, &features))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
     if (opcode == 1) {
         feature_ok = (features & 0x0002) != 0;
-        if (!feature_ok)
-            response = 2;
+        if (!feature_ok) response = 2;
         else if (len != 5)
             response = 3;
         else {
@@ -389,8 +408,7 @@ static inline uint8_t gatt_rsc_control_point_write(
         }
     } else if (opcode == 2) {
         feature_ok = (features & 0x0010) != 0;
-        if (!feature_ok)
-            response = 2;
+        if (!feature_ok) response = 2;
         else if (len != 1)
             response = 3;
         else {
@@ -400,8 +418,7 @@ static inline uint8_t gatt_rsc_control_point_write(
         }
     } else if (opcode == 3) {
         feature_ok = (features & 0x0008) != 0;
-        if (!feature_ok)
-            response = 2;
+        if (!feature_ok) response = 2;
         else if (len != 2 || value[1] > 16 ||
                  !(service->supported_sensor_locations &
                    (1u << value[1]))) response = 3;
@@ -411,8 +428,7 @@ static inline uint8_t gatt_rsc_control_point_write(
         else service->sensor_location = value[1];
     } else if (opcode == 4) {
         feature_ok = (features & 0x0008) != 0;
-        if (!feature_ok)
-            response = 2;
+        if (!feature_ok) response = 2;
         else if (len != 1)
             response = 3;
         else {
@@ -436,23 +452,27 @@ static inline uint8_t gatt_csc_control_point_write(
 ) {
     (void)command;
     ble_gatt_csc_service *service = context;
+
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     uint8_t error = gatt_sport_control_ready(server,
                                               service->control_point_handle);
-    if (error)
-        return error;
+
+    if (error) return error;
     uint8_t opcode = value[0];
     uint8_t response = 1;
     uint8_t locations[17];
     uint16_t location_count = 0;
     uint16_t features = 0;
+
     if (!gatt_sport_feature16(server, service->feature_handle, &features))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -502,18 +522,21 @@ static inline uint8_t gatt_cycling_power_control_point_write(
 ) {
     (void)command;
     ble_gatt_cycling_power_service *service = context;
+
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     uint8_t error = gatt_sport_control_ready(server,
                                               service->control_point_handle);
-    if (error)
-        return error;
+
+    if (error) return error;
 
     if (service->control_point_pending_opcode)
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
@@ -531,6 +554,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
     uint8_t update_sensor_location = 0, requested_sensor_location = 0;
     uint8_t update_setting = 0, setting_opcode = 0;
     uint32_t features = 0;
+
     if (!gatt_sport_feature32(server, service->feature_handle, &features))
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
@@ -654,22 +678,27 @@ static inline uint8_t gatt_cycling_power_control_point_write(
             response == 1 && parameter_len ? parameters : NULL,
         opcode == 3 && response == 1 ? location_count :
         response == 1 ? parameter_len : 0);
+
     if (response_error) return response_error;
+
     if (update_cumulative_revolutions)
         service->cumulative_wheel_revolutions =
             requested_cumulative_revolutions;
+
     if (update_sensor_location) {
         if (!gatt_sport_sensor_location_store(server,
                 service->sensor_location_handle, requested_sensor_location))
             return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
         service->sensor_location = requested_sensor_location;
     }
+
     if (update_setting) {
         if (setting_opcode == 4) service->crank_length = requested_setting;
         else if (setting_opcode == 6) service->chain_length = requested_setting;
         else if (setting_opcode == 8) service->chain_weight = requested_setting;
         else service->span_length = requested_setting;
     }
+
     if (!response_error && update_content_mask)
         service->measurement_content_mask = requested_content_mask;
     return response_error;
@@ -681,6 +710,7 @@ static inline int gatt_rsc_service_set_supported_locations(
     ble_gatt_rsc_service *service, uint32_t locations
 ) {
     uint16_t features;
+
     if (!service || !service->server ||
         !gatt_sport_feature16(service->server, service->feature_handle,
                               &features) || !(features & 0x0008) ||
@@ -697,6 +727,7 @@ static inline int gatt_csc_service_set_supported_locations(
     ble_gatt_csc_service *service, uint32_t locations
 ) {
     uint16_t features;
+
     if (!service || !service->server ||
         !gatt_sport_feature16(service->server, service->feature_handle,
                               &features) || !(features & 0x0004) ||
@@ -713,6 +744,7 @@ static inline int gatt_cycling_power_service_set_supported_locations(
     ble_gatt_cycling_power_service *service, uint32_t locations
 ) {
     uint32_t features;
+
     if (!service || !service->server ||
         !gatt_sport_feature32(service->server, service->feature_handle,
                               &features) || !(features & (1u << 11)) ||
@@ -748,6 +780,7 @@ static inline int gatt_cycling_power_service_control_point_complete(
         (parameter_len && !parameters) || parameter_len > 17 ||
         gatt_sport_control_busy(server, service->control_point_handle)
     ) return 0;
+
     if (!gatt_sport_control_point_response(server,
             service->control_point_handle, 0x20,
             service->control_point_pending_opcode, response,
@@ -780,6 +813,7 @@ static inline int gatt_cycling_power_service_set_factory_calibration_date(
         service->server, service->factory_calibration_date_handle);
     uint8_t *stored = attribute ?
         gatt_attribute_value(service->server, attribute) : NULL;
+
     if (!stored || attribute->value_capacity < 7)
         return 0;
     memcpy(stored, date, 7);
@@ -799,6 +833,7 @@ static inline int gatt_rsc_service_calibration_complete(
         gatt_sport_control_busy(server, service->control_point_handle)
     ) return 0;
     uint8_t response[3] = {0x10, 0x02, success ? 0x01 : 0x04};
+
     if (!gatt_server_queue_event(server, service->control_point_handle,
                                  response, sizeof(response), 1)
     ) return 0;
@@ -813,6 +848,7 @@ static inline int gatt_rsc_service_notify_measurement(
     const ble_gatt_rsc_measurement *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint8_t)~0x03) ||
         !gatt_sport_feature16(server, service->feature_handle, &features) ||
@@ -826,6 +862,7 @@ static inline int gatt_rsc_service_notify_measurement(
     ble_put_le16(value + len, measurement->instantaneous_speed);
     len += 2;
     value[len++] = measurement->instantaneous_cadence;
+
     if (measurement->flags & 0x01) {
         ble_put_le16(value + len, measurement->stride_length);
         len += 2;
@@ -849,6 +886,7 @@ static inline int gatt_csc_service_notify_measurement(
     const ble_gatt_csc_measurement *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || service->server != server || !measurement ||
         !(measurement->flags & 0x03) ||
         (measurement->flags & (uint8_t)~0x03) ||
@@ -860,6 +898,7 @@ static inline int gatt_csc_service_notify_measurement(
     uint8_t value[11];
     uint16_t len = 0;
     value[len++] = measurement->flags;
+
     if (measurement->flags & 0x01) {
         uint32_t revolutions = measurement->cumulative_wheel_revolutions;
         value[len++] = (uint8_t)revolutions;

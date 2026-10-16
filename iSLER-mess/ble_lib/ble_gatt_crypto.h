@@ -49,6 +49,7 @@ static inline void gatt_aes128_expand(
     uint8_t temp[4];
     while (generated < 176) {
         memcpy(temp, round_keys + generated - 4, 4);
+
         if ((generated & 15u) == 0) {
             uint8_t first = temp[0];
             temp[0] = ble_gatt_aes_sbox[temp[1]] ^ rcon[round++];
@@ -88,6 +89,7 @@ static inline void gatt_aes128_encrypt_expanded(
             }
         }
         memcpy(state, shifted, sizeof(state));
+
         if (round != 10) {
             for (uint8_t col = 0; col < 4; col++) {
                 uint8_t *s = state + 4 * col;
@@ -125,8 +127,7 @@ static inline void gatt_aes128_encrypt(
 static inline void gatt_cmac_init(
     ble_gatt_cmac *cmac, const uint8_t key[16]
 ) {
-    if (!cmac || !key)
-        return;
+    if (!cmac || !key) return;
     memset(cmac, 0, sizeof(*cmac));
     gatt_aes128_expand(key, cmac->round_keys);
 }
@@ -145,14 +146,13 @@ static inline void gatt_cmac_update(
     ble_gatt_cmac *cmac,
     const uint8_t *data, size_t len
 ) {
-    if (!cmac || (!data && len))
-        return;
+    if (!cmac || (!data && len)) return;
     while (len) {
         if (cmac->used == 16)
             gatt_cmac_block(cmac);
         size_t count = 16u - cmac->used;
-        if (count > len)
-            count = len;
+
+        if (count > len) count = len;
         memcpy(cmac->block + cmac->used, data, count);
         cmac->used = (uint8_t)(cmac->used + count);
         data += count;
@@ -169,15 +169,16 @@ static inline void gatt_cmac_double(uint8_t block[16]) {
 }
 
 static inline void gatt_cmac_final(ble_gatt_cmac *cmac, uint8_t mac[16]) {
-    if (!cmac || !mac)
-        return;
+    if (!cmac || !mac) return;
 
     uint8_t subkey[16] = {0};
     uint8_t zero[16] = {0};
     gatt_aes128_encrypt_expanded(cmac->round_keys, zero, subkey);
     gatt_cmac_double(subkey);
+
     if (cmac->used != 16)
         gatt_cmac_double(subkey);
+
     if (cmac->used < 16)
         cmac->block[cmac->used] = 0x80;
     for (uint8_t i = 0; i < 16; i++) {

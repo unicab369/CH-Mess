@@ -32,11 +32,12 @@ static inline int gatt_glucose_feature16(
     if (!server || !handle || !features)
         return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+
     if (!attribute || attribute->value_len < 2)
         return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value)
-        return 0;
+
+    if (!value) return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -48,6 +49,7 @@ static inline int gatt_glucose_service_notify_measurement(
     const ble_gatt_glucose_measurement *measurement
 ) {
     uint16_t features;
+
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->sensor_status & (uint16_t)~0x03ff) ||
@@ -63,6 +65,7 @@ static inline int gatt_glucose_service_notify_measurement(
     len += 2;
     memcpy(value + len, measurement->base_time, 7);
     len += 7;
+
     if (measurement->flags & 0x01) {
         ble_put_le16(value + len, (uint16_t)measurement->time_offset);
         len += 2;
@@ -98,6 +101,7 @@ static inline int gatt_glucose_service_notify_context(
     value[len++] = context->flags;
     ble_put_le16(value + len, context->sequence_number);
     len += 2;
+
     if (context->flags & 0x01) {
         value[len++] = context->carbohydrate_id;
         ble_put_le16(value + len, context->carbohydrate);
@@ -106,6 +110,7 @@ static inline int gatt_glucose_service_notify_context(
 
     if (context->flags & 0x02)
         value[len++] = context->meal;
+
     if (context->flags & 0x04)
         value[len++] = context->tester_health;
 

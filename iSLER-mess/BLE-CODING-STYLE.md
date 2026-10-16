@@ -4,11 +4,17 @@ These formatting rules apply to the BLE library, examples, and BLE Mesh code.
 
 ## Unbraced `if` statements
 
-Keep a single-line condition on its own line and put the controlled statement on the next indented line:
+For a single-line condition, put the controlled statement on the next indented line by default:
 
 ```c
 if (!conn || !psm || psm > 0x00ffu)
     return 0;
+```
+
+If the complete unbraced `if` statement fits within 40 characters, it may be written on one line:
+
+```c
+if (!id) return 0;
 ```
 
 When the condition wraps across lines, put the closing parenthesis and the controlled statement together on a line of their own:

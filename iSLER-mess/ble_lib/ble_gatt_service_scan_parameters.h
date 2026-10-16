@@ -9,8 +9,10 @@ static uint8_t gatt_scan_parameters_window_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
+
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
 
@@ -19,6 +21,7 @@ static uint8_t gatt_scan_parameters_window_write(
 
     uint16_t interval = ble_get_le16(value);
     uint16_t window = ble_get_le16(value + 2);
+
     if (interval < 4 || interval > 0x4000 || window < 4 ||
         window > interval
     ) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
@@ -41,6 +44,7 @@ static inline int gatt_scan_parameters_service_add(
         return 0;
     uint16_t interval = ble_get_le16(scan_interval_window);
     uint16_t window = ble_get_le16(scan_interval_window + 2);
+
     if (interval < 4 || interval > 0x4000 || window < 4 ||
         window > interval
     ) return 0;
@@ -62,6 +66,7 @@ static inline int gatt_scan_parameters_service_add(
         {0}
     };
     uint16_t values[2], cccds[2];
+
     if (!gatt_sig_service_add_with_handlers(server, 0x1813, chars, 2,
             &service->service_handle, values, cccds, handlers)
     ) return 0;

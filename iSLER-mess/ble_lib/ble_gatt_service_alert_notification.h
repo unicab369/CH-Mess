@@ -12,8 +12,10 @@ static uint8_t gatt_alert_notification_control_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
+
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
 
@@ -22,6 +24,7 @@ static uint8_t gatt_alert_notification_control_write(
 
     uint8_t cmd = value[0];
     uint8_t category = value[1];
+
     if (cmd > 5 || (category > 9 && category != GATT_ALERT_CATEGORY_ALL))
         return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
 
@@ -30,6 +33,7 @@ static uint8_t gatt_alert_notification_control_write(
         service->supported_unread_alerts : service->supported_new_alerts;
     uint16_t category_bit = category == GATT_ALERT_CATEGORY_ALL ?
         supported : (uint16_t)(1u << category);
+
     if (category_bit & (uint16_t)~supported)
         return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
 
@@ -86,6 +90,7 @@ static inline int gatt_alert_notification_service_add(
     handlers[4].write = gatt_alert_notification_control_write;
     handlers[4].context = service;
     uint16_t values[5], cccds[5];
+
     if (!gatt_sig_service_add_with_handlers(server, 0x1811, chars, 5,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
@@ -111,11 +116,13 @@ static inline int gatt_alert_notification_service_notify_new(
         (text_len && !text)
     ) return 0;
     uint16_t category_bit = (uint16_t)(1u << category);
+
     if (!(service->supported_new_alerts & category_bit) ||
         !(service->enabled_new_alerts & category_bit)
     ) return 0;
 
     uint8_t value[20] = {category, count};
+
     if (text_len)
         memcpy(value + 2, text, text_len);
     return gatt_server_queue_event(server, service->new_alert_handle,
@@ -133,6 +140,7 @@ static inline int gatt_alert_notification_service_notify_unread(
     if (!server || !service || category > 9)
         return 0;
     uint16_t category_bit = (uint16_t)(1u << category);
+
     if (!(service->supported_unread_alerts & category_bit) ||
         !(service->enabled_unread_alerts & category_bit)
     ) return 0;

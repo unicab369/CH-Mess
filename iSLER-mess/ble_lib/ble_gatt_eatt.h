@@ -76,13 +76,13 @@ static inline void gatt_eatt_init(
     ble_gatt_eatt *eatt,
     const ble_gatt_eatt_ops *ops, uint16_t local_mtu
 ) {
-    if (!eatt)
-        return;
+    if (!eatt) return;
     memset(eatt, 0, sizeof(*eatt));
-    if (ops)
-        eatt->ops = *ops;
+
+    if (ops) eatt->ops = *ops;
     eatt->local_mtu = local_mtu < BLE_GATT_EATT_MIN_MTU ?
         BLE_GATT_EATT_MIN_MTU : local_mtu;
+
     if (eatt->local_mtu > BLE_GATT_EATT_MTU_MAX)
         eatt->local_mtu = BLE_GATT_EATT_MTU_MAX;
 }
@@ -93,9 +93,9 @@ static inline void gatt_eatt_set_encrypted(
     ble_gatt_eatt *eatt,
     int encrypted
 ) {
-    if (!eatt)
-        return;
+    if (!eatt) return;
     eatt->encrypted = (uint8_t)(encrypted != 0);
+
     if (!eatt->encrypted) {
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             ble_gatt_eatt_bearer *bearer = &eatt->bearers[i];
@@ -115,8 +115,7 @@ static inline int gatt_eatt_find(
     const ble_gatt_eatt *eatt,
     uint16_t cid
 ) {
-    if (!eatt || !cid)
-        return -1;
+    if (!eatt || !cid) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED &&
             eatt->bearers[i].cid == cid
@@ -126,8 +125,7 @@ static inline int gatt_eatt_find(
 
 // Find an unused bearer slot.
 static inline int gatt_eatt_free_slot(const ble_gatt_eatt *eatt) {
-    if (!eatt)
-        return -1;
+    if (!eatt) return -1;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++)
         if (eatt->bearers[i].state == BLE_GATT_EATT_CLOSED)
             return i;
@@ -141,8 +139,8 @@ static inline int gatt_eatt_open(ble_gatt_eatt *eatt) {
     if (!eatt || !eatt->encrypted || !eatt->ops.open)
         return 0;
     int slot = gatt_eatt_free_slot(eatt);
-    if (slot < 0)
-        return 0;
+
+    if (slot < 0) return 0;
 
     if (!eatt->ops.open(eatt->ops.context, BLE_GATT_EATT_PSM,
                         eatt->local_mtu)
@@ -165,6 +163,7 @@ static inline int gatt_eatt_accept(ble_gatt_eatt *eatt, uint16_t cid) {
     }
 
     int slot = gatt_eatt_free_slot(eatt);
+
     if (slot < 0) {
         if (eatt->ops.reject)
             eatt->ops.reject(eatt->ops.context, cid, 0x0005u);
@@ -185,12 +184,13 @@ static inline int gatt_eatt_channel_opened(
     ble_gatt_eatt *eatt,
     uint16_t cid, uint16_t negotiated_mtu, int encrypted, int success
 ) {
-    if (!eatt || !cid)
-        return 0;
+    if (!eatt || !cid) return 0;
     int existing = gatt_eatt_find(eatt, cid);
+
     if (existing >= 0 &&
         eatt->bearers[existing].state != BLE_GATT_EATT_OPENING
     ) existing = -1;
+
     if (!success || !encrypted || !eatt->encrypted ||
         negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
         negotiated_mtu > BLE_GATT_EATT_MTU_MAX ||
@@ -205,6 +205,7 @@ static inline int gatt_eatt_channel_opened(
     }
 
     int slot = existing;
+
     if (slot < 0) {
         for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
             if (eatt->bearers[i].state == BLE_GATT_EATT_OPENING &&
@@ -230,6 +231,7 @@ static inline int gatt_eatt_channel_opened(
     bearer->mtu = negotiated_mtu < eatt->local_mtu ?
         negotiated_mtu : eatt->local_mtu;
     bearer->state = BLE_GATT_EATT_OPEN;
+
     if (eatt->ops.channel_ready)
         eatt->ops.channel_ready(eatt->ops.context, cid, bearer->mtu);
     return 1;
@@ -242,6 +244,7 @@ static inline int gatt_eatt_reconfigure(
     uint16_t cid, uint16_t negotiated_mtu
 ) {
     int slot = gatt_eatt_find(eatt, cid);
+
     if (slot < 0 || negotiated_mtu < BLE_GATT_EATT_MIN_MTU ||
         negotiated_mtu > BLE_GATT_EATT_MTU_MAX
     ) return 0;
@@ -259,6 +262,7 @@ static inline int gatt_eatt_send(
     const uint8_t *pdu, uint16_t len
 ) {
     int slot = gatt_eatt_find(eatt, cid);
+
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || !eatt->ops.send
     ) return 0;
@@ -273,6 +277,7 @@ static inline int gatt_eatt_receive(
     const uint8_t *pdu, uint16_t len
 ) {
     int slot = gatt_eatt_find(eatt, cid);
+
     if (slot < 0 || !eatt->encrypted || !pdu || !len ||
         len > eatt->bearers[slot].mtu || pdu[0] == 0xd2 ||
         !eatt->ops.receive_att
@@ -290,9 +295,10 @@ static inline void gatt_eatt_channel_closed(
     uint16_t cid, int reason
 ) {
     int slot = gatt_eatt_find(eatt, cid);
-    if (slot < 0)
-        return;
+
+    if (slot < 0) return;
     memset(&eatt->bearers[slot], 0, sizeof(eatt->bearers[slot]));
+
     if (eatt->ops.channel_closed)
         eatt->ops.channel_closed(eatt->ops.context, cid, reason);
 }
@@ -300,10 +306,10 @@ static inline void gatt_eatt_channel_closed(
 // Application facing
 // Close every bearer and clear the link's encryption state.
 static inline void gatt_eatt_disconnect(ble_gatt_eatt *eatt) {
-    if (!eatt)
-        return;
+    if (!eatt) return;
     for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
         uint16_t cid = eatt->bearers[i].cid;
+
         if (eatt->bearers[i].state != BLE_GATT_EATT_CLOSED) {
             if (cid && eatt->ops.close)
                 eatt->ops.close(eatt->ops.context, cid);
