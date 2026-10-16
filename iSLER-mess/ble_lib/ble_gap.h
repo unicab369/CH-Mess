@@ -578,7 +578,7 @@ static inline void gap_bytes_reverse(
         out[i] = in[len - 1 - i];
 }
 
-static void gap_write_u16_le(uint8_t *dst, uint16_t value) {
+static inline void gap_write_u16_le(uint8_t *dst, uint16_t value) {
     dst[0] = (uint8_t)value;
     dst[1] = (uint8_t)(value >> 8);
 }

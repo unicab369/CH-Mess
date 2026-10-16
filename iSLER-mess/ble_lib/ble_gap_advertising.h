@@ -61,14 +61,14 @@ int gap_ad_append(
 }
 
 // Application facing
-int gap_ad_add_flags(gap_ad_builder *builder, uint8_t flags) {
+int gap_ad_flags(gap_ad_builder *builder, uint8_t flags) {
     if (flags & 0xe0) return 0;
     return gap_ad_append(builder, GAP_AD_FLAGS, &flags, 1);
 }
 
 // Application facing
 // NOTE: A nonzero complete value selects the complete AD type.
-int gap_ad_add_local_name(
+int gap_ad_local_name(
     gap_ad_builder *builder, const uint8_t *name,
     size_t len, uint8_t complete
 ) {
@@ -77,7 +77,7 @@ int gap_ad_add_local_name(
 }
 
 // Application facing
-int gap_ad_add_uuid16_list(
+int gap_ad_uuid16_list(
     gap_ad_builder *builder, const uint16_t *uuids,
     size_t count, uint8_t complete
 ) {
@@ -92,14 +92,13 @@ int gap_ad_add_uuid16_list(
     for (size_t i = 0; i < count; i++) {
         uint16_t uuid;
         memcpy(&uuid, value + i * 2, sizeof(uuid));
-        value[i * 2] = (uint8_t)uuid;
-        value[i * 2 + 1] = (uint8_t)(uuid >> 8);
+        gap_write_u16_le(value + i * 2, uuid);
     }
     return 1;
 }
 
 // Application facing
-int gap_ad_add_uuid32_list(
+int gap_ad_uuid32_list(
     gap_ad_builder *builder, const uint32_t *uuids,
     size_t count, uint8_t complete
 ) {
@@ -122,7 +121,7 @@ int gap_ad_add_uuid32_list(
 }
 
 // Application facing
-int gap_ad_add_uuid128_list(
+int gap_ad_uuid128_list(
     gap_ad_builder *builder, const uint8_t *uuids,
     size_t count, uint8_t complete
 ) {
@@ -132,7 +131,7 @@ int gap_ad_add_uuid128_list(
 }
 
 // Application facing
-int gap_ad_add_tx_power(gap_ad_builder *builder, int8_t dbm) {
+int gap_ad_tx_power(gap_ad_builder *builder, int8_t dbm) {
     uint8_t value = (uint8_t)dbm;
     return gap_ad_append(builder, GAP_AD_TX_POWER, &value, 1);
 }
@@ -140,7 +139,7 @@ int gap_ad_add_tx_power(gap_ad_builder *builder, int8_t dbm) {
 // Application facing
 // Append service data with a 16-, 32-, or 128-bit UUID already encoded in
 // Bluetooth little-endian byte order.
-int gap_ad_add_service_data(
+int gap_ad_service_data(
     gap_ad_builder *builder, const uint8_t *uuid, size_t uuid_len,
     const uint8_t *data, size_t len
 ) {

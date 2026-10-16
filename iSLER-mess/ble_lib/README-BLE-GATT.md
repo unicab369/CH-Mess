@@ -84,6 +84,9 @@ Channel Sounding integration and implements RAS procedures and data transfer.
 `gatt_generic_health_sensor_service_add()` registers the live-observation-only
 GHS layout and its control point. The application encodes and streams the
 observations and handles start/stop commands.
+`gatt_authorization_control_service_add()` registers the mandatory ACS
+characteristics. The application must provide the ACS security protocol,
+payload segmentation, and protected-resource behavior.
 
 Additional service database builders are available:
 

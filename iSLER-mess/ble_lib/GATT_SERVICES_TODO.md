@@ -57,7 +57,7 @@ count that generic path as implementation of a standard service.
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [ ] Insulin Delivery (`0x183A`)
 - [x] Emergency Configuration (`0x183C`)
-- [ ] Authorization Control (`0x183D`)
+- [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
 - [ ] Physical Activity Monitor (`0x183E`)
 - [x] Elapsed Time (`0x183F`)
 - [x] Generic Health Sensor (`0x1840`), live-observation-only layout

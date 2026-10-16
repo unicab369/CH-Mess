@@ -1286,6 +1286,61 @@ static inline int gatt_generic_health_sensor_service_add(
 }
 
 typedef struct {
+    uint16_t service_handle, status_handle, status_cccd_handle;
+    uint16_t data_in_handle, data_out_notify_handle;
+    uint16_t data_out_notify_cccd_handle, data_out_indicate_handle;
+    uint16_t data_out_indicate_cccd_handle, control_point_handle;
+    uint16_t control_point_cccd_handle;
+} ble_gatt_authorization_control_service;
+
+// Application facing
+// Add the mandatory ACS characteristics. The application implements the ACS
+// security protocol, segmentation, status updates, and protected GATT access.
+static inline int gatt_authorization_control_service_add(
+    ble_gatt_server *server,
+    ble_gatt_authorization_control_service *service,
+    const uint8_t status[3], uint16_t data_capacity,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || !status || !data_capacity ||
+        data_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t data_initial = 0;
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[5] = {
+        {0x2b2f, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ, status, 3},
+        {0x2b30, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b31, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_READ,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b32, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b33, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 0,
+            control_point_capacity, 1}
+    };
+    uint16_t values[5], cccds[5];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x183d, characteristics, 5,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->status_handle = values[0];
+    service->status_cccd_handle = cccds[0];
+    service->data_in_handle = values[1];
+    service->data_out_notify_handle = values[2];
+    service->data_out_notify_cccd_handle = cccds[2];
+    service->data_out_indicate_handle = values[3];
+    service->data_out_indicate_cccd_handle = cccds[3];
+    service->control_point_handle = values[4];
+    service->control_point_cccd_handle = cccds[4];
+    return 1;
+}
+
+typedef struct {
     uint16_t service_handle, control_point_handle, control_point_cccd_handle;
 } ble_gatt_transport_discovery_service;
 

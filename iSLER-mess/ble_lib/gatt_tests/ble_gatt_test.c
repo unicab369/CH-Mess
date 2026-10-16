@@ -233,16 +233,16 @@ static void test_gap_adv_data_helpers(void) {
     uint8_t data[31];
     gap_ad_builder builder;
     assert(gap_ad_builder_init(&builder, data, sizeof(data)));
-    assert(gap_ad_add_flags(&builder, 0x06));
-    assert(!gap_ad_add_flags(&builder, 0x80));
+    assert(gap_ad_flags(&builder, 0x06));
+    assert(!gap_ad_flags(&builder, 0x80));
     const uint8_t name[] = "Sensor";
-    assert(gap_ad_add_local_name(&builder, name, sizeof(name) - 1, 1));
+    assert(gap_ad_local_name(&builder, name, sizeof(name) - 1, 1));
     const uint16_t services[] = {0x1800, 0x1801};
-    assert(gap_ad_add_uuid16_list(&builder, services, 2, 1));
-    assert(gap_ad_add_tx_power(&builder, -8));
+    assert(gap_ad_uuid16_list(&builder, services, 2, 1));
+    assert(gap_ad_tx_power(&builder, -8));
     const uint8_t service_payload[] = {0xaa, 0xbb, 0xcc};
     const uint8_t service_uuid[] = {0x0f, 0x18};
-    assert(gap_ad_add_service_data(&builder, service_uuid,
+    assert(gap_ad_service_data(&builder, service_uuid,
         sizeof(service_uuid), service_payload, sizeof(service_payload)));
     assert(builder.len <= sizeof(data));
 
@@ -274,8 +274,8 @@ static void test_gap_adv_data_helpers(void) {
 
     uint8_t small[3];
     assert(gap_ad_builder_init(&builder, small, sizeof(small)));
-    assert(gap_ad_add_flags(&builder, 0x06));
-    assert(!gap_ad_add_tx_power(&builder, 0));
+    assert(gap_ad_flags(&builder, 0x06));
+    assert(!gap_ad_tx_power(&builder, 0));
     assert(builder.len == sizeof(small));
     const uint8_t malformed[] = {3, GAP_AD_FLAGS, 0x06};
     offset = 0;
