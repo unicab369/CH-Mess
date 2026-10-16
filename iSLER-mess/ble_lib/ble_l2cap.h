@@ -179,20 +179,6 @@ typedef struct {
     uint32_t pending_deadline_ms;
 } ble_l2cap_connection;
 
-// Route a complete SDU by its destination CID. Unknown CIDs return 0 and are
-// left for the connection layer to reject or ignore according to channel type.
-static inline int ble_l2cap_dispatch(
-    const ble_l2cap_channel_handler *handlers,
-    size_t handler_count, uint16_t cid, const uint8_t *sdu, uint16_t len
-) {
-    if (!handlers || !sdu || !len) return 0;
-    for (size_t i = 0; i < handler_count; i++) {
-        if (handlers[i].cid == cid && handlers[i].receive)
-            return handlers[i].receive(handlers[i].context, cid, sdu, len);
-    }
-    return 0;
-}
-
 typedef struct {
     uint16_t expected, used;
     uint32_t discard_remaining;
@@ -1361,7 +1347,12 @@ static inline int ble_l2cap_connection_receive(
         return ble_l2cap_signaling_receive(conn, sdu, len);
     int slot = ble_l2cap_channel_find_local(conn, cid);
     if (slot >= 0) return ble_l2cap_ecfc_receive(conn, cid, sdu, len);
-    return ble_l2cap_dispatch(conn->fixed, 2, cid, sdu, len);
+    for (size_t i = 0; i < 2; i++) {
+        if (conn->fixed[i].cid == cid && conn->fixed[i].receive)
+            return conn->fixed[i].receive(conn->fixed[i].context,
+                                          cid, sdu, len);
+    }
+    return 0;
 }
 
 static inline int ble_l2cap_encode(

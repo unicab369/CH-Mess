@@ -84,15 +84,6 @@ int main(void) {
     assert(ble_l2cap_reassembler_feed(&rx, 2, packet, 7,
         &cid, &sdu, &sdu_len) == 1);
     assert(cid == BLE_L2CAP_CID_SMP && sdu_len == sizeof(pdu));
-    const ble_l2cap_channel_handler routes[] = {
-        {BLE_L2CAP_CID_ATT, route_att, NULL}
-    };
-    assert(ble_l2cap_dispatch(routes, 1, BLE_L2CAP_CID_ATT, pdu,
-                              sizeof(pdu)) == 1);
-    assert(ble_l2cap_dispatch(routes, 1, BLE_L2CAP_CID_SMP, pdu,
-                              sizeof(pdu)) == 0);
-    assert(routed == 1);
-
     // A new start abandons a truncated prior SDU; malformed fragments fail.
     assert(ble_l2cap_reassembler_feed(&rx, 2, packet, 5,
         &cid, &sdu, &sdu_len) == 0);
@@ -114,6 +105,13 @@ int main(void) {
     ops.context = &fake;
     ble_l2cap_connection conn;
     assert(ble_l2cap_connection_init(&conn, &ops, 120, 80, 4));
+    assert(ble_l2cap_connection_register_fixed(
+        &conn, BLE_L2CAP_CID_ATT, route_att, NULL));
+    assert(ble_l2cap_connection_receive(&conn, BLE_L2CAP_CID_ATT,
+        pdu, sizeof(pdu)) == 1);
+    assert(ble_l2cap_connection_receive(&conn, BLE_L2CAP_CID_SMP,
+        pdu, sizeof(pdu)) == 0);
+    assert(routed == 1);
     assert(ble_l2cap_psm_register(&conn, 0x0027));
     assert(ble_l2cap_psm_register(&conn, 0x0028));
     assert(!ble_l2cap_psm_register(&conn, 0x0100));
