@@ -583,6 +583,13 @@ static inline void gap_write_u16_le(uint8_t *dst, uint16_t value) {
     dst[1] = (uint8_t)(value >> 8);
 }
 
+static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
+    dst[0] = (uint8_t)value;
+    dst[1] = (uint8_t)(value >> 8);
+    dst[2] = (uint8_t)(value >> 16);
+    dst[3] = (uint8_t)(value >> 24);
+}
+
 
 static struct {
     uint8_t active;

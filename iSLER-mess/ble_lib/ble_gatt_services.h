@@ -1341,6 +1341,72 @@ static inline int gatt_authorization_control_service_add(
 }
 
 typedef struct {
+    uint16_t service_handle, features_handle;
+    uint16_t instantaneous_data_handle, instantaneous_data_cccd_handle;
+    uint16_t summary_data_handle, summary_data_cccd_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t current_session_handle, current_session_cccd_handle;
+    uint16_t session_descriptor_handle, session_descriptor_cccd_handle;
+} ble_gatt_physical_activity_monitor_service;
+
+// Application facing
+// Add the mandatory PAMS characteristics. Optional data characteristics are
+// omitted; the application supplies session values and implements all session
+// control and measurement procedures.
+static inline int gatt_physical_activity_monitor_service_add(
+    ble_gatt_server *server,
+    ble_gatt_physical_activity_monitor_service *service,
+    uint64_t features, const uint8_t current_session[17],
+    uint16_t instantaneous_capacity, uint16_t summary_capacity,
+    uint16_t control_point_capacity, uint16_t session_descriptor_capacity
+) {
+    if (!server || !service || !features || (features >> 55) ||
+        !current_session || !instantaneous_capacity || !summary_capacity ||
+        !control_point_capacity || !session_descriptor_capacity ||
+        instantaneous_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        summary_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        session_descriptor_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t feature_value[8];
+    for (uint8_t i = 0; i < sizeof(feature_value); i++)
+        feature_value[i] = (uint8_t)(features >> (8 * i));
+    uint8_t initial = 0;
+    ble_gatt_sig_characteristic characteristics[6] = {
+        {0x2b3b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            feature_value, sizeof(feature_value)},
+        {0x2b3c, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_READ,
+            &initial, 0, instantaneous_capacity, 1},
+        {0x2b3d, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+            &initial, 0, summary_capacity, 1},
+        {0x2b43, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &initial, 0, control_point_capacity, 1},
+        {0x2b44, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ, current_session, 17, 17},
+        {0x2b45, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+            &initial, 0, session_descriptor_capacity, 1}
+    };
+    uint16_t values[6], cccds[6];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x183e, characteristics, 6,
+            &service->service_handle, values, cccds))
+        return 0;
+    service->features_handle = values[0];
+    service->instantaneous_data_handle = values[1];
+    service->instantaneous_data_cccd_handle = cccds[1];
+    service->summary_data_handle = values[2];
+    service->summary_data_cccd_handle = cccds[2];
+    service->control_point_handle = values[3];
+    service->control_point_cccd_handle = cccds[3];
+    service->current_session_handle = values[4];
+    service->current_session_cccd_handle = cccds[4];
+    service->session_descriptor_handle = values[5];
+    service->session_descriptor_cccd_handle = cccds[5];
+    return 1;
+}
+
+typedef struct {
     uint16_t service_handle, control_point_handle, control_point_cccd_handle;
 } ble_gatt_transport_discovery_service;
 

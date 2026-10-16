@@ -1447,10 +1447,7 @@ static int gap_periodic_connect_exchange(
     request[1] = 34;
     memcpy(request + 2, local_address, 6);
     memcpy(request + 8, peer_address, 6);
-    request[14] = (uint8_t)access_address;
-    request[15] = (uint8_t)(access_address >> 8);
-    request[16] = (uint8_t)(access_address >> 16);
-    request[17] = (uint8_t)(access_address >> 24);
+    ble_write_u32_le(request + 14, access_address);
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(request + 18, crc_init, sizeof(crc_init));
     request[21] = 1;
@@ -1846,10 +1843,7 @@ static int gap_hw_transmit_extended_advertising(
         uint8_t *timing = frame + header_offset;
         timing[0] = 9; // AD length: type plus eight timing bytes.
         timing[1] = 0x32; // Periodic Advertising Response Timing Information.
-        timing[2] = (uint8_t)set->periodic.response_access;
-        timing[3] = (uint8_t)(set->periodic.response_access >> 8);
-        timing[4] = (uint8_t)(set->periodic.response_access >> 16);
-        timing[5] = (uint8_t)(set->periodic.response_access >> 24);
+        ble_write_u32_le(timing + 2, set->periodic.response_access);
         timing[6] = set->pawr.subevents;
         timing[7] = set->pawr.subevent_int;
         timing[8] = set->pawr.resp_delay;
@@ -1895,10 +1889,7 @@ static int gap_hw_transmit_extended_advertising(
         memcpy(sync_info + 4, set->periodic.channel_map, 5);
         sync_info[8] = (uint8_t)((sync_info[8] & 0x1f) |
                                  ((set->periodic.sca & 7) << 5));
-        sync_info[9] = (uint8_t)set->periodic.access_address;
-        sync_info[10] = (uint8_t)(set->periodic.access_address >> 8);
-        sync_info[11] = (uint8_t)(set->periodic.access_address >> 16);
-        sync_info[12] = (uint8_t)(set->periodic.access_address >> 24);
+        ble_write_u32_le(sync_info + 9, set->periodic.access_address);
         sync_info[13] = (uint8_t)set->periodic.crc_init;
         sync_info[14] = (uint8_t)(set->periodic.crc_init >> 8);
         sync_info[15] = (uint8_t)(set->periodic.crc_init >> 16);
@@ -2449,10 +2440,7 @@ static int gap_past_encode(
     frame[7] = (uint8_t)sync->interval;
     frame[8] = (uint8_t)(sync->interval >> 8);
     memcpy(frame + 9, sync->channel_map, 5);
-    frame[14] = (uint8_t)sync->access_address;
-    frame[15] = (uint8_t)(sync->access_address >> 8);
-    frame[16] = (uint8_t)(sync->access_address >> 16);
-    frame[17] = (uint8_t)(sync->access_address >> 24);
+    ble_write_u32_le(frame + 14, sync->access_address);
     frame[18] = (uint8_t)sync->crc_init;
     frame[19] = (uint8_t)(sync->crc_init >> 8);
     frame[20] = (uint8_t)(sync->crc_init >> 16);

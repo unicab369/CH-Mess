@@ -114,8 +114,7 @@ int gap_ad_uuid32_list(
     for (size_t i = 0; i < count; i++) {
         uint32_t uuid;
         memcpy(&uuid, value + i * 4, sizeof(uuid));
-        for (uint8_t b = 0; b < 4; b++)
-            value[i * 4 + b] = (uint8_t)(uuid >> (8 * b));
+        ble_write_u32_le(value + i * 4, uuid);
     }
     return 1;
 }
@@ -615,10 +614,7 @@ static int gap_conn_procedure_start(
     gap_central.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central.request[1] = 34;
 
-    gap_central.request[14] = (uint8_t)access_address;
-    gap_central.request[15] = (uint8_t)(access_address >> 8);
-    gap_central.request[16] = (uint8_t)(access_address >> 16);
-    gap_central.request[17] = (uint8_t)(access_address >> 24);
+    ble_write_u32_le(gap_central.request + 14, access_address);
 
     uint8_t crc_init[3];
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));

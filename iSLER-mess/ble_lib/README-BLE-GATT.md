@@ -87,6 +87,9 @@ observations and handles start/stop commands.
 `gatt_authorization_control_service_add()` registers the mandatory ACS
 characteristics. The application must provide the ACS security protocol,
 payload segmentation, and protected-resource behavior.
+`gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
+characteristics, without optional activity streams. The application supplies
+session state and handles measurement and session-control procedures.
 
 Additional service database builders are available:
 
