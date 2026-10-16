@@ -1377,7 +1377,7 @@ static int gap_periodic_connect_request(
     ) return 0;
 
     uint8_t local_address[6], local_type;
-    gap_local_address_select(peer_slot, local_address, &local_type);
+    gap_local_addr_select(peer_slot, local_address, &local_type);
     if (responder_type != local_type || memcmp(request + 8, local_address, 6) != 0)
         return 0;
 
@@ -1436,7 +1436,7 @@ static int gap_periodic_connect_exchange(
     int peer_slot = gap_identity_find(peer_address, peer_type);
     uint8_t local_address[6], local_type, crc_init[3];
     uint32_t access_address;
-    gap_local_address_select(peer_slot, local_address, &local_type);
+    gap_local_addr_select(peer_slot, local_address, &local_type);
     if (!gap_access_addr(&access_address)) {
         set->pawr_connect.pending = 0;
         return 0;
@@ -1686,7 +1686,7 @@ static int gap_hw_transmit_extended_advertising(
     gap_ext_adv_set *set
 ) {
     uint8_t address[6], address_type;
-    gap_local_address_select(-1, address, &address_type);
+    gap_local_addr_select(-1, address, &address_type);
     uint16_t adi = (uint16_t)((set->sid & 0x0f) << 12) | set->did;
     uint8_t *primary = gap_ext_primary_frame;
     uint8_t *frame = gap_ext_adv_frame;

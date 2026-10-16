@@ -958,7 +958,7 @@ int gap_identity_local_key(
 
 // Select the peer's cached local RPA, our identity for its zero local IRK,
 // or the global address when that peer has no local key override.
-static void gap_local_address_select(
+static void gap_local_addr_select(
     int slot, uint8_t address[6], uint8_t *type
 ) {
     if (gap_privacy.enabled &&
@@ -987,8 +987,6 @@ static void gap_local_address_select(
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active || timeout_s > 41400 || (irk && !timeout_s)

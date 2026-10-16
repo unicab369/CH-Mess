@@ -530,7 +530,7 @@ static void gap_privacy_poll(uint32_t now) {
     }
 
     if (gap_adv.enabled) {
-        gap_local_address_select(gap_adv.peer_slot, gap_adv.address,
+        gap_local_addr_select(gap_adv.peer_slot, gap_adv.address,
                                  &gap_adv.address_type);
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&

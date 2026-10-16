@@ -382,7 +382,7 @@ static inline void gap_adv_enable(
     gap_adv.peer_slot = slot;
     gap_adv.interval_ms = interval_ms;
     gap_adv.next_event_ms = GET_MILLIS();
-    gap_local_address_select(slot, gap_adv.address, &gap_adv.address_type);
+    gap_local_addr_select(slot, gap_adv.address, &gap_adv.address_type);
     gap_adv.enabled = 1;
 }
 
@@ -612,7 +612,7 @@ static int gap_conn_procedure_start(
         peer_slot = gap_identity_find(peer_address, peer_type);
         memcpy(gap_central.request + 8, peer_address, 6);
     }
-    gap_local_address_select(peer_slot, gap_central.request + 2, &local_type);
+    gap_local_addr_select(peer_slot, gap_central.request + 2, &local_type);
     gap_central.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central.request[1] = 34;
 

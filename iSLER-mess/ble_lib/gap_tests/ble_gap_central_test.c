@@ -298,7 +298,7 @@ void GAP_HW_LINK_RX(void) {
             0x21, 0x22, 0x23, 0x24, 0x25, 0x26
         };
         uint8_t advertiser_address[6], address_type;
-        gap_local_address_select(-1, advertiser_address, &address_type);
+        gap_local_addr_select(-1, advertiser_address, &address_type);
         memset(rx_frame, 0, sizeof(rx_frame));
         rx_frame[0] = (uint8_t)(0x03 | (address_type << 7));
         rx_frame[1] = 12;

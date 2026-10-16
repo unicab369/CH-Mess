@@ -756,7 +756,7 @@ void gap_hw_received(void) {
         gap_adv_scan.ready = 1;
 
         uint8_t local_type;
-        gap_local_address_select(peer_slot, gap_scan.request + 2, &local_type);
+        gap_local_addr_select(peer_slot, gap_scan.request + 2, &local_type);
         gap_scan.request[0] = (uint8_t)(0x03 | (local_type << 6) | (advertiser_type << 7));
         gap_scan.request[1] = 12;
         memcpy(gap_scan.request + 8, frame + 2, 6);
