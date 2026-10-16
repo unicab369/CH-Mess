@@ -77,11 +77,10 @@ count that generic path as implementation of a standard service.
 - [x] Volume Offset Control (`0x1845`), secondary service builder
 - [x] Coordinated Set Identification (`0x1846`)
 - [x] Device Time (`0x1847`), base layout and Propose/Force Time Update DTCP
-- [x] Media Control (`0x1848`), mandatory metadata plus optional playback speed,
-  seeking speed, and playing-order characteristics
-- [x] Generic Media Control (`0x1849`), shared layout with mandatory name
-  notifications and optional playback speed, seeking speed, and playing-order
-  characteristics
+- [x] Media Control (`0x1848`), mandatory metadata, optional playback/order
+  values, and captured Control Point requests with response notifications
+- [x] Generic Media Control (`0x1849`), shared metadata, playback/order values,
+  and captured Control Point requests with response notifications
 - [x] Constant Tone Extension (`0x184A`)
 - [x] Telephone Bearer (`0x184B`), mandatory encrypted call-state layout
 - [x] Generic Telephone Bearer (`0x184C`), shared mandatory call-state layout

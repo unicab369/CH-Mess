@@ -180,11 +180,14 @@ and history protocols.
 `gatt_media_control_service_add()` registers mandatory MCS or GMCS metadata
 from initial values. Set `generic_service` for GMCS, which also requires Media
 Player Name notifications. Use `gatt_media_control_service_add_full()` to add
-Playback Speed, Seeking Speed, Playing Order, and Playing Orders Supported.
-Their initial values and optional notification properties are configured in
-`ble_gatt_media_control_optional_config`; queue value changes with
-`gatt_media_control_service_notify_optional()`. Media Control Point behavior,
-object ID characteristics (which require an included OTS), and search remain
+Playback Speed, Seeking Speed, Playing Order, Playing Orders Supported, and
+the paired Media Control Point/Supported Opcodes characteristics. The builder
+validates the supported opcode and playing-order bitfields. Control Point
+writes are captured in `control_point_opcode` and
+`control_point_parameter`; the application performs the action and completes
+it with `gatt_media_control_service_control_point_complete()`. Optional
+notification changes use `gatt_media_control_service_notify_optional()`.
+Object ID characteristics (which require an included OTS) and search remain
 application-owned.
 `gatt_telephone_bearer_service_add()` registers mandatory TBS or GTBS call
 state characteristics with encrypted permissions. Its config selects GTBS

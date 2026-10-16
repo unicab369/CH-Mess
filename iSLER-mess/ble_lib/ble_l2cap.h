@@ -585,8 +585,7 @@ static inline int l2cap_connection_update_request(
     if (!conn || conn->pending_id ||
         !ble_connection_timing_ranges_valid(
             interval_min, interval_max, latency, timeout) ||
-        (uint32_t)timeout * 8u <=
-            2u * (uint32_t)(latency + 1u) * interval_max
+        (uint32_t)timeout * 8u <= 2u * (uint32_t)(latency + 1u) * interval_max
     ) return 0;
 
     uint8_t payload[8];
@@ -647,8 +646,10 @@ static inline int l2cap_connection_tick(
     }
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
         l2cap_channel *ch = &conn->channels[i];
+
         if (ch->state == L2CAP_CHANNEL_CLOSING && ch->deadline_ms &&
-            (int32_t)(now_ms - ch->deadline_ms) >= 0) {
+            (int32_t)(now_ms - ch->deadline_ms) >= 0
+        ) {
             l2cap_channel_clear(conn, i, 0x0008);
             expired++;
         }
@@ -661,16 +662,19 @@ static inline int l2cap_ecfc_send_pending_credit(
 ) {
     uint8_t payload[4];
     if (!conn || !ch || !ch->rx_credit_pending ||
-        ch->rx_credit_pending > 65535u - ch->rx_credits)
-        return 0;
+        ch->rx_credit_pending > 65535u - ch->rx_credits
+    ) return 0;
+
     // The peer addresses its channel by the source CID it supplied at setup.
     ble_write_u16_le(payload, ch->remote_cid);
     ble_write_u16_le(payload + 2, ch->rx_credit_pending);
+
     uint8_t id = l2cap_identifier_alloc(conn);
     if (!id) return 0;
     if (!l2cap_send_signal(conn, L2CAP_FLOW_CONTROL_CREDIT,
-                               id, payload, sizeof(payload)))
-        return 0;
+                               id, payload, sizeof(payload))
+    ) return 0;
+
     ch->rx_credits = (uint16_t)(ch->rx_credits + ch->rx_credit_pending);
     ch->rx_credit_pending = 0;
     return 1;
@@ -678,28 +682,36 @@ static inline int l2cap_ecfc_send_pending_credit(
 
 static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
     if (!conn) return 0;
+
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
         l2cap_channel *ch = &conn->channels[i];
+
         if (ch->state == L2CAP_CHANNEL_OPEN && ch->rx_credit_pending &&
-            l2cap_ecfc_send_pending_credit(conn, ch))
-            return 1;
+            l2cap_ecfc_send_pending_credit(conn, ch)
+        ) return 1;
+
         if (ch->state != L2CAP_CHANNEL_OPEN || !ch->tx_len ||
-            !ch->tx_credits) continue;
+            !ch->tx_credits
+        ) continue;
+
         uint8_t frame[L2CAP_CHANNEL_MPS_MAX];
         uint16_t peer_mps = ch->remote_mps < L2CAP_CHANNEL_MPS_MAX ?
-            ch->remote_mps : L2CAP_CHANNEL_MPS_MAX;
+                            ch->remote_mps : L2CAP_CHANNEL_MPS_MAX;
         uint16_t used;
+
         if (!ch->tx_offset) {
             ble_write_u16_le(frame, ch->tx_len);
             uint16_t take = ch->tx_len;
             if (take > peer_mps - 2) take = peer_mps - 2;
             memcpy(frame + 2, ch->tx_data, take);
             used = take + 2;
-        } else {
+        }
+        else {
             used = (uint16_t)(ch->tx_len - ch->tx_offset);
             if (used > peer_mps) used = peer_mps;
             memcpy(frame, ch->tx_data + ch->tx_offset, used);
         }
+
         if (!conn->ops.send_pdu(conn->ops.context, ch->remote_cid,
                                 frame, used))
             return 0;
