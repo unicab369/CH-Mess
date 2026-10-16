@@ -1160,7 +1160,7 @@ static int gap_conn_accept(
     conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->initiator.address, frame + 2, 6);
     memcpy(conn->responder.address, frame + 8, 6);
-    memcpy(&conn->peer, &conn->initiator, sizeof(conn->peer));
+    conn->peer = conn->initiator;
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
