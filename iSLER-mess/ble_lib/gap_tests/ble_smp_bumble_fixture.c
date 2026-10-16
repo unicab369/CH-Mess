@@ -1,11 +1,38 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+static void gap_wipe(volatile void *data, size_t len) {
+    volatile uint8_t *bytes = data;
+    while (len--) *bytes++ = 0;
+}
+
+static void gap_bytes_reverse(
+    uint8_t *out, const uint8_t *in, size_t len
+) {
+    for (size_t i = 0; i < len; i++) out[i] = in[len - 1 - i];
+}
+
+void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
+                       uint8_t *output) {
+    for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
+}
+
 #define BLE_GAP_SMP_CORE_TEST
 #include "../ble_gap_smp.h"
 
 static uint8_t outbound[BLE_L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
+
+static int poll_smp(ble_smp *smp) {
+    if (!smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu ||
+        !smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
+            BLE_L2CAP_CID_SMP, smp->tx, smp->tx_len))
+        return 0;
+    gap_wipe(smp->tx, sizeof(smp->tx));
+    smp->tx_len = 0;
+    return 1;
+}
 
 static int send_pdu(
     void *context, uint16_t cid, const uint8_t *pdu,
@@ -51,7 +78,7 @@ int main(void) {
     smp.tx_len = sizeof(request);
     smp.procedure_active = 1;
     smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
-    if (!smp_poll(&smp) || !outbound_len ||
+    if (!poll_smp(&smp) || !outbound_len ||
         !write_record(outbound, outbound_len))
         return 2;
 

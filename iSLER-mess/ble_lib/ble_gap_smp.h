@@ -96,25 +96,58 @@ int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 
 // LE SMP command lengths include the one-octet command code. Reserved command
 // codes are rejected here so the protocol owner can choose to ignore them.
+enum {
+    SMP_PDU_LEN_2_OPCODES = (1u << SMP_PAIRING_FAILED) |
+                            (1u << SMP_SECURITY_REQUEST) |
+                            (1u << SMP_KEYPRESS_NOTIFICATION),
+    SMP_PDU_LEN_7_OPCODES = (1u << SMP_PAIRING_REQUEST) |
+                            (1u << SMP_PAIRING_RESPONSE),
+    SMP_PDU_LEN_8_OPCODES = 1u << SMP_IDENTITY_ADDRESS_INFORMATION,
+    SMP_PDU_LEN_11_OPCODES = 1u << SMP_CENTRAL_IDENTIFICATION,
+    SMP_PDU_LEN_17_OPCODES = (1u << SMP_PAIRING_CONFIRM) |
+                             (1u << SMP_PAIRING_RANDOM) |
+                             (1u << SMP_ENCRYPTION_INFORMATION) |
+                             (1u << SMP_IDENTITY_INFORMATION) |
+                             (1u << SMP_SIGNING_INFORMATION) |
+                             (1u << SMP_PAIRING_DHKEY_CHECK),
+    SMP_PDU_LEN_65_OPCODES = 1u << SMP_PAIRING_PUBLIC_KEY
+};
+
 static inline int smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
-    if (!pdu || !len || len > SMP_PDU_MAX) return 0;
-    switch (pdu[0]) {
-    case SMP_PAIRING_REQUEST:
-    case SMP_PAIRING_RESPONSE: return len == 7;
-    case SMP_PAIRING_CONFIRM:
-    case SMP_PAIRING_RANDOM:
-    case SMP_ENCRYPTION_INFORMATION:
-    case SMP_IDENTITY_INFORMATION:
-    case SMP_SIGNING_INFORMATION:
-    case SMP_PAIRING_DHKEY_CHECK: return len == 17;
-    case SMP_PAIRING_FAILED:
-    case SMP_SECURITY_REQUEST: return len == 2;
-    case SMP_KEYPRESS_NOTIFICATION:
-        return len == 2 && pdu[1] <= SMP_KEYPRESS_COMPLETED;
-    case SMP_CENTRAL_IDENTIFICATION: return len == 11;
-    case SMP_IDENTITY_ADDRESS_INFORMATION: return len == 8;
-    case SMP_PAIRING_PUBLIC_KEY: return len == 65;
-    default: return 0;
+    // Original opcode switch equivalent:
+    // case SMP_PAIRING_REQUEST:
+    // case SMP_PAIRING_RESPONSE: return len == 7;
+    // case SMP_PAIRING_CONFIRM:
+    // case SMP_PAIRING_RANDOM:
+    // case SMP_ENCRYPTION_INFORMATION:
+    // case SMP_IDENTITY_INFORMATION:
+    // case SMP_SIGNING_INFORMATION:
+    // case SMP_PAIRING_DHKEY_CHECK: return len == 17;
+    // case SMP_PAIRING_FAILED:
+    // case SMP_SECURITY_REQUEST: return len == 2;
+    // case SMP_KEYPRESS_NOTIFICATION:
+    //     return len == 2 && pdu[1] <= SMP_KEYPRESS_COMPLETED;
+    // case SMP_CENTRAL_IDENTIFICATION: return len == 11;
+    // case SMP_IDENTITY_ADDRESS_INFORMATION: return len == 8;
+    // case SMP_PAIRING_PUBLIC_KEY: return len == 65;
+    // default: return 0;
+
+    if (!pdu || !len || len > SMP_PDU_MAX ||
+        pdu[0] > SMP_KEYPRESS_NOTIFICATION
+    ) return 0;
+
+    uint16_t opcode_bit = (uint16_t)1 << pdu[0];
+    switch (len) {
+        case 2:
+            return (SMP_PDU_LEN_2_OPCODES & opcode_bit) &&
+                (pdu[0] != SMP_KEYPRESS_NOTIFICATION ||
+                    pdu[1] <= SMP_KEYPRESS_COMPLETED);
+        case 7: return SMP_PDU_LEN_7_OPCODES & opcode_bit;
+        case 8: return SMP_PDU_LEN_8_OPCODES & opcode_bit;
+        case 11: return SMP_PDU_LEN_11_OPCODES & opcode_bit;
+        case 17: return SMP_PDU_LEN_17_OPCODES & opcode_bit;
+        case 65: return SMP_PDU_LEN_65_OPCODES & opcode_bit;
+        default: return 0;
     }
 }
 

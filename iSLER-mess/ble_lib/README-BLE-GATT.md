@@ -266,14 +266,23 @@ Additional service builders include:
   `gatt_body_composition_service_indicate_value()` when the application
   already has an encoded payload.
 - `gatt_user_data_service_add()` for Database Change Increment, User Index,
-  and User Control Point.
+  and User Control Point. The Database Change Increment accepts validated
+  four-octet writes. User Control Point writes are saved as a pending request
+  in `request_opcode`, `request_parameter`, and `request_parameter_len`; the
+  application handles registration, consent, and deletion, then completes the
+  request with `gatt_user_data_service_complete()`. Successful registration
+  updates the readable User Index. Update the values with
+  `gatt_user_data_service_set_database_change_increment()` and
+  `gatt_user_data_service_set_user_index()`; the notification helper also
+  queues a Database Change Increment notification.
 - `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
   Feature. `gatt_weight_scale_service_indicate_measurement()` encodes the
   measurement and checks optional fields against supported features.
 
-These are database builders. The application supplies record storage,
-control-point behavior, and correctly formatted measurement payloads; the
-builders do not implement those profile procedures.
+These are database builders. The application supplies record storage and
+service-specific policy, and completes control-point requests where described
+above. Measurement payloads remain application data and are validated by the
+service helpers where a typed encoder is available.
 
 Additional builders cover Bond Management, Indoor Positioning, Pulse Oximeter,
 HTTP Proxy, Automation IO, Binary Sensor, Mesh Provisioning, and Mesh Proxy.
