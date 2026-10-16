@@ -257,8 +257,9 @@ Additional service builders include:
   route number is kept in the service state.
 - `gatt_environmental_sensing_service_add()` for caller-selected permitted
   environmental measurement characteristics. Use
-  `gatt_environmental_sensing_service_send()` to queue a notification or
-  indication for one of the registered measurements.
+  `gatt_environmental_sensing_service_set_value()` to update a stored
+  measurement and `gatt_environmental_sensing_service_send()` to queue a
+  notification or indication.
 - `gatt_body_composition_service_add()` for Body Composition Measurement and
   Feature. `gatt_body_composition_service_indicate_measurement()` encodes the
   standard fields and checks them against the Feature value; use

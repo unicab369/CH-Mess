@@ -831,17 +831,21 @@ int gap_scan_take_ad(
     const uint8_t *types, size_t type_count,
     uint8_t *ad, size_t *len, int8_t *rssi
 ) {
+    if (!types || !ad || !len) return 0;
+
     if (gap_adv_scan.ready) {
         gap_receive_report(gap_adv_scan.frame, gap_adv_scan.frame[1], gap_adv_scan.rssi);
         gap_adv_scan.ready = 0;
     }
 
-    if (!types || !ad || !len || !gap_rx.ready) return 0;
+    if (!gap_rx.ready) return 0;
 
     const uint8_t *frame = gap_rx.frame;
     uint8_t payload_len = frame[1];
     int8_t packet_rssi = gap_rx.rssi;
-    if (!gap_scan.active_pending) gap_rx_armed = 0;
+    if (!gap_scan.active_pending)
+        gap_rx_armed = 0;
+
     gap_rx.ready = 0;
     GAP_HW_PACKET_CLEAR();
     gap_receive_report(frame, payload_len, packet_rssi);
@@ -849,10 +853,11 @@ int gap_scan_take_ad(
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
     if ((frame[0] & 0x0f) != ADV_NONCONN_IND ||
         payload_len < 8 || payload_len > 37
-    )
-        return 0;
+    ) return 0;
+
     size_t end = (size_t)payload_len + 2;
 
+    // Walk the AD structures and look for one of the requested types.
     for (size_t offset = 8; offset < end;) {
         uint8_t ad_len = frame[offset];
         if (!ad_len || offset + ad_len + 1 > end) break;
