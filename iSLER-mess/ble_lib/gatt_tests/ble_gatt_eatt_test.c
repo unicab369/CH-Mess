@@ -173,7 +173,7 @@ int main(void) {
                                        &lower));
     gatt_transport_set_eatt_client_callbacks(&transport, NULL,
         eatt_client_result_with_cid, NULL, NULL, &lower);
-    assert(ble_l2cap_psm_is_registered(&transport.l2cap,
+    assert(l2cap_psm_is_registered(&transport.l2cap,
                                       BLE_GATT_EATT_PSM));
     transport.connected = 1;
     assert(transport.l2cap.ops.authorize_psm(
@@ -184,11 +184,11 @@ int main(void) {
         transport.l2cap.ops.context, BLE_GATT_EATT_PSM) == 0);
     assert(gatt_transport_eatt_open(&transport));
     uint16_t local_cid = transport.l2cap.pending_local_cid[0];
-    int channel_slot = ble_l2cap_channel_find_local(&transport.l2cap,
+    int channel_slot = l2cap_channel_find_local(&transport.l2cap,
                                                     local_cid);
     assert(channel_slot >= 0);
-    ble_l2cap_channel *channel = &transport.l2cap.channels[channel_slot];
-    channel->state = BLE_L2CAP_CHANNEL_OPEN;
+    l2cap_channel *channel = &transport.l2cap.channels[channel_slot];
+    channel->state = L2CAP_CHANNEL_OPEN;
     channel->remote_cid = 0x0041;
     channel->remote_mtu = 80;
     transport.l2cap.pending_id = 0;
@@ -216,7 +216,7 @@ int main(void) {
     channel->tx_len = channel->tx_offset = 0;
 
     // A second EATT channel gets an independent ATT MTU and prepare queue.
-    ble_l2cap_channel *second = &transport.l2cap.channels[1];
+    l2cap_channel *second = &transport.l2cap.channels[1];
     memset(second, 0, sizeof(*second));
     second->psm = BLE_GATT_EATT_PSM;
     second->local_cid = 0x0042;
@@ -224,7 +224,7 @@ int main(void) {
     second->local_mtu = 100;
     second->remote_mtu = 70;
     second->local_mps = second->remote_mps = 100;
-    second->state = BLE_L2CAP_CHANNEL_OPEN;
+    second->state = L2CAP_CHANNEL_OPEN;
     transport.l2cap.ops.channel_opened(transport.l2cap.ops.context,
         BLE_GATT_EATT_PSM, second->local_cid, second->remote_cid,
         second->local_mtu);
@@ -299,7 +299,7 @@ int main(void) {
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)bearer_slot;
     assert(gatt_transport_test_poll(&transport, 101) == 0);
-    int second_channel_slot = ble_l2cap_channel_find_local(&transport.l2cap,
+    int second_channel_slot = l2cap_channel_find_local(&transport.l2cap,
                                                            second->local_cid);
     assert(second_channel_slot >= 0 &&
            transport.l2cap.channels[second_channel_slot].tx_len ==
@@ -327,9 +327,9 @@ int main(void) {
     transport.tx_len = transport.tx_offset = 0;
     assert(second_channel_slot >= 0 &&
            transport.l2cap.channels[second_channel_slot].state ==
-               BLE_L2CAP_CHANNEL_CLOSING &&
+               L2CAP_CHANNEL_CLOSING &&
            transport.l2cap.channels[channel_slot].state ==
-               BLE_L2CAP_CHANNEL_OPEN);
+               L2CAP_CHANNEL_OPEN);
     assert(gatt_eatt_find(&transport.eatt, local_cid) >= 0);
     transport.connected = 0;
     assert(gatt_transport_test_poll(&transport, 0) == 0);

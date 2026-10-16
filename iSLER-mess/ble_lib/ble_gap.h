@@ -1232,17 +1232,17 @@ static int gap_conn_accept(
 
 typedef struct {
     gap_conn_handle handle;
-    ble_l2cap_ops upper;
-    ble_l2cap_connection connection;
-    ble_l2cap_reassembler reassembler;
+    l2cap_ops upper;
+    l2cap_connection connection;
+    l2cap_reassembler reassembler;
     uint8_t initialized, connected;
     uint16_t tx_len, tx_offset;
-    uint8_t tx[4 + BLE_L2CAP_SDU_MAX];
+    uint8_t tx[4 + L2CAP_SDU_MAX];
 } ble_gap_l2cap_peer;
 
 typedef struct {
     ble_gap_l2cap_peer peers[GAP_CONNECTION_COUNT];
-    ble_l2cap_ops upper;
+    l2cap_ops upper;
     uint16_t mtu, mps, initial_credits;
 } ble_gap_l2cap;
 
@@ -1251,7 +1251,7 @@ static inline int ble_gap_l2cap_send_pdu(
 ) {
     ble_gap_l2cap_peer *peer = context;
     if (!peer || peer->tx_len || !peer->connected) return 0;
-    int encoded = ble_l2cap_encode(peer->tx, sizeof(peer->tx), cid,
+    int encoded = l2cap_encode(peer->tx, sizeof(peer->tx), cid,
                                    payload, len);
     if (!encoded) return 0;
     peer->tx_len = (uint16_t)encoded;
@@ -1302,11 +1302,11 @@ static inline int ble_gap_l2cap_connection_update(
 
 // Application facing
 static inline int ble_gap_l2cap_init(
-    ble_gap_l2cap *manager, const ble_l2cap_ops *upper,
+    ble_gap_l2cap *manager, const l2cap_ops *upper,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
 ) {
-    if (!manager || mtu < 23 || mtu > BLE_L2CAP_CHANNEL_MTU_MAX ||
-        mps < 23 || mps > BLE_L2CAP_CHANNEL_MPS_MAX
+    if (!manager || mtu < 23 || mtu > L2CAP_CHANNEL_MTU_MAX ||
+        mps < 23 || mps > L2CAP_CHANNEL_MPS_MAX
     ) return 0;
 
     memset(manager, 0, sizeof(*manager));
@@ -1333,7 +1333,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         if (peer->initialized &&
             peer->handle.generation != handle.generation) {
-            ble_l2cap_connection_reset(&peer->connection, 0x0013);
+            l2cap_connection_reset(&peer->connection, 0x0013);
             peer->initialized = 0;
         }
 
@@ -1342,7 +1342,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->handle = handle;
             peer->upper = manager->upper;
 
-            ble_l2cap_ops ops = {0};
+            l2cap_ops ops = {0};
             ops.send_pdu = ble_gap_l2cap_send_pdu;
             ops.accept_psm = ble_gap_l2cap_accept_psm;
             ops.channel_opened = ble_gap_l2cap_channel_opened;
@@ -1351,7 +1351,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             ops.connection_update = ble_gap_l2cap_connection_update;
             ops.context = peer;
 
-            if (!ble_l2cap_connection_init(&peer->connection, &ops,
+            if (!l2cap_connection_init(&peer->connection, &ops,
                     manager->mtu, manager->mps, manager->initial_credits)) {
                 gap_conn_slot = previous_slot;
                 return -1;
@@ -1361,10 +1361,10 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         uint8_t connected = gap_conn_select(handle) && gap_connected();
         if (connected != peer->connected) {
-            if (!connected) ble_l2cap_connection_reset(&peer->connection, 0);
+            if (!connected) l2cap_connection_reset(&peer->connection, 0);
             peer->connected = connected;
             peer->tx_len = peer->tx_offset = 0;
-            ble_l2cap_reassembler_reset(&peer->reassembler);
+            l2cap_reassembler_reset(&peer->reassembler);
         }
 
         int result = 0;
@@ -1384,7 +1384,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 result = 1;
             }
         } else if (connected &&
-                   ble_l2cap_ecfc_pump(&peer->connection) && peer->tx_len) {
+                   l2cap_ecfc_pump(&peer->connection) && peer->tx_len) {
             result = 1;
         } else if (connected) {
             uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
@@ -1392,22 +1392,22 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             int received = gap_receive_data(&llid, fragment, &len);
             if (received > 0) {
                 if (!len || len > sizeof(fragment)) {
-                    ble_l2cap_reassembler_reset(&peer->reassembler);
+                    l2cap_reassembler_reset(&peer->reassembler);
                 } else {
                     uint16_t cid = 0, sdu_len = 0;
                     const uint8_t *sdu = NULL;
-                    int assembled = ble_l2cap_reassembler_feed(
+                    int assembled = l2cap_reassembler_feed(
                         &peer->reassembler, llid, fragment, len,
                         &cid, &sdu, &sdu_len);
                     if (assembled > 0)
-                        result = ble_l2cap_connection_receive(
+                        result = l2cap_connection_receive(
                             &peer->connection, cid, sdu, sdu_len);
                     else result = assembled;
                 }
             } else result = received;
         }
 
-        ble_l2cap_connection_tick(&peer->connection, GET_MILLIS());
+        l2cap_connection_tick(&peer->connection, GET_MILLIS());
         if (result < 0) {
             gap_conn_slot = previous_slot;
             return result;
@@ -1418,7 +1418,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         ble_gap_l2cap_peer *peer = &manager->peers[slot];
         if (!peer->initialized || seen[slot]) continue;
-        ble_l2cap_connection_reset(&peer->connection, 0x0013);
+        l2cap_connection_reset(&peer->connection, 0x0013);
         memset(peer, 0, sizeof(*peer));
     }
 
@@ -1428,7 +1428,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
 // Application facing
 // Return a live connection's L2CAP instance for channel registration and use.
-static inline ble_l2cap_connection *ble_gap_l2cap_for(
+static inline l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {
     if (!manager || handle.slot >= GAP_CONNECTION_COUNT) return NULL;

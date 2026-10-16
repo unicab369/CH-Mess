@@ -3,9 +3,9 @@
 #include <string.h>
 #include "../ble_l2cap.h"
 
-static ble_l2cap_connection connection;
-static ble_l2cap_reassembler reassembler;
-static uint8_t outbound[BLE_L2CAP_SDU_MAX + 4];
+static l2cap_connection connection;
+static l2cap_reassembler reassembler;
+static uint8_t outbound[L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
 static uint8_t received[32];
 static uint16_t received_len;
@@ -16,7 +16,7 @@ static int send_pdu(
 ) {
     (void)context;
     if (outbound_len) return 0;
-    int encoded = ble_l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
+    int encoded = l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
     if (!encoded) return 0;
     outbound_len = (uint16_t)encoded;
     return 1;
@@ -58,27 +58,27 @@ static int receive_frame(
 ) {
     uint16_t cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
-    int result = ble_l2cap_reassembler_feed(&reassembler, 2, frame, len,
+    int result = l2cap_reassembler_feed(&reassembler, 2, frame, len,
         &cid, &sdu, &sdu_len);
     if (result != 1) return 0;
     *cid_out = cid;
-    return ble_l2cap_connection_receive(&connection, cid, sdu, sdu_len);
+    return l2cap_connection_receive(&connection, cid, sdu, sdu_len);
 }
 
 int main(void) {
-    ble_l2cap_ops ops = {0};
+    l2cap_ops ops = {0};
     ops.send_pdu = send_pdu;
     ops.accept_psm = accept_psm;
     ops.channel_data = receive_data;
-    if (!ble_l2cap_connection_init(&connection, &ops, 100, 40, 2) ||
-        !ble_l2cap_psm_register(&connection, 0x0027))
+    if (!l2cap_connection_init(&connection, &ops, 100, 40, 2) ||
+        !l2cap_psm_register(&connection, 0x0027))
         return 1;
 
-    uint8_t frame[BLE_L2CAP_SDU_MAX + 4];
+    uint8_t frame[L2CAP_SDU_MAX + 4];
     uint16_t frame_len, cid;
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) ||
-        cid != BLE_L2CAP_CID_LE_SIGNALING || !outbound_len ||
+        cid != L2CAP_CID_LE_SIGNALING || !outbound_len ||
         !write_record(outbound, outbound_len))
         return 2;
     outbound_len = 0;

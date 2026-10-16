@@ -571,12 +571,83 @@ typedef struct {
     uint16_t parameters_handle, parameters_cccd_handle;
     uint16_t device_time_handle, device_time_cccd_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t control_point_pending_opcode, control_point_request_len;
+    uint8_t control_point_request[11];
 } ble_gatt_device_time_service;
+
+// Internal
+static inline int gatt_dts_control_point_busy(
+    const ble_gatt_server *server, uint16_t handle
+) {
+    if (server->indication_pending && server->indication_handle == handle)
+        return 1;
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == handle &&
+            server->events[i].indication)
+            return 1;
+    return 0;
+}
+
+// Internal
+static inline uint8_t gatt_dts_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_device_time_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_server *server = service->server;
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        server, service->control_point_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->control_point_pending_opcode ||
+        gatt_dts_control_point_busy(server, service->control_point_handle))
+        return 0xfe;
+
+    uint8_t opcode = value[0];
+    uint8_t response[3] = {0x09, opcode, 0x02};
+    uint16_t response_len = 3;
+    if (opcode == 2 || opcode == 3) {
+        ble_gatt_attribute *feature = gatt_server_find(
+            server, service->feature_handle);
+        if (!feature || feature->value_len != 4)
+            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        uint8_t *feature_value = gatt_attribute_value(server, feature);
+        if (!feature_value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        uint16_t features = ble_get_le16(feature_value + 2);
+        if (len != 11) {
+            response[2] = 0x03;
+        } else {
+            uint16_t flags = ble_get_le16(value + 1);
+            uint8_t epoch_2000 = (uint8_t)((flags >> 6) & 1);
+            uint8_t epoch_feature = (uint8_t)(features &
+                (epoch_2000 ? (1u << 10) : (1u << 9)));
+            if ((flags & 0xff00) || !epoch_feature) {
+                response[2] = 0x03;
+            } else {
+                service->control_point_pending_opcode = opcode;
+                service->control_point_request_len = (uint8_t)len;
+                memcpy(service->control_point_request, value, len);
+                return 0;
+            }
+        }
+    }
+    if (!gatt_server_queue_event(server, service->control_point_handle,
+            response, response_len, 1))
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+    return 0;
+}
 
 // Application facing
 // Add DTS mandatory characteristics. Feature is the four-byte CRC/feature
 // value; device_time is the fixed eight-byte base time and status value.
-// The application supplies Device Time Parameters and handles DTCP procedures.
+// The application supplies Device Time Parameters and applies accepted time
+// updates before completing the DTCP procedure.
 static inline int gatt_device_time_service_add(
     ble_gatt_server *server, ble_gatt_device_time_service *service,
     const uint8_t feature[4], const uint8_t *parameters,
@@ -586,7 +657,7 @@ static inline int gatt_device_time_service_add(
 ) {
     if (!server || !service || !feature || !parameters ||
         !parameters_len || !device_time ||
-        !control_point_capacity || control_point_capacity > 20)
+        control_point_capacity < 11 || control_point_capacity > 20)
         return 0;
     uint16_t feature_bits = ble_get_le16(feature + 2);
     if ((feature_bits != 0x0200 && feature_bits != 0x0400) ||
@@ -607,9 +678,13 @@ static inline int gatt_device_time_service_add(
             BLE_GATT_PERM_WRITE, NULL, 0, control_point_capacity, 1}
     };
     uint16_t values[4], cccds[4];
+    ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
-    if (!gatt_sig_service_add(server, 0x1847, characteristics, 4,
-            &service->service_handle, values, cccds))
+    handlers[3].write = gatt_dts_control_point_write;
+    handlers[3].context = service;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1847,
+            characteristics, 4, &service->service_handle, values, cccds,
+            handlers))
         return 0;
     service->feature_handle = values[0];
     service->feature_cccd_handle = cccds[0];
@@ -619,6 +694,36 @@ static inline int gatt_device_time_service_add(
     service->device_time_cccd_handle = cccds[2];
     service->control_point_handle = values[3];
     service->control_point_cccd_handle = cccds[3];
+    service->server = server;
+    return 1;
+}
+
+// Application facing
+// Complete a pending Propose/Force Time Update with a DTCP response.
+// Rejection flags are required only when response_value is 0x05.
+static inline int gatt_device_time_service_control_point_complete(
+    ble_gatt_device_time_service *service, uint8_t response_value,
+    uint16_t rejection_flags
+) {
+    if (!service || !service->server ||
+        (service->control_point_pending_opcode != 2 &&
+         service->control_point_pending_opcode != 3) ||
+        !response_value ||
+        (response_value > 5 && response_value != 7) ||
+        (response_value != 5 && rejection_flags))
+        return 0;
+    uint8_t response[5] = {
+        0x09, service->control_point_pending_opcode, response_value,
+        (uint8_t)rejection_flags, (uint8_t)(rejection_flags >> 8)
+    };
+    uint16_t len = response_value == 5 ? 5 : 3;
+    if (!gatt_server_queue_event(service->server,
+            service->control_point_handle, response, len, 1))
+        return 0;
+    service->control_point_pending_opcode = 0;
+    service->control_point_request_len = 0;
+    memset(service->control_point_request, 0,
+           sizeof(service->control_point_request));
     return 1;
 }
 
@@ -1694,7 +1799,35 @@ static inline int gatt_physical_activity_monitor_service_finish_request(
 
 typedef struct {
     uint16_t service_handle, features_handle;
+    uint16_t preset_control_point_handle, preset_control_point_cccd_handle;
+    uint16_t active_preset_index_handle, active_preset_index_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t control_point_pending;
+    uint16_t control_point_request_len;
+    uint8_t control_point_request[BLE_GATT_ATT_VALUE_MAX];
 } ble_gatt_hearing_access_service;
+
+// Internal
+static inline uint8_t gatt_has_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_hearing_access_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (!len || len > sizeof(service->control_point_request))
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        service->server, service->preset_control_point_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->control_point_pending) return 0x80;
+    memcpy(service->control_point_request, value, len);
+    service->control_point_request_len = len;
+    service->control_point_pending = 1;
+    return 0;
+}
 
 // Application facing
 // Add the mandatory HAS Hearing Aid Features characteristic without preset
@@ -1714,6 +1847,63 @@ static inline int gatt_hearing_access_service_add(
             &service->service_handle, &value_handle, NULL))
         return 0;
     service->features_handle = value_handle;
+    return 1;
+}
+
+// Application facing
+// Add HAS with preset control enabled. The application validates preset
+// requests, updates the active index when appropriate, then completes each
+// request with the encoded indication payload defined by HAS.
+static inline int gatt_hearing_access_service_add_with_preset_control(
+    ble_gatt_server *server, ble_gatt_hearing_access_service *service,
+    uint8_t features, uint8_t active_preset_index,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || features > 2 || !control_point_capacity ||
+        control_point_capacity > BLE_GATT_ATT_VALUE_MAX)
+        return 0;
+    ble_gatt_sig_characteristic characteristics[3] = {
+        {0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            &features, 1},
+        {0x2bdb, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_ENCRYPTED, NULL, 0,
+            control_point_capacity, 1},
+        {0x2bdc, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED, &active_preset_index, 1}
+    };
+    uint16_t values[3], cccds[3];
+    ble_gatt_sig_handlers handlers[3] = {0};
+    memset(service, 0, sizeof(*service));
+    handlers[1].write = gatt_has_control_point_write;
+    handlers[1].context = service;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1854,
+            characteristics, 3, &service->service_handle, values, cccds,
+            handlers))
+        return 0;
+    service->features_handle = values[0];
+    service->preset_control_point_handle = values[1];
+    service->preset_control_point_cccd_handle = cccds[1];
+    service->active_preset_index_handle = values[2];
+    service->active_preset_index_cccd_handle = cccds[2];
+    service->server = server;
+    return 1;
+}
+
+// Application facing
+// Queue the HAS response/notification indication and clear the pending write.
+static inline int gatt_hearing_access_service_control_point_complete(
+    ble_gatt_hearing_access_service *service,
+    const uint8_t *response, uint16_t response_len
+) {
+    if (!service || !service->server || !service->control_point_pending ||
+        !response || !response_len ||
+        response_len > BLE_GATT_ATT_VALUE_MAX)
+        return 0;
+    if (!gatt_server_queue_event(service->server,
+            service->preset_control_point_handle, response, response_len, 1))
+        return 0;
+    service->control_point_pending = 0;
+    service->control_point_request_len = 0;
     return 1;
 }
 
@@ -2211,6 +2401,10 @@ typedef struct {
     uint16_t object_properties_handle;
     uint16_t action_control_point_handle;
     uint16_t action_control_point_cccd_handle;
+    uint16_t object_id_handle;
+    uint16_t object_list_control_point_handle;
+    uint16_t object_list_control_point_cccd_handle;
+    uint16_t object_list_filter_handle;
 } ble_gatt_object_transfer_service;
 
 // Application facing
@@ -2260,6 +2454,93 @@ static inline int gatt_object_transfer_service_add(
     service->object_properties_handle = value_handles[4];
     service->action_control_point_handle = value_handles[5];
     service->action_control_point_cccd_handle = cccd_handles[5];
+    return 1;
+}
+
+// Application facing
+// Add the multi-object OTS attributes to the single-object OTS layout. The
+// caller owns the Object List Filter state and implements OACP/OLCP procedures
+// and object transfers.
+static inline int gatt_object_transfer_service_add_multi_object(
+    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    const uint8_t features[8], const uint8_t *object_name,
+    uint16_t object_name_len, const uint8_t *object_type,
+    uint8_t object_type_len, const uint8_t object_size[8],
+    const uint8_t object_properties[4], const uint8_t object_id[6],
+    const uint8_t *object_list_filter, uint16_t filter_len,
+    uint16_t filter_capacity
+) {
+    uint16_t object_name_capacity = BLE_GATT_SERVER_VALUE_MAX < 120 ?
+        BLE_GATT_SERVER_VALUE_MAX : 120;
+    if (!server || !service || !features || !object_id || !object_size ||
+        !object_properties || !object_type ||
+        (object_type_len != 2 && object_type_len != 16) ||
+        (object_name_len && !object_name) ||
+        object_name_len > object_name_capacity || !filter_capacity ||
+        filter_len > filter_capacity || (filter_len && !object_list_filter))
+        return 0;
+    uint8_t initial_control_point = 0;
+    uint8_t initial_filter = 0;
+    ble_gatt_sig_characteristic characteristics[9] = {
+        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            features, 8},
+        {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            object_name, object_name_len, object_name_capacity, 1},
+        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_type, object_type_len},
+        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_size, 8},
+        {0x2ac3, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_id, 6},
+        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            object_properties, 4},
+        {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_ENCRYPTED, &initial_control_point, 0, 20, 1},
+        {0x2ac6, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_ENCRYPTED, &initial_control_point, 0, 20, 1},
+        {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            filter_len ? object_list_filter : &initial_filter,
+            filter_len, filter_capacity, 1}
+    };
+    uint16_t values[9], cccds[9];
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1825, characteristics, 9,
+            &service->service_handle, values, cccds)) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+    service->features_handle = values[0];
+    service->object_name_handle = values[1];
+    service->object_type_handle = values[2];
+    service->object_size_handle = values[3];
+    service->object_id_handle = values[4];
+    service->object_properties_handle = values[5];
+    service->action_control_point_handle = values[6];
+    service->action_control_point_cccd_handle = cccds[6];
+    service->object_list_control_point_handle = values[7];
+    service->object_list_control_point_cccd_handle = cccds[7];
+    service->object_list_filter_handle = values[8];
+    for (uint8_t i = 6; i <= 7; i++) {
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
+        if (!cccd) {
+            memset(server->attributes + old_count, 0,
+                   (server->count - old_count) * sizeof(server->attributes[0]));
+            memset(server->value_pool + old_value_used, 0,
+                   server->value_used - old_value_used);
+            server->count = old_count;
+            server->next_handle = old_next_handle;
+            server->value_used = old_value_used;
+            memset(service, 0, sizeof(*service));
+            return 0;
+        }
+        cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
+            BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
     return 1;
 }
 

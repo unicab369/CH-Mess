@@ -54,7 +54,8 @@ count that generic path as implementation of a standard service.
 - [x] Human Interface Device (`0x1812`)
 - [x] Internet Protocol Support (`0x1820`)
 - [x] Transport Discovery (`0x1824`)
-- [x] Object Transfer (`0x1825`), single-object metadata and OACP layout
+- [x] Object Transfer (`0x1825`), single- and multi-object layouts including
+  Object ID, OLCP, and Object List Filter
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic with
   optional Training Status and Control Point handling
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
@@ -69,7 +70,7 @@ count that generic path as implementation of a standard service.
 - [x] Volume Control (`0x1844`)
 - [x] Volume Offset Control (`0x1845`), secondary service builder
 - [x] Coordinated Set Identification (`0x1846`)
-- [x] Device Time (`0x1847`), base mandatory layout without optional logging
+- [x] Device Time (`0x1847`), base layout and Propose/Force Time Update DTCP
 - [x] Media Control (`0x1848`), mandatory media metadata layout
 - [x] Generic Media Control (`0x1849`), shared mandatory layout with name notifications
 - [x] Constant Tone Extension (`0x184A`)
@@ -82,7 +83,8 @@ count that generic path as implementation of a standard service.
 - [n/a] Basic Audio Announcement (`0x1851`), advertising service data
 - [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
 - [x] Common Audio (`0x1853`)
-- [x] Hearing Access (`0x1854`), mandatory features-only layout without presets
+- [x] Hearing Access (`0x1854`), mandatory features-only layout and optional
+  preset Control Point/Active Preset Index request-response layout
 - [x] Telephony and Media Audio (`0x1855`)
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD

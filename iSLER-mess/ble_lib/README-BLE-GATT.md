@@ -67,7 +67,11 @@ optional features. Its five-byte RC Feature value must contain CRC `0xffff`
 and three zero feature bytes.
 `gatt_device_time_service_add()` registers the mandatory DTS characteristics
 for a basic device that supports one epoch and does not enable optional time
-logging. The application supplies encoded values and handles the control point.
+logging. Its DTCP handler validates Propose/Force Time Update requests and
+stores the pending request in the service state; the application applies or
+rejects the update, then calls
+`gatt_device_time_service_control_point_complete()` to send the indication.
+Other DTCP procedures are reported as unsupported by this base builder.
 `gatt_coordinated_set_identification_service_add()` registers CSIS SIRK and
 optional size, lock, and rank characteristics with encrypted permissions. The
 application implements SIRK protection and the lock protocol.
@@ -116,13 +120,19 @@ readable 17-byte session value and
 indicate it.
 `gatt_hearing_access_service_add()` registers the mandatory HAS Hearing Aid
 Features characteristic for a device that does not expose preset control.
+Use `gatt_hearing_access_service_add_with_preset_control()` to add the
+encrypted Preset Control Point and Active Preset Index. The application handles
+the preset list and operations using the captured request fields, then queues
+the encoded response indication with
+`gatt_hearing_access_service_control_point_complete()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
 `gatt_object_transfer_service_add()` registers the single-object OTS metadata
-and OACP characteristics. The caller supplies the initial metadata values;
-the application implements OACP procedures and the separate L2CAP object
-transfer channel. Multi-object OTS needs additional Object ID, OLCP, and Object
-List Filter characteristics, which this builder does not add.
+and OACP characteristics. Use
+`gatt_object_transfer_service_add_multi_object()` for the multi-object layout,
+which also registers Object ID, OLCP, and Object List Filter. The caller
+supplies the initial values; the application implements OACP/OLCP procedures
+and the separate L2CAP object transfer channel.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
 telemetry and queues it with
@@ -407,7 +417,7 @@ per-bearer ATT transaction state while sharing the connection's GATT database.
 5. [x] Add deterministic multi-bearer tests for negotiation, concurrent
    client/server traffic, per-bearer indications, MTU boundaries, timeouts,
    recovery, and disconnect cleanup. ECFC credit handling is covered by
-   `l2cap_tests/ble_l2cap_test.c`.
+   `l2cap_tests/l2cap_test.c`.
 6. [x] Exercise an independent EATT client against GATT server procedures
    with Bumble's Enhanced Bearer API and the local C server fixture. This is
    host-side ATT bearer interoperability; real ECFC/hardware verification is
@@ -626,7 +636,7 @@ to omit EATT code and per-bearer storage.
   concurrent client requests, simultaneous client/server roles, per-bearer
   indication confirmation and timeout, shared attribute writes, MTU boundaries,
   timeout/recovery, and disconnect cleanup with deterministic fake L2CAP
-  channels. ECFC credit paths are exercised by `l2cap_tests/ble_l2cap_test.c`.
+  channels. ECFC credit paths are exercised by `l2cap_tests/l2cap_test.c`.
 - [x] Verify ATT procedures through Bumble's EATT Enhanced Bearer client API
   against the C server fixture using `gatt_tests/ble_gatt_bumble_eatt_interop.py`.
   This host test does not exercise an actual radio or the ECFC setup exchange.

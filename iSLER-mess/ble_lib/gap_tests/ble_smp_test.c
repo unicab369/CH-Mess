@@ -54,15 +54,15 @@ int main(void) {
 
     fake_smp fake = {0};
     fake_random_state = &fake;
-    ble_l2cap_ops ops = {0};
+    l2cap_ops ops = {0};
     ops.send_pdu = fake_send;
     ops.context = &fake;
-    ble_l2cap_connection l2cap;
-    assert(ble_l2cap_connection_init(&l2cap, &ops, 64, 64, 1));
+    l2cap_connection l2cap;
+    assert(l2cap_connection_init(&l2cap, &ops, 64, 64, 1));
     ble_smp smp;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    assert(ble_l2cap_connection_register_fixed(&l2cap, BLE_L2CAP_CID_SMP,
+    assert(l2cap_connection_register_fixed(&l2cap, L2CAP_CID_SMP,
         smp_receive_sdu, &smp));
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16];
     assert(smp_random_bytes(secret, 32) && secret[31] == 0x5a);
@@ -80,32 +80,32 @@ int main(void) {
     smp.rx_len = 0;
     assert(smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
            !smp.tx_len);
-    assert(ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
+    assert(l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
         pairing_request, sizeof(pairing_request)));
     assert(smp.rx_len == sizeof(pairing_request) &&
            !memcmp(smp.rx, pairing_request, smp.rx_len));
     smp.rx_len = 0;
     uint8_t l2cap_packet[sizeof(pairing_request) + 4];
-    assert(ble_l2cap_encode(l2cap_packet, sizeof(l2cap_packet),
-        BLE_L2CAP_CID_SMP, pairing_request, sizeof(pairing_request)) ==
+    assert(l2cap_encode(l2cap_packet, sizeof(l2cap_packet),
+        L2CAP_CID_SMP, pairing_request, sizeof(pairing_request)) ==
         sizeof(l2cap_packet));
-    ble_l2cap_reassembler rx = {0};
+    l2cap_reassembler rx = {0};
     uint16_t cid, sdu_len;
     const uint8_t *sdu;
-    assert(ble_l2cap_reassembler_feed(&rx, 2, l2cap_packet, 6,
+    assert(l2cap_reassembler_feed(&rx, 2, l2cap_packet, 6,
         &cid, &sdu, &sdu_len) == 0);
-    assert(ble_l2cap_reassembler_feed(&rx, 1, l2cap_packet + 6,
+    assert(l2cap_reassembler_feed(&rx, 1, l2cap_packet + 6,
         sizeof(l2cap_packet) - 6, &cid, &sdu, &sdu_len) == 1);
-    assert(cid == BLE_L2CAP_CID_SMP &&
-        ble_l2cap_connection_receive(&l2cap, cid, sdu, sdu_len));
+    assert(cid == L2CAP_CID_SMP &&
+        l2cap_connection_receive(&l2cap, cid, sdu, sdu_len));
     assert(smp.rx_len == sizeof(pairing_request) &&
            !memcmp(smp.rx, pairing_request, smp.rx_len));
     smp.rx_len = 0;
     const uint8_t invalid_length[] = {0x01, 0x03};
-    assert(!ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
+    assert(!l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
         invalid_length, sizeof(invalid_length)));
     const uint8_t reserved_opcode[] = {0x0f};
-    assert(ble_l2cap_connection_receive(&l2cap, BLE_L2CAP_CID_SMP,
+    assert(l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
         reserved_opcode, sizeof(reserved_opcode)));
     const uint8_t public_key[65] = {SMP_PAIRING_PUBLIC_KEY};
     assert(smp_pdu_valid(public_key, sizeof(public_key)));

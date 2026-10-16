@@ -44,7 +44,7 @@ typedef struct {
 } ble_gatt_eatt_bearer;
 
 typedef struct {
-    // Map these callbacks to ble_l2cap_connection's ECFC channel APIs.
+    // Map these callbacks to l2cap_connection's ECFC channel APIs.
     // open requests one EATT channel; accept/reject apply incoming policy.
     // Deliver completed SDUs to receive_att.
     int (*open)(void *context, uint16_t psm, uint16_t mtu);

@@ -21,13 +21,13 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
 #define BLE_GAP_SMP_CORE_TEST
 #include "../ble_gap_smp.h"
 
-static uint8_t outbound[BLE_L2CAP_SDU_MAX + 4];
+static uint8_t outbound[L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
 
 static int poll_smp(ble_smp *smp) {
     if (!smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu ||
         !smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
-            BLE_L2CAP_CID_SMP, smp->tx, smp->tx_len))
+            L2CAP_CID_SMP, smp->tx, smp->tx_len))
         return 0;
     gap_wipe(smp->tx, sizeof(smp->tx));
     smp->tx_len = 0;
@@ -39,7 +39,7 @@ static int send_pdu(
                     uint16_t len
 ) {
     (void)context;
-    int encoded = ble_l2cap_encode(outbound, sizeof(outbound), cid, pdu, len);
+    int encoded = l2cap_encode(outbound, sizeof(outbound), cid, pdu, len);
     if (!encoded || outbound_len) return 0;
     outbound_len = (uint16_t)encoded;
     return 1;
@@ -59,15 +59,15 @@ static int read_record(uint8_t *data, uint16_t capacity, uint16_t *len) {
 }
 
 int main(void) {
-    ble_l2cap_ops ops = {0};
+    l2cap_ops ops = {0};
     ops.send_pdu = send_pdu;
-    ble_l2cap_connection l2cap;
+    l2cap_connection l2cap;
     ble_smp smp;
-    if (!ble_l2cap_connection_init(&l2cap, &ops, 65, 65, 1))
+    if (!l2cap_connection_init(&l2cap, &ops, 65, 65, 1))
         return 1;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    if (!ble_l2cap_connection_register_fixed(&l2cap, BLE_L2CAP_CID_SMP,
+    if (!l2cap_connection_register_fixed(&l2cap, L2CAP_CID_SMP,
             smp_receive_sdu, &smp))
         return 1;
 
@@ -82,14 +82,14 @@ int main(void) {
         !write_record(outbound, outbound_len))
         return 2;
 
-    uint8_t frame[BLE_L2CAP_SDU_MAX + 4];
+    uint8_t frame[L2CAP_SDU_MAX + 4];
     uint16_t frame_len, cid, sdu_len;
     const uint8_t *sdu;
     if (!read_record(frame, sizeof(frame), &frame_len)) return 3;
-    ble_l2cap_reassembler rx = {0};
-    if (ble_l2cap_reassembler_feed(&rx, 2, frame, frame_len,
-            &cid, &sdu, &sdu_len) != 1 || cid != BLE_L2CAP_CID_SMP ||
-        !ble_l2cap_connection_receive(&l2cap, cid, sdu, sdu_len) ||
+    l2cap_reassembler rx = {0};
+    if (l2cap_reassembler_feed(&rx, 2, frame, frame_len,
+            &cid, &sdu, &sdu_len) != 1 || cid != L2CAP_CID_SMP ||
+        !l2cap_connection_receive(&l2cap, cid, sdu, sdu_len) ||
         !smp.rx_len || !write_record(smp.rx, smp.rx_len))
         return 4;
     return 0;

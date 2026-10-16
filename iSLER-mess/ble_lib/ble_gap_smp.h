@@ -239,7 +239,7 @@ static inline int smp_opcode_known(uint8_t opcode) {
 }
 
 typedef struct {
-    ble_l2cap_connection *l2cap;
+    l2cap_connection *l2cap;
     uint8_t tx[SMP_PDU_MAX];
     uint8_t rx[SMP_PDU_MAX];
     uint8_t tx_len, rx_len;
@@ -252,7 +252,7 @@ static inline int smp_receive_sdu(
     void *context, uint16_t cid, const uint8_t *sdu, uint16_t len
 ) {
     ble_smp *smp = (ble_smp *)context;
-    if (!smp || cid != BLE_L2CAP_CID_SMP || !sdu || !len) return 0;
+    if (!smp || cid != L2CAP_CID_SMP || !sdu || !len) return 0;
     // Reserved command codes are ignored by SMP, as required by the spec.
     if (!smp_opcode_known(sdu[0])) return 1;
     if (len > sizeof(smp->rx) || !smp_pdu_valid(sdu, len) || smp->rx_len)
@@ -338,8 +338,8 @@ typedef struct {
     uint8_t previous_bond_valid;
     gap_bond previous_bond;
     uint8_t tx[69], tx_len, tx_offset;
-    ble_l2cap_connection l2cap;
-    ble_l2cap_reassembler l2cap_rx;
+    l2cap_connection l2cap;
+    l2cap_reassembler l2cap_rx;
     ble_smp bearer;
     uint8_t random[16], peer_random[16];
     struct {
@@ -371,7 +371,7 @@ static inline int smp_poll(void) {
     if (!bearer->l2cap || !bearer->tx_len || !bearer->l2cap->ops.send_pdu)
         return 0;
     if (!bearer->l2cap->ops.send_pdu(bearer->l2cap->ops.context,
-            BLE_L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
+            L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
     ) return 0;
 
     gap_wipe(bearer->tx, sizeof(bearer->tx));
@@ -663,7 +663,7 @@ static int gap_smp_link_send_pdu(
     if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
         return 0;
 
-    int encoded = ble_l2cap_encode(ctx->tx, sizeof(ctx->tx), cid, payload, len);
+    int encoded = l2cap_encode(ctx->tx, sizeof(ctx->tx), cid, payload, len);
     if (!encoded) return 0;
     ctx->tx_len = (uint8_t)encoded;
     ctx->tx_offset = 0;
@@ -676,17 +676,17 @@ static int smp_link_init(void) {
     gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
     gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
 
-    ble_l2cap_ops ops = {
+    l2cap_ops ops = {
         .send_pdu = gap_smp_link_send_pdu,
         .context = smp
     };
 
-    if (!ble_l2cap_connection_init(&smp->l2cap, &ops, 65, 65, 0))
+    if (!l2cap_connection_init(&smp->l2cap, &ops, 65, 65, 0))
         return 0;
     smp->bearer.l2cap = &smp->l2cap;
 
-    if (!ble_l2cap_connection_register_fixed(&smp->l2cap,
-                    BLE_L2CAP_CID_SMP, smp_receive_sdu, &smp->bearer)
+    if (!l2cap_connection_register_fixed(&smp->l2cap,
+                    L2CAP_CID_SMP, smp_receive_sdu, &smp->bearer)
     ) return 0;
 
     smp->l2cap_ready = 1;
@@ -1253,7 +1253,7 @@ static void gap_smp_finish(uint8_t status) {
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
     smp->bearer.deadline_ms = 0;
-    ble_l2cap_reassembler_reset(&smp->l2cap_rx);
+    l2cap_reassembler_reset(&smp->l2cap_rx);
     // A new SMP pairing procedure requires a new physical connection, even
     // after an unsuccessful attempt; preserve only the connection status.
 
@@ -1927,12 +1927,12 @@ static void gap_smp_poll(void) {
 
     uint16_t completed_cid = 0, sdu_len = 0;
     const uint8_t *sdu = NULL;
-    int assembled = ble_l2cap_reassembler_feed(&smp->l2cap_rx, conn->rx.llid,
+    int assembled = l2cap_reassembler_feed(&smp->l2cap_rx, conn->rx.llid,
                                             conn->rx.data, conn->rx.len,
                                             &completed_cid, &sdu, &sdu_len);
 
     if (assembled <= 0) {
-        if (cid == BLE_L2CAP_CID_SMP) {
+        if (cid == L2CAP_CID_SMP) {
             conn->queue.rx_ready = 0;
             smp->l2cap_rx_pending = 0;
 
@@ -1942,9 +1942,9 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (completed_cid != BLE_L2CAP_CID_SMP) return;
+    if (completed_cid != L2CAP_CID_SMP) return;
     // Keep the RX slot occupied until L2CAP finishes processing the SDU.
-    int dispatched = ble_l2cap_connection_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
+    int dispatched = l2cap_connection_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
     conn->queue.rx_ready = 0;
     smp->l2cap_rx_pending = 0;
 

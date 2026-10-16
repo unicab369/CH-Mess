@@ -4420,7 +4420,7 @@ static void test_smp_signing_key_distribution(void) {
     smp_bond_peripheral_start(0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX &&
            smp->pairing.bond_tx_step == 31 && smp->tx_len == 21 &&
-           smp->tx[2] == BLE_L2CAP_CID_SMP &&
+           smp->tx[2] == L2CAP_CID_SMP &&
            smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
            conn->bond.has_peripheral_ltk && conn->bond.local_csrk.present);
     conn->queue.tx_queued = conn->link.tx_pending = 0;
