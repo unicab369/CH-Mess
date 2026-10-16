@@ -282,21 +282,9 @@ static inline int ble_l2cap_psm_is_registered(
     return 0;
 }
 
-static inline int ble_l2cap_connection_result_valid(uint16_t result) {
-    return result == 0 || result == 2 || (result >= 4 && result <= 11);
-}
-
 static inline int ble_l2cap_ecfc_result_valid(uint16_t result) {
-    return ble_l2cap_connection_result_valid(result) ||
-        (result >= 12 && result <= 15);
-}
-
-static inline int ble_l2cap_psm_accept(
-    ble_l2cap_connection *conn, uint16_t psm
-) {
-    if (!ble_l2cap_psm_is_registered(conn, psm)) return 0;
-    return !conn->ops.accept_psm ||
-        conn->ops.accept_psm(conn->ops.context, psm);
+    return result == 0 || result == 2 ||
+        (result >= 4 && result <= 15);
 }
 
 static inline uint16_t ble_l2cap_psm_authorize(
@@ -305,10 +293,12 @@ static inline uint16_t ble_l2cap_psm_authorize(
     if (!ble_l2cap_psm_is_registered(conn, psm)) return 2;
     if (conn->ops.authorize_psm) {
         uint16_t result = conn->ops.authorize_psm(conn->ops.context, psm);
-        if (result) return ble_l2cap_connection_result_valid(result) ?
+        if (result) return result == 2 || (result >= 4 && result <= 11) ?
             result : 2;
     }
-    return ble_l2cap_psm_accept(conn, psm) ? 0 : 2;
+    return ble_l2cap_psm_is_registered(conn, psm) &&
+        (!conn->ops.accept_psm ||
+         conn->ops.accept_psm(conn->ops.context, psm)) ? 0 : 2;
 }
 
 static inline int ble_l2cap_connection_register_fixed(
@@ -1087,7 +1077,8 @@ static inline int ble_l2cap_signaling_receive(
                 uint16_t result = ble_read_u16_le(p + 8);
                 int slot = ble_l2cap_channel_find_local(conn,
                     conn->pending_local_cid[0]);
-                if (slot < 0 || !ble_l2cap_connection_result_valid(result))
+                if (slot < 0 || !(result == 0 || result == 2 ||
+                    (result >= 4 && result <= 11)))
                     return 0;
                 if (result) {
                     ble_l2cap_channel_clear(conn, (uint8_t)slot, result);
@@ -1338,6 +1329,7 @@ static inline int ble_l2cap_signaling_receive(
 
 // Dispatch one complete SDU from the link layer. Dynamic CIDs are local CIDs;
 // fixed ATT/SMP handlers register by CID. Signaling uses the internal manager.
+// Application facing
 static inline int ble_l2cap_connection_receive(
     ble_l2cap_connection *conn,
     uint16_t cid, const uint8_t *sdu, uint16_t len
