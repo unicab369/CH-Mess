@@ -1596,6 +1596,51 @@ static inline int gatt_transport_discovery_service_add(
 
 typedef struct {
     uint16_t service_handle;
+    uint16_t features_handle;
+    uint16_t machine_data_handle;
+    uint16_t machine_data_cccd_handle;
+} ble_gatt_fitness_machine_service;
+
+// Application facing
+// Add the FTMS feature characteristic and one selected machine-data
+// characteristic. The application encodes machine data and sends its
+// notifications; optional ranges, training status, and remote control are
+// not included by this telemetry-only layout.
+static inline int gatt_fitness_machine_service_add(
+    ble_gatt_server *server, ble_gatt_fitness_machine_service *service,
+    uint16_t machine_data_uuid, const uint8_t features[8],
+    uint16_t machine_data_capacity
+) {
+    static const uint16_t machine_data_uuids[6] = {
+        0x2acd, 0x2ace, 0x2acf, 0x2ad0, 0x2ad1, 0x2ad2
+    };
+    uint8_t supported_data_uuid = 0;
+    for (uint8_t i = 0; i < 6; i++)
+        supported_data_uuid |= machine_data_uuids[i] == machine_data_uuid;
+    if (!server || !service || !features || !supported_data_uuid ||
+        !machine_data_capacity ||
+        machine_data_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t initial_data = 0;
+    ble_gatt_sig_characteristic characteristics[2] = {
+        {0x2acc, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, features, 8},
+        {machine_data_uuid, BLE_GATT_PROP_NOTIFY, 1, 0, &initial_data, 0,
+            machine_data_capacity, 1}
+    };
+    uint16_t value_handles[2], cccd_handles[2];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1826, characteristics, 2,
+            &service->service_handle, value_handles, cccd_handles))
+        return 0;
+    service->features_handle = value_handles[0];
+    service->machine_data_handle = value_handles[1];
+    service->machine_data_cccd_handle = cccd_handles[1];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
 } ble_gatt_internet_protocol_support_service;
 
 // Application facing

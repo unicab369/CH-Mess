@@ -99,6 +99,10 @@ and OACP characteristics. The caller supplies the initial metadata values;
 the application implements OACP procedures and the separate L2CAP object
 transfer channel. Multi-object OTS needs additional Object ID, OLCP, and Object
 List Filter characteristics, which this builder does not add.
+`gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
+selected machine-data notification characteristic. The application encodes
+and sends telemetry; optional ranges, training status, and remote control are
+not included in this layout.
 
 Additional service database builders are available:
 

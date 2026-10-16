@@ -161,6 +161,7 @@ int gap_ad_service_data(
     uint8_t uuid_copy[16];
     memcpy(uuid_copy, uuid, uuid_len);
     uint8_t *out = builder->data + builder->len;
+
     if (len) memmove(out + 2 + uuid_len, data, len);
     memcpy(out + 2, uuid_copy, uuid_len);
     out[0] = (uint8_t)(uuid_len + len + 1);
