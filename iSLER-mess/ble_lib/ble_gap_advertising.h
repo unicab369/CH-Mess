@@ -212,6 +212,8 @@ static struct {
     uint8_t set;
 } gap_ead_key;
 
+// NOTE: To clear the EAD key, use gap_wipe(&gap_ead_key, sizeof(gap_ead_key)).
+
 // Application facing
 // Install the session key and IV shared with EAD receivers. The key must come
 // from a secure application source; key and IV are consumed as byte strings in
@@ -237,12 +239,6 @@ int gap_ead_key_get(uint8_t out[24]) {
     memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
     memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, GAP_EAD_IV_LEN);
     return 1;
-}
-
-// Application facing
-// Erase the EAD key material so encrypted advertising cannot be produced.
-void gap_ead_key_clear(void) {
-    gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 }
 
 static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {

@@ -122,7 +122,7 @@ static void test_encrypted_advertising_data(void) {
     uint8_t randomizer[5] = {0x18, 0xe1, 0x57, 0xca, 0xde};
     uint8_t output[GAP_EAD_AD_STRUCTURE_MAX], clear[32];
     size_t output_len = 0, clear_len = 0;
-    gap_ead_key_clear();
+    gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
     assert(!gap_ead_encrypt(plaintext, sizeof(plaintext), output,
         sizeof(output), &output_len));
     assert(gap_ead_key_set(key, iv));
@@ -154,7 +154,7 @@ static void test_encrypted_advertising_data(void) {
         sizeof(clear), &clear_len));
     assert(!gap_ead_encrypt(plaintext, sizeof(plaintext), output,
         output_len - 1, &output_len));
-    gap_ead_key_clear();
+    gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
     assert(!gap_ead_key_get(clear));
     assert(!gap_ead_decrypt(vector, sizeof(vector), clear,
         sizeof(clear), &clear_len));

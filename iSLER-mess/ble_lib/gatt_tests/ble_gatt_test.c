@@ -216,7 +216,7 @@ static void test_gap_service_characteristics(void) {
     mesh_gatt.server.encrypted = 0;
     mesh_gatt.server.authenticated = 0;
     if (!mesh_gatt.server.encrypted) mesh_gatt.server.encryption_key_size = 0;
-    gap_ead_key_clear();
+    gap_wipe(&gap_ead_key, sizeof(gap_ead_key));
 
     gap_adv_stop();
     mesh_gatt_gap_policy_update();
