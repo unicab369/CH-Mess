@@ -1324,7 +1324,162 @@ typedef struct {
     uint16_t control_point_handle, control_point_cccd_handle;
     uint16_t current_session_handle, current_session_cccd_handle;
     uint16_t session_descriptor_handle, session_descriptor_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t control_point_pending, control_point_opcode;
+    uint8_t control_point_parameter_len, control_point_request_count;
+    uint8_t control_point_parameter[5];
 } ble_gatt_physical_activity_monitor_service;
+
+enum {
+    GATT_PAMS_OP_ENQUIRE_SESSIONS = 0x01,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS = 0x02,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA = 0x03,
+    GATT_PAMS_OP_START_SESSION = 0x04,
+    GATT_PAMS_OP_STOP_SESSION = 0x05,
+    GATT_PAMS_OP_DELETE_ENDED_SESSION = 0x06,
+    GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE = 0x07,
+    GATT_PAMS_OP_ENQUIRE_SESSIONS_RESPONSE = 0xfc,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_RESPONSE = 0xfb,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA_RESPONSE = 0xfa,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR = 0xfd,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR = 0xfe,
+    GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR = 0xff,
+    GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED = 0x80,
+    GATT_PAMS_ERROR_INVALID_SESSION_ID = 0x81,
+    GATT_PAMS_ERROR_INVALID_SUBSESSION_ID = 0x82,
+    GATT_PAMS_ERROR_SESSION_STILL_RUNNING = 0x83,
+    GATT_PAMS_ERROR_NO_DATA_AVAILABLE = 0x84,
+    GATT_PAMS_ERROR_NO_SESSIONS_AVAILABLE = 0x85,
+    GATT_PAMS_ERROR_INVALID_TYPE = 0x86,
+    GATT_PAMS_ERROR_NO_SESSION_RUNNING = 0x87,
+    GATT_PAMS_ERROR_NOTHING_TO_STOP = 0x88,
+    GATT_PAMS_ERROR_ACTIVITY_TYPE_OUT_OF_RANGE = 0x89,
+    GATT_PAMS_ERROR_OPERATION_FAILED = 0x8a
+};
+
+// Internal
+static uint8_t gatt_physical_activity_monitor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_physical_activity_monitor_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (!len || len > 6)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t opcode = value[0];
+    uint8_t parameter_len = (uint8_t)(len - 1);
+    uint8_t expected_len;
+    switch (opcode) {
+    case GATT_PAMS_OP_ENQUIRE_SESSIONS:
+    case GATT_PAMS_OP_STOP_SESSION:
+        expected_len = 0;
+        break;
+    case GATT_PAMS_OP_ENQUIRE_SUBSESSIONS:
+    case GATT_PAMS_OP_DELETE_ENDED_SESSION:
+        expected_len = 2;
+        break;
+    case GATT_PAMS_OP_START_SESSION:
+        expected_len = 1;
+        break;
+    case GATT_PAMS_OP_GET_ENDED_SESSION_DATA:
+        expected_len = 5;
+        break;
+    case GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE:
+        expected_len = 2;
+        break;
+    default:
+        return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+    if (parameter_len != expected_len)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS ||
+        opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION) {
+        if (ble_get_le16(value + 1) == 0xffff)
+            return GATT_PAMS_ERROR_INVALID_SESSION_ID;
+    }
+    if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        if (ble_get_le16(value + 1) == 0xffff)
+            return GATT_PAMS_ERROR_INVALID_SESSION_ID;
+        if (value[5] > 1) return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+    if (opcode == GATT_PAMS_OP_START_SESSION && value[1] > 1)
+        return GATT_PAMS_ERROR_INVALID_TYPE;
+    if (opcode == GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE) {
+        if (value[1] > 1) return GATT_PAMS_ERROR_INVALID_TYPE;
+        if (value[2] > 14 && value[2] != 0xff)
+            return GATT_PAMS_ERROR_ACTIVITY_TYPE_OUT_OF_RANGE;
+        ble_gatt_attribute *feature_attribute = gatt_server_find(
+            service->server, service->features_handle);
+        const uint8_t *feature = feature_attribute ?
+            gatt_attribute_value(service->server, feature_attribute) : NULL;
+        if (!feature || !(feature[3] & 1))
+            return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+
+    ble_gatt_attribute *current_attribute = gatt_server_find(
+        service->server, service->current_session_handle);
+    const uint8_t *current = current_attribute ?
+        gatt_attribute_value(service->server, current_attribute) : NULL;
+    uint8_t session_running = current && current_attribute->value_len == 17 &&
+        (current[0] & 1);
+    uint16_t current_session_id = session_running ? ble_get_le16(current + 1) :
+                                                   0xffff;
+    if ((opcode == GATT_PAMS_OP_START_SESSION && value[1] == 1 &&
+         !session_running) ||
+        (opcode == GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE &&
+         !session_running))
+        return GATT_PAMS_ERROR_NO_SESSION_RUNNING;
+    if (opcode == GATT_PAMS_OP_STOP_SESSION && !session_running)
+        return GATT_PAMS_ERROR_NOTHING_TO_STOP;
+    if (opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION && session_running &&
+        ble_get_le16(value + 1) == current_session_id)
+        return GATT_PAMS_ERROR_SESSION_STILL_RUNNING;
+    if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA && session_running &&
+        ble_get_le16(value + 1) == current_session_id)
+        return GATT_PAMS_ERROR_SESSION_STILL_RUNNING;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
+        service->control_point_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->control_point_pending ||
+        service->server->indication_pending)
+        return 0xfe;
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication)
+            return 0xfe;
+
+    uint16_t required_cccd_handle = 0;
+    uint16_t required_cccd_bit = 2;
+    if (opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS ||
+        opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS ||
+        opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION) {
+        required_cccd_handle = service->session_descriptor_handle;
+    } else if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        uint8_t data_type = value[5];
+        if (data_type > 1) return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+        required_cccd_handle = data_type ? service->summary_data_handle :
+                                           service->instantaneous_data_handle;
+        required_cccd_bit = data_type ? 2 : 1;
+    }
+    if (required_cccd_handle) {
+        ble_gatt_attribute *required_cccd = gatt_server_cccd_for(
+            service->server, required_cccd_handle);
+        if (!required_cccd || !(required_cccd->cccd & required_cccd_bit))
+            return 0xfd;
+    }
+
+    service->control_point_opcode = opcode;
+    service->control_point_parameter_len = parameter_len;
+    if (parameter_len)
+        memcpy(service->control_point_parameter, value + 1, parameter_len);
+    service->control_point_pending = 1;
+    service->control_point_request_count++;
+    return 0;
+}
 
 // Application facing
 // Add the mandatory PAMS characteristics. Optional data characteristics are
@@ -1365,10 +1520,17 @@ static inline int gatt_physical_activity_monitor_service_add(
             &initial, 0, session_descriptor_capacity, 1}
     };
     uint16_t values[6], cccds[6];
+    ble_gatt_sig_handlers handlers[6] = {0};
     memset(service, 0, sizeof(*service));
-    if (!gatt_sig_service_add(server, 0x183e, characteristics, 6,
-            &service->service_handle, values, cccds))
+    service->server = server;
+    handlers[3].write = gatt_physical_activity_monitor_control_write;
+    handlers[3].context = service;
+    if (!gatt_sig_service_add_with_handlers(server, 0x183e,
+            characteristics, 6, &service->service_handle, values, cccds,
+            handlers)) {
+        memset(service, 0, sizeof(*service));
         return 0;
+    }
     service->features_handle = values[0];
     service->instantaneous_data_handle = values[1];
     service->instantaneous_data_cccd_handle = cccds[1];
@@ -1450,6 +1612,84 @@ static inline int gatt_physical_activity_monitor_service_indicate_current_sessio
     if (!value || attribute->value_len != 17) return 0;
     return gatt_server_queue_event(server, service->current_session_handle,
                                    value, 17, 1);
+}
+
+// Application facing
+// Complete an Enquire or Get Ended Session Data procedure with its PAMS
+// success or error response opcode and response parameters.
+static inline int gatt_physical_activity_monitor_service_control_point_complete(
+    ble_gatt_server *server,
+    ble_gatt_physical_activity_monitor_service *service,
+    uint8_t response_opcode, const uint8_t *parameters,
+    uint8_t parameter_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending || (parameter_len && !parameters))
+        return 0;
+    uint8_t request = service->control_point_opcode;
+    uint8_t expected_len = 0;
+    if (request == GATT_PAMS_OP_ENQUIRE_SESSIONS) {
+        if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_RESPONSE)
+            expected_len = 2;
+        else if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR)
+            expected_len = 1;
+        else return 0;
+    } else if (request == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS) {
+        if (response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_RESPONSE)
+            expected_len = 2;
+        else if (response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR)
+            expected_len = 1;
+        else return 0;
+    } else if (request == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        if (response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_RESPONSE)
+            expected_len = 3;
+        else if (response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR)
+            expected_len = 1;
+        else return 0;
+    } else {
+        return 0;
+    }
+    if (parameter_len != expected_len) return 0;
+    if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR ||
+        response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR ||
+        response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR) {
+        if (parameters[0] < GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED ||
+            parameters[0] > GATT_PAMS_ERROR_OPERATION_FAILED)
+            return 0;
+    } else {
+        uint8_t count_nonzero = 0;
+        for (uint8_t i = 0; i < parameter_len; i++)
+            count_nonzero |= parameters[i];
+        if (!count_nonzero) return 0;
+    }
+    uint8_t response[4] = {response_opcode};
+    if (parameter_len) memcpy(response + 1, parameters, parameter_len);
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->control_point_handle);
+    if (!attribute || parameter_len + 1 > attribute->value_capacity)
+        return 0;
+    int queued = gatt_server_queue_event(server,
+        service->control_point_handle, response,
+        (uint16_t)(parameter_len + 1), 1);
+    if (queued > 0) service->control_point_pending = 0;
+    return queued;
+}
+
+// Application facing
+// Finish Start, Stop, Delete Ended Session, or Set Average Activity Type after
+// the application has applied the request and queued any required indications.
+static inline int gatt_physical_activity_monitor_service_finish_request(
+    ble_gatt_server *server,
+    ble_gatt_physical_activity_monitor_service *service
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending ||
+        service->control_point_opcode < GATT_PAMS_OP_START_SESSION ||
+        service->control_point_opcode >
+            GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE)
+        return 0;
+    service->control_point_pending = 0;
+    return 1;
 }
 
 typedef struct {
@@ -2263,6 +2503,10 @@ static inline int gatt_fitness_machine_service_control_point_complete(
     };
     if (response_parameter_len)
         memcpy(response + 3, response_parameters, response_parameter_len);
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->control_point_handle);
+    if (!attribute || response_parameter_len + 3 > attribute->value_capacity)
+        return 0;
     int queued = gatt_server_queue_event(server, service->control_point_handle,
         response, (uint16_t)(3 + response_parameter_len), 1);
     if (queued > 0) service->control_point_pending = 0;

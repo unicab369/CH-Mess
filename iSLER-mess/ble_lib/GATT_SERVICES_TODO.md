@@ -61,7 +61,8 @@ count that generic path as implementation of a standard service.
 - [x] Insulin Delivery (`0x183A`), mandatory authorized status and reader-control layout
 - [x] Emergency Configuration (`0x183C`)
 - [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
-- [x] Physical Activity Monitor (`0x183E`), mandatory characteristics without optional data streams
+- [x] Physical Activity Monitor (`0x183E`), mandatory characteristics and
+  Control Point request/response state without optional data streams
 - [x] Elapsed Time (`0x183F`)
 - [x] Generic Health Sensor (`0x1840`), live-observation-only layout
 - [x] Audio Input Control (`0x1843`), secondary service builder

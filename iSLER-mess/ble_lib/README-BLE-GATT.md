@@ -95,8 +95,16 @@ started.
 characteristics. The application must provide the ACS security protocol,
 payload segmentation, and protected-resource behavior.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
-characteristics, without optional activity streams. The application supplies
-session state and handles measurement and session-control procedures.
+characteristics, without optional activity streams. Control Point writes are
+captured in `control_point_opcode`, `control_point_parameter`, and
+`control_point_parameter_len`; the application supplies session storage and
+handles the requested procedure. Complete Enquire Sessions, Enquire
+Sub-sessions, and Get Ended Session Data with
+`gatt_physical_activity_monitor_service_control_point_complete()` after
+queueing their data indications. Finish Start, Stop, Delete Ended Session, and
+Set Average Activity Type with
+`gatt_physical_activity_monitor_service_finish_request()` after updating
+session state and queuing any required indications.
 `gatt_physical_activity_monitor_service_notify_instantaneous()` queues
 encoded Instantaneous Activity Data.
 `gatt_physical_activity_monitor_service_indicate_summary()` and

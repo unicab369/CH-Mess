@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "ble_connection_timing.h"
 #include "ble_l2cap.h"
 
 // Platform hooks used by the GAP controller and security procedures.
