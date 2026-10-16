@@ -164,6 +164,14 @@ Additional service database builders are available:
   Measurement Status bits against the configured feature value, and queues an
   indication. `gatt_blood_pressure_service_notify_intermediate()` queues an
   encoded Intermediate Cuff Pressure value.
+- `gatt_pulse_oximeter_service_add()` registers PLX Spot-check and/or
+  Continuous Measurement. `gatt_pulse_oximeter_service_indicate_spot_check()`
+  and `gatt_pulse_oximeter_service_notify_continuous()` encode optional fields
+  and check them against the service feature bits.
+- `gatt_glucose_service_notify_measurement()` encodes Glucose Measurement
+  notifications. If the record has context, set its context-follows flag and
+  then queue the matching sequence number with
+  `gatt_glucose_service_notify_context()`.
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_service_notify_measurement()` encodes and queues
   feature-checked measurements. Its SC Control Point validates and applies

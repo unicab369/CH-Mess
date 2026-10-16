@@ -556,7 +556,7 @@ int gap_scan_configure(
     gap_scanner.interval_ms = interval_ms;
     gap_scanner.window_ms = window_ms;
     gap_scanner.discovery_mode = discovery_mode;
-    gap_scanner.filter_duplicates = !!filter_duplicates;
+    gap_scanner.filter_duplicates = filter_duplicates;
     gap_scan = (gap_scan_ctx){0};
     gap_scanner.generation++;
     return 1;
@@ -575,13 +575,12 @@ void gap_scan_stop(void) {
     gap_scanner.generation++;
 }
 
-static int gap_conn_procedure_start(
-    gap_conn_mode mode, uint8_t active_scan
-) {
+static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     uint8_t accept_list_nonempty = 0;
 
-    for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
-        accept_list_nonempty |= gap_accept_list[i].used;
+    if (mode == GAP_CONN_MODE_SELECTIVE || mode == GAP_CONN_MODE_AUTO)
+        for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
+            accept_list_nonempty |= gap_accept_list[i].used;
 
     if (active_scan > 1 || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
