@@ -123,11 +123,12 @@ typedef struct {
 } mesh_net_state;
 
 static int mesh_subnet_slot(const mesh_net_state *state, uint16_t index) {
-    if (state->net_key_index == index) return 0;
+    if (state->net_key_index == index)
+        return 0;
     for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
         if (state->additional_subnets[i].used &&
-            state->additional_subnets[i].index == index)
-            return (int)i + 1;
+            state->additional_subnets[i].index == index
+        ) return (int)i + 1;
     return -1;
 }
 
@@ -154,13 +155,16 @@ static int mesh_subnet_key(
                            uint8_t key[16], uint8_t use_new
 ) {
     int slot = mesh_subnet_slot(state, index);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     if (slot == 0) {
-        if (use_new && !state->has_new_key) return 0;
+        if (use_new && !state->has_new_key)
+            return 0;
         memcpy(key, use_new ? state->new_net_key : state->net_key, 16);
     } else {
         const mesh_additional_subnet *sub = &state->additional_subnets[slot - 1];
-        if (use_new && !sub->has_new_key) return 0;
+        if (use_new && !sub->has_new_key)
+            return 0;
         memcpy(key, use_new ? sub->new_key : sub->key, 16);
     }
     return 1;
@@ -170,7 +174,8 @@ static void mesh_promote_app_keys(mesh_net_state *state, uint16_t net_idx) {
     for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
         mesh_app_key *app = &state->app_keys[i];
         if (!app->used || !app->has_new_key ||
-            mesh_app_net_idx(state, app) != net_idx) continue;
+            mesh_app_net_idx(state, app) != net_idx
+        ) continue;
         memcpy(app->key, app->new_key, 16);
         memset(app->new_key, 0, 16);
         app->has_new_key = 0;
@@ -272,7 +277,8 @@ static inline int mesh_net_replay_update(
         slot++;
 
     if (slot == mesh_network.replay_count) {
-        if (slot == MESH_NETWORK_REPLAY_SLOTS) return 0;
+        if (slot == MESH_NETWORK_REPLAY_SLOTS)
+            return 0;
         mesh_network.replay[slot].src = src;
         mesh_network.replay[slot].net_key_index = net_idx;
         mesh_network.replay_count++;
@@ -342,13 +348,16 @@ static const mesh_credentials *mesh_runtime_netkey(
     const mesh_net_state *state, uint16_t index, uint8_t use_new
 ) {
     int slot = mesh_subnet_slot(state, index);
-    if (slot < 0) return NULL;
+    if (slot < 0)
+        return NULL;
     if (slot == 0) {
-        if (use_new && !state->has_new_key) return NULL;
+        if (use_new && !state->has_new_key)
+            return NULL;
         return use_new ? &mesh_network.new_key : &mesh_network.old_key;
     }
     const mesh_additional_subnet *sub = &state->additional_subnets[slot - 1];
-    if (use_new && !sub->has_new_key) return NULL;
+    if (use_new && !sub->has_new_key)
+        return NULL;
     return use_new ? &mesh_network.additional_new[slot - 1] :
                      &mesh_network.additional_old[slot - 1];
 }
@@ -365,7 +374,8 @@ static const uint8_t *mesh_subnet_key_bytes(
                                              uint16_t index
 ) {
     int slot = mesh_subnet_slot(state, index);
-    if (slot < 0) return NULL;
+    if (slot < 0)
+        return NULL;
     if (slot == 0)
         return state->key_refresh_phase == 2 && state->has_new_key ?
             state->new_net_key : state->net_key;
@@ -397,7 +407,8 @@ static void mesh_friendship_derive(
 static void mesh_friendships_rederive(void) {
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         mesh_friendship *friendship = &mesh_network.friendships[i];
-        if (!friendship->used) continue;
+        if (!friendship->used)
+            continue;
         int slot = mesh_subnet_slot(&mesh_network.state,
                                     friendship->net_key_index);
         if (slot < 0) {
@@ -432,9 +443,10 @@ static inline int mesh_friendship_add(
         friend_address == 0 || friend_address > 0x7fff ||
         lpn_address == friend_address ||
         (mesh_network.state.unicast_address != lpn_address &&
-         mesh_network.state.unicast_address != friend_address))
+         mesh_network.state.unicast_address != friend_address)
+    ) return 0;
+    if (mesh_subnet_slot(&mesh_network.state, net_key_index) < 0)
         return 0;
-    if (mesh_subnet_slot(&mesh_network.state, net_key_index) < 0) return 0;
 
     mesh_friendship *slot = NULL;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
@@ -445,9 +457,12 @@ static inline int mesh_friendship_add(
             slot = candidate;
             break;
         }
-        if (!candidate->used && !slot) slot = candidate;
+        if (!candidate->used && !slot)
+            slot = candidate;
     }
-    if (!slot) return 0;
+
+    if (!slot)
+        return 0;
     memset(slot, 0, sizeof(*slot));
     slot->used = 1;
     slot->net_key_index = net_key_index;
@@ -467,8 +482,8 @@ static inline void mesh_friendship_clear(
         mesh_friendship *friendship = &mesh_network.friendships[i];
         if (friendship->used && friendship->net_key_index == net_key_index &&
             friendship->lpn_address == lpn_address &&
-            friendship->friend_address == friend_address)
-            memset(friendship, 0, sizeof(*friendship));
+            friendship->friend_address == friend_address
+        ) memset(friendship, 0, sizeof(*friendship));
     }
 }
 
@@ -498,8 +513,7 @@ static inline int mesh_network_init(const mesh_net_state *state) {
          (state->has_new_key || state->key_refresh_phase != 0)) ||
         (state->key_refresh_phase != 0 && !state->has_new_key) ||
         (state->key_refresh_phase == 0 && state->has_new_key)
-    )
-        return 0;
+    ) return 0;
 
     for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
         const mesh_app_key *app = &state->app_keys[i];
@@ -509,13 +523,14 @@ static inline int mesh_network_init(const mesh_net_state *state) {
                 mesh_app_net_idx(state, app)) < 0) ||
             (!app->used && app->has_new_key) ||
             (app->has_new_key && mesh_subnet_phase(state,
-                mesh_app_net_idx(state, app)) == 0))
-            return 0;
-        if (!app->used) continue;
+                mesh_app_net_idx(state, app)) == 0)
+        ) return 0;
+        if (!app->used)
+            continue;
         for (uint8_t j = 0; j < i; j++) {
             if (state->app_keys[j].used &&
-                state->app_keys[j].index == app->index)
-                return 0;
+                state->app_keys[j].index == app->index
+            ) return 0;
         }
     }
 
@@ -530,18 +545,19 @@ static inline int mesh_network_init(const mesh_net_state *state) {
             (sub->used && sub->key_refresh_phase != 0 && !sub->has_new_key) ||
             (sub->used && sub->key_refresh_phase == 0 && sub->has_new_key) ||
             (!sub->used && (sub->has_new_key || sub->key_refresh_phase ||
-                            sub->phase2_provisioned)))
-            return 0;
-        if (!sub->used) continue;
+                            sub->phase2_provisioned))
+        ) return 0;
+        if (!sub->used)
+            continue;
         for (uint8_t j = 0; j < i; j++)
             if (state->additional_subnets[j].used &&
-                state->additional_subnets[j].index == sub->index)
-                return 0;
+                state->additional_subnets[j].index == sub->index
+            ) return 0;
     }
 
     if (mesh_network.ready &&
-        mesh_network.state.unicast_address != state->unicast_address)
-        memset(mesh_network.friendships, 0, sizeof(mesh_network.friendships));
+        mesh_network.state.unicast_address != state->unicast_address
+    ) memset(mesh_network.friendships, 0, sizeof(mesh_network.friendships));
     memcpy(&mesh_network.state, state, sizeof(*state));
     mesh_network.reply_net_idx = state->net_key_index;
     for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
@@ -560,7 +576,8 @@ static inline int mesh_network_init(const mesh_net_state *state) {
                sizeof(mesh_network.additional_old[i]));
         memset(&mesh_network.additional_new[i], 0,
                sizeof(mesh_network.additional_new[i]));
-        if (!sub->used) continue;
+        if (!sub->used)
+            continue;
         mesh_derive_keys(sub->key, &mesh_network.additional_old[i]);
         if (sub->has_new_key)
             mesh_derive_keys(sub->new_key, &mesh_network.additional_new[i]);
@@ -571,7 +588,8 @@ static inline int mesh_network_init(const mesh_net_state *state) {
     mesh_network.beacon.observed_at_ms = mesh_network.beacon.last_sent_ms = GET_MILLIS();
     memset(&mesh_network.heartbeat, 0, sizeof(mesh_network.heartbeat));
     // Finite publication counts and subscription timers restart disabled.
-    if (state->heartbeat.count_log == 0xff) mesh_network.heartbeat.remaining = 0xffff;
+    if (state->heartbeat.count_log == 0xff)
+        mesh_network.heartbeat.remaining = 0xffff;
     mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
     mesh_network.replay_count = 0;
     memset(mesh_network.relay_cache, 0, sizeof(mesh_network.relay_cache));
@@ -582,13 +600,15 @@ static inline int mesh_network_init(const mesh_net_state *state) {
 
 static inline int mesh_network_restore(void) {
     mesh_net_state state;
-    if (BLE_MESH_NETWORK_LOAD_STATE(&state) != 1) return 0;
+    if (BLE_MESH_NETWORK_LOAD_STATE(&state) != 1)
+        return 0;
     return mesh_network_init(&state);
 }
 
 // Save first, then make a key or IV transition visible to packet processing.
 static int mesh_commit(const mesh_net_state *next) {
-    if (BLE_MESH_NETWORK_SAVE_STATE(next) != 1) return 0;
+    if (BLE_MESH_NETWORK_SAVE_STATE(next) != 1)
+        return 0;
     if (mesh_network.state.beacon != next->beacon)
         mesh_network.beacon.last_sent_ms = GET_MILLIS();
     mesh_network.state = *next;
@@ -602,9 +622,11 @@ static int mesh_commit(const mesh_net_state *next) {
         const mesh_additional_subnet *sub = &next->additional_subnets[i];
         memset(&mesh_network.additional_old[i], 0, sizeof(mesh_network.additional_old[i]));
         memset(&mesh_network.additional_new[i], 0, sizeof(mesh_network.additional_new[i]));
-        if (!sub->used) continue;
+        if (!sub->used)
+            continue;
         mesh_derive_keys(sub->key, &mesh_network.additional_old[i]);
-        if (sub->has_new_key) mesh_derive_keys(sub->new_key, &mesh_network.additional_new[i]);
+        if (sub->has_new_key)
+            mesh_derive_keys(sub->new_key, &mesh_network.additional_new[i]);
     }
     mesh_friendships_rederive();
     return 1;
@@ -615,17 +637,19 @@ static inline int mesh_stage_net_key(
     uint16_t net_idx,
                                          const uint8_t new_net_key[16]
 ) {
-    if (!mesh_network.ready || !new_net_key) return 0;
+    if (!mesh_network.ready || !new_net_key)
+        return 0;
     int slot = mesh_subnet_slot(&mesh_network.state, net_idx);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     if (slot == 0) {
         if (mesh_network.state.key_refresh_phase == 1 &&
-            memcmp(mesh_network.state.new_net_key, new_net_key, 16) == 0)
-            return 1;
+            memcmp(mesh_network.state.new_net_key, new_net_key, 16) == 0
+        ) return 1;
         if (mesh_network.state.key_refresh_phase != 0 ||
             mesh_network.state.phase2_provisioned ||
-            memcmp(mesh_network.state.net_key, new_net_key, 16) == 0)
-            return 0;
+            memcmp(mesh_network.state.net_key, new_net_key, 16) == 0
+        ) return 0;
         mesh_net_state next = mesh_network.state;
         memcpy(next.new_net_key, new_net_key, 16);
         next.has_new_key = 1;
@@ -634,11 +658,11 @@ static inline int mesh_stage_net_key(
     }
     mesh_additional_subnet *sub = &mesh_network.state.additional_subnets[slot - 1];
     if (sub->key_refresh_phase == 1 &&
-        memcmp(sub->new_key, new_net_key, 16) == 0)
-        return 1;
+        memcmp(sub->new_key, new_net_key, 16) == 0
+    ) return 1;
     if (sub->key_refresh_phase != 0 || sub->phase2_provisioned ||
-        memcmp(sub->key, new_net_key, 16) == 0)
-        return 0;
+        memcmp(sub->key, new_net_key, 16) == 0
+    ) return 0;
     mesh_net_state next = mesh_network.state;
     memcpy(next.additional_subnets[slot - 1].new_key, new_net_key, 16);
     next.additional_subnets[slot - 1].has_new_key = 1;
@@ -652,14 +676,18 @@ static inline int mesh_stage_app_key_for(
                                               const uint8_t new_app_key[16]
 ) {
     if (!mesh_network.ready || !new_app_key ||
-        mesh_subnet_phase(&mesh_network.state, net_idx) != 1)
-        return 0;
+        mesh_subnet_phase(&mesh_network.state, net_idx) != 1
+    ) return 0;
     int slot = mesh_app_key_slot(&mesh_network.state, index);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     const mesh_app_key *app = &mesh_network.state.app_keys[slot];
-    if (mesh_app_net_idx(&mesh_network.state, app) != net_idx) return 0;
-    if (app->has_new_key && memcmp(app->new_key, new_app_key, 16) == 0) return 1;
-    if (app->has_new_key || memcmp(app->key, new_app_key, 16) == 0) return 0;
+    if (mesh_app_net_idx(&mesh_network.state, app) != net_idx)
+        return 0;
+    if (app->has_new_key && memcmp(app->new_key, new_app_key, 16) == 0)
+        return 1;
+    if (app->has_new_key || memcmp(app->key, new_app_key, 16) == 0)
+        return 0;
     mesh_net_state next = mesh_network.state;
     memcpy(next.app_keys[slot].new_key, new_app_key, 16);
     next.app_keys[slot].has_new_key = 1;
@@ -671,7 +699,8 @@ static inline int mesh_stage_app_key(
                                          const uint8_t new_app_key[16]
 ) {
     int slot = mesh_app_key_slot(&mesh_network.state, index);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     return mesh_stage_app_key_for(
         mesh_app_net_idx(&mesh_network.state, &mesh_network.state.app_keys[slot]),
         index, new_app_key);
@@ -682,26 +711,35 @@ static int mesh_key_refresh_transition_apply(
     mesh_net_state *next,
         uint16_t net_idx, uint8_t transition
 ) {
-    if (!next) return 0;
+    if (!next)
+        return 0;
     int slot = mesh_subnet_slot(next, net_idx);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     uint8_t phase = mesh_subnet_phase(next, net_idx);
     uint8_t has_new = slot == 0 ? next->has_new_key :
         next->additional_subnets[slot - 1].has_new_key;
     uint8_t phase2 = slot == 0 ? next->phase2_provisioned :
         next->additional_subnets[slot - 1].phase2_provisioned;
-    if (transition == 2 && phase2) return 1;
+    if (transition == 2 && phase2)
+        return 1;
     if (transition == 3 && !has_new) {
-        if (!phase2) return 1;
-        if (slot == 0) next->phase2_provisioned = 0;
+        if (!phase2)
+            return 1;
+        if (slot == 0)
+            next->phase2_provisioned = 0;
         else next->additional_subnets[slot - 1].phase2_provisioned = 0;
         return 1;
     }
-    if (!has_new) return 0;
+    if (!has_new)
+        return 0;
     if (transition == 2) {
-        if (phase != 1 && phase != 2) return 0;
-        if (phase == 2) return 1;
-        if (slot == 0) next->key_refresh_phase = 2;
+        if (phase != 1 && phase != 2)
+            return 0;
+        if (phase == 2)
+            return 1;
+        if (slot == 0)
+            next->key_refresh_phase = 2;
         else next->additional_subnets[slot - 1].key_refresh_phase = 2;
     } else if (transition == 3) {
         if (slot == 0) {
@@ -735,7 +773,8 @@ static int mesh_iv_state_update(
     mesh_net_state *next, uint32_t observed_iv,
                                 uint8_t observed_update
 ) {
-    if (!next || observed_update > 1) return 0;
+    if (!next || observed_update > 1)
+        return 0;
     uint64_t now;
     if (next->iv_index != UINT32_MAX &&
         observed_iv == next->iv_index + 1 && observed_update &&
@@ -762,8 +801,8 @@ static inline int mesh_start_iv_update(void) {
     uint64_t now;
     if (!mesh_network.ready || mesh_network.state.iv_update ||
         mesh_network.state.iv_index == UINT32_MAX ||
-        !iv_time_ready(&now))
-        return 0;
+        !iv_time_ready(&now)
+    ) return 0;
 
     mesh_net_state next = mesh_network.state;
     next.iv_index++;
@@ -807,7 +846,8 @@ static void mesh_obfuscate(
 
 // Queue one authenticated Secure Network Beacon for each installed subnet.
 static inline int mesh_net_beacon_queue(void) {
-    if (!mesh_network.ready || !mesh_network.state.beacon) return 0;
+    if (!mesh_network.ready || !mesh_network.state.beacon)
+        return 0;
     const mesh_net_state *state = &mesh_network.state;
     uint8_t sent = 0;
     for (uint8_t i = 0; i < MESH_MAX_SUBNETS; i++) {
@@ -819,14 +859,16 @@ static inline int mesh_net_beacon_queue(void) {
             phase2 = state->phase2_provisioned;
         } else {
             const mesh_additional_subnet *sub = &state->additional_subnets[i - 1];
-            if (!sub->used) continue;
+            if (!sub->used)
+                continue;
             net_idx = sub->index;
             phase = sub->key_refresh_phase;
             phase2 = sub->phase2_provisioned;
         }
         const mesh_credentials *key = mesh_runtime_netkey(
             state, net_idx, phase == 2);
-        if (!key) continue;
+        if (!key)
+            continue;
         uint8_t ad[24], mac[16];
         ad[0] = 23; ad[1] = MESH_NETWORK_BEACON_AD_TYPE; ad[2] = 0x01;
         ad[3] = (phase == 2 || phase2 ? 1 : 0) | (state->iv_update ? 2 : 0);
@@ -836,9 +878,12 @@ static inline int mesh_net_beacon_queue(void) {
         ad[14] = (uint8_t)(iv >> 8); ad[15] = (uint8_t)iv;
         aes_cmac(key->beacon_key, ad + 3, 13, mac);
         memcpy(ad + 16, mac, 8);
-        if (BLE_MESH_QUEUE_TX(ad, sizeof(ad)) == 0) sent++;
+        if (BLE_MESH_QUEUE_TX(ad, sizeof(ad)) == 0)
+            sent++;
     }
-    if (sent) mesh_network.beacon.last_sent_ms = GET_MILLIS();
+
+    if (sent)
+        mesh_network.beacon.last_sent_ms = GET_MILLIS();
     return sent != 0;
 }
 
@@ -855,8 +900,7 @@ static inline int mesh_net_queue_with_credentials(
         dst == 0 || ctl > 1 ||
         ttl > 0x7f || len < 1 || len > (ctl ? 12u : 16u) ||
         state->next_seq > 0xffffffu || !key
-    )
-        return 0;
+    ) return 0;
 
     uint8_t ad[31], *pdu = ad + 2;
     uint32_t seq = state->next_seq;
@@ -881,11 +925,12 @@ static inline int mesh_net_queue_with_credentials(
 
     if (ccm_encrypt_and_tag(key->encryption_key, nonce, 13,
                             NULL, 0, plain, len + 2, pdu + 7,
-                            pdu + 9 + len, mic_len) != CCM_OK)
-        return 0;
+                            pdu + 9 + len, mic_len) != CCM_OK
+    ) return 0;
     mesh_obfuscate(key, pdu, iv);
 
-    if (BLE_MESH_NETWORK_STORE_SEQ(seq + 1) != 1) return 0;
+    if (BLE_MESH_NETWORK_STORE_SEQ(seq + 1) != 1)
+        return 0;
     state->next_seq = seq + 1;
     return BLE_MESH_QUEUE_TX(ad, (size_t)ad[0] + 1) == 0;
 }
@@ -910,14 +955,15 @@ static inline int mesh_net_queue_friend(
         uint16_t dst, uint8_t ctl, uint8_t ttl, const uint8_t *transport,
         size_t len
 ) {
-    if (!mesh_network.ready || !mesh_local_element(src)) return 0;
+    if (!mesh_network.ready || !mesh_local_element(src))
+        return 0;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         const mesh_friendship *friendship =
             &mesh_network.friendships[i];
         if (!friendship->used || friendship->net_key_index != net_idx ||
             !((src == friendship->lpn_address && dst == friendship->friend_address) ||
-              (src == friendship->friend_address && dst == friendship->lpn_address)))
-            continue;
+              (src == friendship->friend_address && dst == friendship->lpn_address))
+        ) continue;
         const mesh_credentials *credentials =
             mesh_subnet_phase(&mesh_network.state, net_idx) == 2 &&
             friendship->has_new_credentials ? &friendship->new_credentials :
@@ -931,8 +977,10 @@ static inline int mesh_net_queue_friend(
 // Count authenticated subnet beacons in two rolling 10-second buckets.
 static void mesh_beacon_observations(uint32_t now) {
     uint32_t steps = (uint32_t)(now - mesh_network.beacon.observed_at_ms) / 10000u;
-    if (!steps) return;
-    if (steps >= 2) memset(mesh_network.beacon.observed, 0, sizeof(mesh_network.beacon.observed));
+    if (!steps)
+        return;
+    if (steps >= 2)
+        memset(mesh_network.beacon.observed, 0, sizeof(mesh_network.beacon.observed));
     mesh_network.beacon.bucket ^= steps & 1u;
     mesh_network.beacon.observed[mesh_network.beacon.bucket] = 0;
     mesh_network.beacon.observed_at_ms += steps * 10000u;
@@ -945,8 +993,7 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
     if (!ad || len != 24 || ad[0] != 23 ||
         ad[1] != MESH_NETWORK_BEACON_AD_TYPE || ad[2] != 0x01 ||
         (ad[3] & 0xfcu) != 0 || !mesh_network.ready
-    )
-        return 0;
+    ) return 0;
 
     const mesh_credentials *key = NULL;
     uint8_t used_new = 0;
@@ -961,36 +1008,44 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         } else {
             const mesh_additional_subnet *sub =
                 &mesh_network.state.additional_subnets[subnet - 1];
-            if (!sub->used) continue;
+            if (!sub->used)
+                continue;
             candidate_idx = sub->index;
             phase = sub->key_refresh_phase;
         }
         for (uint8_t version = 0; version < 2; version++) {
-            if (!version && phase == 2) continue;
+            if (!version && phase == 2)
+                continue;
             const mesh_credentials *candidate =
                 mesh_runtime_netkey(&mesh_network.state, candidate_idx, version);
-            if (!candidate || memcmp(ad + 4, candidate->network_id, 8)) continue;
+            if (!candidate || memcmp(ad + 4, candidate->network_id, 8))
+                continue;
             uint8_t mac[16], diff = 0;
             aes_cmac(candidate->beacon_key, ad + 3, 13, mac);
             for (uint8_t j = 0; j < 8; j++) diff |= mac[j] ^ ad[16 + j];
             if (!diff) { key = candidate; used_new = version; net_idx = candidate_idx; break; }
         }
     }
-    if (!key) return 0;
+
+    if (!key)
+        return 0;
     mesh_beacon_observations(GET_MILLIS());
     uint8_t *observed = &mesh_network.beacon.observed[mesh_network.beacon.bucket];
-    if (*observed < 59) (*observed)++;
+    if (*observed < 59)
+        (*observed)++;
 
     mesh_net_state next = mesh_network.state;
     int subnet_slot = mesh_subnet_slot(&next, net_idx);
-    if (subnet_slot < 0) return 0;
+    if (subnet_slot < 0)
+        return 0;
     uint8_t phase = mesh_subnet_phase(&next, net_idx);
     uint8_t phase2 = subnet_slot == 0 ? next.phase2_provisioned :
         next.additional_subnets[subnet_slot - 1].phase2_provisioned;
     if (used_new) {
         if (ad[3] & 1u) {
             if (phase == 1) {
-                if (subnet_slot == 0) next.key_refresh_phase = 2;
+                if (subnet_slot == 0)
+                    next.key_refresh_phase = 2;
                 else next.additional_subnets[subnet_slot - 1].key_refresh_phase = 2;
             }
         } else if (phase == 1 || phase == 2) {
@@ -1008,10 +1063,12 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         }
     } else if (phase2) {
         if (!(ad[3] & 1u)) {
-            if (subnet_slot == 0) next.phase2_provisioned = 0;
+            if (subnet_slot == 0)
+                next.phase2_provisioned = 0;
             else next.additional_subnets[subnet_slot - 1].phase2_provisioned = 0;
         }
-    } else if (ad[3] & 1u) return 0;
+    } else if (ad[3] & 1u)
+        return 0;
 
     uint32_t observed_iv = ((uint32_t)ad[12] << 24) |
                            ((uint32_t)ad[13] << 16) |
@@ -1020,8 +1077,8 @@ static inline int mesh_handle_net_beacon(const uint8_t *ad, size_t len) {
         return 0;
 
     if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
-        mesh_commit(&next) != 1)
-        return -1;
+        mesh_commit(&next) != 1
+    ) return -1;
     return 1;
 }
 
@@ -1034,13 +1091,15 @@ static inline int mesh_net_receive(
     const uint8_t *pdu, size_t len,
                                         mesh_net_message *message
 ) {
-    if (!pdu || !message) return -1;
+    if (!pdu || !message)
+        return -1;
     if (!mesh_network.ready || len < 14 || len > MESH_NETWORK_MAX_PDU)
         return 0;
 
     uint32_t iv = mesh_network.state.iv_index;
     if ((pdu[0] >> 7) != (iv & 1u)) {
-        if (iv == 0) return 0;
+        if (iv == 0)
+            return 0;
         iv--;
     }
 
@@ -1057,30 +1116,36 @@ static inline int mesh_net_receive(
     uint16_t net_idx = 0;
     for (uint8_t subnet = 0; subnet < MESH_MAX_SUBNETS && !authenticated; subnet++) {
         uint16_t candidate_idx;
-        if (!subnet) candidate_idx = mesh_network.state.net_key_index;
+        if (!subnet)
+            candidate_idx = mesh_network.state.net_key_index;
         else {
             const mesh_additional_subnet *sub = &mesh_network.state.additional_subnets[subnet - 1];
-            if (!sub->used) continue;
+            if (!sub->used)
+                continue;
             candidate_idx = sub->index;
         }
         for (uint8_t version = 0; version < 2; version++) {
             const mesh_credentials *key = mesh_runtime_netkey(
                 &mesh_network.state, candidate_idx, version);
-            if (!key || (pdu[0] & 0x7f) != key->nid) continue;
+            if (!key || (pdu[0] & 0x7f) != key->nid)
+                continue;
 
         memcpy(clear, pdu, len);
         mesh_obfuscate(key, clear, iv);
         ctl = clear[1] >> 7;
         size_t mic_len = ctl ? 8u : 4u;
 
-        if (len < 9 + 1 + mic_len) continue;
+        if (len < 9 + 1 + mic_len)
+            continue;
         transport_len = len - 9 - mic_len;
 
-        if (transport_len > (ctl ? 12u : 16u)) continue;
+        if (transport_len > (ctl ? 12u : 16u))
+            continue;
         src = (uint16_t)((clear[5] << 8) | clear[6]);
 
         if (src == 0 || src > 0x7fff ||
-            mesh_local_element(src)) continue;
+            mesh_local_element(src)
+        ) continue;
         seq = ((uint32_t)clear[2] << 16) | ((uint32_t)clear[3] << 8) | clear[4];
         mesh_nonce(nonce, clear + 1, iv);
 
@@ -1100,27 +1165,34 @@ static inline int mesh_net_receive(
             &mesh_network.friendships[i];
         if (!friendship->used ||
             mesh_subnet_slot(&mesh_network.state,
-                             friendship->net_key_index) < 0) continue;
+                             friendship->net_key_index) < 0
+        ) continue;
         for (uint8_t version = 0; version < 2 && !authenticated; version++) {
-            if (version && !friendship->has_new_credentials) continue;
+            if (version && !friendship->has_new_credentials)
+                continue;
             const mesh_credentials *key = version ?
                 &friendship->new_credentials : &friendship->credentials;
-            if ((pdu[0] & 0x7f) != key->nid) continue;
+            if ((pdu[0] & 0x7f) != key->nid)
+                continue;
 
             memcpy(clear, pdu, len);
             mesh_obfuscate(key, clear, iv);
             ctl = clear[1] >> 7;
             size_t mic_len = ctl ? 8u : 4u;
-            if (len < 9 + 1 + mic_len) continue;
+            if (len < 9 + 1 + mic_len)
+                continue;
             transport_len = len - 9 - mic_len;
-            if (transport_len > (ctl ? 12u : 16u)) continue;
+            if (transport_len > (ctl ? 12u : 16u))
+                continue;
             src = (uint16_t)((clear[5] << 8) | clear[6]);
-            if (src == 0 || src > 0x7fff || mesh_local_element(src)) continue;
+            if (src == 0 || src > 0x7fff || mesh_local_element(src))
+                continue;
             seq = ((uint32_t)clear[2] << 16) | ((uint32_t)clear[3] << 8) | clear[4];
             mesh_nonce(nonce, clear + 1, iv);
             if (ccm_auth_decrypt(key->encryption_key, nonce, 13,
                     NULL, 0, clear + 7, transport_len + 2,
-                    clear + 9 + transport_len, mic_len, plain) != CCM_OK) continue;
+                    clear + 9 + transport_len, mic_len, plain) != CCM_OK
+            ) continue;
 
             authenticated = 1;
             friendship_credential = 1;
@@ -1130,16 +1202,19 @@ static inline int mesh_net_receive(
             friendship_friend = friendship->friend_address;
         }
     }
-    if (!authenticated) return 0;
+
+    if (!authenticated)
+        return 0;
     uint16_t dst = (uint16_t)((plain[0] << 8) | plain[1]);
-    if (dst == 0) return 0;
+    if (dst == 0)
+        return 0;
     if (friendship_credential &&
         !((src == friendship_lpn && dst == friendship_friend) ||
           (src == friendship_friend && dst == friendship_lpn) ||
           (mesh_network.state.unicast_address == friendship_lpn &&
            (mesh_local_element(dst) ||
-            (dst >= 0x8000 && dst < 0xff00)))))
-        return 0;
+            (dst >= 0x8000 && dst < 0xff00))))
+    ) return 0;
 
     // A segmented message is checked when reassembly completes. Checking its
     // individual segment SEQs here would reject valid segments arriving late.
@@ -1214,19 +1289,22 @@ static inline int mesh_net_receive(
     // Count subscribed Heartbeats and track hops after authentication and replay checks.
     if (message->ctl && message->transport[0] == 0x0a) {
         if (mesh_network.heartbeat.subscribed &&
-            (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS()) <= 0)
-            mesh_network.heartbeat.subscribed = 0;
+            (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS()) <= 0
+        ) mesh_network.heartbeat.subscribed = 0;
         if (message->transport_len != 4 || (message->transport[1] & 0x80) ||
             message->transport[1] < message->ttl ||
             (unsigned)message->transport[1] - message->ttl >= 0x7f ||
             !mesh_network.heartbeat.subscribed ||
             message->src != mesh_network.heartbeat.src ||
-            message->dst != mesh_network.heartbeat.dst)
-            return 0;
+            message->dst != mesh_network.heartbeat.dst
+        ) return 0;
         uint8_t hops = message->transport[1] - message->ttl + 1;
-        if (mesh_network.heartbeat.count != 0xffff) mesh_network.heartbeat.count++;
-        if (hops < mesh_network.heartbeat.min_hops) mesh_network.heartbeat.min_hops = hops;
-        if (hops > mesh_network.heartbeat.max_hops) mesh_network.heartbeat.max_hops = hops;
+        if (mesh_network.heartbeat.count != 0xffff)
+            mesh_network.heartbeat.count++;
+        if (hops < mesh_network.heartbeat.min_hops)
+            mesh_network.heartbeat.min_hops = hops;
+        if (hops > mesh_network.heartbeat.max_hops)
+            mesh_network.heartbeat.max_hops = hops;
         return 0;
     }
     return 1;
@@ -1259,10 +1337,12 @@ static inline int mesh_net_poll(mesh_net_message *message) {
     int result = received < 0 ? -1 : 0;
     if (received > 0 && len >= 2 && (size_t)ad[0] + 1 == len) {
         if (ad[1] == MESH_NETWORK_BEACON_AD_TYPE) {
-            if (mesh_handle_net_beacon(ad, len) < 0) result = -1;
+            if (mesh_handle_net_beacon(ad, len) < 0)
+                result = -1;
         } else if (ad[1] == MESH_NETWORK_AD_TYPE) {
             result = mesh_net_receive(ad + 2, len - 2, message);
-            if (result == 1) message->rssi = rssi;
+            if (result == 1)
+                message->rssi = rssi;
         }
     }
 
@@ -1277,7 +1357,8 @@ static inline int mesh_net_poll(mesh_net_message *message) {
             MESH_NETWORK_IV_MIN_SECONDS;
         if (!remaining || (elapsed && remaining <= UINT64_MAX / elapsed &&
             consumed_window >= (uint64_t)remaining * elapsed)) {
-            if (!mesh_start_iv_update()) tick_result = -1;
+            if (!mesh_start_iv_update())
+                tick_result = -1;
         }
     }
 
@@ -1287,23 +1368,26 @@ static inline int mesh_net_poll(mesh_net_message *message) {
         // (20 s observation period / 2 expected beacons) * (observed + 1).
         uint32_t count = mesh_network.beacon.observed[0] + mesh_network.beacon.observed[1];
         uint32_t interval = (count + 1u) * 10000u;
-        if (interval > 600000u) interval = 600000u;
+        if (interval > 600000u)
+            interval = 600000u;
         if ((uint32_t)(millis - mesh_network.beacon.last_sent_ms) >= interval &&
-            mesh_net_beacon_queue()) mesh_network.beacon.last_sent_ms = millis;
+            mesh_net_beacon_queue()
+        ) mesh_network.beacon.last_sent_ms = millis;
     }
     // Expire subscriptions and send due Heartbeats as unsegmented Control PDUs.
     const mesh_heartbeat_publication *pub = &mesh_network.state.heartbeat;
     uint32_t millis = GET_MILLIS();
     if (mesh_network.heartbeat.subscribed &&
-        (int32_t)(mesh_network.heartbeat.expires_at_ms - millis) <= 0)
-        mesh_network.heartbeat.subscribed = 0;
+        (int32_t)(mesh_network.heartbeat.expires_at_ms - millis) <= 0
+    ) mesh_network.heartbeat.subscribed = 0;
     if (mesh_network.ready && pub->dst && pub->period_log &&
         mesh_network.heartbeat.remaining &&
         (int32_t)(millis - mesh_network.heartbeat.publish_at_ms) >= 0) {
         uint8_t control[] = {0x0a, pub->ttl, 0, 0}; // No optional features are enabled.
         if (mesh_net_queue(pub->net_idx, mesh_network.state.unicast_address, pub->dst, 1,
                                pub->ttl, control, sizeof(control))) {
-            if (mesh_network.heartbeat.remaining != 0xffff) mesh_network.heartbeat.remaining--;
+            if (mesh_network.heartbeat.remaining != 0xffff)
+                mesh_network.heartbeat.remaining--;
             mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;
         }
     }

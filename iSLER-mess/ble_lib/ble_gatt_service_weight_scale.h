@@ -13,11 +13,14 @@ typedef struct {
 static inline int gatt_weight_scale_feature16(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
-    if (!server || !handle || !features) return 0;
+    if (!server || !handle || !features)
+        return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-    if (!attribute || attribute->value_len < 2) return 0;
+    if (!attribute || attribute->value_len < 2)
+        return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
+    if (!value)
+        return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -34,8 +37,8 @@ static inline int gatt_weight_scale_service_indicate_measurement(
                                      &features) ||
         ((measurement->flags & 0x02) && !(features & (1u << 0))) ||
         ((measurement->flags & 0x04) && !(features & (1u << 1))) ||
-        ((measurement->flags & 0x08) && !(features & (1u << 2))))
-        return 0;
+        ((measurement->flags & 0x08) && !(features & (1u << 2)))
+    ) return 0;
 
     uint8_t value[15];
     uint16_t len = 0;
@@ -47,7 +50,8 @@ static inline int gatt_weight_scale_service_indicate_measurement(
         len += 7;
     }
 
-    if (measurement->flags & 0x04) value[len++] = measurement->user_id;
+    if (measurement->flags & 0x04)
+        value[len++] = measurement->user_id;
 
     if (measurement->flags & 0x08) {
         ble_put_le16(value + len, measurement->bmi);

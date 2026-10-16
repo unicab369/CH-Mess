@@ -44,12 +44,12 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
 ) {
     if (!server || (include_count && !included_service_handles) ||
         !characteristics || !count || !service_handle ||
-        !value_handles || server->database_sealed)
-        return 0;
+        !value_handles || server->database_sealed
+    ) return 0;
     for (uint8_t i = 0; i < count; i++)
         if (characteristics[i].descriptor_count &&
-            !characteristics[i].descriptors)
-            return 0;
+            !characteristics[i].descriptors
+        ) return 0;
     uint16_t old_count = server->count;
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;

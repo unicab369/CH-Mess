@@ -15,9 +15,11 @@ static int send_pdu(
                     uint16_t len
 ) {
     (void)context;
-    if (outbound_len) return 0;
+    if (outbound_len)
+        return 0;
     int encoded = l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
-    if (!encoded) return 0;
+    if (!encoded)
+        return 0;
     outbound_len = (uint16_t)encoded;
     return 1;
 }
@@ -33,7 +35,8 @@ static int receive_data(
 ) {
     (void)context;
     (void)cid;
-    if (len > sizeof(received)) return 0;
+    if (len > sizeof(received))
+        return 0;
     memcpy(received, data, len);
     received_len = len;
     return 1;
@@ -47,7 +50,8 @@ static int write_record(const uint8_t *data, uint16_t len) {
 
 static int read_record(uint8_t *data, uint16_t capacity, uint16_t *len) {
     uint8_t header[2];
-    if (fread(header, 1, 2, stdin) != 2) return 0;
+    if (fread(header, 1, 2, stdin) != 2)
+        return 0;
     *len = (uint16_t)header[0] | (uint16_t)header[1] << 8;
     return *len <= capacity && fread(data, 1, *len, stdin) == *len;
 }
@@ -60,7 +64,8 @@ static int receive_frame(
     const uint8_t *sdu = NULL;
     int result = l2cap_reassembler_feed(&reassembler, 2, frame, len,
         &cid, &sdu, &sdu_len);
-    if (result != 1) return 0;
+    if (result != 1)
+        return 0;
     *cid_out = cid;
     return l2cap_connection_receive(&connection, cid, sdu, sdu_len);
 }
@@ -71,22 +76,22 @@ int main(void) {
     ops.accept_psm = accept_psm;
     ops.channel_data = receive_data;
     if (!l2cap_connection_init(&connection, &ops, 100, 40, 2) ||
-        !l2cap_psm_register(&connection, 0x0027))
-        return 1;
+        !l2cap_psm_register(&connection, 0x0027)
+    ) return 1;
 
     uint8_t frame[L2CAP_SDU_MAX + 4];
     uint16_t frame_len, cid;
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) ||
         cid != L2CAP_CID_LE_SIGNALING || !outbound_len ||
-        !write_record(outbound, outbound_len))
-        return 2;
+        !write_record(outbound, outbound_len)
+    ) return 2;
     outbound_len = 0;
 
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) || received_len != 5 ||
         memcmp(received, "hello", 5) || !write_record(received, received_len) ||
-        !outbound_len || !write_record(outbound, outbound_len))
-        return 3;
+        !outbound_len || !write_record(outbound, outbound_len)
+    ) return 3;
     return 0;
 }

@@ -322,7 +322,8 @@ static int pb_tx_start(
 
     memset(&tx, 0, sizeof(tx));
     for (uint8_t i = 0; i < count; ++i) {
-        if (!adv[i] || len[i] == 0 || len[i] > PB_MAX_AD_SIZE) return -1;
+        if (!adv[i] || len[i] == 0 || len[i] > PB_MAX_AD_SIZE)
+            return -1;
         memcpy(tx.adv[i], adv[i], len[i]);
         tx.len[i] = (uint8_t)len[i];
     }
@@ -353,7 +354,8 @@ static int pb_tx_send_once(
 }
 
 static int pb_tx_poll(uint32_t now) {
-    if (!tx.active) return 0;
+    if (!tx.active)
+        return 0;
 
     if ((uint32_t)(now - tx.started_ms) >= tx.timeout_ms) {
         int failed = tx.fail_on_timeout;
@@ -361,10 +363,12 @@ static int pb_tx_poll(uint32_t now) {
         return failed ? -1 : 0;
     }
 
-    if ((uint32_t)(now - tx.last_tx_ms) < PB_RETRANSMIT_MS) return 0;
+    if ((uint32_t)(now - tx.last_tx_ms) < PB_RETRANSMIT_MS)
+        return 0;
 
     for (uint8_t i = 0; i < tx.count; ++i) {
-        if (BLE_MESH_QUEUE_TX(tx.adv[i], tx.len[i]) != 0) return -1;
+        if (BLE_MESH_QUEUE_TX(tx.adv[i], tx.len[i]) != 0)
+            return -1;
     }
     tx.last_tx_ms = now;
     return 0;
@@ -390,7 +394,8 @@ static int pb_queue_gpc_ack(uint8_t tx_num) {
 // Returns 1 after queueing the ACK and recording the received transaction,
 // or 0 if the ACK could not be queued.
 static int pb_ack_rx(uint8_t tx_num) {
-    if (pb_queue_gpc_ack(tx_num) == 0) return 0;
+    if (pb_queue_gpc_ack(tx_num) == 0)
+        return 0;
     bearer.last_rx_tx = tx_num;
     bearer.last_rx_valid = 1;
     return 1;
@@ -413,6 +418,7 @@ static int peer_confirm_valid(
     for (size_t i = 0; i < 16; ++i) {
         diff |= (uint8_t)(peer_random[i] ^ local_random[i]);
     }
+
     if (diff == 0) {
         return 0;
     }
@@ -709,7 +715,8 @@ static void provisioner_fail(uint8_t reason) {
 
 /* Returns -1 when either local provisioning role already owns PB-ADV. */
 int provisioner_start(void) {
-    if (bearer.role != PB_ROLE_NONE) return -1;
+    if (bearer.role != PB_ROLE_NONE)
+        return -1;
 
     memset(&provisioner, 0, sizeof(provisioner));
     memset(&session, 0, sizeof(session));
@@ -724,7 +731,8 @@ int provisioner_start(void) {
 /* Poll the radio and handle one received advertisement. */
 void provisioner_poll(void) {
     // Only the active provisioner handles this poll.
-    if (bearer.role != PB_ROLE_PROVISIONER) return;
+    if (bearer.role != PB_ROLE_PROVISIONER)
+        return;
 
     uint8_t adv_data[31];
     size_t len = sizeof(adv_data);
@@ -745,7 +753,8 @@ void provisioner_poll(void) {
         provisioner.state == PROVISIONER_COMPLETE
     ) {
         // Release the bearer after the final transmission stops.
-        if (!tx.active) bearer.role = PB_ROLE_NONE;
+        if (!tx.active)
+            bearer.role = PB_ROLE_NONE;
         return;
     }
 
@@ -853,7 +862,8 @@ void provisioner_poll(void) {
         //! Send STEP_2: PB_LINK_OPEN advertisement
         int success = pb_tx_send_once(link_open, sizeof(link_open),
                                         PB_LINK_OPEN_MS, 1) == 0;
-        if (success) bearer.last_activity_ms = GET_MILLIS();
+        if (success)
+            bearer.last_activity_ms = GET_MILLIS();
         provisioner.state = success ? WAITING_FOR_LINK_ACK
                                     : PROVISIONER_FAILED;
     }
@@ -1286,7 +1296,8 @@ static void provisionee_fail(uint8_t reason) {
 }
 
 static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
-    if (!start || !caps || caps->num_elements == 0) return 0;
+    if (!start || !caps || caps->num_elements == 0)
+        return 0;
 
     /* Validate the selected algorithm and public-key method. */
     if (start->algorithm >= 16 ||
@@ -1328,7 +1339,8 @@ static int prov_start_is_valid(const prov_start *start, const prov_caps *caps) {
 
 /* Returns -1 when either local provisioning role already owns PB-ADV. */
 int provisionee_start(void) {
-    if (bearer.role != PB_ROLE_NONE) return -1;
+    if (bearer.role != PB_ROLE_NONE)
+        return -1;
 
     memset(&provisionee, 0, sizeof(provisionee));
     memset(&session, 0, sizeof(session));
@@ -1350,7 +1362,8 @@ int provisionee_start(void) {
 }
 
 void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
-    if (bearer.role != PB_ROLE_PROVISIONEE) return;
+    if (bearer.role != PB_ROLE_PROVISIONEE)
+        return;
 
     if (!oob_info || !caps) {
         provisionee.state = PROVISIONEE_FAILED;
@@ -1477,7 +1490,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             //! Provisionee Send STEP_3: PB_LINK_ACK advertisement
             int success = pb_tx_send_once(link_ack, sizeof(link_ack),
                                             PB_LINK_OPEN_MS, 1) == 0;
-            if (success) bearer.last_activity_ms = GET_MILLIS();
+            if (success)
+                bearer.last_activity_ms = GET_MILLIS();
             provisionee.state = success ? WAITING_FOR_INVITE
                                         : PROVISIONEE_FAILED;
         }

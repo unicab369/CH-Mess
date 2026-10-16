@@ -29,11 +29,14 @@ typedef struct {
 static inline int gatt_glucose_feature16(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
-    if (!server || !handle || !features) return 0;
+    if (!server || !handle || !features)
+        return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-    if (!attribute || attribute->value_len < 2) return 0;
+    if (!attribute || attribute->value_len < 2)
+        return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
+    if (!value)
+        return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -50,7 +53,8 @@ static inline int gatt_glucose_service_notify_measurement(
         (measurement->sensor_status & (uint16_t)~0x03ff) ||
         !gatt_glucose_feature16(server, service->feature_handle, &features) ||
         ((measurement->flags & 0x08) &&
-         (measurement->sensor_status & (uint16_t)~features))) return 0;
+         (measurement->sensor_status & (uint16_t)~features))
+    ) return 0;
 
     uint8_t value[17];
     uint16_t len = 0;
@@ -86,7 +90,8 @@ static inline int gatt_glucose_service_notify_context(
 ) {
     if (!server || !service || !service->context_handle || !context ||
         !(context->flags & 0xdf) ||
-        ((context->flags & 0x20) && !(context->flags & 0x10))) return 0;
+        ((context->flags & 0x20) && !(context->flags & 0x10))
+    ) return 0;
 
     uint8_t value[17];
     uint16_t len = 0;
@@ -99,8 +104,10 @@ static inline int gatt_glucose_service_notify_context(
         len += 2;
     }
 
-    if (context->flags & 0x02) value[len++] = context->meal;
-    if (context->flags & 0x04) value[len++] = context->tester_health;
+    if (context->flags & 0x02)
+        value[len++] = context->meal;
+    if (context->flags & 0x04)
+        value[len++] = context->tester_health;
 
     if (context->flags & 0x08) {
         ble_put_le16(value + len, context->exercise_duration);
@@ -119,7 +126,8 @@ static inline int gatt_glucose_service_notify_context(
         len += 2;
     }
 
-    if (context->flags & 0x80) value[len++] = context->extended_flags;
+    if (context->flags & 0x80)
+        value[len++] = context->extended_flags;
     return gatt_server_queue_event(server, service->context_handle,
                                    value, len, 0);
 }

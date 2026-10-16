@@ -17,7 +17,8 @@ __attribute__((weak)) int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
 #if GAP_SMP_SUPPORT > 0
 __attribute__((weak)) int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
     (void)slot;
-    if (bond) memset(bond, 0, sizeof(*bond));
+    if (bond)
+        memset(bond, 0, sizeof(*bond));
     return -1;
 }
 __attribute__((weak)) int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) {
@@ -67,8 +68,10 @@ static struct {
 #error "GAP_CODED_PHY_MODE must be PHY_S2 or PHY_S8"
 #endif
 static uint8_t gap_phy_mode(uint8_t phy) {
-    if (phy == GAP_PHY_2M) return PHY_2M;
-    if (phy == GAP_PHY_CODED) return GAP_CODED_PHY_MODE;
+    if (phy == GAP_PHY_2M)
+        return PHY_2M;
+    if (phy == GAP_PHY_CODED)
+        return GAP_CODED_PHY_MODE;
     return PHY_1M;
 }
 
@@ -111,7 +114,8 @@ int GAP_HW_ADV_TX_PHY(
                       uint8_t phy
 ) {
     uint8_t mode = gap_phy_mode(phy);
-    if (!(GAP_HW_ADV_PHY_MASK() & phy)) return 0;
+    if (!(GAP_HW_ADV_PHY_MASK() & phy))
+        return 0;
     gap_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, mode);
     return tx_done != 0;

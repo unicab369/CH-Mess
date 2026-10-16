@@ -1,7 +1,7 @@
 # Bluetooth SIG GATT service builders
 
 Checklist based on the Bluetooth SIG Assigned Numbers document dated
-2026-10-08 (GATT service assignments last modified 2026-09-22). A checked
+2026-10-14 (GATT service assignments last modified 2026-09-22). A checked
 service has a database builder or is handled by the GATT core. Builders do not
 automatically provide each service's application protocol or profile behavior.
 
@@ -25,11 +25,15 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Alert Notification (`0x1811`)
 - [x] Continuous Glucose Monitoring (`0x181F`)
 - [x] Scan Parameters (`0x1813`)
-- [x] Running Speed and Cadence (`0x1814`)
+- [x] Running Speed and Cadence (`0x1814`), feature-gated Control Point
+  procedures and Measurement encoding
 - [x] Automation IO (`0x1815`)
-- [x] Cycling Speed and Cadence (`0x1816`)
-- [x] Cycling Power (`0x1818`)
-- [x] Location and Navigation (`0x1819`)
+- [x] Cycling Speed and Cadence (`0x1816`), feature-gated Control Point
+  procedures and Measurement encoding
+- [x] Cycling Power (`0x1818`), Control Point request/completion handling,
+  correctly mapped Measurement/Vector flags, ATT-sized Vector encoding,
+  feature-gated fields, and connection-scoped content masks
+- [x] Location and Navigation (`0x1819`), Control Point route request handling
 - [x] Environmental Sensing (`0x181A`)
 - [x] Body Composition (`0x181B`)
 - [x] User Data (`0x181C`), Database Change Increment writes, User Control
@@ -44,16 +48,16 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Mesh Proxy (`0x1828`)
 - [x] Binary Sensor (`0x183B`)
 
-## Remaining assigned-service layouts
+## Additional assigned-service layouts
 
-The entries below are not complete standard service builders. The generic
-`gatt_sig_service_add()` can register caller-supplied attributes for them, but
-it does not provide or validate the standard characteristic layout. Do not
-count that generic path as implementation of a standard service.
+Each checked entry has a service-specific builder that registers or validates
+its standard GATT characteristic layout. The generic `gatt_sig_service_add()`
+remains available for custom services; it does not replace these builders.
 
 - [x] Human Interface Device (`0x1812`)
 - [x] Internet Protocol Support (`0x1820`)
-- [x] Transport Discovery (`0x1824`)
+- [x] Transport Discovery (`0x1824`), Activate Transport request capture,
+  unsupported-opcode result indications, and completion helper
 - [x] Object Transfer (`0x1825`), single- and multi-object layouts including
   Object ID, OLCP, and Object List Filter
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
@@ -72,19 +76,24 @@ count that generic path as implementation of a standard service.
 - [x] Generic Health Sensor (`0x1840`), segmented live observations plus
   optional Stored Health Observations/RACP layout and record-number request
   validation
-- [x] Audio Input Control (`0x1843`), secondary service builder
-- [x] Volume Control (`0x1844`)
-- [x] Volume Offset Control (`0x1845`), secondary service builder
+- [x] Audio Input Control (`0x1843`), secondary builder, five validated
+  control-point procedures, Change_Counter, and state notifications
+- [x] Volume Control (`0x1844`), all seven control-point opcodes,
+  Change_Counter validation, and Volume State notifications
+- [x] Volume Offset Control (`0x1845`), secondary builder and validated
+  Set Volume Offset procedure with state notifications
 - [x] Coordinated Set Identification (`0x1846`)
 - [x] Device Time (`0x1847`), base layout and Propose/Force Time Update DTCP
-- [x] Media Control (`0x1848`), mandatory metadata, optional playback/order
-  values, and captured Control Point requests with response notifications
-- [x] Generic Media Control (`0x1849`), shared metadata, playback/order values,
-  and captured Control Point requests with response notifications
+- [x] Media Control (`0x1848`), mandatory metadata, optional properties,
+  OTS-backed Object IDs, Search Control Point, and captured request/response
+  notification paths
+- [x] Generic Media Control (`0x1849`), shared complete layout and procedures
 - [x] Constant Tone Extension (`0x184A`)
-- [x] Telephone Bearer (`0x184B`), mandatory encrypted call-state layout
-- [x] Generic Telephone Bearer (`0x184C`), shared mandatory call-state layout
-- [x] Microphone Control (`0x184D`)
+- [x] Telephone Bearer (`0x184B`), all 16 assigned characteristics with
+  optional slots, signal notification timing, and captured Call Control Point
+- [x] Generic Telephone Bearer (`0x184C`), shared layout and control handling
+- [x] Microphone Control (`0x184D`), optional AICS includes, Disabled-state
+  write errors, and state notifications
 - [x] Audio Stream Control (`0x184E`), caller-defined Sink/Source ASEs and control point
 - [x] Broadcast Audio Scan (`0x184F`), variable Receive State instances
 - [x] Published Audio Capabilities (`0x1850`), PAC records and required audio contexts
@@ -101,7 +110,8 @@ count that generic path as implementation of a standard service.
 - [x] Industrial Measurement Device (`0x185A`), permitted live measurements and optional status indications
 - [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data
 - [x] HID ISO (`0x185C`), Properties and LE HID Operation Mode
-- [x] Cookware (`0x185D`), selected assigned Cookware characteristics
+- [x] Cookware (`0x185D`), all twelve assigned characteristic UUIDs supported
+  through the caller-configured characteristic builder
 - [x] Voice Assistant (`0x185E`), common session and control characteristics
 - [x] Generic Voice Assistant (`0x185F`), shared Voice Assistant layout
 - [x] Tire Pressure Monitoring System (`0x1860`), Properties, Pressure, and optional sensor values

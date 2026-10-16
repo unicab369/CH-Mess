@@ -17,8 +17,8 @@ static inline int mesh_onoff_get(
 ) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
-        return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
+    ) return 0;
     return mesh_access_queue_acknowledged(element, dst,
         mesh_models.state.default_ttl, app_idx, OP_ONOFF_GET,
         OP_ONOFF_STATUS, NULL, 0, 0, MESH_ACCESS_ACK_TIMEOUT_MS,
@@ -32,8 +32,8 @@ static inline int mesh_onoff_get_virtual(
 ) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
-        return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
+    ) return 0;
     return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl,
         app_idx, OP_ONOFF_GET, NULL, 0, 0);
 }
@@ -45,8 +45,7 @@ static inline int mesh_onoff_set(
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 || on > 1 || acknowledged > 1 ||
         !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
-    )
-        return 0;
+    ) return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
     if (acknowledged && dst > 0 && dst <= 0x7fff)
@@ -65,8 +64,8 @@ static inline int mesh_onoff_set_virtual(
 ) {
     int index = mesh_element_index(element);
     if (!mesh_models.ready || index < 0 || !label || on > 1 ||
-        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx))
-        return 0;
+        !app_key_allowed((uint8_t)index, MESH_MODEL_ONOFF_CLIENT, app_idx)
+    ) return 0;
 
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid++};
     return mesh_access_queue_virtual(element, label, mesh_models.state.default_ttl, app_idx,
@@ -78,13 +77,15 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
     struct mesh_onoff_server_state *server = &mesh_models.onoff_server[element];
     uint32_t opcode = message->opcode;
     if (opcode == OP_ONOFF_GET) {
-        if (message->params_len != 0) return 0;
+        if (message->params_len != 0)
+            return 0;
     }
     else if (
         opcode == OP_ONOFF_SET ||
         opcode == OP_ONOFF_SET_UNACK
     ) {
-        if (message->params_len != 2 || message->params[0] > 1) return 0;
+        if (message->params_len != 2 || message->params[0] > 1)
+            return 0;
         uint32_t now = GET_MILLIS();
 
         if (!server->has_tid ||
@@ -95,7 +96,8 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
         ) {
             uint8_t changed = server->onoff != message->params[0];
             server->onoff = message->params[0];
-            if (changed) mesh_publication_begin(element, MESH_MODEL_ONOFF_SERVER,
+            if (changed)
+                mesh_publication_begin(element, MESH_MODEL_ONOFF_SERVER,
                 OP_ONOFF_STATUS, &server->onoff, 1);
             BLE_MESH_ONOFF_CHANGED(mesh_network.state.unicast_address + element,
                                    server->onoff);
@@ -105,7 +107,8 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
             server->last_set_ms = now;
             server->has_tid = 1;
         }
-        if (opcode == OP_ONOFF_SET_UNACK) return 1;
+        if (opcode == OP_ONOFF_SET_UNACK)
+            return 1;
     } else return 0;
 
     uint8_t present = server->onoff;
@@ -121,11 +124,13 @@ static inline int mesh_onoff_publish(
                                          uint8_t acknowledged
 ) {
     int index = mesh_element_index(element);
-    if (index < 0 || on > 1 || acknowledged > 1) return 0;
+    if (index < 0 || on > 1 || acknowledged > 1)
+        return 0;
     uint8_t params[2] = {on, mesh_models.onoff_client[index].tid};
     int result = mesh_publication_begin((uint8_t)index, MESH_MODEL_ONOFF_CLIENT,
         acknowledged ? OP_ONOFF_SET : OP_ONOFF_SET_UNACK, params, sizeof(params));
-    if (result) mesh_models.onoff_client[index].tid++;
+    if (result)
+        mesh_models.onoff_client[index].tid++;
     return result;
 }
 
@@ -146,7 +151,8 @@ static void mesh_publications_poll(void) {
             if ((j == 2 && mesh_models.health_server[i].publish_pending) ||
                 (period && (int32_t)(now - mesh_models.publications[i][j].period_at_ms) >= 0)) {
                 mesh_models.publications[i][j].period_at_ms = now + period;
-                if (j == 0) mesh_publication_begin(i, models[j], OP_ONOFF_STATUS,
+                if (j == 0)
+                    mesh_publication_begin(i, models[j], OP_ONOFF_STATUS,
                     &mesh_models.onoff_server[i].onoff, 1);
                 else if (j == 2) {
                     uint8_t params[3 + MESH_HEALTH_MAX_FAULTS] = {
@@ -181,7 +187,8 @@ static inline int mesh_models_poll(void) {
         BLE_MESH_ADV_POLL(ad, &len, NULL);
         return 0;
     }
-    if (!mesh_models.ready && !mesh_models_init()) return 0;
+    if (!mesh_models.ready && !mesh_models_init())
+        return 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
         mesh_health_attention_remaining(i);
     mesh_access_message raw;
@@ -201,7 +208,8 @@ static inline int mesh_models_poll(void) {
             result = 1;
         }
     }
-    if (result <= 0) return result;
+    if (result <= 0)
+        return result;
 
     // Decode once, then deliver to each subscribed model instance.
     const mesh_access_pdu *message = &access;
@@ -210,19 +218,23 @@ static inline int mesh_models_poll(void) {
     uint8_t virtual = message->has_label &&
         message->dst == mesh_virtual_address(message->label);
     uint8_t group = message->dst >= 0xc000 && message->dst <= 0xfeff;
-    if (unicast < 0 && !virtual && !group) return 0;
+    if (unicast < 0 && !virtual && !group)
+        return 0;
 
     if (message->app_key_index == APP_KEY_INDEX_NONE) {
-        if (unicast != 0 || message->has_label) return 0;
+        if (unicast != 0 || message->has_label)
+            return 0;
         // Server requests use our key; client replies use the sending node's key.
         if (message->device_key_owner == message->dst) {
             uint16_t primary_net_idx = mesh_network.state.net_key_index;
             mesh_network.reply_net_idx = message->net_key_index;
             int handled = server_config_receive(message);
             mesh_network.reply_net_idx = primary_net_idx;
-            if (handled) return 1;
+            if (handled)
+                return 1;
         }
-        if (message->device_key_owner != message->src) return 0;
+        if (message->device_key_owner != message->src)
+            return 0;
 
         if (opcode == OP_CONFIG_BEACON_STATUS ||
             opcode == OP_CONFIG_NODE_RESET_STATUS ||
@@ -257,22 +269,25 @@ static inline int mesh_models_poll(void) {
 
     int handled = 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++) {
-        if (unicast >= 0 && unicast != i) continue;
+        if (unicast >= 0 && unicast != i)
+            continue;
         uint16_t model = 0;
         if (opcode == OP_ONOFF_GET || opcode == OP_ONOFF_SET ||
-            opcode == OP_ONOFF_SET_UNACK) model = MESH_MODEL_ONOFF_SERVER;
-        else if (opcode == OP_ONOFF_STATUS) model = MESH_MODEL_ONOFF_CLIENT;
+            opcode == OP_ONOFF_SET_UNACK
+        ) model = MESH_MODEL_ONOFF_SERVER;
+        else if (opcode == OP_ONOFF_STATUS)
+            model = MESH_MODEL_ONOFF_CLIENT;
         else if (opcode == OP_HEALTH_ATTENTION_GET ||
                  opcode == OP_HEALTH_ATTENTION_SET ||
                  opcode == OP_HEALTH_ATTENTION_SET_UNACK ||
                  opcode == OP_HEALTH_FAULT_GET || opcode == OP_HEALTH_FAULT_CLEAR ||
                  opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST ||
                  opcode == OP_HEALTH_FAULT_TEST_UNACK || opcode == OP_HEALTH_PERIOD_GET ||
-                 opcode == OP_HEALTH_PERIOD_SET || opcode == OP_HEALTH_PERIOD_SET_UNACK)
-            model = MESH_MODEL_HEALTH_SERVER;
+                 opcode == OP_HEALTH_PERIOD_SET || opcode == OP_HEALTH_PERIOD_SET_UNACK
+        else ) model = MESH_MODEL_HEALTH_SERVER;
         else if (opcode == OP_HEALTH_CURRENT_STATUS || opcode == OP_HEALTH_FAULT_STATUS ||
-                 opcode == OP_HEALTH_PERIOD_STATUS || opcode == OP_HEALTH_ATTENTION_STATUS)
-            model = MESH_MODEL_HEALTH_CLIENT;
+                 opcode == OP_HEALTH_PERIOD_STATUS || opcode == OP_HEALTH_ATTENTION_STATUS
+        else ) model = MESH_MODEL_HEALTH_CLIENT;
         else continue;
 
         if (virtual) {
@@ -286,7 +301,9 @@ static inline int mesh_models_poll(void) {
                     break;
                 }
             }
-            if (!subscribed) continue;
+
+            if (!subscribed)
+                continue;
         }
         if (group) {
             // Deliver a group message only to subscribed model instances.
@@ -299,14 +316,18 @@ static inline int mesh_models_poll(void) {
                     break;
                 }
             }
-            if (!subscribed) continue;
+
+            if (!subscribed)
+                continue;
         }
-        if (!app_key_allowed(i, model, message->app_key_index)) continue;
+        if (!app_key_allowed(i, model, message->app_key_index))
+            continue;
 
         if (model == MESH_MODEL_ONOFF_SERVER)
             handled |= server_onoff_receive(message, i);
         else if (model == MESH_MODEL_ONOFF_CLIENT) {
-            if (message->params_len != 1 || message->params[0] > 1) continue;
+            if (message->params_len != 1 || message->params[0] > 1)
+                continue;
             BLE_MESH_ONOFF_STATUS(mesh_network.state.unicast_address + i,
                                   message->src, message->params[0]);
             handled = 1;
@@ -314,9 +335,11 @@ static inline int mesh_models_poll(void) {
             // Validate Health statuses before delivering replies or subscribed fault reports.
             size_t len = message->params_len;
             if (opcode == OP_HEALTH_CURRENT_STATUS || opcode == OP_HEALTH_FAULT_STATUS) {
-                if (len < 3) continue; // Test ID, Company ID, then zero or more faults.
+                if (len < 3)
+                    continue; // Test ID, Company ID, then zero or more faults.
             } else if (len != 1 ||
-                       (opcode == OP_HEALTH_PERIOD_STATUS && message->params[0] > 15)) continue;
+                       (opcode == OP_HEALTH_PERIOD_STATUS && message->params[0] > 15)
+            } else ) continue;
             BLE_MESH_HEALTH_STATUS(mesh_network.state.unicast_address + i,
                                    message->src, opcode, message->params, len);
             handled = 1;

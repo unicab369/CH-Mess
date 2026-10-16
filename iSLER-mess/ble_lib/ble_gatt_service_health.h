@@ -37,7 +37,8 @@ static inline int gatt_health_thermometer_measurement_encode(
         (measurement->flags & (uint8_t)~0x07) ||
         ((measurement->flags & 0x04) &&
          (measurement->temperature_type < 1 ||
-          measurement->temperature_type > 10))) return 0;
+          measurement->temperature_type > 10))
+    ) return 0;
 
     *len = 0;
     value[(*len)++] = measurement->flags;
@@ -65,8 +66,8 @@ static inline int gatt_health_thermometer_service_indicate(
     uint8_t value[13];
     uint16_t len;
     if (!server || !service ||
-        !gatt_health_thermometer_measurement_encode(measurement, value, &len))
-        return 0;
+        !gatt_health_thermometer_measurement_encode(measurement, value, &len)
+    ) return 0;
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
@@ -81,8 +82,8 @@ static inline int gatt_health_thermometer_service_notify_intermediate(
     uint8_t value[13];
     uint16_t len;
     if (!server || !service || !service->intermediate_temperature_handle ||
-        !gatt_health_thermometer_measurement_encode(measurement, value, &len))
-        return 0;
+        !gatt_health_thermometer_measurement_encode(measurement, value, &len)
+    ) return 0;
     return gatt_server_queue_event(server,
         service->intermediate_temperature_handle, value, len, 0);
 }
@@ -91,11 +92,14 @@ static inline int gatt_health_thermometer_service_notify_intermediate(
 static inline int gatt_blood_pressure_feature16(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
-    if (!server || !handle || !features) return 0;
+    if (!server || !handle || !features)
+        return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-    if (!attribute || attribute->value_len < 2) return 0;
+    if (!attribute || attribute->value_len < 2)
+        return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
+    if (!value)
+        return 0;
     *features = ble_get_le16(value);
     return 1;
 }
@@ -115,7 +119,8 @@ static inline int gatt_blood_pressure_service_indicate(
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
-          (uint16_t)~features))) return 0;
+          (uint16_t)~features))
+    ) return 0;
 
     uint8_t value[19];
     uint16_t len = 0;
@@ -134,7 +139,8 @@ static inline int gatt_blood_pressure_service_indicate(
         len += 2;
     }
 
-    if (measurement->flags & 0x08) value[len++] = measurement->user_id;
+    if (measurement->flags & 0x08)
+        value[len++] = measurement->user_id;
 
     if (measurement->flags & 0x10) {
         ble_put_le16(value + len, measurement->measurement_status);
@@ -159,7 +165,8 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
-          (uint16_t)~features))) return 0;
+          (uint16_t)~features))
+    ) return 0;
 
     uint8_t value[22];
     uint16_t len = 0;
@@ -178,7 +185,8 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
         len += 2;
     }
 
-    if (measurement->flags & 0x08) value[len++] = measurement->user_id;
+    if (measurement->flags & 0x08)
+        value[len++] = measurement->user_id;
 
     if (measurement->flags & 0x10) {
         ble_put_le16(value + len, measurement->measurement_status);

@@ -28,10 +28,13 @@ static int test_smp_user_request(
     return 0; // The application will answer through the existing GAP API.
 }
 int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
-    if (!test_bond_storage_enabled || slot >= GAP_BOND_SLOTS) return -1;
-    if (!test_bonds[slot].valid) return 0;
+    if (!test_bond_storage_enabled || slot >= GAP_BOND_SLOTS)
+        return -1;
+    if (!test_bonds[slot].valid)
+        return 0;
 
-    if (bond) *bond = test_bonds[slot];
+    if (bond)
+        *bond = test_bonds[slot];
     return 1;
 }
 int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) {
@@ -41,7 +44,8 @@ int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) {
     return 1;
 }
 int GAP_BOND_DELETE(uint8_t slot) {
-    if (!test_bond_storage_enabled || slot >= GAP_BOND_SLOTS) return 0;
+    if (!test_bond_storage_enabled || slot >= GAP_BOND_SLOTS)
+        return 0;
     memset(&test_bonds[slot], 0, sizeof(test_bonds[slot]));
     return 1;
 }
@@ -86,10 +90,12 @@ void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 static uint8_t secure_random_forced[12], secure_random_force;
 static uint8_t ead_randomizer_forced[5], ead_randomizer_force;
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
-    if (!secure_random_available || (len == 4 && secure_random_passkey_fail)) return 0;
+    if (!secure_random_available || (len == 4 && secure_random_passkey_fail))
+        return 0;
     if (len == 4 && secure_random_passkey_reject) { memset(out, 0xff, 4); return 1; }
 
-    if (secure_random_disconnect) gap_conn_end();
+    if (secure_random_disconnect)
+        gap_conn_end();
 
     if (len == sizeof(ead_randomizer_forced) && ead_randomizer_force) {
         memcpy(out, ead_randomizer_forced, sizeof(ead_randomizer_forced));
@@ -184,8 +190,10 @@ uint16_t GAP_HW_DATA_MAX(void) { return radio_data_max; }
 uint8_t GAP_HW_PHY_MASK(void) { return radio_phy_mask; }
 int8_t GAP_HW_RSSI(void) { return -40; }
 uint64_t GAP_HW_TICKS(void) {
-    if (!fake_radio_ticks_enabled) return (uint64_t)now_ms * 1000;
-    if (fake_radio_tick_autoincrement) return fake_radio_ticks++;
+    if (!fake_radio_ticks_enabled)
+        return (uint64_t)now_ms * 1000;
+    if (fake_radio_tick_autoincrement)
+        return fake_radio_ticks++;
     return fake_radio_ticks;
 }
 uint64_t HW_TICKS_FROM_US(uint32_t us) { return us; }
@@ -238,7 +246,8 @@ void GAP_HW_LINK_TX(void) {
         rx_frame[3] = 0x03;
         memcpy(rx_frame + 4, request + 8, 6);
         memcpy(rx_frame + 10, request + 2, 6);
-        if (corrupt_pawr_connect_response) rx_frame[10] ^= 1;
+        if (corrupt_pawr_connect_response)
+            rx_frame[10] ^= 1;
         fake_radio_ticks += HW_TICKS_FROM_US((36u + 10u) * 8u + 150u);
         inject_pawr_connect_response = 0;
         corrupt_pawr_connect_response = 0;
@@ -337,7 +346,8 @@ int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel,
                           uint8_t phy
 ) {
-    if (!(radio_adv_phy_mask & phy)) return 0;
+    if (!(radio_adv_phy_mask & phy))
+        return 0;
     configured_adv_phy = phy;
     return GAP_HW_ADV_TX(frame, len, channel);
 }
@@ -923,14 +933,16 @@ static void test_extended_advertising_transmit(void) {
     memset(oversized_data, 'B', sizeof(oversized_data));
     for (size_t offset = 0; offset < sizeof(maximum_data);) {
         size_t chunk = sizeof(maximum_data) - offset;
-        if (chunk > 256) chunk = 256;
+        if (chunk > 256)
+            chunk = 256;
         maximum_data[offset] = (uint8_t)(chunk - 1);
         maximum_data[offset + 1] = 0x09;
         offset += chunk;
     }
     for (size_t offset = 0; offset < sizeof(oversized_data);) {
         size_t chunk = sizeof(oversized_data) - offset;
-        if (chunk > 256) chunk = 256;
+        if (chunk > 256)
+            chunk = 256;
         oversized_data[offset] = (uint8_t)(chunk - 1);
         oversized_data[offset + 1] = 0x09;
         offset += chunk;
@@ -983,7 +995,8 @@ static void test_extended_advertising_chain_transmit(void) {
     size_t offset = 3;
     while (offset < sizeof(data)) {
         size_t chunk = sizeof(data) - offset;
-        if (chunk > 256) chunk = 256;
+        if (chunk > 256)
+            chunk = 256;
         data[offset] = (uint8_t)(chunk - 1);
         data[offset + 1] = 0x09;
         memset(data + offset + 2, 'X', chunk - 2);
@@ -1062,7 +1075,8 @@ static void test_periodic_advertising_transmit(void) {
     size_t data_offset = 0;
     while (data_offset < sizeof(maximum_periodic_data)) {
         size_t field_data = sizeof(maximum_periodic_data) - data_offset - 1;
-        if (field_data > 255) field_data = 255;
+        if (field_data > 255)
+            field_data = 255;
         maximum_periodic_data[data_offset] = (uint8_t)field_data;
         maximum_periodic_data[data_offset + 1] = 0xff;
         memset(maximum_periodic_data + data_offset + 2, 0x33,
@@ -2018,7 +2032,8 @@ static void test_extended_scannable_advertising(void) {
     size_t offset = 3;
     while (offset < sizeof(data)) {
         size_t chunk = sizeof(data) - offset;
-        if (chunk > 256) chunk = 256;
+        if (chunk > 256)
+            chunk = 256;
         data[offset] = (uint8_t)(chunk - 1);
         data[offset + 1] = 0x09;
         memset(data + offset + 2, 'R', chunk - 2);
@@ -3093,7 +3108,8 @@ static void receive_test_control(uint8_t opcode, const uint8_t *data, uint8_t le
     rx_frame[0] = 3 | (conn->link.expected_rx_sn << 3) | ((conn->link.tx_sn ^ 1) << 2);
     rx_frame[1] = len + 1;
     rx_frame[2] = opcode;
-    if (len) memcpy(rx_frame + 3, data, len);
+    if (len)
+        memcpy(rx_frame + 3, data, len);
     gap_hw_received();
 }
 
@@ -3911,7 +3927,8 @@ static void receive_secure_test_pdu(
         ((conn->link.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = (uint8_t)(len + 4);
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (8 * i));
-    if (!conn->is_central) nonce[4] |= 0x80;
+    if (!conn->is_central)
+        nonce[4] |= 0x80;
     memcpy(nonce + 5, gap_security->iv, 8);
     aad = rx_frame[0] & 0xe3;
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -3926,7 +3943,8 @@ static void receive_secure_test_pdu(
     assert(EVP_EncryptUpdate(ctx, rx_frame + 2, &produced, payload, (int)len));
     assert(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, 4, rx_frame + 2 + len));
     EVP_CIPHER_CTX_free(ctx);
-    if (tampered) rx_frame[2 + len] ^= 1;
+    if (tampered)
+        rx_frame[2 + len] ^= 1;
     conn->link_state.rx_armed = 1;
     gap_hw_received();
 }
@@ -4140,7 +4158,8 @@ static void receive_test_smp(const uint8_t *p, uint8_t len, uint8_t split) {
     uint8_t total = len + 4, offset = 0;
     while (offset < total) {
         uint8_t chunk = offset ? 27 : split ? split : 27;
-        if (chunk > total - offset) chunk = total - offset;
+        if (chunk > total - offset)
+            chunk = total - offset;
         conn->queue.tx_queued = 0;
         conn->procedures.rx_llid = offset ? 1 : 2;
         conn->procedures.rx_len = chunk;
@@ -4499,7 +4518,8 @@ static void test_passkey_pairing(void) {
     assert(gap_smp_user_request_set(test_smp_user_request, &ui));
     for (uint8_t central = 0; central < 2; central++) {
         for (uint8_t local_io = 0; local_io < 5; local_io++) {
-            if (local_io == GAP_IO_NONE) continue;
+            if (local_io == GAP_IO_NONE)
+                continue;
             for (uint8_t peer_io = 0; peer_io < 5; peer_io++) {
                 start_test_central_link(); conn->is_central = central;
                 assert(gap_security_set(local_io, 1, 16));
@@ -4540,7 +4560,8 @@ static void test_passkey_pairing(void) {
                     assert(!gap_passkey_reply(passkey));
                 }
 
-                if (!(input && !central)) receive_test_smp(confirm, 17, 0);
+                if (!(input && !central))
+                    receive_test_smp(confirm, 17, 0);
                 assert(smp->pairing.phase == SMP_PHASE_RANDOM);
                 uint8_t expected_key[16], s1_input[16], key[16] = {0};
                 memcpy(s1_input,
@@ -4700,7 +4721,8 @@ static void test_secure_connections_just_works(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     int vector_result = ble_sc_crypto_test();
-    if (vector_result) fprintf(stderr, "SC vector failed: %d\n", vector_result);
+    if (vector_result)
+        fprintf(stderr, "SC vector failed: %d\n", vector_result);
     assert(vector_result == 0);
     memset(test_bonds, 0, sizeof(test_bonds));
     test_bond_storage_enabled = 1;
@@ -5327,7 +5349,8 @@ static void test_secure_connections_passkey(void) {
                              smp->random, z, local_confirm);
         assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM &&
                smp->tx[4] == 3 && !memcmp(smp->tx + 5, local_confirm, 16));
-        if (round) assert(memcmp(previous_nonce, smp->random, 16));
+        if (round)
+            assert(memcmp(previous_nonce, smp->random, 16));
         memcpy(previous_nonce, smp->random, 16);
         conn->queue.tx_queued = conn->link.tx_pending = 0;
         gap_smp_poll();

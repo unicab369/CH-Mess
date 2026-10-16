@@ -12,7 +12,8 @@ typedef struct {
 
 static int load_hash(void *context, uint8_t hash[16]) {
     peer_store *store = context;
-    if (!store->valid) return 0;
+    if (!store->valid)
+        return 0;
     memcpy(hash, store->hash, 16);
     return 1;
 }

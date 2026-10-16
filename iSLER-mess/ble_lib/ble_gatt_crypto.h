@@ -151,7 +151,8 @@ static inline void gatt_cmac_update(
         if (cmac->used == 16)
             gatt_cmac_block(cmac);
         size_t count = 16u - cmac->used;
-        if (count > len) count = len;
+        if (count > len)
+            count = len;
         memcpy(cmac->block + cmac->used, data, count);
         cmac->used = (uint8_t)(cmac->used + count);
         data += count;

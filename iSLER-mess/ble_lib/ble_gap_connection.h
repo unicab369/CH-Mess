@@ -109,7 +109,8 @@ static void gap_smp_link_close(void);
 
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_conn_slot_active(gap_conn_slot)) return;
+    if (!gap_conn_slot_active(gap_conn_slot))
+        return;
 
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
         GAP_HW_STOP();
@@ -263,8 +264,10 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             return;
         }
 
-        if (conn->phy.pending.tx) conn->phy.current.tx = conn->phy.pending.tx;
-        if (conn->phy.pending.rx) conn->phy.current.rx = conn->phy.pending.rx;
+        if (conn->phy.pending.tx)
+            conn->phy.current.tx = conn->phy.pending.tx;
+        if (conn->phy.pending.rx)
+            conn->phy.current.rx = conn->phy.pending.rx;
         conn->pending.phy_update = 0;
         conn->pending.phy_request = 0;
         conn->phy.status = 0;
@@ -357,7 +360,8 @@ static void gap_conn_event_advance(void) {
 // Instant stays in the future while earlier packets wait for acknowledgement.
 static void gap_send_conn_update(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
@@ -381,7 +385,8 @@ static void gap_send_conn_update(void) {
 }
 
 static uint8_t gap_class_valid(const uint8_t *class) {
-    if (!class || (class[9] & 0xfc)) return 0;
+    if (!class || (class[9] & 0xfc))
+        return 0;
 
     for (uint8_t channel = 0; channel < 37; channel++) {
         if (((class[channel >> 2] >> ((channel & 3) * 2)) & 3) == 2)
@@ -393,8 +398,10 @@ static uint8_t gap_class_valid(const uint8_t *class) {
 // Select one PHY from a negotiated preference mask. Prefer the highest rate,
 // then the mandatory 1M PHY; coded airtime is accounted for conservatively.
 static uint8_t gap_phy_preferred(uint8_t mask) {
-    if (mask & GAP_PHY_2M) return GAP_PHY_2M;
-    if (mask & GAP_PHY_CODED) return GAP_PHY_CODED;
+    if (mask & GAP_PHY_2M)
+        return GAP_PHY_2M;
+    if (mask & GAP_PHY_CODED)
+        return GAP_PHY_CODED;
     return mask & GAP_PHY_1M;
 }
 
@@ -402,7 +409,8 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 // are visible to the peer that is deciding whether to start the procedure.
 static void gap_send_conn_feature_request(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     uint8_t supported_phys = GAP_HW_PHY_MASK();
     conn->features.request_pending = 1;
@@ -425,7 +433,8 @@ static void gap_send_conn_feature_request(void) {
 // after the peer acknowledges this PDU; until then both event phases are used.
 static void gap_send_subrate_update(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     conn->next_schedule.base_event = conn->link.event_counter;
     conn->subrate.update_queued = 0;
@@ -445,7 +454,8 @@ static void gap_send_subrate_update(void) {
 
 static void gap_send_rate_ind(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     conn->next_schedule.instant = (uint16_t)(conn->link.event_counter +
                                 6 * (uint32_t)conn->next_schedule.factor *
@@ -477,7 +487,8 @@ static void gap_send_rate_ind(void) {
 // Encode our LE 1M limits for both local requests and peer-request responses.
 static void gap_send_data_length(uint8_t opcode) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     if (opcode == LL_LENGTH_REQ) {
         conn->queue.length = 0;
@@ -526,8 +537,8 @@ static void gap_privacy_poll(uint32_t now) {
             gap_identities[i].local_key_set &&
             gap_identities[i].has_local_irk &&
             gap_private_addr_generate(gap_identities[i].local_irk, address,
-                                          gap_identities[i].local_address))
-            memcpy(gap_identities[i].local_address, address, 6);
+                                          gap_identities[i].local_address)
+        ) memcpy(gap_identities[i].local_address, address, 6);
     }
 
     if (gap_adv.enabled) {
@@ -536,8 +547,8 @@ static void gap_privacy_poll(uint32_t now) {
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&
             gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
-                                          gap_adv.target.address))
-            memcpy(gap_adv.target.address, address, 6);
+                                          gap_adv.target.address)
+        ) memcpy(gap_adv.target.address, address, 6);
     }
     gap_privacy.timeout_s = next_timeout_s;
     gap_privacy.next_rotation_ms = now + (uint32_t)next_timeout_s * 1000;
@@ -815,7 +826,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
             for (uint8_t channel = 0; channel < 37; channel++)
                 if (frame[3 + channel / 8] &
-                    (1 << (channel % 8))) used_count++;
+                    (1 << (channel % 8))
+                ) used_count++;
 
             uint16_t instant = (uint16_t)frame[8] | (uint16_t)frame[9] << 8;
 
@@ -847,6 +859,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
         uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
         uint16_t timeout = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
+
         if (!ble_connection_timing_ranges_valid(
                 minimum, maximum, latency, timeout) ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
@@ -887,8 +900,10 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         ) return gap_conn_reject_parameters(frame[2], error);
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
-            if (minimum < conn->params_min) minimum = conn->params_min;
-            if (maximum > conn->params_max) maximum = conn->params_max;
+            if (minimum < conn->params_min)
+                minimum = conn->params_min;
+            if (maximum > conn->params_max)
+                maximum = conn->params_max;
             error = GAP_LL_ERR_UNSUPPORTED_PARAM; // Unsupported LL parameter value.
             if (minimum > maximum)
                 return gap_conn_reject_parameters(frame[2], error);
@@ -896,12 +911,14 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
-            if (interval < minimum || interval > maximum) interval = minimum;
+            if (interval < minimum || interval > maximum)
+                interval = minimum;
 
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t)
                     ((minimum + frame[11] - 1) / frame[11]) * frame[11];
-                if (preferred <= maximum) interval = preferred;
+                if (preferred <= maximum)
+                    interval = preferred;
             }
             uint16_t factor = (uint32_t)interval * 10 ==
                                 conn->schedule.interval_125us ?
@@ -1378,7 +1395,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
             if (periodicity) {
                 uint16_t preferred = (uint16_t)(
                     ((interval + periodicity - 1) / periodicity) * periodicity);
-                if (preferred <= maximum) interval = preferred;
+                if (preferred <= maximum)
+                    interval = preferred;
             }
 
             if (interval < gap_conn_rate_min_interval())
@@ -1495,7 +1513,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                 while (factor >= min_factor &&
                     !gap_rate_parameters_valid(conn->schedule.interval_125us,
                         factor, max_latency, continuation, timeout)) {
-                    if (factor == min_factor) break;
+                    if (factor == min_factor)
+                        break;
                     factor--;
                 }
 
@@ -1668,7 +1687,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         }
 
         if (frame[2] == LL_PHY_RSP) {
-            if (!conn->is_central || !conn->pending.phy_request) break;
+            if (!conn->is_central || !conn->pending.phy_request)
+                break;
         }
         else if (gap_security->phase ||
             conn->pending.timing_update ||
@@ -1708,14 +1728,17 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                     rx = 0;
                 }
 
-                if (tx == conn->phy.current.tx) tx = 0;
-                if (rx == conn->phy.current.rx) rx = 0;
+                if (tx == conn->phy.current.tx)
+                    tx = 0;
+                if (rx == conn->phy.current.rx)
+                    rx = 0;
                 conn->phy.instant = tx || rx ? (uint16_t)(conn->link.event_counter +
                                     6 * (conn->schedule.latency + 1) + 1) : 0;
                 conn->queue.phy_queued = 0;
                 conn->pending.phy_request = 0;
                 conn->pending.phy_update = tx || rx;
-                if (!conn->pending.phy_update) conn->phy.status = 0;
+                if (!conn->pending.phy_update)
+                    conn->phy.status = 0;
                 conn->phy.pending.tx = tx;
                 conn->phy.pending.rx = rx;
 
@@ -1746,11 +1769,15 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
         uint8_t tx = frame[4], rx = frame[3];
         // Invalid or unsupported selections leave that direction unchanged.
-        if ((tx != 1 && tx != 2 && tx != 4) || !(tx & supported)) tx = 0;
-        if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported)) rx = 0;
+        if ((tx != 1 && tx != 2 && tx != 4) || !(tx & supported))
+            tx = 0;
+        if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported))
+            rx = 0;
 
-        if (tx == conn->phy.current.tx) tx = 0;
-        if (rx == conn->phy.current.rx) rx = 0;
+        if (tx == conn->phy.current.tx)
+            tx = 0;
+        if (rx == conn->phy.current.rx)
+            rx = 0;
         conn->pending.phy_request = 0;
         conn->queue.phy_queued = 0;
 
@@ -1962,13 +1989,18 @@ void gap_subrate_get(
     uint16_t *continuation, uint16_t *timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (factor)     *factor = conn->schedule.factor;
-    if (base_event) *base_event = conn->schedule.base_event;
+    if (factor)
+        *factor = conn->schedule.factor;
+    if (base_event)
+        *base_event = conn->schedule.base_event;
 
-    if (peripheral_latency) *peripheral_latency = conn->schedule.latency;
-    if (continuation)       *continuation = conn->schedule.continuation;
+    if (peripheral_latency)
+        *peripheral_latency = conn->schedule.latency;
+    if (continuation)
+        *continuation = conn->schedule.continuation;
 
-    if (timeout)    *timeout = conn->schedule.timeout;
+    if (timeout)
+        *timeout = conn->schedule.timeout;
 }
 
 // Application facing
@@ -2040,13 +2072,18 @@ void gap_conn_rate_get(
     uint16_t *timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (interval) *interval = conn->schedule.interval_125us;
-    if (factor) *factor = conn->schedule.factor;
+    if (interval)
+        *interval = conn->schedule.interval_125us;
+    if (factor)
+        *factor = conn->schedule.factor;
 
-    if (peripheral_latency) *peripheral_latency = conn->schedule.latency;
-    if (continuation) *continuation = conn->schedule.continuation;
+    if (peripheral_latency)
+        *peripheral_latency = conn->schedule.latency;
+    if (continuation)
+        *continuation = conn->schedule.continuation;
 
-    if (timeout) *timeout = conn->schedule.timeout;
+    if (timeout)
+        *timeout = conn->schedule.timeout;
 }
 
 // Application facing
@@ -2062,8 +2099,10 @@ int gap_channel_map_set(const uint8_t channels[5]) {
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (channels[channel / 8] & (1 << (channel % 8))) count++;
-    if (count < 2) return 0;
+        if (channels[channel / 8] & (1 << (channel % 8)))
+            count++;
+    if (count < 2)
+        return 0;
 
     if (memcmp(channels, conn->link.channel_map, 5) == 0) {
         conn->connection_status = 0;
@@ -2110,8 +2149,8 @@ int gap_channel_classification_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_connected() || !classification ||
-        !gap_class_valid(classification))
-        return 0;
+        !gap_class_valid(classification)
+    ) return 0;
 
     if (memcmp(conn->channel.local_classification, classification,
                GAP_CHANNEL_CLASSIFICATION_BYTES) == 0
@@ -2217,8 +2256,10 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // Return the current rate in each direction; values are GAP_PHY_*.
 void gap_phy_get(uint8_t *tx, uint8_t *rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (tx) *tx = conn->phy.current.tx;
-    if (rx) *rx = conn->phy.current.rx;
+    if (tx)
+        *tx = conn->phy.current.tx;
+    if (rx)
+        *rx = conn->phy.current.rx;
 }
 
 // Application facing
@@ -2285,10 +2326,13 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 #if GAP_SMP_SUPPORT > 0
     gap_smp_poll();
 #endif
-    if (!data || !len || !conn->queue.rx_ready) return 0;
-    if (*len < conn->rx.len) return -1;
+    if (!data || !len || !conn->queue.rx_ready)
+        return 0;
+    if (*len < conn->rx.len)
+        return -1;
 
-    if (llid) *llid = conn->rx.llid;
+    if (llid)
+        *llid = conn->rx.llid;
 
     *len = conn->rx.len;
     memcpy(data, conn->rx.data, conn->rx.len);
@@ -2356,7 +2400,8 @@ static uint8_t *gap_security_tx_frame(void) {
 static void gap_send_security(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
+    if (gap_tx_frame[1])
+        return;
 
     uint8_t phase = gap_security->phase;
     if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
@@ -2476,8 +2521,10 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
 
     if (!gap_conn_slot_active(gap_conn_slot) || gap_security->phase != GAP_ENC_KEY_REQUEST)
         return 0;
-    if (random) memcpy(random, gap_security->random, 8);
-    if (ediv) *ediv = gap_security->ediv;
+    if (random)
+        memcpy(random, gap_security->random, 8);
+    if (ediv)
+        *ediv = gap_security->ediv;
     return 1;
 }
 

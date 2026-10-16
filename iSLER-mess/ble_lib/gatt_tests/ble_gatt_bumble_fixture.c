@@ -28,7 +28,8 @@ static int verify_peer_signed_write(
     uint32_t counter = (uint32_t)signature[0] |
         (uint32_t)signature[1] << 8 | (uint32_t)signature[2] << 16 |
         (uint32_t)signature[3] << 24;
-    if (counter <= peer_sign_counter) return 0;
+    if (counter <= peer_sign_counter)
+        return 0;
     uint8_t mac[16];
     ble_gatt_cmac cmac;
     gatt_cmac_init(&cmac, csrk);
@@ -36,7 +37,8 @@ static int verify_peer_signed_write(
     gatt_cmac_update(&cmac, signature, 4);
     gatt_cmac_final(&cmac, mac);
     for (uint8_t i = 0; i < 8; i++)
-        if (signature[4 + i] != mac[7 - i]) return 0;
+        if (signature[4 + i] != mac[7 - i])
+            return 0;
     peer_sign_counter = counter;
     return 1;
 }
@@ -136,8 +138,8 @@ int main(void) {
             (const uint8_t *)"\0", 1, 1, NULL, NULL, NULL,
             &signed_declaration, &signed_value) ||
         !gatt_server_set_min_key_size(&server, authorized_value, 12) ||
-        !gatt_server_seal_database(&server))
-        return 2;
+        !gatt_server_seal_database(&server)
+    ) return 2;
     (void)signed_declaration;
     gatt_server_set_authorizer(&server,
         authorize_application_access, NULL);
@@ -148,12 +150,13 @@ int main(void) {
     uint8_t response[BLE_GATT_SERVER_MTU_MAX];
     for (;;) {
         uint8_t size_bytes[2];
-        if (fread(size_bytes, 1, 2, stdin) != 2) break;
+        if (fread(size_bytes, 1, 2, stdin) != 2)
+            break;
         uint16_t request_len = (uint16_t)size_bytes[0] |
                                (uint16_t)size_bytes[1] << 8;
         if (!request_len || request_len > sizeof(request) ||
-            fread(request, 1, request_len, stdin) != request_len)
-            return 3;
+            fread(request, 1, request_len, stdin) != request_len
+        ) return 3;
         uint16_t response_len = 0;
         int has_response;
         // Harness-only link state control; this is not an ATT PDU sent by a
@@ -181,13 +184,13 @@ int main(void) {
         uint8_t output_size[2] = {(uint8_t)output_len,
                                   (uint8_t)(output_len >> 8)};
         if (fwrite(output_size, 1, 2, stdout) != 2 ||
-            (output_len && fwrite(response, 1, output_len, stdout) != output_len))
-            return 4;
+            (output_len && fwrite(response, 1, output_len, stdout) != output_len)
+        ) return 4;
         uint8_t event_size[2] = {(uint8_t)event_len,
                                  (uint8_t)(event_len >> 8)};
         if (fwrite(event_size, 1, 2, stdout) != 2 ||
-            (event_len && fwrite(event, 1, event_len, stdout) != event_len))
-            return 5;
+            (event_len && fwrite(event, 1, event_len, stdout) != event_len)
+        ) return 5;
         fflush(stdout);
     }
     return 0;

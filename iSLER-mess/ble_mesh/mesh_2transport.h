@@ -144,19 +144,21 @@ struct transport_rx {
 static struct transport_rx transport_rx[MESH_TRANSPORT_RX_PACKET_SLOTS];
 
 static void mesh_friend_queue_item_release(mesh_friend_queue_item *item) {
-    if (!item || !item->segmented) return;
+    if (!item || !item->segmented)
+        return;
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active && rx->ctl == item->message.ctl &&
             rx->net_idx == item->net_key_index && rx->src == item->src &&
             rx->dst == item->dst && rx->seq_auth == item->seq_auth &&
-            rx->iv_index == item->iv_index)
-            rx->active = rx->ack_pending = rx->friend_queued = 0;
+            rx->iv_index == item->iv_index
+        ) rx->active = rx->ack_pending = rx->friend_queued = 0;
     }
 }
 
 static void mesh_friend_queue_clear(mesh_friend_offer *offer) {
-    if (!offer) return;
+    if (!offer)
+        return;
     for (uint8_t i = 0; i < offer->queue_count; i++)
         mesh_friend_queue_item_release(&offer->queue[i]);
     offer->queue_count = 0;
@@ -199,8 +201,8 @@ static inline int mesh_lpn_send_request(void) {
         (uint8_t)(request_counter >> 8), (uint8_t)request_counter
     };
     if (!mesh_net_queue(transport_lpn.net_key_index, primary,
-            MESH_FRIENDS_ADDRESS, 1, 0, request, sizeof(request)))
-        return 0;
+            MESH_FRIENDS_ADDRESS, 1, 0, request, sizeof(request))
+    ) return 0;
     transport_lpn.lpn_counter = request_counter;
     transport_lpn.next_lpn_counter++;
     transport_lpn.last_tx_ms = GET_MILLIS();
@@ -222,8 +224,8 @@ static inline int mesh_lpn_start(
         poll_timeout_ms < 1000 || poll_timeout_ms > 0x34bbffu * 100u ||
         poll_timeout_ms % 100u ||
         previous_friend > 0x7fff ||
-        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0)
-        return 0;
+        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0
+    ) return 0;
 
     memset(&transport_lpn, 0, sizeof(transport_lpn));
     transport_lpn.net_key_index = net_key_index;
@@ -233,7 +235,8 @@ static inline int mesh_lpn_start(
     transport_lpn.poll_timeout_ms = poll_timeout_ms;
     transport_lpn.next_lpn_counter = next_lpn_counter;
     transport_lpn.previous_friend = previous_friend;
-    if (mesh_lpn_send_request()) return 1;
+    if (mesh_lpn_send_request())
+        return 1;
     memset(&transport_lpn, 0, sizeof(transport_lpn));
     return 0;
 }
@@ -250,7 +253,8 @@ static inline uint16_t mesh_lpn_next_counter(void) {
 
 // End the current friendship with Friend Clear and wait for its confirmation.
 static inline int mesh_lpn_clear(void) {
-    if (transport_lpn.state != MESH_LPN_ESTABLISHED) return 0;
+    if (transport_lpn.state != MESH_LPN_ESTABLISHED)
+        return 0;
     uint8_t clear[5] = {
         MESH_CONTROL_FRIEND_CLEAR,
         (uint8_t)(mesh_network.state.unicast_address >> 8),
@@ -260,8 +264,8 @@ static inline int mesh_lpn_clear(void) {
     };
     if (!mesh_net_queue_friend(transport_lpn.net_key_index,
             mesh_network.state.unicast_address, transport_lpn.friend_address,
-            0, 0, clear, sizeof(clear)))
-        return 0;
+            0, 0, clear, sizeof(clear))
+    ) return 0;
     transport_lpn.state = MESH_LPN_CLEARING;
     transport_lpn.last_tx_ms = GET_MILLIS();
     transport_lpn.clear_started_ms = transport_lpn.last_tx_ms;
@@ -277,8 +281,8 @@ static inline void mesh_lpn_poll_response_received(
         message->dst < mesh_network.state.unicast_address ||
         (uint32_t)message->dst >=
             (uint32_t)mesh_network.state.unicast_address +
-                transport_lpn.num_elements)
-        return;
+                transport_lpn.num_elements
+    ) return;
     transport_lpn.fsn ^= 1;
     transport_lpn.last_rx_ms = GET_MILLIS();
     transport_lpn.poll_attempts = 0;
@@ -300,20 +304,22 @@ static inline int mesh_lpn_subscription_update(
         count > transport_lpn.subscription_list_size ||
         transport_lpn.subscription_pending ||
         (opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD &&
-         opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE))
-        return 0;
+         opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE)
+    ) return 0;
     uint8_t message[2 + MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2];
     message[0] = opcode;
     message[1] = transport_lpn.subscription_transaction;
     for (uint8_t i = 0; i < count; i++) {
-        if (!mesh_friend_subscription_address(addresses[i])) return 0;
+        if (!mesh_friend_subscription_address(addresses[i]))
+            return 0;
         message[2 + i * 2] = (uint8_t)(addresses[i] >> 8);
         message[3 + i * 2] = (uint8_t)addresses[i];
     }
+
     if (!mesh_net_queue_friend(transport_lpn.net_key_index,
             mesh_network.state.unicast_address, transport_lpn.friend_address,
-            1, 0, message, 2 + count * 2))
-        return 0;
+            1, 0, message, 2 + count * 2)
+    ) return 0;
     transport_lpn.subscription_opcode = opcode;
     transport_lpn.subscription_count = count;
     transport_lpn.subscription_pending_transaction =
@@ -333,8 +339,8 @@ static inline int mesh_friend_enable(
 ) {
     if (!mesh_network.ready || !receive_window ||
         subscription_size > MESH_FRIEND_SUBSCRIPTION_CAPACITY ||
-        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0)
-        return 0;
+        mesh_subnet_slot(&mesh_network.state, net_key_index) < 0
+    ) return 0;
     transport_friend.net_key_index = net_key_index;
     transport_friend.receive_window = receive_window;
     transport_friend.subscription_size = subscription_size;
@@ -349,7 +355,8 @@ static inline int mesh_friend_enable(
 static inline void mesh_friend_disable(void) {
     transport_friend.enabled = 0;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
-        if (!transport_friend_offers[i].used) continue;
+        if (!transport_friend_offers[i].used)
+            continue;
         mesh_friendship_clear(transport_friend_offers[i].net_key_index,
             transport_friend_offers[i].lpn_address,
             mesh_network.state.unicast_address);
@@ -373,8 +380,8 @@ static inline void mesh_friend_request_receive(
         message->dst != MESH_FRIENDS_ADDRESS || message->ttl != 0 ||
         message->len != 10 || !message->src || message->src > 0x7fff ||
         (message->params[0] & 0x80) || !(message->params[0] & 0x07) ||
-        message->params[1] < 10)
-        return;
+        message->params[1] < 10
+    ) return;
     uint32_t poll_timeout = ((uint32_t)message->params[2] << 16) |
         ((uint32_t)message->params[3] << 8) | message->params[4];
     uint16_t previous_friend = (uint16_t)((message->params[5] << 8) |
@@ -383,8 +390,8 @@ static inline void mesh_friend_request_receive(
     if (poll_timeout < 10 || poll_timeout > 0x34bbff || !elements ||
         previous_friend > 0x7fff ||
         (uint32_t)message->src + elements - 1 > 0x7fff ||
-        MESH_FRIEND_QUEUE_CAPACITY < (1u << (message->params[0] & 0x07)))
-        return;
+        MESH_FRIEND_QUEUE_CAPACITY < (1u << (message->params[0] & 0x07))
+    ) return;
 
     uint16_t lpn_counter = (uint16_t)((message->params[8] << 8) |
                                        message->params[9]);
@@ -396,16 +403,18 @@ static inline void mesh_friend_request_receive(
         slot++;
     if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) {
         for (slot = 0; slot < MESH_NETWORK_MAX_FRIENDSHIPS; slot++)
-            if (!transport_friend_offers[slot].used) break;
-        if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+            if (!transport_friend_offers[slot].used)
+                break;
+        if (slot == MESH_NETWORK_MAX_FRIENDSHIPS)
+            return;
     } else if (transport_friend_offers[slot].lpn_counter == lpn_counter) {
         return;
     }
 
     uint16_t friend_counter = transport_friend.next_counter++;
     if (!mesh_friendship_add(message->net_key_index, message->src,
-            mesh_network.state.unicast_address, lpn_counter, friend_counter))
-        return;
+            mesh_network.state.unicast_address, lpn_counter, friend_counter)
+    ) return;
     mesh_friend_queue_clear(&transport_friend_offers[slot]);
     memset(&transport_friend_offers[slot], 0,
            sizeof(transport_friend_offers[slot]));
@@ -429,7 +438,8 @@ static inline void mesh_friend_request_receive(
         (int32_t)rssi_factor_half * measured_rssi;
     uint32_t offer_delay_ms = delay_half_ms > 0 ?
         (uint32_t)(delay_half_ms + 1) / 2u : 0u;
-    if (offer_delay_ms < 100u) offer_delay_ms = 100u;
+    if (offer_delay_ms < 100u)
+        offer_delay_ms = 100u;
     transport_friend_offers[slot].offer_at_ms = GET_MILLIS() + offer_delay_ms;
     transport_friend_offers[slot].rssi = message->rssi;
     transport_friend_offers[slot].expires_at_ms = GET_MILLIS() + poll_timeout * 100u;
@@ -448,28 +458,31 @@ static inline void mesh_friend_subscription_receive(
          message->opcode != MESH_CONTROL_FRIEND_SUBSCRIPTION_REMOVE) ||
         message->len < 3 || message->len > 1 +
             MESH_FRIEND_SUBSCRIPTION_MESSAGE_MAX * 2 ||
-        (message->len & 1) == 0)
-        return;
+        (message->len & 1) == 0
+    ) return;
     uint8_t slot = 0;
     while (slot < MESH_NETWORK_MAX_FRIENDSHIPS &&
         (!transport_friend_offers[slot].used ||
          !transport_friend_offers[slot].offered ||
          transport_friend_offers[slot].net_key_index != message->net_key_index ||
          transport_friend_offers[slot].lpn_address != message->src)) slot++;
-    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS)
+        return;
 
     uint8_t transaction = message->params[0];
     uint8_t count = (uint8_t)((message->len - 1) / 2);
     for (uint8_t i = 0; i < count; i++) {
         uint16_t address = (uint16_t)((message->params[1 + i * 2] << 8) |
                                        message->params[2 + i * 2]);
-        if (!mesh_friend_subscription_address(address)) return;
+        if (!mesh_friend_subscription_address(address))
+            return;
     }
 
     mesh_friend_offer *friendship = &transport_friend_offers[slot];
     if (friendship->has_subscription_transaction &&
         friendship->last_subscription_transaction == transaction) {
-        if (friendship->last_subscription_opcode != message->opcode) return;
+        if (friendship->last_subscription_opcode != message->opcode)
+            return;
     } else {
         for (uint8_t i = 0; i < count; i++) {
             uint16_t address = (uint16_t)((message->params[1 + i * 2] << 8) |
@@ -482,8 +495,8 @@ static inline void mesh_friend_subscription_receive(
                 }
             if (message->opcode == MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD) {
                 if (found == friendship->subscription_count &&
-                    friendship->subscription_count < transport_friend.subscription_size)
-                    friendship->subscriptions[friendship->subscription_count++] = address;
+                    friendship->subscription_count < transport_friend.subscription_size
+                ) friendship->subscriptions[friendship->subscription_count++] = address;
             } else if (found < friendship->subscription_count) {
                 memmove(&friendship->subscriptions[found],
                     &friendship->subscriptions[found + 1],
@@ -509,20 +522,21 @@ static inline void mesh_friend_subscription_receive(
 // present in that LPN's Friend Subscription List.
 static int mesh_friend_queue_target(const mesh_net_message *message) {
     if (!message || message->ttl < 2 || !message->dst ||
-        message->dst >= 0xff00)
-        return -1;
+        message->dst >= 0xff00
+    ) return -1;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         const mesh_friend_offer *friendship = &transport_friend_offers[i];
         if (!friendship->used || !friendship->offered ||
-            friendship->net_key_index != message->net_key_index) continue;
+            friendship->net_key_index != message->net_key_index
+        ) continue;
         if (message->dst <= 0x7fff) {
             if (message->dst < friendship->lpn_address ||
                 (uint32_t)message->dst >=
                     (uint32_t)friendship->lpn_address + friendship->num_elements ||
                 (message->src >= friendship->lpn_address &&
                  (uint32_t)message->src <
-                    (uint32_t)friendship->lpn_address + friendship->num_elements))
-                continue;
+                    (uint32_t)friendship->lpn_address + friendship->num_elements)
+            ) continue;
         } else {
             uint8_t subscribed = 0;
             for (uint8_t j = 0; j < friendship->subscription_count; j++)
@@ -530,7 +544,8 @@ static int mesh_friend_queue_target(const mesh_net_message *message) {
                     subscribed = 1;
                     break;
                 }
-            if (!subscribed) continue;
+            if (!subscribed)
+                continue;
         }
         return (int)i;
     }
@@ -539,15 +554,17 @@ static int mesh_friend_queue_target(const mesh_net_message *message) {
 
 static inline int mesh_friend_queue_receive(const mesh_net_message *message) {
     int target = mesh_friend_queue_target(message);
-    if (target < 0) return 0;
+    if (target < 0)
+        return 0;
     mesh_friend_offer *friendship = &transport_friend_offers[target];
     for (uint8_t j = 0; j < friendship->queue_count; j++) {
         const mesh_friend_queue_item *item = &friendship->queue[j];
         if (!item->segmented && item->message.src == message->src &&
             item->message.seq == message->seq &&
-            item->message.iv_index == message->iv_index)
-            return 1;
+            item->message.iv_index == message->iv_index
+        ) return 1;
     }
+
     if (friendship->queue_count == MESH_FRIEND_QUEUE_CAPACITY) {
         mesh_friend_queue_item_release(&friendship->queue[0]);
         memmove(&friendship->queue[0], &friendship->queue[1],
@@ -575,15 +592,16 @@ static inline void mesh_friend_poll_receive(
         message->net_key_index != transport_friend.net_key_index ||
         message->dst != mesh_network.state.unicast_address || message->ttl != 0 ||
         message->len != 1 ||
-        (message->params[0] & 0xfe))
-        return;
+        (message->params[0] & 0xfe)
+    ) return;
     uint8_t slot = 0;
     while (slot < MESH_NETWORK_MAX_FRIENDSHIPS &&
         (!transport_friend_offers[slot].used ||
          transport_friend_offers[slot].net_key_index != message->net_key_index ||
          transport_friend_offers[slot].lpn_address != message->src ||
          !transport_friend_offers[slot].offered)) slot++;
-    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS) return;
+    if (slot == MESH_NETWORK_MAX_FRIENDSHIPS)
+        return;
     if ((int32_t)(GET_MILLIS() -
             transport_friend_offers[slot].expires_at_ms) >= 0) {
         mesh_friendship_clear(message->net_key_index, message->src,
@@ -629,10 +647,12 @@ static inline void mesh_friend_poll_receive(
                 if (!rx->active || rx->ctl != item->message.ctl ||
                     rx->net_idx != item->net_key_index || rx->src != item->src ||
                     rx->dst != item->dst || rx->seq_auth != item->seq_auth ||
-                    rx->iv_index != item->iv_index) continue;
+                    rx->iv_index != item->iv_index
+                ) continue;
                 uint8_t segment = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                             (rx->transport[3] >> 5));
-                if (segment != item->next_segment) continue;
+                if (segment != item->next_segment)
+                    continue;
                 memset(&segmented_message, 0, sizeof(segmented_message));
                 segmented_message.ctl = rx->ctl;
                 segmented_message.ttl = rx->ttl > 0 ? (uint8_t)(rx->ttl - 1) : 0;
@@ -660,7 +680,8 @@ static inline void mesh_friend_poll_receive(
                     &mesh_network.friendships[i];
                 if (!friendship->used ||
                     friendship->net_key_index != message->net_key_index ||
-                    friendship->lpn_address != message->src) continue;
+                    friendship->lpn_address != message->src
+                ) continue;
                 const mesh_credentials *key =
                     mesh_subnet_phase(&mesh_network.state,
                         message->net_key_index) == 2 &&
@@ -747,16 +768,18 @@ static inline void mesh_friend_clear_receive(
 ) {
     if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR ||
         message->net_key_index != transport_friend.net_key_index ||
-        message->len != 4)
-        return;
+        message->len != 4
+    ) return;
     uint16_t lpn = (uint16_t)((message->params[0] << 8) | message->params[1]);
     uint16_t counter = (uint16_t)((message->params[2] << 8) |
                                    message->params[3]);
-    if (!lpn || lpn > 0x7fff) return;
+    if (!lpn || lpn > 0x7fff)
+        return;
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         mesh_friend_offer *offer = &transport_friend_offers[i];
         if (!offer->used || offer->net_key_index != message->net_key_index ||
-            offer->lpn_address != lpn) continue;
+            offer->lpn_address != lpn
+        ) continue;
         if (!message->friendship && offer->clear_done &&
             offer->clear_source == message->src && message->ttl != 0 &&
             message->dst == mesh_network.state.unicast_address &&
@@ -779,8 +802,8 @@ static inline void mesh_friend_clear_receive(
                 message->dst != mesh_network.state.unicast_address ||
                 !mesh_net_queue_friend(message->net_key_index,
                     mesh_network.state.unicast_address, lpn, 0, 0,
-                    confirm, sizeof(confirm)))
-                return;
+                    confirm, sizeof(confirm))
+            ) return;
         } else {
             // A replacement Friend uses managed-flooding credentials. Relays
             // can reduce its TTL, so accept any nonzero received value.
@@ -791,8 +814,8 @@ static inline void mesh_friend_clear_receive(
                 (uint16_t)(counter - offer->lpn_counter) > 255u ||
                 !mesh_net_queue(message->net_key_index,
                     mesh_network.state.unicast_address, message->src, 1,
-                    0x7f, confirm, sizeof(confirm)))
-                return;
+                    0x7f, confirm, sizeof(confirm))
+            ) return;
         }
         mesh_friendship_clear(message->net_key_index, lpn,
                               mesh_network.state.unicast_address);
@@ -819,8 +842,8 @@ static inline void mesh_friend_clear_confirm_receive(
 ) {
     if (!message || message->opcode != MESH_CONTROL_FRIEND_CLEAR_CONFIRM ||
         message->friendship || message->len != 2 ||
-        message->dst != mesh_network.state.unicast_address)
-        return;
+        message->dst != mesh_network.state.unicast_address
+    ) return;
     uint16_t lpn = (uint16_t)((message->params[0] << 8) | message->params[1]);
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
         mesh_friend_offer *offer = &transport_friend_offers[i];
@@ -840,8 +863,8 @@ static inline void mesh_lpn_control_receive(
         const mesh_transport_control_message *message
 ) {
     if (!message || message->net_key_index != transport_lpn.net_key_index ||
-        !mesh_network.ready)
-        return;
+        !mesh_network.ready
+    ) return;
 
     if (transport_lpn.state == MESH_LPN_REQUESTING &&
         message->opcode == MESH_CONTROL_FRIEND_OFFER && !message->friendship &&
@@ -852,8 +875,8 @@ static inline void mesh_lpn_control_receive(
                                               message->params[5]);
         if (!mesh_friendship_add(message->net_key_index,
                 mesh_network.state.unicast_address, message->src,
-                transport_lpn.lpn_counter, friend_counter))
-            return;
+                transport_lpn.lpn_counter, friend_counter)
+        ) return;
 
         uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, 0};
         if (!mesh_net_queue_friend(message->net_key_index,
@@ -880,11 +903,12 @@ static inline void mesh_lpn_control_receive(
         !(message->params[0] & 0xfc) && message->params[5] <= 1) {
         uint16_t primary = mesh_network.state.unicast_address;
         if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE) {
-            if (message->dst != primary) return;
+            if (message->dst != primary)
+                return;
         } else if (message->dst < primary ||
             (uint32_t)message->dst >=
-                (uint32_t)primary + transport_lpn.num_elements)
-            return;
+                (uint32_t)primary + transport_lpn.num_elements
+        } else ) return;
 
         uint8_t phase = mesh_subnet_phase(&mesh_network.state,
                                           transport_lpn.net_key_index);
@@ -892,21 +916,21 @@ static inline void mesh_lpn_control_receive(
         if (message->params[0] & 1u) {
             if ((phase != 1 && phase != 2) ||
                 !mesh_key_refresh_transition_apply(&next,
-                    transport_lpn.net_key_index, 2))
-                return;
+                    transport_lpn.net_key_index, 2)
+            ) return;
         } else if (phase == 2 && !mesh_key_refresh_transition_apply(&next,
-                       transport_lpn.net_key_index, 3))
-            return;
+                       transport_lpn.net_key_index, 3)
+        } else ) return;
 
         uint32_t friend_iv_index = ((uint32_t)message->params[1] << 24) |
             ((uint32_t)message->params[2] << 16) |
             ((uint32_t)message->params[3] << 8) | message->params[4];
         if (!mesh_iv_state_update(&next, friend_iv_index,
-                                  (message->params[0] >> 1) & 1u))
-            return;
+                                  (message->params[0] >> 1) & 1u)
+        ) return;
         if (memcmp(&next, &mesh_network.state, sizeof(next)) != 0 &&
-            !mesh_commit(&next))
-            return;
+            !mesh_commit(&next)
+        ) return;
         if (transport_lpn.state == MESH_LPN_WAITING_FOR_UPDATE)
             transport_lpn.state = MESH_LPN_ESTABLISHED;
         return;
@@ -948,7 +972,8 @@ static uint8_t label_count;
 // Bluetooth Mesh virtual address = 0x8000 | low 14 bits of
 // AES-CMAC(s1("vtad"), Label UUID).
 static inline uint16_t mesh_virtual_address(const uint8_t label[16]) {
-    if (!label) return 0;
+    if (!label)
+        return 0;
     const uint8_t zero[16] = {0};
     uint8_t salt[16], hash[16];
     aes_cmac(zero, (const uint8_t *)"vtad", 4, salt);
@@ -958,12 +983,15 @@ static inline uint16_t mesh_virtual_address(const uint8_t label[16]) {
 
 // Register receive labels. Colliding virtual addresses remain distinct.
 static inline int mesh_label_add(const uint8_t label[16]) {
-    if (!label) return 0;
+    if (!label)
+        return 0;
     for (uint8_t i = 0; i < label_count; i++) {
-        if (memcmp(transport_labels[i].label, label, 16) == 0) return 1;
+        if (memcmp(transport_labels[i].label, label, 16) == 0)
+            return 1;
     }
 
-    if (label_count == MESH_TRANSPORT_MAX_LABELS) return 0;
+    if (label_count == MESH_TRANSPORT_MAX_LABELS)
+        return 0;
     uint8_t i = label_count++;
     memcpy(transport_labels[i].label, label, 16);
     transport_labels[i].address = mesh_virtual_address(label);
@@ -1032,7 +1060,8 @@ static int transport_decrypt(
                              mesh_access_message *out
 ) {
     size_t mic_len = mic_64 ? 8 : 4;
-    if (len <= mic_len || len - mic_len > MESH_TRANSPORT_MAX_ACCESS) return 0;
+    if (len <= mic_len || len - mic_len > MESH_TRANSPORT_MAX_ACCESS)
+        return 0;
 
     uint8_t nonce[13], key[16];
     transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv_index);
@@ -1045,16 +1074,20 @@ static int transport_decrypt(
 
         for (uint8_t slot = 0; slot < MESH_MAX_APP_KEYS; slot++) {
             const mesh_app_key *app = &state->app_keys[slot];
-            if (!app->used || mesh_app_net_idx(state, app) != net_idx) continue;
+            if (!app->used || mesh_app_net_idx(state, app) != net_idx)
+                continue;
             for (uint8_t version = 0; version < 2; version++) {
-                if (version && !app->has_new_key) break;
+                if (version && !app->has_new_key)
+                    break;
                 const uint8_t *key = version ? app->new_key : app->key;
-                if (transport_app_aid(key) != aid) continue;
+                if (transport_app_aid(key) != aid)
+                    continue;
 
                 // 0x8000-0xBFFF is the Bluetooth Mesh virtual address range.
                 if (dst >= 0x8000 && dst < 0xc000) {
                     for (uint8_t j = 0; j < label_count; j++) {
-                        if (transport_labels[j].address != dst) continue;
+                        if (transport_labels[j].address != dst)
+                            continue;
                         if (ccm_auth_decrypt(key, nonce, 13,
                                              transport_labels[j].label, 16,
                                              upper, len - mic_len,
@@ -1072,13 +1105,18 @@ static int transport_decrypt(
                                             out->data) == CCM_OK) {
                     out->app_key_index = app->index;
                 }
-                if (out->app_key_index != APP_KEY_INDEX_NONE) break;
+                if (out->app_key_index != APP_KEY_INDEX_NONE)
+                    break;
             }
-            if (out->app_key_index != APP_KEY_INDEX_NONE) break;
+            if (out->app_key_index != APP_KEY_INDEX_NONE)
+                break;
         }
-        if (out->app_key_index == APP_KEY_INDEX_NONE) return 0;
+
+        if (out->app_key_index == APP_KEY_INDEX_NONE)
+            return 0;
     } else {
-        if (aid != 0 || !mesh_local_element(dst)) return 0;
+        if (aid != 0 || !mesh_local_element(dst))
+            return 0;
         int ok = 0;
         if (BLE_MESH_TRANSPORT_GET_DEVICE_KEY(dst, key) == 1 &&
             ccm_auth_decrypt(key, nonce, 13, NULL, 0, upper, len - mic_len,
@@ -1092,7 +1130,8 @@ static int transport_decrypt(
             ok = 1;
             out->device_key_owner = src;
         }
-        if (!ok) return 0;
+        if (!ok)
+            return 0;
     }
 
     out->src = src;
@@ -1104,13 +1143,15 @@ static int transport_decrypt(
 }
 
 static int transport_segment_queue(void) {
-    if (!transport_tx.active) return 0;
+    if (!transport_tx.active)
+        return 0;
 
     while (transport_tx.next_seg <= transport_tx.seg_n &&
            (transport_tx.acked & ((uint32_t)1 << transport_tx.next_seg))
     ) { transport_tx.next_seg++; }
 
-    if (transport_tx.next_seg > transport_tx.seg_n) return 1;
+    if (transport_tx.next_seg > transport_tx.seg_n)
+        return 1;
 
     uint32_t iv = mesh_network.state.iv_index - (mesh_network.state.iv_update ? 1 : 0);
     if (iv != transport_tx.iv_index ||
@@ -1134,13 +1175,14 @@ static int transport_segment_queue(void) {
     lower[2] = (uint8_t)(((transport_tx.seq_zero & 0x3f) << 2) | (seg_o >> 3));
     lower[3] = (uint8_t)((seg_o << 5) | transport_tx.seg_n);
 
-    if (count > MESH_TRANSPORT_SEGMENT_SIZE) count = MESH_TRANSPORT_SEGMENT_SIZE;
+    if (count > MESH_TRANSPORT_SEGMENT_SIZE)
+        count = MESH_TRANSPORT_SEGMENT_SIZE;
     memcpy(lower + 4, transport_tx.upper + offset, count);
 
     if (!mesh_net_queue(transport_tx.net_idx, transport_tx.src, transport_tx.dst,
                            0, transport_tx.ttl,
-                           lower, count + 4))
-        return 0;
+                           lower, count + 4)
+    ) return 0;
     transport_tx.next_seg++;
     transport_tx.last_tx_ms = GET_MILLIS();
     return 1;
@@ -1148,7 +1190,8 @@ static int transport_segment_queue(void) {
 
 // Start a queued Access message only when it owns the active SAR context.
 static int transport_tx_start(const struct transport_tx_pending *pending) {
-    if (!pending || transport_tx.active) return 0;
+    if (!pending || transport_tx.active)
+        return 0;
     const mesh_net_state *state = &mesh_network.state;
     size_t mic_len = pending->mic_64 ? 8u : 4u;
     size_t upper_len = pending->access_len + mic_len;
@@ -1158,15 +1201,15 @@ static int transport_tx_start(const struct transport_tx_pending *pending) {
     uint8_t *label = pending->has_label ? (uint8_t *)pending->label : NULL;
 
     if (seq > 0xffffff || seq + (upper_len - 1) / MESH_TRANSPORT_SEGMENT_SIZE >
-            0xffffff || !mesh_local_element(pending->src))
-        return -1;
+            0xffffff || !mesh_local_element(pending->src)
+    ) return -1;
     transport_nonce(nonce, !pending->akf, pending->mic_64, seq,
                     pending->src, pending->dst, iv);
     if (ccm_encrypt_and_tag(pending->key, nonce, 13, label,
             pending->has_label ? 16u : 0u, pending->access,
             pending->access_len, upper, upper + pending->access_len,
-            mic_len) != CCM_OK)
-        return -1;
+            mic_len) != CCM_OK
+    ) return -1;
 
     memset(&transport_tx, 0, sizeof(transport_tx));
     transport_tx.active = 1;
@@ -1200,7 +1243,8 @@ static int mesh_friend_send_obo_ack(
     const mesh_net_message *net,
         uint16_t seq_zero, uint8_t seg_n
 ) {
-    if (!net || net->dst > 0x7fff) return 0;
+    if (!net || net->dst > 0x7fff)
+        return 0;
     uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
         ((uint32_t)1 << (seg_n + 1)) - 1;
     uint8_t ack[7] = {
@@ -1282,8 +1326,7 @@ static inline int mesh_transport_queue(
         ((dst >= 0x8000 && dst < 0xc000) != (label != NULL)) ||
         (label && (app_key_index == APP_KEY_INDEX_NONE ||
                    app_key_index == DEVICE_KEY_LOCAL))
-    )
-        return 0;
+    ) return 0;
 
     const mesh_net_state *state = &mesh_network.state;
     uint8_t key[16], akf = app_key_index != APP_KEY_INDEX_NONE &&
@@ -1298,7 +1341,8 @@ static inline int mesh_transport_queue(
             return 0;
     } else {
         int slot = mesh_app_key_slot(state, app_key_index);
-        if (slot < 0) return 0;
+        if (slot < 0)
+            return 0;
         const mesh_app_key *app = &state->app_keys[slot];
         net_idx = mesh_app_net_idx(state, app);
         memcpy(key, mesh_subnet_phase(state, net_idx) == 2 && app->has_new_key ?
@@ -1310,13 +1354,14 @@ static inline int mesh_transport_queue(
     size_t upper_len = len + mic_len;
     if (!mic_64 && upper_len <= 15) {
         uint32_t seq = state->next_seq;
-        if (seq > 0xffffff) return 0;
+        if (seq > 0xffffff)
+            return 0;
         uint32_t iv = state->iv_index - (state->iv_update ? 1u : 0u);
         uint8_t nonce[13], upper[MESH_TRANSPORT_MAX_UPPER];
         transport_nonce(nonce, !akf, mic_64, seq, src, dst, iv);
         if (ccm_encrypt_and_tag(key, nonce, 13, label, label ? 16u : 0u,
-                access, len, upper, upper + len, mic_len) != CCM_OK)
-            return 0;
+                access, len, upper, upper + len, mic_len) != CCM_OK
+        ) return 0;
         uint8_t lower[16];
         lower[0] = (akf << 6) | aid;
         memcpy(lower + 1, upper, upper_len);
@@ -1335,7 +1380,8 @@ static inline int mesh_transport_queue(
         .has_label = label != NULL
     };
     memcpy(pending.key, key, sizeof(pending.key));
-    if (label) memcpy(pending.label, label, sizeof(pending.label));
+    if (label)
+        memcpy(pending.label, label, sizeof(pending.label));
     memcpy(pending.access, access, len);
 
     if (transport_tx.active || segmented_tx_queue_count) {
@@ -1350,7 +1396,8 @@ static inline int mesh_transport_queue(
     }
 
     int result = transport_tx_start(&pending);
-    if (result != 1) memset(&transport_tx, 0, sizeof(transport_tx));
+    if (result != 1)
+        memset(&transport_tx, 0, sizeof(transport_tx));
     return result == 1;
 }
 
@@ -1362,16 +1409,20 @@ static inline int mesh_transport_receive(
     const mesh_net_message *net,
                                               mesh_access_message *out
 ) {
-    if (!net || !out) return -1;
-    if (!net->transport_len || net->transport_len > sizeof(net->transport)) return 0;
+    if (!net || !out)
+        return -1;
+    if (!net->transport_len || net->transport_len > sizeof(net->transport))
+        return 0;
     const uint8_t *pdu = net->transport;
 
     // Segment Acknowledgment uses bit 7 for OBO, not the Segmented flag.
     uint8_t segmented = (pdu[0] & 0x80) &&
                         !(net->ctl && (pdu[0] & 0x7f) == 0);
-    if (!segmented && mesh_friend_queue_receive(net)) return 0;
+    if (!segmented && mesh_friend_queue_receive(net))
+        return 0;
     if (net->ctl && !segmented) {
-        if (!net->transport_len) return 0;
+        if (!net->transport_len)
+            return 0;
         if ((pdu[0] & 0x7f) == 0) {
             uint8_t obo = (pdu[0] >> 7) & 1;
             if (net->transport_len != 7 || (pdu[1] & 0x80) ||
@@ -1379,12 +1430,12 @@ static inline int mesh_transport_receive(
                 net->net_key_index != transport_tx.net_idx ||
                 (!obo && net->src != transport_tx.dst) ||
                 net->dst != transport_tx.src
-            )
-                return 0;
+            ) return 0;
 
             uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) |
                                             (pdu[2] >> 2));
-            if (seq_zero != transport_tx.seq_zero) return 0;
+            if (seq_zero != transport_tx.seq_zero)
+                return 0;
             uint32_t acked = ((uint32_t)pdu[3] << 24) |
                             ((uint32_t)pdu[4] << 16) |
                             ((uint32_t)pdu[5] << 8) | pdu[6];
@@ -1407,7 +1458,8 @@ static inline int mesh_transport_receive(
                     return 0;
                 }
                 transport_tx.retries++;
-                if (new_acked) transport_tx.retries_without_progress = 0;
+                if (new_acked)
+                    transport_tx.retries_without_progress = 0;
                 else transport_tx.retries_without_progress++;
                 transport_tx.next_seg = 0;
             }
@@ -1443,11 +1495,12 @@ static inline int mesh_transport_receive(
     }
 
     if (net->dst <= 0x7fff && !mesh_local_element(net->dst) &&
-        mesh_friend_queue_target(net) < 0)
-        return 0;
+        mesh_friend_queue_target(net) < 0
+    ) return 0;
 
     if (!segmented) {
-        if (net->transport_len < 6) return 0;
+        if (net->transport_len < 6)
+            return 0;
         uint8_t akf = (pdu[0] >> 6) & 1;
         uint8_t aid = pdu[0] & 0x3f;
         int result = transport_decrypt(akf, aid, 0, net->seq, net->iv_index,
@@ -1460,9 +1513,11 @@ static inline int mesh_transport_receive(
         return result;
     }
 
-    if (net->transport_len < 5) return 0;
+    if (net->transport_len < 5)
+        return 0;
     uint8_t mic_64 = net->ctl ? 0 : pdu[1] >> 7;
-    if (net->ctl && (!(pdu[0] & 0x7f) || (pdu[1] & 0x80))) return 0;
+    if (net->ctl && (!(pdu[0] & 0x7f) || (pdu[1] & 0x80)))
+        return 0;
     uint8_t akf = (pdu[0] >> 6) & 1;
     uint8_t aid = pdu[0] & 0x3f;
     uint16_t seq_zero = (uint16_t)(((pdu[1] & 0x7f) << 6) | ((pdu[2] >> 2) & 0x3f));
@@ -1473,12 +1528,13 @@ static inline int mesh_transport_receive(
                                      MESH_TRANSPORT_SEGMENT_SIZE;
 
     if (seg_o > seg_n || !segment_len || segment_len > segment_size ||
-        (seg_o != seg_n && segment_len != segment_size))
-        return 0;
+        (seg_o != seg_n && segment_len != segment_size)
+    ) return 0;
 
     uint32_t seq_auth = (net->seq & ~0x1fff) | seq_zero;
     if (seq_auth > net->seq) {
-        if (seq_auth < 0x2000) return 0;
+        if (seq_auth < 0x2000)
+            return 0;
         seq_auth -= 0x2000;
     }
 
@@ -1494,14 +1550,16 @@ static inline int mesh_transport_receive(
         struct transport_rx *rx = &transport_rx[i];
         if (rx->active && !rx->friend_queued &&
             (uint32_t)(now - rx->updated_ms) >=
-            ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000)
-            rx->active = rx->ack_pending = 0;
+            ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000
+        ) rx->active = rx->ack_pending = 0;
         if (!rx->active) {
-            if (!free_rx) free_rx = rx;
+            if (!free_rx)
+                free_rx = rx;
             continue;
         }
         if (!transport_rx_matches(rx, net->ctl, net->net_key_index, net->src, net->dst,
-                                  seq_auth, net->iv_index)) continue;
+                                  seq_auth, net->iv_index)
+        ) continue;
         matched_rx = rx;
         context_updated_ms = rx->updated_ms;
         uint16_t old_seq_zero = (uint16_t)(((rx->transport[1] & 0x7f) << 6) |
@@ -1510,9 +1568,10 @@ static inline int mesh_transport_receive(
         uint8_t old_seg_o = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                       (rx->transport[3] >> 5));
         if (rx->transport[0] != pdu[0] || old_seq_zero != seq_zero ||
-            old_seg_n != seg_n || (rx->transport[1] >> 7) != mic_64)
-            return 0;
-        if (old_seg_o == seg_o) duplicate = 1;
+            old_seg_n != seg_n || (rx->transport[1] >> 7) != mic_64
+        ) return 0;
+        if (old_seg_o == seg_o)
+            duplicate = 1;
     }
     mask = transport_rx_received(net->ctl, net->net_key_index, net->src, net->dst,
                                   seq_auth, net->iv_index);
@@ -1538,7 +1597,8 @@ static inline int mesh_transport_receive(
                     ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10;
                 uint32_t next_ack = matched_rx->ack_sent_ms +
                     ack_delay_half_steps * segment_interval_ms / 2;
-                if ((int32_t)(next_ack - now) > 0) ack_at_ms = next_ack;
+                if ((int32_t)(next_ack - now) > 0)
+                    ack_at_ms = next_ack;
             }
         } else {
             ack_at_ms += transport_sar_rx_ack_delay_ms(seg_n);
@@ -1560,10 +1620,13 @@ static inline int mesh_transport_receive(
                 if (!candidate->active || candidate->friend_queued ||
                     transport_rx_received(candidate->ctl, candidate->net_idx, candidate->src,
                         candidate->dst, candidate->seq_auth, candidate->iv_index) !=
-                            candidate_mask) continue;
+                            candidate_mask
+                ) continue;
                 if (!oldest || (uint32_t)(now - candidate->updated_ms) >
-                    (uint32_t)(now - oldest->updated_ms)) oldest = candidate;
+                    (uint32_t)(now - oldest->updated_ms)
+                ) oldest = candidate;
             }
+
             if (!oldest) {
                 // Reject a unicast transfer with an empty BlockAck when no
                 // segment slot can be reclaimed, as required by SAR behavior.
@@ -1584,8 +1647,8 @@ static inline int mesh_transport_receive(
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
                 if (transport_rx_matches(rx, oldest->ctl, oldest->net_idx, oldest->src,
-                        oldest->dst, oldest->seq_auth, oldest->iv_index))
-                    rx->active = rx->ack_pending = 0;
+                        oldest->dst, oldest->seq_auth, oldest->iv_index)
+                ) rx->active = rx->ack_pending = 0;
             }
             free_rx = oldest;
         }
@@ -1615,25 +1678,29 @@ static inline int mesh_transport_receive(
         }
     }
 
-    if (mask != segment_mask) return 0;
+    if (mask != segment_mask)
+        return 0;
     int friend_slot = mesh_friend_queue_target(net);
     if (!mesh_local_element(net->dst) && friend_slot >= 0) {
         uint32_t last_seq = 0;
         for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
             const struct transport_rx *rx = &transport_rx[i];
             if (!transport_rx_matches(rx, net->ctl, net->net_key_index,
-                    net->src, net->dst, seq_auth, net->iv_index)) continue;
+                    net->src, net->dst, seq_auth, net->iv_index)
+            ) continue;
             uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                      (rx->transport[3] >> 5));
-            if (part == seg_n) last_seq = rx->seq;
+            if (part == seg_n)
+                last_seq = rx->seq;
         }
+
         if (!mesh_net_replay_update(net->src, net->net_key_index,
                 net->iv_index, last_seq)) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
                 if (transport_rx_matches(rx, net->ctl, net->net_key_index,
-                        net->src, net->dst, seq_auth, net->iv_index))
-                    rx->active = rx->ack_pending = 0;
+                        net->src, net->dst, seq_auth, net->iv_index)
+                ) rx->active = rx->ack_pending = 0;
             }
             return 0;
         }
@@ -1641,9 +1708,10 @@ static inline int mesh_transport_receive(
         for (uint8_t i = 0; i < friendship->queue_count; i++) {
             mesh_friend_queue_item *item = &friendship->queue[i];
             if (item->segmented && item->src == net->src &&
-                item->seq_auth == seq_auth && item->iv_index == net->iv_index)
-                return 0;
+                item->seq_auth == seq_auth && item->iv_index == net->iv_index
+            ) return 0;
         }
+
         if (friendship->queue_count == MESH_FRIEND_QUEUE_CAPACITY) {
             mesh_friend_queue_item_release(&friendship->queue[0]);
             memmove(&friendship->queue[0], &friendship->queue[1],
@@ -1668,7 +1736,8 @@ static inline int mesh_transport_receive(
         for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
             struct transport_rx *rx = &transport_rx[i];
             if (!transport_rx_matches(rx, net->ctl, net->net_key_index,
-                    net->src, net->dst, seq_auth, net->iv_index)) continue;
+                    net->src, net->dst, seq_auth, net->iv_index)
+            ) continue;
             rx->friend_queued = 1;
             rx->ack_pending = 0;
         }
@@ -1683,17 +1752,21 @@ static inline int mesh_transport_receive(
         for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
             const struct transport_rx *rx = &transport_rx[i];
             if (!transport_rx_matches(rx, 1, net->net_key_index, net->src,
-                    net->dst, seq_auth, net->iv_index)) continue;
+                    net->dst, seq_auth, net->iv_index)
+            ) continue;
             uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                      (rx->transport[3] >> 5));
-            if (part == seg_n) last_seq = rx->seq;
+            if (part == seg_n)
+                last_seq = rx->seq;
         }
+
         if (!mesh_net_replay_update(net->src, net->net_key_index,
                                         net->iv_index, last_seq)) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
                 if (transport_rx_matches(rx, 1, net->net_key_index, net->src,
-                        net->dst, seq_auth, net->iv_index)) rx->delivered = 1;
+                        net->dst, seq_auth, net->iv_index)
+                ) rx->delivered = 1;
             }
         }
         return 0;
@@ -1705,7 +1778,8 @@ static inline int mesh_transport_receive(
     for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
         const struct transport_rx *rx = &transport_rx[i];
         if (!transport_rx_matches(rx, net->ctl, net->net_key_index, net->src, net->dst,
-                                  seq_auth, net->iv_index)) continue;
+                                  seq_auth, net->iv_index)
+        ) continue;
         uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                  (rx->transport[3] >> 5));
         size_t part_len = rx->transport_len - 4;
@@ -1721,25 +1795,30 @@ static inline int mesh_transport_receive(
                                    net->net_key_index, net->src, net->dst, upper,
                                    upper_len, out);
     if (result && !mesh_net_replay_update(net->src, net->net_key_index,
-                                               net->iv_index, last_seq))
-        return 0;
-    if (result) out->ttl = net->ttl;
+                                               net->iv_index, last_seq)
+    ) return 0;
+    if (result)
+        out->ttl = net->ttl;
     return result;
 }
 
 // Poll the network, reassemble Access/Control messages, and service SAR.
 // Returns 1 with an Access message, 0 if none, or -1 for a send/radio error.
 static inline int mesh_transport_poll(mesh_access_message *out) {
-    if (!out) return -1;
+    if (!out)
+        return -1;
     mesh_net_message net;
     int received = mesh_net_poll(&net);
-    if (received < 0) return -1;
+    if (received < 0)
+        return -1;
     int result = received ? mesh_transport_receive(&net, out) : 0;
-    if (result < 0) return -1;
+    if (result < 0)
+        return -1;
     // Send delayed Friend Offers and expire LPNs that did not establish or
     // maintain their friendship before the negotiated Poll Timeout.
     for (size_t i = 0; i < MESH_NETWORK_MAX_FRIENDSHIPS; i++) {
-        if (!transport_friend_offers[i].used) continue;
+        if (!transport_friend_offers[i].used)
+            continue;
         uint32_t now = GET_MILLIS();
         if ((int32_t)(GET_MILLIS() -
                 transport_friend_offers[i].expires_at_ms) >= 0) {
@@ -1793,7 +1872,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         }
         if (!transport_friend.enabled || transport_friend_offers[i].offered ||
             (int32_t)(GET_MILLIS() -
-                transport_friend_offers[i].offer_at_ms) < 0) continue;
+                transport_friend_offers[i].offer_at_ms) < 0
+        ) continue;
         uint8_t offer[7] = {
             MESH_CONTROL_FRIEND_OFFER,
             transport_friend.receive_window,
@@ -1806,8 +1886,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         if (mesh_net_queue(transport_friend_offers[i].net_key_index,
                 mesh_network.state.unicast_address,
                 transport_friend_offers[i].lpn_address, 1, 0,
-                offer, sizeof(offer)))
-            transport_friend_offers[i].offered = 1;
+                offer, sizeof(offer))
+        ) transport_friend_offers[i].offered = 1;
     }
     // Retry discovery every 1.1 seconds and resend Friend Poll while awaiting
     // the initial Friend Update; discard a friendship after six unanswered polls.
@@ -1852,7 +1932,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             if (mesh_net_queue_friend(transport_lpn.net_key_index,
                     mesh_network.state.unicast_address,
                     transport_lpn.friend_address, 0, 0,
-                    clear, sizeof(clear))) transport_lpn.last_tx_ms = now;
+                    clear, sizeof(clear))
+            ) transport_lpn.last_tx_ms = now;
         }
     } else if (transport_lpn.state == MESH_LPN_ESTABLISHED) {
         uint32_t now = GET_MILLIS();
@@ -1890,8 +1971,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 if (mesh_net_queue_friend(transport_lpn.net_key_index,
                         mesh_network.state.unicast_address,
                         transport_lpn.friend_address, 1, 0,
-                        poll, sizeof(poll)))
-                    transport_lpn.last_tx_ms = now;
+                        poll, sizeof(poll))
+                ) transport_lpn.last_tx_ms = now;
             }
         }
     }
@@ -1903,8 +1984,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *candidate = &transport_rx[i];
                 if (!candidate->active || candidate->friend_queued ||
-                    !candidate->ctl || candidate->delivered)
-                    continue;
+                    !candidate->ctl || candidate->delivered
+                ) continue;
                 uint8_t seg_n = candidate->transport[3] & 0x1f;
                 uint32_t segment_mask = seg_n == 31 ? UINT32_MAX :
                     ((uint32_t)1 << (seg_n + 1)) - 1;
@@ -1915,7 +1996,9 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                     break;
                 }
             }
-            if (!first) break;
+
+            if (!first)
+                break;
 
             mesh_transport_control_message control = {0};
             uint8_t seg_n = first->transport[3] & 0x1f;
@@ -1928,14 +2011,16 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
                 struct transport_rx *rx = &transport_rx[i];
                 if (!transport_rx_matches(rx, 1, first->net_idx, first->src,
-                        first->dst, first->seq_auth, first->iv_index)) continue;
+                        first->dst, first->seq_auth, first->iv_index)
+                ) continue;
                 uint8_t part = (uint8_t)(((rx->transport[2] & 3) << 3) |
                                          (rx->transport[3] >> 5));
                 size_t part_len = rx->transport_len - 4;
                 memcpy(control.params + (size_t)part *
                        MESH_TRANSPORT_CONTROL_SEGMENT_SIZE,
                        rx->transport + 4, part_len);
-                if (part == seg_n) last_len = (uint8_t)part_len;
+                if (part == seg_n)
+                    last_len = (uint8_t)part_len;
                 rx->delivered = 1;
             }
             control.len = (uint16_t)((size_t)seg_n *
@@ -1954,7 +2039,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             rx->active = rx->ack_pending = 0;
         }
         if (!rx->active || !rx->ack_pending || !mesh_local_element(rx->dst) ||
-            (int32_t)(now - rx->ack_at_ms) < 0) continue;
+            (int32_t)(now - rx->ack_at_ms) < 0
+        ) continue;
         uint16_t seq_zero = (uint16_t)(((rx->transport[1] & 0x7f) << 6) |
                                         ((rx->transport[2] >> 2) & 0x3f));
         uint32_t mask = transport_rx_received(rx->ctl, rx->net_idx, rx->src, rx->dst,
@@ -1968,12 +2054,13 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         };
         if (!mesh_net_queue(rx->net_idx, rx->dst, rx->src,
                                 1, rx->ttl,
-                                pdu, sizeof(pdu)))
-            return -1;
+                                pdu, sizeof(pdu))
+        ) return -1;
         for (size_t j = 0; j < MESH_TRANSPORT_RX_PACKET_SLOTS; j++) {
             struct transport_rx *sent_rx = &transport_rx[j];
             if (!transport_rx_matches(sent_rx, rx->ctl, rx->net_idx, rx->src,
-                    rx->dst, rx->seq_auth, rx->iv_index)) continue;
+                    rx->dst, rx->seq_auth, rx->iv_index)
+            ) continue;
             sent_rx->ack_sent = 1;
             sent_rx->ack_sent_ms = now;
         }
@@ -1981,7 +2068,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
         uint8_t retrans_left = rx->ack_retrans_left;
         uint8_t retransmit = seg_n > transport_sar_rx.segments_threshold &&
                              retrans_left != 0;
-        if (retransmit) retrans_left--;
+        if (retransmit)
+            retrans_left--;
         transport_rx_ack(rx->ctl, rx->net_idx, rx->src, rx->dst, rx->seq_auth,
             rx->iv_index, retransmit,
             retransmit ? now + ((uint32_t)transport_sar_rx.segment_interval_step + 1) * 10 : 0,
@@ -2017,8 +2105,8 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
             uint32_t segment_interval_ms =
                 ((uint32_t)transport_sar_tx.segment_interval_step + 1) * 10;
             if ((uint32_t)(now - transport_tx.last_tx_ms) >= segment_interval_ms &&
-                transport_segment_queue() < 0)
-                return -1;
+                transport_segment_queue() < 0
+            ) return -1;
         }
         else if (transport_tx.dst >= 0x8000 &&
                  (uint32_t)(now - transport_tx.last_tx_ms) >=

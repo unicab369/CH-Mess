@@ -30,8 +30,10 @@ static void on_event(
 ) {
     (void)context;
     assert(len == 1);
-    if (handle == 0x1234) assert(value[0] == 0x5a);
-    else if (handle == 0x5678) assert(value[0] == 0x6b);
+    if (handle == 0x1234)
+        assert(value[0] == 0x5a);
+    else if (handle == 0x5678)
+        assert(value[0] == 0x6b);
     else assert(0);
     event_count++;
 }

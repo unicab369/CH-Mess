@@ -12,10 +12,13 @@ static uint8_t gatt_alert_notification_control_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-    if (!context || !value) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (!context || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
 
-    if (len != 2) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (len != 2)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t cmd = value[0];
     uint8_t category = value[1];
@@ -56,8 +59,8 @@ static inline int gatt_alert_notification_service_add(
 ) {
     if (!service ||
         (supported_new_alerts & (uint16_t)~GATT_ALERT_CATEGORY_MASK) ||
-        (supported_unread_alerts & (uint16_t)~GATT_ALERT_CATEGORY_MASK))
-        return 0;
+        (supported_unread_alerts & (uint16_t)~GATT_ALERT_CATEGORY_MASK)
+    ) return 0;
     memset(service, 0, sizeof(*service));
     service->supported_new_alerts = supported_new_alerts;
     service->supported_unread_alerts = supported_unread_alerts;
@@ -84,8 +87,8 @@ static inline int gatt_alert_notification_service_add(
     handlers[4].context = service;
     uint16_t values[5], cccds[5];
     if (!gatt_sig_service_add_with_handlers(server, 0x1811, chars, 5,
-            &service->service_handle, values, cccds, handlers))
-        return 0;
+            &service->service_handle, values, cccds, handlers)
+    ) return 0;
     service->supported_new_alerts_handle = values[0];
     service->supported_unread_alerts_handle = values[1];
     service->new_alert_handle = values[2];
@@ -105,15 +108,16 @@ static inline int gatt_alert_notification_service_notify_new(
     uint8_t category, uint8_t count, const uint8_t *text, uint16_t text_len
 ) {
     if (!server || !service || category > 9 || text_len > 18 ||
-        (text_len && !text))
-        return 0;
+        (text_len && !text)
+    ) return 0;
     uint16_t category_bit = (uint16_t)(1u << category);
     if (!(service->supported_new_alerts & category_bit) ||
-        !(service->enabled_new_alerts & category_bit))
-        return 0;
+        !(service->enabled_new_alerts & category_bit)
+    ) return 0;
 
     uint8_t value[20] = {category, count};
-    if (text_len) memcpy(value + 2, text, text_len);
+    if (text_len)
+        memcpy(value + 2, text, text_len);
     return gatt_server_queue_event(server, service->new_alert_handle,
         value, (uint16_t)(2 + text_len), 0);
 }
@@ -126,11 +130,12 @@ static inline int gatt_alert_notification_service_notify_unread(
     const ble_gatt_alert_notification_service *service,
     uint8_t category, uint8_t count
 ) {
-    if (!server || !service || category > 9) return 0;
+    if (!server || !service || category > 9)
+        return 0;
     uint16_t category_bit = (uint16_t)(1u << category);
     if (!(service->supported_unread_alerts & category_bit) ||
-        !(service->enabled_unread_alerts & category_bit))
-        return 0;
+        !(service->enabled_unread_alerts & category_bit)
+    ) return 0;
 
     uint8_t value[2] = {category, count};
     return gatt_server_queue_event(server, service->unread_alert_status_handle,

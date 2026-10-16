@@ -60,22 +60,26 @@ static inline int mesh_access_queue(
     uint8_t mic_64
 ) {
     size_t opcode_len;
-    if (opcode <= 0x7e) opcode_len = 1;
-    else if (opcode >= 0x8000 && opcode <= 0xbfff) opcode_len = 2;
-    else if (opcode >= 0xc00000 && opcode <= 0xffffff) opcode_len = 3;
+    if (opcode <= 0x7e)
+        opcode_len = 1;
+    else if (opcode >= 0x8000 && opcode <= 0xbfff)
+        opcode_len = 2;
+    else if (opcode >= 0xc00000 && opcode <= 0xffffff)
+        opcode_len = 3;
     else return 0;
 
     if ((!params && params_len) || mic_64 > 1 ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
-                     opcode_len)
-        return 0;
+                     opcode_len
+    ) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
         data[i] = (uint8_t)(opcode >> (8 * (opcode_len - 1 - i)));
     }
 
-    if (params_len) memcpy(data + opcode_len, params, params_len);
+    if (params_len)
+        memcpy(data + opcode_len, params, params_len);
     return mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
                                          data, opcode_len + params_len, mic_64);
 }
@@ -98,17 +102,18 @@ static inline int mesh_access_queue_acknowledged(
         !response_len || !src || src > 0x7fff || !dst || dst > 0x7fff ||
         (!params && params_len) || mic_64 > 1 || !timeout_ms ||
         timeout_ms > 0x7fffffffu ||
-        params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) - opcode_len)
-        return 0;
+        params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) - opcode_len
+    ) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++)
         data[i] = (uint8_t)(request_opcode >> (8 * (opcode_len - 1 - i)));
-    if (params_len) memcpy(data + opcode_len, params, params_len);
+    if (params_len)
+        memcpy(data + opcode_len, params, params_len);
     size_t len = opcode_len + params_len;
     if (!mesh_transport_queue(src, dst, ttl, app_key_index, NULL,
-            data, len, mic_64))
-        return 0;
+            data, len, mic_64)
+    ) return 0;
 
     mesh_access_ack.src = src;
     mesh_access_ack.dst = dst;
@@ -135,8 +140,8 @@ static inline uint8_t mesh_access_ack_status(void) {
 // Service the one outstanding transaction after checking for a reply.
 static inline void mesh_access_ack_poll(void) {
     if (mesh_access_ack.state != MESH_ACCESS_ACK_PENDING ||
-        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0)
-        return;
+        (int32_t)(GET_MILLIS() - mesh_access_ack.retry_at_ms) < 0
+    ) return;
     if (mesh_access_ack.retries_sent >= mesh_access_ack.retry_limit) {
         mesh_access_ack.state = MESH_ACCESS_ACK_TIMED_OUT;
         return;
@@ -165,21 +170,25 @@ static inline int mesh_access_queue_on_net(
     const uint8_t *params, size_t params_len
 ) {
     size_t opcode_len;
-    if (opcode <= 0x7e) opcode_len = 1;
-    else if (opcode >= 0x8000 && opcode <= 0xbfff) opcode_len = 2;
-    else if (opcode >= 0xc00000 && opcode <= 0xffffff) opcode_len = 3;
+    if (opcode <= 0x7e)
+        opcode_len = 1;
+    else if (opcode >= 0x8000 && opcode <= 0xbfff)
+        opcode_len = 2;
+    else if (opcode >= 0xc00000 && opcode <= 0xffffff)
+        opcode_len = 3;
     else return 0;
 
     if ((!params && params_len) ||
-        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len)
-        return 0;
+        params_len > MESH_TRANSPORT_MAX_ACCESS - opcode_len
+    ) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
         data[i] = (uint8_t)(opcode >> (8 * (opcode_len - 1 - i)));
     }
 
-    if (params_len) memcpy(data + opcode_len, params, params_len);
+    if (params_len)
+        memcpy(data + opcode_len, params, params_len);
     uint16_t previous_net_idx = mesh_network.reply_net_idx;
     mesh_network.reply_net_idx = net_idx;
 
@@ -203,15 +212,16 @@ static inline int mesh_access_queue_virtual(
         app_key_index == DEVICE_KEY_LOCAL || !opcode_len ||
         mic_64 > 1 || (!params && params_len) ||
         params_len > MESH_TRANSPORT_MAX_ACCESS - (mic_64 ? 4u : 0u) -
-                     opcode_len)
-        return 0;
+                     opcode_len
+    ) return 0;
 
     uint8_t data[MESH_TRANSPORT_MAX_ACCESS];
     for (size_t i = 0; i < opcode_len; i++) {
         data[i] = (uint8_t)(opcode >> (8 * (opcode_len - 1 - i)));
     }
 
-    if (params_len) memcpy(data + opcode_len, params, params_len);
+    if (params_len)
+        memcpy(data + opcode_len, params, params_len);
     return mesh_transport_queue(src, mesh_virtual_address(label), ttl,
                                      app_key_index, label, data,
                                      opcode_len + params_len, mic_64);
@@ -224,9 +234,11 @@ static inline int mesh_access_poll(
     mesh_access_message *message,
                                        mesh_access_pdu *access
 ) {
-    if (!message || !access) return -1;
+    if (!message || !access)
+        return -1;
     int result = mesh_transport_poll(message);
-    if (result < 0) return result;
+    if (result < 0)
+        return result;
     if (!result) {
         mesh_access_ack_poll();
         return 0;
@@ -260,12 +272,13 @@ static inline int mesh_access_poll(
         .params = message->data + opcode_len,
         .params_len = message->len - opcode_len
     };
-    if (message->has_label) memcpy(access->label, message->label, 16);
+    if (message->has_label)
+        memcpy(access->label, message->label, 16);
     if (mesh_access_ack.state == MESH_ACCESS_ACK_PENDING &&
         access->src == mesh_access_ack.dst && access->dst == mesh_access_ack.src &&
         access->app_key_index == mesh_access_ack.app_key_index &&
-        access->opcode == mesh_access_ack.response_opcode)
-        mesh_access_ack.state = MESH_ACCESS_ACK_COMPLETE;
+        access->opcode == mesh_access_ack.response_opcode
+    ) mesh_access_ack.state = MESH_ACCESS_ACK_COMPLETE;
     mesh_access_ack_poll();
     return 1;
 }

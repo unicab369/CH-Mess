@@ -38,7 +38,8 @@ static int fake_send(
 }
 
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
-    if (!fake_random_state || fake_random_state->random_fail) return 0;
+    if (!fake_random_state || fake_random_state->random_fail)
+        return 0;
     memset(out, 0x5a, len);
     return 1;
 }

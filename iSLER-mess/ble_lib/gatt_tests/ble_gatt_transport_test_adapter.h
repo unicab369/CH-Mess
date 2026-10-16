@@ -66,7 +66,8 @@ static inline int gatt_transport_test_poll(
         return status;
     }
 
-    if (!connected) return status;
+    if (!connected)
+        return status;
 
     if (transport->tx_len) {
         uint8_t llid;
@@ -74,7 +75,8 @@ static inline int gatt_transport_test_poll(
         uint16_t len;
         int ready = gatt_transport_tx_peek(transport,
             ops->max_tx_payload(ops->context), &llid, &fragment, &len);
-        if (ready < 0) return -1;
+        if (ready < 0)
+            return -1;
 
         if (ready && ops->send(ops->context, llid, fragment, len)) {
             (void)gatt_transport_tx_sent(transport, len, now_ms);
@@ -83,7 +85,8 @@ static inline int gatt_transport_test_poll(
         return 0;
     }
 
-    if (status > 0) return status;
+    if (status > 0)
+        return status;
 
     uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
     size_t len = sizeof(fragment);
@@ -95,7 +98,8 @@ static inline int gatt_transport_test_poll(
         return -1;
     }
 
-    if (!received) return status;
+    if (!received)
+        return status;
     status = gatt_transport_receive_fragment(transport, llid, fragment, len);
     if (status < 0 && gatt_transport_test_terminate)
         gatt_transport_test_terminate(ops->context);

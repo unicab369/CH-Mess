@@ -32,8 +32,10 @@ static int fake_receive(
                         size_t *len
 ) {
     fake_link *link = context;
-    if (!link->rx_count) return 0;
-    if (*len < link->rx[0].len) return -1;
+    if (!link->rx_count)
+        return 0;
+    if (*len < link->rx[0].len)
+        return -1;
     *llid = link->rx[0].llid;
     *len = link->rx[0].len;
     memcpy(data, link->rx[0].data, *len);
@@ -47,7 +49,8 @@ static int fake_send(
                      size_t len
 ) {
     fake_link *link = context;
-    if (link->block_tx) return 0;
+    if (link->block_tx)
+        return 0;
     assert(link->tx_count < FAKE_RX_COUNT && len <= link->max_payload);
     uint8_t i = link->tx_count++;
     link->tx_llid[i] = llid;
@@ -98,7 +101,8 @@ static void fake_cccd_store(
 
 static int fake_database_hash_load(void *context, uint8_t hash[16]) {
     fake_link *link = context;
-    if (!link->database_hash_valid) return 0;
+    if (!link->database_hash_valid)
+        return 0;
     memcpy(hash, link->database_hash, 16);
     return 1;
 }
@@ -125,7 +129,8 @@ static void enqueue_l2cap(
     for (uint16_t offset = 0; offset < total;) {
         assert(link->rx_count < FAKE_RX_COUNT);
         uint16_t chunk = total - offset;
-        if (chunk > fragment_size) chunk = fragment_size;
+        if (chunk > fragment_size)
+            chunk = fragment_size;
         uint8_t i = link->rx_count++;
         link->rx[i].llid = offset ? 1 : 2;
         link->rx[i].len = (uint8_t)chunk;
@@ -164,8 +169,10 @@ static void client_event(
 ) {
     (void)context;
     assert(len == 1);
-    if (handle == 2) assert(value[0] == 0x66);
-    else if (handle == 3) assert(value[0] == 0x67);
+    if (handle == 2)
+        assert(value[0] == 0x66);
+    else if (handle == 3)
+        assert(value[0] == 0x67);
     else assert(0);
     client_event_count++;
 }
@@ -711,7 +718,8 @@ int main(void) {
     while (link.rx_count || transport.l2cap_rx.expected || !transport.tx_len) {
         int status = gatt_transport_test_poll(&transport, 10);
         assert(status >= 0);
-        if (transport.tx_len) break;
+        if (transport.tx_len)
+            break;
     }
     while (transport.tx_len)
         assert(gatt_transport_test_poll(&transport, 11) == 1);

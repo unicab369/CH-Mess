@@ -5,11 +5,14 @@
 static inline int gatt_lns_feature32(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
-    if (!server || !handle || !features) return 0;
+    if (!server || !handle || !features)
+        return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-    if (!attribute || attribute->value_len < 4) return 0;
+    if (!attribute || attribute->value_len < 4)
+        return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
+    if (!value)
+        return 0;
     *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
         (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
     return 1;
@@ -23,8 +26,8 @@ static inline int gatt_lns_control_busy(
         return 1;
     for (uint16_t i = 0; i < server->event_count; i++)
         if (server->events[i].handle == handle &&
-            server->events[i].indication)
-            return 1;
+            server->events[i].indication
+        ) return 1;
     return 0;
 }
 
@@ -35,12 +38,13 @@ static inline uint8_t gatt_lns_control_response(
 ) {
     uint8_t response[20];
     if (parameter_len > sizeof(response) - 3 ||
-        (parameter_len && !parameters))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        (parameter_len && !parameters)
+    ) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     response[0] = 0x20;
     response[1] = request_opcode;
     response[2] = response_code;
-    if (parameter_len) memcpy(response + 3, parameters, parameter_len);
+    if (parameter_len)
+        memcpy(response + 3, parameters, parameter_len);
     return gatt_server_queue_event(server, handle, response,
         (uint16_t)(parameter_len + 3), 1) ? 0 :
         BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
@@ -55,17 +59,20 @@ static inline uint8_t gatt_lns_control_point_write(
     ble_gatt_location_navigation_service *service = context;
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (offset)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (!len)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         server, service->control_point_handle);
-    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (!cccd || !(cccd->cccd & 2))
+        return 0xfd;
 
     if (gatt_lns_control_busy(server, service->control_point_handle) ||
-        service->control_point_pending_opcode)
-        return 0xfe;
+        service->control_point_pending_opcode
+    ) return 0xfe;
 
     uint32_t features = 0;
     if (!gatt_lns_feature32(server, service->feature_handle, &features))
@@ -76,16 +83,21 @@ static inline uint8_t gatt_lns_control_point_write(
     uint16_t parameter_len = 0;
 
     if (opcode == 1) {
-        if (!(features & (1u << 1))) response = 2;
-        else if (len != 4) response = 3;
+        if (!(features & (1u << 1)))
+            response = 2;
+        else if (len != 4)
+            response = 3;
         else service->total_distance = (uint32_t)value[1] |
             (uint32_t)value[2] << 8 | (uint32_t)value[3] << 16;
     } else if (opcode == 2) {
-        if (len != 3) response = 3;
+        if (len != 3)
+            response = 3;
         else service->location_speed_content_mask = ble_get_le16(value + 1);
     } else if (opcode == 3) {
-        if (!(features & (1u << 12))) response = 2;
-        else if (len != 2 || value[1] > 5) response = 3;
+        if (!(features & (1u << 12)))
+            response = 2;
+        else if (len != 2 || value[1] > 5)
+            response = 3;
         else {
             service->navigation_command = value[1];
             if (value[1] == 0 || value[1] == 2)
@@ -95,7 +107,8 @@ static inline uint8_t gatt_lns_control_point_write(
         }
     } else if (opcode == 4 || opcode == 5 || opcode == 6) {
         uint8_t feature_bit = opcode == 4 ? 10 : opcode == 5 ? 11 : 12;
-        if (!(features & (1u << feature_bit))) response = 2;
+        if (!(features & (1u << feature_bit)))
+            response = 2;
         else if ((opcode == 4 && len != 1) ||
                  (opcode != 4 && len != 3)) response = 3;
         else {
@@ -106,15 +119,19 @@ static inline uint8_t gatt_lns_control_point_write(
             return 0;
         }
     } else if (opcode == 7) {
-        if (len != 2 || !value[1]) response = 3;
+        if (len != 2 || !value[1])
+            response = 3;
         else service->fix_rate = value[1];
     } else if (opcode == 8) {
-        if (!(features & (1u << 3))) response = 2;
-        else if (len != 4) response = 3;
+        if (!(features & (1u << 3)))
+            response = 2;
+        else if (len != 4)
+            response = 3;
         else {
             int32_t elevation = (int32_t)value[1] |
                 (int32_t)value[2] << 8 | (int32_t)value[3] << 16;
-            if (elevation & 0x800000) elevation |= (int32_t)0xff000000;
+            if (elevation & 0x800000)
+                elevation |= (int32_t)0xff000000;
             service->elevation = elevation;
         }
     } else {
@@ -134,12 +151,12 @@ static inline int gatt_location_navigation_service_control_point_complete(
     if (!server || !service || service->server != server ||
         !service->control_point_pending_opcode || response < 1 || response > 4 ||
         (parameter_len && !parameters) || parameter_len > 17 ||
-        gatt_lns_control_busy(server, service->control_point_handle))
-        return 0;
+        gatt_lns_control_busy(server, service->control_point_handle)
+    ) return 0;
     if (!gatt_lns_control_response(server, service->control_point_handle,
             service->control_point_pending_opcode, response,
-            parameters, parameter_len))
-        return 0;
+            parameters, parameter_len)
+    ) return 0;
     if (response == 1 && service->control_point_pending_opcode == 6)
         service->selected_route = service->control_point_request_parameter;
     service->control_point_pending_opcode = 0;

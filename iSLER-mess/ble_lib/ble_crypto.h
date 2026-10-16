@@ -50,7 +50,8 @@ static void ctr_xor(
         AES_ENCRYPT_BLOCK(key, ctr_blk, ks);
 
         size_t n = len - off;
-        if (n > 16) n = 16;
+        if (n > 16)
+            n = 16;
         for (size_t i = 0; i < n; i++) out[off + i] = in[off + i] ^ ks[i];
 
         off += n;
@@ -77,7 +78,8 @@ static void cbc_mac_update_parts(
         size_t off = 0;
         while (off < lengths[part]) {
             size_t n = lengths[part] - off;
-            if (n > sizeof(blk) - used) n = sizeof(blk) - used;
+            if (n > sizeof(blk) - used)
+                n = sizeof(blk) - used;
 
             memcpy(blk + used, parts[part] + off, n);
             used += n;
@@ -110,7 +112,8 @@ static int compute_mac(
 ) {
     //! B0 is the first CBC-MAC block: flags, nonce, and message length.
     uint8_t b0[16];
-    if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
+    if (nonce_len < 7 || nonce_len > 13)
+        return CCM_ERR_PARAM;
 
     size_t L = 15 - nonce_len;               // 2..8
     // Message length must fit in L bytes.
@@ -119,7 +122,8 @@ static int compute_mac(
 
     memset(b0, 0, sizeof(b0));
     uint8_t flags = 0;
-    if (aad_len > 0) flags |= 0x40;
+    if (aad_len > 0)
+        flags |= 0x40;
     flags |= (uint8_t)(((tag_len - 2) / 2) << 3);   // M' = (M-2)/2
     flags |= (uint8_t)(L - 1);
     b0[0] = flags;
@@ -193,7 +197,8 @@ int ccm_encrypt_and_tag(
     uint8_t *out, uint8_t *tag, size_t tag_len
 ) {
     // validate
-    if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
+    if (nonce_len < 7 || nonce_len > 13)
+        return CCM_ERR_PARAM;
     switch (tag_len) {
         case 4: case 6: case 8: case 10:
         case 12: case 14: case 16: break;
@@ -203,7 +208,8 @@ int ccm_encrypt_and_tag(
     uint8_t mac[16], full_tag[16];
     int rc = compute_mac(key, nonce, nonce_len, tag_len,
                          aad, aad_len, pt, pt_len, mac);
-    if (rc != CCM_OK) return rc;
+    if (rc != CCM_OK)
+        return rc;
 
     encrypt_tag(key, nonce, nonce_len, mac, full_tag);
 
@@ -227,7 +233,8 @@ int ccm_auth_decrypt(
     const uint8_t *ct, size_t ct_len,
     const uint8_t *tag, size_t tag_len, uint8_t *out
 ) {
-    if (nonce_len < 7 || nonce_len > 13) return CCM_ERR_PARAM;
+    if (nonce_len < 7 || nonce_len > 13)
+        return CCM_ERR_PARAM;
     switch (tag_len) {
         case 4: case 6: case 8: case 10:
         case 12: case 14: case 16: break;
@@ -241,7 +248,8 @@ int ccm_auth_decrypt(
     uint8_t mac[16], full_tag[16];
     int rc = compute_mac(key, nonce, nonce_len, tag_len,
                          aad, aad_len, out, ct_len, mac);
-    if (rc != CCM_OK) return rc;
+    if (rc != CCM_OK)
+        return rc;
 
     encrypt_tag(key, nonce, nonce_len, mac, full_tag);
 
@@ -283,8 +291,10 @@ static void aes_cmac(
     }
 
     memset(block, 0, sizeof(block));
-    if (len != 0) memcpy(block, message, len);
-    if (len < 16) block[len] = 0x80;
+    if (len != 0)
+        memcpy(block, message, len);
+    if (len < 16)
+        block[len] = 0x80;
     for (int i = 0; i < 16; i++) block[i] ^= state[i] ^ subkey[i];
     AES_ENCRYPT_BLOCK(key, block, mac);
 }

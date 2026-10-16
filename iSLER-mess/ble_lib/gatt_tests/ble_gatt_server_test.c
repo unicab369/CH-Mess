@@ -12,9 +12,11 @@ static uint8_t dynamic_read(
                             uint16_t *inout_len
 ) {
     const uint8_t *value = context;
-    if (offset > sizeof(dynamic_value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (offset > sizeof(dynamic_value))
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     uint16_t len = (uint16_t)(sizeof(dynamic_value) - offset);
-    if (len > *inout_len) len = *inout_len;
+    if (len > *inout_len)
+        len = *inout_len;
     memcpy(out, value + offset, len);
     *inout_len = len;
     read_calls++;
@@ -28,7 +30,8 @@ static uint8_t dynamic_write(
 ) {
     (void)context;
     assert(offset == 0 && !command);
-    if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (len != 1)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     dynamic_value[0] = value[0];
     write_calls++;
     return 0;
@@ -84,15 +87,18 @@ static uint8_t bounded_read(
                             uint16_t *inout_len
 ) {
     bounded_read_state *state = context;
-    if (offset > sizeof(state->value)) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (offset > sizeof(state->value))
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
 
     if (state->over_report) {
         *inout_len = (uint16_t)(*inout_len + 1);
         return 0;
     }
     uint16_t available = (uint16_t)(sizeof(state->value) - offset);
-    if (*inout_len > available) *inout_len = available;
-    if (*inout_len) memcpy(out, state->value + offset, *inout_len);
+    if (*inout_len > available)
+        *inout_len = available;
+    if (*inout_len)
+        memcpy(out, state->value + offset, *inout_len);
     return 0;
 }
 
@@ -102,10 +108,13 @@ static uint8_t oversized_dynamic_read(
 ) {
     const uint8_t *value = context;
     const uint16_t value_len = BLE_GATT_ATT_VALUE_MAX + 1u;
-    if (offset > value_len) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (offset > value_len)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     uint16_t count = value_len - offset;
-    if (count > *inout_len) count = *inout_len;
-    if (count) memcpy(out, value + offset, count);
+    if (count > *inout_len)
+        count = *inout_len;
+    if (count)
+        memcpy(out, value + offset, count);
     *inout_len = count;
     return 0;
 }
@@ -116,8 +125,8 @@ static uint8_t transaction_prepare(
 ) {
     transaction_state *state = context;
     if ((len && value[0] == 0xee) || offset > sizeof(state->staged) ||
-        len > sizeof(state->staged) - offset)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        len > sizeof(state->staged) - offset
+    ) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
     for (uint16_t i = 0; i < len; i++) {
         state->staged[offset + i] = value[i];
         state->touched[offset + i] = 1;
@@ -129,7 +138,8 @@ static void transaction_execute(void *context, uint8_t commit) {
     transaction_state *state = context;
     if (commit) {
         for (unsigned i = 0; i < sizeof(state->visible); i++)
-            if (state->touched[i]) state->visible[i] = state->staged[i];
+            if (state->touched[i])
+                state->visible[i] = state->staged[i];
         state->commits++;
     } else {
         state->cancels++;
@@ -462,8 +472,8 @@ static int verify_signed(
         (uint32_t)signature[9] << 8 | (uint32_t)signature[10] << 16 |
         (uint32_t)signature[11] << 24;
     if (len != 4 || pdu[0] != 0xd2 || signature[0] != 0xa5 ||
-        counter <= state->last_counter)
-        return 0;
+        counter <= state->last_counter
+    ) return 0;
     state->last_counter = counter;
     state->accepted++;
     return 1;
@@ -512,7 +522,8 @@ static void test_signed_write_command(void) {
     request[12] = 2;
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(gatt_server_att(&server, request, sizeof(request), response,
         sizeof(response), &response_len) == 0);
     assert(state.accepted == 1);
@@ -580,12 +591,14 @@ static void test_security_and_authorization_check_order(void) {
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
     server.encrypted = 1;
     server.authenticated = 1;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     allow = 1;
@@ -612,7 +625,8 @@ static void test_security_and_authorization_check_order(void) {
     assert(response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION);
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, authz_read, sizeof(authz_read), response,
                &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == initial);
@@ -638,7 +652,8 @@ static void test_security_and_authorization_check_order(void) {
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
     server.encrypted = 1;
     server.authenticated = 1;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, prepare, sizeof(prepare), response, &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
@@ -664,7 +679,8 @@ static void test_minimum_encryption_key_size(void) {
 
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     server.encryption_key_size = 10;
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response[4] == BLE_GATT_ATT_ERR_ENCRYPTION_KEY_SIZE_TOO_SHORT);
@@ -1232,14 +1248,16 @@ static void test_writes_cccd_and_permissions(void) {
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, read_secure, sizeof(read_secure), response,
                &response_len) == 1);
     assert(response[0] == 0x01 &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
     server.encrypted = 1;
     server.authenticated = 1;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(att(&server, read_secure, sizeof(read_secure), response,
                &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == initial);
@@ -1564,7 +1582,8 @@ static void test_attribute_value_limit_and_notification_truncation(void) {
         att_pdu, sizeof(att_pdu), &att_len));
     server.encrypted = 1;
     server.authenticated = 0;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     server.encryption_key_size = 10;
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
@@ -1573,7 +1592,8 @@ static void test_attribute_value_limit_and_notification_truncation(void) {
         att_pdu, sizeof(att_pdu), &att_len));
     server.encrypted = 1;
     server.authenticated = 1;
-    if (!server.encrypted) server.encryption_key_size = 0;
+    if (!server.encrypted)
+        server.encryption_key_size = 0;
     assert(!gatt_server_notify(&server, notify, value, 1,
         att_pdu, sizeof(att_pdu), &att_len));
     allow_notify = 1;

@@ -27,11 +27,14 @@ static inline int gatt_body_composition_service_indicate_value(
 static inline int gatt_body_composition_feature32(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
-    if (!server || !handle || !features) return 0;
+    if (!server || !handle || !features)
+        return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-    if (!attribute || attribute->value_len < 4) return 0;
+    if (!attribute || attribute->value_len < 4)
+        return 0;
     const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
+    if (!value)
+        return 0;
     *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
         (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
     return 1;
@@ -57,8 +60,8 @@ static inline int gatt_body_composition_service_indicate_measurement(
         ((measurement->flags & 0x0100) && !(features & (1u << 7))) ||
         ((measurement->flags & 0x0200) && !(features & (1u << 8))) ||
         ((measurement->flags & 0x0400) && !(features & (1u << 9))) ||
-        ((measurement->flags & 0x0800) && !(features & (1u << 10))))
-        return 0;
+        ((measurement->flags & 0x0800) && !(features & (1u << 10)))
+    ) return 0;
 
     uint8_t value[32];
     uint16_t len = 0;
@@ -71,7 +74,8 @@ static inline int gatt_body_composition_service_indicate_measurement(
         len += 7;
     }
 
-    if (measurement->flags & 0x0004) value[len++] = measurement->user_id;
+    if (measurement->flags & 0x0004)
+        value[len++] = measurement->user_id;
 
     if (measurement->flags & 0x0008) {
         ble_put_le16(value + len, measurement->basal_metabolism);

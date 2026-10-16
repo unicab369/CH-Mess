@@ -41,8 +41,8 @@ static int flash_data_range_valid(uint32_t addr, int len) {
 __HIGH_CODE
 int flash_erase_data(uint32_t addr, int len) {
     if (!flash_data_range_valid(addr, len) ||
-        (addr & (SECTOR_SIZE - 1)))
-        return 0;
+        (addr & (SECTOR_SIZE - 1))
+    ) return 0;
     return ch5xx_flash_cmd_erase(addr, len) == 0;
 }
 
@@ -50,8 +50,7 @@ __HIGH_CODE
 int flash_read_data(uint32_t addr, uint8_t *out, int len) {
     if (!out || !flash_data_range_valid(addr, len) ||
         (addr & 3) || (len & 3) || ((uintptr_t)out & 3)
-    )
-        return 0;
+    ) return 0;
 
     ch5xx_flash_cmd_read(addr, out, len);
     return 1;
@@ -61,8 +60,7 @@ __HIGH_CODE
 int flash_write_data(uint32_t addr, uint8_t *data, int len) {
     if (!data || !flash_data_range_valid(addr, len) ||
         (addr & 3) || (len & 3) || ((uintptr_t)data & 3)
-    )
-        return 0;
+    ) return 0;
 
     return ch5xx_flash_cmd_write(addr, data, len) == 0;
 }
@@ -84,7 +82,8 @@ int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
 }
 
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
-    if (!out && len) return 0;
+    if (!out && len)
+        return 0;
 
     for (unsigned i = 0; i < len;) {
         uint32_t value = rand();
@@ -121,7 +120,8 @@ static int mesh_adv_queue_add(
     if (!ad || len < 2 || len > MESH_ADV_MAX_SIZE || (size_t)ad[0] + 1 != len)
         return -1;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
-        if (radio_queue[i].remaining) continue;
+        if (radio_queue[i].remaining)
+            continue;
         memcpy(radio_queue[i].data, ad, len);
         radio_queue[i].len = (uint8_t)len;
         radio_queue[i].send_at_ms = send_at_ms;
@@ -137,17 +137,19 @@ static int mesh_adv_queue_add(
 static int mesh_adv_queue_next(uint32_t now) {
     int first = -1, next = -1;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++) {
-        if (!radio_queue[i].remaining) continue;
+        if (!radio_queue[i].remaining)
+            continue;
         if (!radio_queue[i].started && (first < 0 ||
-            (int32_t)(radio_queue[i].order - radio_queue[first].order) < 0)) first = i;
+            (int32_t)(radio_queue[i].order - radio_queue[first].order) < 0)
+        ) first = i;
         if (radio_queue[i].started && (int32_t)(now - radio_queue[i].send_at_ms) >= 0 &&
-            (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0))
-            next = i;
+            (next < 0 || (int32_t)(radio_queue[i].order - radio_queue[next].order) < 0)
+        ) next = i;
     }
     // Keep initial packets in order; a waiting retry does not block new packets.
     if (first >= 0 && (int32_t)(now - radio_queue[first].send_at_ms) >= 0 &&
-        (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0))
-        next = first;
+        (next < 0 || (int32_t)(radio_queue[first].order - radio_queue[next].order) < 0)
+    ) next = first;
     return next;
 }
 
@@ -170,8 +172,8 @@ static int mesh_proxy_gatt_receive(
          (len < 14 || len > MESH_NETWORK_MAX_PDU)) ||
         (type == MESH_GATT_PROXY_BEACON && len != 22) ||
         (type != MESH_GATT_PROXY_NETWORK && type != MESH_GATT_PROXY_BEACON) ||
-        mesh_gatt_rx_count >= MESH_GATT_RX_QUEUE_SIZE)
-        return 0;
+        mesh_gatt_rx_count >= MESH_GATT_RX_QUEUE_SIZE
+    ) return 0;
     uint8_t ad[MESH_ADV_MAX_SIZE];
     ad[0] = (uint8_t)(len + 1);
     ad[1] = type == MESH_GATT_PROXY_NETWORK ?
@@ -209,7 +211,8 @@ static void mesh_radio_init(void) {
 }
 
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
-    if (reset_slot >= 0) return -1;
+    if (reset_slot >= 0)
+        return -1;
     uint8_t transmit = len >= 2 && adv_data && adv_data[1] == MESH_NETWORK_AD_TYPE ?
         mesh_network.state.network_transmit : 0;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
@@ -219,7 +222,8 @@ int BLE_MESH_QUEUE_RELAY_TX(
     const uint8_t *adv_data, size_t len,
                             uint8_t relay_retransmit
 ) {
-    if (reset_slot >= 0) return -1;
+    if (reset_slot >= 0)
+        return -1;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), relay_retransmit);
 }
 
@@ -227,7 +231,8 @@ int BLE_MESH_QUEUE_TX_DELAYED(
     const uint8_t *adv_data, size_t len,
     uint16_t min_delay_ms, uint16_t max_delay_ms
 ) {
-    if (reset_slot >= 0 || min_delay_ms > max_delay_ms) return -1;
+    if (reset_slot >= 0 || min_delay_ms > max_delay_ms)
+        return -1;
 
     uint32_t range = (uint32_t)max_delay_ms - min_delay_ms + 1;
     uint32_t delay_ms = min_delay_ms + rand() % range;
@@ -236,7 +241,8 @@ int BLE_MESH_QUEUE_TX_DELAYED(
 
 
 int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
-    if (!device_uuid) return -1;
+    if (!device_uuid)
+        return -1;
 
     // Use the factory MAC as the stable, device-specific part of the UUID.
     memset(device_uuid, 0, 16);
@@ -297,7 +303,8 @@ static int mesh_state_load_record(mesh_state_record *record) {
     mesh_state_record first, second;
     int has_first = mesh_state_read(BLE_MESH_DATA_ADDR, &first);
     int has_second = mesh_state_read(BLE_MESH_DATA_ADDR + SECTOR_SIZE, &second);
-    if (!has_first && !has_second) return 0;
+    if (!has_first && !has_second)
+        return 0;
 
     if (!has_first || (has_second &&
          (uint8_t)(second.generation - first.generation) < 0x80)) {
@@ -334,14 +341,16 @@ static int mesh_state_save_record(mesh_state_record *record) {
 
     if (!flash_erase_data(addr, SECTOR_SIZE) ||
         !flash_write_data(addr, (uint8_t *)record, sizeof(*record)) ||
-        !flash_read_data(addr, (uint8_t *)&check, sizeof(check)))
-        return 0;
+        !flash_read_data(addr, (uint8_t *)&check, sizeof(check))
+    ) return 0;
     return memcmp(record, &check, sizeof(*record)) == 0;
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
-    if (!adv_data || !len) return -1;
-    if (rssi) *rssi = 127;
+    if (!adv_data || !len)
+        return -1;
+    if (rssi)
+        *rssi = 127;
     mesh_gatt_poll();
     int connection_busy = (gap_conn_slot_mask != 0);
     if (connection_busy) {
@@ -350,21 +359,24 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
     }
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
-        if (*len < mesh_gatt_rx_queue[slot].len) return -1;
+        if (*len < mesh_gatt_rx_queue[slot].len)
+            return -1;
         *len = mesh_gatt_rx_queue[slot].len;
         memcpy(adv_data, mesh_gatt_rx_queue[slot].data, *len);
         mesh_gatt_rx_head = (slot + 1) % MESH_GATT_RX_QUEUE_SIZE;
         mesh_gatt_rx_count--;
         return 1;
     }
-    if (connection_busy) return 0;
+    if (connection_busy)
+        return 0;
     uint32_t now = GET_MILLIS();
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
     };
     int received = gap_scan_take_ad(mesh_ad_types,
         sizeof(mesh_ad_types), adv_data, len, rssi);
-    if (received < 0) return -1;
+    if (received < 0)
+        return -1;
 
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
@@ -373,8 +385,10 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
         now, &sent_at, &jitter);
-    if (send_result < 0) return -1;
-    if (send_result == 2) return 0;
+    if (send_result < 0)
+        return -1;
+    if (send_result == 2)
+        return 0;
     if (send_result == 1 && radio_queue[slot].remaining &&
         --radio_queue[slot].remaining) {
         radio_queue[slot].started = 1;
@@ -422,19 +436,24 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
 }
 
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
-    if (!state) return 0;
+    if (!state)
+        return 0;
     mesh_state_record record;
-    if (!mesh_state_load_record(&record)) return 0;
+    if (!mesh_state_load_record(&record))
+        return 0;
     *state = record.state;
     return 1;
 }
 
 int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
-    if (!state) return 0;
+    if (!state)
+        return 0;
     mesh_state_record record = {0};
-    if (!mesh_state_load_record(&record)) record.models.default_ttl = MODEL_TTL;
+    if (!mesh_state_load_record(&record))
+        record.models.default_ttl = MODEL_TTL;
     record.state = *state;
-    if (!mesh_state_save_record(&record)) return 0;
+    if (!mesh_state_save_record(&record))
+        return 0;
     // Cached packets cannot outlive a change in the transmitting credentials.
     if (mesh_network.ready &&
         (memcmp(state->net_key, mesh_network.state.net_key, 16) ||
@@ -444,22 +463,27 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
         mesh_adv_queue_clear(MESH_NETWORK_AD_TYPE);
         mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
     }
-    if (!state->beacon) mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
+    if (!state->beacon)
+        mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
     return 1;
 }
 
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
-    if (!state) return 0;
+    if (!state)
+        return 0;
     mesh_state_record record;
-    if (!mesh_state_load_record(&record)) return 0;
+    if (!mesh_state_load_record(&record))
+        return 0;
     *state = record.models;
     return 1;
 }
 
 int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
-    if (!state) return 0;
+    if (!state)
+        return 0;
     mesh_state_record record;
-    if (!mesh_state_load_record(&record)) return 0;
+    if (!mesh_state_load_record(&record))
+        return 0;
     record.models = *state;
     return mesh_state_save_record(&record);
 }
@@ -467,19 +491,21 @@ int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
 int BLE_MESH_NODE_RESET(uint16_t dst) {
     mesh_state_record record;
     if (reset_slot >= 0 || !mesh_state_load_record(&record) || record.node_count ||
-        bearer.role != PB_ROLE_NONE)
-        return 0;
+        bearer.role != PB_ROLE_NONE
+    ) return 0;
     if (!mesh_access_queue(mesh_network.state.unicast_address, dst,
         mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
-        OP_CONFIG_NODE_RESET_STATUS, NULL, 0, 0))
-        return 0;
+        OP_CONFIG_NODE_RESET_STATUS, NULL, 0, 0)
+    ) return 0;
     // The immediately preceding queue operation added the Reset Status packet.
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
         if (radio_queue[i].remaining && radio_queue[i].order == radio_order - 1u)
             reset_slot = i;
-    if (reset_slot < 0) return 0;
+    if (reset_slot < 0)
+        return 0;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
-        if (i != reset_slot) radio_queue[i].remaining = 0;
+        if (i != reset_slot)
+            radio_queue[i].remaining = 0;
     mesh_network.ready = 0;
     return 1;
 }
@@ -489,10 +515,11 @@ int PROVISIONEE_STORE_DATA(
     const prov_data *data, const uint8_t device_key[16],
                            uint8_t num_elements
 ) {
-    if (!data || !device_key) return -1;
-    if (!num_elements || num_elements > MESH_MAX_ELEMENTS ||
-        (uint32_t)data->unicast_address + num_elements - 1 > 0x7fff)
+    if (!data || !device_key)
         return -1;
+    if (!num_elements || num_elements > MESH_MAX_ELEMENTS ||
+        (uint32_t)data->unicast_address + num_elements - 1 > 0x7fff
+    ) return -1;
     mesh_net_state state = {0};
     memcpy(state.net_key, data->net_key, 16);
     state.net_key_index = data->net_key_index;
@@ -517,14 +544,17 @@ int PROVISIONEE_STORE_DATA(
     record.models.default_ttl = MODEL_TTL;
     record.models.sar_transmitter = MESH_SAR_TRANSMITTER_DEFAULT;
     record.models.sar_receiver = MESH_SAR_RX_DEFAULT;
-    if (!mesh_state_save_record(&record)) return -1;
-    if (!mesh_network_init(&state)) return -1;
+    if (!mesh_state_save_record(&record))
+        return -1;
+    if (!mesh_network_init(&state))
+        return -1;
     memset(&mesh_models, 0, sizeof(mesh_models));
     return mesh_models_init() ? 0 : -1;
 }
 
 int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
-    if (!data || num_elements == 0) return -1;
+    if (!data || num_elements == 0)
+        return -1;
     mesh_state_record record;
     if (!mesh_state_load_record(&record) ||
         record.state.unicast_address == 0 ||
@@ -534,20 +564,20 @@ int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
         record.state.net_key_index > 0x0FFF ||
         record.node_count >= PROVISIONER_MAX_NODES ||
         (record.state.key_refresh_phase == 2 && !record.state.has_new_key)
-    )
-        return -1;
+    ) return -1;
 
     uint16_t next_address = record.next_unicast_address;
     if (!next_address) {
         next_address = record.state.unicast_address + record.state.element_count;
     }
     if (next_address > 0x7FFF ||
-        (uint32_t)next_address + num_elements - 1 > 0x7FFF)
-        return -1;
+        (uint32_t)next_address + num_elements - 1 > 0x7FFF
+    ) return -1;
 
     // Reserve the full range before sending Provisioning Data.
     record.next_unicast_address = next_address + num_elements;
-    if (!mesh_state_save_record(&record)) return -1;
+    if (!mesh_state_save_record(&record))
+        return -1;
 
     const mesh_net_state *state = &record.state;
     int use_new_key = state->key_refresh_phase == 2;
@@ -565,17 +595,17 @@ int PROVISIONER_STORE_NODE_DEVKEY(
     uint8_t num_elements
 ) {
     if (!device_key || num_elements == 0 || unicast_address == 0 ||
-        (uint32_t)unicast_address + num_elements - 1 > 0x7FFF)
-        return -1;
+        (uint32_t)unicast_address + num_elements - 1 > 0x7FFF
+    ) return -1;
 
     mesh_state_record record;
     if (!mesh_state_load_record(&record) ||
-        record.node_count >= PROVISIONER_MAX_NODES)
-        return -1;
+        record.node_count >= PROVISIONER_MAX_NODES
+    ) return -1;
 
     if ((uint32_t)unicast_address + num_elements !=
-        record.next_unicast_address)
-        return -1;
+        record.next_unicast_address
+    ) return -1;
 
     mesh_node_record *node = &record.nodes[record.node_count];
     memcpy(node->device_key, device_key, 16);
@@ -586,11 +616,12 @@ int PROVISIONER_STORE_NODE_DEVKEY(
 }
 
 int BLE_MESH_TRANSPORT_GET_DEVICE_KEY(uint16_t address, uint8_t key[16]) {
-    if (!key || address == 0 || address > 0x7fff) return 0;
+    if (!key || address == 0 || address > 0x7fff)
+        return 0;
     mesh_state_record record;
     if (!mesh_state_load_record(&record) ||
-        record.node_count > PROVISIONER_MAX_NODES)
-        return 0;
+        record.node_count > PROVISIONER_MAX_NODES
+    ) return 0;
 
     if (address >= record.state.unicast_address &&
         (uint32_t)address < (uint32_t)record.state.unicast_address +
@@ -649,8 +680,8 @@ void BLE_MESH_HEALTH_ATTENTION(uint16_t element, uint8_t seconds) {
 int BLE_MESH_HEALTH_TEST(uint16_t element, uint8_t test_id, uint8_t *faults, size_t *len) {
     int index = mesh_element_index(element);
     if (test_id || index < 0 || !faults || !len ||
-        *len < mesh_models.health_server[index].current_count)
-        return 0;
+        *len < mesh_models.health_server[index].current_count
+    ) return 0;
     // The default standard test returns the latest application-reported faults.
     *len = mesh_models.health_server[index].current_count;
     memcpy(faults, mesh_models.health_server[index].current, *len);
@@ -678,7 +709,8 @@ int ECDH_COMPUTE_DHKEY(
 ) {
     uECC_Curve curve = uECC_secp256r1();
     // This validates the peer's key; it does not verify a signature.
-    if (!uECC_valid_public_key(peer_public_key, curve)) return -1;
+    if (!uECC_valid_public_key(peer_public_key, curve))
+        return -1;
     return uECC_shared_secret(peer_public_key, private_key, dhkey, curve) ? 0 : -1;
 }
 

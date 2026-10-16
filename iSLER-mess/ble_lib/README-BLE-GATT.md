@@ -53,15 +53,26 @@ Additional concrete builders include `gatt_hid_service_add()` for the HID
 core characteristics and caller-provided Report Map/Reports,
 `gatt_internet_protocol_support_service_add()` for the characteristic-free
 IP Support service, `gatt_transport_discovery_service_add()` for the optional
-TDS Control Point, `gatt_emergency_configuration_service_add()` for encrypted
-Emergency ID/Text, and `gatt_elapsed_time_service_add()` for Current Elapsed
+TDS Control Point, which captures Activate Transport requests and indicates
+completion through `gatt_transport_discovery_service_complete()`,
+`gatt_emergency_configuration_service_add()` for encrypted Emergency ID/Text, and `gatt_elapsed_time_service_add()` for Current Elapsed
 Time. `gatt_microphone_control_service_add()` registers encrypted MICS Mute,
 and `gatt_volume_control_service_add()` registers encrypted VCS state, control
-point, and flags. These builders add the database; applications still handle
-service-specific control point behavior and notifications.
+point, and flags. Except for the MICS and volume-control handlers described
+below, these builders add the database but leave service-specific control
+point behavior and notification policy to the application. MICS rejects
+client writes of Disabled and returns Mute Disabled when writes arrive while
+that state is active; local microphone changes use
+`gatt_microphone_control_service_set_mute()`. Register AICS instances first,
+then use `gatt_microphone_control_service_add_with_aics()` to include them. VCS
+implements all seven Volume Control Point opcodes, validates Change_Counter,
+uses a step size of one, and updates/notifies Volume State; local changes use
+`gatt_volume_control_service_set_state()`.
 `gatt_volume_offset_control_service_add()` registers an encrypted VOCS
-secondary service. Add it before its parent and include it from the parent;
-the application handles control-point procedures and value notifications.
+secondary service. Add it before its parent and include it from the parent. Its
+Set Volume Offset procedure validates Change_Counter and the signed offset
+range, then updates and notifies Volume Offset State. Local changes use
+`gatt_volume_offset_control_service_set_offset()`.
 `gatt_reconnection_configuration_service_add()` registers a base RCS with no
 optional features. Its five-byte RC Feature value must contain CRC `0xffff`
 and three zero feature bytes.
@@ -77,7 +88,10 @@ optional size, lock, and rank characteristics with encrypted permissions. The
 application implements SIRK protection and the lock protocol.
 `gatt_audio_input_control_service_add()` registers the encrypted AICS secondary
 service. Register it before its parent, then place the Include declaration in
-the parent before the parent's characteristics.
+the parent before the parent's characteristics. It validates all five control
+point procedures, maintains the state Change_Counter, and notifies state
+changes. Local state, status, and description changes use its corresponding
+`set_state()`, `set_status()`, and `set_description()` helpers.
 `gatt_telephony_and_media_audio_service_add()` registers TMAS with the
 application's supported TMAP Role bits.
 `gatt_common_audio_service_add()` registers the no-characteristic CAS and can
@@ -190,15 +204,23 @@ builder validates feature dependencies, Object ID sizes, supported opcode and
 playing-order bitfields, and search request framing. Control Point and Search
 requests are captured in service state for the application to perform and
 complete with `gatt_media_control_service_control_point_complete()` and
-`gatt_media_control_service_search_complete()`. Set and notify populated
+`gatt_media_control_service_search_complete()`. Writable Object ID requests
+are captured in `object_id_write_index` and `object_id_write_value`; finish
+their player action with `gatt_media_control_service_object_id_write_complete()`.
+Set and notify populated
 Search Results with `gatt_media_control_service_set_search_results_object_id()`.
 The app handles the media player actions and OTS object storage; notify changed
 MCS values with `gatt_media_control_service_notify_optional()` and update
 notified Object IDs with `gatt_media_control_service_notify_object_id()`.
-`gatt_telephone_bearer_service_add()` registers mandatory TBS or GTBS call
-state characteristics with encrypted permissions. Its config selects GTBS
-and supplies the initial encoded values; the application implements call
-control and notifications.
+`gatt_telephone_bearer_service_add()` registers the mandatory TBS/GTBS
+characteristics and caller-selected optional signal-strength, target-URI, and
+friendly-name characteristics with encrypted permissions. Its config selects
+GTBS and supplies initial encoded values. Call Control Point requests are
+validated and captured for the application, which completes each request with
+`gatt_telephone_bearer_service_complete()` after performing the telephony
+action and updating call state. Use
+`gatt_telephone_bearer_service_set_signal_strength()` and its poll helper to
+honor the configured minimum signal notification interval.
 `gatt_pacs_service_add()` registers one or both PAC directions with the
 mandatory Available and Supported Audio Contexts characteristics.
 `gatt_audio_stream_control_service_add()` registers caller-provided Sink and
@@ -211,8 +233,9 @@ measurement characteristics and optional status characteristics;
 measurement descriptors and history behavior remain application-defined.
 `gatt_hid_iso_service_add()` registers HID ISO Properties and LE HID Operation
 Mode; the application implements mode switching and ISO report transport.
-`gatt_cookware_service_add()` accepts selected assigned Cookware characteristic
-definitions. `gatt_voice_assistant_service_add()` builds the common Voice
+`gatt_cookware_service_add()` accepts any unique subset of all twelve assigned
+Cookware characteristic UUIDs; the caller supplies each value, property set,
+and application procedure behavior. `gatt_voice_assistant_service_add()` builds the common Voice
 Assistant or Generic Voice Assistant session layout. Both require application
 logic for their protocol procedures. `gatt_tpms_service_add()` registers TPMS
 Properties, Tire Pressure, and selected optional sensor values; the application
@@ -306,8 +329,8 @@ Additional service builders include:
   Feature, Sensor Location, and optional Vector and Control Point
   characteristics. `gatt_cycling_power_service_notify_measurement()` encodes
   all defined measurement fields and checks them against the Feature value.
-  `gatt_cycling_power_service_notify_vector()` encodes crank data and up to
-  nine force and torque samples for the optional Vector characteristic. Its
+  `gatt_cycling_power_service_notify_vector()` encodes crank data and force or
+  torque arrays up to the ATT value limit for the optional Vector characteristic. Its
   Control Point handles cumulative wheel count, sensor location, crank/chain
   settings, measurement content masking, sampling-rate and calibration-date
   requests. Offset compensation procedures are completed by the application
@@ -315,7 +338,9 @@ Additional service builders include:
   supported locations, sampling rate, and factory calibration date before
   accepting connections when those features are used. The service state keeps
   the latest Control Point cumulative count and adjustable crank/chain values;
-  use those values when producing subsequent measurements.
+  use those values when producing subsequent measurements. Call
+  `gatt_cycling_power_service_reset_connection()` on each new connection so
+  the optional Measurement Content mask returns to its default.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and
   Speed, with optional Navigation, Position Quality, and Control Point. The
   Control Point handles distance, content mask, navigation command, fix rate,

@@ -411,7 +411,8 @@ static inline void gap_conn_slot_set_active(uint8_t slot, uint8_t active) {
 
 static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) return slot;
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+            return slot;
     return -1;
 }
 // Public connection handles identify a live slot generation, so a handle
@@ -432,11 +433,14 @@ static inline uint8_t gap_conn_count(void) {
 // Application facing
 // Return the handle for the active connection at this zero-based list index.
 static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
-    if (!handle) return 0;
+    if (!handle)
+        return 0;
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
-        if (index--) continue;
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+            continue;
+        if (index--)
+            continue;
         handle->slot = slot;
         handle->generation = gap_conn_generations[slot];
         return 1;
@@ -499,7 +503,8 @@ static int gap_access_address_valid(uint32_t address) {
     for (uint8_t i = 1; i < 4; i++)
         if ((uint8_t)(address >> (8 * i)) != (uint8_t)address)
             bytes_equal = 0;
-    if (bytes_equal) return 0;
+    if (bytes_equal)
+        return 0;
 
     uint8_t transitions = 0, msb_transitions = 0, run = 1;
     uint8_t previous = address & 1;
@@ -511,7 +516,8 @@ static int gap_access_address_valid(uint32_t address) {
         if (value != previous) {
             transitions++;
             run = 1;
-            if (bit >= 27) msb_transitions++;
+            if (bit >= 27)
+                msb_transitions++;
         }
         else if (++run > 6) {
             return 0;
@@ -537,8 +543,8 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
         hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
-            2 * (uint32_t)(latency + 1) * interval)
-        return 0;
+            2 * (uint32_t)(latency + 1) * interval
+    ) return 0;
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++) {
@@ -605,11 +611,11 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         gap_central.active || timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
-        timing->scan_window_ms > timing->scan_interval_ms)
-        return 0;
+        timing->scan_window_ms > timing->scan_interval_ms
+    ) return 0;
     if ((uint32_t)timing->supervision_timeout * 4 <=
-        (uint32_t)(timing->latency + 1) * timing->interval)
-        return 0;
+        (uint32_t)(timing->latency + 1) * timing->interval
+    ) return 0;
     gap_conn_timing = *timing;
     return 1;
 }
@@ -654,18 +660,21 @@ static void gap_address_hash(
 // Return the known identity slot for an identity address or matching RPA.
 static int gap_identity_find(const uint8_t address[6], uint8_t type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
-        if (!gap_identities[i].used) continue;
+        if (!gap_identities[i].used)
+            continue;
 
         if ((type != 0) == gap_identities[i].peer.type &&
             memcmp(address, gap_identities[i].peer.address, 6) == 0
         ) return i;
 
         if (type && (address[5] & 0xc0) == 0x40) {
-            if (!gap_identities[i].has_irk) continue; // Zero IRK: identity only.
+            if (!gap_identities[i].has_irk)
+                continue; // Zero IRK: identity only.
 
             uint8_t hash[3];
             gap_address_hash(gap_identities[i].irk, address + 3, hash);
-            if (memcmp(hash, address, 3) == 0) return i;
+            if (memcmp(hash, address, 3) == 0)
+                return i;
         }
     }
     return -1;
@@ -674,7 +683,8 @@ static int gap_identity_find(const uint8_t address[6], uint8_t type) {
 // Network privacy rejects a known peer's identity address when it has an IRK.
 // Device privacy accepts it; unknown peers still follow the configured filters.
 static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
-    if (slot < 0) return 1;
+    if (slot < 0)
+        return 1;
     gap_identity *identity = &gap_identities[slot];
 
     return !identity->has_irk ||
@@ -686,7 +696,8 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 // A static random address has 11 type bits and a nonzero, non-all-ones 46-bit
 // random part. Identity and Filter Accept List entries use the same rule.
 static int gap_static_addr_valid(const uint8_t address[6]) {
-    if (!address || (address[5] & 0xc0) != 0xc0) return 0;
+    if (!address || (address[5] & 0xc0) != 0xc0)
+        return 0;
 
     static const uint8_t zero[5] = {0};
     static const uint8_t ones[5] = {0xff, 0xff, 0xff, 0xff, 0xff};
@@ -695,8 +706,8 @@ static int gap_static_addr_valid(const uint8_t address[6]) {
     // Check the remaining bytes only if the top six bits could complete an
     // all-zero or all-one random part.
     if ((!random_bits && !memcmp(address, zero, sizeof(zero))) ||
-        (random_bits == 0x3f && !memcmp(address, ones, sizeof(ones))))
-        return 0;
+        (random_bits == 0x3f && !memcmp(address, ones, sizeof(ones)))
+    ) return 0;
     return 1;
 }
 
@@ -708,7 +719,8 @@ static int gap_accept_list_match(
                                     &gap_identities[identity_slot] : NULL;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        if (!(gap_accept_list_mask & ((uint32_t)1 << i))) continue;
+        if (!(gap_accept_list_mask & ((uint32_t)1 << i)))
+            continue;
 
         if (gap_accept_list[i].peer.type == (type != 0) &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
@@ -747,7 +759,8 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
             free_slot = i;
     }
 
-    if (free_slot < 0) return 0;
+    if (free_slot < 0)
+        return 0;
     gap_accept_list_mask |= (uint32_t)1 << free_slot;
     gap_accept_list[free_slot].peer.type = type;
     memcpy(gap_accept_list[free_slot].peer.address, address, 6);
@@ -819,10 +832,12 @@ int gap_identity_set(
             break;
         }
 
-        if (!gap_identities[i].used && slot < 0) slot = i;
+        if (!gap_identities[i].used && slot < 0)
+            slot = i;
     }
 
-    if (!irk || slot < 0) return 0;
+    if (!irk || slot < 0)
+        return 0;
 
     if (!gap_identities[slot].used)
         gap_identities[slot].privacy_mode = GAP_PRIVACY_NETWORK;
@@ -831,7 +846,8 @@ int gap_identity_set(
     gap_identities[slot].has_irk = 0;
 
     for (uint8_t i = 0; i < 16; i++)
-        if (irk[i]) gap_identities[slot].has_irk = 1;
+        if (irk[i])
+            gap_identities[slot].has_irk = 1;
 
     gap_identities[slot].peer.type = random_type;
     memcpy(gap_identities[slot].peer.address, address, 6);
@@ -873,7 +889,8 @@ int gap_resolve(
         return 0;
 
     int slot = gap_identity_find(address, type);
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     memcpy(identity, gap_identities[slot].peer.address, 6);
     *identity_type = gap_identities[slot].peer.type;
     return 1;
@@ -889,7 +906,8 @@ static int gap_private_addr_generate(
             uint32_t random = (uint32_t)address[3] |
                             (uint32_t)address[4] << 8 |
                             (uint32_t)(address[5] & 0x3f) << 16;
-            if (!random || random == 0x3fffff) continue;
+            if (!random || random == 0x3fffff)
+                continue;
             gap_address_hash(irk, address + 3, address);
         }
         else {
@@ -899,15 +917,18 @@ static int gap_private_addr_generate(
             uint8_t all_zero = 1, all_one = 1, public_address[6];
 
             for (uint8_t i = 0; i < 6; i++) {
-                if (address[i]) all_zero = 0;
-                if (address[i] != (i == 5 ? 0x3f : 0xff)) all_one = 0;
+                if (address[i])
+                    all_zero = 0;
+                if (address[i] != (i == 5 ? 0x3f : 0xff))
+                    all_one = 0;
             }
             GAP_HW_PUBLIC_ADDRESS(public_address);
             if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
                 continue;
         }
 
-        if (!previous || memcmp(address, previous, 6) != 0) return 1;
+        if (!previous || memcmp(address, previous, 6) != 0)
+            return 1;
     }
     return 0;
 }
@@ -935,17 +956,20 @@ int gap_identity_local_key(
         }
     }
 
-    if (slot < 0) return 0;
+    if (slot < 0)
+        return 0;
     gap_identity *identity = &gap_identities[slot];
 
     uint8_t key_bits = 0, local[6] = {0};
-    if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
+    if (irk)
+        for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
         key_bits |= irk[i];
 
     if (key_bits && !gap_private_addr_generate(irk, local, identity->local_address))
         return 0;
 
-    if (irk) memcpy(identity->local_irk, irk, sizeof(identity->local_irk));
+    if (irk)
+        memcpy(identity->local_irk, irk, sizeof(identity->local_irk));
     else memset(identity->local_irk, 0, sizeof(identity->local_irk));
 
     memcpy(identity->local_address, local, sizeof(identity->local_address));
@@ -969,14 +993,16 @@ static void gap_local_addr_select(
         }
         else {
             *type = gap_identity_address.type;
-            if (*type) memcpy(address, gap_identity_address.address, 6);
+            if (*type)
+                memcpy(address, gap_identity_address.address, 6);
             else GAP_HW_PUBLIC_ADDRESS(address);
         }
         return;
     }
 
     *type = gap_own_address.type;
-    if (*type) memcpy(address, gap_own_address.address, 6);
+    if (*type)
+        memcpy(address, gap_own_address.address, 6);
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
@@ -1002,7 +1028,8 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (!gap_private_addr_generate(irk, address, gap_own_address.address))
         return 0;
 
-    if (irk) memcpy(gap_privacy.irk, irk, 16);
+    if (irk)
+        memcpy(gap_privacy.irk, irk, 16);
     else memset(gap_privacy.irk, 0, 16);
 
     gap_privacy.resolvable = irk != NULL;
@@ -1136,15 +1163,18 @@ static int gap_conn_accept(
 ) {
     gap_security_context *gap_security;
     gap_conn_context *conn;
-    if (!gap_conn_request_valid(frame)) return 0;
+    if (!gap_conn_request_valid(frame))
+        return 0;
     uint16_t data_capacity = GAP_HW_DATA_MAX();
-    if (data_capacity < 27) return 0;
+    if (data_capacity < 27)
+        return 0;
 
     if (data_capacity > GAP_CONN_DATA_MAX)
         data_capacity = GAP_CONN_DATA_MAX;
 
     int free_slot = gap_conn_free_slot();
-    if (free_slot < 0) return 0;
+    if (free_slot < 0)
+        return 0;
 
     // Must precede conn->data_capacity; conn uses this slot index.
     gap_conn_slot = free_slot;
@@ -1252,10 +1282,12 @@ static inline int ble_gap_l2cap_send_pdu(
     void *context, uint16_t cid, const uint8_t *payload, uint16_t len
 ) {
     ble_gap_l2cap_peer *peer = context;
-    if (!peer || peer->tx_len || !peer->connected) return 0;
+    if (!peer || peer->tx_len || !peer->connected)
+        return 0;
     int encoded = l2cap_encode(peer->tx, sizeof(peer->tx), cid,
                                    payload, len);
-    if (!encoded) return 0;
+    if (!encoded)
+        return 0;
     peer->tx_len = (uint16_t)encoded;
     peer->tx_offset = 0;
     return 1;
@@ -1272,7 +1304,8 @@ static inline void ble_gap_l2cap_channel_opened(
     uint16_t local, uint16_t remote, uint16_t mtu
 ) {
     ble_gap_l2cap_peer *peer = context;
-    if (peer->upper.channel_opened) peer->upper.channel_opened(
+    if (peer->upper.channel_opened)
+        peer->upper.channel_opened(
         peer->upper.context, psm, local, remote, mtu);
 }
 
@@ -1281,7 +1314,8 @@ static inline void ble_gap_l2cap_channel_closed(
     uint16_t local, uint16_t remote, uint16_t reason
 ) {
     ble_gap_l2cap_peer *peer = context;
-    if (peer->upper.channel_closed) peer->upper.channel_closed(
+    if (peer->upper.channel_closed)
+        peer->upper.channel_closed(
         peer->upper.context, psm, local, remote, reason);
 }
 
@@ -1312,7 +1346,8 @@ static inline int ble_gap_l2cap_init(
     ) return 0;
 
     memset(manager, 0, sizeof(*manager));
-    if (upper) manager->upper = *upper;
+    if (upper)
+        manager->upper = *upper;
     manager->mtu = mtu;
     manager->mps = mps;
     manager->initial_credits = initial_credits;
@@ -1322,7 +1357,8 @@ static inline int ble_gap_l2cap_init(
 // Application facing
 // Poll each live connection; GAP supplies its LL data directly.
 static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
-    if (!manager) return -1;
+    if (!manager)
+        return -1;
 
     uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
@@ -1363,7 +1399,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         uint8_t connected = gap_conn_select(handle) && gap_connected();
         if (connected != peer->connected) {
-            if (!connected) l2cap_connection_reset(&peer->connection, 0);
+            if (!connected)
+                l2cap_connection_reset(&peer->connection, 0);
             peer->connected = connected;
             peer->tx_len = peer->tx_offset = 0;
             l2cap_reassembler_reset(&peer->reassembler);
@@ -1419,7 +1456,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         ble_gap_l2cap_peer *peer = &manager->peers[slot];
-        if (!peer->initialized || seen[slot]) continue;
+        if (!peer->initialized || seen[slot])
+            continue;
         l2cap_connection_reset(&peer->connection, 0x0013);
         memset(peer, 0, sizeof(*peer));
     }
@@ -1433,7 +1471,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 static inline l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {
-    if (!manager || handle.slot >= GAP_CONNECTION_COUNT) return NULL;
+    if (!manager || handle.slot >= GAP_CONNECTION_COUNT)
+        return NULL;
     ble_gap_l2cap_peer *peer = &manager->peers[handle.slot];
     if (!peer->initialized || peer->handle.generation != handle.generation)
         return NULL;
