@@ -1407,6 +1407,99 @@ static inline int gatt_physical_activity_monitor_service_add(
 }
 
 typedef struct {
+    uint16_t service_handle, features_handle;
+} ble_gatt_hearing_access_service;
+
+// Application facing
+// Add the mandatory HAS Hearing Aid Features characteristic without preset
+// control support. `features` contains only the hearing-aid type bits.
+static inline int gatt_hearing_access_service_add(
+    ble_gatt_server *server, ble_gatt_hearing_access_service *service,
+    uint8_t features
+) {
+    if (!server || !service || features > 2) return 0;
+    ble_gatt_sig_characteristic characteristic = {
+        0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        &features, 1
+    };
+    uint16_t value_handle;
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1854, &characteristic, 1,
+            &service->service_handle, &value_handle, NULL))
+        return 0;
+    service->features_handle = value_handle;
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, role_handle;
+    uint16_t unicast_game_gateway_features_handle;
+    uint16_t unicast_game_terminal_features_handle;
+    uint16_t broadcast_game_sender_features_handle;
+    uint16_t broadcast_game_receiver_features_handle;
+} ble_gatt_gaming_audio_service;
+
+// Application facing
+// Add GMAS role discovery and the role-specific feature characteristics.
+// Role bit order is UGG, UGT, BGS, BGR; only advertised roles are registered.
+static inline int gatt_gaming_audio_service_add(
+    ble_gatt_server *server, ble_gatt_gaming_audio_service *service,
+    uint8_t roles, uint8_t unicast_game_gateway_features,
+    uint8_t unicast_game_terminal_features,
+    uint8_t broadcast_game_sender_features,
+    uint8_t broadcast_game_receiver_features
+) {
+    if (!server || !service || !roles || (roles & 0xf0) ||
+        (unicast_game_gateway_features & 0xf8) ||
+        (unicast_game_terminal_features & 0x80) ||
+        (broadcast_game_sender_features & 0xfe) ||
+        (broadcast_game_receiver_features & 0xfc))
+        return 0;
+
+    uint8_t count = 1 + !!(roles & 0x01) + !!(roles & 0x02) +
+        !!(roles & 0x04) + !!(roles & 0x08);
+    ble_gatt_sig_characteristic characteristics[5] = {0};
+    uint8_t values[5] = {roles, unicast_game_gateway_features,
+        unicast_game_terminal_features, broadcast_game_sender_features,
+        broadcast_game_receiver_features};
+    uint8_t indexes[4] = {0xff, 0xff, 0xff, 0xff};
+    uint8_t i = 0;
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c00, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, &values[0], 1
+    };
+    const uint16_t feature_uuids[4] = {0x2c01, 0x2c02, 0x2c03, 0x2c04};
+    for (uint8_t role = 0; role < 4; role++) {
+        if (!(roles & (1u << role))) continue;
+        indexes[role] = i;
+        characteristics[i] = (ble_gatt_sig_characteristic){
+            feature_uuids[role], BLE_GATT_PROP_READ, 0,
+            BLE_GATT_PERM_READ, &values[role + 1], 1
+        };
+        i++;
+    }
+
+    uint16_t value_handles[5];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1858, characteristics, count,
+            &service->service_handle, value_handles, NULL))
+        return 0;
+    service->role_handle = value_handles[0];
+    if (indexes[0] != 0xff)
+        service->unicast_game_gateway_features_handle =
+            value_handles[indexes[0]];
+    if (indexes[1] != 0xff)
+        service->unicast_game_terminal_features_handle =
+            value_handles[indexes[1]];
+    if (indexes[2] != 0xff)
+        service->broadcast_game_sender_features_handle =
+            value_handles[indexes[2]];
+    if (indexes[3] != 0xff)
+        service->broadcast_game_receiver_features_handle =
+            value_handles[indexes[3]];
+    return 1;
+}
+
+typedef struct {
     uint16_t service_handle, control_point_handle, control_point_cccd_handle;
 } ble_gatt_transport_discovery_service;
 

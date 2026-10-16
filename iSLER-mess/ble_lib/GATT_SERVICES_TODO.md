@@ -78,11 +78,11 @@ count that generic path as implementation of a standard service.
 - [n/a] Basic Audio Announcement (`0x1851`), advertising service data
 - [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
 - [x] Common Audio (`0x1853`)
-- [ ] Hearing Access (`0x1854`)
+- [x] Hearing Access (`0x1854`), mandatory features-only layout without presets
 - [x] Telephony and Media Audio (`0x1855`)
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [ ] Electronic Shelf Label (`0x1857`)
-- [ ] Gaming Audio (`0x1858`)
+- [x] Gaming Audio (`0x1858`), role and role-specific feature characteristics
 - [ ] Mesh Proxy Solicitation (`0x1859`)
 - [ ] Industrial Measurement Device (`0x185A`)
 - [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data

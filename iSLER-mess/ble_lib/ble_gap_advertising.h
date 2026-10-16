@@ -53,9 +53,10 @@ int gap_ad_append(
     ) return 0;
 
     // Copy first so value may overlap the builder buffer.
-    if (value_len) memmove(builder->data + builder->len + 2, value, value_len);
-    builder->data[builder->len] = (uint8_t)(value_len + 1);
-    builder->data[builder->len + 1] = type;
+    uint8_t *ad = builder->data + builder->len;
+    if (value_len) memmove(ad + 2, value, value_len);
+    ad[0] = (uint8_t)(value_len + 1);
+    ad[1] = type;
     builder->len += value_len + 2;
     return 1;
 }

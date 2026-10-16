@@ -90,6 +90,10 @@ payload segmentation, and protected-resource behavior.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
 characteristics, without optional activity streams. The application supplies
 session state and handles measurement and session-control procedures.
+`gatt_hearing_access_service_add()` registers the mandatory HAS Hearing Aid
+Features characteristic for a device that does not expose preset control.
+`gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
+characteristics for each advertised GMAP role.
 
 Additional service database builders are available:
 
