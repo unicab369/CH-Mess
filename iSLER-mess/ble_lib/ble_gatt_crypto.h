@@ -181,7 +181,6 @@ static inline void gatt_cmac_final(ble_gatt_cmac *cmac, uint8_t mac[16]) {
 
     if (cmac->used != 16)
         gatt_cmac_double(subkey);
-
     if (cmac->used < 16)
         cmac->block[cmac->used] = 0x80;
     for (uint8_t i = 0; i < 16; i++) {

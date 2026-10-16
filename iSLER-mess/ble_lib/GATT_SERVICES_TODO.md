@@ -47,14 +47,17 @@ automatically provide each service's application protocol or profile behavior.
   user storage remains application-owned
 - [x] Weight Scale (`0x181D`)
 - [x] Bond Management (`0x181E`), feature-gated Control Point validation,
-  authorization-code checks, and application request capture
+  authorization-code checks, and application request capture; configured
+  Control Point capacity is bounded to one Write Request at the local MTU
 - [x] Indoor Positioning (`0x1821`), mandatory and optional coordinate/location
   layouts, database-updating writes, and advertising-regeneration signaling
 - [x] Pulse Oximeter (`0x1822`)
 - [x] HTTP Proxy (`0x1823`)
 - [x] Mesh Provisioning (`0x1827`)
 - [x] Mesh Proxy (`0x1828`)
-- [x] Binary Sensor (`0x183B`)
+- [x] Binary Sensor (`0x183B`), validated Get/Setting Sensor commands,
+  split-command reassembly, pending request capture, and split indication
+  response/event helper
 
 ## Additional assigned-service layouts
 

@@ -787,7 +787,6 @@ static inline void gap_receive_report(
 
     if (pdu_type == ADV_DIRECT_IND)
         data_len = 0; // ADV_DIRECT_IND has a second address.
-
     if (data_len > GAP_ADV_DATA_MAX)
         return;
 
@@ -900,7 +899,6 @@ static inline void gap_receive_report(
 
     if (report->has_target)
         memcpy(report->target_address, frame + 8, 6);
-
     if (data_len)
         memcpy(report->data, frame + 8, data_len);
     gap_scan.count++;

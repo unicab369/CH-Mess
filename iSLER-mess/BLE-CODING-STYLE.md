@@ -45,7 +45,7 @@ else {
 
 ## Space between `if` statements
 
-Put a blank line before each `if` statement, except when the `if` is among the first two nonblank lines at the top of a method, directly nested inside an `if` or `else` block, or is the first statement immediately under a `case` or `default` label. Consecutive one-line `if` statements may also appear without a blank line between them. This means an `if` on the second line of a method may follow the first statement without a blank line. A declaration or other setup statement before an `if` still requires a blank line elsewhere, including inside a block or switch case.
+Put a blank line before each `if` statement, except when the `if` is among the first two nonblank lines at the top of a method, directly nested inside an `if` or `else` block, or is the first statement immediately under a `case` or `default` label. Consecutive one-line `if` statements may appear without a blank line between them. Consecutive unbraced `if` statements may also appear without a blank line when each `if` condition fits on one line no wider than 40 columns and its controlled statement is on the next line. A declaration or other setup statement before an `if` still requires a blank line elsewhere, including inside a block or switch case.
 
 Separate loops from the statements before and after them with a blank line. Do not put a blank line between a loop header and its body.
 

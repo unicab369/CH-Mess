@@ -380,7 +380,6 @@ static inline uint8_t gatt_rsc_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -466,7 +465,6 @@ static inline uint8_t gatt_csc_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -538,7 +536,6 @@ static inline uint8_t gatt_cycling_power_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 

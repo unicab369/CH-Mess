@@ -15,7 +15,6 @@ static uint8_t gatt_battery_level_read(
 ) {
     if (!context || !out || !inout_len)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-
     if (offset > 1)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
 
@@ -361,7 +360,6 @@ static inline int gatt_heart_rate_measurement_encode(
 
     if (heart_rate > 0xff)
         flags |= 0x01;
-
     if (energy_expended_present)
         flags |= 0x08;
     uint16_t count = (uint16_t)((capacity - base_len) / 2);
@@ -433,10 +431,8 @@ static uint8_t gatt_microphone_control_mute_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 1)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if (value[0] > 1)
         return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
 
@@ -626,7 +622,6 @@ static uint8_t gatt_volume_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -767,16 +762,12 @@ static uint8_t gatt_volume_offset_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if (value[0] != 1)
         return GATT_VOCS_ATT_ERR_OPCODE_NOT_SUPPORTED;
-
     if (len != 4)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if (value[1] != service->state[2])
         return GATT_VOCS_ATT_ERR_INVALID_CHANGE_COUNTER;
 
@@ -976,7 +967,6 @@ static inline uint8_t gatt_dts_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -1267,10 +1257,8 @@ static uint8_t gatt_aics_control_point_write(
 
     if (opcode < 1 || opcode > 5)
         return GATT_AICS_ATT_ERR_OPCODE_NOT_SUPPORTED;
-
     if (len != (opcode == 1 ? 3 : 2))
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if (value[1] != service->state[3])
         return GATT_AICS_ATT_ERR_INVALID_CHANGE_COUNTER;
 
@@ -1973,7 +1961,6 @@ static uint8_t gatt_generic_health_sensor_racp_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (command)
         return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
 
@@ -2048,10 +2035,8 @@ static uint8_t gatt_generic_health_sensor_control_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 1)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if (command)
         return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
 
@@ -2441,10 +2426,8 @@ static uint8_t gatt_physical_activity_monitor_control_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (command)
         return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
-
     if (!len || len > 6)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -2978,7 +2961,6 @@ static inline uint8_t gatt_has_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
 
@@ -2989,7 +2971,6 @@ static inline uint8_t gatt_has_control_point_write(
     case 0x04:
         if (!(service->features & 0x20))
             return GATT_HAS_ATT_ERR_INVALID_OPCODE;
-
         if (len < 3 || len > 42)
             return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
 
@@ -3317,7 +3298,6 @@ static uint8_t gatt_media_control_playing_order_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 1)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -3433,7 +3413,6 @@ static uint8_t gatt_media_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len || len > 5)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -3448,7 +3427,6 @@ static uint8_t gatt_media_control_point_write(
 
     if (!cccd || !(cccd->cccd & 1))
         return 0xfd;
-
     if (service->control_point_pending)
         return 0xfe;
 
@@ -3485,7 +3463,6 @@ static uint8_t gatt_media_control_object_id_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 0 && len != 6)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -4220,7 +4197,6 @@ static inline int gatt_pacs_service_add(
 
     if (config->sink_pac_len)
         service->sink_pac_handle = value_handles[i++];
-
     if (config->source_pac_len)
         service->source_pac_handle = value_handles[i++];
     service->available_contexts_handle = value_handles[available_index];
@@ -5328,7 +5304,6 @@ static uint8_t gatt_fitness_machine_control_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (command)
         return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
 
@@ -6040,7 +6015,6 @@ static inline int gatt_current_time_service_add(
 
     if (local_time_index != 0xff)
         service->local_time_info_handle = values[local_time_index];
-
     if (reference_time_index != 0xff)
         service->reference_time_info_handle = values[reference_time_index];
     return 1;
@@ -6081,7 +6055,6 @@ static uint8_t gatt_reference_time_update_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 1)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -6981,10 +6954,8 @@ static uint8_t gatt_user_data_database_change_write(
     (void)command;
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 4)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -7012,10 +6983,8 @@ static uint8_t gatt_user_data_control_write(
     (void)command;
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len || len > 16)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
@@ -7025,7 +6994,6 @@ static uint8_t gatt_user_data_control_write(
 
     if (!cccd || !(cccd->cccd & 2))
         return 0xfd;
-
     if (service->request_pending)
         return 0xfe;
 
@@ -7301,32 +7269,205 @@ typedef struct {
 typedef struct {
     uint16_t service_handle, control_point_handle;
     uint16_t response_handle, response_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t assembly_active, assembly_next_sequence;
+    uint16_t assembly_len;
+    uint8_t assembly[BLE_GATT_SERVER_VALUE_MAX];
+    uint8_t request_pending, request_message_id, request_parameter_count;
+    uint16_t request_len;
+    uint8_t request[BLE_GATT_SERVER_VALUE_MAX];
 } ble_gatt_binary_sensor_service;
 
-// Application facing
-// Add the Binary Sensor Control Point and Response attributes. The application
-// implements the BSS message protocol and sends Response indications.
-static inline int gatt_binary_sensor_service_add(
-    ble_gatt_server *server, ble_gatt_binary_sensor_service *service
+static uint8_t gatt_binary_sensor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+
+static inline int gatt_binary_sensor_message_valid(
+    const uint8_t *message, uint16_t len
 ) {
-    if (!service) return 0;
+    if (!message || len < 4 || message[0] || message[2] || !message[3] ||
+        (message[1] != 0x00 && message[1] != 0x02)) return 0;
+
+    uint16_t offset = 4;
+    uint8_t sensor_type_seen = 0, report_status_seen = 0;
+    for (uint16_t i = 0; i < message[3]; i++) {
+        if (len - offset < 4 || message[offset + 2] ||
+            message[offset + 3] ||
+            message[offset + 1] > len - offset - 4) return 0;
+        uint8_t id = message[offset];
+        uint8_t value_len = message[offset + 1];
+        const uint8_t *value = message + offset + 4;
+        if (id == 0x02) {
+            if (sensor_type_seen++ || value_len != 1 ||
+                !((value[0] <= 2) || (value[0] >= 0x80 && value[0] <= 0x82)))
+                return 0;
+        }
+        else if (id == 0x03) {
+            if (report_status_seen++ || value_len != 1 || value[0] > 1)
+                return 0;
+        }
+        else if (id == 0x0c) {
+            if (message[1] != 0x02 || !value_len || value_len > 32) return 0;
+        }
+        else return 0;
+        offset = (uint16_t)(offset + 4 + value_len);
+    }
+
+    if (offset != len || !sensor_type_seen) return 0;
+    if (message[1] == 0x00)
+        return message[3] == 1 && !report_status_seen;
+    return message[3] >= 2 && report_status_seen;
+}
+
+static uint8_t gatt_binary_sensor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_binary_sensor_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len < 3 || len > BLE_GATT_SERVER_VALUE_MAX)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->control_point_handle);
+    if (!attribute || len > attribute->value_capacity)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t header = value[0];
+    uint8_t sequence = (header >> 1) & 0x1f;
+    uint8_t execute = header & 1;
+    if ((header & 0x40) || (header & 0x80))
+        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+    if (!sequence) {
+        service->assembly_active = 1;
+        service->assembly_next_sequence = 1;
+        service->assembly_len = 0;
+    }
+    else if (!service->assembly_active ||
+             sequence != service->assembly_next_sequence) {
+        service->assembly_active = 0;
+        service->assembly_len = 0;
+        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    uint16_t fragment_len = (uint16_t)(len - 1);
+    if (fragment_len > sizeof(service->assembly) - service->assembly_len) {
+        service->assembly_active = 0;
+        service->assembly_len = 0;
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+    }
+    memcpy(service->assembly + service->assembly_len, value + 1,
+           fragment_len);
+    service->assembly_len = (uint16_t)(service->assembly_len + fragment_len);
+    service->assembly_next_sequence = (uint8_t)((sequence + 1) & 0x1f);
+    if (!execute) return 0;
+
+    service->assembly_active = 0;
+    if (!gatt_binary_sensor_message_valid(service->assembly,
+                                           service->assembly_len)) {
+        service->assembly_len = 0;
+        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    if (service->request_pending)
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+    memcpy(service->request, service->assembly, service->assembly_len);
+    service->request_len = service->assembly_len;
+    service->request_message_id = service->assembly[1];
+    service->request_parameter_count = service->assembly[3];
+    service->request_pending = 1;
+    service->assembly_len = 0;
+    return 0;
+}
+
+// Application facing
+// Add the Binary Sensor Control Point and Response attributes. Control Point
+// writes are reassembled and validated before they are exposed as requests.
+static inline int gatt_binary_sensor_service_add_full(
+    ble_gatt_server *server, ble_gatt_binary_sensor_service *service,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX) return 0;
 
     memset(service, 0, sizeof(*service));
     uint8_t unused_value = 0;
     ble_gatt_sig_characteristic chars[] = {
         {0x2b2b, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
-         &unused_value, 0, 20, 1},
+         &unused_value, 0, control_point_capacity, 1},
         {0x2b2c, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0}
     };
     uint16_t values[2], cccds[2];
+    ble_gatt_sig_handlers handlers[2] = {0};
+    handlers[0].write = gatt_binary_sensor_control_write;
+    handlers[0].context = service;
 
-    if (!gatt_sig_service_add(server, 0x183b, chars, 2,
-            &service->service_handle, values, cccds)
+    if (!gatt_sig_service_add_with_handlers(server, 0x183b, chars, 2,
+            &service->service_handle, values, cccds, handlers)
     ) return 0;
 
     service->control_point_handle = values[0];
     service->response_handle = values[1];
     service->response_cccd_handle = cccds[1];
+    service->server = server;
+    return 1;
+}
+
+static inline int gatt_binary_sensor_service_add(
+    ble_gatt_server *server, ble_gatt_binary_sensor_service *service
+) {
+    return gatt_binary_sensor_service_add_full(server, service, 20);
+}
+
+// Take one fully reassembled and validated Control Point message. The
+// returned bytes contain the BSS Message Header and parameter records.
+static inline int gatt_binary_sensor_service_take_request(
+    ble_gatt_binary_sensor_service *service, uint8_t *message,
+    uint16_t *inout_len, uint8_t *message_id, uint8_t *parameter_count
+) {
+    if (!service || !service->request_pending || !message || !inout_len ||
+        !message_id || !parameter_count || *inout_len < service->request_len)
+        return 0;
+    memcpy(message, service->request, service->request_len);
+    *inout_len = service->request_len;
+    *message_id = service->request_message_id;
+    *parameter_count = service->request_parameter_count;
+    service->request_pending = 0;
+    service->request_len = 0;
+    return 1;
+}
+
+// Queue one complete response/event message. Long messages are segmented
+// according to the negotiated ATT MTU and BSS five-bit sequence field.
+static inline int gatt_binary_sensor_service_indicate_message(
+    ble_gatt_server *server, ble_gatt_binary_sensor_service *service,
+    const uint8_t *message, uint16_t message_len
+) {
+    if (!server || !service || !message || message_len < 2 ||
+        message_len > BLE_GATT_SERVER_VALUE_MAX || server->mtu < 5)
+        return 0;
+    uint16_t payload_limit = (uint16_t)(server->mtu - 4);
+    uint16_t fragment_count = (uint16_t)((message_len + payload_limit - 1) /
+                                          payload_limit);
+    uint32_t queue_bytes = (uint32_t)message_len + fragment_count;
+    if (fragment_count > BLE_GATT_SERVER_EVENT_QUEUE_SIZE - server->event_count ||
+        queue_bytes > BLE_GATT_SERVER_EVENT_BYTES - server->event_used)
+        return 0;
+    uint16_t offset = 0;
+    uint8_t sequence = 0;
+    do {
+        uint16_t chunk = (uint16_t)(message_len - offset);
+        if (chunk > payload_limit) chunk = payload_limit;
+        uint8_t packet[BLE_GATT_ATT_VALUE_MAX];
+        uint8_t final = (uint8_t)(chunk == message_len - offset);
+        packet[0] = (uint8_t)((sequence & 0x1f) << 1) | final | 0x80;
+        memcpy(packet + 1, message + offset, chunk);
+        if (!gatt_server_queue_event(server, service->response_handle,
+                packet, (uint16_t)(chunk + 1), 1)) return 0;
+        offset = (uint16_t)(offset + chunk);
+        sequence = (uint8_t)((sequence + 1) & 0x1f);
+    } while (offset < message_len);
     return 1;
 }
 
@@ -7599,10 +7740,6 @@ static uint8_t gatt_bond_management_control_write(
     if (opcode < 1 || opcode > 9)
         return 0x80; // Op Code not supported.
     uint8_t feature_bit = (uint8_t)((opcode - 1) * 2);
-    if (!(service->feature[feature_bit / 8] &
-          (uint8_t)(1u << (feature_bit % 8))))
-        return 0x80;
-
     uint16_t code_len = (uint16_t)(len - 1);
     uint8_t auth_bit = (uint8_t)(feature_bit + 1);
     uint8_t auth_supported =
@@ -7610,8 +7747,9 @@ static uint8_t gatt_bond_management_control_write(
     uint8_t base_supported =
         (service->feature[feature_bit / 8] &
          (uint8_t)(1u << (feature_bit % 8))) != 0;
-    if ((code_len && !auth_supported) || (!code_len && auth_supported &&
-                                          !base_supported))
+    if (!auth_supported && !base_supported)
+        return 0x80;
+    if ((code_len && !auth_supported) || (!code_len && !base_supported))
         return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
     for (uint16_t i = 0; i < code_len; i++)
         if (value[i + 1] < '0' || value[i + 1] > '9')
@@ -7638,11 +7776,6 @@ static inline int gatt_bond_management_features_valid(
         return 0;
     if ((feature_len == 3) && (features[2] & 0xfcu))
         return 0;
-    for (uint8_t bit = 1; bit < 18; bit += 2) {
-        if ((features[bit / 8] & (1u << (bit % 8))) &&
-            !(features[(bit - 1) / 8] & (1u << ((bit - 1) % 8))))
-            return 0;
-    }
     return 1;
 }
 
@@ -7661,6 +7794,11 @@ static inline int gatt_bond_management_service_add_with_authorizer(
         !gatt_bond_management_features_valid(features, feature_len) ||
         !control_point_capacity ||
         control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        // This service binds a normal Write Request callback. Keep its
+        // maximum value within one request at the configured local MTU;
+        // larger values require prepare/execute support for the same
+        // authorization and request-capture semantics.
+        control_point_capacity > server->local_mtu - 3 ||
         (!authorize &&
          ((features[0] & 0xaa) ||
           (feature_len > 1 && (features[1] & 0xaa)) ||

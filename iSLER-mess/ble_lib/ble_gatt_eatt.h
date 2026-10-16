@@ -209,7 +209,6 @@ static inline int gatt_eatt_channel_opened(
     ) {
         if (eatt->ops.close)
             eatt->ops.close(eatt->ops.context, cid);
-
         if (existing >= 0)
             memset(&eatt->bearers[existing], 0, sizeof(eatt->bearers[existing]));
         return 0;

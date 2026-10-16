@@ -1226,16 +1226,12 @@ static int smp_bond_store(const gap_bond *bond) {
 
     if (!stored.peer_irk.present)
         stored.peer_irk = (bond_opt_key){0};
-
     if (!stored.local_irk.present)
         stored.local_irk = (bond_opt_key){0};
-
     if (!stored.peer_csrk.present)
         stored.peer_csrk = (bond_opt_key){0};
-
     if (!stored.local_csrk.present)
         stored.local_csrk = (bond_opt_key){0};
-
     if (!stored.has_peripheral_ltk)
         stored.peripheral = (gap_bond_key){0};
 

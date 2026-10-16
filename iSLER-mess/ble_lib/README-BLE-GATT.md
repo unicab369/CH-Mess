@@ -408,8 +408,12 @@ HTTP Proxy, Automation IO, Binary Sensor, Mesh Provisioning, and Mesh Proxy.
 channels and can add an Aggregate value containing their handles. Mesh Data In
 uses a fixed 65-octet capacity for Provisioning and 66 octets for Proxy. The
 application handles the bearer protocol and sends Data Out notifications using
-the returned CCCD. The Binary Sensor builder registers its Control Point and
-indicated Response; the application implements the BSS command protocol. Bond
+the returned CCCD. `gatt_binary_sensor_service_add_full()` sets the Control
+Point fragment capacity. The Binary Sensor builder reassembles split commands,
+validates Get Sensor Status and Setting Sensor messages, and exposes
+requests through `gatt_binary_sensor_service_take_request()`. Applications
+encode result/status/event messages and send them with
+`gatt_binary_sensor_service_indicate_message()`. Bond
 Management validates its feature bitmap and supported opcodes, checks optional
 authorization-code input through the supplied authorizer, and exposes accepted
 requests through `gatt_bond_management_service_take_request()`. The application

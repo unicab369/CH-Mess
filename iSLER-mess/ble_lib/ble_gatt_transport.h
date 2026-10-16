@@ -713,7 +713,6 @@ static inline void gatt_transport_set_connected(
 
     if (transport->server)
         gatt_server_link_reset(transport->server);
-
     if (transport->client)
         gatt_client_reset(transport->client);
     gatt_transport_sync_mtu_from_server(transport);

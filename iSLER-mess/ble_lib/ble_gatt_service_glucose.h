@@ -366,7 +366,6 @@ static inline int gatt_glucose_service_notify_context(
 
     if (context->flags & 0x02)
         value[len++] = context->meal;
-
     if (context->flags & 0x04)
         value[len++] = context->tester_health;
 

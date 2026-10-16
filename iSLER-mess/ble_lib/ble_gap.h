@@ -192,7 +192,6 @@ static inline uint32_t gap_phy_airtime_us(
 ) {
     if (phy == GAP_PHY_2M)
         return ((uint32_t)payload_len + 11) * 4;
-
     if (phy == GAP_PHY_CODED)
         return 976 + (uint32_t)payload_len * 64;
 

@@ -1411,7 +1411,6 @@ static inline int l2cap_signaling_receive(
 
             if (ble_read_u16_le(p) > 4)
                 return 0;
-
             if (ble_read_u16_le(p) == 0)
                 for (uint8_t i = 0; i < conn->pending_count; i++) {
                     int slot = l2cap_channel_find_local(conn,

@@ -326,7 +326,6 @@ static int gatt_uuid_equal(
 static uint16_t gatt_uuid_assigned16(const ble_gatt_uuid *uuid) {
     if (uuid->len == 2)
         return ble_get_le16(uuid->value);
-
     if (uuid->len == 16)
         return ble_get_le16(uuid->value + 14);
 
@@ -1410,7 +1409,6 @@ static uint8_t gatt_server_read(
 
     if (size > *out_len)
         size = *out_len;
-
     if (size)
         memcpy(out, gatt_attribute_value(server, a) + offset, size);
     *out_len = size;
@@ -1692,7 +1690,6 @@ static uint8_t gatt_server_write(
     if (!(a->flags & BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH)) {
         if (offset > a->value_len)
             return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
         if (len > a->value_len - offset)
             return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     }
@@ -1809,7 +1806,6 @@ static inline int gatt_server_notify(
 
     if (value_len > server->mtu - 3)
         value_len = server->mtu - 3;
-
     if (att_capacity < value_len + 3)
         return 0;
 
@@ -1855,7 +1851,6 @@ static inline int gatt_server_indicate(
 
     if (value_len > server->mtu - 3)
         value_len = server->mtu - 3;
-
     if (att_capacity < value_len + 3)
         return 0;
 
@@ -2218,7 +2213,6 @@ static inline int gatt_server_att(
 
         if (find)
             uuid_len = (uint8_t)(req_len - 7);
-
         if (first == 0 || first > last)
             return gatt_server_error_rsp(op, first, 0x01, rsp,
                                               rsp_capacity, rsp_len);

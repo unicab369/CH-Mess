@@ -241,7 +241,6 @@ static inline uint8_t gatt_lns_control_point_write(
 
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 

@@ -407,10 +407,8 @@ static uint8_t gap_class_valid(const uint8_t *class) {
 static uint8_t gap_phy_preferred(uint8_t mask) {
     if (mask & GAP_PHY_2M)
         return GAP_PHY_2M;
-
     if (mask & GAP_PHY_CODED)
         return GAP_PHY_CODED;
-
     return mask & GAP_PHY_1M;
 }
 
@@ -527,13 +525,11 @@ static void gap_privacy_poll(uint32_t now) {
     }
 
     uint8_t address[6];
-
     if (!gap_private_addr_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
                                       address, gap_own_address.address)
     ) return;
 
     uint16_t next_timeout_s;
-
     if (!gap_privacy_timeout_pick(gap_privacy.timeout_min_s,
                                   gap_privacy.timeout_max_s,
                                   &next_timeout_s)
@@ -572,8 +568,7 @@ static uint8_t gap_rate_parameters_valid(
         factor >= 1 && factor <= 500 && latency <= 499 &&
         continuation < factor && factor * (latency + 1) <= 500 &&
         timeout >= 10 && timeout <= 3200 &&
-        (uint64_t)timeout * 80 >
-            2ull * interval * factor * (latency + 1);
+        (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
 }
 
 static uint8_t gap_subrate_parameters_valid(
@@ -1832,7 +1827,6 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
         if (tx == conn->phy.current.tx)
             tx = 0;
-
         if (rx == conn->phy.current.rx)
             rx = 0;
         conn->pending.phy_request = 0;
@@ -2053,16 +2047,12 @@ void gap_subrate_get(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (factor)
         *factor = conn->schedule.factor;
-
     if (base_event)
         *base_event = conn->schedule.base_event;
-
     if (peripheral_latency)
         *peripheral_latency = conn->schedule.latency;
-
     if (continuation)
         *continuation = conn->schedule.continuation;
-
     if (timeout)
         *timeout = conn->schedule.timeout;
 }
@@ -2137,16 +2127,12 @@ void gap_conn_rate_get(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (interval)
         *interval = conn->schedule.interval_125us;
-
     if (factor)
         *factor = conn->schedule.factor;
-
     if (peripheral_latency)
         *peripheral_latency = conn->schedule.latency;
-
     if (continuation)
         *continuation = conn->schedule.continuation;
-
     if (timeout)
         *timeout = conn->schedule.timeout;
 }
@@ -2593,7 +2579,6 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
 
     if (random)
         memcpy(random, gap_security->random, 8);
-
     if (ediv)
         *ediv = gap_security->ediv;
     return 1;

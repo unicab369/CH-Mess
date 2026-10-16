@@ -14,10 +14,8 @@ static uint8_t gatt_alert_notification_control_write(
     (void)command;
     if (!context || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-
     if (offset)
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len != 2)
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
