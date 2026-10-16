@@ -2467,7 +2467,7 @@ static inline int gatt_reference_time_update_service_add(
     service->server = server;
     static const uint8_t control_point = 0;
     ble_gatt_sig_characteristic chars[] = {
-        {0x2a16, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+        {0x2a16, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
          &control_point, 1},
         {0x2a17, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, state, 2}
     };

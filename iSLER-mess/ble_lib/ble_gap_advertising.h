@@ -697,6 +697,11 @@ int gap_scan_poll(gap_scan_report *report) {
     return 1;
 }
 
+#define GAP_SCAN_REPORT_PDU_MASK \
+    ((1u << ADV_IND) | (1u << ADV_DIRECT_IND) | \
+    (1u << ADV_NONCONN_IND) | (1u << SCAN_RSP) | \
+    (1u << ADV_SCAN_IND))
+
 // Keep the newest advertising observation when the application falls behind.
 static inline void gap_receive_report(
     const uint8_t *frame, uint8_t payload_len, int8_t rssi
@@ -706,12 +711,7 @@ static inline void gap_receive_report(
     uint8_t pdu_type = frame[0] & 0x0f;
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
-    if (pdu_type != ADV_IND &&
-        pdu_type != ADV_DIRECT_IND &&
-        pdu_type != ADV_NONCONN_IND &&
-        pdu_type != SCAN_RSP &&
-        pdu_type != ADV_SCAN_IND
-    ) return;
+    if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type))) return;
 
     if (pdu_type == ADV_DIRECT_IND && payload_len != 12) return;
     uint8_t data_len = payload_len - 6;
@@ -723,10 +723,6 @@ static inline void gap_receive_report(
     int slot = gap_identity_find(frame + 2, address_type);
     if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
     if (gap_privacy.scan_filter && slot < 0) return;
-    const uint8_t *identity_address = slot >= 0 ?
-        gap_identities[slot].peer.address : frame + 2;
-    uint8_t identity_type = slot >= 0 ?
-        gap_identities[slot].peer.type : address_type;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {
@@ -761,6 +757,11 @@ static inline void gap_receive_report(
             }
         }
     }
+
+    const uint8_t *identity_address = slot >= 0 ?
+                    gap_identities[slot].peer.address : frame + 2;
+    uint8_t identity_type = slot >= 0 ?
+                    gap_identities[slot].peer.type : address_type;
 
     if (gap_scanner.filter_duplicates) {
         // For directed advertising, compare the target address too.
