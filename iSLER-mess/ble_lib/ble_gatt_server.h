@@ -63,7 +63,13 @@ enum {
     BLE_GATT_PERM_WRITE_AUTHENTICATED = 1u << 5,
     BLE_GATT_PERM_READ_AUTHORIZED = 1u << 6,
     BLE_GATT_PERM_WRITE_AUTHORIZED = 1u << 7,
-    BLE_GATT_PERM_WRITE_SIGNED = 1u << 8
+    BLE_GATT_PERM_WRITE_SIGNED = 1u << 8,
+    // Security constraints for server-originated notifications/indications.
+    // These are separate from read permissions so event-only characteristics
+    // can be secured without advertising an unsupported Read property.
+    BLE_GATT_PERM_EVENT_ENCRYPTED = 1u << 9,
+    BLE_GATT_PERM_EVENT_AUTHENTICATED = 1u << 10,
+    BLE_GATT_PERM_EVENT_AUTHORIZED = 1u << 11
 };
 
 enum {
@@ -524,7 +530,13 @@ static inline int gatt_server_seal_database(ble_gatt_server *server) {
                             BLE_GATT_PROP_WRITE_NO_RSP)) !=
                 !!(value_attribute->permissions & write_permissions) ||
             !!(properties & BLE_GATT_PROP_AUTH_SIGNED_WRITE) !=
-                !!(value_attribute->permissions & BLE_GATT_PERM_WRITE_SIGNED))
+                !!(value_attribute->permissions & BLE_GATT_PERM_WRITE_SIGNED) ||
+            ((value_attribute->permissions &
+                (BLE_GATT_PERM_EVENT_ENCRYPTED |
+                 BLE_GATT_PERM_EVENT_AUTHENTICATED |
+                 BLE_GATT_PERM_EVENT_AUTHORIZED)) &&
+             !(properties & (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE)))
+           )
             return 0;
 
         uint8_t cccd_count = 0, extended_count = 0, server_config_count = 0;
@@ -967,6 +979,10 @@ static inline int gatt_server_add_characteristic(
          !(properties & BLE_GATT_PROP_AUTH_SIGNED_WRITE)) ||
         ((permissions & write_permissions) &&
          !(properties & (BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP))) ||
+        ((permissions & (BLE_GATT_PERM_EVENT_ENCRYPTED |
+                         BLE_GATT_PERM_EVENT_AUTHENTICATED |
+                         BLE_GATT_PERM_EVENT_AUTHORIZED)) &&
+         !(properties & (BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE))) ||
         server->count + 2 > BLE_GATT_SERVER_MAX_ATTRIBUTES ||
         server->next_handle > 0xfffd)
         return 0;
@@ -1143,6 +1159,38 @@ static uint8_t gatt_server_access_security_error(
     return 0;
 }
 
+static uint8_t gatt_server_event_security_error(
+    const ble_gatt_server *server, const ble_gatt_attribute *attribute
+) {
+    uint16_t permissions = attribute->permissions;
+    if ((permissions & BLE_GATT_PERM_EVENT_AUTHENTICATED) &&
+        !server->authenticated)
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION;
+    if ((permissions & BLE_GATT_PERM_EVENT_AUTHORIZED) &&
+        (!server->authorize || !server->authorize(server->authorize_context,
+            attribute->handle, 0)))
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
+    if ((permissions & BLE_GATT_PERM_EVENT_ENCRYPTED) && !server->encrypted)
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION;
+    uint16_t read_permissions = BLE_GATT_PERM_READ |
+        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_READ_AUTHENTICATED |
+        BLE_GATT_PERM_READ_AUTHORIZED;
+    if (permissions & read_permissions)
+        return gatt_server_access_security_error(server, attribute, 0);
+    uint16_t write_permissions = BLE_GATT_PERM_WRITE |
+        BLE_GATT_PERM_WRITE_ENCRYPTED | BLE_GATT_PERM_WRITE_AUTHENTICATED |
+        BLE_GATT_PERM_WRITE_AUTHORIZED | BLE_GATT_PERM_WRITE_SIGNED;
+    if (permissions & write_permissions)
+        return gatt_server_access_security_error(server, attribute, 1);
+    if (attribute->min_key_size) {
+        if (!server->encrypted)
+            return BLE_GATT_ATT_ERR_INSUFFICIENT_ENCRYPTION;
+        if (server->encryption_key_size < attribute->min_key_size)
+            return BLE_GATT_ATT_ERR_ENCRYPTION_KEY_SIZE_TOO_SHORT;
+    }
+    return 0;
+}
+
 static uint8_t gatt_server_read(
     ble_gatt_server *server,
     ble_gatt_attribute *a, uint16_t offset,
@@ -1270,9 +1318,10 @@ static inline int gatt_server_queue_event(
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
     uint8_t bit = indication ? 2 : 1;
     uint8_t property = indication ? BLE_GATT_PROP_INDICATE : BLE_GATT_PROP_NOTIFY;
-    if (!characteristic || !(characteristic->properties & property) ||
+    if (!characteristic || value_len > characteristic->value_capacity ||
+        !(characteristic->properties & property) ||
         !cccd || !(cccd->cccd & bit) ||
-        gatt_server_access_security_error(server, characteristic, 0))
+        gatt_server_event_security_error(server, characteristic))
         return 0;
     ble_gatt_server_event *event = &server->events[server->event_count++];
     event->handle = value_handle;
@@ -1483,10 +1532,11 @@ static inline int gatt_server_notify(
     ble_gatt_attribute *characteristic =
         gatt_server_find(server, value_handle);
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
-    if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
+    if (!characteristic || value_len > characteristic->value_capacity ||
+        !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
         !cccd || !(cccd->cccd & 1))
         return 0;
-    if (gatt_server_access_security_error(server, characteristic, 0))
+    if (gatt_server_event_security_error(server, characteristic))
         return 0;
     if (value_len > BLE_GATT_ATT_VALUE_MAX) return 0;
     if (value_len > server->mtu - 3) value_len = server->mtu - 3;
@@ -1512,10 +1562,11 @@ static inline int gatt_server_indicate(
     ble_gatt_attribute *characteristic =
         gatt_server_find(server, value_handle);
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, value_handle);
-    if (!characteristic || !(characteristic->properties & BLE_GATT_PROP_INDICATE) ||
+    if (!characteristic || value_len > characteristic->value_capacity ||
+        !(characteristic->properties & BLE_GATT_PROP_INDICATE) ||
         !cccd || !(cccd->cccd & 2) || server->indication_pending)
         return 0;
-    if (gatt_server_access_security_error(server, characteristic, 0))
+    if (gatt_server_event_security_error(server, characteristic))
         return 0;
     if (value_len > BLE_GATT_ATT_VALUE_MAX) return 0;
     if (value_len > server->mtu - 3) value_len = server->mtu - 3;
@@ -1564,7 +1615,7 @@ static inline int gatt_server_poll_event(
                                          BLE_GATT_PROP_NOTIFY;
     if (!characteristic || !(characteristic->properties & property) ||
         !cccd || !(cccd->cccd & bit) ||
-        gatt_server_access_security_error(server, characteristic, 0)) {
+        gatt_server_event_security_error(server, characteristic)) {
         gatt_server_remove_event(server, 0);
         return 0;
     }
@@ -1599,8 +1650,7 @@ static inline int gatt_server_poll_event(
             if (!characteristic ||
                 !(characteristic->properties & BLE_GATT_PROP_NOTIFY) ||
                 !candidate_cccd || !(candidate_cccd->cccd & 1) ||
-                gatt_server_access_security_error(server,
-                                                       characteristic, 0))
+                gatt_server_event_security_error(server, characteristic))
                 break;
             uint16_t tuple_len = (uint16_t)(4 + candidate->len);
             if (encoded >= packet_limit ||

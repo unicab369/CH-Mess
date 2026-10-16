@@ -1234,12 +1234,12 @@ static inline int gatt_ranging_service_add(
     if (include_realtime)
         characteristics[i++] = (ble_gatt_sig_characteristic){
             0x2c15, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, &data_initial, 0,
+            BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
             ranging_data_capacity, 1
         };
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c16, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
-        BLE_GATT_PERM_READ_ENCRYPTED, &data_initial, 0,
+        BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
         ranging_data_capacity, 1
     };
     characteristics[i++] = (ble_gatt_sig_characteristic){
@@ -1284,9 +1284,83 @@ typedef struct {
     uint16_t service_handle, live_observations_handle;
     uint16_t live_observations_cccd_handle, control_point_handle;
     uint16_t control_point_cccd_handle;
+    uint16_t stored_observations_handle, stored_observations_cccd_handle;
+    uint16_t racp_handle, racp_cccd_handle;
     ble_gatt_server *server;
     uint8_t live_observations_started, control_point_request_count;
+    uint8_t stored_observations_notify;
+    uint8_t racp_pending, racp_opcode, racp_operator, racp_request_len;
+    uint8_t racp_request[20];
+    uint8_t rolling_segment_counter, observation_segment_queued;
+    uint16_t observation_len, observation_offset;
+    uint8_t observation_data[BLE_GATT_ATT_VALUE_MAX];
 } ble_gatt_generic_health_sensor_service;
+
+enum {
+    GATT_GHS_RACP_REPORT_STORED_RECORDS = 0x07,
+    GATT_GHS_RACP_DELETE_STORED_RECORDS = 0x02,
+    GATT_GHS_RACP_ABORT_OPERATION = 0x03,
+    GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS = 0x04,
+    GATT_GHS_RACP_NUMBER_OF_RECORDS_RESPONSE = 0x05,
+    GATT_GHS_RACP_RESPONSE_CODE = 0x06,
+    GATT_GHS_RACP_REPORT_STORED_RECORDS_RESPONSE = 0x08,
+    GATT_GHS_RACP_RESPONSE_SUCCESS = 0x01,
+    GATT_GHS_RACP_RESPONSE_NO_RECORDS_FOUND = 0x06,
+    GATT_GHS_RACP_RESPONSE_OPCODE_NOT_SUPPORTED = 0x02,
+    GATT_GHS_RACP_RESPONSE_OPERAND_NOT_SUPPORTED = 0x09,
+    GATT_GHS_RACP_RESPONSE_PROCEDURE_NOT_COMPLETED = 0x08
+};
+
+// Internal: accept the record-number RACP procedures provided by this helper.
+static uint8_t gatt_generic_health_sensor_racp_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_generic_health_sensor_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len < 2 || len > sizeof(service->racp_request))
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    uint8_t opcode = value[0], oper = value[1];
+    uint8_t filter_len = (uint8_t)(len - 2);
+    if (opcode == GATT_GHS_RACP_ABORT_OPERATION) {
+        if (oper != 0 || filter_len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    } else if (opcode == GATT_GHS_RACP_DELETE_STORED_RECORDS ||
+               opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS ||
+               opcode == GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS) {
+        if (oper == 1) {
+            if (filter_len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        } else if (oper == 2 || oper == 3) {
+            if (filter_len != 5 && filter_len != 7)
+                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        } else if (oper == 4) {
+            if (filter_len != 9 && filter_len != 13)
+                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        } else if (oper == 5 || oper == 6) {
+            if (filter_len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        }
+    }
+    ble_gatt_attribute *racp_cccd = gatt_server_cccd_for(
+        service->server, service->racp_handle);
+    if (!racp_cccd || !(racp_cccd->cccd & 2)) return 0xfd;
+    if (opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS) {
+        ble_gatt_attribute *data_cccd = gatt_server_cccd_for(
+            service->server, service->stored_observations_handle);
+        if (!data_cccd || !data_cccd->cccd) return 0xfd;
+    }
+    if (service->racp_pending || service->server->indication_pending)
+        return 0xfe;
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication) return 0xfe;
+    memcpy(service->racp_request, value, len);
+    service->racp_request_len = (uint8_t)len;
+    service->racp_opcode = opcode;
+    service->racp_operator = oper;
+    service->racp_pending = 1;
+    return 0;
+}
 
 // Internal
 static uint8_t gatt_generic_health_sensor_control_write(
@@ -1317,31 +1391,52 @@ static uint8_t gatt_generic_health_sensor_control_write(
 // Application facing
 // Add the live-observation-only GHS layout. The service handles its start/stop
 // Control Point and success indications; the application supplies observations.
-static inline int gatt_generic_health_sensor_service_add(
+static inline int gatt_generic_health_sensor_service_add_full(
     ble_gatt_server *server,
     ble_gatt_generic_health_sensor_service *service,
-    uint16_t observation_capacity
+    uint16_t observation_capacity, uint16_t stored_observation_capacity,
+    uint8_t stored_observations_notify
 ) {
-    if (!server || !service || !observation_capacity ||
-        observation_capacity > BLE_GATT_SERVER_VALUE_MAX)
+    if (!server || !service || observation_capacity < 2 ||
+        observation_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        stored_observation_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        stored_observations_notify > 1 ||
+        (!stored_observation_capacity && stored_observations_notify))
         return 0;
 
     uint8_t observation_initial = 0;
     uint8_t control_point_initial = 0;
-    ble_gatt_sig_characteristic characteristics[2] = {
-        {0x2b8b, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+    ble_gatt_sig_characteristic characteristics[4] = {
+        {0x2b8b, BLE_GATT_PROP_INDICATE, 1, 0,
             &observation_initial, 0, observation_capacity, 1},
         {0x2bf4, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE, &control_point_initial, 1, 1}
     };
-    uint16_t values[2], cccds[2];
-    ble_gatt_sig_handlers handlers[2] = {0};
+    uint8_t count = 2;
+    if (stored_observation_capacity) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2bdd, stored_observations_notify ? BLE_GATT_PROP_NOTIFY :
+                                                BLE_GATT_PROP_INDICATE,
+            1, 0, &observation_initial, 0,
+            stored_observation_capacity, 1
+        };
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 0, 20, 1
+        };
+    }
+    uint16_t values[4], cccds[4];
+    ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
     service->server = server;
     handlers[1].write = gatt_generic_health_sensor_control_write;
     handlers[1].context = service;
+    if (stored_observation_capacity) {
+        handlers[3].write = gatt_generic_health_sensor_racp_write;
+        handlers[3].context = service;
+    }
     if (!gatt_sig_service_add_with_handlers(server, 0x1840,
-            characteristics, 2, &service->service_handle, values, cccds,
+            characteristics, count, &service->service_handle, values, cccds,
             handlers)) {
         memset(service, 0, sizeof(*service));
         return 0;
@@ -1350,21 +1445,166 @@ static inline int gatt_generic_health_sensor_service_add(
     service->live_observations_cccd_handle = cccds[0];
     service->control_point_handle = values[1];
     service->control_point_cccd_handle = cccds[1];
+    if (stored_observation_capacity) {
+        service->stored_observations_handle = values[2];
+        service->stored_observations_cccd_handle = cccds[2];
+        service->racp_handle = values[3];
+        service->racp_cccd_handle = cccds[3];
+        service->stored_observations_notify = stored_observations_notify;
+    }
     return 1;
 }
 
-// Application facing
-// Encode and queue a live Health Observation after the Control Point starts it.
-static inline int gatt_generic_health_sensor_service_indicate_observation(
+// Queue one already-encoded, segmented Stored Health Observations value.
+// Record filtering and ordering remain owned by the application's record store.
+static inline int gatt_generic_health_sensor_service_queue_stored_segment(
     ble_gatt_server *server,
     const ble_gatt_generic_health_sensor_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server ||
+        !service->stored_observations_handle || !service->racp_pending ||
+        service->racp_opcode != GATT_GHS_RACP_REPORT_STORED_RECORDS ||
+        !value || !len)
+        return 0;
+    return gatt_server_queue_event(server,
+        service->stored_observations_handle, value, len,
+        (uint8_t)!service->stored_observations_notify);
+}
+
+// Compatibility builder for live-observation-only GHS.
+static inline int gatt_generic_health_sensor_service_add(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint16_t observation_capacity
+) {
+    return gatt_generic_health_sensor_service_add_full(server, service,
+        observation_capacity, 0, 0);
+}
+
+// Complete the pending RACP procedure after application-owned record access.
+// For report-number requests, provide the matching count response operand;
+// for other procedures, pass NULL and zero length on success.
+static inline int gatt_generic_health_sensor_service_racp_complete(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint8_t response_code, const uint8_t *operand, uint8_t operand_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->racp_pending || (operand_len && !operand)) return 0;
+    uint8_t response[6] = {0};
+    uint16_t response_len;
+    if (response_code == GATT_GHS_RACP_RESPONSE_SUCCESS &&
+        service->racp_opcode == GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS) {
+        if (operand_len != 4) return 0;
+        response[0] = GATT_GHS_RACP_NUMBER_OF_RECORDS_RESPONSE;
+        response[1] = 0;
+        memcpy(response + 2, operand, 4);
+        response_len = 6;
+    } else if (response_code == GATT_GHS_RACP_RESPONSE_SUCCESS &&
+               service->racp_opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS) {
+        if (operand_len != 4) return 0;
+        response[0] = GATT_GHS_RACP_REPORT_STORED_RECORDS_RESPONSE;
+        response[1] = 0;
+        memcpy(response + 2, operand, 4);
+        response_len = 6;
+    } else {
+        if (operand_len || response_code == 0 || response_code > 10)
+            return 0;
+        response[0] = GATT_GHS_RACP_RESPONSE_CODE;
+        response[1] = 0;
+        response[2] = service->racp_opcode;
+        response[3] = response_code;
+        response_len = 4;
+    }
+    int queued = gatt_server_queue_event(server, service->racp_handle,
+        response, response_len, 1);
+    if (queued > 0) service->racp_pending = 0;
+    return queued;
+}
+
+// Application facing
+// Queue an encoded live Health Observation after the Control Point starts it.
+static inline int gatt_generic_health_sensor_service_continue_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service
+);
+
+static inline int gatt_generic_health_sensor_service_indicate_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server ||
         !service->live_observations_started ||
-        !value || !len) return 0;
-    return gatt_server_queue_event(server, service->live_observations_handle,
-                                   value, len, 1);
+        !value || !len || len > sizeof(service->observation_data) ||
+        service->observation_len || service->observation_segment_queued ||
+        server->indication_pending)
+        return 0;
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->live_observations_handle)
+            return 0;
+    memcpy(service->observation_data, value, len);
+    service->observation_len = len;
+    service->observation_offset = 0;
+    if (gatt_generic_health_sensor_service_continue_observation(server,
+            service)) return 1;
+    service->observation_len = 0;
+    service->observation_offset = 0;
+    return 0;
+}
+
+// Application facing
+// Queue the next observation segment. Retry after indication confirmation if
+// blocked by another queued event; observation_len reaches zero once all
+// segments have been queued.
+static inline int gatt_generic_health_sensor_service_continue_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service
+) {
+    if (!server || !service || service->server != server ||
+        !service->live_observations_started || !service->observation_len)
+        return 0;
+    if (server->indication_pending) return 0;
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->live_observations_handle &&
+            server->events[i].indication)
+            return 0;
+    service->observation_segment_queued = 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->live_observations_handle);
+    if (!attribute || !attribute->value_capacity) return 0;
+    uint16_t segment_limit = (uint16_t)(server->mtu - 4);
+    if (segment_limit > attribute->value_capacity - 1)
+        segment_limit = (uint16_t)(attribute->value_capacity - 1);
+    if (!segment_limit) return 0;
+    uint16_t remaining = (uint16_t)(service->observation_len -
+                                    service->observation_offset);
+    uint16_t segment_len = remaining < segment_limit ? remaining :
+                                                        segment_limit;
+    uint8_t first = service->observation_offset == 0;
+    uint8_t last = segment_len == remaining;
+    uint8_t segment[BLE_GATT_ATT_VALUE_MAX];
+    segment[0] = (uint8_t)((service->rolling_segment_counter & 0x3f) << 2) |
+        (uint8_t)(first ? 1 : 0) | (uint8_t)(last ? 2 : 0);
+    memcpy(segment + 1,
+           service->observation_data + service->observation_offset,
+           segment_len);
+    if (gatt_server_queue_event(server, service->live_observations_handle,
+            segment, (uint16_t)(segment_len + 1), 1) != 1)
+        return 0;
+    service->observation_offset = (uint16_t)(service->observation_offset +
+                                             segment_len);
+    service->rolling_segment_counter = (uint8_t)(
+        (service->rolling_segment_counter + 1) & 0x3f);
+    if (last) {
+        service->observation_len = 0;
+        service->observation_offset = 0;
+    } else {
+        service->observation_segment_queued = 1;
+    }
+    return 1;
 }
 
 typedef struct {
@@ -1397,9 +1637,9 @@ static inline int gatt_authorization_control_service_add(
             BLE_GATT_PERM_READ, status, 3},
         {0x2b30, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
             &data_initial, 0, data_capacity, 1},
-        {0x2b31, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_READ,
+        {0x2b31, BLE_GATT_PROP_NOTIFY, 1, 0,
             &data_initial, 0, data_capacity, 1},
-        {0x2b32, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+        {0x2b32, BLE_GATT_PROP_INDICATE, 1, 0,
             &data_initial, 0, data_capacity, 1},
         {0x2b33, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE, &control_point_initial, 0,
@@ -1429,6 +1669,7 @@ typedef struct {
     uint16_t control_point_handle, control_point_cccd_handle;
     uint16_t current_session_handle, current_session_cccd_handle;
     uint16_t session_descriptor_handle, session_descriptor_cccd_handle;
+    uint16_t optional_data_handle[5], optional_data_cccd_handle[5];
     ble_gatt_server *server;
     uint8_t control_point_pending, control_point_opcode;
     uint8_t control_point_parameter_len, control_point_request_count;
@@ -1566,8 +1807,11 @@ static uint8_t gatt_physical_activity_monitor_control_write(
     } else if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
         uint8_t data_type = value[5];
         if (data_type > 1) return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
-        required_cccd_handle = data_type ? service->summary_data_handle :
-                                           service->instantaneous_data_handle;
+        if (data_type < 2)
+            required_cccd_handle = data_type ? service->summary_data_handle :
+                                               service->instantaneous_data_handle;
+        else
+            required_cccd_handle = service->optional_data_handle[data_type - 2];
         required_cccd_bit = data_type ? 2 : 1;
     }
     if (required_cccd_handle) {
@@ -1587,15 +1831,14 @@ static uint8_t gatt_physical_activity_monitor_control_write(
 }
 
 // Application facing
-// Add the mandatory PAMS characteristics. Optional data characteristics are
-// omitted; the application supplies session values and implements all session
-// control and measurement procedures.
-static inline int gatt_physical_activity_monitor_service_add(
+// Add mandatory PAMS characteristics and selected optional data streams.
+static inline int gatt_physical_activity_monitor_service_add_full(
     ble_gatt_server *server,
     ble_gatt_physical_activity_monitor_service *service,
     uint64_t features, const uint8_t current_session[17],
     uint16_t instantaneous_capacity, uint16_t summary_capacity,
-    uint16_t control_point_capacity, uint16_t session_descriptor_capacity
+    uint16_t control_point_capacity, uint16_t session_descriptor_capacity,
+    uint8_t optional_data_mask, const uint16_t optional_data_capacity[5]
 ) {
     if (!server || !service || !features || (features >> 55) ||
         !current_session || !instantaneous_capacity || !summary_capacity ||
@@ -1603,35 +1846,55 @@ static inline int gatt_physical_activity_monitor_service_add(
         instantaneous_capacity > BLE_GATT_SERVER_VALUE_MAX ||
         summary_capacity > BLE_GATT_SERVER_VALUE_MAX ||
         control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
-        session_descriptor_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        session_descriptor_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (optional_data_mask & 0xe0) ||
+        (optional_data_mask && !optional_data_capacity))
         return 0;
+
+    for (uint8_t i = 0; i < 5; i++)
+        if ((optional_data_mask & (1u << i)) &&
+            (!optional_data_capacity[i] ||
+             optional_data_capacity[i] > BLE_GATT_SERVER_VALUE_MAX))
+            return 0;
 
     uint8_t feature_value[8];
     for (uint8_t i = 0; i < sizeof(feature_value); i++)
         feature_value[i] = (uint8_t)(features >> (8 * i));
     uint8_t initial = 0;
-    ble_gatt_sig_characteristic characteristics[6] = {
+    ble_gatt_sig_characteristic characteristics[11] = {
         {0x2b3b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
             feature_value, sizeof(feature_value)},
-        {0x2b3c, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_READ,
+        {0x2b3c, BLE_GATT_PROP_NOTIFY, 1, 0,
             &initial, 0, instantaneous_capacity, 1},
-        {0x2b3d, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+        {0x2b3d, BLE_GATT_PROP_INDICATE, 1, 0,
             &initial, 0, summary_capacity, 1},
         {0x2b43, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE, &initial, 0, control_point_capacity, 1},
         {0x2b44, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_READ, current_session, 17, 17},
-        {0x2b45, BLE_GATT_PROP_INDICATE, 1, BLE_GATT_PERM_READ,
+        {0x2b45, BLE_GATT_PROP_INDICATE, 1, 0,
             &initial, 0, session_descriptor_capacity, 1}
     };
-    uint16_t values[6], cccds[6];
-    ble_gatt_sig_handlers handlers[6] = {0};
+    static const uint16_t optional_uuid[5] = {0x2b3e, 0x2b3f, 0x2b40,
+                                              0x2b41, 0x2b42};
+    uint8_t count = 6;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!(optional_data_mask & (1u << i))) continue;
+        uint8_t notify = (i == 0 || i == 3);
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            optional_uuid[i], notify ? BLE_GATT_PROP_NOTIFY :
+                                      BLE_GATT_PROP_INDICATE,
+            1, 0, &initial, 0, optional_data_capacity[i], 1
+        };
+    }
+    uint16_t values[11], cccds[11];
+    ble_gatt_sig_handlers handlers[11] = {0};
     memset(service, 0, sizeof(*service));
     service->server = server;
     handlers[3].write = gatt_physical_activity_monitor_control_write;
     handlers[3].context = service;
     if (!gatt_sig_service_add_with_handlers(server, 0x183e,
-            characteristics, 6, &service->service_handle, values, cccds,
+            characteristics, count, &service->service_handle, values, cccds,
             handlers)) {
         memset(service, 0, sizeof(*service));
         return 0;
@@ -1647,7 +1910,41 @@ static inline int gatt_physical_activity_monitor_service_add(
     service->current_session_cccd_handle = cccds[4];
     service->session_descriptor_handle = values[5];
     service->session_descriptor_cccd_handle = cccds[5];
+    uint8_t value_index = 6;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!(optional_data_mask & (1u << i))) continue;
+        service->optional_data_handle[i] = values[value_index];
+        service->optional_data_cccd_handle[i] = cccds[value_index++];
+    }
     return 1;
+}
+
+// Queue an encoded optional PAMS data stream. Stream indexes are: 0 cardio-
+// respiratory instantaneous, 1 cardio-respiratory summary, 2 step summary,
+// 3 sleep instantaneous, 4 sleep summary.
+static inline int gatt_physical_activity_monitor_service_queue_optional_data(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service,
+    uint8_t stream, const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || stream >= 5 || !value || !len ||
+        !service->optional_data_handle[stream]) return 0;
+    return gatt_server_queue_event(server,
+        service->optional_data_handle[stream], value, len,
+        stream == 0 || stream == 3 ? 0 : 1);
+}
+
+// Compatibility builder for the mandatory PAMS layout.
+static inline int gatt_physical_activity_monitor_service_add(
+    ble_gatt_server *server,
+    ble_gatt_physical_activity_monitor_service *service,
+    uint64_t features, const uint8_t current_session[17],
+    uint16_t instantaneous_capacity, uint16_t summary_capacity,
+    uint16_t control_point_capacity, uint16_t session_descriptor_capacity
+) {
+    return gatt_physical_activity_monitor_service_add_full(server, service,
+        features, current_session, instantaneous_capacity, summary_capacity,
+        control_point_capacity, session_descriptor_capacity, 0, NULL);
 }
 
 // Application facing
@@ -1802,10 +2099,32 @@ typedef struct {
     uint16_t preset_control_point_handle, preset_control_point_cccd_handle;
     uint16_t active_preset_index_handle, active_preset_index_cccd_handle;
     ble_gatt_server *server;
+    uint8_t features;
     uint8_t control_point_pending;
     uint16_t control_point_request_len;
     uint8_t control_point_request[BLE_GATT_ATT_VALUE_MAX];
 } ble_gatt_hearing_access_service;
+
+enum {
+    GATT_HAS_ATT_ERR_INVALID_OPCODE = 0x80,
+    GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH = 0x81,
+    GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE = 0x82,
+    GATT_HAS_ATT_ERR_PRESET_SYNCHRONIZATION_NOT_SUPPORTED = 0x83,
+    GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS = 0x80,
+    GATT_HAS_ATT_ERR_OUT_OF_RANGE = 0xff
+};
+
+// Internal
+static inline int gatt_has_features_valid(uint8_t features) {
+    uint8_t type = features & 0x03;
+    uint8_t independent = (features & 0x08) != 0;
+    uint8_t synchronized = (features & 0x04) != 0;
+    if ((features & 0xc0) || type == 3) return 0;
+    if (type != 0 && (independent || synchronized)) return 0;
+    if (independent && synchronized) return 0;
+    if ((features & 0x20) && !(features & 0x10)) return 0;
+    return 1;
+}
 
 // Internal
 static inline uint8_t gatt_has_control_point_write(
@@ -1817,12 +2136,45 @@ static inline uint8_t gatt_has_control_point_write(
     if (!service || !service->server || !value)
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (!len || len > sizeof(service->control_point_request))
+    if (!len) return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
+    uint8_t opcode = value[0];
+    uint8_t required_len = 0;
+    switch (opcode) {
+    case 0x01: required_len = 3; break;
+    case 0x04:
+        if (!(service->features & 0x20))
+            return GATT_HAS_ATT_ERR_INVALID_OPCODE;
+        if (len < 3 || len > 42)
+            return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
+        break;
+    case 0x05: case 0x08: required_len = 2; break;
+    case 0x06: case 0x07: required_len = 1; break;
+    case 0x09: case 0x0a:
+        if (!(service->features & 0x04))
+            return GATT_HAS_ATT_ERR_INVALID_OPCODE;
+        required_len = 1;
+        break;
+    default:
+        return GATT_HAS_ATT_ERR_INVALID_OPCODE;
+    }
+    if (required_len && len != required_len)
+        return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
+    if (len > sizeof(service->control_point_request))
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if ((opcode == 0x01 && (!value[1] || !value[2])) ||
+        ((opcode == 0x04 || opcode == 0x05 || opcode == 0x08) &&
+         !value[1]))
+        return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         service->server, service->preset_control_point_handle);
-    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
-    if (service->control_point_pending) return 0x80;
+    if ((opcode == 0x01 || opcode == 0x04 || opcode == 0x05 ||
+         opcode == 0x08) && (!cccd || !(cccd->cccd & 2)))
+        return 0xfd;
+    if (service->control_point_pending)
+        return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
+    if (gatt_dts_control_point_busy(service->server,
+            service->preset_control_point_handle))
+        return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     memcpy(service->control_point_request, value, len);
     service->control_point_request_len = len;
     service->control_point_pending = 1;
@@ -1859,7 +2211,9 @@ static inline int gatt_hearing_access_service_add_with_preset_control(
     uint8_t features, uint8_t active_preset_index,
     uint16_t control_point_capacity
 ) {
-    if (!server || !service || features > 2 || !control_point_capacity ||
+    if (!server || !service || !gatt_has_features_valid(features) ||
+        server->local_mtu < 49 || control_point_capacity <
+            ((features & 0x10) ? 46 : 44) ||
         control_point_capacity > BLE_GATT_ATT_VALUE_MAX)
         return 0;
     ble_gatt_sig_characteristic characteristics[3] = {
@@ -1886,25 +2240,56 @@ static inline int gatt_hearing_access_service_add_with_preset_control(
     service->active_preset_index_handle = values[2];
     service->active_preset_index_cccd_handle = cccds[2];
     service->server = server;
+    service->features = features;
     return 1;
 }
 
 // Application facing
-// Queue the HAS response/notification indication and clear the pending write.
-static inline int gatt_hearing_access_service_control_point_complete(
+// Queue one encoded Preset Control Point response indication. Set is_last to
+// zero when more response records follow, as for a multi-record read request.
+static inline int gatt_hearing_access_service_control_point_indicate(
     ble_gatt_hearing_access_service *service,
-    const uint8_t *response, uint16_t response_len
+    const uint8_t *response, uint16_t response_len, uint8_t is_last
 ) {
     if (!service || !service->server || !service->control_point_pending ||
         !response || !response_len ||
-        response_len > BLE_GATT_ATT_VALUE_MAX)
+        response_len > BLE_GATT_ATT_VALUE_MAX ||
+        response_len > service->server->mtu - 3 || is_last > 1)
         return 0;
     if (!gatt_server_queue_event(service->server,
             service->preset_control_point_handle, response, response_len, 1))
         return 0;
-    service->control_point_pending = 0;
-    service->control_point_request_len = 0;
+    if (is_last) {
+        service->control_point_pending = 0;
+        service->control_point_request_len = 0;
+    }
     return 1;
+}
+
+// Application facing
+// Queue a final response indication for the pending Preset Control Point
+// request.
+static inline int gatt_hearing_access_service_control_point_complete(
+    ble_gatt_hearing_access_service *service,
+    const uint8_t *response, uint16_t response_len
+) {
+    return gatt_hearing_access_service_control_point_indicate(service,
+        response, response_len, 1);
+}
+
+// Application facing
+// Indicate an unsolicited Preset Changed operation. Preset changes require
+// Dynamic Presets support in the configured Hearing Aid Features value.
+static inline int gatt_hearing_access_service_indicate_preset_change(
+    ble_gatt_hearing_access_service *service,
+    const uint8_t *value, uint16_t value_len
+) {
+    if (!service || !service->server || !service->preset_control_point_handle ||
+        !(service->features & 0x10) || !value || !value_len ||
+        value_len > service->server->mtu - 3)
+        return 0;
+    return gatt_server_queue_event(service->server,
+        service->preset_control_point_handle, value, value_len, 1);
 }
 
 // Application facing
@@ -2010,7 +2395,43 @@ typedef struct {
     uint16_t track_title_handle, track_duration_handle, track_position_handle;
     uint16_t media_state_handle, media_state_cccd_handle;
     uint16_t content_control_id_handle;
+    uint16_t playback_speed_handle, playback_speed_cccd_handle;
+    uint16_t seeking_speed_handle, seeking_speed_cccd_handle;
+    uint16_t playing_order_handle, playing_order_cccd_handle;
+    uint16_t playing_orders_supported_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t control_point_opcodes_handle;
+    uint16_t supported_playing_orders;
+    uint32_t supported_control_point_opcodes;
+    uint8_t control_point_pending, control_point_opcode;
+    uint8_t control_point_parameter_len, control_point_parameter[4];
+    ble_gatt_server *server;
 } ble_gatt_media_control_service;
+
+// Internal: ignore unsupported playing-order values as required by MCS.
+static uint8_t gatt_media_control_playing_order_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_media_control_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    uint8_t order = value[0];
+    if (order > 9 || (service->supported_playing_orders &&
+        !(service->supported_playing_orders & (1u << order))))
+        return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->playing_order_handle);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!stored || attribute->value_capacity < 1)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    stored[0] = order;
+    return 0;
+}
 
 typedef struct {
     const uint8_t *value;
@@ -2028,13 +2449,85 @@ typedef struct {
     uint8_t player_name_notify;
 } ble_gatt_media_control_config;
 
+typedef struct {
+    uint8_t characteristic_mask;
+    uint8_t notify_mask;
+    const uint8_t *playback_speed;
+    const uint8_t *seeking_speed;
+    const uint8_t *playing_order;
+    const uint8_t *playing_orders_supported; // little-endian uint16 bitfield
+    uint16_t control_point_capacity;
+    const uint8_t *control_point_opcodes; // little-endian uint32 bitfield
+} ble_gatt_media_control_optional_config;
+
+enum {
+    GATT_MCS_OPTION_PLAYBACK_SPEED = 0x01,
+    GATT_MCS_OPTION_SEEKING_SPEED = 0x02,
+    GATT_MCS_OPTION_PLAYING_ORDER = 0x04,
+    GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED = 0x08,
+    GATT_MCS_OPTION_CONTROL_POINT = 0x10,
+    GATT_MCS_OPTION_CONTROL_POINT_OPCODES = 0x20
+};
+
+enum {
+    GATT_MCS_RESULT_SUCCESS = 0x01,
+    GATT_MCS_RESULT_OPCODE_NOT_SUPPORTED = 0x02,
+    GATT_MCS_RESULT_MEDIA_PLAYER_INACTIVE = 0x03,
+    GATT_MCS_RESULT_COMMAND_CANNOT_BE_COMPLETED = 0x04
+};
+
+static inline int gatt_media_control_opcode_bit(uint8_t opcode) {
+    switch (opcode) {
+    case 0x01: return 0; case 0x02: return 1; case 0x03: return 2;
+    case 0x04: return 3; case 0x05: return 4; case 0x10: return 5;
+    case 0x20: return 6; case 0x21: return 7; case 0x22: return 8;
+    case 0x23: return 9; case 0x24: return 10; case 0x30: return 11;
+    case 0x31: return 12; case 0x32: return 13; case 0x33: return 14;
+    case 0x34: return 15; case 0x40: return 16; case 0x41: return 17;
+    case 0x42: return 18; case 0x43: return 19; case 0x44: return 20;
+    default: return -1;
+    }
+}
+
+// Internal: capture a validated MCS opcode request for the application.
+static uint8_t gatt_media_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_media_control_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (!len || len > 5) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->control_point_handle);
+    if (!attribute || len > attribute->value_capacity)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (service->control_point_pending) return 0xfe;
+    uint8_t opcode = value[0];
+    int bit = gatt_media_control_opcode_bit(opcode);
+    uint8_t supported = bit >= 0 &&
+        (service->supported_control_point_opcodes & (1u << bit));
+    uint8_t has_parameter = opcode == 0x10 || opcode == 0x24 ||
+                            opcode == 0x34 || opcode == 0x44;
+    if (supported && len != (has_parameter ? 5 : 1))
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    service->control_point_opcode = opcode;
+    service->control_point_parameter_len = (uint8_t)(len - 1);
+    if (len > 1) memcpy(service->control_point_parameter, value + 1, len - 1);
+    service->control_point_pending = 1;
+    return 0;
+}
+
 // Application facing
 // Add the mandatory MCS/GMCS media metadata layout. Set generic_service for
-// GMCS; its Media Player Name notification is mandatory. Optional controls,
-// object IDs, and search characteristics are not added by this builder.
-static inline int gatt_media_control_service_add(
+// GMCS; its Media Player Name notification is mandatory. The extended variant
+// can add playback-speed and playing-order characteristics.
+static inline int gatt_media_control_service_add_full(
     ble_gatt_server *server, ble_gatt_media_control_service *service,
-    const ble_gatt_media_control_config *config
+    const ble_gatt_media_control_config *config,
+    const ble_gatt_media_control_optional_config *optional
 ) {
     if (!server || !service || !config ||
         (config->player_name.value_len && !config->player_name.value) ||
@@ -2051,9 +2544,48 @@ static inline int gatt_media_control_service_add(
         config->media_state > 3)
         return 0;
 
+    uint8_t option_mask = optional ? optional->characteristic_mask : 0;
+    uint8_t notify_mask = optional ? optional->notify_mask : 0;
+    const uint8_t *mcp_opcodes = optional ? optional->control_point_opcodes : NULL;
+    uint32_t supported_mcp_opcodes = mcp_opcodes ?
+        (uint32_t)mcp_opcodes[0] | ((uint32_t)mcp_opcodes[1] << 8) |
+        ((uint32_t)mcp_opcodes[2] << 16) |
+        ((uint32_t)mcp_opcodes[3] << 24) : 0;
+    if ((option_mask & 0xc0) || (notify_mask & 0xc0) ||
+        (notify_mask & ~option_mask) ||
+        ((option_mask & GATT_MCS_OPTION_PLAYBACK_SPEED) &&
+         !optional->playback_speed) ||
+        ((option_mask & GATT_MCS_OPTION_SEEKING_SPEED) &&
+         !optional->seeking_speed) ||
+        ((option_mask & GATT_MCS_OPTION_PLAYING_ORDER) &&
+         (!optional->playing_order || *optional->playing_order > 9)) ||
+        ((option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
+         (!optional->playing_orders_supported ||
+          !ble_get_le16(optional->playing_orders_supported) ||
+          (ble_get_le16(optional->playing_orders_supported) & 0xfc00))) ||
+        ((option_mask & (GATT_MCS_OPTION_PLAYING_ORDER |
+                         GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)) ==
+         (GATT_MCS_OPTION_PLAYING_ORDER |
+          GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
+         !(ble_get_le16(optional->playing_orders_supported) &
+           (1u << *optional->playing_order))) ||
+        ((option_mask & (GATT_MCS_OPTION_CONTROL_POINT |
+                         GATT_MCS_OPTION_CONTROL_POINT_OPCODES)) &&
+         (option_mask & (GATT_MCS_OPTION_CONTROL_POINT |
+                         GATT_MCS_OPTION_CONTROL_POINT_OPCODES)) !=
+             (GATT_MCS_OPTION_CONTROL_POINT |
+              GATT_MCS_OPTION_CONTROL_POINT_OPCODES)) ||
+        ((option_mask & GATT_MCS_OPTION_CONTROL_POINT) &&
+         (!mcp_opcodes ||
+          optional->control_point_capacity < 5 ||
+          optional->control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+          !supported_mcp_opcodes ||
+          (supported_mcp_opcodes & 0xffe00000)))
+        return 0;
+
     static const uint8_t empty_value = 0;
     uint8_t name_notify = config->generic_service || config->player_name_notify;
-    ble_gatt_sig_characteristic characteristics[7] = {
+    ble_gatt_sig_characteristic characteristics[13] = {
         {0x2b93, BLE_GATT_PROP_READ |
                 (name_notify ? BLE_GATT_PROP_NOTIFY : 0), name_notify,
             BLE_GATT_PERM_READ_ENCRYPTED, config->player_name.value,
@@ -2074,13 +2606,72 @@ static inline int gatt_media_control_service_add(
         {0x2ba8, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             &config->content_control_id, 1}
     };
-    uint16_t value_handles[7], cccd_handles[7];
+    static const uint16_t optional_uuid[6] = {0x2b9a, 0x2b9b, 0x2ba1,
+        0x2ba2, 0x2ba4, 0x2ba5};
+    const uint8_t *optional_value[6] = {
+        optional ? optional->playback_speed : NULL,
+        optional ? optional->seeking_speed : NULL,
+        optional ? optional->playing_order : NULL,
+        optional ? optional->playing_orders_supported : NULL,
+        &empty_value,
+        optional ? optional->control_point_opcodes : NULL
+    };
+    uint8_t extra_count = 0;
+    for (uint8_t i = 0; i < 6; i++) {
+        uint8_t bit = (uint8_t)(1u << i);
+        if (!(option_mask & bit)) continue;
+        uint8_t notify = (notify_mask & bit) != 0;
+        uint8_t writable = i == 0 || i == 2;
+        uint8_t control_point = i == 4;
+        uint8_t properties = control_point ?
+            BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
+                BLE_GATT_PROP_NOTIFY :
+            BLE_GATT_PROP_READ |
+                (writable ? BLE_GATT_PROP_WRITE |
+                           BLE_GATT_PROP_WRITE_NO_RSP : 0) |
+                (notify ? BLE_GATT_PROP_NOTIFY : 0);
+        uint16_t value_len = i == 3 ? 2 : (i == 5 ? 4 : 1);
+        uint16_t value_capacity = control_point ?
+            optional->control_point_capacity : value_len;
+        uint8_t permissions = (control_point ? 0 :
+            BLE_GATT_PERM_READ_ENCRYPTED) |
+            (writable || control_point ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0);
+        characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
+            optional_uuid[i], properties, control_point || notify,
+            permissions, optional_value[i], control_point ? 0 : value_len,
+            value_capacity, control_point
+        };
+    }
+    uint16_t value_handles[13], cccd_handles[13];
+    ble_gatt_sig_handlers handlers[13] = {0};
     memset(service, 0, sizeof(*service));
-    if (!gatt_sig_service_add(server,
+    service->server = server;
+    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
+        service->supported_playing_orders =
+            ble_get_le16(optional->playing_orders_supported);
+    uint8_t extra_index = 0;
+    for (uint8_t i = 0; i < 6; i++) {
+        uint8_t bit = (uint8_t)(1u << i);
+        if (!(option_mask & bit)) continue;
+        if (i == 2) {
+            handlers[7 + extra_index].write =
+                gatt_media_control_playing_order_write;
+            handlers[7 + extra_index].context = service;
+        } else if (i == 4) {
+            handlers[7 + extra_index].write =
+                gatt_media_control_point_write;
+            handlers[7 + extra_index].context = service;
+        }
+        extra_index++;
+    }
+    if (!gatt_sig_service_add_with_handlers(server,
             config->generic_service ? 0x1849 : 0x1848,
-            characteristics, 7, &service->service_handle,
-            value_handles, cccd_handles))
+            characteristics, (uint8_t)(7 + extra_count),
+            &service->service_handle,
+            value_handles, cccd_handles, handlers)) {
+        memset(service, 0, sizeof(*service));
         return 0;
+    }
     service->media_player_name_handle = value_handles[0];
     service->media_player_name_cccd_handle = cccd_handles[0];
     service->track_changed_handle = value_handles[1];
@@ -2093,12 +2684,76 @@ static inline int gatt_media_control_service_add(
     service->content_control_id_handle = value_handles[6];
     const uint16_t encrypted_cccd_permissions =
         BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
-    for (uint8_t i = 0; i < 7; i++) {
+    for (uint8_t i = 0; i < 7 + extra_count; i++) {
         if (!cccd_handles[i]) continue;
         ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
         if (cccd) cccd->permissions = encrypted_cccd_permissions;
     }
+    uint8_t value_index = 7;
+    if (option_mask & GATT_MCS_OPTION_PLAYBACK_SPEED) {
+        service->playback_speed_handle = value_handles[value_index];
+        service->playback_speed_cccd_handle = cccd_handles[value_index++];
+    }
+    if (option_mask & GATT_MCS_OPTION_SEEKING_SPEED) {
+        service->seeking_speed_handle = value_handles[value_index];
+        service->seeking_speed_cccd_handle = cccd_handles[value_index++];
+    }
+    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDER) {
+        service->playing_order_handle = value_handles[value_index];
+        service->playing_order_cccd_handle = cccd_handles[value_index++];
+    }
+    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
+        service->playing_orders_supported_handle = value_handles[value_index++];
+    if (option_mask & GATT_MCS_OPTION_CONTROL_POINT) {
+        service->control_point_handle = value_handles[value_index];
+        service->control_point_cccd_handle = cccd_handles[value_index++];
+        service->supported_control_point_opcodes =
+            supported_mcp_opcodes;
+        service->control_point_opcodes_handle = value_handles[value_index];
+    }
     return 1;
+}
+
+// Compatibility builder for mandatory MCS/GMCS metadata characteristics.
+static inline int gatt_media_control_service_add(
+    ble_gatt_server *server, ble_gatt_media_control_service *service,
+    const ble_gatt_media_control_config *config
+) {
+    return gatt_media_control_service_add_full(server, service, config, NULL);
+}
+
+// Queue a one- or two-octet MCS optional characteristic notification.
+static inline int gatt_media_control_service_notify_optional(
+    ble_gatt_server *server,
+    const ble_gatt_media_control_service *service,
+    uint16_t value_handle, const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value)
+        return 0;
+    if (value_handle == service->control_point_opcodes_handle && len == 4)
+        return gatt_server_queue_event(server, value_handle, value, len, 0);
+    if (len != 1) return 0;
+    if (value_handle != service->playback_speed_handle &&
+        value_handle != service->seeking_speed_handle &&
+        value_handle != service->playing_order_handle)
+        return 0;
+    return gatt_server_queue_event(server, value_handle, value, len, 0);
+}
+
+// Complete a captured MCS opcode request and notify its opcode/result pair.
+static inline int gatt_media_control_service_control_point_complete(
+    ble_gatt_server *server, ble_gatt_media_control_service *service,
+    uint8_t result_code
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending || result_code < GATT_MCS_RESULT_SUCCESS ||
+        result_code > GATT_MCS_RESULT_COMMAND_CANNOT_BE_COMPLETED)
+        return 0;
+    uint8_t response[2] = {service->control_point_opcode, result_code};
+    int queued = gatt_server_queue_event(server,
+        service->control_point_handle, response, sizeof(response), 0);
+    if (queued > 0) service->control_point_pending = 0;
+    return queued;
 }
 
 typedef struct {
@@ -3657,6 +4312,11 @@ typedef struct {
     uint16_t features_handle, features_cccd_handle;
     uint16_t status_reader_control_point_handle;
     uint16_t status_reader_control_point_cccd_handle;
+    uint16_t command_control_point_handle, command_control_point_cccd_handle;
+    uint16_t command_data_handle, command_data_cccd_handle;
+    uint16_t record_access_control_point_handle;
+    uint16_t record_access_control_point_cccd_handle;
+    uint16_t history_data_handle, history_data_cccd_handle;
 } ble_gatt_insulin_delivery_service;
 
 typedef struct {
@@ -3671,6 +4331,10 @@ typedef struct {
     ble_gatt_insulin_delivery_value features;
     uint16_t status_reader_control_point_capacity;
     uint8_t features_indicate;
+    uint16_t command_control_point_capacity;
+    uint16_t command_data_capacity;
+    uint16_t record_access_control_point_capacity;
+    uint16_t history_data_capacity;
 } ble_gatt_insulin_delivery_config;
 
 // Application facing
@@ -3701,11 +4365,30 @@ static inline int gatt_insulin_delivery_service_add(
         config->features_indicate > 1 ||
         config->status_reader_control_point_capacity < 2 ||
         config->status_reader_control_point_capacity >
-            BLE_GATT_SERVER_VALUE_MAX)
+            BLE_GATT_SERVER_VALUE_MAX ||
+        (config->command_control_point_capacity &&
+         (config->command_control_point_capacity < 2 ||
+          config->command_control_point_capacity >
+              BLE_GATT_SERVER_VALUE_MAX)) ||
+        (config->record_access_control_point_capacity &&
+         (config->record_access_control_point_capacity < 2 ||
+          config->record_access_control_point_capacity >
+              BLE_GATT_SERVER_VALUE_MAX)) ||
+        (config->command_control_point_capacity &&
+         config->command_data_capacity < 2) ||
+        (!!config->command_control_point_capacity !=
+         !!config->command_data_capacity) ||
+        (config->command_data_capacity > BLE_GATT_SERVER_VALUE_MAX) ||
+        (config->record_access_control_point_capacity &&
+         config->history_data_capacity < 8) ||
+        (!!config->record_access_control_point_capacity !=
+         !!config->history_data_capacity) ||
+        (config->history_data_capacity > BLE_GATT_SERVER_VALUE_MAX))
         return 0;
 
-    uint8_t control_point_initial = 0;
-    ble_gatt_sig_characteristic characteristics[5] = {
+    uint8_t control_point_initial = 0, indexes[9], count = 0;
+    memset(indexes, 0xff, sizeof(indexes));
+    ble_gatt_sig_characteristic characteristics[9] = {
         {0x2b20, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_READ_AUTHORIZED,
             config->status_changed.value, config->status_changed.value_len,
@@ -3726,9 +4409,32 @@ static inline int gatt_insulin_delivery_service_add(
             BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
             config->status_reader_control_point_capacity, 1}
     };
-    uint16_t value_handles[5], cccd_handles[5];
+    count = 5;
+    if (config->command_control_point_capacity) {
+        indexes[0] = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b25, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            config->command_control_point_capacity, 1};
+        indexes[1] = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b26, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHORIZED,
+            &control_point_initial, 0, config->command_data_capacity, 1};
+    }
+    if (config->record_access_control_point_capacity) {
+        indexes[2] = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b27, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            config->record_access_control_point_capacity, 1};
+        indexes[3] = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2b28, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHORIZED,
+            &control_point_initial, 0, config->history_data_capacity, 1};
+    }
+    uint16_t value_handles[9], cccd_handles[9];
     memset(service, 0, sizeof(*service));
-    if (!gatt_sig_service_add(server, 0x183a, characteristics, 5,
+    if (!gatt_sig_service_add(server, 0x183a, characteristics, count,
             &service->service_handle, value_handles, cccd_handles))
         return 0;
     service->status_changed_handle = value_handles[0];
@@ -3741,10 +4447,24 @@ static inline int gatt_insulin_delivery_service_add(
     service->features_cccd_handle = cccd_handles[3];
     service->status_reader_control_point_handle = value_handles[4];
     service->status_reader_control_point_cccd_handle = cccd_handles[4];
+    if (indexes[0] != 0xff) {
+        service->command_control_point_handle = value_handles[indexes[0]];
+        service->command_control_point_cccd_handle =
+            cccd_handles[indexes[0]];
+        service->command_data_handle = value_handles[indexes[1]];
+        service->command_data_cccd_handle = cccd_handles[indexes[1]];
+    }
+    if (indexes[2] != 0xff) {
+        service->record_access_control_point_handle = value_handles[indexes[2]];
+        service->record_access_control_point_cccd_handle =
+            cccd_handles[indexes[2]];
+        service->history_data_handle = value_handles[indexes[3]];
+        service->history_data_cccd_handle = cccd_handles[indexes[3]];
+    }
 
     const uint16_t authorized_cccd_permissions =
         BLE_GATT_PERM_READ_AUTHORIZED | BLE_GATT_PERM_WRITE_AUTHORIZED;
-    for (uint8_t i = 0; i < 5; i++) {
+    for (uint8_t i = 0; i < count; i++) {
         if (!cccd_handles[i]) continue;
         ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
         if (!cccd) return 0;
@@ -4126,7 +4846,7 @@ static inline int gatt_user_data_service_add(
         {.uuid = 0x2b37,
          .properties = BLE_GATT_PROP_INDICATE,
          .cccd = 1,
-         .permissions = BLE_GATT_PERM_READ,
+         .permissions = 0,
          .value = &registered_user_initial,
          .value_len = 0,
          .value_capacity = BLE_GATT_SERVER_VALUE_MAX,

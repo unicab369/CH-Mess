@@ -90,16 +90,26 @@ value and, when requested, the five advertising-channel controls.
 `gatt_ranging_service_add()` registers mandatory RAS characteristics and adds
 Real-time Ranging Data when feature bit 0 is set. The application supplies the
 Channel Sounding integration and implements RAS procedures and data transfer.
-`gatt_generic_health_sensor_service_add()` registers the live-observation-only
-GHS layout. Its Control Point handles start/stop commands and queues success
-indications; the application encodes observations and sends them with
-`gatt_generic_health_sensor_service_indicate_observation()` after streaming is
-started.
+`gatt_generic_health_sensor_service_add()` registers the live-observation GHS
+layout. Use `gatt_generic_health_sensor_service_add_full()` to include Stored
+Health Observations and its RACP, selecting notify or indicate delivery. The
+RACP handler validates request structure and captures it for the
+application; complete procedures with
+`gatt_generic_health_sensor_service_racp_complete()` after queueing stored
+segments through `gatt_generic_health_sensor_service_queue_stored_segment()`.
+The live Control Point handles start/stop commands and queues success
+indications. The application encodes observations and starts segmented
+indications with `gatt_generic_health_sensor_service_indicate_observation()`;
+call `gatt_generic_health_sensor_service_continue_observation()` after each
+confirmation until `observation_len` is zero.
 `gatt_authorization_control_service_add()` registers the mandatory ACS
 characteristics. The application must provide the ACS security protocol,
 payload segmentation, and protected-resource behavior.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
-characteristics, without optional activity streams. Control Point writes are
+characteristics. Use `gatt_physical_activity_monitor_service_add_full()` to
+select optional cardio-respiratory, step-counter, and sleep data streams;
+`gatt_physical_activity_monitor_service_queue_optional_data()` queues their
+encoded notifications or indications. Control Point writes are
 captured in `control_point_opcode`, `control_point_parameter`, and
 `control_point_parameter_len`; the application supplies session storage and
 handles the requested procedure. Complete Enquire Sessions, Enquire
@@ -123,9 +133,13 @@ Features characteristic for a device that does not expose preset control.
 Use `gatt_hearing_access_service_add_with_preset_control()` to add the
 encrypted Preset Control Point and Active Preset Index. The application handles
 the preset list and operations using the captured request fields, then queues
-the encoded response indication with
-`gatt_hearing_access_service_control_point_complete()`. Update the active
-preset in the database with
+encoded response indications with
+`gatt_hearing_access_service_control_point_indicate()`; mark the last record
+to finish a multi-record Read Presets response. Use
+`gatt_hearing_access_service_indicate_preset_change()` for unsolicited
+changes when Dynamic Presets is enabled. The preset-enabled builder accepts
+the full Hearing Aid Features bitfield and validates reserved/type-dependent
+bits. Update the active preset in the database with
 `gatt_hearing_access_service_set_active_preset_index()` or update and notify
 with `gatt_hearing_access_service_notify_active_preset_index()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
@@ -159,11 +173,19 @@ status updates with
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement
 the medical-device control-point procedures and indication behavior. Optional
-IDD Command and history characteristics are not included.
+IDD Command Control Point/Data and IDD Record Access Control Point/History Data
+are included as capacity-paired options. Their notification-only values use
+event authorization permissions; the application still implements the command
+and history protocols.
 `gatt_media_control_service_add()` registers mandatory MCS or GMCS metadata
 from initial values. Set `generic_service` for GMCS, which also requires Media
-Player Name notifications. Optional playback controls, object IDs, and search
-are left to the application.
+Player Name notifications. Use `gatt_media_control_service_add_full()` to add
+Playback Speed, Seeking Speed, Playing Order, and Playing Orders Supported.
+Their initial values and optional notification properties are configured in
+`ble_gatt_media_control_optional_config`; queue value changes with
+`gatt_media_control_service_notify_optional()`. Media Control Point behavior,
+object ID characteristics (which require an included OTS), and search remain
+application-owned.
 `gatt_telephone_bearer_service_add()` registers mandatory TBS or GTBS call
 state characteristics with encrypted permissions. Its config selects GTBS
 and supplies the initial encoded values; the application implements call
@@ -457,6 +479,10 @@ Items 2–6 are software work; item 7 requires a radio and target firmware.
 - [x] Enforce per-attribute minimum LE encryption key sizes; the platform can
   supply the live key size through the transport security setter, including
   before notifications and indications are sent.
+- [x] Apply event-specific encryption, authentication, and authorization to
+  notify/indicate-only characteristics without requiring a GATT Read property;
+  when no event-specific security is declared, inherit the characteristic's
+  readable security or (for write-only control points) its write security.
 - [x] Restore and store CCCD settings through application callbacks for bonded
   peers; non-bonded peers start with the default disabled configuration.
 - [x] Drop queued notifications/indications when the peer disables their CCCD

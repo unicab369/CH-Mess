@@ -60,20 +60,28 @@ count that generic path as implementation of a standard service.
   feature-matched Supported Range values, optional Training Status and
   Fitness Machine Status notifications, and Control Point handling
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
-- [x] Insulin Delivery (`0x183A`), mandatory authorized status and reader-control layout
+- [x] Insulin Delivery (`0x183A`), mandatory authorized status and
+  Status Reader Control Point, plus paired optional command/data and
+  Record Access/History characteristics
 - [x] Emergency Configuration (`0x183C`)
 - [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
-- [x] Physical Activity Monitor (`0x183E`), mandatory characteristics and
-  Control Point request/response state without optional data streams
+- [x] Physical Activity Monitor (`0x183E`), mandatory characteristics,
+  selectable optional cardio-respiratory, step-counter, and sleep streams,
+  and Control Point request/response state
 - [x] Elapsed Time (`0x183F`)
-- [x] Generic Health Sensor (`0x1840`), live-observation-only layout
+- [x] Generic Health Sensor (`0x1840`), segmented live observations plus
+  optional Stored Health Observations/RACP layout and record-number request
+  validation
 - [x] Audio Input Control (`0x1843`), secondary service builder
 - [x] Volume Control (`0x1844`)
 - [x] Volume Offset Control (`0x1845`), secondary service builder
 - [x] Coordinated Set Identification (`0x1846`)
 - [x] Device Time (`0x1847`), base layout and Propose/Force Time Update DTCP
-- [x] Media Control (`0x1848`), mandatory media metadata layout
-- [x] Generic Media Control (`0x1849`), shared mandatory layout with name notifications
+- [x] Media Control (`0x1848`), mandatory metadata plus optional playback speed,
+  seeking speed, and playing-order characteristics
+- [x] Generic Media Control (`0x1849`), shared layout with mandatory name
+  notifications and optional playback speed, seeking speed, and playing-order
+  characteristics
 - [x] Constant Tone Extension (`0x184A`)
 - [x] Telephone Bearer (`0x184B`), mandatory encrypted call-state layout
 - [x] Generic Telephone Bearer (`0x184C`), shared mandatory call-state layout
