@@ -168,9 +168,14 @@ with `gatt_hearing_access_service_notify_active_preset_index()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
 `gatt_object_transfer_service_add()` registers the single-object OTS metadata
-and OACP characteristics. Use
+and OACP characteristics, including First-Created and Last-Modified. It assumes
+the server has a real-time clock; use
+`gatt_object_transfer_service_add_type_full()` to provide initial date values
+and select the correct Last-Modified write property for servers without a
+clock. Use
 `gatt_object_transfer_service_add_multi_object()` for the multi-object layout,
-which also registers Object ID, OLCP, and Object List Filter. The caller
+which also registers Object ID, OLCP, and all three Object List Filter
+instances. The caller
 supplies the initial values. OACP requests are feature-gated, length-checked,
 and captured by `gatt_object_transfer_service_take_oacp_request()`; the
 application performs object operations and responds through
@@ -179,8 +184,11 @@ feature-gated and captured by `gatt_object_transfer_service_take_olcp_request()`
 all eight assigned opcodes are supported. Read the Order parameter with
 `gatt_object_transfer_service_get_olcp_order()` and complete procedures with
 `gatt_object_transfer_service_olcp_complete()`; Request Number of Objects is
-opcode `0x07`. The application supplies object-list behavior, object storage,
-and the separate L2CAP object transfer channel.
+opcode `0x07`. Configure each filter instance with
+`gatt_object_transfer_service_set_object_list_filter()`. The application
+supplies object-list behavior, object storage, and the separate L2CAP object
+transfer channel. The multi-object `..._type_full()` builder also accepts
+initial date values and the real-time-clock capability.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
 telemetry and queues it with

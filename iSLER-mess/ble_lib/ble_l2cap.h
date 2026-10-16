@@ -161,13 +161,19 @@ static inline void ble_write_u16_le(uint8_t *p, uint16_t value) {
     p[1] = (uint8_t)(value >> 8);
 }
 
+static inline int ble_connection_latency_timeout_valid(
+    uint16_t latency, uint16_t timeout
+) {
+    return latency <= 499 && timeout >= 10 && timeout <= 3200;
+}
+
 static inline int ble_connection_timing_ranges_valid(
     uint16_t interval_min, uint16_t interval_max,
     uint16_t latency, uint16_t timeout
 ) {
     return interval_min >= 6 && interval_min <= interval_max &&
-        interval_max <= 3200 && latency <= 499 &&
-        timeout >= 10 && timeout <= 3200;
+        interval_max <= 3200 &&
+        ble_connection_latency_timeout_valid(latency, timeout);
 }
 
 static inline int l2cap_connection_init(

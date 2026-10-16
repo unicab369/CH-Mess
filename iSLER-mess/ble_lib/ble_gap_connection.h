@@ -559,9 +559,9 @@ static uint8_t gap_schedule_parameters_valid(
     uint16_t continuation, uint16_t timeout
 ) {
     return min_factor >= 1 && min_factor <= max_factor && max_factor <= 500 &&
-        max_latency <= 499 && continuation < min_factor &&
-        max_factor * (max_latency + 1) <= 500 &&
-        timeout >= 10 && timeout <= 3200;
+        ble_connection_latency_timeout_valid(max_latency, timeout) &&
+        continuation < min_factor &&
+        max_factor * (max_latency + 1) <= 500;
 }
 
 static uint8_t gap_rate_parameters_valid(

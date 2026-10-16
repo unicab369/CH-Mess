@@ -5109,6 +5109,8 @@ typedef struct {
     uint16_t object_name_handle;
     uint16_t object_type_handle;
     uint16_t object_size_handle;
+    uint16_t object_first_created_handle;
+    uint16_t object_last_modified_handle;
     uint16_t object_properties_handle;
     uint16_t action_control_point_handle;
     uint16_t action_control_point_cccd_handle;
@@ -5116,6 +5118,7 @@ typedef struct {
     uint16_t object_list_control_point_handle;
     uint16_t object_list_control_point_cccd_handle;
     uint16_t object_list_filter_handle;
+    uint16_t object_list_filter_handles[3];
     ble_gatt_server *server;
     uint8_t features[8];
     uint8_t request_pending, request_taken, request_opcode;
@@ -5362,26 +5365,40 @@ static inline int gatt_object_transfer_service_olcp_complete(
 // Add the single-object OTS layout. Multi-object servers also need Object ID,
 // OLCP, and the Object List Filter characteristics. The application handles
 // OACP procedures and the separate L2CAP object-transfer channel.
-static inline int gatt_object_transfer_service_add_type(
+static inline int gatt_object_transfer_service_add_type_full(
     ble_gatt_server *server, ble_gatt_object_transfer_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
-    const uint8_t object_properties[4]
+    const uint8_t first_created[7], const uint8_t last_modified[7],
+    uint8_t has_realtime_clock, const uint8_t object_properties[4]
 ) {
     uint16_t object_name_capacity = BLE_GATT_SERVER_VALUE_MAX < 120 ?
         BLE_GATT_SERVER_VALUE_MAX : 120;
 
     if (!server || !service || !gatt_ots_features_valid(features, 0) ||
         !object_size ||
-        !object_properties || (object_name_len && !object_name) ||
+        !first_created || !last_modified || !object_properties ||
+        has_realtime_clock > 1 || (object_name_len && !object_name) ||
         object_name_len > object_name_capacity || !object_type ||
         (object_type_len != 2 && object_type_len != 16)
     ) return 0;
 
     uint8_t action_control_point = 0;
-    ble_gatt_sig_characteristic characteristics[6] = {
+    uint8_t first_created_properties = BLE_GATT_PROP_READ;
+    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    if (features[0] & 0x01) {
+        first_created_properties |= BLE_GATT_PROP_WRITE;
+        first_created_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    uint8_t last_modified_properties = BLE_GATT_PROP_READ;
+    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    if (!has_realtime_clock) {
+        last_modified_properties |= BLE_GATT_PROP_WRITE;
+        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    ble_gatt_sig_characteristic characteristics[8] = {
         {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
@@ -5391,19 +5408,23 @@ static inline int gatt_object_transfer_service_add_type(
             object_type, object_type_len},
         {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             object_size, 8},
+        {0x2ac1, first_created_properties, 0,
+            first_created_permissions, first_created, 7},
+        {0x2ac2, last_modified_properties, 0,
+            last_modified_permissions, last_modified, 7},
         {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             object_properties, 4},
         {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE_ENCRYPTED, &action_control_point, 0, 21, 1}
     };
-    uint16_t value_handles[6], cccd_handles[6];
-    ble_gatt_sig_handlers handlers[6] = {0};
-    handlers[5].write = gatt_ots_oacp_write;
-    handlers[5].context = service;
+    uint16_t value_handles[8], cccd_handles[8];
+    ble_gatt_sig_handlers handlers[8] = {0};
+    handlers[7].write = gatt_ots_oacp_write;
+    handlers[7].context = service;
     memset(service, 0, sizeof(*service));
 
     if (!gatt_sig_service_register_with_includes_and_handlers(server, 0x1825,
-            primary_service, NULL, 0, characteristics, 6,
+            primary_service, NULL, 0, characteristics, 8,
             &service->service_handle, value_handles, cccd_handles, handlers)
     ) return 0;
 
@@ -5411,12 +5432,29 @@ static inline int gatt_object_transfer_service_add_type(
     service->object_name_handle = value_handles[1];
     service->object_type_handle = value_handles[2];
     service->object_size_handle = value_handles[3];
-    service->object_properties_handle = value_handles[4];
-    service->action_control_point_handle = value_handles[5];
-    service->action_control_point_cccd_handle = cccd_handles[5];
+    service->object_first_created_handle = value_handles[4];
+    service->object_last_modified_handle = value_handles[5];
+    service->object_properties_handle = value_handles[6];
+    service->action_control_point_handle = value_handles[7];
+    service->action_control_point_cccd_handle = cccd_handles[7];
     service->server = server;
     memcpy(service->features, features, sizeof(service->features));
     return 1;
+}
+
+static inline int gatt_object_transfer_service_add_type(
+    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    uint8_t primary_service,
+    const uint8_t features[8], const uint8_t *object_name,
+    uint16_t object_name_len, const uint8_t *object_type,
+    uint8_t object_type_len, const uint8_t object_size[8],
+    const uint8_t object_properties[4]
+) {
+    static const uint8_t unknown_date[7] = {0};
+    return gatt_object_transfer_service_add_type_full(server, service,
+        primary_service, features, object_name, object_name_len, object_type,
+        object_type_len, object_size, unknown_date, unknown_date, 1,
+        object_properties);
 }
 
 static inline int gatt_object_transfer_service_add(
@@ -5448,13 +5486,15 @@ static inline int gatt_object_transfer_service_add_secondary(
 // Add the multi-object OTS attributes to the single-object OTS layout. The
 // caller owns the Object List Filter state and implements OACP/OLCP procedures
 // and object transfers.
-static inline int gatt_object_transfer_service_add_multi_object_type(
+static inline int gatt_object_transfer_service_add_multi_object_type_full(
     ble_gatt_server *server, ble_gatt_object_transfer_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
-    const uint8_t object_properties[4], const uint8_t object_id[6],
+    const uint8_t first_created[7], const uint8_t last_modified[7],
+    uint8_t has_realtime_clock, const uint8_t object_properties[4],
+    const uint8_t object_id[6],
     const uint8_t *object_list_filter, uint16_t filter_len,
     uint16_t filter_capacity
 ) {
@@ -5462,7 +5502,8 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
         BLE_GATT_SERVER_VALUE_MAX : 120;
 
     if (!server || !service || !gatt_ots_features_valid(features, 1) ||
-        !object_id || !object_size ||
+        !object_id || !object_size || !first_created || !last_modified ||
+        has_realtime_clock > 1 ||
         !object_properties || !object_type ||
         (object_type_len != 2 && object_type_len != 16) ||
         (object_name_len && !object_name) ||
@@ -5472,7 +5513,19 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
 
     uint8_t initial_control_point = 0;
     uint8_t initial_filter = 0;
-    ble_gatt_sig_characteristic characteristics[9] = {
+    uint8_t first_created_properties = BLE_GATT_PROP_READ;
+    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    if (features[0] & 0x01) {
+        first_created_properties |= BLE_GATT_PROP_WRITE;
+        first_created_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    uint8_t last_modified_properties = BLE_GATT_PROP_READ;
+    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    if (!has_realtime_clock) {
+        last_modified_properties |= BLE_GATT_PROP_WRITE;
+        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    ble_gatt_sig_characteristic characteristics[13] = {
         {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
@@ -5482,6 +5535,10 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
             object_type, object_type_len},
         {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             object_size, 8},
+        {0x2ac1, first_created_properties, 0,
+            first_created_permissions, first_created, 7},
+        {0x2ac2, last_modified_properties, 0,
+            last_modified_permissions, last_modified, 7},
         {0x2ac3, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             object_id, 6},
         {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
@@ -5493,21 +5550,27 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
             BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
             filter_len ? object_list_filter : &initial_filter,
-            filter_len, filter_capacity, 1}
+            filter_len, filter_capacity, 1},
+        {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            &initial_filter, 0, filter_capacity, 1},
+        {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            &initial_filter, 0, filter_capacity, 1}
     };
-    uint16_t values[9], cccds[9];
-    ble_gatt_sig_handlers handlers[9] = {0};
-    handlers[6].write = gatt_ots_oacp_write;
-    handlers[6].context = service;
-    handlers[7].write = gatt_ots_olcp_write;
-    handlers[7].context = service;
+    uint16_t values[13], cccds[13];
+    ble_gatt_sig_handlers handlers[13] = {0};
+    handlers[8].write = gatt_ots_oacp_write;
+    handlers[8].context = service;
+    handlers[9].write = gatt_ots_olcp_write;
+    handlers[9].context = service;
     uint16_t old_count = server->count;
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
 
     if (!gatt_sig_service_register_with_includes_and_handlers(server,
-            0x1825, primary_service, NULL, 0, characteristics, 9,
+            0x1825, primary_service, NULL, 0, characteristics, 13,
             &service->service_handle, values, cccds, handlers)) {
         memset(service, 0, sizeof(*service));
         return 0;
@@ -5517,16 +5580,21 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
     service->object_name_handle = values[1];
     service->object_type_handle = values[2];
     service->object_size_handle = values[3];
-    service->object_id_handle = values[4];
-    service->object_properties_handle = values[5];
-    service->action_control_point_handle = values[6];
-    service->action_control_point_cccd_handle = cccds[6];
-    service->object_list_control_point_handle = values[7];
-    service->object_list_control_point_cccd_handle = cccds[7];
-    service->object_list_filter_handle = values[8];
+    service->object_first_created_handle = values[4];
+    service->object_last_modified_handle = values[5];
+    service->object_id_handle = values[6];
+    service->object_properties_handle = values[7];
+    service->action_control_point_handle = values[8];
+    service->action_control_point_cccd_handle = cccds[8];
+    service->object_list_control_point_handle = values[9];
+    service->object_list_control_point_cccd_handle = cccds[9];
+    service->object_list_filter_handle = values[10];
+    service->object_list_filter_handles[0] = values[10];
+    service->object_list_filter_handles[1] = values[11];
+    service->object_list_filter_handles[2] = values[12];
     service->server = server;
     memcpy(service->features, features, sizeof(service->features));
-    for (uint8_t i = 6; i <= 7; i++) {
+    for (uint8_t i = 8; i <= 9; i++) {
         ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
 
         if (!cccd) {
@@ -5544,6 +5612,43 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
         cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
             BLE_GATT_PERM_WRITE_ENCRYPTED;
     }
+    return 1;
+}
+
+static inline int gatt_object_transfer_service_add_multi_object_type(
+    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    uint8_t primary_service,
+    const uint8_t features[8], const uint8_t *object_name,
+    uint16_t object_name_len, const uint8_t *object_type,
+    uint8_t object_type_len, const uint8_t object_size[8],
+    const uint8_t object_properties[4], const uint8_t object_id[6],
+    const uint8_t *object_list_filter, uint16_t filter_len,
+    uint16_t filter_capacity
+) {
+    static const uint8_t unknown_date[7] = {0};
+    return gatt_object_transfer_service_add_multi_object_type_full(server,
+        service, primary_service, features, object_name, object_name_len,
+        object_type, object_type_len, object_size, unknown_date, unknown_date,
+        1, object_properties, object_id, object_list_filter, filter_len,
+        filter_capacity);
+}
+
+static inline int gatt_object_transfer_service_set_object_list_filter(
+    ble_gatt_object_transfer_service *service, uint8_t index,
+    const uint8_t *filter, uint16_t filter_len
+) {
+    if (!service || !service->server || index >= 3 ||
+        (filter_len && !filter)) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->object_list_filter_handles[index]);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored || filter_len > attribute->value_capacity)
+        return 0;
+    if (filter_len) memcpy(stored, filter, filter_len);
+    if (filter_len < attribute->value_capacity)
+        memset(stored + filter_len, 0, attribute->value_capacity - filter_len);
+    attribute->value_len = filter_len;
     return 1;
 }
 
