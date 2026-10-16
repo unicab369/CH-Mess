@@ -772,7 +772,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                                 conn->schedule.factor : 1;
 
             if (win_size && win_size <= 8 &&
-                gap_timing_valid(interval, interval, latency, timeout) &&
+                ble_connection_timing_ranges_valid(
+                    interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2 * (uint32_t)(latency + 1) * interval * 10 * factor
             ) {
@@ -845,7 +846,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
         uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
         uint16_t timeout = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        if (!gap_timing_valid(minimum, maximum, latency, timeout) ||
+        if (!ble_connection_timing_ranges_valid(
+                minimum, maximum, latency, timeout) ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
                 2 * (uint32_t)(latency + 1) * maximum * 10
         ) return gap_conn_reject_parameters(frame[2], error);
@@ -1830,7 +1832,8 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
                         conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
-        !gap_timing_valid(interval, interval, latency, timeout) ||
+        !ble_connection_timing_ranges_valid(
+            interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * interval * 10 * factor
     ) return 0;
@@ -1857,7 +1860,8 @@ int gap_conn_request(
                     conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() ||
-        !gap_timing_valid(minimum, maximum, latency, timeout) ||
+        !ble_connection_timing_ranges_valid(
+            minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * maximum * 10 * factor
     ) return 0;

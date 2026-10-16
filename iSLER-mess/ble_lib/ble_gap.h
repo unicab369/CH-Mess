@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "ble_connection_timing.h"
 #include "ble_l2cap.h"
 
 // Platform hooks used by the GAP controller and security procedures.
@@ -521,13 +522,6 @@ static int gap_access_address_valid(uint32_t address) {
     return transitions <= 24 && msb_transitions >= 2;
 }
 
-static uint8_t gap_timing_valid(
-    uint16_t minimum, uint16_t maximum, uint16_t latency, uint16_t timeout
-) {
-    return minimum >= 6 && minimum <= maximum && maximum <= 3200 &&
-        latency <= 499 && timeout >= 10 && timeout <= 3200;
-}
-
 static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
     uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
@@ -537,7 +531,8 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
 
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !win_size || win_size > 8 ||
-        !gap_timing_valid(interval, interval, latency, timeout) ||
+        !ble_connection_timing_ranges_valid(
+            interval, interval, latency, timeout) ||
         win_size >= interval ||
         ((uint16_t)frame[22] | (uint16_t)frame[23] << 8) > interval ||
         hop < 5 || hop > 16 ||
@@ -603,7 +598,7 @@ static gap_timing_cfg gap_conn_timing = {
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
-    if (!timing || !gap_timing_valid(
+    if (!timing || !ble_connection_timing_ranges_valid(
             timing->interval, timing->interval, timing->latency,
             timing->supervision_timeout) || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
