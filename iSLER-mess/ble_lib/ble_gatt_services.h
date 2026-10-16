@@ -2368,6 +2368,21 @@ static inline int gatt_tx_power_service_add(
 }
 
 // Application facing
+// Update the signed Tx Power Level stored in the server database.
+static inline int gatt_tx_power_service_set_level(
+    ble_gatt_server *server, const ble_gatt_tx_power_service *service,
+    int8_t tx_power_dbm
+) {
+    if (!server || !service || !service->tx_power_level_handle) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->tx_power_level_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!value || attribute->value_len != 1) return 0;
+    value[0] = (uint8_t)tx_power_dbm;
+    return 1;
+}
+
+// Application facing
 static inline int gatt_current_time_service_add(
     ble_gatt_server *server, ble_gatt_current_time_service *service,
     const uint8_t current_time[10], const uint8_t local_time_info[2],
@@ -2519,6 +2534,24 @@ static inline int gatt_next_dst_change_service_add(
                               &service->service_handle, values, NULL))
         return 0;
     service->time_with_dst_handle = values[0];
+    return 1;
+}
+
+// Application facing
+// Update the seven-octet Time with DST value in the server database.
+static inline int gatt_next_dst_change_service_set_time(
+    ble_gatt_server *server,
+    const ble_gatt_next_dst_change_service *service,
+    const uint8_t time_with_dst[7]
+) {
+    if (!server || !service || !service->time_with_dst_handle ||
+        !time_with_dst)
+        return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->time_with_dst_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!value || attribute->value_len != 7) return 0;
+    memcpy(value, time_with_dst, 7);
     return 1;
 }
 

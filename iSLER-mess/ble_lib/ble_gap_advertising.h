@@ -517,7 +517,8 @@ typedef struct {
 } gap_scan_ctx;
 static gap_scan_ctx gap_scan;
 static struct {
-    uint8_t address_type, address[6], pdu_type, data_len;
+    gap_peer_address peer;
+    uint8_t pdu_type, data_len;
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];
 
@@ -771,9 +772,9 @@ static inline void gap_receive_report(
         uint8_t seen_slot = gap_scan.seen_count;
 
         for (uint8_t i = 0; i < gap_scan.seen_count; i++) {
-            if (gap_scan_seen[i].address_type == identity_type &&
+            if (gap_scan_seen[i].peer.type == identity_type &&
                 gap_scan_seen[i].pdu_type == pdu_type &&
-                memcmp(gap_scan_seen[i].address, identity_address, 6) == 0
+                memcmp(gap_scan_seen[i].peer.address, identity_address, 6) == 0
             ) {
                 seen_slot = i;
                 if (gap_scan_seen[i].data_len == seen_len &&
@@ -790,10 +791,10 @@ static inline void gap_receive_report(
         else if (seen_slot == gap_scan.seen_count) {
             gap_scan.seen_count++;
         }
-        gap_scan_seen[seen_slot].address_type = identity_type;
+        gap_scan_seen[seen_slot].peer.type = identity_type;
         gap_scan_seen[seen_slot].pdu_type = pdu_type;
         gap_scan_seen[seen_slot].data_len = seen_len;
-        memcpy(gap_scan_seen[seen_slot].address, identity_address, 6);
+        memcpy(gap_scan_seen[seen_slot].peer.address, identity_address, 6);
         if (seen_len)
             memcpy(gap_scan_seen[seen_slot].data, frame + 8, seen_len);
     }

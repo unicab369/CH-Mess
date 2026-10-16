@@ -158,11 +158,14 @@ Additional service database builders are available:
   implement Alert Level reads and validated writes. The service state exposes
   the latest level to the application; Immediate Alert also increments a
   request counter so repeated writes can trigger repeated device actions.
-- `gatt_tx_power_service_add()` registers the signed Tx Power Level.
+- `gatt_tx_power_service_add()` registers the signed Tx Power Level;
+  `gatt_tx_power_service_set_level()` updates its readable database value.
 - `gatt_current_time_service_add()` registers Current Time and optionally
   Local Time Information and Reference Time Information. The Current Time
   value supports notifications; `gatt_current_time_service_notify()` updates
   the readable value and queues one.
+- `gatt_next_dst_change_service_set_time()` updates the readable seven-octet
+  Time with DST value when transition information changes.
 - `gatt_reference_time_update_service_add()` handles Get/Cancel commands and
   exposes pending state. The application completes an asynchronous request
   with `gatt_reference_time_update_service_complete()` and a result code.
