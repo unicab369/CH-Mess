@@ -82,8 +82,7 @@ int BLE_MESH_NETWORK_TIME_SECONDS(uint64_t *seconds) {
 }
 
 int GET_RANDOM_BYTES(uint8_t *out, unsigned len) {
-    if (!out && len)
-        return 0;
+    if (!out && len) return 0;
 
     for (unsigned i = 0; i < len;) {
         uint32_t value = rand();
@@ -211,8 +210,7 @@ static void mesh_radio_init(void) {
 }
 
 int BLE_MESH_QUEUE_TX(const uint8_t *adv_data, size_t len) {
-    if (reset_slot >= 0)
-        return -1;
+    if (reset_slot >= 0) return -1;
     uint8_t transmit = len >= 2 && adv_data && adv_data[1] == MESH_NETWORK_AD_TYPE ?
         mesh_network.state.network_transmit : 0;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), transmit);
@@ -222,8 +220,7 @@ int BLE_MESH_QUEUE_RELAY_TX(
     const uint8_t *adv_data, size_t len,
                             uint8_t relay_retransmit
 ) {
-    if (reset_slot >= 0)
-        return -1;
+    if (reset_slot >= 0) return -1;
     return mesh_adv_queue_add(adv_data, len, GET_MILLIS(), relay_retransmit);
 }
 
@@ -241,8 +238,7 @@ int BLE_MESH_QUEUE_TX_DELAYED(
 
 
 int GET_LOCAL_UUID(uint8_t device_uuid[16]) {
-    if (!device_uuid)
-        return -1;
+    if (!device_uuid) return -1;
 
     // Use the factory MAC as the stable, device-specific part of the UUID.
     memset(device_uuid, 0, 16);
@@ -309,7 +305,8 @@ static int mesh_state_load_record(mesh_state_record *record) {
     if (!has_first || (has_second &&
          (uint8_t)(second.generation - first.generation) < 0x80)) {
         *record = second;
-    } else {
+    }
+    else {
         *record = first;
     }
     return 1;
@@ -327,7 +324,8 @@ static int mesh_state_save_record(mesh_state_record *record) {
         (!has_first || (uint8_t)(second.generation - first.generation) < 0x80)
     ) {
         generation = second.generation + 1;
-    } else if (has_first) {
+    }
+    else if (has_first) {
         addr += SECTOR_SIZE;
         generation = first.generation + 1;
     }
@@ -347,10 +345,8 @@ static int mesh_state_save_record(mesh_state_record *record) {
 }
 
 int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
-    if (!adv_data || !len)
-        return -1;
-    if (rssi)
-        *rssi = 127;
+    if (!adv_data || !len) return -1;
+    if (rssi) *rssi = 127;
     mesh_gatt_poll();
     int connection_busy = (gap_conn_slot_mask != 0);
     if (connection_busy) {
@@ -367,16 +363,14 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         mesh_gatt_rx_count--;
         return 1;
     }
-    if (connection_busy)
-        return 0;
+    if (connection_busy) return 0;
     uint32_t now = GET_MILLIS();
     const uint8_t mesh_ad_types[] = {
         MESH_PROV_AD_TYPE, MESH_BEACON_AD_TYPE, MESH_NETWORK_AD_TYPE
     };
     int received = gap_scan_take_ad(mesh_ad_types,
         sizeof(mesh_ad_types), adv_data, len, rssi);
-    if (received < 0)
-        return -1;
+    if (received < 0) return -1;
 
     int slot = mesh_adv_queue_next(now);
     uint32_t sent_at;
@@ -385,10 +379,8 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         slot >= 0 ? radio_queue[slot].data : NULL,
         slot >= 0 ? radio_queue[slot].len : 0,
         now, &sent_at, &jitter);
-    if (send_result < 0)
-        return -1;
-    if (send_result == 2)
-        return 0;
+    if (send_result < 0) return -1;
+    if (send_result == 2) return 0;
     if (send_result == 1 && radio_queue[slot].remaining &&
         --radio_queue[slot].remaining) {
         radio_queue[slot].started = 1;
@@ -436,8 +428,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
 }
 
 int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
-    if (!state)
-        return 0;
+    if (!state) return 0;
     mesh_state_record record;
     if (!mesh_state_load_record(&record))
         return 0;
@@ -446,8 +437,7 @@ int BLE_MESH_NETWORK_LOAD_STATE(mesh_net_state *state) {
 }
 
 int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
-    if (!state)
-        return 0;
+    if (!state) return 0;
     mesh_state_record record = {0};
     if (!mesh_state_load_record(&record))
         record.models.default_ttl = MODEL_TTL;
@@ -469,8 +459,7 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
 }
 
 int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
-    if (!state)
-        return 0;
+    if (!state) return 0;
     mesh_state_record record;
     if (!mesh_state_load_record(&record))
         return 0;
@@ -479,8 +468,7 @@ int BLE_MESH_MODELS_LOAD_STATE(mesh_models_state *state) {
 }
 
 int BLE_MESH_MODELS_SAVE_STATE(const mesh_models_state *state) {
-    if (!state)
-        return 0;
+    if (!state) return 0;
     mesh_state_record record;
     if (!mesh_state_load_record(&record))
         return 0;
@@ -501,8 +489,7 @@ int BLE_MESH_NODE_RESET(uint16_t dst) {
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
         if (radio_queue[i].remaining && radio_queue[i].order == radio_order - 1u)
             reset_slot = i;
-    if (reset_slot < 0)
-        return 0;
+    if (reset_slot < 0) return 0;
     for (uint8_t i = 0; i < RADIO_QUEUE_SIZE; i++)
         if (i != reset_slot)
             radio_queue[i].remaining = 0;
@@ -515,8 +502,7 @@ int PROVISIONEE_STORE_DATA(
     const prov_data *data, const uint8_t device_key[16],
                            uint8_t num_elements
 ) {
-    if (!data || !device_key)
-        return -1;
+    if (!data || !device_key) return -1;
     if (!num_elements || num_elements > MESH_MAX_ELEMENTS ||
         (uint32_t)data->unicast_address + num_elements - 1 > 0x7fff
     ) return -1;

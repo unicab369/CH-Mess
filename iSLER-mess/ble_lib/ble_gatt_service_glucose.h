@@ -31,32 +31,66 @@ static inline int gatt_glucose_feature16(
 ) {
     if (!server || !handle || !features)
         return 0;
+
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
 
     if (!attribute || attribute->value_len < 2)
         return 0;
+
     const uint8_t *value = gatt_attribute_value(server, attribute);
 
     if (!value) return 0;
+
     *features = ble_get_le16(value);
+    return 1;
+}
+
+// Internal
+static inline int gatt_glucose_status_supported(
+    uint16_t feature, uint16_t status
+) {
+    if (status & 0xf000u)
+        return 0;
+    if ((status & 0x001fu) & (uint16_t)~feature)
+        return 0;
+    if ((status & 0x0060u) && !(feature & (1u << 5)))
+        return 0;
+    if ((status & 0x0180u) && !(feature & (1u << 6)))
+        return 0;
+    if ((status & 0x0200u) && !(feature & (1u << 7)))
+        return 0;
+    if ((status & 0x0400u) && !(feature & (1u << 8)))
+        return 0;
+    if ((status & 0x0800u) && !(feature & (1u << 9)))
+        return 0;
     return 1;
 }
 
 // Application facing
 // Encode and queue one Glucose Measurement notification.
 static inline int gatt_glucose_service_notify_measurement(
-    ble_gatt_server *server, const ble_gatt_glucose_service *service,
+    ble_gatt_server *server, ble_gatt_glucose_service *service,
     const ble_gatt_glucose_measurement *measurement
 ) {
     uint16_t features;
 
-    if (!server || !service || !measurement ||
+    if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
-        (measurement->sensor_status & (uint16_t)~0x03ff) ||
+        (measurement->sensor_status & (uint16_t)~0x0fff) ||
+        service->measurement_context_pending ||
         !gatt_glucose_feature16(server, service->feature_handle, &features) ||
         ((measurement->flags & 0x08) &&
-         (measurement->sensor_status & (uint16_t)~features))
+         !gatt_glucose_status_supported(features,
+                                        measurement->sensor_status)) ||
+        ((measurement->flags & 0x10) && !service->context_handle)
     ) return 0;
+
+    if (measurement->flags & 0x10) {
+        ble_gatt_attribute *context_cccd = gatt_server_cccd_for(
+            server, service->context_handle);
+        if (!context_cccd || !(context_cccd->cccd & 1))
+            return 0;
+    }
 
     uint8_t value[17];
     uint16_t len = 0;
@@ -81,19 +115,43 @@ static inline int gatt_glucose_service_notify_measurement(
         ble_put_le16(value + len, measurement->sensor_status);
         len += 2;
     }
-    return gatt_server_queue_event(server, service->measurement_handle,
-                                   value, len, 0);
+    int queued = gatt_server_queue_event(server, service->measurement_handle,
+                                         value, len, 0);
+    if (queued > 0) {
+        service->last_measurement_sequence = measurement->sequence_number;
+        service->measurement_context_pending =
+            (measurement->flags & 0x10) != 0;
+    }
+    return queued;
 }
 
 // Application facing
 // Encode and queue the Context notification matching a measurement sequence.
 static inline int gatt_glucose_service_notify_context(
-    ble_gatt_server *server, const ble_gatt_glucose_service *service,
+    ble_gatt_server *server, ble_gatt_glucose_service *service,
     const ble_gatt_glucose_context *context
 ) {
-    if (!server || !service || !service->context_handle || !context ||
+    if (!server || !service || service->server != server ||
+        !service->context_handle || !service->measurement_context_pending ||
+        !context ||
+        context->sequence_number != service->last_measurement_sequence ||
         !(context->flags & 0xdf) ||
-        ((context->flags & 0x20) && !(context->flags & 0x10))
+        ((context->flags & 0x20) && !(context->flags & 0x10)) ||
+        ((context->flags & 0x01) &&
+            (context->carbohydrate_id < 1 || context->carbohydrate_id > 7)) ||
+        ((context->flags & 0x02) &&
+            (context->meal < 1 || context->meal > 5)) ||
+        ((context->flags & 0x04) &&
+            (((context->tester_health & 0x0f) != 1 &&
+              (context->tester_health & 0x0f) != 2 &&
+              (context->tester_health & 0x0f) != 3 &&
+              (context->tester_health & 0x0f) != 0x0f) ||
+             (((context->tester_health >> 4) < 1 ||
+               (context->tester_health >> 4) > 5) &&
+              (context->tester_health >> 4) != 0x0f))) ||
+        ((context->flags & 0x10) &&
+            (context->medication_id < 1 || context->medication_id > 5)) ||
+        ((context->flags & 0x80) && context->extended_flags)
     ) return 0;
 
     uint8_t value[17];
@@ -133,8 +191,11 @@ static inline int gatt_glucose_service_notify_context(
 
     if (context->flags & 0x80)
         value[len++] = context->extended_flags;
-    return gatt_server_queue_event(server, service->context_handle,
-                                   value, len, 0);
+    int queued = gatt_server_queue_event(server, service->context_handle,
+                                         value, len, 0);
+    if (queued > 0)
+        service->measurement_context_pending = 0;
+    return queued;
 }
 
 #endif

@@ -354,8 +354,7 @@ static int pb_tx_send_once(
 }
 
 static int pb_tx_poll(uint32_t now) {
-    if (!tx.active)
-        return 0;
+    if (!tx.active) return 0;
 
     if ((uint32_t)(now - tx.started_ms) >= tx.timeout_ms) {
         int failed = tx.fail_on_timeout;
@@ -1000,7 +999,8 @@ void provisioner_poll(void) {
                                 : PROVISIONER_FAILED;
 
     //! Check STEP_8: Expect PROV_OP_PUBLIC_KEY advertisement
-    } else if (
+    }
+    else if (
         provisioner.state == WAITING_FOR_PUBLIC_KEY &&
         len >= 8 && (adv_data[6] & 0x80) != 0
     ) {
@@ -1611,7 +1611,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             if (ECDH_GENERATE_KPAIR(session.private_key, session.public_key) == 0) {
                 memcpy(&session.confirm_inputs[81], session.public_key, 64);
                 provisionee.state = WAITING_FOR_PUBLIC_KEY;
-            } else {
+            }
+            else {
                 provisionee_fail(PROV_ERR_UNEXPECTED_ERROR);
             }
         }
@@ -1938,7 +1939,8 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
 
             if (BLE_MESH_QUEUE_TX(beacon, sizeof(beacon)) != 0) {
                 provisionee.state = PROVISIONEE_FAILED;
-            } else {
+            }
+            else {
                 last_beacon_ms = now;
             }
         }

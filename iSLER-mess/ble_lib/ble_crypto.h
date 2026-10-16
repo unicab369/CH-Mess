@@ -50,8 +50,7 @@ static void ctr_xor(
         AES_ENCRYPT_BLOCK(key, ctr_blk, ks);
 
         size_t n = len - off;
-        if (n > 16)
-            n = 16;
+        if (n > 16) n = 16;
         for (size_t i = 0; i < n; i++) out[off + i] = in[off + i] ^ ks[i];
 
         off += n;
@@ -122,8 +121,7 @@ static int compute_mac(
 
     memset(b0, 0, sizeof(b0));
     uint8_t flags = 0;
-    if (aad_len > 0)
-        flags |= 0x40;
+    if (aad_len > 0) flags |= 0x40;
     flags |= (uint8_t)(((tag_len - 2) / 2) << 3);   // M' = (M-2)/2
     flags |= (uint8_t)(L - 1);
     b0[0] = flags;
@@ -146,14 +144,16 @@ static int compute_mac(
             lenbuf[0] = (uint8_t)(aad_len >> 8);
             lenbuf[1] = (uint8_t)(aad_len & 0xFF);
             lenlen = 2;
-        } else if (aad_len <= 0xFFFFFFFF) {
+        }
+        else if (aad_len <= 0xFFFFFFFF) {
             lenbuf[0] = 0xFF; lenbuf[1] = 0xFE;
             lenbuf[2] = (uint8_t)(aad_len >> 24);
             lenbuf[3] = (uint8_t)(aad_len >> 16);
             lenbuf[4] = (uint8_t)(aad_len >> 8);
             lenbuf[5] = (uint8_t)(aad_len);
             lenlen = 6;
-        } else {
+        }
+        else {
             lenbuf[0] = 0xFF; lenbuf[1] = 0xFF;
             for (int i = 0; i < 8; i++)
                 lenbuf[2 + i] = (uint8_t)(aad_len >> (8 * (7 - i)));
@@ -208,8 +208,7 @@ int ccm_encrypt_and_tag(
     uint8_t mac[16], full_tag[16];
     int rc = compute_mac(key, nonce, nonce_len, tag_len,
                          aad, aad_len, pt, pt_len, mac);
-    if (rc != CCM_OK)
-        return rc;
+    if (rc != CCM_OK) return rc;
 
     encrypt_tag(key, nonce, nonce_len, mac, full_tag);
 
@@ -248,8 +247,7 @@ int ccm_auth_decrypt(
     uint8_t mac[16], full_tag[16];
     int rc = compute_mac(key, nonce, nonce_len, tag_len,
                          aad, aad_len, out, ct_len, mac);
-    if (rc != CCM_OK)
-        return rc;
+    if (rc != CCM_OK) return rc;
 
     encrypt_tag(key, nonce, nonce_len, mac, full_tag);
 
@@ -293,8 +291,7 @@ static void aes_cmac(
     memset(block, 0, sizeof(block));
     if (len != 0)
         memcpy(block, message, len);
-    if (len < 16)
-        block[len] = 0x80;
+    if (len < 16) block[len] = 0x80;
     for (int i = 0; i < 16; i++) block[i] ^= state[i] ^ subkey[i];
     AES_ENCRYPT_BLOCK(key, block, mac);
 }

@@ -122,8 +122,11 @@ payload segmentation, and protected-resource behavior.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
 characteristics. Use `gatt_physical_activity_monitor_service_add_full()` to
 select optional cardio-respiratory, step-counter, and sleep data streams;
+each selected stream must have at least one matching advertised feature.
 `gatt_physical_activity_monitor_service_queue_optional_data()` queues their
-encoded notifications or indications. Control Point writes are
+encoded notifications or indications. Get Ended Session Data supports all
+seven standard data-type values and checks the registered stream's correct
+notification or indication subscription. Control Point writes are
 captured in `control_point_opcode`, `control_point_parameter`, and
 `control_point_parameter_len`; the application supplies session storage and
 handles the requested procedure. Complete Enquire Sessions, Enquire
@@ -344,8 +347,15 @@ Additional service builders include:
   the optional Measurement Content mask returns to its default.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and
   Speed, with optional Navigation, Position Quality, and Control Point. The
-  Control Point handles distance, content mask, navigation command, fix rate,
-  and elevation requests. Route operations are completed through
+  builder checks Position Quality field lengths and feature-bit consistency.
+  `gatt_location_navigation_service_notify_location_speed()` and
+  `gatt_location_navigation_service_notify_navigation()` encode notifications,
+  apply the content mask, check feature support, and reject values that exceed
+  the negotiated MTU. Call
+  `gatt_location_navigation_service_reset_connection()` on each new connection
+  so the Location and Speed mask does not carry over between peers.
+  The Control Point handles distance, content mask, navigation command, fix
+  rate, and elevation requests. Route operations are completed through
   `gatt_location_navigation_service_control_point_complete()`; the requested
   route number is kept in the service state. The Navigation characteristic
   uses notifications, and each Control Point operation is gated by its LN
@@ -354,10 +364,11 @@ Additional service builders include:
   environmental measurement characteristics. Use
   `gatt_environmental_sensing_service_set_value()` to update a stored
   measurement and `gatt_environmental_sensing_service_send()` to queue a
-  notification or indication.
+  notification or indication that fits the negotiated ATT MTU.
 - `gatt_body_composition_service_add()` for Body Composition Measurement and
-  Feature. `gatt_body_composition_service_indicate_measurement()` encodes the
-  standard fields and checks them against the Feature value; use
+  Feature, with reserved feature bits rejected. Both indication helpers enforce
+  the negotiated MTU. `gatt_body_composition_service_indicate_measurement()`
+  encodes the standard fields and checks them against the Feature value; use
   `gatt_body_composition_service_indicate_value()` when the application
   already has an encoded payload.
 - `gatt_user_data_service_add()` for Database Change Increment, User Index,

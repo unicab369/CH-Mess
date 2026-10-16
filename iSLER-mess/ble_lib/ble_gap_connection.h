@@ -190,7 +190,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         if (instant_packet_received) {
             conn->link.next_ticks = conn->link.next_ticks - gap_conn_interval_ticks() +
                     HW_TICKS_FROM_US((uint32_t)conn->next_schedule.interval_125us * 125);
-        } else {
+        }
+        else {
             conn->link.next_ticks +=
                 (uint64_t)conn->next_schedule.win_offset * HW_TICKS_FROM_US(125);
         }
@@ -228,7 +229,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             // The packet already fixed the new anchor; ignore WinOffset and WinSize.
             conn->link.next_ticks = conn->link.next_ticks - gap_conn_interval_ticks() +
                     (uint64_t)conn->new_params.interval * HW_TICKS_FROM_US(1250);
-        } else {
+        }
+        else {
             conn->link.next_ticks += (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
         }
 
@@ -315,6 +317,7 @@ static void gap_conn_event_advance(void) {
 
     if (conn->is_central && conn->subrate.transition) {
         int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
+
         if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
             subrated = 1;
     }
@@ -410,6 +413,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 
     if (mask & GAP_PHY_CODED)
         return GAP_PHY_CODED;
+
     return mask & GAP_PHY_1M;
 }
 
@@ -787,6 +791,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
         else return gap_conn_unknown_response(frame[2]);
+
         break;
 
     case LL_CONNECTION_UPDATE_IND: {
@@ -904,11 +909,13 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                 if (frame[14 + j * 2] == (uint8_t)offset &&
                     frame[15 + j * 2] == (uint8_t)(offset >> 8)
                 ) return gap_conn_reject_parameters(frame[2], error);
+
             has_offset = 1;
         }
 
         if (has_offset && minimum != maximum && !frame[11])
             return gap_conn_reject_parameters(frame[2], error);
+
         error = GAP_LL_ERR_COLLISION; // LL procedure collision.
 
         if (gap_security->phase || gap_conn_rate_busy() ||
@@ -932,6 +939,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
+
             if (interval < minimum || interval > maximum)
                 interval = minimum;
 
@@ -1553,6 +1561,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                         factor, max_latency, continuation, timeout)) {
                     if (factor == min_factor)
                         break;
+
                     factor--;
                 }
 
@@ -1661,6 +1670,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
         if (frame[1] != 9)
             return gap_conn_unknown_response(frame[2]);
+
         {
             uint16_t values[4];
             for (uint8_t i = 0; i < 4; i++)
@@ -1706,7 +1716,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                     conn->queue.length = 0;
                     conn->length_status = 0;
                 }
-            } else {
+            }
+            else {
                 conn->pending.length = 0;
                 conn->length_status = 0;
             }
@@ -1792,7 +1803,8 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
                 gap_tx_frame[4] = rx;
                 ble_write_u16_le(gap_tx_frame + 5, conn->phy.instant);
             }
-        } else {
+        }
+        else {
             // The Central's request wins simultaneous requests.
             conn->queue.phy_queued = 0;
             conn->pending.phy_request = 1;
@@ -1854,10 +1866,12 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
 
         if (frame[1] != 35)
             return gap_conn_unknown_response(frame[2]);
+
         (void)gap_past_receive(frame,
             connection_anchor_ticks,
             connection_event_counter);
         break;
+
 #endif
     // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
     // Optional newer control procedures are not advertised.
@@ -2353,7 +2367,8 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         uint16_t pdu_len = (uint16_t)data[0] | (uint16_t)data[1] << 8;
         conn->tx_l2cap_remaining = (size_t)pdu_len + 4 > len ?
                                     (uint16_t)((size_t)pdu_len + 4 - len) : 0;
-    } else {
+    }
+    else {
         conn->tx_l2cap_remaining = len < conn->tx_l2cap_remaining ?
                                     (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
     }
@@ -2490,7 +2505,8 @@ static void gap_send_security(void) {
             gap_tx_frame[2] = LL_TERMINATE_IND;
             gap_tx_frame[3] = 0x06;
             conn->link_state.terminate_sent = 1;
-        } else {
+        }
+        else {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = LL_REJECT_EXT_IND;
             gap_tx_frame[3] = LL_ENC_REQ;
@@ -2616,7 +2632,8 @@ int gap_key_reply(const uint8_t ltk[16]) {
         memcpy(gap_security->ltk, ltk, 16);
         gap_security_derive();
         gap_security->phase = GAP_ENC_START_QUEUED;
-    } else {
+    }
+    else {
         // Send the rejection after ENC_RSP has been acknowledged. A refresh
         // cannot resume the link in plaintext, so it terminates instead.
         gap_security->status = 0x06;

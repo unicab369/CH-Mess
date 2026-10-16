@@ -27,8 +27,7 @@ static int fake_send_pdu(
                          uint16_t len
 ) {
     fake_l2cap *f = ctx;
-    if (f->block_send)
-        return 0;
+    if (f->block_send) return 0;
     assert(len <= sizeof(f->pdu));
     f->cid = cid; f->len = len; memcpy(f->pdu, pdu, len); return 1;
 }

@@ -32,8 +32,7 @@ static int fake_receive(
                         size_t *len
 ) {
     fake_link *link = context;
-    if (!link->rx_count)
-        return 0;
+    if (!link->rx_count) return 0;
     if (*len < link->rx[0].len)
         return -1;
     *llid = link->rx[0].llid;
@@ -49,8 +48,7 @@ static int fake_send(
                      size_t len
 ) {
     fake_link *link = context;
-    if (link->block_tx)
-        return 0;
+    if (link->block_tx) return 0;
     assert(link->tx_count < FAKE_RX_COUNT && len <= link->max_payload);
     uint8_t i = link->tx_count++;
     link->tx_llid[i] = llid;
@@ -718,8 +716,7 @@ int main(void) {
     while (link.rx_count || transport.l2cap_rx.expected || !transport.tx_len) {
         int status = gatt_transport_test_poll(&transport, 10);
         assert(status >= 0);
-        if (transport.tx_len)
-            break;
+        if (transport.tx_len) break;
     }
     while (transport.tx_len)
         assert(gatt_transport_test_poll(&transport, 11) == 1);

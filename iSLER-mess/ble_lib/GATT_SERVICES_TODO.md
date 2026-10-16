@@ -33,9 +33,13 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Cycling Power (`0x1818`), Control Point request/completion handling,
   correctly mapped Measurement/Vector flags, MTU-bounded Vector packets,
   feature-gated fields, and connection-scoped content masks
-- [x] Location and Navigation (`0x1819`), Control Point route request handling
+- [x] Location and Navigation (`0x1819`), validated Position Quality values,
+  feature-gated Control Point procedures, MTU-bounded route responses, and
+  MTU-bounded Location and Speed/Navigation notification encoders with
+  connection-scoped content masks
 - [x] Environmental Sensing (`0x181A`)
-- [x] Body Composition (`0x181B`)
+- [x] Body Composition (`0x181B`), reserved Feature-bit validation and
+  MTU-bounded Measurement indication encoding
 - [x] User Data (`0x181C`), Database Change Increment writes, User Control
   Point request/response handling, and segmented Registered User indications;
   user storage remains application-owned
@@ -71,7 +75,9 @@ remains available for custom services; it does not replace these builders.
 - [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
 - [x] Physical Activity Monitor (`0x183E`), mandatory characteristics,
   selectable optional cardio-respiratory, step-counter, and sleep streams,
-  and Control Point request/response state
+  and Control Point request/response state with all seven Get Ended Session
+  Data characteristic types, feature-matched optional streams, and correct
+  notify/indicate subscription checks
 - [x] Elapsed Time (`0x183F`)
 - [x] Generic Health Sensor (`0x1840`), segmented live observations plus
   optional Stored Health Observations/RACP layout and record-number request

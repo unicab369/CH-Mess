@@ -34,6 +34,7 @@ static inline int ble_gap_gatt_bind_slot(
     if (!manager || slot >= GAP_CONNECTION_COUNT || !transport ||
         (!server && !client)
     ) return 0;
+
     ble_gap_gatt_peer *peer = &manager->peers[slot];
 
     if (peer->bound || peer->connected)
@@ -129,6 +130,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
 
         if (!peer->bound || !peer->connected || seen[slot])
             continue;
+
         gatt_transport_set_connected(peer->transport, 0);
         peer->connected = 0;
         memset(&peer->handle, 0, sizeof(peer->handle));
@@ -151,6 +153,7 @@ static inline ble_gatt_transport *ble_gap_gatt_transport_for(
     if (!peer->bound || !peer->connected ||
         peer->handle.generation != handle.generation
     ) return NULL;
+
     return peer->transport;
 }
 

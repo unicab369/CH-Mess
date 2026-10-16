@@ -33,8 +33,7 @@ int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
     if (!test_bonds[slot].valid)
         return 0;
 
-    if (bond)
-        *bond = test_bonds[slot];
+    if (bond) *bond = test_bonds[slot];
     return 1;
 }
 int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) {
@@ -933,16 +932,14 @@ static void test_extended_advertising_transmit(void) {
     memset(oversized_data, 'B', sizeof(oversized_data));
     for (size_t offset = 0; offset < sizeof(maximum_data);) {
         size_t chunk = sizeof(maximum_data) - offset;
-        if (chunk > 256)
-            chunk = 256;
+        if (chunk > 256) chunk = 256;
         maximum_data[offset] = (uint8_t)(chunk - 1);
         maximum_data[offset + 1] = 0x09;
         offset += chunk;
     }
     for (size_t offset = 0; offset < sizeof(oversized_data);) {
         size_t chunk = sizeof(oversized_data) - offset;
-        if (chunk > 256)
-            chunk = 256;
+        if (chunk > 256) chunk = 256;
         oversized_data[offset] = (uint8_t)(chunk - 1);
         oversized_data[offset + 1] = 0x09;
         offset += chunk;
@@ -995,8 +992,7 @@ static void test_extended_advertising_chain_transmit(void) {
     size_t offset = 3;
     while (offset < sizeof(data)) {
         size_t chunk = sizeof(data) - offset;
-        if (chunk > 256)
-            chunk = 256;
+        if (chunk > 256) chunk = 256;
         data[offset] = (uint8_t)(chunk - 1);
         data[offset + 1] = 0x09;
         memset(data + offset + 2, 'X', chunk - 2);
@@ -2032,8 +2028,7 @@ static void test_extended_scannable_advertising(void) {
     size_t offset = 3;
     while (offset < sizeof(data)) {
         size_t chunk = sizeof(data) - offset;
-        if (chunk > 256)
-            chunk = 256;
+        if (chunk > 256) chunk = 256;
         data[offset] = (uint8_t)(chunk - 1);
         data[offset + 1] = 0x09;
         memset(data + offset + 2, 'R', chunk - 2);
@@ -4218,7 +4213,8 @@ static void test_smp_pairing(void) {
             gap_smp_poll();
             assert(gap_security->phase == GAP_ENC_QUEUED);
             assert(!memcmp(gap_security->ltk, smp->pairing.stk, 16));
-        } else {
+        }
+        else {
             conn->queue.tx_queued = 0;
             gap_smp_poll(); // Queue our Pairing Random before ENC_REQ.
             conn->queue.tx_queued = 0;

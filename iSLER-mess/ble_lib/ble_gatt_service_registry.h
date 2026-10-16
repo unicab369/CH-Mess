@@ -46,10 +46,12 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
         !characteristics || !count || !service_handle ||
         !value_handles || server->database_sealed
     ) return 0;
+
     for (uint8_t i = 0; i < count; i++)
         if (characteristics[i].descriptor_count &&
             !characteristics[i].descriptors
         ) return 0;
+
     uint16_t old_count = server->count;
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
@@ -88,7 +90,8 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                                   handlers[i].execute)) {
             if (!handlers[i].prepare || !handlers[i].execute) {
                 added = 0;
-            } else {
+            }
+            else {
                 ble_gatt_attribute *attribute = gatt_server_find(
                     server, value_handles[i]);
                 if (!attribute ||
@@ -97,7 +100,8 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                         BLE_GATT_PERM_WRITE_AUTHENTICATED |
                         BLE_GATT_PERM_WRITE_AUTHORIZED))) {
                     added = 0;
-                } else {
+                }
+                else {
                     attribute->prepare = handlers[i].prepare;
                     attribute->execute = handlers[i].execute;
                 }
@@ -111,7 +115,8 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
         if (added && characteristics[i].cccd) {
             if (!cccd_handles) {
                 added = 0;
-            } else {
+            }
+            else {
                 added = gatt_server_add_descriptor(server, &cccd_uuid,
                     BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
                     NULL, 0, 0, NULL, NULL, NULL, &cccd_handles[i]);

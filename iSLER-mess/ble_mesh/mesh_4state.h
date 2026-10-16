@@ -128,8 +128,7 @@ static uint32_t mesh_health_period(uint8_t element) {
     uint32_t period = mesh_publication_period(mesh_models.state.publications[element][2].period);
     if (period && mesh_models.health_server[element].current_count) {
         period >>= mesh_models.state.health_period[element];
-        if (period < 100)
-            period = 100;
+        if (period < 100) period = 100;
     }
     return period;
 }
@@ -154,7 +153,8 @@ static uint8_t *mesh_model_bindings(
             return &state->health_server_bindings;
         if (model == MESH_MODEL_HEALTH_CLIENT)
             return &state->health_client_bindings;
-    } else {
+    }
+    else {
         mesh_element_bindings *bindings = &state->other[element - 1];
         if (model == MESH_MODEL_ONOFF_SERVER)
             return &bindings->onoff_server_bindings;
@@ -343,11 +343,13 @@ static inline uint8_t mesh_model_group_change(
         if (i == MESH_MODEL_GROUP_SLOTS)
             return MESH_CONFIG_INSUFFICIENT_RESOURCES;
         next.groups[next.group_count++] = (mesh_model_group){(uint8_t)index, model, address};
-    } else if (!add && i < next.group_count) {
+    }
+    else if (!add && i < next.group_count) {
         for (uint8_t j = i + 1; j < next.group_count; j++)
             next.groups[j - 1] = next.groups[j];
         memset(&next.groups[--next.group_count], 0, sizeof(next.groups[0]));
-    } else return MESH_CONFIG_SUCCESS;
+    }
+    else return MESH_CONFIG_SUCCESS;
     if (BLE_MESH_MODELS_SAVE_STATE(&next) != 1)
         return MESH_CONFIG_STORAGE_FAILURE;
     mesh_models.state = next;
@@ -356,8 +358,7 @@ static inline uint8_t mesh_model_group_change(
 
 static int app_key_allowed(uint8_t element, uint16_t model, uint16_t app_idx) {
     int slot = mesh_app_key_slot(&mesh_network.state, app_idx);
-    if (slot < 0)
-        return 0;
+    if (slot < 0) return 0;
     uint8_t *bindings = mesh_model_bindings(&mesh_models.state, element, model);
     return bindings && (*bindings & (1u << slot));
 }

@@ -141,7 +141,8 @@ static void transaction_execute(void *context, uint8_t commit) {
             if (state->touched[i])
                 state->visible[i] = state->staged[i];
         state->commits++;
-    } else {
+    }
+    else {
         state->cancels++;
     }
     memset(state->touched, 0, sizeof(state->touched));
@@ -1870,7 +1871,8 @@ static void test_att_malformed_lengths_and_command_behavior(void) {
             response, sizeof(response), &response_len);
         if (cases[i].no_response) {
             assert(result == 0 && response_len == 0);
-        } else {
+        }
+        else {
             assert(result == 1 && response_len == 5 && response[0] == 0x01 &&
                    response[1] == cases[i].opcode && response[4] == 0x04);
         }

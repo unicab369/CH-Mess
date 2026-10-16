@@ -41,7 +41,8 @@ static uint8_t gatt_alert_notification_control_write(
         uint16_t *enabled = cmd == 0 ? &service->enabled_new_alerts :
                                       &service->enabled_unread_alerts;
         *enabled |= category_bit;
-    } else if (cmd == 2 || cmd == 3) {
+    }
+    else if (cmd == 2 || cmd == 3) {
         uint16_t *enabled = cmd == 2 ? &service->enabled_new_alerts :
                                       &service->enabled_unread_alerts;
         *enabled &= (uint16_t)~category_bit;
@@ -65,6 +66,7 @@ static inline int gatt_alert_notification_service_add(
         (supported_new_alerts & (uint16_t)~GATT_ALERT_CATEGORY_MASK) ||
         (supported_unread_alerts & (uint16_t)~GATT_ALERT_CATEGORY_MASK)
     ) return 0;
+
     memset(service, 0, sizeof(*service));
     service->supported_new_alerts = supported_new_alerts;
     service->supported_unread_alerts = supported_unread_alerts;
@@ -94,6 +96,7 @@ static inline int gatt_alert_notification_service_add(
     if (!gatt_sig_service_add_with_handlers(server, 0x1811, chars, 5,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
+
     service->supported_new_alerts_handle = values[0];
     service->supported_unread_alerts_handle = values[1];
     service->new_alert_handle = values[2];
@@ -115,6 +118,7 @@ static inline int gatt_alert_notification_service_notify_new(
     if (!server || !service || category > 9 || text_len > 18 ||
         (text_len && !text)
     ) return 0;
+
     uint16_t category_bit = (uint16_t)(1u << category);
 
     if (!(service->supported_new_alerts & category_bit) ||
@@ -139,6 +143,7 @@ static inline int gatt_alert_notification_service_notify_unread(
 ) {
     if (!server || !service || category > 9)
         return 0;
+
     uint16_t category_bit = (uint16_t)(1u << category);
 
     if (!(service->supported_unread_alerts & category_bit) ||

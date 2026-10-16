@@ -40,7 +40,8 @@ static void gap_conn_send_queued(void) {
         }
         else if (!conn->features.known) {
             gap_send_conn_feature_request();
-        } else {
+        }
+        else {
             gap_tx_frame[0] = 3;
             conn->params_started_ms = GET_MILLIS();
             conn->queue.local_params = 0;
@@ -88,7 +89,8 @@ static void gap_conn_send_queued(void) {
         // Wait for the peer Link Layer and Host to confirm subrating support.
         if (!conn->features.known) {
             gap_send_conn_feature_request();
-        } else {
+        }
+        else {
             const uint8_t required =
                 GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
             if ((conn->features.peer[4] & required) != required) {
@@ -194,7 +196,8 @@ static void gap_conn_send_queued(void) {
             conn->channel.report_queued = 0;
             conn->channel.report_pending = 0;
             conn->connection_status = 0x1a;
-        } else {
+        }
+        else {
             conn->channel.report_queued = 0;
             conn->channel.report_pending = 1;
             conn->connection_status = GAP_CONNECTION_PENDING;
@@ -244,7 +247,8 @@ void gap_hw_received(void) {
     if (gap_conn_slot_active(gap_conn_slot) && conn->link_state.rx_armed) {
         if (conn->is_central) {
             conn_anchor_ticks = conn->link.next_ticks;
-        } else {
+        }
+        else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
                 gap_phy_airtime_us((uint16_t)frame[1], conn->phy.current.rx));
 
@@ -317,7 +321,8 @@ void gap_hw_received(void) {
 
         if (conn->is_central) {
             conn->link.next_ticks += gap_conn_interval_ticks();
-        } else {
+        }
+        else {
             uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(conn->phy.current.rx == 2 ?
                                                 ((uint32_t)frame[1] + 11) * 4 :
                                                 ((uint32_t)frame[1] + 10) * 8);
@@ -479,6 +484,7 @@ void gap_hw_received(void) {
                         conn->sync_transfer_queued
                 ) {
                     int slot = gap_sync_slot_from_handle(conn->sync_transfer_handle);
+
                     if (slot >= 0) {
                         gap_past_encode(
                             gap_tx_frame, conn->sync_transfer_id,
@@ -494,6 +500,7 @@ void gap_hw_received(void) {
                     conn->channel.enabled
                 ) {
                     uint32_t now_ms = GET_MILLIS();
+
                     if (!gap_tx_frame[1] &&
                         (uint32_t)(now_ms - conn->channel.status_changed_ms) >=
                             (uint32_t)conn->channel.max_delay_200ms * 200 &&
@@ -548,6 +555,7 @@ void gap_hw_received(void) {
                             (conn->link.tx_sn << 3);
         conn->link.tx_pending = 1;
         uint8_t *transmit = gap_security_tx_frame();
+
         if (!transmit) {
             gap_conn_slot = previous_slot;
             return;
@@ -689,6 +697,7 @@ void gap_hw_received(void) {
                 gap_privacy.enabled && gap_privacy.resolvable
             ) {
                 const uint8_t *irk = gap_privacy.irk;
+
                 if (peer_slot >= 0 && gap_identities[peer_slot].local_key_set) {
                     irk = gap_identities[peer_slot].has_local_irk ?
                             gap_identities[peer_slot].local_irk : NULL;
@@ -730,7 +739,8 @@ void gap_hw_received(void) {
             ) {
                 conn->peer.type = advertiser_type;
                 memcpy(conn->peer.address, frame + 2, 6);
-            } else {
+            }
+            else {
                 conn->peer.type = gap_central.peer.type;
                 memcpy(conn->peer.address, gap_central.peer.address, 6);
             }
@@ -887,7 +897,8 @@ static uint64_t gap_conn_event_close_ticks(
         // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
         // per octet. S=2 packets finish sooner, so this is conservative.
         packet_us = 2 * (976 + (uint32_t)connection->data_capacity * 64) + 150;
-    } else {
+    }
+    else {
         packet_us = 400 + 2 * (connection->data_capacity > 27 ?
                     connection->data_capacity - 27 : 0) * 8;
     }
@@ -1048,6 +1059,7 @@ static void gap_conn_poll(void) {
             gap_conn_update_apply(0);
             if (!gap_conn_slot_active(gap_conn_slot))
                 return;
+
             skipped++;
         } while (now >= gap_conn_event_close_ticks(conn, now_ms));
 
@@ -1097,6 +1109,7 @@ static void gap_conn_poll(void) {
 
         if (conn->is_central && conn->subrate.transition) {
             int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
+
             if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
                 subrated = 1;
         }
@@ -1153,6 +1166,7 @@ static void gap_conn_poll(void) {
                         (conn->link.expected_rx_sn << 2) | (conn->link.tx_sn << 3);
         GAP_HW_TX_CLEAR_DONE();
         uint8_t *transmit = gap_security_tx_frame();
+
         if (!transmit) return;
 
         GAP_HW_LINK_CONFIG(conn->link.access_address, channel,
@@ -1189,6 +1203,7 @@ static inline void gap_conn_poll_all(void) {
 
         if (!gap_conn_slot_active(slot))
             continue;
+
         uint64_t deadline = gap_conn_event_close_ticks(&gap_conn_ctx[slot], now_ms);
         uint8_t position = count;
 
@@ -1287,8 +1302,10 @@ void gap_hw_scan_poll(void) {
 
     if (gap_ext_scan.periodic_listening) {
         uint8_t slot = gap_ext_scan.periodic_slot;
+
         if (ticks <= gap_syncs[slot].end_ticks)
             return;
+
         if (gap_rx_armed) GAP_HW_STOP();
 
         gap_rx_armed = 0;
@@ -1300,8 +1317,10 @@ void gap_hw_scan_poll(void) {
 
     if (gap_ext_scan.aux_listening) {
         uint8_t slot = gap_ext_scan.aux_slot;
+
         if (ticks <= gap_aux_request[slot].end_ticks)
             return;
+
         if (gap_rx_armed) GAP_HW_STOP();
 
         gap_rx_armed = 0;
@@ -1350,6 +1369,7 @@ void gap_hw_scan_poll(void) {
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_syncs[i].used || !gap_syncs[i].window_active)
                 continue;
+
             if (sync_slot < 0 || gap_syncs[i].start_ticks <
                 gap_syncs[sync_slot].start_ticks
             ) sync_slot = i;
@@ -1370,6 +1390,7 @@ void gap_hw_scan_poll(void) {
                 slot = -1;
                 if (ticks >= start_ticks && ticks <= end_ticks) {
                     gap_sync_context *sync = &gap_syncs[sync_slot];
+
                     if (gap_rx_armed)
                         GAP_HW_STOP();
                     gap_ext_scan.periodic_slot = (uint8_t)sync_slot;
@@ -1416,6 +1437,7 @@ void gap_hw_scan_poll(void) {
     if (gap_scan.active_pending) {
         if ((int32_t)(now - gap_scan.active_deadline_ms) < 0)
             return;
+
         gap_scan.active_pending = 0;
     }
 
@@ -1455,7 +1477,8 @@ void gap_hw_scan_poll(void) {
             GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, channel, NULL, 1,
                             GAP_PHY_1M, GAP_PHY_1M);
             GAP_HW_LINK_RX();
-        } else {
+        }
+        else {
             GAP_HW_SCAN_RX(channel);
         }
         gap_rx_armed = 1;
@@ -1468,6 +1491,7 @@ int gap_send_due(
     uint32_t now, uint32_t *sent_at, uint8_t *jitter
 ) {
     if (gap_poll.slot_valid) return 0;
+
     gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
     int extended_result = gap_ext_send_due(now);
@@ -1476,6 +1500,7 @@ int gap_send_due(
 
     if (extended_result)
         return extended_result;
+
 #endif
     int send_gap = gap_adv.enabled != 0 &&
                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
@@ -1585,7 +1610,8 @@ int gap_send_due(
                     gap_scanner.generation++;
                     gap_conn_poll();
                     transmit_result = 2;
-                } else {
+                }
+                else {
                     adv_evt.conn_req_ready = 0;
                 }
                 break;
@@ -1613,6 +1639,7 @@ int gap_send_due(
     if (!transmit_result) return -1;
 
     if (transmit_result == 2) return 2;
+
     uint32_t completed_at = GET_MILLIS();
     uint8_t event_jitter = GAP_HW_RANDOM_JITTER() % 11;
 

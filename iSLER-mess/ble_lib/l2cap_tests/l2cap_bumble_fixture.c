@@ -15,11 +15,9 @@ static int send_pdu(
                     uint16_t len
 ) {
     (void)context;
-    if (outbound_len)
-        return 0;
+    if (outbound_len) return 0;
     int encoded = l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
-    if (!encoded)
-        return 0;
+    if (!encoded) return 0;
     outbound_len = (uint16_t)encoded;
     return 1;
 }
@@ -64,8 +62,7 @@ static int receive_frame(
     const uint8_t *sdu = NULL;
     int result = l2cap_reassembler_feed(&reassembler, 2, frame, len,
         &cid, &sdu, &sdu_len);
-    if (result != 1)
-        return 0;
+    if (result != 1) return 0;
     *cid_out = cid;
     return l2cap_connection_receive(&connection, cid, sdu, sdu_len);
 }

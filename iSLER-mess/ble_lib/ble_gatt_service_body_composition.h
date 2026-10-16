@@ -17,8 +17,11 @@ static inline int gatt_body_composition_service_indicate_value(
     ble_gatt_server *server, const ble_gatt_body_composition_service *service,
     const uint8_t *value, uint16_t len
 ) {
-    if (!server || !service || !service->measurement_handle || !value || !len)
+    if (!server || !service || !service->measurement_handle || !value || !len ||
+        server->mtu < 3 || len > server->mtu - 3
+    )
         return 0;
+
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
@@ -29,13 +32,16 @@ static inline int gatt_body_composition_feature32(
 ) {
     if (!server || !handle || !features)
         return 0;
+
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
 
     if (!attribute || attribute->value_len < 4)
         return 0;
+
     const uint8_t *value = gatt_attribute_value(server, attribute);
 
     if (!value) return 0;
+
     *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
         (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
     return 1;
@@ -62,7 +68,8 @@ static inline int gatt_body_composition_service_indicate_measurement(
         ((measurement->flags & 0x0100) && !(features & (1u << 7))) ||
         ((measurement->flags & 0x0200) && !(features & (1u << 8))) ||
         ((measurement->flags & 0x0400) && !(features & (1u << 9))) ||
-        ((measurement->flags & 0x0800) && !(features & (1u << 10)))
+        ((measurement->flags & 0x0800) && !(features & (1u << 10))) ||
+        !server || server->mtu < 3
     ) return 0;
 
     uint8_t value[32];
@@ -124,6 +131,8 @@ static inline int gatt_body_composition_service_indicate_measurement(
         ble_put_le16(value + len, measurement->height);
         len += 2;
     }
+    if (len > server->mtu - 3)
+        return 0;
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }

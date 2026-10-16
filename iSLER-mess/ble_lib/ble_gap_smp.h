@@ -255,6 +255,7 @@ static inline int smp_receive_sdu(
 
     if (!smp || cid != L2CAP_CID_SMP || !sdu || !len)
         return 0;
+
     // Reserved command codes are ignored by SMP, as required by the spec.
 
     if (!smp_opcode_known(sdu[0]))
@@ -279,6 +280,7 @@ static inline int smp_random_bytes(uint8_t *out, unsigned len) {
 
     if (GAP_RANDOM_SECURE_BYTES(out, len))
         return 1;
+
     gap_wipe(out, len);
     return 0;
 }
@@ -427,6 +429,7 @@ int smp_port_cmac(
 ) {
     if (!key || (!input && len) || !output)
         return 0;
+
     aes_cmac(key, input, len, output);
     return 1;
 }
@@ -686,6 +689,7 @@ static int gap_smp_link_send_pdu(
     int encoded = l2cap_encode(ctx->tx, sizeof(ctx->tx), cid, payload, len);
 
     if (!encoded) return 0;
+
     ctx->tx_len = (uint8_t)encoded;
     ctx->tx_offset = 0;
     return 1;
@@ -704,6 +708,7 @@ static int smp_link_init(void) {
 
     if (!l2cap_connection_init(&smp->l2cap, &ops, 65, 65, 0))
         return 0;
+
     smp->bearer.l2cap = &smp->l2cap;
 
     if (!l2cap_connection_register_fixed(&smp->l2cap,
@@ -793,6 +798,7 @@ int gap_smp_user_request_set(
 ) {
     if (gap_smp_contexts[gap_conn_slot].pairing.phase)
         return 0;
+
     gap_smp_user_request_callback = callback;
     gap_smp_user_request_context = context;
     return 1;
@@ -802,6 +808,7 @@ int gap_smp_user_request_set(
 int gap_keypress_notifications_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp_contexts[gap_conn_slot].pairing.phase)
         return 0;
+
     gap_pair_cfg.keypress_notifications = enabled;
     return 1;
 }
@@ -831,6 +838,7 @@ int gap_bonding_set(uint8_t enabled) {
     if (enabled) {
         if (!GAP_BOND_LOAD || !GAP_BOND_SAVE || !GAP_BOND_DELETE)
             return 0;
+
         gap_bond bond;
 
         for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
@@ -849,6 +857,7 @@ int gap_bonding_set(uint8_t enabled) {
 int gap_secure_connections_set(uint8_t enabled) {
     if (enabled > 1 || gap_smp_contexts[gap_conn_slot].pairing.phase)
         return 0;
+
     gap_pair_cfg.secure_connections = enabled;
 
     if (!enabled) {
@@ -885,7 +894,8 @@ int gap_sc_oob_get(gap_oob_data *out) {
         memcpy(local->private_key, smp->secure.private_key, 32);
         memcpy(local->public_key, smp->secure.public_key, 64);
         *out = local->oob.data;
-    } else {
+    }
+    else {
         gap_wipe(local, sizeof(*local));
     }
 
@@ -1007,6 +1017,7 @@ int gap_pair_cancel(void) {
 
     if (!smp->pairing.phase || smp->blocked)
         return 0;
+
     gap_smp_fail(smp->pairing.phase == SMP_PHASE_SC_USER ? 0x0c : 1);
     return 1;
 }
@@ -1102,9 +1113,11 @@ static int gap_bond_valid(const gap_bond *bond) {
         for (uint8_t i = 0; i < sizeof(bond->peripheral.ltk); i++)
             if (bond->peripheral.ltk[i])
                 return 0;
+
         for (uint8_t i = 0; i < sizeof(bond->peripheral.rand); i++)
             if (bond->peripheral.rand[i])
                 return 0;
+
         if (bond->peripheral.ediv[0] || bond->peripheral.ediv[1])
             return 0;
     }
@@ -1125,6 +1138,7 @@ int gap_bond_remove(void) {
 
     if (!GAP_BOND_LOAD || !GAP_BOND_DELETE)
         return 0;
+
     gap_bond bond;
 
     for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
@@ -1195,6 +1209,7 @@ static int smp_bond_load(void) {
 
 static int smp_bond_store(const gap_bond *bond) {
     if (!bond) return 0;
+
     gap_bond stored = *bond;
     // Normalize legacy versions before validating the current bond fields.
     stored.version = GAP_BOND_VERSION;
@@ -1462,7 +1477,8 @@ static void smp_bond_rx_complete(void) {
     if (smp_bond_store(&conn->bond)) {
         conn->bonded = 1;
         gap_smp_finish(0);
-    } else {
+    }
+    else {
         gap_smp_finish(SMP_FAIL_UNSPECIFIED);
         gap_wipe(&conn->bond, sizeof(conn->bond));
     }
@@ -1501,6 +1517,7 @@ static void smp_bond_peripheral_start(void) {
 
     if (keyset & GAP_KEY_DIST_IDENTITY) {
         uint8_t address[7] = {0};
+
         if (!gap_smp_local_identity(conn->bond.local_irk.key, address)) {
             gap_smp_fail(SMP_FAIL_UNSPECIFIED);
             return;
@@ -1650,6 +1667,7 @@ static void gap_smp_poll(void) {
     ) {
         if (conn->link.tx_pending || conn->queue.tx_queued)
             return;
+
         smp->bond_tx_waiting = 0;
         uint8_t key_dist = pairing->response[conn->is_central ? 5 : 6];
 
@@ -1657,10 +1675,12 @@ static void gap_smp_poll(void) {
             (!conn->is_central && pairing->bond_tx_step == 31)
         ) {
             uint8_t master_id[10];
+
             if (conn->is_central) {
                 memcpy(master_id, conn->bond.central.ediv, 2);
                 memcpy(master_id + 2, conn->bond.central.rand, 8);
-            } else {
+            }
+            else {
                 memcpy(master_id, conn->bond.peripheral.ediv, 2);
                 memcpy(master_id + 2, conn->bond.peripheral.rand, 8);
             }
@@ -1684,7 +1704,8 @@ static void gap_smp_poll(void) {
                     return;
                 }
                 pairing->bond_tx_step = conn->is_central ? 3 : 33;
-            } else {
+            }
+            else {
                 if (!gap_smp_queue(SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
                     gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                     return;
@@ -1764,6 +1785,7 @@ static void gap_smp_poll(void) {
             max_len = time_len;
 
         size_t remaining = smp->tx_len - smp->tx_offset;
+
         if (max_len > remaining)
             max_len = remaining;
 
@@ -1983,7 +2005,8 @@ static void gap_smp_poll(void) {
             gap_key_reply(conn->bond.central.ltk)
         ) {
             conn->restore_started = 1;
-        } else {
+        }
+        else {
             gap_key_reply(NULL);
         }
     }
@@ -2016,6 +2039,7 @@ static void gap_smp_poll(void) {
 
     if (completed_cid != L2CAP_CID_SMP)
         return;
+
     // Keep the RX slot occupied until L2CAP finishes processing the SDU.
     int dispatched = l2cap_connection_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
     conn->queue.rx_ready = 0;
@@ -2577,9 +2601,11 @@ static void gap_smp_poll(void) {
         pairing->phase == SMP_PHASE_SC_PUBLIC_KEY
     ) {
         uint32_t generation = *security_gen;
+
         if (!gap_sc_accept_key(pdu + 1)) {
             if (!gap_conn_slot_active(gap_conn_slot) || generation != *security_gen)
                 return;
+
             // Invalid P-256 point or reflected key.
             gap_smp_fail(SMP_FAIL_DHKEY_CHECK);
             return;
@@ -2639,7 +2665,8 @@ static void gap_smp_poll(void) {
 
             if (conn->is_central) {
                 gap_smp_queue(SMP_PAIRING_RANDOM, smp->random, 16);
-            } else {
+            }
+            else {
                 uint8_t confirm[16];
                 gap_sc_confirm_value(smp->secure.public_key,
                                      smp->secure.peer_public_key,

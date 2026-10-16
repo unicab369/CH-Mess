@@ -42,6 +42,7 @@ static inline int gatt_scan_parameters_service_add(
 ) {
     if (!service || !scan_interval_window)
         return 0;
+
     uint16_t interval = ble_get_le16(scan_interval_window);
     uint16_t window = ble_get_le16(scan_interval_window + 2);
 
@@ -70,6 +71,7 @@ static inline int gatt_scan_parameters_service_add(
     if (!gatt_sig_service_add_with_handlers(server, 0x1813, chars, 2,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
+
     service->scan_interval_window_handle = values[0];
     service->scan_refresh_handle = values[1];
     service->scan_refresh_cccd_handle = cccds[1];
@@ -84,6 +86,7 @@ static inline int gatt_scan_parameters_service_notify_refresh(
 ) {
     if (!server || !service || !service->scan_refresh_handle)
         return 0;
+
     const uint8_t refresh = 0;
     return gatt_server_queue_event(server, service->scan_refresh_handle,
         &refresh, sizeof(refresh), 0);

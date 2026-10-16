@@ -128,6 +128,7 @@ static inline void gatt_cmac_init(
     ble_gatt_cmac *cmac, const uint8_t key[16]
 ) {
     if (!cmac || !key) return;
+
     memset(cmac, 0, sizeof(*cmac));
     gatt_aes128_expand(key, cmac->round_keys);
 }
@@ -147,6 +148,7 @@ static inline void gatt_cmac_update(
     const uint8_t *data, size_t len
 ) {
     if (!cmac || (!data && len)) return;
+
     while (len) {
         if (cmac->used == 16)
             gatt_cmac_block(cmac);

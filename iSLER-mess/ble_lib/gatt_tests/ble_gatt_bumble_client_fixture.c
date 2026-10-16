@@ -191,8 +191,7 @@ int main(void) {
             return 2;
         }
 
-        if (!started)
-            return 3;
+        if (!started) return 3;
 
         if (command == 12 || command == 22) {
             const uint8_t result[4] = {2, 0, 0, 0};

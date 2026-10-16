@@ -166,7 +166,8 @@ int main(void) {
             server.encryption_key_size = request[2];
             application_authorized = request[3] != 0;
             has_response = 0;
-        } else {
+        }
+        else {
             has_response = gatt_server_att(&server, request,
                 request_len, response, sizeof(response), &response_len);
         }

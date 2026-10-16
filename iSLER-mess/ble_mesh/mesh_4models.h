@@ -109,7 +109,8 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
         }
         if (opcode == OP_ONOFF_SET_UNACK)
             return 1;
-    } else return 0;
+    }
+    else return 0;
 
     uint8_t present = server->onoff;
     return mesh_access_queue(mesh_network.state.unicast_address + element,
@@ -163,7 +164,8 @@ static void mesh_publications_poll(void) {
                     mesh_publication_begin(i, models[j], OP_HEALTH_CURRENT_STATUS,
                                            params, 3u + count);
                     mesh_models.health_server[i].publish_pending = 0;
-                } else if (mesh_models.publications[i][j].opcode) {
+                }
+                else if (mesh_models.publications[i][j].opcode) {
                     // Each periodic Set is a new transaction; retries keep its TID.
                     mesh_models.publications[i][j].params[1] = mesh_models.onoff_client[i].tid++;
                     mesh_publication_begin(i, models[j], mesh_models.publications[i][j].opcode,
@@ -198,7 +200,8 @@ static inline int mesh_models_poll(void) {
         access = mesh_models.local.access;
         mesh_models.local.pending = 0;
         result = 1;
-    } else result = mesh_access_poll(&raw, &access);
+    }
+    else result = mesh_access_poll(&raw, &access);
     // Handle received requests first so publications do not occupy their reply slot.
     if (result <= 0) {
         mesh_publications_poll();
@@ -208,8 +211,7 @@ static inline int mesh_models_poll(void) {
             result = 1;
         }
     }
-    if (result <= 0)
-        return result;
+    if (result <= 0) return result;
 
     // Decode once, then deliver to each subscribed model instance.
     const mesh_access_pdu *message = &access;
@@ -230,8 +232,7 @@ static inline int mesh_models_poll(void) {
             mesh_network.reply_net_idx = message->net_key_index;
             int handled = server_config_receive(message);
             mesh_network.reply_net_idx = primary_net_idx;
-            if (handled)
-                return 1;
+            if (handled) return 1;
         }
         if (message->device_key_owner != message->src)
             return 0;
@@ -302,8 +303,7 @@ static inline int mesh_models_poll(void) {
                 }
             }
 
-            if (!subscribed)
-                continue;
+            if (!subscribed) continue;
         }
         if (group) {
             // Deliver a group message only to subscribed model instances.
@@ -317,8 +317,7 @@ static inline int mesh_models_poll(void) {
                 }
             }
 
-            if (!subscribed)
-                continue;
+            if (!subscribed) continue;
         }
         if (!app_key_allowed(i, model, message->app_key_index))
             continue;
@@ -331,19 +330,23 @@ static inline int mesh_models_poll(void) {
             BLE_MESH_ONOFF_STATUS(mesh_network.state.unicast_address + i,
                                   message->src, message->params[0]);
             handled = 1;
-        } else if (model == MESH_MODEL_HEALTH_CLIENT) {
+        }
+        else if (model == MESH_MODEL_HEALTH_CLIENT) {
             // Validate Health statuses before delivering replies or subscribed fault reports.
             size_t len = message->params_len;
             if (opcode == OP_HEALTH_CURRENT_STATUS || opcode == OP_HEALTH_FAULT_STATUS) {
                 if (len < 3)
                     continue; // Test ID, Company ID, then zero or more faults.
-            } else if (len != 1 ||
+            }
+            else if (len != 1 ||
                        (opcode == OP_HEALTH_PERIOD_STATUS && message->params[0] > 15)
-            } else ) continue;
+            }
+            else ) continue;
             BLE_MESH_HEALTH_STATUS(mesh_network.state.unicast_address + i,
                                    message->src, opcode, message->params, len);
             handled = 1;
-        } else handled |= server_health_receive(message, i);
+        }
+        else handled |= server_health_receive(message, i);
     }
     return handled;
 }

@@ -60,8 +60,7 @@ static inline int mesh_access_queue(
     uint8_t mic_64
 ) {
     size_t opcode_len;
-    if (opcode <= 0x7e)
-        opcode_len = 1;
+    if (opcode <= 0x7e) opcode_len = 1;
     else if (opcode >= 0x8000 && opcode <= 0xbfff)
         opcode_len = 2;
     else if (opcode >= 0xc00000 && opcode <= 0xffffff)
@@ -156,7 +155,8 @@ static inline void mesh_access_ack_poll(void) {
     if (queued) {
         mesh_access_ack.retries_sent++;
         mesh_access_ack.retry_at_ms = GET_MILLIS() + mesh_access_ack.timeout_ms;
-    } else {
+    }
+    else {
         // A full transport queue is not a lost response; try the same retry
         // again shortly without consuming one of the bounded attempts.
         mesh_access_ack.retry_at_ms = GET_MILLIS() + 100u;
@@ -170,8 +170,7 @@ static inline int mesh_access_queue_on_net(
     const uint8_t *params, size_t params_len
 ) {
     size_t opcode_len;
-    if (opcode <= 0x7e)
-        opcode_len = 1;
+    if (opcode <= 0x7e) opcode_len = 1;
     else if (opcode >= 0x8000 && opcode <= 0xbfff)
         opcode_len = 2;
     else if (opcode >= 0xc00000 && opcode <= 0xffffff)
@@ -234,11 +233,9 @@ static inline int mesh_access_poll(
     mesh_access_message *message,
                                        mesh_access_pdu *access
 ) {
-    if (!message || !access)
-        return -1;
+    if (!message || !access) return -1;
     int result = mesh_transport_poll(message);
-    if (result < 0)
-        return result;
+    if (result < 0) return result;
     if (!result) {
         mesh_access_ack_poll();
         return 0;

@@ -28,13 +28,16 @@ static inline int gatt_pulse_oximeter_feature16(
 ) {
     if (!server || !handle || !features)
         return 0;
+
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
 
     if (!attribute || attribute->value_len < 2)
         return 0;
+
     const uint8_t *value = gatt_attribute_value(server, attribute);
 
     if (!value) return 0;
+
     *features = ble_get_le16(value);
     return 1;
 }
