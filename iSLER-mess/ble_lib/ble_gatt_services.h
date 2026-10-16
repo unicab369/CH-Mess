@@ -2064,6 +2064,25 @@ typedef struct {
     uint16_t machine_data_cccd_handle;
 } ble_gatt_fitness_machine_service;
 
+typedef struct {
+    ble_gatt_fitness_machine_service base;
+    uint16_t training_status_handle, training_status_cccd_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t control_point_pending, control_point_opcode;
+    uint8_t control_point_parameter_len, control_point_request_count;
+    uint8_t control_point_parameter[19];
+} ble_gatt_fitness_machine_controlled_service;
+
+enum {
+    GATT_FTMS_OP_RESPONSE_CODE = 0x80,
+    GATT_FTMS_RESPONSE_SUCCESS = 1,
+    GATT_FTMS_RESPONSE_NOT_SUPPORTED = 2,
+    GATT_FTMS_RESPONSE_INVALID_PARAMETER = 3,
+    GATT_FTMS_RESPONSE_FAILED = 4,
+    GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED = 5
+};
+
 // Application facing
 // Add the FTMS feature characteristic and one selected machine-data
 // characteristic. The application encodes machine data and sends its
@@ -2100,6 +2119,154 @@ static inline int gatt_fitness_machine_service_add(
     service->machine_data_handle = value_handles[1];
     service->machine_data_cccd_handle = cccd_handles[1];
     return 1;
+}
+
+// Internal
+static uint8_t gatt_fitness_machine_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_fitness_machine_controlled_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (!len || len > sizeof(service->control_point_parameter) + 1)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        service->server, service->control_point_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->control_point_pending || service->server->indication_pending)
+        return 0xfe;
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication &&
+            service->server->events[i].handle ==
+                service->control_point_handle)
+            return 0xfe;
+    service->control_point_opcode = value[0];
+    service->control_point_parameter_len = (uint8_t)(len - 1);
+    if (len > 1)
+        memcpy(service->control_point_parameter, value + 1, len - 1);
+    service->control_point_pending = 1;
+    service->control_point_request_count++;
+    return 0;
+}
+
+// Application facing
+// Add Fitness Machine Data with optional Training Status and Control Point.
+// The application handles Training Status encoding and Control Point policy.
+static inline int gatt_fitness_machine_service_add_controlled(
+    ble_gatt_server *server,
+    ble_gatt_fitness_machine_controlled_service *service,
+    uint16_t machine_data_uuid, const uint8_t features[8],
+    uint16_t machine_data_capacity, const uint8_t *training_status,
+    uint16_t training_status_len, uint16_t training_status_capacity,
+    uint16_t control_point_capacity
+) {
+    static const uint16_t machine_data_uuids[6] = {
+        0x2acd, 0x2ace, 0x2acf, 0x2ad0, 0x2ad1, 0x2ad2
+    };
+    uint8_t supported_data_uuid = 0;
+    for (uint8_t i = 0; i < 6; i++)
+        supported_data_uuid |= machine_data_uuids[i] == machine_data_uuid;
+    if (!server || !service || !features || !supported_data_uuid ||
+        !machine_data_capacity ||
+        machine_data_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (training_status_len && !training_status) ||
+        training_status_len > training_status_capacity ||
+        training_status_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        control_point_capacity > 20)
+        return 0;
+
+    uint8_t initial_data = 0;
+    uint8_t initial_control_point = 0;
+    ble_gatt_sig_characteristic characteristics[4] = {
+        {0x2acc, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, features, 8},
+        {machine_data_uuid, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &initial_data, 0, machine_data_capacity, 1}
+    };
+    ble_gatt_sig_handlers handlers[4] = {0};
+    uint8_t count = 2;
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    if (training_status_capacity) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2ad3, BLE_GATT_PROP_NOTIFY, 1, 0,
+            training_status, training_status_len, training_status_capacity, 1
+        };
+    }
+    if (control_point_capacity) {
+        characteristics[count] = (ble_gatt_sig_characteristic){
+            0x2ad9, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &initial_control_point, 0,
+            control_point_capacity, 1
+        };
+        handlers[count].write = gatt_fitness_machine_control_write;
+        handlers[count].context = service;
+        count++;
+    }
+    uint16_t value_handles[4], cccd_handles[4];
+    if (!gatt_sig_service_add_with_handlers(server, 0x1826, characteristics,
+            count, &service->base.service_handle, value_handles,
+            cccd_handles, handlers)) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+    service->base.features_handle = value_handles[0];
+    service->base.machine_data_handle = value_handles[1];
+    service->base.machine_data_cccd_handle = cccd_handles[1];
+    uint8_t index = 2;
+    if (training_status_capacity) {
+        service->training_status_handle = value_handles[index];
+        service->training_status_cccd_handle = cccd_handles[index++];
+    }
+    if (control_point_capacity) {
+        service->control_point_handle = value_handles[index];
+        service->control_point_cccd_handle = cccd_handles[index];
+    }
+    return 1;
+}
+
+// Application facing
+// Add an encoded Training Status notification characteristic.
+static inline int gatt_fitness_machine_service_notify_training_status(
+    ble_gatt_server *server,
+    const ble_gatt_fitness_machine_controlled_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value || !len)
+        return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->training_status_handle);
+    if (!attribute || len > attribute->value_capacity ||
+        len > server->mtu - 3)
+        return 0;
+    return gatt_server_queue_event(server, service->training_status_handle,
+                                   value, len, 0);
+}
+
+// Application facing
+// Complete a pending Fitness Machine Control Point request with an indication.
+static inline int gatt_fitness_machine_service_control_point_complete(
+    ble_gatt_server *server,
+    ble_gatt_fitness_machine_controlled_service *service,
+    uint8_t result, const uint8_t *response_parameters,
+    uint8_t response_parameter_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending || result < 1 || result > 5 ||
+        response_parameter_len > 17 ||
+        (response_parameter_len && !response_parameters))
+        return 0;
+    uint8_t response[20] = {
+        GATT_FTMS_OP_RESPONSE_CODE, service->control_point_opcode, result
+    };
+    if (response_parameter_len)
+        memcpy(response + 3, response_parameters, response_parameter_len);
+    int queued = gatt_server_queue_event(server, service->control_point_handle,
+        response, (uint16_t)(3 + response_parameter_len), 1);
+    if (queued > 0) service->control_point_pending = 0;
+    return queued;
 }
 
 // Application facing

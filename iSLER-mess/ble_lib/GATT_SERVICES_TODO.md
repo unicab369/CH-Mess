@@ -55,7 +55,8 @@ count that generic path as implementation of a standard service.
 - [x] Internet Protocol Support (`0x1820`)
 - [x] Transport Discovery (`0x1824`)
 - [x] Object Transfer (`0x1825`), single-object metadata and OACP layout
-- [x] Fitness Machine (`0x1826`), one machine-data characteristic without optional control features
+- [x] Fitness Machine (`0x1826`), selected machine-data characteristic with
+  optional Training Status and Control Point handling
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [x] Insulin Delivery (`0x183A`), mandatory authorized status and reader-control layout
 - [x] Emergency Configuration (`0x183C`)

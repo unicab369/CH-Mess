@@ -3,8 +3,8 @@
 
 // Poll one GATT transport for each configured GAP connection slot.
 // Include after ble_gap.h and call ble_gap_gatt_poll() from the main loop.
-// This adapter consumes GAP data directly; do not poll ble_gap_l2cap for the
-// same connections.
+// This adapter consumes GAP data directly; do not also call
+// ble_gap_l2cap_poll() for the same connections.
 #include "ble_gap.h"
 #include "ble_gatt_transport.h"
 

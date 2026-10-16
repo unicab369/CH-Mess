@@ -112,13 +112,6 @@ typedef struct {
     void *context;
 } ble_l2cap_channel_handler;
 
-typedef int (*ble_l2cap_send_pdu_fn)(
-    void *context, uint16_t cid, const uint8_t *payload, uint16_t len
-);
-typedef int (*ble_l2cap_psm_accept_fn)(void *context, uint16_t psm);
-// Return 0 to accept or a standardized LE Credit Based Connection result
-// code (2, 4..11) to refuse for a specific security/policy reason.
-typedef uint16_t (*ble_l2cap_psm_authorize_fn)(void *context, uint16_t psm);
 typedef void (*ble_l2cap_channel_event_fn)(
     void *context, uint16_t psm, uint16_t local_cid,
     uint16_t remote_cid, uint16_t mtu
@@ -154,9 +147,12 @@ typedef struct {
 } ble_l2cap_channel;
 
 typedef struct {
-    ble_l2cap_send_pdu_fn send_pdu;
-    ble_l2cap_psm_accept_fn accept_psm;
-    ble_l2cap_psm_authorize_fn authorize_psm;
+    int (*send_pdu)(void *context, uint16_t cid,
+                    const uint8_t *payload, uint16_t len);
+    int (*accept_psm)(void *context, uint16_t psm);
+    // Return 0 to accept or a standardized LE Credit Based Connection result
+    // code (2, 4..11) to refuse for a specific security/policy reason.
+    uint16_t (*authorize_psm)(void *context, uint16_t psm);
     ble_l2cap_channel_event_fn channel_opened;
     ble_l2cap_channel_event_fn channel_closed;
     ble_l2cap_channel_data_fn channel_data;

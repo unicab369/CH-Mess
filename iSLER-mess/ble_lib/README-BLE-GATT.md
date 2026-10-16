@@ -118,8 +118,15 @@ List Filter characteristics, which this builder does not add.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
 telemetry and queues it with
-`gatt_fitness_machine_service_notify_data()`; optional ranges, training status,
-and remote control are not included in this layout.
+`gatt_fitness_machine_service_notify_data()`. Use
+`gatt_fitness_machine_service_add_controlled()` to also add optional Training
+Status and Fitness Machine Control Point characteristics. The application
+queues data through `service.base` and provides encoded Training Status values.
+Control Point writes are saved in `control_point_opcode`,
+`control_point_parameter`, and `control_point_parameter_len`; the application
+handles each request and completes it with
+`gatt_fitness_machine_service_control_point_complete()`. Supported range and
+Fitness Machine Status characteristics remain optional and are not included.
 `gatt_insulin_delivery_service_add()` registers the mandatory authorized IDD
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement
@@ -336,7 +343,7 @@ the Bluetooth specification; the remaining standard layouts are tracked in
 each connection slot its own server, transport, client (when used), and service
 state. Register services before binding because transport initialization seals
 the server database. This adapter reads GAP fragments directly, so do not also
-poll `ble_gap_l2cap` for the same links.
+call `ble_gap_l2cap_poll()` for the same links.
 
 ```c
 #include "ble_gatt_services.h"
