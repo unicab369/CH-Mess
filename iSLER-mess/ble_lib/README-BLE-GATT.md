@@ -103,6 +103,38 @@ List Filter characteristics, which this builder does not add.
 selected machine-data notification characteristic. The application encodes
 and sends telemetry; optional ranges, training status, and remote control are
 not included in this layout.
+`gatt_insulin_delivery_service_add()` registers the mandatory authorized IDD
+status, feature, and Status Reader Control Point characteristics from caller-
+encoded values. The application must install a GATT authorizer and implement
+the medical-device control-point procedures and indication behavior. Optional
+IDD Command and history characteristics are not included.
+`gatt_media_control_service_add()` registers mandatory MCS or GMCS metadata
+from initial values. Set `generic_service` for GMCS, which also requires Media
+Player Name notifications. Optional playback controls, object IDs, and search
+are left to the application.
+`gatt_telephone_bearer_service_add()` registers mandatory TBS or GTBS call
+state characteristics with encrypted permissions. Its config selects GTBS
+and supplies the initial encoded values; the application implements call
+control and notifications.
+`gatt_pacs_service_add()` registers one or both PAC directions with the
+mandatory Available and Supported Audio Contexts characteristics.
+`gatt_audio_stream_control_service_add()` registers caller-provided Sink and
+Source ASE instances and the ASE Control Point. The application supplies the
+LE Audio state machines, codec configuration, and ISO stream handling.
+`gatt_esl_service_add()` registers the nine ESL characteristics, including the
+Control Point CCCD. The application implements ESL key setup, PAwR, and
+control-point procedures. `gatt_imd_service_add()` registers permitted live
+measurement characteristics and optional status characteristics;
+measurement descriptors and history behavior remain application-defined.
+`gatt_hid_iso_service_add()` registers HID ISO Properties and LE HID Operation
+Mode; the application implements mode switching and ISO report transport.
+`gatt_cookware_service_add()` accepts selected assigned Cookware characteristic
+definitions. `gatt_voice_assistant_service_add()` builds the common Voice
+Assistant or Generic Voice Assistant session layout. Both require application
+logic for their protocol procedures. `gatt_tpms_service_add()` registers TPMS
+Properties, Tire Pressure, and selected optional sensor values; the application
+encodes values and handles signing. Mesh Proxy Solicitation uses advertising
+PDUs/service data and has no GATT attribute database to register.
 
 Additional service database builders are available:
 

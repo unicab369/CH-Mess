@@ -55,7 +55,7 @@ count that generic path as implementation of a standard service.
 - [x] Object Transfer (`0x1825`), single-object metadata and OACP layout
 - [x] Fitness Machine (`0x1826`), one machine-data characteristic without optional control features
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
-- [ ] Insulin Delivery (`0x183A`)
+- [x] Insulin Delivery (`0x183A`), mandatory authorized status and reader-control layout
 - [x] Emergency Configuration (`0x183C`)
 - [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
 - [x] Physical Activity Monitor (`0x183E`), mandatory characteristics without optional data streams
@@ -66,33 +66,35 @@ count that generic path as implementation of a standard service.
 - [x] Volume Offset Control (`0x1845`), secondary service builder
 - [x] Coordinated Set Identification (`0x1846`)
 - [x] Device Time (`0x1847`), base mandatory layout without optional logging
-- [ ] Media Control (`0x1848`)
-- [ ] Generic Media Control (`0x1849`)
+- [x] Media Control (`0x1848`), mandatory media metadata layout
+- [x] Generic Media Control (`0x1849`), shared mandatory layout with name notifications
 - [x] Constant Tone Extension (`0x184A`)
-- [ ] Telephone Bearer (`0x184B`)
-- [ ] Generic Telephone Bearer (`0x184C`)
+- [x] Telephone Bearer (`0x184B`), mandatory encrypted call-state layout
+- [x] Generic Telephone Bearer (`0x184C`), shared mandatory call-state layout
 - [x] Microphone Control (`0x184D`)
-- [ ] Audio Stream Control (`0x184E`)
+- [x] Audio Stream Control (`0x184E`), caller-defined Sink/Source ASEs and control point
 - [x] Broadcast Audio Scan (`0x184F`), variable Receive State instances
-- [ ] Published Audio Capabilities (`0x1850`)
+- [x] Published Audio Capabilities (`0x1850`), PAC records and required audio contexts
 - [n/a] Basic Audio Announcement (`0x1851`), advertising service data
 - [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
 - [x] Common Audio (`0x1853`)
 - [x] Hearing Access (`0x1854`), mandatory features-only layout without presets
 - [x] Telephony and Media Audio (`0x1855`)
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
-- [ ] Electronic Shelf Label (`0x1857`)
+- [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD
 - [x] Gaming Audio (`0x1858`), role and role-specific feature characteristics
-- [ ] Mesh Proxy Solicitation (`0x1859`)
-- [ ] Industrial Measurement Device (`0x185A`)
+- [n/a] Mesh Proxy Solicitation (`0x1859`), Solicitation PDU/service data rather than a GATT attribute service
+- [x] Industrial Measurement Device (`0x185A`), permitted live measurements and optional status indications
 - [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data
-- [ ] HID ISO (`0x185C`)
-- [ ] Cookware (`0x185D`)
-- [ ] Voice Assistant (`0x185E`)
-- [ ] Generic Voice Assistant (`0x185F`)
-- [ ] Tire Pressure Monitoring System (`0x1860`)
+- [x] HID ISO (`0x185C`), Properties and LE HID Operation Mode
+- [x] Cookware (`0x185D`), selected assigned Cookware characteristics
+- [x] Voice Assistant (`0x185E`), common session and control characteristics
+- [x] Generic Voice Assistant (`0x185F`), shared Voice Assistant layout
+- [x] Tire Pressure Monitoring System (`0x1860`), Properties, Pressure, and optional sensor values
 
 The Basic Audio, Broadcast Audio, and Public Broadcast Announcement UUIDs
 identify service data carried in periodic/extended advertising; their profile
-specifications do not define GATT attributes for these announcements. Their
-encoders belong with GAP advertising support, not in the GATT service database.
+specifications do not define GATT attributes for these announcements. Mesh
+Proxy Solicitation identifies a Solicitation PDU/service-data format used in
+advertising. Those encoders belong with GAP advertising support, not in the
+GATT service database.

@@ -212,7 +212,8 @@ static struct {
     uint8_t set;
 } gap_ead_key;
 
-// NOTE: To clear the EAD key, use gap_wipe(&gap_ead_key, sizeof(gap_ead_key)).
+// NOTE: To clear the EAD key
+// use gap_wipe(&gap_ead_key, sizeof(gap_ead_key)).
 
 // Application facing
 // Install the session key and IV shared with EAD receivers. The key must come
@@ -281,10 +282,10 @@ int gap_ead_encrypt(
     memmove(encrypted_data, plaintext, plaintext_len);
 
     int encrypt_result = ccm_encrypt_and_tag(
-        gap_ead_key.session_key, nonce, sizeof(nonce),
-        &aad, sizeof(aad), encrypted_data, plaintext_len,
-        encrypted_data, encrypted_data + plaintext_len, GAP_EAD_MIC_LEN
-    );
+            gap_ead_key.session_key, nonce, sizeof(nonce),
+            &aad, sizeof(aad), encrypted_data, plaintext_len,
+            encrypted_data, encrypted_data + plaintext_len, GAP_EAD_MIC_LEN);
+
     if (encrypt_result != CCM_OK) {
         gap_wipe(encrypted_data, plaintext_len + GAP_EAD_MIC_LEN);
         return 0;
@@ -321,6 +322,7 @@ int gap_ead_decrypt(
                             sizeof(nonce), &aad, sizeof(aad), out, plaintext_len,
                             ead + 7 + plaintext_len,
                             GAP_EAD_MIC_LEN, out);
+
     if (decrypt_result != CCM_OK || !gap_ead_plaintext_valid(out, plaintext_len)) {
         gap_wipe(out, plaintext_len);
         return 0;
@@ -329,21 +331,13 @@ int gap_ead_decrypt(
     return 1;
 }
 
-static int gap_access_addr(uint32_t *address) {
+static inline int gap_access_addr(uint32_t *address) {
     if (!address) return 0;
 
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
-        uint8_t bytes[4];
-        GAP_HW_RANDOM_BYTES(bytes, sizeof(bytes));
-
-        uint32_t candidate = (uint32_t)bytes[0] |
-                            (uint32_t)bytes[1] << 8 |
-                            (uint32_t)bytes[2] << 16 |
-                            (uint32_t)bytes[3] << 24;
-        if (gap_access_address_valid(candidate)) {
-            *address = candidate;
-            return 1;
-        }
+        // This is a random value, so little-endian conversion is not required.
+        GAP_HW_RANDOM_BYTES((uint8_t *)address, sizeof(*address));
+        if (gap_access_address_valid(*address)) return 1;
     }
     return 0;
 }
@@ -351,8 +345,7 @@ static int gap_access_addr(uint32_t *address) {
 // =============================================================================
 // Legacy advertising procedures
 // =============================================================================
-// Validate the AD payloads immediately before the advertising start path uses
-// them, keeping this private helper next to its only call site.
+// Validate the AD payloads immediately before the advertising start path uses them
 static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
     if ((!data && len) || len > GAP_ADV_DATA_MAX) return 0;
 

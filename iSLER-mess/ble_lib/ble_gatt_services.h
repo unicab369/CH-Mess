@@ -1501,6 +1501,423 @@ static inline int gatt_gaming_audio_service_add(
 
 typedef struct {
     uint16_t service_handle;
+    uint16_t media_player_name_handle, media_player_name_cccd_handle;
+    uint16_t track_changed_handle, track_changed_cccd_handle;
+    uint16_t track_title_handle, track_duration_handle, track_position_handle;
+    uint16_t media_state_handle, media_state_cccd_handle;
+    uint16_t content_control_id_handle;
+} ble_gatt_media_control_service;
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_media_control_string;
+
+typedef struct {
+    ble_gatt_media_control_string player_name;
+    ble_gatt_media_control_string track_title;
+    const uint8_t *track_duration;
+    const uint8_t *track_position;
+    uint8_t media_state;
+    uint8_t content_control_id;
+    uint8_t generic_service;
+    uint8_t player_name_notify;
+} ble_gatt_media_control_config;
+
+// Application facing
+// Add the mandatory MCS/GMCS media metadata layout. Set generic_service for
+// GMCS; its Media Player Name notification is mandatory. Optional controls,
+// object IDs, and search characteristics are not added by this builder.
+static inline int gatt_media_control_service_add(
+    ble_gatt_server *server, ble_gatt_media_control_service *service,
+    const ble_gatt_media_control_config *config
+) {
+    if (!server || !service || !config ||
+        (config->player_name.value_len && !config->player_name.value) ||
+        config->player_name.value_len > config->player_name.value_capacity ||
+        !config->player_name.value_capacity ||
+        config->player_name.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        config->player_name_notify > 1 || config->generic_service > 1 ||
+        (config->generic_service && !config->player_name_notify) ||
+        (config->track_title.value_len && !config->track_title.value) ||
+        config->track_title.value_len > config->track_title.value_capacity ||
+        !config->track_title.value_capacity ||
+        config->track_title.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !config->track_duration || !config->track_position ||
+        config->media_state > 3)
+        return 0;
+
+    static const uint8_t empty_value = 0;
+    uint8_t name_notify = config->generic_service || config->player_name_notify;
+    ble_gatt_sig_characteristic characteristics[7] = {
+        {0x2b93, BLE_GATT_PROP_READ |
+                (name_notify ? BLE_GATT_PROP_NOTIFY : 0), name_notify,
+            BLE_GATT_PERM_READ_ENCRYPTED, config->player_name.value,
+            config->player_name.value_len, config->player_name.value_capacity,
+            1},
+        {0x2b96, BLE_GATT_PROP_NOTIFY, 1, 0, &empty_value, 0},
+        {0x2b97, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            config->track_title.value, config->track_title.value_len,
+            config->track_title.value_capacity, 1},
+        {0x2b98, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            config->track_duration, 4},
+        {0x2b99, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
+                BLE_GATT_PROP_WRITE_NO_RSP, 0,
+            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            config->track_position, 4},
+        {0x2ba3, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED, &config->media_state, 1},
+        {0x2ba8, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            &config->content_control_id, 1}
+    };
+    uint16_t value_handles[7], cccd_handles[7];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server,
+            config->generic_service ? 0x1849 : 0x1848,
+            characteristics, 7, &service->service_handle,
+            value_handles, cccd_handles))
+        return 0;
+    service->media_player_name_handle = value_handles[0];
+    service->media_player_name_cccd_handle = cccd_handles[0];
+    service->track_changed_handle = value_handles[1];
+    service->track_changed_cccd_handle = cccd_handles[1];
+    service->track_title_handle = value_handles[2];
+    service->track_duration_handle = value_handles[3];
+    service->track_position_handle = value_handles[4];
+    service->media_state_handle = value_handles[5];
+    service->media_state_cccd_handle = cccd_handles[5];
+    service->content_control_id_handle = value_handles[6];
+    const uint16_t encrypted_cccd_permissions =
+        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+    for (uint8_t i = 0; i < 7; i++) {
+        if (!cccd_handles[i]) continue;
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
+        if (cccd) cccd->permissions = encrypted_cccd_permissions;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t sink_pac_handle, source_pac_handle;
+    uint16_t available_contexts_handle, available_contexts_cccd_handle;
+    uint16_t supported_contexts_handle;
+} ble_gatt_published_audio_capabilities_service;
+
+typedef struct {
+    const uint8_t *sink_pac;
+    uint16_t sink_pac_len;
+    const uint8_t *source_pac;
+    uint16_t source_pac_len;
+    const uint8_t available_contexts[4];
+    const uint8_t supported_contexts[4];
+} ble_gatt_pacs_config;
+
+// Application facing
+// Add PACS with one or both PAC directions and the mandatory audio-context
+// characteristics. The application encodes PAC records and updates
+// Available Audio Contexts as stream availability changes.
+static inline int gatt_pacs_service_add(
+    ble_gatt_server *server,
+    ble_gatt_published_audio_capabilities_service *service,
+    const ble_gatt_pacs_config *config
+) {
+    if (!server || !service || !config || !config->available_contexts ||
+        !config->supported_contexts ||
+        (!config->sink_pac_len && !config->source_pac_len) ||
+        (config->sink_pac_len && (!config->sink_pac ||
+                                  config->sink_pac_len >
+                                      BLE_GATT_SERVER_VALUE_MAX ||
+                                  config->sink_pac[0] == 0)) ||
+        (config->source_pac_len && (!config->source_pac ||
+                                   config->source_pac_len >
+                                       BLE_GATT_SERVER_VALUE_MAX ||
+                                   config->source_pac[0] == 0)))
+        return 0;
+
+    ble_gatt_sig_characteristic characteristics[4];
+    uint8_t count = 0, available_index = 0, supported_index = 0;
+    if (config->sink_pac_len)
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2bc9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            config->sink_pac, config->sink_pac_len
+        };
+    if (config->source_pac_len)
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2bcb, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            config->source_pac, config->source_pac_len
+        };
+    available_index = count;
+    characteristics[count++] = (ble_gatt_sig_characteristic){
+        0x2bcd, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+        BLE_GATT_PERM_READ_ENCRYPTED, config->available_contexts, 4
+    };
+    supported_index = count;
+    characteristics[count++] = (ble_gatt_sig_characteristic){
+        0x2bce, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        config->supported_contexts, 4
+    };
+    uint16_t value_handles[4], cccd_handles[4];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1850, characteristics, count,
+            &service->service_handle, value_handles, cccd_handles))
+        return 0;
+    uint8_t i = 0;
+    if (config->sink_pac_len) service->sink_pac_handle = value_handles[i++];
+    if (config->source_pac_len)
+        service->source_pac_handle = value_handles[i++];
+    service->available_contexts_handle = value_handles[available_index];
+    service->available_contexts_cccd_handle =
+        cccd_handles[available_index];
+    service->supported_contexts_handle = value_handles[supported_index];
+    ble_gatt_attribute *cccd = gatt_server_find(server,
+        service->available_contexts_cccd_handle);
+    if (cccd)
+        cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
+                            BLE_GATT_PERM_WRITE_ENCRYPTED;
+    return 1;
+}
+
+enum { GATT_ASCS_MAX_ASES = 8 };
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_ascs_endpoint;
+
+typedef struct {
+    uint8_t sink_count, source_count;
+    ble_gatt_ascs_endpoint sinks[GATT_ASCS_MAX_ASES];
+    ble_gatt_ascs_endpoint sources[GATT_ASCS_MAX_ASES];
+    uint16_t control_point_capacity;
+} ble_gatt_ascs_config;
+
+typedef struct {
+    uint16_t service_handle;
+    uint8_t sink_count, source_count;
+    uint16_t sink_handles[GATT_ASCS_MAX_ASES];
+    uint16_t sink_cccd_handles[GATT_ASCS_MAX_ASES];
+    uint16_t source_handles[GATT_ASCS_MAX_ASES];
+    uint16_t source_cccd_handles[GATT_ASCS_MAX_ASES];
+    uint16_t control_point_handle, control_point_cccd_handle;
+} ble_gatt_audio_stream_control_service;
+
+// Application facing
+// Add ASCS with caller-provided Sink ASEs, Source ASEs, and the mandatory ASE
+// Control Point. Values start with ASE_ID and ASE_State; the application
+// implements ASE state transitions and the ISO audio stream procedures.
+static inline int gatt_audio_stream_control_service_add(
+    ble_gatt_server *server, ble_gatt_audio_stream_control_service *service,
+    const ble_gatt_ascs_config *config
+) {
+    if (!server || !service || !config ||
+        !(config->sink_count + config->source_count) ||
+        config->sink_count > GATT_ASCS_MAX_ASES ||
+        config->source_count > GATT_ASCS_MAX_ASES ||
+        (uint16_t)config->sink_count + config->source_count >
+            GATT_ASCS_MAX_ASES ||
+        !config->control_point_capacity ||
+        config->control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+    uint8_t ids[GATT_ASCS_MAX_ASES];
+    uint8_t id_count = 0;
+    for (uint8_t direction = 0; direction < 2; direction++) {
+        const ble_gatt_ascs_endpoint *endpoints = direction ?
+            config->sources : config->sinks;
+        uint8_t count = direction ? config->source_count : config->sink_count;
+        for (uint8_t i = 0; i < count; i++) {
+            const ble_gatt_ascs_endpoint *endpoint = &endpoints[i];
+            if (!endpoint->value || endpoint->value_len < 2 ||
+                endpoint->value_len > endpoint->value_capacity ||
+                endpoint->value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+                endpoint->value[0] == 0)
+                return 0;
+            for (uint8_t j = 0; j < id_count; j++)
+                if (ids[j] == endpoint->value[0]) return 0;
+            ids[id_count++] = endpoint->value[0];
+        }
+    }
+
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[GATT_ASCS_MAX_ASES + 1];
+    uint8_t endpoint_indexes[GATT_ASCS_MAX_ASES];
+    uint8_t index = 0, endpoint_index = 0;
+    for (uint8_t i = 0; i < config->sink_count; i++) {
+        const ble_gatt_ascs_endpoint *endpoint = &config->sinks[i];
+        endpoint_indexes[endpoint_index++] = index;
+        characteristics[index++] = (ble_gatt_sig_characteristic){
+            0x2bc4, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED, endpoint->value,
+            endpoint->value_len, endpoint->value_capacity, 1
+        };
+    }
+    uint8_t source_start = endpoint_index;
+    for (uint8_t i = 0; i < config->source_count; i++) {
+        const ble_gatt_ascs_endpoint *endpoint = &config->sources[i];
+        endpoint_indexes[endpoint_index++] = index;
+        characteristics[index++] = (ble_gatt_sig_characteristic){
+            0x2bc5, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENCRYPTED, endpoint->value,
+            endpoint->value_len, endpoint->value_capacity, 1
+        };
+    }
+    uint8_t control_point_index = index;
+    characteristics[index++] = (ble_gatt_sig_characteristic){
+        0x2bc6, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
+            BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_WRITE_ENCRYPTED,
+        &control_point_initial, 0, config->control_point_capacity, 1
+    };
+    uint16_t value_handles[GATT_ASCS_MAX_ASES + 1];
+    uint16_t cccd_handles[GATT_ASCS_MAX_ASES + 1];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x184e, characteristics, index,
+            &service->service_handle, value_handles, cccd_handles))
+        return 0;
+    service->sink_count = config->sink_count;
+    service->source_count = config->source_count;
+    for (uint8_t i = 0; i < config->sink_count; i++) {
+        service->sink_handles[i] = value_handles[endpoint_indexes[i]];
+        service->sink_cccd_handles[i] = cccd_handles[endpoint_indexes[i]];
+    }
+    for (uint8_t i = 0; i < config->source_count; i++) {
+        uint8_t value_index = endpoint_indexes[source_start + i];
+        service->source_handles[i] = value_handles[value_index];
+        service->source_cccd_handles[i] = cccd_handles[value_index];
+    }
+    service->control_point_handle = value_handles[control_point_index];
+    service->control_point_cccd_handle = cccd_handles[control_point_index];
+    const uint16_t encrypted_cccd_permissions =
+        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+    for (uint8_t i = 0; i < index; i++) {
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
+        if (cccd) cccd->permissions = encrypted_cccd_permissions;
+    }
+    return 1;
+}
+
+enum {
+    GATT_TBS_PROVIDER_NAME,
+    GATT_TBS_BEARER_UCI,
+    GATT_TBS_BEARER_TECHNOLOGY,
+    GATT_TBS_URI_SCHEMES,
+    GATT_TBS_CURRENT_CALLS,
+    GATT_TBS_CONTENT_CONTROL_ID,
+    GATT_TBS_STATUS_FLAGS,
+    GATT_TBS_CALL_STATE,
+    GATT_TBS_CALL_CONTROL_POINT,
+    GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES,
+    GATT_TBS_TERMINATION_REASON,
+    GATT_TBS_INCOMING_CALL,
+    GATT_TBS_CHARACTERISTIC_COUNT
+};
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_telephone_bearer_value;
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t value_handles[GATT_TBS_CHARACTERISTIC_COUNT];
+    uint16_t cccd_handles[GATT_TBS_CHARACTERISTIC_COUNT];
+} ble_gatt_telephone_bearer_service;
+
+typedef struct {
+    ble_gatt_telephone_bearer_value values[GATT_TBS_CHARACTERISTIC_COUNT];
+    uint16_t call_control_point_capacity;
+    uint8_t generic_service;
+} ble_gatt_telephone_bearer_config;
+
+// Application facing
+// Add the mandatory TBS/GTBS characteristics. Use generic_service for GTBS;
+// call values are encoded by the application, which also implements call
+// control and sends status notifications.
+static inline int gatt_telephone_bearer_service_add(
+    ble_gatt_server *server, ble_gatt_telephone_bearer_service *service,
+    const ble_gatt_telephone_bearer_config *config
+) {
+    static const uint16_t uuids[GATT_TBS_CHARACTERISTIC_COUNT] = {
+        0x2bb3, 0x2bb4, 0x2bb5, 0x2bb6, 0x2bb9, 0x2bba,
+        0x2bbb, 0x2bbd, 0x2bbe, 0x2bbf, 0x2bc0, 0x2bc1
+    };
+    static const uint8_t properties[GATT_TBS_CHARACTERISTIC_COUNT] = {
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
+            BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY
+    };
+    if (!server || !service || !config || config->generic_service > 1 ||
+        config->call_control_point_capacity < 1 ||
+        config->call_control_point_capacity > BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        const ble_gatt_telephone_bearer_value *value = &config->values[i];
+        if (value->value_len > value->value_capacity ||
+            value->value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+            (value->value_len && !value->value))
+            return 0;
+    }
+    if (config->values[GATT_TBS_BEARER_TECHNOLOGY].value_len != 1 ||
+        config->values[GATT_TBS_CONTENT_CONTROL_ID].value_len != 1 ||
+        config->values[GATT_TBS_STATUS_FLAGS].value_len != 2 ||
+        config->values[GATT_TBS_CALL_STATE].value_len % 3 ||
+        config->values[GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES].value_len != 2 ||
+        config->values[GATT_TBS_TERMINATION_REASON].value_len != 2 ||
+        config->values[GATT_TBS_CALL_CONTROL_POINT].value_len ||
+        !config->values[GATT_TBS_BEARER_UCI].value_len ||
+        !config->values[GATT_TBS_URI_SCHEMES].value_len)
+        return 0;
+
+    ble_gatt_sig_characteristic characteristics[GATT_TBS_CHARACTERISTIC_COUNT];
+    uint8_t empty_value = 0;
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        const ble_gatt_telephone_bearer_value *value = &config->values[i];
+        uint16_t permissions = 0;
+        if (properties[i] & BLE_GATT_PROP_READ)
+            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+        if (properties[i] & (BLE_GATT_PROP_WRITE |
+                             BLE_GATT_PROP_WRITE_NO_RSP))
+            permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        characteristics[i] = (ble_gatt_sig_characteristic){
+            .uuid = uuids[i], .properties = properties[i],
+            .cccd = !!(properties[i] & BLE_GATT_PROP_NOTIFY),
+            .permissions = permissions,
+            .value = value->value_len ? value->value : &empty_value,
+            .value_len = value->value_len,
+            .value_capacity = i == GATT_TBS_CALL_CONTROL_POINT ?
+                config->call_control_point_capacity : value->value_capacity,
+            .variable_length = i == GATT_TBS_CALL_CONTROL_POINT
+        };
+    }
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server,
+            config->generic_service ? 0x184c : 0x184b,
+            characteristics, GATT_TBS_CHARACTERISTIC_COUNT,
+            &service->service_handle, service->value_handles,
+            service->cccd_handles))
+        return 0;
+    const uint16_t encrypted_cccd_permissions =
+        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        if (!service->cccd_handles[i]) continue;
+        ble_gatt_attribute *cccd =
+            gatt_server_find(server, service->cccd_handles[i]);
+        if (cccd) cccd->permissions = encrypted_cccd_permissions;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
     uint16_t features_handle;
     uint16_t object_name_handle;
     uint16_t object_type_handle;
@@ -2196,6 +2613,110 @@ static inline int gatt_glucose_service_add(
     service->feature_handle = values[i++];
     service->record_access_handle = values[i];
     service->record_access_cccd_handle = cccds[i];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t status_changed_handle, status_changed_cccd_handle;
+    uint16_t status_handle, status_cccd_handle;
+    uint16_t annunciation_status_handle, annunciation_status_cccd_handle;
+    uint16_t features_handle, features_cccd_handle;
+    uint16_t status_reader_control_point_handle;
+    uint16_t status_reader_control_point_cccd_handle;
+} ble_gatt_insulin_delivery_service;
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_insulin_delivery_value;
+
+typedef struct {
+    ble_gatt_insulin_delivery_value status_changed;
+    ble_gatt_insulin_delivery_value status;
+    ble_gatt_insulin_delivery_value annunciation_status;
+    ble_gatt_insulin_delivery_value features;
+    uint16_t status_reader_control_point_capacity;
+    uint8_t features_indicate;
+} ble_gatt_insulin_delivery_config;
+
+// Application facing
+// Add the mandatory IDD status, features, and Status Reader Control Point
+// characteristics. The application supplies encoded initial values and must
+// authorize access, implement the control point, and send indications.
+static inline int gatt_insulin_delivery_service_add(
+    ble_gatt_server *server, ble_gatt_insulin_delivery_service *service,
+    const ble_gatt_insulin_delivery_config *config
+) {
+    if (!server || !service || !config ||
+        !config->status_changed.value || !config->status_changed.value_len ||
+        config->status_changed.value_len >
+            config->status_changed.value_capacity ||
+        config->status_changed.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !config->status.value || !config->status.value_len ||
+        config->status.value_len > config->status.value_capacity ||
+        config->status.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !config->annunciation_status.value ||
+        !config->annunciation_status.value_len ||
+        config->annunciation_status.value_len >
+            config->annunciation_status.value_capacity ||
+        config->annunciation_status.value_capacity >
+            BLE_GATT_SERVER_VALUE_MAX || !config->features.value ||
+        config->features.value_len < 8 ||
+        config->features.value_len > config->features.value_capacity ||
+        config->features.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        config->features_indicate > 1 ||
+        config->status_reader_control_point_capacity < 2 ||
+        config->status_reader_control_point_capacity >
+            BLE_GATT_SERVER_VALUE_MAX)
+        return 0;
+
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[5] = {
+        {0x2b20, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ_AUTHORIZED,
+            config->status_changed.value, config->status_changed.value_len,
+            config->status_changed.value_capacity},
+        {0x2b21, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ_AUTHORIZED, config->status.value,
+            config->status.value_len, config->status.value_capacity},
+        {0x2b22, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ_AUTHORIZED, config->annunciation_status.value,
+            config->annunciation_status.value_len,
+            config->annunciation_status.value_capacity},
+        {0x2b23, BLE_GATT_PROP_READ |
+                (config->features_indicate ? BLE_GATT_PROP_INDICATE : 0),
+            config->features_indicate, BLE_GATT_PERM_READ_AUTHORIZED,
+            config->features.value, config->features.value_len,
+            config->features.value_capacity},
+        {0x2b24, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            config->status_reader_control_point_capacity, 1}
+    };
+    uint16_t value_handles[5], cccd_handles[5];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x183a, characteristics, 5,
+            &service->service_handle, value_handles, cccd_handles))
+        return 0;
+    service->status_changed_handle = value_handles[0];
+    service->status_changed_cccd_handle = cccd_handles[0];
+    service->status_handle = value_handles[1];
+    service->status_cccd_handle = cccd_handles[1];
+    service->annunciation_status_handle = value_handles[2];
+    service->annunciation_status_cccd_handle = cccd_handles[2];
+    service->features_handle = value_handles[3];
+    service->features_cccd_handle = cccd_handles[3];
+    service->status_reader_control_point_handle = value_handles[4];
+    service->status_reader_control_point_cccd_handle = cccd_handles[4];
+
+    const uint16_t authorized_cccd_permissions =
+        BLE_GATT_PERM_READ_AUTHORIZED | BLE_GATT_PERM_WRITE_AUTHORIZED;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!cccd_handles[i]) continue;
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
+        if (!cccd) return 0;
+        cccd->permissions = authorized_cccd_permissions;
+    }
     return 1;
 }
 
@@ -2993,6 +3514,309 @@ static inline int gatt_http_proxy_service_add(
     service->entity_body_handle = values[3];
     service->control_point_handle = values[4];
     service->https_security_handle = values[5];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t measurement_handles[8];
+    uint16_t measurement_cccd_handles[8];
+    uint8_t measurement_count;
+    uint16_t status_handle, status_cccd_handle;
+    uint16_t descriptor_changed_handle, descriptor_changed_cccd_handle;
+} ble_gatt_imd_service;
+
+// Application facing
+// Add IMDS with one to eight permitted live measurements and optional status
+// characteristics. Measurement descriptors and history procedures remain
+// application-defined.
+static inline int gatt_imd_service_add(
+    ble_gatt_server *server, ble_gatt_imd_service *service,
+    const ble_gatt_sig_characteristic *measurements, uint8_t count,
+    const uint8_t *status, uint16_t status_len,
+    const uint8_t *descriptor_changed, uint16_t descriptor_changed_len
+) {
+    if (!server || !service || !measurements || !count || count > 8 ||
+        (status_len && !status) || (descriptor_changed_len &&
+        !descriptor_changed)) return 0;
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = measurements[i].uuid;
+        uint8_t permitted = uuid == 0x2a6e ||
+                            (uuid >= 0x2c06 && uuid <= 0x2c0b);
+        if (!permitted ||
+            !(measurements[i].properties & BLE_GATT_PROP_READ) ||
+            measurements[i].permissions || measurements[i].cccd > 1)
+            return 0;
+        for (uint8_t j = 0; j < i; j++)
+            if (measurements[j].uuid == uuid) return 0;
+    }
+    ble_gatt_sig_characteristic chars[10];
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < count; i++) chars[n++] = measurements[i];
+    uint8_t status_index = 0xff, changed_index = 0xff;
+    if (status) {
+        status_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0c, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1, 0,
+            status, status_len, status_len, 1
+        };
+    }
+    if (descriptor_changed) {
+        changed_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0d, BLE_GATT_PROP_INDICATE, 1, 0,
+            descriptor_changed, descriptor_changed_len,
+            descriptor_changed_len, 1
+        };
+    }
+    uint16_t values[10], cccds[10];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x185a, chars, n,
+            &service->service_handle, values, cccds)) return 0;
+    service->measurement_count = count;
+    for (uint8_t i = 0; i < count; i++) {
+        service->measurement_handles[i] = values[i];
+        service->measurement_cccd_handles[i] = cccds[i];
+    }
+    if (status_index != 0xff) {
+        service->status_handle = values[status_index];
+        service->status_cccd_handle = cccds[status_index];
+    }
+    if (changed_index != 0xff) {
+        service->descriptor_changed_handle = values[changed_index];
+        service->descriptor_changed_cccd_handle = cccds[changed_index];
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, properties_handle, operation_mode_handle;
+    uint16_t operation_mode_cccd_handle;
+} ble_gatt_hid_iso_service;
+
+// Application facing
+// Add HID ISO Properties and LE HID Operation Mode. Properties are the
+// caller-encoded Properties value; the application
+// implements mode switching and ISO report transport.
+static inline int gatt_hid_iso_service_add(
+    ble_gatt_server *server, ble_gatt_hid_iso_service *service,
+    const uint8_t *properties, uint16_t properties_len,
+    const uint8_t *operation_mode,
+    uint16_t operation_mode_len, uint16_t operation_mode_capacity,
+    uint8_t mode_change_notify
+) {
+    if (!server || !service || !properties || properties_len < 3 ||
+        properties_len > BLE_GATT_SERVER_VALUE_MAX || !operation_mode ||
+        !operation_mode_capacity || operation_mode_len >
+        operation_mode_capacity || operation_mode_capacity >
+        BLE_GATT_SERVER_VALUE_MAX || mode_change_notify > 1) return 0;
+    ble_gatt_sig_characteristic chars[2] = {
+        {0x2c23, BLE_GATT_PROP_READ, 0, 0, properties, properties_len},
+        {0x2c24, BLE_GATT_PROP_WRITE |
+            (mode_change_notify ? BLE_GATT_PROP_INDICATE : 0),
+            mode_change_notify, 0, operation_mode, operation_mode_len,
+            operation_mode_capacity, 1}
+    };
+    uint16_t values[2], cccds[2];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x185c, chars, 2,
+            &service->service_handle, values, cccds)) return 0;
+    service->properties_handle = values[0];
+    service->operation_mode_handle = values[1];
+    service->operation_mode_cccd_handle = cccds[1];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t handles[7];
+    uint16_t cccd_handles[7];
+} ble_gatt_tpms_service;
+
+typedef struct {
+    const uint8_t *data;
+    uint16_t len, capacity;
+} ble_gatt_service_value;
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t handles[9], cccd_handles[9];
+} ble_gatt_esl_service;
+
+// Application facing
+// Add the ESL GATT database. The nine values are ordered as Address, AP Sync
+// Key Material, Response Key Material, Current Absolute Time, Display Info,
+// Image Info, Sensor Info, LED Info, and Control Point. The application
+// implements ESL synchronization, PAwR, key handling, and control commands.
+static inline int gatt_esl_service_add(
+    ble_gatt_server *server, ble_gatt_esl_service *service,
+    const ble_gatt_service_value values_in[9]
+) {
+    if (!server || !service || !values_in) return 0;
+    static const uint16_t uuids[9] = {
+        0x2bf6, 0x2bf7, 0x2bf8, 0x2bf9, 0x2bfa,
+        0x2bfb, 0x2bfc, 0x2bfd, 0x2bfe
+    };
+    ble_gatt_sig_characteristic chars[9];
+    for (uint8_t i = 0; i < 9; i++) {
+        const ble_gatt_service_value *value = &values_in[i];
+        if (!value->data || value->len > value->capacity ||
+            value->capacity > BLE_GATT_SERVER_VALUE_MAX) return 0;
+        uint8_t properties = (i <= 3 || i == 8) ?
+            BLE_GATT_PROP_WRITE : BLE_GATT_PROP_READ;
+        uint8_t cccd = 0;
+        if (i == 8) {
+            properties |= BLE_GATT_PROP_WRITE_NO_RSP | BLE_GATT_PROP_NOTIFY;
+            cccd = 1;
+        }
+        uint16_t permissions = 0;
+        if (properties & BLE_GATT_PROP_READ)
+            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+        if (properties & (BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP))
+            permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        chars[i] = (ble_gatt_sig_characteristic){
+            uuids[i], properties, cccd, permissions,
+            value->data, value->len, value->capacity, 1
+        };
+    }
+    uint16_t cccds[9];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1857, chars, 9,
+            &service->service_handle, service->handles, cccds)) return 0;
+    memcpy(service->cccd_handles, cccds, sizeof(cccds));
+    if (cccds[8]) {
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccds[8]);
+        if (cccd) cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
+                                      BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t handles[7], cccd_handles[7];
+    uint8_t characteristic_count;
+} ble_gatt_voice_assistant_service;
+
+// Application facing
+// Add the common VAS/Generic VAS characteristic database. The first four
+// values (name, UUID, service control point, session state) are required;
+// session flag, languages, and features are optional. The application handles
+// assistant sessions and service-control commands.
+static inline int gatt_voice_assistant_service_add(
+    ble_gatt_server *server, ble_gatt_voice_assistant_service *service,
+    const ble_gatt_service_value values_in[7], uint8_t generic_service
+) {
+    if (!server || !service || !values_in || generic_service > 1) return 0;
+    static const uint16_t uuids[7] = {
+        0x2c31, 0x2c32, 0x2c33, 0x2c35, 0x2c36, 0x2c37, 0x2c38
+    };
+    ble_gatt_sig_characteristic chars[7];
+    uint8_t indexes[7], count = 0;
+    for (uint8_t i = 0; i < 7; i++) {
+        const ble_gatt_service_value *value = &values_in[i];
+        if (i < 4 && !value->data) return 0;
+        if (!value->data) continue;
+        if (value->len > value->capacity ||
+            value->capacity > BLE_GATT_SERVER_VALUE_MAX) return 0;
+        uint8_t properties = BLE_GATT_PROP_READ, cccd = 0, permissions = 0;
+        if (i == 2) {
+            properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_NOTIFY;
+            cccd = 1;
+            permissions = BLE_GATT_PERM_WRITE_ENCRYPTED;
+        } else if (i == 3 || i == 4) {
+            properties |= BLE_GATT_PROP_NOTIFY;
+            cccd = 1;
+        }
+        if (properties & BLE_GATT_PROP_READ)
+            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+        indexes[count] = i;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            uuids[i], properties, cccd, permissions,
+            value->data, value->len, value->capacity, 1
+        };
+    }
+    uint16_t values[7], cccds[7];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, generic_service ? 0x185f : 0x185e,
+            chars, count, &service->service_handle, values, cccds)) return 0;
+    service->characteristic_count = count;
+    for (uint8_t i = 0; i < count; i++) {
+        service->handles[indexes[i]] = values[i];
+        service->cccd_handles[indexes[i]] = cccds[i];
+        if (!cccds[i]) continue;
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
+        if (cccd) cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
+                                      BLE_GATT_PERM_WRITE_ENCRYPTED;
+    }
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t value_handles[12], cccd_handles[12];
+    uint8_t characteristic_count;
+} ble_gatt_cookware_service;
+
+// Application facing
+// Add selected CWS characteristics from the assigned Cookware range. The
+// application chooses characteristics for its supported cooking features
+// and implements their value formats and recipe procedures.
+static inline int gatt_cookware_service_add(
+    ble_gatt_server *server, ble_gatt_cookware_service *service,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count
+) {
+    if (!server || !service || !characteristics || !count || count > 12)
+        return 0;
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = characteristics[i].uuid;
+        if (uuid < 0x2c25 || uuid > 0x2c30) return 0;
+        for (uint8_t j = 0; j < i; j++)
+            if (characteristics[j].uuid == uuid) return 0;
+    }
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x185d, characteristics, count,
+            &service->service_handle, service->value_handles,
+            service->cccd_handles)) return 0;
+    service->characteristic_count = count;
+    return 1;
+}
+
+// Application facing
+// Add the mandatory TPMS Properties and Tire Pressure characteristics with
+// optional temperature, acceleration, duty-cycle, position, and signing key.
+// The application encodes each present value and handles TPMS signing.
+static inline int gatt_tpms_service_add(
+    ble_gatt_server *server, ble_gatt_tpms_service *service,
+    const ble_gatt_service_value values_in[7]
+) {
+    if (!server || !service || !values_in || !values_in[0].data ||
+        !values_in[1].data) return 0;
+    static const uint16_t uuids[7] = {
+        0x2c3e, 0x2c3b, 0x2c3c, 0x2c3d, 0x2c3f, 0x2c40, 0x2c41
+    };
+    uint8_t indexes[7], n = 0;
+    ble_gatt_sig_characteristic chars[7];
+    for (uint8_t i = 0; i < 7; i++) {
+        if (!values_in[i].data) continue;
+        if (values_in[i].len > values_in[i].capacity ||
+            values_in[i].capacity > BLE_GATT_SERVER_VALUE_MAX) return 0;
+        indexes[n] = i;
+        uint8_t char_properties = BLE_GATT_PROP_READ;
+        if (i == 1 || i == 2) char_properties |= BLE_GATT_PROP_NOTIFY;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            uuids[i], char_properties, (uint8_t)(i == 1 || i == 2), 0,
+            values_in[i].data, values_in[i].len, values_in[i].capacity, 1
+        };
+    }
+    uint16_t values[7], cccds[7];
+    memset(service, 0, sizeof(*service));
+    if (!gatt_sig_service_add(server, 0x1860, chars, n,
+            &service->service_handle, values, cccds)) return 0;
+    for (uint8_t i = 0; i < n; i++) {
+        service->handles[indexes[i]] = values[i];
+        service->cccd_handles[indexes[i]] = cccds[i];
+    }
     return 1;
 }
 
