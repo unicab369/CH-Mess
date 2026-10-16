@@ -598,7 +598,8 @@ static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
 static struct {
     uint8_t active;
     gap_conn_mode mode;
-    uint8_t peer_type, peer_address[6], request[36];
+    gap_peer_address peer;
+    uint8_t request[36];
     uint32_t deadline_ms;
 } gap_central;
 

@@ -649,10 +649,10 @@ void gap_hw_received(void) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
         }
         else {
-            int target_slot = gap_identity_find(gap_central.peer_address,
-                                                gap_central.peer_type);
-            peer_matches = (advertiser_type == gap_central.peer_type &&
-                            memcmp(frame + 2, gap_central.peer_address, 6) == 0) ||
+            int target_slot = gap_identity_find(gap_central.peer.address,
+                                                gap_central.peer.type);
+            peer_matches = (advertiser_type == gap_central.peer.type &&
+                            memcmp(frame + 2, gap_central.peer.address, 6) == 0) ||
                             (peer_slot >= 0 && peer_slot == target_slot);
         }
     }
@@ -719,8 +719,8 @@ void gap_hw_received(void) {
                 conn->peer.type = advertiser_type;
                 memcpy(conn->peer.address, frame + 2, 6);
             } else {
-                conn->peer.type = gap_central.peer_type;
-                memcpy(conn->peer.address, gap_central.peer_address, 6);
+                conn->peer.type = gap_central.peer.type;
+                memcpy(conn->peer.address, gap_central.peer.address, 6);
             }
             gap_central.active = 0;
             gap_central.mode = GAP_CONN_MODE_DIRECT;

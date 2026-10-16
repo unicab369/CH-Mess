@@ -355,6 +355,23 @@ static inline int gatt_heart_rate_measurement_encode(
     return 1;
 }
 
+// Application facing
+// Encode a Heart Rate Measurement into caller storage and queue its notification.
+static inline int gatt_heart_rate_service_notify_measurement(
+    ble_gatt_server *server, const ble_gatt_heart_rate_service *service,
+    uint16_t heart_rate, int energy_expended_present,
+    uint16_t energy_expended, const uint16_t *rr_intervals,
+    uint8_t rr_interval_count, uint8_t *buffer, uint16_t capacity
+) {
+    uint16_t len;
+    if (!server || !service || !buffer ||
+        !gatt_heart_rate_measurement_encode(heart_rate,
+            energy_expended_present, energy_expended, rr_intervals,
+            rr_interval_count, buffer, capacity, &len)) return 0;
+    return gatt_server_queue_event(server, service->measurement_handle,
+                                   buffer, len, 0);
+}
+
 #include "ble_gatt_service_registry.h"
 
 typedef struct {

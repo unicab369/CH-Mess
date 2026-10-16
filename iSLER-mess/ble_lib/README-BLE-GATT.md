@@ -39,11 +39,11 @@ Device Name and Appearance. The supplied UTF-8 name is copied into the
 database and must be 1–248 octets.
 
 `gatt_heart_rate_service_add()` adds Heart Rate Measurement with its CCCD and
-can optionally add Body Sensor Location. Encode each measurement with
-`gatt_heart_rate_measurement_encode()` and pass the result to
-`gatt_server_notify()` using the measurement handle. Set the encoder capacity
-to the current server's `mtu - 3` so optional RR Interval entries are omitted
-as whole 16-bit values when they do not fit.
+can optionally add Body Sensor Location.
+`gatt_heart_rate_service_notify_measurement()` encodes into a caller-provided
+reusable buffer and queues the notification. Set its capacity to the current
+server's `mtu - 3` so optional RR Interval entries are omitted as whole
+16-bit values when they do not fit.
 
 Additional concrete builders include `gatt_hid_service_add()` for the HID
 core characteristics and caller-provided Report Map/Reports,

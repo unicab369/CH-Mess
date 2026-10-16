@@ -583,9 +583,10 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
          !gap_accept_list_mask)
     ) return 0;
 
-    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer_type : 0;
+    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ?
+                        gap_central.peer.type : 0;
     const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
-                                gap_central.peer_address : NULL;
+                                  gap_central.peer.address : NULL;
     uint32_t access_address;
     if (!gap_access_addr(&access_address)) return 0;
 
@@ -616,24 +617,25 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     gap_central.request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
 
     gap_central.mode = mode;
-    gap_central.peer_type = peer_type;
+    gap_central.peer.type = peer_type;
 
     if (mode != GAP_CONN_MODE_DIRECT)
-        memset(gap_central.peer_address, 0, sizeof(gap_central.peer_address));
+        memset(&gap_central.peer, 0, sizeof(gap_central.peer));
 
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
-    if (mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO))
+    if (mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO)) {
         gap_scan_start(active_scan);
-    else gap_scanner.scanning = 1;
-    gap_central.active = 1;
-    gap_central.deadline_ms = mode == GAP_CONN_MODE_AUTO ? 0 :
-                                GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
-    if (!(mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO))) {
+    } else {
+        gap_scanner.scanning = 1;
         gap_scanner.active = active_scan;
         gap_scan = (gap_scan_ctx){0};
         gap_scanner.generation++;
     }
+
+    gap_central.active = 1;
+    gap_central.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 :
+                        GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     return 1;
 }
 
@@ -645,13 +647,12 @@ int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
         (gap_scanner.scanning || gap_central.active)
     ) return 0;
 
-    memcpy(gap_central.peer_address, peer_address, 6);
-    gap_central.peer_type = peer_type != 0;
+    gap_central.peer.type = peer_type != 0;
+    memcpy(gap_central.peer.address, peer_address, 6);
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 
-    memset(gap_central.peer_address, 0, sizeof(gap_central.peer_address));
-    gap_central.peer_type = 0;
+    memset(&gap_central.peer, 0, sizeof(gap_central.peer));
     return 0;
 }
 
