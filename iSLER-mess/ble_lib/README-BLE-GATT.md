@@ -83,14 +83,25 @@ value and, when requested, the five advertising-channel controls.
 Real-time Ranging Data when feature bit 0 is set. The application supplies the
 Channel Sounding integration and implements RAS procedures and data transfer.
 `gatt_generic_health_sensor_service_add()` registers the live-observation-only
-GHS layout and its control point. The application encodes and streams the
-observations and handles start/stop commands.
+GHS layout. Its Control Point handles start/stop commands and queues success
+indications; the application encodes observations and sends them with
+`gatt_generic_health_sensor_service_indicate_observation()` after streaming is
+started.
 `gatt_authorization_control_service_add()` registers the mandatory ACS
 characteristics. The application must provide the ACS security protocol,
 payload segmentation, and protected-resource behavior.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
 characteristics, without optional activity streams. The application supplies
 session state and handles measurement and session-control procedures.
+`gatt_physical_activity_monitor_service_notify_instantaneous()` queues
+encoded Instantaneous Activity Data.
+`gatt_physical_activity_monitor_service_indicate_summary()` and
+`gatt_physical_activity_monitor_service_indicate_session_descriptor()` queue
+the corresponding indications. Use
+`gatt_physical_activity_monitor_service_set_current_session()` to update the
+readable 17-byte session value and
+`gatt_physical_activity_monitor_service_indicate_current_session()` to
+indicate it.
 `gatt_hearing_access_service_add()` registers the mandatory HAS Hearing Aid
 Features characteristic for a device that does not expose preset control.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature

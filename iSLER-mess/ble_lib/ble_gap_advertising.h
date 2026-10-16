@@ -607,12 +607,9 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_central.request + 18, crc_init, sizeof(crc_init));
     gap_central.request[21] = 1; // transmit window size: 1.25 ms
-    gap_central.request[24] = (uint8_t)gap_conn_timing.interval;
-    gap_central.request[25] = (uint8_t)(gap_conn_timing.interval >> 8);
-    gap_central.request[26] = (uint8_t)gap_conn_timing.latency;
-    gap_central.request[27] = (uint8_t)(gap_conn_timing.latency >> 8);
-    gap_central.request[28] = (uint8_t)gap_conn_timing.supervision_timeout;
-    gap_central.request[29] = (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
+    gap_write_u16_le(gap_central.request + 24, gap_conn_timing.interval);
+    gap_write_u16_le(gap_central.request + 26, gap_conn_timing.latency);
+    gap_write_u16_le(gap_central.request + 28, gap_conn_timing.supervision_timeout);
 
     memset(gap_central.request + 30, 0xff, 4);
     gap_central.request[34] = 0x1f; // data channels 0 through 36
@@ -634,10 +631,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     if (!(mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO))) {
         gap_scanner.active = active_scan;
-        gap_scan.head = 0;
-        gap_scan.count = 0;
-        gap_scan.seen_count = 0;
-        gap_scan.seen_next = 0;
+        gap_scan = (gap_scan_ctx){0};
         gap_scanner.generation++;
     }
     return 1;

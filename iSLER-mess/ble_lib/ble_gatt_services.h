@@ -1162,12 +1162,39 @@ typedef struct {
     uint16_t service_handle, live_observations_handle;
     uint16_t live_observations_cccd_handle, control_point_handle;
     uint16_t control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t live_observations_started, control_point_request_count;
 } ble_gatt_generic_health_sensor_service;
 
+// Internal
+static uint8_t gatt_generic_health_sensor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_generic_health_sensor_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (value[0] != 0x01 && value[0] != 0x02) return 0x81;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        service->server, service->control_point_handle);
+    if (!cccd || !(cccd->cccd & 0x02)) return 0xfd;
+    uint8_t response = 0x80;
+    if (!gatt_server_queue_event(service->server,
+            service->control_point_handle, &response, 1, 1))
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
+    service->live_observations_started = value[0] == 0x01;
+    service->control_point_request_count++;
+    return 0;
+}
+
 // Application facing
-// Add the live-observation-only GHS layout. This includes its required GHS
-// Control Point; the application implements observation encoding, streaming,
-// and the start/stop control-point procedure.
+// Add the live-observation-only GHS layout. The service handles its start/stop
+// Control Point and success indications; the application supplies observations.
 static inline int gatt_generic_health_sensor_service_add(
     ble_gatt_server *server,
     ble_gatt_generic_health_sensor_service *service,
@@ -1186,15 +1213,36 @@ static inline int gatt_generic_health_sensor_service_add(
             BLE_GATT_PERM_WRITE, &control_point_initial, 1, 1}
     };
     uint16_t values[2], cccds[2];
+    ble_gatt_sig_handlers handlers[2] = {0};
     memset(service, 0, sizeof(*service));
-    if (!gatt_sig_service_add(server, 0x1840, characteristics, 2,
-            &service->service_handle, values, cccds))
+    service->server = server;
+    handlers[1].write = gatt_generic_health_sensor_control_write;
+    handlers[1].context = service;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1840,
+            characteristics, 2, &service->service_handle, values, cccds,
+            handlers)) {
+        memset(service, 0, sizeof(*service));
         return 0;
+    }
     service->live_observations_handle = values[0];
     service->live_observations_cccd_handle = cccds[0];
     service->control_point_handle = values[1];
     service->control_point_cccd_handle = cccds[1];
     return 1;
+}
+
+// Application facing
+// Encode and queue a live Health Observation after the Control Point starts it.
+static inline int gatt_generic_health_sensor_service_indicate_observation(
+    ble_gatt_server *server,
+    const ble_gatt_generic_health_sensor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server ||
+        !service->live_observations_started ||
+        !value || !len) return 0;
+    return gatt_server_queue_event(server, service->live_observations_handle,
+                                   value, len, 1);
 }
 
 typedef struct {
@@ -1316,6 +1364,75 @@ static inline int gatt_physical_activity_monitor_service_add(
     service->session_descriptor_handle = values[5];
     service->session_descriptor_cccd_handle = cccds[5];
     return 1;
+}
+
+// Application facing
+// Queue an encoded PAMS Instantaneous Activity Data notification.
+static inline int gatt_physical_activity_monitor_service_notify_instantaneous(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || !value || !len) return 0;
+    return gatt_server_queue_event(server, service->instantaneous_data_handle,
+                                   value, len, 0);
+}
+
+// Application facing
+// Queue an encoded PAMS Summary Data indication.
+static inline int gatt_physical_activity_monitor_service_indicate_summary(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || !value || !len) return 0;
+    return gatt_server_queue_event(server, service->summary_data_handle,
+                                   value, len, 1);
+}
+
+// Application facing
+// Queue an encoded PAMS Session Descriptor indication.
+static inline int gatt_physical_activity_monitor_service_indicate_session_descriptor(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || !value || !len) return 0;
+    return gatt_server_queue_event(server, service->session_descriptor_handle,
+                                   value, len, 1);
+}
+
+// Application facing
+// Update the readable 17-byte Current Session value.
+static inline int gatt_physical_activity_monitor_service_set_current_session(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service,
+    const uint8_t value[17]
+) {
+    if (!server || !service || !value) return 0;
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->current_session_handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!stored || attribute->value_len != 17 ||
+        attribute->value_capacity < 17) return 0;
+    memcpy(stored, value, 17);
+    return 1;
+}
+
+// Application facing
+// Indicate the current value previously set with set_current_session().
+static inline int gatt_physical_activity_monitor_service_indicate_current_session(
+    ble_gatt_server *server,
+    const ble_gatt_physical_activity_monitor_service *service
+) {
+    if (!server || !service) return 0;
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->current_session_handle);
+    const uint8_t *value = attribute ?
+        gatt_attribute_value(server, attribute) : NULL;
+    if (!value || attribute->value_len != 17) return 0;
+    return gatt_server_queue_event(server, service->current_session_handle,
+                                   value, 17, 1);
 }
 
 typedef struct {
