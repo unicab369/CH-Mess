@@ -259,11 +259,6 @@ static inline int l2cap_psm_is_registered(
     return 0;
 }
 
-static inline int l2cap_ecfc_result_valid(uint16_t result) {
-    return result == 0 || result == 2 ||
-        (result >= 4 && result <= 15);
-}
-
 static inline uint16_t l2cap_psm_authorize(
     l2cap_connection *conn, uint16_t psm
 ) {
@@ -1059,7 +1054,9 @@ static inline int l2cap_signaling_receive(
                 uint16_t mps = ble_read_u16_le(p + 2);
                 uint16_t credits = ble_read_u16_le(p + 4);
                 uint16_t result = ble_read_u16_le(p + 6);
-                if (!l2cap_ecfc_result_valid(result)) return 0;
+                if (result != 0 && result != 2 &&
+                    (result < 4 || result > 15))
+                    return 0;
                 if (result == 13 || result == 14 || result == 15) {
                     if (command_len != 8) return 0;
                     conn->pending_deadline_ms = conn->now_ms +

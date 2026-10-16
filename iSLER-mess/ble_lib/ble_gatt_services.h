@@ -1907,6 +1907,34 @@ static inline int gatt_hearing_access_service_control_point_complete(
     return 1;
 }
 
+// Application facing
+// Update the one-octet Active Preset Index value in the GATT database.
+static inline int gatt_hearing_access_service_set_active_preset_index(
+    ble_gatt_hearing_access_service *service, uint8_t index
+) {
+    if (!service || !service->server || !service->active_preset_index_handle)
+        return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->active_preset_index_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(service->server,
+                                                       attribute) : NULL;
+    if (!value || attribute->value_len != 1) return 0;
+    value[0] = index;
+    return 1;
+}
+
+// Application facing
+// Update Active Preset Index and queue its notification.
+static inline int gatt_hearing_access_service_notify_active_preset_index(
+    ble_gatt_hearing_access_service *service, uint8_t index
+) {
+    if (!service || !service->server ||
+        !gatt_hearing_access_service_set_active_preset_index(service, index))
+        return 0;
+    return gatt_server_queue_event(service->server,
+        service->active_preset_index_handle, &index, 1, 0);
+}
+
 typedef struct {
     uint16_t service_handle, role_handle;
     uint16_t unicast_game_gateway_features_handle;
@@ -2098,8 +2126,7 @@ static inline int gatt_pacs_service_add(
     ble_gatt_published_audio_capabilities_service *service,
     const ble_gatt_pacs_config *config
 ) {
-    if (!server || !service || !config || !config->available_contexts ||
-        !config->supported_contexts ||
+    if (!server || !service || !config ||
         (!config->sink_pac_len && !config->source_pac_len) ||
         (config->sink_pac_len && (!config->sink_pac ||
                                   config->sink_pac_len >
@@ -2589,11 +2616,24 @@ typedef struct {
     ble_gatt_fitness_machine_service base;
     uint16_t training_status_handle, training_status_cccd_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t supported_range_handles[5];
+    uint16_t fitness_machine_status_handle;
+    uint16_t fitness_machine_status_cccd_handle;
     ble_gatt_server *server;
     uint8_t control_point_pending, control_point_opcode;
     uint8_t control_point_parameter_len, control_point_request_count;
     uint8_t control_point_parameter[19];
 } ble_gatt_fitness_machine_controlled_service;
+
+typedef struct {
+    // Optional supported ranges, ordered speed, inclination, resistance,
+    // heart rate, and power. Values are 6 octets except heart rate (3).
+    const uint8_t *supported_ranges[5];
+    const uint8_t *training_status;
+    uint16_t training_status_len, training_status_capacity;
+    uint16_t fitness_machine_status_capacity;
+    uint16_t control_point_capacity;
+} ble_gatt_fitness_machine_options;
 
 enum {
     GATT_FTMS_OP_RESPONSE_CODE = 0x80,
@@ -2749,6 +2789,120 @@ static inline int gatt_fitness_machine_service_add_controlled(
 }
 
 // Application facing
+// Build a full selected FTMS layout, including any feature-matched Supported
+// Range characteristics, Training Status, Fitness Machine Status, and Control
+// Point. Range values are the standard encoded 6-octet values, except Heart
+// Rate Range which is 3 octets. The application supplies status/data payloads
+// and retains Control Point policy.
+static inline int gatt_fitness_machine_service_add_full(
+    ble_gatt_server *server,
+    ble_gatt_fitness_machine_controlled_service *service,
+    uint16_t machine_data_uuid, const uint8_t features[8],
+    uint16_t machine_data_capacity,
+    const ble_gatt_fitness_machine_options *options
+) {
+    static const uint16_t machine_data_uuids[6] = {
+        0x2acd, 0x2ace, 0x2acf, 0x2ad0, 0x2ad1, 0x2ad2
+    };
+    static const uint16_t range_uuids[5] = {
+        0x2ad4, 0x2ad5, 0x2ad6, 0x2ad7, 0x2ad8
+    };
+    static const uint8_t range_feature_bits[5] = {0, 1, 2, 4, 3};
+    static const uint8_t range_lengths[5] = {6, 6, 6, 3, 6};
+    uint8_t valid_data_uuid = 0;
+    for (uint8_t i = 0; i < 6; i++)
+        valid_data_uuid |= machine_data_uuids[i] == machine_data_uuid;
+    if (!server || !service || !features || !options || !valid_data_uuid ||
+        !machine_data_capacity ||
+        machine_data_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (options->training_status_len && !options->training_status) ||
+        options->training_status_len > options->training_status_capacity ||
+        options->training_status_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        options->fitness_machine_status_capacity >
+            BLE_GATT_SERVER_VALUE_MAX ||
+        (options->control_point_capacity &&
+         (options->control_point_capacity < 3 ||
+          options->control_point_capacity > 20 ||
+          !options->fitness_machine_status_capacity)))
+        return 0;
+
+    uint8_t initial_data = 0, initial_control_point = 0;
+    ble_gatt_sig_characteristic characteristics[10];
+    ble_gatt_sig_handlers handlers[10] = {0};
+    uint8_t count = 0, range_indexes[5];
+    memset(range_indexes, 0xff, sizeof(range_indexes));
+    characteristics[count++] = (ble_gatt_sig_characteristic){
+        0x2acc, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, features, 8};
+    characteristics[count++] = (ble_gatt_sig_characteristic){
+        machine_data_uuid, BLE_GATT_PROP_NOTIFY, 1, 0,
+        &initial_data, 0, machine_data_capacity, 1};
+    for (uint8_t i = 0; i < 5; i++) {
+        uint8_t feature_enabled = (features[4 + range_feature_bits[i] / 8] &
+            (1u << (range_feature_bits[i] % 8))) != 0;
+        if (feature_enabled != (options->supported_ranges[i] != NULL))
+            return 0;
+        if (!feature_enabled) continue;
+        range_indexes[i] = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            range_uuids[i], BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            options->supported_ranges[i], range_lengths[i]};
+    }
+    uint8_t training_index = 0xff, status_index = 0xff, control_index = 0xff;
+    if (options->training_status_capacity) {
+        training_index = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2ad3, BLE_GATT_PROP_NOTIFY, 1, 0,
+            options->training_status, options->training_status_len,
+            options->training_status_capacity, 1};
+    }
+    if (options->fitness_machine_status_capacity) {
+        status_index = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2ada, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &initial_data, 0, options->fitness_machine_status_capacity, 1};
+    }
+    if (options->control_point_capacity) {
+        control_index = count;
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2ad9, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &initial_control_point, 0,
+            options->control_point_capacity, 1};
+        handlers[control_index].write = gatt_fitness_machine_control_write;
+        handlers[control_index].context = service;
+    }
+
+    uint16_t value_handles[10], cccd_handles[10];
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1826, characteristics,
+            count, &service->base.service_handle, value_handles,
+            cccd_handles, handlers)) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+    service->base.features_handle = value_handles[0];
+    service->base.machine_data_handle = value_handles[1];
+    service->base.machine_data_cccd_handle = cccd_handles[1];
+    for (uint8_t i = 0; i < 5; i++)
+        if (range_indexes[i] != 0xff)
+            service->supported_range_handles[i] = value_handles[range_indexes[i]];
+    if (training_index != 0xff) {
+        service->training_status_handle = value_handles[training_index];
+        service->training_status_cccd_handle = cccd_handles[training_index];
+    }
+    if (status_index != 0xff) {
+        service->fitness_machine_status_handle = value_handles[status_index];
+        service->fitness_machine_status_cccd_handle =
+            cccd_handles[status_index];
+    }
+    if (control_index != 0xff) {
+        service->control_point_handle = value_handles[control_index];
+        service->control_point_cccd_handle = cccd_handles[control_index];
+    }
+    return 1;
+}
+
+// Application facing
 // Add an encoded Training Status notification characteristic.
 static inline int gatt_fitness_machine_service_notify_training_status(
     ble_gatt_server *server,
@@ -2764,6 +2918,23 @@ static inline int gatt_fitness_machine_service_notify_training_status(
         return 0;
     return gatt_server_queue_event(server, service->training_status_handle,
                                    value, len, 0);
+}
+
+// Application facing
+// Queue an encoded Fitness Machine Status notification.
+static inline int gatt_fitness_machine_service_notify_status(
+    ble_gatt_server *server,
+    const ble_gatt_fitness_machine_controlled_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value || !len)
+        return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->fitness_machine_status_handle);
+    if (!attribute || len > attribute->value_capacity || len > server->mtu - 3)
+        return 0;
+    return gatt_server_queue_event(server,
+        service->fitness_machine_status_handle, value, len, 0);
 }
 
 // Application facing

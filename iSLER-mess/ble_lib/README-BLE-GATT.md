@@ -124,7 +124,10 @@ Use `gatt_hearing_access_service_add_with_preset_control()` to add the
 encrypted Preset Control Point and Active Preset Index. The application handles
 the preset list and operations using the captured request fields, then queues
 the encoded response indication with
-`gatt_hearing_access_service_control_point_complete()`.
+`gatt_hearing_access_service_control_point_complete()`. Update the active
+preset in the database with
+`gatt_hearing_access_service_set_active_preset_index()` or update and notify
+with `gatt_hearing_access_service_notify_active_preset_index()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
 `gatt_object_transfer_service_add()` registers the single-object OTS metadata
@@ -143,8 +146,15 @@ queues data through `service.base` and provides encoded Training Status values.
 Control Point writes are saved in `control_point_opcode`,
 `control_point_parameter`, and `control_point_parameter_len`; the application
 handles each request and completes it with
-`gatt_fitness_machine_service_control_point_complete()`. Supported range and
-Fitness Machine Status characteristics remain optional and are not included.
+`gatt_fitness_machine_service_control_point_complete()`. The simpler
+controlled builder omits the optional Supported Range and Fitness Machine
+Status characteristics. Use `gatt_fitness_machine_service_add_full()` for
+feature-matched Supported
+Speed, Inclination, Resistance, Heart Rate, and Power Range characteristics,
+plus Fitness Machine Status when the Control Point is enabled (required in that
+case by FTMS). Range payloads are read-only standard encoded values; queue
+status updates with
+`gatt_fitness_machine_service_notify_status()`.
 `gatt_insulin_delivery_service_add()` registers the mandatory authorized IDD
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement

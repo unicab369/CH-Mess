@@ -56,8 +56,9 @@ count that generic path as implementation of a standard service.
 - [x] Transport Discovery (`0x1824`)
 - [x] Object Transfer (`0x1825`), single- and multi-object layouts including
   Object ID, OLCP, and Object List Filter
-- [x] Fitness Machine (`0x1826`), selected machine-data characteristic with
-  optional Training Status and Control Point handling
+- [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
+  feature-matched Supported Range values, optional Training Status and
+  Fitness Machine Status notifications, and Control Point handling
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [x] Insulin Delivery (`0x183A`), mandatory authorized status and reader-control layout
 - [x] Emergency Configuration (`0x183C`)
