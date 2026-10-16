@@ -2379,7 +2379,7 @@ static inline int gatt_rsc_service_add(
         &sensor_location, 1
     };
     uint8_t control_point_index = 0xff;
-    if (features & 0x0018) {
+    if (features & 0x001a) {
         control_point_index = count;
         chars[count++] = (ble_gatt_sig_characteristic){
             .uuid = 0x2a55,
@@ -2585,7 +2585,7 @@ static inline int gatt_csc_service_add(
         &sensor_location, 1
     };
     uint8_t control_point_index = 0xff;
-    if (features & 0x0004) {
+    if (features & 0x0005) {
         control_point_index = count;
         chars[count++] = (ble_gatt_sig_characteristic){
             .uuid = 0x2a55,
@@ -3600,5 +3600,6 @@ static inline int gatt_tpms_service_add(
 #include "ble_gatt_service_alerts.h"
 #include "ble_gatt_service_alert_notification.h"
 #include "ble_gatt_service_scan_parameters.h"
+#include "ble_gatt_service_sport.h"
 
 #endif

@@ -158,7 +158,8 @@ Additional service database builders are available:
 - `gatt_blood_pressure_service_add()` registers Blood Pressure Measurement,
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
-  Location.
+  Location. `gatt_rsc_service_notify_measurement()` encodes and queues
+  feature-checked measurements.
 
 These builders add service and characteristic database entries and return
 their handles. Applications supply profile-specific measurement payloads and
@@ -183,6 +184,8 @@ Additional service builders include:
   and updates the service state; the application applies it to its scanner.
 - `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
+  `gatt_csc_service_notify_measurement()` encodes and queues feature-checked
+  wheel and crank measurements.
 - `gatt_cycling_power_service_add()` for Power Measurement and Feature, with
   optional Vector, Sensor Location, and Control Point characteristics.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and

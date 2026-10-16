@@ -3,6 +3,7 @@
 
 // Scan Parameters Service protocol behavior. The application applies valid
 // parameters to its scanner and decides when to request a client refresh.
+// Internal
 static uint8_t gatt_scan_parameters_window_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command

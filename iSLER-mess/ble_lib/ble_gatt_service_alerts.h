@@ -5,6 +5,7 @@
 // The application observes the state fields to perform device-specific
 // actions.
 
+// Internal
 static uint8_t gatt_alert_u8_read(
     void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
 ) {
@@ -20,6 +21,7 @@ static uint8_t gatt_alert_u8_read(
     return 0;
 }
 
+// Internal
 static uint8_t gatt_alert_level_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -33,6 +35,7 @@ static uint8_t gatt_alert_level_write(
     return 0;
 }
 
+// Internal
 static uint8_t gatt_immediate_alert_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -48,6 +51,7 @@ static uint8_t gatt_immediate_alert_write(
     return 0;
 }
 
+// Internal
 static uint8_t gatt_phone_ringer_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command

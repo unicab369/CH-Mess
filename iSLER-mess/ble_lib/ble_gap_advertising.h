@@ -375,7 +375,7 @@ static inline void gap_adv_enable(
     gap_adv.peer_slot = slot;
     gap_adv.interval_ms = interval_ms;
     gap_adv.next_event_ms = GET_MILLIS();
-    gap_local_addr_select(slot, gap_adv.address, &gap_adv.address_type);
+    gap_local_addr_select(slot, gap_adv.local.address, &gap_adv.local.type);
     gap_adv.enabled = 1;
 }
 
@@ -399,7 +399,7 @@ static inline int gap_adv_start_payload(
     if (resp_len)
         memcpy(gap_adv.scan_response, scan_response, resp_len);
 
-    gap_adv.target_type = 0;
+    gap_adv.target.type = 0;
     gap_adv.data_len = (uint8_t)data_len;
     gap_adv.scan_resp_len = (uint8_t)resp_len;
     gap_adv_enable(pdu_type, interval_ms, -1);
@@ -456,8 +456,8 @@ int gap_adv_start_directed(
             return 0;
         type = 1;
     }
-    gap_adv.target_type = type;
-    memcpy(gap_adv.target_address, target, sizeof(target));
+    gap_adv.target.type = type;
+    memcpy(gap_adv.target.address, target, sizeof(target));
     gap_adv.data_len = 0;
     gap_adv.scan_resp_len = 0;
     gap_adv_enable(0x01, interval_ms, slot);

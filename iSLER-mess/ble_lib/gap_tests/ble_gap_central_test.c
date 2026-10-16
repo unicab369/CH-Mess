@@ -545,7 +545,7 @@ static void test_private_rotation(void) {
     gap_scan.active_pending = 0;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) != 0);
-    assert(memcmp(gap_adv.address, gap_own_address.address, 6) == 0);
+    assert(memcmp(gap_adv.local.address, gap_own_address.address, 6) == 0);
     assert(gap_resolve(gap_own_address.address, 1, identity, &type));
     gap_adv_stop();
     // Initiation retains InitA even if the rotation timeout expires.
@@ -2469,27 +2469,27 @@ static void test_peer_local_keys(void) {
     assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
 
     assert(gap_adv_start_directed(test_identity, 0, 100));
-    assert(gap_adv.peer_slot == slot && gap_adv.address_type == 1);
-    gap_address_hash(local_irk, gap_adv.address + 3, hash);
-    assert(memcmp(hash, gap_adv.address, 3) == 0);
-    gap_address_hash(test_irk, gap_adv.target_address + 3, hash);
-    assert(gap_adv.target_type == 1);
-    assert(memcmp(hash, gap_adv.target_address, 3) == 0);
-    memcpy(first, gap_adv.address, 6);
+    assert(gap_adv.peer_slot == slot && gap_adv.local.type == 1);
+    gap_address_hash(local_irk, gap_adv.local.address + 3, hash);
+    assert(memcmp(hash, gap_adv.local.address, 3) == 0);
+    gap_address_hash(test_irk, gap_adv.target.address + 3, hash);
+    assert(gap_adv.target.type == 1);
+    assert(memcmp(hash, gap_adv.target.address, 3) == 0);
+    memcpy(first, gap_adv.local.address, 6);
     random_seed++;
     now_ms = gap_privacy.next_rotation_ms;
     gap_privacy_poll(now_ms);
-    assert(memcmp(first, gap_adv.address, 6) != 0);
-    gap_address_hash(local_irk, gap_adv.address + 3, hash);
-    assert(memcmp(hash, gap_adv.address, 3) == 0);
+    assert(memcmp(first, gap_adv.local.address, 6) != 0);
+    gap_address_hash(local_irk, gap_adv.local.address + 3, hash);
+    assert(memcmp(hash, gap_adv.local.address, 3) == 0);
     // The peer may initiate with a different RPA from the directed TargetA.
     gap_advertising_rx_event = 1;
     gap_adv_frame[0] = 0xc1;
-    memcpy(gap_adv_frame + 2, gap_adv.address, 6);
-    memcpy(gap_adv_frame + 8, gap_adv.target_address, 6);
+    memcpy(gap_adv_frame + 2, gap_adv.local.address, 6);
+    memcpy(gap_adv_frame + 8, gap_adv.target.address, 6);
     rx_frame[0] = 0xc5; rx_frame[1] = 34;
     memcpy(rx_frame + 2, test_rpa, 6);
-    memcpy(rx_frame + 8, gap_adv.address, 6);
+    memcpy(rx_frame + 8, gap_adv.local.address, 6);
     gap_connect_request_ready = 0;
     gap_hw_received();
     assert(gap_connect_request_ready);
@@ -2580,7 +2580,7 @@ static void test_nonresolvable_private_addresses(void) {
     now_ms++;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) != 0);
-    assert(memcmp(gap_adv.address, gap_own_address.address, 6) == 0);
+    assert(memcmp(gap_adv.local.address, gap_own_address.address, 6) == 0);
     assert(aes_count == before);
     gap_adv_stop();
     // Local peer keys cannot replace a selected NRPA when initiating.

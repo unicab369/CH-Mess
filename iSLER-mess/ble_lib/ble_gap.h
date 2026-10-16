@@ -198,8 +198,9 @@ static inline uint32_t gap_phy_airtime_us(
 // Advertising, scanning, and periodic-sync state.
 static struct {
     uint8_t enabled, pdu_type, data_len, scan_resp_len;
-    uint8_t address_type, address[6];
-    uint8_t target_type, target_address[6];
+    struct {
+        uint8_t type, address[6];
+    } local, target;
     int8_t peer_slot;
     uint8_t scan_accept, connection_accept;
     uint16_t interval_ms;

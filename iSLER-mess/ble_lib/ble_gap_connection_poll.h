@@ -1448,8 +1448,8 @@ int gap_send_due(
 
     if (send_gap) {
         data = gap_adv.data;
-        random_address = gap_adv.address_type ? gap_adv.address : NULL;
-        target_type = gap_adv.target_type;
+        random_address = gap_adv.local.type ? gap_adv.local.address : NULL;
+        target_type = gap_adv.target.type;
         pdu_type = gap_adv.pdu_type;
         len = gap_adv.data_len;
     }
@@ -1473,7 +1473,7 @@ int gap_send_due(
     memcpy(adv_evt.adv_frame + 2, address, 6);
 
     if (pdu_type == ADV_DIRECT_IND)
-        memcpy(adv_evt.adv_frame + 8, gap_adv.target_address, 6);
+        memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
     else if (len)
         memcpy(adv_evt.adv_frame + 8, data, len);
 

@@ -530,13 +530,13 @@ static void gap_privacy_poll(uint32_t now) {
     }
 
     if (gap_adv.enabled) {
-        gap_local_addr_select(gap_adv.peer_slot, gap_adv.address,
-                                 &gap_adv.address_type);
+        gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address,
+                                 &gap_adv.local.type);
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&
             gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
-                                          gap_adv.target_address))
-            memcpy(gap_adv.target_address, address, 6);
+                                          gap_adv.target.address))
+            memcpy(gap_adv.target.address, address, 6);
     }
     gap_privacy.timeout_s = next_timeout_s;
     gap_privacy.next_rotation_ms = now + (uint32_t)next_timeout_s * 1000;

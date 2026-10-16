@@ -6,6 +6,7 @@
 #define GATT_ALERT_CATEGORY_MASK 0x03ffu
 #define GATT_ALERT_CATEGORY_ALL  0xffu
 
+// Internal
 static uint8_t gatt_alert_notification_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
