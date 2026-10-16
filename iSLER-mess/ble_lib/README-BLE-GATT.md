@@ -410,10 +410,19 @@ uses a fixed 65-octet capacity for Provisioning and 66 octets for Proxy. The
 application handles the bearer protocol and sends Data Out notifications using
 the returned CCCD. The Binary Sensor builder registers its Control Point and
 indicated Response; the application implements the BSS command protocol. Bond
-Management requires authenticated access to its control point and feature value;
-the application still performs the bond-management
-procedures. Indoor Positioning adds the three mandatory characteristics, and
-the application supplies and validates coordinate updates. Pulse Oximeter
+Management validates its feature bitmap and supported opcodes, checks optional
+authorization-code input through the supplied authorizer, and exposes accepted
+requests through `gatt_bond_management_service_take_request()`. The application
+performs bond deletion after the relevant link is no longer active.
+`gatt_indoor_positioning_service_add_full()` adds the three
+mandatory Indoor Positioning characteristics and any supplied local
+coordinates, floor number, altitude, uncertainty, and location name. It checks
+that every configured field has a value characteristic. Writes update the
+readable database. Use
+`gatt_indoor_positioning_service_encode_advertising_data()` to build the
+Indoor Positioning AD structure, passing any configured Tx Power value from
+GAP. Call `gatt_indoor_positioning_service_take_broadcast_update()` after the
+application refreshes its advertising payload. Pulse Oximeter
 adds either or both measurement modes, its feature value, and an optional
 Record Access Control Point when records are stored. HTTP Proxy takes value
 capacities for URI, headers, entity body, and control point; those allocations

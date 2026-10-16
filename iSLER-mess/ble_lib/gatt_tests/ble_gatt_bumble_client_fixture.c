@@ -50,6 +50,7 @@ static void on_result(
                 if (client.operation.value[i] != (uint8_t)i)
                     status = BLE_GATT_CLIENT_PROTOCOL_ERROR;
     }
+
     uint8_t header[4] = {2, status, (uint8_t)len, (uint8_t)(len >> 8)};
     if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header) ||
         (len && fwrite(pdu, 1, len, stdout) != len)
@@ -89,6 +90,7 @@ int main(void) {
             requested_handle = (uint16_t)handle_bytes[0] |
                 (uint16_t)handle_bytes[1] << 8;
         }
+
         int started = 0;
         switch (command) {
         case 1:

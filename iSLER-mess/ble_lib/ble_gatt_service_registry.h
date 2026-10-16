@@ -152,6 +152,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
         *service_handle = 0;
         return 0;
     }
+
     return 1;
 }
 

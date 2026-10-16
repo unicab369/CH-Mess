@@ -74,6 +74,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
             gatt_transport_set_connected(peer->transport, 0);
             peer->connected = 0;
         }
+
         peer->handle = handle;
 
         if (!gap_conn_select(handle) || !gap_connected())
@@ -98,6 +99,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
             failed = 1;
             continue;
         }
+
         work += received > 0;
 
         int result = gatt_transport_poll(peer->transport, GET_MILLIS());
@@ -107,6 +109,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
             failed = 1;
             continue;
         }
+
         work += result;
 
         uint16_t max_payload = gap_data_length_get().tx_octets;

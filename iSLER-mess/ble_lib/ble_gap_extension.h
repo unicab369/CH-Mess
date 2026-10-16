@@ -560,6 +560,7 @@ int gap_ext_adv_stop(uint8_t set_id) {
         set->pawr.enabled = 0;
         set->pawr.data_pending = 0;
     }
+
     return 1;
 }
 
@@ -784,6 +785,7 @@ static int gap_ext_adv_decode(
 
                 fields->pawr.has_timing = 1;
             }
+
             cursor += value_len;
         }
         cursor = header_end;
@@ -829,6 +831,7 @@ static void gap_ext_report_queue(
                     (gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)) != 0;
                 break;
             }
+
             offset += field_len + 1;
         }
 
@@ -880,6 +883,7 @@ static void gap_ext_report_queue(
         gap_ext_scan_idx.report_head = (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
         gap_ext_scan_idx.report_count--;
     }
+
     uint8_t slot = (gap_ext_scan_idx.report_head +
                     gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
@@ -928,6 +932,7 @@ static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
             (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
         gap_sync_events.count--;
     }
+
     uint8_t tail = (gap_sync_events.head + gap_sync_events.count) %
         GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.items[tail] = event;
@@ -968,6 +973,7 @@ int gap_periodic_sync_start(
         gap_scan_start(0);
         gap_sync_owned_scan = 1;
     }
+
     memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
     gap_syncs[slot].used = 1;
     gap_syncs[slot].handle = (uint8_t)(slot + 1);
@@ -1315,6 +1321,7 @@ static int gap_periodic_sync_receive(
             gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
         }
     }
+
     gap_syncs[slot].rssi = rssi;
     gap_syncs[slot].phy = packet_phy;
 
@@ -1335,6 +1342,7 @@ static int gap_periodic_sync_receive(
         gap_syncs[slot].event_data_active = 1;
         return 1;
     }
+
     gap_syncs[slot].event_data_active = 0;
 
     if (!gap_ext_ad_data_valid(gap_syncs[slot].data,
@@ -1349,6 +1357,7 @@ static int gap_periodic_sync_receive(
             GAP_PERIODIC_REPORT_COUNT;
         gap_periodic_reports.count--;
     }
+
     uint8_t tail = (gap_periodic_reports.head + gap_periodic_reports.count) %
                    GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_report *report = &gap_periodic_reports.items[tail];
@@ -1447,6 +1456,7 @@ static void gap_pawr_response_report_push(
                         GAP_PAWR_RESPONSE_REPORT_COUNT;
                     gap_pawr_reports.count--;
                 }
+
                 uint8_t tail = (gap_pawr_reports.head +
                     gap_pawr_reports.count) %
                     GAP_PAWR_RESPONSE_REPORT_COUNT;
@@ -1464,6 +1474,7 @@ static void gap_pawr_response_report_push(
                     memcpy(report->data, fields.payload.data, fields.payload.len);
                 gap_pawr_reports.count++;
             }
+
             break;
         }
     }
@@ -1716,6 +1727,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
                 continue;
             }
+
             uint16_t data_len = set->pawr.data_pending ?
                 set->periodic.data_len : 0;
             // AUX_SYNC_SUBEVENT_IND uses the extended advertising PDU format.
@@ -1778,6 +1790,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
         }
         return 1;
     }
+
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len, offset = 0;
     uint8_t channel = gap_periodic_channel_for(set->periodic.access_address,
@@ -1904,7 +1917,6 @@ static int gap_hw_transmit_extended_advertising(
                GAP_HW_TICKS() < tx_deadline_ticks) {}
 
         if (!GAP_HW_TX_DONE()) return 0;
-
         if (!has_chain) return 1;
 
         uint16_t data_offset = first_chunk;
@@ -2035,6 +2047,7 @@ static int gap_hw_transmit_extended_advertising(
                 HW_TICKS_FROM_US(delay_us);
             target = set->periodic.next_event_ticks;
         }
+
         uint64_t offset_ticks = target > pdu_start ? target - pdu_start : 0;
         uint32_t offset_us = (uint32_t)(offset_ticks / HW_TICKS_FROM_US(1));
         uint8_t units_300 = offset_us >= 245700;
@@ -2148,6 +2161,7 @@ static void gap_ext_scan_process(void) {
             pdu_len, gap_ext_scan.ticks);
         return;
     }
+
     gap_ext_fields fields;
 
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields))
@@ -2242,6 +2256,7 @@ static void gap_ext_scan_process(void) {
                 }
             }
         }
+
         return;
     }
 
@@ -2323,6 +2338,7 @@ static void gap_ext_scan_process(void) {
                     context_slot = -1;
                     break;
                 }
+
                 context_slot = i;
             }
 
@@ -2336,6 +2352,7 @@ static void gap_ext_scan_process(void) {
                 gap_ext_ctx[context_slot].identity.adi = fields.identity.adi;
                 gap_ext_ctx[context_slot].identity.sid = fields.identity.sid;
             }
+
             gap_ext_ctx[context_slot].rssi = gap_ext_scan.rssi;
         }
 
@@ -2357,6 +2374,7 @@ static void gap_ext_scan_process(void) {
                 gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
                     break;
             }
+
             gap_ext_ctx[context_slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
             break;
         }
@@ -2419,6 +2437,7 @@ static void gap_ext_scan_process(void) {
                         aux_slot = gap_aux_request[0].start_ticks <=
                                     gap_aux_request[1].start_ticks ? 0 : 1;
                 }
+
                 gap_aux_request[aux_slot].active = 1;
                 gap_aux_request[aux_slot].channel = fields.aux_channel;
                 gap_aux_request[aux_slot].phy = aux_phy;
@@ -2735,6 +2754,7 @@ static void gap_connection_take_radio(void) {
         if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
             gap_aux_request[slot].active = 0;
     }
+
     GAP_HW_PACKET_CLEAR();
 }
 
@@ -2866,6 +2886,7 @@ static int gap_ext_send_due(uint32_t now) {
             return 1;
         }
     }
+
     int send_extended = -1;
     for (uint8_t offset = 0; offset < GAP_EXT_ADV_SET_COUNT; offset++) {
         uint8_t set_id = (gap_ext_adv_next_set + offset) %
@@ -2892,7 +2913,6 @@ static int gap_ext_send_due(uint32_t now) {
     int transmit_result = gap_hw_transmit_extended_advertising(&gap_ext_adv[send_extended]);
 
     if (!transmit_result) return -1;
-
     if (transmit_result == 2) return 2;
 
     uint32_t completed_at = GET_MILLIS();

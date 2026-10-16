@@ -98,29 +98,35 @@ static inline int gatt_location_navigation_service_notify_location_speed(
         ble_put_le16(value + index, instantaneous_speed);
         index += 2;
     }
+
     if (flags & (1u << 1)) {
         gatt_lns_put_le24(value + index, total_distance);
         index += 3;
     }
+
     if (flags & (1u << 2)) {
         gatt_lns_put_le32(value + index, (uint32_t)latitude);
         gatt_lns_put_le32(value + index + 4, (uint32_t)longitude);
         index += 8;
     }
+
     if (flags & (1u << 3)) {
         gatt_lns_put_le24(value + index, (uint32_t)elevation);
         index += 3;
     }
+
     if (flags & (1u << 4)) {
         ble_put_le16(value + index, heading);
         index += 2;
     }
+
     if (flags & (1u << 5))
         value[index++] = rolling_time;
     if (flags & (1u << 6)) {
         memcpy(value + index, utc_time, 7);
         index += 7;
     }
+
     if (server->mtu < 3 || index > server->mtu - 3)
         return 0;
 
@@ -165,11 +171,13 @@ static inline int gatt_location_navigation_service_notify_navigation(
         gatt_lns_put_le24(value + index, remaining_distance);
         index += 3;
     }
+
     if (flags & (1u << 1)) {
         gatt_lns_put_le24(value + index,
                           (uint32_t)remaining_vertical_distance);
         index += 3;
     }
+
     if (flags & (1u << 2)) {
         memcpy(value + index, estimated_time_of_arrival, 7);
         index += 7;
@@ -350,6 +358,7 @@ static inline uint8_t gatt_lns_control_point_write(
         service->fix_rate = next_fix_rate;
         service->elevation = next_elevation;
     }
+
     return error;
 }
 

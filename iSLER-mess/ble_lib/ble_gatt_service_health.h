@@ -157,6 +157,7 @@ static inline int gatt_blood_pressure_service_indicate(
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;
     }
+
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
@@ -205,6 +206,7 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
         ble_put_le16(value + len, measurement->measurement_status);
         len += 2;
     }
+
     return gatt_server_queue_event(server,
         service->intermediate_cuff_pressure_handle, value, len, 0);
 }

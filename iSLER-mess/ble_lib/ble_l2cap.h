@@ -288,6 +288,7 @@ static inline uint16_t l2cap_psm_authorize(
             return result == 2 || (result >= 4 && result <= 11) ?
             result : 2;
     }
+
     return !conn->ops.accept_psm ||
         conn->ops.accept_psm(conn->ops.context, psm) ? 0 : 2;
 }
@@ -684,6 +685,7 @@ static inline int l2cap_connection_tick(
                     l2cap_channel_clear(conn, (uint8_t)slot, 0x0008);
             }
         }
+
         conn->pending_id = conn->pending_count = conn->pending_code = 0;
         conn->pending_deadline_ms = 0;
         expired++;
@@ -821,6 +823,7 @@ static inline int l2cap_signaling_receive(
             offset = (uint16_t)(offset + command_len);
             continue;
         }
+
         int handled;
         switch (code) {
         case L2CAP_COMMAND_REJECT:
@@ -869,6 +872,7 @@ static inline int l2cap_signaling_receive(
             offset = (uint16_t)(offset + command_len);
             continue;
         }
+
         switch (code) {
         case L2CAP_LE_CREDIT_CONNECTION_REQUEST: {
             uint16_t result = 0, psm = 0, remote_cid = 0;
@@ -890,6 +894,7 @@ static inline int l2cap_signaling_receive(
                     result = 10;
                 else result = l2cap_psm_authorize(conn, psm);
             }
+
             int slot = -1;
             if (!result) {
                 for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
@@ -899,6 +904,7 @@ static inline int l2cap_signaling_receive(
                     }
                 }
             }
+
             uint16_t local_cid = slot < 0 ? 0 : l2cap_cid_alloc(conn);
             if (!result && (!local_cid || slot < 0))
                 result = 4;
@@ -936,6 +942,7 @@ static inline int l2cap_signaling_receive(
                     conn->ops.channel_opened(conn->ops.context, psm,
                         local_cid, remote_cid, ch->local_mtu);
             }
+
             break;
         }
         case L2CAP_LE_CREDIT_CONNECTION_RESPONSE:
@@ -1053,6 +1060,7 @@ static inline int l2cap_signaling_receive(
                         slots[i] = -1;
                         continue;
                     }
+
                     conn->channels[slots[i]].local_cid = local_cids[i];
                 }
             }
@@ -1066,6 +1074,7 @@ static inline int l2cap_signaling_receive(
                         partial_result = channel_result[i];
                         break;
                     }
+
                 ble_write_u16_le(response, conn->local_mtu);
                 ble_write_u16_le(response + 2, conn->local_mps);
                 ble_write_u16_le(response + 4, conn->local_credits);
@@ -1136,6 +1145,7 @@ static inline int l2cap_signaling_receive(
                     mps < L2CAP_ECFC_MPS_MIN
                 ) result = 0x000b;
             }
+
             uint16_t greatest_mtu = 0, greatest_mps = 0;
             for (uint8_t i = 0; !result && i < count; i++) {
                 uint16_t cid = ble_read_u16_le(p + 4 + i * 2);
@@ -1198,6 +1208,7 @@ static inline int l2cap_signaling_receive(
                         L2CAP_SIGNAL_TIMEOUT_MS;
                     break;
                 }
+
                 uint8_t partial = result == 4 || result == 9 || result == 10;
                 if (result && !partial) {
                     if (command_len != 8)
@@ -1265,6 +1276,7 @@ static inline int l2cap_signaling_receive(
                             l2cap_channel_clear(conn, (uint8_t)slot, result);
                             continue;
                         }
+
                         ch->remote_cid = remote;
                         ch->remote_mtu = mtu;
                         ch->remote_mps = mps;
@@ -1294,6 +1306,7 @@ static inline int l2cap_signaling_receive(
                     l2cap_channel_clear(conn, (uint8_t)slot, 3);
                     break;
                 }
+
                 conn->channels[slot].tx_credits += credits;
             }
             break;
@@ -1376,9 +1389,11 @@ static inline int l2cap_signaling_receive(
                                 ble_read_u16_le(p));
                     }
                 }
+
                 conn->pending_id = conn->pending_count = conn->pending_code = 0;
                 conn->pending_deadline_ms = 0;
             }
+
             break;
         case L2CAP_CONNECTION_PARAMETER_UPDATE_RESPONSE:
             if (command_len != 2 || identifier != conn->pending_id ||
@@ -1418,6 +1433,7 @@ static inline int l2cap_signaling_receive(
             if (!l2cap_signal_reject(conn, identifier, 0))
                 return 0;
         }
+
         offset = (uint16_t)(offset + command_len);
     }
     return 1;
@@ -1442,6 +1458,7 @@ static inline int l2cap_connection_receive(
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
         }
+
         ch->rx_credits--;
         uint16_t offset = 0;
         if (!ch->rx_expected) {
@@ -1449,6 +1466,7 @@ static inline int l2cap_connection_receive(
                 l2cap_channel_clear(conn, (uint8_t)slot, 1);
                 return 0;
             }
+
             ch->rx_expected = ble_read_u16_le(sdu);
             offset = 2;
             if (!ch->rx_expected || ch->rx_expected > ch->local_mtu ||
@@ -1457,11 +1475,13 @@ static inline int l2cap_connection_receive(
                 return 0;
             }
         }
+
         uint16_t chunk = (uint16_t)(len - offset);
         if ((uint32_t)ch->rx_used + chunk > ch->rx_expected) {
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
         }
+
         memcpy(ch->rx_data + ch->rx_used, sdu + offset, chunk);
         ch->rx_used = (uint16_t)(ch->rx_used + chunk);
         if (ch->rx_used == ch->rx_expected) {
@@ -1471,6 +1491,7 @@ static inline int l2cap_connection_receive(
                 l2cap_channel_clear(conn, (uint8_t)slot, 2);
                 return 0;
             }
+
             ch->rx_expected = ch->rx_used = 0;
         }
         // Replenish each consumed K-frame after its payload has been copied or
@@ -1537,6 +1558,7 @@ static inline int l2cap_reassembler_feed(
                 (uint32_t)payload_len + 4 - len : 0;
             return 0;
         }
+
         rx->expected = (uint16_t)(payload_len + 4);
     }
     else if (rx->discard_remaining) {
@@ -1547,18 +1569,19 @@ static inline int l2cap_reassembler_feed(
     else if (!rx->expected) {
         return 0;
     }
+
     uint16_t remaining = (uint16_t)(rx->expected - rx->used);
     if (len > remaining) {
         rx->expected = rx->used = 0;
         return -1;
     }
+
     memcpy(rx->data + rx->used, fragment, len);
     rx->used = (uint16_t)(rx->used + len);
     if (rx->used != rx->expected)
         return 0;
 
     if (cid) *cid = rx->cid;
-
     if (sdu) *sdu = rx->data + 4;
     if (sdu_len)
         *sdu_len = (uint16_t)(rx->expected - 4);

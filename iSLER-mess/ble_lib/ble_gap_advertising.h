@@ -272,7 +272,6 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
         int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
 
         if (parse_result < 0) return 0;
-
         if (parse_result == 0) break;
 
         structures++;
@@ -313,6 +312,7 @@ int gap_ead_encrypt(
         gap_wipe(encrypted_data, plaintext_len + GAP_EAD_MIC_LEN);
         return 0;
     }
+
     out[0] = (uint8_t)(plaintext_len + 10);
     out[1] = GAP_AD_ENCRYPTED_DATA;
     memcpy(out + 2, randomizer, sizeof(randomizer));
@@ -351,6 +351,7 @@ int gap_ead_decrypt(
         gap_wipe(out, plaintext_len);
         return 0;
     }
+
     *out_len = plaintext_len;
     return 1;
 }
@@ -499,6 +500,7 @@ int gap_adv_start_directed(
 
         type = 1;
     }
+
     gap_adv.target.type = type != 0;
     memcpy(gap_adv.target.address, target, sizeof(target));
     gap_adv.data_len = 0;
@@ -651,6 +653,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
         peer_slot = gap_identity_find(peer_address, peer_type);
         memcpy(gap_central.request + 8, peer_address, 6);
     }
+
     gap_local_addr_select(peer_slot, gap_central.request + 2, &local_type);
     gap_central.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
     gap_central.request[1] = 34;
@@ -867,6 +870,7 @@ static inline void gap_receive_report(
         else if (seen_slot == gap_scan.seen_count) {
             gap_scan.seen_count++;
         }
+
         gap_scan_seen[seen_slot].peer.type = identity_type;
         gap_scan_seen[seen_slot].pdu_type = pdu_type;
         gap_scan_seen[seen_slot].data_len = seen_len;

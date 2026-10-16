@@ -46,8 +46,10 @@ automatically provide each service's application protocol or profile behavior.
   Point request/response handling, and segmented Registered User indications;
   user storage remains application-owned
 - [x] Weight Scale (`0x181D`)
-- [x] Bond Management (`0x181E`)
-- [x] Indoor Positioning (`0x1821`)
+- [x] Bond Management (`0x181E`), feature-gated Control Point validation,
+  authorization-code checks, and application request capture
+- [x] Indoor Positioning (`0x1821`), mandatory and optional coordinate/location
+  layouts, database-updating writes, and advertising-regeneration signaling
 - [x] Pulse Oximeter (`0x1822`)
 - [x] HTTP Proxy (`0x1823`)
 - [x] Mesh Provisioning (`0x1827`)

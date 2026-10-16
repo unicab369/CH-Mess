@@ -353,6 +353,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         gap_conn_poll_all();
         gap_hw_scan_poll();
     }
+
     if (mesh_gatt_rx_count) {
         uint8_t slot = mesh_gatt_rx_head;
         if (*len < mesh_gatt_rx_queue[slot].len)
@@ -363,6 +364,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         mesh_gatt_rx_count--;
         return 1;
     }
+
     if (connection_busy) return 0;
     uint32_t now = GET_MILLIS();
     const uint8_t mesh_ad_types[] = {
@@ -453,6 +455,7 @@ int BLE_MESH_NETWORK_SAVE_STATE(const mesh_net_state *state) {
         mesh_adv_queue_clear(MESH_NETWORK_AD_TYPE);
         mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
     }
+
     if (!state->beacon)
         mesh_adv_queue_clear(MESH_NETWORK_BEACON_AD_TYPE);
     return 1;
@@ -556,6 +559,7 @@ int PROVISIONER_GET_DATA(prov_data *data, uint8_t num_elements) {
     if (!next_address) {
         next_address = record.state.unicast_address + record.state.element_count;
     }
+
     if (next_address > 0x7FFF ||
         (uint32_t)next_address + num_elements - 1 > 0x7FFF
     ) return -1;

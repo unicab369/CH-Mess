@@ -107,6 +107,7 @@ static int server_onoff_receive(const mesh_access_pdu *message, uint8_t element)
             server->last_set_ms = now;
             server->has_tid = 1;
         }
+
         if (opcode == OP_ONOFF_SET_UNACK)
             return 1;
     }
@@ -147,6 +148,7 @@ static void mesh_publications_poll(void) {
                 mesh_models.publications[i][j].remaining = 0;
                 continue;
             }
+
             uint32_t period = j == 2 ? mesh_health_period(i) :
                 j == 3 ? 0 : mesh_publication_period(pub->period);
             if ((j == 2 && mesh_models.health_server[i].publish_pending) ||
@@ -172,6 +174,7 @@ static void mesh_publications_poll(void) {
                         mesh_models.publications[i][j].params, mesh_models.publications[i][j].len);
                 }
             }
+
             if (mesh_models.publications[i][j].remaining &&
                 (int32_t)(now - mesh_models.publications[i][j].retransmit_at_ms) >= 0 &&
                 mesh_publication_send(i, j)) {
@@ -189,6 +192,7 @@ static inline int mesh_models_poll(void) {
         BLE_MESH_ADV_POLL(ad, &len, NULL);
         return 0;
     }
+
     if (!mesh_models.ready && !mesh_models_init())
         return 0;
     for (uint8_t i = 0; i < mesh_network.state.element_count; i++)
@@ -211,6 +215,7 @@ static inline int mesh_models_poll(void) {
             result = 1;
         }
     }
+
     if (result <= 0) return result;
 
     // Decode once, then deliver to each subscribed model instance.
@@ -234,6 +239,7 @@ static inline int mesh_models_poll(void) {
             mesh_network.reply_net_idx = primary_net_idx;
             if (handled) return 1;
         }
+
         if (message->device_key_owner != message->src)
             return 0;
 
@@ -305,6 +311,7 @@ static inline int mesh_models_poll(void) {
 
             if (!subscribed) continue;
         }
+
         if (group) {
             // Deliver a group message only to subscribed model instances.
             uint8_t subscribed = 0;
@@ -319,6 +326,7 @@ static inline int mesh_models_poll(void) {
 
             if (!subscribed) continue;
         }
+
         if (!app_key_allowed(i, model, message->app_key_index))
             continue;
 

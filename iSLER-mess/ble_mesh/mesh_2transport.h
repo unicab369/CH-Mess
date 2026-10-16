@@ -495,6 +495,7 @@ static inline void mesh_friend_subscription_receive(
                     found = j;
                     break;
                 }
+
             if (message->opcode == MESH_CONTROL_FRIEND_SUBSCRIPTION_ADD) {
                 if (found == friendship->subscription_count &&
                     friendship->subscription_count < transport_friend.subscription_size
@@ -548,6 +549,7 @@ static int mesh_friend_queue_target(const mesh_net_message *message) {
                     subscribed = 1;
                     break;
                 }
+
             if (!subscribed) continue;
         }
         return (int)i;
@@ -577,6 +579,7 @@ static inline int mesh_friend_queue_receive(const mesh_net_message *message) {
             friendship->has_poll_fsn = 0;
         }
     }
+
     mesh_friend_queue_item *item =
         &friendship->queue[friendship->queue_count++];
     memset(item, 0, sizeof(*item));
@@ -631,8 +634,10 @@ static inline void mesh_friend_poll_receive(
                 offer->queue_count--;
             }
         }
+
         offer->last_response_queued = 0;
     }
+
     transport_friend_offers[slot].last_poll_fsn = fsn;
     transport_friend_offers[slot].has_poll_fsn = 1;
 
@@ -713,14 +718,17 @@ static inline void mesh_friend_poll_receive(
                     mesh_obfuscate(key, pdu, iv);
                     sent = BLE_MESH_QUEUE_TX(ad, (size_t)ad[0] + 1) == 0;
                 }
+
                 break;
             }
         }
+
         if (sent) {
             transport_friend_offers[slot].last_response_queued = 1;
             transport_friend_offers[slot].expires_at_ms = GET_MILLIS() +
                 transport_friend_offers[slot].poll_timeout_ms;
         }
+
         return;
     }
 
@@ -793,6 +801,7 @@ static inline void mesh_friend_clear_receive(
                 confirm, sizeof(confirm));
             return;
         }
+
         uint8_t confirm[3] = {MESH_CONTROL_FRIEND_CLEAR_CONFIRM,
             (uint8_t)(lpn >> 8), (uint8_t)lpn};
         uint8_t previous_friend_clear = !message->friendship;
@@ -890,6 +899,7 @@ static inline void mesh_lpn_control_receive(
                 mesh_network.state.unicast_address, message->src);
             return;
         }
+
         transport_lpn.friend_address = message->src;
         transport_lpn.friend_counter = friend_counter;
         transport_lpn.subscription_list_size = message->params[2];
@@ -1112,6 +1122,7 @@ static int transport_decrypt(
                                             out->data) == CCM_OK) {
                     out->app_key_index = app->index;
                 }
+
                 if (out->app_key_index != APP_KEY_INDEX_NONE)
                     break;
             }
@@ -1132,12 +1143,14 @@ static int transport_decrypt(
             ok = 1;
             out->device_key_owner = dst;
         }
+
         if (!ok && BLE_MESH_TRANSPORT_GET_DEVICE_KEY(src, key) == 1 &&
             ccm_auth_decrypt(key, nonce, 13, NULL, 0, upper, len - mic_len,
                              upper + len - mic_len, mic_len, out->data) == CCM_OK) {
             ok = 1;
             out->device_key_owner = src;
         }
+
         if (!ok) return 0;
     }
 
@@ -1447,6 +1460,7 @@ static inline int mesh_transport_receive(
                 transport_tx.active = 0;
                 return 0;
             }
+
             uint32_t segment_mask = transport_tx.seg_n == 31 ? UINT32_MAX :
                                     ((uint32_t)1 << (transport_tx.seg_n + 1)) - 1;
             uint32_t new_acked = (acked & segment_mask) & ~transport_tx.acked;
@@ -1461,12 +1475,14 @@ static inline int mesh_transport_receive(
                     transport_tx.active = 0;
                     return 0;
                 }
+
                 transport_tx.retries++;
                 if (new_acked)
                     transport_tx.retries_without_progress = 0;
                 else transport_tx.retries_without_progress++;
                 transport_tx.next_seg = 0;
             }
+
             return 0;
         }
 
@@ -1495,6 +1511,7 @@ static inline int mesh_transport_receive(
                 transport_control_handler(&control);
             mesh_lpn_poll_response_received(net);
         }
+
         return 0;
     }
 
@@ -1514,6 +1531,7 @@ static inline int mesh_transport_receive(
             out->ttl = net->ttl;
             mesh_lpn_poll_response_received(net);
         }
+
         return result;
     }
 
@@ -1559,6 +1577,7 @@ static inline int mesh_transport_receive(
             if (!free_rx) free_rx = rx;
             continue;
         }
+
         if (!transport_rx_matches(rx, net->ctl, net->net_key_index, net->src, net->dst,
                                   seq_auth, net->iv_index)
         ) continue;
@@ -1645,6 +1664,7 @@ static inline int mesh_transport_receive(
                     mesh_net_queue(net->net_key_index, net->dst, net->src,
                         1, net->ttl, ack, sizeof(ack));
                 }
+
                 return 0;
             }
             // Free every stored segment belonging to the completed transaction.
@@ -1656,6 +1676,7 @@ static inline int mesh_transport_receive(
             }
             free_rx = oldest;
         }
+
         memset(free_rx, 0, sizeof(*free_rx));
         free_rx->active = 1;
         free_rx->ctl = net->ctl;
@@ -1707,6 +1728,7 @@ static inline int mesh_transport_receive(
             }
             return 0;
         }
+
         mesh_friend_offer *friendship = &transport_friend_offers[friend_slot];
         for (uint8_t i = 0; i < friendship->queue_count; i++) {
             mesh_friend_queue_item *item = &friendship->queue[i];
@@ -1723,6 +1745,7 @@ static inline int mesh_transport_receive(
             friendship->last_response_queued = 0;
             friendship->has_poll_fsn = 0;
         }
+
         mesh_friend_queue_item *item =
             &friendship->queue[friendship->queue_count++];
         memset(item, 0, sizeof(*item));
@@ -1750,6 +1773,7 @@ static inline int mesh_transport_receive(
         mesh_friend_send_obo_ack(net, seq_zero, seg_n);
         return 0;
     }
+
     if (net->ctl) {
         uint32_t last_seq = 0;
         for (size_t i = 0; i < MESH_TRANSPORT_RX_PACKET_SLOTS; i++) {
@@ -1772,6 +1796,7 @@ static inline int mesh_transport_receive(
                 ) rx->delivered = 1;
             }
         }
+
         return 0;
     }
 
@@ -1829,6 +1854,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                    sizeof(transport_friend_offers[i]));
             continue;
         }
+
         if (transport_friend_offers[i].subscription_confirm_pending &&
             (int32_t)(now -
                 transport_friend_offers[i].subscription_confirm_at_ms) >= 0) {
@@ -1848,6 +1874,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 transport_friend_offers[i].subscription_confirm_pending = 0;
             }
         }
+
         mesh_friend_offer *friend_offer = &transport_friend_offers[i];
         if (friend_offer->clear_pending) {
             if ((uint32_t)(now - friend_offer->clear_started_ms) >=
@@ -1871,6 +1898,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 }
             }
         }
+
         if (!transport_friend.enabled || transport_friend_offers[i].offered ||
             (int32_t)(GET_MILLIS() -
                 transport_friend_offers[i].offer_at_ms) < 0
@@ -1974,6 +2002,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                         transport_lpn.friend_address, 1, 0, subscription,
                         2 + transport_lpn.subscription_count * 2);
                 }
+
                 uint8_t poll[2] = {MESH_CONTROL_FRIEND_POLL, transport_lpn.fsn};
                 if (mesh_net_queue_friend(transport_lpn.net_key_index,
                         mesh_network.state.unicast_address,
@@ -2044,6 +2073,7 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 ((uint32_t)transport_sar_rx.discard_timeout + 1) * 5000) {
             rx->active = rx->ack_pending = 0;
         }
+
         if (!rx->active || !rx->ack_pending || !mesh_local_element(rx->dst) ||
             (int32_t)(now - rx->ack_at_ms) < 0
         ) continue;
@@ -2135,11 +2165,13 @@ static inline int mesh_transport_poll(mesh_access_message *out) {
                 transport_tx.active = 0;
                 return -1;
             }
+
             transport_tx.retries++;
             transport_tx.retries_without_progress++;
             transport_tx.next_seg = 0;
         }
     }
+
     return result;
 }
 

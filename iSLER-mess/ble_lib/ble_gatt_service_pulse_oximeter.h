@@ -88,6 +88,7 @@ static inline int gatt_pulse_oximeter_service_indicate_spot_check(
         ble_put_le16(value + len, measurement->pulse_amplitude_index);
         len += 2;
     }
+
     return gatt_server_queue_event(server, service->spot_check_handle,
                                    value, len, 1);
 }
@@ -146,6 +147,7 @@ static inline int gatt_pulse_oximeter_service_notify_continuous(
         ble_put_le16(value + len, measurement->pulse_amplitude_index);
         len += 2;
     }
+
     return gatt_server_queue_event(server, service->continuous_handle,
                                    value, len, 0);
 }

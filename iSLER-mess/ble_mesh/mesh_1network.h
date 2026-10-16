@@ -355,6 +355,7 @@ static const mesh_credentials *mesh_runtime_netkey(
             return NULL;
         return use_new ? &mesh_network.new_key : &mesh_network.old_key;
     }
+
     const mesh_additional_subnet *sub = &state->additional_subnets[slot - 1];
     if (use_new && !sub->has_new_key)
         return NULL;
@@ -413,6 +414,7 @@ static void mesh_friendships_rederive(void) {
             memset(friendship, 0, sizeof(*friendship));
             continue;
         }
+
         const uint8_t *old_key = slot == 0 ? mesh_network.state.net_key :
             mesh_network.state.additional_subnets[slot - 1].key;
         const uint8_t *new_key = slot == 0 ?
@@ -455,6 +457,7 @@ static inline int mesh_friendship_add(
             slot = candidate;
             break;
         }
+
         if (!candidate->used && !slot)
             slot = candidate;
     }
@@ -649,6 +652,7 @@ static inline int mesh_stage_net_key(
         next.key_refresh_phase = 1;
         return mesh_commit(&next);
     }
+
     mesh_additional_subnet *sub = &mesh_network.state.additional_subnets[slot - 1];
     if (sub->key_refresh_phase == 1 &&
         memcmp(sub->new_key, new_net_key, 16) == 0
@@ -719,6 +723,7 @@ static int mesh_key_refresh_transition_apply(
         else next->additional_subnets[slot - 1].phase2_provisioned = 0;
         return 1;
     }
+
     if (!has_new) return 0;
     if (transition == 2) {
         if (phase != 1 && phase != 2)
@@ -784,6 +789,7 @@ static int mesh_iv_state_update(
                observed_update != next->iv_update) {
         return 0;
     }
+
     return 1;
 }
 
@@ -1294,6 +1300,7 @@ static inline int mesh_net_receive(
             mesh_network.heartbeat.max_hops = hops;
         return 0;
     }
+
     return 1;
 }
 
@@ -1379,6 +1386,7 @@ static inline int mesh_net_poll(mesh_net_message *message) {
             mesh_network.heartbeat.publish_at_ms = millis + (1u << (pub->period_log - 1)) * 1000u;
         }
     }
+
     return result == 0 && tick_result < 0 ? -1 : result;
 }
 

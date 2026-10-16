@@ -130,6 +130,7 @@ static uint32_t mesh_health_period(uint8_t element) {
         period >>= mesh_models.state.health_period[element];
         if (period < 100) period = 100;
     }
+
     return period;
 }
 
@@ -409,6 +410,7 @@ static int mesh_publication_send(uint8_t element, uint8_t slot) {
         mesh_models.local.pending = 1;
         return 1;
     }
+
     return pub->has_label ?
         mesh_access_queue_virtual(src, pub->label, ttl, pub->app_idx,
                                        opcode, params, len, 0) :

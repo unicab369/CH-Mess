@@ -115,21 +115,13 @@ static inline uint16_t gatt_cycling_power_apply_content_mask(
     uint16_t flags, uint16_t mask
 ) {
     if (mask & (1u << 0)) flags &= (uint16_t)~0x0003;
-
     if (mask & (1u << 1)) flags &= (uint16_t)~0x000c;
-
     if (mask & (1u << 2)) flags &= (uint16_t)~0x0010;
-
     if (mask & (1u << 3)) flags &= (uint16_t)~0x0020;
-
     if (mask & (1u << 4)) flags &= (uint16_t)~0x00c0;
-
     if (mask & (1u << 5)) flags &= (uint16_t)~0x0100;
-
     if (mask & (1u << 6)) flags &= (uint16_t)~0x0200;
-
     if (mask & (1u << 7)) flags &= (uint16_t)~0x0400;
-
     if (mask & (1u << 8)) flags &= (uint16_t)~0x0800;
     return flags;
 }
@@ -228,6 +220,7 @@ static inline int gatt_cycling_power_service_notify_measurement(
         ble_put_le16(value + len, measurement->offset_compensation_indicator);
         len += 2;
     }
+
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 0);
 }
@@ -907,6 +900,7 @@ static inline int gatt_rsc_service_notify_measurement(
         value[len++] = (uint8_t)(distance >> 16);
         value[len++] = (uint8_t)(distance >> 24);
     }
+
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 0);
 }
@@ -947,6 +941,7 @@ static inline int gatt_csc_service_notify_measurement(
         ble_put_le16(value + len, measurement->last_crank_event_time);
         len += 2;
     }
+
     return gatt_server_queue_event(server, service->measurement_handle,
                                    value, len, 0);
 }

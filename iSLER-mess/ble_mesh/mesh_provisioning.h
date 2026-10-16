@@ -780,6 +780,7 @@ void provisioner_poll(void) {
         ) {
             return;
         }
+
         bearer.last_activity_ms = now;
     }
 
@@ -805,6 +806,7 @@ void provisioner_poll(void) {
         if (pb_queue_gpc_ack(adv_data[6]) == 0) {
             provisioner.state = PROVISIONER_FAILED;
         }
+
         return;
     }
 
@@ -823,6 +825,7 @@ void provisioner_poll(void) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
+
         pb_send_link_close(PB_CLOSE_FAIL);
         provisioner.state = PROVISIONER_FAILED;
         return;
@@ -1022,10 +1025,12 @@ void provisioner_poll(void) {
                 provisioner.state = PROVISIONER_FAILED;
                 return;
             }
+
             if (ECDH_COMPUTE_DHKEY(session.private_key, peer_pubkey, session.dhkey) != 0) {
                 provisioner_fail(PROV_ERR_INVALID_FORMAT);
                 return;
             }
+
             if (GET_RANDOM_BYTES(session.random, sizeof(session.random)) != 1 ||
                 AUTH_COMPUTE_CONFIRMATION(
                     session.confirm_inputs, session.dhkey,
@@ -1124,6 +1129,7 @@ void provisioner_poll(void) {
             provisioner.state = PROVISIONER_FAILED;
             return;
         }
+
         if (!peer_confirm_valid(session.confirm_inputs, session.dhkey,
                                 session.peer_random, session.random,
                                 session.peer_confirmation)
@@ -1439,6 +1445,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
             if (pb_queue_gpc_ack(adv_data[6]) == 0) {
                 provisionee.state = PROVISIONEE_FAILED;
             }
+
             return;
         }
 
@@ -1456,6 +1463,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
+
             PROV_ATTENTION_STOP();
             provisionee.state = WAITING_FOR_FAILED_CLOSE;
             return;
@@ -1638,6 +1646,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
+
                 if (ECDH_COMPUTE_DHKEY(session.private_key, peer_public_key, session.dhkey) != 0) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
@@ -1737,6 +1746,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                 provisionee.state = PROVISIONEE_FAILED;
                 return;
             }
+
             if (!peer_confirm_valid(session.confirm_inputs, session.dhkey,
                                     session.peer_random, session.random,
                                     session.peer_confirmation)
@@ -1825,6 +1835,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee.state = PROVISIONEE_FAILED;
                     return;
                 }
+
                 if (AUTH_DECRYPT_DATA(session.session_key,
                                     session.session_nonce,
                                     encrypted, mic, plain) != 0
@@ -1860,6 +1871,7 @@ void provisionee_poll(const uint8_t oob_info[2], const prov_caps *caps) {
                     provisionee_fail(PROV_ERR_INVALID_FORMAT);
                     return;
                 }
+
                 if (PROVISIONEE_STORE_DATA(&data, session.device_key,
                                            caps->num_elements) != 0) {
                     provisionee_fail(PROV_ERR_UNEXPECTED_ERROR);

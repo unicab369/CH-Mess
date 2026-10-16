@@ -80,6 +80,7 @@ static inline int gatt_transport_test_poll(
             (void)gatt_transport_tx_sent(transport, len, now_ms);
             return 1;
         }
+
         return 0;
     }
 

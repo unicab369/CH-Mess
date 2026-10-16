@@ -150,6 +150,7 @@ static inline uint8_t gatt_glucose_racp_write(
              (!context_cccd || !(context_cccd->cccd & 1))))
             return 0x81;
     }
+
     if (service->racp_pending &&
         opcode != GATT_GLUCOSE_RACP_ABORT_OPERATION)
         return 0x80; // Procedure already in progress.
@@ -170,6 +171,7 @@ static inline uint8_t gatt_glucose_racp_write(
         service->racp_abort_requested = 1;
         return 0;
     }
+
     memcpy(service->racp_request, value, len);
     service->racp_request_len = (uint8_t)len;
     service->racp_opcode = opcode;
@@ -215,6 +217,7 @@ static inline int gatt_glucose_service_racp_complete(
         service->racp_abort_requested = 0;
         service->racp_aborted_opcode = 0;
     }
+
     return queued;
 }
 
@@ -308,6 +311,7 @@ static inline int gatt_glucose_service_notify_measurement(
         ble_put_le16(value + len, measurement->sensor_status);
         len += 2;
     }
+
     int queued = gatt_server_queue_event(server, service->measurement_handle,
                                          value, len, 0);
     if (queued > 0) {
@@ -315,6 +319,7 @@ static inline int gatt_glucose_service_notify_measurement(
         service->measurement_context_pending =
             (measurement->flags & 0x10) != 0;
     }
+
     return queued;
 }
 

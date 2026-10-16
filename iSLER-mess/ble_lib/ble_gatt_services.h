@@ -70,6 +70,7 @@ static inline int gatt_battery_service_add(
         memset(battery, 0, sizeof(*battery));
         return 0;
     }
+
     return 1;
 }
 
@@ -137,12 +138,14 @@ static int gatt_device_info_add_string(
         *handle = 0;
         return 1;
     }
+
     uint16_t len = gatt_device_info_string_len(value);
 
     if (!len) {
         *handle = 0;
         return 1;
     }
+
     ble_gatt_uuid uuid = {2, {(uint8_t)uuid16, (uint8_t)(uuid16 >> 8)}};
     return gatt_server_add_characteristic(server, &uuid,
         BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
@@ -213,6 +216,7 @@ static inline int gatt_device_information_service_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     return 1;
 }
 
@@ -272,6 +276,7 @@ static inline int gatt_gap_service_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     return 1;
 }
 
@@ -330,6 +335,7 @@ static inline int gatt_heart_rate_service_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     return 1;
 }
 
@@ -889,6 +895,7 @@ static inline int gatt_volume_offset_control_service_add(
         server->value_used = old_value_used;
         return 0;
     }
+
     service->service_handle = service_handle;
     service->state_handle = state_handle;
     service->state_cccd_handle = state_cccd;
@@ -1173,6 +1180,7 @@ static inline int gatt_coordinated_set_identification_service_add(
             BLE_GATT_PERM_READ_ENCRYPTED, &member_rank, 1
         };
     }
+
     uint16_t values[4], cccds[4];
     memset(service, 0, sizeof(*service));
 
@@ -1194,6 +1202,7 @@ static inline int gatt_coordinated_set_identification_service_add(
         service->member_lock_cccd_handle = cccds[i++];
         service->member_rank_handle = values[i];
     }
+
     return 1;
 }
 
@@ -1252,7 +1261,6 @@ static uint8_t gatt_aics_control_point_write(
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t opcode = value[0];
@@ -1299,6 +1307,7 @@ static uint8_t gatt_aics_control_point_write(
         next[3]++;
         gatt_aics_commit_state(service, next);
     }
+
     return 0;
 }
 
@@ -1449,6 +1458,7 @@ static inline int gatt_audio_input_control_service_add(
         server->value_used = old_value_used;
         return 0;
     }
+
     service->service_handle = service_handle;
     service->state_handle = state_handle;
     service->state_cccd_handle = state_cccd;
@@ -1594,6 +1604,7 @@ static inline int gatt_common_audio_service_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     return 1;
 }
 
@@ -1675,6 +1686,7 @@ static inline int gatt_broadcast_audio_scan_service_add(
                (size_t)receive_state_count * sizeof(*receive_state_cccd_handles));
         return 0;
     }
+
     return 1;
 }
 
@@ -1731,6 +1743,7 @@ static inline int gatt_constant_tone_extension_service_add(
         service->interval_handle = values[4];
         service->phy_handle = values[5];
     }
+
     return 1;
 }
 
@@ -1869,6 +1882,7 @@ static inline int gatt_ranging_service_add(
             BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
             ranging_data_capacity, 1
         };
+
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c16, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
         BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
@@ -1904,6 +1918,7 @@ static inline int gatt_ranging_service_add(
         service->realtime_data_handle = values[i];
         service->realtime_data_cccd_handle = cccds[i++];
     }
+
     service->ondemand_data_handle = values[i];
     service->ondemand_data_cccd_handle = cccds[i++];
     service->control_point_handle = values[i];
@@ -1992,6 +2007,7 @@ static uint8_t gatt_generic_health_sensor_racp_write(
                 return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         }
     }
+
     ble_gatt_attribute *racp_cccd = gatt_server_cccd_for(
         service->server, service->racp_handle);
 
@@ -2097,6 +2113,7 @@ static inline int gatt_generic_health_sensor_service_add_full(
             BLE_GATT_PERM_WRITE, &control_point_initial, 0, 20, 1
         };
     }
+
     uint16_t values[4], cccds[4];
     ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
@@ -2115,6 +2132,7 @@ static inline int gatt_generic_health_sensor_service_add_full(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->live_observations_handle = values[0];
     service->live_observations_cccd_handle = cccds[0];
     service->control_point_handle = values[1];
@@ -2127,6 +2145,7 @@ static inline int gatt_generic_health_sensor_service_add_full(
         service->racp_cccd_handle = cccds[3];
         service->stored_observations_notify = stored_observations_notify;
     }
+
     return 1;
 }
 
@@ -2666,6 +2685,7 @@ static inline int gatt_physical_activity_monitor_service_add_full(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->features_handle = values[0];
     service->instantaneous_data_handle = values[1];
     service->instantaneous_data_cccd_handle = cccds[1];
@@ -3108,6 +3128,7 @@ static inline int gatt_hearing_access_service_control_point_indicate(
         service->control_point_pending = 0;
         service->control_point_request_len = 0;
     }
+
     return 1;
 }
 
@@ -3781,6 +3802,7 @@ static inline int gatt_media_control_service_add_full(
             url->value_capacity, 1
         };
     }
+
     uint8_t search_index = 0xff;
 
     if (search_enabled) {
@@ -3792,6 +3814,7 @@ static inline int gatt_media_control_service_add_full(
             optional->search_control_point_capacity, 1
         };
     }
+
     uint8_t characteristic_count = (uint8_t)(7 + extra_count);
     uint16_t value_handles[22], cccd_handles[22];
     ble_gatt_sig_handlers handlers[22] = {0};
@@ -3818,6 +3841,7 @@ static inline int gatt_media_control_service_add_full(
                 gatt_media_control_point_write;
             handlers[7 + extra_index].context = service;
         }
+
         extra_index++;
     }
 
@@ -3840,6 +3864,7 @@ static inline int gatt_media_control_service_add_full(
         handlers[search_index].write = gatt_media_control_search_write;
         handlers[search_index].context = service;
     }
+
     uint16_t include_handles[1];
     uint8_t include_count = ots_needed ? 1 : 0;
 
@@ -3855,6 +3880,7 @@ static inline int gatt_media_control_service_add_full(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->media_player_name_handle = value_handles[0];
     service->media_player_name_cccd_handle = cccd_handles[0];
     service->track_changed_handle = value_handles[1];
@@ -3922,6 +3948,7 @@ static inline int gatt_media_control_service_add_full(
         service->search_control_point_cccd_handle =
             cccd_handles[search_index];
     }
+
     return 1;
 }
 
@@ -3993,6 +4020,7 @@ static inline int gatt_media_control_service_notify_optional(
         if (notify_len > mtu_limit)
             notify_len = mtu_limit;
     }
+
     return gatt_server_queue_event(server, value_handle, stored, notify_len, 0);
 }
 
@@ -4170,6 +4198,7 @@ static inline int gatt_pacs_service_add(
             0x2bcb, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
             config->source_pac, config->source_pac_len
         };
+
     available_index = count;
     characteristics[count++] = (ble_gatt_sig_characteristic){
         0x2bcd, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
@@ -4492,7 +4521,6 @@ static uint8_t gatt_tbs_control_point_write(
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint16_t handle = service->value_handles[GATT_TBS_CALL_CONTROL_POINT];
@@ -4554,6 +4582,7 @@ static uint8_t gatt_tbs_control_point_write(
                         0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
         }
     }
+
     service->request_opcode = opcode;
     service->parameter_len = len - 1;
     memcpy(service->parameters, value + 1, service->parameter_len);
@@ -4779,7 +4808,6 @@ static inline int gatt_telephone_bearer_service_set_signal_strength(
     uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
 
     if (!stored || attribute->value_capacity < 1) return 0;
-
     if (attribute->value_len == 1 && stored[0] == strength) return 1;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, handle);
@@ -4788,6 +4816,7 @@ static inline int gatt_telephone_bearer_service_set_signal_strength(
         service->signal_notification_pending = 0;
         return 1;
     }
+
     stored[0] = strength;
     attribute->value_len = 1;
     ble_gatt_attribute *interval_attribute = gatt_server_find(server,
@@ -4802,6 +4831,7 @@ static inline int gatt_telephone_bearer_service_set_signal_strength(
             service->signal_notification_pending = 1;
             return 0;
         }
+
         service->signal_notify_initialized = 1;
         service->signal_last_notify_ms = now_ms;
         service->signal_notification_pending = 0;
@@ -4832,6 +4862,7 @@ static inline int gatt_telephone_bearer_service_poll_signal_strength(
         service->signal_notification_pending = 0;
         return 0;
     }
+
     uint32_t delay = interval ? (uint32_t)interval[0] * 1000u : 0;
 
     if (service->signal_notify_initialized && delay &&
@@ -5004,6 +5035,7 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->features_handle = values[0];
     service->object_name_handle = values[1];
     service->object_type_handle = values[2];
@@ -5029,6 +5061,7 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
             memset(service, 0, sizeof(*service));
             return 0;
         }
+
         cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
             BLE_GATT_PERM_WRITE_ENCRYPTED;
     }
@@ -5092,9 +5125,7 @@ static uint8_t gatt_tds_control_point_write(
         return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
 
     if (command) return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
-
     if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-
     if (len < 2) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
@@ -5121,6 +5152,7 @@ static uint8_t gatt_tds_control_point_write(
 
         return 0;
     }
+
     service->request_opcode = value[0];
     service->organization_id = value[1];
     service->parameter_len = len - 2;
@@ -5151,6 +5183,7 @@ static inline int gatt_transport_discovery_service_add(
         return gatt_server_add_service(server, &uuid, 1,
                                        &service->service_handle);
     }
+
     uint8_t initial_value = 0;
     ble_gatt_sig_characteristic characteristic = {
         0x2abc, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
@@ -5383,6 +5416,7 @@ static inline int gatt_fitness_machine_service_add_controlled(
         handlers[count].context = service;
         count++;
     }
+
     uint16_t value_handles[4], cccd_handles[4];
 
     if (!gatt_sig_service_add_with_handlers(server, 0x1826, characteristics,
@@ -5391,6 +5425,7 @@ static inline int gatt_fitness_machine_service_add_controlled(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->base.features_handle = value_handles[0];
     service->base.machine_data_handle = value_handles[1];
     service->base.machine_data_cccd_handle = cccd_handles[1];
@@ -5405,6 +5440,7 @@ static inline int gatt_fitness_machine_service_add_controlled(
         service->control_point_handle = value_handles[index];
         service->control_point_cccd_handle = cccd_handles[index];
     }
+
     return 1;
 }
 
@@ -5508,6 +5544,7 @@ static inline int gatt_fitness_machine_service_add_full(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->base.features_handle = value_handles[0];
     service->base.machine_data_handle = value_handles[1];
     service->base.machine_data_cccd_handle = cccd_handles[1];
@@ -5530,6 +5567,7 @@ static inline int gatt_fitness_machine_service_add_full(
         service->control_point_handle = value_handles[control_index];
         service->control_point_cccd_handle = cccd_handles[control_index];
     }
+
     return 1;
 }
 
@@ -5990,6 +6028,7 @@ static inline int gatt_current_time_service_add(
             {0x2a14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
              reference_time_info, 4};
     }
+
     uint16_t values[3], cccds[3];
 
     if (!gatt_sig_service_add(server, 0x1805, chars, count,
@@ -6065,6 +6104,7 @@ static uint8_t gatt_reference_time_update_write(
         state[0] = 0;
         state[1] = 1;
     }
+
     service->last_command = value[0];
     service->request_count++;
     return 0;
@@ -6096,6 +6136,7 @@ static inline int gatt_reference_time_update_service_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
+
     service->control_point_handle = values[0];
     service->state_handle = values[1];
     return 1;
@@ -6198,6 +6239,7 @@ static inline int gatt_health_thermometer_service_add(
             &temperature_type, 1
         };
     }
+
     uint16_t values[3], cccds[3];
 
     if (!gatt_sig_service_add(server, 0x1809, chars, count,
@@ -6246,6 +6288,7 @@ static inline int gatt_blood_pressure_service_add(
             0x2a36, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
         };
     }
+
     chars[count++] = (ble_gatt_sig_characteristic){
         0x2a49, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2
     };
@@ -6263,6 +6306,7 @@ static inline int gatt_blood_pressure_service_add(
         service->intermediate_cuff_pressure_handle = values[i];
         service->intermediate_cuff_pressure_cccd_handle = cccds[i++];
     }
+
     service->feature_handle = values[i];
     return 1;
 }
@@ -6314,6 +6358,7 @@ static inline int gatt_rsc_service_add(
         handlers[control_point_index].write = gatt_rsc_control_point_write;
         handlers[control_point_index].context = service;
     }
+
     service->server = server;
     service->sensor_location = sensor_location;
     service->supported_sensor_locations = 1u << sensor_location;
@@ -6332,6 +6377,7 @@ static inline int gatt_rsc_service_add(
         service->control_point_handle = values[control_point_index];
         service->control_point_cccd_handle = cccds[control_point_index];
     }
+
     return 1;
 }
 
@@ -6359,6 +6405,7 @@ static inline int gatt_glucose_service_add(
             0x2a34, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
         };
     }
+
     chars[count++] = (ble_gatt_sig_characteristic){
         0x2a51, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2
     };
@@ -6390,6 +6437,7 @@ static inline int gatt_glucose_service_add(
         service->context_handle = values[i];
         service->context_cccd_handle = cccds[i++];
     }
+
     service->feature_handle = values[i++];
     service->record_access_handle = values[i];
     service->record_access_cccd_handle = cccds[i];
@@ -6527,6 +6575,7 @@ static inline int gatt_insulin_delivery_service_add(
             0x2b28, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHORIZED,
             &control_point_initial, 0, config->history_data_capacity, 1};
     }
+
     uint16_t value_handles[9], cccd_handles[9];
     memset(service, 0, sizeof(*service));
 
@@ -6622,6 +6671,7 @@ static inline int gatt_csc_service_add(
         handlers[control_point_index].write = gatt_csc_control_point_write;
         handlers[control_point_index].context = service;
     }
+
     service->server = server;
     service->sensor_location = sensor_location;
     service->supported_sensor_locations = 1u << sensor_location;
@@ -6640,6 +6690,7 @@ static inline int gatt_csc_service_add(
         service->control_point_handle = values[control_point_index];
         service->control_point_cccd_handle = cccds[control_point_index];
     }
+
     return 1;
 }
 
@@ -6717,12 +6768,14 @@ static inline int gatt_cycling_power_service_add(
             sizeof(service->factory_calibration_date)
         };
     }
+
     ble_gatt_sig_handlers handlers[6] = {0};
 
     if (control_index != 0xff) {
         handlers[control_index].write = gatt_cycling_power_control_point_write;
         handlers[control_index].context = service;
     }
+
     service->server = server;
     service->sensor_location = sensor_location;
     service->supported_sensor_locations = 1u << sensor_location;
@@ -6836,12 +6889,14 @@ static inline int gatt_location_navigation_service_add(
             .variable_length = 1
         };
     }
+
     ble_gatt_sig_handlers handlers[5] = {0};
 
     if (control_index != 0xff) {
         handlers[control_index].write = gatt_lns_control_point_write;
         handlers[control_index].context = service;
     }
+
     service->server = server;
     uint16_t values[5], cccds[5];
 
@@ -6865,6 +6920,7 @@ static inline int gatt_location_navigation_service_add(
         service->control_point_handle = values[control_index];
         service->control_point_cccd_handle = cccds[control_index];
     }
+
     return 1;
 }
 
@@ -7189,6 +7245,7 @@ static inline int gatt_user_data_service_complete(
                 parameter[0]);
         service->request_pending = 0;
     }
+
     return queued;
 }
 
@@ -7220,7 +7277,20 @@ static inline int gatt_weight_scale_service_add(
 
 typedef struct {
     uint16_t service_handle, control_point_handle, feature_handle;
+    ble_gatt_server *server;
+    uint8_t feature[3], feature_len;
+    uint8_t request_pending, request_opcode, request_count;
+    uint16_t request_parameter_len;
+    uint8_t request_parameter[BLE_GATT_SERVER_VALUE_MAX - 1];
+    uint8_t (*authorize)(void *context, uint8_t opcode,
+                         const uint8_t *code, uint16_t code_len);
+    void *authorize_context;
 } ble_gatt_bond_management_service;
+
+static uint8_t gatt_bond_management_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 
 typedef struct {
     uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
@@ -7352,6 +7422,7 @@ static inline int gatt_automation_io_service_add(
             value[i * 2 + 1] = (uint8_t)(values[i] >> 8);
         }
     }
+
     return 1;
 }
 
@@ -7503,17 +7574,97 @@ static inline int gatt_cgm_service_add(
     return 1;
 }
 
-// Application facing
-// Add Bond Management attributes. The application must implement the control
-// point's bond deletion procedures and enforce the requested authorization.
-static inline int gatt_bond_management_service_add(
+static uint8_t gatt_bond_management_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_bond_management_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (command)
+        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (!len || len > BLE_GATT_SERVER_VALUE_MAX ||
+        len - 1 > sizeof(service->request_parameter))
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *control_point = gatt_server_find(
+        service->server, service->control_point_handle);
+    if (!control_point || len > control_point->value_capacity)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (service->request_pending)
+        return 0x81; // Operation failed while the previous request is pending.
+
+    uint8_t opcode = value[0];
+    if (opcode < 1 || opcode > 9)
+        return 0x80; // Op Code not supported.
+    uint8_t feature_bit = (uint8_t)((opcode - 1) * 2);
+    if (!(service->feature[feature_bit / 8] &
+          (uint8_t)(1u << (feature_bit % 8))))
+        return 0x80;
+
+    uint16_t code_len = (uint16_t)(len - 1);
+    uint8_t auth_bit = (uint8_t)(feature_bit + 1);
+    uint8_t auth_supported =
+        (service->feature[auth_bit / 8] & (uint8_t)(1u << (auth_bit % 8))) != 0;
+    uint8_t base_supported =
+        (service->feature[feature_bit / 8] &
+         (uint8_t)(1u << (feature_bit % 8))) != 0;
+    if ((code_len && !auth_supported) || (!code_len && auth_supported &&
+                                          !base_supported))
+        return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
+    for (uint16_t i = 0; i < code_len; i++)
+        if (value[i + 1] < '0' || value[i + 1] > '9')
+            return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
+    if (service->authorize) {
+        uint8_t error = service->authorize(service->authorize_context,
+            opcode, code_len ? value + 1 : NULL, code_len);
+        if (error) return error;
+    }
+
+    service->request_opcode = opcode;
+    service->request_parameter_len = code_len;
+    if (code_len)
+        memcpy(service->request_parameter, value + 1, code_len);
+    service->request_pending = 1;
+    service->request_count++;
+    return 0;
+}
+
+static inline int gatt_bond_management_features_valid(
+    const uint8_t *features, uint16_t feature_len
+) {
+    if (!features || !feature_len || feature_len > 3 || !features[feature_len - 1])
+        return 0;
+    if ((feature_len == 3) && (features[2] & 0xfcu))
+        return 0;
+    for (uint8_t bit = 1; bit < 18; bit += 2) {
+        if ((features[bit / 8] & (1u << (bit % 8))) &&
+            !(features[(bit - 1) / 8] & (1u << ((bit - 1) % 8))))
+            return 0;
+    }
+    return 1;
+}
+
+// Add Bond Management attributes and bind the request validator. The optional
+// authorizer checks authorization-code writes before the ATT Write Response;
+// the application then performs the captured bond operation.
+static inline int gatt_bond_management_service_add_with_authorizer(
     ble_gatt_server *server, ble_gatt_bond_management_service *service,
     const uint8_t *features, uint16_t feature_len,
-    uint16_t control_point_capacity
+    uint16_t control_point_capacity,
+    uint8_t (*authorize)(void *context, uint8_t opcode,
+                         const uint8_t *code, uint16_t code_len),
+    void *authorize_context
 ) {
-    if (!service || !features || !feature_len || feature_len > 3 ||
+    if (!server || !service ||
+        !gatt_bond_management_features_valid(features, feature_len) ||
         !control_point_capacity ||
-        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (!authorize &&
+         ((features[0] & 0xaa) ||
+          (feature_len > 1 && (features[1] & 0xaa)) ||
+          (feature_len > 2 && (features[2] & 0x02))))
     ) return 0;
 
     memset(service, 0, sizeof(*service));
@@ -7525,51 +7676,349 @@ static inline int gatt_bond_management_service_add(
             BLE_GATT_PERM_READ_AUTHENTICATED, features, feature_len}
     };
     uint16_t values[2];
+    ble_gatt_sig_handlers handlers[2] = {0};
+    handlers[0].write = gatt_bond_management_control_write;
+    handlers[0].context = service;
 
-    if (!gatt_sig_service_add(server, 0x181e, chars, 2,
-                              &service->service_handle, values, NULL)
+    if (!gatt_sig_service_add_with_handlers(server, 0x181e, chars, 2,
+            &service->service_handle, values, NULL, handlers)
     ) return 0;
 
     service->control_point_handle = values[0];
     service->feature_handle = values[1];
+    service->server = server;
+    service->feature_len = (uint8_t)feature_len;
+    memcpy(service->feature, features, feature_len);
+    service->authorize = authorize;
+    service->authorize_context = authorize_context;
     return 1;
 }
 
+// Add Bond Management attributes without an authorization-code callback.
+static inline int gatt_bond_management_service_add(
+    ble_gatt_server *server, ble_gatt_bond_management_service *service,
+    const uint8_t *features, uint16_t feature_len,
+    uint16_t control_point_capacity
+) {
+    return gatt_bond_management_service_add_with_authorizer(server, service,
+        features, feature_len, control_point_capacity, NULL, NULL);
+}
+
+// Copy one validated request for application-owned bond-store processing.
+// The operation is cleared only when the caller passes a sufficient buffer.
+static inline int gatt_bond_management_service_take_request(
+    ble_gatt_bond_management_service *service, uint8_t *opcode,
+    uint8_t *authorization_code, uint16_t *inout_code_len
+) {
+    if (!service || !service->server || !service->request_pending || !opcode ||
+        !inout_code_len ||
+        (service->request_parameter_len && !authorization_code) ||
+        *inout_code_len < service->request_parameter_len)
+        return 0;
+    *opcode = service->request_opcode;
+    if (service->request_parameter_len)
+        memcpy(authorization_code, service->request_parameter,
+               service->request_parameter_len);
+    *inout_code_len = service->request_parameter_len;
+    service->request_pending = 0;
+    service->request_opcode = 0;
+    service->request_parameter_len = 0;
+    return 1;
+}
+
+typedef struct ble_gatt_indoor_positioning_service
+    ble_gatt_indoor_positioning_service;
+
 typedef struct {
+    ble_gatt_indoor_positioning_service *service;
+    uint16_t handle, fixed_length;
+    uint8_t variable_length;
+} ble_gatt_indoor_positioning_write_context;
+
+typedef struct {
+    const uint8_t *local_north, *local_east;
+    const uint8_t *floor_number, *altitude, *uncertainty;
+    const uint8_t *location_name;
+    uint16_t location_name_len, location_name_capacity;
+} ble_gatt_indoor_positioning_values;
+
+struct ble_gatt_indoor_positioning_service {
     uint16_t service_handle, configuration_handle, latitude_handle;
     uint16_t longitude_handle;
-} ble_gatt_indoor_positioning_service;
+    uint16_t local_north_handle, local_east_handle, floor_number_handle;
+    uint16_t altitude_handle, uncertainty_handle, location_name_handle;
+    ble_gatt_server *server;
+    uint8_t broadcast_data_changed;
+    ble_gatt_indoor_positioning_write_context write_context[9];
+};
 
-// Application facing
-// Add the mandatory Indoor Positioning attributes. Values are the one-octet
-// configuration and four-octet signed coordinates in Bluetooth byte order.
+static uint8_t gatt_indoor_positioning_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_indoor_positioning_write_context *write = context;
+    ble_gatt_indoor_positioning_service *service =
+        write ? write->service : NULL;
+
+    if (!service || !service->server || !write || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (command)
+        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len > BLE_GATT_ATT_VALUE_MAX)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                                                      write->handle);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+
+    if (!write->variable_length) {
+        if (offset)
+            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        if (len != write->fixed_length)
+            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (attribute->value_capacity < write->fixed_length)
+            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        memcpy(stored, value, write->fixed_length);
+    }
+    else {
+        if (offset > attribute->value_len)
+            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        if (len > attribute->value_capacity - offset)
+            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (len)
+            memcpy(stored + offset, value, len);
+        if (!offset)
+            attribute->value_len = len;
+        else if (offset + len > attribute->value_len)
+            attribute->value_len = offset + len;
+    }
+    if (write->handle != service->location_name_handle)
+        service->broadcast_data_changed = 1;
+    return 0;
+}
+
+static inline int gatt_indoor_positioning_append(
+    ble_gatt_indoor_positioning_service *service,
+    ble_gatt_sig_characteristic characteristics[9],
+    ble_gatt_sig_handlers handlers[9], uint8_t *count,
+    uint16_t uuid, const uint8_t *value, uint16_t value_len,
+    uint16_t value_capacity, uint8_t variable_length
+) {
+    uint8_t index = *count;
+    if (index >= 9 || value_len > value_capacity ||
+        value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (value_len && !value))
+        return 0;
+    characteristics[index] = (ble_gatt_sig_characteristic){
+        uuid, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+        value, value_len, value_capacity, variable_length
+    };
+    service->write_context[index].service = service;
+    service->write_context[index].fixed_length = value_len;
+    service->write_context[index].variable_length = variable_length;
+    handlers[index].write = gatt_indoor_positioning_write;
+    handlers[index].context = &service->write_context[index];
+    (*count)++;
+    return 1;
+}
+
+// Add mandatory Indoor Positioning characteristics and optional values.
+// Configured optional broadcast fields must have corresponding values.
+static inline int gatt_indoor_positioning_service_add_full(
+    ble_gatt_server *server, ble_gatt_indoor_positioning_service *service,
+    uint8_t configuration, const uint8_t latitude[4],
+    const uint8_t longitude[4],
+    const ble_gatt_indoor_positioning_values *optional
+) {
+    if (!server || !service || !latitude || !longitude ||
+        server->database_sealed ||
+        ((configuration & 0x01) && (configuration & 0x02) &&
+         (!optional || !optional->local_north || !optional->local_east)) ||
+        ((configuration & 0x08) && (!optional || !optional->altitude)) ||
+        ((configuration & 0x10) && (!optional || !optional->floor_number)) ||
+        ((configuration & 0x20) && (!optional || !optional->uncertainty)) ||
+        ((configuration & 0x40) && (!optional || !optional->location_name)) ||
+        (optional && (!!optional->local_north != !!optional->local_east)) ||
+        (optional && (optional->location_name_len >
+                      optional->location_name_capacity ||
+                      optional->location_name_capacity >
+                      BLE_GATT_SERVER_VALUE_MAX ||
+                      (optional->location_name_len &&
+                       !optional->location_name) ||
+                      (!optional->location_name &&
+                       (optional->location_name_len ||
+                        optional->location_name_capacity)) ||
+                      (optional->location_name &&
+                       !optional->location_name_capacity)))
+    )
+        return 0;
+
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[9];
+    ble_gatt_sig_handlers handlers[9] = {0};
+    uint8_t count = 0;
+    if (!gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2aad, &configuration, 1, 1, 0) ||
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2aae, latitude, 4, 4, 0) ||
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2aaf, longitude, 4, 4, 0))
+        return 0;
+    if (optional && optional->local_north &&
+        (!gatt_indoor_positioning_append(service, chars, handlers, &count,
+             0x2ab0, optional->local_north, 2, 2, 0) ||
+         !gatt_indoor_positioning_append(service, chars, handlers, &count,
+             0x2ab1, optional->local_east, 2, 2, 0)))
+        return 0;
+    if (optional && optional->floor_number &&
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2ab2, optional->floor_number, 1, 1, 0))
+        return 0;
+    if (optional && optional->altitude &&
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2ab3, optional->altitude, 2, 2, 0))
+        return 0;
+    if (optional && optional->uncertainty &&
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2ab4, optional->uncertainty, 1, 1, 0))
+        return 0;
+    if (optional && optional->location_name &&
+        !gatt_indoor_positioning_append(service, chars, handlers, &count,
+            0x2ab5, optional->location_name, optional->location_name_len,
+            optional->location_name_capacity, 1))
+        return 0;
+    uint16_t values[9];
+    service->server = server;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1821, chars, count,
+            &service->service_handle, values, NULL, handlers)
+    ) {
+        service->server = NULL;
+        return 0;
+    }
+
+    for (uint8_t i = 0; i < count; i++)
+        service->write_context[i].handle = values[i];
+    service->configuration_handle = values[0];
+    service->latitude_handle = values[1];
+    service->longitude_handle = values[2];
+    uint8_t i = 3;
+    if (optional && optional->local_north) {
+        service->local_north_handle = values[i++];
+        service->local_east_handle = values[i++];
+    }
+
+    if (optional && optional->floor_number)
+        service->floor_number_handle = values[i++];
+    if (optional && optional->altitude)
+        service->altitude_handle = values[i++];
+    if (optional && optional->uncertainty)
+        service->uncertainty_handle = values[i++];
+    if (optional && optional->location_name)
+        service->location_name_handle = values[i++];
+    service->broadcast_data_changed = 1;
+    return 1;
+}
+
+// Backward-compatible mandatory-only Indoor Positioning builder.
 static inline int gatt_indoor_positioning_service_add(
     ble_gatt_server *server, ble_gatt_indoor_positioning_service *service,
     uint8_t configuration, const uint8_t latitude[4],
     const uint8_t longitude[4]
 ) {
-    if (!service || !latitude || !longitude)
+    return gatt_indoor_positioning_service_add_full(server, service,
+        configuration, latitude, longitude, NULL);
+}
+
+// Return and clear the flag after regenerating Indoor Positioning advertising
+// data from the readable characteristic values.
+static inline int gatt_indoor_positioning_service_take_broadcast_update(
+    ble_gatt_indoor_positioning_service *service
+) {
+    if (!service || !service->server || !service->broadcast_data_changed)
+        return 0;
+    service->broadcast_data_changed = 0;
+    return 1;
+}
+
+// Encode the Indoor Positioning Service AD structure from the current GATT
+// values. tx_power_present must describe a Tx Power AD field supplied by GAP.
+static inline int gatt_indoor_positioning_service_encode_advertising_data(
+    const ble_gatt_indoor_positioning_service *service,
+    uint8_t tx_power_present, int8_t tx_power,
+    uint8_t *out, uint16_t capacity, uint16_t *out_len
+) {
+    if (!service || !service->server || !out || !out_len ||
+        tx_power_present > 1)
+        return 0;
+    *out_len = 0;
+    ble_gatt_attribute *configuration_attribute = gatt_server_find(
+        service->server, service->configuration_handle);
+    const uint8_t *configuration_value = configuration_attribute ?
+        gatt_attribute_value(service->server, configuration_attribute) : NULL;
+    if (!configuration_value || configuration_attribute->value_len != 1)
+        return 0;
+    uint8_t configuration = configuration_value[0] & 0x7f;
+    if ((configuration & 0x04) && !tx_power_present)
         return 0;
 
-    memset(service, 0, sizeof(*service));
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2aad, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
-            &configuration, 1},
-        {0x2aae, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, latitude, 4},
-        {0x2aaf, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, longitude, 4}
+    uint8_t value[20];
+    uint16_t len = 1;
+    value[len++] = 0x25; // Indoor Positioning AD type.
+    if (configuration) value[len++] = configuration;
+
+    if (configuration & 0x01) {
+        uint16_t first_handle = (configuration & 0x02) ?
+            service->local_north_handle : service->latitude_handle;
+        uint16_t second_handle = (configuration & 0x02) ?
+            service->local_east_handle : service->longitude_handle;
+        uint16_t coordinate_len = (configuration & 0x02) ? 2 : 4;
+        ble_gatt_attribute *first = gatt_server_find(service->server,
+                                                      first_handle);
+        ble_gatt_attribute *second = gatt_server_find(service->server,
+                                                       second_handle);
+        const uint8_t *first_value = first ?
+            gatt_attribute_value(service->server, first) : NULL;
+        const uint8_t *second_value = second ?
+            gatt_attribute_value(service->server, second) : NULL;
+        if (!first_value || !second_value ||
+            first->value_len != coordinate_len ||
+            second->value_len != coordinate_len)
+            return 0;
+        memcpy(value + len, first_value, coordinate_len);
+        len += coordinate_len;
+        memcpy(value + len, second_value, coordinate_len);
+        len += coordinate_len;
+    }
+    if (configuration & 0x04)
+        value[len++] = (uint8_t)tx_power;
+
+    const uint8_t flags[] = {0x10, 0x08, 0x20};
+    const uint16_t handles[] = {
+        service->floor_number_handle,
+        service->altitude_handle,
+        service->uncertainty_handle
     };
-    uint16_t values[3];
+    const uint8_t lengths[] = {1, 2, 1};
+    for (uint8_t i = 0; i < 3; i++) {
+        if (!(configuration & flags[i])) continue;
+        ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                                                          handles[i]);
+        const uint8_t *field = attribute ?
+            gatt_attribute_value(service->server, attribute) : NULL;
+        if (!field || attribute->value_len != lengths[i])
+            return 0;
+        memcpy(value + len, field, lengths[i]);
+        len += lengths[i];
+    }
 
-    if (!gatt_sig_service_add(server, 0x1821, chars, 3,
-                              &service->service_handle, values, NULL)
-    ) return 0;
-
-    service->configuration_handle = values[0];
-    service->latitude_handle = values[1];
-    service->longitude_handle = values[2];
+    if (len - 1 > 0xff || len > capacity)
+        return 0;
+    value[0] = (uint8_t)(len - 1);
+    memcpy(out, value, len);
+    *out_len = len;
     return 1;
 }
 
@@ -7605,6 +8054,7 @@ static inline int gatt_pulse_oximeter_service_add(
         chars[count++] = (ble_gatt_sig_characteristic){
             0x2a5f, BLE_GATT_PROP_NOTIFY, 1, 0,
             &unused_value, 0, 0, 1};
+
     chars[count++] = (ble_gatt_sig_characteristic){
         0x2a60, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
         feature, sizeof(feature)};
@@ -7614,6 +8064,7 @@ static inline int gatt_pulse_oximeter_service_add(
             0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE,
             &unused_value, 0, 0, 1};
+
     uint16_t values[4], cccds[4];
 
     if (!gatt_sig_service_add(server, 0x1822, chars, count,
@@ -7631,12 +8082,14 @@ static inline int gatt_pulse_oximeter_service_add(
         service->continuous_handle = values[i];
         service->continuous_cccd_handle = cccds[i++];
     }
+
     service->feature_handle = values[i++];
 
     if (include_record_access) {
         service->record_access_handle = values[i];
         service->record_access_cccd_handle = cccds[i];
     }
+
     return 1;
 }
 
@@ -7754,6 +8207,7 @@ static inline int gatt_imd_service_add(
             descriptor_changed_len, 1
         };
     }
+
     uint16_t values[10], cccds[10];
     memset(service, 0, sizeof(*service));
 
@@ -7776,6 +8230,7 @@ static inline int gatt_imd_service_add(
         service->descriptor_changed_handle = values[changed_index];
         service->descriptor_changed_cccd_handle = cccds[changed_index];
     }
+
     return 1;
 }
 
@@ -7870,6 +8325,7 @@ static inline int gatt_esl_service_add(
             properties |= BLE_GATT_PROP_WRITE_NO_RSP | BLE_GATT_PROP_NOTIFY;
             cccd = 1;
         }
+
         uint16_t permissions = 0;
 
         if (properties & BLE_GATT_PROP_READ)
@@ -7898,6 +8354,7 @@ static inline int gatt_esl_service_add(
             cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
                                       BLE_GATT_PERM_WRITE_ENCRYPTED;
     }
+
     return 1;
 }
 

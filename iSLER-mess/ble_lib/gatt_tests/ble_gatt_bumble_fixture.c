@@ -181,6 +181,7 @@ int main(void) {
             (void)gatt_server_poll_event(&server, 1, event,
                                              sizeof(event), &event_len);
         }
+
         uint16_t output_len = has_response > 0 ? response_len : 0;
         uint8_t output_size[2] = {(uint8_t)output_len,
                                   (uint8_t)(output_len >> 8)};

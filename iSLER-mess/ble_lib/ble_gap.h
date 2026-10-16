@@ -526,6 +526,7 @@ static int gap_access_address_valid(uint32_t address) {
         else if (++run > 6) {
             return 0;
         }
+
         previous = value;
     }
     return transitions <= 24 && msb_transitions >= 2;
@@ -838,6 +839,7 @@ int gap_identity_set(
                 memset(&gap_identities[i], 0, sizeof(gap_identities[i]));
                 return 1;
             }
+
             slot = i;
             break;
         }
@@ -1265,6 +1267,7 @@ static int gap_conn_accept(
         gap_conn_slot_set_active(gap_conn_slot, 0);
         return 0;
     }
+
 #endif
 
     gap_adv.enabled = 0;
@@ -1418,6 +1421,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 gap_conn_slot = previous_slot;
                 return -1;
             }
+
             peer->initialized = 1;
         }
 
@@ -1440,6 +1444,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 gap_conn_slot = previous_slot;
                 return -1;
             }
+
             uint16_t remaining = peer->tx_len - peer->tx_offset;
             uint16_t chunk = remaining < max_len ? remaining : max_len;
             uint8_t llid = peer->tx_offset ? 1 : 2;
@@ -1485,6 +1490,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             gap_conn_slot = previous_slot;
             return result;
         }
+
         work += result;
     }
 

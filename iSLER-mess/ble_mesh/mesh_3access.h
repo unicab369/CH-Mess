@@ -145,6 +145,7 @@ static inline void mesh_access_ack_poll(void) {
         mesh_access_ack.state = MESH_ACCESS_ACK_TIMED_OUT;
         return;
     }
+
     uint16_t previous_net_idx = mesh_network.reply_net_idx;
     mesh_network.reply_net_idx = mesh_access_ack.reply_net_idx;
     int queued = mesh_transport_queue(mesh_access_ack.src, mesh_access_ack.dst,
@@ -240,6 +241,7 @@ static inline int mesh_access_poll(
         mesh_access_ack_poll();
         return 0;
     }
+
     if (!message->len || message->len > sizeof(message->data)) {
         mesh_access_ack_poll();
         return 0;

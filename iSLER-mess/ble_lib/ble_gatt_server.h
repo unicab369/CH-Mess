@@ -876,6 +876,7 @@ static inline int gatt_server_seal_database(ble_gatt_server *server) {
                 memset(&cmac, 0, sizeof(cmac));
                 return 0;
             }
+
             gatt_cmac_update(&cmac, value, attribute->value_len);
         }
         uint8_t hash[16];
@@ -1354,6 +1355,7 @@ static uint8_t gatt_server_event_security_error(
         if (server->encryption_key_size < attribute->min_key_size)
             return BLE_GATT_ATT_ERR_ENCRYPTION_KEY_SIZE_TOO_SHORT;
     }
+
     return 0;
 }
 
@@ -2144,7 +2146,6 @@ static inline int gatt_server_att(
 
     if (req_len > mtu) {
         if (op & 0x40) return 0;
-
         if (op == 0x1e) return -1;
 
         return gatt_server_error_rsp(op, 0,
@@ -2717,6 +2718,7 @@ static inline int gatt_server_att(
                             error = BLE_GATT_ATT_ERR_INVALID_OFFSET;
                             break;
                         }
+
                         covered = next;
                     }
 
@@ -2764,6 +2766,7 @@ static inline int gatt_server_att(
                             error_handle = p->handle;
                             break;
                         }
+
                         continue;
                     }
 

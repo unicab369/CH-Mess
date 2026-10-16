@@ -302,6 +302,7 @@ static inline int gatt_client_read_long(
         client->operation.kind = 0;
         return 0;
     }
+
     return 1;
 }
 
@@ -538,6 +539,7 @@ static inline int gatt_client_receive(
                 if (!client->send || !client->send(client->context, &confirmation, 1))
                     return -1;
             }
+
             return 1;
         }
 
@@ -656,6 +658,7 @@ static inline int gatt_client_receive(
                             }
                         }
                     }
+
                     break;
                 }
             }
@@ -683,6 +686,7 @@ static inline int gatt_client_receive(
                         }
                     }
                 }
+
                 break;
             case ATT_OP_EXECUTE_WRITE_REQ:
                 // The execute-write request has no handle for comparison.
@@ -699,6 +703,7 @@ static inline int gatt_client_receive(
                         (first <= last && error_handle >= first &&
                          error_handle <= last);
                 }
+
                 break;
             }
             }
@@ -791,6 +796,7 @@ static inline int gatt_client_receive(
                     previous = handle;
                 }
             }
+
             break;
         case ATT_OP_FIND_BY_TYPE_VALUE_RSP: {
             response_valid = client->request.len >= 7 &&
@@ -816,6 +822,7 @@ static inline int gatt_client_receive(
                     previous_end = group_end;
                 }
             }
+
             break;
         }
         case ATT_OP_READ_BY_TYPE_RSP: {
@@ -865,9 +872,11 @@ static inline int gatt_client_receive(
                         if (!service_start || service_start > service_end)
                             response_valid = 0;
                     }
+
                     previous = handle;
                 }
             }
+
             break;
         }
         case ATT_OP_READ_RSP:
@@ -883,6 +892,7 @@ static inline int gatt_client_receive(
                 response_valid = offset <= BLE_GATT_ATT_VALUE_MAX &&
                                 (uint32_t)offset + len - 1 <= BLE_GATT_ATT_VALUE_MAX;
             }
+
             break;
 
         case ATT_OP_READ_MULTIPLE_RSP:
@@ -912,6 +922,7 @@ static inline int gatt_client_receive(
                     previous_end = end;
                 }
             }
+
             break;
         }
         case ATT_OP_WRITE_RSP: case ATT_OP_EXECUTE_WRITE_RSP:
@@ -938,6 +949,7 @@ static inline int gatt_client_receive(
                     response_valid = 0;
                     break;
                 }
+
                 uint16_t value_len = (uint16_t)pdu[offset] |
                                      (uint16_t)pdu[offset + 1] << 8;
                 offset += 2;
@@ -952,6 +964,7 @@ static inline int gatt_client_receive(
                     truncated = 1;
                     break;
                 }
+
                 offset += value_len;
             }
 

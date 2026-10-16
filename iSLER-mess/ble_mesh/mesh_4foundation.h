@@ -138,6 +138,7 @@ static int mesh_health_queue(
         return mesh_publication_begin((uint8_t)index, MESH_MODEL_HEALTH_CLIENT,
             opcode, params, len);
     }
+
     if (!app_key_allowed((uint8_t)index, MESH_MODEL_HEALTH_CLIENT, app_idx))
         return 0;
     uint32_t response_opcode =
@@ -369,6 +370,7 @@ static uint8_t mesh_health_attention_remaining(uint8_t element) {
         BLE_MESH_HEALTH_ATTENTION(mesh_network.state.unicast_address + element, 0);
         return 0;
     }
+
     return (uint8_t)((total - elapsed + 999) / 1000);
 }
 
@@ -400,6 +402,7 @@ static uint8_t mesh_subscription_replace(
             return MESH_CONFIG_INSUFFICIENT_RESOURCES;
         next.groups[next.group_count++] = (mesh_model_group){(uint8_t)index, model, address};
     }
+
     if (label) {
         if (next.virtual_count == MESH_MODEL_VIRTUAL_SLOTS)
             return MESH_CONFIG_INSUFFICIENT_RESOURCES;
@@ -408,6 +411,7 @@ static uint8_t mesh_subscription_replace(
         entry->model = model;
         memcpy(entry->label, label, 16);
     }
+
     if (memcmp(&next, &mesh_models.state, sizeof(next)) &&
         BLE_MESH_MODELS_SAVE_STATE(&next) != 1
     ) return MESH_CONFIG_STORAGE_FAILURE;
@@ -473,6 +477,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     transport_sar_tx = next;
             }
         }
+
         const mesh_sar_tx_state *sar = &mesh_models.state.sar_transmitter;
         uint8_t reply[5] = {
             status,
@@ -512,6 +517,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     transport_sar_rx = next;
             }
         }
+
         const mesh_sar_rx_state *sar = &mesh_models.state.sar_receiver;
         uint8_t reply[4] = {
             status,
@@ -565,12 +571,14 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     mesh_network.heartbeat.publish_at_ms = GET_MILLIS();
                 }
             }
+
             if (status != MESH_CONFIG_SUCCESS) {
                 count = pub.count_log == 0xff ? 0xffff :
                         pub.count_log <= 0x11 && pub.count_log ?
                         (uint16_t)(pub.count_log == 0x11 ? 0xfffe : 1u << (pub.count_log - 1)) : 0;
             }
         }
+
         uint8_t reply[10] = {status, (uint8_t)pub.dst, (uint8_t)(pub.dst >> 8)};
         if (pub.dst) {
             reply[3] = count == 0xffff ? 0xff : mesh_heartbeat_log(count, 1);
@@ -581,6 +589,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             reply[6] = (uint8_t)pub.features; reply[7] = (uint8_t)(pub.features >> 8);
             reply[8] = (uint8_t)pub.net_idx; reply[9] = (uint8_t)(pub.net_idx >> 8);
         }
+
         return mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
             OP_CONFIG_HEARTBEAT_PUB_STATUS, reply, sizeof(reply), 0);
@@ -619,6 +628,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 stopped = 1;
             }
         }
+
         int32_t ms = (int32_t)(mesh_network.heartbeat.expires_at_ms - GET_MILLIS());
         if (ms <= 0)
             mesh_network.heartbeat.subscribed = 0;
@@ -656,6 +666,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next))
                 return 0;
         }
+
         uint8_t reply = beacon ? state->beacon : state->network_transmit;
         return mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
@@ -675,6 +686,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             if (memcmp(&next, state, sizeof(next)) && !mesh_commit(&next))
                 return 0;
         }
+
         uint8_t reply[2] = {state->relay, state->relay_retransmit};
         return mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
@@ -748,6 +760,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 int free_slot = -1;
                 for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
                     if (!state->additional_subnets[i].used) { free_slot = i; break; }
+
                 if (free_slot < 0)
                     status = MESH_CONFIG_INSUFFICIENT_RESOURCES;
                 else {
@@ -771,6 +784,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 if (subnet_count == 1)
                     status = MESH_CONFIG_CANNOT_REMOVE;
             }
+
             if (status == MESH_CONFIG_SUCCESS && subnet > 0) {
                 for (uint8_t i = 0; i < MESH_MAX_APP_KEYS; i++) {
                     const mesh_app_key *app = &state->app_keys[i];
@@ -795,6 +809,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 int promote = -1;
                 for (uint8_t i = 0; i < MESH_MAX_SUBNETS - 1; i++)
                     if (state->additional_subnets[i].used) { promote = i; break; }
+
                 if (promote < 0)
                     status = MESH_CONFIG_CANNOT_REMOVE;
                 for (uint8_t i = 0; status == MESH_CONFIG_SUCCESS && i < MESH_MAX_APP_KEYS; i++) {
@@ -872,6 +887,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
             }
             phase = mesh_subnet_phase(&mesh_network.state, net_idx);
         }
+
         uint8_t reply[4] = {status, p[0], p[1],
                             phase != 0xff ? phase : 0};
         return mesh_access_queue(state->unicast_address, message->src,
@@ -989,6 +1005,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 }
             }
         }
+
         uint8_t reply[12] = {status, p[0], p[1],
             (uint8_t)pub.address, (uint8_t)(pub.address >> 8),
             (uint8_t)pub.app_idx, (uint8_t)(pub.app_idx >> 8),
@@ -1031,6 +1048,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 reply[size++] = (uint8_t)(address >> 8);
             }
         }
+
         return mesh_access_queue(state->unicast_address, message->src,
             mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
             OP_CONFIG_SIG_MODEL_SUB_LIST, reply, size, 0);
@@ -1064,6 +1082,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                     mesh_app_net_idx(state, &state->app_keys[i]) == net_idx
                 ) indexes[count++] = state->app_keys[i].index;
         }
+
         size_t reply_len = 3 + mesh_pack_app_indexes(reply + 3, indexes, count);
         mesh_access_queue(mesh_network.state.unicast_address, message->src, mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
                               OP_CONFIG_APPKEY_LIST, reply, reply_len, 0);
@@ -1089,6 +1108,7 @@ static int server_config_receive(const mesh_access_pdu *message) {
                 if (state->app_keys[i].used && (*bindings & (1u << i)))
                     indexes[count++] = state->app_keys[i].index;
         }
+
         size_t reply_len = 5 + mesh_pack_app_indexes(reply + 5, indexes, count);
         mesh_access_queue(mesh_network.state.unicast_address, message->src, mesh_models.state.default_ttl, DEVICE_KEY_LOCAL,
                               OP_CONFIG_SIG_MODEL_APP_LIST, reply, reply_len, 0);
@@ -1648,6 +1668,7 @@ static inline int mesh_replace_subscription(
         params[offset++] = (uint8_t)(address >> 8);
         opcode = OP_CONFIG_MODEL_SUB_OVERWRITE;
     }
+
     params[offset++] = (uint8_t)model;
     params[offset++] = (uint8_t)(model >> 8);
     return mesh_access_queue(mesh_network.state.unicast_address, dst,
@@ -1695,6 +1716,7 @@ static inline int mesh_health_faults(
         mesh_models.health_server[index].publish_pending = 1;
         mesh_models.publications[index][2].period_at_ms = GET_MILLIS() + mesh_health_period((uint8_t)index);
     }
+
     return 1;
 }
 
@@ -1719,10 +1741,12 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
             if (opcode == OP_HEALTH_PERIOD_SET_UNACK)
                 return 1;
         }
+
         return mesh_access_queue(mesh_network.state.unicast_address + element,
             message->src, mesh_models.state.default_ttl, message->app_key_index,
             OP_HEALTH_PERIOD_STATUS, &mesh_models.state.health_period[element], 1, 0);
     }
+
     if (opcode == OP_HEALTH_FAULT_GET || opcode == OP_HEALTH_FAULT_CLEAR ||
         opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST ||
         opcode == OP_HEALTH_FAULT_TEST_UNACK) {
@@ -1744,6 +1768,7 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
             memset(mesh_models.health_server[element].registered, 0,
                    sizeof(mesh_models.health_server[element].registered));
         }
+
         if (opcode == OP_HEALTH_FAULT_CLEAR_UNACK || opcode == OP_HEALTH_FAULT_TEST_UNACK)
             return 1;
         uint8_t reply[3 + MESH_HEALTH_MAX_FAULTS] = {
@@ -1755,6 +1780,7 @@ static int server_health_receive(const mesh_access_pdu *message, uint8_t element
             message->src, mesh_models.state.default_ttl, message->app_key_index,
             OP_HEALTH_FAULT_STATUS, reply, 3u + count, 0);
     }
+
     if (message->opcode == OP_HEALTH_ATTENTION_GET) {
         if (message->params_len != 0)
             return 0;

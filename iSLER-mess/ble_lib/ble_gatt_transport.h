@@ -488,6 +488,7 @@ static inline void gatt_transport_channel_opened(
         bearer->server.local_mtu = transport->server->local_mtu < mtu ?
             transport->server->local_mtu : mtu;
     }
+
     gatt_transport_eatt_client_init(transport, bearer);
 }
 
@@ -520,6 +521,7 @@ static inline void gatt_transport_channel_closed(
                 break;
             }
         }
+
         gatt_eatt_channel_closed(&transport->eatt, local_cid, reason);
     }
 }
@@ -733,6 +735,7 @@ static inline void gatt_transport_set_connected(
                                            configuration);
             }
         }
+
         (void)gatt_server_check_database_version(server);
     }
 }
@@ -761,6 +764,7 @@ static inline void gatt_transport_set_security(
         if (!server->encrypted)
             server->encryption_key_size = 0;
     }
+
 #if BLE_GATT_ENABLE_EATT
 
     if (transport->eatt_enabled && encryption_changed)
@@ -811,6 +815,7 @@ static inline void gatt_transport_set_client(
                 gatt_transport_eatt_client_init(transport,
                     &transport->eatt_contexts[i]);
     }
+
 #endif
 }
 
@@ -831,6 +836,7 @@ static inline ble_gatt_client *gatt_transport_eatt_client_get(
             bearer = &transport->eatt_contexts[i];
             break;
         }
+
     return bearer && bearer->client_enabled ? &bearer->client : NULL;
 }
 
@@ -1004,6 +1010,7 @@ static inline int gatt_transport_tx_sent(
                 BLE_GATT_CLIENT_TIMEOUT_MS;
         transport->tx_client_request = 0;
     }
+
     return 1;
 }
 

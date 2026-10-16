@@ -94,6 +94,7 @@ static uint8_t bounded_read(
         *inout_len = (uint16_t)(*inout_len + 1);
         return 0;
     }
+
     uint16_t available = (uint16_t)(sizeof(state->value) - offset);
     if (*inout_len > available)
         *inout_len = available;

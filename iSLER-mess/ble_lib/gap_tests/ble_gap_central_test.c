@@ -360,6 +360,7 @@ void GAP_HW_RANDOM_BYTES(uint8_t *out, size_t len) {
         for (size_t i = 0; i < len; i++) out[i] = forced_random[i % 6];
         return;
     }
+
     static const uint8_t value[4] = {0x78, 0x56, 0x34, 0x12};
     for (size_t i = 0; i < len; i++)
         out[i] = value[i % sizeof(value)] + (len == 4 ? 0 : random_seed);
@@ -2079,6 +2080,7 @@ static void test_extended_scannable_advertising(void) {
             assert(!memcmp(gap_ext_ctx[0].data, data, 1470));
             assert(!memcmp(captured_extended_pdus[i] + 6, data + 1470, 180));
         }
+
         assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
             captured_extended_pdus[i], captured_extended_pdu_lengths[i], -40));
     }
@@ -4528,6 +4530,7 @@ static void test_passkey_pairing(void) {
                     assert(gap_pairing_status() == 3);
                     gap_conn_end(); continue;
                 }
+
                 gap_smp_poll(); // Deliver the asynchronous UI callback.
                 uint8_t input = local_io == 2 ||
                     (local_io == 4 && (peer_io < 2 || (peer_io == 4 && !central)));
@@ -4586,6 +4589,7 @@ static void test_passkey_pairing(void) {
                     gap_smp_poll();
                     assert(smp->encryption_started);
                 }
+
                 gap_security->phase = 0; gap_security->status = 0;
                 gap_security->tx_enabled = gap_security->rx_enabled = 1;
                 gap_smp_poll();
@@ -5232,6 +5236,7 @@ static void test_secure_connections_numeric_comparison(void) {
             gap_conn_end();
             continue;
         }
+
         assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY && conn->queue.tx_queued);
         uint8_t peer_check[17] = {13};
         gap_sc_dhkey_check(0, peer_check + 1);

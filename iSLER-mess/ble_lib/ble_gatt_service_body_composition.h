@@ -131,6 +131,7 @@ static inline int gatt_body_composition_service_indicate_measurement(
         ble_put_le16(value + len, measurement->height);
         len += 2;
     }
+
     if (len > server->mtu - 3)
         return 0;
     return gatt_server_queue_event(server, service->measurement_handle,

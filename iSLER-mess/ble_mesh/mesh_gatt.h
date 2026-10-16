@@ -222,6 +222,7 @@ static uint8_t mesh_gatt_gap_edkm_read(
         memset(material, 0, sizeof(material));
         return BLE_GATT_ATT_ERR_INVALID_OFFSET;
     }
+
     uint16_t len = (uint16_t)(sizeof(material) - offset);
     if (len > *inout_len)
         len = *inout_len;
@@ -262,6 +263,7 @@ static int mesh_gatt_proxy_sar_timeout_poll(void) {
         gap_disconnect(0x13);
         return 1;
     }
+
     uint32_t now = GET_MILLIS();
     if ((mesh_gatt.proxy_rx_active &&
          (uint32_t)(now - mesh_gatt.proxy_rx_started_ms) >=
@@ -275,6 +277,7 @@ static int mesh_gatt_proxy_sar_timeout_poll(void) {
         gap_disconnect(0x13);
         return 1;
     }
+
     return 0;
 }
 
@@ -575,6 +578,7 @@ int mesh_gatt_proxy_offer(
             (mesh_gatt.filter_type && listed)
         ) return 0;
     }
+
     uint8_t slot = (mesh_gatt.proxy_tx_head + mesh_gatt.proxy_tx_count) %
                    MESH_GATT_PROXY_QUEUE_SIZE;
     mesh_gatt.proxy_tx[slot].type = type;
@@ -663,6 +667,7 @@ static void mesh_gatt_proxy_input(
         mesh_gatt.proxy_rx_started_ms = 0;
         return;
     }
+
     p++; len--;
     if (!sar) {
         mesh_gatt.proxy_rx_active = 0;
@@ -755,6 +760,7 @@ static void mesh_gatt_notify_poll(void) {
         mesh_gatt.proxy_tx_sar_active = 1;
         mesh_gatt.proxy_tx_started_ms = GET_MILLIS();
     }
+
     mesh_gatt.proxy_tx[slot].offset += (uint8_t)chunk;
     if (!sar || sar == 3) {
         mesh_gatt.proxy_tx_sar_active = 0;
@@ -786,14 +792,17 @@ void mesh_gatt_poll(void) {
             mesh_gatt_provisioning_link_notify(0);
             mesh_gatt_link_reset();
         }
+
         (void)gatt_transport_poll(&mesh_gatt.transport, GET_MILLIS());
         return;
     }
+
     if (!mesh_gatt.connected) {
         mesh_gatt_link_reset();
         mesh_gatt.connected = 1;
         mesh_gatt_provisioning_link_notify(1);
     }
+
     if (mesh_gatt_proxy_sar_timeout_poll())
         return;
     mesh_gatt_notify_poll();
@@ -830,6 +839,7 @@ void mesh_gatt_poll(void) {
         else if (ready && gap_send_data(llid, fragment, len)) {
             (void)gatt_transport_tx_sent(&mesh_gatt.transport, len, now_ms);
         }
+
         return;
     }
 }
