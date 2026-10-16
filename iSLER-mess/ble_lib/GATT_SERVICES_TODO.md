@@ -42,22 +42,27 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Mesh Proxy (`0x1828`)
 - [x] Binary Sensor (`0x183B`)
 
-## Remaining assigned services
+## Remaining assigned-service layouts
 
-- [ ] Human Interface Device (`0x1812`)
-- [ ] Internet Protocol Support (`0x1820`)
-- [ ] Transport Discovery (`0x1824`)
+The entries below are not complete standard service builders. A generic
+UUID-pinned registration function exists for many, but it does not provide the
+standard characteristic layout or validate properties and permissions. Do not
+count those as implemented until a concrete builder is added.
+
+- [x] Human Interface Device (`0x1812`)
+- [x] Internet Protocol Support (`0x1820`)
+- [x] Transport Discovery (`0x1824`)
 - [ ] Object Transfer (`0x1825`)
 - [ ] Fitness Machine (`0x1826`)
-- [ ] Reconnection Configuration (`0x1829`)
+- [x] Reconnection Configuration (`0x1829`), mandatory RC Feature only
 - [ ] Insulin Delivery (`0x183A`)
-- [ ] Emergency Configuration (`0x183C`)
+- [x] Emergency Configuration (`0x183C`)
 - [ ] Authorization Control (`0x183D`)
 - [ ] Physical Activity Monitor (`0x183E`)
-- [ ] Elapsed Time (`0x183F`)
+- [x] Elapsed Time (`0x183F`)
 - [ ] Generic Health Sensor (`0x1840`)
 - [ ] Audio Input Control (`0x1843`)
-- [ ] Volume Control (`0x1844`)
+- [x] Volume Control (`0x1844`)
 - [ ] Volume Offset Control (`0x1845`)
 - [ ] Coordinated Set Identification (`0x1846`)
 - [ ] Device Time (`0x1847`)
@@ -66,7 +71,7 @@ automatically provide each service's application protocol or profile behavior.
 - [ ] Constant Tone Extension (`0x184A`)
 - [ ] Telephone Bearer (`0x184B`)
 - [ ] Generic Telephone Bearer (`0x184C`)
-- [ ] Microphone Control (`0x184D`)
+- [x] Microphone Control (`0x184D`)
 - [ ] Audio Stream Control (`0x184E`)
 - [ ] Broadcast Audio Scan (`0x184F`)
 - [ ] Published Audio Capabilities (`0x1850`)

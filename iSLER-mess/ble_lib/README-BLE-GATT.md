@@ -44,6 +44,19 @@ can optionally add Body Sensor Location. Encode each measurement with
 to the current server's `mtu - 3` so optional RR Interval entries are omitted
 as whole 16-bit values when they do not fit.
 
+Additional concrete builders include `gatt_hid_service_add()` for the HID
+core characteristics and caller-provided Report Map/Reports,
+`gatt_internet_protocol_support_service_add()` for the characteristic-free
+IP Support service, `gatt_transport_discovery_service_add()` for the optional
+TDS Control Point, `gatt_emergency_configuration_service_add()` for encrypted
+Emergency ID/Text, and `gatt_elapsed_time_service_add()` for Current Elapsed
+Time. `gatt_microphone_control_service_add()` registers encrypted MICS Mute,
+and `gatt_volume_control_service_add()` registers encrypted VCS state, control
+point, and flags. These builders add the database; applications still handle
+service-specific control point behavior and notifications.
+`gatt_reconnection_configuration_service_add()` registers the mandatory RC
+Feature value; pass its five-byte wire value, including the CRC field.
+
 Additional service database builders are available:
 
 - `gatt_immediate_alert_service_add()` and `gatt_link_loss_service_add()`
@@ -119,6 +132,20 @@ capacities for URI, headers, entity body, and control point; those allocations
 count against the server's configured value pool. The application implements
 HTTP handling and queues status/response events. These helpers register
 attributes and do not by themselves provide full profile conformance.
+
+`gatt_sig_service_add()` is the application-facing builder for other
+16-bit UUID services, including assigned services without a dedicated helper.
+Pass the service UUID and the characteristic definitions required by that
+service; the builder adds the service, characteristics, and requested CCCDs
+transactionally and returns their handles. This registers the database only:
+the application remains responsible for choosing the specification-correct
+characteristics and implementing service procedures.
+
+Some additional assigned UUIDs have generic UUID-pinned registration entry
+points in `ble_gatt_services.h`. Those are convenience wrappers around
+`gatt_sig_service_add()`; they are not complete standard service builders and
+do not validate the characteristic layout. The remaining layouts are tracked
+in `GATT_SERVICES_TODO.md`.
 
 ## GAP connection integration
 
