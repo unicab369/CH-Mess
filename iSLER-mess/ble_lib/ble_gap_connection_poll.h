@@ -644,9 +644,8 @@ void gap_hw_received(void) {
         if (gap_central.mode == GAP_CONN_MODE_GENERAL) {
             peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
         }
-        else if (gap_central.mode == GAP_CONN_MODE_SELECTIVE ||
-                 gap_central.mode == GAP_CONN_MODE_AUTO
-        ) {
+        else if (gap_central.mode &
+                 (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
         }
         else {

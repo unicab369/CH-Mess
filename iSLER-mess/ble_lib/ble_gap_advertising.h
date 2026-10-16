@@ -579,8 +579,8 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (active_scan > 1 || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        ((mode == GAP_CONN_MODE_SELECTIVE ||
-          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_mask)
+        ((mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) &&
+         !gap_accept_list_mask)
     ) return 0;
 
     uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer_type : 0;
@@ -626,13 +626,13 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 
     // General establishment connects to the first acceptable connectable
     // advertiser; direct establishment scans only for the requested peer.
-    if (mode == GAP_CONN_MODE_GENERAL || mode == GAP_CONN_MODE_AUTO)
+    if (mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO))
         gap_scan_start(active_scan);
     else gap_scanner.scanning = 1;
     gap_central.active = 1;
     gap_central.deadline_ms = mode == GAP_CONN_MODE_AUTO ? 0 :
                                 GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
-    if (mode != GAP_CONN_MODE_GENERAL && mode != GAP_CONN_MODE_AUTO) {
+    if (!(mode & (GAP_CONN_MODE_GENERAL | GAP_CONN_MODE_AUTO))) {
         gap_scanner.active = active_scan;
         gap_scan.head = 0;
         gap_scan.count = 0;

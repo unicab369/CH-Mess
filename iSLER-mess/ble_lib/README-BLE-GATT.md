@@ -22,10 +22,11 @@ callbacks. The GAP security manager uses the same L2CAP header helpers for
 fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
 
-The Battery Service helper adds a read-only Battery Level characteristic.
-Keep one `ble_gatt_battery_service` state alive per server/connection while
-the server may read it, and update the percentage with
-`gatt_battery_service_set_level()`.
+The Battery Service helper adds a readable, notifiable Battery Level
+characteristic. Keep one `ble_gatt_battery_service` state alive per
+server/connection while the server may read it. Update the percentage with
+`gatt_battery_service_set_level()` or update and queue a notification with
+`gatt_battery_service_notify_level()`.
 
 `gatt_device_information_service_add()` adds the standard Device Information
 Service with optional manufacturer, model, serial, hardware, firmware, and

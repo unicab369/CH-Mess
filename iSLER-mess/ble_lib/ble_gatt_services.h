@@ -6,8 +6,7 @@
 #include "ble_gatt_server.h"
 
 typedef struct {
-    uint16_t service_handle;
-    uint16_t level_handle;
+    uint16_t service_handle, level_handle, level_cccd_handle;
     uint8_t level;
 } ble_gatt_battery_service;
 
@@ -27,7 +26,7 @@ static uint8_t gatt_battery_level_read(
 }
 
 // Application facing
-// Add the standard Battery Service with a read-only Battery Level value.
+// Add the standard Battery Service with a readable, notifiable Battery Level.
 // Keep one service state per GATT server/connection and keep it alive while
 // that server may read the characteristic.
 static inline int gatt_battery_service_add(
@@ -39,6 +38,7 @@ static inline int gatt_battery_service_add(
 
     ble_gatt_uuid service_uuid = {2, {0x0f, 0x18}};
     ble_gatt_uuid level_uuid = {2, {0x19, 0x2a}};
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
     uint16_t old_count = server->count;
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
@@ -47,9 +47,12 @@ static inline int gatt_battery_service_add(
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &battery->service_handle) &&
         gatt_server_add_characteristic(server, &level_uuid,
-            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, BLE_GATT_PERM_READ,
             &battery->level, 1, 1, gatt_battery_level_read, NULL, battery,
-            NULL, &battery->level_handle);
+            NULL, &battery->level_handle) &&
+        gatt_server_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL, &battery->level_cccd_handle);
     if (!added) {
         memset(server->attributes + old_count, 0,
                (server->count - old_count) * sizeof(server->attributes[0]));
@@ -71,6 +74,18 @@ static inline int gatt_battery_service_set_level(
     if (!battery || !battery->level_handle || level > 100) return 0;
     battery->level = level;
     return 1;
+}
+
+// Application facing
+// Update Battery Level and queue its notification.
+static inline int gatt_battery_service_notify_level(
+    ble_gatt_server *server, ble_gatt_battery_service *battery,
+    uint8_t level
+) {
+    if (!server || !battery || level > 100 ||
+        !gatt_battery_service_set_level(battery, level)) return 0;
+    return gatt_server_queue_event(server, battery->level_handle,
+                                   &battery->level, 1, 0);
 }
 
 typedef struct {

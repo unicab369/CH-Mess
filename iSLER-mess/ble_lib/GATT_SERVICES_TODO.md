@@ -20,7 +20,7 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Device Information (`0x180A`)
 - [x] Heart Rate (`0x180D`)
 - [x] Phone Alert Status (`0x180E`)
-- [x] Battery (`0x180F`)
+- [x] Battery (`0x180F`), Battery Level read and optional notification
 - [x] Blood Pressure (`0x1810`)
 - [x] Alert Notification (`0x1811`)
 - [x] Continuous Glucose Monitoring (`0x181F`)
