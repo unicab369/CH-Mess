@@ -198,13 +198,20 @@ Additional service builders include:
   all defined measurement fields and checks them against the Feature value.
   `gatt_cycling_power_service_notify_vector()` encodes crank data and up to
   nine force and torque samples for the optional Vector characteristic. Its
-  Control Point handles cumulative wheel count and sensor-location operations;
-  configure its supported-location mask before accepting connections when
-  the multiple-location feature is enabled.
-- `gatt_cycling_power_service_add()` for Power Measurement and Feature, with
-  optional Vector, Sensor Location, and Control Point characteristics.
+  Control Point handles cumulative wheel count, sensor location, crank/chain
+  settings, measurement content masking, sampling-rate and calibration-date
+  requests. Offset compensation procedures are completed by the application
+  with `gatt_cycling_power_service_control_point_complete()`. Configure
+  supported locations, sampling rate, and factory calibration date before
+  accepting connections when those features are used. The service state keeps
+  the latest Control Point cumulative count and adjustable crank/chain values;
+  use those values when producing subsequent measurements.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and
-  Speed, with optional Navigation, Position Quality, and Control Point.
+  Speed, with optional Navigation, Position Quality, and Control Point. The
+  Control Point handles distance, content mask, navigation command, fix rate,
+  and elevation requests. Route operations are completed through
+  `gatt_location_navigation_service_control_point_complete()`; the requested
+  route number is kept in the service state.
 - `gatt_environmental_sensing_service_add()` for caller-selected permitted
   environmental measurement characteristics.
 - `gatt_body_composition_service_add()` for Body Composition Measurement and

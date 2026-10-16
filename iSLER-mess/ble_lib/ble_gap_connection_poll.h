@@ -674,7 +674,7 @@ void gap_hw_received(void) {
             int target_matches = target_type == ((gap_central.request[0] >> 6) & 1) &&
                                 memcmp(frame + 8, gap_central.request + 2, 6) == 0;
 
-            if (!target_matches && target_type == 1 && (frame[13] & 0xc0) == 0x40 &&
+            if (!target_matches && target_type && (frame[13] & 0xc0) == 0x40 &&
                 gap_privacy.enabled && gap_privacy.resolvable
             ) {
                 const uint8_t *irk = gap_privacy.irk;
@@ -1459,7 +1459,7 @@ int gap_send_due(
          pdu_type != ADV_NONCONN_IND &&
          pdu_type != ADV_SCAN_IND) || (!data && len) ||
         len > GAP_ADV_DATA_MAX ||
-        target_type > 1 || (pdu_type == ADV_DIRECT_IND && len) ||
+        (pdu_type == ADV_DIRECT_IND && len) ||
         (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len)
     ) return -1;
 

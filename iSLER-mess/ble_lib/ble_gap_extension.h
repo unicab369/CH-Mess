@@ -396,7 +396,8 @@ int gap_periodic_pawr_connect(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!peer_address || type > 1 ||
+    uint8_t random_type = type != 0;
+    if (!peer_address ||
         gap_conn_slot_active(gap_conn_slot) ||
         (gap_central.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
@@ -407,12 +408,12 @@ int gap_periodic_pawr_connect(
         if (gap_ext_adv[i].pawr_connect.pending)
             return 0;
 
-    if (!gap_peer_allowed(gap_identity_find(peer_address, type),
-                          peer_address, type))
+    if (!gap_peer_allowed(gap_identity_find(peer_address, random_type),
+                          peer_address, random_type))
         return 0;
 
     set->pawr_connect.subevent = subevent;
-    set->pawr_connect.peer_type = type;
+    set->pawr_connect.peer_type = random_type;
     memcpy(set->pawr_connect.peer_address, peer_address, 6);
     set->pawr_connect.pending = 1;
     return 1;
@@ -477,7 +478,8 @@ int gap_ext_adv_start_phy(
         gap_adv.enabled || set->enabled ||
         set->periodic.enabled || sid > 15 ||
         !gap_ext_ad_data_valid(data, len) ||
-        interval_ms < 100 || interval_ms > 10240 ||
+        interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
+        interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
         !(GAP_HW_ADV_PHY_MASK() & aux_phy) ||
         (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M &&
          aux_phy != GAP_PHY_CODED)
@@ -869,14 +871,15 @@ int gap_periodic_sync_start(
     const uint8_t address[6], uint8_t sid, uint32_t timeout_ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!address || type > 1 || sid > 15 || timeout_ms < 100 ||
+    uint8_t random_type = type != 0;
+    if (!address || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 || gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
-            gap_syncs[i].address_type == type &&
+            gap_syncs[i].address_type == random_type &&
             !memcmp(gap_syncs[i].address, address, 6)
         ) return 0;
 
@@ -897,7 +900,7 @@ int gap_periodic_sync_start(
     gap_syncs[slot].used = 1;
     gap_syncs[slot].handle = (uint8_t)(slot + 1);
     gap_syncs[slot].sid = sid;
-    gap_syncs[slot].address_type = type;
+    gap_syncs[slot].address_type = random_type;
     memcpy(gap_syncs[slot].address, address, 6);
     gap_syncs[slot].timeout_ms = timeout_ms;
     gap_syncs[slot].last_event_ms = GET_MILLIS();

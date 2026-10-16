@@ -2127,9 +2127,14 @@ typedef struct {
     uint16_t feature_handle, sensor_location_handle;
     uint16_t vector_handle, vector_cccd_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t factory_calibration_date_handle;
     ble_gatt_server *server;
     uint32_t cumulative_wheel_revolutions, supported_sensor_locations;
-    uint8_t sensor_location;
+    uint16_t crank_length, chain_length, chain_weight, span_length;
+    uint16_t measurement_content_mask;
+    uint8_t sensor_location, sampling_rate, control_point_pending_opcode;
+    uint8_t control_point_request_count;
+    uint8_t factory_calibration_date[7], factory_calibration_date_set;
 } ble_gatt_cycling_power_service;
 
 typedef struct {
@@ -2138,6 +2143,13 @@ typedef struct {
     uint16_t navigation_handle, navigation_cccd_handle;
     uint16_t position_quality_handle, control_point_handle;
     uint16_t control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t total_distance;
+    int32_t elevation;
+    uint16_t location_speed_content_mask, selected_route;
+    uint16_t control_point_request_parameter;
+    uint8_t fix_rate, navigation_command, navigation_running;
+    uint8_t control_point_pending_opcode, control_point_request_count;
 } ble_gatt_location_navigation_service;
 
 typedef struct {
@@ -2665,7 +2677,7 @@ static inline int gatt_cycling_power_service_add(
     };
     uint8_t unused_value = 0;
     static const uint8_t control_point_initial = 0;
-    ble_gatt_sig_characteristic chars[5];
+    ble_gatt_sig_characteristic chars[6];
     uint8_t count = 0;
     chars[count++] = (ble_gatt_sig_characteristic){
         0x2a63, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
@@ -2678,6 +2690,7 @@ static inline int gatt_cycling_power_service_add(
         &sensor_location, 1
     };
     uint8_t vector_index = 0xff, control_index = 0xff;
+    uint8_t calibration_date_index = 0xff;
     if (include_vector) {
         vector_index = count;
         chars[count++] = (ble_gatt_sig_characteristic){
@@ -2697,7 +2710,15 @@ static inline int gatt_cycling_power_service_add(
             .variable_length = 1
         };
     }
-    ble_gatt_sig_handlers handlers[5] = {0};
+    if (features & (1u << 18)) {
+        calibration_date_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a2b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            service->factory_calibration_date,
+            sizeof(service->factory_calibration_date)
+        };
+    }
+    ble_gatt_sig_handlers handlers[6] = {0};
     if (control_index != 0xff) {
         handlers[control_index].write = gatt_cycling_power_control_point_write;
         handlers[control_index].context = service;
@@ -2705,7 +2726,7 @@ static inline int gatt_cycling_power_service_add(
     service->server = server;
     service->sensor_location = sensor_location;
     service->supported_sensor_locations = 1u << sensor_location;
-    uint16_t values[5], cccds[5];
+    uint16_t values[6], cccds[6];
     if (!gatt_sig_service_add_with_handlers(server, 0x1818, chars, count,
             &service->service_handle, values, cccds, handlers))
         return 0;
@@ -2721,8 +2742,17 @@ static inline int gatt_cycling_power_service_add(
         service->control_point_handle = values[control_index];
         service->control_point_cccd_handle = cccds[control_index];
     }
+    if (calibration_date_index != 0xff)
+        service->factory_calibration_date_handle =
+            values[calibration_date_index];
     return 1;
 }
+
+// Internal
+static inline uint8_t gatt_lns_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 
 // Application facing
 static inline int gatt_location_navigation_service_add(
@@ -2777,9 +2807,15 @@ static inline int gatt_location_navigation_service_add(
             .variable_length = 1
         };
     }
+    ble_gatt_sig_handlers handlers[5] = {0};
+    if (control_index != 0xff) {
+        handlers[control_index].write = gatt_lns_control_point_write;
+        handlers[control_index].context = service;
+    }
+    service->server = server;
     uint16_t values[5], cccds[5];
-    if (!gatt_sig_service_add(server, 0x1819, chars, count,
-                              &service->service_handle, values, cccds))
+    if (!gatt_sig_service_add_with_handlers(server, 0x1819, chars, count,
+            &service->service_handle, values, cccds, handlers))
         return 0;
     service->feature_handle = values[0];
     service->location_speed_handle = values[1];
@@ -3647,5 +3683,6 @@ static inline int gatt_tpms_service_add(
 #include "ble_gatt_service_alert_notification.h"
 #include "ble_gatt_service_scan_parameters.h"
 #include "ble_gatt_service_sport.h"
+#include "ble_gatt_service_location_navigation.h"
 
 #endif

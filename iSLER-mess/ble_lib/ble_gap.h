@@ -127,6 +127,8 @@ typedef enum {
 
 // Advertising payload limits and extended advertising storage.
 #define GAP_ADV_DATA_MAX 31
+#define GAP_ADV_INTERVAL_MIN_MS 100
+#define GAP_ADV_INTERVAL_MAX_MS 10240
 #define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
 #define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
 #define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
@@ -244,6 +246,7 @@ typedef struct {
 } gap_data_length;
 
 typedef struct {
+    // Zero is public; any nonzero value is treated as random.
     uint8_t type, address[6];
 } gap_peer_address;
 
@@ -674,11 +677,11 @@ static int gap_identity_find(const uint8_t address[6], uint8_t type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (!gap_identities[i].used) continue;
 
-        if (type == gap_identities[i].peer.type &&
+        if ((type != 0) == gap_identities[i].peer.type &&
             memcmp(address, gap_identities[i].peer.address, 6) == 0
         ) return i;
 
-        if (type == 1 && (address[5] & 0xc0) == 0x40) {
+        if (type && (address[5] & 0xc0) == 0x40) {
             if (!gap_identities[i].has_irk) continue; // Zero IRK: identity only.
 
             uint8_t hash[3];
@@ -697,7 +700,7 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 
     return !identity->has_irk ||
         identity->privacy_mode == GAP_PRIVACY_DEVICE ||
-        type != identity->peer.type ||
+        (type != 0) != identity->peer.type ||
         memcmp(address, identity->peer.address, 6) != 0;
 }
 
@@ -728,7 +731,7 @@ static int gap_accept_list_match(
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!gap_accept_list[i].used) continue;
 
-        if (gap_accept_list[i].peer.type == type &&
+        if (gap_accept_list[i].peer.type == (type != 0) &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
@@ -812,16 +815,17 @@ int gap_accept_list_clear(void) {
 int gap_identity_set(
     const uint8_t address[6], uint8_t type, const uint8_t irk[16]
 ) {
-    if (!address || type > 1 || gap_scanner.scanning ||
+    uint8_t random_type = type != 0;
+    if (!address || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
-        (type && !gap_static_addr_valid(address))
+        (random_type && !gap_static_addr_valid(address))
     ) return 0;
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].peer.type == type &&
+            gap_identities[i].peer.type == random_type &&
             memcmp(gap_identities[i].peer.address, address, 6) == 0
         ) {
             if (!irk) {
@@ -845,7 +849,7 @@ int gap_identity_set(
     for (uint8_t i = 0; i < 16; i++)
         if (irk[i]) gap_identities[slot].has_irk = 1;
 
-    gap_identities[slot].peer.type = type;
+    gap_identities[slot].peer.type = random_type;
     memcpy(gap_identities[slot].peer.address, address, 6);
     memcpy(gap_identities[slot].irk, irk, 16);
     return 1;
@@ -856,7 +860,8 @@ int gap_identity_set(
 int gap_identity_privacy(
     const uint8_t address[6], uint8_t type, uint8_t mode
 ) {
-    if (!address || type > 1 || mode > GAP_PRIVACY_DEVICE ||
+    uint8_t random_type = type != 0;
+    if (!address || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active
@@ -864,7 +869,7 @@ int gap_identity_privacy(
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].peer.type == type &&
+            gap_identities[i].peer.type == random_type &&
             memcmp(gap_identities[i].peer.address, address, 6) == 0
         ) {
             gap_identities[i].privacy_mode = mode;
@@ -880,7 +885,7 @@ int gap_resolve(
     const uint8_t address[6], uint8_t type,
     uint8_t identity[6], uint8_t *identity_type
 ) {
-    if (!address || type > 1 || !identity || !identity_type)
+    if (!address || !identity || !identity_type)
         return 0;
 
     int slot = gap_identity_find(address, type);
@@ -929,7 +934,8 @@ static int gap_private_addr_generate(
 int gap_identity_local_key(
     const uint8_t address[6], uint8_t type, const uint8_t irk[16]
 ) {
-    if (!address || type > 1 || gap_scanner.scanning || gap_adv.enabled ||
+    uint8_t random_type = type != 0;
+    if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
@@ -937,7 +943,7 @@ int gap_identity_local_key(
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
-            gap_identities[i].peer.type == type &&
+            gap_identities[i].peer.type == random_type &&
             memcmp(address, gap_identities[i].peer.address, 6) == 0
         ) {
             slot = i;

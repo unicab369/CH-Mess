@@ -390,7 +390,8 @@ static inline int gap_adv_start_payload(
     if (gap_central.active ||
         !gap_ad_data_valid(data, data_len) ||
         !gap_ad_data_valid(scan_response, resp_len) ||
-        interval_ms < 100 || interval_ms > 10240
+        interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
+        interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) {
         return 0;
     }
@@ -442,7 +443,8 @@ int gap_adv_start_directed(
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
     if (gap_central.active || !address ||
-        type > 1 || interval_ms < 100 || interval_ms > 10240 ||
+        interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
+        interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
         (gap_privacy.enabled && !gap_privacy.resolvable)
     ) return 0;
 
@@ -457,7 +459,7 @@ int gap_adv_start_directed(
             return 0;
         type = 1;
     }
-    gap_adv.target.type = type;
+    gap_adv.target.type = type != 0;
     memcpy(gap_adv.target.address, target, sizeof(target));
     gap_adv.data_len = 0;
     gap_adv.scan_resp_len = 0;
@@ -656,12 +658,12 @@ static int gap_conn_procedure_start(
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || peer_type > 1 || gap_conn_free_slot() < 0 ||
+    if (!peer_address || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_central.active)
     ) return 0;
 
     memcpy(gap_central.peer_address, peer_address, 6);
-    gap_central.peer_type = peer_type;
+    gap_central.peer_type = peer_type != 0;
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 
