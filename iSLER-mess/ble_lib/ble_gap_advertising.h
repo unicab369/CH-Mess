@@ -353,12 +353,14 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
         uint8_t field_len = data[offset];
 
         if (!field_len) {
+            // A zero length terminates the data; only zero padding may follow.
             for (; offset < len; offset++)
                 if (data[offset])
                     return 0;
             break;
         }
 
+        // The length byte counts the type and value bytes that follow it.
         if (offset + (size_t)field_len + 1 > len)
             return 0;
         offset += (size_t)field_len + 1;

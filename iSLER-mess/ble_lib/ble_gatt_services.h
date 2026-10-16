@@ -1,7 +1,8 @@
 #ifndef BLE_GATT_SERVICES_H
 #define BLE_GATT_SERVICES_H
 
-// Reusable Bluetooth SIG GATT services built on the generic GATT server.
+// Bluetooth SIG GATT service database builders.
+// Profile procedures and application state belong in service-specific modules.
 #include "ble_gatt_server.h"
 
 typedef struct {
@@ -339,111 +340,7 @@ static inline int gatt_heart_rate_measurement_encode(
     return 1;
 }
 
-typedef struct {
-    uint16_t uuid;
-    uint16_t permissions;
-    const uint8_t *value;
-    uint16_t value_len, value_capacity;
-} ble_gatt_sig_descriptor;
-
-typedef struct {
-    uint16_t uuid;
-    uint8_t properties, cccd;
-    uint16_t permissions;
-    const uint8_t *value;
-    uint16_t value_len;
-    uint16_t value_capacity;
-    uint8_t variable_length;
-    const ble_gatt_sig_descriptor *descriptors;
-    uint8_t descriptor_count;
-} ble_gatt_sig_characteristic;
-
-// Application facing
-// Add a 16-bit UUID service and its caller-defined characteristics as one
-// transaction. The caller supplies the assigned characteristic UUIDs,
-// properties, permissions, values, and optional CCCDs.
-static inline int gatt_sig_service_add(
-    ble_gatt_server *server, uint16_t service_uuid16,
-    const ble_gatt_sig_characteristic *characteristics, uint8_t count,
-    uint16_t *service_handle, uint16_t *value_handles,
-    uint16_t *cccd_handles
-) {
-    if (!server || !characteristics || !count || !service_handle ||
-        !value_handles || server->database_sealed)
-        return 0;
-    for (uint8_t i = 0; i < count; i++)
-        if (characteristics[i].descriptor_count &&
-            !characteristics[i].descriptors)
-            return 0;
-    uint16_t old_count = server->count;
-    uint16_t old_next_handle = server->next_handle;
-    uint16_t old_value_used = server->value_used;
-    ble_gatt_uuid service_uuid = {
-        2, {(uint8_t)service_uuid16, (uint8_t)(service_uuid16 >> 8)}
-    };
-    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
-    memset(value_handles, 0, (size_t)count * sizeof(*value_handles));
-    if (cccd_handles)
-        memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
-
-    int added = gatt_server_add_service(server, &service_uuid, 1,
-                                         service_handle);
-    for (uint8_t i = 0; added && i < count; i++) {
-        ble_gatt_uuid uuid = {
-            2, {(uint8_t)characteristics[i].uuid,
-                (uint8_t)(characteristics[i].uuid >> 8)}
-        };
-        added = gatt_server_add_characteristic(server, &uuid,
-            characteristics[i].properties, characteristics[i].permissions,
-            characteristics[i].value, characteristics[i].value_len,
-            characteristics[i].value_capacity ?
-                characteristics[i].value_capacity :
-                characteristics[i].value_len,
-            NULL, NULL, NULL, NULL,
-            &value_handles[i]);
-        if (added && characteristics[i].variable_length)
-            server->attributes[server->count - 1].flags |=
-                BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
-        if (added && characteristics[i].cccd) {
-            if (!cccd_handles) {
-                added = 0;
-            } else {
-                added = gatt_server_add_descriptor(server, &cccd_uuid,
-                    BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
-                    NULL, 0, 0, NULL, NULL, NULL, &cccd_handles[i]);
-            }
-        }
-        for (uint8_t j = 0; added &&
-             j < characteristics[i].descriptor_count; j++) {
-            const ble_gatt_sig_descriptor *descriptor =
-                &characteristics[i].descriptors[j];
-            ble_gatt_uuid descriptor_uuid = {
-                2, {(uint8_t)descriptor->uuid,
-                    (uint8_t)(descriptor->uuid >> 8)}
-            };
-            added = gatt_server_add_descriptor(server, &descriptor_uuid,
-                descriptor->permissions, descriptor->value,
-                descriptor->value_len, descriptor->value_capacity,
-                NULL, NULL, NULL, NULL);
-        }
-    }
-
-    if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
-        memset(value_handles, 0, (size_t)count * sizeof(*value_handles));
-        if (cccd_handles)
-            memset(cccd_handles, 0, (size_t)count * sizeof(*cccd_handles));
-        *service_handle = 0;
-        return 0;
-    }
-    return 1;
-}
+#include "ble_gatt_service_registry.h"
 
 typedef struct {
     uint16_t service_handle, mute_handle, mute_cccd_handle;
@@ -2139,10 +2036,12 @@ static inline int gatt_emergency_configuration_service_add(
 
 typedef struct {
     uint16_t service_handle, alert_level_handle;
+    uint8_t alert_level, request_count;
 } ble_gatt_immediate_alert_service;
 
 typedef struct {
     uint16_t service_handle, alert_level_handle;
+    uint8_t alert_level;
 } ble_gatt_link_loss_service;
 
 typedef struct {
@@ -2165,6 +2064,9 @@ typedef struct {
 typedef struct {
     uint16_t service_handle, alert_status_handle, alert_status_cccd_handle;
     uint16_t ringer_setting_handle, ringer_control_point_handle;
+    uint16_t ringer_setting_cccd_handle;
+    uint8_t alert_status, ringer_setting, last_ringer_control;
+    uint8_t ringer_control_count;
 } ble_gatt_phone_alert_status_service;
 
 typedef struct {
@@ -2196,11 +2098,15 @@ typedef struct {
     uint16_t supported_unread_alerts_handle, new_alert_handle;
     uint16_t new_alert_cccd_handle, unread_alert_status_handle;
     uint16_t unread_alert_status_cccd_handle, control_point_handle;
+    uint16_t supported_new_alerts, supported_unread_alerts;
+    uint16_t enabled_new_alerts, enabled_unread_alerts;
+    uint8_t last_command, last_category, control_count;
 } ble_gatt_alert_notification_service;
 
 typedef struct {
     uint16_t service_handle, scan_interval_window_handle;
     uint16_t scan_refresh_handle, scan_refresh_cccd_handle;
+    uint16_t scan_interval, scan_window;
 } ble_gatt_scan_parameters_service;
 
 typedef struct {
@@ -2268,44 +2174,6 @@ typedef struct {
     uint16_t record_access_handle, record_access_cccd_handle;
     uint16_t specific_ops_handle, specific_ops_cccd_handle;
 } ble_gatt_cgm_service;
-
-// Application facing
-static inline int gatt_immediate_alert_service_add(
-    ble_gatt_server *server, ble_gatt_immediate_alert_service *service,
-    uint8_t alert_level
-) {
-    if (!service || alert_level > 2) return 0;
-    memset(service, 0, sizeof(*service));
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2a06, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
-         &alert_level, 1}
-    };
-    uint16_t values[1];
-    if (!gatt_sig_service_add(server, 0x1802, chars, 1,
-                              &service->service_handle, values, NULL))
-        return 0;
-    service->alert_level_handle = values[0];
-    return 1;
-}
-
-// Application facing
-static inline int gatt_link_loss_service_add(
-    ble_gatt_server *server, ble_gatt_link_loss_service *service,
-    uint8_t alert_level
-) {
-    if (!service || alert_level > 2) return 0;
-    memset(service, 0, sizeof(*service));
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2a06, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, &alert_level, 1}
-    };
-    uint16_t values[1];
-    if (!gatt_sig_service_add(server, 0x1803, chars, 1,
-                              &service->service_handle, values, NULL))
-        return 0;
-    service->alert_level_handle = values[0];
-    return 1;
-}
 
 // Application facing
 static inline int gatt_tx_power_service_add(
@@ -2402,33 +2270,6 @@ static inline int gatt_next_dst_change_service_add(
                               &service->service_handle, values, NULL))
         return 0;
     service->time_with_dst_handle = values[0];
-    return 1;
-}
-
-// Application facing
-static inline int gatt_phone_alert_status_service_add(
-    ble_gatt_server *server, ble_gatt_phone_alert_status_service *service,
-    const uint8_t alert_status[1], uint8_t ringer_setting
-) {
-    if (!service || !alert_status || ringer_setting > 1) return 0;
-    memset(service, 0, sizeof(*service));
-    static const uint8_t ringer_control_point = 0;
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2a3f, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-         BLE_GATT_PERM_READ, alert_status, 1},
-        {0x2a41, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, &ringer_setting, 1},
-        {0x2a40, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
-         &ringer_control_point, 1}
-    };
-    uint16_t values[3], cccds[3];
-    if (!gatt_sig_service_add(server, 0x180e, chars, 3,
-                              &service->service_handle, values, cccds))
-        return 0;
-    service->alert_status_handle = values[0];
-    service->alert_status_cccd_handle = cccds[0];
-    service->ringer_setting_handle = values[1];
-    service->ringer_control_point_handle = values[2];
     return 1;
 }
 
@@ -2717,70 +2558,6 @@ static inline int gatt_insulin_delivery_service_add(
         if (!cccd) return 0;
         cccd->permissions = authorized_cccd_permissions;
     }
-    return 1;
-}
-
-// Application facing
-static inline int gatt_alert_notification_service_add(
-    ble_gatt_server *server, ble_gatt_alert_notification_service *service,
-    uint16_t supported_new_alerts, uint16_t supported_unread_alerts
-) {
-    if (!service) return 0;
-    memset(service, 0, sizeof(*service));
-    uint8_t new_categories[2] = {
-        (uint8_t)supported_new_alerts,
-        (uint8_t)(supported_new_alerts >> 8)
-    };
-    uint8_t unread_categories[2] = {
-        (uint8_t)supported_unread_alerts,
-        (uint8_t)(supported_unread_alerts >> 8)
-    };
-    uint8_t alert_value[2] = {0, 0};
-    static const uint8_t control_point_initial[2] = {0, 0};
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2a47, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
-         new_categories, 2},
-        {0x2a48, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
-         unread_categories, 2},
-        {0x2a46, BLE_GATT_PROP_NOTIFY, 1, 0, alert_value, 2},
-        {0x2a45, BLE_GATT_PROP_NOTIFY, 1, 0, alert_value, 2},
-        {0x2a44, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
-         control_point_initial, 2}
-    };
-    uint16_t values[5], cccds[5];
-    if (!gatt_sig_service_add(server, 0x1811, chars, 5,
-                              &service->service_handle, values, cccds))
-        return 0;
-    service->supported_new_alerts_handle = values[0];
-    service->supported_unread_alerts_handle = values[1];
-    service->new_alert_handle = values[2];
-    service->new_alert_cccd_handle = cccds[2];
-    service->unread_alert_status_handle = values[3];
-    service->unread_alert_status_cccd_handle = cccds[3];
-    service->control_point_handle = values[4];
-    return 1;
-}
-
-// Application facing
-static inline int gatt_scan_parameters_service_add(
-    ble_gatt_server *server, ble_gatt_scan_parameters_service *service,
-    const uint8_t scan_interval_window[4]
-) {
-    if (!service || !scan_interval_window) return 0;
-    memset(service, 0, sizeof(*service));
-    uint8_t refresh_value = 0;
-    ble_gatt_sig_characteristic chars[] = {
-        {0x2a4f, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP, 0,
-         BLE_GATT_PERM_WRITE, scan_interval_window, 4},
-        {0x2a31, BLE_GATT_PROP_NOTIFY, 1, 0, &refresh_value, 1}
-    };
-    uint16_t values[2], cccds[2];
-    if (!gatt_sig_service_add(server, 0x1813, chars, 2,
-                              &service->service_handle, values, cccds))
-        return 0;
-    service->scan_interval_window_handle = values[0];
-    service->scan_refresh_handle = values[1];
-    service->scan_refresh_cccd_handle = cccds[1];
     return 1;
 }
 
@@ -3819,5 +3596,9 @@ static inline int gatt_tpms_service_add(
     }
     return 1;
 }
+
+#include "ble_gatt_service_alerts.h"
+#include "ble_gatt_service_alert_notification.h"
+#include "ble_gatt_service_scan_parameters.h"
 
 #endif

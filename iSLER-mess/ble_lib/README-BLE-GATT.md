@@ -3,9 +3,9 @@
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
-`ble_gatt_services.h` provides reusable Bluetooth SIG Battery, Device
-Information, Generic Access, Heart Rate, and additional standard service
-database builders.
+`ble_gatt_services.h` provides reusable Bluetooth SIG service database
+builders. `ble_gatt_service_registry.h` contains the generic 16-bit UUID
+service builder and the per-characteristic ATT handler binding API.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
@@ -139,7 +139,9 @@ PDUs/service data and has no GATT attribute database to register.
 Additional service database builders are available:
 
 - `gatt_immediate_alert_service_add()` and `gatt_link_loss_service_add()`
-  register Alert Level.
+  implement Alert Level reads and validated writes. The service state exposes
+  the latest level to the application; Immediate Alert also increments a
+  request counter so repeated writes can trigger repeated device actions.
 - `gatt_tx_power_service_add()` registers the signed Tx Power Level.
 - `gatt_current_time_service_add()` registers Current Time and optionally
   Local Time Information and Reference Time Information.
@@ -147,7 +149,9 @@ Additional service database builders are available:
   `gatt_next_dst_change_service_add()` register the time update and DST
   characteristics.
 - `gatt_phone_alert_status_service_add()` registers Alert Status with a CCCD,
-  Ringer Setting, and Ringer Control Point.
+  Ringer Setting with a CCCD, and Ringer Control Point. The control point
+  validates its opcode and updates service state; the application performs
+  device-specific actions and sends notifications.
 - `gatt_health_thermometer_service_add()` registers Temperature Measurement
   with an indication CCCD and optional Intermediate Temperature notification
   and Temperature Type.
@@ -171,9 +175,12 @@ Additional service builders include:
   application supplies encoded static values and implements record storage
   and control-point behavior.
 - `gatt_alert_notification_service_add()` for supported categories, new and
-  unread alert notifications, and the Alert Notification Control Point.
+  unread alert notifications, and the Alert Notification Control Point. The
+  control point validates commands and updates per-category enable masks; the
+  application supplies alert records and notification payloads.
 - `gatt_scan_parameters_service_add()` for Scan Interval Window and Scan
-  Refresh.
+  Refresh. The Scan Interval Window handler validates the Bluetooth ranges
+  and updates the service state; the application applies it to its scanner.
 - `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
 - `gatt_cycling_power_service_add()` for Power Measurement and Feature, with
@@ -219,6 +226,12 @@ service; the builder adds the service, characteristics, and requested CCCDs
 transactionally and returns their handles. This registers the database only:
 the application remains responsible for choosing the specification-correct
 characteristics and implementing service procedures.
+
+For services with ATT-level behavior, `gatt_sig_service_add_with_handlers()`
+binds per-characteristic read, write, and reliable-write handlers as part of
+transactional registration. Protocol handlers belong in service-specific
+modules; product behavior such as changing a display, reading a sensor, or
+controlling a media player belongs in the application.
 
 For an unfinished service, `gatt_sig_service_add()` can register a
 caller-supplied characteristic list. It does not validate that list against
