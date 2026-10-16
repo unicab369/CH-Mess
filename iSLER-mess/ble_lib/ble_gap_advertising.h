@@ -576,17 +576,11 @@ void gap_scan_stop(void) {
 }
 
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
-    uint8_t accept_list_nonempty = 0;
-
-    if (mode == GAP_CONN_MODE_SELECTIVE || mode == GAP_CONN_MODE_AUTO)
-        for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++)
-            accept_list_nonempty |= gap_accept_list[i].used;
-
     if (active_scan > 1 || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
         GAP_EXT_ADVERTISING_ENABLED ||
         ((mode == GAP_CONN_MODE_SELECTIVE ||
-          mode == GAP_CONN_MODE_AUTO) && !accept_list_nonempty)
+          mode == GAP_CONN_MODE_AUTO) && !gap_accept_list_mask)
     ) return 0;
 
     uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer_type : 0;

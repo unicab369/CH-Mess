@@ -156,14 +156,15 @@ Additional service database builders are available:
   with an indication CCCD and optional Intermediate Temperature notification
   and Temperature Type. `gatt_health_thermometer_service_indicate()` encodes
   temperature values and optional timestamp/type fields;
-  `gatt_health_thermometer_service_notify_intermediate()` queues an encoded
-  Intermediate Temperature value.
+  `gatt_health_thermometer_service_notify_intermediate()` encodes and queues
+  an Intermediate Temperature measurement.
 - `gatt_blood_pressure_service_add()` registers Blood Pressure Measurement,
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
   `gatt_blood_pressure_service_indicate()` encodes measurements, validates
   Measurement Status bits against the configured feature value, and queues an
-  indication. `gatt_blood_pressure_service_notify_intermediate()` queues an
-  encoded Intermediate Cuff Pressure value.
+  indication. `gatt_blood_pressure_service_notify_intermediate()` encodes and
+  queues an Intermediate Cuff Pressure notification, including the required
+  NaN unused pressure fields.
 - `gatt_pulse_oximeter_service_add()` registers PLX Spot-check and/or
   Continuous Measurement. `gatt_pulse_oximeter_service_indicate_spot_check()`
   and `gatt_pulse_oximeter_service_notify_continuous()` encode optional fields

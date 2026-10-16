@@ -640,8 +640,9 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
 
 static gap_peer_address gap_own_address;
 static gap_peer_address gap_identity_address;
+// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
+static uint32_t gap_accept_list_mask;
 static struct {
-    uint8_t used;
     gap_peer_address peer;
 } gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
@@ -729,7 +730,7 @@ static int gap_accept_list_match(
                                     &gap_identities[identity_slot] : NULL;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        if (!gap_accept_list[i].used) continue;
+        if (!(gap_accept_list_mask & ((uint32_t)1 << i))) continue;
 
         if (gap_accept_list[i].peer.type == (type != 0) &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
@@ -758,17 +759,18 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
 
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        if (gap_accept_list[i].used &&
+        uint32_t bit = (uint32_t)1 << i;
+        if ((gap_accept_list_mask & bit) &&
             gap_accept_list[i].peer.type == type &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
-        if (!gap_accept_list[i].used && free_slot < 0)
+        if (!(gap_accept_list_mask & bit) && free_slot < 0)
             free_slot = i;
     }
 
     if (free_slot < 0) return 0;
-    gap_accept_list[free_slot].used = 1;
+    gap_accept_list_mask |= (uint32_t)1 << free_slot;
     gap_accept_list[free_slot].peer.type = type;
     memcpy(gap_accept_list[free_slot].peer.address, address, 6);
     return 1;
@@ -785,11 +787,13 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        if (gap_accept_list[i].used &&
+        uint32_t bit = (uint32_t)1 << i;
+        if ((gap_accept_list_mask & bit) &&
             gap_accept_list[i].peer.type == type &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) {
             memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
+            gap_accept_list_mask &= ~bit;
             return 1;
         }
     }
@@ -806,6 +810,7 @@ int gap_accept_list_clear(void) {
     ) return 0;
 
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
+    gap_accept_list_mask = 0;
     return 1;
 }
 
