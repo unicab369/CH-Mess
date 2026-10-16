@@ -76,8 +76,9 @@ remains available for custom services; it does not replace these builders.
   conditional First-Created/Last-Modified metadata, Object ID, OLCP, and all
   three Object List Filter instances; feature bitmap validation, OACP/OLCP
   opcode and parameter validation, correct OLCP Order/Request Number of
-  Objects/Clear Marking mapping, request capture, procedure serialization,
-  and response indications
+  Objects/Clear Marking mapping, reliable OACP writes, request capture,
+  atomic current-object metadata updates, procedure serialization, and
+  response indications
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
   feature-matched Supported Range values, optional Training Status and
   Fitness Machine Status notifications, and Control Point handling

@@ -5125,6 +5125,8 @@ typedef struct {
     uint8_t active_control_point;
     uint16_t request_parameter_len;
     uint8_t request_parameters[BLE_GATT_ATT_VALUE_MAX - 1];
+    uint8_t oacp_prepared[21], oacp_prepared_coverage[21];
+    uint8_t oacp_prepare_active;
     uint8_t olcp_pending, olcp_taken, olcp_opcode, olcp_order;
     uint8_t olcp_parameter[6];
 } ble_gatt_object_transfer_service;
@@ -5137,6 +5139,7 @@ static uint8_t gatt_ots_olcp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
+static void gatt_ots_oacp_execute(void *context, uint8_t commit);
 
 static inline uint8_t gatt_ots_oacp_feature_bit(uint8_t opcode) {
     switch (opcode) {
@@ -5161,6 +5164,89 @@ static inline int gatt_ots_features_valid(
     if (!multi_object && (features[4] || features[5] ||
                           features[6] || features[7])) return 0;
     return 1;
+}
+
+static uint8_t gatt_ots_oacp_prepare(
+    void *context, uint16_t offset, const uint8_t *value, uint16_t len
+) {
+    ble_gatt_object_transfer_service *service = context;
+    if (!service || (len && !value))
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (!len || offset > sizeof(service->oacp_prepared) ||
+        len > sizeof(service->oacp_prepared) - offset)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!service->oacp_prepare_active) {
+        memset(service->oacp_prepared, 0, sizeof(service->oacp_prepared));
+        memset(service->oacp_prepared_coverage, 0,
+               sizeof(service->oacp_prepared_coverage));
+        service->oacp_prepare_active = 1;
+    }
+    memcpy(service->oacp_prepared + offset, value, len);
+    memset(service->oacp_prepared_coverage + offset, 1, len);
+    return 0;
+}
+
+static uint8_t gatt_ots_oacp_prepare_commit_validate(
+    void *context, const uint8_t *value, uint16_t len
+) {
+    ble_gatt_object_transfer_service *service = context;
+    if (!service || !service->server || !value)
+        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    if (!len || len > 21)
+        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!service->oacp_prepared_coverage[0])
+        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    uint8_t opcode = value[0];
+    uint8_t valid_length = 0;
+    switch (opcode) {
+    case 0x01: valid_length = len == 7 || len == 21; break;
+    case 0x02:
+    case 0x07: valid_length = len == 1; break;
+    case 0x03:
+    case 0x05: valid_length = len == 9; break;
+    case 0x04: valid_length = 1; break;
+    case 0x06: valid_length = len == 10; break;
+    default: valid_length = 1; break;
+    }
+    if (!valid_length) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    for (uint16_t i = 0; i < len; i++)
+        if (!service->oacp_prepared_coverage[i])
+            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    ble_gatt_attribute *cccd = gatt_server_find(service->server,
+        service->action_control_point_cccd_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->active_control_point) return 0xfe;
+    return 0;
+}
+
+static inline int gatt_ots_bind_oacp_long_write(
+    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    uint16_t handle
+) {
+    return gatt_server_set_transaction_callbacks(server, handle,
+                gatt_ots_oacp_prepare, gatt_ots_oacp_execute) &&
+        gatt_server_set_prepare_commit_validator(server, handle,
+                gatt_ots_oacp_prepare_commit_validate);
+}
+
+static void gatt_ots_oacp_execute(void *context, uint8_t commit) {
+    ble_gatt_object_transfer_service *service = context;
+    if (!service) return;
+    if (commit) {
+        uint16_t len = 0;
+        while (len < sizeof(service->oacp_prepared) &&
+               service->oacp_prepared_coverage[len]) len++;
+        uint8_t contiguous = len > 0;
+        for (uint16_t i = len; i < sizeof(service->oacp_prepared); i++)
+            if (service->oacp_prepared_coverage[i]) contiguous = 0;
+        if (contiguous)
+            (void)gatt_ots_oacp_write(service, 0, service->oacp_prepared,
+                                      len, 0);
+    }
+    memset(service->oacp_prepared, 0, sizeof(service->oacp_prepared));
+    memset(service->oacp_prepared_coverage, 0,
+           sizeof(service->oacp_prepared_coverage));
+    service->oacp_prepare_active = 0;
 }
 
 static uint8_t gatt_ots_oacp_write(
@@ -5290,7 +5376,9 @@ static uint8_t gatt_ots_olcp_write(
         (opcode == 7 || opcode == 8) ? len == 1 : 1;
     if (!valid_length) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t response_code = 0x01;
-    if (opcode >= 0x05 && opcode <= 0x08 &&
+    if (opcode < 0x01 || opcode > 0x08)
+        response_code = 0x02;
+    else if (opcode >= 0x05 &&
         !(service->features[4] & (uint8_t)(1u << (opcode - 0x05))))
         response_code = 0x02;
     else if (opcode == 0x06 && !(
@@ -5439,7 +5527,8 @@ static inline int gatt_object_transfer_service_add_type_full(
     service->action_control_point_cccd_handle = cccd_handles[7];
     service->server = server;
     memcpy(service->features, features, sizeof(service->features));
-    return 1;
+    return gatt_ots_bind_oacp_long_write(server, service,
+        service->action_control_point_handle);
 }
 
 static inline int gatt_object_transfer_service_add_type(
@@ -5594,6 +5683,8 @@ static inline int gatt_object_transfer_service_add_multi_object_type_full(
     service->object_list_filter_handles[2] = values[12];
     service->server = server;
     memcpy(service->features, features, sizeof(service->features));
+    if (!gatt_ots_bind_oacp_long_write(server, service,
+            service->action_control_point_handle)) return 0;
     for (uint8_t i = 8; i <= 9; i++) {
         ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
 
@@ -5649,6 +5740,48 @@ static inline int gatt_object_transfer_service_set_object_list_filter(
     if (filter_len < attribute->value_capacity)
         memset(stored + filter_len, 0, attribute->value_capacity - filter_len);
     attribute->value_len = filter_len;
+    return 1;
+}
+
+static inline int gatt_object_transfer_service_set_current_object_metadata(
+    ble_gatt_object_transfer_service *service,
+    const uint8_t *name, uint16_t name_len,
+    const uint8_t *type, uint8_t type_len,
+    const uint8_t size[8], const uint8_t first_created[7],
+    const uint8_t last_modified[7], const uint8_t object_id[6],
+    const uint8_t properties[4]
+) {
+    if (!service || !service->server || (name_len && !name) || !type ||
+        (type_len != 2 && type_len != 16) || !size || !first_created ||
+        !last_modified || !properties ||
+        (service->object_id_handle && !object_id)) return 0;
+    const uint16_t handles[] = {service->object_name_handle,
+        service->object_type_handle, service->object_size_handle,
+        service->object_first_created_handle,
+        service->object_last_modified_handle, service->object_id_handle,
+        service->object_properties_handle};
+    const uint8_t *values[] = {name, type, size, first_created,
+        last_modified, object_id, properties};
+    const uint16_t lengths[] = {name_len, type_len, 8, 7, 7,
+        object_id ? 6 : 0, 4};
+    ble_gatt_attribute *attributes[7];
+    uint8_t *stored[7];
+    for (uint8_t i = 0; i < 7; i++) {
+        if (!handles[i]) continue;
+        attributes[i] = gatt_server_find(service->server, handles[i]);
+        stored[i] = attributes[i] ?
+            gatt_attribute_value(service->server, attributes[i]) : NULL;
+        if (!attributes[i] || !stored[i] ||
+            lengths[i] > attributes[i]->value_capacity) return 0;
+    }
+    for (uint8_t i = 0; i < 7; i++) {
+        if (!handles[i]) continue;
+        if (lengths[i]) memcpy(stored[i], values[i], lengths[i]);
+        if (lengths[i] < attributes[i]->value_capacity)
+            memset(stored[i] + lengths[i], 0,
+                   attributes[i]->value_capacity - lengths[i]);
+        attributes[i]->value_len = lengths[i];
+    }
     return 1;
 }
 
@@ -8856,6 +8989,8 @@ typedef struct {
 } ble_gatt_http_proxy_service;
 
 enum {
+    GATT_HTTP_PROXY_ERR_INVALID_REQUEST = 0x81,
+    GATT_HTTP_PROXY_ERR_NETWORK_NOT_AVAILABLE = 0x82,
     GATT_HTTP_PROXY_ERR_PROCEDURE_ALREADY_IN_PROGRESS = 0xfe,
     GATT_HTTP_PROXY_DATA_STATUS_HEADERS_RECEIVED = 0x01,
     GATT_HTTP_PROXY_DATA_STATUS_HEADERS_TRUNCATED = 0x02,
@@ -8898,7 +9033,8 @@ static uint8_t gatt_http_proxy_control_write(
 
     uint8_t opcode = value[0];
     if (opcode == 0x0b) {
-        if (!service->request_pending) return 0x81;
+        if (!service->request_pending)
+            return GATT_HTTP_PROXY_ERR_INVALID_REQUEST;
         service->cancel_requested = 1;
         service->request_count++;
         return 0;
@@ -8908,10 +9044,12 @@ static uint8_t gatt_http_proxy_control_write(
     if (service->request_pending)
         return GATT_HTTP_PROXY_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     if (!service->uri_configured || !service->headers_configured ||
-        !service->entity_body_configured) return 0x81;
+        !service->entity_body_configured)
+        return GATT_HTTP_PROXY_ERR_INVALID_REQUEST;
     ble_gatt_attribute *uri = gatt_server_find(service->server,
         service->uri_handle);
-    if (!uri || !uri->value_len) return 0x81;
+    if (!uri || !uri->value_len)
+        return GATT_HTTP_PROXY_ERR_INVALID_REQUEST;
     if (service->request_validate) {
         ble_gatt_attribute *headers = gatt_server_find(service->server,
             service->headers_handle);

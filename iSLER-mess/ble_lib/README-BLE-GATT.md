@@ -172,7 +172,8 @@ and OACP characteristics, including First-Created and Last-Modified. It assumes
 the server has a real-time clock; use
 `gatt_object_transfer_service_add_type_full()` to provide initial date values
 and select the correct Last-Modified write property for servers without a
-clock. Use
+clock. OACP supports reliable writes for requests that exceed the negotiated
+ATT Write Request size, including 128-bit Object Type Create requests. Use
 `gatt_object_transfer_service_add_multi_object()` for the multi-object layout,
 which also registers Object ID, OLCP, and all three Object List Filter
 instances. The caller
@@ -187,7 +188,9 @@ all eight assigned opcodes are supported. Read the Order parameter with
 opcode `0x07`. Configure each filter instance with
 `gatt_object_transfer_service_set_object_list_filter()`. The application
 supplies object-list behavior, object storage, and the separate L2CAP object
-transfer channel. The multi-object `..._type_full()` builder also accepts
+transfer channel. Update the visible selected-object attributes atomically with
+`gatt_object_transfer_service_set_current_object_metadata()` before completing
+an OACP or OLCP operation. The multi-object `..._type_full()` builder also accepts
 initial date values and the real-time-clock capability.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes

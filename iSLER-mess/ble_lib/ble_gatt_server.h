@@ -127,6 +127,9 @@ typedef void (*ble_gatt_write_observer_fn)(
 typedef uint8_t (*ble_gatt_prepare_fn)(
     void *context, uint16_t offset, const uint8_t *value, uint16_t len
 );
+typedef uint8_t (*ble_gatt_prepare_commit_validate_fn)(
+    void *context, const uint8_t *value, uint16_t len
+);
 typedef void (*ble_gatt_execute_fn)(void *context, uint8_t commit);
 // Verify the exact ATT Signed Write Command bytes excluding its final
 // 12-byte authentication signature. The callback must check and persist the
@@ -168,6 +171,7 @@ typedef struct ble_gatt_attribute {
     ble_gatt_read_fn read;
     ble_gatt_write_fn write;
     ble_gatt_prepare_fn prepare;
+    ble_gatt_prepare_commit_validate_fn prepare_commit_validate;
     ble_gatt_execute_fn execute;
     ble_gatt_write_observer_fn write_observer;
     void *write_observer_context;
@@ -522,6 +526,18 @@ static inline int gatt_server_set_transaction_callbacks(
 
     a->prepare = prepare;
     a->execute = execute;
+    return 1;
+}
+
+static inline int gatt_server_set_prepare_commit_validator(
+    ble_gatt_server *server, uint16_t handle,
+    ble_gatt_prepare_commit_validate_fn validate
+) {
+    if (!server || !validate || server->database_sealed ||
+        server->prepare_count) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+    if (!attribute || !attribute->prepare || !attribute->execute) return 0;
+    attribute->prepare_commit_validate = validate;
     return 1;
 }
 
@@ -2753,6 +2769,54 @@ static inline int gatt_server_att(
                     }
 
                     if (error) break;
+                }
+
+                if (error) break;
+
+                for (uint16_t i = 0; i < server->prepare_count; i++) {
+                    ble_gatt_prepared_write *p = &server->prepared[i];
+                    uint8_t first = 1;
+                    for (uint16_t j = 0; j < i; j++)
+                        if (server->prepared[j].handle == p->handle)
+                            first = 0;
+                    if (!first) continue;
+                    ble_gatt_attribute *a =
+                        gatt_server_find(server, p->handle);
+                    if (!a || !a->prepare_commit_validate) continue;
+                    uint16_t value_len = a->value_len;
+                    for (uint16_t j = 0; j < server->prepare_count; j++) {
+                        ble_gatt_prepared_write *part = &server->prepared[j];
+                        uint16_t end = part->offset + part->len;
+                        if (part->handle == a->handle && end > value_len)
+                            value_len = end;
+                    }
+                    if (value_len > BLE_GATT_ATT_VALUE_MAX) {
+                        error_handle = a->handle;
+                        error = BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+                        break;
+                    }
+                    uint8_t value[BLE_GATT_ATT_VALUE_MAX];
+                    memset(value, 0, value_len);
+                    uint8_t *stored = gatt_attribute_value(server, a);
+                    if (a->value_len && !stored) {
+                        error_handle = a->handle;
+                        error = BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+                        break;
+                    }
+                    if (a->value_len) memcpy(value, stored, a->value_len);
+                    for (uint16_t j = 0; j < server->prepare_count; j++) {
+                        ble_gatt_prepared_write *part = &server->prepared[j];
+                        if (part->handle != a->handle) continue;
+                        memcpy(value + part->offset,
+                            server->prepare_data + part->data_offset,
+                            part->len);
+                    }
+                    error = a->prepare_commit_validate(a->context, value,
+                                                        value_len);
+                    if (error) {
+                        error_handle = a->handle;
+                        break;
+                    }
                 }
 
                 if (error) break;

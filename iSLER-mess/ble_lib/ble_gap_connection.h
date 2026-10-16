@@ -57,11 +57,6 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-static int gap_past_receive(
-    const uint8_t *frame,
-    uint64_t connection_anchor_ticks, uint16_t connection_event_counter
-);
-
 #if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
 #define GAP_CONN_PACKET_BUFFER_MAX 35
 #else
@@ -107,6 +102,13 @@ static uint8_t gap_conn_rate_busy(void) {
 static void gap_smp_link_close(void);
 #endif
 
+#if GAP_EXT_ADV_SUPPORT
+static int gap_past_receive(
+    const uint8_t *frame,
+    uint64_t connection_anchor_ticks, uint16_t connection_event_counter
+);
+#endif
+
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!gap_conn_slot_active(gap_conn_slot))
@@ -120,6 +122,9 @@ static void gap_conn_end(void) {
 
 #if GAP_SMP_SUPPORT > 0
     gap_smp_link_close();
+    gap_wipe(&conn->bond, sizeof(conn->bond));
+    conn->bonded = 0;
+    conn->restore_started = 0;
 #endif
     // Preserve the final status while clearing the rest of the security state.
     uint8_t security_status = gap_sec_contexts[gap_conn_slot].status ==
@@ -127,9 +132,6 @@ static void gap_conn_end(void) {
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
-#if GAP_SMP_SUPPORT > 0
-    gap_wipe(&conn->bond, sizeof(conn->bond));
-#endif
     gap_wipe(&conn->tx, sizeof(conn->tx));
     gap_wipe(&conn->rx, sizeof(conn->rx));
     gap_wipe(&conn->queue, sizeof(conn->queue));
@@ -146,10 +148,6 @@ static void gap_conn_end(void) {
     // Clear per-link security and bond state.
     conn->authenticated = 0;
     conn->enc_key_size = 0;
-#if GAP_SMP_SUPPORT > 0
-    conn->bonded = 0;
-    conn->restore_started = 0;
-#endif
 
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
