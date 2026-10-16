@@ -500,7 +500,7 @@ static void test_dual_role_mtu_synchronization(void) {
     uint8_t packet[64];
     uint16_t packet_len = collect_tx(&link, packet);
     assert(packet_len == 37 && packet[4] == 0x1b &&
-           gatt_server_u16(packet + 5) == value);
+           ble_get_le16(packet + 5) == value);
 
     link.connected = 0;
     assert(gatt_transport_test_poll(&transport, 8) == 0);
@@ -635,8 +635,8 @@ static void test_database_version_reconnect_flow(void) {
     while (transport.tx_len)
         assert(gatt_transport_test_poll(&transport, 2) == 1);
     assert(link.tx_count == 1 && link.tx_data[0][4] == 0x1d &&
-           gatt_server_u16(link.tx_data[0] + 7) == 1 &&
-           gatt_server_u16(link.tx_data[0] + 9) == 0xffff);
+           ble_get_le16(link.tx_data[0] + 7) == 1 &&
+           ble_get_le16(link.tx_data[0] + 9) == 0xffff);
 
     const uint8_t confirmation[] = {0x1e};
     enqueue_l2cap(&link, BLE_GATT_TRANSPORT_ATT_CID, confirmation,
@@ -704,8 +704,8 @@ int main(void) {
     uint8_t response[4 + BLE_GATT_SERVER_MTU_MAX];
     uint16_t response_len = collect_tx(&link, response);
     assert(response_len == 4 + sizeof(value) + 1);
-    assert(gatt_server_u16(response) == sizeof(value) + 1);
-    assert(gatt_server_u16(response + 2) == BLE_GATT_TRANSPORT_ATT_CID);
+    assert(ble_get_le16(response) == sizeof(value) + 1);
+    assert(ble_get_le16(response + 2) == BLE_GATT_TRANSPORT_ATT_CID);
     assert(response[4] == 0x0b && !memcmp(response + 5, value, sizeof(value)));
 
     // Another full ATT request is accepted after the first fragmented response.

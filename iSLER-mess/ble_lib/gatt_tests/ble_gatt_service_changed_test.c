@@ -47,7 +47,7 @@ int main(void) {
     assert(att(&server, read_hash_by_uuid, sizeof(read_hash_by_uuid),
                response, &response_len) == 1);
     assert(response[0] == 0x09 && response[1] == 18 && response_len == 20 &&
-           gatt_server_u16(response + 2) == handles.database_hash_handle &&
+           ble_get_le16(response + 2) == handles.database_hash_handle &&
            memcmp(response + 4, hash_value, 16) == 0);
 
     uint8_t read_changed[] = {0x0a,
@@ -69,10 +69,10 @@ int main(void) {
     assert(gatt_server_poll_event(&server, 100, indication,
         sizeof(indication), &indication_len) == 1);
     assert(indication_len == 7 && indication[0] == 0x1d &&
-           gatt_server_u16(indication + 1) ==
+           ble_get_le16(indication + 1) ==
                handles.service_changed_handle &&
-           gatt_server_u16(indication + 3) == 2 &&
-           gatt_server_u16(indication + 5) == 5);
+           ble_get_le16(indication + 3) == 2 &&
+           ble_get_le16(indication + 5) == 5);
     const uint8_t confirmation[] = {0x1e};
     assert(att(&server, confirmation, sizeof(confirmation), response,
                &response_len) == 0);

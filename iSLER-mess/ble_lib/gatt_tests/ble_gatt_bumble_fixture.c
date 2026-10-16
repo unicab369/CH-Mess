@@ -174,9 +174,9 @@ int main(void) {
         uint8_t event[BLE_GATT_SERVER_MTU_MAX];
         uint16_t event_len = 0;
         if (request[0] == 0x12 && request_len == 5 &&
-            gatt_server_u16(request + 1) ==
+            ble_get_le16(request + 1) ==
                 gatt_service.service_changed_cccd_handle &&
-            gatt_server_u16(request + 3) == 2) {
+            ble_get_le16(request + 3) == 2) {
             (void)gatt_server_service_changed(&server, 1, 0xffff);
             (void)gatt_server_poll_event(&server, 1, event,
                                              sizeof(event), &event_len);

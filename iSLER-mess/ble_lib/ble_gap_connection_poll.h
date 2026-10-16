@@ -1123,12 +1123,11 @@ static void gap_conn_poll(void) {
             ((int32_t)event - (int32_t)conn->schedule.base_event) %
                 conn->schedule.factor == 0;
 
-        if (conn->is_central && conn->subrate.transition) {
-            int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-
-            if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
-                subrated = 1;
-        }
+        if (conn->is_central && conn->subrate.transition &&
+            conn->next_schedule.factor &&
+            ((int32_t)event - (int32_t)conn->next_schedule.base_event) %
+                conn->next_schedule.factor == 0
+        ) subrated = 1;
 
         if (!conn->subrate.continuations &&
             (!subrated || (!conn->is_central && conn->subrate.latency_remaining))

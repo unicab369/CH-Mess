@@ -66,8 +66,8 @@ int main(void) {
     assert(gatt_server_poll_event(&server, 10, indication,
         sizeof(indication), &indication_len) == 1);
     assert(indication_len == 7 && indication[0] == 0x1d &&
-           gatt_server_u16(indication + 3) == 1 &&
-           gatt_server_u16(indication + 5) == 0xffff);
+           ble_get_le16(indication + 3) == 1 &&
+           ble_get_le16(indication + 5) == 0xffff);
 
     // A disconnect before confirmation leaves the old version persisted.
     gatt_server_link_reset(&server);

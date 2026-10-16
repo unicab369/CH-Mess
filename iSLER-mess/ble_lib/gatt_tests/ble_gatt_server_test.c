@@ -343,7 +343,7 @@ static void test_server_configuration_descriptor_writes(void) {
     uint8_t enable[] = {0x12, (uint8_t)sccd, (uint8_t)(sccd >> 8), 1, 0};
     assert(att(&server, enable, sizeof(enable), response, &response_len) == 1);
     assert(response[0] == 0x13 &&
-           gatt_server_u16(gatt_attribute_value(&server,
+           ble_get_le16(gatt_attribute_value(&server,
                gatt_server_find(&server, sccd))) == 1);
 
     uint8_t reserved[] = {0x12, (uint8_t)sccd, (uint8_t)(sccd >> 8), 2, 0};
@@ -360,9 +360,9 @@ static void test_server_configuration_descriptor_writes(void) {
     const uint8_t execute[] = {0x18, 1};
     assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
     assert(response[0] == 0x01 && response[1] == 0x18 &&
-           gatt_server_u16(response + 2) == sccd &&
+           ble_get_le16(response + 2) == sccd &&
            response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED &&
-           gatt_server_u16(gatt_attribute_value(&server,
+           ble_get_le16(gatt_attribute_value(&server,
                gatt_server_find(&server, sccd))) == 1);
 
     uint8_t prepare_disable[] = {
@@ -371,7 +371,7 @@ static void test_server_configuration_descriptor_writes(void) {
     assert(att(&server, prepare_disable, sizeof(prepare_disable), response,
                &response_len) == 1 && response[0] == 0x17);
     assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
-    assert(response[0] == 0x19 && gatt_server_u16(
+    assert(response[0] == 0x19 && ble_get_le16(
         gatt_attribute_value(&server, gatt_server_find(&server, sccd)))
         == 0);
 }
@@ -457,10 +457,10 @@ static void test_included_service_discovery(void) {
     uint16_t response_len;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 10 && response[0] == 0x09 && response[1] == 8);
-    assert(gatt_server_u16(response + 2) == include_handle);
-    assert(gatt_server_u16(response + 4) == battery_handle);
-    assert(gatt_server_u16(response + 6) == value_handle);
-    assert(gatt_server_u16(response + 8) == 0x180f);
+    assert(ble_get_le16(response + 2) == include_handle);
+    assert(ble_get_le16(response + 4) == battery_handle);
+    assert(ble_get_le16(response + 6) == value_handle);
+    assert(ble_get_le16(response + 8) == 0x180f);
 }
 
 typedef struct { uint32_t last_counter, accepted; } signed_state;
@@ -746,7 +746,7 @@ static void test_fixed_and_variable_length_writes(void) {
     const uint8_t execute[] = {0x18, 1};
     assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
     assert(response[0] == 0x01 &&
-           gatt_server_u16(response + 2) == fixed_handle &&
+           ble_get_le16(response + 2) == fixed_handle &&
            response[4] == BLE_GATT_ATT_ERR_INVALID_OFFSET);
 
     uint8_t prepared_too_long[] = {0x16, (uint8_t)fixed_handle,
@@ -755,7 +755,7 @@ static void test_fixed_and_variable_length_writes(void) {
                &response_len) == 1 && response[0] == 0x17);
     assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
     assert(response[0] == 0x01 &&
-           gatt_server_u16(response + 2) == fixed_handle &&
+           ble_get_le16(response + 2) == fixed_handle &&
            response[4] == BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
     assert(!server.prepare_count);
 
@@ -789,7 +789,7 @@ static void test_maximum_att_attribute_value(void) {
     uint16_t response_len;
     assert(att(&server, exchange_mtu, sizeof(exchange_mtu), response,
                &response_len) == 1);
-    assert(response[0] == 0x03 && gatt_server_u16(response + 1) == 517);
+    assert(response[0] == 0x03 && ble_get_le16(response + 1) == 517);
     uint8_t read[] = {0x0a, (uint8_t)handle, (uint8_t)(handle >> 8)};
     assert(att(&server, read, sizeof(read), response, &response_len) == 1);
     assert(response_len == 513 && response[0] == 0x0b &&
@@ -800,7 +800,7 @@ static void test_maximum_att_attribute_value(void) {
     assert(att(&server, read_multiple, sizeof(read_multiple), response,
                &response_len) == 1);
     assert(response_len == 23 && response[0] == 0x21 &&
-           gatt_server_u16(response + 1) == sizeof(value) &&
+           ble_get_le16(response + 1) == sizeof(value) &&
            !memcmp(response + 3, value, response_len - 3));
 }
 
@@ -828,9 +828,9 @@ static void test_read_multiple_variable_request_order_and_truncation(void) {
     uint16_t response_len;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == sizeof(response) && response[0] == 0x21);
-    assert(gatt_server_u16(response + 1) == sizeof(second_value));
+    assert(ble_get_le16(response + 1) == sizeof(second_value));
     assert(response[3] == 'z');
-    assert(gatt_server_u16(response + 4) == sizeof(first_value));
+    assert(ble_get_le16(response + 4) == sizeof(first_value));
     assert(response[6] == 0x5a && response[22] == 0x5a);
 }
 
@@ -855,7 +855,7 @@ static void test_read_multiple_checks_all_permissions(void) {
     uint16_t response_len;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x01 &&
-           gatt_server_u16(response + 2) == second_handle &&
+           ble_get_le16(response + 2) == second_handle &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
 }
 
@@ -881,7 +881,7 @@ static void test_fixed_read_multiple_checks_after_mtu_boundary(void) {
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x01 &&
            response[1] == 0x0e &&
-           gatt_server_u16(response + 2) == second_handle &&
+           ble_get_le16(response + 2) == second_handle &&
            response[4] == BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
 
     allow = 1;
@@ -889,7 +889,7 @@ static void test_fixed_read_multiple_checks_after_mtu_boundary(void) {
     request[4] = 0x7f;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x01 &&
-           response[1] == 0x0e && gatt_server_u16(response + 2) == 0x7fff &&
+           response[1] == 0x0e && ble_get_le16(response + 2) == 0x7fff &&
            response[4] == BLE_GATT_ATT_ERR_INVALID_HANDLE);
 }
 
@@ -916,7 +916,7 @@ static void test_response_capacity_and_large_find_information(void) {
     assert(att(&server, find, sizeof(find), response, &response_len) == 1);
     assert(response[0] == 0x05 && response[1] == 2 && response_len == 506);
     for (uint16_t i = 0; i < 28; i++)
-        assert(gatt_server_u16(response + 2 + i * 18) == i + 1);
+        assert(ble_get_le16(response + 2 + i * 18) == i + 1);
 
     ble_gatt_server write_server;
     gatt_server_init(&write_server, 23);
@@ -949,7 +949,7 @@ static void test_att_mtu_and_reads(void) {
     const uint8_t exchange[] = {0x02, 80, 0};
     assert(att(&server, exchange, sizeof(exchange), response, &response_len) == 1);
     assert(response_len == 3 && response[0] == 0x03);
-    assert(gatt_server_u16(response + 1) == 100);
+    assert(ble_get_le16(response + 1) == 100);
     assert(server.mtu == 80);
 
     const uint8_t read_level[] = {0x0a, 3, 0};
@@ -1022,7 +1022,7 @@ static void test_mtu_below_default_keeps_default(void) {
     assert(att(&server, exchange, sizeof(exchange), response,
                &response_len) == 1);
     assert(response_len == 3 && response[0] == 0x03 &&
-           gatt_server_u16(response + 1) == 100 &&
+           ble_get_le16(response + 1) == 100 &&
            server.mtu == 23 && server.mtu_exchanged);
 }
 
@@ -1044,7 +1044,7 @@ static void test_dynamic_read_enforces_att_value_limit(void) {
     assert(att(&server, read_blob, sizeof(read_blob), response,
                &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x01 &&
-           response[1] == 0x0c && gatt_server_u16(response + 2) == handle &&
+           response[1] == 0x0c && ble_get_le16(response + 2) == handle &&
            response[4] == BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
 }
 
@@ -1065,18 +1065,18 @@ static void test_discovery(void) {
     const uint8_t groups[] = {0x10, 1, 0, 0xff, 0xff, 0, 0x28};
     assert(att(&server, groups, sizeof(groups), response, &response_len) == 1);
     assert(response_len == 8 && response[0] == 0x11 && response[1] == 6);
-    assert(gatt_server_u16(response + 2) == 1);
-    assert(gatt_server_u16(response + 4) == 3);
-    assert(gatt_server_u16(response + 6) == 0x180f);
+    assert(ble_get_le16(response + 2) == 1);
+    assert(ble_get_le16(response + 4) == 3);
+    assert(ble_get_le16(response + 6) == 0x180f);
 
     const uint8_t characteristics[] = {0x08, 1, 0, 3, 0, 3, 0x28};
     assert(att(&server, characteristics, sizeof(characteristics), response,
                &response_len) == 1);
     assert(response_len == 9 && response[0] == 0x09 && response[1] == 7);
-    assert(gatt_server_u16(response + 2) == declaration);
+    assert(ble_get_le16(response + 2) == declaration);
     assert(response[4] == BLE_GATT_PROP_READ);
-    assert(gatt_server_u16(response + 5) == level);
-    assert(gatt_server_u16(response + 7) == 0x2a19);
+    assert(ble_get_le16(response + 5) == level);
+    assert(ble_get_le16(response + 7) == 0x2a19);
 
     const uint8_t read_by_uuid[] = {0x08, (uint8_t)level,
         (uint8_t)(level >> 8), (uint8_t)level, (uint8_t)(level >> 8),
@@ -1084,7 +1084,7 @@ static void test_discovery(void) {
     assert(att(&server, read_by_uuid, sizeof(read_by_uuid), response,
                &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x09 && response[1] == 3 &&
-           gatt_server_u16(response + 2) == level && response[4] == 42);
+           ble_get_le16(response + 2) == level && response[4] == 42);
 
     const uint8_t information[] = {0x04, 1, 0, 3, 0};
     assert(att(&server, information, sizeof(information), response,
@@ -1096,8 +1096,8 @@ static void test_discovery(void) {
     assert(att(&server, find_service, sizeof(find_service), response,
                &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x07);
-    assert(gatt_server_u16(response + 1) == 1);
-    assert(gatt_server_u16(response + 3) == 3);
+    assert(ble_get_le16(response + 1) == 1);
+    assert(ble_get_le16(response + 3) == 3);
 }
 
 static void test_128_bit_uuids(void) {
@@ -1137,8 +1137,8 @@ static void test_128_bit_uuids(void) {
     assert(att(&server, type_req, sizeof(type_req), response,
                &response_len) == 1);
     assert(response_len == 23 && response[1] == 21);
-    assert(gatt_server_u16(response + 2) == declaration);
-    assert(gatt_server_u16(response + 5) == value);
+    assert(ble_get_le16(response + 2) == declaration);
+    assert(ble_get_le16(response + 5) == value);
     assert(!memcmp(response + 7, char_uuid.value, 16));
 
     uint8_t characteristic_uuid128[16];
@@ -1149,15 +1149,15 @@ static void test_128_bit_uuids(void) {
     assert(att(&server, type_req128, sizeof(type_req128), response,
                &response_len) == 1);
     assert(response_len == 23 && response[1] == 21);
-    assert(gatt_server_u16(response + 2) == declaration);
+    assert(ble_get_le16(response + 2) == declaration);
 
     uint8_t find_req[23] = {0x06, 1, 0, 3, 0, 0, 0x28};
     memcpy(find_req + 7, service_uuid.value, 16);
     assert(att(&server, find_req, sizeof(find_req), response,
                &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x07);
-    assert(gatt_server_u16(response + 1) == service);
-    assert(gatt_server_u16(response + 3) == value);
+    assert(ble_get_le16(response + 1) == service);
+    assert(ble_get_le16(response + 3) == value);
 
     uint8_t assigned_uuid_bytes[16];
     bluetooth_uuid128(0xfff9, assigned_uuid_bytes);
@@ -1175,7 +1175,7 @@ static void test_128_bit_uuids(void) {
     assert(att(&server, type_req16, sizeof(type_req16), response,
                &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x09 &&
-           gatt_server_u16(response + 2) == assigned_handle &&
+           ble_get_le16(response + 2) == assigned_handle &&
            response[4] == assigned_value);
 }
 
@@ -1238,7 +1238,7 @@ static void test_writes_cccd_and_permissions(void) {
                &response_len) == 1);
     assert(att(&server, execute, sizeof(execute), response, &response_len) == 1);
     assert(response[0] == 0x01 && response[1] == 0x18 &&
-           gatt_server_u16(response + 2) == cccd &&
+           ble_get_le16(response + 2) == cccd &&
            response[4] == BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED &&
            server.attributes[cccd - 1].cccd == 0 &&
            cccd_state.stores == 2);
@@ -1328,7 +1328,7 @@ static void test_read_by_type_mtu_limit(void) {
     uint16_t response_len;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 23 && response[1] == 21);
-    assert(gatt_server_u16(response + 2) == handle);
+    assert(ble_get_le16(response + 2) == handle);
     assert(response[4] == 0 && response[22] == 18);
 }
 
@@ -1347,8 +1347,8 @@ static void test_find_by_type_value_and_unsupported_group(void) {
     uint16_t response_len;
     assert(att(&server, find, sizeof(find), response, &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x07);
-    assert(gatt_server_u16(response + 1) == handle);
-    assert(gatt_server_u16(response + 3) == handle);
+    assert(ble_get_le16(response + 1) == handle);
+    assert(ble_get_le16(response + 3) == handle);
 
     const uint8_t unsupported_group[] = {0x10, 1, 0, 0xff, 0xff,
                                          0x02, 0x29};
@@ -1433,9 +1433,9 @@ static void test_read_multiple(void) {
     request[0] = 0x20;
     assert(att(&server, request, sizeof(request), response, &response_len) == 1);
     assert(response_len == 10 && response[0] == 0x21);
-    assert(gatt_server_u16(response + 1) == 2);
+    assert(ble_get_le16(response + 1) == 2);
     assert(!memcmp(response + 3, one_value, 2));
-    assert(gatt_server_u16(response + 5) == 3);
+    assert(ble_get_le16(response + 5) == 3);
     assert(!memcmp(response + 7, two_value, 3));
 }
 
@@ -1464,7 +1464,7 @@ static void test_notifications_and_indications(void) {
     assert(gatt_server_notify(&server, notify, event, sizeof(event),
         response, sizeof(response), &response_len) == 1);
     assert(response_len == 5 && response[0] == 0x1b);
-    assert(gatt_server_u16(response + 1) == notify);
+    assert(ble_get_le16(response + 1) == notify);
     assert(!memcmp(response + 3, event, sizeof(event)));
 
     uint8_t oversized_event[21] = {0};
@@ -1844,11 +1844,11 @@ static void test_multiple_handle_notifications_requires_client_feature(void) {
     assert(gatt_server_poll_event(&server, 1, response,
         sizeof(response), &response_len) == 1);
     assert(response[0] == 0x23 && response_len == 12 &&
-           gatt_server_u16(response + 1) == first &&
-           gatt_server_u16(response + 3) == sizeof(a) &&
+           ble_get_le16(response + 1) == first &&
+           ble_get_le16(response + 3) == sizeof(a) &&
            response[5] == a[0] &&
-           gatt_server_u16(response + 6) == second &&
-           gatt_server_u16(response + 8) == sizeof(b) &&
+           ble_get_le16(response + 6) == second &&
+           ble_get_le16(response + 8) == sizeof(b) &&
            !memcmp(response + 10, b, sizeof(b)) && server.event_count == 0);
 }
 

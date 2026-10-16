@@ -273,6 +273,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             conn->phy.current.tx = conn->phy.pending.tx;
         if (conn->phy.pending.rx)
             conn->phy.current.rx = conn->phy.pending.rx;
+
         conn->pending.phy_update = 0;
         conn->pending.phy_request = 0;
         conn->phy.status = 0;
@@ -299,6 +300,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             if (conn->link.channel_map[channel / 8] & (1 << (channel % 8)))
                 conn->link.used_channels[conn->link.used_count++] = channel;
         conn->pending.channel_map = 0;
+
         if (conn->is_central && conn->connection_status == GAP_CONNECTION_PENDING)
             conn->connection_status = 0;
     }
@@ -308,19 +310,22 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 // event counter and channel hop still advance for every connection interval.
 static void gap_conn_event_advance(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t event = conn->link.event_counter;
     uint8_t subrated = conn->schedule.factor &&
-                    ((int32_t)event - (int32_t)conn->schedule.base_event) %
-                        conn->schedule.factor == 0;
+        ((int32_t)conn->link.event_counter -
+         (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0;
 
-    if (conn->is_central && conn->subrate.transition) {
-        int32_t pending_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-        if (conn->next_schedule.factor && pending_offset % conn->next_schedule.factor == 0)
-            subrated = 1;
+    if (conn->is_central && conn->subrate.transition &&
+        conn->next_schedule.factor &&
+        ((int32_t)conn->link.event_counter -
+         (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0
+    ) subrated = 1;
+
+    if (!conn->is_central && subrated) {
+        if (conn->subrate.latency_remaining)
+            conn->subrate.latency_remaining--;
+        if (conn->subrate.event_received)
+            conn->subrate.latency_remaining = conn->schedule.latency;
     }
-
-    if (!conn->is_central && subrated && conn->subrate.latency_remaining)
-        conn->subrate.latency_remaining--;
 
     if (subrated) {
         // A new subrated event starts a fresh continuation window; activity
@@ -334,9 +339,6 @@ static void gap_conn_event_advance(void) {
         if (conn->subrate.event_activity)
             conn->subrate.continuations = conn->schedule.continuation;
     }
-
-    if (!conn->is_central && subrated && conn->subrate.event_received)
-        conn->subrate.latency_remaining = conn->schedule.latency;
 
     conn->subrate.event_activity = 0;
     conn->subrate.event_received = 0;
