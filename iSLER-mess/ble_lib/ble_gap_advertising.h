@@ -459,7 +459,7 @@ int gap_adv_start_directed(
     if (gap_privacy.enabled && gap_privacy.resolvable &&
         slot >= 0 && gap_identities[slot].has_irk
     ) {
-        if (!gap_private_address_generate(gap_identities[slot].irk, target, address))
+        if (!gap_private_addr_generate(gap_identities[slot].irk, target, address))
             return 0;
         type = 1;
     }

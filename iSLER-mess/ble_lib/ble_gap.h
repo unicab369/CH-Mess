@@ -927,11 +927,18 @@ int gap_identity_local_key(
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
-    int slot = gap_identity_find(address, type);
+    int slot = -1;
+    for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
+        if (gap_identities[i].used &&
+            gap_identities[i].peer.type == type &&
+            memcmp(address, gap_identities[i].peer.address, 6) == 0
+        ) {
+            slot = i;
+            break;
+        }
+    }
     if (slot < 0) return 0;
     gap_identity *identity = &gap_identities[slot];
-    if (identity->peer.type != type ||
-        memcmp(address, identity->peer.address, 6) != 0) return 0;
 
     uint8_t key_bits = 0, local[6] = {0};
     if (irk) for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
