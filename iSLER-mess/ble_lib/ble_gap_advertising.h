@@ -396,6 +396,7 @@ static inline int gap_adv_start_payload(
     }
 
     if (data_len) memcpy(gap_adv.data, data, data_len);
+    // Save the payload to send when this device receives a scan request.
     if (resp_len)
         memcpy(gap_adv.scan_response, scan_response, resp_len);
 

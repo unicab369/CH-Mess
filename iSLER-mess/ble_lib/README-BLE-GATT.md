@@ -159,7 +159,10 @@ Additional service database builders are available:
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_service_notify_measurement()` encodes and queues
-  feature-checked measurements.
+  feature-checked measurements. Its SC Control Point validates and applies
+  cumulative-distance and sensor-location requests, and exposes calibration
+  requests for the application to complete with
+  `gatt_rsc_service_calibration_complete()`.
 
 These builders add service and characteristic database entries and return
 their handles. Applications supply profile-specific measurement payloads and
@@ -185,7 +188,19 @@ Additional service builders include:
 - `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
   `gatt_csc_service_notify_measurement()` encodes and queues feature-checked
-  wheel and crank measurements.
+  wheel and crank measurements. The control point handles cumulative wheel
+  revolutions, sensor-location changes, and supported-location requests.
+  Configure each service's supported-location mask before accepting
+  connections when its multiple-location feature is set.
+- `gatt_cycling_power_service_add()` registers Cycling Power Measurement,
+  Feature, Sensor Location, and optional Vector and Control Point
+  characteristics. `gatt_cycling_power_service_notify_measurement()` encodes
+  all defined measurement fields and checks them against the Feature value.
+  `gatt_cycling_power_service_notify_vector()` encodes crank data and up to
+  nine force and torque samples for the optional Vector characteristic. Its
+  Control Point handles cumulative wheel count and sensor-location operations;
+  configure its supported-location mask before accepting connections when
+  the multiple-location feature is enabled.
 - `gatt_cycling_power_service_add()` for Power Measurement and Feature, with
   optional Vector, Sensor Location, and Control Point characteristics.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and

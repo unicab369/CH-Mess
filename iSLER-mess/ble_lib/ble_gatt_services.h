@@ -2085,6 +2085,10 @@ typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle, sensor_location_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t total_distance, supported_sensor_locations;
+    uint8_t sensor_location, calibration_pending;
+    uint8_t calibration_request_count;
 } ble_gatt_rsc_service;
 
 typedef struct {
@@ -2113,6 +2117,9 @@ typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle, sensor_location_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t cumulative_wheel_revolutions, supported_sensor_locations;
+    uint8_t sensor_location;
 } ble_gatt_csc_service;
 
 typedef struct {
@@ -2120,6 +2127,9 @@ typedef struct {
     uint16_t feature_handle, sensor_location_handle;
     uint16_t vector_handle, vector_cccd_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t cumulative_wheel_revolutions, supported_sensor_locations;
+    uint8_t sensor_location;
 } ble_gatt_cycling_power_service;
 
 typedef struct {
@@ -2355,7 +2365,12 @@ static inline int gatt_blood_pressure_service_add(
     return 1;
 }
 
-// Application facing
+// Internal
+static inline uint8_t gatt_rsc_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+
 static inline int gatt_rsc_service_add(
     ble_gatt_server *server, ble_gatt_rsc_service *service,
     uint16_t features, uint8_t sensor_location
@@ -2379,6 +2394,7 @@ static inline int gatt_rsc_service_add(
         &sensor_location, 1
     };
     uint8_t control_point_index = 0xff;
+    ble_gatt_sig_handlers handlers[4] = {0};
     if (features & 0x001a) {
         control_point_index = count;
         chars[count++] = (ble_gatt_sig_characteristic){
@@ -2391,10 +2407,15 @@ static inline int gatt_rsc_service_add(
             .value_capacity = 8,
             .variable_length = 1
         };
+        handlers[control_point_index].write = gatt_rsc_control_point_write;
+        handlers[control_point_index].context = service;
     }
+    service->server = server;
+    service->sensor_location = sensor_location;
+    service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[4], cccds[4];
-    if (!gatt_sig_service_add(server, 0x1814, chars, count,
-                              &service->service_handle, values, cccds))
+    if (!gatt_sig_service_add_with_handlers(server, 0x1814, chars, count,
+            &service->service_handle, values, cccds, handlers))
         return 0;
     service->measurement_handle = values[0];
     service->measurement_cccd_handle = cccds[0];
@@ -2561,7 +2582,12 @@ static inline int gatt_insulin_delivery_service_add(
     return 1;
 }
 
-// Application facing
+// Internal
+static inline uint8_t gatt_csc_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+
 static inline int gatt_csc_service_add(
     ble_gatt_server *server, ble_gatt_csc_service *service,
     uint16_t features, uint8_t sensor_location
@@ -2585,6 +2611,7 @@ static inline int gatt_csc_service_add(
         &sensor_location, 1
     };
     uint8_t control_point_index = 0xff;
+    ble_gatt_sig_handlers handlers[4] = {0};
     if (features & 0x0005) {
         control_point_index = count;
         chars[count++] = (ble_gatt_sig_characteristic){
@@ -2597,10 +2624,15 @@ static inline int gatt_csc_service_add(
             .value_capacity = 8,
             .variable_length = 1
         };
+        handlers[control_point_index].write = gatt_csc_control_point_write;
+        handlers[control_point_index].context = service;
     }
+    service->server = server;
+    service->sensor_location = sensor_location;
+    service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[4], cccds[4];
-    if (!gatt_sig_service_add(server, 0x1816, chars, count,
-                              &service->service_handle, values, cccds))
+    if (!gatt_sig_service_add_with_handlers(server, 0x1816, chars, count,
+            &service->service_handle, values, cccds, handlers))
         return 0;
     service->measurement_handle = values[0];
     service->measurement_cccd_handle = cccds[0];
@@ -2612,6 +2644,12 @@ static inline int gatt_csc_service_add(
     }
     return 1;
 }
+
+// Internal
+static inline uint8_t gatt_cycling_power_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 
 // Application facing
 static inline int gatt_cycling_power_service_add(
@@ -2659,9 +2697,17 @@ static inline int gatt_cycling_power_service_add(
             .variable_length = 1
         };
     }
+    ble_gatt_sig_handlers handlers[5] = {0};
+    if (control_index != 0xff) {
+        handlers[control_index].write = gatt_cycling_power_control_point_write;
+        handlers[control_index].context = service;
+    }
+    service->server = server;
+    service->sensor_location = sensor_location;
+    service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[5], cccds[5];
-    if (!gatt_sig_service_add(server, 0x1818, chars, count,
-                              &service->service_handle, values, cccds))
+    if (!gatt_sig_service_add_with_handlers(server, 0x1818, chars, count,
+            &service->service_handle, values, cccds, handlers))
         return 0;
     service->measurement_handle = values[0];
     service->measurement_cccd_handle = cccds[0];
