@@ -506,6 +506,7 @@ static void gap_send_data_length(uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!gap_privacy.enabled || gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
@@ -568,10 +569,8 @@ static uint8_t gap_rate_parameters_valid(
     uint16_t continuation, uint16_t timeout
 ) {
     return interval >= 3 && interval <= 32000 &&
-        gap_schedule_parameters_valid(
-            factor, factor, latency, continuation, timeout
-        ) &&
-        (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
+        gap_schedule_parameters_valid( factor, factor, latency, continuation, timeout
+        ) && (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
 }
 
 static uint16_t gap_conn_rate_min_interval(void) {
@@ -581,9 +580,9 @@ static uint16_t gap_conn_rate_min_interval(void) {
     uint8_t peripheral_tx_phy = conn->is_central ? conn->phy.current.rx :
                                 conn->phy.current.tx;
 
+    // Coded PHY needs at least 2704 us, subject to the RX-octet limit.
     if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704)
         rx_time = 2704;
-
     if (coded_limit < rx_time)
         rx_time = coded_limit;
 
