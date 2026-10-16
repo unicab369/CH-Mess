@@ -119,7 +119,7 @@ typedef enum {
 
 // Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
 #ifndef GAP_SMP_SUPPORT
-#define GAP_SMP_SUPPORT 1
+#define GAP_SMP_SUPPORT 0
 #endif
 #if GAP_SMP_SUPPORT != 0 && GAP_SMP_SUPPORT != 1
 #error "GAP_SMP_SUPPORT must be 0 or 1"

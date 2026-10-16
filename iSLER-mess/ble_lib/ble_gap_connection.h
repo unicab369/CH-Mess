@@ -474,19 +474,13 @@ static void gap_send_rate_ind(void) {
     gap_tx_frame[1] = 15;
     gap_tx_frame[2] = LL_CONNECTION_RATE_IND;
 
-    const uint16_t values[7] = {
-        conn->next_schedule.win_offset,
-        conn->next_schedule.interval_125us,
-        conn->next_schedule.instant,
-        conn->next_schedule.factor,
-        conn->next_schedule.latency,
-        conn->next_schedule.continuation,
-        conn->next_schedule.timeout
-    };
-
-    for (uint8_t i = 0; i < 7; i++) {
-        ble_write_u16_le(gap_tx_frame + 3 + i * 2, values[i]);
-    }
+    ble_write_u16_le(gap_tx_frame + 3, conn->next_schedule.win_offset);
+    ble_write_u16_le(gap_tx_frame + 5, conn->next_schedule.interval_125us);
+    ble_write_u16_le(gap_tx_frame + 7, conn->next_schedule.instant);
+    ble_write_u16_le(gap_tx_frame + 9, conn->next_schedule.factor);
+    ble_write_u16_le(gap_tx_frame + 11, conn->next_schedule.latency);
+    ble_write_u16_le(gap_tx_frame + 13, conn->next_schedule.continuation);
+    ble_write_u16_le(gap_tx_frame + 15, conn->next_schedule.timeout);
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
@@ -560,18 +554,7 @@ static void gap_privacy_poll(uint32_t now) {
     gap_privacy.next_rotation_ms = now + (uint32_t)next_timeout_s * 1000;
 }
 
-static uint8_t gap_rate_parameters_valid(
-    uint16_t interval, uint16_t factor, uint16_t latency,
-    uint16_t continuation, uint16_t timeout
-) {
-    return interval >= 3 && interval <= 32000 &&
-        factor >= 1 && factor <= 500 && latency <= 499 &&
-        continuation < factor && factor * (latency + 1) <= 500 &&
-        timeout >= 10 && timeout <= 3200 &&
-        (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
-}
-
-static uint8_t gap_subrate_parameters_valid(
+static uint8_t gap_schedule_parameters_valid(
     uint16_t min_factor, uint16_t max_factor, uint16_t max_latency,
     uint16_t continuation, uint16_t timeout
 ) {
@@ -579,6 +562,17 @@ static uint8_t gap_subrate_parameters_valid(
         max_latency <= 499 && continuation < min_factor &&
         max_factor * (max_latency + 1) <= 500 &&
         timeout >= 10 && timeout <= 3200;
+}
+
+static uint8_t gap_rate_parameters_valid(
+    uint16_t interval, uint16_t factor, uint16_t latency,
+    uint16_t continuation, uint16_t timeout
+) {
+    return interval >= 3 && interval <= 32000 &&
+        gap_schedule_parameters_valid(
+            factor, factor, latency, continuation, timeout
+        ) &&
+        (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
 }
 
 static uint16_t gap_conn_rate_min_interval(void) {
@@ -1393,7 +1387,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         }
 
         if (minimum < 3 || maximum > 32000 || minimum > maximum ||
-            !gap_subrate_parameters_valid(factor_min, factor_max, latency,
+            !gap_schedule_parameters_valid(factor_min, factor_max, latency,
                                          continuation, timeout) ||
             periodicity > maximum || !offsets_valid ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum *
@@ -1532,7 +1526,7 @@ static uint8_t gap_conn_control_process(const uint8_t *frame,
         uint16_t timeout = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
         uint8_t error = GAP_LL_ERR_INVALID_PARAMS;
 
-        if (gap_subrate_parameters_valid(min_factor, max_factor, max_latency,
+        if (gap_schedule_parameters_valid(min_factor, max_factor, max_latency,
                                          continuation, timeout) &&
             (uint64_t)timeout * 80 > 2ull *
                 conn->schedule.interval_125us * min_factor * (max_latency + 1)
@@ -2011,7 +2005,7 @@ int gap_subrate_request(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || conn->is_central ||
-        !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
+        !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * conn->schedule.interval_125us * factor_min *
@@ -2096,7 +2090,7 @@ int gap_conn_rate_request(
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || conn->is_central ||
         interval_min < 3 || interval_max > 32000 || interval_min > interval_max ||
-        !gap_subrate_parameters_valid(factor_min, factor_max, max_latency,
+        !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * interval_max *
             factor_max * (max_latency + 1)

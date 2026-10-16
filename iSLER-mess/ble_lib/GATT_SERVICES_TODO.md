@@ -52,7 +52,10 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Indoor Positioning (`0x1821`), mandatory and optional coordinate/location
   layouts, database-updating writes, and advertising-regeneration signaling
 - [x] Pulse Oximeter (`0x1822`)
-- [x] HTTP Proxy (`0x1823`)
+- [x] HTTP Proxy (`0x1823`), validated GET/HEAD/POST/PUT/DELETE and HTTPS
+  Control Point requests, per-request URI/header/body write tracking, request/
+  cancel capture, certificate-validity reporting, and three-octet status
+  completion
 - [x] Mesh Provisioning (`0x1827`)
 - [x] Mesh Proxy (`0x1828`)
 - [x] Binary Sensor (`0x183B`), validated Get/Setting Sensor commands,
@@ -70,7 +73,9 @@ remains available for custom services; it does not replace these builders.
 - [x] Transport Discovery (`0x1824`), Activate Transport request capture,
   unsupported-opcode result indications, and completion helper
 - [x] Object Transfer (`0x1825`), single- and multi-object layouts including
-  Object ID, OLCP, and Object List Filter
+  Object ID, OLCP, and Object List Filter; OACP/OLCP opcode and feature
+  validation, correct OLCP Order/Request Number of Objects/Clear Marking
+  mapping, request capture, procedure serialization, and response indications
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
   feature-matched Supported Range values, optional Training Status and
   Fitness Machine Status notifications, and Control Point handling
@@ -79,7 +84,10 @@ remains available for custom services; it does not replace these builders.
   Status Reader Control Point, plus paired optional command/data and
   Record Access/History characteristics
 - [x] Emergency Configuration (`0x183C`)
-- [x] Authorization Control (`0x183D`), mandatory ACS characteristic layout
+- [x] Authorization Control (`0x183D`), mandatory ACS layout, segmented
+  Data In and Control Point reassembly, segmented Data Out/Control Point
+  indication helpers, and status updates; ACS cryptography and protected
+  resource authorization remain application-owned
 - [x] Physical Activity Monitor (`0x183E`), mandatory characteristics,
   selectable optional cardio-respiratory, step-counter, and sleep streams,
   and Control Point request/response state with all seven Get Ended Session

@@ -117,6 +117,10 @@ typedef uint8_t (*ble_gatt_write_fn)(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
+// Observers run after a characteristic value write has been committed.
+typedef void (*ble_gatt_write_observer_fn)(
+    void *context, uint16_t handle, const uint8_t *value, uint16_t len
+);
 // Prepare validates and stages one fragment without publishing it. If it
 // returns an error, it must leave its staging state unchanged. Execute is
 // called once at commit (commit=1) or cancel (commit=0); commit must not fail.
@@ -165,6 +169,8 @@ typedef struct ble_gatt_attribute {
     ble_gatt_write_fn write;
     ble_gatt_prepare_fn prepare;
     ble_gatt_execute_fn execute;
+    ble_gatt_write_observer_fn write_observer;
+    void *write_observer_context;
     void *context;
 } ble_gatt_attribute;
 
@@ -342,6 +348,31 @@ static uint8_t *gatt_attribute_value(
     ) return NULL;
 
     return server->value_pool + attribute->value_offset;
+}
+
+static void gatt_server_observe_committed_write(
+    ble_gatt_server *server, ble_gatt_attribute *attribute
+) {
+    if (!server || !attribute || !attribute->write_observer) return;
+    uint8_t *value = gatt_attribute_value(server, attribute);
+    if (!value && attribute->value_len) return;
+    attribute->write_observer(attribute->write_observer_context,
+        attribute->handle, value, attribute->value_len);
+}
+
+// Application facing
+// Observe writes after the GATT server has committed the characteristic
+// value. This includes normal and reliable (prepare/execute) writes.
+static inline int gatt_server_set_write_observer(
+    ble_gatt_server *server, uint16_t value_handle,
+    ble_gatt_write_observer_fn observer, void *context
+) {
+    if (!server) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(server, value_handle);
+    if (!attribute || !attribute->value_capacity) return 0;
+    attribute->write_observer = observer;
+    attribute->write_observer_context = context;
+    return 1;
 }
 
 // Application facing
@@ -1684,8 +1715,11 @@ static uint8_t gatt_server_write(
         ) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
     }
 
-    if (a->write)
-        return a->write(a->context, offset, value, len, command);
+    if (a->write) {
+        uint8_t error = a->write(a->context, offset, value, len, command);
+        if (!error) gatt_server_observe_committed_write(server, a);
+        return error;
+    }
 
     if (!(a->flags & BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH)) {
         if (offset > a->value_len)
@@ -1708,6 +1742,8 @@ static uint8_t gatt_server_write(
         else if (offset + len > a->value_len)
             a->value_len = offset + len;
     }
+
+    gatt_server_observe_committed_write(server, a);
 
     return 0;
 }
@@ -2771,6 +2807,16 @@ static inline int gatt_server_att(
                         server->prepare_data + p->data_offset, p->len);
                     if (p->offset + p->len > a->value_len)
                         a->value_len = p->offset + p->len;
+                }
+                for (uint16_t i = 0; i < server->prepare_count; i++) {
+                    uint16_t handle = server->prepared[i].handle;
+                    uint8_t first = 1;
+                    for (uint16_t j = 0; j < i; j++)
+                        if (server->prepared[j].handle == handle)
+                            first = 0;
+                    if (!first) continue;
+                    gatt_server_observe_committed_write(server,
+                        gatt_server_find(server, handle));
                 }
             } while (0);
 

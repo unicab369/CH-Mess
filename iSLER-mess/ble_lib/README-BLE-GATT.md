@@ -117,8 +117,14 @@ indications with `gatt_generic_health_sensor_service_indicate_observation()`;
 call `gatt_generic_health_sensor_service_continue_observation()` after each
 confirmation until `observation_len` is zero.
 `gatt_authorization_control_service_add()` registers the mandatory ACS
-characteristics. The application must provide the ACS security protocol,
-payload segmentation, and protected-resource behavior.
+characteristics and binds segmented Data In and Control Point reassembly.
+Retrieve complete payloads with `gatt_authorization_control_service_take_data_in()`
+and `gatt_authorization_control_service_take_control_point()`. Queue segmented
+Data Out notifications/indications with the corresponding helpers, and complete
+Control Point requests with
+`gatt_authorization_control_service_complete_control_point()`. The application
+still implements ACS cryptography, opcode policy, protected-resource access,
+and updates the Status value through `gatt_authorization_control_service_set_status()`.
 `gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
 characteristics. Use `gatt_physical_activity_monitor_service_add_full()` to
 select optional cardio-respiratory, step-counter, and sleep data streams;
@@ -165,7 +171,15 @@ characteristics for each advertised GMAP role.
 and OACP characteristics. Use
 `gatt_object_transfer_service_add_multi_object()` for the multi-object layout,
 which also registers Object ID, OLCP, and Object List Filter. The caller
-supplies the initial values; the application implements OACP/OLCP procedures
+supplies the initial values. OACP requests are feature-gated, length-checked,
+and captured by `gatt_object_transfer_service_take_oacp_request()`; the
+application performs object operations and responds through
+`gatt_object_transfer_service_oacp_complete()`. Multi-object OLCP requests are
+feature-gated and captured by `gatt_object_transfer_service_take_olcp_request()`;
+all eight assigned opcodes are supported. Read the Order parameter with
+`gatt_object_transfer_service_get_olcp_order()` and complete procedures with
+`gatt_object_transfer_service_olcp_complete()`; Request Number of Objects is
+opcode `0x07`. The application supplies object-list behavior, object storage,
 and the separate L2CAP object transfer channel.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
@@ -430,9 +444,26 @@ application refreshes its advertising payload. Pulse Oximeter
 adds either or both measurement modes, its feature value, and an optional
 Record Access Control Point when records are stored. HTTP Proxy takes value
 capacities for URI, headers, entity body, and control point; those allocations
-count against the server's configured value pool. The application implements
-HTTP handling and queues status/response events. These helpers register
-attributes and do not by themselves provide full profile conformance.
+count against the server's configured value pool. Its Control Point validates
+HTTP/HTTPS methods and captures requests with
+`gatt_http_proxy_service_take_request()`; cancellation is reported through
+`gatt_http_proxy_service_take_cancel()`. URI, HTTP Headers, and Entity Body
+must each be written before every request, using empty values for unused
+fields. The server tracks normal and reliable writes and rejects requests
+until all three fields have been written. Install
+`gatt_http_proxy_service_set_request_validator()` when the application must
+validate HTTP syntax, URI policy, or synchronous network availability before
+accepting a request. Complete requests with
+`gatt_http_proxy_service_complete()` or provide response data-status bits with
+`gatt_http_proxy_service_complete_with_data_status()`. The status notification
+contains the two-octet HTTP status code and one-octet data-status field. Use
+the `GATT_HTTP_PROXY_DATA_STATUS_*` flags to report received and truncated
+headers/body. Set response headers/body with
+`gatt_http_proxy_service_set_response_value()` and report HTTPS certificate
+validity through
+`gatt_http_proxy_service_set_https_certificate_validity()` before completion.
+Call `gatt_http_proxy_service_link_reset()` when the owning ATT link resets.
+The application still performs HTTP transport and response parsing.
 
 `gatt_sig_service_add()` is the application-facing builder for other
 16-bit UUID services, including assigned services without a dedicated helper.
