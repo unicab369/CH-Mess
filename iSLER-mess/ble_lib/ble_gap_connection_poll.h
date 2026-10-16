@@ -39,7 +39,7 @@ static void gap_conn_send_queued(void) {
             conn->connection_status = 0x1a;
         }
         else if (!conn->features.known) {
-            gap_send_conn_feature_request();
+            gap_send_feature_request();
         }
         else {
             gap_tx_frame[0] = 3;
@@ -89,7 +89,7 @@ static void gap_conn_send_queued(void) {
     ) {
         // Wait for the peer Link Layer and Host to confirm subrating support.
         if (!conn->features.known) {
-            gap_send_conn_feature_request();
+            gap_send_feature_request();
         }
         else {
             const uint8_t required =
@@ -131,7 +131,7 @@ static void gap_conn_send_queued(void) {
         !conn->features.ext_pending
     ) {
         if (!conn->features.known) {
-            gap_send_conn_feature_request();
+            gap_send_feature_request();
         }
         else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
             conn->rate.set_queued = 0;
@@ -194,7 +194,7 @@ static void gap_conn_send_queued(void) {
         conn->is_central && !conn->features.request_pending
     ) {
         if (!conn->features.known) {
-            gap_send_conn_feature_request();
+            gap_send_feature_request();
         }
         else if (!(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
             conn->channel.report_queued = 0;

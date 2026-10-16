@@ -310,35 +310,34 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 // event counter and channel hop still advance for every connection interval.
 static void gap_conn_event_advance(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t subrated = conn->schedule.factor &&
-        ((int32_t)conn->link.event_counter -
-         (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0;
-
-    if (conn->is_central && conn->subrate.transition &&
-        conn->next_schedule.factor &&
-        ((int32_t)conn->link.event_counter -
-         (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0
-    ) subrated = 1;
-
-    if (!conn->is_central && subrated) {
-        if (conn->subrate.latency_remaining)
-            conn->subrate.latency_remaining--;
-        if (conn->subrate.event_received)
-            conn->subrate.latency_remaining = conn->schedule.latency;
-    }
+    uint8_t subrated =
+        // schedule
+        (conn->schedule.factor &&
+         ((int32_t)conn->link.event_counter -
+          (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0) ||
+        (conn->is_central && conn->subrate.transition &&
+        // next_schedule
+         conn->next_schedule.factor &&
+         ((int32_t)conn->link.event_counter -
+          (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0);
 
     if (subrated) {
+        if (!conn->is_central) {
+            if (conn->subrate.event_received)
+                conn->subrate.latency_remaining = conn->schedule.latency;
+            else if (conn->subrate.latency_remaining)
+                conn->subrate.latency_remaining--;
+        }
+
         // A new subrated event starts a fresh continuation window; activity
         // before it cannot keep later events active.
         conn->subrate.continuations = conn->subrate.event_activity ?
                                         conn->schedule.continuation : 0;
     }
-    else {
-        if (conn->subrate.continuations)
-            conn->subrate.continuations--;
-        if (conn->subrate.event_activity)
-            conn->subrate.continuations = conn->schedule.continuation;
-    }
+    else if (conn->subrate.event_activity)
+        conn->subrate.continuations = conn->schedule.continuation;
+    else if (conn->subrate.continuations)
+        conn->subrate.continuations--;
 
     conn->subrate.event_activity = 0;
     conn->subrate.event_received = 0;
@@ -414,7 +413,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
-static void gap_send_conn_feature_request(void) {
+static void gap_send_feature_request(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
