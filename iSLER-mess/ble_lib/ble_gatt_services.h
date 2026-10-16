@@ -3684,5 +3684,9 @@ static inline int gatt_tpms_service_add(
 #include "ble_gatt_service_scan_parameters.h"
 #include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_location_navigation.h"
+#include "ble_gatt_service_environmental_sensing.h"
+#include "ble_gatt_service_body_composition.h"
+#include "ble_gatt_service_weight_scale.h"
+#include "ble_gatt_service_health.h"
 
 #endif

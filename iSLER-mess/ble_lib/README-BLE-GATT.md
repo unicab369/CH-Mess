@@ -154,9 +154,16 @@ Additional service database builders are available:
   device-specific actions and sends notifications.
 - `gatt_health_thermometer_service_add()` registers Temperature Measurement
   with an indication CCCD and optional Intermediate Temperature notification
-  and Temperature Type.
+  and Temperature Type. `gatt_health_thermometer_service_indicate()` encodes
+  temperature values and optional timestamp/type fields;
+  `gatt_health_thermometer_service_notify_intermediate()` queues an encoded
+  Intermediate Temperature value.
 - `gatt_blood_pressure_service_add()` registers Blood Pressure Measurement,
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
+  `gatt_blood_pressure_service_indicate()` encodes measurements, validates
+  Measurement Status bits against the configured feature value, and queues an
+  indication. `gatt_blood_pressure_service_notify_intermediate()` queues an
+  encoded Intermediate Cuff Pressure value.
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_service_notify_measurement()` encodes and queues
   feature-checked measurements. Its SC Control Point validates and applies
@@ -213,13 +220,19 @@ Additional service builders include:
   `gatt_location_navigation_service_control_point_complete()`; the requested
   route number is kept in the service state.
 - `gatt_environmental_sensing_service_add()` for caller-selected permitted
-  environmental measurement characteristics.
+  environmental measurement characteristics. Use
+  `gatt_environmental_sensing_service_send()` to queue a notification or
+  indication for one of the registered measurements.
 - `gatt_body_composition_service_add()` for Body Composition Measurement and
-  Feature.
+  Feature. `gatt_body_composition_service_indicate_measurement()` encodes the
+  standard fields and checks them against the Feature value; use
+  `gatt_body_composition_service_indicate_value()` when the application
+  already has an encoded payload.
 - `gatt_user_data_service_add()` for Database Change Increment, User Index,
   and User Control Point.
 - `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
-  Feature.
+  Feature. `gatt_weight_scale_service_indicate_measurement()` encodes the
+  measurement and checks optional fields against supported features.
 
 These are database builders. The application supplies record storage,
 control-point behavior, and correctly formatted measurement payloads; the
