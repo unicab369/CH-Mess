@@ -509,7 +509,7 @@ static void gap_privacy_poll(uint32_t now) {
     }
     uint8_t address[6];
     if (!gap_private_addr_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
-                                      address, gap_random_address)
+                                      address, gap_own_address.address)
     ) return;
 
     uint16_t next_timeout_s;
@@ -518,7 +518,7 @@ static void gap_privacy_poll(uint32_t now) {
                                   &next_timeout_s)
     ) return;
 
-    memcpy(gap_random_address, address, 6);
+    memcpy(gap_own_address.address, address, 6);
     // Refresh cached local RPAs outside the RX interrupt, between exchanges.
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_privacy.resolvable && gap_identities[i].used &&

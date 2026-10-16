@@ -627,9 +627,8 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
 
 // GAP privacy, identity resolution, and Filter Accept List operations.
 
-static uint8_t gap_own_address_type;
-static uint8_t gap_random_address[6];
-static uint8_t gap_identity_address_type, gap_identity_address[6];
+static gap_peer_address gap_own_address;
+static gap_peer_address gap_identity_address;
 static struct {
     uint8_t used;
     gap_peer_address peer;
@@ -970,15 +969,15 @@ static void gap_local_addr_select(
             memcpy(address, gap_identities[slot].local_address, 6);
         }
         else {
-            *type = gap_identity_address_type;
-            if (*type) memcpy(address, gap_identity_address, 6);
+            *type = gap_identity_address.type;
+            if (*type) memcpy(address, gap_identity_address.address, 6);
             else GAP_HW_PUBLIC_ADDRESS(address);
         }
         return;
     }
 
-    *type = gap_own_address_type;
-    if (*type) memcpy(address, gap_random_address, 6);
+    *type = gap_own_address.type;
+    if (*type) memcpy(address, gap_own_address.address, 6);
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
@@ -996,20 +995,20 @@ int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
         gap_privacy.enabled = 0;
         gap_privacy.resolvable = 0;
-        gap_own_address_type = 0;
+        gap_own_address.type = 0;
         return 1;
     }
 
     uint8_t address[6];
-    if (!gap_private_addr_generate(irk, address, gap_random_address))
+    if (!gap_private_addr_generate(irk, address, gap_own_address.address))
         return 0;
 
     if (irk) memcpy(gap_privacy.irk, irk, 16);
     else memset(gap_privacy.irk, 0, 16);
 
     gap_privacy.resolvable = irk != NULL;
-    memcpy(gap_random_address, address, 6);
-    gap_own_address_type = 1;
+    memcpy(gap_own_address.address, address, 6);
+    gap_own_address.type = 1;
     gap_privacy.enabled = 1;
     gap_privacy.timeout_s = timeout_s;
     gap_privacy.timeout_min_s = timeout_s;
@@ -1050,7 +1049,6 @@ static int gap_privacy_timeout_pick(
 int gap_privacy_set_randomized(
     const uint8_t irk[16], uint16_t min_timeout_s, uint16_t max_timeout_s
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
@@ -1058,22 +1056,21 @@ int gap_privacy_set_randomized(
     ) return 0;
 
     uint16_t timeout_s;
-    if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s))
-        return 0;
-
     uint8_t address[6];
-    if (!gap_private_addr_generate(irk, address, gap_random_address))
-        return 0;
+
+    if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s) ||
+        !gap_private_addr_generate(irk, address, gap_own_address.address)
+    ) return 0;
 
     memcpy(gap_privacy.irk, irk, sizeof(gap_privacy.irk));
-    memcpy(gap_random_address, address, sizeof(gap_random_address));
+    memcpy(gap_own_address.address, address, sizeof(gap_own_address.address));
     gap_privacy.timeout_s = timeout_s;
     gap_privacy.timeout_min_s = min_timeout_s;
     gap_privacy.timeout_max_s = max_timeout_s;
     gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
     gap_privacy.resolvable = 1;
     gap_privacy.enabled = 1;
-    gap_own_address_type = 1;
+    gap_own_address.type = 1;
     return 1;
 }
 
@@ -1095,18 +1092,18 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 // Application facing
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
-int gap_set_static_random_address(const uint8_t address[6]) {
+int gap_set_static_addr(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
         !gap_static_addr_valid(address)
     ) return 0;
 
-    memcpy(gap_random_address, address, 6);
-    memcpy(gap_identity_address, address, 6);
-    gap_identity_address_type = 1;
+    memcpy(gap_own_address.address, address, 6);
+    memcpy(gap_identity_address.address, address, 6);
+    gap_identity_address.type = 1;
     gap_privacy.enabled = 0;
-    gap_own_address_type = 1;
+    gap_own_address.type = 1;
     return 1;
 }
 
@@ -1120,8 +1117,8 @@ int gap_use_public_address(void) {
     ) return 0;
 
     gap_privacy.enabled = 0;
-    gap_identity_address_type = 0;
-    gap_own_address_type = 0;
+    gap_identity_address.type = 0;
+    gap_own_address.type = 0;
     return 1;
 }
 
