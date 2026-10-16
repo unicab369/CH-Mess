@@ -32,8 +32,9 @@ automatically provide each service's application protocol or profile behavior.
 - [x] Location and Navigation (`0x1819`)
 - [x] Environmental Sensing (`0x181A`)
 - [x] Body Composition (`0x181B`)
-- [x] User Data (`0x181C`), Database Change Increment writes and base User
-  Control Point request/response handling; user storage remains application-owned
+- [x] User Data (`0x181C`), Database Change Increment writes, User Control
+  Point request/response handling, and segmented Registered User indications;
+  user storage remains application-owned
 - [x] Weight Scale (`0x181D`)
 - [x] Bond Management (`0x181E`)
 - [x] Indoor Positioning (`0x1821`)

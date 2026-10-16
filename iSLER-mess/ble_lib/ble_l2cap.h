@@ -14,8 +14,8 @@
 //       channels, ECFC setup/reconfiguration, credits, disconnect, and reject.
 // - [x] Segment/reassemble ECFC SDUs as K-frames, enforce MTU/MPS and credit
 //       limits, and replenish receive credits.
-// - [x] Provide an LL-fragment link adapter with one L2CAP receive path and
-//       bounded transmit fragmentation.
+// - [x] Keep LL-fragment transport in the GAP adapter; this module owns L2CAP
+//       framing, reassembly, and channel dispatch only.
 // - [x] Reject unknown and malformed-length signaling commands; track
 //       signaling/channel timeouts and disconnect cleanup.
 // - [x] Return defined result codes for malformed channel parameters, handle
@@ -236,7 +236,16 @@ static inline int ble_l2cap_connection_init(
 
 static inline void ble_l2cap_channel_clear(
     ble_l2cap_connection *conn,
-    uint8_t slot, int reason);
+    uint8_t slot, int reason
+) {
+    if (!conn || slot >= BLE_L2CAP_CHANNEL_MAX) return;
+    ble_l2cap_channel *ch = &conn->channels[slot];
+    uint16_t psm = ch->psm, local = ch->local_cid, remote = ch->remote_cid;
+    memset(ch, 0, sizeof(*ch));
+    if (conn->ops.channel_closed && local)
+        conn->ops.channel_closed(conn->ops.context, psm, local, remote,
+                                  (uint16_t)reason);
+}
 
 static inline int ble_l2cap_psm_register(
     ble_l2cap_connection *conn, uint16_t psm
@@ -397,19 +406,6 @@ static inline int ble_l2cap_send_signal(
     if (payload_len) memcpy(packet + 4, payload, payload_len);
     return conn->ops.send_pdu(conn->ops.context,
         BLE_L2CAP_CID_LE_SIGNALING, packet, payload_len + 4);
-}
-
-static inline void ble_l2cap_channel_clear(
-    ble_l2cap_connection *conn,
-    uint8_t slot, int reason
-) {
-    if (!conn || slot >= BLE_L2CAP_CHANNEL_MAX) return;
-    ble_l2cap_channel *ch = &conn->channels[slot];
-    uint16_t psm = ch->psm, local = ch->local_cid, remote = ch->remote_cid;
-    memset(ch, 0, sizeof(*ch));
-    if (conn->ops.channel_closed && local)
-        conn->ops.channel_closed(conn->ops.context, psm, local, remote,
-                                  (uint16_t)reason);
 }
 
 // Start an ECFC request for one or more channels, up to the LE signaling
@@ -1434,160 +1430,6 @@ static inline int ble_l2cap_reassembler_feed(
     if (sdu_len) *sdu_len = (uint16_t)(rx->expected - 4);
     rx->expected = rx->used = 0;
     return 1;
-}
-
-// Optional LE link adapter. It owns LL-fragment IO and connects the framing
-// engine to the channel/signaling manager above. The GAP/platform supplies the
-// callbacks; no radio or GATT implementation is embedded here.
-#ifndef BLE_L2CAP_LL_MAX
-#define BLE_L2CAP_LL_MAX 251
-#endif
-typedef struct {
-    int (*connected)(void *context);
-    int (*receive_fragment)(void *context, uint8_t *llid, uint8_t *data,
-                            size_t *len);
-    int (*send_fragment)(void *context, uint8_t llid, const uint8_t *data,
-                         size_t len);
-    uint16_t (*max_tx_payload)(void *context);
-    void *context;
-} ble_l2cap_link_io;
-
-typedef struct {
-    ble_l2cap_link_io io;
-    ble_l2cap_ops upper;
-    ble_l2cap_connection connection;
-    ble_l2cap_reassembler reassembler;
-    uint8_t connected;
-    uint16_t tx_len, tx_offset;
-    uint8_t tx[4 + BLE_L2CAP_SDU_MAX];
-} ble_l2cap_link;
-
-static inline int ble_l2cap_link_send_pdu(
-    void *context, uint16_t cid,
-    const uint8_t *payload, uint16_t len
-) {
-    ble_l2cap_link *link = (ble_l2cap_link *)context;
-    if (!link || link->tx_len || !link->connected) return 0;
-    int encoded = ble_l2cap_encode(link->tx, sizeof(link->tx), cid,
-                                    payload, len);
-    if (!encoded) return 0;
-    link->tx_len = (uint16_t)encoded;
-    link->tx_offset = 0;
-    return 1;
-}
-
-static inline int ble_l2cap_link_accept_psm(void *context, uint16_t psm) {
-    ble_l2cap_link *link = context;
-    return !link->upper.accept_psm || link->upper.accept_psm(
-        link->upper.context, psm);
-}
-
-static inline void ble_l2cap_link_channel_opened(
-    void *context, uint16_t psm,
-    uint16_t local, uint16_t remote, uint16_t mtu
-) {
-    ble_l2cap_link *link = context;
-    if (link->upper.channel_opened) link->upper.channel_opened(
-        link->upper.context, psm, local, remote, mtu);
-}
-
-static inline void ble_l2cap_link_channel_closed(
-    void *context, uint16_t psm,
-    uint16_t local, uint16_t remote, uint16_t reason
-) {
-    ble_l2cap_link *link = context;
-    if (link->upper.channel_closed) link->upper.channel_closed(
-        link->upper.context, psm, local, remote, reason);
-}
-
-static inline int ble_l2cap_link_channel_data(
-    void *context, uint16_t local,
-    const uint8_t *sdu, uint16_t len
-) {
-    ble_l2cap_link *link = context;
-    return link->upper.channel_data && link->upper.channel_data(
-        link->upper.context, local, sdu, len);
-}
-
-static inline int ble_l2cap_link_connection_update(
-    void *context,
-    uint16_t minimum, uint16_t maximum, uint16_t latency, uint16_t timeout
-) {
-    ble_l2cap_link *link = context;
-    return link->upper.connection_update && link->upper.connection_update(
-        link->upper.context, minimum, maximum, latency, timeout);
-}
-
-static inline int ble_l2cap_link_init(
-    ble_l2cap_link *link,
-    const ble_l2cap_link_io *io, const ble_l2cap_ops *upper,
-    uint16_t mtu, uint16_t mps, uint16_t initial_credits
-) {
-    if (!link || !io || !io->connected || !io->receive_fragment ||
-        !io->send_fragment || !io->max_tx_payload)
-        return 0;
-    memset(link, 0, sizeof(*link));
-    link->io = *io;
-    if (upper) link->upper = *upper;
-    ble_l2cap_ops ops = {0};
-    ops.send_pdu = ble_l2cap_link_send_pdu;
-    ops.accept_psm = ble_l2cap_link_accept_psm;
-    ops.channel_opened = ble_l2cap_link_channel_opened;
-    ops.channel_closed = ble_l2cap_link_channel_closed;
-    ops.channel_data = ble_l2cap_link_channel_data;
-    ops.connection_update = ble_l2cap_link_connection_update;
-    ops.context = link;
-    return ble_l2cap_connection_init(&link->connection, &ops, mtu, mps,
-                                      initial_credits);
-}
-
-static inline int ble_l2cap_link_poll(ble_l2cap_link *link) {
-    if (!link) return -1;
-    uint8_t connected = link->io.connected(link->io.context) != 0;
-    if (connected != link->connected) {
-        if (!connected) ble_l2cap_connection_reset(&link->connection, 0);
-        link->connected = connected;
-        link->tx_len = link->tx_offset = 0;
-        ble_l2cap_reassembler_reset(&link->reassembler);
-    }
-    if (!connected) return 0;
-    if (link->tx_len) {
-        uint16_t max_len = link->io.max_tx_payload(link->io.context);
-        if (!max_len || max_len > BLE_L2CAP_LL_MAX) return -1;
-        uint16_t remaining = link->tx_len - link->tx_offset;
-        uint16_t chunk = remaining < max_len ? remaining : max_len;
-        uint8_t llid = link->tx_offset ? 1 : 2;
-        if (!link->io.send_fragment(link->io.context, llid,
-            link->tx + link->tx_offset, chunk))
-            return 0;
-        link->tx_offset = (uint16_t)(link->tx_offset + chunk);
-        if (link->tx_offset == link->tx_len)
-            link->tx_len = link->tx_offset = 0;
-        return 1;
-    }
-    if (ble_l2cap_ecfc_pump(&link->connection) && link->tx_len) return 1;
-    uint8_t llid, fragment[BLE_L2CAP_LL_MAX];
-    size_t len = sizeof(fragment);
-    int received = link->io.receive_fragment(link->io.context, &llid,
-                                               fragment, &len);
-    if (received <= 0) return received;
-    if (!len || len > sizeof(fragment)) {
-        ble_l2cap_reassembler_reset(&link->reassembler);
-        return 0;
-    }
-    uint16_t cid = 0, sdu_len = 0;
-    const uint8_t *sdu = NULL;
-    int assembled = ble_l2cap_reassembler_feed(&link->reassembler, llid,
-        fragment, len, &cid, &sdu, &sdu_len);
-    if (assembled <= 0) return assembled;
-    return ble_l2cap_connection_receive(&link->connection, cid, sdu, sdu_len);
-}
-
-static inline int ble_l2cap_link_tick(
-    ble_l2cap_link *link,
-                                       uint32_t now_ms
-) {
-    return link ? ble_l2cap_connection_tick(&link->connection, now_ms) : 0;
 }
 
 #endif // BLE_L2CAP_H

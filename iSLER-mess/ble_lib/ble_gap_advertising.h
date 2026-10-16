@@ -510,6 +510,15 @@ typedef struct {
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
 typedef struct {
+    // Scanner radio scheduling and active-scan request state.
+    uint8_t channel_index, applied_generation;
+    uint32_t interval_start_ms;
+    volatile uint8_t active_pending, active_address_type;
+    uint8_t active_address[6];
+    uint32_t active_deadline_ms;
+    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
+
+    // Scan report queue, duplicate tracking, and scan-response peer.
     uint8_t head, count;
     uint8_t seen_count, seen_next;
     uint8_t response_accepted;

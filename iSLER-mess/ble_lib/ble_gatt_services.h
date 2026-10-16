@@ -2102,6 +2102,23 @@ static inline int gatt_fitness_machine_service_add(
     return 1;
 }
 
+// Application facing
+// Queue one encoded Fitness Machine Data notification.
+static inline int gatt_fitness_machine_service_notify_data(
+    ble_gatt_server *server,
+    const ble_gatt_fitness_machine_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || !value || !len) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->machine_data_handle);
+    if (!attribute || len > attribute->value_capacity ||
+        len > server->mtu - 3)
+        return 0;
+    return gatt_server_queue_event(server, service->machine_data_handle,
+                                   value, len, 0);
+}
+
 typedef struct {
     uint16_t service_handle;
 } ble_gatt_internet_protocol_support_service;
@@ -2319,6 +2336,7 @@ typedef struct {
     uint16_t service_handle, database_change_handle;
     uint16_t database_change_cccd_handle, user_index_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t registered_user_handle, registered_user_cccd_handle;
     ble_gatt_server *server;
     uint32_t database_change_increment;
     uint8_t user_index, request_opcode, request_parameter_len;
@@ -2329,6 +2347,8 @@ enum {
     GATT_UDS_OP_REGISTER_NEW_USER = 1,
     GATT_UDS_OP_CONSENT = 2,
     GATT_UDS_OP_DELETE_USER_DATA = 3,
+    GATT_UDS_OP_LIST_ALL_USERS = 4,
+    GATT_UDS_OP_DELETE_USERS = 5,
     GATT_UDS_OP_RESPONSE_CODE = 0x20,
     GATT_UDS_RESPONSE_SUCCESS = 1,
     GATT_UDS_RESPONSE_NOT_SUPPORTED = 2,
@@ -3194,7 +3214,9 @@ static uint8_t gatt_user_data_control_write(
     uint8_t parameter_len = (uint8_t)(len - 1);
     if ((opcode == GATT_UDS_OP_REGISTER_NEW_USER && parameter_len != 2) ||
         (opcode == GATT_UDS_OP_CONSENT && parameter_len != 3) ||
-        (opcode == GATT_UDS_OP_DELETE_USER_DATA && parameter_len != 0))
+        ((opcode == GATT_UDS_OP_DELETE_USER_DATA ||
+          opcode == GATT_UDS_OP_LIST_ALL_USERS) && parameter_len != 0) ||
+        (opcode == GATT_UDS_OP_DELETE_USERS && !parameter_len))
         return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     service->request_opcode = opcode;
@@ -3223,6 +3245,7 @@ static inline int gatt_user_data_service_add(
         (uint8_t)(database_change_increment >> 24)
     };
     static const uint8_t control_point_initial = 0;
+    static const uint8_t registered_user_initial = 0;
     ble_gatt_sig_characteristic chars[] = {
         {0x2a99, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
                     BLE_GATT_PROP_NOTIFY, 1,
@@ -3236,15 +3259,23 @@ static inline int gatt_user_data_service_add(
          .value = &control_point_initial,
          .value_len = 0,
          .value_capacity = 16,
+         .variable_length = 1},
+        {.uuid = 0x2b37,
+         .properties = BLE_GATT_PROP_INDICATE,
+         .cccd = 1,
+         .permissions = BLE_GATT_PERM_READ,
+         .value = &registered_user_initial,
+         .value_len = 0,
+         .value_capacity = BLE_GATT_SERVER_VALUE_MAX,
          .variable_length = 1}
     };
-    ble_gatt_sig_handlers handlers[3] = {0};
+    ble_gatt_sig_handlers handlers[4] = {0};
     handlers[0].write = gatt_user_data_database_change_write;
     handlers[0].context = service;
     handlers[2].write = gatt_user_data_control_write;
     handlers[2].context = service;
-    uint16_t values[3], cccds[3];
-    if (!gatt_sig_service_add_with_handlers(server, 0x181c, chars, 3,
+    uint16_t values[4], cccds[4];
+    if (!gatt_sig_service_add_with_handlers(server, 0x181c, chars, 4,
             &service->service_handle, values, cccds, handlers))
         return 0;
     service->database_change_handle = values[0];
@@ -3252,7 +3283,42 @@ static inline int gatt_user_data_service_add(
     service->user_index_handle = values[1];
     service->control_point_handle = values[2];
     service->control_point_cccd_handle = cccds[2];
+    service->registered_user_handle = values[3];
+    service->registered_user_cccd_handle = cccds[3];
     return 1;
+}
+
+// Application facing
+// Queue one Registered User indication segment. Increment the 6-bit segment
+// counter for each segment and wrap it from 63 back to 0.
+static inline int gatt_user_data_service_indicate_registered_user_segment(
+    ble_gatt_server *server, ble_gatt_user_data_service *service,
+    uint8_t segment_number, uint8_t first_segment, uint8_t last_segment,
+    uint8_t user_index, const uint8_t *name, uint16_t name_len,
+    uint8_t name_present, uint8_t name_truncated
+) {
+    if (!server || !service || service->server != server ||
+        segment_number > 63 || first_segment > 1 || last_segment > 1 ||
+        name_present > 1 || name_truncated > 1 || (name_len && !name) ||
+        (!first_segment && (name_present || name_truncated)) ||
+        (name_truncated && !name_present) ||
+        name_len > server->mtu - 4 - (first_segment ? 2 : 0) ||
+        name_len > BLE_GATT_SERVER_VALUE_MAX - 3)
+        return 0;
+
+    uint8_t value[BLE_GATT_SERVER_VALUE_MAX];
+    value[0] = (uint8_t)((segment_number << 2) |
+        (first_segment ? 1 : 0) | (last_segment ? 2 : 0));
+    uint16_t value_len = 1;
+    if (first_segment) {
+        value[value_len++] = (uint8_t)((name_present ? 1 : 0) |
+            (name_truncated ? 2 : 0));
+        value[value_len++] = user_index;
+    }
+    if (name_len) memcpy(value + value_len, name, name_len);
+    value_len += name_len;
+    return gatt_server_queue_event(server, service->registered_user_handle,
+        value, value_len, 1);
 }
 
 // Application facing
@@ -3320,6 +3386,8 @@ static inline int gatt_user_data_service_complete(
         !service->request_pending || response < 1 || response > 5 ||
         parameter_len > 13 || (parameter_len && !parameter) ||
         (response == 1 && service->request_opcode == 1 &&
+         parameter_len != 1) ||
+        (response == 1 && service->request_opcode == 4 &&
          parameter_len != 1))
         return 0;
 

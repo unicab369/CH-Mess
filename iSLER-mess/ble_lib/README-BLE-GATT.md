@@ -117,8 +117,9 @@ transfer channel. Multi-object OTS needs additional Object ID, OLCP, and Object
 List Filter characteristics, which this builder does not add.
 `gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
-and sends telemetry; optional ranges, training status, and remote control are
-not included in this layout.
+telemetry and queues it with
+`gatt_fitness_machine_service_notify_data()`; optional ranges, training status,
+and remote control are not included in this layout.
 `gatt_insulin_delivery_service_add()` registers the mandatory authorized IDD
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement
@@ -266,15 +267,22 @@ Additional service builders include:
   `gatt_body_composition_service_indicate_value()` when the application
   already has an encoded payload.
 - `gatt_user_data_service_add()` for Database Change Increment, User Index,
-  and User Control Point. The Database Change Increment accepts validated
-  four-octet writes. User Control Point writes are saved as a pending request
-  in `request_opcode`, `request_parameter`, and `request_parameter_len`; the
-  application handles registration, consent, and deletion, then completes the
-  request with `gatt_user_data_service_complete()`. Successful registration
+  User Control Point, and Registered User. The Database Change Increment
+  accepts validated four-octet writes. User Control Point writes are saved as
+  a pending request in `request_opcode`, `request_parameter`, and
+  `request_parameter_len`; the application handles registration, consent, and
+  deletion, then completes the request with
+  `gatt_user_data_service_complete()`. Successful registration
   updates the readable User Index. Update the values with
   `gatt_user_data_service_set_database_change_increment()` and
   `gatt_user_data_service_set_user_index()`; the notification helper also
-  queues a Database Change Increment notification.
+  queues a Database Change Increment notification. List All Users and Delete
+  Users (a list of user indices) are delivered as application requests. Queue
+  Registered User indications with
+  `gatt_user_data_service_indicate_registered_user_segment()`; put the flags
+  and user index in the first segment, then pass only name bytes in continuation
+  segments. Complete List All Users with a one-byte response parameter
+  containing the number of users returned.
 - `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
   Feature. `gatt_weight_scale_service_indicate_measurement()` encodes the
   measurement and checks optional fields against supported features.

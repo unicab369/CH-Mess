@@ -229,17 +229,6 @@ static gap_scanner_state gap_scanner = {
     .discovery_mode = GAP_DISCOVERY_ALL
 };
 
-// Scan radio state is shared by advertising and connection polling. Declare it
-// before the advertising implementation is included below.
-static struct {
-    uint8_t channel_index, applied_generation;
-    uint32_t interval_start_ms;
-    volatile uint8_t active_pending, active_address_type;
-    uint8_t active_address[6];
-    uint32_t active_deadline_ms;
-    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
-} gap_scan;
-
 // Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
 typedef struct {
     uint16_t tx_octets, tx_time, rx_octets, rx_time;

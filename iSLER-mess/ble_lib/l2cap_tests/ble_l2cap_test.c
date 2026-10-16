@@ -14,16 +14,6 @@ static int route_att(
     return 1;
 }
 
-static int route_att_count(
-    void *ctx, uint16_t cid, const uint8_t *data,
-                           uint16_t len
-) {
-    uint8_t *count = ctx;
-    assert(cid == BLE_L2CAP_CID_ATT && len == 3 && data[0] == 0x0a);
-    (*count)++;
-    return 1;
-}
-
 typedef struct {
     uint16_t cid, len;
     uint8_t pdu[BLE_L2CAP_CHANNEL_MTU_MAX];
@@ -68,29 +58,6 @@ static int fake_channel_data(
     fake_l2cap *f = ctx; assert(local >= 0x40 && len <= sizeof(f->data));
     f->data_count++; f->data_len = len; memcpy(f->data, sdu, len); return 1;
 }
-
-typedef struct {
-    uint8_t connected, rx_count, tx_count;
-    uint16_t max_payload;
-    struct { uint8_t llid, len, data[16]; } rx[8], tx[16];
-} fake_ll;
-static int ll_connected(void *ctx) { return ((fake_ll *)ctx)->connected; }
-static int ll_receive(void *ctx, uint8_t *llid, uint8_t *data, size_t *len) {
-    fake_ll *f = ctx;
-    if (!f->rx_count) return 0;
-    if (*len < f->rx[0].len) return -1;
-    *llid = f->rx[0].llid; *len = f->rx[0].len;
-    memcpy(data, f->rx[0].data, *len);
-    memmove(f->rx, f->rx + 1, (--f->rx_count) * sizeof(f->rx[0]));
-    return 1;
-}
-static int ll_send(void *ctx, uint8_t llid, const uint8_t *data, size_t len) {
-    fake_ll *f = ctx; assert(f->tx_count < 16 && len <= f->max_payload);
-    uint8_t i = f->tx_count++;
-    f->tx[i].llid = llid; f->tx[i].len = (uint8_t)len;
-    memcpy(f->tx[i].data, data, len); return 1;
-}
-static uint16_t ll_max(void *ctx) { return ((fake_ll *)ctx)->max_payload; }
 
 int main(void) {
     ble_l2cap_reassembler rx = {0};
@@ -375,65 +342,5 @@ int main(void) {
     assert(reject_fake.pdu[0] == BLE_L2CAP_SIG_COMMAND_REJECT &&
            reject_fake.pdu[1] == 13);
 
-    fake_ll radio = {0}; radio.connected = 1; radio.max_payload = 8;
-    ble_l2cap_link_io ll = {ll_connected, ll_receive, ll_send, ll_max, &radio};
-    ble_l2cap_link link;
-    assert(ble_l2cap_link_init(&link, &ll, NULL, 100, 40, 4));
-    assert(ble_l2cap_link_poll(&link) == 0);
-    assert(ble_l2cap_connection_register_fixed(&link.connection,
-        BLE_L2CAP_CID_ATT, route_att, NULL));
-    assert(ble_l2cap_encode(packet, sizeof(packet), BLE_L2CAP_CID_ATT,
-                            pdu, sizeof(pdu)) == 7);
-    radio.rx[0].llid = 2; radio.rx[0].len = 5;
-    memcpy(radio.rx[0].data, packet, 5);
-    radio.rx[1].llid = 1; radio.rx[1].len = 2;
-    memcpy(radio.rx[1].data, packet + 5, 2); radio.rx_count = 2;
-    assert(ble_l2cap_link_poll(&link) == 0);
-    assert(ble_l2cap_link_poll(&link) == 1 && routed == 2);
-    assert(ble_l2cap_connection_update_request(&link.connection, 24, 40, 0, 100));
-    while (link.tx_len || link.tx_offset == 0) {
-        assert(ble_l2cap_link_poll(&link) == 1);
-        if (!link.tx_len) break;
-    }
-    assert(radio.tx_count == 2 && radio.tx[0].llid == 2 &&
-           radio.tx[1].llid == 1);
-
-    // Two independent link objects keep their L2CAP reassembly state separate.
-    fake_ll radio_a = {0}, radio_b = {0};
-    radio_a.connected = radio_b.connected = 1;
-    radio_a.max_payload = radio_b.max_payload = 8;
-    ble_l2cap_link_io ll_a = {
-        ll_connected, ll_receive, ll_send, ll_max, &radio_a
-    };
-    ble_l2cap_link_io ll_b = {
-        ll_connected, ll_receive, ll_send, ll_max, &radio_b
-    };
-    ble_l2cap_link link_a, link_b;
-    assert(ble_l2cap_link_init(&link_a, &ll_a, NULL, 100, 40, 4));
-    assert(ble_l2cap_link_init(&link_b, &ll_b, NULL, 100, 40, 4));
-    uint8_t received_a = 0, received_b = 0;
-    assert(ble_l2cap_connection_register_fixed(&link_a.connection,
-        BLE_L2CAP_CID_ATT, route_att_count, &received_a));
-    assert(ble_l2cap_connection_register_fixed(&link_b.connection,
-        BLE_L2CAP_CID_ATT, route_att_count, &received_b));
-    assert(ble_l2cap_encode(packet, sizeof(packet), BLE_L2CAP_CID_ATT,
-                            pdu, sizeof(pdu)) == 7);
-    radio_a.rx[0].llid = 2;
-    radio_a.rx[0].len = 5;
-    memcpy(radio_a.rx[0].data, packet, 5);
-    radio_a.rx_count = 1;
-    radio_b.rx[0].llid = 2;
-    radio_b.rx[0].len = 7;
-    memcpy(radio_b.rx[0].data, packet, 7);
-    radio_b.rx_count = 1;
-    assert(ble_l2cap_link_poll(&link_a) == 0);
-    assert(ble_l2cap_link_poll(&link_b) == 1);
-    assert(received_a == 0 && received_b == 1);
-    radio_a.rx[0].llid = 1;
-    radio_a.rx[0].len = 2;
-    memcpy(radio_a.rx[0].data, packet + 5, 2);
-    radio_a.rx_count = 1;
-    assert(ble_l2cap_link_poll(&link_a) == 1);
-    assert(received_a == 1 && received_b == 1);
     return 0;
 }
