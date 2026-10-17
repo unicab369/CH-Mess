@@ -955,15 +955,24 @@ static inline uint8_t gap_conn_can_skip_event(
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
     ) return 0;
 
-    int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
-    int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-    uint8_t scheduled_event =
-        (conn->schedule.factor && current_offset % conn->schedule.factor == 0) ||
-        (conn->is_central && conn->subrate.transition &&
-         conn->next_schedule.factor &&
-         next_offset % conn->next_schedule.factor == 0);
+    if (!conn->is_central && conn->subrate.latency_remaining)
+        return 1;
 
-    return !scheduled_event || (!conn->is_central && conn->subrate.latency_remaining);
+    int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
+    if (conn->schedule.factor && current_offset % conn->schedule.factor == 0)
+        return 0;
+
+    if (conn->is_central &&
+        conn->subrate.transition &&
+        conn->next_schedule.factor
+    ) {
+        int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
+        if ((int32_t)event - (int32_t)conn->next_schedule.base_event
+            % conn->next_schedule.factor == 0
+        ) return 0;
+    }
+
+    return 1;
 }
 
 static void gap_conn_poll(void) {
