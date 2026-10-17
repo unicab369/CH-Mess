@@ -152,6 +152,7 @@ typedef struct {
 // =============================================================================
 // Basic framing and connection/channel management
 // =============================================================================
+
 static inline uint16_t ble_read_u16_le(const uint8_t *p) {
     return (uint16_t)p[0] | (uint16_t)p[1] << 8;
 }

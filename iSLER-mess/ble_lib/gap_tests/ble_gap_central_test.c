@@ -3435,9 +3435,7 @@ static void test_phy_updates(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     assert(!gap_phy_set(2, 2));
     start_test_central_link();
-    uint8_t tx, rx;
-    gap_phy_get(&tx, &rx);
-    assert(tx == 1 && rx == 1);
+    assert(conn->phy.current.tx == 1 && conn->phy.current.rx == 1);
     assert(!gap_phy_set(0, 2) && !gap_phy_set(4, 4));
     assert(gap_phy_set(2, 2));
     assert(!gap_conn_update(48, 0, 200));
@@ -3449,7 +3447,7 @@ static void test_phy_updates(void) {
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x16 && gap_tx_frame[3] == 2);
     receive_test_link_packet(0);
-    assert(gap_tx_frame[2] == 0x16 && gap_phy_status() == 0xff);
+    assert(gap_tx_frame[2] == 0x16 && conn->phy.status == 0xff);
     // Central wins a simultaneous PHY request and keeps its pending request.
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
     assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x23);
@@ -3463,8 +3461,8 @@ static void test_phy_updates(void) {
         assert(conn->phy.current.tx == 1 && conn->phy.current.rx == 1);
         receive_test_link_packet(1);
     }
-    gap_phy_get(&tx, &rx);
-    assert(tx == 2 && rx == 2 && gap_phy_status() == 0);
+    assert(conn->phy.current.tx == 2 && conn->phy.current.rx == 2 &&
+           conn->phy.status == 0);
     conn->link_state.rx_armed = conn->link_state.event_replied = 0;
     now_ms = (uint32_t)((conn->link.next_ticks + 999) / 1000);
     gap_conn_poll();
@@ -3493,7 +3491,8 @@ static void test_phy_updates(void) {
     receive_test_link_packet(1);
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
     assert(gap_tx_frame[3] == 0 && gap_tx_frame[4] == 0);
-    assert(gap_phy_status() == 0 && !(conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE));
+    assert(conn->phy.status == 0 &&
+           !(conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE));
     gap_conn_end();
 
     // The foreground Central send path also starts a queued PHY request.
@@ -3516,9 +3515,8 @@ static void test_phy_updates(void) {
     receive_test_control(0x18,
                          (uint8_t[]){2, 1, (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
-    gap_phy_get(&tx, &rx);
-    assert(tx == 1 && rx == 2);
-    assert(gap_phy_status() == 0);
+    assert(conn->phy.current.tx == 1 && conn->phy.current.rx == 2);
+    assert(conn->phy.status == 0);
     gap_conn_end();
 
     // Unsupported UPDATE fields leave that direction unchanged.
@@ -3527,28 +3525,28 @@ static void test_phy_updates(void) {
     assert(!(conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) && conn->phy.current.tx == 1 && conn->phy.current.rx == 1);
     // Past Instants and unacknowledged Central updates close the link.
     receive_test_control(0x18, (uint8_t[]){2, 2, 0, 0}, 4);
-    assert(!gap_conn_slot_active(gap_conn_slot) && gap_phy_status() == 0x28);
+    assert(!gap_conn_slot_active(gap_conn_slot) && conn->phy.status == 0x28);
     start_test_central_link();
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
     assert((conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE));
     while (gap_conn_slot_active(gap_conn_slot)) receive_test_link_packet(0);
-    assert(gap_phy_status() == 0x28);
+    assert(conn->phy.status == 0x28);
 
     start_test_central_link();
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     receive_test_control(0x07, (uint8_t[]){0x16}, 1);
-    assert(gap_phy_status() == 0x1a && !conn->pending.phy_request);
+    assert(conn->phy.status == 0x1a && !conn->pending.phy_request);
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     receive_test_control(0x11, (uint8_t[]){0x16, 0x20}, 2);
-    assert(gap_phy_status() == 0x20);
+    assert(conn->phy.status == 0x20);
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     now_ms = conn->phy.started_ms + 40000;
     conn->link.last_rx_ms = now_ms;
     gap_conn_poll();
-    assert(!gap_conn_slot_active(gap_conn_slot) && gap_phy_status() == 0x22);
+    assert(!gap_conn_slot_active(gap_conn_slot) && conn->phy.status == 0x22);
 
     // Feature exchange advertises 2M in byte 1, and caches the peer's support.
     start_test_central_link();
@@ -3558,7 +3556,7 @@ static void test_phy_updates(void) {
     gap_conn_end();
     start_test_central_link();
     receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
-    assert(!gap_phy_set(2, 2) && gap_phy_status() == 0x1a);
+    assert(!gap_phy_set(2, 2) && conn->phy.status == 0x1a);
     gap_conn_end();
 
     // Coded PHY is advertised and negotiated only when the radio hook reports
@@ -3581,8 +3579,8 @@ static void test_phy_updates(void) {
            gap_tx_frame[4] == GAP_PHY_CODED);
     instant = conn->phy.instant;
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
-    gap_phy_get(&tx, &rx);
-    assert(tx == GAP_PHY_CODED && rx == GAP_PHY_CODED);
+    assert(conn->phy.current.tx == GAP_PHY_CODED &&
+           conn->phy.current.rx == GAP_PHY_CODED);
     conn->link_state.rx_armed = conn->link_state.event_replied = 0;
     now_ms = (uint32_t)((conn->link.next_ticks + 999) / 1000);
     gap_conn_poll();
@@ -3598,8 +3596,8 @@ static void test_phy_updates(void) {
         GAP_PHY_CODED, GAP_PHY_CODED,
         (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
-    gap_phy_get(&tx, &rx);
-    assert(tx == GAP_PHY_CODED && rx == GAP_PHY_CODED);
+    assert(conn->phy.current.tx == GAP_PHY_CODED &&
+           conn->phy.current.rx == GAP_PHY_CODED);
     gap_conn_end();
 
     radio_phy_mask = 1;
