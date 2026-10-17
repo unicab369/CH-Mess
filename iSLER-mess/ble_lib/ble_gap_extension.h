@@ -63,7 +63,8 @@ enum {
     GAP_PERIODIC_SYNC_TERMINATED = 4
 };
 typedef struct {
-    uint8_t type, handle, sid, address_type, address[6];
+    uint8_t type, handle, sid;
+    gap_address peer;
 } gap_periodic_sync_event;
 typedef struct {
     uint8_t handle, sid;
@@ -81,7 +82,8 @@ typedef struct {
 } gap_pawr_report;
 typedef struct {
     // Synchronization identity and radio parameters.
-    uint8_t used, established, handle, sid, address_type, address[6];
+    uint8_t used, established, handle, sid;
+    gap_address peer;
     uint8_t channel_map[5], sca, phy;
     uint16_t interval;
     uint32_t access_address, crc_init;
@@ -867,8 +869,7 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
     event.type = type;
     event.handle = sync->handle;
     event.sid = sync->sid;
-    event.address_type = sync->address_type;
-    memcpy(event.address, sync->address, 6);
+    event.peer = sync->peer;
 
     if (gap_sync_events.count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
         gap_sync_events.head =
@@ -877,7 +878,7 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
     }
 
     uint8_t tail = (gap_sync_events.head + gap_sync_events.count) %
-        GAP_PERIODIC_SYNC_EVENT_COUNT;
+                    GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.items[tail] = event;
     gap_sync_events.count++;
 }
@@ -885,22 +886,24 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
 // Application facing
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned handle identifies later events.
-int gap_periodic_sync_start(
-    uint8_t type,
-    const uint8_t address[6], uint8_t sid, uint32_t timeout_ms
+int gap_sync_start(
+    uint8_t type, const uint8_t address[6],
+    uint8_t sid, uint32_t timeout_ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t random_type = type != 0;
 
     if (!address || sid > 15 || timeout_ms < 100 ||
-        timeout_ms > 163840 || gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        timeout_ms > 163840 ||
+        gap_central.active ||
+        gap_conn_slot_active(gap_conn_slot)
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
-            gap_syncs[i].address_type == random_type &&
-            !memcmp(gap_syncs[i].address, address, 6)
+            gap_syncs[i].peer.type == random_type &&
+            !memcmp(gap_syncs[i].peer.address, address, 6)
         ) return 0;
 
     int slot = -1;
@@ -921,8 +924,8 @@ int gap_periodic_sync_start(
     gap_syncs[slot].used = 1;
     gap_syncs[slot].handle = (uint8_t)(slot + 1);
     gap_syncs[slot].sid = sid;
-    gap_syncs[slot].address_type = random_type;
-    memcpy(gap_syncs[slot].address, address, 6);
+    gap_syncs[slot].peer.type = random_type;
+    memcpy(gap_syncs[slot].peer.address, address, 6);
     gap_syncs[slot].timeout_ms = timeout_ms;
     gap_syncs[slot].last_event_ms = GET_MILLIS();
     return (uint8_t)(slot + 1);
@@ -930,7 +933,7 @@ int gap_periodic_sync_start(
 
 // Application facing
 // Enable receipt of periodic sync transfers from connected peers.
-int gap_periodic_sync_enable(
+int gap_past_enable(
     uint8_t enabled, uint32_t timeout_ms
 ) {
     if (enabled > 1 || (enabled && (timeout_ms < 100 || timeout_ms > 163840)))
@@ -1125,11 +1128,11 @@ static int gap_sync_info_accept(
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].used && !gap_syncs[i].established &&
             gap_syncs[i].sid == fields->identity.sid &&
-            ((gap_syncs[i].address_type == fields->identity.peer.type &&
-              !memcmp(gap_syncs[i].address, fields->identity.peer.address, 6)) ||
-             (identity_slot >= 0 && gap_syncs[i].address_type ==
+            ((gap_syncs[i].peer.type == fields->identity.peer.type &&
+              !memcmp(gap_syncs[i].peer.address, fields->identity.peer.address, 6)) ||
+             (identity_slot >= 0 && gap_syncs[i].peer.type ==
                   gap_identities[identity_slot].peer.type &&
-              !memcmp(gap_syncs[i].address, gap_identities[identity_slot].peer.address, 6)))) {
+              !memcmp(gap_syncs[i].peer.address, gap_identities[identity_slot].peer.address, 6)))) {
             slot = i;
             break;
         }
@@ -1181,8 +1184,7 @@ static int gap_sync_info_accept(
         (uint16_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500);
     gap_syncs[slot].interval = fields->sync.interval;
     gap_syncs[slot].phy = packet_phy;
-    gap_syncs[slot].address_type = fields->identity.peer.type;
-    memcpy(gap_syncs[slot].address, fields->identity.peer.address, 6);
+    gap_syncs[slot].peer = fields->identity.peer;
     gap_syncs[slot].event_counter = event_counter;
     gap_syncs[slot].access_address = fields->sync.access_address;
     gap_syncs[slot].crc_init = fields->sync.crc_init;
@@ -1442,8 +1444,8 @@ static int gap_periodic_connect_request(
     uint8_t initiator_type = (request[0] >> 6) & 1;
     uint8_t responder_type = (request[0] >> 7) & 1;
 
-    if (initiator_type != sync->address_type ||
-        memcmp(request + 2, sync->address, 6) != 0
+    if (initiator_type != sync->peer.type ||
+        memcmp(request + 2, sync->peer.address, 6) != 0
     ) return 0;
 
     int peer_slot = gap_identity_find(request + 2, initiator_type);
@@ -2510,8 +2512,8 @@ static int gap_past_receive(
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == fields.identity.sid &&
-            gap_syncs[i].address_type == address_type &&
-            !memcmp(gap_syncs[i].address, frame + 29, 6)
+            gap_syncs[i].peer.type == address_type &&
+            !memcmp(gap_syncs[i].peer.address, frame + 29, 6)
         ) return 0;
 
         if (!gap_syncs[i].used && free_slot < 0)
@@ -2524,8 +2526,8 @@ static int gap_past_receive(
     gap_syncs[free_slot].used = 1;
     gap_syncs[free_slot].handle = (uint8_t)(free_slot + 1);
     gap_syncs[free_slot].sid = fields.identity.sid;
-    gap_syncs[free_slot].address_type = address_type;
-    memcpy(gap_syncs[free_slot].address, frame + 29, 6);
+    gap_syncs[free_slot].peer.type = address_type;
+    memcpy(gap_syncs[free_slot].peer.address, frame + 29, 6);
     memcpy(gap_syncs[free_slot].channel_map, fields.sync.channel_map, 5);
     gap_syncs[free_slot].sca = fields.sync.sca;
     gap_syncs[free_slot].phy = phy;
@@ -2627,9 +2629,9 @@ static int gap_past_encode(
     frame[25] = (uint8_t)sync->last_event_counter;
     frame[26] = (uint8_t)(sync->last_event_counter >> 8);
     frame[27] = (uint8_t)((sync->sid & 0x0f) |
-                ((sync->address_type & 1) << 4)); // Local SCA code 0: <= 500 ppm.
+                ((sync->peer.type & 1) << 4)); // Local SCA code 0: <= 500 ppm.
     frame[28] = sync->phy;
-    memcpy(frame + 29, sync->address, 6);
+    memcpy(frame + 29, sync->peer.address, 6);
     frame[35] = (uint8_t)connection_event_counter;
     frame[36] = (uint8_t)(connection_event_counter >> 8);
     return 1;

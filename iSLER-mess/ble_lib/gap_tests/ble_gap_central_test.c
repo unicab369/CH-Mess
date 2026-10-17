@@ -1445,8 +1445,8 @@ static void test_pawr_connection_accept(void) {
     gap_scanner.active = 0;
     sync->used = sync->established = 1;
     sync->handle = 1;
-    sync->address_type = 0;
-    memcpy(sync->address, advertiser, sizeof(advertiser));
+    sync->peer.type = 0;
+    memcpy(sync->peer.address, advertiser, sizeof(advertiser));
     sync->sid = 4;
     sync->pawr.has_timing = 1;
     sync->pawr.subevents = 2;
@@ -1665,7 +1665,7 @@ static void test_periodic_advertising_sync(void) {
     gap_scan_stop();
     memset(gap_syncs, 0, sizeof(gap_syncs));
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
-    int handle = gap_periodic_sync_start(0, advertiser, 6, 1000);
+    int handle = gap_sync_start(0, advertiser, 6, 1000);
     assert(handle == 1 && gap_scanner.scanning);
     assert(!gap_periodic_sync_event_poll(&event));
     gap_hw_scan_poll();
@@ -1773,7 +1773,7 @@ static void test_periodic_advertising_sync(void) {
            event.handle == handle && !gap_syncs[0].used);
     assert(!gap_scanner.scanning);
 
-    int pending = gap_periodic_sync_start(0, advertiser, 7, 1000);
+    int pending = gap_sync_start(0, advertiser, 7, 1000);
     assert(pending == 1 && gap_periodic_sync_stop((uint8_t)pending, 0));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_CANCELLED &&
@@ -1782,7 +1782,7 @@ static void test_periodic_advertising_sync(void) {
 
     now_ms = 1900;
     fake_radio_ticks = 2000000;
-    int missed_handle = gap_periodic_sync_start(0, advertiser, 7, 1000);
+    int missed_handle = gap_sync_start(0, advertiser, 7, 1000);
     assert(missed_handle == 1);
     gap_hw_scan_poll();
     sync_info_pdu[11] = 0x70; // Same SyncInfo, now SID 7.
@@ -2907,7 +2907,7 @@ static void test_periodic_sync_transfer_receive(void) {
     gap_periodic_sync_event event;
     now_ms = 3000;
     fake_radio_ticks_enabled = 0;
-    assert(gap_periodic_sync_enable(1, 1000));
+    assert(gap_past_enable(1, 1000));
     start_test_central_link();
     conn->procedures.data_length.rx_octets = 251;
 
@@ -2946,7 +2946,7 @@ static void test_periodic_sync_transfer_receive(void) {
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].widening_ppm == 1500 &&
            gap_syncs[0].window_active &&
-           !memcmp(gap_syncs[0].address, advertiser, 6));
+           !memcmp(gap_syncs[0].peer.address, advertiser, 6));
 
     uint64_t first_event = gap_syncs[0].next_event_ticks;
     assert(gap_periodic_sync_receive(0, first_periodic_event,
@@ -3000,7 +3000,7 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_conn_slot_active(gap_conn_slot) && !gap_syncs[0].used);
 
     // An accepted transfer that never receives its first PA event times out.
-    assert(gap_periodic_sync_enable(1, 100));
+    assert(gap_past_enable(1, 100));
     memcpy(rx_frame, valid_transfer, sizeof(valid_transfer));
     rx_frame[0] = 3 | (conn->link.expected_rx_sn << 3) |
         ((conn->link.tx_sn ^ 1) << 2);
@@ -3018,7 +3018,7 @@ static void test_periodic_sync_transfer_receive(void) {
            gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST);
     gap_conn_end();
-    assert(gap_periodic_sync_enable(0, 0));
+    assert(gap_past_enable(0, 0));
     fake_radio_ticks_enabled = 0;
 }
 
