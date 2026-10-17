@@ -1307,10 +1307,11 @@ void gap_hw_scan_poll(void) {
 #endif
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
-    if (gap_poll.slot_valid ||
-        (gap_conn_slot_active(gap_conn_slot) &&
-         (gap_conn_ctx[gap_conn_slot].link_state.rx_armed ||
-          gap_conn_ctx[gap_conn_slot].link_state.event_replied))
+    if (gap_poll.slot_valid) return;
+
+    const gap_conn_context *conn = gap_conn_ctx_current();
+    if (gap_conn_slot_active(gap_conn_slot) &&
+        (conn->link_state.rx_armed || conn->link_state.event_replied)
     ) return;
 
     uint8_t reset_scan = gap_scan.applied_generation != gap_scanner.generation;
@@ -1323,9 +1324,7 @@ void gap_hw_scan_poll(void) {
         gap_scan.interval_start_ms = now;
         gap_scan.applied_generation = gap_scanner.generation;
     }
-
 #if GAP_EXT_ADV_SUPPORT
-
     if (reset_scan) {
         gap_ext_scan.ready = 0;
         gap_ext_scan.aux_listening = 0;

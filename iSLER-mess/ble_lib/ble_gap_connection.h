@@ -93,12 +93,6 @@ static gap_conn_buffer gap_conn_buff[GAP_CONNECTION_COUNT];
 #define gap_tx_frame gap_conn_buff[gap_conn_slot].tx
 
 // Application facing
-// Return the read-only context for the currently selected connection slot.
-const gap_conn_context *gap_conn_ctx_current(void) {
-    return &gap_conn_ctx[gap_conn_slot];
-}
-
-// Application facing
 // Read the currently applied connection timing and subrate schedule.
 const gap_conn_schedule *gap_conn_schedule_get(void) {
     return &gap_conn_ctx_current()->schedule;

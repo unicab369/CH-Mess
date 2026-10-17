@@ -423,11 +423,16 @@ typedef struct {
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
-const gap_conn_context *gap_conn_ctx_current(void);
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
+
+// Application facing
+// Return the read-only context for the currently selected connection slot.
+const gap_conn_context *gap_conn_ctx_current(void) {
+    return &gap_conn_ctx[gap_conn_slot];
+}
 
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
