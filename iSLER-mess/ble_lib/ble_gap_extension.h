@@ -1572,6 +1572,46 @@ static void gap_ext_aux_ptr_write_phy(
     field[2] = (uint8_t)(((offset_units >> 8) & 0x1f) | (aux_phy << 6));
 }
 
+static int gap_ext_chain_send(
+    uint8_t *frame, const uint8_t *data, uint16_t data_offset,
+    uint16_t remaining, uint16_t adi, uint8_t address_type,
+    uint8_t phy, uint64_t next_start
+) {
+    uint8_t channel = 1;
+
+    while (remaining) {
+        uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+        uint8_t ext_len = has_chain ? 6 : 3;
+
+        frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
+        frame[1] = (uint8_t)(1 + ext_len + chunk);
+        frame[2] = ext_len;
+        frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
+        frame[4] = (uint8_t)adi;
+        frame[5] = (uint8_t)(adi >> 8);
+
+        // frame[1] changes with the chunk size, so calculate this PDU's offset here.
+        if (has_chain)
+            gap_ext_aux_ptr_write_phy(frame + 6, (channel + 1) % 37,
+                                    gap_ext_next_offset_phy(frame[1], phy), phy);
+        memcpy(frame + 1 + ext_len + 2, data + data_offset, chunk);
+        data_offset += chunk;
+        remaining -= chunk;
+
+        while (GAP_HW_TICKS() < next_start) {}
+        uint64_t pdu_start = GAP_HW_TICKS();
+        if (!GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), channel, phy))
+            return 0;
+        if (!has_chain) return 1;
+
+        channel = (channel + 1) % 37;
+        next_start = pdu_start + HW_TICKS_FROM_US(
+                                    gap_ext_next_offset_phy(frame[1], phy));
+    }
+    return 1;
+}
+
 static int gap_periodic_tx(
     uint8_t *frame, uint8_t length,
     const gap_ext_adv_set *set, uint8_t channel,
@@ -1808,41 +1848,8 @@ static int gap_hw_transmit_extended_advertising(
         uint64_t next_start = gap_ext_adv_scan.response_ticks +
             HW_TICKS_FROM_US(gap_ext_next_offset_phy(frame[1],
                                                            set->aux_phy));
-        uint8_t channel = 1;
-        while (remaining) {
-            has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-            uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
-                remaining;
-            ext_len = has_chain ? 6 : 3;
-            frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
-            frame[1] = (uint8_t)(1 + ext_len + chunk);
-            frame[2] = ext_len;
-            frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
-            frame[4] = (uint8_t)adi;
-            frame[5] = (uint8_t)(adi >> 8);
-            if (has_chain)
-                gap_ext_aux_ptr_write_phy(frame + 6,
-                    (channel + 1) % 37,
-                    gap_ext_next_offset_phy(frame[1], set->aux_phy),
-                    set->aux_phy);
-            memcpy(frame + 1 + ext_len + 2,
-                   set->data + data_offset, chunk);
-            data_offset += chunk;
-            remaining -= chunk;
-            while (GAP_HW_TICKS() < next_start) {}
-            uint64_t pdu_start = GAP_HW_TICKS();
-
-            if (!GAP_HW_ADV_TX_PHY(frame,
-                    (uint8_t)(frame[1] + 2), channel, set->aux_phy)
-            ) return 0;
-
-            if (!has_chain) return 1;
-
-            channel = (channel + 1) % 37;
-            next_start = pdu_start + HW_TICKS_FROM_US(
-                gap_ext_next_offset_phy(frame[1], set->aux_phy));
-        }
-        return 1;
+        return gap_ext_chain_send(frame, set->data, data_offset, remaining,
+                                  adi, address_type, set->aux_phy, next_start);
     }
 
     // ADV_EXT_IND carries the ADI and points to the first AUX_ADV_IND at 480 us.
@@ -1971,42 +1978,8 @@ static int gap_hw_transmit_extended_advertising(
     uint64_t next_start = pdu_start + HW_TICKS_FROM_US(
         gap_ext_next_offset_phy(frame[1], set->aux_phy));
 
-    uint8_t channel = 1;
-    while (remaining) {
-        has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
-            remaining;
-        uint8_t ext_len = has_chain ? 6 : 3;
-        frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
-        frame[1] = (uint8_t)(1 + ext_len + chunk);
-        frame[2] = ext_len;
-        frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
-        frame[4] = (uint8_t)adi;
-        frame[5] = (uint8_t)(adi >> 8);
-
-        if (has_chain)
-            gap_ext_aux_ptr_write_phy(frame + 6,
-                (channel + 1) % 37,
-                gap_ext_next_offset_phy(frame[1], set->aux_phy),
-                set->aux_phy);
-        memcpy(frame + 1 + ext_len + 2,
-               set->data + data_offset, chunk);
-        data_offset += chunk;
-        remaining -= chunk;
-        while (GAP_HW_TICKS() < next_start) {}
-        pdu_start = GAP_HW_TICKS();
-
-        if (!GAP_HW_ADV_TX_PHY(frame, (uint8_t)(frame[1] + 2), channel,
-                                   set->aux_phy)
-        ) return 0;
-
-        if (!has_chain) return 1;
-
-        channel = (channel + 1) % 37;
-        next_start = pdu_start + HW_TICKS_FROM_US(
-            gap_ext_next_offset_phy(frame[1], set->aux_phy));
-    }
-    return 1;
+    return gap_ext_chain_send(frame, set->data, data_offset, remaining,
+                              adi, address_type, set->aux_phy, next_start);
 }
 
 // -----------------------------------------------------------------------------
