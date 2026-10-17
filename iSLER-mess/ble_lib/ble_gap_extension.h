@@ -1271,9 +1271,10 @@ static int gap_periodic_sync_receive(
 // PAwR radio response and connection procedures
 // -----------------------------------------------------------------------------
 static uint8_t gap_sync_channel(
-    uint32_t access_address, const uint8_t channel_map[5], uint16_t event_counter
+    const gap_periodic_params *params, uint16_t event_counter
 ) {
-    uint16_t channel_id = (uint16_t)(access_address >> 16) ^ (uint16_t)access_address;
+    uint16_t channel_id = (uint16_t)(params->access_address >> 16) ^
+                          (uint16_t)params->access_address;
     uint16_t prn = event_counter ^ channel_id;
 
     for (uint8_t round = 0; round < 3; round++) {
@@ -1288,17 +1289,17 @@ static uint8_t gap_sync_channel(
     uint16_t prn_e = prn ^ channel_id;
     uint8_t unmapped = (uint8_t)(prn_e % 37);
 
-    if (channel_map[unmapped >> 3] & (1 << (unmapped & 7)))
+    if (params->channel_map[unmapped >> 3] & (1 << (unmapped & 7)))
         return unmapped;
 
     uint8_t used = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (channel_map[channel >> 3] & (1 << (channel & 7)))
+        if (params->channel_map[channel >> 3] & (1 << (channel & 7)))
             used++;
 
     uint8_t remapped = (uint8_t)(((uint32_t)used * prn_e) >> 16);
     for (uint8_t channel = 0; channel < 37; channel++) {
-        if (!(channel_map[channel >> 3] & (1 << (channel & 7))))
+        if (!(params->channel_map[channel >> 3] & (1 << (channel & 7))))
             continue;
 
         if (!remapped--) return channel;
@@ -1416,9 +1417,8 @@ static int gap_pawr_connect_req(
     response[3] = 0x03; // AdvA and TargetA.
     memcpy(response + 4, local_address, 6);
     memcpy(response + 10, request + 2, 6);
-    uint8_t channel = gap_sync_channel(
-        sync->params.access_address, sync->params.channel_map,
-        (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
+    uint8_t channel = gap_sync_channel(&sync->params,
+                            (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
 
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
     GAP_HW_TX_CLEAR_DONE();
@@ -1605,9 +1605,8 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
              subevent++) {
             uint64_t subevent_start = event_start + HW_TICKS_FROM_US(
                 (uint32_t)subevent * subevent_interval_us);
-            uint8_t channel = gap_sync_channel(
-                set->periodic.params.access_address, set->periodic.params.channel_map,
-                (uint16_t)(set->periodic.event_counter ^ subevent));
+            uint8_t channel = gap_sync_channel(&set->periodic.params,
+                            (uint16_t)(set->periodic.event_counter ^ subevent));
             if (set->pawr_connect.pending &&
                 subevent == set->pawr_connect.subevent
             ) {
@@ -1683,8 +1682,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len, offset = 0;
-    uint8_t channel = gap_sync_channel(set->periodic.params.access_address,
-        set->periodic.params.channel_map, set->periodic.event_counter);
+    uint8_t channel = gap_sync_channel(&set->periodic.params, set->periodic.event_counter);
     uint64_t next_start = GAP_HW_TICKS();
     while (remaining || offset == 0) {
         uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
@@ -2076,9 +2074,7 @@ static void gap_ext_scan_process(void) {
                     125;
             uint64_t response_start = packet_start + HW_TICKS_FROM_US(response_delay_us);
             uint8_t response_channel = gap_sync_channel(
-                                        sync->params.access_address, sync->params.channel_map,
-                                        (uint16_t)(sync->last_event_counter ^
-                                        sync->pawr.subevent));
+                &sync->params, (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
             uint8_t may_respond =
                 response_start >= gap_ext_scan.ticks + HW_TICKS_FROM_US(150);
 

@@ -1124,8 +1124,7 @@ static void test_periodic_advertising_transmit(void) {
     assert(captured_extended_count == 4);
     assert(configured_access_address == access_address &&
            captured_extended_channels[2] ==
-               gap_sync_channel(set->periodic_access_address,
-                   set->periodic_channel_map, 0) &&
+               gap_sync_channel(&set->periodic.params, 0) &&
            captured_extended_ticks[2] >= scheduled_event &&
            captured_extended_ticks[2] - scheduled_event <= 5);
     assert(captured_extended_pdu_lengths[2] == 255 &&
@@ -1143,20 +1142,15 @@ static void test_periodic_advertising_transmit(void) {
     fake_radio_ticks = set->periodic_next_event_ticks + 2 * interval_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 6 &&
-           captured_extended_channels[4] == gap_sync_channel(
-               set->periodic_access_address, set->periodic_channel_map, 3) &&
+           captured_extended_channels[4] == gap_sync_channel(&set->periodic.params, 3) &&
            set->periodic_event_counter == 4);
-    uint32_t saved_access_address = set->periodic_access_address;
-    set->periodic_access_address = BLE_ADV_ACCESS_ADDRESS;
-    assert(gap_sync_channel(set->periodic_access_address,
-               set->periodic_channel_map, 0) == 25 &&
-           gap_sync_channel(set->periodic_access_address,
-               set->periodic_channel_map, 1) == 20 &&
-           gap_sync_channel(set->periodic_access_address,
-               set->periodic_channel_map, 2) == 6 &&
-           gap_sync_channel(set->periodic_access_address,
-               set->periodic_channel_map, 3) == 21);
-    set->periodic_access_address = saved_access_address;
+    uint32_t saved_access_address = set->periodic.params.access_address;
+    set->periodic.params.access_address = BLE_ADV_ACCESS_ADDRESS;
+    assert(gap_sync_channel(&set->periodic.params, 0) == 25 &&
+           gap_sync_channel(&set->periodic.params, 1) == 20 &&
+           gap_sync_channel(&set->periodic.params, 2) == 6 &&
+           gap_sync_channel(&set->periodic.params, 3) == 21);
+    set->periodic.params.access_address = saved_access_address;
     uint16_t old_periodic_did = set->periodic_did;
     assert(gap_periodic_adv_update(0, adv_data,
                                                      sizeof(adv_data)) &&
@@ -1251,7 +1245,7 @@ static void test_pawr_advertising_subevents(void) {
         (uint32_t)timing[3] << 8 | (uint32_t)timing[4] << 16 |
         (uint32_t)timing[5] << 24;
     assert(response_access_addr == set->periodic_response_access_address);
-    assert(response_access_addr != set->periodic_access_address);
+    assert(response_access_addr != set->periodic.params.access_address);
     assert(timing[6] == 3 && timing[7] == 6 && timing[8] == 1 &&
            timing[9] == 2);
 
@@ -1270,8 +1264,7 @@ static void test_pawr_advertising_subevents(void) {
         else
             assert(pdu[1] == 4 && captured_extended_pdu_lengths[2 + subevent] == 6);
         assert(captured_extended_channels[2 + subevent] ==
-               gap_sync_channel(set->periodic_access_address,
-                   set->periodic_channel_map, subevent));
+               gap_sync_channel(&set->periodic.params, subevent));
         assert(captured_extended_ticks[2 + subevent] >= expected_start &&
                captured_extended_ticks[2 + subevent] - expected_start <= 5);
     }
@@ -1413,9 +1406,8 @@ static void test_pawr_advertiser_connection(void) {
     assert((request[0] & 0x0f) == 0x05 && request[1] == 34 &&
            memcmp(request + 8, peer_address, 6) == 0 &&
            gap_conn_request_valid(request));
-    assert(configured_access_address == set->periodic_access_address &&
-           configured_radio_channel == gap_sync_channel(
-               set->periodic_access_address, set->periodic_channel_map,
+    assert(configured_access_address == set->periodic.params.access_address &&
+           configured_radio_channel == gap_sync_channel(&set->periodic.params,
                (uint16_t)(connect_event_counter ^ 1u)) &&
            configured_receive_after_tx);
     assert(conn->link.next_ticks ==
@@ -1505,9 +1497,7 @@ static void test_pawr_connection_accept(void) {
            !memcmp(response + 4, local_address, sizeof(local_address)) &&
            !memcmp(response + 10, advertiser, sizeof(advertiser)));
     assert(configured_access_address == sync->params.access_address &&
-           captured_extended_channels[0] == gap_sync_channel(
-               sync->params.access_address, sync->params.channel_map,
-               (uint16_t)(20 ^ 1)) &&
+           captured_extended_channels[0] == gap_sync_channel(&sync->params, (uint16_t)(20 ^ 1)) &&
            captured_extended_ticks[0] >= 8000150 &&
            captured_extended_ticks[0] <= 8000153 &&
            conn->link.initiator_type == 0 && conn->link.responder_type == 0 &&
@@ -1583,8 +1573,7 @@ static void test_pawr_observer_response(void) {
            fake_radio_ticks <= sync->end_ticks);
     gap_hw_scan_poll();
     assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
-           configured_radio_channel == gap_sync_channel(
-               sync->params.access_address, sync->params.channel_map, (uint16_t)(12 ^ 2)));
+           configured_radio_channel == gap_sync_channel(&sync->params, (uint16_t)(12 ^ 2)));
 
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_tick_autoincrement = 1;
@@ -1605,8 +1594,7 @@ static void test_pawr_observer_response(void) {
            !memcmp(captured_extended_pdus[0] + 4, response_data,
                    sizeof(response_data)));
     assert(captured_extended_channels[0] ==
-           gap_sync_channel(sync->params.access_address, sync->params.channel_map,
-                                    (uint16_t)(12 ^ 2)));
+           gap_sync_channel(&sync->params, (uint16_t)(12 ^ 2)));
     assert(captured_extended_ticks[0] >= selected_subevent_start + 1250 &&
            captured_extended_ticks[0] <= selected_subevent_start + 1253);
     assert(sync->pawr.pending && sync->event_counter == 13 &&
@@ -1735,8 +1723,7 @@ static void test_periodic_advertising_sync(void) {
            configured_access_address == 0x12345678 &&
            configured_crc_init == 0x123456 &&
            configured_radio_channel ==
-               gap_sync_channel(0x12345678,
-                   gap_syncs[0].params.channel_map, 5));
+               gap_sync_channel(&gap_syncs[0].params, 5));
 
     fake_radio_ticks = first_event + 152;
     memcpy(rx_frame, sync_ind, sizeof(sync_ind));
