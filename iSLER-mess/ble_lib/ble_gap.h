@@ -303,6 +303,11 @@ enum {
 };
 
 typedef struct {
+    uint16_t interval_125us, factor, latency, continuation, timeout;
+    uint16_t base_event, win_offset, instant;
+} gap_conn_schedule;
+
+typedef struct {
     struct {
         uint8_t rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
@@ -355,10 +360,7 @@ typedef struct {
     uint16_t update_instant, update_win_offset, map_instant;
 
     // Active and pending connection timing and subrate schedules.
-    struct {
-        uint16_t interval_125us, factor, latency, continuation, timeout;
-        uint16_t base_event, win_offset, instant;
-    } schedule, next_schedule;
+    gap_conn_schedule schedule, next_schedule;
     struct {
         uint8_t queued; // GAP_RATE_QUEUED_SET and GAP_RATE_QUEUED_REQUEST bits.
         uint8_t update_pending;

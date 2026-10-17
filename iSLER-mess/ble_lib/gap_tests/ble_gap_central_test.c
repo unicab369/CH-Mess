@@ -3635,10 +3635,10 @@ static void test_connection_subrating(void) {
     receive_test_link_packet(1);
     assert(conn->subrate.factor == 5 && !conn->subrate.transition &&
            gap_subrate_status() == 0);
-    uint16_t factor, base, latency, continuation, timeout;
-    gap_subrate_get(&factor, &base, &latency, &continuation, &timeout);
-    assert(factor == 5 && base < 5 && latency == 1 && continuation == 1 &&
-           timeout == 300);
+    const gap_conn_schedule *schedule = gap_conn_schedule_get();
+    assert(schedule->factor == 5 && schedule->base_event < 5 &&
+           schedule->latency == 1 && schedule->continuation == 1 &&
+           schedule->timeout == 300);
     gap_conn_end();
 
     // A Peripheral requests a range, then applies the Central's indication.
@@ -3872,7 +3872,7 @@ static void test_channel_classification_reporting(void) {
     uint8_t report[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
     report[0] = 0x0d;
     receive_test_control(0x29, report, sizeof(report));
-    assert(gap_peer_channel_classification_get(received));
+    assert(gap_peer_class_get(received));
     assert(memcmp(received, report, sizeof(report)) == 0);
     gap_conn_end();
 
@@ -3880,11 +3880,11 @@ static void test_channel_classification_reporting(void) {
     conn->is_central = 0;
     conn->features.known = 1;
     conn->features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
-    assert(gap_channel_classification_set(classification));
+    assert(gap_channel_class_set(classification));
     uint8_t reserved_value[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
     reserved_value[0] = 2; // Classification value 2 is reserved.
-    assert(!gap_channel_classification_set(reserved_value));
-    assert(!gap_channel_classification_set((uint8_t[10]){0, 0, 0, 0,
+    assert(!gap_channel_class_set(reserved_value));
+    assert(!gap_channel_class_set((uint8_t[10]){0, 0, 0, 0,
         0, 0, 0, 0, 0, 0x04})); // Reserved high bits must be zero.
     const uint8_t enable_reporting[3] = {1, 5, 10};
     receive_test_control(0x28, enable_reporting, sizeof(enable_reporting));
