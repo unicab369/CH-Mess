@@ -78,8 +78,8 @@ static struct {
     GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
     volatile uint8_t rx_event, scan_resp_started;
     volatile uint8_t conn_req_ready;
-    uint8_t connect_request_frame[36];
-    uint64_t connect_request_ticks;
+    uint8_t conn_req_frame[36];
+    uint64_t conn_req_ticks;
 } adv_evt;
 
 typedef struct {
