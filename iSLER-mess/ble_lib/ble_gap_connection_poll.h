@@ -120,8 +120,8 @@ static void gap_conn_send_queued(void) {
 
     if (conn->rate.queued_flags &&
         !conn->features.request_pending &&
-        !conn->features.ext_pending
-        !gap_tx_frame[1] &&
+        !conn->features.ext_pending &&
+        !gap_tx_frame[1]
     ) {
         if (!conn->features.known) {
             gap_send_feature_request();
@@ -1300,7 +1300,7 @@ void gap_hw_scan_poll(void) {
             gap_rx_armed = 0;
         }
 
-        gap_periodic_sync_event_post(i, GAP_PERIODIC_SYNC_LOST);
+        gap_sync_event_post(i, GAP_PERIODIC_SYNC_LOST);
         memset(&gap_syncs[i], 0, sizeof(gap_syncs[i]));
         gap_sync_finish_owned_scan();
     }
@@ -1351,14 +1351,15 @@ void gap_hw_scan_poll(void) {
 
     if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         uint8_t slot = gap_ext_scan.aux_slot;
+        gap_aux_request_context *request = &gap_aux_request[slot];
 
-        if (ticks <= gap_aux_request[slot].end_ticks)
+        if (ticks <= request->start_ticks + request->duration_ticks)
             return;
 
         if (gap_rx_armed) GAP_HW_STOP();
         gap_rx_armed = 0;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
-        gap_aux_request[slot].active = 0;
+        request->active = 0;
         GAP_HW_PACKET_CLEAR();
     }
 
@@ -1571,7 +1572,7 @@ int gap_send_due(
         (len && (!data || pdu_type == ADV_DIRECT_IND)) ||
         (pdu_type > ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND) ||
         (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len) ||
-        len > GAP_ADV_DATA_MAX ||
+        len > GAP_ADV_DATA_MAX
     ) return -1;
 
     uint8_t public_address[6];

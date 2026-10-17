@@ -2,6 +2,31 @@
 #ifndef BLE_GAP_ADVERTISING_H
 #define BLE_GAP_ADVERTISING_H
 
+#if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t has_address;
+    gap_address peer;
+    uint8_t has_adi, sid;
+    uint16_t adi;
+} gap_ext_identity;
+
+typedef struct {
+    uint8_t active;
+    gap_ext_identity identity;
+    uint8_t await_scan_response;
+    uint16_t data_len;
+    int8_t rssi;
+    uint32_t deadline_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_context;
+static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
+static struct {
+    uint8_t report_head, report_count;
+    uint8_t seen_count, seen_next;
+} gap_ext_idx;
+static uint8_t gap_sync_owned_scan;
+#endif
+
 // =============================================================================
 // Advertising data and EAD
 // =============================================================================

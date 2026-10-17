@@ -20,24 +20,6 @@ enum {
     GAP_EXT_ADV_PERIODIC_PDU = 2
 };
 typedef struct {
-    uint8_t has_address;
-    gap_address peer;
-    uint8_t has_adi, sid;
-    uint16_t adi;
-} gap_ext_identity;
-
-typedef struct {
-    uint8_t active;
-    gap_ext_identity identity;
-    uint8_t await_scan_response;
-    uint16_t data_len;
-    int8_t rssi;
-    uint32_t deadline_ms;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_context;
-static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
-
-typedef struct {
     uint8_t used;
     gap_address peer;
     uint8_t has_adi, sid;
@@ -45,11 +27,6 @@ typedef struct {
     uint32_t data_hash;
 } gap_ext_seen_entry;
 static gap_ext_seen_entry gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
-static struct {
-    uint8_t report_head, report_count;
-    uint8_t seen_count, seen_next;
-} gap_ext_idx;
-
 // -----------------------------------------------------------------------------
 // Periodic synchronization state and reports
 // -----------------------------------------------------------------------------
@@ -126,7 +103,6 @@ static struct {
     gap_pawr_report items[GAP_PAWR_RESPONSE_REPORT_COUNT];
     uint8_t head, count;
 } gap_pawr_reports;
-static uint8_t gap_sync_owned_scan;
 static struct {
     uint8_t enabled;
     uint32_t timeout_ms;
@@ -890,7 +866,6 @@ int gap_sync_start(
     uint8_t type, const uint8_t address[6],
     uint8_t sid, uint32_t timeout_ms
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t random_type = type != 0;
 
     if (!address || sid > 15 || timeout_ms < 100 ||
@@ -2800,7 +2775,7 @@ static int gap_ext_send_due(uint32_t now) {
             set->periodic.next_event_ticks += missed * interval;
 
             if (gap_conn_slot_active(gap_conn_slot) && conn->is_central) {
-                uint32_t event_duration_us = gap_periodic_event_duration_us(set->periodic.data_len,
+                uint32_t event_duration_us = gap_periodic_airtime_us(set->periodic.data_len,
                                                    set->aux_phy);
                 if (set->pawr.enabled) {
                     uint32_t subevent_interval_us = (uint32_t)(set->pawr.subevents > 1 ?
