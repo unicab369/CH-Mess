@@ -1271,13 +1271,12 @@ static inline void gap_conn_poll_all(void) {
     gap_conn_slot = selected_slot;
 }
 
-
 void gap_hw_scan_poll(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t now = GET_MILLIS();
     gap_privacy_poll(now);
 
-    if (gap_central.active && gap_central.mode != GAP_CONN_MODE_AUTO &&
+    if (gap_central.active &&
+        gap_central.mode != GAP_CONN_MODE_AUTO &&
         (int32_t)(now - gap_central.deadline_ms) >= 0
     ) {
         gap_central.active = 0;
@@ -1290,12 +1289,12 @@ void gap_hw_scan_poll(void) {
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (!gap_syncs[i].used ||
-            (uint32_t)(now - gap_syncs[i].last_event_ms) <
-                gap_syncs[i].timeout_ms
+            (uint32_t)(now - gap_syncs[i].last_event_ms) < gap_syncs[i].timeout_ms
         ) continue;
 
         if (gap_ext_scan.periodic_listening &&
-            gap_ext_scan.periodic_slot == i) {
+            gap_ext_scan.periodic_slot == i
+        ) {
             GAP_HW_STOP();
             gap_ext_scan.periodic_listening = 0;
             gap_rx_armed = 0;
@@ -1308,9 +1307,10 @@ void gap_hw_scan_poll(void) {
 #endif
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
-
     if (gap_poll.slot_valid ||
-        (gap_conn_slot_active(gap_conn_slot) && (conn->link_state.rx_armed || conn->link_state.event_replied))
+        (gap_conn_slot_active(gap_conn_slot) &&
+         (gap_conn_ctx[gap_conn_slot].link_state.rx_armed ||
+          gap_conn_ctx[gap_conn_slot].link_state.event_replied))
     ) return;
 
     uint8_t reset_scan = gap_scan.applied_generation != gap_scanner.generation;
