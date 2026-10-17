@@ -1569,13 +1569,11 @@ int gap_send_due(
         len = gap_adv.data_len;
     }
 
-    if ((pdu_type != ADV_IND &&
-         pdu_type != ADV_DIRECT_IND &&
-         pdu_type != ADV_NONCONN_IND &&
-         pdu_type != ADV_SCAN_IND) || (!data && len) ||
+    if (
+        (len && (!data || pdu_type == ADV_DIRECT_IND)) ||
+        (pdu_type > ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND) ||
+        (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len) ||
         len > GAP_ADV_DATA_MAX ||
-        (pdu_type == ADV_DIRECT_IND && len) ||
-        (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len)
     ) return -1;
 
     uint8_t public_address[6];
