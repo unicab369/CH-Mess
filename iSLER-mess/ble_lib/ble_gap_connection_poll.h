@@ -1100,38 +1100,37 @@ static void gap_conn_poll(void) {
     // subrated events until the indication is acknowledged.
     uint16_t event = conn->link.event_counter;
 
-    if (!(conn->subrate.force_event ||
-        (conn->rate.update_pending &&
-         (event == conn->next_schedule.instant ||
-          event == (uint16_t)(conn->next_schedule.instant - 1) ||
-          (conn->is_central && conn->link.tx_pending &&
-           (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
-           gap_tx_frame[2] == LL_CONNECTION_RATE_IND) ||
-          (!conn->is_central && conn->rate.ack_waiting &&
-           (uint16_t)(conn->next_schedule.instant - event) < 0x8000))) ||
-        ((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
-         (event == conn->update_instant ||
-          event == (uint16_t)(conn->update_instant - 1))))
-    ) {
-        uint8_t subrated = conn->schedule.factor &&
-            ((int32_t)event - (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0;
-
-        if (conn->is_central && conn->subrate.transition &&
+    if (!conn->subrate.force_event &&
+        !(conn->rate.update_pending &&
+          (event == conn->next_schedule.instant ||
+           event == (uint16_t)(conn->next_schedule.instant - 1) ||
+           (conn->is_central && conn->link.tx_pending &&
+            (gap_tx_frame[0] & 3) == 3 &&
+            gap_tx_frame[1] == 15 &&
+            gap_tx_frame[2] == LL_CONNECTION_RATE_IND) ||
+           (!conn->is_central && conn->rate.ack_waiting &&
+            (uint16_t)(conn->next_schedule.instant - event) < 0x8000))) &&
+        !((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
+          (event == conn->update_instant ||
+           event == (uint16_t)(conn->update_instant - 1))) &&
+        !conn->subrate.continuations &&
+        ((!(conn->schedule.factor &&
+            ((int32_t)event - (int32_t)conn->schedule.base_event) %
+                conn->schedule.factor == 0) &&
+          !(conn->is_central && conn->subrate.transition &&
             conn->next_schedule.factor &&
-            ((int32_t)event - (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0
-        ) subrated = 1;
-
-        if (!conn->subrate.continuations &&
-            (!subrated || (!conn->is_central && conn->subrate.latency_remaining))
-        ) {
-            // Skipping radio work does not skip the connection event counter or
-            // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
-            conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
-            conn->link.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-            gap_conn_event_advance();
-            gap_conn_update_apply(0);
-            return;
-        }
+            ((int32_t)event - (int32_t)conn->next_schedule.base_event) %
+                conn->next_schedule.factor == 0)) ||
+         (!conn->is_central && conn->subrate.latency_remaining)
+        )
+    ) {
+        // Skipping radio work does not skip the connection event counter or
+        // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
+        conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
+        conn->link.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+        gap_conn_event_advance();
+        gap_conn_update_apply(0);
+        return;
     }
 
 #if GAP_EXT_ADV_SUPPORT
