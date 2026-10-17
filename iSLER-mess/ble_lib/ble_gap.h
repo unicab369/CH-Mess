@@ -24,7 +24,6 @@ int8_t GAP_HW_RSSI(void);
 void GAP_HW_INIT(void);
 void GAP_HW_STOP(void);
 int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel);
-uint8_t GAP_HW_ADV_PHY_MASK(void);
 int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel, uint8_t phy);
 void GAP_HW_LINK_CONFIG(
@@ -65,6 +64,16 @@ int GAP_CCM_DECRYPT(
 // Build-time feature and capacity settings.
 #ifndef GAP_EXT_ADV_SUPPORT
 #define GAP_EXT_ADV_SUPPORT 0
+#endif
+
+// Default secondary advertising PHY support for each target family.
+#ifndef GAP_HW_ADV_PHY_MASK
+    #if defined(CH582_CH583) || defined(CH32V208)
+        #define GAP_HW_ADV_PHY_MASK \
+            (GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED)
+    #else
+        #define GAP_HW_ADV_PHY_MASK GAP_PHY_1M
+    #endif
 #endif
 
 enum {
@@ -171,6 +180,7 @@ typedef enum {
 #define GAP_PHY_1M 1
 #define GAP_PHY_2M 2
 #define GAP_PHY_CODED 4
+
 // Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
 #define GAP_LL_FEATURES 0x2f
 #define GAP_LL_FEATURES_SUBRATING 0x20

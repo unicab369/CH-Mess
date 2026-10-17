@@ -102,19 +102,12 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, PHY_1M);
     return tx_done != 0;
 }
-uint8_t GAP_HW_ADV_PHY_MASK(void) {
-#if defined(CH582_CH583) || defined(CH32V208)
-    return GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED;
-#else
-    return GAP_PHY_1M;
-#endif
-}
 int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel,
                       uint8_t phy
 ) {
     uint8_t mode = gap_phy_mode(phy);
-    if (!(GAP_HW_ADV_PHY_MASK() & phy))
+    if (!(GAP_HW_ADV_PHY_MASK & phy))
         return 0;
     gap_link.receive_after_tx = 0;
     iSLERTX(BLE_ADV_ACCESS_ADDRESS, frame, len, channel, mode);

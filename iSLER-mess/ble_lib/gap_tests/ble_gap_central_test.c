@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define GAP_EXT_ADV_SUPPORT 1
+#define GAP_HW_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
 #include "../ble_gap.h"
 #include "../ble_crypto.h"
 #include <openssl/evp.h>
@@ -53,7 +54,7 @@ static uint32_t now_ms;
 static uint64_t fake_radio_ticks;
 static uint8_t fake_radio_ticks_enabled;
 static uint8_t fake_radio_tick_autoincrement;
-static uint8_t radio_phy_mask = 3, radio_adv_phy_mask = 1;
+static uint8_t radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
 static uint8_t configured_tx_phy, configured_rx_phy, configured_adv_phy;
 static uint8_t configured_receive_after_tx;
 static uint32_t configured_access_address;
@@ -341,12 +342,11 @@ int GAP_HW_ADV_TX(uint8_t *frame, uint8_t len, uint8_t channel) {
         fake_radio_ticks += ((uint32_t)len + 8u) * 8u;
     return 1;
 }
-uint8_t GAP_HW_ADV_PHY_MASK(void) { return radio_adv_phy_mask; }
 int GAP_HW_ADV_TX_PHY(
     uint8_t *frame, uint8_t len, uint8_t channel,
                           uint8_t phy
 ) {
-    if (!(radio_adv_phy_mask & phy))
+    if (!(GAP_HW_ADV_PHY_MASK & phy))
         return 0;
     configured_adv_phy = phy;
     return GAP_HW_ADV_TX(frame, len, channel);
@@ -957,17 +957,14 @@ static void test_extended_advertising_transmit(void) {
 
 static void test_coded_extended_advertising_transmit(void) {
     static const uint8_t data[] = {2, 0x01, 0x06};
-    uint8_t old_adv_phy_mask = radio_adv_phy_mask;
     now_ms = 540;
     fake_radio_ticks = 1100000;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 1;
     captured_extended_count = 0;
     memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
-    radio_adv_phy_mask = GAP_PHY_1M;
     assert(!gap_ext_adv_start_phy(0, data,
-        sizeof(data), 6, 100, GAP_PHY_CODED));
-    radio_adv_phy_mask = GAP_PHY_1M | GAP_PHY_CODED;
+        sizeof(data), 6, 100, GAP_PHY_2M));
     assert(gap_ext_adv_start_phy(0, data,
         sizeof(data), 6, 100, GAP_PHY_CODED));
     assert(gap_ext_adv[0].aux_phy == GAP_PHY_CODED);
@@ -978,7 +975,6 @@ static void test_coded_extended_advertising_transmit(void) {
            configured_adv_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
     assert(gap_ext_adv_stop(0));
-    radio_adv_phy_mask = old_adv_phy_mask;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
 }
@@ -1817,7 +1813,7 @@ static void test_coded_aux_receive_timing(void) {
     assert(gap_phy_airtime_us(27, GAP_PHY_CODED) == 2704);
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
     memset(gap_syncs, 0, sizeof(gap_syncs));
-    radio_phy_mask = 7;
+    radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED;
     fields.has_aux_ptr = 1;
     fields.aux_channel = 18;
     fields.aux_phy = GAP_PHY_CODED;
@@ -1849,12 +1845,12 @@ static void test_coded_aux_receive_timing(void) {
     fake_radio_ticks_enabled = old_tick_mode;
     fake_radio_tick_autoincrement = old_tick_auto;
     fake_radio_ticks = old_ticks;
-    radio_phy_mask = 3;
+    radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
     gap_aux_request[0].active = 0;
     assert(!gap_ext_aux_schedule(&fields, 27, GAP_PHY_CODED,
                                        100000, -1));
 
-    radio_phy_mask = 7;
+    radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED;
     gap_syncs[0].used = 1;
     assert(gap_periodic_aux_schedule(&fields, 27,
         GAP_PHY_CODED, 200000, 0));
@@ -2108,7 +2104,6 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_accept_list_clear());
     assert(gap_adv_filter_policy(0, 0));
 
-    radio_adv_phy_mask = GAP_PHY_1M | GAP_PHY_CODED;
     captured_extended_count = 0;
     assert(gap_ext_adv_scannable_start_phy(0,
         short_response, sizeof(short_response), 8, 100,
@@ -2121,7 +2116,6 @@ static void test_extended_scannable_advertising(void) {
            configured_rx_phy == GAP_PHY_CODED &&
            ((captured_extended_pdus[0][8] >> 6) & 3) == 2);
     assert(gap_ext_adv_stop(0));
-    radio_adv_phy_mask = GAP_PHY_1M;
     assert(gap_use_public_address());
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks_enabled = 0;
@@ -3563,7 +3557,7 @@ static void test_phy_updates(void) {
 
     // Coded PHY is advertised and negotiated only when the radio hook reports
     // support. The peer's FeatureSet uses bit 11 (octet 1, bit 3).
-    radio_phy_mask = 7;
+    radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED;
     start_test_central_link();
     receive_test_control(0x0e,
         (uint8_t[]){0x2e, 0x08, 0, 0, 0, 0, 0, 0}, 8);
@@ -3602,7 +3596,7 @@ static void test_phy_updates(void) {
            conn->phy.current.rx == GAP_PHY_CODED);
     gap_conn_end();
 
-    radio_phy_mask = 1;
+    radio_phy_mask = GAP_PHY_1M;
     start_test_central_link();
     assert(!gap_phy_set(2, 2));
     receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
@@ -3613,7 +3607,7 @@ static void test_phy_updates(void) {
         (uint8_t[]){GAP_PHY_CODED, GAP_PHY_CODED}, 2);
     assert(gap_tx_frame[2] == 0x07);
     gap_conn_end();
-    radio_phy_mask = 3;
+    radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
 }
 
 static void test_connection_subrating(void) {

@@ -467,10 +467,10 @@ int gap_ext_adv_start_phy(
     if ((gap_conn_slot_mask != 0) || gap_central.active ||
         gap_adv.enabled || set->enabled ||
         set->periodic.enabled || sid > 15 ||
-        !gap_ext_ad_data_valid(data, len) ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
-        !(GAP_HW_ADV_PHY_MASK() & aux_phy) ||
+        !gap_ext_ad_data_valid(data, len) ||
+        !(GAP_HW_ADV_PHY_MASK & aux_phy) ||
         (aux_phy != GAP_PHY_1M && aux_phy != GAP_PHY_2M &&
          aux_phy != GAP_PHY_CODED)
     ) return 0;
