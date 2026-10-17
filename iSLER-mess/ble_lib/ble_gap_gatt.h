@@ -118,7 +118,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
 
         work += result;
 
-        uint16_t max_payload = gap_data_length_get().tx_octets;
+        uint16_t max_payload = gap_conn_ctx_current()->data_length.tx_octets;
 
         if (max_payload > (uint16_t)sizeof(fragment))
             max_payload = (uint16_t)sizeof(fragment);

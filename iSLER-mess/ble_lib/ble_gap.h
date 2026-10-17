@@ -1470,7 +1470,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         int result = 0;
 
         if (connected && peer->tx_len) {
-            uint16_t max_len = gap_data_length_get().tx_octets;
+            uint16_t max_len = gap_conn_ctx_current()->data_length.tx_octets;
 
             if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
                 gap_conn_slot = previous_slot;

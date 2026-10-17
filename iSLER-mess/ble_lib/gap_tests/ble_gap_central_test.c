@@ -3234,7 +3234,7 @@ static void test_data_length(void) {
     uint8_t data[GAP_CONN_DATA_MAX];
     memset(data, 0xa5, sizeof(data));
     start_test_central_link();
-    gap_data_length state = gap_data_length_get();
+    gap_data_length state = conn->data_length;
     assert(state.tx_octets == 27 && state.rx_octets == 27 && state.tx_time == 328);
     assert(!gap_data_length_set(26));
     assert(!gap_data_length_set(capacity + 1));
@@ -3254,8 +3254,8 @@ static void test_data_length(void) {
     receive_test_control(0x14, limits, 8);
     assert(gap_tx_frame[2] == 0x15 && conn->pending.length);
     receive_test_control(0x15, limits, 8);
-    assert(gap_data_length_status() == 0);
-    state = gap_data_length_get();
+    assert(conn->length_status == 0);
+    state = conn->data_length;
     assert(state.tx_octets == capacity && state.rx_octets == capacity);
     assert(gap_send_data(1, data, capacity));
     // A shrink leaves the already queued fragment intact.
@@ -3263,7 +3263,7 @@ static void test_data_length(void) {
     limits[2] = 0x48; limits[3] = 0x01;
     receive_test_control(0x14, limits, 8);
     assert(conn->queue.tx_queued && conn->procedures.tx_len == capacity);
-    assert(gap_data_length_get().tx_octets == 27);
+    assert(conn->data_length.tx_octets == 27);
     receive_test_link_packet(1);
     assert(gap_tx_frame[1] == capacity);
     receive_test_link_packet(1);
@@ -3282,7 +3282,7 @@ static void test_data_length(void) {
     // Time limits constrain data even when the peer allows more octets.
     limits[0] = 251;
     receive_test_control(0x14, limits, 8);
-    assert(gap_data_length_get().tx_time == 328);
+    assert(conn->data_length.tx_time == 328);
     if (capacity > 31) {
         assert(gap_send_data(1, data, 31));
         receive_test_link_packet(1);
@@ -3292,22 +3292,22 @@ static void test_data_length(void) {
     // An unsolicited response must not change the negotiated parameters.
     limits[4] = 27;
     receive_test_control(0x15, limits, 8);
-    assert(gap_data_length_get().rx_octets == capacity);
+    assert(conn->data_length.rx_octets == capacity);
     limits[0] = 26;
     receive_test_control(0x14, limits, 8);
     assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x1e);
     gap_conn_end();
 
     start_test_central_link();
-    assert(gap_data_length_get().tx_octets == 27);
+    assert(conn->data_length.tx_octets == 27);
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
     receive_test_control(0x07, (uint8_t[]){0x14}, 1);
-    assert(!conn->pending.length && gap_data_length_status() == 0x1a);
+    assert(!conn->pending.length && conn->length_status == 0x1a);
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
     receive_test_control(0x11, (uint8_t[]){0x14, 0x1e}, 2);
-    assert(gap_data_length_status() == 0x1e);
+    assert(conn->length_status == 0x1e);
     gap_conn_end();
 
     // Peripheral receives and initiates the same data length procedure.
@@ -3321,27 +3321,27 @@ static void test_data_length(void) {
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x14);
     receive_test_control(0x15, limits, 8);
-    assert(gap_data_length_status() == 0);
+    assert(conn->length_status == 0);
     gap_conn_end();
 
     start_test_central_link();
     conn->features.known = 1; conn->features.peer[0] = 0x0e;
     assert(!gap_data_length_set(capacity));
-    assert(gap_data_length_status() == 0x1a);
+    assert(conn->length_status == 0x1a);
     conn->features.known = 0;
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
     now_ms = conn->procedures.length_started_ms + 40000;
     conn->link.last_rx_ms = now_ms;
     gap_conn_poll();
-    assert(!gap_conn_slot_active(gap_conn_slot) && gap_data_length_status() == 0x22);
+    assert(!gap_conn_slot_active(gap_conn_slot) && conn->length_status == 0x22);
 
     // A smaller hardware capacity overrides a larger configured buffer.
     radio_data_max = 27;
     start_test_central_link();
     assert(!gap_data_length_set(28));
     receive_test_control(0x14, limits, 8);
-    assert(gap_tx_frame[3] == 27 && gap_data_length_get().rx_octets == 27);
+    assert(gap_tx_frame[3] == 27 && conn->data_length.rx_octets == 27);
     gap_conn_end();
     radio_data_max = GAP_CONN_DATA_MAX;
 }

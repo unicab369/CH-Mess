@@ -834,7 +834,8 @@ void mesh_gatt_poll(void) {
         const uint8_t *fragment;
         uint16_t len;
         int ready = gatt_transport_tx_peek(&mesh_gatt.transport,
-            gap_data_length_get().tx_octets, &llid, &fragment, &len);
+            gap_conn_ctx_current()->data_length.tx_octets,
+            &llid, &fragment, &len);
         if (ready < 0) {
             (void)gap_disconnect(0x13);
         }

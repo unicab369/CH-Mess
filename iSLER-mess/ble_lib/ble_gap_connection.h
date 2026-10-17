@@ -1846,7 +1846,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
 // Application facing
 // Return the read-only context for the currently selected connection slot.
-const gap_conn_context *gap_conn_context_get(void) {
+const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
@@ -2208,17 +2208,6 @@ int gap_data_length_set(uint16_t octets) {
     conn->length_status = GAP_CONNECTION_PENDING;
     conn->queue.length = 1;
     return 1;
-}
-
-// Application facing
-gap_data_length gap_data_length_get(void) {
-    return gap_conn_ctx[gap_conn_slot].data_length;
-}
-
-// Application facing
-// 0 means success, 0xff pending, otherwise the remote or timeout BLE error.
-uint8_t gap_data_length_status(void) {
-    return gap_conn_ctx[gap_conn_slot].length_status;
 }
 
 // Application facing
