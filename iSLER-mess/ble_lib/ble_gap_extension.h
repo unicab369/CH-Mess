@@ -493,7 +493,7 @@ int gap_ext_adv_start_phy(
 // Application facing
 // Start an extended scannable set; its advertising data is returned only in
 // AUX_SCAN_RSP, as required for scannable extended advertising.
-int gap_ext_adv_scannable_start_phy(
+int gap_ext_adv_scan_start_phy(
     uint8_t set_id, const uint8_t *scan_response,
     size_t scan_resp_len, uint8_t sid,
     uint16_t interval_ms, uint8_t aux_phy
@@ -512,9 +512,7 @@ int gap_ext_adv_scannable_start_phy(
 
 // Application facing
 int gap_ext_adv_stop(uint8_t set_id) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT)
-        return 0;
-
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
     set->enabled = 0;
 
@@ -542,13 +540,6 @@ typedef struct {
 } gap_ext_report;
 
 static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
-
-static void gap_ext_scan_reset(uint8_t clear_owned_scan) {
-    if (clear_owned_scan)
-        gap_sync_owned_scan = 0;
-    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
-    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
-}
 
 // -----------------------------------------------------------------------------
 // Extended advertising decode and scan report assembly
@@ -595,9 +586,9 @@ static int gap_ext_adv_decode(
     ) return 0;
 
     uint16_t payload_len = pdu[1];
-
     if (payload_len < 1) return 0;
 
+    // Optional fields must stay zero when they are absent from the packet.
     memset(fields, 0, sizeof(*fields));
     fields->mode = pdu[2] >> 6;
     uint8_t ext_len = pdu[2] & 0x3f;
@@ -625,14 +616,12 @@ static int gap_ext_adv_decode(
         if (fields->flags & 0x02) {
             if (header_end - cursor < 6)
                 return 0;
-
             cursor += 6;
         }
 
         if (fields->flags & 0x04) {
             if (header_end - cursor < 1)
                 return 0;
-
             cursor += 1;
         }
 
@@ -649,22 +638,20 @@ static int gap_ext_adv_decode(
         if (fields->flags & 0x10) {
             if (header_end - cursor < 3)
                 return 0;
-
             uint8_t channel = pdu[cursor] & 0x3f;
             uint8_t phy = pdu[cursor + 2] >> 5;
 
             if (channel > 36 || phy > 2)
                 return 0;
-
             fields->has_aux_ptr = 1;
 
             uint16_t offset = (uint16_t)pdu[cursor + 1] |
                                 (uint16_t)(pdu[cursor + 2] & 0x1f) << 8;
             fields->aux_offset_zero = (offset == 0);
             fields->aux_channel = channel;
+            fields->aux_phy = phy;
             fields->aux_ca = (pdu[cursor] >> 6) & 1;
             fields->aux_offset_unit = (pdu[cursor] >> 7) & 1;
-            fields->aux_phy = phy;
             fields->aux_offset_us = (uint32_t)offset * (fields->aux_offset_unit ? 300 : 30);
             cursor += 3;
         }

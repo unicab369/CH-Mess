@@ -578,14 +578,12 @@ static struct {
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];
 
-#if GAP_EXT_ADV_SUPPORT
-static void gap_ext_scan_reset(uint8_t clear_owned_scan);
-#endif
-
 // Application facing
 void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
-    gap_ext_scan_reset(1);
+    gap_sync_owned_scan = 0;
+    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
+    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
 #endif
     gap_scan = (gap_scan_ctx){0};
     gap_central.active = 0;
@@ -607,7 +605,8 @@ int gap_scan_configure(
     ) return 0;
 
 #if GAP_EXT_ADV_SUPPORT
-    gap_ext_scan_reset(0);
+    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
+    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
 #endif
     gap_scanner.interval_ms = interval_ms;
     gap_scanner.window_ms = window_ms;
@@ -622,7 +621,9 @@ int gap_scan_configure(
 // Start scanning; active mode requests scan-response data from advertisers.
 void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
-    gap_ext_scan_reset(1);
+    gap_sync_owned_scan = 0;
+    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
+    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
 #endif
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;

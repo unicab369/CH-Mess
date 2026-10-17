@@ -2045,7 +2045,7 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_adv_filter_policy(0, 0));
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_ALL, 0));
     gap_scan_start(0);
-    assert(gap_ext_adv_scannable_start_phy(0, data,
+    assert(gap_ext_adv_scan_start_phy(0, data,
         sizeof(data), 6, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -2094,7 +2094,7 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_accept_list_add(allowed_peer, 0));
     assert(gap_adv_filter_policy(1, 0));
     captured_extended_count = 0;
-    assert(gap_ext_adv_scannable_start_phy(0,
+    assert(gap_ext_adv_scan_start_phy(0,
         short_response, sizeof(short_response), 7, 100, GAP_PHY_1M));
     force_aux_scan_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -2105,7 +2105,7 @@ static void test_extended_scannable_advertising(void) {
     assert(gap_adv_filter_policy(0, 0));
 
     captured_extended_count = 0;
-    assert(gap_ext_adv_scannable_start_phy(0,
+    assert(gap_ext_adv_scan_start_phy(0,
         short_response, sizeof(short_response), 8, 100,
         GAP_PHY_CODED));
     force_aux_scan_request = 1;
