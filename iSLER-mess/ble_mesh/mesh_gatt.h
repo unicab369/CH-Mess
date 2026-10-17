@@ -783,7 +783,7 @@ void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized())
         return;
     mesh_gatt_gap_policy_update();
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     uint8_t connected = gap_conn_slot_active(gap_conn_slot) &&
         (conn->is_central || !conn->link.first_event);
     gatt_transport_set_connected(&mesh_gatt.transport, connected);

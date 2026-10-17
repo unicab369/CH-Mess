@@ -421,6 +421,7 @@ typedef struct {
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
+const gap_conn_context *gap_conn_ctx_current(void);
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 
 static uint8_t gap_conn_slot;
@@ -1454,7 +1455,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         uint8_t connected = gap_conn_select(handle);
         if (connected) {
-            gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+            const gap_conn_context *conn = gap_conn_ctx_current();
             connected = gap_conn_slot_active(gap_conn_slot) &&
                 (conn->is_central || !conn->link.first_event);
         }

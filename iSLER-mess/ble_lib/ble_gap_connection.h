@@ -87,7 +87,7 @@ static gap_conn_buffer gap_conn_buff[GAP_CONNECTION_COUNT];
 #define gap_tx_frame gap_conn_buff[gap_conn_slot].tx
 
 static uint8_t gap_conn_rate_busy(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     return conn->rate.queued ||
         conn->rate.update_pending || conn->rate.req_pending;
 }
@@ -571,7 +571,7 @@ static uint8_t gap_rate_parameters_valid(
 }
 
 static uint16_t gap_conn_rate_min_interval(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     uint32_t rx_time = conn->data_length.rx_time;
     uint32_t coded_limit = (uint32_t)conn->data_length.rx_octets * 64 + 976;
     uint8_t peripheral_tx_phy = conn->is_central ? conn->phy.current.rx :
@@ -1851,7 +1851,7 @@ const gap_conn_context *gap_conn_ctx_current(void) {
 }
 
 static uint8_t gap_conn_procedure_busy(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
 
     return !gap_conn_slot_active(gap_conn_slot) ||
         gap_sec_contexts[gap_conn_slot].phase ||
@@ -2166,7 +2166,7 @@ int gap_channel_class_set(
 // Return the local classifications supplied by the Host/adapter, or NULL if
 // no valid classification is available. The returned data remains GAP-owned.
 const uint8_t *gap_channel_class_get(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     if (!gap_conn_slot_active(gap_conn_slot) ||
         (!conn->is_central && conn->link.first_event) ||
         !conn->channel.classification_valid
@@ -2180,7 +2180,7 @@ const uint8_t *gap_channel_class_get(void) {
 int gap_peer_class_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     if (!gap_conn_slot_active(gap_conn_slot) || !conn->is_central ||
         conn->link.first_event || !classification ||
         !conn->channel.peer_classification_valid
@@ -2243,14 +2243,14 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // Application facing
 // Return the current rate in each direction; values are GAP_PHY_*.
 void gap_phy_get(uint8_t *tx, uint8_t *rx) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     if (tx) *tx = conn->phy.current.tx;
     if (rx) *rx = conn->phy.current.rx;
 }
 
 // Application facing
 uint8_t gap_phy_status(void) {
-    return gap_conn_ctx[gap_conn_slot].phy.status;
+    return gap_conn_ctx_current()->phy.status;
 }
 
 // Application facing
@@ -2561,7 +2561,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
 
 // Application facing
 int gap_encrypted(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    const gap_conn_context *conn = gap_conn_ctx_current();
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     return gap_conn_slot_active(gap_conn_slot) &&
         (conn->is_central || !conn->link.first_event) && !gap_security->phase &&
@@ -2571,12 +2571,12 @@ int gap_encrypted(void) {
 // Application facing
 // Report achieved security only after encryption completes, never during pairing.
 int gap_authenticated(void) {
-    return gap_encrypted() && gap_conn_ctx[gap_conn_slot].authenticated;
+    return gap_encrypted() && gap_conn_ctx_current()->authenticated;
 }
 
 // Application facing
 uint8_t gap_key_size(void) {
-    return gap_encrypted() ? gap_conn_ctx[gap_conn_slot].enc_key_size : 0;
+    return gap_encrypted() ? gap_conn_ctx_current()->enc_key_size : 0;
 }
 
 // Application facing
