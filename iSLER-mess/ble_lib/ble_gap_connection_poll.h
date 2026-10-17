@@ -17,7 +17,7 @@ static void gap_conn_send_queued(void) {
 
     if (conn->queue.local_map && !gap_tx_frame[1]) {
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
-        conn->channel_map_instant = (uint16_t)(conn->link.event_counter +
+        conn->map_instant = (uint16_t)(conn->link.event_counter +
                                     6 * (conn->schedule.latency + 1) + 1);
         conn->pending.channel_map = 1;
         conn->queue.local_map = 0;
@@ -25,8 +25,8 @@ static void gap_conn_send_queued(void) {
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 8;
         gap_tx_frame[2] = LL_CHANNEL_MAP_IND;
-        memcpy(gap_tx_frame + 3, conn->pending_channel_map, 5);
-        ble_write_u16_le(gap_tx_frame + 8, conn->channel_map_instant);
+        memcpy(gap_tx_frame + 3, conn->next_channel_map, 5);
+        ble_write_u16_le(gap_tx_frame + 8, conn->map_instant);
     }
 
     if (conn->queue.local_params &&

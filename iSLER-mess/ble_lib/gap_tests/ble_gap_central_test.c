@@ -3413,7 +3413,7 @@ static void test_channel_map_updates(void) {
     gap_conn_poll();
     assert(gap_tx_frame[2] == 0x01 && conn->pending.channel_map);
     // Reaching the Instant without an ACK must close the link.
-    conn->link.event_counter = conn->procedures.channel_map_instant;
+    conn->link.event_counter = conn->procedures.map_instant;
     gap_conn_update_apply(0);
     assert(!gap_conn_slot_active(gap_conn_slot) && gap_conn_status() == 0x28);
     assert(!conn->queue.local_map_queued && !conn->pending.channel_map);

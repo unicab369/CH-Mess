@@ -280,7 +280,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     }
 
     if (conn->pending.channel_map &&
-        conn->channel_map_instant == conn->link.event_counter
+        conn->map_instant == conn->link.event_counter
     ) {
         // An unacknowledged map change cannot be retried after its Instant;
         // disconnect rather than let the two devices hop on different maps.
@@ -293,7 +293,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             return;
         }
 
-        memcpy(conn->link.channel_map, conn->pending_channel_map, sizeof(conn->link.channel_map));
+        memcpy(conn->link.channel_map, conn->next_channel_map, sizeof(conn->link.channel_map));
         conn->link.used_count = 0;
 
         for (uint8_t channel = 0; channel < 37; channel++)
@@ -831,9 +831,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             uint8_t used_count = 0;
 
             for (uint8_t channel = 0; channel < 37; channel++)
-                if (frame[3 + channel / 8] &
-                    (1 << (channel % 8))
-                ) used_count++;
+                if (frame[3 + channel / 8] & (1 << (channel % 8)))
+                    used_count++;
 
             uint16_t instant = ble_read_u16_le(frame + 8);
 
@@ -841,8 +840,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 (uint16_t)(instant - conn->link.event_counter) < 0x8000 &&
                 instant != conn->link.event_counter
             ) {
-                memcpy(conn->pending_channel_map, frame + 3, 5);
-                conn->channel_map_instant = instant;
+                memcpy(conn->next_channel_map, frame + 3, 5);
+                conn->map_instant = instant;
                 conn->pending.channel_map = 1;
                 gap_tx_frame[0] = 0x01;
                 break;
@@ -2151,7 +2150,7 @@ int gap_channel_map_set(const uint8_t channels[5]) {
         return 1;
     }
 
-    memcpy(conn->pending_channel_map, channels, 5);
+    memcpy(conn->next_channel_map, channels, 5);
     conn->connection_status = GAP_CONNECTION_PENDING;
     conn->queue.local_map = 1;
     return 1;

@@ -277,6 +277,10 @@ static struct {
 } gap_rx;
 
 typedef struct {
+    uint16_t interval, latency, supervision_timeout;
+} gap_conn_params;
+
+typedef struct {
     struct {
         uint8_t rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
@@ -322,11 +326,11 @@ typedef struct {
     } tx, rx;
 
     // Connection parameter and channel-map procedures.
-    uint8_t pending_channel_map[5];
+    uint8_t next_channel_map[5];
     uint8_t connection_status;
     uint16_t params_min, params_max, params_latency, params_timeout;
     uint32_t params_started_ms;
-    uint16_t update_instant, update_win_offset, channel_map_instant;
+    uint16_t update_instant, update_win_offset, map_instant;
 
     // Active and pending connection timing and subrate schedules.
     struct {
@@ -341,9 +345,7 @@ typedef struct {
         uint16_t continuation, timeout, periodicity;
         uint16_t offsets[4];
     } rate;
-    struct {
-        uint16_t interval, latency, supervision_timeout;
-    } new_params;
+    gap_conn_params new_params;
     struct {
         uint8_t transition, event_activity, event_received, force_event;
         uint16_t continuations, latency_remaining;
