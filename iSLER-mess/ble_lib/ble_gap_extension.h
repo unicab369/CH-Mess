@@ -61,6 +61,7 @@ typedef struct {
     // Synchronization identity and radio parameters.
     uint8_t used, established, handle, sid;
     gap_address peer;
+    // Once established, phy comes from a configured RX PHY or validated PAST.
     uint8_t channel_map[5], sca, phy;
     uint16_t interval;
     uint32_t access_address, crc_init;
@@ -968,9 +969,6 @@ int gap_sync_pawr_respond(
 
     if (!sync->established || !sync->pawr.has_timing ||
         subevent >= sync->pawr.subevents ||
-        (sync->phy != GAP_PHY_1M &&
-         sync->phy != GAP_PHY_2M &&
-         sync->phy != GAP_PHY_CODED) ||
          len > GAP_PAWR_RESPONSE_DATA_MAX ||
          !gap_ext_ad_data_valid(data, len) ||
          !(GAP_HW_PHY_MASK() & sync->phy)
@@ -2532,10 +2530,7 @@ static int gap_past_encode(
 
     const gap_sync_context *sync = &gap_syncs[sync_slot];
 
-    if ((sync->phy != GAP_PHY_1M &&
-        sync->phy != GAP_PHY_2M &&
-        sync->phy != GAP_PHY_CODED) ||
-        !gap_access_address_valid(sync->access_address) || sync->interval < 6
+    if (!gap_access_address_valid(sync->access_address) || sync->interval < 6
     ) return 0;
 
     uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)sync->interval * 1250);
