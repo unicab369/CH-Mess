@@ -1838,22 +1838,6 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         break;
 
 #endif
-    // Recognized but unsupported procedures receive LL_UNKNOWN_RSP.
-    // Optional newer control procedures are not advertised.
-    case LL_MIN_USED_CHANNELS_IND:
-    case LL_CTE_REQ:
-    case LL_CTE_RSP:
-    case LL_CLOCK_ACCURACY_REQ:
-    case LL_CLOCK_ACCURACY_RSP:
-    case LL_CIS_REQ:
-    case LL_CIS_RSP:
-    case LL_CIS_IND:
-    case LL_CIS_TERMINATE_IND:
-    case LL_POWER_CONTROL_REQ:
-    case LL_POWER_CONTROL_RSP:
-    case LL_POWER_CHANGE_IND:
-    case LL_PERIODIC_SYNC_WR_IND:
-        return gap_conn_unknown_resp(frame[2]);
     default:
         return gap_conn_unknown_resp(frame[2]);
     }
