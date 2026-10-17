@@ -209,9 +209,42 @@ static struct {
 } gap_adv;
 
 #if GAP_EXT_ADV_SUPPORT
-static int gap_ext_adv_any_enabled(void);
+// Extended advertising set configuration and scheduler state.
+typedef struct {
+    uint8_t enabled, sid, scannable, aux_phy;
+    struct {
+        uint8_t enabled, sync_info_sent;
+        uint16_t data_len, interval, event_counter, did;
+        uint32_t access_address, response_access, crc_init;
+        uint8_t channel_map[5], sca;
+        uint64_t next_event_ticks;
+        uint8_t data[GAP_EXT_ADV_DATA_MAX];
+    } periodic;
+    struct {
+        uint8_t enabled, data_pending;
+        uint8_t subevents, subevent_int;
+        uint8_t resp_slots;
+        uint8_t resp_delay, resp_spacing;
+    } pawr;
+    struct {
+        uint8_t pending, subevent, peer_type, peer_address[6];
+    } pawr_connect;
+    uint16_t data_len, scan_resp_len, interval_ms, did;
+    uint32_t next_event_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_adv_set;
+static gap_ext_adv_set gap_ext_adv[GAP_EXT_ADV_SET_COUNT];
+
+static inline int gap_ext_adv_active(void) {
+    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
+        if (gap_ext_adv[i].enabled || gap_ext_adv[i].periodic.enabled)
+            return 1;
+
+    return 0;
+}
+
 static void gap_ext_adv_connection_accept(void);
-#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_adv_any_enabled())
+#define GAP_EXT_ADVERTISING_ENABLED (gap_ext_adv_active())
 #else
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
