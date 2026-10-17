@@ -926,6 +926,42 @@ static uint64_t gap_conn_close_ticks(
 }
 
 
+// A skipped subrate event still advances the event counter and channel hop.
+static inline uint8_t gap_conn_can_skip_event(
+    const gap_conn_context *conn, uint16_t event
+) {
+    if (conn->subrate.force_event || conn->subrate.continuations)
+        return 0;
+
+    uint16_t instant_delta = (uint16_t)(conn->next_schedule.instant - event);
+    if (conn->rate.update_pending &&
+        (event == conn->next_schedule.instant ||
+         event == (uint16_t)(conn->next_schedule.instant - 1) ||
+        (conn->is_central &&
+            conn->link.tx_pending &&
+            (gap_tx_frame[0] & 3) == 3 &&
+            gap_tx_frame[1] == 15 &&
+            gap_tx_frame[2] == LL_CONNECTION_RATE_IND
+        ) ||
+        (!conn->is_central && conn->rate.ack_waiting && instant_delta < 0x8000)
+        )
+    ) return 0;
+
+    if ((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
+        (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
+    ) return 0;
+
+    int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
+    int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
+    uint8_t scheduled_event =
+        (conn->schedule.factor && current_offset % conn->schedule.factor == 0) ||
+        (conn->is_central && conn->subrate.transition &&
+         conn->next_schedule.factor &&
+         next_offset % conn->next_schedule.factor == 0);
+
+    return !scheduled_event || (!conn->is_central && conn->subrate.latency_remaining);
+}
+
 static void gap_conn_poll(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -1098,32 +1134,7 @@ static void gap_conn_poll(void) {
 
     // During a Central's subrate update, wake for either the old or new
     // subrated events until the indication is acknowledged.
-    uint16_t event = conn->link.event_counter;
-
-    if (!conn->subrate.force_event &&
-        !(conn->rate.update_pending &&
-          (event == conn->next_schedule.instant ||
-           event == (uint16_t)(conn->next_schedule.instant - 1) ||
-           (conn->is_central && conn->link.tx_pending &&
-            (gap_tx_frame[0] & 3) == 3 &&
-            gap_tx_frame[1] == 15 &&
-            gap_tx_frame[2] == LL_CONNECTION_RATE_IND) ||
-           (!conn->is_central && conn->rate.ack_waiting &&
-            (uint16_t)(conn->next_schedule.instant - event) < 0x8000))) &&
-        !((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
-          (event == conn->update_instant ||
-           event == (uint16_t)(conn->update_instant - 1))) &&
-        !conn->subrate.continuations &&
-        (!((conn->schedule.factor &&
-            ((int32_t)event - (int32_t)conn->schedule.base_event) %
-                conn->schedule.factor == 0) ||
-           (conn->is_central && conn->subrate.transition &&
-            conn->next_schedule.factor &&
-            ((int32_t)event - (int32_t)conn->next_schedule.base_event) %
-                conn->next_schedule.factor == 0)) ||
-         (!conn->is_central && conn->subrate.latency_remaining)
-        )
-    ) {
+    if (gap_conn_can_skip_event(conn, conn->link.event_counter)) {
         // Skipping radio work does not skip the connection event counter or
         // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
         conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
