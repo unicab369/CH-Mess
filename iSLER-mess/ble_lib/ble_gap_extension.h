@@ -207,7 +207,9 @@ static uint16_t gap_ext_did_next(uint16_t previous, uint16_t other) {
     uint8_t random[2];
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
     uint16_t did = ble_read_u16_le(random) & 0x0fff;
-    while (did == previous || did == other) did = (did + 1) & 0x0fff;
+
+    while (did == previous || did == other)
+        did = (did + 1) & 0x0fff;
     return did;
 }
 
@@ -216,21 +218,13 @@ static uint16_t gap_ext_did_next(uint16_t previous, uint16_t other) {
 static uint32_t gap_periodic_airtime_us(size_t data_len, uint8_t phy) {
     uint16_t remaining = (uint16_t)data_len;
     uint32_t duration = 0;
-    uint8_t chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-    uint16_t chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
-    uint8_t ext_len = chained ? 6 : 3;
-    uint16_t pdu_len = 1 + ext_len + chunk;
-    duration += ((gap_phy_airtime_us(pdu_len, phy) + 629) / 30) * 30;
-    remaining -= chunk;
-
-    while (remaining) {
-        chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
-        chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
-        ext_len = chained ? 6 : 3;
-        pdu_len = 1 + ext_len + chunk;
+    do {
+        uint8_t chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        uint16_t chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
+        uint16_t pdu_len = 1 + (chained ? 6 : 3) + chunk;
         duration += ((gap_phy_airtime_us(pdu_len, phy) + 629) / 30) * 30;
         remaining -= chunk;
-    }
+    } while (remaining);
     return duration;
 }
 
