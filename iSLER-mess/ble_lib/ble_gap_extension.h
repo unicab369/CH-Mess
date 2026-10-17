@@ -208,11 +208,9 @@ static uint32_t gap_periodic_airtime_us(size_t data_len, uint8_t phy) {
         uint8_t chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
         uint16_t chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
         uint16_t pdu_len = 1 + (chained ? 6 : 3) + chunk;
-        // Match AuxPtr spacing: 600 us guard plus airtime, rounded up to 30 us units.
-        // ceil((airtime + 600) / 30) * 30
-        //   = ((airtime + 600 + 29) / 30) * 30
-        // Keep * 30: integer division truncates to units of 30 us.
-        duration += ((gap_phy_airtime_us(pdu_len, phy) + 629) / 30) * 30;
+        uint32_t airtime_us = gap_phy_airtime_us(pdu_len, phy);
+        // Keep * 30: integer division truncates the result to 30 us units.
+        duration += ((airtime_us + 629) / 30) * 30;
         remaining -= chunk;
     } while (remaining);
     return duration;
@@ -1551,14 +1549,6 @@ static int gap_pawr_exchange(
 // -----------------------------------------------------------------------------
 // Extended and periodic advertising transmission
 // -----------------------------------------------------------------------------
-// Leave extra spacing beyond T_MAFS so foreground PDU preparation fits.
-static uint32_t gap_ext_next_offset_phy(
-    uint8_t pdu_payload_len, uint8_t phy
-) {
-    uint32_t airtime_us = gap_phy_airtime_us(pdu_payload_len, phy);
-    return ((airtime_us + 600 + 29) / 30) * 30;
-}
-
 // Encode an AuxPtr to the next secondary-channel packet.
 static void gap_ext_aux_ptr_write_phy(
     uint8_t *field, uint8_t channel,
@@ -1594,7 +1584,8 @@ static int gap_ext_chain_send(
         // frame[1] changes with the chunk size, so calculate this PDU's offset here.
         if (has_chain)
             gap_ext_aux_ptr_write_phy(frame + 6, (channel + 1) % 37,
-                                    gap_ext_next_offset_phy(frame[1], phy), phy);
+                ((gap_phy_airtime_us(frame[1], phy) + 629) / 30) * 30,
+                phy);
         memcpy(frame + 1 + ext_len + 2, data + data_offset, chunk);
         data_offset += chunk;
         remaining -= chunk;
@@ -1607,7 +1598,7 @@ static int gap_ext_chain_send(
 
         channel = (channel + 1) % 37;
         next_start = pdu_start + HW_TICKS_FROM_US(
-                                    gap_ext_next_offset_phy(frame[1], phy));
+            ((gap_phy_airtime_us(frame[1], phy) + 629) / 30) * 30);
     }
     return 1;
 }
@@ -1736,7 +1727,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
         if (has_chain)
             gap_ext_aux_ptr_write_phy(frame + 6, (channel + 1) % 37,
-                gap_ext_next_offset_phy(frame[1], set->aux_phy),
+                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30,
                 set->aux_phy);
 
         if (chunk)
@@ -1755,7 +1746,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
         channel = (uint8_t)((channel + 1) % 37);
         next_start = pdu_start + HW_TICKS_FROM_US(
-            gap_ext_next_offset_phy(frame[1], set->aux_phy));
+            ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
     }
     return 1;
 }
@@ -1812,7 +1803,7 @@ static int gap_hw_transmit_extended_advertising(
         frame[11] = (uint8_t)(adi >> 8);
         if (has_chain)
             gap_ext_aux_ptr_write_phy(frame + 12, 1,
-                gap_ext_next_offset_phy(frame[1], set->aux_phy),
+                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30,
                 set->aux_phy);
         if (first_chunk)
             memcpy(frame + (has_chain ? 15 : 12), set->data,
@@ -1846,8 +1837,8 @@ static int gap_hw_transmit_extended_advertising(
         uint16_t data_offset = first_chunk;
         remaining -= first_chunk;
         uint64_t next_start = gap_ext_adv_scan.response_ticks +
-            HW_TICKS_FROM_US(gap_ext_next_offset_phy(frame[1],
-                                                           set->aux_phy));
+            HW_TICKS_FROM_US(
+                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
         return gap_ext_chain_send(frame, set->data, data_offset, remaining,
                                   adi, address_type, set->aux_phy, next_start);
     }
@@ -1889,7 +1880,7 @@ static int gap_hw_transmit_extended_advertising(
 
     if (has_chain) {
         gap_ext_aux_ptr_write_phy(frame + header_offset, 1,
-            gap_ext_next_offset_phy(frame[1], set->aux_phy),
+            ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30,
             set->aux_phy);
         header_offset += 3;
     }
@@ -1976,7 +1967,7 @@ static int gap_hw_transmit_extended_advertising(
     if (!has_chain) return 1;
 
     uint64_t next_start = pdu_start + HW_TICKS_FROM_US(
-        gap_ext_next_offset_phy(frame[1], set->aux_phy));
+        ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
 
     return gap_ext_chain_send(frame, set->data, data_offset, remaining,
                               adi, address_type, set->aux_phy, next_start);
