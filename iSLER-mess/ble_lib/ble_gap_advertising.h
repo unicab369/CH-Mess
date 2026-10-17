@@ -583,7 +583,7 @@ void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
     gap_sync_owned_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
-    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
+    memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
     gap_scan = (gap_scan_ctx){0};
     gap_central.active = 0;
@@ -606,7 +606,7 @@ int gap_scan_configure(
 
 #if GAP_EXT_ADV_SUPPORT
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
-    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
+    memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
     gap_scanner.interval_ms = interval_ms;
     gap_scanner.window_ms = window_ms;
@@ -623,7 +623,7 @@ void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
     gap_sync_owned_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
-    memset(&gap_ext_scan_idx, 0, sizeof(gap_ext_scan_idx));
+    memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;

@@ -41,15 +41,17 @@ typedef struct {
 static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
 
 typedef struct {
-    uint8_t used, address_type, address[6], has_adi, sid;
+    uint8_t used;
+    gap_peer_address peer;
+    uint8_t has_adi, sid;
     uint16_t did, data_len;
     uint32_t data_hash;
-} gap_ext_adv_seen_entry;
-static gap_ext_adv_seen_entry gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
+} gap_ext_seen_entry;
+static gap_ext_seen_entry gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
 static struct {
     uint8_t report_head, report_count;
     uint8_t seen_count, seen_next;
-} gap_ext_scan_idx;
+} gap_ext_idx;
 
 // -----------------------------------------------------------------------------
 // Periodic synchronization state and reports
@@ -763,14 +765,14 @@ static void gap_ext_report_queue(
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Limited discovery requires the Limited flag; general accepts either.
+        uint8_t mask = gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03;
         uint8_t discoverable = 0;
 
         for (uint16_t offset = 0; offset < data_len;) {
             uint8_t field_len = data[offset];
 
             if (field_len >= 2 && data[offset + 1] == 0x01) {
-                discoverable = (data[offset + 2] &
-                    (gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)) != 0;
+                discoverable = (data[offset + 2] & mask) != 0;
                 break;
             }
 
@@ -780,41 +782,40 @@ static void gap_ext_report_queue(
         if (!discoverable) return;
     }
 
-    uint8_t identity_type = identity_slot >= 0 ?
-                gap_identities[identity_slot].peer.type : identity->peer.type;
-    const uint8_t *identity_addr = identity_slot >= 0 ?
-                gap_identities[identity_slot].peer.address :
-                identity->peer.address;
+    const gap_peer_address *peer = &identity->peer;
+    if (identity_slot >= 0)
+        peer = &gap_identities[identity_slot].peer;
+
     uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
 
     for (uint16_t i = 0; i < data_len; i++)
         data_hash = (data_hash ^ data[i]) * GAP_EXT_ADV_HASH_PRIME;
 
     if (gap_scanner.filter_duplicates) {
-        for (uint8_t i = 0; i < gap_ext_scan_idx.seen_count; i++) {
-            gap_ext_adv_seen_entry *seen = &gap_ext_adv_seen[i];
+        for (uint8_t i = 0; i < gap_ext_idx.seen_count; i++) {
+            gap_ext_seen_entry *seen = &gap_ext_adv_seen[i];
 
-            if (seen->used && seen->address_type == identity_type &&
+            if (seen->used &&
                 seen->sid == identity->sid &&
-                !memcmp(seen->address, identity_addr, 6) &&
+                seen->peer.type == peer->type &&
+                !memcmp(seen->peer.address, peer->address, 6) &&
                 seen->has_adi == identity->has_adi &&
                 ((identity->has_adi && seen->did == (identity->adi & 0x0fff)) ||
                  (!identity->has_adi && seen->data_len == data_len &&
                   seen->data_hash == data_hash))
             ) return;
         }
-        uint8_t slot = gap_ext_scan_idx.seen_count;
+        uint8_t slot = gap_ext_idx.seen_count;
 
         if (slot == GAP_EXT_ADV_SEEN_COUNT) {
-            slot = gap_ext_scan_idx.seen_next;
-            gap_ext_scan_idx.seen_next = (gap_ext_scan_idx.seen_next + 1) % GAP_EXT_ADV_SEEN_COUNT;
+            slot = gap_ext_idx.seen_next;
+            gap_ext_idx.seen_next = (gap_ext_idx.seen_next + 1) % GAP_EXT_ADV_SEEN_COUNT;
         }
-        else gap_ext_scan_idx.seen_count++;
+        else gap_ext_idx.seen_count++;
 
-        gap_ext_adv_seen_entry *seen = &gap_ext_adv_seen[slot];
+        gap_ext_seen_entry *seen = &gap_ext_adv_seen[slot];
         seen->used = 1;
-        seen->address_type = identity_type;
-        memcpy(seen->address, identity_addr, 6);
+        seen->peer = *peer;
         seen->has_adi = identity->has_adi;
         seen->sid = identity->sid;
         seen->did = identity->adi & 0x0fff;
@@ -822,20 +823,20 @@ static void gap_ext_report_queue(
         seen->data_hash = data_hash;
     }
 
-    if (gap_ext_scan_idx.report_count == GAP_EXT_ADV_REPORT_COUNT) {
-        gap_ext_scan_idx.report_head = (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
-        gap_ext_scan_idx.report_count--;
+    if (gap_ext_idx.report_count == GAP_EXT_ADV_REPORT_COUNT) {
+        gap_ext_idx.report_head = (gap_ext_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
+        gap_ext_idx.report_count--;
     }
 
-    uint8_t slot = (gap_ext_scan_idx.report_head +
-                    gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
+    uint8_t slot = (gap_ext_idx.report_head +
+                    gap_ext_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
     report->has_address = identity->has_address;
     report->peer = identity->peer;
     report->resolved = identity_slot >= 0;
-    report->identity_type = identity_type;
-    memcpy(report->identity_addr, identity_addr, 6);
+    report->identity_type = peer->type;
+    memcpy(report->identity_addr, peer->address, 6);
     report->has_adi = identity->has_adi;
     report->sid = identity->sid;
     report->did = identity->adi & 0x0fff;
@@ -844,18 +845,18 @@ static void gap_ext_report_queue(
 
     if (data_len)
         memcpy(report->data, data, data_len);
-    gap_ext_scan_idx.report_count++;
+    gap_ext_idx.report_count++;
 }
 
 // Application facing
 // Return one complete reassembled extended advertising report.
 int gap_ext_scan_poll(gap_ext_report *report) {
-    if (!report || !gap_ext_scan_idx.report_count)
+    if (!report || !gap_ext_idx.report_count)
         return 0;
 
-    *report = gap_ext_adv_reports[gap_ext_scan_idx.report_head];
-    gap_ext_scan_idx.report_head = (gap_ext_scan_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
-    gap_ext_scan_idx.report_count--;
+    *report = gap_ext_adv_reports[gap_ext_idx.report_head];
+    gap_ext_idx.report_head = (gap_ext_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
+    gap_ext_idx.report_count--;
     return 1;
 }
 
