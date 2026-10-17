@@ -1333,22 +1333,23 @@ static void gap_pawr_report_push(
             gap_ext_fields fields;
 
             if (set_id < GAP_EXT_ADV_SET_COUNT &&
-                gap_ext_adv_decode(pdu, gap_ext_pawr.response.len, &fields) &&
-                fields.mode == 0 && !fields.has_aux_ptr &&
+                fields.mode == 0 &&
+                !fields.has_aux_ptr &&
                 !fields.sync.has_info &&
                 fields.payload.len <= GAP_PAWR_RESPONSE_DATA_MAX &&
+                gap_ext_adv_decode(pdu, gap_ext_pawr.response.len, &fields) &&
                 gap_ext_ad_data_valid(fields.payload.data, fields.payload.len)
             ) {
                 if (gap_pawr_reports.count == GAP_PAWR_RESPONSE_REPORT_COUNT) {
                     gap_pawr_reports.head = (gap_pawr_reports.head + 1) %
-                        GAP_PAWR_RESPONSE_REPORT_COUNT;
+                                            GAP_PAWR_RESPONSE_REPORT_COUNT;
                     gap_pawr_reports.count--;
                 }
 
-                uint8_t tail = (gap_pawr_reports.head +
-                    gap_pawr_reports.count) %
-                    GAP_PAWR_RESPONSE_REPORT_COUNT;
+                uint8_t tail = (gap_pawr_reports.head + gap_pawr_reports.count) %
+                                GAP_PAWR_RESPONSE_REPORT_COUNT;
                 gap_pawr_report *report = &gap_pawr_reports.items[tail];
+
                 memset(report, 0, sizeof(*report));
                 report->set_id = set_id;
                 report->sid = gap_ext_adv[set_id].sid;
@@ -1359,11 +1360,11 @@ static void gap_pawr_report_push(
                 report->peer = fields.identity.peer;
                 report->data_len = fields.payload.len;
                 report->rssi = gap_ext_pawr.response.rssi;
+
                 if (fields.payload.len)
                     memcpy(report->data, fields.payload.data, fields.payload.len);
                 gap_pawr_reports.count++;
             }
-
             break;
         }
     }
@@ -1378,7 +1379,8 @@ static int gap_pawr_connect_req(
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
+        gap_central.active ||
+        gap_conn_slot_active(gap_conn_slot) ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request)
     ) return 0;
@@ -1400,26 +1402,27 @@ static int gap_pawr_connect_req(
     uint8_t local_address[6], local_type;
     gap_local_addr_select(peer_slot, local_address, &local_type);
 
-    if (responder_type != local_type || memcmp(request + 8, local_address, 6) != 0)
-        return 0;
+    if (responder_type != local_type ||
+        memcmp(request + 8, local_address, 6) != 0
+    ) return 0;
 
     // AUX_CONNECT_RSP carries the synchronized device's AdvA and the
     // advertiser's TargetA. Both PDUs use the periodic train's access address.
-    uint8_t *response = gap_ext_adv_frame;
-    response[0] = ADV_EXT_IND | (local_type << 6) |
-                  (initiator_type << 7);
-    response[1] = 14;
-    response[2] = 13; // AdvMode=non-connectable, ExtHdrLen=13.
-    response[3] = 0x03; // AdvA and TargetA.
-    memcpy(response + 4, local_address, 6);
-    memcpy(response + 10, request + 2, 6);
+    gap_ext_adv_frame[0] = ADV_EXT_IND | (local_type << 6) | (initiator_type << 7);
+    gap_ext_adv_frame[1] = 14;
+    gap_ext_adv_frame[2] = 13; // AdvMode=non-connectable, ExtHdrLen=13.
+    gap_ext_adv_frame[3] = 0x03; // AdvA and TargetA.
+    memcpy(gap_ext_adv_frame + 4, local_address, 6);
+    memcpy(gap_ext_adv_frame + 10, request + 2, 6);
+
     uint8_t channel = gap_sync_channel(&sync->params,
                             (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
-
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
+
     GAP_HW_TX_CLEAR_DONE();
     GAP_HW_CRC_INIT(sync->params.crc_init);
-    GAP_HW_LINK_CONFIG(sync->params.access_address, channel, response, 0, sync->phy, sync->phy);
+    GAP_HW_LINK_CONFIG(sync->params.access_address, channel, gap_ext_adv_frame,
+                       0, sync->phy, sync->phy);
 
     if (GAP_HW_TICKS() >= response_start)
         return 0;
