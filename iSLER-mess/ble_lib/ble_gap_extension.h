@@ -2582,29 +2582,22 @@ static int gap_past_encode(
     frame[0] = 3;
     frame[1] = 35;
     frame[2] = 0x1c; // LL_PERIODIC_SYNC_IND.
-    frame[3] = (uint8_t)id;
-    frame[4] = (uint8_t)(id >> 8);
-    frame[5] = (uint8_t)offset_base;
-    frame[6] = (uint8_t)((offset_base >> 8) | (offset_unit << 5) | (offset_adjust << 6));
-    frame[7] = (uint8_t)sync->interval;
-    frame[8] = (uint8_t)(sync->interval >> 8);
+    ble_write_u16_le(frame + 3, id);
+    ble_write_u16_le(frame + 5, offset_base);
+    frame[6] |= (uint8_t)((offset_unit << 5) | (offset_adjust << 6));
+    ble_write_u16_le(frame + 7, sync->interval);
     memcpy(frame + 9, sync->channel_map, 5);
     ble_write_u32_le(frame + 14, sync->access_address);
-    frame[18] = (uint8_t)sync->crc_init;
-    frame[19] = (uint8_t)(sync->crc_init >> 8);
+    ble_write_u16_le(frame + 18, (uint16_t)sync->crc_init);
     frame[20] = (uint8_t)(sync->crc_init >> 16);
-    frame[21] = (uint8_t)pa_event_counter;
-    frame[22] = (uint8_t)(pa_event_counter >> 8);
-    frame[23] = (uint8_t)connection_event_counter;
-    frame[24] = (uint8_t)(connection_event_counter >> 8);
-    frame[25] = (uint8_t)sync->last_event_counter;
-    frame[26] = (uint8_t)(sync->last_event_counter >> 8);
+    ble_write_u16_le(frame + 21, pa_event_counter);
+    ble_write_u16_le(frame + 23, connection_event_counter);
+    ble_write_u16_le(frame + 25, sync->last_event_counter);
     frame[27] = (uint8_t)((sync->sid & 0x0f) |
                 ((sync->peer.type & 1) << 4)); // Local SCA code 0: <= 500 ppm.
     frame[28] = sync->phy;
     memcpy(frame + 29, sync->peer.address, 6);
-    frame[35] = (uint8_t)connection_event_counter;
-    frame[36] = (uint8_t)(connection_event_counter >> 8);
+    ble_write_u16_le(frame + 35, connection_event_counter);
     return 1;
 }
 
