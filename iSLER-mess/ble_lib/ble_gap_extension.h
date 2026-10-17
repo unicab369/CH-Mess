@@ -171,12 +171,18 @@ static struct {
 // Extended scan and periodic radio state
 // -----------------------------------------------------------------------------
 // Extended scan state
+enum {
+    GAP_EXT_SCAN_NONE,
+    GAP_EXT_SCAN_AUX,
+    GAP_EXT_SCAN_PERIODIC
+};
+
 static struct {
     uint8_t frame[2 + 255];
     volatile uint8_t ready, kind;
     volatile int8_t rssi;
     uint64_t ticks;
-    volatile uint8_t aux_listening, periodic_listening;
+    volatile uint8_t listen_state;
     uint8_t aux_slot, aux_rx_phy, periodic_slot, periodic_rx_phy;
 } gap_ext_scan;
 
@@ -2141,8 +2147,7 @@ static void gap_ext_scan_process(void) {
     if (periodic && slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
         gap_syncs[slot].window_active = 0;
 
-    gap_ext_scan.aux_listening = 0;
-    gap_ext_scan.periodic_listening = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
     GAP_HW_PACKET_CLEAR();
 
@@ -2733,24 +2738,24 @@ static void gap_sync_window_missed(uint8_t slot) {
 // -----------------------------------------------------------------------------
 // Stop a lower-priority scan before the connection poll configures its channel.
 static void gap_connection_take_radio(void) {
-    if (!gap_ext_scan.periodic_listening && !gap_ext_scan.aux_listening)
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE)
         return;
 
     if (gap_rx_armed) GAP_HW_STOP();
     gap_rx_armed = 0;
 
-    if (gap_ext_scan.periodic_listening) {
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
         uint8_t slot = gap_ext_scan.periodic_slot;
-        gap_ext_scan.periodic_listening = 0;
+        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 
         if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used &&
             gap_syncs[slot].window_active
         ) gap_sync_window_missed(slot);
     }
 
-    if (gap_ext_scan.aux_listening) {
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         uint8_t slot = gap_ext_scan.aux_slot;
-        gap_ext_scan.aux_listening = 0;
+        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 
         if (slot < GAP_EXT_ADV_CONTEXT_COUNT)
             gap_aux_request[slot].active = 0;

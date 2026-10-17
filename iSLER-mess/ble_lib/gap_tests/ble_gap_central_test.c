@@ -800,7 +800,7 @@ static void test_extended_advertising_radio_followup(void) {
            gap_aux_request[slot].end_ticks == 500347);
     fake_radio_ticks = gap_aux_request[slot].start_ticks;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.aux_listening);
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
     assert(configured_access_address == BLE_ADV_ACCESS_ADDRESS);
     assert(configured_radio_channel == 5 && configured_tx_phy == GAP_PHY_1M &&
            configured_rx_phy == GAP_PHY_1M);
@@ -811,7 +811,7 @@ static void test_extended_advertising_radio_followup(void) {
     assert(gap_aux_request[slot].active);
     fake_radio_ticks = gap_aux_request[slot].start_ticks;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.aux_listening);
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
 
     memcpy(rx_frame, chain, sizeof(chain));
     gap_hw_received();
@@ -1541,8 +1541,7 @@ static void test_pawr_observer_response(void) {
     gap_central.active = 0;
     gap_scan.active_pending = 0;
     gap_rx_armed = 0;
-    gap_ext_scan.periodic_listening = 0;
-    gap_ext_scan.aux_listening = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_scan.applied_generation = gap_scanner.generation;
     memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_periodic_reports.head = gap_periodic_reports.count = 0;
@@ -1589,7 +1588,7 @@ static void test_pawr_observer_response(void) {
     assert(fake_radio_ticks >= sync->start_ticks &&
            fake_radio_ticks <= sync->end_ticks);
     gap_hw_scan_poll();
-    assert(gap_ext_scan.periodic_listening &&
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
            configured_radio_channel == gap_periodic_channel_for(
                sync->access_address, sync->channel_map, (uint16_t)(12 ^ 2)));
 
@@ -1738,7 +1737,7 @@ static void test_periodic_advertising_sync(void) {
     uint64_t first_event = gap_syncs[0].next_event_ticks;
     fake_radio_ticks = gap_syncs[0].start_ticks;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.periodic_listening &&
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
            configured_access_address == 0x12345678 &&
            configured_crc_init == 0x123456 &&
            configured_radio_channel ==
@@ -1760,7 +1759,8 @@ static void test_periodic_advertising_sync(void) {
     uint64_t chain_window_start = gap_syncs[0].start_ticks;
     fake_radio_ticks = chain_window_start;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.periodic_listening && configured_radio_channel == 1);
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
+           configured_radio_channel == 1);
     fake_radio_ticks = chain_window_start + 123;
     memcpy(rx_frame, chain_ind, sizeof(chain_ind));
     gap_hw_received();
@@ -1800,7 +1800,7 @@ static void test_periodic_advertising_sync(void) {
         assert(gap_syncs[0].used);
         fake_radio_ticks = gap_syncs[0].start_ticks;
         gap_hw_scan_poll();
-        assert(gap_ext_scan.periodic_listening);
+        assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
         fake_radio_ticks = gap_syncs[0].end_ticks + 1;
         gap_hw_scan_poll();
     }
@@ -1838,13 +1838,14 @@ static void test_coded_aux_receive_timing(void) {
     fake_radio_ticks = gap_aux_request[0].start_ticks;
     gap_scan.applied_generation = gap_scanner.generation;
     gap_scan.active_pending = 0;
-    gap_rx_armed = gap_ext_scan.aux_listening = 0;
-    gap_ext_scan.periodic_listening = 0;
+    gap_rx_armed = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.aux_listening && gap_rx_armed &&
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX && gap_rx_armed &&
            configured_tx_phy == GAP_PHY_CODED &&
            configured_rx_phy == GAP_PHY_CODED);
-    gap_ext_scan.aux_listening = gap_rx_armed = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
+    gap_rx_armed = 0;
     fake_radio_ticks_enabled = old_tick_mode;
     fake_radio_tick_autoincrement = old_tick_auto;
     fake_radio_ticks = old_ticks;
@@ -1924,7 +1925,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     memset(conn, 0, sizeof(*conn));
     memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_rx_armed = gap_scan.active_pending = 0;
-    gap_ext_scan.periodic_listening = gap_ext_scan.aux_listening = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
     gap_scan.applied_generation = gap_scanner.generation;
     gap_conn_slot_set_active(gap_conn_slot, 1);
@@ -1952,11 +1953,11 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_hw_scan_poll();
     fake_radio_ticks = sync->start_ticks;
     gap_hw_scan_poll();
-    assert(gap_ext_scan.periodic_listening);
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
 
     // A connection event preempts that listener and records the missed event.
     gap_connection_take_radio();
-    assert(!gap_ext_scan.periodic_listening && !gap_rx_armed &&
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE && !gap_rx_armed &&
            sync->missed_events == 1 && sync->event_counter == 4);
 
     // A window intersecting the guarded connection event is skipped up front.
@@ -1966,7 +1967,8 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_hw_scan_poll();
     fake_radio_ticks = sync->start_ticks;
     gap_hw_scan_poll();
-    assert(!gap_ext_scan.periodic_listening && sync->missed_events == 2 &&
+    assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE &&
+           sync->missed_events == 2 &&
            sync->event_counter == 5);
 
     gap_conn_slot_set_active(gap_conn_slot, 0);

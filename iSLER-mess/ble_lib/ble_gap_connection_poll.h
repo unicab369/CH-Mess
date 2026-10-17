@@ -615,14 +615,16 @@ void gap_hw_received(void) {
         return;
     }
 
-    if ((gap_scanner.scanning || gap_ext_scan.periodic_listening) &&
+    if ((gap_scanner.scanning ||
+         gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) &&
         !gap_ext_scan.ready &&
         ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND &&
-            gap_ext_scan.periodic_listening && frame[1] == 34))
+            gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
+            frame[1] == 34))
     ) {
-        gap_ext_scan.kind = gap_ext_scan.periodic_listening
+        gap_ext_scan.kind = gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC
                             ? GAP_EXT_ADV_PERIODIC_PDU
-                            : gap_ext_scan.aux_listening
+                            : gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX
                             ? GAP_EXT_ADV_AUXILIARY_PDU
                             : GAP_EXT_ADV_PRIMARY_PDU;
 
@@ -636,7 +638,7 @@ void gap_hw_received(void) {
         return;
     }
 
-    if (gap_ext_scan.aux_listening) {
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         gap_conn_slot = previous_slot;
         return;
     }
@@ -870,7 +872,7 @@ void gap_hw_init(void) {
     gap_ext_adv_scan.waiting = 0;
     gap_ext_adv_scan.response_started = 0;
     gap_ext_scan.ready = 0;
-    gap_ext_scan.aux_listening = 0;
+    gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
 #endif
     gap_rx_armed = 0;
@@ -1292,11 +1294,11 @@ void gap_hw_scan_poll(void) {
             (uint32_t)(now - gap_syncs[i].last_event_ms) < gap_syncs[i].timeout_ms
         ) continue;
 
-        if (gap_ext_scan.periodic_listening &&
+        if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
             gap_ext_scan.periodic_slot == i
         ) {
             GAP_HW_STOP();
-            gap_ext_scan.periodic_listening = 0;
+            gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
             gap_rx_armed = 0;
         }
 
@@ -1327,8 +1329,7 @@ void gap_hw_scan_poll(void) {
 #if GAP_EXT_ADV_SUPPORT
     if (reset_scan) {
         gap_ext_scan.ready = 0;
-        gap_ext_scan.aux_listening = 0;
-        gap_ext_scan.periodic_listening = 0;
+        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         memset(gap_aux_request, 0, sizeof(gap_aux_request));
         GAP_HW_PACKET_CLEAR();
     }
@@ -1336,31 +1337,29 @@ void gap_hw_scan_poll(void) {
     gap_ext_scan_process();
     uint64_t ticks = GAP_HW_TICKS();
 
-    if (gap_ext_scan.periodic_listening) {
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) {
         uint8_t slot = gap_ext_scan.periodic_slot;
-
         if (ticks <= gap_syncs[slot].end_ticks)
             return;
 
         if (gap_rx_armed) GAP_HW_STOP();
 
         gap_rx_armed = 0;
-        gap_ext_scan.periodic_listening = 0;
+        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         if (gap_syncs[slot].used && gap_syncs[slot].window_active)
             gap_sync_window_missed(slot);
         GAP_HW_PACKET_CLEAR();
     }
 
-    if (gap_ext_scan.aux_listening) {
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         uint8_t slot = gap_ext_scan.aux_slot;
 
         if (ticks <= gap_aux_request[slot].end_ticks)
             return;
 
         if (gap_rx_armed) GAP_HW_STOP();
-
         gap_rx_armed = 0;
-        gap_ext_scan.aux_listening = 0;
+        gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
         gap_aux_request[slot].active = 0;
         GAP_HW_PACKET_CLEAR();
     }
@@ -1370,8 +1369,8 @@ void gap_hw_scan_poll(void) {
 
         for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
             if (!gap_syncs[i].used ||
-                gap_syncs[i].window_active ||
-                !gap_syncs[i].next_ticks
+                !gap_syncs[i].next_ticks ||
+                gap_syncs[i].window_active
             ) continue;
 
             uint64_t target = gap_syncs[i].next_ticks;
@@ -1440,8 +1439,8 @@ void gap_hw_scan_poll(void) {
 
                     gap_ext_scan.periodic_rx_phy = phy;
                     GAP_HW_LINK_CONFIG(sync->access_address, channel, NULL, 0, phy, phy);
+                    gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
                     GAP_HW_LINK_RX();
-                    gap_ext_scan.periodic_listening = 1;
                     gap_rx_armed = 1;
                     return;
                 }
@@ -1457,7 +1456,7 @@ void gap_hw_scan_poll(void) {
                     GAP_HW_STOP();
                 gap_ext_scan.aux_slot = (uint8_t)slot;
                 gap_ext_scan.aux_rx_phy = gap_aux_request[slot].phy;
-                gap_ext_scan.aux_listening = 1;
+                gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
                 GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS,
                         gap_aux_request[slot].channel, NULL, 0,
