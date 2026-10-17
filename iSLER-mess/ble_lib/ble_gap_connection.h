@@ -1844,16 +1844,9 @@ static uint8_t gap_conn_control(const uint8_t *frame,
     return 0;
 }
 
-// Application facing
-// True after Central initiation or the first received Peripheral data packet.
-int gap_connected(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return gap_conn_slot_active(gap_conn_slot) && (conn->is_central || !conn->link.first_event);
-}
-
 static uint8_t gap_conn_procedure_busy(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    return !gap_connected() ||
+    return !gap_conn_slot_active(gap_conn_slot) ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->link.first_event ||
         conn->pending.procedure_flags ||
@@ -2140,7 +2133,8 @@ int gap_channel_reporting_set(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_connected() || !conn->is_central || conn->link.first_event ||
+    if (!gap_conn_slot_active(gap_conn_slot) || !conn->is_central ||
+        conn->link.first_event ||
         gap_security->phase || enable > 1 || min_spacing_200ms < 5 ||
         min_spacing_200ms > 150 || max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 || conn->channel.report_queued ||
@@ -2164,7 +2158,8 @@ int gap_channel_classification_set(
     const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_connected() || !classification ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) || !classification ||
         !gap_class_valid(classification)
     ) return 0;
 
@@ -2188,7 +2183,10 @@ int gap_channel_classification_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_connected() || !classification || !conn->channel.classification_valid)
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) || !classification ||
+        !conn->channel.classification_valid
+    )
         return 0;
 
     memcpy(classification, conn->channel.local_classification, GAP_CHANNEL_CLASSIFICATION_BYTES);
@@ -2201,7 +2199,8 @@ int gap_peer_channel_classification_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_connected() || !conn->is_central || !classification ||
+    if (!gap_conn_slot_active(gap_conn_slot) || !conn->is_central ||
+        conn->link.first_event || !classification ||
         !conn->channel.peer_classification_valid
     ) return 0;
 
@@ -2291,7 +2290,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_connected() || gap_security->phase || conn->queue.tx_queued ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) ||
+        gap_security->phase || conn->queue.tx_queued ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply || !data || (llid != 1 && llid != 2) || !len ||
         len > conn->data_length.tx_octets ||
@@ -2322,7 +2323,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
 int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_connected() || !reason || conn->link_state.terminate_after_reply ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) || !reason ||
+        conn->link_state.terminate_after_reply ||
         conn->link_state.terminate_queued || conn->link_state.terminate_sent
     ) return 0;
 
@@ -2587,8 +2590,10 @@ int gap_key_reply(const uint8_t ltk[16]) {
 
 // Application facing
 int gap_encrypted(void) {
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    return gap_connected() && !gap_security->phase &&
+    return gap_conn_slot_active(gap_conn_slot) &&
+        (conn->is_central || !conn->link.first_event) && !gap_security->phase &&
         gap_security->tx_enabled && gap_security->rx_enabled;
 }
 

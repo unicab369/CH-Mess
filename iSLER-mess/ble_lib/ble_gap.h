@@ -1450,7 +1450,12 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->initialized = 1;
         }
 
-        uint8_t connected = gap_conn_select(handle) && gap_connected();
+        uint8_t connected = gap_conn_select(handle);
+        if (connected) {
+            gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+            connected = gap_conn_slot_active(gap_conn_slot) &&
+                (conn->is_central || !conn->link.first_event);
+        }
 
         if (connected != peer->connected) {
             if (!connected)

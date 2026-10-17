@@ -874,9 +874,12 @@ int gap_secure_connections_set(uint8_t enabled) {
 int gap_sc_oob_get(gap_oob_data *out) {
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!out || !gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
-        !gap_connected() || gap_encrypted() || smp->pairing.phase ||
+        !gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) ||
+        gap_encrypted() || smp->pairing.phase ||
         gap_sec_contexts[gap_conn_slot].phase
     ) return 0;
 
@@ -941,6 +944,7 @@ uint8_t gap_passkey(uint32_t *value) {
 // Submit the passkey entered by the user. Confirm exchange resumes on polling.
 int gap_passkey_reply(uint32_t value) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
     uint8_t passkey_input_phase = smp->pairing.phase == SMP_PHASE_PASSKEY ||
                             (smp->pairing.secure_connections &&
@@ -948,7 +952,8 @@ int gap_passkey_reply(uint32_t value) {
                             (smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY ||
                             smp->pairing.phase == SMP_PHASE_SC_PASSKEY));
 
-    if (!gap_connected() || !passkey_input_phase ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) || !passkey_input_phase ||
         smp->pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
     ) {
         GAP_CRITICAL_EXIT(irq_state);
@@ -998,9 +1003,12 @@ int gap_numeric_get(uint32_t *value) {
 // Application facing
 int gap_numeric_reply(uint8_t accept) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
-    if (!gap_connected() || smp->pairing.phase != SMP_PHASE_SC_USER ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) ||
+        smp->pairing.phase != SMP_PHASE_SC_USER ||
         smp->secure.numeric_reply || accept > 1
     ) {
         GAP_CRITICAL_EXIT(irq_state);
@@ -1028,7 +1036,8 @@ int gap_pair(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_pair_cfg.enabled || !gap_connected() || smp->pairing.phase ||
+    if (!gap_pair_cfg.enabled || !gap_conn_slot_active(gap_conn_slot) ||
+        (!conn->is_central && conn->link.first_event) || smp->pairing.phase ||
         smp->blocked || gap_sec_contexts[gap_conn_slot].phase ||
         gap_encrypted() || smp->tx_len || smp->bearer.tx_len
     ) return 0;

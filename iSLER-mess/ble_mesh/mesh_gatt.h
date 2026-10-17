@@ -783,7 +783,9 @@ void mesh_gatt_poll(void) {
     if (!mesh_gatt_ensure_initialized())
         return;
     mesh_gatt_gap_policy_update();
-    uint8_t connected = gap_connected() != 0;
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t connected = gap_conn_slot_active(gap_conn_slot) &&
+        (conn->is_central || !conn->link.first_event);
     gatt_transport_set_connected(&mesh_gatt.transport, connected);
     gatt_transport_set_security(&mesh_gatt.transport,
         gap_encrypted(), gap_authenticated(), gap_key_size());

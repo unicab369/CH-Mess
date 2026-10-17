@@ -77,7 +77,13 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
 
         peer->handle = handle;
 
-        if (!gap_conn_select(handle) || !gap_connected())
+        if (!gap_conn_select(handle))
+            continue;
+
+        gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+        if (!gap_conn_slot_active(gap_conn_slot) ||
+            (!conn->is_central && conn->link.first_event)
+        )
             continue;
 
         if (!peer->connected) {
