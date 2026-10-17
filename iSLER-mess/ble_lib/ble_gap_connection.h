@@ -781,13 +781,15 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             uint16_t latency = ble_read_u16_le(frame + 8);
             uint16_t timeout = ble_read_u16_le(frame + 10);
             uint16_t instant = ble_read_u16_le(frame + 12);
-            uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
+            uint32_t interval_125us = (uint32_t)interval * 10;
+            uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                                 conn->schedule.factor : 1;
 
             if (win_size && win_size <= 8 &&
                 ble_timing_ranges_valid(interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
-                (uint32_t)timeout * 80 > 2 * (uint32_t)(latency + 1) * interval * 10 * factor
+                (uint32_t)timeout * 80 >
+                    2ull * (latency + 1) * interval_125us * factor
             ) {
                 if ((uint16_t)(instant - conn->link.event_counter) >= 0x8000) {
                     gap_conn_end();
@@ -899,10 +901,10 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         if (gap_security->phase ||
             gap_conn_rate_busy() ||
             conn->pending.procedure_flags ||
+            conn->pending.phy_request ||
             conn->queue.local_update ||
             conn->queue.local_map ||
             conn->queue.phy_queued ||
-            conn->pending.phy_request ||
             (frame[2] == LL_CONNECTION_PARAM_REQ &&
                 ((conn->pending.params && !conn->pending.params_local) ||
                  (conn->is_central &&
@@ -932,12 +934,12 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                     interval = preferred;
             }
 
-            uint16_t factor = (uint32_t)interval * 10 ==
-                                conn->schedule.interval_125us ?
+            uint32_t interval_125us = (uint32_t)interval * 10;
+            uint16_t factor = (interval_125us == conn->schedule.interval_125us) ?
                                 conn->schedule.factor : 1;
             error = GAP_LL_ERR_UNSUPPORTED_PARAM;
-            if ((uint32_t)timeout * 80 <= 2 *
-                (uint32_t)(latency + 1) * interval * 10 * factor
+            if ((uint32_t)timeout * 80 <= 2ull *
+                (uint32_t)(latency + 1) * interval_125us * factor
             ) return gap_conn_reject_resp(frame[2], error);
 
             conn->new_params.interval = interval;
@@ -1903,14 +1905,15 @@ static uint8_t gap_conn_procedure_busy(void) {
 // Both devices apply it at the Instant carried by LL_CONNECTION_UPDATE_IND.
 int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
+    uint32_t interval_125us = (uint32_t)interval * 10;
+    uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                         conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
         !ble_timing_ranges_valid(
             interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <=
-            2ull * (latency + 1) * interval * 10 * factor
+            2ull * (latency + 1) * interval_125us * factor
     ) return 0;
 
     conn->new_params.interval = interval;
