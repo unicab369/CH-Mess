@@ -690,10 +690,14 @@ void gap_hw_received(void) {
             }
 
             uint8_t target_type = (frame[0] >> 7) & 1;
-            int target_matches = target_type == ((gap_central.request[0] >> 6) & 1) &&
-                                memcmp(frame + 8, gap_central.request + 2, 6) == 0;
+            uint8_t request_type = (gap_central.request[0] >> 6) & 1;
+            int target_matches = 0;
 
-            if (!target_matches && target_type && (frame[13] & 0xc0) == 0x40 &&
+            if (target_type == request_type)
+                target_matches = memcmp(frame + 8, gap_central.request + 2, 6) == 0;
+
+            if ((frame[13] & 0xc0) == 0x40 &&
+                !target_matches && target_type &&
                 gap_privacy.enabled && gap_privacy.resolvable
             ) {
                 const uint8_t *irk = gap_privacy.irk;
