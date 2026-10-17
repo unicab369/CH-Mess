@@ -1164,7 +1164,6 @@ static void gap_conn_poll(void) {
 #endif
 
     // Scanning and advertising share this radio with connection events.
-
     if (gap_rx_armed) {
         GAP_HW_STOP();
         gap_rx_armed = 0;
