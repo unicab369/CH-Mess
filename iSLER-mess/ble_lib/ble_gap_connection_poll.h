@@ -1475,11 +1475,9 @@ void gap_hw_scan_poll(void) {
     }
 
 #endif
-
     if (gap_scan.active_pending) {
         if ((int32_t)(now - gap_scan.active_deadline_ms) < 0)
             return;
-
         gap_scan.active_pending = 0;
     }
 
@@ -1538,15 +1536,14 @@ int gap_send_due(
     gap_privacy_poll(now);
 #if GAP_EXT_ADV_SUPPORT
     int extended_result = gap_ext_send_due(now);
-
+    // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
+    // A handled extended event does not mean the fallback packet was sent.
     if (extended_result == 1) return 0;
-
-    if (extended_result)
-        return extended_result;
+    if (extended_result) return extended_result;
 
 #endif
     int send_gap = gap_adv.enabled != 0 &&
-                   (int32_t)(now - gap_adv.next_event_ms) >= 0;
+                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
 
     if (!send_gap && !fallback_ad)
         return 0;
@@ -1559,7 +1556,9 @@ int gap_send_due(
     const uint8_t *data = fallback_ad;
     const uint8_t *random_address = NULL;
     uint8_t target_type = 0;
+    // Keep the selected PDU type for validation and packet framing.
     uint8_t pdu_type = ADV_NONCONN_IND;
+    // Keep the selected payload length for validation and packet construction.
     uint8_t len = fallback_len;
 
     if (send_gap) {
