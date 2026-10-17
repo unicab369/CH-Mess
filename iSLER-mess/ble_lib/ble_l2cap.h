@@ -167,7 +167,7 @@ static inline int ble_connection_latency_timeout_valid(
     return latency <= 499 && timeout >= 10 && timeout <= 3200;
 }
 
-static inline int ble_connection_timing_ranges_valid(
+static inline int ble_timing_ranges_valid(
     uint16_t interval_min, uint16_t interval_max,
     uint16_t latency, uint16_t timeout
 ) {
@@ -631,7 +631,7 @@ static inline int l2cap_connection_update_request(
     uint16_t latency, uint16_t timeout
 ) {
     if (!conn || conn->pending_id ||
-        !ble_connection_timing_ranges_valid(
+        !ble_timing_ranges_valid(
             interval_min, interval_max, latency, timeout) ||
         (uint32_t)timeout * 8u <= 2u * (uint32_t)(latency + 1u) * interval_max
     ) return 0;
@@ -1325,7 +1325,7 @@ static inline int l2cap_signaling_receive(
                 uint16_t interval_max = ble_read_u16_le(p + 2);
                 uint16_t latency = ble_read_u16_le(p + 4);
                 uint16_t timeout = ble_read_u16_le(p + 6);
-                uint16_t result = ble_connection_timing_ranges_valid(
+                uint16_t result = ble_timing_ranges_valid(
                     interval_min, interval_max, latency, timeout) &&
                     (uint32_t)timeout * 8u >
                         2u * (uint32_t)(latency + 1u) * interval_max &&

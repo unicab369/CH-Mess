@@ -532,15 +532,15 @@ static int gap_access_address_valid(uint32_t address) {
 }
 
 static int gap_conn_request_valid(const uint8_t frame[36]) {
-    uint16_t interval = (uint16_t)frame[24] | (uint16_t)frame[25] << 8;
-    uint16_t latency = (uint16_t)frame[26] | (uint16_t)frame[27] << 8;
-    uint16_t timeout = (uint16_t)frame[28] | (uint16_t)frame[29] << 8;
+    uint16_t interval = ble_read_u16_le(frame + 24);
+    uint16_t latency = ble_read_u16_le(frame + 26);
+    uint16_t timeout = ble_read_u16_le(frame + 28);
     uint8_t win_size = frame[21];
     uint8_t hop = frame[35] & 0x1f;
 
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !win_size || win_size > 8 ||
-        !ble_connection_timing_ranges_valid(
+        !ble_timing_ranges_valid(
             interval, interval, latency, timeout) ||
         win_size >= interval ||
         ((uint16_t)frame[22] | (uint16_t)frame[23] << 8) > interval ||
@@ -607,7 +607,7 @@ static gap_timing_cfg gap_conn_timing = {
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
-    if (!timing || !ble_connection_timing_ranges_valid(
+    if (!timing || !ble_timing_ranges_valid(
             timing->interval, timing->interval, timing->latency,
             timing->supervision_timeout) || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||

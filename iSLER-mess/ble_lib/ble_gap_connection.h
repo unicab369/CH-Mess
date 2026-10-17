@@ -780,17 +780,16 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             !conn->pending.timing_update && !gap_conn_rate_busy()
         ) {
             uint8_t win_size = frame[3];
-            uint16_t win_offset = (uint16_t)frame[4] | (uint16_t)frame[5] << 8;
-            uint16_t interval = (uint16_t)frame[6] | (uint16_t)frame[7] << 8;
-            uint16_t latency = (uint16_t)frame[8] | (uint16_t)frame[9] << 8;
-            uint16_t timeout = (uint16_t)frame[10] | (uint16_t)frame[11] << 8;
-            uint16_t instant = (uint16_t)frame[12] | (uint16_t)frame[13] << 8;
+            uint16_t win_offset = ble_read_u16_le(frame + 4);
+            uint16_t interval = ble_read_u16_le(frame + 6);
+            uint16_t latency = ble_read_u16_le(frame + 8);
+            uint16_t timeout = ble_read_u16_le(frame + 10);
+            uint16_t instant = ble_read_u16_le(frame + 12);
             uint16_t factor = (uint32_t)interval * 10 == conn->schedule.interval_125us ?
                                 conn->schedule.factor : 1;
 
             if (win_size && win_size <= 8 &&
-                ble_connection_timing_ranges_valid(
-                    interval, interval, latency, timeout) &&
+                ble_timing_ranges_valid(interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2 * (uint32_t)(latency + 1) * interval * 10 * factor
             ) {
@@ -836,7 +835,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                     (1 << (channel % 8))
                 ) used_count++;
 
-            uint16_t instant = (uint16_t)frame[8] | (uint16_t)frame[9] << 8;
+            uint16_t instant = ble_read_u16_le(frame + 8);
 
             if (used_count >= 2 && !(frame[7] & 0xe0) &&
                 (uint16_t)(instant - conn->link.event_counter) < 0x8000 &&
@@ -869,7 +868,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
         uint16_t timeout = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
 
-        if (!ble_connection_timing_ranges_valid(
+        if (!ble_timing_ranges_valid(
                 minimum, maximum, latency, timeout) ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
                 2 * (uint32_t)(latency + 1) * maximum * 10
@@ -1460,9 +1459,9 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         if (conn->is_central || frame[1] != 15)
             return gap_conn_unknown_resp(frame[2]);
 
-        uint16_t win_offset = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
+        uint16_t win_offset = ble_read_u16_le(frame + 3);
         uint16_t interval = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
-        uint16_t instant = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
+        uint16_t instant = ble_read_u16_le(frame + 7);
         uint16_t factor = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
         uint16_t latency = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
         uint16_t continuation = (uint16_t)frame[13] | (uint16_t)frame[14] << 8;
@@ -1830,7 +1829,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             break;
         }
 
-        uint16_t instant = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
+        uint16_t instant = ble_read_u16_le(frame + 5);
 
         if ((uint16_t)(instant - conn->link.event_counter) >= 0x8000 ||
             instant == conn->link.event_counter
@@ -1909,7 +1908,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
                         conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
-        !ble_connection_timing_ranges_valid(
+        !ble_timing_ranges_valid(
             interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * interval * 10 * factor
@@ -1937,7 +1936,7 @@ int gap_conn_request(
                     conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() ||
-        !ble_connection_timing_ranges_valid(
+        !ble_timing_ranges_valid(
             minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <=
             2ull * (latency + 1) * maximum * 10 * factor
