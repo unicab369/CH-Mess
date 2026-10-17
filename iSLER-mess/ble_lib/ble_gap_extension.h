@@ -531,7 +531,7 @@ int gap_ext_adv_stop(uint8_t set_id) {
 // -----------------------------------------------------------------------------
 typedef struct {
     gap_ext_address addr;
-    uint8_t resolved, identity_type, identity_address[6];
+    uint8_t resolved, identity_type, identity_addr[6];
     uint8_t has_adi, sid;
     uint16_t did;
     int8_t rssi;
@@ -731,7 +731,8 @@ static int gap_ext_adv_decode(
         cursor = header_end;
     }
 
-    if (fields->pawr.has_timing && (!fields->sync.has_info ||
+    if (fields->pawr.has_timing &&
+        (!fields->sync.has_info ||
         fields->pawr.resp_access_addr == fields->sync.access_address)
     ) return 0;
 
@@ -780,7 +781,7 @@ static void gap_ext_report_queue(
 
     uint8_t identity_type = identity_slot >= 0 ?
                 gap_identities[identity_slot].peer.type : identity->addr.address_type;
-    const uint8_t *identity_address = identity_slot >= 0 ?
+    const uint8_t *identity_addr = identity_slot >= 0 ?
                 gap_identities[identity_slot].peer.address : identity->addr.address;
     uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
 
@@ -793,7 +794,7 @@ static void gap_ext_report_queue(
 
             if (seen->used && seen->address_type == identity_type &&
                 seen->sid == identity->sid &&
-                !memcmp(seen->address, identity_address, 6) &&
+                !memcmp(seen->address, identity_addr, 6) &&
                 seen->has_adi == identity->has_adi &&
                 ((identity->has_adi && seen->did == (identity->adi & 0x0fff)) ||
                  (!identity->has_adi && seen->data_len == data_len &&
@@ -811,7 +812,7 @@ static void gap_ext_report_queue(
         gap_ext_adv_seen_entry *seen = &gap_ext_adv_seen[slot];
         seen->used = 1;
         seen->address_type = identity_type;
-        memcpy(seen->address, identity_address, 6);
+        memcpy(seen->address, identity_addr, 6);
         seen->has_adi = identity->has_adi;
         seen->sid = identity->sid;
         seen->did = identity->adi & 0x0fff;
@@ -831,7 +832,7 @@ static void gap_ext_report_queue(
     report->addr = identity->addr;
     report->resolved = identity_slot >= 0;
     report->identity_type = identity_type;
-    memcpy(report->identity_address, identity_address, 6);
+    memcpy(report->identity_addr, identity_addr, 6);
     report->has_adi = identity->has_adi;
     report->sid = identity->sid;
     report->did = identity->adi & 0x0fff;
