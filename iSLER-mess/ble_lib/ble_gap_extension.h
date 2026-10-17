@@ -1006,8 +1006,9 @@ int gap_sync_pawr_respond(
 // existing response after it is sent once more.
 int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
     int slot = gap_sync_slot(handle);
-    if (slot < 0 || !gap_syncs[slot].established ||
-        !gap_syncs[slot].pawr.has_timing || enabled > 1
+    if (enabled > 1 || slot < 0 ||
+        !gap_syncs[slot].established ||
+        !gap_syncs[slot].pawr.has_timing
     ) return 0;
 
     gap_syncs[slot].pawr.repeat = enabled;
@@ -1017,12 +1018,12 @@ int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
 // Application facing
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
 int gap_sync_pawr_accept(uint8_t handle, uint8_t enabled) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     int slot = gap_sync_slot(handle);
 
-    if (enabled > 1 || slot < 0 ||
-        !gap_syncs[slot].established || !gap_syncs[slot].pawr.has_timing ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+    if (enabled > 1 || slot < 0 || gap_central.active ||
+        !gap_syncs[slot].established ||
+        !gap_syncs[slot].pawr.has_timing ||
+        gap_conn_slot_active(gap_conn_slot)
     ) return 0;
 
     gap_syncs[slot].pawr.connect_accept = enabled;
@@ -1030,7 +1031,7 @@ int gap_sync_pawr_accept(uint8_t handle, uint8_t enabled) {
 }
 
 // Application facing
-int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
+int gap_sync_event_poll(gap_periodic_sync_event *event) {
     if (!event || !gap_sync_events.count) return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
     gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
@@ -1039,7 +1040,7 @@ int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
 }
 
 // Application facing
-int gap_periodic_report_poll(gap_periodic_report *report) {
+int gap_report_poll(gap_periodic_report *report) {
     if (!report || !gap_periodic_reports.count)
         return 0;
 

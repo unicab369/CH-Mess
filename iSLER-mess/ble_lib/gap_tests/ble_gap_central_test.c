@@ -1614,7 +1614,7 @@ static void test_pawr_observer_response(void) {
     assert(sync->pawr.pending && sync->event_counter == 13 &&
            !sync->event_data_active &&
            sync->next_event_ticks == selected_subevent_start + 30000);
-    assert(gap_periodic_report_poll(&report) && report.handle == 1 &&
+    assert(gap_report_poll(&report) && report.handle == 1 &&
            report.event_counter == 12 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
 
@@ -1667,7 +1667,7 @@ static void test_periodic_advertising_sync(void) {
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
     int handle = gap_sync_start(0, advertiser, 6, 1000);
     assert(handle == 1 && gap_scanner.scanning);
-    assert(!gap_periodic_sync_event_poll(&event));
+    assert(!gap_sync_event_poll(&event));
     gap_hw_scan_poll();
 
     sync_info_pdu[0] = 0x07;
@@ -1748,7 +1748,7 @@ static void test_periodic_advertising_sync(void) {
            gap_syncs[0].event_counter == 6 &&
            gap_syncs[0].event_data_active &&
            gap_syncs[0].window_chain);
-    assert(gap_periodic_sync_event_poll(&event) &&
+    assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.handle == handle && event.sid == 6);
 
@@ -1761,21 +1761,21 @@ static void test_periodic_advertising_sync(void) {
     memcpy(rx_frame, chain_ind, sizeof(chain_ind));
     gap_hw_received();
     gap_hw_scan_poll();
-    assert(gap_periodic_report_poll(&report));
+    assert(gap_report_poll(&report));
     assert(report.handle == handle && report.sid == 6 &&
            report.event_counter == 5 && report.did == 2 &&
            report.rssi == -40 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
-    assert(!gap_periodic_report_poll(&report));
+    assert(!gap_report_poll(&report));
     assert(gap_sync_stop((uint8_t)handle, 1));
-    assert(gap_periodic_sync_event_poll(&event) &&
+    assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED &&
            event.handle == handle && !gap_syncs[0].used);
     assert(!gap_scanner.scanning);
 
     int pending = gap_sync_start(0, advertiser, 7, 1000);
     assert(pending == 1 && gap_sync_stop((uint8_t)pending, 0));
-    assert(gap_periodic_sync_event_poll(&event) &&
+    assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_CANCELLED &&
            event.handle == pending);
     assert(!gap_sync_stop((uint8_t)pending, 0));
@@ -1801,7 +1801,7 @@ static void test_periodic_advertising_sync(void) {
         gap_hw_scan_poll();
     }
     assert(!gap_syncs[0].used &&
-           gap_periodic_sync_event_poll(&event) &&
+           gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST &&
            event.handle == missed_handle);
     fake_radio_ticks_enabled = 0;
@@ -2952,7 +2952,7 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_periodic_sync_receive(0, first_periodic_event,
         sizeof(first_periodic_event), GAP_PHY_1M, -40,
         first_event + 152));
-    assert(gap_periodic_sync_event_poll(&event) &&
+    assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.handle == 1 && event.sid == 6);
     assert(!gap_periodic_sync_transfer(1, 0x1234));
@@ -2979,7 +2979,7 @@ static void test_periodic_sync_transfer_receive(void) {
         transferred_fields.sync.access_address == 0x12345678 &&
         transferred_fields.sync.crc_init == 0x123456);
     assert(gap_sync_stop(1, 1));
-    assert(gap_periodic_sync_event_poll(&event) &&
+    assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED);
 
     // Invalid PHY and malformed SyncInfo must not allocate sync state.
@@ -3015,7 +3015,7 @@ static void test_periodic_sync_transfer_receive(void) {
     now_ms += 100;
     gap_hw_scan_poll();
     assert(!gap_syncs[0].used &&
-           gap_periodic_sync_event_poll(&event) &&
+           gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_LOST);
     gap_conn_end();
     assert(gap_past_enable(0, 0));
