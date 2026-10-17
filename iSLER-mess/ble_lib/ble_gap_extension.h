@@ -934,8 +934,9 @@ static void gap_sync_scan_finish(void) {
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
 int gap_sync_stop(uint8_t slot, uint8_t terminate) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used ||
+    if (slot >= GAP_PERIODIC_SYNC_COUNT ||
         terminate > 1 ||
+        !gap_syncs[slot].used ||
         gap_syncs[slot].established != terminate
     ) return 0;
 
@@ -965,7 +966,7 @@ int gap_sync_pawr_respond(
     ) return 0;
 
     uint32_t start_125us = (uint32_t)sync->pawr.resp_delay * 10 +
-                                (uint32_t)response_slot * sync->pawr.resp_spacing;
+                            (uint32_t)response_slot * sync->pawr.resp_spacing;
     uint32_t dur_125us = (sync->pawr.subevents > 1 ?
                                 sync->pawr.subevent_interval : sync->interval) * 10;
     uint32_t pkt_dur_us = gap_phy_airtime_us((uint16_t)len, sync->phy);
@@ -1021,7 +1022,8 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
 
 // Application facing
 int gap_sync_event_poll(gap_periodic_sync_event *event) {
-    if (!event || !gap_sync_events.count) return 0;
+    if (!event || !gap_sync_events.count)
+        return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
     gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.count--;
@@ -1032,7 +1034,6 @@ int gap_sync_event_poll(gap_periodic_sync_event *event) {
 int gap_report_poll(gap_periodic_report *report) {
     if (!report || !gap_periodic_reports.count)
         return 0;
-
     *report = gap_periodic_reports.items[gap_periodic_reports.head];
     gap_periodic_reports.head = (gap_periodic_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_reports.count--;
@@ -1043,7 +1044,6 @@ int gap_report_poll(gap_periodic_report *report) {
 int gap_pawr_report_poll(gap_pawr_report *report) {
     if (!report || !gap_pawr_reports.count)
         return 0;
-
     *report = gap_pawr_reports.items[gap_pawr_reports.head];
     gap_pawr_reports.head = (gap_pawr_reports.head + 1) % GAP_PAWR_RESPONSE_REPORT_COUNT;
     gap_pawr_reports.count--;
@@ -1054,9 +1054,12 @@ static int gap_sync_info_accept(
     const gap_ext_fields *fields,
     uint8_t packet_len, uint8_t packet_phy, uint64_t packet_end_ticks
 ) {
-    if (!fields || !fields->sync.has_info || !fields->identity.has_address ||
-        !fields->identity.has_adi || fields->mode != 0 ||
-        !fields->sync.offset_us || fields->sync.interval < 6 ||
+    if (!fields || fields->mode != 0 ||
+        !fields->identity.has_address ||
+        !fields->identity.has_adi ||
+        !fields->sync.has_info ||
+        !fields->sync.offset_us ||
+        fields->sync.interval < 6 ||
         !gap_access_address_valid(fields->sync.access_address)
     ) return 0;
 
@@ -1069,11 +1072,9 @@ static int gap_sync_info_accept(
     for (uint8_t channel = 0; channel < 37; channel++)
         if (fields->sync.channel_map[channel >> 3] & (1 << (channel & 7)))
             used_channels++;
-
     if (used_channels < 2) return 0;
 
     uint32_t airtime_us = gap_phy_airtime_us(packet_len, packet_phy);
-
     if (fields->sync.offset_us <= airtime_us ||
         packet_end_ticks < HW_TICKS_FROM_US(airtime_us)
     ) return 0;
@@ -1089,7 +1090,8 @@ static int gap_sync_info_accept(
               !memcmp(gap_syncs[i].peer.address, fields->identity.peer.address, 6)) ||
              (identity_slot >= 0 && gap_syncs[i].peer.type ==
                   gap_identities[identity_slot].peer.type &&
-              !memcmp(gap_syncs[i].peer.address, gap_identities[identity_slot].peer.address, 6)))) {
+              !memcmp(gap_syncs[i].peer.address, gap_identities[identity_slot].peer.address, 6)))
+        ) {
             slot = i;
             break;
         }
