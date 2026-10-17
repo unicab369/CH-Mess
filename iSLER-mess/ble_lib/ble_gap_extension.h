@@ -115,7 +115,7 @@ static struct {
 static struct {
     gap_periodic_report items[GAP_PERIODIC_REPORT_COUNT];
     uint8_t head, count;
-} gap_periodic_reports;
+} gap_sync_reports;
 static struct {
     gap_pawr_report items[GAP_PAWR_RESPONSE_REPORT_COUNT];
     uint8_t head, count;
@@ -1045,11 +1045,11 @@ int gap_sync_event_poll(gap_periodic_sync_event *event) {
 
 // Application facing
 int gap_report_poll(gap_periodic_report *report) {
-    if (!report || !gap_periodic_reports.count)
+    if (!report || !gap_sync_reports.count)
         return 0;
-    *report = gap_periodic_reports.items[gap_periodic_reports.head];
-    gap_periodic_reports.head = (gap_periodic_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
-    gap_periodic_reports.count--;
+    *report = gap_sync_reports.items[gap_sync_reports.head];
+    gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
+    gap_sync_reports.count--;
     return 1;
 }
 
@@ -1175,9 +1175,8 @@ static int gap_periodic_sync_receive(
     size_t pdu_len, uint8_t packet_phy, int8_t rssi,
     uint64_t received_ticks
 ) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used
-    ) return 0;
+    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used)
+        return 0;
 
     gap_sync_context *sync = &gap_syncs[slot];
     gap_ext_fields fields;
@@ -1195,9 +1194,8 @@ static int gap_periodic_sync_receive(
             return 0;
 
         uint64_t packet_start = received_ticks - HW_TICKS_FROM_US(airtime_us);
-        uint32_t subevent_offset_us =
-                (uint32_t)sync->pawr.subevent *
-                sync->pawr.timing.subevent_interval * 1250;
+        uint32_t subevent_offset_us = (uint32_t)sync->pawr.subevent *
+                                    sync->pawr.timing.subevent_interval * 1250;
 
         if (!sync->pawr.timing.has_timing)
             subevent_offset_us = 0;
@@ -1210,14 +1208,12 @@ static int gap_periodic_sync_receive(
         // do not add the selection offset to the schedule a second time.
         sync->anchor_ticks = packet_start - subevent_offset_ticks;
         sync->next_ticks = sync->anchor_ticks +
-            HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250 +
-                             subevent_offset_us);
+            HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250 + subevent_offset_us);
 
         sync->last_event_counter = sync->event_counter;
         sync->event_counter++;
         sync->missed_events = 0;
-        sync->widening_ppm = (uint16_t)(gap_periodic_sca_ppm[
-                                        sync->params.sca] + 500);
+        sync->widening_ppm = (uint16_t)(gap_periodic_sca_ppm[sync->params.sca] + 500);
         sync->last_event_ms = GET_MILLIS();
         sync->data_len = 0;
 
@@ -1232,16 +1228,14 @@ static int gap_periodic_sync_receive(
     sync->rssi = rssi;
     sync->phy = packet_phy;
 
-    if (fields.payload.len > GAP_EXT_ADV_DATA_MAX -
-            sync->data_len) {
+    if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - sync->data_len) {
         sync->event_data_active = 0;
         sync->data_len = 0;
         return 0;
     }
 
     if (fields.payload.len) {
-        memcpy(sync->data +
-            sync->data_len, fields.payload.data, fields.payload.len);
+        memcpy(sync->data + sync->data_len, fields.payload.data, fields.payload.len);
         sync->data_len += fields.payload.len;
     }
 
@@ -1252,22 +1246,21 @@ static int gap_periodic_sync_receive(
 
     sync->event_data_active = 0;
 
-    if (!gap_ext_ad_data_valid(sync->data,
-                                sync->data_len)
-    ) {
+    if (!gap_ext_ad_data_valid(sync->data, sync->data_len)) {
         sync->data_len = 0;
         return 0;
     }
 
-    if (gap_periodic_reports.count == GAP_PERIODIC_REPORT_COUNT) {
-        gap_periodic_reports.head = (gap_periodic_reports.head + 1) %
-            GAP_PERIODIC_REPORT_COUNT;
-        gap_periodic_reports.count--;
+    if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
+        gap_sync_reports.head = (gap_sync_reports.head + 1) %
+                                    GAP_PERIODIC_REPORT_COUNT;
+        gap_sync_reports.count--;
     }
 
-    uint8_t tail = (gap_periodic_reports.head + gap_periodic_reports.count) %
+    uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) %
                    GAP_PERIODIC_REPORT_COUNT;
-    gap_periodic_report *report = &gap_periodic_reports.items[tail];
+    gap_periodic_report *report = &gap_sync_reports.items[tail];
+
     report->slot = (uint8_t)slot;
     report->sid = sync->sid;
     report->event_counter = sync->last_event_counter;
@@ -1277,11 +1270,10 @@ static int gap_periodic_sync_receive(
 
     if (report->data_len)
         memcpy(report->data, sync->data, report->data_len);
-    gap_periodic_reports.count++;
+    gap_sync_reports.count++;
     sync->data_len = 0;
     return 1;
 }
-
 
 // -----------------------------------------------------------------------------
 // PAwR radio response and connection procedures
