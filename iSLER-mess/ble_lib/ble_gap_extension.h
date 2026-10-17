@@ -1584,9 +1584,7 @@ static int gap_periodic_connect_exchange(
     conn->link.peer_sca_ppm = 500;
 
     if (peer_slot >= 0) {
-        conn->peer.type = gap_identities[peer_slot].peer.type;
-        memcpy(conn->peer.address,
-               gap_identities[peer_slot].peer.address, 6);
+        conn->peer = gap_identities[peer_slot].peer;
     }
     else {
         conn->peer.type = peer_type;

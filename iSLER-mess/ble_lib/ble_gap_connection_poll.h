@@ -989,10 +989,8 @@ static void gap_conn_poll(void) {
         if (!conn->is_central) {
             int peer_slot = gap_identity_find(conn->initiator.address,
                                               conn->initiator.type);
-            if (peer_slot >= 0) {
-                conn->peer.type = gap_identities[peer_slot].peer.type;
-                memcpy(conn->peer.address, gap_identities[peer_slot].peer.address, 6);
-            }
+            if (peer_slot >= 0)
+                conn->peer = gap_identities[peer_slot].peer;
         }
 
 #if GAP_SMP_SUPPORT > 0
