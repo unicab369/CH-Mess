@@ -118,7 +118,7 @@ static void gap_conn_send_queued(void) {
         }
     }
 
-    if (conn->rate.queued &&
+    if (conn->rate.queued_flags &&
         !conn->features.request_pending &&
         !conn->features.ext_pending
         !gap_tx_frame[1] &&
@@ -127,7 +127,7 @@ static void gap_conn_send_queued(void) {
             gap_send_feature_request();
         }
         else if (!(conn->features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
-            conn->rate.queued = 0;
+            conn->rate.queued_flags = 0;
             conn->connection_status = 0x1a;
         }
         else if (!conn->features.page1_known) {
@@ -145,13 +145,13 @@ static void gap_conn_send_queued(void) {
             memset(gap_tx_frame + 7, 0, 6);
         }
         else if (!(conn->features.peer_page1[1] & 0x02)) {
-            conn->rate.queued = 0;
+            conn->rate.queued_flags = 0;
             conn->connection_status = 0x1a;
         }
-        else if (conn->is_central && (conn->rate.queued & GAP_RATE_QUEUED_SET)) {
+        else if (conn->is_central && (conn->rate.queued_flags & GAP_RATE_QUEUED_SET)) {
             gap_send_rate_ind();
         }
-        else if (!conn->is_central && (conn->rate.queued & GAP_RATE_QUEUED_REQUEST)) {
+        else if (!conn->is_central && (conn->rate.queued_flags & GAP_RATE_QUEUED_REQUEST)) {
             gap_tx_frame[0] = 0x03;
             gap_tx_frame[1] = 27;
             gap_tx_frame[2] = LL_CONNECTION_RATE_REQ;
@@ -170,7 +170,7 @@ static void gap_conn_send_queued(void) {
                 ble_write_u16_le(gap_tx_frame + 21 + i * 2,
                                  conn->rate.offsets[i]);
             }
-            conn->rate.queued &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
+            conn->rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
             conn->rate.req_pending = 1;
             conn->params_started_ms = GET_MILLIS();
         }
@@ -964,6 +964,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
+    // phy.status
     if (conn->pending.phy_request &&
         (uint32_t)(now_ms - conn->phy.started_ms) >= 40000
     ) {
@@ -972,6 +973,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
+    // length_status
     if (conn->pending.length &&
         (uint32_t)(now_ms - conn->length_started_ms) >= 40000
     ) {
@@ -982,7 +984,8 @@ static void gap_conn_poll(void) {
 
     if ((conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
          conn->features.request_pending ||
-         conn->features.ext_pending || conn->rate.req_pending ||
+         conn->features.ext_pending ||
+         conn->rate.req_pending ||
          conn->rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {

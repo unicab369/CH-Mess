@@ -111,7 +111,7 @@ uint8_t gap_subrate_status(void) {
 
 static uint8_t gap_conn_rate_busy(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    return conn->rate.queued ||
+    return conn->rate.queued_flags ||
         conn->rate.update_pending || conn->rate.req_pending;
 }
 
@@ -486,7 +486,7 @@ static void gap_send_rate_ind(void) {
                                 (conn->next_schedule.latency + 1) + 1);
     conn->next_schedule.win_offset = 0;
     conn->rate.update_pending = 1;
-    conn->rate.queued &= (uint8_t)~GAP_RATE_QUEUED_SET;
+    conn->rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
     conn->params_started_ms = GET_MILLIS();
 
@@ -1081,7 +1081,7 @@ static uint8_t gap_conn_control(
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
             memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
-            conn->rate.queued = 0;
+            conn->rate.queued_flags = 0;
             conn->connection_status = frame[4];
         }
 
@@ -1226,7 +1226,7 @@ static uint8_t gap_conn_control(
             conn->features.peer[1] = 0;
             conn->features.peer[4] = 0;
             conn->features.peer[7] = 0;
-            conn->rate.queued = 0;
+            conn->rate.queued_flags = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1234,7 +1234,7 @@ static uint8_t gap_conn_control(
             conn->features.ext_pending = 0;
             conn->features.page1_known = 1;
             memset(conn->features.peer_page1, 0, sizeof(conn->features.peer_page1));
-            conn->rate.queued = 0;
+            conn->rate.queued_flags = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -2030,7 +2030,7 @@ int gap_conn_rate_set(
     conn->next_schedule.latency = latency;
     conn->next_schedule.continuation = continuation;
     conn->next_schedule.timeout = timeout;
-    conn->rate.queued |= GAP_RATE_QUEUED_SET;
+    conn->rate.queued_flags |= GAP_RATE_QUEUED_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
@@ -2066,7 +2066,7 @@ int gap_conn_rate_request(
 
     for (uint8_t i = 0; i < 4; i++)
         conn->rate.offsets[i] = 0xffff;
-    conn->rate.queued |= GAP_RATE_QUEUED_REQUEST;
+    conn->rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }

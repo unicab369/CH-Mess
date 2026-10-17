@@ -359,7 +359,7 @@ typedef struct {
     // Active and pending connection timing and subrate schedules.
     gap_conn_schedule schedule, next_schedule;
     struct {
-        uint8_t queued; // GAP_RATE_QUEUED_SET and GAP_RATE_QUEUED_REQUEST bits.
+        uint8_t queued_flags; // Local set and peer request pending bits.
         uint8_t update_pending;
         uint8_t req_pending, ack_waiting;
         uint16_t interval_min, interval_max;
