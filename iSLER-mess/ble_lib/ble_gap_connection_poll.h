@@ -17,6 +17,7 @@ static void gap_conn_send_queued(void) {
 
     if (conn->queue.local_map && !gap_tx_frame[1]) {
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
+        // Allow six latency-adjusted event periods plus one extra event of lead.
         conn->map_instant = (uint16_t)(conn->link.event_counter +
                                     6 * (conn->schedule.latency + 1) + 1);
         conn->pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;

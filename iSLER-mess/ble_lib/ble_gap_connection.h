@@ -368,6 +368,7 @@ static void gap_send_conn_update(void) {
 
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
+    // Allow six latency-adjusted event periods plus one extra event of lead.
     conn->update_instant = (uint16_t)(conn->link.event_counter +
                             6 * (conn->schedule.latency + 1) + 1);
     conn->pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
@@ -1375,8 +1376,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             !gap_schedule_parameters_valid(factor_min, factor_max, latency,
                                          continuation, timeout) ||
             periodicity > maximum || !offsets_valid ||
-            (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum *
-                factor_max * (latency + 1)
+            (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum * factor_max * (latency + 1)
         ) {
             error = GAP_LL_ERR_INVALID_PARAMS;
         }
@@ -1590,8 +1590,9 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
         if ((base >> 14) == 3 &&
             (conn->link.event_counter >> 14) == 0) {
-            uint32_t distance = 65536 - base;
-            uint32_t steps = (distance + factor - 1) / factor;
+            // Rounding steps up may make steps * factor exceed the distance to wrap.
+            // That excess is the new base event after the counter wraps.
+            uint32_t steps = (65536 - base + factor - 1) / factor;
             base = (uint16_t)(base + steps * factor - 65536);
         }
 
@@ -1609,8 +1610,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
     }
     case LL_CHANNEL_REPORTING_IND: { // LL_CHANNEL_REPORTING_IND (Central to Peripheral).
         if (conn->is_central || frame[1] != 4 ||
-            !(conn->features.peer[4] &
-              GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
+            !(conn->features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
             frame[3] > 1 || frame[4] < 5 || frame[4] > 150 ||
             frame[5] < frame[4] || frame[5] > 150
         ) {
@@ -1720,9 +1720,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->queue.local_update ||
             conn->queue.local_params ||
             conn->queue.local_map ||
-            (conn->is_central &&
-                (conn->pending.phy_request ||
-                 conn->queue.phy_queued))
+            (conn->is_central && (conn->pending.phy_request || conn->queue.phy_queued))
         ) {
             gap_tx_frame[1] = 3;
             gap_tx_frame[2] = LL_REJECT_EXT_IND;
@@ -1750,17 +1748,18 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                     rx = 0;
                 }
 
-                if (tx == conn->phy.current.tx)
-                    tx = 0;
-                if (rx == conn->phy.current.rx)
-                    rx = 0;
+                if (tx == conn->phy.current.tx) tx = 0;
+                if (rx == conn->phy.current.rx) rx = 0;
+
+                // Allow six latency-adjusted event periods plus one extra event of lead.
                 conn->phy.instant = tx || rx ? (uint16_t)(conn->link.event_counter +
-                                    6 * (conn->schedule.latency + 1) + 1) : 0;
+                                        6 * (conn->schedule.latency + 1) + 1) : 0;
                 conn->queue.phy_queued = 0;
                 conn->pending.phy_request = 0;
                 conn->pending.procedure_flags = (conn->pending.procedure_flags &
-                    (uint8_t)~GAP_PENDING_PHY_UPDATE) |
-                    ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
+                                            (uint8_t)~GAP_PENDING_PHY_UPDATE) |
+                                            ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
+
                 if (!(conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE))
                     conn->phy.status = 0;
                 conn->phy.pending.tx = tx;
@@ -1788,7 +1787,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
     case LL_PHY_UPDATE_IND: { // LL_PHY_UPDATE_IND (Central to Peripheral)
         if (conn->is_central || frame[1] != 5 ||
-            !(GAP_HW_PHY_MASK() & 6) || (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE)
+            !(GAP_HW_PHY_MASK() & 6) ||
+            (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE)
         ) return gap_conn_unknown_resp(frame[2]);
 
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
@@ -1801,10 +1801,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         if ((rx != 1 && rx != 2 && rx != 4) || !(rx & supported))
             rx = 0;
 
-        if (tx == conn->phy.current.tx)
-            tx = 0;
-        if (rx == conn->phy.current.rx)
-            rx = 0;
+        if (tx == conn->phy.current.tx) tx = 0;
+        if (rx == conn->phy.current.rx) rx = 0;
         conn->pending.phy_request = 0;
         conn->queue.phy_queued = 0;
 
