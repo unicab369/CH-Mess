@@ -1435,7 +1435,7 @@ void gap_hw_scan_poll(void) {
                             gap_periodic_channel_for(
                                 sync->access_address, sync->channel_map,
                                 sync->event_counter ^
-                                    (sync->pawr.has_timing ? sync->pawr.subevent : 0)
+                                    (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0)
                             );
                     uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
                     gap_ext_scan.periodic_rx_phy = phy;

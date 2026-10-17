@@ -1447,9 +1447,9 @@ static void test_pawr_connection_accept(void) {
     sync->peer.type = 0;
     memcpy(sync->peer.address, advertiser, sizeof(advertiser));
     sync->sid = 4;
-    sync->pawr.has_timing = 1;
-    sync->pawr.subevents = 2;
-    sync->pawr.subevent_interval = 6;
+    sync->pawr.timing.has_timing = 1;
+    sync->pawr.timing.subevents = 2;
+    sync->pawr.timing.subevent_interval = 6;
     sync->pawr.subevent = 1;
     sync->last_event_counter = 20;
     sync->access_address = 0x12345678;
@@ -1547,16 +1547,16 @@ static void test_pawr_observer_response(void) {
     sync->event_counter = 12;
     sync->anchor_ticks = 2000000;
     sync->access_address = 0x12345678;
-    sync->pawr.resp_access_addr = 0x78563412;
+    sync->pawr.timing.resp_access_addr = 0x78563412;
     sync->crc_init = 0x123456;
     sync->phy = GAP_PHY_1M;
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
-    sync->pawr.has_timing = 1;
-    sync->pawr.subevents = 3;
-    sync->pawr.subevent_interval = 6;
-    sync->pawr.resp_delay = 1;
-    sync->pawr.resp_spacing = 3;
+    sync->pawr.timing.has_timing = 1;
+    sync->pawr.timing.subevents = 3;
+    sync->pawr.timing.subevent_interval = 6;
+    sync->pawr.timing.resp_delay = 1;
+    sync->pawr.timing.resp_spacing = 3;
     sync->last_event_ms = now_ms;
     sync->timeout_ms = 1000;
     assert(!sync->pawr.repeat);
@@ -1597,7 +1597,7 @@ static void test_pawr_observer_response(void) {
     gap_ext_scan.ready = 1;
     gap_ext_scan_process();
     assert(captured_extended_count == 1 &&
-           configured_access_address == sync->pawr.resp_access_addr &&
+           configured_access_address == sync->pawr.timing.resp_access_addr &&
            captured_extended_pdu_lengths[0] == 7 &&
            captured_extended_pdus[0][0] == 0x07 &&
            captured_extended_pdus[0][2] == 1 &&
@@ -1721,12 +1721,12 @@ static void test_periodic_advertising_sync(void) {
            !gap_syncs[0].established &&
            gap_syncs[0].event_counter == 5 &&
            gap_syncs[0].access_address == 0x12345678 &&
-           gap_syncs[0].pawr.has_timing &&
-           gap_syncs[0].pawr.subevents == 2 &&
-           gap_syncs[0].pawr.subevent_interval == 6 &&
-           gap_syncs[0].pawr.resp_delay == 1 &&
-           gap_syncs[0].pawr.resp_spacing == 2 &&
-           gap_syncs[0].pawr.resp_access_addr == 0x78563412);
+           gap_syncs[0].pawr.timing.has_timing &&
+           gap_syncs[0].pawr.timing.subevents == 2 &&
+           gap_syncs[0].pawr.timing.subevent_interval == 6 &&
+           gap_syncs[0].pawr.timing.resp_delay == 1 &&
+           gap_syncs[0].pawr.timing.resp_spacing == 2 &&
+           gap_syncs[0].pawr.timing.resp_access_addr == 0x78563412);
 
     uint64_t first_event = gap_syncs[0].next_event_ticks;
     fake_radio_ticks = gap_syncs[0].start_ticks;
