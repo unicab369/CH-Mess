@@ -326,13 +326,15 @@ void gap_hw_received(void) {
         }
 
         if (conn->is_central) {
-            conn->link.next_ticks += gap_conn_interval_ticks();
+            conn->link.next_ticks +=
+                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
         else {
             uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(conn->phy.current.rx == 2 ?
                                                 ((uint32_t)frame[1] + 11) * 4 :
                                                 ((uint32_t)frame[1] + 10) * 8);
-            conn->link.next_ticks = received_ticks - rx_airtime_ticks + gap_conn_interval_ticks();
+            conn->link.next_ticks = received_ticks - rx_airtime_ticks +
+                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
 
         conn->link.last_rx_ms = GET_MILLIS();
@@ -1070,7 +1072,8 @@ static void gap_conn_poll(void) {
         uint32_t skipped = 0;
 
         do {
-            conn->link.next_ticks += gap_conn_interval_ticks();
+            conn->link.next_ticks +=
+                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
             gap_conn_event_advance();
             gap_conn_update_apply(0);
             if (!gap_conn_slot_active(gap_conn_slot))
@@ -1135,7 +1138,8 @@ static void gap_conn_poll(void) {
             // Skipping radio work does not skip the connection event counter or
             // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
             conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
-            conn->link.next_ticks += gap_conn_interval_ticks();
+            conn->link.next_ticks +=
+                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
             gap_conn_event_advance();
             gap_conn_update_apply(0);
             return;

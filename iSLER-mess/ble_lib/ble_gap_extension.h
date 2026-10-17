@@ -2508,7 +2508,10 @@ static int gap_past_receive(
         return 0;
 
     int64_t target_signed = (int64_t)connection_anchor_ticks +
-                            (int64_t)event_delta * (int64_t)gap_conn_interval_ticks() +
+                            (int64_t)event_delta *
+                            (int64_t)HW_TICKS_FROM_US(
+                                (uint32_t)conn->schedule.interval_125us * 125
+                            ) +
                             (int64_t)HW_TICKS_FROM_US(fields.sync.offset_us);
 
     if (target_signed <= 0) return 0;
@@ -2772,7 +2775,9 @@ static int gap_sync_conn_overlap(
     if (widen_us > widen_max_us)
         widen_us = widen_max_us;
     uint64_t widening_ticks = (uint64_t)widen_us * HW_TICKS_FROM_US(1);
-    uint64_t interval_ticks = gap_conn_interval_ticks();
+    uint64_t interval_ticks = HW_TICKS_FROM_US(
+        (uint32_t)conn->schedule.interval_125us * 125
+    );
     uint64_t event_ticks = conn->link.next_ticks;
     uint32_t event_window_us = conn->link.first_event ||
             conn->pending.update_window_active ? conn->window_size * 1250 : 1000;

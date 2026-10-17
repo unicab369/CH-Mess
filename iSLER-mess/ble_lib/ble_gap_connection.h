@@ -86,12 +86,6 @@ static gap_conn_buffer gap_conn_buff[GAP_CONNECTION_COUNT];
 
 #define gap_tx_frame gap_conn_buff[gap_conn_slot].tx
 
-// Convert the shared connection schedule interval to hardware timer ticks.
-static uint64_t gap_conn_interval_ticks(void) {
-    uint16_t interval = gap_conn_ctx[gap_conn_slot].schedule.interval_125us;
-    return HW_TICKS_FROM_US((uint32_t)interval * 125);
-}
-
 static uint8_t gap_conn_rate_busy(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     return conn->rate.set_queued || conn->rate.request_queued ||
@@ -185,7 +179,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         }
 
         if (instant_packet_received) {
-            conn->link.next_ticks = conn->link.next_ticks - gap_conn_interval_ticks() +
+            conn->link.next_ticks = conn->link.next_ticks -
+                    HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
                     HW_TICKS_FROM_US((uint32_t)conn->next_schedule.interval_125us * 125);
         }
         else {
@@ -224,7 +219,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 
         if (instant_packet_received) {
             // The packet already fixed the new anchor; ignore WinOffset and WinSize.
-            conn->link.next_ticks = conn->link.next_ticks - gap_conn_interval_ticks() +
+            conn->link.next_ticks = conn->link.next_ticks -
+                    HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
                     (uint64_t)conn->new_params.interval * HW_TICKS_FROM_US(1250);
         }
         else {
