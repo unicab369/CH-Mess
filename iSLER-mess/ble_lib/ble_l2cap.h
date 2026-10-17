@@ -157,6 +157,11 @@ static inline uint16_t ble_read_u16_le(const uint8_t *p) {
     return (uint16_t)p[0] | (uint16_t)p[1] << 8;
 }
 
+static inline uint32_t ble_read_u32_le(const uint8_t *p) {
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
+           (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
 static inline void ble_write_u16_le(uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)value;
     p[1] = (uint8_t)(value >> 8);

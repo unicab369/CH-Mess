@@ -645,14 +645,14 @@ static int gap_ext_adv_decode(
                 return 0;
             fields->has_aux_ptr = 1;
 
-            uint16_t offset = (uint16_t)pdu[cursor + 1] |
-                                (uint16_t)(pdu[cursor + 2] & 0x1f) << 8;
+            uint16_t offset = ble_read_u16_le(pdu + cursor + 1) & 0x1fff;
             fields->aux_offset_zero = (offset == 0);
             fields->aux_channel = channel;
             fields->aux_phy = phy;
             fields->aux_ca = (pdu[cursor] >> 6) & 1;
             fields->aux_offset_unit = (pdu[cursor] >> 7) & 1;
-            fields->aux_offset_us = (uint32_t)offset * (fields->aux_offset_unit ? 300 : 30);
+            fields->aux_offset_us = (uint32_t)offset *
+                                    (fields->aux_offset_unit ? 300 : 30);
             cursor += 3;
         }
 
@@ -664,8 +664,7 @@ static int gap_ext_adv_decode(
             if (pdu[cursor + 1] & 0x80)
                 return 0;
 
-            uint16_t offset = (uint16_t)pdu[cursor] |
-                            (uint16_t)(pdu[cursor + 1] & 0x1f) << 8;
+            uint16_t offset = ble_read_u16_le(pdu + cursor) & 0x1fff;
             fields->sync.offset_unit = (pdu[cursor + 1] >> 5) & 1;
             fields->sync.offset_adjust = (pdu[cursor + 1] >> 6) & 1;
             fields->sync.offset_us = (uint32_t)offset * (fields->sync.offset_unit ? 300 : 30) +
@@ -677,10 +676,7 @@ static int gap_ext_adv_decode(
             memcpy(fields->sync.channel_map, pdu + cursor + 4, 5);
             fields->sync.sca = fields->sync.channel_map[4] >> 5;
             fields->sync.interval = ble_read_u16_le(pdu + cursor + 2);
-            fields->sync.access_address = (uint32_t)pdu[cursor + 9] |
-                                            (uint32_t)pdu[cursor + 10] << 8 |
-                                            (uint32_t)pdu[cursor + 11] << 16 |
-                                            (uint32_t)pdu[cursor + 12] << 24;
+            fields->sync.access_address = ble_read_u32_le(pdu + cursor + 9);
             fields->sync.crc_init = (uint32_t)pdu[cursor + 13] |
                                     (uint32_t)pdu[cursor + 14] << 8 |
                                     (uint32_t)pdu[cursor + 15] << 16;
@@ -703,7 +699,6 @@ static int gap_ext_adv_decode(
 
         while (cursor < header_end) {
             uint8_t acad_len = pdu[cursor++];
-
             if (!acad_len || (size_t)acad_len > header_end - cursor)
                 return 0;
 
@@ -713,10 +708,7 @@ static int gap_ext_adv_decode(
                 if (fields->pawr.has_timing || value_len != 8)
                     return 0;
 
-                fields->pawr.resp_access_addr = (uint32_t)pdu[cursor] |
-                                                (uint32_t)pdu[cursor + 1] << 8 |
-                                                (uint32_t)pdu[cursor + 2] << 16 |
-                                                (uint32_t)pdu[cursor + 3] << 24;
+                fields->pawr.resp_access_addr = ble_read_u32_le(pdu + cursor);
                 fields->pawr.subevents = pdu[cursor + 4];
                 fields->pawr.subevent_interval = pdu[cursor + 5];
                 fields->pawr.resp_delay = pdu[cursor + 6];
