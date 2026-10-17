@@ -3627,7 +3627,8 @@ static void test_connection_subrating(void) {
     assert(gap_tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
     assert(gap_tx_frame[2] == 0x27 && gap_tx_frame[1] == 11);
-    assert(conn->subrate.transition && conn->subrate.pending);
+    assert(conn->subrate.transition &&
+           conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
     assert(gap_tx_frame[3] == 5 && gap_tx_frame[4] == 0);
     assert(gap_tx_frame[7] == 1 && gap_tx_frame[9] == 1);
     receive_test_link_packet(1);
@@ -3662,7 +3663,8 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     uint8_t request[10] = {2, 0, 6, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x26, request, sizeof(request));
-    assert(gap_tx_frame[2] == 0x27 && conn->subrate.pending);
+    assert(gap_tx_frame[2] == 0x27 &&
+           conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
     assert(conn->subrate.pending_factor == 6);
     receive_test_link_packet(1);
     assert(conn->subrate.factor == 6 && gap_subrate_status() == 0);
@@ -3692,7 +3694,8 @@ static void test_connection_subrating(void) {
     gap_conn_end();
 
     start_test_central_link();
-    conn->subrate.pending = conn->subrate.transition = 1;
+    conn->subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
+    conn->subrate.transition = 1;
     conn->subrate.status = GAP_CONNECTION_PENDING;
     conn->subrate.started_ms = now_ms - 40000;
     gap_conn_poll();

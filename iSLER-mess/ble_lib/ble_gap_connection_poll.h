@@ -102,7 +102,7 @@ static void gap_conn_send_queued(void) {
                 (conn->subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST)
             ) {
                 conn->subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
-                conn->subrate.request_pending = 1;
+                conn->subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
                 conn->subrate.started_ms = GET_MILLIS();
 
                 gap_tx_frame[0] = 0x03;
@@ -346,7 +346,8 @@ void gap_hw_received(void) {
             if (!conn->is_central && conn->rate.ack_waiting)
                 conn->rate.ack_waiting = 0;
 
-            if (conn->is_central && conn->subrate.pending &&
+            if (conn->is_central &&
+                conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 11 &&
                 gap_tx_frame[2] == LL_SUBRATE_IND
@@ -356,7 +357,7 @@ void gap_hw_received(void) {
                 conn->schedule.latency = conn->next_schedule.latency;
                 conn->schedule.continuation = conn->next_schedule.continuation;
                 conn->schedule.timeout = conn->next_schedule.timeout;
-                conn->subrate.pending = 0;
+                conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
                 conn->subrate.transition = 0;
                 conn->subrate.status = 0;
             }
@@ -991,10 +992,11 @@ static void gap_conn_poll(void) {
     ) {
         conn->connection_status = 0x22; // LL response timeout.
         if (conn->subrate.queued_flags ||
-            conn->subrate.request_pending
+            conn->subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
         ) {
             conn->subrate.queued_flags = 0;
-            conn->subrate.request_pending = 0;
+            if (conn->subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING)
+                conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.status = 0x22;
         }
 
@@ -1002,12 +1004,11 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((conn->subrate.pending || conn->subrate.request_pending) &&
+    if (conn->subrate.procedure_state != GAP_SUBRATE_IDLE &&
         (uint32_t)(now_ms - conn->subrate.started_ms) >= 40000
     ) {
-        conn->subrate.pending = 0;
+        conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
         conn->subrate.transition = 0;
-        conn->subrate.request_pending = 0;
         conn->subrate.status = 0x22;
         gap_conn_end();
         return;

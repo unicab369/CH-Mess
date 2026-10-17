@@ -299,6 +299,12 @@ enum {
     GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
 };
 
+enum {
+    GAP_SUBRATE_IDLE,
+    GAP_SUBRATE_UPDATE_PENDING,
+    GAP_SUBRATE_REQUEST_PENDING
+};
+
 typedef struct {
     uint16_t interval_125us, factor, latency, continuation, timeout;
     uint16_t base_event, win_offset, instant;
@@ -371,9 +377,8 @@ typedef struct {
     struct {
         uint8_t transition, event_activity, event_received, force_event;
         uint16_t continuations, latency_remaining;
-        uint8_t pending;
+        uint8_t procedure_state; // GAP_SUBRATE_* state.
         uint8_t queued_flags; // GAP_SUBRATE_QUEUED_UPDATE and _REQUEST bits.
-        uint8_t request_pending;
         uint8_t status;
         uint16_t request_min, request_max, request_latency, request_continuation;
         uint16_t request_timeout;

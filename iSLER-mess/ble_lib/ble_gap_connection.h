@@ -258,7 +258,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             conn->subrate.continuations = 0;
             conn->subrate.latency_remaining = 0;
             conn->subrate.transition = 0;
-            conn->subrate.pending = 0;
+            if (conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING)
+                conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.queued_flags &=
                 (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
         }
@@ -463,7 +464,7 @@ static void gap_send_subrate_update(void) {
     conn->next_schedule.base_event = conn->link.event_counter;
     conn->subrate.queued_flags &=
         (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
-    conn->subrate.pending = 1;
+    conn->subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
     conn->subrate.transition = 1;
     conn->subrate.started_ms = GET_MILLIS();
 
@@ -1064,8 +1065,10 @@ static uint8_t gap_conn_control(
             conn->connection_status = frame[3];
         }
 
-        if (frame[3] == LL_SUBRATE_REQ && conn->subrate.request_pending) {
-            conn->subrate.request_pending = 0;
+        if (frame[3] == LL_SUBRATE_REQ &&
+            conn->subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
+        ) {
+            conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1122,13 +1125,17 @@ static uint8_t gap_conn_control(
             conn->length_status = frame[4];
         }
 
-        if (frame[3] == LL_SUBRATE_REQ && conn->subrate.request_pending) {
-            conn->subrate.request_pending = 0;
+        if (frame[3] == LL_SUBRATE_REQ &&
+            conn->subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
+        ) {
+            conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.status = frame[4];
         }
 
-        if (frame[3] == LL_SUBRATE_IND && conn->subrate.pending) {
-            conn->subrate.pending = 0;
+        if (frame[3] == LL_SUBRATE_IND &&
+            conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING
+        ) {
+            conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.transition = 0;
             conn->subrate.status = frame[4];
         }
@@ -1272,13 +1279,17 @@ static uint8_t gap_conn_control(
             conn->length_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
-        if (frame[3] == LL_SUBRATE_REQ && conn->subrate.request_pending) {
-            conn->subrate.request_pending = 0;
+        if (frame[3] == LL_SUBRATE_REQ &&
+            conn->subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
+        ) {
+            conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
-        if (frame[3] == LL_SUBRATE_IND && conn->subrate.pending) {
-            conn->subrate.pending = 0;
+        if (frame[3] == LL_SUBRATE_IND &&
+            conn->subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING
+        ) {
+            conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->subrate.transition = 0;
             conn->subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
@@ -1409,9 +1420,8 @@ static uint8_t gap_conn_control(
             error = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (gap_security->phase || gap_conn_rate_busy() ||
-            conn->subrate.pending ||
+            conn->subrate.procedure_state != GAP_SUBRATE_IDLE ||
             conn->subrate.queued_flags ||
-            conn->subrate.request_pending ||
             conn->pending.procedure_flags ||
             conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
             conn->pending.phy_request ||
@@ -1481,9 +1491,8 @@ static uint8_t gap_conn_control(
             instant == conn->link.event_counter ||
             !(conn->features.peer_page1[1] & 0x01) ||
             conn->rate.update_pending ||
-            conn->subrate.pending ||
+            conn->subrate.procedure_state != GAP_SUBRATE_IDLE ||
             conn->subrate.queued_flags ||
-            conn->subrate.request_pending ||
             conn->pending.procedure_flags ||
             conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
             conn->queue.local_update ||
@@ -1539,7 +1548,7 @@ static uint8_t gap_conn_control(
                 !conn->queue.local_update &&
                 conn->pending.params_state == GAP_CONN_PARAMS_NONE &&
                 !conn->queue.local_params &&
-                !conn->subrate.pending &&
+                conn->subrate.procedure_state != GAP_SUBRATE_UPDATE_PENDING &&
                 !(conn->subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) &&
                 !conn->queue.local_map &&
                 !conn->queue.phy_queued &&
@@ -1625,9 +1634,8 @@ static uint8_t gap_conn_control(
         conn->schedule.continuation = continuation;
         conn->schedule.timeout = timeout;
         conn->subrate.latency_remaining = 0;
-        conn->subrate.pending = 0;
+        conn->subrate.procedure_state = GAP_SUBRATE_IDLE;
         conn->subrate.transition = 0;
-        conn->subrate.request_pending = 0;
         conn->subrate.status = 0;
         break;
     }
