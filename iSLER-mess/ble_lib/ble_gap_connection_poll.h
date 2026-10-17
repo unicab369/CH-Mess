@@ -1084,11 +1084,9 @@ static void gap_conn_poll(void) {
     // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
     uint32_t widen_us = ((uint32_t)(now_ms - conn->link.last_rx_ms) *
                         (500 + conn->link.peer_sca_ppm) + 999) / 1000;
-    uint32_t interval_125us = conn->schedule.interval_125us;
-    uint32_t widen_max_us = interval_125us * 125 / 2;
+    uint32_t widen_max = (uint32_t)conn->schedule.interval_125us * 125 / 2;
 
-    if (widen_us > widen_max_us)
-        widen_us = widen_max_us;
+    if (widen_us > widen_max) widen_us = widen_max;
     uint64_t open_ticks = conn->link.next_ticks;
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + (uint64_t)widen_us * HW_TICKS_FROM_US(1);
 
