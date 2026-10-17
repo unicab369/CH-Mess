@@ -1721,10 +1721,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 break;
         }
         else if (gap_security->phase ||
-            (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
+            conn->pending.procedure_flags ||
             conn->pending.params ||
-            (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
-            (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
             conn->queue.local_update ||
             conn->queue.local_params ||
             conn->queue.local_map ||
@@ -1882,12 +1880,10 @@ static uint8_t gap_conn_procedure_busy(void) {
     return !gap_connected() ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->link.first_event ||
-        (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
+        conn->pending.procedure_flags ||
         conn->pending.params ||
         conn->pending.length ||
-        (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
         conn->pending.phy_request ||
-        (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
         conn->queue.local_update ||
         conn->queue.local_params ||
         conn->queue.length ||
@@ -2532,10 +2528,9 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!gap_conn_slot_active(gap_conn_slot) ||
         (*gap_security_generation) != generation ||
         gap_security->phase ||
-        (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
+        conn->pending.procedure_flags ||
         conn->queue.local_update ||
         conn->queue.local_map ||
-        (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
         conn->queue.local_params ||
         conn->pending.params ||
         conn->features.request_pending ||
@@ -2543,7 +2538,6 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         conn->pending.length ||
         conn->queue.phy_queued ||
         conn->pending.phy_request ||
-        (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
         conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply
