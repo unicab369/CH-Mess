@@ -1584,6 +1584,7 @@ static int gap_ext_chain_send(
         if (has_chain)
             gap_aux_ptr_write(frame + 6, (channel + 1) % 37,
                 ((gap_phy_airtime_us(frame[1], phy) + 629) / 30) * 30, phy);
+
         memcpy(frame + 1 + ext_len + 2, data + data_offset, chunk);
         data_offset += chunk;
         remaining -= chunk;
@@ -1623,7 +1624,8 @@ static int gap_aux_tx(
 static int gap_periodic_tx(gap_ext_adv_set *set) {
     if (set->pawr.enabled) {
         uint8_t *frame = gap_ext_adv_frame;
-        uint16_t adi = (uint16_t)((set->sid << 12) | set->periodic.did);
+        uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
+                                  (set->periodic.did & 0x0fff));
         uint64_t event_start = set->periodic.next_ticks;
         uint32_t interval_us = (uint32_t)(set->pawr.subevents > 1 ?
                     set->pawr.subevent_int : set->periodic.params.interval) * 1250;
@@ -1698,19 +1700,21 @@ static int gap_periodic_tx(gap_ext_adv_set *set) {
 
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len, offset = 0;
+    uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
+                              (set->periodic.did & 0x0fff));
     uint8_t channel = gap_sync_channel(&set->periodic.params, set->periodic.event_counter);
     uint64_t next_start = GAP_HW_TICKS();
+
     while (remaining || offset == 0) {
         uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
+        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
         uint8_t ext_len = has_chain ? 6 : 3;
-        uint16_t chunk = has_chain ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX :
-            remaining;
+
         // AUX_SYNC_IND starts the train; later packets use AUX_CHAIN_IND.
         frame[0] = ADV_EXT_IND;
         frame[1] = (uint8_t)(1 + ext_len + chunk);
         frame[2] = ext_len;
         frame[3] = has_chain ? 0x18 : 0x08; // ADI and optional AuxPtr.
-        uint16_t adi = (uint16_t)((set->sid << 12) | set->periodic.did);
         frame[4] = (uint8_t)adi;
         frame[5] = (uint8_t)(adi >> 8);
 
@@ -1720,12 +1724,11 @@ static int gap_periodic_tx(gap_ext_adv_set *set) {
                 set->aux_phy);
 
         if (chunk)
-            memcpy(frame + 1 + ext_len + 2,
-                          set->periodic.data + offset, chunk);
+            memcpy(frame + 1 + ext_len + 2, set->periodic.data + offset, chunk);
         uint64_t pdu_start = 0;
 
         if (!gap_aux_tx(frame, (uint8_t)(frame[1] + 2), set,
-                                   channel, next_start, &pdu_start)
+                        channel, next_start, &pdu_start)
         ) return 0;
 
         offset += chunk;
@@ -1735,7 +1738,7 @@ static int gap_periodic_tx(gap_ext_adv_set *set) {
 
         channel = (uint8_t)((channel + 1) % 37);
         next_start = pdu_start + HW_TICKS_FROM_US(
-            ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
+                    ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30);
     }
     return 1;
 }
@@ -1746,7 +1749,8 @@ static int gap_hw_transmit_extended_advertising(
 ) {
     uint8_t address[6], address_type;
     gap_local_addr_select(-1, address, &address_type);
-    uint16_t adi = (uint16_t)((set->sid & 0x0f) << 12) | set->did;
+    uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
+                              (set->did & 0x0fff));
     uint8_t *primary = gap_ext_primary_frame;
     uint8_t *frame = gap_ext_adv_frame;
 
@@ -1760,6 +1764,7 @@ static int gap_hw_transmit_extended_advertising(
         primary[4] = (uint8_t)adi;
         primary[5] = (uint8_t)(adi >> 8);
         gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
+
         frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         frame[1] = 10;
         frame[2] = 0x89; // AdvMode=scannable, ExtHdrLen=9.
@@ -1780,9 +1785,9 @@ static int gap_hw_transmit_extended_advertising(
 
         uint16_t remaining = set->scan_resp_len;
         uint8_t has_chain = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 4;
-        uint16_t first_chunk = has_chain ? GAP_EXT_ADV_FIRST_PDU_DATA_MAX :
-            remaining;
+        uint16_t first_chunk = has_chain ? GAP_EXT_ADV_FIRST_PDU_DATA_MAX : remaining;
         uint8_t ext_len = has_chain ? 12 : 9;
+
         frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
         frame[1] = (uint8_t)(1 + ext_len + first_chunk);
         frame[2] = ext_len;
@@ -1790,33 +1795,31 @@ static int gap_hw_transmit_extended_advertising(
         memcpy(frame + 4, address, sizeof(address));
         frame[10] = (uint8_t)adi;
         frame[11] = (uint8_t)(adi >> 8);
+
         if (has_chain)
             gap_aux_ptr_write(frame + 12, 1,
-                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30,
-                set->aux_phy);
+                ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30, set->aux_phy);
+
         if (first_chunk)
-            memcpy(frame + (has_chain ? 15 : 12), set->data,
-                   first_chunk);
+            memcpy(frame + (has_chain ? 15 : 12), set->data, first_chunk);
 
         gap_ext_adv_scan.response_started = 0;
         gap_ext_adv_scan.address_type = address_type;
         memcpy(gap_ext_adv_scan.address, address, sizeof(address));
         gap_ext_adv_scan.waiting = 1;
+
         GAP_HW_TX_CLEAR_DONE();
-        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, frame, 1,
-                               set->aux_phy, set->aux_phy);
+        GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS, 0, frame, 1, set->aux_phy, set->aux_phy);
         GAP_HW_LINK_RX();
-        uint64_t rx_deadline_ticks = GAP_HW_TICKS() +
-            HW_TICKS_FROM_US(1500);
-        while (gap_ext_adv_scan.waiting &&
-               GAP_HW_TICKS() < rx_deadline_ticks) {}
+        uint64_t rx_deadline_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(1500);
+        while (gap_ext_adv_scan.waiting && GAP_HW_TICKS() < rx_deadline_ticks) {}
         GAP_HW_STOP();
+
         gap_ext_adv_scan.waiting = 0;
         if (!gap_ext_adv_scan.response_started)
             return 1;
 
-        uint64_t tx_deadline_ticks = GAP_HW_TICKS() +
-            HW_TICKS_FROM_US(1000);
+        uint64_t tx_deadline_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
         while (!GAP_HW_TX_DONE() &&
                GAP_HW_TICKS() < tx_deadline_ticks) {}
 
