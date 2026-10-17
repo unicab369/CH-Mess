@@ -466,7 +466,7 @@ void gap_hw_received(void) {
             if (new_packet && (frame[0] & 3) == 3 && frame[1]) {
                 gap_tx_frame[0] = 0x03;
 
-                if (gap_conn_control_process(frame, authenticated,
+                if (gap_conn_control(frame, authenticated,
                         conn_anchor_ticks, event_counter)
                 ) {
                     gap_conn_slot = previous_slot;

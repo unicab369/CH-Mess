@@ -5,6 +5,19 @@
 // Profile procedures and application state belong in service-specific modules.
 #include "ble_gatt_server.h"
 
+static inline void gatt_service_rollback(
+    ble_gatt_server *server, uint16_t old_count, uint16_t old_next_handle,
+    uint16_t old_value_used
+) {
+    memset(server->attributes + old_count, 0,
+           (server->count - old_count) * sizeof(server->attributes[0]));
+    memset(server->value_pool + old_value_used, 0,
+           server->value_used - old_value_used);
+    server->count = old_count;
+    server->next_handle = old_next_handle;
+    server->value_used = old_value_used;
+}
+
 typedef struct {
     uint16_t service_handle, level_handle, level_cccd_handle;
     uint8_t level;
