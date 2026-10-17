@@ -219,11 +219,6 @@ static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
-enum {
-    GAP_RATE_QUEUED_SET = 1u << 0,
-    GAP_RATE_QUEUED_REQUEST = 1u << 1
-};
-
 typedef struct {
     uint8_t scanning, active, generation;
     uint16_t interval_ms, window_ms;
@@ -284,6 +279,17 @@ static struct {
 typedef struct {
     uint16_t interval, latency, supervision_timeout;
 } gap_conn_params;
+
+enum {
+    GAP_RATE_QUEUED_SET = 1u << 0,
+    GAP_RATE_QUEUED_REQUEST = 1u << 1
+};
+
+enum {
+    GAP_PENDING_TIMING_UPDATE = 1u << 0,
+    GAP_PENDING_CHANNEL_MAP = 1u << 1,
+    GAP_PENDING_PHY_UPDATE = 1u << 2
+};
 
 typedef struct {
     struct {
@@ -391,9 +397,10 @@ typedef struct {
     } phy;
     struct {
         uint8_t update_window_active;
-        uint8_t timing_update, channel_map;
+        // GAP_PENDING_* flags: timing update, channel map, and PHY update.
+        uint8_t procedure_flags;
         uint8_t params, params_local;
-        uint8_t phy_request, phy_update;
+        uint8_t phy_request;
         uint8_t length;
     } pending;
 } gap_conn_context;

@@ -204,7 +204,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         conn->connection_status = 0;
     }
 
-    if (conn->pending.timing_update &&
+    if ((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
         conn->update_instant == conn->link.event_counter
     ) {
         // Close an unsynchronized Central link instead of retransmitting an
@@ -246,14 +246,14 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         conn->link.last_rx_ms = GET_MILLIS();
         conn->pending.update_window_active = !instant_packet_received;
         conn->subrate.force_event = 1;
-        conn->pending.timing_update = 0;
+        conn->pending.procedure_flags &= (uint8_t)~GAP_PENDING_TIMING_UPDATE;
         if (conn->connection_status == GAP_CONNECTION_PENDING)
             conn->connection_status = 0;
     }
 
     // Switch rates at the shared Instant, including events skipped by polling.
 
-    if (conn->pending.phy_update &&
+    if ((conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) &&
         conn->phy.instant == conn->link.event_counter
     ) {
         if (conn->is_central && conn->link.tx_pending &&
@@ -270,12 +270,12 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         if (conn->phy.pending.rx)
             conn->phy.current.rx = conn->phy.pending.rx;
 
-        conn->pending.phy_update = 0;
+        conn->pending.procedure_flags &= (uint8_t)~GAP_PENDING_PHY_UPDATE;
         conn->pending.phy_request = 0;
         conn->phy.status = 0;
     }
 
-    if (conn->pending.channel_map &&
+    if ((conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) &&
         conn->map_instant == conn->link.event_counter
     ) {
         // An unacknowledged map change cannot be retried after its Instant;
@@ -295,7 +295,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         for (uint8_t channel = 0; channel < 37; channel++)
             if (conn->link.channel_map[channel / 8] & (1 << (channel % 8)))
                 conn->link.used_channels[conn->link.used_count++] = channel;
-        conn->pending.channel_map = 0;
+        conn->pending.procedure_flags &= (uint8_t)~GAP_PENDING_CHANNEL_MAP;
 
         if (conn->is_central && conn->connection_status == GAP_CONNECTION_PENDING)
             conn->connection_status = 0;
@@ -369,7 +369,7 @@ static void gap_send_conn_update(void) {
     conn->update_win_offset = 0;
     conn->update_instant = (uint16_t)(conn->link.event_counter +
                             6 * (conn->schedule.latency + 1) + 1);
-    conn->pending.timing_update = 1;
+    conn->pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
     conn->queue.local_update = 0;
     conn->pending.params = 0;
     conn->pending.params_local = 0;
@@ -651,9 +651,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         if (conn->is_central ||
             frame[1] != 23 ||
             (!restart && (gap_security->phase || gap_security->rx_enabled)) ||
-            conn->pending.timing_update ||
-            conn->pending.channel_map ||
-            conn->pending.phy_update
+            conn->pending.procedure_flags
         ) return gap_conn_unknown_resp(frame[2]);
 
         uint8_t entropy[12];
@@ -774,7 +772,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
     case LL_CONNECTION_UPDATE_IND: {
         if (!conn->is_central && frame[1] == 12 &&
-            !conn->pending.timing_update && !gap_conn_rate_busy()
+            !(conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !gap_conn_rate_busy()
         ) {
             uint8_t win_size = frame[3];
             uint16_t win_offset = ble_read_u16_le(frame + 4);
@@ -801,7 +799,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 conn->new_params.interval = interval;
                 conn->new_params.latency = latency;
                 conn->new_params.supervision_timeout = timeout;
-                conn->pending.timing_update = 1;
+                conn->pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
                 conn->pending.params = 0;
                 conn->pending.params_local = 0;
 
@@ -823,7 +821,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
     }
     case LL_CHANNEL_MAP_IND: {
         if (!conn->is_central && frame[1] == 8 &&
-            !conn->pending.channel_map
+            !(conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP)
         ) {
             uint8_t used_count = 0;
 
@@ -839,7 +837,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             ) {
                 memcpy(conn->next_channel_map, frame + 3, 5);
                 conn->map_instant = instant;
-                conn->pending.channel_map = 1;
+                conn->pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
                 gap_tx_frame[0] = 0x01;
                 break;
             }
@@ -897,13 +895,11 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
         if (gap_security->phase ||
             gap_conn_rate_busy() ||
-            conn->pending.timing_update ||
+            conn->pending.procedure_flags ||
             conn->queue.local_update ||
-            conn->pending.channel_map ||
             conn->queue.local_map ||
             conn->queue.phy_queued ||
             conn->pending.phy_request ||
-            conn->pending.phy_update ||
             (frame[2] == LL_CONNECTION_PARAM_REQ &&
                 ((conn->pending.params && !conn->pending.params_local) ||
                  (conn->is_central &&
@@ -1399,11 +1395,9 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->subrate.update_queued ||
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
-            conn->pending.timing_update ||
+            conn->pending.procedure_flags ||
             conn->pending.params ||
-            conn->pending.channel_map ||
             conn->pending.phy_request ||
-            conn->pending.phy_update ||
             conn->pending.length ||
             conn->queue.local_update ||
             conn->queue.local_params ||
@@ -1474,10 +1468,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->subrate.update_queued ||
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
-            conn->pending.timing_update ||
+            conn->pending.procedure_flags ||
             conn->pending.params ||
-            conn->pending.channel_map ||
-            conn->pending.phy_update ||
             conn->queue.local_update ||
             conn->queue.local_params
         ) {
@@ -1527,17 +1519,15 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             error = GAP_LL_ERR_COLLISION;
             if (!gap_security->phase &&
                 !gap_conn_rate_busy() &&
-                !conn->pending.timing_update &&
+                !conn->pending.procedure_flags &&
                 !conn->queue.local_update &&
                 !conn->pending.params &&
                 !conn->queue.local_params &&
                 !conn->subrate.pending &&
                 !conn->subrate.update_queued &&
-                !conn->pending.channel_map &&
                 !conn->queue.local_map &&
                 !conn->queue.phy_queued &&
                 !conn->pending.phy_request &&
-                !conn->pending.phy_update &&
                 !conn->queue.length &&
                 !conn->pending.length
             ) {
@@ -1731,10 +1721,10 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 break;
         }
         else if (gap_security->phase ||
-            conn->pending.timing_update ||
+            (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
             conn->pending.params ||
-            conn->pending.channel_map ||
-            conn->pending.phy_update ||
+            (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
+            (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
             conn->queue.local_update ||
             conn->queue.local_params ||
             conn->queue.local_map ||
@@ -1776,8 +1766,10 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                                     6 * (conn->schedule.latency + 1) + 1) : 0;
                 conn->queue.phy_queued = 0;
                 conn->pending.phy_request = 0;
-                conn->pending.phy_update = tx || rx;
-                if (!conn->pending.phy_update)
+                conn->pending.procedure_flags = (conn->pending.procedure_flags &
+                    (uint8_t)~GAP_PENDING_PHY_UPDATE) |
+                    ((tx || rx) ? GAP_PENDING_PHY_UPDATE : 0);
+                if (!(conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE))
                     conn->phy.status = 0;
                 conn->phy.pending.tx = tx;
                 conn->phy.pending.rx = rx;
@@ -1804,7 +1796,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
     case LL_PHY_UPDATE_IND: { // LL_PHY_UPDATE_IND (Central to Peripheral)
         if (conn->is_central || frame[1] != 5 ||
-            !(GAP_HW_PHY_MASK() & 6) || conn->pending.phy_update
+            !(GAP_HW_PHY_MASK() & 6) || (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE)
         ) return gap_conn_unknown_resp(frame[2]);
 
         uint8_t supported = GAP_HW_PHY_MASK() & 7;
@@ -1842,7 +1834,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         conn->phy.pending.tx = tx;
         conn->phy.pending.rx = rx;
         conn->phy.instant = instant;
-        conn->pending.phy_update = 1;
+        conn->pending.procedure_flags |= GAP_PENDING_PHY_UPDATE;
         break;
     }
 #if GAP_EXT_ADV_SUPPORT
@@ -1890,12 +1882,12 @@ static uint8_t gap_conn_procedure_busy(void) {
     return !gap_connected() ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->link.first_event ||
-        conn->pending.timing_update ||
+        (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
         conn->pending.params ||
         conn->pending.length ||
-        conn->pending.channel_map ||
+        (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
         conn->pending.phy_request ||
-        conn->pending.phy_update ||
+        (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
         conn->queue.local_update ||
         conn->queue.local_params ||
         conn->queue.length ||
@@ -2540,10 +2532,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!gap_conn_slot_active(gap_conn_slot) ||
         (*gap_security_generation) != generation ||
         gap_security->phase ||
-        conn->pending.timing_update ||
+        (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) ||
         conn->queue.local_update ||
         conn->queue.local_map ||
-        conn->pending.channel_map ||
+        (conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) ||
         conn->queue.local_params ||
         conn->pending.params ||
         conn->features.request_pending ||
@@ -2551,7 +2543,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         conn->pending.length ||
         conn->queue.phy_queued ||
         conn->pending.phy_request ||
-        conn->pending.phy_update ||
+        (conn->pending.procedure_flags & GAP_PENDING_PHY_UPDATE) ||
         conn->link_state.terminate_queued ||
         conn->link_state.terminate_sent ||
         conn->link_state.terminate_after_reply

@@ -19,7 +19,7 @@ static void gap_conn_send_queued(void) {
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
         conn->map_instant = (uint16_t)(conn->link.event_counter +
                                     6 * (conn->schedule.latency + 1) + 1);
-        conn->pending.channel_map = 1;
+        conn->pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
         conn->queue.local_map = 0;
 
         gap_tx_frame[0] = 3;
@@ -1120,7 +1120,7 @@ static void gap_conn_poll(void) {
            gap_tx_frame[2] == LL_CONNECTION_RATE_IND) ||
           (!conn->is_central && conn->rate.ack_waiting &&
            (uint16_t)(conn->next_schedule.instant - event) < 0x8000))) ||
-        (conn->pending.timing_update &&
+        ((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
          (event == conn->update_instant ||
           event == (uint16_t)(conn->update_instant - 1))))
     ) {
