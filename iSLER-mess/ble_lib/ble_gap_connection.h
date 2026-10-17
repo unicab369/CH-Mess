@@ -772,7 +772,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
     case LL_CONNECTION_UPDATE_IND: {
         if (!conn->is_central && frame[1] == 12 &&
-            !(conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !gap_conn_rate_busy()
+            !(conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
+            !gap_conn_rate_busy()
         ) {
             uint8_t win_size = frame[3];
             uint16_t win_offset = ble_read_u16_le(frame + 4);
@@ -852,9 +853,11 @@ static uint8_t gap_conn_control(const uint8_t *frame,
     case LL_CONNECTION_PARAM_RSP: { // LL_CONNECTION_PARAM_RSP (Peripheral to Central only)
         uint8_t error = GAP_LL_ERR_INVALID_PARAMS; // Invalid LL parameters.
 
-        if (frame[1] != 24 || (frame[2] == LL_CONNECTION_PARAM_RSP &&
-            (!conn->is_central || !conn->pending.params ||
-             !conn->pending.params_local))
+        if (frame[1] != 24 ||
+            (frame[2] == LL_CONNECTION_PARAM_RSP &&
+                (!conn->is_central || !conn->pending.params ||
+                !conn->pending.params_local)
+            )
         ) return gap_conn_reject_resp(frame[2], error);
 
         uint16_t minimum = ble_read_u16_le(frame + 3);
@@ -863,8 +866,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         uint16_t timeout = ble_read_u16_le(frame + 9);
 
         if (!ble_timing_ranges_valid(minimum, maximum, latency, timeout) ||
-            frame[11] > maximum || (uint32_t)timeout * 80 <=
-                2 * (uint32_t)(latency + 1) * maximum * 10
+            frame[11] > maximum ||
+            (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * maximum * 10
         ) return gap_conn_reject_resp(frame[2], error);
 
         // Offset hints must be unique, below Interval_Max, and
