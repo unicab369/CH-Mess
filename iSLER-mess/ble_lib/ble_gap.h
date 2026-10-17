@@ -391,7 +391,7 @@ typedef struct {
     uint8_t window_size, update_window_size;
 #if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
-    uint8_t sync_transfer_handle;
+    uint8_t sync_transfer_slot;
     uint16_t sync_transfer_id;
 #endif
     uint16_t tx_l2cap_remaining;

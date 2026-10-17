@@ -483,9 +483,9 @@ void gap_hw_received(void) {
                 if (gap_tx_frame[1] == 0 &&
                     !gap_security->phase && conn->sync_transfer_queued
                 ) {
-                    int slot = gap_sync_slot(conn->sync_transfer_handle);
+                    uint8_t slot = conn->sync_transfer_slot;
 
-                    if (slot >= 0) {
+                    if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used) {
                         gap_past_encode(gap_tx_frame, conn->sync_transfer_id,
                             (uint8_t)slot, conn_anchor_ticks, event_counter);
                     }

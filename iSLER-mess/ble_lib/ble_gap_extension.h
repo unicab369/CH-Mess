@@ -40,11 +40,11 @@ enum {
     GAP_PERIODIC_SYNC_TERMINATED = 4
 };
 typedef struct {
-    uint8_t type, handle, sid;
+    uint8_t type, slot, sid;
     gap_address peer;
 } gap_periodic_sync_event;
 typedef struct {
-    uint8_t handle, sid;
+    uint8_t slot, sid;
     uint16_t event_counter, did, data_len;
     int8_t rssi;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
@@ -59,7 +59,7 @@ typedef struct {
 } gap_pawr_report;
 typedef struct {
     // Synchronization identity and radio parameters.
-    uint8_t used, established, handle, sid;
+    uint8_t used, established, sid;
     gap_address peer;
     // Once established, phy comes from a configured RX PHY or validated PAST.
     uint8_t channel_map[5], sca, phy;
@@ -844,7 +844,7 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
     gap_periodic_sync_event event;
     memset(&event, 0, sizeof(event));
     event.type = type;
-    event.handle = sync->handle;
+    event.slot = (uint8_t)(sync - gap_syncs);
     event.sid = sync->sid;
     event.peer = sync->peer;
 
@@ -862,7 +862,7 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
 
 // Application facing
 // Request synchronization to one advertiser and SID. Scanning is started
-// automatically when needed; the returned handle identifies later events.
+// automatically when needed; the returned slot identifies later events.
 int gap_sync_start(
     uint8_t type, const uint8_t address[6],
     uint8_t sid, uint32_t timeout_ms
@@ -873,14 +873,14 @@ int gap_sync_start(
         timeout_ms > 163840 ||
         gap_central.active ||
         gap_conn_slot_active(gap_conn_slot)
-    ) return 0;
+    ) return -1;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
             gap_syncs[i].peer.type == random_type &&
             !memcmp(gap_syncs[i].peer.address, address, 6)
-        ) return 0;
+        ) return -1;
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
@@ -889,7 +889,7 @@ int gap_sync_start(
             break;
         }
 
-    if (slot < 0) return 0;
+    if (slot < 0) return -1;
 
     gap_sync_context *sync = &gap_syncs[slot];
 
@@ -900,13 +900,12 @@ int gap_sync_start(
 
     memset(sync, 0, sizeof(*sync));
     sync->used = 1;
-    sync->handle = (uint8_t)(slot + 1);
     sync->sid = sid;
     sync->peer.type = random_type;
     memcpy(sync->peer.address, address, 6);
     sync->timeout_ms = timeout_ms;
     sync->last_event_ms = GET_MILLIS();
-    return (uint8_t)(slot + 1);
+    return slot;
 }
 
 // Application facing
@@ -918,14 +917,6 @@ int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
     gap_past.enabled = enabled;
     if (enabled) gap_past.timeout_ms = timeout_ms;
     return 1;
-}
-
-static int gap_sync_slot(uint8_t handle) {
-    if (!handle || handle > GAP_PERIODIC_SYNC_COUNT)
-        return -1;
-
-    uint8_t slot = (uint8_t)(handle - 1);
-    return gap_syncs[slot].used ? slot : -1;
 }
 
 static void gap_sync_scan_finish(void) {
@@ -942,9 +933,9 @@ static void gap_sync_scan_finish(void) {
 // Application facing
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
-int gap_sync_stop(uint8_t handle, uint8_t terminate) {
-    int slot = gap_sync_slot(handle);
-    if (slot < 0 || terminate > 1 ||
+int gap_sync_stop(uint8_t slot, uint8_t terminate) {
+    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used ||
+        terminate > 1 ||
         gap_syncs[slot].established != terminate
     ) return 0;
 
@@ -960,11 +951,10 @@ int gap_sync_stop(uint8_t handle, uint8_t terminate) {
 // The configuration stays selected for later events; each queued response is
 // consumed after transmission. Pass zero data bytes to send an empty response.
 int gap_sync_pawr_respond(
-    uint8_t handle, uint8_t subevent,
+    uint8_t slot, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len
 ) {
-    int slot = gap_sync_slot(handle);
-    if (slot < 0) return 0;
+    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used) return 0;
     gap_sync_context *sync = &gap_syncs[slot];
 
     if (!sync->established || !sync->pawr.has_timing ||
@@ -1004,9 +994,9 @@ int gap_sync_pawr_respond(
 // Repeat the queued PAwR response at matching subevents until disabled.
 // Responses remain one-shot by default; disabling repeat consumes the
 // existing response after it is sent once more.
-int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
-    int slot = gap_sync_slot(handle);
-    if (enabled > 1 || slot < 0 ||
+int gap_sync_pawr_repeat(uint8_t slot, uint8_t enabled) {
+    if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
+        !gap_syncs[slot].used ||
         !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing
     ) return 0;
@@ -1017,10 +1007,9 @@ int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
 
 // Application facing
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
-int gap_sync_pawr_accept(uint8_t handle, uint8_t enabled) {
-    int slot = gap_sync_slot(handle);
-
-    if (enabled > 1 || slot < 0 || gap_central.active ||
+int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
+    if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
+        !gap_syncs[slot].used || gap_central.active ||
         !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing ||
         gap_conn_slot_active(gap_conn_slot)
@@ -1274,7 +1263,7 @@ static int gap_periodic_sync_receive(
     uint8_t tail = (gap_periodic_reports.head + gap_periodic_reports.count) %
                    GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_report *report = &gap_periodic_reports.items[tail];
-    report->handle = gap_syncs[slot].handle;
+    report->slot = (uint8_t)slot;
     report->sid = gap_syncs[slot].sid;
     report->event_counter = gap_syncs[slot].last_event_counter;
     report->did = gap_syncs[slot].did;
@@ -2492,7 +2481,6 @@ static int gap_past_receive(
 
     memset(&gap_syncs[free_slot], 0, sizeof(gap_syncs[free_slot]));
     gap_syncs[free_slot].used = 1;
-    gap_syncs[free_slot].handle = (uint8_t)(free_slot + 1);
     gap_syncs[free_slot].sid = fields.identity.sid;
     gap_syncs[free_slot].peer.type = address_type;
     memcpy(gap_syncs[free_slot].peer.address, frame + 29, 6);
@@ -2597,18 +2585,18 @@ static int gap_past_encode(
 
 // Application facing
 // Queue a PAST LL control PDU for the active connection.
-int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
+int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    int sync_slot = gap_sync_slot(handle);
 
-    if (!gap_conn_slot_active(gap_conn_slot) || sync_slot < 0 ||
-        !gap_syncs[sync_slot].established ||
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used ||
+        !gap_syncs[slot].established ||
         conn->sync_transfer_queued ||
         conn->data_length.tx_octets < 35 ||
         conn->data_length.tx_time < 392
     ) return 0;
 
-    conn->sync_transfer_handle = handle;
+    conn->sync_transfer_slot = slot;
     conn->sync_transfer_id = id;
     conn->sync_transfer_queued = 1;
     return 1;

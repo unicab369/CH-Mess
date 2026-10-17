@@ -163,7 +163,7 @@ static void gap_conn_end(void) {
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
     conn->sync_transfer_queued = 0;
-    conn->sync_transfer_handle = 0;
+    conn->sync_transfer_slot = 0;
 #endif
 
     if (conn->connection_status == GAP_CONNECTION_PENDING)
