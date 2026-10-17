@@ -1312,27 +1312,23 @@ static void gap_pawr_report_push(
     gap_ext_adv_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint64_t subevent_start_ticks
 ) {
-    if (!gap_ext_pawr.response.ready)
-        return;
+    if (!gap_ext_pawr.response.ready) return;
 
     uint8_t *pdu = gap_ext_pawr.response.frame;
     uint32_t airtime_us = gap_phy_airtime_us(pdu[1], set->aux_phy);
-    uint64_t packet_start_ticks = gap_ext_pawr.response.ticks >=
-        HW_TICKS_FROM_US(airtime_us) ? gap_ext_pawr.response.ticks -
-        HW_TICKS_FROM_US(airtime_us) : 0;
+    uint64_t pkt_start_ticks = gap_ext_pawr.response.ticks >=
+                            HW_TICKS_FROM_US(airtime_us) ? gap_ext_pawr.response.ticks -
+                            HW_TICKS_FROM_US(airtime_us) : 0;
 
-    for (uint8_t response_slot = 0; response_slot < set->pawr.resp_slots;
-         response_slot++) {
-        uint64_t slot_start_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
-            (uint32_t)set->pawr.resp_delay * 1250 +
-            (uint32_t)response_slot * set->pawr.resp_spacing * 125);
-        uint64_t slot_end_ticks = slot_start_ticks + HW_TICKS_FROM_US(
-            (uint32_t)set->pawr.resp_spacing * 125);
-        uint64_t packet_end_ticks = packet_start_ticks + HW_TICKS_FROM_US(airtime_us);
+    for (uint8_t resp_slot = 0; resp_slot < set->pawr.resp_slots; resp_slot++) {
+        uint64_t start_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
+                                    (uint32_t)set->pawr.resp_delay * 1250 +
+                                    (uint32_t)resp_slot * set->pawr.resp_spacing * 125);
+        uint64_t end_ticks = start_ticks + HW_TICKS_FROM_US(
+                                (uint32_t)set->pawr.resp_spacing * 125);
 
-        if (packet_start_ticks + HW_TICKS_FROM_US(150) >= slot_start_ticks &&
-            packet_start_ticks < slot_end_ticks &&
-            packet_end_ticks <= slot_end_ticks
+        if (pkt_start_ticks + HW_TICKS_FROM_US(150) >= start_ticks &&
+            pkt_start_ticks + HW_TICKS_FROM_US(airtime_us) <= end_ticks
         ) {
             gap_ext_fields fields;
 
@@ -1358,7 +1354,7 @@ static void gap_pawr_report_push(
                 report->sid = gap_ext_adv[set_id].sid;
                 report->event_counter = event_counter;
                 report->subevent = subevent;
-                report->response_slot = response_slot;
+                report->response_slot = resp_slot;
                 report->has_address = fields.identity.has_address;
                 report->peer = fields.identity.peer;
                 report->data_len = fields.payload.len;
@@ -1601,6 +1597,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             set->pawr.subevents > 1 ? set->pawr.subevent_int :
                                          set->periodic.params.interval) * 1250;
         uint64_t event_start = set->periodic.next_event_ticks;
+
         for (uint8_t subevent = 0; subevent < set->pawr.subevents;
              subevent++) {
             uint64_t subevent_start = event_start + HW_TICKS_FROM_US(
@@ -1626,15 +1623,13 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             frame[3] = 0x08; // ADI; no AuxPtr, SyncInfo, or ACAD here.
             frame[4] = (uint8_t)adi;
             frame[5] = (uint8_t)(adi >> 8);
+
             if (data_len)
-                memcpy(frame + 6, set->periodic.data,
-                       data_len);
+                memcpy(frame + 6, set->periodic.data, data_len);
             uint64_t subevent_start_ticks = 0;
 
             if (!gap_periodic_tx(frame, (uint8_t)(frame[1] + 2), set,
-                    channel,
-                    subevent_start,
-                    &subevent_start_ticks)
+                    channel, subevent_start, &subevent_start_ticks)
             ) return 0;
 
             // PAwR data is sent once, then later subevents are empty until the
@@ -1660,10 +1655,9 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             gap_rx_armed = 1;
             while (GAP_HW_TICKS() < end_ticks) {
                 if (gap_ext_pawr.response.ready)
-                    gap_pawr_report_push(set,
-                        (uint8_t)(set - gap_ext_adv),
-                        set->periodic.event_counter, subevent,
-                        subevent_start_ticks);
+                    gap_pawr_report_push(set, (uint8_t)(set - gap_ext_adv),
+                                        set->periodic.event_counter, subevent,
+                                        subevent_start_ticks);
             }
 
             if (gap_rx_armed)
@@ -1672,10 +1666,9 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             gap_ext_pawr.response.listening = 0;
             GAP_HW_PACKET_CLEAR();
             if (gap_ext_pawr.response.ready)
-                gap_pawr_report_push(set,
-                    (uint8_t)(set - gap_ext_adv),
-                    set->periodic.event_counter, subevent,
-                    subevent_start_ticks);
+                gap_pawr_report_push(set, (uint8_t)(set - gap_ext_adv),
+                                    set->periodic.event_counter, subevent,
+                                    subevent_start_ticks);
         }
         return 1;
     }
