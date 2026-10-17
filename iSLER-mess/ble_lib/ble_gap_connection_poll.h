@@ -1171,9 +1171,12 @@ static void gap_conn_poll(void) {
 
     // Legacy CONNECT_IND selects Channel Selection Algorithm #1.
     uint8_t unmapped = (conn->link.unmapped_channel + conn->link.hop) % 37;
-    uint8_t channel = conn->link.channel_map[unmapped / 8] & (1 << (unmapped % 8)) ?
-                    unmapped : conn->link.used_channels[unmapped % conn->link.used_count];
     conn->link.unmapped_channel = unmapped;
+
+    uint8_t channel = unmapped;
+    if (!(conn->link.channel_map[unmapped / 8] & (1 << (unmapped % 8))))
+        channel = conn->link.used_channels[unmapped % conn->link.used_count];
+
     GAP_HW_CRC_INIT(conn->link.crc_init);
 
     if (conn->is_central) {
@@ -1194,7 +1197,8 @@ static void gap_conn_poll(void) {
         }
 
         gap_tx_frame[0] = (gap_tx_frame[0] & 0x03) |
-                        (conn->link.expected_rx_sn << 2) | (conn->link.tx_sn << 3);
+                        (conn->link.expected_rx_sn << 2) |
+                        (conn->link.tx_sn << 3);
         GAP_HW_TX_CLEAR_DONE();
         uint8_t *transmit = gap_security_tx_frame();
 
@@ -1204,10 +1208,10 @@ static void gap_conn_poll(void) {
                             transmit, 1, conn->phy.current.tx, conn->phy.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
-        GAP_HW_LINK_TX();
-        gap_rx_armed = 1;
         conn->link_state.rx_armed = 1;
         conn->link_state.channel_selected = 1;
+        gap_rx_armed = 1;
+        GAP_HW_LINK_TX();
         return;
     }
 
@@ -1215,10 +1219,10 @@ static void gap_conn_poll(void) {
                         NULL, 0, conn->phy.current.tx, conn->phy.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
-    GAP_HW_LINK_RX();
-    gap_rx_armed = 1;
     conn->link_state.rx_armed = 1;
     conn->link_state.channel_selected = 1;
+    gap_rx_armed = 1;
+    GAP_HW_LINK_RX();
 }
 
 // Run housekeeping for every live link and let the first due link claim the
@@ -1231,29 +1235,28 @@ static inline void gap_conn_poll_all(void) {
 
     for (uint8_t offset = 0; offset < GAP_CONNECTION_COUNT; offset++) {
         uint8_t slot = (uint8_t)((gap_poll.poll_cursor + offset) % GAP_CONNECTION_COUNT);
-
         if (!gap_conn_slot_active(slot))
             continue;
 
         uint64_t deadline = gap_conn_close_ticks(&gap_conn_ctx[slot], now_ms);
-        uint8_t position = count;
+        uint8_t pos = count;
 
-        while (position && deadline < deadlines[position - 1]) {
-            order[position] = order[position - 1];
-            deadlines[position] = deadlines[position - 1];
-            position--;
+        while (pos && deadline < deadlines[pos - 1]) {
+            order[pos] = order[pos - 1];
+            deadlines[pos] = deadlines[pos - 1];
+            pos--;
         }
-        order[position] = slot;
-        deadlines[position] = deadline;
+        order[pos] = slot;
+        deadlines[pos] = deadline;
         count++;
     }
 
+    // Save the slot because the loop changes gap_conn_slot for each link.
     uint8_t selected_slot = gap_conn_slot;
     uint8_t owner_at_entry = gap_poll.slot_valid ? gap_poll.slot : UINT8_MAX;
 
     for (uint8_t index = 0; index < count; index++) {
-        uint8_t slot = order[index];
-        gap_conn_slot = slot;
+        gap_conn_slot = order[index];
         gap_conn_poll();
 
         if (gap_poll.slot_valid &&
