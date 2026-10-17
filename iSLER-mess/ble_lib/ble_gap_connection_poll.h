@@ -924,7 +924,6 @@ static uint64_t gap_conn_close_ticks(
 
 
 static void gap_conn_poll(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!gap_conn_slot_active(gap_conn_slot))
@@ -953,6 +952,7 @@ static void gap_conn_poll(void) {
     gap_smp_poll();
 #endif
     uint32_t now_ms = GET_MILLIS();
+    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
     if (gap_security->phase &&
         gap_security->phase != GAP_ENC_QUEUED &&
