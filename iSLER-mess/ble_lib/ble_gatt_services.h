@@ -72,13 +72,8 @@ static inline int gatt_battery_service_add(
             NULL, 0, 0, NULL, NULL, NULL, &battery->level_cccd_handle);
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(battery, 0, sizeof(*battery));
         return 0;
     }
@@ -218,13 +213,8 @@ static inline int gatt_device_information_service_add(
     }
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(service, 0, sizeof(*service));
         return 0;
     }
@@ -278,13 +268,8 @@ static inline int gatt_gap_service_add(
             &service->appearance_handle);
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(service, 0, sizeof(*service));
         return 0;
     }
@@ -337,13 +322,8 @@ static inline int gatt_heart_rate_service_add(
     }
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(service, 0, sizeof(*service));
         return 0;
     }
@@ -890,13 +870,8 @@ static inline int gatt_volume_offset_control_service_add(
             BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         return 0;
     }
 
@@ -1450,13 +1425,8 @@ static inline int gatt_audio_input_control_service_add(
             BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         return 0;
     }
 
@@ -1595,13 +1565,8 @@ static inline int gatt_common_audio_service_add(
             &service->csis_include_handle);
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(service, 0, sizeof(*service));
         return 0;
     }
@@ -1673,13 +1638,8 @@ static inline int gatt_broadcast_audio_scan_service_add(
     }
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
-        memset(server->value_pool + old_value_used, 0,
-               server->value_used - old_value_used);
-        server->count = old_count;
-        server->next_handle = old_next_handle;
-        server->value_used = old_value_used;
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
         memset(service, 0, sizeof(*service));
         memset(receive_state_handles, 0,
                (size_t)receive_state_count * sizeof(*receive_state_handles));
@@ -5702,13 +5662,8 @@ static inline int gatt_object_transfer_service_add_multi_object_type_full(
         ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
 
         if (!cccd) {
-            memset(server->attributes + old_count, 0,
-                   (server->count - old_count) * sizeof(server->attributes[0]));
-            memset(server->value_pool + old_value_used, 0,
-                   server->value_used - old_value_used);
-            server->count = old_count;
-            server->next_handle = old_next_handle;
-            server->value_used = old_value_used;
+            gatt_service_rollback(server, old_count, old_next_handle,
+                old_value_used);
             memset(service, 0, sizeof(*service));
             return 0;
         }

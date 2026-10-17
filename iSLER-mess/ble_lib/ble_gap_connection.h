@@ -662,17 +662,19 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         uint8_t entropy[12];
 
         if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
-            gap_tx_frame[1] = 3;
-            gap_tx_frame[2] = LL_REJECT_EXT_IND;
-            gap_tx_frame[3] = LL_ENC_REQ;
             gap_security->status = GAP_LL_ERR_UNSPECIFIED;
-            gap_tx_frame[4] = GAP_LL_ERR_UNSPECIFIED;
 
             if (restart) {
                 conn->link_state.terminate_after_reply = 1;
                 gap_tx_frame[1] = 2;
                 gap_tx_frame[2] = LL_TERMINATE_IND;
                 gap_tx_frame[3] = GAP_LL_ERR_UNSPECIFIED;
+            }
+            else {
+                gap_tx_frame[1] = 3;
+                gap_tx_frame[2] = LL_REJECT_EXT_IND;
+                gap_tx_frame[3] = LL_ENC_REQ;
+                gap_tx_frame[4] = GAP_LL_ERR_UNSPECIFIED;
             }
 
             break;
