@@ -371,8 +371,7 @@ static void gap_send_conn_update(void) {
                             6 * (conn->schedule.latency + 1) + 1);
     conn->pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
     conn->queue.local_update = 0;
-    conn->pending.params = 0;
-    conn->pending.params_local = 0;
+    conn->pending.params_state = GAP_CONN_PARAMS_NONE;
 
     gap_tx_frame[0] = 0x03;
     gap_tx_frame[1] = 12;
@@ -627,10 +626,9 @@ static uint8_t gap_conn_reject_resp(uint8_t opcode, uint8_t error) {
     gap_tx_frame[4] = error;
 
     if (opcode == LL_CONNECTION_PARAM_RSP &&
-        conn->pending.params && conn->pending.params_local
+        conn->pending.params_state == GAP_CONN_PARAMS_LOCAL
     ) {
-        conn->pending.params = 0;
-        conn->pending.params_local = 0;
+        conn->pending.params_state = GAP_CONN_PARAMS_NONE;
         conn->connection_status = error;
     }
 
@@ -803,8 +801,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 conn->new_params.latency = latency;
                 conn->new_params.supervision_timeout = timeout;
                 conn->pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
-                conn->pending.params = 0;
-                conn->pending.params_local = 0;
+                conn->pending.params_state = GAP_CONN_PARAMS_NONE;
 
                 if (conn->queue.local_params) {
                     conn->queue.local_params = 0;
@@ -857,8 +854,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
 
         if (frame[1] != 24 ||
             (frame[2] == LL_CONNECTION_PARAM_RSP &&
-                (!conn->is_central || !conn->pending.params ||
-                !conn->pending.params_local)
+                (!conn->is_central ||
+                 conn->pending.params_state != GAP_CONN_PARAMS_LOCAL)
             )
         ) return gap_conn_reject_resp(frame[2], error);
 
@@ -906,9 +903,10 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->queue.local_map ||
             conn->queue.phy_queued ||
             (frame[2] == LL_CONNECTION_PARAM_REQ &&
-                ((conn->pending.params && !conn->pending.params_local) ||
+                (conn->pending.params_state == GAP_CONN_PARAMS_REMOTE ||
                  (conn->is_central &&
-                    (conn->pending.params || conn->queue.local_params))))
+                    (conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
+                     conn->queue.local_params))))
         ) return gap_conn_reject_resp(frame[2], error);
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
@@ -951,13 +949,12 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             // The Central's procedure takes precedence over a
             // simultaneous locally initiated Peripheral request.
             if (conn->queue.local_params ||
-                (conn->pending.params && conn->pending.params_local)
+                conn->pending.params_state == GAP_CONN_PARAMS_LOCAL
             ) conn->connection_status = GAP_LL_ERR_COLLISION;
 
             conn->queue.local_params = 0;
             conn->features.request_pending = 0;
-            conn->pending.params = 1;
-            conn->pending.params_local = 0;
+            conn->pending.params_state = GAP_CONN_PARAMS_REMOTE;
             conn->params_started_ms = GET_MILLIS();
             gap_tx_frame[1] = 24;
             memcpy(gap_tx_frame + 2, frame + 2, 24);
@@ -1027,7 +1024,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->length_status = frame[3];
         }
 
-        if ((conn->pending.params && conn->pending.params_local) ||
+        if (conn->pending.params_state == GAP_CONN_PARAMS_LOCAL ||
             conn->features.request_pending
         ) {
             if (conn->features.request_pending &&
@@ -1039,8 +1036,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 conn->subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
 
-            conn->pending.params = 0;
-            conn->pending.params_local = 0;
+            conn->pending.params_state = GAP_CONN_PARAMS_NONE;
             conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[3];
@@ -1122,12 +1118,11 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         }
 
         if ((frame[3] == LL_CONNECTION_PARAM_REQ &&
-                conn->pending.params && conn->pending.params_local) ||
+                conn->pending.params_state == GAP_CONN_PARAMS_LOCAL) ||
              ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
               conn->features.request_pending)
         ) {
-            conn->pending.params = 0;
-            conn->pending.params_local = 0;
+            conn->pending.params_state = GAP_CONN_PARAMS_NONE;
             conn->queue.local_params = 0;
             conn->features.request_pending = 0;
             conn->connection_status = frame[4];
@@ -1267,8 +1262,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
-        if ((frame[3] == LL_CONNECTION_PARAM_REQ && conn->pending.params &&
-             conn->pending.params_local) ||
+        if ((frame[3] == LL_CONNECTION_PARAM_REQ &&
+             conn->pending.params_state == GAP_CONN_PARAMS_LOCAL) ||
             ((frame[3] == LL_FEATURE_REQ || frame[3] == LL_PERIPHERAL_FEATURE_REQ) &&
              conn->features.request_pending)
         ) {
@@ -1282,8 +1277,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             }
 
             conn->queue.local_params = 0;
-            conn->pending.params = 0;
-            conn->pending.params_local = 0;
+            conn->pending.params_state = GAP_CONN_PARAMS_NONE;
             conn->features.request_pending = 0;
             conn->features.known = 1;
             conn->features.peer[0] = 0;
@@ -1401,7 +1395,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
             conn->pending.procedure_flags ||
-            conn->pending.params ||
+            conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
             conn->pending.phy_request ||
             conn->pending.length ||
             conn->queue.local_update ||
@@ -1474,7 +1468,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             conn->subrate.request_pending ||
             conn->subrate.request_queued ||
             conn->pending.procedure_flags ||
-            conn->pending.params ||
+            conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
             conn->queue.local_update ||
             conn->queue.local_params
         ) {
@@ -1526,7 +1520,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 !gap_conn_rate_busy() &&
                 !conn->pending.procedure_flags &&
                 !conn->queue.local_update &&
-                !conn->pending.params &&
+                conn->pending.params_state == GAP_CONN_PARAMS_NONE &&
                 !conn->queue.local_params &&
                 !conn->subrate.pending &&
                 !conn->subrate.update_queued &&
@@ -1727,7 +1721,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         }
         else if (gap_security->phase ||
             conn->pending.procedure_flags ||
-            conn->pending.params ||
+            conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
             conn->queue.local_update ||
             conn->queue.local_params ||
             conn->queue.local_map ||
@@ -1886,7 +1880,7 @@ static uint8_t gap_conn_procedure_busy(void) {
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->link.first_event ||
         conn->pending.procedure_flags ||
-        conn->pending.params ||
+        conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
         conn->pending.length ||
         conn->pending.phy_request ||
         conn->queue.local_update ||
@@ -2535,10 +2529,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         (*gap_security_generation) != generation ||
         gap_security->phase ||
         conn->pending.procedure_flags ||
+        conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
         conn->queue.local_update ||
         conn->queue.local_map ||
         conn->queue.local_params ||
-        conn->pending.params ||
         conn->features.request_pending ||
         conn->queue.length ||
         conn->pending.length ||

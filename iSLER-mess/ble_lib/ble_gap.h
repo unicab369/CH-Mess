@@ -291,6 +291,12 @@ enum {
     GAP_PENDING_PHY_UPDATE = 1u << 2
 };
 
+enum {
+    GAP_CONN_PARAMS_NONE,
+    GAP_CONN_PARAMS_REMOTE,
+    GAP_CONN_PARAMS_LOCAL
+};
+
 typedef struct {
     struct {
         uint8_t rx_armed, event_replied, channel_selected;
@@ -397,9 +403,9 @@ typedef struct {
     } phy;
     struct {
         uint8_t update_window_active;
-        // GAP_PENDING_* flags: timing update, channel map, and PHY update.
+        // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
         uint8_t procedure_flags;
-        uint8_t params, params_local;
+        uint8_t params_state; // None, remote request, or local request.
         uint8_t phy_request;
         uint8_t length;
     } pending;

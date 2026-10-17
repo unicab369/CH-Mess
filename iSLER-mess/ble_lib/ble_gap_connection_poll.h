@@ -45,8 +45,7 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[0] = 3;
             conn->params_started_ms = GET_MILLIS();
             conn->queue.local_params = 0;
-            conn->pending.params = 1;
-            conn->pending.params_local = 1;
+            conn->pending.params_state = GAP_CONN_PARAMS_LOCAL;
             gap_tx_frame[1] = 24;
             gap_tx_frame[2] = LL_CONNECTION_PARAM_REQ;
 
@@ -992,7 +991,8 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((conn->pending.params || conn->features.request_pending ||
+    if ((conn->pending.params_state != GAP_CONN_PARAMS_NONE ||
+         conn->features.request_pending ||
          conn->features.ext_pending || conn->rate.req_pending ||
          conn->rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000

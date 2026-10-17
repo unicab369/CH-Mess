@@ -3131,7 +3131,7 @@ static void test_connection_parameter_requests(void) {
     receive_test_link_packet(1);
     assert(conn->features.request_pending && gap_tx_frame[2] == 0x08);
     receive_test_control(0x09, features, sizeof(features));
-    assert(conn->features.known && conn->pending.params);
+    assert(conn->features.known && conn->pending.params_state != GAP_CONN_PARAMS_NONE);
     assert(gap_tx_frame[2] == 0x0f && gap_tx_frame[1] == 24);
     assert(memcmp(gap_tx_frame + 3, parameters, 8) == 0);
     for (uint8_t i = 14; i < 26; i++) assert(gap_tx_frame[i] == 0xff);
@@ -3150,11 +3150,11 @@ static void test_connection_parameter_requests(void) {
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x0e);
     receive_test_control(0x09, features, sizeof(features));
-    assert(gap_tx_frame[2] == 0x0f && conn->pending.params);
+    assert(gap_tx_frame[2] == 0x0f && conn->pending.params_state != GAP_CONN_PARAMS_NONE);
     receive_test_control(0x11, (uint8_t[]){0x08, 0x20}, 2);
-    assert(conn->pending.params); // Unrelated rejection cannot cancel it.
+    assert(conn->pending.params_state != GAP_CONN_PARAMS_NONE); // Unrelated rejection cannot cancel it.
     receive_test_control(0x11, (uint8_t[]){0x0f, 0x20}, 2);
-    assert(!conn->pending.params && gap_conn_status() == 0x20);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && gap_conn_status() == 0x20);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     uint8_t update[11] = {1, 0, 0, 54, 0, 1, 0, 44, 1, 0, 0};
@@ -3162,7 +3162,7 @@ static void test_connection_parameter_requests(void) {
     update[9] = (uint8_t)instant;
     update[10] = (uint8_t)(instant >> 8);
     receive_test_control(0x00, update, sizeof(update));
-    assert(!conn->pending.params && (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
     assert(conn->procedures.params.interval == 54 && gap_conn_status() == 0);
     gap_conn_end();
@@ -3177,7 +3177,7 @@ static void test_connection_parameter_requests(void) {
     receive_test_control(0x0f, parameters, sizeof(parameters));
     assert(gap_tx_frame[2] == 0x10);
     assert(memcmp(gap_tx_frame + 3, parameters, sizeof(parameters)) == 0);
-    assert(conn->pending.params && !conn->pending.params_local);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_REMOTE);
     assert(gap_conn_status() == 0x23); // Central wins the collision.
     gap_conn_end();
 
@@ -3198,9 +3198,9 @@ static void test_connection_parameter_requests(void) {
     receive_test_link_packet(1);
     receive_test_control(0x0f, parameters, sizeof(parameters));
     assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x23);
-    assert(conn->pending.params && conn->pending.params_local);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_LOCAL);
     receive_test_control(0x07, (uint8_t[]){0x0f}, 1);
-    assert(!conn->pending.params && gap_conn_status() == 0x1a);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && gap_conn_status() == 0x1a);
     gap_conn_end();
     start_test_central_link();
     receive_test_control(0x0f, parameters, sizeof(parameters));
