@@ -1372,7 +1372,7 @@ static void gap_pawr_report_push(
 }
 
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
-static int gap_pawr_connect_req(
+static int gap_pawr_conn_req(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -1435,7 +1435,7 @@ static int gap_pawr_connect_req(
     if (!GAP_HW_TX_DONE()) return 0;
 
     if (!gap_conn_accept(request, received_ticks, HW_TICKS_FROM_US(1250),
-                         HW_TICKS_FROM_US(2500))
+                                                HW_TICKS_FROM_US(2500))
     ) return 0;
 
     conn->link.peer_sca_ppm = 500;
@@ -1449,20 +1449,20 @@ static int gap_pawr_connect_req(
 
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
-static int gap_pawr_connect_exchange(
-    gap_ext_adv_set *set, uint8_t channel,
-    uint64_t request_start_ticks
+static int gap_pawr_exchange(
+    gap_ext_adv_set *set, uint8_t channel, uint64_t request_start_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!set || !set->pawr_connect.pending || gap_conn_slot_active(gap_conn_slot) || GAP_HW_DATA_MAX() < 27)
-        return 0;
+    if (!set || !set->pawr_connect.pending ||
+        gap_conn_slot_active(gap_conn_slot) || GAP_HW_DATA_MAX() < 27
+    ) return 0;
 
     uint8_t *request = gap_central.request;
     uint8_t peer_type = set->pawr_connect.peer_type;
     const uint8_t *peer_address = set->pawr_connect.peer_address;
-    int peer_slot = gap_identity_find(peer_address, peer_type);
     uint8_t local_address[6], local_type, crc_init[3];
     uint32_t access_address;
+    int peer_slot = gap_identity_find(peer_address, peer_type);
     gap_local_addr_select(peer_slot, local_address, &local_type);
 
     if (!gap_access_addr(&access_address)) {
@@ -1479,12 +1479,9 @@ static int gap_pawr_connect_exchange(
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(request + 18, crc_init, sizeof(crc_init));
     request[21] = 1;
-    request[24] = (uint8_t)gap_conn_timing.interval;
-    request[25] = (uint8_t)(gap_conn_timing.interval >> 8);
-    request[26] = (uint8_t)gap_conn_timing.latency;
-    request[27] = (uint8_t)(gap_conn_timing.latency >> 8);
-    request[28] = (uint8_t)gap_conn_timing.supervision_timeout;
-    request[29] = (uint8_t)(gap_conn_timing.supervision_timeout >> 8);
+    ble_write_u16_le(request + 24, gap_conn_timing.interval);
+    ble_write_u16_le(request + 26, gap_conn_timing.latency);
+    ble_write_u16_le(request + 28, gap_conn_timing.supervision_timeout);
     memset(request + 30, 0xff, 4);
     request[34] = 0x1f;
     request[35] = 5;
@@ -1498,8 +1495,8 @@ static int gap_pawr_connect_exchange(
     gap_ext_pawr.connect.waiting = 1;
     GAP_HW_TX_CLEAR_DONE();
     GAP_HW_CRC_INIT(set->periodic.params.crc_init);
-    GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel, request, 1,
-                           set->aux_phy, set->aux_phy);
+    GAP_HW_LINK_CONFIG(set->periodic.params.access_address, channel,
+                        request, 1, set->aux_phy, set->aux_phy);
 
     while (GAP_HW_TICKS() < request_start_ticks) {}
     GAP_HW_LINK_TX();
@@ -1511,6 +1508,7 @@ static int gap_pawr_connect_exchange(
     uint64_t response_deadline = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
     while (GAP_HW_TX_DONE() && !gap_ext_pawr.connect.response_ready &&
            GAP_HW_TICKS() < response_deadline) {}
+
     gap_ext_pawr.connect.waiting = 0;
     set->pawr_connect.pending = 0;
     GAP_HW_STOP();
@@ -1610,7 +1608,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             if (set->pawr_connect.pending &&
                 subevent == set->pawr_connect.subevent
             ) {
-                if (gap_pawr_connect_exchange(
+                if (gap_pawr_exchange(
                         set, channel, subevent_start)
                 ) return 1;
 
@@ -2040,7 +2038,7 @@ static void gap_ext_scan_process(void) {
     size_t pdu_len = (size_t)pdu[1] + 2;
 
     if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
-        (void)gap_pawr_connect_req((uint8_t)slot, pdu,
+        (void)gap_pawr_conn_req((uint8_t)slot, pdu,
             pdu_len, gap_ext_scan.ticks);
         return;
     }

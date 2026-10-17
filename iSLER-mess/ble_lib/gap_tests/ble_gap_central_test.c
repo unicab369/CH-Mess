@@ -1472,7 +1472,7 @@ static void test_pawr_connection_accept(void) {
 
     captured_extended_count = 0;
     assert(gap_sync_pawr_accept(0, 0));
-    assert(!gap_pawr_connect_req(0, request, sizeof(request),
+    assert(!gap_pawr_conn_req(0, request, sizeof(request),
                                                8000000));
     assert(!gap_conn_slot_active(gap_conn_slot) && !captured_extended_count);
     assert(gap_sync_pawr_accept(0, 1));
