@@ -227,7 +227,7 @@ static int gap_ext_ad_data_valid(const uint8_t *data, size_t len) {
 static uint16_t gap_ext_did_next(uint16_t previous, uint16_t other) {
     uint8_t random[2];
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
-    uint16_t did = ((uint16_t)random[0] | ((uint16_t)random[1] << 8)) & 0x0fff;
+    uint16_t did = ble_read_u16_le(random) & 0x0fff;
     while (did == previous || did == other) did = (did + 1) & 0x0fff;
     return did;
 }
@@ -678,7 +678,7 @@ static int gap_ext_adv_decode(
                 return 0;
 
             fields->identity.has_adi = 1;
-            fields->identity.adi = (uint16_t)pdu[cursor] | (uint16_t)pdu[cursor + 1] << 8;
+            fields->identity.adi = ble_read_u16_le(pdu + cursor);
             fields->identity.sid = fields->identity.adi >> 12;
             cursor += 2;
         }
@@ -726,8 +726,7 @@ static int gap_ext_adv_decode(
 
             memcpy(fields->sync.channel_map, pdu + cursor + 4, 5);
             fields->sync.sca = fields->sync.channel_map[4] >> 5;
-            fields->sync.interval = (uint16_t)pdu[cursor + 2] |
-                                    (uint16_t)pdu[cursor + 3] << 8;
+            fields->sync.interval = ble_read_u16_le(pdu + cursor + 2);
             fields->sync.access_address = (uint32_t)pdu[cursor + 9] |
                                             (uint32_t)pdu[cursor + 10] << 8 |
                                             (uint32_t)pdu[cursor + 11] << 16 |
@@ -735,8 +734,7 @@ static int gap_ext_adv_decode(
             fields->sync.crc_init = (uint32_t)pdu[cursor + 13] |
                                     (uint32_t)pdu[cursor + 14] << 8 |
                                     (uint32_t)pdu[cursor + 15] << 16;
-            fields->sync.event_counter = (uint16_t)pdu[cursor + 16] |
-                                        (uint16_t)pdu[cursor + 17] << 8;
+            fields->sync.event_counter = ble_read_u16_le(pdu + cursor + 16);
             cursor += 18;
         }
 
@@ -2497,13 +2495,13 @@ static int gap_past_receive(
 
     uint32_t interval_us = (uint32_t)fields.sync.interval * 1250;
     uint16_t pa_delta = (uint16_t)(fields.sync.event_counter -
-        ((uint16_t)frame[25] | (uint16_t)frame[26] << 8));
+        ble_read_u16_le(frame + 25));
     uint32_t pa_distance = pa_delta < 0x8000 ? pa_delta : 0x10000 - pa_delta;
 
     if (pa_distance > 1 && (uint64_t)pa_distance * interval_us > 5000000)
         return 0;
 
-    int16_t event_delta = (int16_t)(((uint16_t)frame[23] | (uint16_t)frame[24] << 8) -
+    int16_t event_delta = (int16_t)(ble_read_u16_le(frame + 23) -
                             connection_event_counter);
 
     if (event_delta <= -16384 || event_delta >= 16384)
@@ -2518,7 +2516,7 @@ static int gap_past_receive(
     uint64_t target = (uint64_t)target_signed;
 
     uint16_t conn_delta = (uint16_t)(connection_event_counter -
-                            ((uint16_t)frame[35] | (uint16_t)frame[36] << 8));
+                            ble_read_u16_le(frame + 35));
     uint32_t conn_distance = conn_delta < 0x8000 ? conn_delta : 0x10000 - conn_delta;
     uint32_t clock_sum_ppm = gap_periodic_sca_ppm[fields.sync.sca] +
                             gap_periodic_sca_ppm[sca] + 500;

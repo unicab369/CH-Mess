@@ -681,7 +681,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         }
 
         gap_security->refreshing = restart;
-        gap_security->ediv = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
+        gap_security->ediv = ble_read_u16_le(frame + 11);
         memcpy(gap_security->random, frame + 3, 8);
         memcpy(gap_security->skd, frame + 13, 8);
         memcpy(gap_security->iv, frame + 21, 4);
@@ -1353,19 +1353,18 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             break;
         }
 
-        uint16_t minimum    = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
-        uint16_t maximum    = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
-        uint16_t factor_min = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
-        uint16_t factor_max = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        uint16_t latency    = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
-        uint16_t continuation = (uint16_t)frame[13] | (uint16_t)frame[14] << 8;
-        uint16_t timeout    = (uint16_t)frame[15] | (uint16_t)frame[16] << 8;
-        uint16_t periodicity = (uint16_t)frame[17] | (uint16_t)frame[18] << 8;
+        uint16_t minimum    = ble_read_u16_le(frame + 3);
+        uint16_t maximum    = ble_read_u16_le(frame + 5);
+        uint16_t factor_min = ble_read_u16_le(frame + 7);
+        uint16_t factor_max = ble_read_u16_le(frame + 9);
+        uint16_t latency    = ble_read_u16_le(frame + 11);
+        uint16_t continuation = ble_read_u16_le(frame + 13);
+        uint16_t timeout    = ble_read_u16_le(frame + 15);
+        uint16_t periodicity = ble_read_u16_le(frame + 17);
         uint8_t invalid_offset = 0, offsets_valid = 1;
 
         for (uint8_t i = 0; i < 4; i++) {
-            uint16_t offset = (uint16_t)frame[21 + i * 2] |
-                            (uint16_t)frame[22 + i * 2] << 8;
+            uint16_t offset = ble_read_u16_le(frame + 21 + i * 2);
 
             if (offset == 0xffff)
                 invalid_offset = 1;
@@ -1373,8 +1372,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 offsets_valid = 0;
 
             for (uint8_t j = 0; j < i; j++) {
-                uint16_t previous = (uint16_t)frame[21 + j * 2] |
-                                    (uint16_t)frame[22 + j * 2] << 8;
+                uint16_t previous = ble_read_u16_le(frame + 21 + j * 2);
 
                 if (offset != 0xffff && offset == previous)
                     offsets_valid = 0;
@@ -1457,12 +1455,12 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             return gap_conn_unknown_resp(frame[2]);
 
         uint16_t win_offset = ble_read_u16_le(frame + 3);
-        uint16_t interval = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
+        uint16_t interval = ble_read_u16_le(frame + 5);
         uint16_t instant = ble_read_u16_le(frame + 7);
-        uint16_t factor = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        uint16_t latency = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
-        uint16_t continuation = (uint16_t)frame[13] | (uint16_t)frame[14] << 8;
-        uint16_t timeout = (uint16_t)frame[15] | (uint16_t)frame[16] << 8;
+        uint16_t factor = ble_read_u16_le(frame + 9);
+        uint16_t latency = ble_read_u16_le(frame + 11);
+        uint16_t continuation = ble_read_u16_le(frame + 13);
+        uint16_t timeout = ble_read_u16_le(frame + 15);
 
         if (!gap_rate_parameters_valid(interval, factor,
                 latency, continuation, timeout) ||
@@ -1514,11 +1512,11 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             break;
         }
 
-        uint16_t min_factor = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
-        uint16_t max_factor = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
-        uint16_t max_latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
-        uint16_t continuation = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        uint16_t timeout = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
+        uint16_t min_factor = ble_read_u16_le(frame + 3);
+        uint16_t max_factor = ble_read_u16_le(frame + 5);
+        uint16_t max_latency = ble_read_u16_le(frame + 7);
+        uint16_t continuation = ble_read_u16_le(frame + 9);
+        uint16_t timeout = ble_read_u16_le(frame + 11);
         uint8_t error = GAP_LL_ERR_INVALID_PARAMS;
 
         if (gap_schedule_parameters_valid(min_factor, max_factor, max_latency,
@@ -1583,11 +1581,11 @@ static uint8_t gap_conn_control(const uint8_t *frame,
             break;
         }
 
-        uint16_t factor = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
-        uint16_t base = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
-        uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
-        uint16_t continuation = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
-        uint16_t timeout = (uint16_t)frame[11] | (uint16_t)frame[12] << 8;
+        uint16_t factor = ble_read_u16_le(frame + 3);
+        uint16_t base = ble_read_u16_le(frame + 5);
+        uint16_t latency = ble_read_u16_le(frame + 7);
+        uint16_t continuation = ble_read_u16_le(frame + 9);
+        uint16_t timeout = ble_read_u16_le(frame + 11);
 
         if (gap_conn_rate_busy() ||
             !gap_rate_parameters_valid(conn->schedule.interval_125us,
@@ -1658,8 +1656,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         {
             uint16_t values[4];
             for (uint8_t i = 0; i < 4; i++)
-                values[i] = (uint16_t)frame[3 + i * 2] |
-                            (uint16_t)frame[4 + i * 2] << 8;
+                values[i] = ble_read_u16_le(frame + 3 + i * 2);
 
             if (values[0] < 27 || values[0] > 251 ||
                 values[2] < 27 || values[2] > 251 ||
@@ -2326,7 +2323,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     // SMP may only send between complete application L2CAP PDUs.
 
     if (llid == 2) {
-        uint16_t pdu_len = (uint16_t)data[0] | (uint16_t)data[1] << 8;
+        uint16_t pdu_len = ble_read_u16_le(data);
         conn->tx_l2cap_remaining = (size_t)pdu_len + 4 > len ?
                                     (uint16_t)((size_t)pdu_len + 4 - len) : 0;
     }

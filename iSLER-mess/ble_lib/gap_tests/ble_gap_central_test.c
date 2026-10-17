@@ -914,8 +914,7 @@ static void test_extended_advertising_transmit(void) {
     assert(gap_ext_scan_receive(GAP_EXT_ADV_PRIMARY_PDU,
         primary, captured_extended_pdu_lengths[0], -40));
     assert(gap_ext_ctx[0].active &&
-           gap_ext_ctx[0].identity.adi ==
-               ((uint16_t)primary[4] | (uint16_t)primary[5] << 8));
+           gap_ext_ctx[0].identity.adi == ble_read_u16_le(primary + 4));
     assert(gap_ext_scan_receive(GAP_EXT_ADV_AUXILIARY_PDU,
         auxiliary, captured_extended_pdu_lengths[1], -40));
     assert(!gap_ext_ctx[0].active);
@@ -1103,7 +1102,7 @@ static void test_periodic_advertising_transmit(void) {
     const uint8_t *aux = captured_extended_pdus[1];
     assert(aux[2] == 27 && aux[3] == 0x29);
     const uint8_t *sync = aux + 12;
-    assert(((uint16_t)sync[2] | ((uint16_t)sync[3] << 8)) == 6);
+    assert(ble_read_u16_le(sync + 2) == 6);
     uint32_t access_address = (uint32_t)sync[9] |
         (uint32_t)sync[10] << 8 | (uint32_t)sync[11] << 16 |
         (uint32_t)sync[12] << 24;
@@ -1120,7 +1119,7 @@ static void test_periodic_advertising_transmit(void) {
                sync_unit_us);
     assert(sync[4] == 0xff && sync[5] == 0xff && sync[6] == 0xff &&
            sync[7] == 0xff && (sync[8] & 0x1f) == 0x1f);
-    uint16_t set_adi = (uint16_t)aux[10] | (uint16_t)aux[11] << 8;
+    uint16_t set_adi = ble_read_u16_le(aux + 10);
     assert((set_adi >> 12) == 6 && (sync[16] | sync[17]) == 0);
     gap_ext_adv_set *set = &gap_ext_adv[0];
     fake_radio_ticks = set->periodic_next_event_ticks;
@@ -1136,8 +1135,7 @@ static void test_periodic_advertising_transmit(void) {
     assert(captured_extended_pdu_lengths[2] == 255 &&
            captured_extended_pdus[2][2] == 6 &&
            captured_extended_pdus[2][3] == 0x18 &&
-           ((uint16_t)captured_extended_pdus[2][4] |
-            (uint16_t)captured_extended_pdus[2][5] << 8) != set_adi &&
+           ble_read_u16_le(captured_extended_pdus[2] + 4) != set_adi &&
            (captured_extended_pdus[2][5] >> 4) == 6);
     assert(captured_extended_pdu_lengths[3] == 60 &&
            captured_extended_pdus[3][2] == 3 &&

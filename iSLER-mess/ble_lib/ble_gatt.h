@@ -156,7 +156,7 @@ static inline int gatt_client_request(
     client->request.opcode = pdu[0];
 
     if (pdu[0] == ATT_OP_EXCHANGE_MTU_REQ && len == 3) {
-        uint16_t requested = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
+        uint16_t requested = ble_get_le16(pdu + 1);
         client->local_mtu = requested < 23 ? 23 :
                         (requested > BLE_GATT_CLIENT_MTU_MAX ?
                         BLE_GATT_CLIENT_MTU_MAX : requested);
@@ -530,7 +530,7 @@ static inline int gatt_client_receive(
 
     if (opcode == ATT_OP_HANDLE_VALUE_NOTIFICATION ||
         opcode == ATT_OP_HANDLE_VALUE_INDICATION) {
-        uint16_t handle = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
+        uint16_t handle = ble_get_le16(pdu + 1);
 
         if (!handle || len - 3 > BLE_GATT_ATT_VALUE_MAX) {
             if (opcode == ATT_OP_HANDLE_VALUE_INDICATION) {
@@ -950,8 +950,7 @@ static inline int gatt_client_receive(
                     break;
                 }
 
-                uint16_t value_len = (uint16_t)pdu[offset] |
-                                     (uint16_t)pdu[offset + 1] << 8;
+                uint16_t value_len = ble_get_le16(pdu + offset);
                 offset += 2;
 
                 if (value_len > BLE_GATT_ATT_VALUE_MAX || ++tuples > requested) {
@@ -988,7 +987,7 @@ static inline int gatt_client_receive(
     memset(&client->request, 0, sizeof(client->request));
 
     if (opcode == ATT_OP_EXCHANGE_MTU_RSP) {
-        uint16_t peer_mtu = (uint16_t)pdu[1] | (uint16_t)pdu[2] << 8;
+        uint16_t peer_mtu = ble_get_le16(pdu + 1);
         client->mtu = peer_mtu < 23 ? 23 :
                     (peer_mtu < client->local_mtu ? peer_mtu : client->local_mtu);
     }

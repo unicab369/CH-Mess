@@ -545,7 +545,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
         !ble_timing_ranges_valid(
             interval, interval, latency, timeout) ||
         win_size >= interval ||
-        ((uint16_t)frame[22] | (uint16_t)frame[23] << 8) > interval ||
+        ble_read_u16_le(frame + 22) > interval ||
         hop < 5 || hop > 16 ||
         (frame[34] & 0xe0) ||
         (uint32_t)timeout * 8 <=
@@ -1228,20 +1228,18 @@ static int gap_conn_accept(
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->link.next_ticks = received_ticks + (uint64_t)((uint16_t)frame[22] |
-                            (uint16_t)frame[23] << 8) * unit_ticks + delay_ticks;
+    conn->link.next_ticks = received_ticks +
+                            (uint64_t)ble_read_u16_le(frame + 22) *
+                            unit_ticks + delay_ticks;
     conn->link.used_count = count;
     conn->link.hop = frame[35] & 0x1f;
     conn->link.last_rx_ms = GET_MILLIS();
     conn->link.first_event = 1;
 
     conn->schedule.factor = 1;
-    conn->schedule.interval_125us = ((uint16_t)frame[24] |
-                                    (uint16_t)frame[25] << 8) * 10;
-    conn->schedule.latency = (uint16_t)frame[26] |
-                            (uint16_t)frame[27] << 8;
-    conn->schedule.timeout = (uint16_t)frame[28] |
-                            (uint16_t)frame[29] << 8;
+    conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
+    conn->schedule.latency = ble_read_u16_le(frame + 26);
+    conn->schedule.timeout = ble_read_u16_le(frame + 28);
     conn->data_length = (gap_data_length){27, 328, 27, 328};
     conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
     conn->window_size = frame[21];
