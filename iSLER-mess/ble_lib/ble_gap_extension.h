@@ -177,6 +177,13 @@ enum {
     GAP_EXT_SCAN_PERIODIC
 };
 
+typedef struct {
+    uint64_t start_ticks;
+    uint32_t duration_ticks;
+    uint8_t active, channel, phy;
+} gap_aux_request_context;
+static gap_aux_request_context gap_aux_request[GAP_EXT_ADV_CONTEXT_COUNT];
+
 static struct {
     uint8_t frame[2 + 255];
     volatile uint8_t ready, kind;
@@ -2440,14 +2447,20 @@ static void gap_ext_scan_process(void) {
                                     gap_aux_request[1].start_ticks ? 0 : 1;
                 }
 
-                gap_aux_request[aux_slot].active = 1;
+                uint32_t start_us = after_packet_us > widen_us ?
+                                    after_packet_us - widen_us : 0;
+                uint64_t start_offset_ticks = HW_TICKS_FROM_US(start_us);
+                uint64_t end_offset_ticks = HW_TICKS_FROM_US(
+                    after_packet_us + offset_unit_us + widen_us);
+
+                gap_aux_request[aux_slot].start_ticks = gap_ext_scan.ticks +
+                                                        start_offset_ticks;
+                // The AuxPtr receive window lasts only a few milliseconds.
+                gap_aux_request[aux_slot].duration_ticks =
+                    (uint32_t)(end_offset_ticks - start_offset_ticks);
                 gap_aux_request[aux_slot].channel = fields.aux_channel;
                 gap_aux_request[aux_slot].phy = aux_phy;
-                gap_aux_request[aux_slot].start_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
-                                        after_packet_us > widen_us ?
-                                        after_packet_us - widen_us : 0);
-                gap_aux_request[aux_slot].end_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
-                                        after_packet_us + offset_unit_us + widen_us);
+                gap_aux_request[aux_slot].active = 1;
             }
         }
     }

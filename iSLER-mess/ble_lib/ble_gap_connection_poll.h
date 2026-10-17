@@ -1452,18 +1452,20 @@ void gap_hw_scan_poll(void) {
         }
 
         if (slot >= 0) {
-            if (ticks > gap_aux_request[slot].end_ticks) {
-                gap_aux_request[slot].active = 0;
+            gap_aux_request_context *request = &gap_aux_request[slot];
+
+            if (ticks > request->start_ticks + request->duration_ticks) {
+                request->active = 0;
             }
-            else if (ticks >= gap_aux_request[slot].start_ticks) {
+            else if (ticks >= request->start_ticks) {
                 if (gap_rx_armed) GAP_HW_STOP();
 
                 gap_ext_scan.aux_slot = (uint8_t)slot;
-                gap_ext_scan.aux_rx_phy = gap_aux_request[slot].phy;
+                gap_ext_scan.aux_rx_phy = request->phy;
                 gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
                 GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS,
-                        gap_aux_request[slot].channel, NULL, 0,
+                        request->channel, NULL, 0,
                         gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy);
                 GAP_HW_LINK_RX();
                 gap_rx_armed = 1;
