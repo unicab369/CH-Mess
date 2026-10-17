@@ -1458,8 +1458,8 @@ static void test_pawr_connection_accept(void) {
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
     sync->phy = GAP_PHY_1M;
-    assert(gap_sync_pawr_connect_accept(1, 1));
-    assert(!gap_sync_pawr_connect_accept(1, 2));
+    assert(gap_sync_pawr_accept(1, 1));
+    assert(!gap_sync_pawr_accept(1, 2));
 
     request[0] = 0x05; // Public InitA and AdvA.
     request[1] = 34;
@@ -1480,11 +1480,11 @@ static void test_pawr_connection_accept(void) {
     request[35] = 5;
 
     captured_extended_count = 0;
-    assert(gap_sync_pawr_connect_accept(1, 0));
+    assert(gap_sync_pawr_accept(1, 0));
     assert(!gap_periodic_connect_request(0, request, sizeof(request),
                                                8000000));
     assert(!gap_conn_slot_active(gap_conn_slot) && !captured_extended_count);
-    assert(gap_sync_pawr_connect_accept(1, 1));
+    assert(gap_sync_pawr_accept(1, 1));
 
     fake_radio_ticks = 8000000;
     fake_radio_ticks_enabled = 1;

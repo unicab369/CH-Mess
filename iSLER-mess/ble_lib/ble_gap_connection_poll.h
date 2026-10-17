@@ -483,7 +483,7 @@ void gap_hw_received(void) {
                 if (gap_tx_frame[1] == 0 &&
                     !gap_security->phase && conn->sync_transfer_queued
                 ) {
-                    int slot = gap_sync_slot_from_handle(conn->sync_transfer_handle);
+                    int slot = gap_sync_slot(conn->sync_transfer_handle);
 
                     if (slot >= 0) {
                         gap_past_encode(gap_tx_frame, conn->sync_transfer_id,

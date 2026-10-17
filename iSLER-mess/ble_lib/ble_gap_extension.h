@@ -920,7 +920,7 @@ int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
     return 1;
 }
 
-static int gap_sync_slot_from_handle(uint8_t handle) {
+static int gap_sync_slot(uint8_t handle) {
     if (!handle || handle > GAP_PERIODIC_SYNC_COUNT)
         return -1;
 
@@ -943,7 +943,7 @@ static void gap_sync_scan_finish(void) {
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
 int gap_sync_stop(uint8_t handle, uint8_t terminate) {
-    int slot = gap_sync_slot_from_handle(handle);
+    int slot = gap_sync_slot(handle);
     if (slot < 0 || terminate > 1 ||
         gap_syncs[slot].established != terminate
     ) return 0;
@@ -963,7 +963,7 @@ int gap_sync_pawr_respond(
     uint8_t handle, uint8_t subevent,
     uint8_t response_slot, const uint8_t *data, size_t len
 ) {
-    int slot = gap_sync_slot_from_handle(handle);
+    int slot = gap_sync_slot(handle);
     if (slot < 0) return 0;
     gap_sync_context *sync = &gap_syncs[slot];
 
@@ -974,15 +974,15 @@ int gap_sync_pawr_respond(
          !(GAP_HW_PHY_MASK() & sync->phy)
     ) return 0;
 
-    uint32_t response_start_125us = (uint32_t)sync->pawr.resp_delay * 10 +
+    uint32_t start_125us = (uint32_t)sync->pawr.resp_delay * 10 +
                                 (uint32_t)response_slot * sync->pawr.resp_spacing;
-    uint32_t subevent_duration_125us = (sync->pawr.subevents > 1 ?
+    uint32_t dur_125us = (sync->pawr.subevents > 1 ?
                                 sync->pawr.subevent_interval : sync->interval) * 10;
-    uint32_t packet_duration_us = gap_phy_airtime_us((uint16_t)len, sync->phy);
+    uint32_t pkt_dur_us = gap_phy_airtime_us((uint16_t)len, sync->phy);
 
-    if (response_start_125us >= subevent_duration_125us ||
-        packet_duration_us + 150 >= (uint32_t)sync->pawr.resp_spacing * 125 ||
-        response_start_125us * 125 + packet_duration_us >= subevent_duration_125us * 125
+    if (start_125us >= dur_125us ||
+        pkt_dur_us + 150 >= (uint32_t)sync->pawr.resp_spacing * 125 ||
+        start_125us * 125 + pkt_dur_us >= dur_125us * 125
     ) return 0;
 
     sync->pawr.subevent = subevent;
@@ -1005,7 +1005,7 @@ int gap_sync_pawr_respond(
 // Responses remain one-shot by default; disabling repeat consumes the
 // existing response after it is sent once more.
 int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
-    int slot = gap_sync_slot_from_handle(handle);
+    int slot = gap_sync_slot(handle);
     if (slot < 0 || !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.has_timing || enabled > 1
     ) return 0;
@@ -1016,12 +1016,12 @@ int gap_sync_pawr_repeat(uint8_t handle, uint8_t enabled) {
 
 // Application facing
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
-int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
+int gap_sync_pawr_accept(uint8_t handle, uint8_t enabled) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    int slot = gap_sync_slot_from_handle(handle);
+    int slot = gap_sync_slot(handle);
 
-    if (slot < 0 || !gap_syncs[slot].established ||
-        !gap_syncs[slot].pawr.has_timing || enabled > 1 ||
+    if (enabled > 1 || slot < 0 ||
+        !gap_syncs[slot].established || !gap_syncs[slot].pawr.has_timing ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active
     ) return 0;
 
@@ -1031,9 +1031,7 @@ int gap_sync_pawr_connect_accept(uint8_t handle, uint8_t enabled) {
 
 // Application facing
 int gap_periodic_sync_event_poll(gap_periodic_sync_event *event) {
-    if (!event || !gap_sync_events.count)
-        return 0;
-
+    if (!event || !gap_sync_events.count) return 0;
     *event = gap_sync_events.items[gap_sync_events.head];
     gap_sync_events.head = (gap_sync_events.head + 1) % GAP_PERIODIC_SYNC_EVENT_COUNT;
     gap_sync_events.count--;
@@ -2600,7 +2598,7 @@ static int gap_past_encode(
 // Queue a PAST LL control PDU for the active connection.
 int gap_periodic_sync_transfer(uint8_t handle, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    int sync_slot = gap_sync_slot_from_handle(handle);
+    int sync_slot = gap_sync_slot(handle);
 
     if (!gap_conn_slot_active(gap_conn_slot) || sync_slot < 0 ||
         !gap_syncs[sync_slot].established ||
