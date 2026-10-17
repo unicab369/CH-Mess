@@ -1454,8 +1454,8 @@ static void test_pawr_connection_accept(void) {
     sync->last_event_counter = 20;
     sync->params.access_address = 0x12345678;
     sync->params.crc_init = 0x123456;
-    memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
-    sync->channel_map[4] = 0x1f;
+    memset(sync->params.channel_map, 0xff, sizeof(sync->params.channel_map));
+    sync->params.channel_map[4] = 0x1f;
     sync->phy = GAP_PHY_1M;
     assert(gap_sync_pawr_accept(0, 1));
     assert(!gap_sync_pawr_accept(0, 2));
@@ -1506,7 +1506,7 @@ static void test_pawr_connection_accept(void) {
            !memcmp(response + 10, advertiser, sizeof(advertiser)));
     assert(configured_access_address == sync->params.access_address &&
            captured_extended_channels[0] == gap_periodic_channel_for(
-               sync->params.access_address, sync->channel_map,
+               sync->params.access_address, sync->params.channel_map,
                (uint16_t)(20 ^ 1)) &&
            captured_extended_ticks[0] >= 8000150 &&
            captured_extended_ticks[0] <= 8000153 &&
@@ -1550,8 +1550,8 @@ static void test_pawr_observer_response(void) {
     sync->pawr.timing.resp_access_addr = 0x78563412;
     sync->params.crc_init = 0x123456;
     sync->phy = GAP_PHY_1M;
-    memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
-    sync->channel_map[4] = 0x1f;
+    memset(sync->params.channel_map, 0xff, sizeof(sync->params.channel_map));
+    sync->params.channel_map[4] = 0x1f;
     sync->pawr.timing.has_timing = 1;
     sync->pawr.timing.subevents = 3;
     sync->pawr.timing.subevent_interval = 6;
@@ -1584,7 +1584,7 @@ static void test_pawr_observer_response(void) {
     gap_hw_scan_poll();
     assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
            configured_radio_channel == gap_periodic_channel_for(
-               sync->params.access_address, sync->channel_map, (uint16_t)(12 ^ 2)));
+               sync->params.access_address, sync->params.channel_map, (uint16_t)(12 ^ 2)));
 
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_tick_autoincrement = 1;
@@ -1605,7 +1605,7 @@ static void test_pawr_observer_response(void) {
            !memcmp(captured_extended_pdus[0] + 4, response_data,
                    sizeof(response_data)));
     assert(captured_extended_channels[0] ==
-           gap_periodic_channel_for(sync->params.access_address, sync->channel_map,
+           gap_periodic_channel_for(sync->params.access_address, sync->params.channel_map,
                                     (uint16_t)(12 ^ 2)));
     assert(captured_extended_ticks[0] >= selected_subevent_start + 1250 &&
            captured_extended_ticks[0] <= selected_subevent_start + 1253);
@@ -1736,7 +1736,7 @@ static void test_periodic_advertising_sync(void) {
            configured_crc_init == 0x123456 &&
            configured_radio_channel ==
                gap_periodic_channel_for(0x12345678,
-                   gap_syncs[0].channel_map, 5));
+                   gap_syncs[0].params.channel_map, 5));
 
     fake_radio_ticks = first_event + 152;
     memcpy(rx_frame, sync_ind, sizeof(sync_ind));
@@ -1936,9 +1936,9 @@ static void test_periodic_sync_connection_arbitration(void) {
     sync->last_event_ms = now_ms;
     sync->params.access_address = 0x12345678;
     sync->params.crc_init = 0x123456;
-    sync->channel_map[0] = sync->channel_map[1] =
-        sync->channel_map[2] = sync->channel_map[3] = 0xff;
-    sync->channel_map[4] = 0x1f;
+    sync->params.channel_map[0] = sync->params.channel_map[1] =
+        sync->params.channel_map[2] = sync->params.channel_map[3] = 0xff;
+    sync->params.channel_map[4] = 0x1f;
     sync->anchor_ticks = fake_radio_ticks;
     sync->next_event_ticks = fake_radio_ticks + HW_TICKS_FROM_US(1000);
 

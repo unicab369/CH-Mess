@@ -71,6 +71,7 @@ typedef struct {
 } gap_pawr_timing;
 
 typedef struct {
+    uint8_t channel_map[5];
     uint8_t sca;
     uint16_t interval;
     uint32_t access_address, crc_init;
@@ -81,7 +82,7 @@ typedef struct {
     uint8_t used, established, sid;
     gap_address peer;
     // Once established, phy comes from a configured RX PHY or validated PAST.
-    uint8_t channel_map[5], phy;
+    uint8_t phy;
     gap_sync_params params;
 
     // Event counters, receive windows, and clock tracking.
@@ -553,7 +554,6 @@ typedef struct {
         uint8_t has_info, offset_unit, offset_adjust;
         gap_sync_params params;
         uint16_t event_counter;
-        uint8_t channel_map[5];
         uint32_t offset_us;
     } sync;
 
@@ -664,8 +664,8 @@ static int gap_ext_adv_decode(
                 (fields->sync.offset_us < 245700 && fields->sync.offset_unit)
             ) return 0;
 
-            memcpy(fields->sync.channel_map, pdu + cursor + 4, 5);
-            fields->sync.params.sca = fields->sync.channel_map[4] >> 5;
+            memcpy(fields->sync.params.channel_map, pdu + cursor + 4, 5);
+            fields->sync.params.sca = fields->sync.params.channel_map[4] >> 5;
             fields->sync.params.interval = ble_read_u16_le(pdu + cursor + 2);
             fields->sync.params.access_address = ble_read_u32_le(pdu + cursor + 9);
             fields->sync.params.crc_init = (uint32_t)pdu[cursor + 13] |
@@ -1083,7 +1083,7 @@ static int gap_sync_info_accept(
 
     uint8_t used_channels = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (fields->sync.channel_map[channel >> 3] & (1 << (channel & 7)))
+        if (fields->sync.params.channel_map[channel >> 3] & (1 << (channel & 7)))
             used_channels++;
     if (used_channels < 2) return 0;
 
@@ -1147,7 +1147,6 @@ static int gap_sync_info_accept(
         return 0;
 
     gap_sync_context *sync = &gap_syncs[slot];
-    memcpy(sync->channel_map, fields->sync.channel_map, 5);
     sync->phy = packet_phy;
     sync->did = fields->identity.adi & 0x0fff;
     sync->peer = fields->identity.peer;
@@ -1425,7 +1424,7 @@ static int gap_periodic_connect_request(
     memcpy(response + 4, local_address, 6);
     memcpy(response + 10, request + 2, 6);
     uint8_t channel = gap_periodic_channel_for(
-        sync->params.access_address, sync->channel_map,
+        sync->params.access_address, sync->params.channel_map,
         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
 
     uint64_t response_start = received_ticks + HW_TICKS_FROM_US(150);
@@ -2084,7 +2083,7 @@ static void gap_ext_scan_process(void) {
                     125;
             uint64_t response_start = packet_start + HW_TICKS_FROM_US(response_delay_us);
             uint8_t response_channel = gap_periodic_channel_for(
-                                        sync->params.access_address, sync->channel_map,
+                                        sync->params.access_address, sync->params.channel_map,
                                         (uint16_t)(sync->last_event_counter ^
                                         sync->pawr.subevent));
             uint8_t may_respond =
@@ -2398,7 +2397,7 @@ static int gap_past_receive(
 
     uint8_t used_channels = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (fields.sync.channel_map[channel >> 3] & (1 << (channel & 7)))
+        if (fields.sync.params.channel_map[channel >> 3] & (1 << (channel & 7)))
             used_channels++;
 
     if (used_channels < 2) return 0;
@@ -2481,7 +2480,6 @@ static int gap_past_receive(
     gap_syncs[free_slot].sid = fields.identity.sid;
     gap_syncs[free_slot].peer.type = address_type;
     memcpy(gap_syncs[free_slot].peer.address, frame + 29, 6);
-    memcpy(gap_syncs[free_slot].channel_map, fields.sync.channel_map, 5);
     gap_syncs[free_slot].params = fields.sync.params;
     gap_syncs[free_slot].phy = phy;
     gap_syncs[free_slot].missed_events = skipped;
@@ -2562,7 +2560,7 @@ static int gap_past_encode(
     ble_write_u16_le(frame + 5, offset_base);
     frame[6] |= (uint8_t)((offset_unit << 5) | (offset_adjust << 6));
     ble_write_u16_le(frame + 7, sync->params.interval);
-    memcpy(frame + 9, sync->channel_map, 5);
+    memcpy(frame + 9, sync->params.channel_map, 5);
     ble_write_u32_le(frame + 14, sync->params.access_address);
     ble_write_u16_le(frame + 18, (uint16_t)sync->params.crc_init);
     frame[20] = (uint8_t)(sync->params.crc_init >> 16);
