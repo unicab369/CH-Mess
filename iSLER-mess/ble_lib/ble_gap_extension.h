@@ -1471,7 +1471,7 @@ static int gap_pawr_exchange(
     }
 
     memset(request, 0, sizeof(gap_central.request));
-    request[0] = 0x05 | (local_type << 6) | (peer_type << 7);
+    request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     request[1] = 34;
     memcpy(request + 2, local_address, 6);
     memcpy(request + 8, peer_address, 6);
@@ -1517,15 +1517,18 @@ static int gap_pawr_exchange(
         return 0;
 
     const uint8_t *response = gap_ext_pawr.connect.response;
+    uint8_t expected_header = ADV_EXT_IND | (peer_type << 6) | (local_type << 7);
 
-    if ((response[0] & 0x0f) != ADV_EXT_IND || response[1] != 14 ||
-        response[2] != 13 || response[3] != 0x03 ||
-        ((response[0] >> 6) & 1) != peer_type ||
-        ((response[0] >> 7) & 1) != local_type ||
+    if ((response[0] & 0xcf) != expected_header ||
+        response[1] != 14 ||
+        response[2] != 13 ||
+        response[3] != 0x03 ||
         memcmp(response + 4, peer_address, 6) != 0 ||
-        memcmp(response + 10, local_address, 6) != 0 ||
-        !gap_conn_accept(request, gap_ext_pawr.connect.request_end_ticks,
-            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
+        memcmp(response + 10, local_address, 6) != 0
+    ) return 0;
+
+    if (!gap_conn_accept(request, gap_ext_pawr.connect.request_end_ticks,
+                        HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(2500))
     ) return 0;
 
     conn->is_central = 1;
@@ -1553,8 +1556,7 @@ static uint32_t gap_ext_next_offset_phy(
     uint8_t pdu_payload_len, uint8_t phy
 ) {
     uint32_t airtime_us = gap_phy_airtime_us(pdu_payload_len, phy);
-    uint32_t minimum_us = airtime_us + 600;
-    return ((minimum_us + 29) / 30) * 30;
+    return ((airtime_us + 600 + 29) / 30) * 30;
 }
 
 // Encode an AuxPtr to the next secondary-channel packet.

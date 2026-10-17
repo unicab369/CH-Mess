@@ -686,7 +686,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     }
 
     gap_local_addr_select(peer_slot, gap_central.request + 2, &local_type);
-    gap_central.request[0] = 0x05 | (local_type << 6) | (peer_type << 7); // CONNECT_IND
+    gap_central.request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     gap_central.request[1] = 34;
 
     ble_write_u32_le(gap_central.request + 14, access_address);
