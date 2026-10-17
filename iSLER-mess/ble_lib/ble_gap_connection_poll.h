@@ -933,19 +933,23 @@ static inline uint8_t gap_conn_can_skip_event(
     if (conn->subrate.force_event || conn->subrate.continuations)
         return 0;
 
-    uint16_t instant_delta = (uint16_t)(conn->next_schedule.instant - event);
-    if (conn->rate.update_pending &&
-        (event == conn->next_schedule.instant ||
-         event == (uint16_t)(conn->next_schedule.instant - 1) ||
-        (conn->is_central &&
-            conn->link.tx_pending &&
-            (gap_tx_frame[0] & 3) == 3 &&
-            gap_tx_frame[1] == 15 &&
-            gap_tx_frame[2] == LL_CONNECTION_RATE_IND
-        ) ||
-        (!conn->is_central && conn->rate.ack_waiting && instant_delta < 0x8000)
-        )
-    ) return 0;
+    if (conn->rate.update_pending) {
+        if (event == conn->next_schedule.instant ||
+            event == (uint16_t)(conn->next_schedule.instant - 1)
+        ) return 0;
+
+        if (conn->is_central) {
+            if (conn->link.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
+                gap_tx_frame[1] == 15 &&
+                gap_tx_frame[2] == LL_CONNECTION_RATE_IND
+            ) return 0;
+        }
+        else {
+            uint16_t instant_delta = (uint16_t)(conn->next_schedule.instant - event);
+            if (conn->rate.ack_waiting && instant_delta < 0x8000)
+                return 0;
+        }
+    }
 
     if ((conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
