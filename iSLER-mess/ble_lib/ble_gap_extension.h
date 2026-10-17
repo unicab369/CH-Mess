@@ -3,9 +3,6 @@
 #define BLE_GAP_EXTENSION_H
 
 #if GAP_EXT_ADV_SUPPORT
-#define GAP_EXT_ADV_HASH_OFFSET_BASIS 2166136261u
-#define GAP_EXT_ADV_HASH_PRIME 16777619u
-
 static uint8_t gap_ext_adv_next_set;
 static uint8_t gap_periodic_advertising_next_set;
 
@@ -786,23 +783,23 @@ static void gap_ext_report_queue(
     if (identity_slot >= 0)
         peer = &gap_identities[identity_slot].peer;
 
-    uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
+    uint32_t data_hash = 2166136261u;
 
     for (uint16_t i = 0; i < data_len; i++)
-        data_hash = (data_hash ^ data[i]) * GAP_EXT_ADV_HASH_PRIME;
+        data_hash = (data_hash ^ data[i]) * 16777619u;
 
     if (gap_scanner.filter_duplicates) {
         for (uint8_t i = 0; i < gap_ext_idx.seen_count; i++) {
             gap_ext_seen_entry *seen = &gap_ext_adv_seen[i];
 
             if (seen->used &&
-                seen->sid == identity->sid &&
                 seen->peer.type == peer->type &&
                 !memcmp(seen->peer.address, peer->address, 6) &&
+                seen->sid == identity->sid &&
                 seen->has_adi == identity->has_adi &&
-                ((identity->has_adi && seen->did == (identity->adi & 0x0fff)) ||
-                 (!identity->has_adi && seen->data_len == data_len &&
-                  seen->data_hash == data_hash))
+                (identity->has_adi ?
+                    seen->did == (identity->adi & 0x0fff) :
+                    seen->data_len == data_len && seen->data_hash == data_hash)
             ) return;
         }
         uint8_t slot = gap_ext_idx.seen_count;
