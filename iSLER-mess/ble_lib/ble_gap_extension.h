@@ -23,11 +23,8 @@ enum {
     GAP_EXT_ADV_PERIODIC_PDU = 2
 };
 typedef struct {
-    uint8_t has_address, address_type, address[6];
-} gap_ext_address;
-
-typedef struct {
-    gap_ext_address addr;
+    uint8_t has_address;
+    gap_peer_address peer;
     uint8_t has_adi, sid;
     uint16_t adi;
 } gap_ext_identity;
@@ -77,7 +74,8 @@ typedef struct {
 } gap_periodic_report;
 typedef struct {
     uint8_t set_id, sid, subevent, response_slot;
-    gap_ext_address addr;
+    uint8_t has_address;
+    gap_peer_address peer;
     uint16_t event_counter, data_len;
     int8_t rssi;
     uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
@@ -530,7 +528,8 @@ int gap_ext_adv_stop(uint8_t set_id) {
 // Extended scan report state
 // -----------------------------------------------------------------------------
 typedef struct {
-    gap_ext_address addr;
+    uint8_t has_address;
+    gap_peer_address peer;
     uint8_t resolved, identity_type, identity_addr[6];
     uint8_t has_adi, sid;
     uint16_t did;
@@ -608,8 +607,8 @@ static int gap_ext_adv_decode(
                 return 0;
 
             fields->identity.has_address = 1;
-            fields->identity.address_type = (pdu[0] >> 6) & 1;
-            memcpy(fields->identity.address, pdu + cursor, 6);
+            fields->identity.peer.type = (pdu[0] >> 6) & 1;
+            memcpy(fields->identity.peer.address, pdu + cursor, 6);
             cursor += 6;
         }
 
@@ -751,9 +750,11 @@ static void gap_ext_report_queue(
 
     int identity_slot = -1;
 
-    if (identity->addr.has_address) {
-        identity_slot = gap_identity_find(identity->addr.address, identity->addr.address_type);
-        if (!gap_peer_allowed(identity_slot, identity->addr.address, identity->addr.address_type))
+    if (identity->has_address) {
+        identity_slot = gap_identity_find(identity->peer.address,
+                                          identity->peer.type);
+        if (!gap_peer_allowed(identity_slot, identity->peer.address,
+                              identity->peer.type))
             return;
     }
 
@@ -780,9 +781,10 @@ static void gap_ext_report_queue(
     }
 
     uint8_t identity_type = identity_slot >= 0 ?
-                gap_identities[identity_slot].peer.type : identity->addr.address_type;
+                gap_identities[identity_slot].peer.type : identity->peer.type;
     const uint8_t *identity_addr = identity_slot >= 0 ?
-                gap_identities[identity_slot].peer.address : identity->addr.address;
+                gap_identities[identity_slot].peer.address :
+                identity->peer.address;
     uint32_t data_hash = GAP_EXT_ADV_HASH_OFFSET_BASIS;
 
     for (uint16_t i = 0; i < data_len; i++)
@@ -829,7 +831,8 @@ static void gap_ext_report_queue(
                     gap_ext_scan_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
-    report->addr = identity->addr;
+    report->has_address = identity->has_address;
+    report->peer = identity->peer;
     report->resolved = identity_slot >= 0;
     report->identity_type = identity_type;
     memcpy(report->identity_addr, identity_addr, 6);
@@ -1117,13 +1120,14 @@ static int gap_sync_info_accept(
     ) return 0;
 
     int slot = -1;
-    int identity_slot = gap_identity_find(fields->identity.address, fields->identity.address_type);
+    int identity_slot = gap_identity_find(fields->identity.peer.address,
+                                          fields->identity.peer.type);
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].used && !gap_syncs[i].established &&
             gap_syncs[i].sid == fields->identity.sid &&
-            ((gap_syncs[i].address_type == fields->identity.address_type &&
-              !memcmp(gap_syncs[i].address, fields->identity.address, 6)) ||
+            ((gap_syncs[i].address_type == fields->identity.peer.type &&
+              !memcmp(gap_syncs[i].address, fields->identity.peer.address, 6)) ||
              (identity_slot >= 0 && gap_syncs[i].address_type ==
                   gap_identities[identity_slot].peer.type &&
               !memcmp(gap_syncs[i].address, gap_identities[identity_slot].peer.address, 6)))) {
@@ -1178,8 +1182,8 @@ static int gap_sync_info_accept(
         (uint16_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500);
     gap_syncs[slot].interval = fields->sync.interval;
     gap_syncs[slot].phy = packet_phy;
-    gap_syncs[slot].address_type = fields->identity.address_type;
-    memcpy(gap_syncs[slot].address, fields->identity.address, 6);
+    gap_syncs[slot].address_type = fields->identity.peer.type;
+    memcpy(gap_syncs[slot].address, fields->identity.peer.address, 6);
     gap_syncs[slot].event_counter = event_counter;
     gap_syncs[slot].access_address = fields->sync.access_address;
     gap_syncs[slot].crc_init = fields->sync.crc_init;
@@ -1407,7 +1411,8 @@ static void gap_pawr_response_report_push(
                 report->event_counter = event_counter;
                 report->subevent = subevent;
                 report->response_slot = response_slot;
-                report->addr = fields.identity.addr;
+                report->has_address = fields.identity.has_address;
+                report->peer = fields.identity.peer;
                 report->data_len = fields.payload.len;
                 report->rssi = gap_ext_pawr.response.rssi;
                 if (fields.payload.len)
@@ -2235,10 +2240,11 @@ static void gap_ext_scan_process(void) {
                 if (ctx->active &&
                     ctx->identity.has_adi &&
                     ctx->identity.adi == fields.identity.adi &&
-                    ctx->identity.addr.has_address == fields.identity.addr.has_address &&
-                    (!fields.identity.addr.has_address ||
-                     (ctx->identity.addr.address_type == fields.identity.addr.address_type &&
-                      !memcmp(ctx->identity.addr.address, fields.identity.addr.address, 6)))
+                    ctx->identity.has_address == fields.identity.has_address &&
+                    (!fields.identity.has_address ||
+                     (ctx->identity.peer.type == fields.identity.peer.type &&
+                      !memcmp(ctx->identity.peer.address,
+                              fields.identity.peer.address, 6)))
                 ) {
                     context_slot = i;
                     break;
@@ -2267,8 +2273,10 @@ static void gap_ext_scan_process(void) {
                 if (!ctx->active ||
                     (fields.identity.has_adi &&
                      (!ctx->identity.has_adi || ctx->identity.adi != fields.identity.adi)) ||
-                    (fields.identity.addr.has_address && ctx->identity.addr.has_address &&
-                     memcmp(&fields.identity.addr, &ctx->identity.addr, sizeof(fields.identity.addr)) != 0)
+                    (fields.identity.has_address && ctx->identity.has_address &&
+                     (fields.identity.peer.type != ctx->identity.peer.type ||
+                      memcmp(fields.identity.peer.address,
+                             ctx->identity.peer.address, 6) != 0))
                 ) continue;
 
                 if (context_slot >= 0) {
@@ -2281,8 +2289,10 @@ static void gap_ext_scan_process(void) {
 
             if (context_slot < 0) break;
 
-            if (fields.identity.addr.has_address)
-                gap_ext_ctx[context_slot].identity.addr = fields.identity.addr;
+            if (fields.identity.has_address) {
+                gap_ext_ctx[context_slot].identity.has_address = 1;
+                gap_ext_ctx[context_slot].identity.peer = fields.identity.peer;
+            }
 
             if (fields.identity.has_adi) {
                 gap_ext_ctx[context_slot].identity.has_adi = 1;
@@ -2425,7 +2435,7 @@ static int gap_past_receive(
     gap_ext_fields fields;
 
     if (!gap_ext_adv_decode(pdu, sizeof(pdu), &fields) ||
-        !fields.identity.addr.has_address ||
+        !fields.identity.has_address ||
         !fields.identity.has_adi || !fields.sync.has_info ||
         !gap_access_address_valid(fields.sync.access_address) ||
         fields.sync.interval < 6
