@@ -1114,10 +1114,10 @@ static void gap_conn_poll(void) {
           (event == conn->update_instant ||
            event == (uint16_t)(conn->update_instant - 1))) &&
         !conn->subrate.continuations &&
-        ((!(conn->schedule.factor &&
+        (!((conn->schedule.factor &&
             ((int32_t)event - (int32_t)conn->schedule.base_event) %
-                conn->schedule.factor == 0) &&
-          !(conn->is_central && conn->subrate.transition &&
+                conn->schedule.factor == 0) ||
+           (conn->is_central && conn->subrate.transition &&
             conn->next_schedule.factor &&
             ((int32_t)event - (int32_t)conn->next_schedule.base_event) %
                 conn->next_schedule.factor == 0)) ||
