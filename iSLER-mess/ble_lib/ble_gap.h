@@ -234,7 +234,7 @@ typedef struct {
         uint16_t data_len, event_counter, did;
         uint32_t response_access;
         gap_periodic_params params;
-        uint64_t next_event_ticks;
+        uint64_t next_ticks;
         uint8_t data[GAP_EXT_ADV_DATA_MAX];
     } periodic;
     struct {
