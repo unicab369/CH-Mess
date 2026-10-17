@@ -1432,7 +1432,7 @@ void gap_hw_scan_poll(void) {
                     GAP_HW_CRC_INIT(sync->params.crc_init);
 
                     uint8_t channel = sync->window_chain ? sync->aux_channel :
-                            gap_periodic_channel_for(
+                            gap_sync_channel(
                                 sync->params.access_address, sync->params.channel_map,
                                 sync->event_counter ^
                                     (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0)

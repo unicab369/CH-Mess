@@ -1277,7 +1277,7 @@ static int gap_periodic_sync_receive(
 // -----------------------------------------------------------------------------
 // PAwR radio response and connection procedures
 // -----------------------------------------------------------------------------
-static uint8_t gap_periodic_channel_for(
+static uint8_t gap_sync_channel(
     uint32_t access_address, const uint8_t channel_map[5], uint16_t event_counter
 ) {
     uint16_t channel_id = (uint16_t)(access_address >> 16) ^ (uint16_t)access_address;
@@ -1314,7 +1314,7 @@ static uint8_t gap_periodic_channel_for(
 }
 
 // Decode a captured response and identify its slot from the packet start time.
-static void gap_pawr_response_report_push(
+static void gap_pawr_report_push(
     gap_ext_adv_set *set, uint8_t set_id,
     uint16_t event_counter, uint8_t subevent, uint64_t subevent_start_ticks
 ) {
@@ -1381,7 +1381,7 @@ static void gap_pawr_response_report_push(
 }
 
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
-static int gap_periodic_connect_request(
+static int gap_pawr_connect_req(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -1423,7 +1423,7 @@ static int gap_periodic_connect_request(
     response[3] = 0x03; // AdvA and TargetA.
     memcpy(response + 4, local_address, 6);
     memcpy(response + 10, request + 2, 6);
-    uint8_t channel = gap_periodic_channel_for(
+    uint8_t channel = gap_sync_channel(
         sync->params.access_address, sync->params.channel_map,
         (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
 
@@ -1457,7 +1457,7 @@ static int gap_periodic_connect_request(
 
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
-static int gap_periodic_connect_exchange(
+static int gap_pawr_connect_exchange(
     gap_ext_adv_set *set, uint8_t channel,
     uint64_t request_start_ticks
 ) {
@@ -1612,13 +1612,13 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
              subevent++) {
             uint64_t subevent_start = event_start + HW_TICKS_FROM_US(
                 (uint32_t)subevent * subevent_interval_us);
-            uint8_t channel = gap_periodic_channel_for(
+            uint8_t channel = gap_sync_channel(
                 set->periodic.access_address, set->periodic.channel_map,
                 (uint16_t)(set->periodic.event_counter ^ subevent));
             if (set->pawr_connect.pending &&
                 subevent == set->pawr_connect.subevent
             ) {
-                if (gap_periodic_connect_exchange(
+                if (gap_pawr_connect_exchange(
                         set, channel, subevent_start)
                 ) return 1;
 
@@ -1668,7 +1668,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             gap_rx_armed = 1;
             while (GAP_HW_TICKS() < end_ticks) {
                 if (gap_ext_pawr.response.ready)
-                    gap_pawr_response_report_push(set,
+                    gap_pawr_report_push(set,
                         (uint8_t)(set - gap_ext_adv),
                         set->periodic.event_counter, subevent,
                         subevent_start_ticks);
@@ -1680,7 +1680,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
             gap_ext_pawr.response.listening = 0;
             GAP_HW_PACKET_CLEAR();
             if (gap_ext_pawr.response.ready)
-                gap_pawr_response_report_push(set,
+                gap_pawr_report_push(set,
                     (uint8_t)(set - gap_ext_adv),
                     set->periodic.event_counter, subevent,
                     subevent_start_ticks);
@@ -1690,7 +1690,7 @@ static int gap_hw_transmit_periodic(gap_ext_adv_set *set) {
 
     uint8_t *frame = gap_ext_adv_frame;
     uint16_t remaining = set->periodic.data_len, offset = 0;
-    uint8_t channel = gap_periodic_channel_for(set->periodic.access_address,
+    uint8_t channel = gap_sync_channel(set->periodic.access_address,
         set->periodic.channel_map, set->periodic.event_counter);
     uint64_t next_start = GAP_HW_TICKS();
     while (remaining || offset == 0) {
@@ -2053,7 +2053,7 @@ static void gap_ext_scan_process(void) {
     size_t pdu_len = (size_t)pdu[1] + 2;
 
     if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
-        (void)gap_periodic_connect_request((uint8_t)slot, pdu,
+        (void)gap_pawr_connect_req((uint8_t)slot, pdu,
             pdu_len, gap_ext_scan.ticks);
         return;
     }
@@ -2082,7 +2082,7 @@ static void gap_ext_scan_process(void) {
                 (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing *
                     125;
             uint64_t response_start = packet_start + HW_TICKS_FROM_US(response_delay_us);
-            uint8_t response_channel = gap_periodic_channel_for(
+            uint8_t response_channel = gap_sync_channel(
                                         sync->params.access_address, sync->params.channel_map,
                                         (uint16_t)(sync->last_event_counter ^
                                         sync->pawr.subevent));
