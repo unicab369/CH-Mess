@@ -19,12 +19,14 @@ typedef struct {
     uint32_t deadline_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
 } gap_ext_context;
+
 static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
 static struct {
     uint8_t report_head, report_count;
     uint8_t seen_count, seen_next;
 } gap_ext_idx;
-static uint8_t gap_sync_owned_scan;
+
+static uint8_t gap_sync_started_scan;
 #endif
 
 // =============================================================================
@@ -606,7 +608,7 @@ static struct {
 // Application facing
 void gap_scan_start(uint8_t active) {
 #if GAP_EXT_ADV_SUPPORT
-    gap_sync_owned_scan = 0;
+    gap_sync_started_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
@@ -646,7 +648,7 @@ int gap_scan_configure(
 // Start scanning; active mode requests scan-response data from advertisers.
 void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
-    gap_sync_owned_scan = 0;
+    gap_sync_started_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif

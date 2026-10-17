@@ -894,7 +894,7 @@ int gap_sync_start(
 
     if (!gap_scanner.scanning) {
         gap_scan_start(0);
-        gap_sync_owned_scan = 1;
+        gap_sync_started_scan = 1;
     }
 
     memset(sync, 0, sizeof(*sync));
@@ -927,13 +927,12 @@ static int gap_sync_slot_from_handle(uint8_t handle) {
     return gap_syncs[slot].used ? slot : -1;
 }
 
-static void gap_sync_finish_owned_scan(void) {
-    if (!gap_sync_owned_scan) return;
-
+static void gap_sync_scan_finish(void) {
+    if (!gap_sync_started_scan) return;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used) return;
 
-    gap_sync_owned_scan = 0;
+    gap_sync_started_scan = 0;
 
     if (gap_scanner.scanning)
         gap_scan_stop();
@@ -942,7 +941,7 @@ static void gap_sync_finish_owned_scan(void) {
 // Application facing
 // Stop a sync: terminate=0 cancels acquisition; terminate=1 ends an
 // established synchronization.
-int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
+int gap_sync_stop(uint8_t handle, uint8_t terminate) {
     int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0 || terminate > 1 ||
         gap_syncs[slot].established != terminate
@@ -951,7 +950,7 @@ int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
     gap_sync_event_post((uint8_t)slot, terminate ?
         GAP_PERIODIC_SYNC_TERMINATED : GAP_PERIODIC_SYNC_CANCELLED);
     memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-    gap_sync_finish_owned_scan();
+    gap_sync_scan_finish();
     return 1;
 }
 
@@ -965,7 +964,6 @@ int gap_sync_pawr_respond(
 ) {
     int slot = gap_sync_slot_from_handle(handle);
     if (slot < 0) return 0;
-
     gap_sync_context *sync = &gap_syncs[slot];
 
     if (!sync->established || !sync->pawr.has_timing ||
@@ -2649,7 +2647,7 @@ static void gap_sync_window_missed(uint8_t slot) {
         ) {
             gap_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
             memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-            gap_sync_finish_owned_scan();
+            gap_sync_scan_finish();
             return;
         }
     }

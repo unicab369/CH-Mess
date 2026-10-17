@@ -1767,18 +1767,18 @@ static void test_periodic_advertising_sync(void) {
            report.rssi == -40 && report.data_len == 3 &&
            !memcmp(report.data, (uint8_t[]){2, 0x01, 0x06}, 3));
     assert(!gap_periodic_report_poll(&report));
-    assert(gap_periodic_sync_stop((uint8_t)handle, 1));
+    assert(gap_sync_stop((uint8_t)handle, 1));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED &&
            event.handle == handle && !gap_syncs[0].used);
     assert(!gap_scanner.scanning);
 
     int pending = gap_sync_start(0, advertiser, 7, 1000);
-    assert(pending == 1 && gap_periodic_sync_stop((uint8_t)pending, 0));
+    assert(pending == 1 && gap_sync_stop((uint8_t)pending, 0));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_CANCELLED &&
            event.handle == pending);
-    assert(!gap_periodic_sync_stop((uint8_t)pending, 0));
+    assert(!gap_sync_stop((uint8_t)pending, 0));
 
     now_ms = 1900;
     fake_radio_ticks = 2000000;
@@ -2978,7 +2978,7 @@ static void test_periodic_sync_transfer_receive(void) {
         transferred_fields.sync.interval == 8 &&
         transferred_fields.sync.access_address == 0x12345678 &&
         transferred_fields.sync.crc_init == 0x123456);
-    assert(gap_periodic_sync_stop(1, 1));
+    assert(gap_sync_stop(1, 1));
     assert(gap_periodic_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED);
 
