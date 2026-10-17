@@ -1377,7 +1377,7 @@ void gap_hw_scan_poll(void) {
                                     target - gap_syncs[i].anchor_ticks : 0;
             uint16_t widening_ppm = gap_syncs[i].widening_ppm
                         ? gap_syncs[i].widening_ppm
-                        : (uint16_t)(gap_periodic_sca_ppm[gap_syncs[i].sca] + 500);
+                        : (uint16_t)(gap_periodic_sca_ppm[gap_syncs[i].params.sca] + 500);
             uint32_t widen_us = (uint32_t)(((uint64_t)widening_ppm *
                 (uint32_t)(elapsed_ticks / HW_TICKS_FROM_US(1)) + 999999) / 1000000) + 2;
             uint64_t widen_ticks = HW_TICKS_FROM_US(widen_us);
@@ -1429,18 +1429,18 @@ void gap_hw_scan_poll(void) {
                     if (gap_rx_armed) GAP_HW_STOP();
                     gap_ext_scan.periodic_slot = (uint8_t)sync_slot;
                     gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
-                    GAP_HW_CRC_INIT(sync->crc_init);
+                    GAP_HW_CRC_INIT(sync->params.crc_init);
 
                     uint8_t channel = sync->window_chain ? sync->aux_channel :
                             gap_periodic_channel_for(
-                                sync->access_address, sync->channel_map,
+                                sync->params.access_address, sync->channel_map,
                                 sync->event_counter ^
                                     (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0)
                             );
                     uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
                     gap_ext_scan.periodic_rx_phy = phy;
 
-                    GAP_HW_LINK_CONFIG(sync->access_address, channel, NULL, 0, phy, phy);
+                    GAP_HW_LINK_CONFIG(sync->params.access_address, channel, NULL, 0, phy, phy);
                     // Set listener state before RX can trigger its interrupt.
                     gap_ext_scan.listen_state = GAP_EXT_SCAN_PERIODIC;
                     GAP_HW_LINK_RX();

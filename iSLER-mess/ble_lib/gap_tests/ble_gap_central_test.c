@@ -1452,8 +1452,8 @@ static void test_pawr_connection_accept(void) {
     sync->pawr.timing.subevent_interval = 6;
     sync->pawr.subevent = 1;
     sync->last_event_counter = 20;
-    sync->access_address = 0x12345678;
-    sync->crc_init = 0x123456;
+    sync->params.access_address = 0x12345678;
+    sync->params.crc_init = 0x123456;
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
     sync->phy = GAP_PHY_1M;
@@ -1504,9 +1504,9 @@ static void test_pawr_connection_accept(void) {
            response[2] == 13 && response[3] == 0x03 &&
            !memcmp(response + 4, local_address, sizeof(local_address)) &&
            !memcmp(response + 10, advertiser, sizeof(advertiser)));
-    assert(configured_access_address == sync->access_address &&
+    assert(configured_access_address == sync->params.access_address &&
            captured_extended_channels[0] == gap_periodic_channel_for(
-               sync->access_address, sync->channel_map,
+               sync->params.access_address, sync->channel_map,
                (uint16_t)(20 ^ 1)) &&
            captured_extended_ticks[0] >= 8000150 &&
            captured_extended_ticks[0] <= 8000153 &&
@@ -1543,12 +1543,12 @@ static void test_pawr_observer_response(void) {
     memset(sync, 0, sizeof(*sync));
     sync->used = sync->established = 1;
     sync->sid = 6;
-    sync->interval = 24;
+    sync->params.interval = 24;
     sync->event_counter = 12;
     sync->anchor_ticks = 2000000;
-    sync->access_address = 0x12345678;
+    sync->params.access_address = 0x12345678;
     sync->pawr.timing.resp_access_addr = 0x78563412;
-    sync->crc_init = 0x123456;
+    sync->params.crc_init = 0x123456;
     sync->phy = GAP_PHY_1M;
     memset(sync->channel_map, 0xff, sizeof(sync->channel_map));
     sync->channel_map[4] = 0x1f;
@@ -1584,7 +1584,7 @@ static void test_pawr_observer_response(void) {
     gap_hw_scan_poll();
     assert(gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
            configured_radio_channel == gap_periodic_channel_for(
-               sync->access_address, sync->channel_map, (uint16_t)(12 ^ 2)));
+               sync->params.access_address, sync->channel_map, (uint16_t)(12 ^ 2)));
 
     memcpy(gap_ext_scan.frame, subevent_pdu, sizeof(subevent_pdu));
     fake_radio_tick_autoincrement = 1;
@@ -1605,7 +1605,7 @@ static void test_pawr_observer_response(void) {
            !memcmp(captured_extended_pdus[0] + 4, response_data,
                    sizeof(response_data)));
     assert(captured_extended_channels[0] ==
-           gap_periodic_channel_for(sync->access_address, sync->channel_map,
+           gap_periodic_channel_for(sync->params.access_address, sync->channel_map,
                                     (uint16_t)(12 ^ 2)));
     assert(captured_extended_ticks[0] >= selected_subevent_start + 1250 &&
            captured_extended_ticks[0] <= selected_subevent_start + 1253);
@@ -1720,7 +1720,7 @@ static void test_periodic_advertising_sync(void) {
     assert(gap_syncs[0].window_active &&
            !gap_syncs[0].established &&
            gap_syncs[0].event_counter == 5 &&
-           gap_syncs[0].access_address == 0x12345678 &&
+           gap_syncs[0].params.access_address == 0x12345678 &&
            gap_syncs[0].pawr.timing.has_timing &&
            gap_syncs[0].pawr.timing.subevents == 2 &&
            gap_syncs[0].pawr.timing.subevent_interval == 6 &&
@@ -1930,12 +1930,12 @@ static void test_periodic_sync_connection_arbitration(void) {
 
     gap_sync_context *sync = &gap_syncs[0];
     sync->used = sync->established = 1;
-    sync->interval = 8;
+    sync->params.interval = 8;
     sync->event_counter = 3;
     sync->timeout_ms = 10000;
     sync->last_event_ms = now_ms;
-    sync->access_address = 0x12345678;
-    sync->crc_init = 0x123456;
+    sync->params.access_address = 0x12345678;
+    sync->params.crc_init = 0x123456;
     sync->channel_map[0] = sync->channel_map[1] =
         sync->channel_map[2] = sync->channel_map[3] = 0xff;
     sync->channel_map[4] = 0x1f;
@@ -2971,9 +2971,9 @@ static void test_periodic_sync_transfer_receive(void) {
     assert(gap_ext_adv_decode(transferred_sync_info,
         sizeof(transferred_sync_info), &transferred_fields) &&
         transferred_fields.identity.sid == 6 &&
-        transferred_fields.sync.interval == 8 &&
-        transferred_fields.sync.access_address == 0x12345678 &&
-        transferred_fields.sync.crc_init == 0x123456);
+        transferred_fields.sync.params.interval == 8 &&
+        transferred_fields.sync.params.access_address == 0x12345678 &&
+        transferred_fields.sync.params.crc_init == 0x123456);
     assert(gap_sync_stop(0, 1));
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_TERMINATED);
