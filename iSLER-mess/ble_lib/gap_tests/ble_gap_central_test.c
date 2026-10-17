@@ -3690,7 +3690,7 @@ static void test_connection_subrating(void) {
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
     assert(gap_subrate_status() == 0x1a &&
-           !conn->subrate.update_queued);
+           !(conn->subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE));
     gap_conn_end();
 
     start_test_central_link();

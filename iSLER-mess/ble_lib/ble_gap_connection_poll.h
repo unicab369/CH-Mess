@@ -83,7 +83,7 @@ static void gap_conn_send_queued(void) {
         gap_tx_frame[4] = conn->phy.preferred.rx;
     }
 
-    if ((conn->subrate.update_queued || conn->subrate.request_queued) &&
+    if (conn->subrate.queued_flags &&
         !gap_tx_frame[1] && !conn->features.request_pending
     ) {
         // Wait for the peer Link Layer and Host to confirm subrating support.
@@ -94,15 +94,19 @@ static void gap_conn_send_queued(void) {
             const uint8_t required =
                 GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
             if ((conn->features.peer[4] & required) != required) {
-                conn->subrate.update_queued = 0;
-                conn->subrate.request_queued = 0;
+                conn->subrate.queued_flags = 0;
                 conn->subrate.status = 0x1a;
             }
-            else if (conn->is_central && conn->subrate.update_queued) {
+            else if (conn->is_central &&
+                (conn->subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
+            ) {
                 gap_send_subrate_update();
             }
-            else if (!conn->is_central && conn->subrate.request_queued) {
-                conn->subrate.request_queued = 0;
+            else if (!conn->is_central &&
+                (conn->subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST)
+            ) {
+                conn->subrate.queued_flags &=
+                    (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
                 conn->subrate.request_pending = 1;
                 conn->subrate.started_ms = GET_MILLIS();
 
@@ -998,11 +1002,10 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
         conn->connection_status = 0x22; // LL response timeout.
-        if (conn->subrate.update_queued || conn->subrate.request_queued ||
+        if (conn->subrate.queued_flags ||
             conn->subrate.request_pending
         ) {
-            conn->subrate.update_queued = 0;
-            conn->subrate.request_queued = 0;
+            conn->subrate.queued_flags = 0;
             conn->subrate.request_pending = 0;
             conn->subrate.status = 0x22;
         }
