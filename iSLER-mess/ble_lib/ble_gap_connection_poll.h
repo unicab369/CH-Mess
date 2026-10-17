@@ -1688,9 +1688,7 @@ int gap_send_due(
         return 0;
     }
 
-    if (sent_at)
-        *sent_at = completed_at;
-
+    if (sent_at) *sent_at = completed_at;
     if (jitter) *jitter = event_jitter;
     return 1;
 }
