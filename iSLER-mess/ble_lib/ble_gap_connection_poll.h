@@ -879,32 +879,36 @@ void gap_hw_init(void) {
     gap_scan.channel_index = 0;
     gap_scan.applied_generation = gap_scanner.generation - 1;
     gap_scan.interval_start_ms = 0;
+    gap_scan.active_pending = 0;
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
-    gap_scan.active_pending = 0;
     gap_adv_scan.ready = 0;
-    GAP_HW_PACKET_CLEAR();
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
+    GAP_HW_PACKET_CLEAR();
 }
 
-static void gap_conn_poll(void);
-
 // Calculate the receive-window deadline used to arbitrate the shared radio.
-static uint64_t gap_conn_event_close_ticks(
+static uint64_t gap_conn_close_ticks(
     const gap_conn_context *connection, uint32_t now_ms
 ) {
     uint32_t packet_us;
-    if (connection->phy.current.tx == GAP_PHY_CODED || connection->phy.current.rx == GAP_PHY_CODED) {
-        // Bound an exchange with two maximum S=8 packets and T_IFS. A 27-byte
-        // payload takes 2704 us on LE Coded S=8; larger DLE payloads add 64 us
-        // per octet. S=2 packets finish sooner, so this is conservative.
-        packet_us = 2 * (976 + (uint32_t)connection->data_capacity * 64) + 150;
+    if (connection->phy.current.tx == GAP_PHY_CODED ||
+        connection->phy.current.rx == GAP_PHY_CODED
+    ) {
+        // T_IFS. A 27-byte payload takes 2704 us on LE Coded S=8; larger DLE
+        // payloads add 64 us per octet. S=2 packets finish sooner.
+        // Exchange as: 2 * (976 us + payload octets * 64 us) + 150 us
+        // Simplified: 2102 us + payload octets * 128 us.
+        packet_us = 2102 + (uint32_t)connection->data_capacity * 128;
     }
     else {
-        packet_us = 400 + 2 * (connection->data_capacity > 27 ?
-                    connection->data_capacity - 27 : 0) * 8;
+        // Two packets add 8 us per octet above 27 bytes: 400 us +
+        // 2 * max(data_capacity - 27, 0) * 8 us.
+        // Simplified: 400 us + 16 us * max(data_capacity - 27, 0).
+        packet_us = 400 + 16 * (connection->data_capacity > 27 ?
+                                    connection->data_capacity - 27 : 0);
     }
 
     uint32_t window_us = connection->link.first_event ||
@@ -912,12 +916,9 @@ static uint64_t gap_conn_event_close_ticks(
                         (uint32_t)connection->window_size * 1250 : 1000;
     uint32_t widen_us = ((uint32_t)(now_ms - connection->link.last_rx_ms) *
                             (500 + connection->link.peer_sca_ppm) + 999) / 1000;
-    uint32_t widen_max_us =
-        (uint32_t)connection->schedule.interval_125us * 125 / 2;
+    uint32_t widen_max = (uint32_t)connection->schedule.interval_125us * 125 / 2;
 
-    if (widen_us > widen_max_us)
-        widen_us = widen_max_us;
-
+    if (widen_us > widen_max) widen_us = widen_max;
     return connection->link.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
 }
 
@@ -1046,7 +1047,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    uint64_t close_ticks = gap_conn_event_close_ticks(conn, now_ms);
+    uint64_t close_ticks = gap_conn_close_ticks(conn, now_ms);
 
     if (now >= close_ticks) {
         if (conn->link_state.rx_armed) {
@@ -1069,7 +1070,7 @@ static void gap_conn_poll(void) {
                 return;
 
             skipped++;
-        } while (now >= gap_conn_event_close_ticks(conn, now_ms));
+        } while (now >= gap_conn_close_ticks(conn, now_ms));
 
         uint32_t extra_hops = skipped - conn->link_state.channel_selected;
         conn->link.unmapped_channel =
@@ -1214,7 +1215,7 @@ static inline void gap_conn_poll_all(void) {
         if (!gap_conn_slot_active(slot))
             continue;
 
-        uint64_t deadline = gap_conn_event_close_ticks(&gap_conn_ctx[slot], now_ms);
+        uint64_t deadline = gap_conn_close_ticks(&gap_conn_ctx[slot], now_ms);
         uint8_t position = count;
 
         while (position && deadline < deadlines[position - 1]) {
