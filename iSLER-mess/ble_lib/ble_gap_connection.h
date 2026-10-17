@@ -862,13 +862,12 @@ static uint8_t gap_conn_control(const uint8_t *frame,
              !conn->pending.params_local))
         ) return gap_conn_reject_resp(frame[2], error);
 
-        uint16_t minimum = (uint16_t)frame[3] | (uint16_t)frame[4] << 8;
-        uint16_t maximum = (uint16_t)frame[5] | (uint16_t)frame[6] << 8;
-        uint16_t latency = (uint16_t)frame[7] | (uint16_t)frame[8] << 8;
-        uint16_t timeout = (uint16_t)frame[9] | (uint16_t)frame[10] << 8;
+        uint16_t minimum = ble_read_u16_le(frame + 3);
+        uint16_t maximum = ble_read_u16_le(frame + 5);
+        uint16_t latency = ble_read_u16_le(frame + 7);
+        uint16_t timeout = ble_read_u16_le(frame + 9);
 
-        if (!ble_timing_ranges_valid(
-                minimum, maximum, latency, timeout) ||
+        if (!ble_timing_ranges_valid(minimum, maximum, latency, timeout) ||
             frame[11] > maximum || (uint32_t)timeout * 80 <=
                 2 * (uint32_t)(latency + 1) * maximum * 10
         ) return gap_conn_reject_resp(frame[2], error);
@@ -877,7 +876,7 @@ static uint8_t gap_conn_control(const uint8_t *frame,
         // ordered before unspecified (0xffff) offsets.
         uint8_t unspecified = 0, has_offset = 0;
         for (uint8_t i = 0; i < 6; i++) {
-            uint16_t offset = (uint16_t)frame[14 + i * 2] | (uint16_t)frame[15 + i * 2] << 8;
+            uint16_t offset = ble_read_u16_le(frame + 14 + i * 2);
 
             if (offset == 0xffff) {
                 unspecified = 1;
@@ -888,9 +887,8 @@ static uint8_t gap_conn_control(const uint8_t *frame,
                 return gap_conn_reject_resp(frame[2], error);
 
             for (uint8_t j = 0; j < i; j++)
-                if (frame[14 + j * 2] == (uint8_t)offset &&
-                    frame[15 + j * 2] == (uint8_t)(offset >> 8)
-                ) return gap_conn_reject_resp(frame[2], error);
+                if (ble_read_u16_le(frame + 14 + j * 2) == offset)
+                    return gap_conn_reject_resp(frame[2], error);
 
             has_offset = 1;
         }
