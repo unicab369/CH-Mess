@@ -915,34 +915,32 @@ int gap_sync_start(
 
     if (slot < 0) return 0;
 
+    gap_sync_context *sync = &gap_syncs[slot];
+
     if (!gap_scanner.scanning) {
         gap_scan_start(0);
         gap_sync_owned_scan = 1;
     }
 
-    memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
-    gap_syncs[slot].used = 1;
-    gap_syncs[slot].handle = (uint8_t)(slot + 1);
-    gap_syncs[slot].sid = sid;
-    gap_syncs[slot].peer.type = random_type;
-    memcpy(gap_syncs[slot].peer.address, address, 6);
-    gap_syncs[slot].timeout_ms = timeout_ms;
-    gap_syncs[slot].last_event_ms = GET_MILLIS();
+    memset(sync, 0, sizeof(*sync));
+    sync->used = 1;
+    sync->handle = (uint8_t)(slot + 1);
+    sync->sid = sid;
+    sync->peer.type = random_type;
+    memcpy(sync->peer.address, address, 6);
+    sync->timeout_ms = timeout_ms;
+    sync->last_event_ms = GET_MILLIS();
     return (uint8_t)(slot + 1);
 }
 
 // Application facing
 // Enable receipt of periodic sync transfers from connected peers.
-int gap_past_enable(
-    uint8_t enabled, uint32_t timeout_ms
-) {
+int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
     if (enabled > 1 || (enabled && (timeout_ms < 100 || timeout_ms > 163840)))
         return 0;
 
     gap_past.enabled = enabled;
-
-    if (enabled)
-        gap_past.timeout_ms = timeout_ms;
+    if (enabled) gap_past.timeout_ms = timeout_ms;
     return 1;
 }
 
