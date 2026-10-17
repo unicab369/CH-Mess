@@ -1142,25 +1142,24 @@ static int gap_sync_info_accept(
 
     gap_sync_context *sync = &gap_syncs[slot];
     memcpy(sync->channel_map, fields->sync.channel_map, 5);
-    sync->sca = fields->sync.sca;
-    sync->pawr.timing = fields->pawr;
-    sync->widening_ppm =
-        (uint16_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500);
-    sync->interval = fields->sync.interval;
     sync->phy = packet_phy;
+    sync->did = fields->identity.adi & 0x0fff;
     sync->peer = fields->identity.peer;
-    sync->event_counter = event_counter;
+    sync->sca = fields->sync.sca;
+    sync->interval = fields->sync.interval;
     sync->access_address = fields->sync.access_address;
     sync->crc_init = fields->sync.crc_init;
-    sync->did = fields->identity.adi & 0x0fff;
-    sync->anchor_ticks =
-        packet_end_ticks - HW_TICKS_FROM_US(airtime_us);
+    sync->pawr.timing = fields->pawr;
+
+    sync->widening_ppm = (uint16_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500);
+    sync->event_counter = event_counter;
+    sync->anchor_ticks = packet_end_ticks - HW_TICKS_FROM_US(airtime_us);
     sync->next_ticks = target;
     sync->start_ticks = window_start;
     sync->end_ticks = window_end;
+    sync->missed_events = skipped;
     sync->window_active = 1;
     sync->window_chain = 0;
-    sync->missed_events = skipped;
     return 1;
 }
 
