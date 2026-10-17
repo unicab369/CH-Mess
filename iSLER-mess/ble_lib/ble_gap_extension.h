@@ -222,6 +222,10 @@ static uint32_t gap_periodic_airtime_us(size_t data_len, uint8_t phy) {
         uint8_t chained = remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;
         uint16_t chunk = chained ? GAP_EXT_ADV_CHAIN_PDU_DATA_MAX : remaining;
         uint16_t pdu_len = 1 + (chained ? 6 : 3) + chunk;
+        // Match AuxPtr spacing: 600 us guard plus airtime, rounded up to 30 us units.
+        // ceil((airtime + 600) / 30) * 30
+        //   = ((airtime + 600 + 29) / 30) * 30
+        // Keep * 30: integer division truncates to units of 30 us.
         duration += ((gap_phy_airtime_us(pdu_len, phy) + 629) / 30) * 30;
         remaining -= chunk;
     } while (remaining);
@@ -237,14 +241,12 @@ int gap_periodic_adv_start(
 ) {
     if (set_id >= GAP_EXT_ADV_SET_COUNT)
         return 0;
-
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
     if (!set->enabled || set->scannable ||
         set->periodic.enabled || interval < 6 ||
         !gap_ext_ad_data_valid(data, len) ||
-        (uint32_t)interval * 1250 <
-        gap_periodic_airtime_us(len, set->aux_phy)
+        (uint32_t)interval * 1250 < gap_periodic_airtime_us(len, set->aux_phy)
     ) return 0;
 
     uint8_t random[3];
