@@ -1340,8 +1340,9 @@ static uint8_t gap_conn_control(
             gap_tx_frame[2] = LL_FEATURE_EXT_RSP;
             gap_tx_frame[3] = 1;
             gap_tx_frame[4] = page;
-            memset(gap_tx_frame + 5, 0, 8);
+            gap_tx_frame[5] = 0;
             gap_tx_frame[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
+            memset(gap_tx_frame + 7, 0, 6);
         }
         else {
             if (!conn->features.ext_pending || page != 1)
@@ -2146,11 +2147,11 @@ int gap_channel_class_set(
         !gap_class_valid(classification)
     ) return 0;
 
-    if (memcmp(conn->channel.local_classification, classification,
+    if (memcmp(conn->channel.local_class, classification,
                GAP_CHANNEL_CLASSIFICATION_BYTES) == 0
     ) return 1;
 
-    memcpy(conn->channel.local_classification, classification,
+    memcpy(conn->channel.local_class, classification,
            GAP_CHANNEL_CLASSIFICATION_BYTES);
     conn->channel.classification_valid = 1;
     conn->channel.status_changed_ms = GET_MILLIS();
@@ -2170,7 +2171,7 @@ const uint8_t *gap_channel_class_get(void) {
         !conn->channel.classification_valid
     ) return NULL;
 
-    return conn->channel.local_classification;
+    return conn->channel.local_class;
 }
 
 // Application facing

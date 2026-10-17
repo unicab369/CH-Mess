@@ -398,7 +398,7 @@ typedef struct {
         uint8_t enabled, classification_valid, peer_classification_valid;
         uint8_t status_last_sent_valid;
         uint8_t min_spacing_200ms, max_delay_200ms;
-        uint8_t local_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+        uint8_t local_class[GAP_CHANNEL_CLASSIFICATION_BYTES];
         uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } channel;
