@@ -2019,8 +2019,9 @@ int gap_conn_rate_set(
     if (gap_conn_procedure_busy() ||
         gap_conn_rate_busy() ||
         !conn->is_central ||
-        interval < gap_conn_min_interval()
-        !gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
+        interval < gap_conn_min_interval() ||
+        !gap_rate_parameters_valid(interval, factor, latency, continuation,
+                                   timeout)
     ) return 0;
 
     conn->next_schedule.interval_125us = interval;
