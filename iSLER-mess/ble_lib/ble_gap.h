@@ -502,14 +502,25 @@ static inline int gap_conn_current(gap_conn_handle *handle) {
 }
 
 // Encryption procedure state; application/SMP code supplies keys in PDU byte order.
+// Timed phases occupy the low nine bits for a single-mask timeout check.
 enum {
-    GAP_ENC_IDLE, GAP_ENC_QUEUED, GAP_ENC_WAIT_RSP, GAP_ENC_WAIT_START,
-    GAP_ENC_WAIT_FINAL, GAP_ENC_KEY_REQUEST, GAP_ENC_START_QUEUED,
-    GAP_ENC_PERIPHERAL_START, GAP_ENC_PAUSE_QUEUED, GAP_ENC_WAIT_PAUSE,
-    GAP_ENC_PERIPHERAL_PAUSE, GAP_ENC_RESTART_QUEUED, GAP_ENC_PERIPHERAL_RESTART
+    GAP_ENC_IDLE = 0,
+    GAP_ENC_WAIT_RSP = 1u << 0,
+    GAP_ENC_WAIT_START = 1u << 1,
+    GAP_ENC_WAIT_FINAL = 1u << 2,
+    GAP_ENC_KEY_REQUEST = 1u << 3,
+    GAP_ENC_START_QUEUED = 1u << 4,
+    GAP_ENC_PERIPHERAL_START = 1u << 5,
+    GAP_ENC_WAIT_PAUSE = 1u << 6,
+    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
+    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
+    GAP_ENC_QUEUED = 1u << 9,
+    GAP_ENC_PAUSE_QUEUED = 1u << 10,
+    GAP_ENC_RESTART_QUEUED = 1u << 11,
+    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
 };
 typedef struct {
-    volatile uint8_t phase;
+    volatile uint16_t phase;
     uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
     uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
     uint8_t next_skd[8], next_iv[4];

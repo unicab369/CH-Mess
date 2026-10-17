@@ -954,10 +954,9 @@ static void gap_conn_poll(void) {
     uint32_t now_ms = GET_MILLIS();
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
-    if (gap_security->phase &&
-        gap_security->phase != GAP_ENC_QUEUED &&
-        gap_security->phase != GAP_ENC_PAUSE_QUEUED &&
-        gap_security->phase != GAP_ENC_RESTART_QUEUED &&
+    // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
+    // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.
+    if ((gap_security->phase & GAP_ENC_TIMEOUT_MASK) &&
         (uint32_t)(now_ms - gap_security->started_ms) >= 40000
     ) {
         gap_security->status = 0x22;
@@ -966,7 +965,8 @@ static void gap_conn_poll(void) {
     }
 
     if (conn->pending.phy_request &&
-        (uint32_t)(now_ms - conn->phy.started_ms) >= 40000) {
+        (uint32_t)(now_ms - conn->phy.started_ms) >= 40000
+    ) {
         conn->phy.status = 0x22;
         gap_conn_end();
         return;

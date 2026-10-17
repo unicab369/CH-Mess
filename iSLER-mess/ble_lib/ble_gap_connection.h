@@ -2390,7 +2390,7 @@ static void gap_send_security(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    uint8_t phase = gap_security->phase;
+    uint16_t phase = gap_security->phase;
 
     if (phase == GAP_ENC_QUEUED || phase == GAP_ENC_RESTART_QUEUED) {
         memcpy(gap_security->skd, gap_security->next_skd, 8);
