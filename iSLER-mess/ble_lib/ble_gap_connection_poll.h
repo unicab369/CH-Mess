@@ -1114,13 +1114,11 @@ static void gap_conn_poll(void) {
           event == (uint16_t)(conn->update_instant - 1))))
     ) {
         uint8_t subrated = conn->schedule.factor &&
-            ((int32_t)event - (int32_t)conn->schedule.base_event) %
-                conn->schedule.factor == 0;
+            ((int32_t)event - (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0;
 
         if (conn->is_central && conn->subrate.transition &&
             conn->next_schedule.factor &&
-            ((int32_t)event - (int32_t)conn->next_schedule.base_event) %
-                conn->next_schedule.factor == 0
+            ((int32_t)event - (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0
         ) subrated = 1;
 
         if (!conn->subrate.continuations &&
@@ -1129,8 +1127,7 @@ static void gap_conn_poll(void) {
             // Skipping radio work does not skip the connection event counter or
             // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
             conn->link.unmapped_channel = (conn->link.unmapped_channel + conn->link.hop) % 37;
-            conn->link.next_ticks +=
-                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+            conn->link.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
             gap_conn_event_advance();
             gap_conn_update_apply(0);
             return;
