@@ -569,11 +569,11 @@ typedef struct {
     uint8_t head, count;
     uint8_t seen_count, seen_next;
     uint8_t response_accepted;
-    gap_peer_address response_peer;
+    gap_address response_peer;
 } gap_scan_ctx;
 static gap_scan_ctx gap_scan;
 static struct {
-    gap_peer_address peer;
+    gap_address peer;
     uint8_t pdu_type, data_len;
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_seen[GAP_SCAN_SEEN_COUNT];

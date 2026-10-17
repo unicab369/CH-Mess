@@ -21,7 +21,7 @@ enum {
 };
 typedef struct {
     uint8_t has_address;
-    gap_peer_address peer;
+    gap_address peer;
     uint8_t has_adi, sid;
     uint16_t adi;
 } gap_ext_identity;
@@ -39,7 +39,7 @@ static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
 
 typedef struct {
     uint8_t used;
-    gap_peer_address peer;
+    gap_address peer;
     uint8_t has_adi, sid;
     uint16_t did, data_len;
     uint32_t data_hash;
@@ -74,7 +74,7 @@ typedef struct {
 typedef struct {
     uint8_t set_id, sid, subevent, response_slot;
     uint8_t has_address;
-    gap_peer_address peer;
+    gap_address peer;
     uint16_t event_counter, data_len;
     int8_t rssi;
     uint8_t data[GAP_PAWR_RESPONSE_DATA_MAX];
@@ -528,8 +528,9 @@ int gap_ext_adv_stop(uint8_t set_id) {
 // -----------------------------------------------------------------------------
 typedef struct {
     uint8_t has_address;
-    gap_peer_address peer;
-    uint8_t resolved, identity_type, identity_addr[6];
+    gap_address peer;
+    uint8_t resolved;
+    gap_address identity;
     uint8_t has_adi, sid;
     uint16_t did;
     int8_t rssi;
@@ -779,7 +780,7 @@ static void gap_ext_report_queue(
         if (!discoverable) return;
     }
 
-    const gap_peer_address *peer = &identity->peer;
+    const gap_address *peer = &identity->peer;
     if (identity_slot >= 0)
         peer = &gap_identities[identity_slot].peer;
 
@@ -792,15 +793,18 @@ static void gap_ext_report_queue(
         for (uint8_t i = 0; i < gap_ext_idx.seen_count; i++) {
             gap_ext_seen_entry *seen = &gap_ext_adv_seen[i];
 
-            if (seen->used &&
-                seen->peer.type == peer->type &&
-                !memcmp(seen->peer.address, peer->address, 6) &&
-                seen->sid == identity->sid &&
-                seen->has_adi == identity->has_adi &&
-                (identity->has_adi ?
-                    seen->did == (identity->adi & 0x0fff) :
-                    seen->data_len == data_len && seen->data_hash == data_hash)
-            ) return;
+            if (!seen->used || seen->peer.type != peer->type ||
+                memcmp(seen->peer.address, peer->address, 6) ||
+                seen->sid != identity->sid ||
+                seen->has_adi != identity->has_adi
+            ) continue;
+
+            if (identity->has_adi) {
+                if (seen->did == (identity->adi & 0x0fff))
+                    return;
+            } else if (seen->data_len == data_len && seen->data_hash == data_hash) {
+                return;
+            }
         }
         uint8_t slot = gap_ext_idx.seen_count;
 
@@ -825,15 +829,13 @@ static void gap_ext_report_queue(
         gap_ext_idx.report_count--;
     }
 
-    uint8_t slot = (gap_ext_idx.report_head +
-                    gap_ext_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
+    uint8_t slot = (gap_ext_idx.report_head + gap_ext_idx.report_count) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_report *report = &gap_ext_adv_reports[slot];
 
     report->has_address = identity->has_address;
     report->peer = identity->peer;
     report->resolved = identity_slot >= 0;
-    report->identity_type = peer->type;
-    memcpy(report->identity_addr, peer->address, 6);
+    report->identity = *peer;
     report->has_adi = identity->has_adi;
     report->sid = identity->sid;
     report->did = identity->adi & 0x0fff;
@@ -848,9 +850,7 @@ static void gap_ext_report_queue(
 // Application facing
 // Return one complete reassembled extended advertising report.
 int gap_ext_scan_poll(gap_ext_report *report) {
-    if (!report || !gap_ext_idx.report_count)
-        return 0;
-
+    if (!report || !gap_ext_idx.report_count) return 0;
     *report = gap_ext_adv_reports[gap_ext_idx.report_head];
     gap_ext_idx.report_head = (gap_ext_idx.report_head + 1) % GAP_EXT_ADV_REPORT_COUNT;
     gap_ext_idx.report_count--;
@@ -860,14 +860,15 @@ int gap_ext_scan_poll(gap_ext_report *report) {
 // -----------------------------------------------------------------------------
 // Periodic synchronization management and reports
 // -----------------------------------------------------------------------------
-static void gap_periodic_sync_event_post(uint8_t slot, uint8_t type) {
+static void gap_sync_event_post(uint8_t slot, uint8_t type) {
+    gap_sync_context *sync = &gap_syncs[slot];
     gap_periodic_sync_event event;
     memset(&event, 0, sizeof(event));
     event.type = type;
-    event.handle = gap_syncs[slot].handle;
-    event.sid = gap_syncs[slot].sid;
-    event.address_type = gap_syncs[slot].address_type;
-    memcpy(event.address, gap_syncs[slot].address, 6);
+    event.handle = sync->handle;
+    event.sid = sync->sid;
+    event.address_type = sync->address_type;
+    memcpy(event.address, sync->address, 6);
 
     if (gap_sync_events.count == GAP_PERIODIC_SYNC_EVENT_COUNT) {
         gap_sync_events.head =
@@ -971,7 +972,7 @@ int gap_periodic_sync_stop(uint8_t handle, uint8_t terminate) {
         gap_syncs[slot].established != terminate
     ) return 0;
 
-    gap_periodic_sync_event_post((uint8_t)slot, terminate ?
+    gap_sync_event_post((uint8_t)slot, terminate ?
         GAP_PERIODIC_SYNC_TERMINATED : GAP_PERIODIC_SYNC_CANCELLED);
     memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
     gap_sync_finish_owned_scan();
@@ -1260,7 +1261,7 @@ static int gap_periodic_sync_receive(
             gap_syncs[slot].did = fields.identity.adi & 0x0fff;
         if (!gap_syncs[slot].established) {
             gap_syncs[slot].established = 1;
-            gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
+            gap_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
         }
     }
 
@@ -2671,7 +2672,7 @@ static void gap_sync_window_missed(uint8_t slot) {
         if (!gap_syncs[slot].established &&
             gap_syncs[slot].missed_events >= 6
         ) {
-            gap_periodic_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
+            gap_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
             memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
             gap_sync_finish_owned_scan();
             return;

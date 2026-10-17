@@ -1141,7 +1141,7 @@ static int gap_bond_valid(const gap_bond *bond) {
 
 // Application facing
 int gap_bond_remove(void) {
-    const gap_peer_address *peer = &gap_conn_ctx[gap_conn_slot].bond.peer;
+    const gap_address *peer = &gap_conn_ctx[gap_conn_slot].bond.peer;
     if (peer->type > 1 || (peer->type && (peer->address[5] & 0xc0) != 0xc0))
         return 0;
 

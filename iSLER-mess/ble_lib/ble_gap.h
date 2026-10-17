@@ -279,7 +279,7 @@ typedef struct {
 typedef struct {
     // Zero is public; any nonzero value is treated as random.
     uint8_t type, address[6];
-} gap_peer_address;
+} gap_address;
 
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
@@ -295,7 +295,7 @@ typedef struct {
 // little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
     uint8_t version, valid;
-    gap_peer_address peer;
+    gap_address peer;
     // Keep Central- and Peripheral-distributed key sets separate.
     gap_bond_key central, peripheral;
     bond_opt_key peer_irk, local_irk, peer_csrk, local_csrk;
@@ -371,7 +371,7 @@ typedef struct {
         uint64_t next_ticks;
     } link;
     // Connection endpoint and peer identity addresses.
-    gap_peer_address initiator, responder, peer;
+    gap_address initiator, responder, peer;
     uint8_t is_central;
     uint8_t authenticated, enc_key_size;
     uint8_t load_pending;
@@ -678,7 +678,7 @@ static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
 static struct {
     uint8_t active;
     gap_conn_mode mode;
-    gap_peer_address peer;
+    gap_address peer;
     uint8_t request[36];
     uint32_t deadline_ms;
 } gap_central;
@@ -721,19 +721,19 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
 
 // GAP privacy, identity resolution, and Filter Accept List operations.
 
-static gap_peer_address gap_own_address;
-static gap_peer_address gap_identity_address;
+static gap_address gap_own_address;
+static gap_address gap_identity_address;
 // Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
 static uint32_t gap_accept_list_mask;
 static struct {
-    gap_peer_address peer;
+    gap_address peer;
 } gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
 // Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
 // Addresses use PDU byte order; IRKs use standard AES byte order.
 typedef struct {
     uint8_t used;
-    gap_peer_address peer;
+    gap_address peer;
     uint8_t irk[16];
     uint8_t privacy_mode, has_irk;
     uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
