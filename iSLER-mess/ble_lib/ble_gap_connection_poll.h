@@ -915,6 +915,8 @@ static uint64_t gap_conn_close_ticks(
     uint32_t window_us = connection->link.first_event ||
                         connection->pending.update_window_active ?
                         (uint32_t)connection->window_size * 1250 : 1000;
+    // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
+    // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
     uint32_t widen_us = ((uint32_t)(now_ms - connection->link.last_rx_ms) *
                             (500 + connection->link.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max = (uint32_t)connection->schedule.interval_125us * 125 / 2;
@@ -1032,7 +1034,6 @@ static void gap_conn_poll(void) {
 
     if (conn->link_state.event_replied) {
         if (!GAP_HW_TX_DONE()) {
-
             if (now > conn->link.next_ticks)
                 gap_conn_end();
             return;
@@ -1047,21 +1048,18 @@ static void gap_conn_poll(void) {
             gap_conn_end();
             return;
         }
-
         return;
     }
 
-    uint64_t close_ticks = gap_conn_close_ticks(conn, now_ms);
-
-    if (now >= close_ticks) {
+    if (now >= gap_conn_close_ticks(conn, now_ms)) {
         if (conn->link_state.rx_armed) {
             GAP_HW_STOP();
             gap_rx_armed = 0;
         }
 
-        if (gap_poll.slot_valid &&
-            gap_poll.slot == gap_conn_slot
-        ) gap_poll.slot_valid = 0;
+        if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot)
+            gap_poll.slot_valid = 0;
+
         conn->link_state.rx_armed = 0;
         uint32_t skipped = 0;
 
@@ -1077,12 +1075,13 @@ static void gap_conn_poll(void) {
         } while (now >= gap_conn_close_ticks(conn, now_ms));
 
         uint32_t extra_hops = skipped - conn->link_state.channel_selected;
-        conn->link.unmapped_channel =
-            (conn->link.unmapped_channel +
-             extra_hops * conn->link.hop) % 37;
+        conn->link.unmapped_channel = (conn->link.unmapped_channel +
+                                        extra_hops * conn->link.hop) % 37;
         conn->link_state.channel_selected = 0;
     }
 
+    // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
+    // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
     uint32_t widen_us = ((uint32_t)(now_ms - conn->link.last_rx_ms) *
                         (500 + conn->link.peer_sca_ppm) + 999) / 1000;
     uint32_t interval_125us = conn->schedule.interval_125us;
