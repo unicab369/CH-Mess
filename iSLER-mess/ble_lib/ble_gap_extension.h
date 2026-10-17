@@ -1179,29 +1179,27 @@ static int gap_periodic_sync_receive(
         !gap_syncs[slot].used
     ) return 0;
 
+    gap_sync_context *sync = &gap_syncs[slot];
     gap_ext_fields fields;
 
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields) || fields.mode != 0)
         return 0;
-
-    if (fields.identity.has_adi && fields.identity.sid != gap_syncs[slot].sid)
+    if (fields.identity.has_adi && fields.identity.sid != sync->sid)
         return 0;
 
-    uint8_t was_chain = gap_syncs[slot].event_data_active;
+    uint8_t was_chain = sync->event_data_active;
 
     if (!was_chain) {
         uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
-
         if (received_ticks < HW_TICKS_FROM_US(airtime_us))
             return 0;
 
-        uint64_t packet_start = received_ticks -
-            HW_TICKS_FROM_US(airtime_us);
+        uint64_t packet_start = received_ticks - HW_TICKS_FROM_US(airtime_us);
         uint32_t subevent_offset_us =
-            (uint32_t)gap_syncs[slot].pawr.subevent *
-            gap_syncs[slot].pawr.timing.subevent_interval * 1250;
+                (uint32_t)sync->pawr.subevent *
+                sync->pawr.timing.subevent_interval * 1250;
 
-        if (!gap_syncs[slot].pawr.timing.has_timing)
+        if (!sync->pawr.timing.has_timing)
             subevent_offset_us = 0;
         uint64_t subevent_offset_ticks = HW_TICKS_FROM_US(subevent_offset_us);
 
@@ -1210,56 +1208,54 @@ static int gap_periodic_sync_receive(
 
         // Keep anchor_ticks at subevent zero so successive selected subevents
         // do not add the selection offset to the schedule a second time.
-        gap_syncs[slot].anchor_ticks = packet_start -
-            subevent_offset_ticks;
-        gap_syncs[slot].next_ticks =
-            gap_syncs[slot].anchor_ticks +
-            HW_TICKS_FROM_US((uint32_t)gap_syncs[slot].params.interval * 1250 +
+        sync->anchor_ticks = packet_start - subevent_offset_ticks;
+        sync->next_ticks = sync->anchor_ticks +
+            HW_TICKS_FROM_US((uint32_t)sync->params.interval * 1250 +
                              subevent_offset_us);
-        gap_syncs[slot].last_event_counter =
-            gap_syncs[slot].event_counter;
-        gap_syncs[slot].event_counter++;
-        gap_syncs[slot].missed_events = 0;
-        gap_syncs[slot].widening_ppm =
-            (uint16_t)(gap_periodic_sca_ppm[
-                gap_syncs[slot].params.sca] + 500);
-        gap_syncs[slot].last_event_ms = GET_MILLIS();
-        gap_syncs[slot].data_len = 0;
+
+        sync->last_event_counter = sync->event_counter;
+        sync->event_counter++;
+        sync->missed_events = 0;
+        sync->widening_ppm = (uint16_t)(gap_periodic_sca_ppm[
+                                        sync->params.sca] + 500);
+        sync->last_event_ms = GET_MILLIS();
+        sync->data_len = 0;
+
         if (fields.identity.has_adi)
-            gap_syncs[slot].did = fields.identity.adi & 0x0fff;
-        if (!gap_syncs[slot].established) {
-            gap_syncs[slot].established = 1;
+            sync->did = fields.identity.adi & 0x0fff;
+        if (!sync->established) {
+            sync->established = 1;
             gap_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
         }
     }
 
-    gap_syncs[slot].rssi = rssi;
-    gap_syncs[slot].phy = packet_phy;
+    sync->rssi = rssi;
+    sync->phy = packet_phy;
 
     if (fields.payload.len > GAP_EXT_ADV_DATA_MAX -
-            gap_syncs[slot].data_len) {
-        gap_syncs[slot].event_data_active = 0;
-        gap_syncs[slot].data_len = 0;
+            sync->data_len) {
+        sync->event_data_active = 0;
+        sync->data_len = 0;
         return 0;
     }
 
     if (fields.payload.len) {
-        memcpy(gap_syncs[slot].data +
-            gap_syncs[slot].data_len, fields.payload.data, fields.payload.len);
-        gap_syncs[slot].data_len += fields.payload.len;
+        memcpy(sync->data +
+            sync->data_len, fields.payload.data, fields.payload.len);
+        sync->data_len += fields.payload.len;
     }
 
     if (fields.has_aux_ptr && !fields.aux_offset_zero) {
-        gap_syncs[slot].event_data_active = 1;
+        sync->event_data_active = 1;
         return 1;
     }
 
-    gap_syncs[slot].event_data_active = 0;
+    sync->event_data_active = 0;
 
-    if (!gap_ext_ad_data_valid(gap_syncs[slot].data,
-                                gap_syncs[slot].data_len)
+    if (!gap_ext_ad_data_valid(sync->data,
+                                sync->data_len)
     ) {
-        gap_syncs[slot].data_len = 0;
+        sync->data_len = 0;
         return 0;
     }
 
@@ -1273,16 +1269,16 @@ static int gap_periodic_sync_receive(
                    GAP_PERIODIC_REPORT_COUNT;
     gap_periodic_report *report = &gap_periodic_reports.items[tail];
     report->slot = (uint8_t)slot;
-    report->sid = gap_syncs[slot].sid;
-    report->event_counter = gap_syncs[slot].last_event_counter;
-    report->did = gap_syncs[slot].did;
-    report->rssi = gap_syncs[slot].rssi;
-    report->data_len = gap_syncs[slot].data_len;
+    report->sid = sync->sid;
+    report->event_counter = sync->last_event_counter;
+    report->did = sync->did;
+    report->rssi = sync->rssi;
+    report->data_len = sync->data_len;
 
     if (report->data_len)
-        memcpy(report->data, gap_syncs[slot].data, report->data_len);
+        memcpy(report->data, sync->data, report->data_len);
     gap_periodic_reports.count++;
-    gap_syncs[slot].data_len = 0;
+    sync->data_len = 0;
     return 1;
 }
 
@@ -2610,30 +2606,31 @@ int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
 
 
 static void gap_sync_window_missed(uint8_t slot) {
-    if (!gap_syncs[slot].used) return;
-    if (gap_syncs[slot].window_chain) {
-        gap_syncs[slot].event_data_active = 0;
-        gap_syncs[slot].data_len = 0;
+    gap_sync_context *sync = &gap_syncs[slot];
+    if (!sync->used) return;
+    if (sync->window_chain) {
+        sync->event_data_active = 0;
+        sync->data_len = 0;
     }
     else {
-        gap_syncs[slot].event_counter++;
-        gap_syncs[slot].next_ticks += HW_TICKS_FROM_US(
-                                (uint32_t)gap_syncs[slot].params.interval * 1250);
+        sync->event_counter++;
+        sync->next_ticks += HW_TICKS_FROM_US(
+                                (uint32_t)sync->params.interval * 1250);
 
-        if (gap_syncs[slot].missed_events < 255)
-            gap_syncs[slot].missed_events++;
+        if (sync->missed_events < 255)
+            sync->missed_events++;
 
-        if (!gap_syncs[slot].established &&
-            gap_syncs[slot].missed_events >= 6
+        if (!sync->established &&
+            sync->missed_events >= 6
         ) {
             gap_sync_event_post(slot, GAP_PERIODIC_SYNC_LOST);
-            memset(&gap_syncs[slot], 0, sizeof(gap_syncs[slot]));
+            memset(sync, 0, sizeof(*sync));
             gap_sync_scan_finish();
             return;
         }
     }
-    gap_syncs[slot].window_active = 0;
-    gap_syncs[slot].window_chain = 0;
+    sync->window_active = 0;
+    sync->window_chain = 0;
 }
 
 // -----------------------------------------------------------------------------
