@@ -446,7 +446,8 @@ static inline int gap_adv_start_payload(
 // Application facing
 // Start legacy non-connectable, non-scannable advertising.
 int gap_adv_start(const uint8_t *data, size_t len, uint16_t interval_ms) {
-    return gap_adv_start_payload(0x02, data, len, NULL, 0, interval_ms);
+    return gap_adv_start_payload(
+        ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
 }
 
 // Application facing
@@ -458,7 +459,8 @@ int gap_adv_start_scannable(
     if (!scan_response || !resp_len)
         return 0;
 
-    return gap_adv_start_payload(0x06, data, len, scan_response, resp_len, interval_ms);
+    return gap_adv_start_payload(
+        ADV_SCAN_IND, data, len, scan_response, resp_len, interval_ms);
 }
 
 // Application facing
@@ -468,7 +470,8 @@ int gap_adv_start_connectable(
     const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
-    return gap_adv_start_payload(0x00, data, len, scan_response, resp_len, interval_ms);
+    return gap_adv_start_payload(
+        ADV_IND, data, len, scan_response, resp_len, interval_ms);
 }
 
 // Application facing
@@ -505,7 +508,7 @@ int gap_adv_start_directed(
     memcpy(gap_adv.target.address, target, sizeof(target));
     gap_adv.data_len = 0;
     gap_adv.scan_resp_len = 0;
-    gap_adv_enable(0x01, interval_ms, slot);
+    gap_adv_enable(ADV_DIRECT_IND, interval_ms, slot);
     return 1;
 }
 
