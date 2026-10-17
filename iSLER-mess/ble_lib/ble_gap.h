@@ -219,14 +219,21 @@ static struct {
 } gap_adv;
 
 #if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t channel_map[5];
+    uint8_t sca;
+    uint16_t interval;
+    uint32_t access_address, crc_init;
+} gap_periodic_params;
+
 // Extended advertising set configuration and scheduler state.
 typedef struct {
     uint8_t enabled, sid, scannable, aux_phy;
     struct {
         uint8_t enabled, sync_info_sent;
-        uint16_t data_len, interval, event_counter, did;
-        uint32_t access_address, response_access, crc_init;
-        uint8_t channel_map[5], sca;
+        uint16_t data_len, event_counter, did;
+        uint32_t response_access;
+        gap_periodic_params params;
         uint64_t next_event_ticks;
         uint8_t data[GAP_EXT_ADV_DATA_MAX];
     } periodic;
