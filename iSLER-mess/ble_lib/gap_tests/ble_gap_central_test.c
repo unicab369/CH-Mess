@@ -1236,11 +1236,11 @@ static void test_pawr_advertising_subevents(void) {
         ));
     assert(gap_periodic_adv_start(0, periodic_data,
                                                     sizeof(periodic_data), 24));
-    assert(!gap_periodic_pawr_set(0, 5, 6, 1, 2));
-    assert(!gap_periodic_pawr_set(0, 3, 6, 6, 2));
-    assert(gap_periodic_pawr_set(0, 3, 6, 1, 2));
-    assert(!gap_periodic_pawr_slots_set(0, 255));
-    assert(gap_periodic_pawr_slots_set(0, 4));
+    assert(!gap_pawr_set(0, 5, 6, 1, 2));
+    assert(!gap_pawr_set(0, 3, 6, 6, 2));
+    assert(gap_pawr_set(0, 3, 6, 1, 2));
+    assert(!gap_pawr_slots_set(0, 255));
+    assert(gap_pawr_slots_set(0, 4));
     gap_ext_adv_set *set = &gap_ext_adv[0];
     assert(set->pawr_enabled && set->pawr_num_response_slots == 4 &&
            gap_access_address_valid(set->periodic_response_access_address));
@@ -1317,8 +1317,8 @@ static void test_pawr_interleaved_advertising_sets(void) {
         sizeof(periodic_data0), 100));
     assert(gap_periodic_adv_start(1, periodic_data1,
         sizeof(periodic_data1), 100));
-    assert(gap_periodic_pawr_set(0, 2, 6, 1, 2));
-    assert(gap_periodic_pawr_set(1, 2, 6, 1, 2));
+    assert(gap_pawr_set(0, 2, 6, 1, 2));
+    assert(gap_pawr_set(1, 2, 6, 1, 2));
     gap_ext_adv_set *set0 = &gap_ext_adv[0];
     gap_ext_adv_set *set1 = &gap_ext_adv[1];
     set0->periodic_sync_info_sent = 1;
@@ -1377,25 +1377,25 @@ static void test_pawr_advertiser_connection(void) {
         sizeof(advertising_data), 6, 100, GAP_PHY_1M));
     assert(gap_periodic_adv_start(0, periodic_data,
         sizeof(periodic_data), 24));
-    assert(gap_periodic_pawr_set(0, 2, 6, 1, 2));
+    assert(gap_pawr_set(0, 2, 6, 1, 2));
     gap_ext_adv_set *set = &gap_ext_adv[0];
     set->periodic_sync_info_sent = 1;
     set->periodic_next_event_ticks = fake_radio_ticks;
 
-    assert(!gap_periodic_pawr_connect(1, 0, 0,
+    assert(!gap_pawr_connect(1, 0, 0,
         peer_address));
-    assert(!gap_periodic_pawr_connect(0, 2, 0,
+    assert(!gap_pawr_connect(0, 2, 0,
         peer_address));
-    assert(gap_periodic_pawr_connect(0, 0, 0,
+    assert(gap_pawr_connect(0, 0, 0,
         peer_address));
-    assert(!gap_periodic_pawr_connect(0, 0, 0,
+    assert(!gap_pawr_connect(0, 0, 0,
         peer_address));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!gap_conn_slot_active(gap_conn_slot) && !set->pawr_connect_pending);
 
     // A malformed response is ignored and does not create a connection.
     set->periodic_next_event_ticks = fake_radio_ticks;
-    assert(gap_periodic_pawr_connect(0, 0, 0,
+    assert(gap_pawr_connect(0, 0, 0,
         peer_address));
     inject_pawr_connect_response = 1;
     corrupt_pawr_connect_response = 1;
@@ -1405,7 +1405,7 @@ static void test_pawr_advertiser_connection(void) {
     // A missing response also discards its one-shot request; the Host can
     // queue another attempt for a later event.
     set->periodic_next_event_ticks = fake_radio_ticks;
-    assert(gap_periodic_pawr_connect(0, 1, 0,
+    assert(gap_pawr_connect(0, 1, 0,
         peer_address));
     uint16_t connect_event_counter = set->periodic_event_counter;
     inject_pawr_connect_response = 1;

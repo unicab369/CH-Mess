@@ -249,11 +249,10 @@ int gap_periodic_adv_start(
         (uint32_t)interval * 1250 < gap_periodic_airtime_us(len, set->aux_phy)
     ) return 0;
 
-    uint8_t random[3];
-
     if (!gap_access_addr(&set->periodic.access_address))
         return 0;
 
+    uint8_t random[3];
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
     set->periodic.crc_init = (uint32_t)random[0] |
                             (uint32_t)random[1] << 8 |
@@ -261,8 +260,7 @@ int gap_periodic_adv_start(
     set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
     set->did = gap_ext_did_next(set->did, set->periodic.did);
 
-    if (len)
-        memcpy(set->periodic.data, data, len);
+    if (len) memcpy(set->periodic.data, data, len);
     set->periodic.data_len = (uint16_t)len;
     set->periodic.interval = interval;
     set->periodic.event_counter = 0;
@@ -275,11 +273,10 @@ int gap_periodic_adv_start(
     set->periodic.sca = 0;
     set->periodic.sync_info_sent = 0;
 
-    uint32_t initial_delay_us = (uint32_t)interval * 1250;
+    uint32_t delay_us = (uint32_t)interval * 1250;
+    if (delay_us > 100000) delay_us = 100000;
 
-    if (initial_delay_us > 100000)
-        initial_delay_us = 100000;
-    set->periodic.next_event_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(initial_delay_us);
+    set->periodic.next_event_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(delay_us);
     set->periodic.enabled = 1;
     set->next_event_ms = GET_MILLIS();
     return 1;
@@ -289,36 +286,36 @@ int gap_periodic_adv_start(
 // Enable PAwR subevent transmission for an active periodic advertising set.
 // Timing values use the Core units: 1.25 ms for subevent interval and response
 // slot delay, and 0.125 ms for response slot spacing.
-int gap_periodic_pawr_set(
+int gap_pawr_set(
     uint8_t set_id, uint8_t subevents, uint8_t subevent_int,
     uint8_t resp_delay, uint8_t resp_spacing
 ) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
-        !gap_ext_adv[set_id].periodic.enabled ||
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
+    gap_ext_adv_set *set = &gap_ext_adv[set_id];
+
+    if (!set->periodic.enabled ||
         !subevents || subevents > 128 ||
         !resp_delay || resp_delay == 0xff ||
         resp_spacing < 2
     ) return 0;
 
-    gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    uint32_t subevent_units = set->periodic.interval;
+    uint32_t interval = set->periodic.interval;
 
     if (subevents > 1) {
         if (subevent_int < 6 ||
             (uint32_t)subevents * subevent_int > set->periodic.interval
         ) return 0;
 
-        subevent_units = subevent_int;
+        interval = subevent_int;
     }
 
-    if (resp_delay >= subevent_units ||
-        (uint32_t)resp_spacing > (subevent_units - resp_delay) * 10 ||
+    if (resp_delay >= interval ||
+        (uint32_t)resp_spacing > (interval - resp_delay) * 10 ||
         set->periodic.data_len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3
     ) return 0;
 
     uint32_t airtime_us = gap_periodic_airtime_us(set->periodic.data_len, set->aux_phy);
-
-    if (airtime_us >= subevent_units * 1250 ||
+    if (airtime_us >= interval * 1250 ||
         airtime_us + 150 >= (uint32_t)resp_delay * 1250
     ) return 0;
 
@@ -355,14 +352,13 @@ int gap_periodic_pawr_set(
 // Application facing
 // Configure how many response slots the advertiser listens to per subevent.
 // PRTI advertises their timing; the slot count is local product configuration.
-int gap_periodic_pawr_slots_set(
+int gap_pawr_slots_set(
     uint8_t set_id, uint8_t count
 ) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT ||
-        !gap_ext_adv[set_id].pawr.enabled || !count
-    ) return 0;
-
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
+    if (!set->pawr.enabled || !count) return 0;
+
     uint32_t subevent_units = set->pawr.subevents > 1 ?
             set->pawr.subevent_int : set->periodic.interval;
 
@@ -377,7 +373,7 @@ int gap_periodic_pawr_slots_set(
 // Application facing
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
-int gap_periodic_pawr_connect(
+int gap_pawr_connect(
     uint8_t set_id, uint8_t subevent,
     uint8_t type, const uint8_t peer_address[6]
 ) {
@@ -385,7 +381,6 @@ int gap_periodic_pawr_connect(
         return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-
     uint8_t random_type = type != 0;
 
     if (!peer_address ||
@@ -438,8 +433,7 @@ int gap_periodic_adv_update(
         ) return 0;
     }
 
-    if (len)
-        memcpy(set->periodic.data, data, len);
+    if (len) memcpy(set->periodic.data, data, len);
     set->periodic.did = gap_ext_did_next(set->periodic.did, set->did);
     set->periodic.data_len = (uint16_t)len;
 
@@ -450,13 +444,9 @@ int gap_periodic_adv_update(
 
 // Application facing
 int gap_periodic_adv_stop(uint8_t set_id) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT)
-        return 0;
-
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-
-    if (!set->periodic.enabled)
-        return 0;
+    if (!set->periodic.enabled) return 0;
 
     memset(&set->pawr, 0, sizeof(set->pawr));
     memset(&set->pawr_connect, 0, sizeof(set->pawr_connect));
@@ -471,9 +461,7 @@ int gap_ext_adv_start_phy(
     uint8_t set_id, const uint8_t *data, size_t len,
     uint8_t sid, uint16_t interval_ms, uint8_t aux_phy
 ) {
-    if (set_id >= GAP_EXT_ADV_SET_COUNT)
-        return 0;
-
+    if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
     if ((gap_conn_slot_mask != 0) || gap_central.active ||
