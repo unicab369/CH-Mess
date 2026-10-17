@@ -605,20 +605,19 @@ void gap_hw_received(void) {
             return;
         }
 
-        gap_ext_adv_scan.response_started = 1;
+        // Prepare the buffer and timing before marking the response and starting TX.
         GAP_HW_TX_BUFFER(gap_ext_adv_frame);
         gap_ext_adv_scan.response_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(150);
+        gap_ext_adv_scan.response_started = 1;
         GAP_HW_LINK_TX();
         gap_conn_slot = previous_slot;
         return;
     }
 
-    if ((gap_scanner.scanning ||
-         gap_ext_scan.periodic_listening) &&
-        ((pdu_type == ADV_EXT_IND) ||
-         (gap_ext_scan.periodic_listening &&
-          pdu_type == CONNECT_IND && frame[1] == 34)) &&
-        !gap_ext_scan.ready
+    if ((gap_scanner.scanning || gap_ext_scan.periodic_listening) &&
+        !gap_ext_scan.ready &&
+        ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND &&
+            gap_ext_scan.periodic_listening && frame[1] == 34))
     ) {
         gap_ext_scan.kind = gap_ext_scan.periodic_listening
                             ? GAP_EXT_ADV_PERIODIC_PDU
@@ -626,9 +625,10 @@ void gap_hw_received(void) {
                             ? GAP_EXT_ADV_AUXILIARY_PDU
                             : GAP_EXT_ADV_PRIMARY_PDU;
 
-        gap_ext_scan.ticks = received_ticks;
+        // Capture RSSI before copying, then finish packet data before publishing it.
         gap_ext_scan.rssi = GAP_HW_RSSI();
         memcpy(gap_ext_scan.frame, frame, (size_t)frame[1] + 2);
+        gap_ext_scan.ticks = received_ticks;
         gap_ext_scan.ready = 1;
         GAP_HW_PACKET_READY();
         gap_conn_slot = previous_slot;
@@ -639,13 +639,10 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-
 #endif
     int peer_slot = -1;
 
-    if (pdu_type <= ADV_SCAN_IND &&
-        frame[1] >= 6 && frame[1] <= 37
-    ) {
+    if (pdu_type <= ADV_SCAN_IND && frame[1] >= 6 && frame[1] <= 37) {
         uint8_t peer_type = (frame[0] >> 6) & 1;
         peer_slot = gap_identity_find(frame + 2, peer_type);
         // Enforce each peer's privacy mode before responding or connecting,
@@ -659,16 +656,16 @@ void gap_hw_received(void) {
     uint8_t advertiser_type = (frame[0] >> 6) & 1;
     int peer_matches = 0;
 
-    if ((gap_central.active ||
-         (gap_scanner.active && gap_central.mode == GAP_CONN_MODE_SELECTIVE)) &&
+    if (
         pdu_type <= ADV_SCAN_IND &&
-        frame[1] >= 6 && frame[1] <= 37
+        frame[1] >= 6 && frame[1] <= 37 &&
+        (gap_central.active ||
+         (gap_scanner.active && gap_central.mode == GAP_CONN_MODE_SELECTIVE))
     ) {
         if (gap_central.mode == GAP_CONN_MODE_GENERAL) {
             peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
         }
-        else if (gap_central.mode &
-                 (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
+        else if (gap_central.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
         }
         else {
