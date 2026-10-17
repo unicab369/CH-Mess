@@ -3125,7 +3125,7 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn_request(48, 60, 1, 3201));
     assert(!gap_conn_request(40, 40, 0, 10));
     assert(gap_conn_request(48, 60, 1, 300));
-    assert(gap_conn_status() == GAP_CONNECTION_PENDING);
+    assert(conn->connection_status == GAP_CONNECTION_PENDING);
     assert(!gap_conn_update(48, 1, 300));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
@@ -3140,7 +3140,7 @@ static void test_connection_parameter_requests(void) {
     assert(conn->procedures.new_params.interval == 50); // Honor preferred periodicity.
     uint16_t instant = conn->procedures.update_instant;
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
-    assert(conn->procedures.params.interval == 50 && gap_conn_status() == 0);
+    assert(conn->procedures.params.interval == 50 && conn->connection_status == 0);
     gap_conn_end();
 
     // A Peripheral may initiate the request but waits for the Central's update.
@@ -3154,7 +3154,7 @@ static void test_connection_parameter_requests(void) {
     receive_test_control(0x11, (uint8_t[]){0x08, 0x20}, 2);
     assert(conn->pending.params_state != GAP_CONN_PARAMS_NONE); // Unrelated rejection cannot cancel it.
     receive_test_control(0x11, (uint8_t[]){0x0f, 0x20}, 2);
-    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && gap_conn_status() == 0x20);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && conn->connection_status == 0x20);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     uint8_t update[11] = {1, 0, 0, 54, 0, 1, 0, 44, 1, 0, 0};
@@ -3164,7 +3164,7 @@ static void test_connection_parameter_requests(void) {
     receive_test_control(0x00, update, sizeof(update));
     assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && (conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     while (conn->link.event_counter != instant) receive_test_link_packet(1);
-    assert(conn->procedures.params.interval == 54 && gap_conn_status() == 0);
+    assert(conn->procedures.params.interval == 54 && conn->connection_status == 0);
     gap_conn_end();
 
     // Responding to a Central request sends PARAM_RSP, never UPDATE_IND.
@@ -3178,7 +3178,7 @@ static void test_connection_parameter_requests(void) {
     assert(gap_tx_frame[2] == 0x10);
     assert(memcmp(gap_tx_frame + 3, parameters, sizeof(parameters)) == 0);
     assert(conn->pending.params_state == GAP_CONN_PARAMS_REMOTE);
-    assert(gap_conn_status() == 0x23); // Central wins the collision.
+    assert(conn->connection_status == 0x23); // Central wins the collision.
     gap_conn_end();
 
     // A Central accepts a Peripheral request directly with UPDATE_IND.
@@ -3200,7 +3200,7 @@ static void test_connection_parameter_requests(void) {
     assert(gap_tx_frame[2] == 0x11 && gap_tx_frame[4] == 0x23);
     assert(conn->pending.params_state == GAP_CONN_PARAMS_LOCAL);
     receive_test_control(0x07, (uint8_t[]){0x0f}, 1);
-    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && gap_conn_status() == 0x1a);
+    assert(conn->pending.params_state == GAP_CONN_PARAMS_NONE && conn->connection_status == 0x1a);
     gap_conn_end();
     start_test_central_link();
     receive_test_control(0x0f, parameters, sizeof(parameters));
@@ -3211,7 +3211,7 @@ static void test_connection_parameter_requests(void) {
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
-    assert(!conn->queue.local_params_queued && gap_conn_status() == 0x1a);
+    assert(!conn->queue.local_params_queued && conn->connection_status == 0x1a);
     assert(!gap_conn_request(48, 60, 1, 300));
     gap_conn_end();
 
@@ -3223,7 +3223,7 @@ static void test_connection_parameter_requests(void) {
     now_ms = conn->procedures.params_started_ms + 40000;
     conn->link.last_rx_ms = now_ms;
     gap_conn_poll();
-    assert(!gap_conn_slot_active(gap_conn_slot) && gap_conn_status() == 0x22);
+    assert(!gap_conn_slot_active(gap_conn_slot) && conn->connection_status == 0x22);
 }
 
 // Test real wire fields, asymmetric peer limits, collisions and LL retries.
@@ -3357,11 +3357,11 @@ static void test_channel_map_updates(void) {
     assert(!gap_channel_map_set((uint8_t[5]){1}));
     assert(!gap_channel_map_set(invalid));
     assert(gap_channel_map_set(conn->link.channel_map));
-    assert(!conn->queue.local_map_queued && gap_conn_status() == 0);
+    assert(!conn->queue.local_map_queued && conn->connection_status == 0);
     uint8_t old_map[5];
     memcpy(old_map, conn->link.channel_map, 5);
     assert(gap_channel_map_set(channels));
-    assert(gap_conn_status() == GAP_CONNECTION_PENDING);
+    assert(conn->connection_status == GAP_CONNECTION_PENDING);
     assert(!gap_channel_map_set(channels));
     assert(!gap_conn_update(48, 0, 200));
     assert(!gap_conn_request(48, 60, 0, 200));
@@ -3387,7 +3387,7 @@ static void test_channel_map_updates(void) {
         assert(memcmp(conn->link.channel_map, old_map, 5) == 0);
         receive_test_link_packet(1);
     }
-    assert(!(conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) && gap_conn_status() == 0);
+    assert(!(conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) && conn->connection_status == 0);
     assert(memcmp(conn->link.channel_map, channels, 5) == 0);
     assert(conn->link.used_count == 2 && conn->link.used_channels[0] == 0 &&
         conn->link.used_channels[1] == 1);
@@ -3400,7 +3400,7 @@ static void test_channel_map_updates(void) {
     memset(timing + 11, 0xff, 12);
     receive_test_control(0x0f, timing, sizeof(timing));
     assert(gap_tx_frame[2] == 0x11 && !(conn->pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
-    assert(conn->queue.local_map_queued && gap_conn_status() == GAP_CONNECTION_PENDING);
+    assert(conn->queue.local_map_queued && conn->connection_status == GAP_CONNECTION_PENDING);
     gap_conn_end();
 
     // The Central foreground send path also builds a queued map update.
@@ -3413,7 +3413,7 @@ static void test_channel_map_updates(void) {
     // Reaching the Instant without an ACK must close the link.
     conn->link.event_counter = conn->procedures.map_instant;
     gap_conn_update_apply(0);
-    assert(!gap_conn_slot_active(gap_conn_slot) && gap_conn_status() == 0x28);
+    assert(!gap_conn_slot_active(gap_conn_slot) && conn->connection_status == 0x28);
     assert(!conn->queue.local_map_queued && !(conn->pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
 
     // Only the Central may initiate; a Peripheral applies a received update.
@@ -3804,7 +3804,7 @@ static void test_connection_rate_exchange(void) {
     assert(!conn->procedures.rate_update_pending && conn->link.interval_125us == 80 &&
            conn->subrate.factor == 2 && conn->subrate.continuation == 1 &&
            conn->procedures.params.supervision_timeout == 100 &&
-           gap_conn_status() == 0);
+           conn->connection_status == 0);
     gap_conn_end();
 
     start_test_central_link();
@@ -3868,7 +3868,7 @@ static void test_channel_classification_reporting(void) {
            gap_tx_frame[3] == 1 && gap_tx_frame[4] == 5 &&
            gap_tx_frame[5] == 10);
     receive_test_link_packet(1);
-    assert(gap_conn_status() == 0);
+    assert(conn->connection_status == 0);
     uint8_t report[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
     report[0] = 0x0d;
     receive_test_control(0x29, report, sizeof(report));

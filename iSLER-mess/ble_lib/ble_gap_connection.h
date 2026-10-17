@@ -7,6 +7,12 @@
 
 #include "ble_crypto.h"
 
+// On radio receive, LLE_IRQHandler invokes ble_mesh_rx_received(), which calls
+// gap_hw_received(). Incoming Link Layer control PDUs are processed there,
+// while foreground code may also update shared flags. Do not track independently
+// updated flags in one shared variable without protecting each read-modify-write
+// with a critical section; an interrupt could overwrite another flag's update.
+
 enum {
     LL_CONNECTION_UPDATE_IND = 0x00,
     LL_CHANNEL_MAP_IND = 0x01,
@@ -1928,13 +1934,6 @@ int gap_conn_request(
 }
 
 // Application facing
-// Last local timing, channel-map, or connection-rate operation: 0 means
-// success, 0xff pending, otherwise a Bluetooth Link Layer error.
-uint8_t gap_conn_status(void) {
-    return gap_conn_ctx[gap_conn_slot].connection_status;
-}
-
-// Application facing
 // Request a subrate update as the Central. The Peripheral can request a
 // range with gap_subrate_request(); only the Central sends LL_SUBRATE_IND.
 int gap_subrate_set(
@@ -2563,9 +2562,12 @@ int gap_key_reply(const uint8_t ltk[16]) {
 int gap_encrypted(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+
     return gap_conn_slot_active(gap_conn_slot) &&
-        (conn->is_central || !conn->link.first_event) && !gap_security->phase &&
-        gap_security->tx_enabled && gap_security->rx_enabled;
+                                (conn->is_central || !conn->link.first_event) &&
+                                !gap_security->phase &&
+                                gap_security->tx_enabled &&
+                                gap_security->rx_enabled;
 }
 
 // Application facing
