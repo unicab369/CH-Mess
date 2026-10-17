@@ -727,29 +727,29 @@ void gap_hw_received(void) {
         gap_rx_armed = 0;
 
         if (GAP_HW_ADV_TX(gap_central.request, sizeof(gap_central.request), channel) &&
-            gap_conn_accept(gap_central.request, GAP_HW_TICKS(), HW_TICKS_FROM_US(1250),
-                                  HW_TICKS_FROM_US(1250))
+            gap_conn_accept(gap_central.request, GAP_HW_TICKS(),
+                            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
-            conn->is_central = 1;
             conn->link_state.central_anchor_set = 0;
             conn->link.peer_sca_ppm = 500; // conservative until clock data exists
+            conn->is_central = 1;
 
             if (peer_slot >= 0) {
-                conn->peer.type = gap_identities[peer_slot].peer.type;
-                memcpy(conn->peer.address, gap_identities[peer_slot].peer.address, 6);
+                conn->peer = gap_identities[peer_slot].peer;
             }
-            else if (gap_central.mode != GAP_CONN_MODE_DIRECT
-            ) {
+            else if (gap_central.mode != GAP_CONN_MODE_DIRECT) {
+                // The type is bit 6 of frame[0]; frame[1] is the length, and the
+                // address starts at frame[2], so they cannot be copied as one block.
                 conn->peer.type = advertiser_type;
                 memcpy(conn->peer.address, frame + 2, 6);
             }
             else {
-                conn->peer.type = gap_central.peer.type;
-                memcpy(conn->peer.address, gap_central.peer.address, 6);
+                conn->peer = gap_central.peer;
             }
-            gap_central.active = 0;
+
             gap_central.mode = GAP_CONN_MODE_DIRECT;
+            gap_central.active = 0;
             gap_scanner.scanning = 0;
             gap_scanner.active = 0;
             gap_scanner.generation++;
@@ -763,8 +763,8 @@ void gap_hw_received(void) {
 
     if (gap_scanner.active && !adv_evt.rx_event &&
         !gap_scan.active_pending &&
-        (pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
         frame[1] >= 6 && frame[1] <= 37 &&
+        (pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
         (gap_central.mode != GAP_CONN_MODE_SELECTIVE || peer_matches)
     ) {
         if (gap_privacy.scan_filter && peer_slot < 0) {
