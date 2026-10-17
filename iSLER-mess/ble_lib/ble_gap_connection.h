@@ -2262,12 +2262,18 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 
     if (!gap_conn_slot_active(gap_conn_slot) ||
         (!conn->is_central && conn->link.first_event) ||
-        gap_security->phase || conn->queue.tx_queued ||
-        conn->link_state.terminate_queued || conn->link_state.terminate_sent ||
-        conn->link_state.terminate_after_reply || !data || (llid != 1 && llid != 2) || !len ||
+        gap_security->phase ||
+        conn->queue.tx_queued ||
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent ||
+        conn->link_state.terminate_after_reply ||
+        !data ||
+        (llid != 1 && llid != 2) ||
+        !len ||
         len > conn->data_length.tx_octets ||
         (len + 10 + (gap_security->tx_enabled ? 4 : 0)) * 8 >
-            conn->data_length.tx_time || (llid == 2 && len < 4)
+            conn->data_length.tx_time ||
+        (llid == 2 && len < 4)
     ) return 0;
 
     // SMP may only send between complete application L2CAP PDUs.
@@ -2293,10 +2299,13 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 // reason in LL_TERMINATE_IND; the link closes once the peer acknowledges it.
 int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
     if (!gap_conn_slot_active(gap_conn_slot) ||
-        (!conn->is_central && conn->link.first_event) || !reason ||
+        (!conn->is_central && conn->link.first_event) ||
+        !reason ||
         conn->link_state.terminate_after_reply ||
-        conn->link_state.terminate_queued || conn->link_state.terminate_sent
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent
     ) return 0;
 
     conn->link.local_terminate_reason = reason;
@@ -2313,12 +2322,13 @@ static void gap_smp_receive_complete(void);
 // Application facing
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-#if GAP_SMP_SUPPORT > 0
-    gap_smp_poll();
-#endif
 
     if (!data || !len || !conn->queue.rx_ready)
         return 0;
+
+#if GAP_SMP_SUPPORT > 0
+    gap_smp_poll();
+#endif
 
     if (*len < conn->rx.len) return -1;
     if (llid) *llid = conn->rx.llid;
@@ -2339,7 +2349,8 @@ static void gap_security_nonce(
     uint8_t nonce[13], uint64_t counter, uint8_t central
 ) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (i * 8));
+    for (uint8_t i = 0; i < 5; i++)
+        nonce[i] = (uint8_t)(counter >> (i * 8));
     nonce[4] |= central ? 0x80 : 0;
     memcpy(nonce + 5, gap_security->iv, 8);
 }
@@ -2387,9 +2398,9 @@ static uint8_t *gap_security_tx_frame(void) {
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(void) {
+    if (gap_tx_frame[1]) return;
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_tx_frame[1]) return;
 
     uint8_t phase = gap_security->phase;
 
@@ -2448,21 +2459,23 @@ static int gap_smp_blocks_encryption(void);
 // Application facing
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!ltk || !random || gap_conn_procedure_busy() || !conn->is_central ||
+    if (!ltk || !random || !conn->is_central ||
+        gap_conn_procedure_busy() ||
         conn->features.request_pending
-#if GAP_SMP_SUPPORT > 0
-        || gap_smp_blocks_encryption()
-#endif
     ) return 0;
+
+    #if GAP_SMP_SUPPORT > 0
+        if (gap_smp_blocks_encryption()) return 0;
+    #endif
 
     if (conn->features.known && !(conn->features.peer[0] & 1)) {
         gap_security->status = 0x1a;
         return 0;
     }
 
+    uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
     uint32_t generation = (*gap_security_generation);
     uint8_t entropy[12];
 
@@ -2499,12 +2512,13 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 
     conn->authenticated = 0;
     conn->enc_key_size = 0;
+    gap_security->ediv = ediv;
     memcpy(gap_security->ltk, ltk, 16);
     memcpy(gap_security->random, random, 8);
-    gap_security->ediv = ediv;
     memcpy(gap_security->next_skd, entropy, 8);
     memcpy(gap_security->next_iv, entropy + 8, 4);
     gap_wipe(entropy, sizeof(entropy));
+
     gap_security->refreshing = gap_security->tx_enabled;
     gap_security->started_ms = GET_MILLIS();
     gap_security->status = GAP_CONNECTION_PENDING;
@@ -2520,8 +2534,9 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_conn_slot_active(gap_conn_slot) || gap_security->phase != GAP_ENC_KEY_REQUEST)
-        return 0;
+    if (!gap_conn_slot_active(gap_conn_slot) ||
+        gap_security->phase != GAP_ENC_KEY_REQUEST
+    ) return 0;
 
     if (random)
         memcpy(random, gap_security->random, 8);
