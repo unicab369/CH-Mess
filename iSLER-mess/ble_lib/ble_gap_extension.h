@@ -1203,9 +1203,8 @@ static int gap_sync_info_accept(
     uint32_t widen_us = (uint32_t)(((uint64_t)(gap_periodic_sca_ppm[fields->sync.sca] + 500) *
                         (fields->sync.offset_us + unit_us) + 999999) / 1000000) +
         2;
-    uint64_t window_start = target > HW_TICKS_FROM_US(widen_us)
-                                ? target - HW_TICKS_FROM_US(widen_us)
-                                : 0;
+    uint64_t widen_ticks = HW_TICKS_FROM_US(widen_us);
+    uint64_t window_start = target > widen_ticks ? target - widen_ticks : 0;
     uint64_t window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
     uint64_t now_ticks = GAP_HW_TICKS();
     uint32_t interval_us = (uint32_t)fields->sync.interval * 1250;
@@ -1220,8 +1219,8 @@ static int gap_sync_info_accept(
         widen_us = (uint32_t)(((uint64_t)(
                         gap_periodic_sca_ppm[fields->sync.sca] + 500) * elapsed_us +
                         999999) / 1000000) + 2;
-        window_start = target > HW_TICKS_FROM_US(widen_us) ?
-                            target - HW_TICKS_FROM_US(widen_us) : 0;
+        widen_ticks = HW_TICKS_FROM_US(widen_us);
+        window_start = target > widen_ticks ? target - widen_ticks : 0;
         window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
     }
     // Sync acquisition expires after six consecutive periodic events are missed.
