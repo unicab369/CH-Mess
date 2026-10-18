@@ -169,15 +169,16 @@ records. Use
 `gatt_hap_set_active_preset()` or `gatt_hap_notify_active_preset()` after an
 active preset change initiated outside the control point.
 `gatt_ots_add()` registers the single-object OTS metadata
-and OACP characteristics, including First-Created and Last-Modified. It assumes
+and OACP characteristics, including First-Created and Last-Modified, plus
+Object Changed. It assumes
 the server has a real-time clock; use
 `gatt_ots_add_type_full()` to provide initial date values
 and select the correct Last-Modified write property for servers without a
 clock. OACP supports reliable writes for requests that exceed the negotiated
 ATT Write Request size, including 128-bit Object Type Create requests. Use
 `gatt_ots_add_multi()` for the multi-object layout,
-which also registers Object ID, OLCP, and all three Object List Filter
-instances. The caller
+which also registers Object ID, OLCP, all three Object List Filter instances,
+and the Object Changed indication characteristic. The caller
 supplies the initial values. OACP requests are feature-gated, length-checked,
 and checked against the selected object's properties and size. The application
 takes accepted requests with `gatt_ots_take_oacp_request()`, performs object
@@ -197,6 +198,8 @@ date, size, and marked-object filters. Without a table, OLCP requests remain
 available through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
 Keep the table and its name pointers valid for the service lifetime. Configure
 each Object List Filter instance with `gatt_ots_set_list_filter()`.
+Queue Object Changed indications with `gatt_ots_object_changed()` and the
+standard change flags plus the affected nonzero Object ID.
 After create/delete operations, update the table to keep navigation and counts
 current. The multi-object `..._type_full()` builder also accepts initial date
 values and the real-time-clock capability.

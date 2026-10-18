@@ -1407,6 +1407,11 @@ typedef uint8_t (*ble_gatt_ots_clear_fn)(
 );
 
 enum {
+    GATT_OTS_CHANGE_CLIENT = 1u << 0,
+    GATT_OTS_CHANGE_CONTENTS = 1u << 1,
+    GATT_OTS_CHANGE_METADATA = 1u << 2,
+    GATT_OTS_CHANGE_CREATED = 1u << 3,
+    GATT_OTS_CHANGE_DELETED = 1u << 4,
     GATT_OTS_OBJECT_DELETE = 1u << 0,
     GATT_OTS_OBJECT_EXECUTE = 1u << 1,
     GATT_OTS_OBJECT_READ = 1u << 2,
@@ -1433,6 +1438,7 @@ typedef struct ble_gatt_ots_service {
     uint16_t object_list_control_point_cccd_handle;
     uint16_t object_list_filter_handle;
     uint16_t object_list_filter_handles[3];
+    uint16_t object_changed_handle, object_changed_cccd_handle;
     ble_gatt_server *server;
     uint8_t features[8];
     uint8_t request_pending, request_taken, request_opcode;
@@ -2219,6 +2225,7 @@ static inline int gatt_ots_add_type_full(
     ) return 0;
 
     uint8_t action_control_point = 0;
+    uint8_t initial_changed[7] = {0};
     uint8_t first_created_properties = BLE_GATT_PROP_READ;
     uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENC;
     if (features[0] & 0x01) {
@@ -2231,7 +2238,7 @@ static inline int gatt_ots_add_type_full(
         last_modified_properties |= BLE_GATT_PROP_WRITE;
         last_modified_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
-    ble_gatt_sig_characteristic characteristics[8] = {
+    ble_gatt_sig_characteristic characteristics[9] = {
         {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
@@ -2248,16 +2255,19 @@ static inline int gatt_ots_add_type_full(
         {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_properties, 4},
         {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_ENC, &action_control_point, 0, 21, 1}
+            BLE_GATT_PERM_WRITE_ENC, &action_control_point, 0, 21, 1},
+        {0x2ac8, BLE_GATT_PROP_INDICATE, 1, 0,
+            initial_changed, sizeof(initial_changed),
+            sizeof(initial_changed), 0}
     };
-    uint16_t value_handles[8], cccd_handles[8];
-    ble_gatt_sig_handlers handlers[8] = {0};
+    uint16_t value_handles[9], cccd_handles[9];
+    ble_gatt_sig_handlers handlers[9] = {0};
     handlers[7].write_request = gatt_ots_oacp_write;
     handlers[7].context = service;
     memset(service, 0, sizeof(*service));
 
     if (!gatt_sig_register(server, 0x1825,
-            primary_service, NULL, 0, characteristics, 8,
+            primary_service, NULL, 0, characteristics, 9,
             &service->service_handle, value_handles, cccd_handles, handlers)
     ) return 0;
 
@@ -2270,9 +2280,14 @@ static inline int gatt_ots_add_type_full(
     service->object_properties_handle = value_handles[6];
     service->action_control_point_handle = value_handles[7];
     service->action_control_point_cccd_handle = cccd_handles[7];
+    service->object_changed_handle = value_handles[8];
+    service->object_changed_cccd_handle = cccd_handles[8];
     service->server = server;
     service->current_object_valid = 1;
     memcpy(service->features, features, sizeof(service->features));
+    ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[8]);
+    if (!cccd) return 0;
+    cccd->permissions = BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
     return gatt_ots_bind_oacp_long_write(server, service,
         service->action_control_point_handle);
 }
@@ -2321,9 +2336,8 @@ static inline int gatt_ots_add_secondary(
 }
 
 // Application-facing API
-// Add the multi-object OTS attributes to the single-object OTS layout. The
-// caller owns the Object List Filter state and implements OACP/OLCP procedures
-// and object transfers.
+// Add the multi-object layout, including Object Changed. The caller owns the
+// object list and implements object storage and the separate transfer channel.
 // OTS means Object Transfer Service.
 static inline int gatt_ots_add_multi_type_full(
     ble_gatt_server *server, ble_gatt_ots_service *service,
@@ -2353,6 +2367,7 @@ static inline int gatt_ots_add_multi_type_full(
 
     uint8_t initial_control_point = 0;
     uint8_t initial_filter = 0;
+    uint8_t initial_changed[7] = {0};
     uint8_t first_created_properties = BLE_GATT_PROP_READ;
     uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENC;
     if (features[0] & 0x01) {
@@ -2365,7 +2380,7 @@ static inline int gatt_ots_add_multi_type_full(
         last_modified_properties |= BLE_GATT_PROP_WRITE;
         last_modified_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
-    ble_gatt_sig_characteristic characteristics[13] = {
+    ble_gatt_sig_characteristic characteristics[14] = {
         {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
@@ -2396,10 +2411,13 @@ static inline int gatt_ots_add_multi_type_full(
             &initial_filter, 0, filter_capacity, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
             BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
-            &initial_filter, 0, filter_capacity, 1}
+            &initial_filter, 0, filter_capacity, 1},
+        {0x2ac8, BLE_GATT_PROP_INDICATE, 1, 0,
+            initial_changed, sizeof(initial_changed),
+            sizeof(initial_changed), 0}
     };
-    uint16_t values[13], cccds[13];
-    ble_gatt_sig_handlers handlers[13] = {0};
+    uint16_t values[14], cccds[14];
+    ble_gatt_sig_handlers handlers[14] = {0};
     handlers[8].write_request = gatt_ots_oacp_write;
     handlers[8].context = service;
     handlers[9].write_request = gatt_ots_olcp_write;
@@ -2416,7 +2434,7 @@ static inline int gatt_ots_add_multi_type_full(
     }
 
     if (!gatt_sig_register(server,
-            0x1825, primary_service, NULL, 0, characteristics, 13,
+            0x1825, primary_service, NULL, 0, characteristics, 14,
             &service->service_handle, values, cccds, handlers)) {
         memset(service, 0, sizeof(*service));
         return 0;
@@ -2438,13 +2456,17 @@ static inline int gatt_ots_add_multi_type_full(
     service->object_list_filter_handles[0] = values[10];
     service->object_list_filter_handles[1] = values[11];
     service->object_list_filter_handles[2] = values[12];
+    service->object_changed_handle = values[13];
+    service->object_changed_cccd_handle = cccds[13];
     service->server = server;
     service->current_object_valid = 1;
     memcpy(service->features, features, sizeof(service->features));
     if (!gatt_ots_bind_oacp_long_write(server, service,
             service->action_control_point_handle)) return 0;
-    for (uint8_t i = 8; i <= 9; i++) {
-        ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
+    static const uint8_t cccd_indexes[] = {8, 9, 13};
+    for (uint8_t i = 0; i < sizeof(cccd_indexes); i++) {
+        ble_gatt_attribute *cccd = gatt_server_find(server,
+            cccds[cccd_indexes[i]]);
 
         if (!cccd) {
             gatt_service_rollback(server, old_count, old_next_handle,
@@ -2545,6 +2567,30 @@ static inline int gatt_ots_set_objects(
             }
     }
     return 1;
+}
+
+// OTS means Object Transfer Service.
+// Queue one Object Changed indication. Set the client-source bit when another
+// client caused the change; creation/deletion cannot combine with other flags.
+static inline int gatt_ots_object_changed(
+    ble_gatt_ots_service *service, uint8_t flags,
+    const uint8_t object_id[6]
+) {
+    if (!service || !service->server || !service->object_changed_handle ||
+        !object_id || (flags & (uint8_t)~0x1fu) || !(flags & 0x1eu) ||
+        !(object_id[0] | object_id[1] | object_id[2] |
+          object_id[3] | object_id[4] | object_id[5])) return 0;
+    uint8_t special = flags & (GATT_OTS_CHANGE_CREATED |
+                               GATT_OTS_CHANGE_DELETED);
+    if (special && (special == (GATT_OTS_CHANGE_CREATED |
+                                GATT_OTS_CHANGE_DELETED) ||
+        (flags & (GATT_OTS_CHANGE_CONTENTS | GATT_OTS_CHANGE_METADATA))))
+        return 0;
+    uint8_t value[7];
+    value[0] = flags;
+    memcpy(value + 1, object_id, 6);
+    return gatt_queue_event(service->server, service->object_changed_handle,
+                            value, sizeof(value), 1);
 }
 
 // OTS means Object Transfer Service.

@@ -74,7 +74,8 @@ remains available for custom services; it does not replace these builders.
   unsupported-opcode result indications, and completion helper
 - [x] Object Transfer (`0x1825`), single- and multi-object layouts including
   conditional First-Created/Last-Modified metadata, Object ID, OLCP, and all
-  three Object List Filter instances; feature bitmap validation, OACP/OLCP
+  three Object List Filter instances, Object Changed characteristic and
+  indications; feature bitmap validation, OACP/OLCP
   opcode, property, size, and parameter validation, reliable OACP writes,
   request capture and completion, optional caller-owned object-list
   navigation with selection/order/marking callbacks, filter configuration,
