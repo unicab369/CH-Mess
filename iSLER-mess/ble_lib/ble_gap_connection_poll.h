@@ -109,11 +109,11 @@ static void gap_conn_send_queued(void) {
                 gap_tx_frame[1] = 11;
                 gap_tx_frame[2] = LL_SUBRATE_REQ;
 
-                ble_write_u16_le(gap_tx_frame + 3, conn->c_subrate.peripheral_request.factor_min);
-                ble_write_u16_le(gap_tx_frame + 5, conn->c_subrate.peripheral_request.factor_max);
-                ble_write_u16_le(gap_tx_frame + 7, conn->c_subrate.peripheral_request.latency);
-                ble_write_u16_le(gap_tx_frame + 9, conn->c_subrate.peripheral_request.continuation);
-                ble_write_u16_le(gap_tx_frame + 11, conn->c_subrate.peripheral_request.timeout);
+                ble_write_u16_le(gap_tx_frame + 3, conn->role.peripheral.subrate_request.factor_min);
+                ble_write_u16_le(gap_tx_frame + 5, conn->role.peripheral.subrate_request.factor_max);
+                ble_write_u16_le(gap_tx_frame + 7, conn->role.peripheral.subrate_request.latency);
+                ble_write_u16_le(gap_tx_frame + 9, conn->role.peripheral.subrate_request.continuation);
+                ble_write_u16_le(gap_tx_frame + 11, conn->role.peripheral.subrate_request.timeout);
             }
         }
     }
@@ -156,41 +156,41 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[1] = 27;
             gap_tx_frame[2] = LL_CONNECTION_RATE_REQ;
 
-            ble_write_u16_le(gap_tx_frame + 3, conn->c_rate.peripheral_request.interval_min);
-            ble_write_u16_le(gap_tx_frame + 5, conn->c_rate.peripheral_request.interval_max);
-            ble_write_u16_le(gap_tx_frame + 7, conn->c_rate.peripheral_request.factor_min);
-            ble_write_u16_le(gap_tx_frame + 9, conn->c_rate.peripheral_request.factor_max);
-            ble_write_u16_le(gap_tx_frame + 11, conn->c_rate.peripheral_request.latency);
-            ble_write_u16_le(gap_tx_frame + 13, conn->c_rate.peripheral_request.continuation);
-            ble_write_u16_le(gap_tx_frame + 15, conn->c_rate.peripheral_request.timeout);
-            ble_write_u16_le(gap_tx_frame + 17, conn->c_rate.peripheral_request.periodicity);
+            ble_write_u16_le(gap_tx_frame + 3, conn->role.peripheral.rate_request.interval_min);
+            ble_write_u16_le(gap_tx_frame + 5, conn->role.peripheral.rate_request.interval_max);
+            ble_write_u16_le(gap_tx_frame + 7, conn->role.peripheral.rate_request.factor_min);
+            ble_write_u16_le(gap_tx_frame + 9, conn->role.peripheral.rate_request.factor_max);
+            ble_write_u16_le(gap_tx_frame + 11, conn->role.peripheral.rate_request.latency);
+            ble_write_u16_le(gap_tx_frame + 13, conn->role.peripheral.rate_request.continuation);
+            ble_write_u16_le(gap_tx_frame + 15, conn->role.peripheral.rate_request.timeout);
+            ble_write_u16_le(gap_tx_frame + 17, conn->role.peripheral.rate_request.periodicity);
             ble_write_u16_le(gap_tx_frame + 19, conn->c_link_layer.event_counter);
 
             for (uint8_t i = 0; i < 4; i++) {
                 ble_write_u16_le(gap_tx_frame + 21 + i * 2,
-                                 conn->c_rate.peripheral_request.offsets[i]);
+                                 conn->role.peripheral.rate_request.offsets[i]);
             }
             conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
-            conn->c_rate.req_pending = 1;
+            conn->role.peripheral.rate_req_pending = 1;
             conn->params_started_ms = GET_MILLIS();
         }
     }
 
     if (!gap_tx_frame[1] && conn->is_central &&
-        conn->c_channel.role.central.report_queued &&
+        conn->role.central.channel_report_queued &&
         !conn->c_features.request_pending
     ) {
         if (!conn->c_features.known) {
             gap_send_feature_request();
         }
         else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
-            conn->c_channel.role.central.report_queued = 0;
-            conn->c_channel.role.central.report_pending = 0;
+            conn->role.central.channel_report_queued = 0;
+            conn->role.central.channel_report_pending = 0;
             conn->connection_status = 0x1a;
         }
         else {
-            conn->c_channel.role.central.report_queued = 0;
-            conn->c_channel.role.central.report_pending = 1;
+            conn->role.central.channel_report_queued = 0;
+            conn->role.central.channel_report_pending = 1;
             conn->connection_status = GAP_CONNECTION_PENDING;
 
             gap_tx_frame[0] = 0x03;
@@ -334,17 +334,17 @@ void gap_hw_received(void) {
         if (conn->c_link_layer.tx_pending &&
             (((frame[0] >> 2) & 1) != conn->c_link_layer.tx_sn)
         ) {
-            if (conn->is_central && conn->c_channel.role.central.report_pending &&
+            if (conn->is_central && conn->role.central.channel_report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
                 gap_tx_frame[2] == LL_CHANNEL_REPORTING_IND
             ) {
-                conn->c_channel.role.central.report_pending = 0;
+                conn->role.central.channel_report_pending = 0;
                 conn->connection_status = 0;
             }
 
-            if (!conn->is_central && conn->c_rate.ack_waiting)
-                conn->c_rate.ack_waiting = 0;
+            if (!conn->is_central && conn->role.peripheral.rate_ack_waiting)
+                conn->role.peripheral.rate_ack_waiting = 0;
 
             if (conn->is_central &&
                 conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
@@ -496,20 +496,20 @@ void gap_hw_received(void) {
 
             if (!gap_security->phase) {
                 if (!conn->is_central &&
-                    conn->c_channel.enabled && conn->c_channel.role.peripheral.status_queued
+                    conn->c_channel.enabled && conn->role.peripheral.channel_status_queued
                 ) {
                     uint32_t now_ms = GET_MILLIS();
 
                     if (!gap_tx_frame[1] &&
-                        (uint32_t)(now_ms - conn->c_channel.role.peripheral.status_changed_ms) >=
+                        (uint32_t)(now_ms - conn->role.peripheral.channel_status_changed_ms) >=
                                 (uint32_t)conn->c_channel.max_delay_200ms * 200 &&
-                        (!conn->c_channel.role.peripheral.status_last_sent_valid ||
-                                (uint32_t)(now_ms - conn->c_channel.role.peripheral.status_last_sent_ms) >=
+                        (!conn->role.peripheral.channel_status_last_sent_valid ||
+                                (uint32_t)(now_ms - conn->role.peripheral.channel_status_last_sent_ms) >=
                                 (uint32_t)conn->c_channel.min_spacing_200ms * 200)
                     ) {
-                        conn->c_channel.role.peripheral.status_queued = 0;
-                        conn->c_channel.role.peripheral.status_last_sent_ms = now_ms;
-                        conn->c_channel.role.peripheral.status_last_sent_valid = 1;
+                        conn->role.peripheral.channel_status_queued = 0;
+                        conn->role.peripheral.channel_status_last_sent_ms = now_ms;
+                        conn->role.peripheral.channel_status_last_sent_valid = 1;
 
                         gap_tx_frame[0] = 0x03;
                         gap_tx_frame[1] = 11;
@@ -733,7 +733,7 @@ void gap_hw_received(void) {
                             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
-            conn->c_link_state.central_anchor_set = 0;
+            conn->role.central.central_anchor_set = 0;
             conn->c_link_layer.peer_sca_ppm = 500; // conservative until clock data exists
             conn->is_central = 1;
 
@@ -947,7 +947,7 @@ static inline uint8_t gap_conn_can_skip_event(
         }
         else {
             uint16_t instant_delta = (uint16_t)(conn->next_schedule.instant - event);
-            if (conn->c_rate.ack_waiting && instant_delta < 0x8000)
+            if (conn->role.peripheral.rate_ack_waiting && instant_delta < 0x8000)
                 return 0;
         }
     }
@@ -956,7 +956,7 @@ static inline uint8_t gap_conn_can_skip_event(
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
     ) return 0;
 
-    if (!conn->is_central && conn->c_subrate.latency_remaining)
+    if (!conn->is_central && conn->role.peripheral.latency_remaining)
         return 1;
 
     int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
@@ -1036,7 +1036,7 @@ static void gap_conn_poll(void) {
     if ((conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
          conn->c_features.request_pending ||
          conn->c_features.ext_pending ||
-         conn->c_rate.req_pending ||
+         (!conn->is_central && conn->role.peripheral.rate_req_pending) ||
          conn->c_rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
@@ -1178,9 +1178,9 @@ static void gap_conn_poll(void) {
     GAP_HW_CRC_INIT(conn->c_link_layer.crc_init);
 
     if (conn->is_central) {
-        if (!conn->c_link_state.central_anchor_set) {
+        if (!conn->role.central.central_anchor_set) {
             conn->c_link_layer.next_ticks = now;
-            conn->c_link_state.central_anchor_set = 1;
+            conn->role.central.central_anchor_set = 1;
         }
 
         if (!conn->c_link_layer.tx_pending) {

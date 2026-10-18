@@ -441,7 +441,6 @@ typedef struct {
         uint8_t rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
         uint8_t terminate_queued, terminate_sent;
-        uint8_t central_anchor_set;
     } c_link_state;
 
     // PHY update state.
@@ -458,23 +457,13 @@ typedef struct {
     struct {
         uint8_t queued_flags; // Local set and peer request pending bits.
         uint8_t update_pending;
-        uint8_t req_pending, ack_waiting;
-        struct {
-            uint16_t interval_min, interval_max;
-            uint16_t factor_min, factor_max, latency;
-            uint16_t continuation, timeout, periodicity;
-            uint16_t offsets[4];
-        } peripheral_request;
     } c_rate;
     struct {
         uint8_t event_activity, event_received, force_event;
-        uint16_t continuations, latency_remaining;
+        uint16_t continuations;
         uint8_t procedure_state; // GAP_SUBRATE_* state.
         uint8_t queued_flags; // GAP_SUBRATE_QUEUED_UPDATE and _REQUEST bits.
         uint8_t status;
-        struct {
-            uint16_t factor_min, factor_max, latency, continuation, timeout;
-        } peripheral_request;
         uint32_t started_ms;
     } c_subrate;
 
@@ -505,19 +494,31 @@ typedef struct {
     struct {
         uint8_t enabled;
         uint8_t min_spacing_200ms, max_delay_200ms;
-        // Central request state and Peripheral report state are mutually
-        // exclusive for a connection, so they share storage.
-        union {
-            struct {
-                uint8_t report_queued, report_pending;
-                uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
-            } central;
-            struct {
-                uint8_t status_queued, status_last_sent_valid;
-                uint32_t status_changed_ms, status_last_sent_ms;
-            } peripheral;
-        } role;
     } c_channel;
+
+    // Fields exclusive to one role share storage within this connection.
+    union {
+        struct {
+            uint8_t central_anchor_set;
+            uint8_t channel_report_queued, channel_report_pending;
+            uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
+        } central;
+        struct {
+            uint8_t rate_req_pending, rate_ack_waiting;
+            struct {
+                uint16_t interval_min, interval_max;
+                uint16_t factor_min, factor_max, latency;
+                uint16_t continuation, timeout, periodicity;
+                uint16_t offsets[4];
+            } rate_request;
+            uint16_t latency_remaining;
+            struct {
+                uint16_t factor_min, factor_max, latency, continuation, timeout;
+            } subrate_request;
+            uint8_t channel_status_queued, channel_status_last_sent_valid;
+            uint32_t channel_status_changed_ms, channel_status_last_sent_ms;
+        } peripheral;
+    } role;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];

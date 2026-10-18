@@ -116,7 +116,8 @@ uint8_t gap_subrate_status(void) {
 static uint8_t gap_conn_rate_busy(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     return conn->c_rate.queued_flags ||
-        conn->c_rate.update_pending || conn->c_rate.req_pending;
+        conn->c_rate.update_pending ||
+        (!conn->is_central && conn->role.peripheral.rate_req_pending);
 }
 
 #if GAP_SMP_SUPPORT > 0
@@ -225,12 +226,15 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         conn->schedule.latency = conn->next_schedule.latency;
         conn->schedule.continuation = conn->next_schedule.continuation;
         conn->schedule.timeout = conn->next_schedule.timeout;
-        conn->c_subrate.latency_remaining = 0;
+        if (!conn->is_central)
+            conn->role.peripheral.latency_remaining = 0;
         conn->c_subrate.continuations = 0;
         conn->c_subrate.force_event = 1;
         conn->c_rate.update_pending = 0;
-        conn->c_rate.req_pending = 0;
-        conn->c_rate.ack_waiting = 0;
+        if (!conn->is_central) {
+            conn->role.peripheral.rate_req_pending = 0;
+            conn->role.peripheral.rate_ack_waiting = 0;
+        }
         conn->connection_status = 0;
     }
 
@@ -263,7 +267,8 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             conn->schedule.factor = 1;
             conn->schedule.continuation = 0;
             conn->c_subrate.continuations = 0;
-            conn->c_subrate.latency_remaining = 0;
+            if (!conn->is_central)
+                conn->role.peripheral.latency_remaining = 0;
             if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING)
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->c_subrate.queued_flags &=
@@ -352,9 +357,9 @@ static void gap_conn_event_advance(void) {
     if (subrated) {
         if (!conn->is_central) {
             if (conn->c_subrate.event_received)
-                conn->c_subrate.latency_remaining = conn->schedule.latency;
-            else if (conn->c_subrate.latency_remaining)
-                conn->c_subrate.latency_remaining--;
+                conn->role.peripheral.latency_remaining = conn->schedule.latency;
+            else if (conn->role.peripheral.latency_remaining)
+                conn->role.peripheral.latency_remaining--;
         }
 
         // A new subrated event starts a fresh continuation window; activity
@@ -1100,8 +1105,10 @@ static uint8_t gap_conn_control(
             conn->connection_status = frame[4];
         }
 
-        if (frame[3] == LL_CONNECTION_RATE_REQ && conn->c_rate.req_pending) {
-            conn->c_rate.req_pending = 0;
+        if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
+            conn->role.peripheral.rate_req_pending
+        ) {
+            conn->role.peripheral.rate_req_pending = 0;
             conn->connection_status = frame[4];
         }
 
@@ -1151,9 +1158,9 @@ static uint8_t gap_conn_control(
             conn->c_subrate.status = frame[4];
         }
 
-        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->c_channel.role.central.report_pending) {
-            conn->c_channel.role.central.report_pending = 0;
-            conn->c_channel.role.central.report_queued = 0;
+        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->role.central.channel_report_pending) {
+            conn->role.central.channel_report_pending = 0;
+            conn->role.central.channel_report_queued = 0;
             conn->connection_status = frame[4];
         }
 
@@ -1227,10 +1234,10 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
 
         if (frame[3] == LL_CHANNEL_REPORTING_IND &&
-            conn->c_channel.role.central.report_pending
+            conn->role.central.channel_report_pending
         ) {
-            conn->c_channel.role.central.report_pending = 0;
-            conn->c_channel.role.central.report_queued = 0;
+            conn->role.central.channel_report_pending = 0;
+            conn->role.central.channel_report_queued = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1256,8 +1263,10 @@ static uint8_t gap_conn_control(
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
-        if (frame[3] == LL_CONNECTION_RATE_REQ && conn->c_rate.req_pending) {
-            conn->c_rate.req_pending = 0;
+        if (frame[3] == LL_CONNECTION_RATE_REQ && !conn->is_central &&
+            conn->role.peripheral.rate_req_pending
+        ) {
+            conn->role.peripheral.rate_req_pending = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1532,7 +1541,7 @@ static uint8_t gap_conn_control(
         conn->next_schedule.continuation = continuation;
         conn->next_schedule.timeout = timeout;
         conn->c_rate.update_pending = 1;
-        conn->c_rate.ack_waiting = 1;
+        conn->role.peripheral.rate_ack_waiting = 1;
         conn->params_started_ms = GET_MILLIS();
         conn->connection_status = GAP_CONNECTION_PENDING;
         break;
@@ -1654,7 +1663,7 @@ static uint8_t gap_conn_control(
         conn->schedule.latency = latency;
         conn->schedule.continuation = continuation;
         conn->schedule.timeout = timeout;
-        conn->c_subrate.latency_remaining = 0;
+        conn->role.peripheral.latency_remaining = 0;
         conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
         conn->c_subrate.status = 0;
         break;
@@ -1672,9 +1681,9 @@ static uint8_t gap_conn_control(
         conn->c_channel.enabled = frame[3];
         conn->c_channel.min_spacing_200ms = frame[4];
         conn->c_channel.max_delay_200ms = frame[5];
-        conn->c_channel.role.peripheral.status_queued = frame[3];
-        conn->c_channel.role.peripheral.status_changed_ms = GET_MILLIS();
-        conn->c_channel.role.peripheral.status_last_sent_valid = 0;
+        conn->role.peripheral.channel_status_queued = frame[3];
+        conn->role.peripheral.channel_status_changed_ms = GET_MILLIS();
+        conn->role.peripheral.channel_status_last_sent_valid = 0;
         break;
     }
     case LL_CHANNEL_STATUS_IND: { // LL_CHANNEL_STATUS_IND (Peripheral to Central).
@@ -1687,7 +1696,7 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
         }
 
-        memcpy(conn->c_channel.role.central.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
+        memcpy(conn->role.central.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
         break;
     }
     case LL_LENGTH_REQ:
@@ -2029,11 +2038,11 @@ int gap_subrate_request(
         return 0;
     }
 
-    conn->c_subrate.peripheral_request.factor_min = factor_min;
-    conn->c_subrate.peripheral_request.factor_max = factor_max;
-    conn->c_subrate.peripheral_request.latency = max_latency;
-    conn->c_subrate.peripheral_request.continuation = continuation;
-    conn->c_subrate.peripheral_request.timeout = timeout;
+    conn->role.peripheral.subrate_request.factor_min = factor_min;
+    conn->role.peripheral.subrate_request.factor_max = factor_max;
+    conn->role.peripheral.subrate_request.latency = max_latency;
+    conn->role.peripheral.subrate_request.continuation = continuation;
+    conn->role.peripheral.subrate_request.timeout = timeout;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_REQUEST;
     return 1;
@@ -2105,17 +2114,17 @@ int gap_conn_rate_request(
         }
     }
 
-    conn->c_rate.peripheral_request.interval_min = interval_min;
-    conn->c_rate.peripheral_request.interval_max = interval_max;
-    conn->c_rate.peripheral_request.factor_min = factor_min;
-    conn->c_rate.peripheral_request.factor_max = factor_max;
-    conn->c_rate.peripheral_request.latency = max_latency;
-    conn->c_rate.peripheral_request.continuation = continuation;
-    conn->c_rate.peripheral_request.timeout = timeout;
-    conn->c_rate.peripheral_request.periodicity = preferred_periodicity;
+    conn->role.peripheral.rate_request.interval_min = interval_min;
+    conn->role.peripheral.rate_request.interval_max = interval_max;
+    conn->role.peripheral.rate_request.factor_min = factor_min;
+    conn->role.peripheral.rate_request.factor_max = factor_max;
+    conn->role.peripheral.rate_request.latency = max_latency;
+    conn->role.peripheral.rate_request.continuation = continuation;
+    conn->role.peripheral.rate_request.timeout = timeout;
+    conn->role.peripheral.rate_request.periodicity = preferred_periodicity;
 
     for (uint8_t i = 0; i < 4; i++)
-        conn->c_rate.peripheral_request.offsets[i] = offsets ? offsets[i] : 0xffff;
+        conn->role.peripheral.rate_request.offsets[i] = offsets ? offsets[i] : 0xffff;
     conn->c_rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
@@ -2169,8 +2178,8 @@ int gap_channel_reporting_set(
         min_spacing_200ms > 150 ||
         max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 ||
-        conn->c_channel.role.central.report_queued ||
-        conn->c_channel.role.central.report_pending ||
+        conn->role.central.channel_report_queued ||
+        conn->role.central.channel_report_pending ||
         conn->c_link_state.terminate_queued ||
         conn->c_link_state.terminate_sent ||
         conn->c_link_state.terminate_after_reply
@@ -2179,7 +2188,7 @@ int gap_channel_reporting_set(
     conn->c_channel.enabled = enable;
     conn->c_channel.min_spacing_200ms = min_spacing_200ms;
     conn->c_channel.max_delay_200ms = max_delay_200ms;
-    conn->c_channel.role.central.report_queued = 1;
+    conn->role.central.channel_report_queued = 1;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
@@ -2205,9 +2214,9 @@ int gap_channel_class_set(
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
         if (!conn->is_central) {
-            conn->c_channel.role.peripheral.status_changed_ms = now_ms;
+            conn->role.peripheral.channel_status_changed_ms = now_ms;
             if (conn->c_channel.enabled)
-                conn->c_channel.role.peripheral.status_queued = 1;
+                conn->role.peripheral.channel_status_queued = 1;
         }
     }
 
@@ -2224,7 +2233,7 @@ int gap_peer_class_get(
         !conn->is_central || !classification
     ) return 0;
 
-    memcpy(classification, conn->c_channel.role.central.peer_classification, GAP_CHANN_CLASS_BYTES);
+    memcpy(classification, conn->role.central.peer_classification, GAP_CHANN_CLASS_BYTES);
     return 1;
 }
 
