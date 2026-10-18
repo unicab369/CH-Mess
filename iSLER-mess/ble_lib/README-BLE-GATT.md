@@ -56,15 +56,16 @@ IP Support service, `gatt_tds_add()` for the optional
 TDS Control Point, which captures Activate Transport requests and indicates
 completion through `gatt_tds_complete()`,
 `gatt_ecs_add()` for encrypted Emergency ID/Text, and `gatt_elapsed_add()` for Current Elapsed
-Time. `gatt_mics_add()` registers encrypted MICS Mute,
-and `gatt_vcs_add()` registers encrypted VCS state, control
+Time. `gatt_mics_add_aics()` registers encrypted MICS Mute, optionally
+including AICS instances, and `gatt_vcs_add()` registers encrypted VCS state, control
 point, and flags. Except for the MICS and volume-control handlers described
 below, these builders add the database but leave service-specific control
 point behavior and notification policy to the application. MICS rejects
 client writes of Disabled and returns Mute Disabled when writes arrive while
 that state is active; local microphone changes use
-`gatt_mics_set_mute()`. Register AICS instances first,
-then use `gatt_mics_add_aics()` to include them. VCS
+`gatt_mics_set_mute()`. Use `gatt_mics_add_aics()` with zero AICS handles for
+standalone MICS, or register AICS instances first and pass their handles to
+include them. VCS
 implements all seven Volume Control Point opcodes, validates Change_Counter,
 uses a step size of one, and updates/notifies Volume State; local changes use
 `gatt_vcs_set_state()`.

@@ -109,15 +109,6 @@ static inline int gatt_mics_add_aics(
     return 1;
 }
 
-// Add standalone MICS without included AICS instances.
-static inline int gatt_mics_add(
-    ble_gatt_server *server, ble_gatt_mics_service *service,
-    uint8_t mute
-) {
-    return gatt_mics_add_aics(server, service,
-                                                         mute, NULL, 0);
-}
-
 // Update MICS Mute after a local microphone-state change and notify clients
 // that enabled the characteristic's CCCD. Returns 1 when the value is set;
 // notification queueing can fail independently if the queue is full.
