@@ -33,7 +33,7 @@ typedef struct {
     ble_gatt_execute_fn execute;
 } ble_gatt_sig_handlers;
 
-// Application facing
+// Application-facing service registration.
 // Add a 16-bit UUID service and its caller-defined characteristics as one
 // transaction. The caller supplies the assigned characteristic UUIDs,
 // properties, permissions, values, and optional CCCDs.
@@ -158,7 +158,6 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
     return 1;
 }
 
-// Application facing
 // Add a primary service with included services and per-characteristic handlers.
 static inline int gatt_sig_service_add_with_includes_and_handlers(
     ble_gatt_server *server, uint16_t service_uuid16,
@@ -173,7 +172,6 @@ static inline int gatt_sig_service_add_with_includes_and_handlers(
         cccd_handles, handlers);
 }
 
-// Application facing
 // Add a service with caller-selected included services and per-characteristic
 // ATT handlers as one rollback-safe database operation.
 static inline int gatt_sig_service_add_with_handlers(
@@ -187,7 +185,6 @@ static inline int gatt_sig_service_add_with_handlers(
         value_handles, cccd_handles, handlers);
 }
 
-// Application facing
 // Add a secondary service with caller-supplied characteristics and handlers.
 static inline int gatt_sig_secondary_service_add_with_handlers(
     ble_gatt_server *server, uint16_t service_uuid16,
@@ -200,7 +197,6 @@ static inline int gatt_sig_secondary_service_add_with_handlers(
         value_handles, cccd_handles, handlers);
 }
 
-// Application facing
 // Add a service with per-characteristic read, write, and reliable-write
 // handlers. Service modules use this to connect profile procedures to the
 // generic ATT server; simple static databases can use gatt_sig_service_add().
@@ -215,7 +211,7 @@ static inline int gatt_sig_service_add(
         NULL);
 }
 
-
+// Helpers shared by service modules.
 static inline void gatt_service_rollback(
     ble_gatt_server *server, uint16_t old_count, uint16_t old_next_handle,
     uint16_t old_value_used
@@ -229,8 +225,6 @@ static inline void gatt_service_rollback(
     server->value_used = old_value_used;
 }
 
-
-// Internal
 static inline int gatt_dts_control_point_busy(
     const ble_gatt_server *server, uint16_t handle
 ) {
@@ -245,25 +239,15 @@ static inline int gatt_dts_control_point_busy(
     return 0;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Backing storage shared by service value objects.
 typedef struct {
     const uint8_t *data;
     uint16_t len, capacity;
 } ble_gatt_service_value;
 
+// Service-specific database builders.
+#include "ble_gatt_service_navigation.h"
+#include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_health.h"
 #include "ble_gatt_service_measurement.h"
 #include "ble_gatt_service_audio.h"
