@@ -24,13 +24,13 @@ uint32_t GET_MILLIS(void) {
 
 static ble_gatt_server gatt_server;
 static ble_gatt_transport gatt_transport;
-static ble_gatt_battery_service battery_service;
+static ble_gatt_bas_service battery_service;
 static ble_gap_gatt gatt_links;
 
 static int gatt_start(void) {
     gatt_server_init(&gatt_server, 64);
 
-    if (!gatt_battery_service_add(&gatt_server, &battery_service, 50))
+    if (!gatt_bas_add(&gatt_server, &battery_service, 50))
         return 0;
 
     ble_gap_gatt_init(&gatt_links);
@@ -76,7 +76,7 @@ int main(void) {
         if ((int32_t)(now - next_update) >= 0) {
             next_update = now + 1000;
             level = level >= 100 ? 0 : (uint8_t)(level + 10);
-            (void)gatt_battery_service_notify_level(&gatt_server,
+            (void)gatt_bas_notify_level(&gatt_server,
                                                      &battery_service, level);
         }
 

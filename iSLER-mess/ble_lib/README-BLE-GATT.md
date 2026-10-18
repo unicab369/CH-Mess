@@ -23,18 +23,18 @@ fixed SMP CID 6. Protocol adapters and application services stay outside these
 generic modules.
 
 The Battery Service helper adds a readable, notifiable Battery Level
-characteristic. Keep one `ble_gatt_battery_service` state alive per
+characteristic. Keep one `ble_gatt_bas_service` state alive per
 server/connection while the server may read it. Update the percentage with
-`gatt_battery_service_set_level()` or update and queue a notification with
-`gatt_battery_service_notify_level()`.
+`gatt_bas_set_level()` or update and queue a notification with
+`gatt_bas_notify_level()`.
 
-`gatt_device_information_service_add()` adds the standard Device Information
+`gatt_dis_add()` adds the standard Device Information
 Service with optional manufacturer, model, serial, hardware, firmware, and
 software strings, plus optional System ID and PnP ID values. The helper copies
 provided values into the server database, so the input strings and IDs can be
 temporary during registration. Keep one handle-state object per server.
 
-`gatt_gap_service_add()` adds the Generic Access Service with a read-only
+`gatt_gap_add()` adds the Generic Access Service with a read-only
 Device Name and Appearance. The supplied UTF-8 name is copied into the
 database and must be 1–248 octets.
 
@@ -45,17 +45,17 @@ reusable buffer and queues the notification. Set its capacity to the current
 server's `mtu - 3` so optional RR Interval entries are omitted as whole
 16-bit values when they do not fit.
 
-`gatt_phone_alert_status_service_add()` handles Ringer Control Point writes.
+`gatt_pass_add()` handles Ringer Control Point writes.
 Use its Alert Status and Ringer Setting setters to update readable values, or
 their corresponding notification helpers to update and queue a notification.
 
 Additional concrete builders include `gatt_hid_add()` for the HID
 core characteristics and caller-provided Report Map/Reports,
-`gatt_internet_protocol_support_service_add()` for the characteristic-free
-IP Support service, `gatt_transport_discovery_service_add()` for the optional
+`gatt_ipsp_add()` for the characteristic-free
+IP Support service, `gatt_tds_add()` for the optional
 TDS Control Point, which captures Activate Transport requests and indicates
-completion through `gatt_transport_discovery_service_complete()`,
-`gatt_emergency_configuration_service_add()` for encrypted Emergency ID/Text, and `gatt_elapsed_time_service_add()` for Current Elapsed
+completion through `gatt_tds_complete()`,
+`gatt_ecs_add()` for encrypted Emergency ID/Text, and `gatt_elapsed_add()` for Current Elapsed
 Time. `gatt_microphone_control_service_add()` registers encrypted MICS Mute,
 and `gatt_volume_control_service_add()` registers encrypted VCS state, control
 point, and flags. Except for the MICS and volume-control handlers described
@@ -73,17 +73,17 @@ secondary service. Add it before its parent and include it from the parent. Its
 Set Volume Offset procedure validates Change_Counter and the signed offset
 range, then updates and notifies Volume Offset State. Local changes use
 `gatt_volume_offset_control_service_set_offset()`.
-`gatt_reconnection_configuration_service_add()` registers a base RCS with no
+`gatt_rcs_add()` registers a base RCS with no
 optional features. Its five-byte RC Feature value must contain CRC `0xffff`
 and three zero feature bytes.
-`gatt_device_time_service_add()` registers the mandatory DTS characteristics
+`gatt_dts_add()` registers the mandatory DTS characteristics
 for a basic device that supports one epoch and does not enable optional time
 logging. Its DTCP handler validates Propose/Force Time Update requests and
 stores the pending request in the service state; the application applies or
 rejects the update, then calls
-`gatt_device_time_service_control_point_complete()` to send the indication.
+`gatt_dts_complete_control_point()` to send the indication.
 Other DTCP procedures are reported as unsupported by this base builder.
-`gatt_coordinated_set_identification_service_add()` registers CSIS SIRK and
+`gatt_csis_add()` registers CSIS SIRK and
 optional size, lock, and rank characteristics with encrypted permissions. The
 application implements SIRK protection and the lock protocol.
 `gatt_audio_input_control_service_add()` registers the encrypted AICS secondary
@@ -99,9 +99,9 @@ include a previously registered CSIS service.
 `gatt_broadcast_audio_scan_service_add()` registers the encrypted BASS control
 point and caller-selected variable-length receive-state instances. The
 application handles synchronization procedures and updates their values.
-`gatt_constant_tone_extension_service_add()` registers the required CTE Enable
+`gatt_ctes_add()` registers the required CTE Enable
 value and, when requested, the five advertising-channel controls.
-`gatt_ranging_service_add()` registers mandatory RAS characteristics and adds
+`gatt_ranging_add()` registers mandatory RAS characteristics and adds
 Real-time Ranging Data when feature bit 0 is set. The application supplies the
 Channel Sounding integration and implements RAS procedures and data transfer.
 `gatt_ghs_add()` registers the live-observation GHS
@@ -116,15 +116,15 @@ indications. The application encodes observations and starts segmented
 indications with `gatt_ghs_indicate_observation()`;
 call `gatt_ghs_continue_observation()` after each
 confirmation until `observation_len` is zero.
-`gatt_authorization_control_service_add()` registers the mandatory ACS
+`gatt_acs_add()` registers the mandatory ACS
 characteristics and binds segmented Data In and Control Point reassembly.
-Retrieve complete payloads with `gatt_authorization_control_service_take_data_in()`
-and `gatt_authorization_control_service_take_control_point()`. Queue segmented
+Retrieve complete payloads with `gatt_acs_take_data_in()`
+and `gatt_acs_take_control_point()`. Queue segmented
 Data Out notifications/indications with the corresponding helpers, and complete
 Control Point requests with
-`gatt_authorization_control_service_complete_control_point()`. The application
+`gatt_acs_complete_control_point()`. The application
 still implements ACS cryptography, opcode policy, protected-resource access,
-and updates the Status value through `gatt_authorization_control_service_set_status()`.
+and updates the Status value through `gatt_acs_set_status()`.
 `gatt_pams_add()` registers the mandatory PAMS
 characteristics. Use `gatt_pams_add_full()` to
 select optional cardio-respiratory, step-counter, and sleep data streams;
@@ -151,20 +151,20 @@ the corresponding indications. Use
 readable 17-byte session value and
 `gatt_pams_indicate_session()` to
 indicate it.
-`gatt_hearing_access_service_add()` registers the mandatory HAS Hearing Aid
+`gatt_hap_add()` registers the mandatory HAS Hearing Aid
 Features characteristic for a device that does not expose preset control.
-Use `gatt_hearing_access_service_add_with_preset_control()` to add the
+Use `gatt_hap_add_with_preset_control()` to add the
 encrypted Preset Control Point and Active Preset Index. The application handles
 the preset list and operations using the captured request fields, then queues
 encoded response indications with
-`gatt_hearing_access_service_control_point_indicate()`; mark the last record
+`gatt_hap_control_point_indicate()`; mark the last record
 to finish a multi-record Read Presets response. Use
-`gatt_hearing_access_service_indicate_preset_change()` for unsolicited
+`gatt_hap_indicate_preset_change()` for unsolicited
 changes when Dynamic Presets is enabled. The preset-enabled builder accepts
 the full Hearing Aid Features bitfield and validates reserved/type-dependent
 bits. Update the active preset in the database with
-`gatt_hearing_access_service_set_active_preset_index()` or update and notify
-with `gatt_hearing_access_service_notify_active_preset_index()`.
+`gatt_hap_set_active_preset()` or update and notify
+with `gatt_hap_notify_active_preset()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
 `gatt_ots_add()` registers the single-object OTS metadata
@@ -240,14 +240,14 @@ Search Results with `gatt_media_control_service_set_search_results_object_id()`.
 The app handles the media player actions and OTS object storage; notify changed
 MCS values with `gatt_media_control_service_notify_optional()` and update
 notified Object IDs with `gatt_media_control_service_notify_object_id()`.
-`gatt_telephone_bearer_service_add()` registers the mandatory TBS/GTBS
+`gatt_tbs_add()` registers the mandatory TBS/GTBS
 characteristics and caller-selected optional signal-strength, target-URI, and
 friendly-name characteristics with encrypted permissions. Its config selects
 GTBS and supplies initial encoded values. Call Control Point requests are
 validated and captured for the application, which completes each request with
-`gatt_telephone_bearer_service_complete()` after performing the telephony
+`gatt_tbs_complete()` after performing the telephony
 action and updating call state. Use
-`gatt_telephone_bearer_service_set_signal_strength()` and its poll helper to
+`gatt_tbs_set_signal_strength()` and its poll helper to
 honor the configured minimum signal notification interval.
 `gatt_pacs_service_add()` registers one or both PAC directions with the
 mandatory Available and Supported Audio Contexts characteristics.
@@ -263,7 +263,7 @@ measurement descriptors and history behavior remain application-defined.
 Mode; the application implements mode switching and ISO report transport.
 `gatt_cws_add()` accepts any unique subset of all twelve assigned
 Cookware characteristic UUIDs; the caller supplies each value, property set,
-and application procedure behavior. `gatt_voice_assistant_service_add()` builds the common Voice
+and application procedure behavior. `gatt_vas_add()` builds the common Voice
 Assistant or Generic Voice Assistant session layout. Both require application
 logic for their protocol procedures. `gatt_tpms_add()` registers TPMS
 Properties, Tire Pressure, and selected optional sensor values; the application
@@ -272,23 +272,23 @@ PDUs/service data and has no GATT attribute database to register.
 
 Additional service database builders are available:
 
-- `gatt_immediate_alert_service_add()` and `gatt_link_loss_service_add()`
+- `gatt_ias_add()` and `gatt_lls_add()`
   implement Alert Level reads and validated writes. The service state exposes
   the latest level to the application; Immediate Alert also increments a
   request counter so repeated writes can trigger repeated device actions.
-- `gatt_tx_power_service_add()` registers the signed Tx Power Level;
-  `gatt_tx_power_service_set_level()` updates its readable database value.
-- `gatt_current_time_service_add()` registers Current Time and optionally
+- `gatt_tx_power_add()` registers the signed Tx Power Level;
+  `gatt_tx_power_set_level()` updates its readable database value.
+- `gatt_cts_add()` registers Current Time and optionally
   Local Time Information and Reference Time Information. The Current Time
-  value supports notifications; `gatt_current_time_service_notify()` updates
+  value supports notifications; `gatt_cts_notify()` updates
   the readable value and queues one.
-- `gatt_next_dst_change_service_set_time()` updates the readable seven-octet
+- `gatt_ndcs_set_time()` updates the readable seven-octet
   Time with DST value when transition information changes.
-- `gatt_reference_time_update_service_add()` handles Get/Cancel commands and
+- `gatt_rtus_add()` handles Get/Cancel commands and
   exposes pending state. The application completes an asynchronous request
-  with `gatt_reference_time_update_service_complete()` and a result code.
-  `gatt_next_dst_change_service_add()` registers the DST characteristic.
-- `gatt_phone_alert_status_service_add()` registers Alert Status with a CCCD,
+  with `gatt_rtus_complete()` and a result code.
+  `gatt_ndcs_add()` registers the DST characteristic.
+- `gatt_pass_add()` registers Alert Status with a CCCD,
   Ringer Setting with a CCCD, and Ringer Control Point. The control point
   validates its opcode and updates service state; the application performs
   device-specific actions and sends notifications.
@@ -339,17 +339,17 @@ Additional service builders include:
   authenticated feature/status/session values, and both control points. The
   application supplies encoded static values and implements record storage
   and control-point behavior.
-- `gatt_alert_notification_service_add()` for supported categories, new and
+- `gatt_ans_add()` for supported categories, new and
   unread alert notifications, and the Alert Notification Control Point. The
   control point validates commands and updates per-category enable masks; the
   application supplies alert records. Use
-  `gatt_alert_notification_service_notify_new()` and
-  `gatt_alert_notification_service_notify_unread()` to format and queue
+  `gatt_ans_notify_new()` and
+  `gatt_ans_notify_unread()` to format and queue
   notifications for enabled categories.
-- `gatt_scan_parameters_service_add()` for Scan Interval Window and Scan
+- `gatt_sps_add()` for Scan Interval Window and Scan
   Refresh. The Scan Interval Window handler validates the Bluetooth ranges
   and updates the service state; the application applies it to its scanner.
-  Call `gatt_scan_parameters_service_notify_refresh()` when the client should
+  Call `gatt_sps_notify_refresh()` when the client should
   refresh its scan parameters.
 - `gatt_csc_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
@@ -441,16 +441,16 @@ encode result/status/event messages and send them with
 `gatt_bss_indicate_message()`. Bond
 Management validates its feature bitmap and supported opcodes, checks optional
 authorization-code input through the supplied authorizer, and exposes accepted
-requests through `gatt_bond_management_service_take_request()`. The application
+requests through `gatt_bms_take_request()`. The application
 performs bond deletion after the relevant link is no longer active.
-`gatt_indoor_positioning_service_add_full()` adds the three
+`gatt_ips_add_full()` adds the three
 mandatory Indoor Positioning characteristics and any supplied local
 coordinates, floor number, altitude, uncertainty, and location name. It checks
 that every configured field has a value characteristic. Writes update the
 readable database. Use
-`gatt_indoor_positioning_service_encode_advertising_data()` to build the
+`gatt_ips_encode_advertising_data()` to build the
 Indoor Positioning AD structure, passing any configured Tx Power value from
-GAP. Call `gatt_indoor_positioning_service_take_broadcast_update()` after the
+GAP. Call `gatt_ips_take_broadcast_update()` after the
 application refreshes its advertising payload. Pulse Oximeter
 adds either or both measurement modes, its feature value, and an optional
 Record Access Control Point when records are stored. HTTP Proxy takes value
@@ -510,13 +510,13 @@ call `ble_gap_l2cap_poll()` for the same links.
 static ble_gap_gatt gatt_links;
 static ble_gatt_server servers[GAP_CONNECTION_COUNT];
 static ble_gatt_transport transports[GAP_CONNECTION_COUNT];
-static ble_gatt_battery_service batteries[GAP_CONNECTION_COUNT];
+static ble_gatt_bas_service batteries[GAP_CONNECTION_COUNT];
 
 static int gatt_services_init(void) {
     ble_gap_gatt_init(&gatt_links);
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gatt_server_init(&servers[slot], 23);
-        if (!gatt_battery_service_add(&servers[slot], &batteries[slot], 100) ||
+        if (!gatt_bas_add(&servers[slot], &batteries[slot], 100) ||
             !ble_gap_gatt_bind_slot(&gatt_links, slot, &transports[slot],
                                     &servers[slot], NULL))
             return 0;

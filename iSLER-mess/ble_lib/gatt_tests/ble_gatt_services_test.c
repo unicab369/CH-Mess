@@ -20,19 +20,19 @@ static uint8_t read_battery_level(
 
 int main(void) {
     ble_gatt_server server;
-    ble_gatt_battery_service battery = {0};
+    ble_gatt_bas_service battery = {0};
     gatt_server_init(&server, 23);
 
-    assert(gatt_battery_service_add(&server, &battery, 87));
+    assert(gatt_bas_add(&server, &battery, 87));
     assert(battery.service_handle && battery.level_handle);
     uint8_t level = 0;
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 87);
 
-    assert(gatt_battery_service_set_level(&battery, 42));
+    assert(gatt_bas_set_level(&battery, 42));
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 42);
-    assert(!gatt_battery_service_set_level(&battery, 101));
+    assert(!gatt_bas_set_level(&battery, 101));
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 42);
 
@@ -51,10 +51,10 @@ int main(void) {
     assert(level == 42);
 
     gatt_server_init(&server, 23);
-    ble_gatt_mesh_provisioning_service provisioning = {0};
+    ble_gatt_mesh_prov_service provisioning = {0};
     ble_gatt_mesh_proxy_service proxy = {0};
-    assert(gatt_mesh_provisioning_service_add(&server, &provisioning));
-    assert(gatt_mesh_proxy_service_add(&server, &proxy));
+    assert(gatt_mesh_prov_add(&server, &provisioning));
+    assert(gatt_mesh_proxy_add(&server, &proxy));
     assert(provisioning.service_handle && provisioning.data_in_handle &&
            provisioning.data_out_handle &&
            provisioning.data_out_cccd_handle);
