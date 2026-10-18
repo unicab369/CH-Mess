@@ -1264,7 +1264,7 @@ static void test_writes_cccd_and_permissions(void) {
                &response_len) == 1);
     assert(response[0] == 0x0b && response[1] == initial);
 
-    gatt_server_link_reset(&server);
+    gatt_link_reset(&server);
     assert(server.attributes[cccd - 1].cccd == 0);
     assert(server.mtu == 23 && !server.encrypted);
 }

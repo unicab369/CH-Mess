@@ -57,7 +57,7 @@ static void capture_provisioning_link(uint8_t open, void *context) {
 static void mesh_link_setup(void) {
     assert(mesh_gatt_ensure_initialized());
     mesh_gatt_link_reset();
-    gatt_server_link_reset(&mesh_gatt.server);
+    gatt_link_reset(&mesh_gatt.server);
     mesh_gatt.connected = 1;
 }
 
@@ -447,7 +447,7 @@ static void test_mesh_sar_timeout_and_link_cleanup(void) {
     mesh_gatt.filter_count = 1;
     mesh_gatt.proxy_tx_count = 1;
     mesh_gatt_link_reset();
-    gatt_server_link_reset(&mesh_gatt.server);
+    gatt_link_reset(&mesh_gatt.server);
     assert(!mesh_gatt.connected && !mesh_gatt.filter_type &&
            !mesh_gatt.filter_count && !mesh_gatt.proxy_tx_count);
     assert(!mesh_gatt_proxy_cccd() && !mesh_gatt_provisioning_cccd());

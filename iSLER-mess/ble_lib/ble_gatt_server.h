@@ -263,8 +263,7 @@ typedef struct {
 } ble_gatt_server;
 
 static ble_gatt_attribute *gatt_server_find(
-    ble_gatt_server *server,
-    uint16_t handle
+    ble_gatt_server *server, uint16_t handle
 ) {
     if (!server || !handle) return NULL;
 
@@ -275,9 +274,8 @@ static ble_gatt_attribute *gatt_server_find(
     return NULL;
 }
 
-static void gatt_server_prepare_cancel_all(
-    ble_gatt_server *server,
-    uint16_t extra_handle
+static void gatt_cancel_prepares(
+    ble_gatt_server *server, uint16_t extra_handle
 ) {
     if (!server) return;
 
@@ -285,25 +283,21 @@ static void gatt_server_prepare_cancel_all(
     for (uint16_t i = 0; i < server->prepare_count; i++) {
         uint16_t handle = server->prepared[i].handle;
         uint8_t first = 1;
+
         for (uint16_t j = 0; j < i; j++)
             if (server->prepared[j].handle == handle)
                 first = 0;
 
         if (!first) continue;
 
-        if (handle == extra_handle)
-            extra_seen = 1;
+        if (handle == extra_handle) extra_seen = 1;
         ble_gatt_attribute *a = gatt_server_find(server, handle);
-
-        if (a && a->execute)
-            a->execute(a->context, 0);
+        if (a && a->execute) a->execute(a->context, 0);
     }
 
     if (extra_handle && !extra_seen) {
         ble_gatt_attribute *a = gatt_server_find(server, extra_handle);
-
-        if (a && a->execute)
-            a->execute(a->context, 0);
+        if (a && a->execute) a->execute(a->context, 0);
     }
 }
 
@@ -311,63 +305,60 @@ static void gatt_server_prepare_cancel_all(
 // UUID and attribute helpers
 // =============================================================================
 static int gatt_uuid_equal(
-    const ble_gatt_uuid *a,
-    const ble_gatt_uuid *b
+    const ble_gatt_uuid *uuid_a, const ble_gatt_uuid *uuid_b
 ) {
-    if (!a || !b ||
-        (a->len != BLE_GATT_UUID16_LEN && a->len != BLE_GATT_UUID128_LEN) ||
-        (b->len != BLE_GATT_UUID16_LEN && b->len != BLE_GATT_UUID128_LEN)
+    if (!uuid_a || !uuid_b ||
+        (uuid_a->len != BLE_GATT_UUID16_LEN &&
+         uuid_a->len != BLE_GATT_UUID128_LEN) ||
+        (uuid_b->len != BLE_GATT_UUID16_LEN &&
+         uuid_b->len != BLE_GATT_UUID128_LEN)
     ) return 0;
 
-    if (a->len == b->len)
-        return !memcmp(a->value, b->value, a->len);
+    if (uuid_a->len == uuid_b->len)
+        return !memcmp(uuid_a->value, uuid_b->value, uuid_a->len);
 
-    const ble_gatt_uuid *short_uuid = a->len == 2 ? a : b;
-    const ble_gatt_uuid *long_uuid = a->len == 16 ? a : b;
+    const ble_gatt_uuid *short_uuid = uuid_a->len == 2 ? uuid_a : uuid_b;
+    const ble_gatt_uuid *long_uuid = uuid_a->len == 16 ? uuid_a : uuid_b;
     static const uint8_t bluetooth_base_prefix[14] = {
         0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00,
         0x80, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00
     };
-    return !memcmp(long_uuid->value, bluetooth_base_prefix,
-                   sizeof(bluetooth_base_prefix)) &&
-           !memcmp(long_uuid->value + 14, short_uuid->value, 2);
+    return !memcmp(long_uuid->value + 14, short_uuid->value, 2) &&
+           !memcmp(long_uuid->value, bluetooth_base_prefix,
+                   sizeof(bluetooth_base_prefix));
 }
 
 static uint16_t gatt_uuid_assigned16(const ble_gatt_uuid *uuid) {
-    if (uuid->len == 2)
-        return ble_get_le16(uuid->value);
-    if (uuid->len == 16)
-        return ble_get_le16(uuid->value + 14);
-
+    if (uuid->len == 2) return ble_get_le16(uuid->value);
+    if (uuid->len == 16) return ble_get_le16(uuid->value + 14);
     return 0;
 }
 
 static uint8_t *gatt_attribute_value(
-    ble_gatt_server *server,
-    ble_gatt_attribute *attribute
+    ble_gatt_server *server, ble_gatt_attribute *attribute
 ) {
     if (!attribute->value_capacity ||
         attribute->value_offset > server->value_used ||
         attribute->value_capacity > server->value_used - attribute->value_offset
     ) return NULL;
-
     return server->value_pool + attribute->value_offset;
 }
 
-static void gatt_server_observe_committed_write(
+static void gatt_write_committed(
     ble_gatt_server *server, ble_gatt_attribute *attribute
 ) {
     if (!server || !attribute || !attribute->write_observer) return;
     uint8_t *value = gatt_attribute_value(server, attribute);
     if (!value && attribute->value_len) return;
+
     attribute->write_observer(attribute->write_observer_context,
-        attribute->handle, value, attribute->value_len);
+                attribute->handle, value, attribute->value_len);
 }
 
 // Application facing
 // Observe writes after the GATT server has committed the characteristic
 // value. This includes normal and reliable (prepare/execute) writes.
-static inline int gatt_server_set_write_observer(
+static inline int gatt_set_write_observer(
     ble_gatt_server *server, uint16_t value_handle,
     ble_gatt_write_observer_fn observer, void *context
 ) {
@@ -385,23 +376,21 @@ static inline int gatt_server_set_write_observer(
 // =============================================================================
 static inline void gatt_server_init(ble_gatt_server *server, uint16_t local_mtu) {
     if (!server) return;
-
     memset(server, 0, sizeof(*server));
-
     if (local_mtu < 23) local_mtu = 23;
-
     if (local_mtu > BLE_GATT_SERVER_MTU_MAX)
         local_mtu = BLE_GATT_SERVER_MTU_MAX;
+
     server->local_mtu = local_mtu;
     server->mtu = 23;
     server->next_handle = 1;
 }
 
 // Application facing
-static inline void gatt_server_link_reset(ble_gatt_server *server) {
+static inline void gatt_link_reset(ble_gatt_server *server) {
     if (!server) return;
 
-    gatt_server_prepare_cancel_all(server, 0);
+    gatt_cancel_prepares(server, 0);
     server->mtu = 23;
     server->mtu_exchanged = 0;
     server->encrypted = 0;
@@ -418,16 +407,15 @@ static inline void gatt_server_link_reset(ble_gatt_server *server) {
     memset(server->prepare_data, 0, sizeof(server->prepare_data));
     server->prepare_count = 0;
     server->prepare_used = 0;
+
     for (uint16_t i = 0; i < server->count; i++) {
         if (server->attributes[i].flags & BLE_GATT_ATTRIBUTE_CCCD)
             server->attributes[i].cccd = 0;
 
         if (server->attributes[i].flags &
             BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES) {
-            uint8_t *features = gatt_attribute_value(server,
-                &server->attributes[i]);
-            if (features)
-                features[0] = 0;
+            uint8_t *features = gatt_attribute_value(server, &server->attributes[i]);
+            if (features) features[0] = 0;
             server->attributes[i].value_len = 1;
         }
     }
@@ -437,16 +425,12 @@ static inline void gatt_server_link_reset(ble_gatt_server *server) {
 // Set the minimum LE encryption key size required for an attribute (7-16
 // octets). Configure it while building the database, before sealing it.
 static inline int gatt_server_set_min_key_size(
-    ble_gatt_server *server,
-    uint16_t handle, uint8_t octets
+    ble_gatt_server *server, uint16_t handle, uint8_t octets
 ) {
     if (!server || server->database_sealed || octets < 7 || octets > 16)
         return 0;
-
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-
     if (!attribute) return 0;
-
     attribute->min_key_size = octets;
     return 1;
 }
@@ -456,11 +440,9 @@ static inline int gatt_server_set_min_key_size(
 // Storage with spare capacity is variable by default; a write callback owns
 // its own length semantics and cannot be reconfigured here.
 static inline int gatt_server_set_variable_length(
-    ble_gatt_server *server,
-    uint16_t handle, int variable
+    ble_gatt_server *server, uint16_t handle, int variable
 ) {
-    if (!server || server->database_sealed)
-        return 0;
+    if (!server || server->database_sealed) return 0;
 
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
 
@@ -529,6 +511,7 @@ static inline int gatt_server_set_transaction_callbacks(
     return 1;
 }
 
+// Application facing
 static inline int gatt_server_set_prepare_commit_validator(
     ble_gatt_server *server, uint16_t handle,
     ble_gatt_prepare_commit_validate_fn validate
@@ -1733,7 +1716,7 @@ static uint8_t gatt_server_write(
 
     if (a->write) {
         uint8_t error = a->write(a->context, offset, value, len, command);
-        if (!error) gatt_server_observe_committed_write(server, a);
+        if (!error) gatt_write_committed(server, a);
         return error;
     }
 
@@ -1759,7 +1742,7 @@ static uint8_t gatt_server_write(
             a->value_len = offset + len;
     }
 
-    gatt_server_observe_committed_write(server, a);
+    gatt_write_committed(server, a);
 
     return 0;
 }
@@ -2879,13 +2862,13 @@ static inline int gatt_server_att(
                         if (server->prepared[j].handle == handle)
                             first = 0;
                     if (!first) continue;
-                    gatt_server_observe_committed_write(server,
+                    gatt_write_committed(server,
                         gatt_server_find(server, handle));
                 }
             } while (0);
 
             if (error) {
-                gatt_server_prepare_cancel_all(server, 0);
+                gatt_cancel_prepares(server, 0);
                 memset(server->prepare_data, 0, server->prepare_used);
                 server->prepare_count = 0;
                 server->prepare_used = 0;
@@ -2894,7 +2877,7 @@ static inline int gatt_server_att(
             }
         }
         else {
-            gatt_server_prepare_cancel_all(server, 0);
+            gatt_cancel_prepares(server, 0);
         }
         memset(server->prepare_data, 0, server->prepare_used);
         server->prepare_count = 0;

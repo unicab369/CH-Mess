@@ -50,7 +50,7 @@ int main(void) {
 
     // A changed database is retained as pending until its indication confirms.
     peer.hash[0] ^= 0x80;
-    gatt_server_link_reset(&server);
+    gatt_link_reset(&server);
     assert(gatt_server_set_cccd(&server,
         handles.service_changed_handle, peer.service_changed_cccd));
     assert(server.database_hash_update_pending && server.event_count == 1 &&
@@ -70,7 +70,7 @@ int main(void) {
            ble_get_le16(indication + 5) == 0xffff);
 
     // A disconnect before confirmation leaves the old version persisted.
-    gatt_server_link_reset(&server);
+    gatt_link_reset(&server);
     assert(server.database_hash_update_pending == 0 && peer.stores == 1);
     assert(gatt_server_set_cccd(&server,
         handles.service_changed_handle, peer.service_changed_cccd));

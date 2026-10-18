@@ -90,7 +90,7 @@ int main(void) {
         BLE_GATT_CLIENT_FEATURE_MULTIPLE_HANDLE_NOTIFICATIONS;
     gatt_server_set_client_features_persistence(&server,
         load_client_features, store_client_features, &persisted_features);
-    gatt_server_link_reset(&server);
+    gatt_link_reset(&server);
     gatt_server_restore_client_features(&server);
     ble_gatt_attribute *features = gatt_server_find(
         &server, handles.client_supported_features_handle);
@@ -118,7 +118,7 @@ int main(void) {
         *gatt_attribute_value(&server, features) ==
             BLE_GATT_CLIENT_FEATURE_MASK);
 
-    gatt_server_link_reset(&server);
+    gatt_link_reset(&server);
     assert(*gatt_attribute_value(&server, features) == 0);
     gatt_server_restore_client_features(&server);
     assert(*gatt_attribute_value(&server, features) ==

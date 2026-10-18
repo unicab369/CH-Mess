@@ -839,7 +839,7 @@ static inline void gatt_transport_channel_closed(
                     ble_gatt_transport_server_bearer active;
                     active = transport->server->bearer;
                     transport->server->bearer = bearer->server;
-                    gatt_server_prepare_cancel_all(transport->server, 0);
+                    gatt_cancel_prepares(transport->server, 0);
                     transport->server->bearer = active;
                 }
 
@@ -1040,7 +1040,7 @@ static inline void gatt_transport_set_connected(
     memset(transport->tx, 0, sizeof(transport->tx));
 
     if (transport->server)
-        gatt_server_link_reset(transport->server);
+        gatt_link_reset(transport->server);
     if (transport->client)
         gatt_client_reset(transport->client);
     gatt_transport_sync_mtu_from_server(transport);

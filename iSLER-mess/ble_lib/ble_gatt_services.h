@@ -9104,11 +9104,11 @@ static inline int gatt_http_proxy_service_add(
     service->control_point_handle = values[4];
     service->https_security_handle = values[5];
     service->server = server;
-    if (!gatt_server_set_write_observer(server, service->uri_handle,
+    if (!gatt_set_write_observer(server, service->uri_handle,
             gatt_http_proxy_value_written, service) ||
-        !gatt_server_set_write_observer(server, service->headers_handle,
+        !gatt_set_write_observer(server, service->headers_handle,
             gatt_http_proxy_value_written, service) ||
-        !gatt_server_set_write_observer(server, service->entity_body_handle,
+        !gatt_set_write_observer(server, service->entity_body_handle,
             gatt_http_proxy_value_written, service)
     ) return 0;
     return 1;
