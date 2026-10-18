@@ -189,30 +189,45 @@ int main(void) {
     gatt_server_init(&server, 23);
     ble_gatt_ess_service ess = {0};
     uint8_t temperature[2] = {0, 0};
-    uint8_t logic = 0, trigger[8] = {0};
+    uint8_t logic = 0, trigger[8] = {0}, interval[8] = {0};
+    uint8_t minimum[8] = {0};
+    const uint8_t presentation[] = {0x06, 0, 0, 0, 0, 0, 0};
     const ble_gatt_sig_descriptor ess_descs[] = {
         {0x290b, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
          &logic, 1, 1},
         {0x290d, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
-         trigger, 1, sizeof(trigger)}
+         trigger, 1, sizeof(trigger)},
+        {0x290d, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         interval, 1, sizeof(interval)},
+        {0x290d, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         minimum, 1, sizeof(minimum)},
+        {0x2904, BLE_GATT_PERM_READ, presentation,
+         sizeof(presentation), sizeof(presentation)}
     };
     const ble_gatt_sig_characteristic ess_chars[] = {
         {0x2a6e, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
          BLE_GATT_PERM_READ,
          temperature, sizeof(temperature), sizeof(temperature), 0,
-         ess_descs, 2}
+         ess_descs, 5}
     };
     assert(gatt_ess_add(&server, &ess, ess_chars, 1));
     uint16_t config_handle = 0, trigger_handle = 0;
+    uint16_t triggers[3] = {0};
+    uint8_t found_triggers = 0;
     for (uint16_t i = 0; i < server.count; i++) {
         uint16_t uuid = gatt_uuid_assigned16(&server.attrs[i].uuid);
         if (uuid == 0x290b) config_handle = server.attrs[i].handle;
-        if (uuid == 0x290d) trigger_handle = server.attrs[i].handle;
+        if (uuid == 0x290d && found_triggers < 3) {
+            if (!trigger_handle) trigger_handle = server.attrs[i].handle;
+            triggers[found_triggers++] = server.attrs[i].handle;
+        }
     }
-    assert(config_handle && trigger_handle);
+    assert(config_handle && trigger_handle && found_triggers == 3);
     const uint8_t use_or[] = {1};
     const uint8_t bad_logic[] = {2};
+    const uint8_t less_than[] = {4, 30, 0};
     const uint8_t time_trigger[] = {1, 5, 0, 0};
+    const uint8_t min_trigger[] = {2, 5, 0, 0};
     const uint8_t bad_time_trigger[] = {1, 5, 0};
     const uint8_t unsupported_trigger[] = {10, 0, 0};
     assert(!write_value(&server, config_handle, use_or, sizeof(use_or)));
@@ -224,6 +239,30 @@ int main(void) {
         sizeof(bad_time_trigger)) == ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
     assert(write_value(&server, trigger_handle, unsupported_trigger,
         sizeof(unsupported_trigger)) == 0x81);
+
+    // Trigger evaluation applies characteristic presentation formats, Boolean
+    // configuration, fixed intervals, and the minimum interval gate.
+    assert(gatt_server_set_cccd(&server, ess.measurement_handles[0], 1));
+    const uint8_t temp_low[] = {20, 0}, temp_high[] = {40, 0};
+    assert(!write_value(&server, config_handle, (const uint8_t[]){0}, 1));
+    assert(!write_value(&server, triggers[0], less_than, sizeof(less_than)));
+    assert(!write_value(&server, triggers[1], time_trigger,
+        sizeof(time_trigger)));
+    assert(!write_value(&server, triggers[2], min_trigger,
+        sizeof(min_trigger)));
+    assert(gatt_ess_send_at(&server, &ess, 0, temp_low, sizeof(temp_low),
+        0, 100));
+    server.event_count = server.event_used = 0;
+    assert(!gatt_ess_send_at(&server, &ess, 0, temp_high, sizeof(temp_high),
+        0, 104));
+    assert(!server.event_count);
+    assert(!write_value(&server, config_handle, use_or, sizeof(use_or)));
+    assert(!gatt_ess_send_at(&server, &ess, 0, temp_low, sizeof(temp_low),
+        0, 104));
+    assert(!server.event_count); // The minimum interval still blocks it.
+    assert(gatt_ess_send_at(&server, &ess, 0, temp_high, sizeof(temp_high),
+        0, 105));
+    assert(server.event_count == 1);
 
     // FTMS applies its standardized start/stop state rules and completes
     // synchronous machine actions through the application callback.

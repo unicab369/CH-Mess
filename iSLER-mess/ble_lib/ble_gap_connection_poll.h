@@ -998,6 +998,7 @@ static void gap_conn_poll(void) {
 #endif
     }
 
+    // Bond loading is one-time; restoration and SMP protocol work are polled each event.
 #if GAP_SMP_SUPPORT > 0
     smp_bond_restore_poll();
     gap_smp_poll();

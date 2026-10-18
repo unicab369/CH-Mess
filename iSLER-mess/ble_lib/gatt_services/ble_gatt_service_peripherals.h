@@ -3349,6 +3349,8 @@ typedef struct {
     uint16_t measurement_cccd_handles[GATT_ESS_MAX_MEASUREMENTS];
     ble_gatt_ess_desc desc[GATT_ESS_MAX_MEASUREMENTS]
                           [GATT_ESS_MAX_TRIGGERS + 1];
+    uint32_t last_send_s[GATT_ESS_MAX_MEASUREMENTS];
+    uint8_t sent_mask;
 } ble_gatt_ess_service;
 
 static uint8_t gatt_ess_desc_write(
@@ -3488,6 +3490,216 @@ static inline int gatt_ess_set_value(
     memcpy(stored, value, len);
     attribute->value_len = len;
     return 1;
+}
+
+static int gatt_ess_compare_value(
+    ble_gatt_server *server, uint16_t handle,
+    const uint8_t *value, const uint8_t *operand, uint16_t len,
+    uint8_t condition, int *comparison
+) {
+    ble_gatt_attribute *measurement = gatt_server_find(server, handle);
+    uint8_t format = 0;
+    if (!measurement || !comparison)
+        return 0;
+
+    for (uint16_t i = 0; i < server->count; i++) {
+        ble_gatt_attribute *attr = &server->attrs[i];
+        if (attr->handle <= handle)
+            continue;
+        if (attr->flags & BLE_GATT_ATTR_CHAR)
+            break;
+        if (gatt_uuid_assigned16(&attr->uuid) != 0x2904)
+            continue;
+        const uint8_t *presentation = gatt_attribute_value(server, attr);
+        if (presentation && attr->value_len == 7)
+            format = presentation[0];
+        break;
+    }
+
+    uint8_t width = 0;
+    uint8_t is_signed = 0;
+    if (format >= 0x04 && format <= 0x0a) {
+        static const uint8_t widths[] = {1, 2, 2, 3, 4, 6, 8};
+        width = widths[format - 0x04];
+    }
+    else if (format >= 0x0c && format <= 0x12) {
+        static const uint8_t widths[] = {1, 2, 2, 3, 4, 6, 8};
+        width = widths[format - 0x0c];
+        is_signed = 1;
+    }
+
+    if (width && len == width) {
+        uint64_t a = 0, b = 0;
+        for (uint8_t i = 0; i < width; i++) {
+            a |= (uint64_t)value[i] << (8u * i);
+            b |= (uint64_t)operand[i] << (8u * i);
+        }
+        if (format == 0x05 || format == 0x0d) {
+            a &= 0x0fff;
+            b &= 0x0fff;
+        }
+        if (is_signed) {
+            uint8_t bits = format == 0x0d ? 12 : (uint8_t)(width * 8);
+            uint64_t sign = (uint64_t)1 << (bits - 1);
+            if (bits < 64) {
+                if (a & sign) a |= ~(((uint64_t)1 << bits) - 1);
+                if (b & sign) b |= ~(((uint64_t)1 << bits) - 1);
+            }
+            int64_t sa = (int64_t)a, sb = (int64_t)b;
+            *comparison = sa < sb ? -1 : sa > sb;
+        }
+        else
+            *comparison = a < b ? -1 : a > b;
+        return 1;
+    }
+
+    if ((format == 0x14 && len == 4) || (format == 0x15 && len == 8)) {
+        uint64_t a = 0, b = 0;
+        for (uint8_t i = 0; i < len; i++) {
+            a |= (uint64_t)value[i] << (8u * i);
+            b |= (uint64_t)operand[i] << (8u * i);
+        }
+        if (len == 4) {
+            uint32_t abits = (uint32_t)a, bbits = (uint32_t)b;
+            float af, bf;
+            memcpy(&af, &abits, sizeof(af));
+            memcpy(&bf, &bbits, sizeof(bf));
+            if (af != af || bf != bf)
+                return 0;
+            *comparison = af < bf ? -1 : af > bf;
+        }
+        else {
+            double ad, bd;
+            memcpy(&ad, &a, sizeof(ad));
+            memcpy(&bd, &b, sizeof(bd));
+            if (ad != ad || bd != bd)
+                return 0;
+            *comparison = ad < bd ? -1 : ad > bd;
+        }
+        return 1;
+    }
+
+    // Equality remains well-defined for opaque and composite data.
+    if (len && (condition == 8 || condition == 9)) {
+        int equal = !memcmp(value, operand, len);
+        *comparison = equal ? 0 : 1;
+        return 1;
+    }
+    return 0;
+}
+
+static uint32_t gatt_ess_trigger_interval(const uint8_t *operand) {
+    return (uint32_t)operand[0] | (uint32_t)operand[1] << 8 |
+        (uint32_t)operand[2] << 16;
+}
+
+// Update a measurement and queue it only when its configured ESS triggers
+// allow an event. `now_s` must be a monotonic timestamp in seconds.
+static inline int gatt_ess_send_at(
+    ble_gatt_server *server, ble_gatt_ess_service *service,
+    uint8_t measurement_index, const uint8_t *value, uint16_t len,
+    int indication, uint32_t now_s
+) {
+    if (!server || !service || measurement_index >= service->measurement_count ||
+        !service->measurement_handles[measurement_index] || !value ||
+        server->mtu < 3 || len > server->mtu - 3
+    ) return 0;
+
+    uint8_t index = measurement_index;
+    uint16_t handle = service->measurement_handles[index];
+    ble_gatt_attribute *measurement = gatt_server_find(server, handle);
+    uint8_t *stored = measurement ? gatt_attribute_value(server, measurement) :
+        NULL;
+    uint8_t property = indication ? BLE_GATT_PROP_INDICATE :
+        BLE_GATT_PROP_NOTIFY;
+    if (!measurement || !stored || len > measurement->value_capacity ||
+        (!(measurement->flags & BLE_GATT_ATTR_VAR_LEN) &&
+         len != measurement->value_len) ||
+        !(measurement->properties & property))
+        return 0;
+
+    uint8_t has_triggers = 0, positive_count = 0, min_count = 0;
+    uint8_t any_match = 0;
+    uint8_t all_match = 1, min_interval_ok = 1, logic = 0;
+    uint8_t sent = !!(service->sent_mask & (uint8_t)(1u << index));
+    uint16_t old_len = measurement->value_len;
+    uint32_t elapsed = sent ? (uint32_t)(now_s - service->last_send_s[index]) :
+        UINT32_MAX;
+
+    for (uint8_t d = 0; d < GATT_ESS_MAX_TRIGGERS + 1; d++) {
+        ble_gatt_ess_desc *binding = &service->desc[index][d];
+        if (!binding->handle)
+            continue;
+        ble_gatt_attribute *desc = gatt_server_find(server, binding->handle);
+        const uint8_t *setting = desc ? gatt_attribute_value(server, desc) :
+            NULL;
+        if (!desc || !setting || !desc->value_len)
+            continue;
+
+        if (binding->kind == GATT_ESS_DESC_CONFIG) {
+            if (desc->value_len == 1 && setting[0] <= 1)
+                logic = setting[0];
+            continue;
+        }
+
+        has_triggers = 1;
+        uint8_t condition = setting[0];
+        const uint8_t *operand = setting + 1;
+        uint16_t operand_len = (uint16_t)(desc->value_len - 1);
+        if (!condition)
+            continue;
+        if (condition == 2) {
+            if (operand_len != 3)
+                continue;
+            min_count++;
+            if (sent && elapsed < gatt_ess_trigger_interval(operand))
+                min_interval_ok = 0;
+            continue;
+        }
+
+        uint8_t match = 0;
+        if (condition == 1 && operand_len == 3)
+            match = !sent || elapsed >= gatt_ess_trigger_interval(operand);
+        else if (condition == 3)
+            match = old_len != len || memcmp(stored, value, len) != 0;
+        else if (condition >= 4 && condition <= 9 && operand_len == len) {
+            int cmp;
+            if (gatt_ess_compare_value(server, handle, value, operand, len,
+                                       condition, &cmp)) {
+                match = condition == 4 ? cmp < 0 :
+                    condition == 5 ? cmp <= 0 :
+                    condition == 6 ? cmp > 0 :
+                    condition == 7 ? cmp >= 0 :
+                    condition == 8 ? cmp == 0 : cmp != 0;
+            }
+        }
+        else
+            continue;
+
+        positive_count++;
+        any_match |= match;
+        all_match &= match;
+    }
+
+    // No ESS trigger descriptor retains the explicit-send behavior.
+    if (!positive_count && min_count) {
+        positive_count = 1;
+        any_match = all_match = 1;
+    }
+    uint8_t triggered = !has_triggers || (positive_count &&
+        (logic ? any_match : all_match) && min_interval_ok);
+    memcpy(stored, value, len);
+    measurement->value_len = len;
+    if (!triggered)
+        return 0;
+
+    int queued = gatt_queue_event(server, handle, value, len,
+                                  indication != 0);
+    if (queued) {
+        service->last_send_s[index] = now_s;
+        service->sent_mask |= (uint8_t)(1u << index);
+    }
+    return queued;
 }
 
 // Application-facing API

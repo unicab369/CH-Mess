@@ -40,8 +40,8 @@ automatically provide each service's application protocol or profile behavior.
   MTU-bounded Location and Speed/Navigation notification encoders with
   connection-scoped content masks
 - [x] Environmental Sensing (`0x181A`), writable Configuration and Trigger
-  Setting validation/storage; sample timing and trigger scheduling remain
-  application-owned
+  Setting validation, interval/value trigger evaluation, and AND/OR event
+  filtering; sample acquisition and call scheduling remain application-owned
 - [x] Body Composition (`0x181B`), reserved Feature-bit validation and
   MTU-bounded Measurement indication encoding
 - [x] User Data (`0x181C`), Database Change Increment writes, User Control

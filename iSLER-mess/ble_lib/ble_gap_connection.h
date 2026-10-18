@@ -111,6 +111,9 @@ static uint8_t gap_conn_rate_busy(void) {
 
 #if GAP_SMP_SUPPORT > 0
 static void gap_smp_link_close(void);
+static void gap_smp_poll(void);
+static void gap_smp_receive_complete(void);
+static int gap_smp_blocks_encryption(void);
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
@@ -2303,11 +2306,6 @@ int gap_disconnect(uint8_t reason) {
 }
 
 // Copy one received LL data fragment; leave it queued if the output is too small.
-#if GAP_SMP_SUPPORT > 0
-static void gap_smp_poll(void);
-static void gap_smp_receive_complete(void);
-#endif
-
 // Application facing
 int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2441,10 +2439,6 @@ static void gap_send_security(void) {
 // Start encryption (or refresh an encrypted link) as Central. LTK and Rand
 // use Bluetooth little-endian byte order; EDIV is the host's numeric value.
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
-#if GAP_SMP_SUPPORT > 0
-static int gap_smp_blocks_encryption(void);
-#endif
-
 // Application facing
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];

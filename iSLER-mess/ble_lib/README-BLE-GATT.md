@@ -431,13 +431,17 @@ Additional service builders include:
 - `gatt_ess_add()` for caller-selected permitted
   environmental measurement characteristics. Use
   `gatt_ess_set_value()` to update a stored
-  measurement and `gatt_ess_send()` to queue a
-  notification or indication that fits the negotiated ATT MTU. Writable
-  Environmental Sensing Configuration (`0x290B`) and Trigger Setting
+  measurement and `gatt_ess_send()` to queue an explicit
+  notification or indication that fits the negotiated ATT MTU. Use
+  `gatt_ess_send_at()` for trigger-filtered updates and pass a monotonic
+  timestamp in seconds. It evaluates fixed and minimum intervals, compares
+  supported integer and IEEE float Presentation Formats, and applies
+  configured AND/OR logic. Writable Environmental Sensing Configuration
+  (`0x290B`) and Trigger Setting
   (`0x290D`) descriptors validate and retain their standard values; at most
   one configuration and three trigger descriptors are supported per
-  measurement. The application still decides when to sample and call
-  `gatt_ess_send()`.
+  measurement. The application supplies new samples and schedules calls to
+  `gatt_ess_send_at()`.
 - `gatt_bcs_add()` for Body Composition Measurement and
   Feature, with reserved feature bits rejected. Both indication helpers enforce
   the negotiated MTU. `gatt_bcs_indicate()`
