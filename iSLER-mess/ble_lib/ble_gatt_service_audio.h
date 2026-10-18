@@ -3,9 +3,14 @@
 
 // Contents: Microphone/Input Control (MICS/AICS), Volume Control (VCS/VOCS),
 // and Media Control (MCS/GMCS).
-// Audio Stream Control, Published Audio Capabilities, Broadcast Audio Scan,
-// Telephony and Media Audio, Gaming Audio, and Common Audio services are
-// omitted because they require LE Audio support.
+// BLE Audio is not supported. Omitted LE Audio GATT services:
+// ASCS (0x184E): Audio Stream Control; BASS (0x184F): Broadcast Audio Scan;
+// PACS (0x1850): Published Audio Capabilities; CAS (0x1853): Common Audio;
+// TMAS (0x1855): Telephony and Media Audio; GMAS (0x1858): Gaming Audio.
+// LE Audio broadcast service-data UUIDs are also unsupported:
+// 0x1851: Basic Audio Announcement; 0x1852: Broadcast Audio Announcement;
+// 0x1856: Public Broadcast Announcement. These UUIDs identify advertising
+// data, not GATT database services.
 // This header contains standalone GATT audio controls and related services.
 
 // Microphone and Input Control: MICS, AICS

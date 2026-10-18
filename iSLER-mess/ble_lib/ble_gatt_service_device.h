@@ -277,14 +277,6 @@ typedef struct {
     const uint8_t *pnp_id;
 } ble_gatt_dis_info;
 
-static uint16_t gatt_dis_str_len(const char *value) {
-    if (!value) return 0;
-
-    uint16_t len = 0;
-    while (len < BLE_GATT_SERVER_VALUE_MAX && value[len]) len++;
-    return len;
-}
-
 static int gatt_dis_add_str(
     ble_gatt_server *server, uint16_t uuid16, const char *value,
     uint16_t *handle
@@ -294,7 +286,8 @@ static int gatt_dis_add_str(
         return 1;
     }
 
-    uint16_t len = gatt_dis_str_len(value);
+    uint16_t len = 0;
+    while (len < BLE_GATT_SERVER_VALUE_MAX && value[len]) len++;
 
     if (!len) {
         *handle = 0;
@@ -389,7 +382,9 @@ static inline int gatt_gap_add(
     if (!server || !service || !device_name || server->database_sealed)
         return 0;
 
-    uint16_t name_len = gatt_dis_str_len(device_name);
+    uint16_t name_len = 0;
+    while (name_len < BLE_GATT_SERVER_VALUE_MAX && device_name[name_len])
+        name_len++;
 
     if (!name_len || name_len > 248)
         return 0;
