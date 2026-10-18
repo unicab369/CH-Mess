@@ -487,7 +487,10 @@ typedef struct {
 
     // Link-layer feature exchange and channel classification.
     struct {
-        uint8_t known, peer[8];
+        uint8_t known;
+        // These are the feature-set octets used by this stack.
+        uint8_t peer_feature_0, peer_feature_1;
+        uint8_t peer_feature_4, peer_feature_7;
         uint8_t ext_pending, page1_known, peer_page1[8];
         uint8_t request_pending;
     } c_features;

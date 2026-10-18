@@ -3196,7 +3196,7 @@ static void test_connection_parameter_requests(void) {
 
     // A responsive link with a stalled procedure still has a 40-second timeout.
     start_test_central_link();
-    conn->c_features.known = 1; conn->c_features.peer[0] = 0x0e;
+    conn->c_features.known = 1; conn->c_features.peer_feature_0 = 0x0e;
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     now_ms = conn->procedures.params_started_ms + 40000;
@@ -3304,7 +3304,7 @@ static void test_data_length(void) {
     gap_conn_end();
 
     start_test_central_link();
-    conn->c_features.known = 1; conn->c_features.peer[0] = 0x0e;
+    conn->c_features.known = 1; conn->c_features.peer_feature_0 = 0x0e;
     assert(!gap_data_length_set(capacity));
     assert(conn->length_status == 0x1a);
     conn->c_features.known = 0;
@@ -3763,7 +3763,7 @@ static void test_extended_feature_page(void) {
 static void test_connection_rate_exchange(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     start_test_central_link();
-    assert(!conn->c_features.page1_known && !conn->c_features.peer[7]);
+    assert(!conn->c_features.page1_known && !conn->c_features.peer_feature_7);
     assert(gap_conn_rate_set(80, 2, 0, 1, 100));
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x08);
@@ -3841,7 +3841,7 @@ static void test_channel_classification_reporting(void) {
 
     start_test_central_link();
     conn->c_features.known = 1;
-    conn->c_features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_reporting_set(1, 5, 10));
     gap_channel_reporting_start_queued();
     assert(gap_tx_frame[2] == 0x28 && gap_tx_frame[1] == 4 &&
@@ -3859,7 +3859,7 @@ static void test_channel_classification_reporting(void) {
     start_test_central_link();
     conn->is_central = 0;
     conn->c_features.known = 1;
-    conn->c_features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_class_set(classification));
     uint8_t reserved_value[GAP_CHANN_CLASS_BYTES] = {0};
     reserved_value[0] = 2; // Classification value 2 is reserved.

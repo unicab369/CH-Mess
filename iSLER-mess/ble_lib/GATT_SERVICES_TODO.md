@@ -136,7 +136,9 @@ remains available for custom services; it does not replace these builders.
   selection, and Active Preset Index notifications
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD
-- [n/a] Mesh Proxy Solicitation (`0x1859`), Solicitation PDU/service data rather than a GATT attribute service
+- [x] Mesh Proxy Solicitation (`0x1859`), advertising service-data encoder for
+  a prebuilt Solicitation PDU; Mesh cryptography and sequence management
+  remain in the Mesh layer
 - [x] Industrial Measurement Device (`0x185A`), permitted live measurements and optional status indications
 - [x] Ranging (`0x185B`), mandatory characteristics, optional real-time data,
   Control Point command validation/capture and responses, client filter state,

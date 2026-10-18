@@ -305,6 +305,34 @@ static inline int gatt_mesh_proxy_add(
     return 1;
 }
 
+#define GATT_MESH_SOLICIT_UUID 0x1859u
+#define GATT_MESH_SOLICIT_PDU_LEN 17u
+
+// Application-facing advertising helper
+// Append the Mesh Proxy Solicitation service-data AD structure. The caller
+// supplies the encrypted and authenticated PDU; Mesh key handling and
+// sequence management remain in the Mesh layer. This is advertising data,
+// not a GATT attribute service.
+static inline int gatt_mesh_proxy_solicit(
+    uint8_t *ad, size_t capacity, size_t *len,
+    const uint8_t pdu[GATT_MESH_SOLICIT_PDU_LEN]
+) {
+    const size_t ad_len = GATT_MESH_SOLICIT_PDU_LEN + 4u;
+
+    if (!ad || !len || !pdu || *len > capacity ||
+        ad_len > capacity - *len
+    ) return 0;
+
+    uint8_t *out = ad + *len;
+    memmove(out + 4, pdu, GATT_MESH_SOLICIT_PDU_LEN);
+    out[0] = (uint8_t)(GATT_MESH_SOLICIT_PDU_LEN + 3u);
+    out[1] = 0x16; // Service Data - 16-bit UUID
+    out[2] = (uint8_t)GATT_MESH_SOLICIT_UUID;
+    out[3] = (uint8_t)(GATT_MESH_SOLICIT_UUID >> 8);
+    *len += ad_len;
+    return 1;
+}
+
 // Service-specific database builders.
 #include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_health.h"

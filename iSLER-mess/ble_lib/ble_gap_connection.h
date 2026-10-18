@@ -1169,10 +1169,10 @@ static uint8_t gap_conn_control(
         ) {
             uint8_t supported_phys = GAP_HW_PHY_MASK();
             conn->c_features.known = 1;
-            conn->c_features.peer[0] = frame[3];
-            conn->c_features.peer[1] = frame[4];
-            conn->c_features.peer[4] = frame[7];
-            conn->c_features.peer[7] = frame[10];
+            conn->c_features.peer_feature_0 = frame[3];
+            conn->c_features.peer_feature_1 = frame[4];
+            conn->c_features.peer_feature_4 = frame[7];
+            conn->c_features.peer_feature_7 = frame[10];
 
             gap_tx_frame[1] = 9;
             gap_tx_frame[2] = LL_FEATURE_RSP;
@@ -1224,10 +1224,10 @@ static uint8_t gap_conn_control(
         ) {
             conn->c_features.request_pending = 0;
             conn->c_features.known = 1;
-            conn->c_features.peer[0] = 0;
-            conn->c_features.peer[1] = 0;
-            conn->c_features.peer[4] = 0;
-            conn->c_features.peer[7] = 0;
+            conn->c_features.peer_feature_0 = 0;
+            conn->c_features.peer_feature_1 = 0;
+            conn->c_features.peer_feature_4 = 0;
+            conn->c_features.peer_feature_7 = 0;
             conn->c_rate.queued_flags = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
@@ -1305,8 +1305,8 @@ static uint8_t gap_conn_control(
             conn->c_pending.params_state = GAP_CONN_PARAMS_NONE;
             conn->c_features.request_pending = 0;
             conn->c_features.known = 1;
-            conn->c_features.peer[0] = 0;
-            conn->c_features.peer[4] = 0;
+            conn->c_features.peer_feature_0 = 0;
+            conn->c_features.peer_feature_4 = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE; // Unsupported remote feature.
         }
 
@@ -1317,10 +1317,10 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
 
         conn->c_features.known = 1;
-        conn->c_features.peer[0] = frame[3];
-        conn->c_features.peer[1] = frame[4];
-        conn->c_features.peer[4] = frame[7];
-        conn->c_features.peer[7] = frame[10];
+        conn->c_features.peer_feature_0 = frame[3];
+        conn->c_features.peer_feature_1 = frame[4];
+        conn->c_features.peer_feature_4 = frame[7];
+        conn->c_features.peer_feature_7 = frame[10];
         conn->c_features.request_pending = 0;
         conn->c_features.ext_pending = 0;
 
@@ -1333,7 +1333,9 @@ static uint8_t gap_conn_control(
 
     case LL_FEATURE_EXT_REQ:
     case LL_FEATURE_EXT_RSP: {
-        if (frame[1] != 11 || !(conn->c_features.peer[7] & GAP_LL_FEATURES_EXTENDED))
+        if (frame[1] != 11 ||
+            !(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)
+        )
             return gap_conn_unknown_resp(frame[2]);
 
         uint8_t page = frame[4];
@@ -1636,7 +1638,8 @@ static uint8_t gap_conn_control(
     }
     case LL_CHANNEL_REPORTING_IND: { // LL_CHANNEL_REPORTING_IND (Central to Peripheral).
         if (conn->is_central || frame[1] != 4 ||
-            !(conn->c_features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
+            !(conn->c_features.peer_feature_4 &
+              GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
             frame[3] > 1 || frame[4] < 5 || frame[4] > 150 ||
             frame[5] < frame[4] || frame[5] > 150
         ) {
@@ -1654,7 +1657,8 @@ static uint8_t gap_conn_control(
     case LL_CHANNEL_STATUS_IND: { // LL_CHANNEL_STATUS_IND (Peripheral to Central).
         if (!conn->is_central || frame[1] != 11 ||
             !conn->c_channel.enabled ||
-            !(conn->c_features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
+            !(conn->c_features.peer_feature_4 &
+              GAP_LL_FEATURES_CHANNEL_CLASSIFICATION) ||
             !gap_class_valid(frame + 3)
         ) {
             return gap_conn_unknown_resp(frame[2]);
@@ -1929,7 +1933,7 @@ int gap_conn_request(
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * maximum * 10 * factor
     ) return 0;
 
-    if (conn->c_features.known && !(conn->c_features.peer[0] & 0x02)) {
+    if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
         conn->connection_status = 0x1a;
         return 0;
     }
@@ -1962,7 +1966,7 @@ int gap_subrate_set(
     const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
 
     if (conn->c_features.known &&
-        (conn->c_features.peer[4] & required) != required
+        (conn->c_features.peer_feature_4 & required) != required
     ) {
         conn->c_subrate.status = 0x1a;
         return 0;
@@ -1996,7 +2000,7 @@ int gap_subrate_request(
     const uint8_t required = GAP_LL_FEATURES_SUBRATING | GAP_LL_FEATURES_SUBRATING_HOST;
 
     if (conn->c_features.known &&
-        (conn->c_features.peer[4] & required) != required
+        (conn->c_features.peer_feature_4 & required) != required
     ) {
         conn->c_subrate.status = 0x1a;
         return 0;
@@ -2188,7 +2192,7 @@ int gap_data_length_set(uint16_t octets) {
         octets > conn->data_capacity
     ) return 0;
 
-    if (conn->c_features.known && !(conn->c_features.peer[0] & 0x20)) {
+    if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x20)) {
         conn->length_status = 0x1a;
         return 0;
     }
@@ -2213,8 +2217,8 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 
     if (conn->c_features.known) {
         uint8_t peer_supported = GAP_PHY_1M |
-                                ((conn->c_features.peer[1] & 0x01) ? GAP_PHY_2M : 0) |
-                                ((conn->c_features.peer[1] & 0x08) ? GAP_PHY_CODED : 0);
+            ((conn->c_features.peer_feature_1 & 0x01) ? GAP_PHY_2M : 0) |
+            ((conn->c_features.peer_feature_1 & 0x08) ? GAP_PHY_CODED : 0);
         if (!(peer_supported & 6) || !(tx & peer_supported) ||
             !(rx & peer_supported)
         ) {
@@ -2439,7 +2443,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         if (gap_smp_blocks_encryption()) return 0;
     #endif
 
-    if (conn->c_features.known && !(conn->c_features.peer[0] & 1)) {
+    if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 1)) {
         gap_security->status = 0x1a;
         return 0;
     }

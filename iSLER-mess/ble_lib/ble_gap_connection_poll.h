@@ -35,7 +35,7 @@ static void gap_conn_send_queued(void) {
         !gap_tx_frame[1]
     ) {
         // Exchange features before sending the application's timing range.
-        if (conn->c_features.known && !(conn->c_features.peer[0] & 0x02)) {
+        if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
             conn->c_queue.local_params = 0;
             conn->connection_status = 0x1a;
         }
@@ -89,7 +89,7 @@ static void gap_conn_send_queued(void) {
         else {
             const uint8_t required = GAP_LL_FEATURES_SUBRATING |
                                     GAP_LL_FEATURES_SUBRATING_HOST;
-            if ((conn->c_features.peer[4] & required) != required) {
+            if ((conn->c_features.peer_feature_4 & required) != required) {
                 conn->c_subrate.queued_flags = 0;
                 conn->c_subrate.status = 0x1a;
             }
@@ -126,7 +126,7 @@ static void gap_conn_send_queued(void) {
         if (!conn->c_features.known) {
             gap_send_feature_request();
         }
-        else if (!(conn->c_features.peer[7] & GAP_LL_FEATURES_EXTENDED)) {
+        else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->c_rate.queued_flags = 0;
             conn->connection_status = 0x1a;
         }
@@ -183,7 +183,7 @@ static void gap_conn_send_queued(void) {
         if (!conn->c_features.known) {
             gap_send_feature_request();
         }
-        else if (!(conn->c_features.peer[4] & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
+        else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
             conn->c_channel.report_queued = 0;
             conn->c_channel.report_pending = 0;
             conn->connection_status = 0x1a;

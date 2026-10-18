@@ -305,7 +305,11 @@ Assistant or Generic Voice Assistant session layout. Both require application
 logic for their protocol procedures. `gatt_tpms_add()` registers TPMS
 Properties, Tire Pressure, and selected optional sensor values; the application
 encodes values and handles signing. Mesh Proxy Solicitation uses advertising
-PDUs/service data and has no GATT attribute database to register.
+service data and has no GATT attribute database to register. Use
+`gatt_mesh_proxy_solicit()` to append its service-data structure with a
+prebuilt 17-octet Solicitation PDU; Mesh key handling, sequence management,
+and PDU encryption remain in the Mesh layer. The helper is in
+`gatt_services/ble_gatt_services.h`; it still only builds advertising data.
 
 Additional service database builders are available:
 
