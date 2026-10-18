@@ -116,7 +116,7 @@ static void gap_smp_link_close(void);
 #if GAP_EXT_ADV_SUPPORT
 static int gap_past_receive(
     const uint8_t *frame,
-    uint64_t connection_anchor_ticks, uint16_t connection_event_counter
+    uint64_t connection_anchor_ticks, uint16_t conn_event_counter
 );
 #endif
 
@@ -659,7 +659,7 @@ static uint8_t gap_conn_reject_resp(uint8_t opcode, uint8_t error) {
 static uint8_t gap_conn_control(
     const uint8_t *frame,
     uint8_t authenticated, uint64_t connection_anchor_ticks,
-    uint16_t connection_event_counter
+    uint16_t conn_event_counter
 ) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -1857,7 +1857,7 @@ static uint8_t gap_conn_control(
         if (frame[1] != 35)
             return gap_conn_unknown_resp(frame[2]);
 
-        (void)gap_past_receive(frame, connection_anchor_ticks, connection_event_counter);
+        (void)gap_past_receive(frame, connection_anchor_ticks, conn_event_counter);
         break;
 
 #endif

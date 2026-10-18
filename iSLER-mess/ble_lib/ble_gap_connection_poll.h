@@ -1377,7 +1377,7 @@ void gap_hw_scan_poll(void) {
                                     target - gap_syncs[i].anchor_ticks : 0;
             uint16_t widening_ppm = gap_syncs[i].widening_ppm
                         ? gap_syncs[i].widening_ppm
-                        : (uint16_t)(gap_periodic_sca_ppm[gap_syncs[i].params.sca] + 500);
+                        : (uint16_t)(gap_sca_ppm[gap_syncs[i].params.sca] + 500);
             uint32_t widen_us = (uint32_t)(((uint64_t)widening_ppm *
                 (uint32_t)(elapsed_ticks / HW_TICKS_FROM_US(1)) + 999999) / 1000000) + 2;
             uint64_t widen_ticks = HW_TICKS_FROM_US(widen_us);
