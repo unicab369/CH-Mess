@@ -1661,7 +1661,6 @@ static uint8_t gap_conn_control(
         }
 
         memcpy(conn->c_channel.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
-        conn->c_channel.peer_classification_valid = 1;
         break;
     }
     case LL_LENGTH_REQ:
@@ -2167,14 +2166,13 @@ int gap_channel_class_set(
 }
 
 // Application facing
-// Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
+// Read the latest peer classification, or all unknown before the first report.
 int gap_peer_class_get(
     uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || !conn->is_central ||
-        conn->c_link_layer.first_event || !classification ||
-        !conn->c_channel.peer_classification_valid
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        !conn->is_central || !classification
     ) return 0;
 
     memcpy(classification, conn->c_channel.peer_classification, GAP_CHANN_CLASS_BYTES);
