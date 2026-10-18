@@ -35,10 +35,10 @@ int main(void) {
     peer_store peer = {.service_changed_cccd = 2};
     gatt_server_init(&server, 64);
     assert(gatt_server_add_standard_gatt_service(&server, &handles));
-    assert(gatt_server_seal_database(&server));
-    gatt_server_set_database_hash_persistence(&server, load_hash,
+    assert(gatt_seal_database(&server));
+    gatt_set_hash_persistence(&server, load_hash,
                                                    save_hash, &peer);
-    gatt_server_set_cccd_persistence(&server, load_cccd, NULL, &peer);
+    gatt_set_cccd_persistence(&server, load_cccd, NULL, &peer);
 
     // A first connection records a baseline without sending Service Changed.
     assert(gatt_server_set_cccd(&server,

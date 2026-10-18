@@ -389,7 +389,7 @@ static int mesh_gatt_register_services(void) {
             &service) ||
         !gatt_server_add_characteristic(&mesh_gatt.server,
             &gap_device_name, BLE_GATT_PROP_READ,
-            BLE_GATT_PERM_READ_AUTHENTICATED,
+            BLE_GATT_PERM_READ_AUTHN,
             NULL, 0, 0, mesh_gatt_gap_device_name_read, NULL, NULL,
             &decl, &value) ||
         !gatt_server_add_characteristic(&mesh_gatt.server,
@@ -422,7 +422,7 @@ static int mesh_gatt_register_services(void) {
 #if MESH_GATT_EAD_SUPPORT
     if (!gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
             BLE_GATT_PROP_READ,
-            BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
+            BLE_GATT_PERM_READ_AUTHN | BLE_GATT_PERM_READ_AUTHZ,
             NULL, 0, 24, mesh_gatt_gap_edkm_read, NULL, NULL,
             &decl, &value)
     ) return 0;
@@ -447,7 +447,7 @@ static int mesh_gatt_ensure_initialized(void) {
 int mesh_gatt_set_authorizer(ble_gatt_authorize_fn authorize, void *context) {
     if (!mesh_gatt_ensure_initialized())
         return 0;
-    gatt_server_set_authorizer(&mesh_gatt.server, authorize, context);
+    gatt_set_authorizer(&mesh_gatt.server, authorize, context);
     return 1;
 }
 
@@ -500,7 +500,7 @@ static void mesh_gatt_gap_policy_update(void) {
         MESH_GATT_HANDLE_GAP_DEVICE_NAME);
     if (!name) return;
     name->permissions = mesh_gatt_gap_discoverable() ? BLE_GATT_PERM_READ :
-        BLE_GATT_PERM_READ_AUTHENTICATED;
+        BLE_GATT_PERM_READ_AUTHN;
 }
 
 void mesh_gatt_proxy_set_rx_callback(

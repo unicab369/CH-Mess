@@ -566,7 +566,7 @@ static void test_bonded_cccd_restore(void) {
         NULL, &cccd_handle));
     link.cccd_handle = value_handle;
     link.cccd_value = 1;
-    gatt_server_set_cccd_persistence(&server, fake_cccd_load,
+    gatt_set_cccd_persistence(&server, fake_cccd_load,
                                           fake_cccd_store, &link);
     ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
@@ -617,9 +617,9 @@ static void test_database_version_reconnect_flow(void) {
     memset(link.database_hash, 0xa5, sizeof(link.database_hash));
     gatt_server_init(&server, 64);
     assert(gatt_server_add_standard_gatt_service(&server, &handles));
-    gatt_server_set_cccd_persistence(&server, fake_cccd_load,
+    gatt_set_cccd_persistence(&server, fake_cccd_load,
                                          fake_cccd_store, &link);
-    gatt_server_set_database_hash_persistence(&server,
+    gatt_set_hash_persistence(&server,
         fake_database_hash_load, fake_database_hash_store, &link);
     ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
@@ -672,7 +672,7 @@ int main(void) {
     assert(gatt_server_add_attribute(&server, &value_uuid,
         BLE_GATT_PERM_READ, value, sizeof(value), sizeof(value), NULL, NULL,
         NULL, &value_handle));
-    assert(gatt_server_set_min_key_size(&server, value_handle, 12));
+    assert(gatt_set_min_key_size(&server, value_handle, 12));
     ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state

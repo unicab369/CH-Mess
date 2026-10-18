@@ -466,7 +466,7 @@ static inline int gatt_microphone_control_service_add_with_aics(
             server, aics_service_handles[i]);
 
         if (!included ||
-            !(included->flags & BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE) ||
+            !(included->flags & BLE_GATT_ATTR_SECONDARY_SERVICE) ||
             gatt_uuid_assigned16(&included->uuid) != 0x1843) return 0;
 
         for (uint8_t j = 0; j < i; j++)
@@ -478,7 +478,7 @@ static inline int gatt_microphone_control_service_add_with_aics(
     ble_gatt_sig_characteristic characteristic = {
         0x2bc3, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
             BLE_GATT_PROP_NOTIFY, 1,
-        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
         &service->mute, 1
     };
     ble_gatt_sig_handlers handlers[] = {
@@ -684,12 +684,12 @@ static inline int gatt_volume_control_service_add(
     service->server = server;
     ble_gatt_sig_characteristic characteristics[3] = {
         {0x2b7d, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, service->volume_state, 3},
+            BLE_GATT_PERM_READ_ENC, service->volume_state, 3},
         {0x2b7e, BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, NULL, 0, 3, 1},
+            BLE_GATT_PERM_WRITE_ENC, NULL, 0, 3, 1},
         {0x2b7f, BLE_GATT_PROP_READ |
             (volume_flags_changeable ? BLE_GATT_PROP_NOTIFY : 0),
-            volume_flags_changeable, BLE_GATT_PERM_READ_ENCRYPTED,
+            volume_flags_changeable, BLE_GATT_PERM_READ_ENC,
             &service->volume_flags, 1}
     };
     ble_gatt_sig_handlers handlers[3] = {0};
@@ -831,32 +831,32 @@ static inline int gatt_volume_offset_control_service_add(
                                          &service_handle) &&
         gatt_server_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, state, 3, 3, NULL, NULL, NULL,
+            BLE_GATT_PERM_READ_ENC, state, 3, 3, NULL, NULL, NULL,
             &declaration, &state_handle) &&
         gatt_server_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
         gatt_server_add_characteristic(server, &location_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, audio_location, 4, 4,
+            BLE_GATT_PERM_READ_ENC, audio_location, 4, 4,
             NULL, NULL, NULL, &declaration, &location_handle) &&
         gatt_server_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &location_cccd) &&
         gatt_server_add_characteristic(server, &control_point_uuid,
-            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
             NULL, gatt_volume_offset_control_point_write, service,
             &declaration, &control_point_handle);
 
     if (added)
         server->attributes[server->count - 1].flags |=
-            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+            BLE_GATT_ATTR_VAR_LEN;
 
     if (added)
         added = gatt_server_add_characteristic(server, &description_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, description, description_len,
+            BLE_GATT_PERM_READ_ENC, description, description_len,
             description_capacity, NULL, NULL, NULL, &declaration,
             &description_handle);
 
@@ -867,7 +867,7 @@ static inline int gatt_volume_offset_control_service_add(
 
     if (added && description_capacity > description_len)
         server->attributes[server->count - 2].flags |=
-            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+            BLE_GATT_ATTR_VAR_LEN;
 
     if (!added) {
         gatt_service_rollback(server, old_count, old_next_handle,
@@ -1135,14 +1135,14 @@ static inline int gatt_coordinated_set_identification_service_add(
     characteristics[count++] = (ble_gatt_sig_characteristic){
         0x2b84, BLE_GATT_PROP_READ |
             (sirk_notify ? BLE_GATT_PROP_NOTIFY : 0), sirk_notify,
-        BLE_GATT_PERM_READ_ENCRYPTED, sirk, 17
+        BLE_GATT_PERM_READ_ENC, sirk, 17
     };
 
     if (set_size) {
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b85, BLE_GATT_PROP_READ |
                 (size_notify ? BLE_GATT_PROP_NOTIFY : 0), size_notify,
-            BLE_GATT_PERM_READ_ENCRYPTED, &set_size, 1
+            BLE_GATT_PERM_READ_ENC, &set_size, 1
         };
     }
 
@@ -1150,12 +1150,12 @@ static inline int gatt_coordinated_set_identification_service_add(
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b86, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
                 BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             &member_lock, 1
         };
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b87, BLE_GATT_PROP_READ, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED, &member_rank, 1
+            BLE_GATT_PERM_READ_ENC, &member_rank, 1
         };
     }
 
@@ -1375,41 +1375,41 @@ static inline int gatt_audio_input_control_service_add(
                                          &service_handle) &&
         gatt_server_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, service->state, 4, 4, NULL, NULL, NULL,
+            BLE_GATT_PERM_READ_ENC, service->state, 4, 4, NULL, NULL, NULL,
             &declaration, &state_handle) &&
         gatt_server_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
         gatt_server_add_characteristic(server, &gain_uuid,
-            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENCRYPTED,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENC,
             service->gain_properties, 3, 3, NULL, NULL, NULL, &declaration,
             &gain_handle) &&
         gatt_server_add_characteristic(server, &type_uuid,
-            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENCRYPTED,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENC,
             &input_type, 1, 1, NULL, NULL, NULL, &declaration, &type_handle) &&
         gatt_server_add_characteristic(server, &status_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, &service->status, 1, 1, NULL, NULL, NULL,
+            BLE_GATT_PERM_READ_ENC, &service->status, 1, 1, NULL, NULL, NULL,
             &declaration, &status_handle) &&
         gatt_server_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &status_cccd) &&
         gatt_server_add_characteristic(server, &control_uuid,
-            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
             NULL, gatt_aics_control_point_write, service,
             &declaration, &control_handle);
 
     if (added)
         server->attributes[server->count - 1].flags |=
-            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+            BLE_GATT_ATTR_VAR_LEN;
 
     if (added)
         added = gatt_server_add_characteristic(server, &description_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY |
                 (description_writable ? BLE_GATT_PROP_WRITE_NO_RSP : 0),
-            BLE_GATT_PERM_READ_ENCRYPTED |
-                (description_writable ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0),
+            BLE_GATT_PERM_READ_ENC |
+                (description_writable ? BLE_GATT_PERM_WRITE_ENC : 0),
             description, description_len, description_capacity,
             NULL, description_writable ? gatt_aics_description_write : NULL,
             description_writable ? service : NULL, &declaration,
@@ -1422,7 +1422,7 @@ static inline int gatt_audio_input_control_service_add(
 
     if (added && description_capacity > description_len)
         server->attributes[server->count - 2].flags |=
-            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+            BLE_GATT_ATTR_VAR_LEN;
 
     if (!added) {
         gatt_service_rollback(server, old_count, old_next_handle,
@@ -1612,23 +1612,23 @@ static inline int gatt_broadcast_audio_scan_service_add(
                                          &service->service_handle) &&
         gatt_server_add_characteristic(server, &control_uuid,
             BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, NULL, 0,
+            BLE_GATT_PERM_WRITE_ENC, NULL, 0,
             control_point_capacity, NULL, NULL, NULL, &declaration,
             &service->control_point_handle);
 
     if (added)
         server->attributes[server->count - 1].flags |=
-            BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+            BLE_GATT_ATTR_VAR_LEN;
     for (uint8_t i = 0; added && i < receive_state_count; i++) {
         added = gatt_server_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
-            BLE_GATT_PERM_READ_ENCRYPTED, NULL, 0,
+            BLE_GATT_PERM_READ_ENC, NULL, 0,
             receive_state_capacity, NULL, NULL, NULL, &declaration,
             &receive_state_handles[i]);
 
         if (added)
             server->attributes[server->count - 1].flags |=
-                BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+                BLE_GATT_ATTR_VAR_LEN;
 
         if (added)
             added = gatt_server_add_descriptor(server, &cccd_uuid,
@@ -1833,34 +1833,34 @@ static inline int gatt_ranging_service_add(
     ble_gatt_sig_characteristic characteristics[6] = {0};
     uint8_t i = 0;
     characteristics[i++] = (ble_gatt_sig_characteristic){
-        0x2c14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        0x2c14, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
         feature_value, sizeof(feature_value)
     };
 
     if (include_realtime)
         characteristics[i++] = (ble_gatt_sig_characteristic){
             0x2c15, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
+            BLE_GATT_PERM_EVENT_ENC, &data_initial, 0,
             ranging_data_capacity, 1
         };
 
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c16, BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE, 1,
-        BLE_GATT_PERM_EVENT_ENCRYPTED, &data_initial, 0,
+        BLE_GATT_PERM_EVENT_ENC, &data_initial, 0,
         ranging_data_capacity, 1
     };
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c17, BLE_GATT_PROP_WRITE_NO_RSP | BLE_GATT_PROP_INDICATE, 1,
-        BLE_GATT_PERM_WRITE_ENCRYPTED, &control_point_initial, 0,
+        BLE_GATT_PERM_WRITE_ENC, &control_point_initial, 0,
         control_point_capacity, 1
     };
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c18, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
-        BLE_GATT_PERM_READ_ENCRYPTED, counter, sizeof(counter)
+        BLE_GATT_PERM_READ_ENC, counter, sizeof(counter)
     };
     characteristics[i++] = (ble_gatt_sig_characteristic){
         0x2c19, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
-        BLE_GATT_PERM_READ_ENCRYPTED, counter, sizeof(counter)
+        BLE_GATT_PERM_READ_ENC, counter, sizeof(counter)
     };
 
     uint16_t values[6], cccds[6];
@@ -3251,7 +3251,7 @@ static inline int gatt_hearing_access_service_add(
         return 0;
 
     ble_gatt_sig_characteristic characteristic = {
-        0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
         &features, 1
     };
     uint16_t value_handle;
@@ -3281,13 +3281,13 @@ static inline int gatt_hearing_access_service_add_with_preset_control(
     ) return 0;
 
     ble_gatt_sig_characteristic characteristics[3] = {
-        {0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2bda, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             &features, 1},
         {0x2bdb, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, NULL, 0,
+            BLE_GATT_PERM_WRITE_ENC, NULL, 0,
             control_point_capacity, 1},
         {0x2bdc, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, &active_preset_index, 1}
+            BLE_GATT_PERM_READ_ENC, &active_preset_index, 1}
     };
     uint16_t values[3], cccds[3];
     ble_gatt_sig_handlers handlers[3] = {0};
@@ -3861,7 +3861,7 @@ static inline int gatt_media_control_service_add_full(
          (!optional || !optional->ots_service_handle ||
           !gatt_server_find(server, optional->ots_service_handle) ||
           !(gatt_server_find(server, optional->ots_service_handle)->flags &
-            BLE_GATT_ATTRIBUTE_SECONDARY_SERVICE) ||
+            BLE_GATT_ATTR_SECONDARY_SERVICE) ||
           gatt_uuid_assigned16(&gatt_server_find(server,
               optional->ots_service_handle)->uuid) != 0x1825)) ||
         ((option_mask & GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL) &&
@@ -3893,7 +3893,7 @@ static inline int gatt_media_control_service_add_full(
     ble_gatt_sig_characteristic characteristics[22] = {
         {0x2b93, BLE_GATT_PROP_READ |
                 (name_notify ? BLE_GATT_PROP_NOTIFY : 0), name_notify,
-            BLE_GATT_PERM_READ_ENCRYPTED, config->player_name.value,
+            BLE_GATT_PERM_READ_ENC, config->player_name.value,
             config->player_name.value_len, config->player_name.value_capacity,
             1},
         {0x2b96, BLE_GATT_PROP_NOTIFY, 1, 0, &empty_value, 0},
@@ -3901,25 +3901,25 @@ static inline int gatt_media_control_service_add_full(
                 ((notify_mask & GATT_MCS_NOTIFY_TRACK_TITLE) ?
                     BLE_GATT_PROP_NOTIFY : 0),
             (notify_mask & GATT_MCS_NOTIFY_TRACK_TITLE) != 0,
-            BLE_GATT_PERM_READ_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC,
             config->track_title.value, config->track_title.value_len,
             config->track_title.value_capacity, 1},
         {0x2b98, BLE_GATT_PROP_READ |
                 ((notify_mask & GATT_MCS_NOTIFY_TRACK_DURATION) ?
                     BLE_GATT_PROP_NOTIFY : 0),
             (notify_mask & GATT_MCS_NOTIFY_TRACK_DURATION) != 0,
-            BLE_GATT_PERM_READ_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC,
             config->track_duration, 4},
         {0x2b99, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
                 BLE_GATT_PROP_WRITE_NO_RSP |
                 ((notify_mask & GATT_MCS_NOTIFY_TRACK_POSITION) ?
                     BLE_GATT_PROP_NOTIFY : 0),
             (notify_mask & GATT_MCS_NOTIFY_TRACK_POSITION) != 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             config->track_position, 4},
         {0x2ba3, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, &config->media_state, 1},
-        {0x2ba8, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC, &config->media_state, 1},
+        {0x2ba8, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             &config->content_control_id, 1}
     };
     static const uint16_t optional_uuid[6] = {0x2b9a, 0x2b9b, 0x2ba1,
@@ -3953,8 +3953,8 @@ static inline int gatt_media_control_service_add_full(
         uint16_t value_capacity = control_point ?
             optional->control_point_capacity : value_len;
         uint8_t permissions = (control_point ? 0 :
-            BLE_GATT_PERM_READ_ENCRYPTED) |
-            (writable || control_point ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0);
+            BLE_GATT_PERM_READ_ENC) |
+            (writable || control_point ? BLE_GATT_PERM_WRITE_ENC : 0);
         characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
             optional_uuid[i], properties, control_point || notify,
             permissions, optional_value[i], control_point ? 0 : value_len,
@@ -3983,8 +3983,8 @@ static inline int gatt_media_control_service_add_full(
             &optional->object_ids[i];
         characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
             object_uuid[i], properties, notify,
-            BLE_GATT_PERM_READ_ENCRYPTED |
-                (writable ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0),
+            BLE_GATT_PERM_READ_ENC |
+                (writable ? BLE_GATT_PERM_WRITE_ENC : 0),
             object->value_len ? object->value : &empty_value,
             object->value_len, 6, 1
         };
@@ -3996,7 +3996,7 @@ static inline int gatt_media_control_service_add_full(
         const ble_gatt_media_control_string *url =
             &optional->media_player_icon_url;
         characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
-            0x2b95, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            0x2b95, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             url->value_len ? url->value : &empty_value, url->value_len,
             url->value_capacity, 1
         };
@@ -4009,7 +4009,7 @@ static inline int gatt_media_control_service_add_full(
         characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
             0x2ba7, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
                     BLE_GATT_PROP_NOTIFY,
-            1, BLE_GATT_PERM_WRITE_ENCRYPTED, &empty_value, 0,
+            1, BLE_GATT_PERM_WRITE_ENC, &empty_value, 0,
             optional->search_control_point_capacity, 1
         };
     }
@@ -4094,7 +4094,7 @@ static inline int gatt_media_control_service_add_full(
     service->media_state_cccd_handle = cccd_handles[5];
     service->content_control_id_handle = value_handles[6];
     const uint16_t encrypted_cccd_permissions =
-        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
     for (uint8_t i = 0; i < characteristic_count; i++) {
         if (!cccd_handles[i]) continue;
 
@@ -4206,7 +4206,7 @@ static inline int gatt_media_control_service_notify_optional(
 
     if (len) memcpy(stored, value, len);
 
-    if (attribute->flags & BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH)
+    if (attribute->flags & BLE_GATT_ATTR_VAR_LEN)
         attribute->value_len = len;
     uint16_t notify_len = len;
 
@@ -4388,24 +4388,24 @@ static inline int gatt_pacs_service_add(
 
     if (config->sink_pac_len)
         characteristics[count++] = (ble_gatt_sig_characteristic){
-            0x2bc9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            0x2bc9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             config->sink_pac, config->sink_pac_len
         };
 
     if (config->source_pac_len)
         characteristics[count++] = (ble_gatt_sig_characteristic){
-            0x2bcb, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+            0x2bcb, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             config->source_pac, config->source_pac_len
         };
 
     available_index = count;
     characteristics[count++] = (ble_gatt_sig_characteristic){
         0x2bcd, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-        BLE_GATT_PERM_READ_ENCRYPTED, config->available_contexts, 4
+        BLE_GATT_PERM_READ_ENC, config->available_contexts, 4
     };
     supported_index = count;
     characteristics[count++] = (ble_gatt_sig_characteristic){
-        0x2bce, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        0x2bce, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
         config->supported_contexts, 4
     };
     uint16_t value_handles[4], cccd_handles[4];
@@ -4429,8 +4429,8 @@ static inline int gatt_pacs_service_add(
         service->available_contexts_cccd_handle);
 
     if (cccd)
-        cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
-                            BLE_GATT_PERM_WRITE_ENCRYPTED;
+        cccd->permissions = BLE_GATT_PERM_READ_ENC |
+                            BLE_GATT_PERM_WRITE_ENC;
     return 1;
 }
 
@@ -4508,7 +4508,7 @@ static inline int gatt_audio_stream_control_service_add(
         endpoint_indexes[endpoint_index++] = index;
         characteristics[index++] = (ble_gatt_sig_characteristic){
             0x2bc4, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, endpoint->value,
+            BLE_GATT_PERM_READ_ENC, endpoint->value,
             endpoint->value_len, endpoint->value_capacity, 1
         };
     }
@@ -4518,14 +4518,14 @@ static inline int gatt_audio_stream_control_service_add(
         endpoint_indexes[endpoint_index++] = index;
         characteristics[index++] = (ble_gatt_sig_characteristic){
             0x2bc5, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
-            BLE_GATT_PERM_READ_ENCRYPTED, endpoint->value,
+            BLE_GATT_PERM_READ_ENC, endpoint->value,
             endpoint->value_len, endpoint->value_capacity, 1
         };
     }
     uint8_t control_point_index = index;
     characteristics[index++] = (ble_gatt_sig_characteristic){
         0x2bc6, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
-            BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_WRITE_ENC,
         &control_point_initial, 0, config->control_point_capacity, 1
     };
     uint16_t value_handles[GATT_ASCS_MAX_ASES + 1];
@@ -4551,7 +4551,7 @@ static inline int gatt_audio_stream_control_service_add(
     service->control_point_handle = value_handles[control_point_index];
     service->control_point_cccd_handle = cccd_handles[control_point_index];
     const uint16_t encrypted_cccd_permissions =
-        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
     for (uint8_t i = 0; i < index; i++) {
         ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
 
@@ -4869,11 +4869,11 @@ static inline int gatt_telephone_bearer_service_add(
         uint16_t permissions = 0;
 
         if (properties[i] & BLE_GATT_PROP_READ)
-            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+            permissions |= BLE_GATT_PERM_READ_ENC;
 
         if (properties[i] & (BLE_GATT_PROP_WRITE |
                              BLE_GATT_PROP_WRITE_NO_RSP)
-        ) permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        ) permissions |= BLE_GATT_PERM_WRITE_ENC;
         characteristics[count] = (ble_gatt_sig_characteristic){
             .uuid = uuids[i], .properties = properties[i],
             .cccd = !!(properties[i] & BLE_GATT_PROP_NOTIFY),
@@ -4911,7 +4911,7 @@ static inline int gatt_telephone_bearer_service_add(
         service->cccd_handles[indexes[n]] = cccd_handles[n];
     }
     const uint16_t encrypted_cccd_permissions =
-        BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED;
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
     for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
         if (!service->cccd_handles[i])
             continue;
@@ -5196,9 +5196,9 @@ static inline int gatt_ots_bind_oacp_long_write(
     ble_gatt_server *server, ble_gatt_object_transfer_service *service,
     uint16_t handle
 ) {
-    return gatt_server_set_transaction_callbacks(server, handle,
+    return gatt_set_prepare(server, handle,
                 gatt_ots_oacp_prepare, gatt_ots_oacp_execute) &&
-        gatt_server_set_prepare_commit_validator(server, handle,
+        gatt_set_validator(server, handle,
                 gatt_ots_oacp_prepare_commit_validate);
 }
 
@@ -5448,35 +5448,35 @@ static inline int gatt_object_transfer_service_add_type_full(
 
     uint8_t action_control_point = 0;
     uint8_t first_created_properties = BLE_GATT_PROP_READ;
-    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENC;
     if (features[0] & 0x01) {
         first_created_properties |= BLE_GATT_PROP_WRITE;
-        first_created_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        first_created_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
     uint8_t last_modified_properties = BLE_GATT_PROP_READ;
-    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENC;
     if (!has_realtime_clock) {
         last_modified_properties |= BLE_GATT_PROP_WRITE;
-        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
     ble_gatt_sig_characteristic characteristics[8] = {
-        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             object_name, object_name_len, object_name_capacity, 1},
-        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_type, object_type_len},
-        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_size, 8},
         {0x2ac1, first_created_properties, 0,
             first_created_permissions, first_created, 7},
         {0x2ac2, last_modified_properties, 0,
             last_modified_permissions, last_modified, 7},
-        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_properties, 4},
         {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, &action_control_point, 0, 21, 1}
+            BLE_GATT_PERM_WRITE_ENC, &action_control_point, 0, 21, 1}
     };
     uint16_t value_handles[8], cccd_handles[8];
     ble_gatt_sig_handlers handlers[8] = {0};
@@ -5576,48 +5576,48 @@ static inline int gatt_object_transfer_service_add_multi_object_type_full(
     uint8_t initial_control_point = 0;
     uint8_t initial_filter = 0;
     uint8_t first_created_properties = BLE_GATT_PROP_READ;
-    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    uint16_t first_created_permissions = BLE_GATT_PERM_READ_ENC;
     if (features[0] & 0x01) {
         first_created_properties |= BLE_GATT_PROP_WRITE;
-        first_created_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        first_created_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
     uint8_t last_modified_properties = BLE_GATT_PROP_READ;
-    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENCRYPTED;
+    uint16_t last_modified_permissions = BLE_GATT_PERM_READ_ENC;
     if (!has_realtime_clock) {
         last_modified_properties |= BLE_GATT_PROP_WRITE;
-        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+        last_modified_permissions |= BLE_GATT_PERM_WRITE_ENC;
     }
     ble_gatt_sig_characteristic characteristics[13] = {
-        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2abd, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             features, 8},
         {0x2abe, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             object_name, object_name_len, object_name_capacity, 1},
-        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2abf, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_type, object_type_len},
-        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2ac0, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_size, 8},
         {0x2ac1, first_created_properties, 0,
             first_created_permissions, first_created, 7},
         {0x2ac2, last_modified_properties, 0,
             last_modified_permissions, last_modified, 7},
-        {0x2ac3, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2ac3, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_id, 6},
-        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2ac4, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             object_properties, 4},
         {0x2ac5, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, &initial_control_point, 0, 21, 1},
+            BLE_GATT_PERM_WRITE_ENC, &initial_control_point, 0, 21, 1},
         {0x2ac6, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_ENCRYPTED, &initial_control_point, 0, 7, 1},
+            BLE_GATT_PERM_WRITE_ENC, &initial_control_point, 0, 7, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             filter_len ? object_list_filter : &initial_filter,
             filter_len, filter_capacity, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             &initial_filter, 0, filter_capacity, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_READ_ENCRYPTED | BLE_GATT_PERM_WRITE_ENCRYPTED,
+            BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             &initial_filter, 0, filter_capacity, 1}
     };
     uint16_t values[13], cccds[13];
@@ -5668,8 +5668,8 @@ static inline int gatt_object_transfer_service_add_multi_object_type_full(
             return 0;
         }
 
-        cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
-            BLE_GATT_PERM_WRITE_ENCRYPTED;
+        cccd->permissions = BLE_GATT_PERM_READ_ENC |
+            BLE_GATT_PERM_WRITE_ENC;
     }
     return 1;
 }
@@ -6419,13 +6419,13 @@ static inline int gatt_emergency_configuration_service_add(
 
     memset(service, 0, sizeof(*service));
     ble_gatt_sig_characteristic characteristics[2] = {
-        {0x2b2d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENCRYPTED,
+        {0x2b2d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
          emergency_id, 6},
         {0x2b2e,
          BLE_GATT_PROP_READ | (text_writable ? BLE_GATT_PROP_WRITE : 0),
          0,
-         BLE_GATT_PERM_READ_ENCRYPTED |
-             (text_writable ? BLE_GATT_PERM_WRITE_ENCRYPTED : 0),
+         BLE_GATT_PERM_READ_ENC |
+             (text_writable ? BLE_GATT_PERM_WRITE_ENC : 0),
          emergency_text, emergency_text_len,
          (uint16_t)(emergency_text_len ? 20 : 0), 1}
     };
@@ -7096,7 +7096,7 @@ static inline int gatt_glucose_service_add(
         .uuid = 0x2a52,
         .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
         .cccd = 1,
-        .permissions = BLE_GATT_PERM_WRITE_AUTHENTICATED,
+        .permissions = BLE_GATT_PERM_WRITE_AUTHN,
         .value = &racp_initial,
         .value_len = 0,
         .value_capacity = 17,
@@ -7213,23 +7213,23 @@ static inline int gatt_insulin_delivery_service_add(
     memset(indexes, 0xff, sizeof(indexes));
     ble_gatt_sig_characteristic characteristics[9] = {
         {0x2b20, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_READ_AUTHORIZED,
+            BLE_GATT_PERM_READ_AUTHZ,
             config->status_changed.value, config->status_changed.value_len,
             config->status_changed.value_capacity},
         {0x2b21, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_READ_AUTHORIZED, config->status.value,
+            BLE_GATT_PERM_READ_AUTHZ, config->status.value,
             config->status.value_len, config->status.value_capacity},
         {0x2b22, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_READ_AUTHORIZED, config->annunciation_status.value,
+            BLE_GATT_PERM_READ_AUTHZ, config->annunciation_status.value,
             config->annunciation_status.value_len,
             config->annunciation_status.value_capacity},
         {0x2b23, BLE_GATT_PROP_READ |
                 (config->features_indicate ? BLE_GATT_PROP_INDICATE : 0),
-            config->features_indicate, BLE_GATT_PERM_READ_AUTHORIZED,
+            config->features_indicate, BLE_GATT_PERM_READ_AUTHZ,
             config->features.value, config->features.value_len,
             config->features.value_capacity},
         {0x2b24, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
             config->status_reader_control_point_capacity, 1}
     };
     count = 5;
@@ -7238,11 +7238,11 @@ static inline int gatt_insulin_delivery_service_add(
         indexes[0] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b25, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
             config->command_control_point_capacity, 1};
         indexes[1] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
-            0x2b26, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHORIZED,
+            0x2b26, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHZ,
             &control_point_initial, 0, config->command_data_capacity, 1};
     }
 
@@ -7250,11 +7250,11 @@ static inline int gatt_insulin_delivery_service_add(
         indexes[2] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b27, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-            BLE_GATT_PERM_WRITE_AUTHORIZED, &control_point_initial, 0,
+            BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
             config->record_access_control_point_capacity, 1};
         indexes[3] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
-            0x2b28, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHORIZED,
+            0x2b28, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHZ,
             &control_point_initial, 0, config->history_data_capacity, 1};
     }
 
@@ -7293,7 +7293,7 @@ static inline int gatt_insulin_delivery_service_add(
     }
 
     const uint16_t authorized_cccd_permissions =
-        BLE_GATT_PERM_READ_AUTHORIZED | BLE_GATT_PERM_WRITE_AUTHORIZED;
+        BLE_GATT_PERM_READ_AUTHZ | BLE_GATT_PERM_WRITE_AUTHZ;
     for (uint8_t i = 0; i < count; i++) {
         if (!cccd_handles[i]) continue;
 
@@ -7754,7 +7754,7 @@ static inline int gatt_user_data_service_add(
         {.uuid = 0x2a9f,
          .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
          .cccd = 1,
-         .permissions = BLE_GATT_PERM_WRITE_AUTHENTICATED,
+         .permissions = BLE_GATT_PERM_WRITE_AUTHN,
          .value = &control_point_initial,
          .value_len = 0,
          .value_capacity = 16,
@@ -8371,20 +8371,20 @@ static inline int gatt_cgm_service_add(
          config->measurement_capacity, 1},
         {0x2aa8, BLE_GATT_PROP_READ |
             (config->feature_indicate ? BLE_GATT_PROP_INDICATE : 0),
-         config->feature_indicate, BLE_GATT_PERM_READ_AUTHENTICATED,
+         config->feature_indicate, BLE_GATT_PERM_READ_AUTHN,
          config->feature, config->feature_len},
-        {0x2aa9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHENTICATED,
+        {0x2aa9, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHN,
          config->status, config->status_len},
         {0x2aaa, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
-         BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_WRITE_AUTHENTICATED,
+         BLE_GATT_PERM_READ_AUTHN | BLE_GATT_PERM_WRITE_AUTHN,
          config->session_start_time, config->session_start_time_len},
-        {0x2aab, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHENTICATED,
+        {0x2aab, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_AUTHN,
          config->session_run_time, config->session_run_time_len},
         {0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-         BLE_GATT_PERM_WRITE_AUTHENTICATED, &unused_value, 0,
+         BLE_GATT_PERM_WRITE_AUTHN, &unused_value, 0,
          config->control_point_capacity, 1},
         {0x2aac, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
-         BLE_GATT_PERM_WRITE_AUTHENTICATED, &unused_value, 0,
+         BLE_GATT_PERM_WRITE_AUTHN, &unused_value, 0,
          config->control_point_capacity, 1}
     };
     uint16_t values[7], cccds[7];
@@ -8419,7 +8419,7 @@ static inline int gatt_cgm_service_add(
 
         if (cccd)
             cccd->permissions = BLE_GATT_PERM_READ |
-                                BLE_GATT_PERM_WRITE_AUTHENTICATED;
+                                BLE_GATT_PERM_WRITE_AUTHN;
     }
     return 1;
 }
@@ -8517,10 +8517,10 @@ static inline int gatt_bond_management_service_add_with_authorizer(
     memset(service, 0, sizeof(*service));
     ble_gatt_sig_characteristic chars[] = {
         {0x2aa4, BLE_GATT_PROP_WRITE, 0,
-            BLE_GATT_PERM_WRITE_AUTHENTICATED, NULL, 0,
+            BLE_GATT_PERM_WRITE_AUTHN, NULL, 0,
             control_point_capacity, 1},
         {0x2aa5, BLE_GATT_PROP_READ, 0,
-            BLE_GATT_PERM_READ_AUTHENTICATED, features, feature_len}
+            BLE_GATT_PERM_READ_AUTHN, features, feature_len}
     };
     uint16_t values[2];
     ble_gatt_sig_handlers handlers[2] = {0};
@@ -9436,10 +9436,10 @@ static inline int gatt_esl_service_add(
         uint16_t permissions = 0;
 
         if (properties & BLE_GATT_PROP_READ)
-            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+            permissions |= BLE_GATT_PERM_READ_ENC;
 
         if (properties & (BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP))
-            permissions |= BLE_GATT_PERM_WRITE_ENCRYPTED;
+            permissions |= BLE_GATT_PERM_WRITE_ENC;
         chars[i] = (ble_gatt_sig_characteristic){
             uuids[i], properties, cccd, permissions,
             value->data, value->len, value->capacity, 1
@@ -9458,8 +9458,8 @@ static inline int gatt_esl_service_add(
         ble_gatt_attribute *cccd = gatt_server_find(server, cccds[8]);
 
         if (cccd)
-            cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
-                                      BLE_GATT_PERM_WRITE_ENCRYPTED;
+            cccd->permissions = BLE_GATT_PERM_READ_ENC |
+                                      BLE_GATT_PERM_WRITE_ENC;
     }
 
     return 1;
@@ -9505,7 +9505,7 @@ static inline int gatt_voice_assistant_service_add(
         if (i == 2) {
             properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_NOTIFY;
             cccd = 1;
-            permissions = BLE_GATT_PERM_WRITE_ENCRYPTED;
+            permissions = BLE_GATT_PERM_WRITE_ENC;
         }
         else if (i == 3 || i == 4) {
             properties |= BLE_GATT_PROP_NOTIFY;
@@ -9513,7 +9513,7 @@ static inline int gatt_voice_assistant_service_add(
         }
 
         if (properties & BLE_GATT_PROP_READ)
-            permissions |= BLE_GATT_PERM_READ_ENCRYPTED;
+            permissions |= BLE_GATT_PERM_READ_ENC;
         indexes[count] = i;
         chars[count++] = (ble_gatt_sig_characteristic){
             uuids[i], properties, cccd, permissions,
@@ -9537,8 +9537,8 @@ static inline int gatt_voice_assistant_service_add(
         ble_gatt_attribute *cccd = gatt_server_find(server, cccds[i]);
 
         if (cccd)
-            cccd->permissions = BLE_GATT_PERM_READ_ENCRYPTED |
-                                      BLE_GATT_PERM_WRITE_ENCRYPTED;
+            cccd->permissions = BLE_GATT_PERM_READ_ENC |
+                                      BLE_GATT_PERM_WRITE_ENC;
     }
     return 1;
 }

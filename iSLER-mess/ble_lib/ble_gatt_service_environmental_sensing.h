@@ -17,7 +17,7 @@ static inline int gatt_environmental_sensing_service_set_value(
     uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
 
     if (!stored || len > attribute->value_capacity ||
-        (!(attribute->flags & BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH) &&
+        (!(attribute->flags & BLE_GATT_ATTR_VAR_LEN) &&
          len != attribute->value_len)
     ) return 0;
 

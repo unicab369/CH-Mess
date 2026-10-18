@@ -96,9 +96,9 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                     server, value_handles[i]);
                 if (!attribute ||
                     !(attribute->permissions & (BLE_GATT_PERM_WRITE |
-                        BLE_GATT_PERM_WRITE_ENCRYPTED |
-                        BLE_GATT_PERM_WRITE_AUTHENTICATED |
-                        BLE_GATT_PERM_WRITE_AUTHORIZED))) {
+                        BLE_GATT_PERM_WRITE_ENC |
+                        BLE_GATT_PERM_WRITE_AUTHN |
+                        BLE_GATT_PERM_WRITE_AUTHZ))) {
                     added = 0;
                 }
                 else {
@@ -110,7 +110,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
 
         if (added && characteristics[i].variable_length)
             server->attributes[server->count - 1].flags |=
-                BLE_GATT_ATTRIBUTE_VARIABLE_LENGTH;
+                BLE_GATT_ATTR_VAR_LEN;
 
         if (added && characteristics[i].cccd) {
             if (!cccd_handles) {

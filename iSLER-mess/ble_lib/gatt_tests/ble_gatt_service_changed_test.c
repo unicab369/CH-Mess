@@ -29,7 +29,7 @@ int main(void) {
            handles.service_changed_handle == 3 &&
            handles.service_changed_cccd_handle == 4 &&
            handles.database_hash_handle == 6);
-    assert(gatt_server_seal_database(&server));
+    assert(gatt_seal_database(&server));
 
     ble_gatt_attribute *hash = gatt_server_find(
         &server, handles.database_hash_handle);
@@ -85,10 +85,10 @@ int main(void) {
     gatt_server_init(&server, 64);
     assert(gatt_server_add_standard_gatt_service(&server, &handles));
     assert(handles.client_supported_features_handle == 8);
-    assert(gatt_server_seal_database(&server));
+    assert(gatt_seal_database(&server));
     uint8_t persisted_features = BLE_GATT_CLIENT_FEATURE_ROBUST_CACHING |
         BLE_GATT_CLIENT_FEATURE_MULTIPLE_HANDLE_NOTIFICATIONS;
-    gatt_server_set_client_features_persistence(&server,
+    gatt_set_features_persistence(&server,
         load_client_features, store_client_features, &persisted_features);
     gatt_link_reset(&server);
     gatt_server_restore_client_features(&server);

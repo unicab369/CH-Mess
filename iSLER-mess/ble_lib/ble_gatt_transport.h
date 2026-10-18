@@ -991,7 +991,7 @@ static inline int gatt_transport_init(
     memset(transport, 0, sizeof(*transport));
     transport->server = server;
 
-    if (server && !gatt_server_seal_database(server))
+    if (server && !gatt_seal_database(server))
         return 0;
 
     l2cap_ops l2cap_ops = {0};
@@ -1052,7 +1052,7 @@ static inline void gatt_transport_set_connected(
             for (uint16_t i = 0; i < server->count; i++) {
                 ble_gatt_attribute *cccd = &server->attributes[i];
 
-                if (!(cccd->flags & BLE_GATT_ATTRIBUTE_CCCD))
+                if (!(cccd->flags & BLE_GATT_ATTR_CCCD))
                     continue;
 
                 uint16_t value_handle = cccd->parent_handle;

@@ -51,14 +51,14 @@ int main(void) {
 
     gatt_server_init(&server, 23);
     add_manual_gatt_service(&server, 0);
-    assert(!gatt_server_seal_database(&server));
+    assert(!gatt_seal_database(&server));
     assert(!server.database_sealed);
 
     gatt_server_init(&server, 23);
     add_manual_gatt_service(&server, 1);
-    assert(gatt_server_seal_database(&server));
+    assert(gatt_seal_database(&server));
     assert(server.database_sealed && server.database_hash_available);
     assert(server.attributes[server.count - 1].flags &
-           BLE_GATT_ATTRIBUTE_CLIENT_SUPPORTED_FEATURES);
+           BLE_GATT_ATTR_CLIENT_FEATURES);
     return 0;
 }

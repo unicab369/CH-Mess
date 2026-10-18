@@ -95,14 +95,14 @@ int main(void) {
         !gatt_server_add_service(&server, &aggregate_uuid, 1, &aggregate) ||
         !gatt_server_add_included_service(&server, service, NULL) ||
         !gatt_server_add_attribute(&server, &protected_uuid,
-            BLE_GATT_PERM_READ_ENCRYPTED, (const uint8_t *)"protected",
+            BLE_GATT_PERM_READ_ENC, (const uint8_t *)"protected",
             9, 9, NULL, NULL, NULL, &protected_value) ||
         !gatt_server_add_attribute(&server, &authenticated_uuid,
-            BLE_GATT_PERM_READ_AUTHENTICATED,
+            BLE_GATT_PERM_READ_AUTHN,
             (const uint8_t *)"authenticated", 13, 13, NULL, NULL, NULL,
             &authenticated_value) ||
         !gatt_server_add_attribute(&server, &authorized_uuid,
-            BLE_GATT_PERM_READ_AUTHORIZED, (const uint8_t *)"authorized",
+            BLE_GATT_PERM_READ_AUTHZ, (const uint8_t *)"authorized",
             10, 10, NULL, NULL, NULL, &authorized_value) ||
         !gatt_server_add_standard_gatt_service(&server, &gatt_service) ||
         !gatt_server_add_service(&server, &gap_uuid, 1, &service) ||
@@ -129,7 +129,7 @@ int main(void) {
             &declaration, &value) ||
         !gatt_server_add_characteristic(&server, &edkm_uuid,
             BLE_GATT_PROP_READ,
-            BLE_GATT_PERM_READ_AUTHENTICATED | BLE_GATT_PERM_READ_AUTHORIZED,
+            BLE_GATT_PERM_READ_AUTHN | BLE_GATT_PERM_READ_AUTHZ,
             edkm, sizeof(edkm), sizeof(edkm), NULL, NULL, NULL,
             &declaration, &value) ||
         !gatt_server_add_characteristic(&server, &signed_uuid,
@@ -137,13 +137,13 @@ int main(void) {
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_SIGNED,
             (const uint8_t *)"\0", 1, 1, NULL, NULL, NULL,
             &signed_declaration, &signed_value) ||
-        !gatt_server_set_min_key_size(&server, authorized_value, 12) ||
-        !gatt_server_seal_database(&server)
+        !gatt_set_min_key_size(&server, authorized_value, 12) ||
+        !gatt_seal_database(&server)
     ) return 2;
     (void)signed_declaration;
-    gatt_server_set_authorizer(&server,
+    gatt_set_authorizer(&server,
         authorize_application_access, NULL);
-    gatt_server_set_signed_write_verifier(&server,
+    gatt_set_sign_verifier(&server,
         verify_peer_signed_write, NULL);
 
     uint8_t request[BLE_GATT_SERVER_MTU_MAX];

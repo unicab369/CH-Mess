@@ -130,7 +130,7 @@ int main(void) {
     assert(gatt_server_find(&server, cgm.measurement_handle)->value_capacity ==
            cgm_config.measurement_capacity);
     assert(gatt_server_find(&server, cgm.record_access_cccd_handle)->permissions ==
-           (BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_AUTHENTICATED));
+           (BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_AUTHN));
 
     return 0;
 }

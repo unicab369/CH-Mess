@@ -63,7 +63,7 @@ static void mesh_link_setup(void) {
 
 static void set_cccd(uint16_t handle, uint16_t value) {
     ble_gatt_attribute *cccd = gatt_server_find(&mesh_gatt.server, handle);
-    assert(cccd && (cccd->flags & BLE_GATT_ATTRIBUTE_CCCD));
+    assert(cccd && (cccd->flags & BLE_GATT_ATTR_CCCD));
     cccd->cccd = value;
 }
 
@@ -80,7 +80,7 @@ static void test_mesh_services_registered_in_generic_database(void) {
            properties == BLE_GATT_PROP_NOTIFY);
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_DATA_OUT_CCCD - 1].flags &
-           BLE_GATT_ATTRIBUTE_CCCD);
+           BLE_GATT_ATTR_CCCD);
     assert(ble_get_le16(gatt_attribute_value(&mesh_gatt.server,
            &mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_PROVISIONING_SERVICE - 1])) ==
@@ -90,14 +90,14 @@ static void test_mesh_services_registered_in_generic_database(void) {
            mesh_gatt_data_in_write);
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_SERVICE - 1].flags &
-           BLE_GATT_ATTRIBUTE_PRIMARY_SERVICE);
+           BLE_GATT_ATTR_PRIMARY_SERVICE);
     assert(ble_get_le16(gatt_attribute_value(&mesh_gatt.server,
            &mesh_gatt.server.attributes[
                MESH_GATT_HANDLE_GAP_SERVICE - 1])) ==
            MESH_GATT_GAP_SERVICE_UUID);
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
-           BLE_GATT_PERM_READ_AUTHENTICATED);
+           BLE_GATT_PERM_READ_AUTHN);
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_CAR - 1].permissions ==
            BLE_GATT_PERM_READ);
@@ -107,8 +107,8 @@ static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_RPA_ONLY - 1].permissions == BLE_GATT_PERM_READ);
     assert(mesh_gatt.server.attributes[MESH_GATT_HANDLE_GAP_EDKM - 1].permissions ==
-           (BLE_GATT_PERM_READ_AUTHENTICATED |
-            BLE_GATT_PERM_READ_AUTHORIZED));
+           (BLE_GATT_PERM_READ_AUTHN |
+            BLE_GATT_PERM_READ_AUTHZ));
 }
 
 static void test_gap_service_characteristics(void) {
@@ -224,7 +224,7 @@ static void test_gap_service_characteristics(void) {
     mesh_gatt_gap_policy_update();
     assert(mesh_gatt.server.attributes[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
-           BLE_GATT_PERM_READ_AUTHENTICATED);
+           BLE_GATT_PERM_READ_AUTHN);
     assert(gatt_server_att(&mesh_gatt.server, read_name,
         sizeof(read_name), response, sizeof(response), &response_len) == 1);
     assert(response[0] == 0x01 && response[4] ==
