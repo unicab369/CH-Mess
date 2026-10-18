@@ -2,6 +2,64 @@
 #define BLE_GATT_SERVICE_DEVICE_H
 
 // Battery, Device Information, GAP, and time services.
+// Constant Tone Extension Service
+typedef struct {
+    uint16_t service_handle, enable_handle;
+    uint16_t minimum_length_handle, minimum_transmit_count_handle;
+    uint16_t transmit_duration_handle, interval_handle, phy_handle;
+} ble_gatt_constant_tone_extension_service;
+
+// Application facing
+// Add CTES, including advertising-channel controls when supported. The
+// application applies accepted writes to the Link Layer/advertising setup.
+static inline int gatt_constant_tone_extension_service_add(
+    ble_gatt_server *server, ble_gatt_constant_tone_extension_service *service,
+    uint8_t enable, uint8_t advertising_cte,
+    uint8_t minimum_length, uint8_t minimum_transmit_count,
+    uint8_t transmit_duration, uint16_t interval, uint8_t phy
+) {
+    if (!server || !service || (enable & 0xfc) || advertising_cte > 1 ||
+        (advertising_cte && (minimum_length < 2 || minimum_length > 20 ||
+            !minimum_transmit_count || minimum_transmit_count > 15 ||
+            interval < 6 || phy < 1 || phy > 3))
+    ) return 0;
+
+    uint8_t interval_value[2] = {
+        (uint8_t)interval, (uint8_t)(interval >> 8)
+    };
+    ble_gatt_sig_characteristic characteristics[6] = {
+        {0x2bad, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE, &enable, 1},
+        {0x2bae, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &minimum_length, 1},
+        {0x2baf, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &minimum_transmit_count, 1},
+        {0x2bb0, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &transmit_duration, 1},
+        {0x2bb1, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            interval_value, 2},
+        {0x2bb2, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE, &phy, 1}
+    };
+    uint8_t count = advertising_cte ? 6 : 1;
+    uint16_t values[6];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x184a, characteristics, count,
+            &service->service_handle, values, NULL)
+    ) return 0;
+
+    service->enable_handle = values[0];
+
+    if (advertising_cte) {
+        service->minimum_length_handle = values[1];
+        service->minimum_transmit_count_handle = values[2];
+        service->transmit_duration_handle = values[3];
+        service->interval_handle = values[4];
+        service->phy_handle = values[5];
+    }
+
+    return 1;
+}
+
 // Battery Service
 typedef struct {
     uint16_t service_handle, level_handle, level_cccd_handle;
@@ -1185,6 +1243,379 @@ static inline int gatt_elapsed_time_service_add(
 
     service->current_elapsed_time_handle = values[0];
     service->current_elapsed_time_cccd_handle = cccds[0];
+    return 1;
+}
+
+// Bluetooth Mesh Provisioning and Proxy services.
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_provisioning_service;
+
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_proxy_service;
+
+// Application facing
+// Add the Bluetooth Mesh Provisioning Service. The application handles the
+// provisioning protocol and sends Data Out notifications through the returned
+// characteristic and CCCD handles.
+static inline int gatt_mesh_provisioning_service_add(
+    ble_gatt_server *server, ble_gatt_mesh_provisioning_service *service
+) {
+    if (!service) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2adb, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 65, 1},
+        {0x2adc, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_service_add(server, 0x1827, chars, 2,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
+// Application facing
+// Add the Bluetooth Mesh Proxy Service. The application handles proxy PDU
+// processing and sends Data Out notifications using the returned handles.
+static inline int gatt_mesh_proxy_service_add(
+    ble_gatt_server *server, ble_gatt_mesh_proxy_service *service
+) {
+    if (!service) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2add, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 66, 1},
+        {0x2ade, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_service_add(server, 0x1828, chars, 2,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
+// Authorization Control Service
+typedef struct {
+    uint16_t service_handle, status_handle, status_cccd_handle;
+    uint16_t data_in_handle, data_out_notify_handle;
+    uint16_t data_out_notify_cccd_handle, data_out_indicate_handle;
+    uint16_t data_out_indicate_cccd_handle, control_point_handle;
+    uint16_t control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint16_t data_in_capacity, control_point_capacity;
+    uint8_t data_in_assembly_active, data_in_next_counter;
+    uint16_t data_in_assembly_len;
+    uint8_t data_in_assembly[BLE_GATT_SERVER_VALUE_MAX];
+    uint8_t data_in_pending;
+    uint16_t data_in_message_len;
+    uint8_t data_in_message[BLE_GATT_SERVER_VALUE_MAX];
+    uint8_t control_point_assembly_active, control_point_next_counter;
+    uint16_t control_point_assembly_len;
+    uint8_t control_point_assembly[BLE_GATT_SERVER_VALUE_MAX];
+    uint8_t control_point_pending, control_point_taken;
+    uint16_t control_point_message_len;
+    uint8_t control_point_message[BLE_GATT_SERVER_VALUE_MAX];
+} ble_gatt_authorization_control_service;
+
+static uint8_t gatt_authorization_control_data_in_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+static uint8_t gatt_authorization_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+
+static inline uint8_t gatt_authorization_control_receive_segment(
+    uint8_t *active, uint8_t *next_counter, uint16_t *assembly_len,
+    uint8_t *assembly, const uint8_t *value, uint16_t len,
+    uint8_t **complete, uint16_t *complete_len
+) {
+    if (!len || len > 21)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    uint8_t header = value[0];
+    uint8_t first = header & 1;
+    uint8_t last = (header >> 1) & 1;
+    uint8_t counter = header >> 2;
+    if (first) {
+        *active = 1;
+        *assembly_len = 0;
+        *next_counter = (uint8_t)((counter + 1) & 0x3f);
+    }
+    else if (!*active || counter != *next_counter) {
+        *active = 0;
+        *assembly_len = 0;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    else *next_counter = (uint8_t)((counter + 1) & 0x3f);
+
+    uint16_t payload_len = (uint16_t)(len - 1);
+    if (payload_len > BLE_GATT_SERVER_VALUE_MAX - *assembly_len) {
+        *active = 0;
+        *assembly_len = 0;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
+    }
+    if (payload_len) memcpy(assembly + *assembly_len, value + 1, payload_len);
+    *assembly_len = (uint16_t)(*assembly_len + payload_len);
+    if (last) {
+        *active = 0;
+        *complete = assembly;
+        *complete_len = *assembly_len;
+        return 1;
+    }
+    return 0;
+}
+
+static uint8_t gatt_authorization_control_data_in_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_authorization_control_service *service = context;
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (service->data_in_pending) return 0x80;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->data_in_handle);
+    if (!attribute || len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    uint8_t *complete = NULL;
+    uint16_t complete_len = 0;
+    uint8_t result = gatt_authorization_control_receive_segment(
+        &service->data_in_assembly_active, &service->data_in_next_counter,
+        &service->data_in_assembly_len, service->data_in_assembly, value, len,
+        &complete, &complete_len);
+    if (result > 1) return result;
+    if (result == 1) {
+        memcpy(service->data_in_message, complete, complete_len);
+        service->data_in_message_len = complete_len;
+        service->data_in_pending = 1;
+    }
+    return 0;
+}
+
+static uint8_t gatt_authorization_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_authorization_control_service *service = context;
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    ble_gatt_attribute *cccd = gatt_server_find(
+        service->server, service->control_point_cccd_handle);
+    if (!cccd || !(cccd->cccd & 2)) return 0xfd;
+    if (service->control_point_pending) return 0x80;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->control_point_handle);
+    if (!attribute || len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    uint8_t *complete = NULL;
+    uint16_t complete_len = 0;
+    uint8_t result = gatt_authorization_control_receive_segment(
+        &service->control_point_assembly_active,
+        &service->control_point_next_counter,
+        &service->control_point_assembly_len,
+        service->control_point_assembly, value, len,
+        &complete, &complete_len);
+    if (result > 1) return result;
+    if (result == 1) {
+        memcpy(service->control_point_message, complete, complete_len);
+        service->control_point_message_len = complete_len;
+        service->control_point_pending = 1;
+    }
+    return 0;
+}
+
+// Application facing
+// Add ACS attributes and bind segmented Data In/Control Point reassembly.
+static inline int gatt_authorization_control_service_add(
+    ble_gatt_server *server,
+    ble_gatt_authorization_control_service *service,
+    const uint8_t status[3], uint16_t data_capacity,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || !status || !data_capacity ||
+        data_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX
+    ) return 0;
+
+    uint8_t data_initial = 0;
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[5] = {
+        {0x2b2f, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ, status, 3},
+        {0x2b30, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b31, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b32, BLE_GATT_PROP_INDICATE, 1, 0,
+            &data_initial, 0, data_capacity, 1},
+        {0x2b33, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 0,
+            control_point_capacity, 1}
+    };
+    uint16_t values[5], cccds[5];
+    ble_gatt_sig_handlers handlers[5] = {0};
+    handlers[1].write = gatt_authorization_control_data_in_write;
+    handlers[1].context = service;
+    handlers[4].write = gatt_authorization_control_point_write;
+    handlers[4].context = service;
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add_with_handlers(server, 0x183d, characteristics,
+            5, &service->service_handle, values, cccds, handlers)
+    ) return 0;
+
+    service->status_handle = values[0];
+    service->status_cccd_handle = cccds[0];
+    service->data_in_handle = values[1];
+    service->data_out_notify_handle = values[2];
+    service->data_out_notify_cccd_handle = cccds[2];
+    service->data_out_indicate_handle = values[3];
+    service->data_out_indicate_cccd_handle = cccds[3];
+    service->control_point_handle = values[4];
+    service->control_point_cccd_handle = cccds[4];
+    service->server = server;
+    service->data_in_capacity = data_capacity;
+    service->control_point_capacity = control_point_capacity;
+    return 1;
+}
+
+static inline int gatt_authorization_control_service_take_data_in(
+    ble_gatt_authorization_control_service *service, uint8_t *payload,
+    uint16_t *inout_payload_len
+) {
+    if (!service || !service->data_in_pending || !payload ||
+        !inout_payload_len || *inout_payload_len < service->data_in_message_len)
+        return 0;
+    memcpy(payload, service->data_in_message, service->data_in_message_len);
+    *inout_payload_len = service->data_in_message_len;
+    service->data_in_pending = 0;
+    service->data_in_message_len = 0;
+    return 1;
+}
+
+static inline int gatt_authorization_control_service_take_control_point(
+    ble_gatt_authorization_control_service *service, uint8_t *payload,
+    uint16_t *inout_payload_len
+) {
+    if (!service || !service->control_point_pending ||
+        service->control_point_taken || !payload ||
+        !inout_payload_len ||
+        *inout_payload_len < service->control_point_message_len) return 0;
+    memcpy(payload, service->control_point_message,
+           service->control_point_message_len);
+    *inout_payload_len = service->control_point_message_len;
+    service->control_point_taken = 1;
+    return 1;
+}
+
+static inline int gatt_authorization_control_service_queue_payload(
+    ble_gatt_authorization_control_service *service, uint16_t handle,
+    const uint8_t *payload, uint16_t payload_len, uint8_t indication
+) {
+    if (!service || !service->server || !handle || !payload || !payload_len ||
+        payload_len > BLE_GATT_SERVER_VALUE_MAX) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server, handle);
+    if (!attribute || !(attribute->properties &
+            (indication ? BLE_GATT_PROP_INDICATE : BLE_GATT_PROP_NOTIFY)) ||
+        !attribute->value_capacity) return 0;
+    uint16_t chunk_limit = (uint16_t)(service->server->mtu - 4);
+    if (chunk_limit > attribute->value_capacity - 1)
+        chunk_limit = (uint16_t)(attribute->value_capacity - 1);
+    if (!chunk_limit) return 0;
+    uint16_t fragments = (uint16_t)((payload_len + chunk_limit - 1) /
+                                     chunk_limit);
+    if (fragments > BLE_GATT_SERVER_EVENT_QUEUE_SIZE -
+                    service->server->event_count ||
+        (uint32_t)payload_len + fragments >
+            BLE_GATT_SERVER_EVENT_BYTES - service->server->event_used) return 0;
+    uint16_t offset = 0;
+    uint8_t counter = 0;
+    do {
+        uint16_t chunk = (uint16_t)(payload_len - offset);
+        if (chunk > chunk_limit) chunk = chunk_limit;
+        uint8_t packet[BLE_GATT_ATT_VALUE_MAX];
+        uint8_t first = offset == 0;
+        uint8_t last = chunk == payload_len - offset;
+        packet[0] = (uint8_t)((counter << 2) | (first ? 1 : 0) |
+                              (last ? 2 : 0));
+        memcpy(packet + 1, payload + offset, chunk);
+        if (!gatt_queue_event(service->server, handle, packet,
+                (uint16_t)(chunk + 1), indication)) return 0;
+        offset = (uint16_t)(offset + chunk);
+        counter = (uint8_t)((counter + 1) & 0x3f);
+    } while (offset < payload_len);
+    return 1;
+}
+
+static inline int gatt_authorization_control_service_notify_data_out(
+    ble_gatt_authorization_control_service *service,
+    const uint8_t *payload, uint16_t payload_len
+) {
+    return gatt_authorization_control_service_queue_payload(service,
+        service ? service->data_out_notify_handle : 0,
+        payload, payload_len, 0);
+}
+
+static inline int gatt_authorization_control_service_indicate_data_out(
+    ble_gatt_authorization_control_service *service,
+    const uint8_t *payload, uint16_t payload_len
+) {
+    return gatt_authorization_control_service_queue_payload(service,
+        service ? service->data_out_indicate_handle : 0,
+        payload, payload_len, 1);
+}
+
+static inline int gatt_authorization_control_service_set_status(
+    ble_gatt_authorization_control_service *service, const uint8_t status[3],
+    uint8_t indicate
+) {
+    if (!service || !service->server || !status || indicate > 1) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                                                      service->status_handle);
+    if (!attribute || attribute->value_capacity != 3) return 0;
+    uint8_t *stored = gatt_attribute_value(service->server, attribute);
+    if (!stored) return 0;
+    memcpy(stored, status, 3);
+    if (!indicate) return 1;
+    return gatt_queue_event(service->server, service->status_handle,
+                                    status, 3, 1) == 1;
+}
+
+static inline int gatt_authorization_control_service_complete_control_point(
+    ble_gatt_authorization_control_service *service,
+    const uint8_t *response, uint16_t response_len
+) {
+    if (!service || !service->control_point_pending || !response ||
+        !response_len) return 0;
+    if (!gatt_authorization_control_service_queue_payload(service,
+            service->control_point_handle, response, response_len, 1)) return 0;
+    service->control_point_pending = 0;
+    service->control_point_taken = 0;
+    service->control_point_message_len = 0;
     return 1;
 }
 

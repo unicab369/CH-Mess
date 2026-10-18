@@ -1,6 +1,213 @@
 #ifndef BLE_GATT_SERVICE_AUDIO_H
 #define BLE_GATT_SERVICE_AUDIO_H
 
+// Gaming Audio
+typedef struct {
+    uint16_t service_handle, role_handle;
+    uint16_t unicast_game_gateway_features_handle;
+    uint16_t unicast_game_terminal_features_handle;
+    uint16_t broadcast_game_sender_features_handle;
+    uint16_t broadcast_game_receiver_features_handle;
+} ble_gatt_gaming_audio_service;
+
+// Application facing
+// Add GMAS role discovery and the role-specific feature characteristics.
+// Role bit order is UGG, UGT, BGS, BGR; only advertised roles are registered.
+static inline int gatt_gaming_audio_service_add(
+    ble_gatt_server *server, ble_gatt_gaming_audio_service *service,
+    uint8_t roles, uint8_t unicast_game_gateway_features,
+    uint8_t unicast_game_terminal_features,
+    uint8_t broadcast_game_sender_features,
+    uint8_t broadcast_game_receiver_features
+) {
+    if (!server || !service || !roles || (roles & 0xf0) ||
+        (unicast_game_gateway_features & 0xf8) ||
+        (unicast_game_terminal_features & 0x80) ||
+        (broadcast_game_sender_features & 0xfe) ||
+        (broadcast_game_receiver_features & 0xfc)
+    ) return 0;
+
+    uint8_t count = 1 + !!(roles & 0x01) + !!(roles & 0x02) +
+        !!(roles & 0x04) + !!(roles & 0x08);
+    ble_gatt_sig_characteristic characteristics[5] = {0};
+    uint8_t values[5] = {roles, unicast_game_gateway_features,
+        unicast_game_terminal_features, broadcast_game_sender_features,
+        broadcast_game_receiver_features};
+    uint8_t indexes[4] = {0xff, 0xff, 0xff, 0xff};
+    uint8_t i = 0;
+    characteristics[i++] = (ble_gatt_sig_characteristic){
+        0x2c00, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, &values[0], 1
+    };
+    const uint16_t feature_uuids[4] = {0x2c01, 0x2c02, 0x2c03, 0x2c04};
+    for (uint8_t role = 0; role < 4; role++) {
+        if (!(roles & (1u << role)))
+            continue;
+
+        indexes[role] = i;
+        characteristics[i] = (ble_gatt_sig_characteristic){
+            feature_uuids[role], BLE_GATT_PROP_READ, 0,
+            BLE_GATT_PERM_READ, &values[role + 1], 1
+        };
+        i++;
+    }
+
+    uint16_t value_handles[5];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x1858, characteristics, count,
+            &service->service_handle, value_handles, NULL)
+    ) return 0;
+
+    service->role_handle = value_handles[0];
+
+    if (indexes[0] != 0xff)
+        service->unicast_game_gateway_features_handle =
+            value_handles[indexes[0]];
+
+    if (indexes[1] != 0xff)
+        service->unicast_game_terminal_features_handle =
+            value_handles[indexes[1]];
+
+    if (indexes[2] != 0xff)
+        service->broadcast_game_sender_features_handle =
+            value_handles[indexes[2]];
+
+    if (indexes[3] != 0xff)
+        service->broadcast_game_receiver_features_handle =
+            value_handles[indexes[3]];
+    return 1;
+}
+
+
+// Audio Stream Control Service
+enum { GATT_ASCS_MAX_ASES = 8 };
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_ascs_endpoint;
+
+typedef struct {
+    uint8_t sink_count, source_count;
+    ble_gatt_ascs_endpoint sinks[GATT_ASCS_MAX_ASES];
+    ble_gatt_ascs_endpoint sources[GATT_ASCS_MAX_ASES];
+    uint16_t control_point_capacity;
+} ble_gatt_ascs_config;
+
+typedef struct {
+    uint16_t service_handle;
+    uint8_t sink_count, source_count;
+    uint16_t sink_handles[GATT_ASCS_MAX_ASES];
+    uint16_t sink_cccd_handles[GATT_ASCS_MAX_ASES];
+    uint16_t source_handles[GATT_ASCS_MAX_ASES];
+    uint16_t source_cccd_handles[GATT_ASCS_MAX_ASES];
+    uint16_t control_point_handle, control_point_cccd_handle;
+} ble_gatt_audio_stream_control_service;
+
+// Application facing
+// Add ASCS with caller-provided Sink ASEs, Source ASEs, and the mandatory ASE
+// Control Point. Values start with ASE_ID and ASE_State; the application
+// implements ASE state transitions and the ISO audio stream procedures.
+static inline int gatt_audio_stream_control_service_add(
+    ble_gatt_server *server, ble_gatt_audio_stream_control_service *service,
+    const ble_gatt_ascs_config *config
+) {
+    if (!server || !service || !config ||
+        !(config->sink_count + config->source_count) ||
+        config->sink_count > GATT_ASCS_MAX_ASES ||
+        config->source_count > GATT_ASCS_MAX_ASES ||
+        (uint16_t)config->sink_count + config->source_count >
+            GATT_ASCS_MAX_ASES ||
+        !config->control_point_capacity ||
+        config->control_point_capacity > BLE_GATT_SERVER_VALUE_MAX
+    ) return 0;
+
+    uint8_t ids[GATT_ASCS_MAX_ASES];
+    uint8_t id_count = 0;
+    for (uint8_t direction = 0; direction < 2; direction++) {
+        const ble_gatt_ascs_endpoint *endpoints = direction ?
+            config->sources : config->sinks;
+        uint8_t count = direction ? config->source_count : config->sink_count;
+        for (uint8_t i = 0; i < count; i++) {
+            const ble_gatt_ascs_endpoint *endpoint = &endpoints[i];
+
+            if (!endpoint->value || endpoint->value_len < 2 ||
+                endpoint->value_len > endpoint->value_capacity ||
+                endpoint->value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+                endpoint->value[0] == 0
+            ) return 0;
+
+            for (uint8_t j = 0; j < id_count; j++)
+                if (ids[j] == endpoint->value[0])
+                    return 0;
+
+            ids[id_count++] = endpoint->value[0];
+        }
+    }
+
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[GATT_ASCS_MAX_ASES + 1];
+    uint8_t endpoint_indexes[GATT_ASCS_MAX_ASES];
+    uint8_t index = 0, endpoint_index = 0;
+    for (uint8_t i = 0; i < config->sink_count; i++) {
+        const ble_gatt_ascs_endpoint *endpoint = &config->sinks[i];
+        endpoint_indexes[endpoint_index++] = index;
+        characteristics[index++] = (ble_gatt_sig_characteristic){
+            0x2bc4, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENC, endpoint->value,
+            endpoint->value_len, endpoint->value_capacity, 1
+        };
+    }
+    uint8_t source_start = endpoint_index;
+    for (uint8_t i = 0; i < config->source_count; i++) {
+        const ble_gatt_ascs_endpoint *endpoint = &config->sources[i];
+        endpoint_indexes[endpoint_index++] = index;
+        characteristics[index++] = (ble_gatt_sig_characteristic){
+            0x2bc5, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+            BLE_GATT_PERM_READ_ENC, endpoint->value,
+            endpoint->value_len, endpoint->value_capacity, 1
+        };
+    }
+    uint8_t control_point_index = index;
+    characteristics[index++] = (ble_gatt_sig_characteristic){
+        0x2bc6, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
+            BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_WRITE_ENC,
+        &control_point_initial, 0, config->control_point_capacity, 1
+    };
+    uint16_t value_handles[GATT_ASCS_MAX_ASES + 1];
+    uint16_t cccd_handles[GATT_ASCS_MAX_ASES + 1];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x184e, characteristics, index,
+            &service->service_handle, value_handles, cccd_handles)
+    ) return 0;
+
+    service->sink_count = config->sink_count;
+    service->source_count = config->source_count;
+    for (uint8_t i = 0; i < config->sink_count; i++) {
+        service->sink_handles[i] = value_handles[endpoint_indexes[i]];
+        service->sink_cccd_handles[i] = cccd_handles[endpoint_indexes[i]];
+    }
+
+    for (uint8_t i = 0; i < config->source_count; i++) {
+        uint8_t value_index = endpoint_indexes[source_start + i];
+        service->source_handles[i] = value_handles[value_index];
+        service->source_cccd_handles[i] = cccd_handles[value_index];
+    }
+    service->control_point_handle = value_handles[control_point_index];
+    service->control_point_cccd_handle = cccd_handles[control_point_index];
+    const uint16_t encrypted_cccd_permissions =
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
+    for (uint8_t i = 0; i < index; i++) {
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handles[i]);
+
+        if (cccd)
+            cccd->permissions = encrypted_cccd_permissions;
+    }
+    return 1;
+}
+
+
 // Microphone and Input Control: MICS, AICS
 
 typedef struct {

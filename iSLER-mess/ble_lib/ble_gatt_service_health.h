@@ -2,6 +2,78 @@
 #define BLE_GATT_SERVICE_HEALTH_H
 
 typedef struct {
+    uint16_t service_handle, spot_check_handle, spot_check_cccd_handle;
+    uint16_t continuous_handle, continuous_cccd_handle, feature_handle;
+    uint16_t record_access_handle, record_access_cccd_handle;
+} ble_gatt_pulse_oximeter_service;
+
+// Application facing
+// Add a Pulse Oximeter database. At least one measurement mode is required;
+// include_record_access should be set when spot-check records are stored.
+static inline int gatt_pulse_oximeter_service_add(
+    ble_gatt_server *server, ble_gatt_pulse_oximeter_service *service,
+    uint16_t features, uint8_t spot_check, uint8_t continuous,
+    uint8_t include_record_access
+) {
+    if (!service || (!spot_check && !continuous))
+        return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[2] = {(uint8_t)features, (uint8_t)(features >> 8)};
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[4];
+    uint8_t count = 0;
+
+    if (spot_check)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a5e, BLE_GATT_PROP_INDICATE, 1, 0,
+            &unused_value, 0, 0, 1};
+
+    if (continuous)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a5f, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &unused_value, 0, 0, 1};
+
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a60, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        feature, sizeof(feature)};
+
+    if (include_record_access)
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE,
+            &unused_value, 0, 0, 1};
+
+    uint16_t values[4], cccds[4];
+
+    if (!gatt_sig_service_add(server, 0x1822, chars, count,
+                              &service->service_handle, values, cccds)
+    ) return 0;
+
+    uint8_t i = 0;
+
+    if (spot_check) {
+        service->spot_check_handle = values[i];
+        service->spot_check_cccd_handle = cccds[i++];
+    }
+
+    if (continuous) {
+        service->continuous_handle = values[i];
+        service->continuous_cccd_handle = cccds[i++];
+    }
+
+    service->feature_handle = values[i++];
+
+    if (include_record_access) {
+        service->record_access_handle = values[i];
+        service->record_access_cccd_handle = cccds[i];
+    }
+
+    return 1;
+}
+
+
+typedef struct {
     uint8_t flags;
     // IEEE-11073 FLOAT wire value: signed exponent byte, then signed mantissa.
     uint32_t temperature;
@@ -27,6 +99,131 @@ typedef struct {
     uint8_t user_id;
     uint16_t measurement_status;
 } ble_gatt_intermediate_cuff_pressure;
+
+// Heart Rate Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t measurement_handle;
+    uint16_t measurement_cccd_handle;
+    uint16_t body_sensor_location_handle;
+} ble_gatt_heart_rate_service;
+
+// Application facing
+// Add the standard Heart Rate Service. Set body_sensor_location to 0xff to
+// omit the optional characteristic; otherwise use the assigned value 0..6.
+static inline int gatt_heart_rate_service_add(
+    ble_gatt_server *server, ble_gatt_heart_rate_service *service,
+    uint8_t body_sensor_location
+) {
+    if (!server || !service || server->database_sealed ||
+        (body_sensor_location != 0xff && body_sensor_location > 6)
+    ) return 0;
+
+    ble_gatt_uuid service_uuid = {2, {0x0d, 0x18}};
+    ble_gatt_uuid measurement_uuid = {2, {0x37, 0x2a}};
+    ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    memset(service, 0, sizeof(*service));
+
+    int added = gatt_server_add_service(server, &service_uuid, 1,
+                                         &service->service_handle) &&
+        gatt_add_characteristic(server, &measurement_uuid,
+            BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL, NULL,
+            &service->measurement_handle) &&
+        gatt_add_descriptor(server, &cccd_uuid,
+            BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+            NULL, 0, 0, NULL, NULL, NULL,
+            &service->measurement_cccd_handle);
+
+    if (added && body_sensor_location != 0xff) {
+        ble_gatt_uuid location_uuid = {2, {0x38, 0x2a}};
+        added = gatt_add_characteristic(server, &location_uuid,
+            BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
+            &body_sensor_location, 1, 1, NULL, NULL, NULL, NULL,
+            &service->body_sensor_location_handle);
+    }
+
+    if (!added) {
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+
+    return 1;
+}
+
+// Application facing
+// Encode a Heart Rate Measurement value. The output capacity bounds optional
+// RR Interval entries, and only complete 16-bit values are written.
+static inline int gatt_heart_rate_measurement_encode(
+    uint16_t heart_rate, int energy_expended_present,
+    uint16_t energy_expended, const uint16_t *rr_intervals,
+    uint8_t rr_interval_count, uint8_t *out, uint16_t capacity,
+    uint16_t *out_len
+) {
+    if (!out || !out_len || (rr_interval_count && !rr_intervals))
+        return 0;
+
+    *out_len = 0;
+    uint16_t base_len = (uint16_t)(1 + (heart_rate > 0xff ? 2 : 1) +
+                                   (energy_expended_present ? 2 : 0));
+
+    if (capacity < base_len) return 0;
+
+    uint8_t flags = 0;
+
+    if (heart_rate > 0xff)
+        flags |= 0x01;
+    if (energy_expended_present)
+        flags |= 0x08;
+    uint16_t count = (uint16_t)((capacity - base_len) / 2);
+
+    if (count > rr_interval_count)
+        count = rr_interval_count;
+
+    if (count) flags |= 0x10;
+
+    uint16_t offset = 0;
+    out[offset++] = flags;
+    out[offset++] = (uint8_t)heart_rate;
+
+    if (heart_rate > 0xff)
+        out[offset++] = (uint8_t)(heart_rate >> 8);
+
+    if (energy_expended_present) {
+        out[offset++] = (uint8_t)energy_expended;
+        out[offset++] = (uint8_t)(energy_expended >> 8);
+    }
+
+    for (uint16_t i = 0; i < count; i++) {
+        out[offset++] = (uint8_t)rr_intervals[i];
+        out[offset++] = (uint8_t)(rr_intervals[i] >> 8);
+    }
+    *out_len = offset;
+    return 1;
+}
+
+// Application facing
+// Encode a Heart Rate Measurement into caller storage and queue its notification.
+static inline int gatt_heart_rate_service_notify_measurement(
+    ble_gatt_server *server, const ble_gatt_heart_rate_service *service,
+    uint16_t heart_rate, int energy_expended_present,
+    uint16_t energy_expended, const uint16_t *rr_intervals,
+    uint8_t rr_interval_count, uint8_t *buffer, uint16_t capacity
+) {
+    uint16_t len;
+    if (!server || !service || !buffer ||
+        !gatt_heart_rate_measurement_encode(heart_rate,
+            energy_expended_present, energy_expended, rr_intervals,
+            rr_interval_count, buffer, capacity, &len)
+    ) return 0;
+
+    return gatt_queue_event(server, service->measurement_handle,
+                                   buffer, len, 0);
+}
 
 // Internal
 static inline int gatt_temp_encode(
@@ -1710,208 +1907,6 @@ static inline int gatt_csc_notify(
 
     return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 0);
-}
-
-typedef struct {
-    uint8_t flags;
-    uint16_t weight;
-    uint8_t timestamp[7];
-    uint8_t user_id;
-    uint16_t bmi, height;
-} ble_gatt_weight_measurement;
-
-// Internal
-static inline int gatt_weight_feature(
-    ble_gatt_server *server, uint16_t handle, uint16_t *features
-) {
-    if (!server || !handle || !features) return 0;
-    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-
-    if (!attribute || attribute->value_len < 2)
-        return 0;
-
-    const uint8_t *value = gatt_attribute_value(server, attribute);
-    if (!value) return 0;
-
-    *features = ble_get_le16(value);
-    return 1;
-}
-
-// Application facing
-// Encode and queue one Weight Measurement indication.
-static inline int gatt_weight_indicate(
-    ble_gatt_server *server, const ble_gatt_weight_scale_service *service,
-    const ble_gatt_weight_measurement *measurement
-) {
-    uint16_t features;
-
-    if (!service || !measurement || (measurement->flags & 0xf0) ||
-        !gatt_weight_feature(server, service->feature_handle,
-                                     &features) ||
-        ((measurement->flags & 0x02) && !(features & (1u << 0))) ||
-        ((measurement->flags & 0x04) && !(features & (1u << 1))) ||
-        ((measurement->flags & 0x08) && !(features & (1u << 2)))
-    ) return 0;
-
-    uint8_t value[15];
-    uint16_t len = 0;
-    value[len++] = measurement->flags;
-    ble_put_le16(value + len, measurement->weight);
-    len += 2;
-
-    if (measurement->flags & 0x02) {
-        memcpy(value + len, measurement->timestamp, 7);
-        len += 7;
-    }
-
-    if (measurement->flags & 0x04)
-        value[len++] = measurement->user_id;
-
-    if (measurement->flags & 0x08) {
-        ble_put_le16(value + len, measurement->bmi);
-        ble_put_le16(value + len + 2, measurement->height);
-        len += 4;
-    }
-
-    return gatt_queue_event(server, service->measurement_handle,
-                                   value, len, 1);
-}
-
-typedef struct {
-    uint16_t flags;
-    uint16_t body_fat_percentage;
-    uint8_t timestamp[7];
-    uint8_t user_id;
-    uint16_t basal_metabolism, muscle_percentage, muscle_mass;
-    uint16_t fat_free_mass, soft_lean_mass, body_water_mass;
-    uint16_t impedance, weight, height;
-} ble_gatt_body_composition_measurement;
-
-// Application facing
-// Queue a pre-encoded Body Composition Measurement indication.
-static inline int gatt_body_comp_indicate_value(
-    ble_gatt_server *server, const ble_gatt_body_composition_service *service,
-    const uint8_t *value, uint16_t len
-) {
-    if (!server || !service || !service->measurement_handle || !value || !len ||
-        server->mtu < 3 || len > server->mtu - 3
-    )
-        return 0;
-
-    return gatt_queue_event(server, service->measurement_handle,
-                                   value, len, 1);
-}
-
-// Internal
-static inline int gatt_body_comp_feature(
-    ble_gatt_server *server, uint16_t handle, uint32_t *features
-) {
-    if (!server || !handle || !features)
-        return 0;
-
-    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-
-    if (!attribute || attribute->value_len < 4)
-        return 0;
-
-    const uint8_t *value = gatt_attribute_value(server, attribute);
-
-    if (!value) return 0;
-
-    *features = (uint32_t)value[0] | (uint32_t)value[1] << 8 |
-        (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
-    return 1;
-}
-
-// Application facing
-// Encode and queue one feature-checked Body Composition Measurement.
-static inline int gatt_body_comp_indicate(
-    ble_gatt_server *server, const ble_gatt_body_composition_service *service,
-    const ble_gatt_body_composition_measurement *measurement
-) {
-    uint32_t features;
-
-    if (!service || !measurement || (measurement->flags & 0xf000) ||
-        !gatt_body_comp_feature(server, service->feature_handle,
-                                         &features) ||
-        ((measurement->flags & 0x0002) && !(features & (1u << 0))) ||
-        ((measurement->flags & 0x0004) && !(features & (1u << 1))) ||
-        ((measurement->flags & 0x0008) && !(features & (1u << 2))) ||
-        ((measurement->flags & 0x0010) && !(features & (1u << 3))) ||
-        ((measurement->flags & 0x0020) && !(features & (1u << 4))) ||
-        ((measurement->flags & 0x0040) && !(features & (1u << 5))) ||
-        ((measurement->flags & 0x0080) && !(features & (1u << 6))) ||
-        ((measurement->flags & 0x0100) && !(features & (1u << 7))) ||
-        ((measurement->flags & 0x0200) && !(features & (1u << 8))) ||
-        ((measurement->flags & 0x0400) && !(features & (1u << 9))) ||
-        ((measurement->flags & 0x0800) && !(features & (1u << 10))) ||
-        !server || server->mtu < 3
-    ) return 0;
-
-    uint8_t value[32];
-    uint16_t len = 0;
-    ble_put_le16(value + len, measurement->flags);
-    len += 2;
-    ble_put_le16(value + len, measurement->body_fat_percentage);
-    len += 2;
-
-    if (measurement->flags & 0x0002) {
-        memcpy(value + len, measurement->timestamp, 7);
-        len += 7;
-    }
-
-    if (measurement->flags & 0x0004)
-        value[len++] = measurement->user_id;
-
-    if (measurement->flags & 0x0008) {
-        ble_put_le16(value + len, measurement->basal_metabolism);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0010) {
-        ble_put_le16(value + len, measurement->muscle_percentage);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0020) {
-        ble_put_le16(value + len, measurement->muscle_mass);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0040) {
-        ble_put_le16(value + len, measurement->fat_free_mass);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0080) {
-        ble_put_le16(value + len, measurement->soft_lean_mass);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0100) {
-        ble_put_le16(value + len, measurement->body_water_mass);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0200) {
-        ble_put_le16(value + len, measurement->impedance);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0400) {
-        ble_put_le16(value + len, measurement->weight);
-        len += 2;
-    }
-
-    if (measurement->flags & 0x0800) {
-        ble_put_le16(value + len, measurement->height);
-        len += 2;
-    }
-
-    if (len > server->mtu - 3)
-        return 0;
-    return gatt_queue_event(server, service->measurement_handle,
-                                   value, len, 1);
 }
 
 typedef struct {
