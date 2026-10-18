@@ -77,8 +77,8 @@ int main(void) {
         {0x2a58, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
          analog_value, sizeof(analog_value)}
     };
-    ble_gatt_automation_io_service automation_io = {0};
-    assert(gatt_automation_io_service_add(&server, &automation_io,
+    ble_gatt_aio_service automation_io = {0};
+    assert(gatt_aio_add(&server, &automation_io,
         io_channels, 2, 1, BLE_GATT_PROP_READ));
     assert(automation_io.channel_count == 2 && automation_io.aggregate_handle);
     ble_gatt_attribute *aggregate = gatt_server_find(
@@ -92,8 +92,8 @@ int main(void) {
     assert(aggregate_value[3] ==
            (uint8_t)(automation_io.channel_handles[1] >> 8));
 
-    ble_gatt_binary_sensor_service binary_sensor = {0};
-    assert(gatt_binary_sensor_service_add(&server, &binary_sensor));
+    ble_gatt_bss_service binary_sensor = {0};
+    assert(gatt_bss_add(&server, &binary_sensor));
     assert(binary_sensor.service_handle && binary_sensor.control_point_handle &&
            binary_sensor.response_handle && binary_sensor.response_cccd_handle);
     assert(server.attrs[binary_sensor.control_point_handle - 1].uuid.value[0]

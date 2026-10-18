@@ -7,14 +7,15 @@ typedef struct {
     uint16_t service_handle;
     uint16_t value_handles[12], cccd_handles[12];
     uint8_t characteristic_count;
-} ble_gatt_cookware_service;
+} ble_gatt_cws_service;
 
 // Application facing
 // Add selected CWS characteristics from the assigned Cookware range. The
 // application chooses characteristics for its supported cooking features
 // and implements their value formats and recipe procedures.
-static inline int gatt_cookware_service_add(
-    ble_gatt_server *server, ble_gatt_cookware_service *service,
+// CWS means Cookware Service.
+static inline int gatt_cws_add(
+    ble_gatt_server *server, ble_gatt_cws_service *service,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count
 ) {
     if (!server || !service || !characteristics || !count || count > 12)
@@ -135,16 +136,17 @@ static inline int gatt_imd_service_add(
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle;
-} ble_gatt_body_composition_service;
+} ble_gatt_bcs_service;
 
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle;
-} ble_gatt_weight_scale_service;
+} ble_gatt_wss_service;
 
 // Application facing
-static inline int gatt_body_composition_service_add(
-    ble_gatt_server *server, ble_gatt_body_composition_service *service,
+// BCS means Body Composition Service.
+static inline int gatt_bcs_add(
+    ble_gatt_server *server, ble_gatt_bcs_service *service,
     uint32_t features
 ) {
     if (!server || !service || (features & ~0x7ffu)) return 0;
@@ -172,8 +174,9 @@ static inline int gatt_body_composition_service_add(
 }
 
 // Application facing
-static inline int gatt_weight_scale_service_add(
-    ble_gatt_server *server, ble_gatt_weight_scale_service *service,
+// WSS means Weight Scale Service.
+static inline int gatt_wss_add(
+    ble_gatt_server *server, ble_gatt_wss_service *service,
     uint16_t features
 ) {
     if (!server || !service || (features & (uint16_t)~0x03ffu)) return 0;
@@ -224,8 +227,9 @@ static inline int gatt_weight_feature(
 
 // Application facing
 // Encode and queue one Weight Measurement indication.
-static inline int gatt_weight_indicate(
-    ble_gatt_server *server, const ble_gatt_weight_scale_service *service,
+// WSS means Weight Scale Service.
+static inline int gatt_wss_indicate(
+    ble_gatt_server *server, const ble_gatt_wss_service *service,
     const ble_gatt_weight_measurement *measurement
 ) {
     uint16_t features;
@@ -270,12 +274,13 @@ typedef struct {
     uint16_t basal_metabolism, muscle_percentage, muscle_mass;
     uint16_t fat_free_mass, soft_lean_mass, body_water_mass;
     uint16_t impedance, weight, height;
-} ble_gatt_body_composition_measurement;
+} ble_gatt_bcs_measurement;
 
 // Application facing
 // Queue a pre-encoded Body Composition Measurement indication.
-static inline int gatt_body_comp_indicate_value(
-    ble_gatt_server *server, const ble_gatt_body_composition_service *service,
+// BCS means Body Composition Service.
+static inline int gatt_bcs_indicate_value(
+    ble_gatt_server *server, const ble_gatt_bcs_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || !service->measurement_handle || !value || !len ||
@@ -310,9 +315,10 @@ static inline int gatt_body_comp_feature(
 
 // Application facing
 // Encode and queue one feature-checked Body Composition Measurement.
-static inline int gatt_body_comp_indicate(
-    ble_gatt_server *server, const ble_gatt_body_composition_service *service,
-    const ble_gatt_body_composition_measurement *measurement
+// BCS means Body Composition Service.
+static inline int gatt_bcs_indicate(
+    ble_gatt_server *server, const ble_gatt_bcs_service *service,
+    const ble_gatt_bcs_measurement *measurement
 ) {
     uint32_t features;
 
@@ -409,7 +415,8 @@ typedef struct {
 // Add the mandatory TPMS Properties and Tire Pressure characteristics with
 // optional temperature, acceleration, duty-cycle, position, and signing key.
 // The application encodes each present value and handles TPMS signing.
-static inline int gatt_tpms_service_add(
+// TPMS means Tire Pressure Monitoring Service.
+static inline int gatt_tpms_add(
     ble_gatt_server *server, ble_gatt_tpms_service *service,
     const ble_gatt_service_value values_in[7]
 ) {
@@ -460,11 +467,12 @@ typedef struct {
     uint8_t measurement_count;
     uint16_t measurement_handles[8];
     uint16_t measurement_cccd_handles[8];
-} ble_gatt_environmental_sensing_service;
+} ble_gatt_ess_service;
 
 // Application facing
-static inline int gatt_environmental_sensing_service_add(
-    ble_gatt_server *server, ble_gatt_environmental_sensing_service *service,
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_add(
+    ble_gatt_server *server, ble_gatt_ess_service *service,
     const ble_gatt_sig_characteristic *measurements, uint8_t count
 ) {
     if (!server || !service || !measurements || !count || count > 8 ||
@@ -484,9 +492,10 @@ static inline int gatt_environmental_sensing_service_add(
 
 // Application facing
 // Update a stored Environmental Sensing measurement value.
-static inline int gatt_environmental_sensing_service_set_value(
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_set_value(
     ble_gatt_server *server,
-    const ble_gatt_environmental_sensing_service *service,
+    const ble_gatt_ess_service *service,
     uint8_t measurement_index, const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || measurement_index >= service->measurement_count ||
@@ -509,8 +518,9 @@ static inline int gatt_environmental_sensing_service_set_value(
 
 // Application facing
 // Queue a value for one caller-selected Environmental Sensing measurement.
-static inline int gatt_environmental_sensing_service_send(
-    ble_gatt_server *server, const ble_gatt_environmental_sensing_service *service,
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_send(
+    ble_gatt_server *server, const ble_gatt_ess_service *service,
     uint8_t measurement_index, const uint8_t *value, uint16_t len,
     int indication
 ) {
@@ -543,7 +553,7 @@ typedef struct {
     uint8_t request_pending, request_message_id, request_parameter_count;
     uint16_t request_len;
     uint8_t request[BLE_GATT_SERVER_VALUE_MAX];
-} ble_gatt_binary_sensor_service;
+} ble_gatt_bss_service;
 
 static uint8_t gatt_binary_sensor_control_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -591,7 +601,7 @@ static uint8_t gatt_binary_sensor_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
-    ble_gatt_binary_sensor_service *service = context;
+    ble_gatt_bss_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (offset) return ATT_ERR_INVALID_OFFSET;
@@ -651,8 +661,9 @@ static uint8_t gatt_binary_sensor_control_write(
 // Application facing
 // Add the Binary Sensor Control Point and Response attributes. Control Point
 // writes are reassembled and validated before they are exposed as requests.
-static inline int gatt_binary_sensor_service_add_full(
-    ble_gatt_server *server, ble_gatt_binary_sensor_service *service,
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_add_full(
+    ble_gatt_server *server, ble_gatt_bss_service *service,
     uint16_t control_point_capacity
 ) {
     if (!server || !service || !control_point_capacity ||
@@ -681,16 +692,18 @@ static inline int gatt_binary_sensor_service_add_full(
     return 1;
 }
 
-static inline int gatt_binary_sensor_service_add(
-    ble_gatt_server *server, ble_gatt_binary_sensor_service *service
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_add(
+    ble_gatt_server *server, ble_gatt_bss_service *service
 ) {
-    return gatt_binary_sensor_service_add_full(server, service, 20);
+    return gatt_bss_add_full(server, service, 20);
 }
 
 // Take one fully reassembled and validated Control Point message. The
 // returned bytes contain the BSS Message Header and parameter records.
-static inline int gatt_binary_sensor_service_take_request(
-    ble_gatt_binary_sensor_service *service, uint8_t *message,
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_take_request(
+    ble_gatt_bss_service *service, uint8_t *message,
     uint16_t *inout_len, uint8_t *message_id, uint8_t *parameter_count
 ) {
     if (!service || !service->request_pending || !message || !inout_len ||
@@ -707,8 +720,9 @@ static inline int gatt_binary_sensor_service_take_request(
 
 // Queue one complete response/event message. Long messages are segmented
 // according to the negotiated ATT MTU and BSS five-bit sequence field.
-static inline int gatt_binary_sensor_service_indicate_message(
-    ble_gatt_server *server, ble_gatt_binary_sensor_service *service,
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_indicate_message(
+    ble_gatt_server *server, ble_gatt_bss_service *service,
     const uint8_t *message, uint16_t message_len
 ) {
     if (!server || !service || !message || message_len < 2 ||

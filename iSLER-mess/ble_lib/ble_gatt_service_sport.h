@@ -15,17 +15,19 @@ typedef struct {
     uint8_t sensor_location, sampling_rate, control_point_pending_opcode;
     uint8_t control_point_request_count;
     uint8_t factory_calibration_date[7], factory_calibration_date_set;
-} ble_gatt_cycling_power_service;
+} ble_gatt_cps_service;
 
 // Internal
-static inline uint8_t gatt_cycling_power_cp_write(
+// CPS means Cycling Power Service.
+static inline uint8_t gatt_cps_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
 
 // Application facing
-static inline int gatt_cycling_power_service_add(
-    ble_gatt_server *server, ble_gatt_cycling_power_service *service,
+// CPS means Cycling Power Service.
+static inline int gatt_cps_add(
+    ble_gatt_server *server, ble_gatt_cps_service *service,
     uint32_t features, uint8_t sensor_location,
     int include_vector, int include_control_point
 ) {
@@ -95,7 +97,7 @@ static inline int gatt_cycling_power_service_add(
     ble_gatt_sig_handlers handlers[6] = {0};
 
     if (control_index != 0xff) {
-        handlers[control_index].write = gatt_cycling_power_cp_write;
+        handlers[control_index].write = gatt_cps_cp_write;
         handlers[control_index].context = service;
     }
 
@@ -140,12 +142,14 @@ typedef struct {
 } ble_gatt_csc_service;
 
 // Internal
+// CSC means Cycling Speed and Cadence Service.
 static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
 
-static inline int gatt_csc_service_add(
+// CSC means Cycling Speed and Cadence Service.
+static inline int gatt_csc_add(
     ble_gatt_server *server, ble_gatt_csc_service *service,
     uint16_t features, uint8_t sensor_location
 ) {
@@ -221,12 +225,14 @@ typedef struct {
 } ble_gatt_rsc_service;
 
 // Internal
+// RSC means Running Speed and Cadence Service.
 static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
 
-static inline int gatt_rsc_service_add(
+// RSC means Running Speed and Cadence Service.
+static inline int gatt_rsc_add(
     ble_gatt_server *server, ble_gatt_rsc_service *service,
     uint16_t features, uint8_t sensor_location
 ) {
@@ -324,7 +330,7 @@ typedef struct {
     uint16_t top_dead_spot_angle, bottom_dead_spot_angle;
     uint16_t accumulated_energy;
     uint16_t offset_compensation_indicator;
-} ble_gatt_cycling_power_measurement;
+} ble_gatt_cps_measurement;
 
 typedef struct {
     uint8_t flags;
@@ -335,7 +341,7 @@ typedef struct {
     uint8_t force_count;
     const int16_t *torque_magnitudes;
     uint8_t torque_count;
-} ble_gatt_cycling_power_vector;
+} ble_gatt_cps_vector;
 
 // Internal
 static inline int gatt_sport_feature16(
@@ -379,7 +385,8 @@ static inline int gatt_sport_feature32(
 }
 
 // Internal
-static inline int gatt_cycling_power_features_valid(
+// CPS means Cycling Power Service.
+static inline int gatt_cps_features_valid(
     uint16_t flags, uint32_t features
 ) {
     uint8_t context_torque = !!(features & (1u << 16));
@@ -400,7 +407,8 @@ static inline int gatt_cycling_power_features_valid(
         (!(flags & 0x1000) || (features & (1u << 8)));
 }
 
-static inline uint16_t gatt_cycling_power_content_mask(
+// CPS means Cycling Power Service.
+static inline uint16_t gatt_cps_content_mask(
     uint16_t flags, uint16_t mask
 ) {
     if (mask & (1u << 0)) flags &= (uint16_t)~0x0003;
@@ -417,21 +425,22 @@ static inline uint16_t gatt_cycling_power_content_mask(
 
 // Application facing
 // Encode and queue one Cycling Power Measurement notification.
-static inline int gatt_cycling_power_notify(
+// CPS means Cycling Power Service.
+static inline int gatt_cps_notify(
     ble_gatt_server *server,
-    const ble_gatt_cycling_power_service *service,
-    const ble_gatt_cycling_power_measurement *measurement
+    const ble_gatt_cps_service *service,
+    const ble_gatt_cps_measurement *measurement
 ) {
     uint32_t features;
 
     if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint16_t)~0x1fff) ||
         !gatt_sport_feature32(server, service->feature_handle, &features) ||
-        !gatt_cycling_power_features_valid(
-            gatt_cycling_power_content_mask(measurement->flags,
+        !gatt_cps_features_valid(
+            gatt_cps_content_mask(measurement->flags,
                 service->measurement_content_mask),
             features) ||
-        ((gatt_cycling_power_content_mask(measurement->flags,
+        ((gatt_cps_content_mask(measurement->flags,
             service->measurement_content_mask) & 0x0100) &&
          (measurement->maximum_angle > 0x0fff ||
           measurement->minimum_angle > 0x0fff))
@@ -439,7 +448,7 @@ static inline int gatt_cycling_power_notify(
 
     uint8_t value[36];
     uint16_t len = 0;
-    uint16_t flags = gatt_cycling_power_content_mask(
+    uint16_t flags = gatt_cps_content_mask(
         measurement->flags, service->measurement_content_mask);
     ble_put_le16(value + len, flags);
     len += 2;
@@ -516,10 +525,11 @@ static inline int gatt_cycling_power_notify(
 
 // Application facing
 // Encode and queue one Cycling Power Vector notification.
-static inline int gatt_cycling_power_notify_vector(
+// CPS means Cycling Power Service.
+static inline int gatt_cps_notify_vector(
     ble_gatt_server *server,
-    const ble_gatt_cycling_power_service *service,
-    const ble_gatt_cycling_power_vector *vector
+    const ble_gatt_cps_service *service,
+    const ble_gatt_cps_vector *vector
 ) {
     uint32_t features;
 
@@ -657,6 +667,7 @@ static inline int gatt_sport_location_store(
 }
 
 // Internal
+// RSC means Running Speed and Cadence Service.
 static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -742,6 +753,7 @@ static inline uint8_t gatt_rsc_cp_write(
 }
 
 // Internal
+// CSC means Cycling Speed and Cadence Service.
 static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -813,12 +825,13 @@ static inline uint8_t gatt_csc_cp_write(
 }
 
 // Internal
-static inline uint8_t gatt_cycling_power_cp_write(
+// CPS means Cycling Power Service.
+static inline uint8_t gatt_cps_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
     (void)command;
-    ble_gatt_cycling_power_service *service = context;
+    ble_gatt_cps_service *service = context;
 
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
@@ -1008,6 +1021,7 @@ static inline uint8_t gatt_cycling_power_cp_write(
 
 // Application facing
 // Configure the supported locations after adding RSC and before connection.
+// RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_set_locations(
     ble_gatt_rsc_service *service, uint32_t locations
 ) {
@@ -1026,6 +1040,7 @@ static inline int gatt_rsc_set_locations(
 
 // Application facing
 // Configure the supported locations after adding CSC and before connection.
+// CSC means Cycling Speed and Cadence Service.
 static inline int gatt_csc_set_locations(
     ble_gatt_csc_service *service, uint32_t locations
 ) {
@@ -1044,8 +1059,9 @@ static inline int gatt_csc_set_locations(
 
 // Application facing
 // Configure supported Cycling Power sensor locations before connection.
-static inline int gatt_cycling_power_set_locations(
-    ble_gatt_cycling_power_service *service, uint32_t locations
+// CPS means Cycling Power Service.
+static inline int gatt_cps_set_locations(
+    ble_gatt_cps_service *service, uint32_t locations
 ) {
     uint32_t features;
 
@@ -1063,8 +1079,9 @@ static inline int gatt_cycling_power_set_locations(
 // Reset connection-scoped CPS state after each new link. The specification
 // requires the Measurement Content mask to return to its default (no fields
 // disabled) for every connection.
-static inline void gatt_cycling_power_reset(
-    ble_gatt_cycling_power_service *service
+// CPS means Cycling Power Service.
+static inline void gatt_cps_reset(
+    ble_gatt_cps_service *service
 ) {
     if (!service) return;
 
@@ -1074,8 +1091,9 @@ static inline void gatt_cycling_power_reset(
 
 // Application facing
 // Complete an asynchronous Cycling Power Control Point procedure.
-static inline int gatt_cycling_power_control_complete(
-    ble_gatt_server *server, ble_gatt_cycling_power_service *service,
+// CPS means Cycling Power Service.
+static inline int gatt_cps_complete_control(
+    ble_gatt_server *server, ble_gatt_cps_service *service,
     uint8_t response, const uint8_t *parameters, uint16_t parameter_len
 ) {
     if (!server || !service || service->server != server ||
@@ -1099,8 +1117,9 @@ static inline int gatt_cycling_power_control_complete(
 
 // Application facing
 // Set the sampling rate returned by Cycling Power Control Point opcode 14.
-static inline void gatt_cycling_power_set_rate(
-    ble_gatt_cycling_power_service *service, uint8_t samples_per_second
+// CPS means Cycling Power Service.
+static inline void gatt_cps_set_rate(
+    ble_gatt_cps_service *service, uint8_t samples_per_second
 ) {
     if (service)
         service->sampling_rate = samples_per_second;
@@ -1108,8 +1127,9 @@ static inline void gatt_cycling_power_set_rate(
 
 // Application facing
 // Set the Factory Calibration Date characteristic and its Control Point value.
-static inline int gatt_cycling_power_set_cal_date(
-    ble_gatt_cycling_power_service *service, const uint8_t date[7]
+// CPS means Cycling Power Service.
+static inline int gatt_cps_set_cal_date(
+    ble_gatt_cps_service *service, const uint8_t date[7]
 ) {
     if (!service || !service->server || !service->factory_calibration_date_handle ||
         !date || !ble_get_le16(date) || !date[2] || date[2] > 12 ||
@@ -1134,6 +1154,7 @@ static inline int gatt_cycling_power_set_cal_date(
 
 // Application facing
 // Complete an RSC Start Calibration request and queue its response indication.
+// RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_calibration_complete(
     ble_gatt_server *server, ble_gatt_rsc_service *service, int success
 ) {
@@ -1154,6 +1175,7 @@ static inline int gatt_rsc_calibration_complete(
 
 // Application facing
 // Encode and queue one Running Speed and Cadence Measurement notification.
+// RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_notify(
     ble_gatt_server *server, const ble_gatt_rsc_service *service,
     const ble_gatt_rsc_measurement *measurement
@@ -1193,6 +1215,7 @@ static inline int gatt_rsc_notify(
 
 // Application facing
 // Encode and queue one Cycling Speed and Cadence Measurement notification.
+// CSC means Cycling Speed and Cadence Service.
 static inline int gatt_csc_notify(
     ble_gatt_server *server, const ble_gatt_csc_service *service,
     const ble_gatt_csc_measurement *measurement
@@ -1238,10 +1261,10 @@ typedef struct {
     uint16_t features_handle;
     uint16_t machine_data_handle;
     uint16_t machine_data_cccd_handle;
-} ble_gatt_fitness_machine_service;
+} ble_gatt_ftms_service;
 
 typedef struct {
-    ble_gatt_fitness_machine_service base;
+    ble_gatt_ftms_service base;
     uint16_t training_status_handle, training_status_cccd_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
     uint16_t supported_range_handles[5];
@@ -1251,7 +1274,7 @@ typedef struct {
     uint8_t control_point_pending, control_point_opcode;
     uint8_t control_point_parameter_len, control_point_request_count;
     uint8_t control_point_parameter[19];
-} ble_gatt_fitness_machine_controlled_service;
+} ble_gatt_ftms_controlled_service;
 
 typedef struct {
     // Optional supported ranges, ordered speed, inclination, resistance,
@@ -1261,7 +1284,7 @@ typedef struct {
     uint16_t training_status_len, training_status_capacity;
     uint16_t fitness_machine_status_capacity;
     uint16_t control_point_capacity;
-} ble_gatt_fitness_machine_options;
+} ble_gatt_ftms_options;
 
 enum {
     GATT_FTMS_OP_RESPONSE_CODE = 0x80,
@@ -1277,8 +1300,9 @@ enum {
 // characteristic. The application encodes machine data and sends its
 // notifications; optional ranges, training status, and remote control are
 // not included by this telemetry-only layout.
-static inline int gatt_fitness_machine_service_add(
-    ble_gatt_server *server, ble_gatt_fitness_machine_service *service,
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_add(
+    ble_gatt_server *server, ble_gatt_ftms_service *service,
     uint16_t machine_data_uuid, const uint8_t features[8],
     uint16_t machine_data_capacity
 ) {
@@ -1318,7 +1342,7 @@ static uint8_t gatt_fitness_machine_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
-    ble_gatt_fitness_machine_controlled_service *service = context;
+    ble_gatt_ftms_controlled_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
 
@@ -1358,9 +1382,10 @@ static uint8_t gatt_fitness_machine_control_write(
 // Application facing
 // Add Fitness Machine Data with optional Training Status and Control Point.
 // The application handles Training Status encoding and Control Point policy.
-static inline int gatt_fitness_machine_service_add_controlled(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_add_controlled(
     ble_gatt_server *server,
-    ble_gatt_fitness_machine_controlled_service *service,
+    ble_gatt_ftms_controlled_service *service,
     uint16_t machine_data_uuid, const uint8_t features[8],
     uint16_t machine_data_capacity, const uint8_t *training_status,
     uint16_t training_status_len, uint16_t training_status_capacity,
@@ -1445,12 +1470,13 @@ static inline int gatt_fitness_machine_service_add_controlled(
 // Point. Range values are the standard encoded 6-octet values, except Heart
 // Rate Range which is 3 octets. The application supplies status/data payloads
 // and retains Control Point policy.
-static inline int gatt_fitness_machine_service_add_full(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_add_full(
     ble_gatt_server *server,
-    ble_gatt_fitness_machine_controlled_service *service,
+    ble_gatt_ftms_controlled_service *service,
     uint16_t machine_data_uuid, const uint8_t features[8],
     uint16_t machine_data_capacity,
-    const ble_gatt_fitness_machine_options *options
+    const ble_gatt_ftms_options *options
 ) {
     static const uint16_t machine_data_uuids[6] = {
         0x2acd, 0x2ace, 0x2acf, 0x2ad0, 0x2ad1, 0x2ad2
@@ -1568,9 +1594,10 @@ static inline int gatt_fitness_machine_service_add_full(
 
 // Application facing
 // Add an encoded Training Status notification characteristic.
-static inline int gatt_fitness_machine_service_notify_training_status(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_notify_training(
     ble_gatt_server *server,
-    const ble_gatt_fitness_machine_controlled_service *service,
+    const ble_gatt_ftms_controlled_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server || !value || !len)
@@ -1589,9 +1616,10 @@ static inline int gatt_fitness_machine_service_notify_training_status(
 
 // Application facing
 // Queue an encoded Fitness Machine Status notification.
-static inline int gatt_fitness_machine_service_notify_status(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_notify_status(
     ble_gatt_server *server,
-    const ble_gatt_fitness_machine_controlled_service *service,
+    const ble_gatt_ftms_controlled_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server || !value || !len)
@@ -1609,9 +1637,10 @@ static inline int gatt_fitness_machine_service_notify_status(
 
 // Application facing
 // Complete a pending Fitness Machine Control Point request with an indication.
-static inline int gatt_fitness_machine_service_control_point_complete(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_complete_control_point(
     ble_gatt_server *server,
-    ble_gatt_fitness_machine_controlled_service *service,
+    ble_gatt_ftms_controlled_service *service,
     uint8_t result, const uint8_t *response_parameters,
     uint8_t response_parameter_len
 ) {
@@ -1643,9 +1672,10 @@ static inline int gatt_fitness_machine_service_control_point_complete(
 
 // Application facing
 // Queue one encoded Fitness Machine Data notification.
-static inline int gatt_fitness_machine_service_notify_data(
+// FTMS means Fitness Machine Service.
+static inline int gatt_ftms_notify_data(
     ble_gatt_server *server,
-    const ble_gatt_fitness_machine_service *service,
+    const ble_gatt_ftms_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || !value || !len)
@@ -2052,7 +2082,7 @@ static inline int gatt_pams_indicate_summary(
 // Application facing
 // Queue an encoded PAMS Session Descriptor indication.
 // PAMS means Physical Activity Monitor Service.
-static inline int gatt_pams_indicate_session_descriptor(
+static inline int gatt_pams_indicate_descriptor(
     ble_gatt_server *server,
     const ble_gatt_pams_service *service,
     const uint8_t *value, uint16_t len
@@ -2114,7 +2144,7 @@ static inline int gatt_pams_indicate_session(
 // Complete an Enquire or Get Ended Session Data procedure with its PAMS
 // success or error response opcode and response parameters.
 // PAMS means Physical Activity Monitor Service.
-static inline int gatt_pams_complete_control_point(
+static inline int gatt_pams_complete_cp(
     ble_gatt_server *server,
     ble_gatt_pams_service *service,
     uint8_t response_opcode, const uint8_t *parameters,

@@ -7,13 +7,14 @@ typedef struct {
     uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
     uint8_t channel_count;
     uint16_t channel_handles[8], channel_cccd_handles[8];
-} ble_gatt_automation_io_service;
+} ble_gatt_aio_service;
 
 // Application facing
 // Add Automation IO Digital and Analog characteristics, optionally including
 // an Aggregate characteristic whose value lists the channel value handles.
-static inline int gatt_automation_io_service_add(
-    ble_gatt_server *server, ble_gatt_automation_io_service *service,
+// AIO means Automation IO Service.
+static inline int gatt_aio_add(
+    ble_gatt_server *server, ble_gatt_aio_service *service,
     const ble_gatt_sig_characteristic *channels, uint8_t channel_count,
     uint8_t include_aggregate, uint8_t aggregate_properties
 ) {
@@ -119,7 +120,7 @@ typedef struct {
     uint16_t control_point_request_parameter;
     uint8_t fix_rate, navigation_command, navigation_running;
     uint8_t control_point_pending_opcode, control_point_request_count;
-} ble_gatt_location_navigation_service;
+} ble_gatt_lns_service;
 
 // Internal
 static inline int gatt_lns_feature32(
@@ -144,8 +145,9 @@ static inline int gatt_lns_feature32(
 
 // Application facing
 // Reset connection-scoped state when a new peer connection is established.
-static inline int gatt_location_navigation_service_reset_connection(
-    ble_gatt_server *server, ble_gatt_location_navigation_service *service
+// LNS means Location and Navigation Service.
+static inline int gatt_lns_reset_connection(
+    ble_gatt_server *server, ble_gatt_lns_service *service
 ) {
     if (!server || !service || service->server != server)
         return 0;
@@ -175,8 +177,9 @@ static inline void gatt_lns_put_le32(uint8_t *out, uint32_t value) {
 // Queue one Location and Speed notification. Fields are supplied in the
 // characteristic's fixed wire units; utc_time is the seven-byte Date Time
 // value when flag 6 is present.
-static inline int gatt_location_navigation_service_notify_location_speed(
-    ble_gatt_server *server, ble_gatt_location_navigation_service *service,
+// LNS means Location and Navigation Service.
+static inline int gatt_lns_notify_location(
+    ble_gatt_server *server, ble_gatt_lns_service *service,
     uint16_t flags, uint16_t instantaneous_speed, uint32_t total_distance,
     int32_t latitude, int32_t longitude, int32_t elevation,
     uint16_t heading, uint8_t rolling_time, const uint8_t *utc_time
@@ -256,8 +259,9 @@ static inline int gatt_location_navigation_service_notify_location_speed(
 
 // Application facing
 // Queue one Navigation notification using the standard field order.
-static inline int gatt_location_navigation_service_notify_navigation(
-    ble_gatt_server *server, ble_gatt_location_navigation_service *service,
+// LNS means Location and Navigation Service.
+static inline int gatt_lns_notify_nav(
+    ble_gatt_server *server, ble_gatt_lns_service *service,
     uint16_t flags, uint16_t bearing, uint16_t heading,
     uint32_t remaining_distance, int32_t remaining_vertical_distance,
     const uint8_t *estimated_time_of_arrival
@@ -354,7 +358,7 @@ static inline uint8_t gatt_lns_control_point_write(
     uint16_t len, uint8_t command
 ) {
     (void)command;
-    ble_gatt_location_navigation_service *service = context;
+    ble_gatt_lns_service *service = context;
 
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
@@ -483,8 +487,9 @@ static inline uint8_t gatt_lns_control_point_write(
 
 // Application facing
 // Complete an asynchronous LN Control Point route operation.
-static inline int gatt_location_navigation_service_control_point_complete(
-    ble_gatt_server *server, ble_gatt_location_navigation_service *service,
+// LNS means Location and Navigation Service.
+static inline int gatt_lns_complete_control(
+    ble_gatt_server *server, ble_gatt_lns_service *service,
     uint8_t response, const uint8_t *parameters, uint16_t parameter_len
 ) {
     uint8_t opcode = service ? service->control_point_pending_opcode : 0;
@@ -521,8 +526,9 @@ static inline uint8_t gatt_lns_control_point_write(
 );
 
 // Application facing
-static inline int gatt_location_navigation_service_add(
-    ble_gatt_server *server, ble_gatt_location_navigation_service *service,
+// LNS means Location and Navigation Service.
+static inline int gatt_lns_add(
+    ble_gatt_server *server, ble_gatt_lns_service *service,
     uint32_t features, int include_navigation,
     const uint8_t *position_quality, uint16_t position_quality_len,
     int include_control_point
@@ -652,7 +658,8 @@ typedef struct {
 // Add the HID core characteristics and up to eight Report characteristics.
 // Report type is 1 (input), 2 (output), or 3 (feature); report values and the
 // HID Report Map are copied into the server database.
-static inline int gatt_hid_service_add(
+// HID means Human Interface Device.
+static inline int gatt_hid_add(
     ble_gatt_server *server, ble_gatt_hid_service *service,
     const uint8_t information[4], const uint8_t *report_map,
     uint16_t report_map_len, uint8_t protocol_mode,
@@ -730,7 +737,8 @@ typedef struct {
 // Add HID ISO Properties and LE HID Operation Mode. Properties are the
 // caller-encoded Properties value; the application
 // implements mode switching and ISO report transport.
-static inline int gatt_hid_iso_service_add(
+// HID means Human Interface Device.
+static inline int gatt_hid_iso_add(
     ble_gatt_server *server, ble_gatt_hid_iso_service *service,
     const uint8_t *properties, uint16_t properties_len,
     const uint8_t *operation_mode,
@@ -779,7 +787,7 @@ typedef struct {
         const uint8_t *headers, uint16_t headers_len,
         const uint8_t *body, uint16_t body_len);
     void *request_validate_context;
-} ble_gatt_http_proxy_service;
+} ble_gatt_hps_service;
 
 enum {
     GATT_HTTP_PROXY_ERR_INVALID_REQUEST = 0x81,
@@ -796,7 +804,7 @@ static void gatt_http_proxy_value_written(
 ) {
     (void)value;
     (void)len;
-    ble_gatt_http_proxy_service *service = context;
+    ble_gatt_hps_service *service = context;
     if (!service) return;
     if (handle == service->uri_handle) service->uri_configured = 1;
     else if (handle == service->headers_handle)
@@ -814,7 +822,7 @@ static uint8_t gatt_http_proxy_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
-    ble_gatt_http_proxy_service *service = context;
+    ble_gatt_hps_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (offset) return ATT_ERR_INVALID_OFFSET;
@@ -882,8 +890,9 @@ static uint8_t gatt_http_proxy_control_write(
 
 // Application facing
 // Add the HTTP Proxy attributes and validate/capture HTTP request opcodes.
-static inline int gatt_http_proxy_service_add(
-    ble_gatt_server *server, ble_gatt_http_proxy_service *service,
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_add(
+    ble_gatt_server *server, ble_gatt_hps_service *service,
     uint16_t uri_capacity, uint16_t headers_capacity,
     uint16_t entity_body_capacity, uint16_t control_point_capacity
 ) {
@@ -941,8 +950,9 @@ static inline int gatt_http_proxy_service_add(
 
 // Install application validation for HTTP syntax, URI policy, and synchronous
 // network availability checks. Return zero to accept or an ATT error code.
-static inline int gatt_http_proxy_service_set_request_validator(
-    ble_gatt_http_proxy_service *service,
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_set_validator(
+    ble_gatt_hps_service *service,
     uint8_t (*validate)(void *context, uint8_t opcode,
         const uint8_t *uri, uint16_t uri_len,
         const uint8_t *headers, uint16_t headers_len,
@@ -955,8 +965,9 @@ static inline int gatt_http_proxy_service_set_request_validator(
     return 1;
 }
 
-static inline int gatt_http_proxy_service_take_request(
-    ble_gatt_http_proxy_service *service, uint8_t *opcode
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_take_request(
+    ble_gatt_hps_service *service, uint8_t *opcode
 ) {
     if (!service || !service->request_pending || service->request_taken ||
         !opcode) return 0;
@@ -965,8 +976,9 @@ static inline int gatt_http_proxy_service_take_request(
     return 1;
 }
 
-static inline int gatt_http_proxy_service_take_cancel(
-    ble_gatt_http_proxy_service *service
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_take_cancel(
+    ble_gatt_hps_service *service
 ) {
     if (!service || !service->cancel_requested) return 0;
     service->cancel_requested = 0;
@@ -975,8 +987,9 @@ static inline int gatt_http_proxy_service_take_cancel(
 
 // Complete one HTTP request. HPS sends the HTTP status code followed by the
 // three data-status flags defined by the service specification.
-static inline int gatt_http_proxy_service_complete_with_data_status(
-    ble_gatt_http_proxy_service *service, uint16_t status_code,
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_complete_with_data_status(
+    ble_gatt_hps_service *service, uint16_t status_code,
     uint8_t data_status
 ) {
     if (!service || !service->server || !service->request_pending ||
@@ -1001,8 +1014,9 @@ static inline int gatt_http_proxy_service_complete_with_data_status(
 // Convenience completion marks non-empty response fields as received. Use
 // complete_with_data_status() when the response was truncated or when an
 // empty response field was still received.
-static inline int gatt_http_proxy_service_complete(
-    ble_gatt_http_proxy_service *service, uint16_t status_code
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_complete(
+    ble_gatt_hps_service *service, uint16_t status_code
 ) {
     if (!service || !service->server) return 0;
     uint8_t data_status =
@@ -1010,12 +1024,13 @@ static inline int gatt_http_proxy_service_complete(
             GATT_HTTP_PROXY_DATA_STATUS_HEADERS_RECEIVED : 0) |
         (service->response_body_received ?
             GATT_HTTP_PROXY_DATA_STATUS_BODY_RECEIVED : 0);
-    return gatt_http_proxy_service_complete_with_data_status(
+    return gatt_hps_complete_with_data_status(
         service, status_code, data_status);
 }
 
-static inline int gatt_http_proxy_service_set_response_value(
-    ble_gatt_http_proxy_service *service, uint16_t handle,
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_set_response(
+    ble_gatt_hps_service *service, uint16_t handle,
     const uint8_t *value, uint16_t value_len
 ) {
     if (!service || !service->server || !service->request_pending ||
@@ -1037,8 +1052,9 @@ static inline int gatt_http_proxy_service_set_response_value(
 }
 
 // Clear per-client request state when the owning ATT link is reset.
-static inline void gatt_http_proxy_service_link_reset(
-    ble_gatt_http_proxy_service *service
+// HPS means HTTP Proxy Service.
+static inline void gatt_hps_link_reset(
+    ble_gatt_hps_service *service
 ) {
     if (!service || !service->server) return;
     const uint16_t handles[] = {service->uri_handle, service->headers_handle,
@@ -1065,8 +1081,9 @@ static inline void gatt_http_proxy_service_link_reset(
 
 // Report the validity of the HTTP server certificate for the active HTTPS URI.
 // Set this before completion so the client can read it before the status event.
-static inline int gatt_http_proxy_service_set_https_certificate_validity(
-    ble_gatt_http_proxy_service *service, uint8_t valid
+// HPS means HTTP Proxy Service.
+static inline int gatt_hps_set_cert_validity(
+    ble_gatt_hps_service *service, uint8_t valid
 ) {
     if (!service || !service->server || !service->request_pending ||
         service->request_opcode < 0x06 || valid > 1) return 0;
@@ -1107,7 +1124,7 @@ typedef struct {
     uint8_t oacp_prepare_active;
     uint8_t olcp_pending, olcp_taken, olcp_opcode, olcp_order;
     uint8_t olcp_parameter[6];
-} ble_gatt_object_transfer_service;
+} ble_gatt_ots_service;
 
 static uint8_t gatt_ots_oacp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -1147,7 +1164,7 @@ static inline int gatt_ots_features_valid(
 static uint8_t gatt_ots_oacp_prepare(
     void *context, uint16_t offset, const uint8_t *value, uint16_t len
 ) {
-    ble_gatt_object_transfer_service *service = context;
+    ble_gatt_ots_service *service = context;
     if (!service || (len && !value))
         return ATT_ERR_UNLIKELY_ERROR;
     if (!len || offset > sizeof(service->oacp_prepared) ||
@@ -1167,7 +1184,7 @@ static uint8_t gatt_ots_oacp_prepare(
 static uint8_t gatt_ots_oacp_prepare_commit_validate(
     void *context, const uint8_t *value, uint16_t len
 ) {
-    ble_gatt_object_transfer_service *service = context;
+    ble_gatt_ots_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (!len || len > 21)
@@ -1198,7 +1215,7 @@ static uint8_t gatt_ots_oacp_prepare_commit_validate(
 }
 
 static inline int gatt_ots_bind_oacp_long_write(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     uint16_t handle
 ) {
     return gatt_set_prepare(server, handle,
@@ -1208,7 +1225,7 @@ static inline int gatt_ots_bind_oacp_long_write(
 }
 
 static void gatt_ots_oacp_execute(void *context, uint8_t commit) {
-    ble_gatt_object_transfer_service *service = context;
+    ble_gatt_ots_service *service = context;
     if (!service) return;
     if (commit) {
         uint16_t len = 0;
@@ -1231,7 +1248,7 @@ static uint8_t gatt_ots_oacp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
-    ble_gatt_object_transfer_service *service = context;
+    ble_gatt_ots_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (offset) return ATT_ERR_INVALID_OFFSET;
@@ -1283,8 +1300,9 @@ static uint8_t gatt_ots_oacp_write(
     return 0;
 }
 
-static inline int gatt_object_transfer_service_take_oacp_request(
-    ble_gatt_object_transfer_service *service, uint8_t *opcode,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_take_oacp_request(
+    ble_gatt_ots_service *service, uint8_t *opcode,
     uint8_t *parameters, uint16_t *inout_parameter_len
 ) {
     if (!service || !service->request_pending || service->request_taken || !opcode ||
@@ -1301,8 +1319,9 @@ static inline int gatt_object_transfer_service_take_oacp_request(
 }
 
 // Complete an accepted OACP request with a standard response indication.
-static inline int gatt_object_transfer_service_oacp_complete(
-    ble_gatt_object_transfer_service *service, uint8_t result_code,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_oacp_complete(
+    ble_gatt_ots_service *service, uint8_t result_code,
     const uint8_t *response_parameter, uint16_t response_parameter_len
 ) {
     if (!service || !service->server || !service->request_pending ||
@@ -1335,7 +1354,7 @@ static uint8_t gatt_ots_olcp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
-    ble_gatt_object_transfer_service *service = context;
+    ble_gatt_ots_service *service = context;
     if (!service || !service->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (offset) return ATT_ERR_INVALID_OFFSET;
@@ -1376,8 +1395,9 @@ static uint8_t gatt_ots_olcp_write(
     return 0;
 }
 
-static inline int gatt_object_transfer_service_take_olcp_request(
-    ble_gatt_object_transfer_service *service, uint8_t *opcode,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_take_olcp_request(
+    ble_gatt_ots_service *service, uint8_t *opcode,
     uint8_t object_id[6]
 ) {
     if (!service || !service->olcp_pending || service->olcp_taken || !opcode ||
@@ -1389,8 +1409,9 @@ static inline int gatt_object_transfer_service_take_olcp_request(
     return 1;
 }
 
-static inline int gatt_object_transfer_service_get_olcp_order(
-    const ble_gatt_object_transfer_service *service, uint8_t *order
+// OTS means Object Transfer Service.
+static inline int gatt_ots_get_olcp_order(
+    const ble_gatt_ots_service *service, uint8_t *order
 ) {
     if (!service || !service->olcp_pending || !service->olcp_taken ||
         service->olcp_opcode != 0x06 || !order) return 0;
@@ -1398,8 +1419,9 @@ static inline int gatt_object_transfer_service_get_olcp_order(
     return 1;
 }
 
-static inline int gatt_object_transfer_service_olcp_complete(
-    ble_gatt_object_transfer_service *service, uint8_t result_code,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_olcp_complete(
+    ble_gatt_ots_service *service, uint8_t result_code,
     uint32_t object_count
 ) {
     if (!service || !service->server || !service->olcp_pending ||
@@ -1431,8 +1453,9 @@ static inline int gatt_object_transfer_service_olcp_complete(
 // Add the single-object OTS layout. Multi-object servers also need Object ID,
 // OLCP, and the Object List Filter characteristics. The application handles
 // OACP procedures and the separate L2CAP object-transfer channel.
-static inline int gatt_object_transfer_service_add_type_full(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_type_full(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
@@ -1509,8 +1532,9 @@ static inline int gatt_object_transfer_service_add_type_full(
         service->action_control_point_handle);
 }
 
-static inline int gatt_object_transfer_service_add_type(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_type(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
@@ -1518,33 +1542,35 @@ static inline int gatt_object_transfer_service_add_type(
     const uint8_t object_properties[4]
 ) {
     static const uint8_t unknown_date[7] = {0};
-    return gatt_object_transfer_service_add_type_full(server, service,
+    return gatt_ots_add_type_full(server, service,
         primary_service, features, object_name, object_name_len, object_type,
         object_type_len, object_size, unknown_date, unknown_date, 1,
         object_properties);
 }
 
-static inline int gatt_object_transfer_service_add(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
     const uint8_t object_properties[4]
 ) {
-    return gatt_object_transfer_service_add_type(server, service, 1,
+    return gatt_ots_add_type(server, service, 1,
         features, object_name, object_name_len, object_type, object_type_len,
         object_size, object_properties);
 }
 
 // Add the secondary OTS instance required when an MCS references OTS objects.
-static inline int gatt_object_transfer_service_add_secondary(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_secondary(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
     const uint8_t object_properties[4]
 ) {
-    return gatt_object_transfer_service_add_type(server, service, 0,
+    return gatt_ots_add_type(server, service, 0,
         features, object_name, object_name_len, object_type, object_type_len,
         object_size, object_properties);
 }
@@ -1553,8 +1579,9 @@ static inline int gatt_object_transfer_service_add_secondary(
 // Add the multi-object OTS attributes to the single-object OTS layout. The
 // caller owns the Object List Filter state and implements OACP/OLCP procedures
 // and object transfers.
-static inline int gatt_object_transfer_service_add_multi_object_type_full(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_multi_type_full(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
@@ -1679,8 +1706,9 @@ static inline int gatt_object_transfer_service_add_multi_object_type_full(
     return 1;
 }
 
-static inline int gatt_object_transfer_service_add_multi_object_type(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_multi_type(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     uint8_t primary_service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
@@ -1690,15 +1718,16 @@ static inline int gatt_object_transfer_service_add_multi_object_type(
     uint16_t filter_capacity
 ) {
     static const uint8_t unknown_date[7] = {0};
-    return gatt_object_transfer_service_add_multi_object_type_full(server,
+    return gatt_ots_add_multi_type_full(server,
         service, primary_service, features, object_name, object_name_len,
         object_type, object_type_len, object_size, unknown_date, unknown_date,
         1, object_properties, object_id, object_list_filter, filter_len,
         filter_capacity);
 }
 
-static inline int gatt_object_transfer_service_set_object_list_filter(
-    ble_gatt_object_transfer_service *service, uint8_t index,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_set_list_filter(
+    ble_gatt_ots_service *service, uint8_t index,
     const uint8_t *filter, uint16_t filter_len
 ) {
     if (!service || !service->server || index >= 3 ||
@@ -1716,8 +1745,9 @@ static inline int gatt_object_transfer_service_set_object_list_filter(
     return 1;
 }
 
-static inline int gatt_object_transfer_service_set_current_object_metadata(
-    ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_set_object_metadata(
+    ble_gatt_ots_service *service,
     const uint8_t *name, uint16_t name_len,
     const uint8_t *type, uint8_t type_len,
     const uint8_t size[8], const uint8_t first_created[7],
@@ -1758,8 +1788,9 @@ static inline int gatt_object_transfer_service_set_current_object_metadata(
     return 1;
 }
 
-static inline int gatt_object_transfer_service_add_multi_object(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_multi(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
@@ -1767,15 +1798,16 @@ static inline int gatt_object_transfer_service_add_multi_object(
     const uint8_t *object_list_filter, uint16_t filter_len,
     uint16_t filter_capacity
 ) {
-    return gatt_object_transfer_service_add_multi_object_type(server, service,
+    return gatt_ots_add_multi_type(server, service,
         1, features, object_name, object_name_len, object_type,
         object_type_len, object_size, object_properties, object_id,
         object_list_filter, filter_len, filter_capacity);
 }
 
 // Add a secondary multi-object OTS to be included by MCS or another profile.
-static inline int gatt_object_transfer_service_add_multi_object_secondary(
-    ble_gatt_server *server, ble_gatt_object_transfer_service *service,
+// OTS means Object Transfer Service.
+static inline int gatt_ots_add_multi_secondary(
+    ble_gatt_server *server, ble_gatt_ots_service *service,
     const uint8_t features[8], const uint8_t *object_name,
     uint16_t object_name_len, const uint8_t *object_type,
     uint8_t object_type_len, const uint8_t object_size[8],
@@ -1783,7 +1815,7 @@ static inline int gatt_object_transfer_service_add_multi_object_secondary(
     const uint8_t *object_list_filter, uint16_t filter_len,
     uint16_t filter_capacity
 ) {
-    return gatt_object_transfer_service_add_multi_object_type(server, service,
+    return gatt_ots_add_multi_type(server, service,
         0, features, object_name, object_name_len, object_type,
         object_type_len, object_size, object_properties, object_id,
         object_list_filter, filter_len, filter_capacity);
@@ -1800,7 +1832,8 @@ typedef struct {
 // Key Material, Response Key Material, Current Absolute Time, Display Info,
 // Image Info, Sensor Info, LED Info, and Control Point. The application
 // implements ESL synchronization, PAwR, key handling, and control commands.
-static inline int gatt_esl_service_add(
+// ESL means Electronic Shelf Label Service.
+static inline int gatt_esl_add(
     ble_gatt_server *server, ble_gatt_esl_service *service,
     const ble_gatt_service_value values_in[9]
 ) {

@@ -49,7 +49,7 @@ server's `mtu - 3` so optional RR Interval entries are omitted as whole
 Use its Alert Status and Ringer Setting setters to update readable values, or
 their corresponding notification helpers to update and queue a notification.
 
-Additional concrete builders include `gatt_hid_service_add()` for the HID
+Additional concrete builders include `gatt_hid_add()` for the HID
 core characteristics and caller-provided Report Map/Reports,
 `gatt_internet_protocol_support_service_add()` for the characteristic-free
 IP Support service, `gatt_transport_discovery_service_add()` for the optional
@@ -137,7 +137,7 @@ captured in `control_point_opcode`, `control_point_parameter`, and
 `control_point_parameter_len`; the application supplies session storage and
 handles the requested procedure. Complete Enquire Sessions, Enquire
 Sub-sessions, and Get Ended Session Data with
-`gatt_pams_complete_control_point()` after
+`gatt_pams_complete_cp()` after
 queueing their data indications. Finish Start, Stop, Delete Ended Session, and
 Set Average Activity Type with
 `gatt_pams_finish_request()` after updating
@@ -145,7 +145,7 @@ session state and queuing any required indications.
 `gatt_pams_notify_activity()` queues
 encoded Instantaneous Activity Data.
 `gatt_pams_indicate_summary()` and
-`gatt_pams_indicate_session_descriptor()` queue
+`gatt_pams_indicate_descriptor()` queue
 the corresponding indications. Use
 `gatt_pams_set_session()` to update the
 readable 17-byte session value and
@@ -167,50 +167,50 @@ bits. Update the active preset in the database with
 with `gatt_hearing_access_service_notify_active_preset_index()`.
 `gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
 characteristics for each advertised GMAP role.
-`gatt_object_transfer_service_add()` registers the single-object OTS metadata
+`gatt_ots_add()` registers the single-object OTS metadata
 and OACP characteristics, including First-Created and Last-Modified. It assumes
 the server has a real-time clock; use
-`gatt_object_transfer_service_add_type_full()` to provide initial date values
+`gatt_ots_add_type_full()` to provide initial date values
 and select the correct Last-Modified write property for servers without a
 clock. OACP supports reliable writes for requests that exceed the negotiated
 ATT Write Request size, including 128-bit Object Type Create requests. Use
-`gatt_object_transfer_service_add_multi_object()` for the multi-object layout,
+`gatt_ots_add_multi()` for the multi-object layout,
 which also registers Object ID, OLCP, and all three Object List Filter
 instances. The caller
 supplies the initial values. OACP requests are feature-gated, length-checked,
-and captured by `gatt_object_transfer_service_take_oacp_request()`; the
+and captured by `gatt_ots_take_oacp_request()`; the
 application performs object operations and responds through
-`gatt_object_transfer_service_oacp_complete()`. Multi-object OLCP requests are
-feature-gated and captured by `gatt_object_transfer_service_take_olcp_request()`;
+`gatt_ots_oacp_complete()`. Multi-object OLCP requests are
+feature-gated and captured by `gatt_ots_take_olcp_request()`;
 all eight assigned opcodes are supported. Read the Order parameter with
-`gatt_object_transfer_service_get_olcp_order()` and complete procedures with
-`gatt_object_transfer_service_olcp_complete()`; Request Number of Objects is
+`gatt_ots_get_olcp_order()` and complete procedures with
+`gatt_ots_olcp_complete()`; Request Number of Objects is
 opcode `0x07`. Configure each filter instance with
-`gatt_object_transfer_service_set_object_list_filter()`. The application
+`gatt_ots_set_list_filter()`. The application
 supplies object-list behavior, object storage, and the separate L2CAP object
 transfer channel. Update the visible selected-object attributes atomically with
-`gatt_object_transfer_service_set_current_object_metadata()` before completing
+`gatt_ots_set_object_metadata()` before completing
 an OACP or OLCP operation. The multi-object `..._type_full()` builder also accepts
 initial date values and the real-time-clock capability.
-`gatt_fitness_machine_service_add()` registers Fitness Machine Feature and one
+`gatt_ftms_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
 telemetry and queues it with
-`gatt_fitness_machine_service_notify_data()`. Use
-`gatt_fitness_machine_service_add_controlled()` to also add optional Training
+`gatt_ftms_notify_data()`. Use
+`gatt_ftms_add_controlled()` to also add optional Training
 Status and Fitness Machine Control Point characteristics. The application
 queues data through `service.base` and provides encoded Training Status values.
 Control Point writes are saved in `control_point_opcode`,
 `control_point_parameter`, and `control_point_parameter_len`; the application
 handles each request and completes it with
-`gatt_fitness_machine_service_control_point_complete()`. The simpler
+`gatt_ftms_complete_control_point()`. The simpler
 controlled builder omits the optional Supported Range and Fitness Machine
-Status characteristics. Use `gatt_fitness_machine_service_add_full()` for
+Status characteristics. Use `gatt_ftms_add_full()` for
 feature-matched Supported
 Speed, Inclination, Resistance, Heart Rate, and Power Range characteristics,
 plus Fitness Machine Status when the Control Point is enabled (required in that
 case by FTMS). Range payloads are read-only standard encoded values; queue
 status updates with
-`gatt_fitness_machine_service_notify_status()`.
+`gatt_ftms_notify_status()`.
 `gatt_idd_add()` registers the mandatory authorized IDD
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement
@@ -225,8 +225,8 @@ Player Name notifications. Use `gatt_media_control_service_add_full()` to add
 optional playback/order values, the paired Media Control Point and Supported
 Opcodes, OTS-backed Object IDs, Icon URL, and Search Control Point/Results.
 Register OTS first as a secondary service with
-`gatt_object_transfer_service_add_secondary()` or
-`gatt_object_transfer_service_add_multi_object_secondary()` and pass its handle
+`gatt_ots_add_secondary()` or
+`gatt_ots_add_multi_secondary()` and pass its handle
 in the MCS optional config; the builder inserts the Include declaration. The
 builder validates feature dependencies, Object ID sizes, supported opcode and
 playing-order bitfields, and search request framing. Control Point and Search
@@ -254,18 +254,18 @@ mandatory Available and Supported Audio Contexts characteristics.
 `gatt_audio_stream_control_service_add()` registers caller-provided Sink and
 Source ASE instances and the ASE Control Point. The application supplies the
 LE Audio state machines, codec configuration, and ISO stream handling.
-`gatt_esl_service_add()` registers the nine ESL characteristics, including the
+`gatt_esl_add()` registers the nine ESL characteristics, including the
 Control Point CCCD. The application implements ESL key setup, PAwR, and
 control-point procedures. `gatt_imd_service_add()` registers permitted live
 measurement characteristics and optional status characteristics;
 measurement descriptors and history behavior remain application-defined.
-`gatt_hid_iso_service_add()` registers HID ISO Properties and LE HID Operation
+`gatt_hid_iso_add()` registers HID ISO Properties and LE HID Operation
 Mode; the application implements mode switching and ISO report transport.
-`gatt_cookware_service_add()` accepts any unique subset of all twelve assigned
+`gatt_cws_add()` accepts any unique subset of all twelve assigned
 Cookware characteristic UUIDs; the caller supplies each value, property set,
 and application procedure behavior. `gatt_voice_assistant_service_add()` builds the common Voice
 Assistant or Generic Voice Assistant session layout. Both require application
-logic for their protocol procedures. `gatt_tpms_service_add()` registers TPMS
+logic for their protocol procedures. `gatt_tpms_add()` registers TPMS
 Properties, Tire Pressure, and selected optional sensor values; the application
 encodes values and handles signing. Mesh Proxy Solicitation uses advertising
 PDUs/service data and has no GATT attribute database to register.
@@ -318,7 +318,7 @@ Additional service database builders are available:
   layouts and captures requests in the service state; the application runs
   its record operation and calls `gatt_gls_racp_complete()` with
   the result (and record count for Report Number).
-- `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
+- `gatt_rsc_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_notify()` encodes and queues
   feature-checked measurements. Its SC Control Point validates and applies
   cumulative-distance and sensor-location requests, and exposes calibration
@@ -351,55 +351,55 @@ Additional service builders include:
   and updates the service state; the application applies it to its scanner.
   Call `gatt_scan_parameters_service_notify_refresh()` when the client should
   refresh its scan parameters.
-- `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
+- `gatt_csc_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
   `gatt_csc_notify()` encodes and queues feature-checked
   wheel and crank measurements. The control point handles cumulative wheel
   revolutions, sensor-location changes, and supported-location requests.
   Configure each service's supported-location mask before accepting
   connections when its multiple-location feature is set.
-- `gatt_cycling_power_service_add()` registers Cycling Power Measurement,
+- `gatt_cps_add()` registers Cycling Power Measurement,
   Feature, Sensor Location, and optional Vector and Control Point
-  characteristics. `gatt_cycling_power_notify()` encodes
+  characteristics. `gatt_cps_notify()` encodes
   all defined measurement fields and checks them against the Feature value.
-  `gatt_cycling_power_notify_vector()` encodes one MTU-bounded Vector
+  `gatt_cps_notify_vector()` encodes one MTU-bounded Vector
   packet. For continuation packets, pass the remaining samples and clear the
   First Crank Measurement Angle flag. Its
   Control Point handles cumulative wheel count, sensor location, crank/chain
   settings, measurement content masking, sampling-rate and calibration-date
   requests. Offset compensation procedures are completed by the application
-  with `gatt_cycling_power_control_complete()`. Configure
+  with `gatt_cps_complete_control()`. Configure
   supported locations, sampling rate, and factory calibration date before
   accepting connections when those features are used. The service state keeps
   the latest Control Point cumulative count and adjustable crank/chain values;
   use those values when producing subsequent measurements. Call
-  `gatt_cycling_power_reset()` on each new connection so
+  `gatt_cps_reset()` on each new connection so
   the optional Measurement Content mask returns to its default.
-- `gatt_location_navigation_service_add()` for LN Feature and Location and
+- `gatt_lns_add()` for LN Feature and Location and
   Speed, with optional Navigation, Position Quality, and Control Point. The
   builder checks Position Quality field lengths and feature-bit consistency.
-  `gatt_location_navigation_service_notify_location_speed()` and
-  `gatt_location_navigation_service_notify_navigation()` encode notifications,
+  `gatt_lns_notify_location()` and
+  `gatt_lns_notify_nav()` encode notifications,
   apply the content mask, check feature support, and reject values that exceed
   the negotiated MTU. Call
-  `gatt_location_navigation_service_reset_connection()` on each new connection
+  `gatt_lns_reset_connection()` on each new connection
   so the Location and Speed mask does not carry over between peers.
   The Control Point handles distance, content mask, navigation command, fix
   rate, and elevation requests. Route operations are completed through
-  `gatt_location_navigation_service_control_point_complete()`; the requested
+  `gatt_lns_complete_control()`; the requested
   route number is kept in the service state. The Navigation characteristic
   uses notifications, and each Control Point operation is gated by its LN
   Feature bit or optional Navigation characteristic as required.
-- `gatt_environmental_sensing_service_add()` for caller-selected permitted
+- `gatt_ess_add()` for caller-selected permitted
   environmental measurement characteristics. Use
-  `gatt_environmental_sensing_service_set_value()` to update a stored
-  measurement and `gatt_environmental_sensing_service_send()` to queue a
+  `gatt_ess_set_value()` to update a stored
+  measurement and `gatt_ess_send()` to queue a
   notification or indication that fits the negotiated ATT MTU.
-- `gatt_body_composition_service_add()` for Body Composition Measurement and
+- `gatt_bcs_add()` for Body Composition Measurement and
   Feature, with reserved feature bits rejected. Both indication helpers enforce
-  the negotiated MTU. `gatt_body_comp_indicate()`
+  the negotiated MTU. `gatt_bcs_indicate()`
   encodes the standard fields and checks them against the Feature value; use
-  `gatt_body_comp_indicate_value()` when the application
+  `gatt_bcs_indicate_value()` when the application
   already has an encoded payload.
 - `gatt_uds_add()` for Database Change Increment, User Index,
   User Control Point, and Registered User. The Database Change Increment
@@ -418,8 +418,8 @@ Additional service builders include:
   and user index in the first segment, then pass only name bytes in continuation
   segments. Complete List All Users with a one-byte response parameter
   containing the number of users returned.
-- `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
-  Feature. `gatt_weight_indicate()` encodes the
+- `gatt_wss_add()` for Weight Measurement and Weight Scale
+  Feature. `gatt_wss_indicate()` encodes the
   measurement and checks optional fields against supported features.
 
 These are database builders. The application supplies record storage and
@@ -429,16 +429,16 @@ service helpers where a typed encoder is available.
 
 Additional builders cover Bond Management, Indoor Positioning, Pulse Oximeter,
 HTTP Proxy, Automation IO, Binary Sensor, Mesh Provisioning, and Mesh Proxy.
-`gatt_automation_io_service_add()` accepts caller-defined Digital and Analog
+`gatt_aio_add()` accepts caller-defined Digital and Analog
 channels and can add an Aggregate value containing their handles. Mesh Data In
 uses a fixed 65-octet capacity for Provisioning and 66 octets for Proxy. The
 application handles the bearer protocol and sends Data Out notifications using
-the returned CCCD. `gatt_binary_sensor_service_add_full()` sets the Control
+the returned CCCD. `gatt_bss_add_full()` sets the Control
 Point fragment capacity. The Binary Sensor builder reassembles split commands,
 validates Get Sensor Status and Setting Sensor messages, and exposes
-requests through `gatt_binary_sensor_service_take_request()`. Applications
+requests through `gatt_bss_take_request()`. Applications
 encode result/status/event messages and send them with
-`gatt_binary_sensor_service_indicate_message()`. Bond
+`gatt_bss_indicate_message()`. Bond
 Management validates its feature bitmap and supported opcodes, checks optional
 authorization-code input through the supplied authorizer, and exposes accepted
 requests through `gatt_bond_management_service_take_request()`. The application
@@ -457,23 +457,23 @@ Record Access Control Point when records are stored. HTTP Proxy takes value
 capacities for URI, headers, entity body, and control point; those allocations
 count against the server's configured value pool. Its Control Point validates
 HTTP/HTTPS methods and captures requests with
-`gatt_http_proxy_service_take_request()`; cancellation is reported through
-`gatt_http_proxy_service_take_cancel()`. URI, HTTP Headers, and Entity Body
+`gatt_hps_take_request()`; cancellation is reported through
+`gatt_hps_take_cancel()`. URI, HTTP Headers, and Entity Body
 must each be written before every request, using empty values for unused
 fields. The server tracks normal and reliable writes and rejects requests
 until all three fields have been written. Install
-`gatt_http_proxy_service_set_request_validator()` when the application must
+`gatt_hps_set_validator()` when the application must
 validate HTTP syntax, URI policy, or synchronous network availability before
 accepting a request. Complete requests with
-`gatt_http_proxy_service_complete()` or provide response data-status bits with
-`gatt_http_proxy_service_complete_with_data_status()`. The status notification
+`gatt_hps_complete()` or provide response data-status bits with
+`gatt_hps_complete_with_data_status()`. The status notification
 contains the two-octet HTTP status code and one-octet data-status field. Use
 the `GATT_HTTP_PROXY_DATA_STATUS_*` flags to report received and truncated
 headers/body. Set response headers/body with
-`gatt_http_proxy_service_set_response_value()` and report HTTPS certificate
+`gatt_hps_set_response()` and report HTTPS certificate
 validity through
-`gatt_http_proxy_service_set_https_certificate_validity()` before completion.
-Call `gatt_http_proxy_service_link_reset()` when the owning ATT link resets.
+`gatt_hps_set_cert_validity()` before completion.
+Call `gatt_hps_link_reset()` when the owning ATT link resets.
 The application still performs HTTP transport and response parsing.
 
 `gatt_sig_service_add()` is the application-facing builder for other
