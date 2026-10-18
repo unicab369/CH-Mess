@@ -1335,7 +1335,7 @@ static void gap_smp_finish(uint8_t status) {
     smp->bearer.rx_len = 0;
     smp->bearer.procedure_active = 0;
     smp->bearer.deadline_ms = 0;
-    l2cap_reassembler_reset(&smp->l2cap_rx);
+    memset(&smp->l2cap_rx, 0, sizeof(smp->l2cap_rx));
     // A new SMP pairing procedure requires a new physical connection, even
     // after an unsuccessful attempt; preserve only the connection status.
 

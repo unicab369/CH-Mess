@@ -1533,7 +1533,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 l2cap_conn_reset(&peer->connection, 0);
             peer->connected = connected;
             peer->tx_len = peer->tx_offset = 0;
-            l2cap_reassembler_reset(&peer->reassembler);
+            memset(&peer->reassembler, 0, sizeof(peer->reassembler));
         }
 
         int result = 0;
@@ -1568,7 +1568,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
             if (received > 0) {
                 if (!len || len > sizeof(fragment)) {
-                    l2cap_reassembler_reset(&peer->reassembler);
+                    memset(&peer->reassembler, 0, sizeof(peer->reassembler));
                 }
                 else {
                     uint16_t cid = 0, sdu_len = 0;

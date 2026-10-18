@@ -192,9 +192,9 @@ int main(void) {
         disconnect_response, sizeof(disconnect_response)));
     assert(fake.closed == 2);
     assert(l2cap_update_req(&conn, 24, 40, 0, 100));
-    assert(fake.pdu[0] == L2CAP_CONNECTION_PARAMETER_UPDATE_REQUEST);
+    assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_REQ);
     uint8_t update_response[] = {
-        L2CAP_CONNECTION_PARAMETER_UPDATE_RESPONSE, fake.pdu[1],
+        L2CAP_CONN_PARAM_UPDATE_RESP, fake.pdu[1],
         2, 0, 0, 0
     };
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
@@ -255,11 +255,11 @@ int main(void) {
     // The PSM policy hook can reject an otherwise valid incoming channel with
     // the protocol's precise security result.
     multi_fake.authorization_result = 8;
-    uint8_t denied_open[] = {L2CAP_LE_CREDIT_CONNECTION_REQUEST, 21,
+    uint8_t denied_open[] = {L2CAP_LE_CREDIT_CONN_REQ, 21,
         10, 0, 0x27, 0, 0x49, 0, 80, 0, 30, 0, 0, 0};
     assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         denied_open, sizeof(denied_open)));
-    assert(multi_fake.pdu[0] == L2CAP_LE_CREDIT_CONNECTION_RESPONSE &&
+    assert(multi_fake.pdu[0] == L2CAP_LE_CREDIT_CONN_RESP &&
            ble_read_u16_le(multi_fake.pdu + 12) == 8);
     uint8_t bad_ecfc_parameters[] = {
         L2CAP_ECFC_CONNECTION_REQUEST, 22, 10, 0,
@@ -285,7 +285,7 @@ int main(void) {
     assert(l2cap_psm_register(&legacy, 0x0027));
     uint16_t legacy_cid;
     assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
-    uint8_t legacy_response[] = {L2CAP_LE_CREDIT_CONNECTION_RESPONSE,
+    uint8_t legacy_response[] = {L2CAP_LE_CREDIT_CONN_RESP,
         legacy_fake.pdu[1], 10, 0, 0x46, 0, 80, 0, 30, 0, 5, 0, 0, 0};
     assert(l2cap_receive(&legacy,
         L2CAP_CID_LE_SIGNALING, legacy_response, sizeof(legacy_response)));
@@ -303,16 +303,16 @@ int main(void) {
     l2cap_connection zero_credit;
     assert(l2cap_conn_init(&zero_credit, &ops, 100, 40, 0));
     assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
-    uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONNECTION_REQUEST,
+    uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONN_REQ,
         zero_fake.pdu[1], 10, 0, 0x27, 0, 0x48, 0, 80, 0, 40, 0, 0, 0};
     assert(l2cap_receive(&zero_credit,
         L2CAP_CID_LE_SIGNALING, colliding_open, sizeof(colliding_open)));
-    assert(zero_credit.pending_code == L2CAP_LE_CREDIT_CONNECTION_REQUEST &&
+    assert(zero_credit.pending_code == L2CAP_LE_CREDIT_CONN_REQ &&
            zero_credit.pending_id == colliding_open[1] &&
            zero_fake.pdu[0] == L2CAP_COMMAND_REJECT);
     uint8_t zero_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         zero_fake.pdu[1], 10, 0, 0x47, 0, 80, 0, 40, 0, 0, 0, 0, 0};
-    zero_response[0] = L2CAP_LE_CREDIT_CONNECTION_RESPONSE;
+    zero_response[0] = L2CAP_LE_CREDIT_CONN_RESP;
     assert(l2cap_receive(&zero_credit,
         L2CAP_CID_LE_SIGNALING, zero_response, sizeof(zero_response)));
     assert(l2cap_ecfc_send(&zero_credit, local_cid, pdu, sizeof(pdu)));
@@ -333,7 +333,7 @@ int main(void) {
     assert(reject_fake.pdu[0] == L2CAP_COMMAND_REJECT &&
            reject_fake.pdu[1] == 12 &&
            ble_read_u16_le(reject_fake.pdu + 6) == 0);
-    uint8_t malformed_signal[] = {L2CAP_CONNECTION_PARAMETER_UPDATE_REQUEST,
+    uint8_t malformed_signal[] = {L2CAP_CONN_PARAM_UPDATE_REQ,
         13, 4, 0, 1, 0, 2, 0};
     assert(l2cap_signaling_receive(&reject_conn, malformed_signal,
                                        sizeof(malformed_signal)));

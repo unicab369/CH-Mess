@@ -704,7 +704,7 @@ static inline void gatt_transport_set_connected(
     if (transport->eatt_enabled)
         gatt_eatt_set_encrypted(&transport->eatt, 0);
 #endif
-    l2cap_reassembler_reset(&transport->l2cap_rx);
+    memset(&transport->l2cap_rx, 0, sizeof(transport->l2cap_rx));
     transport->tx_len = transport->tx_offset = 0;
     transport->bearer_failed = 0;
     transport->tx_client_request = 0;
@@ -947,7 +947,7 @@ static inline int gatt_transport_receive_fragment(
     if (!fragment || !len || len > BLE_GATT_TRANSPORT_LL_MAX ||
         (llid != 1 && llid != 2)
     ) {
-        l2cap_reassembler_reset(&transport->l2cap_rx);
+        memset(&transport->l2cap_rx, 0, sizeof(transport->l2cap_rx));
         return 0;
     }
 
