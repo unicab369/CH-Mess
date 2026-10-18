@@ -3,7 +3,7 @@
 
 // Bluetooth SIG GATT service database builders.
 // Profile procedures and application state belong in service-specific modules.
-#include "ble_gatt_server.h"
+#include "../ble_gatt_server.h"
 
 // Generic 16-bit UUID service registration and ATT handler binding.
 typedef struct {

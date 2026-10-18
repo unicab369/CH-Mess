@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "../ble_gatt_services.h"
+#include "../gatt_services/ble_gatt_services.h"
 
 static uint8_t read_battery_level(
     ble_gatt_server *server, uint16_t handle, uint8_t *value

@@ -3,7 +3,7 @@
 The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
-`ble_gatt_services.h` provides reusable Bluetooth SIG service database
+`gatt_services/ble_gatt_services.h` provides reusable Bluetooth SIG service database
 builders, generic 16-bit UUID service registration, and per-characteristic
 ATT handler binding.
 
@@ -517,7 +517,7 @@ the server database. This adapter reads GAP fragments directly, so do not also
 call `ble_gap_l2cap_poll()` for the same links.
 
 ```c
-#include "ble_gatt_services.h"
+#include "gatt_services/ble_gatt_services.h"
 #include "ble_gap_gatt.h"
 
 static ble_gap_gatt gatt_links;
