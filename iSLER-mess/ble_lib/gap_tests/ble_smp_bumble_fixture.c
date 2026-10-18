@@ -92,7 +92,7 @@ int main(void) {
     l2cap_reassembler rx = {0};
     if (l2cap_reassembler_feed(&rx, 2, frame, frame_len,
             &cid, &sdu, &sdu_len) != 1 || cid != L2CAP_CID_SMP ||
-        !l2cap_connection_receive(&l2cap, cid, sdu, sdu_len) ||
+        !l2cap_receive(&l2cap, cid, sdu, sdu_len) ||
         !smp.rx_len || !write_record(smp.rx, smp.rx_len)
     ) return 4;
     return 0;

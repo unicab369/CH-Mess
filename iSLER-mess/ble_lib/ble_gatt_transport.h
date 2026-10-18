@@ -962,9 +962,7 @@ static inline int gatt_transport_receive_fragment(
 
     if (complete <= 0) return complete;
 
-    int result = l2cap_connection_receive(
-        &transport->l2cap, cid, att, att_len
-    );
+    int result = l2cap_receive(&transport->l2cap, cid, att, att_len);
     return result < 0 ? gatt_transport_fail_bearer(transport) : result;
 }
 

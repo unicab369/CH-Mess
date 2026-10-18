@@ -81,7 +81,7 @@ int main(void) {
     smp.rx_len = 0;
     assert(smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
            !smp.tx_len);
-    assert(l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
+    assert(l2cap_receive(&l2cap, L2CAP_CID_SMP,
         pairing_request, sizeof(pairing_request)));
     assert(smp.rx_len == sizeof(pairing_request) &&
            !memcmp(smp.rx, pairing_request, smp.rx_len));
@@ -98,15 +98,15 @@ int main(void) {
     assert(l2cap_reassembler_feed(&rx, 1, l2cap_packet + 6,
         sizeof(l2cap_packet) - 6, &cid, &sdu, &sdu_len) == 1);
     assert(cid == L2CAP_CID_SMP &&
-        l2cap_connection_receive(&l2cap, cid, sdu, sdu_len));
+        l2cap_receive(&l2cap, cid, sdu, sdu_len));
     assert(smp.rx_len == sizeof(pairing_request) &&
            !memcmp(smp.rx, pairing_request, smp.rx_len));
     smp.rx_len = 0;
     const uint8_t invalid_length[] = {0x01, 0x03};
-    assert(!l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
+    assert(!l2cap_receive(&l2cap, L2CAP_CID_SMP,
         invalid_length, sizeof(invalid_length)));
     const uint8_t reserved_opcode[] = {0x0f};
-    assert(l2cap_connection_receive(&l2cap, L2CAP_CID_SMP,
+    assert(l2cap_receive(&l2cap, L2CAP_CID_SMP,
         reserved_opcode, sizeof(reserved_opcode)));
     const uint8_t public_key[65] = {SMP_PAIRING_PUBLIC_KEY};
     assert(smp_pdu_valid(public_key, sizeof(public_key)));

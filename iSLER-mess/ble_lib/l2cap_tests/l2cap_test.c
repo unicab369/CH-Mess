@@ -107,9 +107,9 @@ int main(void) {
     assert(l2cap_conn_init(&conn, &ops, 120, 80, 4));
     assert(l2cap_fixed_register(
         &conn, L2CAP_CID_ATT, route_att, NULL));
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_ATT,
+    assert(l2cap_receive(&conn, L2CAP_CID_ATT,
         pdu, sizeof(pdu)) == 1);
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_SMP,
+    assert(l2cap_receive(&conn, L2CAP_CID_SMP,
         pdu, sizeof(pdu)) == 0);
     assert(routed == 1);
     assert(l2cap_psm_register(&conn, 0x0027));
@@ -121,7 +121,7 @@ int main(void) {
            L2CAP_ECFC_CONNECTION_REQUEST);
     uint8_t response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         fake.pdu[1], 10, 0, 120, 0, 80, 0, 5, 0, 0, 0, 0x44, 0};
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
                                         response, sizeof(response)));
     assert(fake.opened == 1);
     uint16_t reconfigure_cids[] = {local_cid};
@@ -130,15 +130,15 @@ int main(void) {
     uint8_t reconfigure_response[] = {
         L2CAP_ECFC_RECONFIGURE_RESPONSE, fake.pdu[1], 2, 0, 0, 0
     };
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         reconfigure_response, sizeof(reconfigure_response)));
     uint8_t new_credits[] = {L2CAP_FLOW_CONTROL_CREDIT, 9, 4, 0,
         0x44, 0, 5, 0};
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         new_credits, sizeof(new_credits)));
     uint8_t incoming_open[] = {L2CAP_ECFC_CONNECTION_REQUEST, 10,
         10, 0, 0x27, 0, 64, 0, 64, 0, 3, 0, 0x45, 0};
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         incoming_open, sizeof(incoming_open)));
     assert(fake.opened == 2 && fake.pdu[0] ==
            L2CAP_ECFC_CONNECTION_RESPONSE);
@@ -146,7 +146,7 @@ int main(void) {
         L2CAP_ECFC_RECONFIGURE_REQUEST, 15, 6, 0,
         120, 0, 64, 0, (uint8_t)local_cid, (uint8_t)(local_cid >> 8)
     };
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         incoming_reconfigure, sizeof(incoming_reconfigure)));
     assert(fake.pdu[0] == L2CAP_ECFC_RECONFIGURE_RESPONSE &&
            ble_read_u16_le(fake.pdu + 4) == 0);
@@ -155,7 +155,7 @@ int main(void) {
     uint16_t inbound_local = conn.channels[inbound_slot].local_cid;
     uint8_t disconnect[] = {L2CAP_DISCONNECTION_REQUEST, 11, 4, 0,
         (uint8_t)inbound_local, (uint8_t)(inbound_local >> 8), 0x45, 0};
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         disconnect, sizeof(disconnect)));
     assert(fake.closed == 1 && fake.pdu[0] ==
            L2CAP_DISCONNECTION_RESPONSE);
@@ -170,9 +170,9 @@ int main(void) {
     uint8_t kframe1[] = {4, 0, 0xaa, 0xbb};
     uint8_t kframe2[] = {0xcc, 0xdd};
     fake.block_send = 1;
-    assert(l2cap_connection_receive(&conn, local_cid, kframe1,
+    assert(l2cap_receive(&conn, local_cid, kframe1,
                                         sizeof(kframe1)));
-    assert(l2cap_connection_receive(&conn, local_cid, kframe2,
+    assert(l2cap_receive(&conn, local_cid, kframe2,
                                         sizeof(kframe2)));
     assert(fake.data_count == 1 && fake.data_len == 4 &&
            fake.data[0] == 0xaa && fake.data[3] == 0xdd);
@@ -188,7 +188,7 @@ int main(void) {
         L2CAP_DISCONNECTION_RESPONSE, fake.pdu[1], 4, 0,
         fake.pdu[4], fake.pdu[5], fake.pdu[6], fake.pdu[7]
     };
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         disconnect_response, sizeof(disconnect_response)));
     assert(fake.closed == 2);
     assert(l2cap_update_req(&conn, 24, 40, 0, 100));
@@ -197,7 +197,7 @@ int main(void) {
         L2CAP_CONNECTION_PARAMETER_UPDATE_RESPONSE, fake.pdu[1],
         2, 0, 0, 0
     };
-    assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         update_response, sizeof(update_response)));
 
     // ECFC can establish several channels in one request, and LE CIDs wrap
@@ -217,7 +217,7 @@ int main(void) {
         L2CAP_ECFC_CONNECTION_REQUEST, 20, 12, 0,
         0x27, 0, 80, 0, 64, 0, 2, 0, 0x30, 0, 0x4a, 0
     };
-    assert(l2cap_connection_receive(&partial_server,
+    assert(l2cap_receive(&partial_server,
         L2CAP_CID_LE_SIGNALING, incoming_partial,
         sizeof(incoming_partial)));
     assert(partial_fake.pdu[0] == L2CAP_ECFC_CONNECTION_RESPONSE &&
@@ -232,7 +232,7 @@ int main(void) {
     uint8_t multi_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         multi_fake.pdu[1], 12, 0, 80, 0, 64, 0, 2, 0, 0, 0,
         0x46, 0, 0x47, 0};
-    assert(l2cap_connection_receive(&multi, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         multi_response, sizeof(multi_response)));
     assert(multi_fake.opened == 2 &&
            l2cap_local_slot(&multi, multi_cids[1]) >= 0);
@@ -241,7 +241,7 @@ int main(void) {
     uint8_t partial_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         multi_fake.pdu[1], 12, 0, 80, 0, 64, 0, 1, 0, 9, 0,
         0x48, 0, 0, 0};
-    assert(l2cap_connection_receive(&multi, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         partial_response, sizeof(partial_response)));
     assert(multi_fake.opened == 3 &&
            l2cap_local_slot(&multi, partial_cids[0]) >= 0 &&
@@ -257,7 +257,7 @@ int main(void) {
     multi_fake.authorization_result = 8;
     uint8_t denied_open[] = {L2CAP_LE_CREDIT_CONNECTION_REQUEST, 21,
         10, 0, 0x27, 0, 0x49, 0, 80, 0, 30, 0, 0, 0};
-    assert(l2cap_connection_receive(&multi, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         denied_open, sizeof(denied_open)));
     assert(multi_fake.pdu[0] == L2CAP_LE_CREDIT_CONNECTION_RESPONSE &&
            ble_read_u16_le(multi_fake.pdu + 12) == 8);
@@ -265,7 +265,7 @@ int main(void) {
         L2CAP_ECFC_CONNECTION_REQUEST, 22, 10, 0,
         0x27, 0, 23, 0, 23, 0, 1, 0, 0x48, 0
     };
-    assert(l2cap_connection_receive(&multi, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         bad_ecfc_parameters, sizeof(bad_ecfc_parameters)));
     assert(multi_fake.pdu[0] == L2CAP_ECFC_CONNECTION_RESPONSE &&
            ble_read_u16_le(multi_fake.pdu + 10) == 11);
@@ -274,7 +274,7 @@ int main(void) {
     multi.channels[overflow_slot].tx_credits = 65535;
     uint8_t credit_overflow[] = {L2CAP_FLOW_CONTROL_CREDIT, 23, 4, 0,
         0x46, 0, 1, 0};
-    assert(l2cap_connection_receive(&multi, L2CAP_CID_LE_SIGNALING,
+    assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         credit_overflow, sizeof(credit_overflow)));
     assert(l2cap_local_slot(&multi, multi_cids[0]) < 0);
 
@@ -287,7 +287,7 @@ int main(void) {
     assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
     uint8_t legacy_response[] = {L2CAP_LE_CREDIT_CONNECTION_RESPONSE,
         legacy_fake.pdu[1], 10, 0, 0x46, 0, 80, 0, 30, 0, 5, 0, 0, 0};
-    assert(l2cap_connection_receive(&legacy,
+    assert(l2cap_receive(&legacy,
         L2CAP_CID_LE_SIGNALING, legacy_response, sizeof(legacy_response)));
     assert(l2cap_local_slot(&legacy, legacy_cid) >= 0);
     uint16_t timeout_cid;
@@ -305,7 +305,7 @@ int main(void) {
     assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
     uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONNECTION_REQUEST,
         zero_fake.pdu[1], 10, 0, 0x27, 0, 0x48, 0, 80, 0, 40, 0, 0, 0};
-    assert(l2cap_connection_receive(&zero_credit,
+    assert(l2cap_receive(&zero_credit,
         L2CAP_CID_LE_SIGNALING, colliding_open, sizeof(colliding_open)));
     assert(zero_credit.pending_code == L2CAP_LE_CREDIT_CONNECTION_REQUEST &&
            zero_credit.pending_id == colliding_open[1] &&
@@ -313,13 +313,13 @@ int main(void) {
     uint8_t zero_response[] = {L2CAP_ECFC_CONNECTION_RESPONSE,
         zero_fake.pdu[1], 10, 0, 0x47, 0, 80, 0, 40, 0, 0, 0, 0, 0};
     zero_response[0] = L2CAP_LE_CREDIT_CONNECTION_RESPONSE;
-    assert(l2cap_connection_receive(&zero_credit,
+    assert(l2cap_receive(&zero_credit,
         L2CAP_CID_LE_SIGNALING, zero_response, sizeof(zero_response)));
     assert(l2cap_ecfc_send(&zero_credit, local_cid, pdu, sizeof(pdu)));
     assert(!l2cap_ecfc_pump(&zero_credit));
     uint8_t one_credit[] = {L2CAP_FLOW_CONTROL_CREDIT, 4, 4, 0,
         0x47, 0, 1, 0};
-    assert(l2cap_connection_receive(&zero_credit,
+    assert(l2cap_receive(&zero_credit,
         L2CAP_CID_LE_SIGNALING, one_credit, sizeof(one_credit)));
     assert(l2cap_ecfc_pump(&zero_credit));
 

@@ -64,7 +64,7 @@ static int receive_frame(
         &cid, &sdu, &sdu_len);
     if (result != 1) return 0;
     *cid_out = cid;
-    return l2cap_connection_receive(&connection, cid, sdu, sdu_len);
+    return l2cap_receive(&connection, cid, sdu, sdu_len);
 }
 
 int main(void) {

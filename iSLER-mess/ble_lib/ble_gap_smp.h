@@ -2072,7 +2072,7 @@ static void gap_smp_poll(void) {
         return;
 
     // Keep the RX slot occupied until L2CAP finishes processing the SDU.
-    int dispatched = l2cap_connection_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
+    int dispatched = l2cap_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
     conn->queue.rx_ready = 0;
     smp->l2cap_rx_pending = 0;
 

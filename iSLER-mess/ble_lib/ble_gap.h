@@ -1577,8 +1577,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                         &peer->reassembler, llid, fragment, len,
                         &cid, &sdu, &sdu_len);
                     if (assembled > 0)
-                        result = l2cap_connection_receive(
-                            &peer->connection, cid, sdu, sdu_len);
+                        result = l2cap_receive(&peer->connection, cid, sdu, sdu_len);
                     else result = assembled;
                 }
             }
