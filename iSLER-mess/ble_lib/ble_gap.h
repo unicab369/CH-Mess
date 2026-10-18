@@ -227,6 +227,38 @@ static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
+#if GAP_SMP_SUPPORT > 0
+typedef struct {
+    uint8_t ltk[16], rand[8], ediv[2];
+} gap_bond_key;
+
+typedef struct {
+    uint8_t key[16];
+    uint8_t present;
+} bond_opt_key;
+
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
+
+// One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
+// little-endian byte order; unused keys and reserved bytes are zero.
+typedef struct {
+    uint8_t version, valid;
+    gap_address peer;
+    // Keep Central- and Peripheral-distributed key sets separate.
+    gap_bond_key central, peripheral;
+    bond_opt_key peer_irk, local_irk, peer_csrk, local_csrk;
+    uint8_t key_size, authenticated;
+    uint8_t has_peripheral_ltk;
+} gap_bond;
+#endif
+
+// Address types are shared by GAP and SMP.
+typedef struct {
+    // Zero is public; any nonzero value is treated as random.
+    uint8_t type, address[6];
+} gap_address;
+
 // GAP state and connection data types.
 typedef struct {
     uint8_t scanning, active, generation;
@@ -246,37 +278,6 @@ typedef struct {
     uint16_t interval_125us, factor, latency, continuation, timeout;
     uint16_t base_event, win_offset, instant;
 } gap_conn_schedule;
-
-typedef struct {
-    // Zero is public; any nonzero value is treated as random.
-    uint8_t type, address[6];
-} gap_address;
-
-#if GAP_SMP_SUPPORT > 0
-typedef struct {
-    uint8_t ltk[16], rand[8], ediv[2];
-} gap_bond_key;
-
-typedef struct {
-    uint8_t key[16];
-    uint8_t present;
-} bond_opt_key;
-
-// One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
-// little-endian byte order; unused keys and reserved bytes are zero.
-typedef struct {
-    uint8_t version, valid;
-    gap_address peer;
-    // Keep Central- and Peripheral-distributed key sets separate.
-    gap_bond_key central, peripheral;
-    bond_opt_key peer_irk, local_irk, peer_csrk, local_csrk;
-    uint8_t key_size, authenticated;
-    uint8_t has_peripheral_ltk;
-} gap_bond;
-
-typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
-                                       uint32_t value);
-#endif
 
 // GAP protocol and procedure enum values.
 // Encryption procedure state; timed phases occupy the low nine bits.
@@ -350,19 +351,6 @@ typedef struct {
     uint64_t tx_counter, rx_counter;
     uint32_t started_ms;
 } gap_security_context;
-
-// Return conservative on-air time for a Link Layer PDU payload length.
-// LE Coded uses the slower S=8 data coding as its scheduling upper bound.
-static inline uint32_t gap_phy_airtime_us(
-    uint16_t payload_len, uint8_t phy
-) {
-    if (phy == GAP_PHY_2M)
-        return ((uint32_t)payload_len + 11) * 4;
-    if (phy == GAP_PHY_CODED)
-        return 976 + (uint32_t)payload_len * 64;
-
-    return ((uint32_t)payload_len + 10) * 8;
-}
 
 // Advertising, scanning, and periodic-sync state.
 static struct {
@@ -523,6 +511,19 @@ static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
+
+// Return conservative on-air time for a Link Layer PDU payload length.
+// LE Coded uses the slower S=8 data coding as its scheduling upper bound.
+static inline uint32_t gap_phy_airtime_us(
+    uint16_t payload_len, uint8_t phy
+) {
+    if (phy == GAP_PHY_2M)
+        return ((uint32_t)payload_len + 11) * 4;
+    if (phy == GAP_PHY_CODED)
+        return 976 + (uint32_t)payload_len * 64;
+
+    return ((uint32_t)payload_len + 10) * 8;
+}
 
 // Connection selection and application-facing handles.
 // Return the read-only context for the currently selected connection slot.
