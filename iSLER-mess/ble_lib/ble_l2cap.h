@@ -17,22 +17,6 @@
 #define L2CAP_SIGNAL_TIMEOUT_MS 30000u
 #endif
 
-// LE signaling command codes implemented by the connection manager.
-enum {
-    L2CAP_COMMAND_REJECT = 0x01,
-    L2CAP_DISCONNECTION_REQUEST = 0x06,
-    L2CAP_DISCONNECTION_RESPONSE = 0x07,
-    L2CAP_CONN_PARAM_UPDATE_REQ = 0x12,
-    L2CAP_CONN_PARAM_UPDATE_RESP = 0x13,
-    L2CAP_LE_CREDIT_CONN_REQ = 0x14,
-    L2CAP_LE_CREDIT_CONN_RESP = 0x15,
-    L2CAP_FLOW_CONTROL_CREDIT = 0x16,
-    L2CAP_ECFC_CONNECTION_REQUEST = 0x17,
-    L2CAP_ECFC_CONNECTION_RESPONSE = 0x18,
-    L2CAP_ECFC_RECONFIGURE_REQUEST = 0x19,
-    L2CAP_ECFC_RECONFIGURE_RESPONSE = 0x1a
-};
-
 #ifndef L2CAP_CHANNEL_MAX
 #define L2CAP_CHANNEL_MAX 4
 #endif
@@ -63,6 +47,29 @@ enum {
 #error "L2CAP_CHANNEL_MPS_MAX must be 23..65535"
 #endif
 
+// LE signaling command codes implemented by the connection manager.
+enum {
+    L2CAP_COMMAND_REJECT = 0x01,
+    L2CAP_DISCONNECTION_REQUEST = 0x06,
+    L2CAP_DISCONNECTION_RESPONSE = 0x07,
+    L2CAP_CONN_PARAM_UPDATE_REQ = 0x12,
+    L2CAP_CONN_PARAM_UPDATE_RESP = 0x13,
+    L2CAP_LE_CREDIT_CONN_REQ = 0x14,
+    L2CAP_LE_CREDIT_CONN_RESP = 0x15,
+    L2CAP_FLOW_CONTROL_CREDIT = 0x16,
+    L2CAP_ECFC_CONNECTION_REQUEST = 0x17,
+    L2CAP_ECFC_CONNECTION_RESPONSE = 0x18,
+    L2CAP_ECFC_RECONFIGURE_REQUEST = 0x19,
+    L2CAP_ECFC_RECONFIGURE_RESPONSE = 0x1a
+};
+
+enum {
+    L2CAP_CHANNEL_CLOSED = 0,
+    L2CAP_CHANNEL_OPENING = 1,
+    L2CAP_CHANNEL_OPEN = 2,
+    L2CAP_CHANNEL_CLOSING = 3
+};
+
 // =============================================================================
 // Callbacks and connection state
 // =============================================================================
@@ -85,13 +92,6 @@ typedef int (*l2cap_channel_data_fn)(
 typedef int (*l2cap_connection_update_fn)(void *context,
     uint16_t interval_min, uint16_t interval_max, uint16_t latency,
     uint16_t timeout);
-
-enum {
-    L2CAP_CHANNEL_CLOSED = 0,
-    L2CAP_CHANNEL_OPENING = 1,
-    L2CAP_CHANNEL_OPEN = 2,
-    L2CAP_CHANNEL_CLOSING = 3
-};
 
 typedef struct {
     uint16_t psm;
@@ -766,8 +766,6 @@ static inline int l2cap_signal_reject(
     return l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
                             identifier, payload, sizeof(payload));
 }
-
-
 
 // Dispatch one complete SDU from the link layer. Dynamic CIDs are local CIDs;
 // fixed ATT/SMP handlers register by CID. Signaling uses the internal manager.

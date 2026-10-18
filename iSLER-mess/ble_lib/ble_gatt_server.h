@@ -2062,7 +2062,6 @@ static uint8_t gatt_prepare_validate(
     return 0;
 }
 
-
 static int gatt_error_response(
     uint8_t request, uint16_t handle, uint8_t error, uint8_t *rsp,
     uint16_t cap, uint16_t *rsp_len

@@ -8,6 +8,11 @@
 #include <string.h>
 #include "ble_gatt.h"
 #include "ble_gatt_server.h"
+#include "ble_l2cap.h"
+
+#ifndef BLE_GATT_ENABLE_EATT
+#define BLE_GATT_ENABLE_EATT 0
+#endif
 
 // =============================================================================
 // Configuration
@@ -35,12 +40,7 @@
 #ifndef L2CAP_SDU_MAX
 #define L2CAP_SDU_MAX BLE_GATT_TRANSPORT_MTU_MAX
 #endif
-#include "ble_l2cap.h"
-
-#ifndef BLE_GATT_ENABLE_EATT
-#define BLE_GATT_ENABLE_EATT 0
-#endif
-
+#define BLE_GATT_TRANSPORT_ATT_CID L2CAP_CID_ATT
 #if BLE_GATT_ENABLE_EATT
 
 // =============================================================================
@@ -98,6 +98,63 @@ typedef struct {
     uint8_t encrypted;
 } ble_gatt_eatt;
 
+#endif // BLE_GATT_ENABLE_EATT
+
+// =============================================================================
+// Transport state
+// =============================================================================
+typedef struct ble_gatt_transport ble_gatt_transport;
+
+#if BLE_GATT_ENABLE_EATT
+typedef int (*ble_gatt_transport_eatt_receive_fn)(void *context, uint16_t cid,
+    const uint8_t *pdu, uint16_t len);
+typedef int (*ble_gatt_transport_eatt_sign_fn)(void *context, uint16_t cid,
+    const uint8_t *pdu, uint16_t len, uint8_t signature[12]);
+typedef void (*ble_gatt_transport_eatt_result_fn)(void *context, uint16_t cid,
+    uint8_t status, const uint8_t *pdu, uint16_t len);
+typedef void (*ble_gatt_transport_eatt_event_fn)(void *context, uint16_t cid,
+    uint16_t handle, const uint8_t *value, uint16_t len);
+
+typedef ble_gatt_server_bearer_state ble_gatt_transport_server_bearer;
+
+typedef struct {
+    ble_gatt_transport *transport;
+    uint16_t cid;
+    ble_gatt_transport_server_bearer server;
+    ble_gatt_client client;
+    uint8_t client_enabled, client_tx_pending;
+    uint16_t tx_len[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE];
+    uint8_t tx_head, tx_count;
+    uint8_t tx_data[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE]
+                   [BLE_GATT_EATT_MTU_MAX];
+} ble_gatt_transport_eatt_context;
+#endif
+
+struct ble_gatt_transport {
+    ble_gatt_server *server;
+    ble_gatt_client *client;
+    l2cap_connection l2cap;
+    uint8_t connected, encrypted, authenticated, key_size;
+    uint8_t bearer_failed, tx_client_request;
+    l2cap_reassembler l2cap_rx;
+    uint16_t tx_len, tx_offset;
+    uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
+#if BLE_GATT_ENABLE_EATT
+    ble_gatt_eatt eatt;
+    ble_gatt_transport_eatt_receive_fn eatt_receive_att;
+    ble_gatt_transport_eatt_sign_fn eatt_sign;
+    ble_gatt_transport_eatt_result_fn eatt_result;
+    ble_gatt_transport_eatt_event_fn eatt_notification, eatt_indication;
+    void *eatt_context;
+    void *eatt_client_context;
+    uint8_t eatt_enabled;
+    uint8_t eatt_event_cursor;
+    ble_gatt_transport_eatt_context eatt_contexts[
+        BLE_GATT_EATT_MAX_BEARERS];
+#endif
+};
+
+#if BLE_GATT_ENABLE_EATT
 // Application facing
 // =============================================================================
 // Bearer state and channel lifecycle
@@ -366,62 +423,6 @@ static inline void gatt_eatt_disconnect(ble_gatt_eatt *eatt) {
 }
 
 #endif // BLE_GATT_ENABLE_EATT
-
-#define BLE_GATT_TRANSPORT_ATT_CID L2CAP_CID_ATT
-
-// =============================================================================
-// Transport state
-// =============================================================================
-typedef struct ble_gatt_transport ble_gatt_transport;
-
-#if BLE_GATT_ENABLE_EATT
-typedef int (*ble_gatt_transport_eatt_receive_fn)(void *context, uint16_t cid,
-    const uint8_t *pdu, uint16_t len);
-typedef int (*ble_gatt_transport_eatt_sign_fn)(void *context, uint16_t cid,
-    const uint8_t *pdu, uint16_t len, uint8_t signature[12]);
-typedef void (*ble_gatt_transport_eatt_result_fn)(void *context, uint16_t cid,
-    uint8_t status, const uint8_t *pdu, uint16_t len);
-typedef void (*ble_gatt_transport_eatt_event_fn)(void *context, uint16_t cid,
-    uint16_t handle, const uint8_t *value, uint16_t len);
-
-typedef ble_gatt_server_bearer_state ble_gatt_transport_server_bearer;
-
-typedef struct {
-    ble_gatt_transport *transport;
-    uint16_t cid;
-    ble_gatt_transport_server_bearer server;
-    ble_gatt_client client;
-    uint8_t client_enabled, client_tx_pending;
-    uint16_t tx_len[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE];
-    uint8_t tx_head, tx_count;
-    uint8_t tx_data[BLE_GATT_TRANSPORT_EATT_TX_QUEUE_SIZE]
-                   [BLE_GATT_EATT_MTU_MAX];
-} ble_gatt_transport_eatt_context;
-#endif
-
-struct ble_gatt_transport {
-    ble_gatt_server *server;
-    ble_gatt_client *client;
-    l2cap_connection l2cap;
-    uint8_t connected, encrypted, authenticated, key_size;
-    uint8_t bearer_failed, tx_client_request;
-    l2cap_reassembler l2cap_rx;
-    uint16_t tx_len, tx_offset;
-    uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
-#if BLE_GATT_ENABLE_EATT
-    ble_gatt_eatt eatt;
-    ble_gatt_transport_eatt_receive_fn eatt_receive_att;
-    ble_gatt_transport_eatt_sign_fn eatt_sign;
-    ble_gatt_transport_eatt_result_fn eatt_result;
-    ble_gatt_transport_eatt_event_fn eatt_notification, eatt_indication;
-    void *eatt_context;
-    void *eatt_client_context;
-    uint8_t eatt_enabled;
-    uint8_t eatt_event_cursor;
-    ble_gatt_transport_eatt_context eatt_contexts[
-        BLE_GATT_EATT_MAX_BEARERS];
-#endif
-};
 
 // =============================================================================
 // Shared L2CAP transport helpers
