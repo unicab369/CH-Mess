@@ -227,14 +227,24 @@ Status and Fitness Machine Control Point characteristics. The application
 queues data through `service.base` and provides encoded Training Status values.
 The Control Point validates all 21 assigned opcodes, parameter lengths,
 target-setting feature bits, and values against any registered Supported Range.
-Unsupported and invalid requests receive standard response indications.
-Valid requests are saved in `control_point_opcode`,
-`control_point_parameter`, and `control_point_parameter_len`; the application
-performs the machine action and completes each request with
-`gatt_ftms_complete_control_point()`. A successful Request Control response
-grants connection-scoped control permission. Call `gatt_ftms_reset()` when the
-client disconnects, and call `gatt_ftms_revoke_control()` to revoke permission
-and queue the standard Control Permission Lost status notification. The simpler
+Unsupported and invalid requests receive standard response indications. The
+service tracks stopped, running, and paused state, rejects repeated Start or
+Resume and repeated Stop or Pause procedures, and applies control permission
+changes on Request Control and Reset. Register `gatt_ftms_set_control_handler()`
+to run machine actions and return a standard result; return
+`GATT_FTMS_CONTROL_DEFERRED` to finish asynchronously with
+`gatt_ftms_complete_control_point()`. Successful Spin Down responses require
+the four-octet Target Speed Low/High parameter. Successful Reset, Start/Resume,
+Stop/Pause, and target-setting procedures queue their standard Fitness Machine
+Status notifications when that characteristic is configured. Reset also sets
+the Training Status value to Idle. The callback applies device-specific target
+settings and actions; the service tracks protocol activity state. Dynamic Spin
+Down status remains application-driven. Without a handler, valid requests
+remain available in `control_point_opcode`,
+`control_point_parameter`, and `control_point_parameter_len` for application
+processing and completion. Call `gatt_ftms_reset()` when the client
+disconnects, and call `gatt_ftms_revoke_control()` to revoke permission and
+queue the standard Control Permission Lost status notification. The simpler
 controlled builder omits the optional Supported Range and Fitness Machine
 Status characteristics. Use `gatt_ftms_add_full()` for
 feature-matched Supported

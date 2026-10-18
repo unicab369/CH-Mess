@@ -3835,8 +3835,8 @@ static void test_connection_rate_exchange(void) {
 
 static void test_channel_classification_reporting(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
-    uint8_t received[GAP_CHANNEL_CLASSIFICATION_BYTES];
+    uint8_t classification[GAP_CHANN_CLASS_BYTES] = {0};
+    uint8_t received[GAP_CHANN_CLASS_BYTES];
     classification[0] = 0x0d; // Channel 0 good; channel 1 bad.
 
     start_test_central_link();
@@ -3849,7 +3849,7 @@ static void test_channel_classification_reporting(void) {
            gap_tx_frame[5] == 10);
     receive_test_link_packet(1);
     assert(conn->connection_status == 0);
-    uint8_t report[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
+    uint8_t report[GAP_CHANN_CLASS_BYTES] = {0};
     report[0] = 0x0d;
     receive_test_control(0x29, report, sizeof(report));
     assert(gap_peer_class_get(received));
@@ -3861,7 +3861,7 @@ static void test_channel_classification_reporting(void) {
     conn->features.known = 1;
     conn->features.peer[4] = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_class_set(classification));
-    uint8_t reserved_value[GAP_CHANNEL_CLASSIFICATION_BYTES] = {0};
+    uint8_t reserved_value[GAP_CHANN_CLASS_BYTES] = {0};
     reserved_value[0] = 2; // Classification value 2 is reserved.
     assert(!gap_channel_class_set(reserved_value));
     assert(!gap_channel_class_set((uint8_t[10]){0, 0, 0, 0,

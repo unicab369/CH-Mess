@@ -1657,7 +1657,7 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
         }
 
-        memcpy(conn->channel.peer_classification, frame + 3, GAP_CHANNEL_CLASSIFICATION_BYTES);
+        memcpy(conn->channel.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
         conn->channel.peer_classification_valid = 1;
         break;
     }
@@ -2140,7 +2140,7 @@ int gap_channel_reporting_set(
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
 // A Peripheral reports changes only after the Central enables reporting.
 int gap_channel_class_set(
-    const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
+    const uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -2149,11 +2149,11 @@ int gap_channel_class_set(
     ) return 0;
 
     if (memcmp(conn->channel.local_class, classification,
-               GAP_CHANNEL_CLASSIFICATION_BYTES) == 0
+               GAP_CHANN_CLASS_BYTES) == 0
     ) return 1;
 
     memcpy(conn->channel.local_class, classification,
-           GAP_CHANNEL_CLASSIFICATION_BYTES);
+           GAP_CHANN_CLASS_BYTES);
     conn->channel.classification_valid = 1;
     conn->channel.status_changed_ms = GET_MILLIS();
 
@@ -2178,7 +2178,7 @@ const uint8_t *gap_channel_class_get(void) {
 // Application facing
 // Read the latest LL_CHANNEL_STATUS_IND report received by a Central.
 int gap_peer_class_get(
-    uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
+    uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || !conn->is_central ||
@@ -2186,7 +2186,7 @@ int gap_peer_class_get(
         !conn->channel.peer_classification_valid
     ) return 0;
 
-    memcpy(classification, conn->channel.peer_classification, GAP_CHANNEL_CLASSIFICATION_BYTES);
+    memcpy(classification, conn->channel.peer_classification, GAP_CHANN_CLASS_BYTES);
     return 1;
 }
 

@@ -1258,6 +1258,12 @@ typedef struct {
     uint16_t machine_data_cccd_handle;
 } ble_gatt_ftms_service;
 
+typedef uint8_t (*ble_gatt_ftms_control_fn)(
+    void *context, uint8_t opcode, const uint8_t *parameters,
+    uint8_t parameter_len, uint8_t *response_parameters,
+    uint8_t *inout_response_parameter_len
+);
+
 typedef struct {
     ble_gatt_ftms_service base;
     uint16_t training_status_handle, training_status_cccd_handle;
@@ -1267,8 +1273,11 @@ typedef struct {
     uint16_t fitness_machine_status_cccd_handle;
     ble_gatt_server *server;
     uint8_t control_point_pending, control_point_opcode, control_granted;
+    uint8_t activity_state;
     uint8_t control_point_parameter_len, control_point_request_count;
     uint8_t control_point_parameter[19];
+    void *control_context;
+    ble_gatt_ftms_control_fn control_handler;
 } ble_gatt_ftms_controlled_service;
 
 typedef struct {
@@ -1305,11 +1314,18 @@ enum {
     GATT_FTMS_OP_SET_CADENCE = 0x14,
     GATT_FTMS_OP_RESPONSE_CODE = 0x80,
     GATT_FTMS_STATUS_CONTROL_LOST = 0xff,
+    GATT_FTMS_CONTROL_DEFERRED = 0,
     GATT_FTMS_RESPONSE_SUCCESS = 1,
     GATT_FTMS_RESPONSE_NOT_SUPPORTED = 2,
     GATT_FTMS_RESPONSE_INVALID_PARAMETER = 3,
     GATT_FTMS_RESPONSE_FAILED = 4,
     GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED = 5
+};
+
+enum {
+    GATT_FTMS_STATE_STOPPED = 0,
+    GATT_FTMS_STATE_RUNNING = 1,
+    GATT_FTMS_STATE_PAUSED = 2
 };
 
 // Internal helper
@@ -1387,6 +1403,75 @@ static inline uint8_t gatt_ftms_queue_response(
     return gatt_queue_event(server, service->control_point_handle,
         response, sizeof(response), 1) > 0 ? 0 :
         ATT_ERR_INSUFFICIENT_RESOURCES;
+}
+
+static inline int gatt_ftms_complete_control_point(
+    ble_gatt_server *server,
+    ble_gatt_ftms_controlled_service *service,
+    uint8_t result, const uint8_t *response_parameters,
+    uint8_t response_parameter_len
+);
+
+static inline void gatt_ftms_report_control_change(
+    ble_gatt_ftms_controlled_service *service, uint8_t opcode,
+    const uint8_t *parameters, uint8_t parameter_len
+) {
+    if (!service || !service->server ||
+        !service->fitness_machine_status_handle) return;
+
+    uint8_t status_opcode;
+    switch (opcode) {
+    case GATT_FTMS_OP_RESET: status_opcode = 0x01; break;
+    case GATT_FTMS_OP_STOP_PAUSE: status_opcode = 0x02; break;
+    case GATT_FTMS_OP_START_RESUME: status_opcode = 0x04; break;
+    case GATT_FTMS_OP_SET_SPEED: status_opcode = 0x05; break;
+    case GATT_FTMS_OP_SET_INCLINATION: status_opcode = 0x06; break;
+    case GATT_FTMS_OP_SET_RESISTANCE: status_opcode = 0x07; break;
+    case GATT_FTMS_OP_SET_POWER: status_opcode = 0x08; break;
+    case GATT_FTMS_OP_SET_HEART_RATE: status_opcode = 0x09; break;
+    case GATT_FTMS_OP_SET_ENERGY: status_opcode = 0x0a; break;
+    case GATT_FTMS_OP_SET_STEPS: status_opcode = 0x0b; break;
+    case GATT_FTMS_OP_SET_STRIDES: status_opcode = 0x0c; break;
+    case GATT_FTMS_OP_SET_DISTANCE: status_opcode = 0x0d; break;
+    case GATT_FTMS_OP_SET_TRAINING_TIME: status_opcode = 0x0e; break;
+    case GATT_FTMS_OP_SET_HR_ZONE2: status_opcode = 0x0f; break;
+    case GATT_FTMS_OP_SET_HR_ZONE3: status_opcode = 0x10; break;
+    case GATT_FTMS_OP_SET_HR_ZONE5: status_opcode = 0x11; break;
+    case GATT_FTMS_OP_SET_SIMULATION: status_opcode = 0x12; break;
+    case GATT_FTMS_OP_SET_WHEEL_CIRCUMFERENCE: status_opcode = 0x13; break;
+    case GATT_FTMS_OP_SET_CADENCE: status_opcode = 0x15; break;
+    default: return;
+    }
+
+    uint8_t value[11];
+    value[0] = status_opcode;
+    uint8_t status_parameter_len = 0;
+    if (opcode == GATT_FTMS_OP_STOP_PAUSE ||
+        (opcode >= GATT_FTMS_OP_SET_SPEED &&
+         opcode <= GATT_FTMS_OP_SET_CADENCE &&
+         opcode != GATT_FTMS_OP_SPIN_DOWN))
+        status_parameter_len = parameter_len;
+    if (status_parameter_len)
+        memcpy(value + 1, parameters, status_parameter_len);
+    (void)gatt_queue_event(service->server,
+        service->fitness_machine_status_handle, value,
+        (uint16_t)(status_parameter_len + 1), 0);
+}
+
+static inline void gatt_ftms_set_training_idle(
+    ble_gatt_ftms_controlled_service *service
+) {
+    if (!service || !service->server || !service->training_status_handle)
+        return;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->training_status_handle);
+    uint8_t *value = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !value || !attribute->value_capacity) return;
+    value[0] = 0x01;
+    attribute->value_len = 1;
+    (void)gatt_queue_event(service->server,
+        service->training_status_handle, value, 1, 0);
 }
 
 // Application-facing API
@@ -1494,6 +1579,15 @@ static uint8_t gatt_fitness_machine_control_write(
         return gatt_ftms_queue_response(service->server, service, opcode,
             GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED);
 
+    if ((opcode == GATT_FTMS_OP_START_RESUME &&
+         service->activity_state == GATT_FTMS_STATE_RUNNING) ||
+        (opcode == GATT_FTMS_OP_STOP_PAUSE &&
+         (service->activity_state == GATT_FTMS_STATE_STOPPED ||
+          (value[1] == 2 &&
+           service->activity_state == GATT_FTMS_STATE_PAUSED))))
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_FAILED);
+
     service->control_point_opcode = opcode;
     service->control_point_parameter_len = parameter_len;
 
@@ -1501,7 +1595,45 @@ static uint8_t gatt_fitness_machine_control_write(
         memcpy(service->control_point_parameter, value + 1, len - 1);
     service->control_point_pending = 1;
     service->control_point_request_count++;
+
+    if (opcode == GATT_FTMS_OP_RESET)
+        service->control_granted = 0;
+
+    if (service->control_handler) {
+        uint8_t response_parameters[17];
+        uint8_t response_parameter_len = sizeof(response_parameters);
+        uint8_t result = service->control_handler(service->control_context,
+            opcode, service->control_point_parameter,
+            service->control_point_parameter_len, response_parameters,
+            &response_parameter_len);
+        if (result == GATT_FTMS_CONTROL_DEFERRED) return 0;
+        if (result < GATT_FTMS_RESPONSE_SUCCESS ||
+            result > GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED ||
+            response_parameter_len > sizeof(response_parameters) ||
+            (opcode == GATT_FTMS_OP_SPIN_DOWN &&
+             result == GATT_FTMS_RESPONSE_SUCCESS ?
+                response_parameter_len != 4 : response_parameter_len != 0)) {
+            result = GATT_FTMS_RESPONSE_FAILED;
+            response_parameter_len = 0;
+        }
+        return gatt_ftms_complete_control_point(service->server, service,
+            result, response_parameters, response_parameter_len) ? 0 :
+            ATT_ERR_INSUFFICIENT_RESOURCES;
+    }
     return 0;
+}
+
+// Register a synchronous machine-action callback. Return a standard result
+// code to complete the procedure; return GATT_FTMS_CONTROL_DEFERRED to finish
+// it later with gatt_ftms_complete_control_point(). A successful Spin Down
+// must return the four-octet Target Speed Low/High response parameter.
+static inline void gatt_ftms_set_control_handler(
+    ble_gatt_ftms_controlled_service *service,
+    ble_gatt_ftms_control_fn handler, void *context
+) {
+    if (!service) return;
+    service->control_handler = handler;
+    service->control_context = context;
 }
 
 // Application-facing API
@@ -1599,6 +1731,7 @@ static inline void gatt_ftms_reset(
     service->control_point_opcode = 0;
     service->control_point_parameter_len = 0;
     service->control_granted = 0;
+    service->activity_state = GATT_FTMS_STATE_STOPPED;
 }
 
 // Revoke the client's control permission and send the standard status event.
@@ -1797,7 +1930,10 @@ static inline int gatt_ftms_complete_control_point(
     if (!server || !service || service->server != server ||
         !service->control_point_pending || result < 1 || result > 5 ||
         response_parameter_len > 17 ||
-        (response_parameter_len && !response_parameters)
+        (response_parameter_len && !response_parameters) ||
+        (service->control_point_opcode == GATT_FTMS_OP_SPIN_DOWN &&
+         result == GATT_FTMS_RESPONSE_SUCCESS ?
+            response_parameter_len != 4 : response_parameter_len != 0)
     ) return 0;
 
     uint8_t response[20] = {
@@ -1817,9 +1953,32 @@ static inline int gatt_ftms_complete_control_point(
 
     if (queued > 0)
         service->control_point_pending = 0;
-    if (queued > 0 && service->control_point_opcode ==
-        GATT_FTMS_OP_REQUEST_CONTROL && result == GATT_FTMS_RESPONSE_SUCCESS)
-        service->control_granted = 1;
+    if (queued > 0 && result == GATT_FTMS_RESPONSE_SUCCESS) {
+        switch (service->control_point_opcode) {
+        case GATT_FTMS_OP_REQUEST_CONTROL:
+            service->control_granted = 1;
+            break;
+        case GATT_FTMS_OP_RESET:
+            service->control_granted = 0;
+            service->activity_state = GATT_FTMS_STATE_STOPPED;
+            gatt_ftms_set_training_idle(service);
+            break;
+        case GATT_FTMS_OP_START_RESUME:
+            service->activity_state = GATT_FTMS_STATE_RUNNING;
+            break;
+        case GATT_FTMS_OP_STOP_PAUSE:
+            service->activity_state =
+                service->control_point_parameter[0] == 1 ?
+                GATT_FTMS_STATE_STOPPED : GATT_FTMS_STATE_PAUSED;
+            break;
+        default:
+            break;
+        }
+        gatt_ftms_report_control_change(service,
+            service->control_point_opcode,
+            service->control_point_parameter,
+            service->control_point_parameter_len);
+    }
     return queued;
 }
 

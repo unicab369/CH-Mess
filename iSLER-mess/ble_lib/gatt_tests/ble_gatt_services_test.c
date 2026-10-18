@@ -30,6 +30,88 @@ static void ots_change_observer(
     memcpy(ots_last_id, object_id, sizeof(ots_last_id));
 }
 
+static uint8_t ftms_action_count;
+
+static uint8_t ftms_action(
+    void *context, uint8_t opcode, const uint8_t *parameters,
+    uint8_t parameter_len, uint8_t *response_parameters,
+    uint8_t *inout_response_parameter_len
+) {
+    (void)context;
+    (void)opcode;
+    (void)parameters;
+    (void)parameter_len;
+    (void)response_parameters;
+    assert(*inout_response_parameter_len == 17);
+    *inout_response_parameter_len = 0;
+    ftms_action_count++;
+    return GATT_FTMS_RESPONSE_SUCCESS;
+}
+
+static uint8_t ftms_defer(
+    void *context, uint8_t opcode, const uint8_t *parameters,
+    uint8_t parameter_len, uint8_t *response_parameters,
+    uint8_t *inout_response_parameter_len
+) {
+    (void)context;
+    (void)opcode;
+    (void)parameters;
+    (void)parameter_len;
+    (void)response_parameters;
+    (void)inout_response_parameter_len;
+    return GATT_FTMS_CONTROL_DEFERRED;
+}
+
+static void ftms_write(
+    ble_gatt_server *server, ble_gatt_ftms_controlled_service *service,
+    const uint8_t *value, uint8_t len, uint8_t expected_result
+) {
+    uint8_t request[BLE_GATT_ATT_VALUE_MAX + 3];
+    request[0] = ATT_OP_WRITE_REQ;
+    request[1] = (uint8_t)service->control_point_handle;
+    request[2] = (uint8_t)(service->control_point_handle >> 8);
+    memcpy(request + 3, value, len);
+    uint8_t response[BLE_GATT_SERVER_MTU_MAX];
+    uint16_t response_len = 0;
+    assert(gatt_server_att(server, request, (uint16_t)(len + 3), response,
+        sizeof(response), &response_len) == 1);
+    assert(response_len == 1 && response[0] == ATT_OP_WRITE_RSP);
+    if (expected_result == GATT_FTMS_CONTROL_DEFERRED) {
+        assert(service->control_point_pending && !server->event_count);
+        return;
+    }
+    assert(server->event_count >= 1 && server->event_count <= 3);
+    ble_gatt_server_event *event = NULL;
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->control_point_handle)
+            event = &server->events[i];
+    assert(event && event->indication);
+    const uint8_t *indication = server->event_data + event->data_offset;
+    assert(event->len == 3 && indication[0] == GATT_FTMS_OP_RESPONSE_CODE &&
+           indication[1] == value[0] && indication[2] == expected_result);
+    if (service->fitness_machine_status_handle &&
+        expected_result == GATT_FTMS_RESPONSE_SUCCESS && value[0] !=
+        GATT_FTMS_OP_REQUEST_CONTROL) {
+        uint8_t expected_status = value[0] == GATT_FTMS_OP_RESET ? 0x01 :
+            value[0] == GATT_FTMS_OP_START_RESUME ? 0x04 :
+            value[0] == GATT_FTMS_OP_STOP_PAUSE ? 0x02 :
+            value[0] == GATT_FTMS_OP_SET_POWER ? 0x08 : 0;
+        uint8_t found_status = 0;
+        for (uint16_t i = 0; i < server->event_count; i++)
+            if (server->events[i].handle ==
+                service->fitness_machine_status_handle) {
+                const uint8_t *status = server->event_data +
+                    server->events[i].data_offset;
+                found_status = status[0] == expected_status &&
+                    server->events[i].len == len &&
+                    (len == 1 || !memcmp(status + 1, value + 1, len - 1));
+            }
+        assert(found_status);
+    }
+    server->event_count = 0;
+    server->event_used = 0;
+}
+
 static uint8_t ots_select_for_test(void *context, const uint8_t object_id[6]) {
     ble_gatt_ots_service *service = context;
     for (uint16_t i = 0; i < service->object_count; i++) {
@@ -80,6 +162,76 @@ int main(void) {
            response[4] == ATT_ERR_WRITE_NOT_PERMITTED);
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 42);
+
+    // FTMS applies its standardized start/stop state rules and completes
+    // synchronous machine actions through the application callback.
+    gatt_server_init(&server, 23);
+    ble_gatt_ftms_controlled_service ftms = {0};
+    const uint8_t ftms_features[8] = {0, 0, 0, 0, 0x08, 0, 0, 0};
+    const uint8_t power_range[6] = {0, 0, 100, 0, 1, 0};
+    ble_gatt_ftms_options ftms_options = {
+        .supported_ranges = {[4] = power_range},
+        .training_status = (const uint8_t[]){0x02},
+        .training_status_len = 1,
+        .training_status_capacity = 1,
+        .fitness_machine_status_capacity = 20,
+        .control_point_capacity = 20
+    };
+    assert(gatt_ftms_add_full(&server, &ftms, 0x2ad2,
+        ftms_features, 20, &ftms_options));
+    ble_gatt_attribute *ftms_cccd = gatt_server_find(&server,
+        ftms.control_point_cccd_handle);
+    assert(ftms_cccd);
+    ftms_cccd->cccd = 2;
+    ble_gatt_attribute *ftms_status_cccd = gatt_server_find(&server,
+        ftms.fitness_machine_status_cccd_handle);
+    assert(ftms_status_cccd);
+    ftms_status_cccd->cccd = 1;
+    ble_gatt_attribute *ftms_training_cccd = gatt_server_find(&server,
+        ftms.training_status_cccd_handle);
+    assert(ftms_training_cccd);
+    ftms_training_cccd->cccd = 1;
+    ftms_action_count = 0;
+    gatt_ftms_set_control_handler(&ftms, ftms_action, NULL);
+
+    const uint8_t request_control[] = {GATT_FTMS_OP_REQUEST_CONTROL};
+    const uint8_t set_power[] = {GATT_FTMS_OP_SET_POWER, 50, 0};
+    const uint8_t start[] = {GATT_FTMS_OP_START_RESUME};
+    const uint8_t stop[] = {GATT_FTMS_OP_STOP_PAUSE, 1};
+    const uint8_t pause[] = {GATT_FTMS_OP_STOP_PAUSE, 2};
+    const uint8_t reset[] = {GATT_FTMS_OP_RESET};
+    ftms_write(&server, &ftms, request_control, sizeof(request_control),
+        GATT_FTMS_RESPONSE_SUCCESS);
+    assert(ftms.control_granted);
+    ftms_write(&server, &ftms, set_power, sizeof(set_power),
+        GATT_FTMS_RESPONSE_SUCCESS);
+    ftms_write(&server, &ftms, start, sizeof(start), GATT_FTMS_RESPONSE_SUCCESS);
+    assert(ftms.activity_state == GATT_FTMS_STATE_RUNNING);
+    uint8_t actions = ftms_action_count;
+    ftms_write(&server, &ftms, start, sizeof(start), GATT_FTMS_RESPONSE_FAILED);
+    assert(ftms_action_count == actions);
+    ftms_write(&server, &ftms, pause, sizeof(pause), GATT_FTMS_RESPONSE_SUCCESS);
+    assert(ftms.activity_state == GATT_FTMS_STATE_PAUSED);
+    ftms_write(&server, &ftms, pause, sizeof(pause), GATT_FTMS_RESPONSE_FAILED);
+    ftms_write(&server, &ftms, start, sizeof(start), GATT_FTMS_RESPONSE_SUCCESS);
+    ftms_write(&server, &ftms, stop, sizeof(stop), GATT_FTMS_RESPONSE_SUCCESS);
+    assert(ftms.activity_state == GATT_FTMS_STATE_STOPPED);
+    ftms_write(&server, &ftms, stop, sizeof(stop), GATT_FTMS_RESPONSE_FAILED);
+    ftms_write(&server, &ftms, reset, sizeof(reset), GATT_FTMS_RESPONSE_SUCCESS);
+    assert(!ftms.control_granted &&
+           ftms.activity_state == GATT_FTMS_STATE_STOPPED);
+    ble_gatt_attribute *ftms_training = gatt_server_find(&server,
+        ftms.training_status_handle);
+    assert(ftms_training && ftms_training->value_len == 1 &&
+           *gatt_attribute_value(&server, ftms_training) == 0x01);
+    gatt_ftms_set_control_handler(&ftms, ftms_defer, NULL);
+    ftms_write(&server, &ftms, request_control, sizeof(request_control),
+        GATT_FTMS_CONTROL_DEFERRED);
+    assert(gatt_ftms_complete_control_point(&server, &ftms,
+        GATT_FTMS_RESPONSE_SUCCESS, NULL, 0));
+    assert(ftms.control_granted && !ftms.control_point_pending);
+    server.event_count = 0;
+    server.event_used = 0;
 
     gatt_server_init(&server, 23);
     ble_gatt_mesh_prov_service provisioning = {0};

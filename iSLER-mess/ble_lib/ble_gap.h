@@ -152,7 +152,7 @@ int GAP_CCM_DECRYPT(
 #define GAP_LL_FEATURES_SUBRATING 0x20
 #define GAP_LL_FEATURES_SUBRATING_HOST 0x40
 #define GAP_LL_FEATURES_CHANNEL_CLASSIFICATION 0x80
-#define GAP_CHANNEL_CLASSIFICATION_BYTES 10
+#define GAP_CHANN_CLASS_BYTES 10
 // Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
 // Shorter Connection Intervals capabilities on feature page 1.
 #define GAP_LL_FEATURES_EXTENDED 0x80
@@ -227,11 +227,6 @@ static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
-typedef struct {
-    // Zero is public; any nonzero value is treated as random.
-    uint8_t type, address[6];
-} gap_address;
-
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
@@ -242,6 +237,36 @@ typedef struct {
     uint8_t present;
 } bond_opt_key;
 
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
+#endif
+
+// GAP state and connection data types.
+typedef struct {
+    uint8_t scanning, active, generation;
+    uint16_t interval_ms, window_ms;
+    uint8_t discovery_mode, filter_duplicates;
+} gap_scanner_state;
+
+typedef struct {
+    uint16_t tx_octets, tx_time, rx_octets, rx_time;
+} gap_data_length;
+
+typedef struct {
+    uint16_t interval, latency, supervision_timeout;
+} gap_conn_params;
+
+typedef struct {
+    uint16_t interval_125us, factor, latency, continuation, timeout;
+    uint16_t base_event, win_offset, instant;
+} gap_conn_schedule;
+
+typedef struct {
+    // Zero is public; any nonzero value is treated as random.
+    uint8_t type, address[6];
+} gap_address;
+
+#if GAP_SMP_SUPPORT > 0
 // One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
 // little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
@@ -253,11 +278,26 @@ typedef struct {
     uint8_t key_size, authenticated;
     uint8_t has_peripheral_ltk;
 } gap_bond;
-
-typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
-                                       uint32_t value);
 #endif
 
+// GAP protocol and procedure enum values.
+// Encryption procedure state; timed phases occupy the low nine bits.
+enum {
+    GAP_ENC_IDLE = 0,
+    GAP_ENC_WAIT_RSP = 1u << 0,
+    GAP_ENC_WAIT_START = 1u << 1,
+    GAP_ENC_WAIT_FINAL = 1u << 2,
+    GAP_ENC_KEY_REQUEST = 1u << 3,
+    GAP_ENC_START_QUEUED = 1u << 4,
+    GAP_ENC_PERIPHERAL_START = 1u << 5,
+    GAP_ENC_WAIT_PAUSE = 1u << 6,
+    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
+    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
+    GAP_ENC_QUEUED = 1u << 9,
+    GAP_ENC_PAUSE_QUEUED = 1u << 10,
+    GAP_ENC_RESTART_QUEUED = 1u << 11,
+    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
+};
 enum {
     ADV_IND = 0x00,
     ADV_DIRECT_IND = 0x01,
@@ -268,13 +308,53 @@ enum {
     ADV_SCAN_IND = 0x06,
     ADV_EXT_IND = 0x07
 };
-
 typedef enum {
     GAP_CONN_MODE_DIRECT = 0x00,
     GAP_CONN_MODE_GENERAL = 0x01,
     GAP_CONN_MODE_SELECTIVE = 0x02,
     GAP_CONN_MODE_AUTO = 0x04
 } gap_conn_mode;
+enum {
+    GAP_RATE_QUEUED_SET = 1u << 0,
+    GAP_RATE_QUEUED_REQUEST = 1u << 1
+};
+enum {
+    GAP_PENDING_TIMING_UPDATE = 1u << 0,
+    GAP_PENDING_CHANNEL_MAP = 1u << 1,
+    GAP_PENDING_PHY_UPDATE = 1u << 2
+};
+enum {
+    GAP_CONN_PARAMS_NONE,
+    GAP_CONN_PARAMS_REMOTE,
+    GAP_CONN_PARAMS_LOCAL
+};
+enum {
+    GAP_SUBRATE_QUEUED_UPDATE = 1u << 0,
+    GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
+};
+enum {
+    GAP_SUBRATE_IDLE,
+    GAP_SUBRATE_UPDATE_PENDING,
+    GAP_SUBRATE_REQUEST_PENDING
+};
+
+typedef struct {
+    uint8_t slot;
+    uint16_t generation;
+} gap_conn_handle;
+
+
+typedef struct {
+    volatile uint16_t phase;
+    uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
+    uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
+    uint8_t next_skd[8], next_iv[4];
+    uint16_t ediv;
+    uint64_t tx_counter, rx_counter;
+    uint32_t started_ms;
+} gap_security_context;
+
+
 
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
@@ -304,21 +384,11 @@ static struct {
 
 
 
-typedef struct {
-    uint8_t scanning, active, generation;
-    uint16_t interval_ms, window_ms;
-    uint8_t discovery_mode, filter_duplicates;
-} gap_scanner_state;
 static gap_scanner_state gap_scanner = {
     .interval_ms = 20,
     .window_ms = 20,
     .discovery_mode = GAP_DISCOVERY_ALL
 };
-
-// Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
-typedef struct {
-    uint16_t tx_octets, tx_time, rx_octets, rx_time;
-} gap_data_length;
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
@@ -330,42 +400,10 @@ static struct {
     volatile int8_t rssi;
 } gap_rx;
 
-typedef struct {
-    uint16_t interval, latency, supervision_timeout;
-} gap_conn_params;
 
-enum {
-    GAP_RATE_QUEUED_SET = 1u << 0,
-    GAP_RATE_QUEUED_REQUEST = 1u << 1
-};
 
-enum {
-    GAP_PENDING_TIMING_UPDATE = 1u << 0,
-    GAP_PENDING_CHANNEL_MAP = 1u << 1,
-    GAP_PENDING_PHY_UPDATE = 1u << 2
-};
 
-enum {
-    GAP_CONN_PARAMS_NONE,
-    GAP_CONN_PARAMS_REMOTE,
-    GAP_CONN_PARAMS_LOCAL
-};
 
-enum {
-    GAP_SUBRATE_QUEUED_UPDATE = 1u << 0,
-    GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
-};
-
-enum {
-    GAP_SUBRATE_IDLE,
-    GAP_SUBRATE_UPDATE_PENDING,
-    GAP_SUBRATE_REQUEST_PENDING
-};
-
-typedef struct {
-    uint16_t interval_125us, factor, latency, continuation, timeout;
-    uint16_t base_event, win_offset, instant;
-} gap_conn_schedule;
 
 typedef struct {
 #if GAP_SMP_SUPPORT > 0
@@ -474,8 +512,8 @@ typedef struct {
         uint8_t enabled, classification_valid, peer_classification_valid;
         uint8_t status_last_sent_valid;
         uint8_t min_spacing_200ms, max_delay_200ms;
-        uint8_t local_class[GAP_CHANNEL_CLASSIFICATION_BYTES];
-        uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
+        uint8_t local_class[GAP_CHANN_CLASS_BYTES];
+        uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } channel;
 
@@ -521,13 +559,6 @@ static int gap_conn_free_slot(void) {
 
     return -1;
 }
-// Public connection handles identify a live slot generation, so a handle
-// from a disconnected link cannot accidentally select a later link in it.
-typedef struct {
-    uint8_t slot;
-    uint16_t generation;
-} gap_conn_handle;
-
 // Application-facing connection handle operations.
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
@@ -573,34 +604,6 @@ static inline int gap_conn_current(gap_conn_handle *handle) {
     handle->generation = gap_conn_generations[gap_conn_slot];
     return handle->generation != 0;
 }
-
-// Encryption procedure state; application/SMP code supplies keys in PDU byte order.
-// Timed phases occupy the low nine bits for a single-mask timeout check.
-enum {
-    GAP_ENC_IDLE = 0,
-    GAP_ENC_WAIT_RSP = 1u << 0,
-    GAP_ENC_WAIT_START = 1u << 1,
-    GAP_ENC_WAIT_FINAL = 1u << 2,
-    GAP_ENC_KEY_REQUEST = 1u << 3,
-    GAP_ENC_START_QUEUED = 1u << 4,
-    GAP_ENC_PERIPHERAL_START = 1u << 5,
-    GAP_ENC_WAIT_PAUSE = 1u << 6,
-    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
-    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
-    GAP_ENC_QUEUED = 1u << 9,
-    GAP_ENC_PAUSE_QUEUED = 1u << 10,
-    GAP_ENC_RESTART_QUEUED = 1u << 11,
-    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
-};
-typedef struct {
-    volatile uint16_t phase;
-    uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
-    uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
-    uint8_t next_skd[8], next_iv[4];
-    uint16_t ediv;
-    uint64_t tx_counter, rx_counter;
-    uint32_t started_ms;
-} gap_security_context;
 
 static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 // Per-slot counters invalidate security work after a link ends or is replaced.
