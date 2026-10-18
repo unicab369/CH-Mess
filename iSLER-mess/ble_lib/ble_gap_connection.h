@@ -2141,41 +2141,29 @@ int gap_channel_reporting_set(
 // Application facing
 // Supply local channel classifications packed as four 2-bit values per byte,
 // channel 0 in the least-significant bits. Values are 0=unknown, 1=good, 3=bad.
-// A Peripheral reports changes only after the Central enables reporting.
+// The assessment is shared by all links. Each Peripheral link reports changes
+// only after its Central enables reporting.
 int gap_channel_class_set(
     const uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) || !classification ||
-        !gap_class_valid(classification)
-    ) return 0;
+    if (!gap_class_valid(classification)) return 0;
 
-    if (memcmp(conn->c_channel.local_class, classification,
-               GAP_CHANN_CLASS_BYTES) == 0
+    if (memcmp(gap_local_class, classification, GAP_CHANN_CLASS_BYTES) == 0
     ) return 1;
 
-    memcpy(conn->c_channel.local_class, classification,
-           GAP_CHANN_CLASS_BYTES);
-    conn->c_channel.classification_valid = 1;
-    conn->c_channel.status_changed_ms = GET_MILLIS();
+    memcpy(gap_local_class, classification, GAP_CHANN_CLASS_BYTES);
+    uint32_t now_ms = GET_MILLIS();
 
-    if (!conn->is_central && conn->c_channel.enabled)
-        conn->c_channel.status_queued = 1;
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
+
+        gap_conn_context *conn = &gap_conn_ctx[slot];
+        conn->c_channel.status_changed_ms = now_ms;
+        if (!conn->is_central && conn->c_channel.enabled)
+            conn->c_channel.status_queued = 1;
+    }
+
     return 1;
-}
-
-// Application facing
-// Return the local classifications supplied by the Host/adapter, or NULL if
-// no valid classification is available. The returned data remains GAP-owned.
-const uint8_t *gap_channel_class_get(void) {
-    const gap_conn_context *conn = gap_conn_ctx_current();
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) ||
-        !conn->c_channel.classification_valid
-    ) return NULL;
-
-    return conn->c_channel.local_class;
 }
 
 // Application facing

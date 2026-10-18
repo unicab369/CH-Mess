@@ -515,7 +515,7 @@ void gap_hw_received(void) {
                         gap_tx_frame[0] = 0x03;
                         gap_tx_frame[1] = 11;
                         gap_tx_frame[2] = LL_CHANNEL_STATUS_IND;
-                        memcpy(gap_tx_frame + 3, conn->c_channel.local_class,
+                        memcpy(gap_tx_frame + 3, gap_local_class,
                                GAP_CHANN_CLASS_BYTES);
                     }
                 }

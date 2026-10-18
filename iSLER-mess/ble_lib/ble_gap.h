@@ -498,10 +498,9 @@ typedef struct {
     } c_tx, c_rx;
     struct {
         uint8_t report_queued, report_pending, status_queued;
-        uint8_t enabled, classification_valid, peer_classification_valid;
+        uint8_t enabled, peer_classification_valid;
         uint8_t status_last_sent_valid;
         uint8_t min_spacing_200ms, max_delay_200ms;
-        uint8_t local_class[GAP_CHANN_CLASS_BYTES];
         uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } c_channel;
@@ -512,6 +511,8 @@ static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
+// Shared radio assessment; an all-zero value means every channel is unknown.
+static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
 
 static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 // Per-slot counters invalidate security work after a link ends or is replaced.
@@ -1335,7 +1336,6 @@ static int gap_conn_accept(
     conn->local_tx_octets = 27;
     conn->load_pending = 1;
 
-    conn->c_channel.classification_valid = 1;
     conn->c_channel.min_spacing_200ms = 5;
     conn->c_channel.max_delay_200ms = 5;
     conn->c_channel.status_changed_ms = GET_MILLIS();
