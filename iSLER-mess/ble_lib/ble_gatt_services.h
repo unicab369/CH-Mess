@@ -246,7 +246,6 @@ typedef struct {
 } ble_gatt_service_value;
 
 // Service-specific database builders.
-#include "ble_gatt_service_navigation.h"
 #include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_health.h"
 #include "ble_gatt_service_measurement.h"
