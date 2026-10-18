@@ -177,20 +177,20 @@ static void gap_conn_send_queued(void) {
     }
 
     if (!gap_tx_frame[1] && conn->is_central &&
-        conn->c_channel.report_queued &&
+        conn->c_channel.role.central.report_queued &&
         !conn->c_features.request_pending
     ) {
         if (!conn->c_features.known) {
             gap_send_feature_request();
         }
         else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
-            conn->c_channel.report_queued = 0;
-            conn->c_channel.report_pending = 0;
+            conn->c_channel.role.central.report_queued = 0;
+            conn->c_channel.role.central.report_pending = 0;
             conn->connection_status = 0x1a;
         }
         else {
-            conn->c_channel.report_queued = 0;
-            conn->c_channel.report_pending = 1;
+            conn->c_channel.role.central.report_queued = 0;
+            conn->c_channel.role.central.report_pending = 1;
             conn->connection_status = GAP_CONNECTION_PENDING;
 
             gap_tx_frame[0] = 0x03;
@@ -334,12 +334,12 @@ void gap_hw_received(void) {
         if (conn->c_link_layer.tx_pending &&
             (((frame[0] >> 2) & 1) != conn->c_link_layer.tx_sn)
         ) {
-            if (conn->is_central && conn->c_channel.report_pending &&
+            if (conn->is_central && conn->c_channel.role.central.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 4 &&
                 gap_tx_frame[2] == LL_CHANNEL_REPORTING_IND
             ) {
-                conn->c_channel.report_pending = 0;
+                conn->c_channel.role.central.report_pending = 0;
                 conn->connection_status = 0;
             }
 
@@ -496,20 +496,20 @@ void gap_hw_received(void) {
 
             if (!gap_security->phase) {
                 if (!conn->is_central &&
-                    conn->c_channel.enabled && conn->c_channel.status_queued
+                    conn->c_channel.enabled && conn->c_channel.role.peripheral.status_queued
                 ) {
                     uint32_t now_ms = GET_MILLIS();
 
                     if (!gap_tx_frame[1] &&
-                        (uint32_t)(now_ms - conn->c_channel.status_changed_ms) >=
+                        (uint32_t)(now_ms - conn->c_channel.role.peripheral.status_changed_ms) >=
                                 (uint32_t)conn->c_channel.max_delay_200ms * 200 &&
-                        (!conn->c_channel.status_last_sent_valid ||
-                                (uint32_t)(now_ms - conn->c_channel.status_last_sent_ms) >=
+                        (!conn->c_channel.role.peripheral.status_last_sent_valid ||
+                                (uint32_t)(now_ms - conn->c_channel.role.peripheral.status_last_sent_ms) >=
                                 (uint32_t)conn->c_channel.min_spacing_200ms * 200)
                     ) {
-                        conn->c_channel.status_queued = 0;
-                        conn->c_channel.status_last_sent_ms = now_ms;
-                        conn->c_channel.status_last_sent_valid = 1;
+                        conn->c_channel.role.peripheral.status_queued = 0;
+                        conn->c_channel.role.peripheral.status_last_sent_ms = now_ms;
+                        conn->c_channel.role.peripheral.status_last_sent_valid = 1;
 
                         gap_tx_frame[0] = 0x03;
                         gap_tx_frame[1] = 11;

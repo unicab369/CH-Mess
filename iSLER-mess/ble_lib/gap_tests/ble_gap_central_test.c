@@ -3867,12 +3867,14 @@ static void test_channel_classification_reporting(void) {
         0, 0, 0, 0, 0, 0x04})); // Reserved high bits must be zero.
     const uint8_t enable_reporting[3] = {1, 5, 10};
     receive_test_control(0x28, enable_reporting, sizeof(enable_reporting));
-    assert(conn->c_channel.enabled && conn->c_channel.status_queued);
+    assert(conn->c_channel.enabled &&
+           conn->c_channel.role.peripheral.status_queued);
     now_ms += 2000;
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x29 && gap_tx_frame[1] == 11 &&
            memcmp(gap_tx_frame + 3, classification, sizeof(classification)) == 0);
-    assert(!conn->c_channel.status_queued && conn->c_channel.status_last_sent_valid);
+    assert(!conn->c_channel.role.peripheral.status_queued &&
+           conn->c_channel.role.peripheral.status_last_sent_valid);
     gap_conn_end();
 }
 

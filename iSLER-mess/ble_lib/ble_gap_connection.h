@@ -1151,9 +1151,9 @@ static uint8_t gap_conn_control(
             conn->c_subrate.status = frame[4];
         }
 
-        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->c_channel.report_pending) {
-            conn->c_channel.report_pending = 0;
-            conn->c_channel.report_queued = 0;
+        if (frame[3] == LL_CHANNEL_REPORTING_IND && conn->c_channel.role.central.report_pending) {
+            conn->c_channel.role.central.report_pending = 0;
+            conn->c_channel.role.central.report_queued = 0;
             conn->connection_status = frame[4];
         }
 
@@ -1227,10 +1227,10 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
 
         if (frame[3] == LL_CHANNEL_REPORTING_IND &&
-            conn->c_channel.report_pending
+            conn->c_channel.role.central.report_pending
         ) {
-            conn->c_channel.report_pending = 0;
-            conn->c_channel.report_queued = 0;
+            conn->c_channel.role.central.report_pending = 0;
+            conn->c_channel.role.central.report_queued = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
 
@@ -1672,9 +1672,9 @@ static uint8_t gap_conn_control(
         conn->c_channel.enabled = frame[3];
         conn->c_channel.min_spacing_200ms = frame[4];
         conn->c_channel.max_delay_200ms = frame[5];
-        conn->c_channel.status_queued = frame[3];
-        conn->c_channel.status_changed_ms = GET_MILLIS();
-        conn->c_channel.status_last_sent_valid = 0;
+        conn->c_channel.role.peripheral.status_queued = frame[3];
+        conn->c_channel.role.peripheral.status_changed_ms = GET_MILLIS();
+        conn->c_channel.role.peripheral.status_last_sent_valid = 0;
         break;
     }
     case LL_CHANNEL_STATUS_IND: { // LL_CHANNEL_STATUS_IND (Peripheral to Central).
@@ -1687,7 +1687,7 @@ static uint8_t gap_conn_control(
             return gap_conn_unknown_resp(frame[2]);
         }
 
-        memcpy(conn->c_channel.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
+        memcpy(conn->c_channel.role.central.peer_classification, frame + 3, GAP_CHANN_CLASS_BYTES);
         break;
     }
     case LL_LENGTH_REQ:
@@ -2169,8 +2169,8 @@ int gap_channel_reporting_set(
         min_spacing_200ms > 150 ||
         max_delay_200ms < min_spacing_200ms ||
         max_delay_200ms > 150 ||
-        conn->c_channel.report_queued ||
-        conn->c_channel.report_pending ||
+        conn->c_channel.role.central.report_queued ||
+        conn->c_channel.role.central.report_pending ||
         conn->c_link_state.terminate_queued ||
         conn->c_link_state.terminate_sent ||
         conn->c_link_state.terminate_after_reply
@@ -2179,7 +2179,7 @@ int gap_channel_reporting_set(
     conn->c_channel.enabled = enable;
     conn->c_channel.min_spacing_200ms = min_spacing_200ms;
     conn->c_channel.max_delay_200ms = max_delay_200ms;
-    conn->c_channel.report_queued = 1;
+    conn->c_channel.role.central.report_queued = 1;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
 }
@@ -2204,9 +2204,11 @@ int gap_channel_class_set(
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
-        conn->c_channel.status_changed_ms = now_ms;
-        if (!conn->is_central && conn->c_channel.enabled)
-            conn->c_channel.status_queued = 1;
+        if (!conn->is_central) {
+            conn->c_channel.role.peripheral.status_changed_ms = now_ms;
+            if (conn->c_channel.enabled)
+                conn->c_channel.role.peripheral.status_queued = 1;
+        }
     }
 
     return 1;
@@ -2222,7 +2224,7 @@ int gap_peer_class_get(
         !conn->is_central || !classification
     ) return 0;
 
-    memcpy(classification, conn->c_channel.peer_classification, GAP_CHANN_CLASS_BYTES);
+    memcpy(classification, conn->c_channel.role.central.peer_classification, GAP_CHANN_CLASS_BYTES);
     return 1;
 }
 

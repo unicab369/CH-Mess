@@ -8,10 +8,16 @@ flowchart TB
     LinkLayer --> PhysicalLayer["Physical Layer (PHY)........."]
 ```
 
-The GAP service is a GATT service, so reading or writing its characteristics
-uses GATT over ATT and L2CAP. GAP security procedures can request pairing;
-SMP exchanges pairing messages over L2CAP's fixed Security Manager channel
-(CID 0x0006), then supplies the negotiated key for Link Layer encryption.
-Advertising, scanning, and connection procedures also use the Link Layer. HCI
-is the optional standard interface between a separate host and controller;
-this project uses direct hardware hooks instead.
+## LE roles
+
+| Role | What it does | Typical use |
+| --- | --- | --- |
+| Broadcaster | Sends advertising packets without accepting connections. | Beacons and one-way broadcasts. |
+| Observer | Scans for advertising packets without initiating connections. | Scanning and discovery applications. |
+| Peripheral | Advertises connectably and accepts a connection initiated by a Central. | A sensor or accessory that waits for a host to connect. |
+| Central | Scans for connectable advertisers and initiates a connection. | A phone, gateway, or host that connects to peripherals. |
+
+A device can support more than one role. In a connection, the Central initiates
+the link and the Peripheral accepts it; either side can provide GATT client or
+server functionality, though Central clients and Peripheral servers are common.
+

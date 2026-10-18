@@ -500,13 +500,22 @@ typedef struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } c_tx, c_rx;
     struct {
-        uint8_t report_queued, report_pending, status_queued;
-        uint8_t enabled, status_last_sent_valid;
+        uint8_t enabled;
         uint8_t min_spacing_200ms, max_delay_200ms;
-        uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
-        uint32_t status_changed_ms, status_last_sent_ms;
+        // Central request state and Peripheral report state are mutually
+        // exclusive for a connection, so they share storage.
+        union {
+            struct {
+                uint8_t report_queued, report_pending;
+                uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
+            } central;
+            struct {
+                uint8_t status_queued, status_last_sent_valid;
+                uint32_t status_changed_ms, status_last_sent_ms;
+            } peripheral;
+        } role;
     } c_channel;
-} gap_conn_context; // 552 B
+} gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 // Hardware payload capacity is shared by all links on this controller.
@@ -1341,7 +1350,6 @@ static int gap_conn_accept(
 
     conn->c_channel.min_spacing_200ms = 5;
     conn->c_channel.max_delay_200ms = 5;
-    conn->c_channel.status_changed_ms = GET_MILLIS();
     conn->c_phy.current.tx = GAP_PHY_1M;
     conn->c_phy.current.rx = GAP_PHY_1M;
     conn->c_phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
