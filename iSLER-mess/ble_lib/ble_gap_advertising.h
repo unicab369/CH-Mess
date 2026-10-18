@@ -2,36 +2,20 @@
 #ifndef BLE_GAP_ADVERTISING_H
 #define BLE_GAP_ADVERTISING_H
 
-#if GAP_EXT_ADV_SUPPORT
-typedef struct {
-    uint8_t has_address;
-    gap_address peer;
-    uint8_t has_adi, sid;
-    uint16_t adi;
-} gap_ext_identity;
+#define GAP_EAD_RANDOMIZER_LEN 5
+#define GAP_EAD_MIC_LEN 4
+#define GAP_EAD_KEY_LEN 16
+#define GAP_EAD_IV_LEN 8
+#define GAP_EAD_PLAINTEXT_MAX 245
+#define GAP_EAD_AD_STRUCTURE_MAX (GAP_EAD_PLAINTEXT_MAX + 11)
 
-typedef struct {
-    uint8_t active;
-    gap_ext_identity identity;
-    uint8_t await_scan_response;
-    uint16_t data_len;
-    int8_t rssi;
-    uint32_t deadline_ms;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_context;
+#define GAP_SCAN_REPORT_PDU_MASK \
+    ((1u << ADV_IND) | (1u << ADV_DIRECT_IND) | \
+    (1u << ADV_NONCONN_IND) | (1u << SCAN_RSP) | \
+    (1u << ADV_SCAN_IND))
 
-static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
-static struct {
-    uint8_t report_head, report_count;
-    uint8_t seen_count, seen_next;
-} gap_ext_idx;
-
-static uint8_t gap_sync_started_scan;
-#endif
-
-// =============================================================================
-// Advertising data and EAD
-// =============================================================================
+#define GAP_SCANNABLE_ADV_PDU_MASK \
+    ((1u << ADV_IND) | (1u << ADV_SCAN_IND))
 
 // Advertising data (AD) structure types and builder interface.
 enum {
@@ -51,10 +35,98 @@ enum {
     GAP_AD_ENCRYPTED_DATA = 0x31
 };
 
+#if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t has_address;
+    gap_address peer;
+    uint8_t has_adi, sid;
+    uint16_t adi;
+} gap_ext_identity;
+
+typedef struct {
+    uint8_t active;
+    gap_ext_identity identity;
+    uint8_t await_scan_response;
+    uint16_t data_len;
+    int8_t rssi;
+    uint32_t deadline_ms;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_context;
+
+#endif
+
+// =============================================================================
+// Advertising data and EAD
+// =============================================================================
+
 typedef struct {
     uint8_t *data;
     size_t capacity, len;
 } gap_ad_builder;
+
+typedef struct {
+    // Received advertising PDU and advertiser address.
+    uint8_t pdu_type;
+    uint8_t address_type, address[6];
+    uint8_t resolved;
+    uint8_t identity_type, identity_address[6];
+    uint8_t has_target;
+    uint8_t target_address_type, target_address[6];
+
+    // Received signal strength and AD payload.
+    int8_t rssi;
+    uint8_t data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
+} gap_scan_report;
+
+typedef struct {
+    // Scanner radio scheduling and active-scan request state.
+    uint8_t channel_index, applied_generation;
+    uint32_t interval_start_ms;
+    volatile uint8_t active_pending, active_address_type;
+    uint8_t active_address[6];
+    uint32_t active_deadline_ms;
+    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
+
+    // Scan report queue, duplicate tracking, and scan-response peer.
+    uint8_t head, count;
+    uint8_t seen_count, seen_next;
+    uint8_t response_accepted;
+    gap_address response_peer;
+} gap_scan_ctx;
+
+// Encrypted Advertising Data key state.
+static struct {
+    uint8_t session_key[GAP_EAD_KEY_LEN];
+    uint8_t iv[GAP_EAD_IV_LEN];
+    uint8_t set;
+} gap_ead_key;
+
+// Advertisement and scan report state.
+static struct {
+    uint8_t frame[2 + 37];
+    volatile uint8_t ready;
+    volatile int8_t rssi;
+} gap_adv_scan;
+
+static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
+static gap_scan_ctx gap_scan;
+static struct {
+    gap_address peer;
+    uint8_t pdu_type, data_len;
+    uint8_t data[GAP_ADV_DATA_MAX];
+} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
+
+
+#if GAP_EXT_ADV_SUPPORT
+static gap_ext_context gap_ext_ctx[GAP_EXT_ADV_CONTEXT_COUNT];
+static struct {
+    uint8_t report_head, report_count;
+    uint8_t seen_count, seen_next;
+} gap_ext_idx;
+
+static uint8_t gap_sync_started_scan;
+#endif
 
 // Application facing
 // Start building AD structures in caller-owned storage.
@@ -239,18 +311,6 @@ int gap_ad_parse_next(
 // Encrypted advertising data
 // =============================================================================
 // Encrypted Advertising Data key management and AD payload protection.
-#define GAP_EAD_RANDOMIZER_LEN 5
-#define GAP_EAD_MIC_LEN 4
-#define GAP_EAD_KEY_LEN 16
-#define GAP_EAD_IV_LEN 8
-#define GAP_EAD_PLAINTEXT_MAX 245
-#define GAP_EAD_AD_STRUCTURE_MAX (GAP_EAD_PLAINTEXT_MAX + 11)
-
-static struct {
-    uint8_t session_key[GAP_EAD_KEY_LEN];
-    uint8_t iv[GAP_EAD_IV_LEN];
-    uint8_t set;
-} gap_ead_key;
 
 // NOTE: To clear the EAD key
 // use gap_wipe(&gap_ead_key, sizeof(gap_ead_key)).
@@ -561,49 +621,6 @@ int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
 // =============================================================================
 
 // Advertisement saved while an active scan requests its scan response.
-static struct {
-    uint8_t frame[2 + 37];
-    volatile uint8_t ready;
-    volatile int8_t rssi;
-} gap_adv_scan;
-
-typedef struct {
-    // Received advertising PDU and advertiser address.
-    uint8_t pdu_type;
-    uint8_t address_type, address[6];
-    uint8_t resolved;
-    uint8_t identity_type, identity_address[6];
-    uint8_t has_target;
-    uint8_t target_address_type, target_address[6];
-
-    // Received signal strength and AD payload.
-    int8_t rssi;
-    uint8_t data_len;
-    uint8_t data[GAP_ADV_DATA_MAX];
-} gap_scan_report;
-
-static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
-typedef struct {
-    // Scanner radio scheduling and active-scan request state.
-    uint8_t channel_index, applied_generation;
-    uint32_t interval_start_ms;
-    volatile uint8_t active_pending, active_address_type;
-    uint8_t active_address[6];
-    uint32_t active_deadline_ms;
-    GAP_RADIO_BUFFER_ATTR uint8_t request[14];
-
-    // Scan report queue, duplicate tracking, and scan-response peer.
-    uint8_t head, count;
-    uint8_t seen_count, seen_next;
-    uint8_t response_accepted;
-    gap_address response_peer;
-} gap_scan_ctx;
-static gap_scan_ctx gap_scan;
-static struct {
-    gap_address peer;
-    uint8_t pdu_type, data_len;
-    uint8_t data[GAP_ADV_DATA_MAX];
-} gap_scan_seen[GAP_SCAN_SEEN_COUNT];
 
 // Application facing
 void gap_scan_start(uint8_t active) {
@@ -788,14 +805,6 @@ int gap_scan_poll(gap_scan_report *report) {
     gap_scan.count--;
     return 1;
 }
-
-#define GAP_SCAN_REPORT_PDU_MASK \
-    ((1u << ADV_IND) | (1u << ADV_DIRECT_IND) | \
-    (1u << ADV_NONCONN_IND) | (1u << SCAN_RSP) | \
-    (1u << ADV_SCAN_IND))
-
-#define GAP_SCANNABLE_ADV_PDU_MASK \
-    ((1u << ADV_IND) | (1u << ADV_SCAN_IND))
 
 // Keep the newest advertising observation when the application falls behind.
 static inline void gap_receive_report(

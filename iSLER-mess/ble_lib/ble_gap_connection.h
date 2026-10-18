@@ -7,6 +7,24 @@
 
 #include "ble_crypto.h"
 
+#if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
+#define GAP_CONN_PACKET_BUFFER_MAX 35
+#else
+#define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
+#endif
+
+#define gap_tx_frame gap_conn_buff[gap_conn_slot].tx
+
+enum {
+    GAP_LL_ERR_UNSUPPORTED_FEATURE = 0x11,
+    GAP_LL_ERR_REMOTE_FEATURE = 0x1a,
+    GAP_LL_ERR_INVALID_PARAMS = 0x1e,
+    GAP_LL_ERR_UNSPECIFIED = 0x1f,
+    GAP_LL_ERR_UNSUPPORTED_PARAM = 0x20,
+    GAP_LL_ERR_COLLISION = 0x23,
+    GAP_LL_ERR_INSTANT = 0x28
+};
+
 // On radio receive, LLE_IRQHandler invokes ble_mesh_rx_received(), which calls
 // gap_hw_received(). Incoming Link Layer control PDUs are processed there,
 // while foreground code may also update shared flags. Do not track independently
@@ -63,11 +81,11 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-#if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
-#define GAP_CONN_PACKET_BUFFER_MAX 35
-#else
-#define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
-#endif
+typedef struct {
+    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
+    uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
+} gap_conn_buffer;
 
 static struct {
     uint8_t slot, slot_valid, poll_cursor;
@@ -82,15 +100,7 @@ static struct {
     uint64_t conn_req_ticks;
 } adv_evt;
 
-typedef struct {
-    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
-    GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
-    uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-} gap_conn_buffer;
-
 static gap_conn_buffer gap_conn_buff[GAP_CONNECTION_COUNT];
-
-#define gap_tx_frame gap_conn_buff[gap_conn_slot].tx
 
 // Application facing
 // Read the currently applied connection timing and subrate schedule.
@@ -622,16 +632,6 @@ static void gap_security_derive(void) {
     gap_wipe(skd, sizeof(skd));
     gap_wipe(gap_security->ltk, sizeof(gap_security->ltk));
 }
-
-enum {
-    GAP_LL_ERR_UNSUPPORTED_FEATURE = 0x11,
-    GAP_LL_ERR_REMOTE_FEATURE = 0x1a,
-    GAP_LL_ERR_INVALID_PARAMS = 0x1e,
-    GAP_LL_ERR_UNSPECIFIED = 0x1f,
-    GAP_LL_ERR_UNSUPPORTED_PARAM = 0x20,
-    GAP_LL_ERR_COLLISION = 0x23,
-    GAP_LL_ERR_INSTANT = 0x28
-};
 
 static inline uint8_t gap_conn_unknown_resp(uint8_t opcode) {
     gap_tx_frame[1] = 2;
