@@ -93,7 +93,7 @@ int main(void) {
            (uint8_t)(automation_io.channel_handles[1] >> 8));
 
     ble_gatt_bss_service binary_sensor = {0};
-    assert(gatt_bss_add(&server, &binary_sensor));
+    assert(gatt_bss_add_full(&server, &binary_sensor, 20));
     assert(binary_sensor.service_handle && binary_sensor.control_point_handle &&
            binary_sensor.response_handle && binary_sensor.response_cccd_handle);
     assert(server.attrs[binary_sensor.control_point_handle - 1].uuid.value[0]

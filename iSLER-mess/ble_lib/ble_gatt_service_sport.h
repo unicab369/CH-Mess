@@ -19,120 +19,6 @@ typedef struct {
     uint8_t factory_calibration_date[7], factory_calibration_date_set;
 } ble_gatt_cps_service;
 
-// Internal helper
-// CPS means Cycling Power Service.
-static inline uint8_t gatt_cps_cp_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
-
-// Application-facing API
-// CPS means Cycling Power Service.
-static inline int gatt_cps_add(
-    ble_gatt_server *server, ble_gatt_cps_service *service,
-    uint32_t features, uint8_t sensor_location,
-    int include_vector, int include_control_point
-) {
-    const uint32_t control_features = (1u << 9) | (1u << 10) |
-        (1u << 11) | (0x0fu << 12) | (1u << 18) | (1u << 19);
-
-    if (!server || !service || sensor_location > 16 ||
-        include_vector > 1 || include_control_point > 1 ||
-        (features & 0xffc00000u) ||
-        (features & 0x00300000u) == 0x00300000u ||
-        (!include_control_point && (features & control_features))
-    )
-        return 0;
-
-    memset(service, 0, sizeof(*service));
-    uint8_t feature[4] = {
-        (uint8_t)features, (uint8_t)(features >> 8),
-        (uint8_t)(features >> 16), (uint8_t)(features >> 24)
-    };
-    uint8_t unused_value = 0;
-    static const uint8_t control_point_initial = 0;
-    ble_gatt_sig_characteristic chars[6];
-    uint8_t count = 0;
-    chars[count++] = (ble_gatt_sig_characteristic){
-        0x2a63, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
-    };
-    chars[count++] = (ble_gatt_sig_characteristic){
-        0x2a65, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 4
-    };
-    chars[count++] = (ble_gatt_sig_characteristic){
-        0x2a5d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
-        &sensor_location, 1
-    };
-    uint8_t vector_index = 0xff, control_index = 0xff;
-    uint8_t calibration_date_index = 0xff;
-
-    if (include_vector) {
-        vector_index = count;
-        chars[count++] = (ble_gatt_sig_characteristic){
-            0x2a64, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
-        };
-    }
-
-    if (include_control_point) {
-        control_index = count;
-        chars[count++] = (ble_gatt_sig_characteristic){
-            .uuid = 0x2a66,
-            .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
-            .cccd = 1,
-            .permissions = BLE_GATT_PERM_WRITE,
-            .value = &control_point_initial,
-            .value_len = 0,
-            .value_capacity = 20,
-            .variable_length = 1
-        };
-    }
-
-    if (features & (1u << 18)) {
-        calibration_date_index = count;
-        chars[count++] = (ble_gatt_sig_characteristic){
-            0x2a2b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
-            service->factory_calibration_date,
-            sizeof(service->factory_calibration_date)
-        };
-    }
-
-    ble_gatt_sig_handlers handlers[6] = {0};
-
-    if (control_index != 0xff) {
-        handlers[control_index].write_request = gatt_cps_cp_write;
-        handlers[control_index].context = service;
-    }
-
-    service->server = server;
-    service->sensor_location = sensor_location;
-    service->supported_sensor_locations = 1u << sensor_location;
-    uint16_t values[6], cccds[6];
-
-    if (!gatt_sig_add_handlers(server, 0x1818, chars, count,
-            &service->service_handle, values, cccds, handlers)
-    ) return 0;
-
-    service->measurement_handle = values[0];
-    service->measurement_cccd_handle = cccds[0];
-    service->feature_handle = values[1];
-    service->sensor_location_handle = values[2];
-
-    if (vector_index != 0xff) {
-        service->vector_handle = values[vector_index];
-        service->vector_cccd_handle = cccds[vector_index];
-    }
-
-    if (control_index != 0xff) {
-        service->control_point_handle = values[control_index];
-        service->control_point_cccd_handle = cccds[control_index];
-    }
-
-    if (calibration_date_index != 0xff)
-        service->factory_calibration_date_handle =
-            values[calibration_date_index];
-    return 1;
-}
-
 // Cycling Speed and Cadence Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
@@ -1019,6 +905,113 @@ static inline uint8_t gatt_cps_cp_write(
     if (!response_error && update_content_mask)
         service->measurement_content_mask = requested_content_mask;
     return response_error;
+}
+
+// Application-facing API
+// CPS means Cycling Power Service.
+static inline int gatt_cps_add(
+    ble_gatt_server *server, ble_gatt_cps_service *service,
+    uint32_t features, uint8_t sensor_location,
+    int include_vector, int include_control_point
+) {
+    const uint32_t control_features = (1u << 9) | (1u << 10) |
+        (1u << 11) | (0x0fu << 12) | (1u << 18) | (1u << 19);
+
+    if (!server || !service || sensor_location > 16 ||
+        include_vector > 1 || include_control_point > 1 ||
+        (features & 0xffc00000u) ||
+        (features & 0x00300000u) == 0x00300000u ||
+        (!include_control_point && (features & control_features))
+    )
+        return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[4] = {
+        (uint8_t)features, (uint8_t)(features >> 8),
+        (uint8_t)(features >> 16), (uint8_t)(features >> 24)
+    };
+    uint8_t unused_value = 0;
+    static const uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic chars[6];
+    uint8_t count = 0;
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a63, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+    };
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a65, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 4
+    };
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a5d, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        &sensor_location, 1
+    };
+    uint8_t vector_index = 0xff, control_index = 0xff;
+    uint8_t calibration_date_index = 0xff;
+
+    if (include_vector) {
+        vector_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a64, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+        };
+    }
+
+    if (include_control_point) {
+        control_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            .uuid = 0x2a66,
+            .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
+            .cccd = 1,
+            .permissions = BLE_GATT_PERM_WRITE,
+            .value = &control_point_initial,
+            .value_len = 0,
+            .value_capacity = 20,
+            .variable_length = 1
+        };
+    }
+
+    if (features & (1u << 18)) {
+        calibration_date_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a2b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            service->factory_calibration_date,
+            sizeof(service->factory_calibration_date)
+        };
+    }
+
+    ble_gatt_sig_handlers handlers[6] = {0};
+
+    if (control_index != 0xff) {
+        handlers[control_index].write_request = gatt_cps_cp_write;
+        handlers[control_index].context = service;
+    }
+
+    service->server = server;
+    service->sensor_location = sensor_location;
+    service->supported_sensor_locations = 1u << sensor_location;
+    uint16_t values[6], cccds[6];
+
+    if (!gatt_sig_add_handlers(server, 0x1818, chars, count,
+            &service->service_handle, values, cccds, handlers)
+    ) return 0;
+
+    service->measurement_handle = values[0];
+    service->measurement_cccd_handle = cccds[0];
+    service->feature_handle = values[1];
+    service->sensor_location_handle = values[2];
+
+    if (vector_index != 0xff) {
+        service->vector_handle = values[vector_index];
+        service->vector_cccd_handle = cccds[vector_index];
+    }
+
+    if (control_index != 0xff) {
+        service->control_point_handle = values[control_index];
+        service->control_point_cccd_handle = cccds[control_index];
+    }
+
+    if (calibration_date_index != 0xff)
+        service->factory_calibration_date_handle =
+            values[calibration_date_index];
+    return 1;
 }
 
 // Application-facing API

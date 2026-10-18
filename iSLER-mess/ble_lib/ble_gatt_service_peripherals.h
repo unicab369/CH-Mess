@@ -2,7 +2,7 @@
 #define BLE_GATT_SERVICE_PERIPHERALS_H
 
 // Contents: Automation IO, Location and Navigation, Indoor Positioning, HID,
-// HTTP Proxy, Object Transfer, and Electronic Shelf Label.
+// HTTP Proxy, Object Transfer, Electronic Shelf Label, and sensor services.
 // Automation IO Service
 typedef struct {
     uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
@@ -520,12 +520,6 @@ static inline int gatt_lns_complete_control(
     return 1;
 }
 
-// Internal helper
-static inline uint8_t gatt_lns_control_point_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
-
 // Application-facing API
 // LNS means Location and Navigation Service.
 static inline int gatt_lns_add(
@@ -839,17 +833,6 @@ static inline int gatt_ips_add_full(
     return 1;
 }
 
-// Backward-compatible mandatory-only Indoor Positioning builder.
-// IPS means Indoor Positioning Service.
-static inline int gatt_ips_add(
-    ble_gatt_server *server, ble_gatt_ips_service *service,
-    uint8_t configuration, const uint8_t latitude[4],
-    const uint8_t longitude[4]
-) {
-    return gatt_ips_add_full(server, service,
-        configuration, latitude, longitude, NULL);
-}
-
 // Return and clear the flag after regenerating Indoor Positioning advertising
 // data from the readable characteristic values.
 // IPS means Indoor Positioning Service.
@@ -1116,11 +1099,6 @@ static void gatt_http_proxy_value_written(
     else if (handle == service->entity_body_handle)
         service->entity_body_configured = 1;
 }
-
-static uint8_t gatt_http_proxy_control_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
 
 static uint8_t gatt_http_proxy_control_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -1403,6 +1381,33 @@ static inline int gatt_hps_set_cert_validity(
 
 // Object Transfer Service (OTS)
 typedef struct {
+    uint8_t id[6];
+    uint32_t properties;
+} ble_gatt_ots_object;
+
+typedef uint8_t (*ble_gatt_ots_select_fn)(
+    void *context, const uint8_t object_id[6]
+);
+typedef uint8_t (*ble_gatt_ots_order_fn)(
+    void *context, uint8_t order, ble_gatt_ots_object *objects,
+    uint16_t count
+);
+typedef uint8_t (*ble_gatt_ots_clear_fn)(
+    void *context, ble_gatt_ots_object *objects, uint16_t count
+);
+
+enum {
+    GATT_OTS_OBJECT_DELETE = 1u << 0,
+    GATT_OTS_OBJECT_EXECUTE = 1u << 1,
+    GATT_OTS_OBJECT_READ = 1u << 2,
+    GATT_OTS_OBJECT_WRITE = 1u << 3,
+    GATT_OTS_OBJECT_APPEND = 1u << 4,
+    GATT_OTS_OBJECT_TRUNCATE = 1u << 5,
+    GATT_OTS_OBJECT_PATCH = 1u << 6,
+    GATT_OTS_OBJECT_MARKED = 1u << 7
+};
+
+typedef struct {
     uint16_t service_handle;
     uint16_t features_handle;
     uint16_t object_name_handle;
@@ -1422,19 +1427,23 @@ typedef struct {
     uint8_t features[8];
     uint8_t request_pending, request_taken, request_opcode;
     uint8_t active_control_point;
+    uint8_t current_object_valid;
     uint16_t request_parameter_len;
     uint8_t request_parameters[BLE_GATT_ATT_VALUE_MAX - 1];
     uint8_t oacp_prepared[21], oacp_prepared_coverage[21];
     uint8_t oacp_prepare_active;
     uint8_t olcp_pending, olcp_taken, olcp_opcode, olcp_order;
     uint8_t olcp_parameter[6];
+    ble_gatt_ots_object *objects;
+    uint16_t object_count, current_object_index;
+    uint8_t object_list_configured;
+    ble_gatt_ots_select_fn select_object;
+    ble_gatt_ots_order_fn order_objects;
+    ble_gatt_ots_clear_fn clear_marking;
+    void *object_list_context;
 } ble_gatt_ots_service;
 
 static uint8_t gatt_ots_oacp_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
-static uint8_t gatt_ots_olcp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
@@ -1451,6 +1460,195 @@ static inline uint8_t gatt_ots_oacp_feature_bit(uint8_t opcode) {
     case 0x07: return 9;
     default: return 0xff;
     }
+}
+
+static inline uint32_t gatt_ots_read_u32(const uint8_t *value) {
+    return (uint32_t)value[0] | (uint32_t)value[1] << 8 |
+           (uint32_t)value[2] << 16 | (uint32_t)value[3] << 24;
+}
+
+static inline uint8_t gatt_ots_object_property(
+    ble_gatt_ots_service *service, uint8_t bit
+) {
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->object_properties_handle);
+    const uint8_t *properties = attribute ? gatt_attribute_value(
+        service->server, attribute) : NULL;
+    return properties && attribute->value_len == 4 &&
+           (properties[bit / 8] & (1u << (bit % 8)));
+}
+
+static inline uint32_t gatt_ots_object_size(
+    ble_gatt_ots_service *service, uint8_t offset
+) {
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->object_size_handle);
+    const uint8_t *size = attribute ? gatt_attribute_value(
+        service->server, attribute) : NULL;
+    return size && attribute->value_len == 8 ?
+        gatt_ots_read_u32(size + offset) : 0;
+}
+
+static inline uint8_t gatt_ots_oacp_response(
+    ble_gatt_ots_service *service, uint8_t opcode, uint8_t result
+) {
+    uint8_t response[] = {0x60, opcode, result};
+    return gatt_queue_event(service->server,
+        service->action_control_point_handle, response,
+        sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+}
+
+static inline uint8_t gatt_ots_olcp_response(
+    ble_gatt_ots_service *service, uint8_t opcode, uint8_t result
+) {
+    uint8_t response[] = {0x70, opcode, result};
+    return gatt_queue_event(service->server,
+        service->object_list_control_point_handle, response,
+        sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+}
+
+static inline int gatt_ots_id_equal(
+    const uint8_t first[6], const uint8_t second[6]
+) {
+    return !memcmp(first, second, 6);
+}
+
+static inline uint8_t gatt_ots_olcp_respond(
+    ble_gatt_ots_service *service, uint8_t opcode, uint8_t result,
+    uint32_t object_count
+) {
+    uint8_t response[7] = {0x70, opcode, result};
+    uint16_t len = 3;
+    if (result == 1 && opcode == 0x07) {
+        response[3] = (uint8_t)object_count;
+        response[4] = (uint8_t)(object_count >> 8);
+        response[5] = (uint8_t)(object_count >> 16);
+        response[6] = (uint8_t)(object_count >> 24);
+        len = 7;
+    }
+    return gatt_queue_event(service->server,
+        service->object_list_control_point_handle, response, len, 1) ?
+        0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+}
+
+static inline uint8_t gatt_ots_select_list_object(
+    ble_gatt_ots_service *service, uint16_t index
+) {
+    if (index >= service->object_count)
+        return gatt_ots_olcp_response(service, service->olcp_opcode, 0x07);
+    if (!service->select_object ||
+        !service->select_object(service->object_list_context,
+            service->objects[index].id)
+    ) return gatt_ots_olcp_response(service, service->olcp_opcode, 0x04);
+    ble_gatt_attribute *id_attribute = gatt_server_find(service->server,
+        service->object_id_handle);
+    const uint8_t *selected_id = id_attribute ? gatt_attribute_value(
+        service->server, id_attribute) : NULL;
+    if (!selected_id || id_attribute->value_len != 6 ||
+        !gatt_ots_id_equal(selected_id, service->objects[index].id))
+        return gatt_ots_olcp_response(service, service->olcp_opcode, 0x04);
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->object_properties_handle);
+    const uint8_t *properties = attribute ? gatt_attribute_value(
+        service->server, attribute) : NULL;
+    if (properties && attribute->value_len == 4)
+        service->objects[index].properties = gatt_ots_read_u32(properties);
+    service->current_object_index = index;
+    service->current_object_valid = 1;
+    return gatt_ots_olcp_response(service, service->olcp_opcode, 0x01);
+}
+
+static inline uint8_t gatt_ots_process_olcp(
+    ble_gatt_ots_service *service, uint8_t opcode
+) {
+    if (opcode >= 0x01 && opcode <= 0x04) {
+        if (!service->object_count)
+            return gatt_ots_olcp_response(service, opcode, 0x07);
+        if (opcode == 0x01)
+            return gatt_ots_select_list_object(service, 0);
+        if (opcode == 0x02)
+            return gatt_ots_select_list_object(service,
+                (uint16_t)(service->object_count - 1));
+        if (service->current_object_index >= service->object_count)
+            return gatt_ots_olcp_response(service, opcode, 0x07);
+        if (opcode == 0x03) {
+            if (!service->current_object_index)
+                return gatt_ots_olcp_response(service, opcode, 0x05);
+            return gatt_ots_select_list_object(service,
+                (uint16_t)(service->current_object_index - 1));
+        }
+        if (service->current_object_index + 1 >= service->object_count)
+            return gatt_ots_olcp_response(service, opcode, 0x05);
+        return gatt_ots_select_list_object(service,
+            (uint16_t)(service->current_object_index + 1));
+    }
+
+    if (opcode == 0x05) {
+        for (uint16_t i = 0; i < service->object_count; i++)
+            if (gatt_ots_id_equal(service->objects[i].id,
+                    service->olcp_parameter))
+                return gatt_ots_select_list_object(service, i);
+        return gatt_ots_olcp_response(service, opcode, 0x08);
+    }
+
+    if (opcode == 0x06) {
+        if (!service->order_objects)
+            return gatt_ots_olcp_response(service, opcode, 0x04);
+        uint8_t result = service->order_objects(service->object_list_context,
+            service->olcp_order, service->objects, service->object_count);
+        if (result < 1 || result > 8)
+            result = 0x04;
+        if (result != 1)
+            return gatt_ots_olcp_response(service, opcode, result);
+        if (service->current_object_valid) {
+            ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                service->object_id_handle);
+            const uint8_t *id = attribute ? gatt_attribute_value(
+                service->server, attribute) : NULL;
+            service->current_object_index = UINT16_MAX;
+            for (uint16_t i = 0; id && i < service->object_count; i++)
+                if (gatt_ots_id_equal(id, service->objects[i].id)) {
+                    service->current_object_index = i;
+                    break;
+                }
+        }
+        return gatt_ots_olcp_response(service, opcode, 0x01);
+    }
+
+    if (opcode == 0x07)
+        return gatt_ots_olcp_respond(service, opcode, 0x01,
+                                     service->object_count);
+
+    if (opcode == 0x08) {
+        if (service->clear_marking) {
+            uint8_t result = service->clear_marking(
+                service->object_list_context, service->objects,
+                service->object_count);
+            if (result < 1 || result > 8)
+                result = 0x04;
+            if (result != 1)
+                return gatt_ots_olcp_response(service, opcode, result);
+        }
+        for (uint16_t i = 0; i < service->object_count; i++)
+            service->objects[i].properties &= ~GATT_OTS_OBJECT_MARKED;
+        if (service->current_object_index < service->object_count) {
+            ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                service->object_properties_handle);
+            uint8_t *properties = attribute ? gatt_attribute_value(
+                service->server, attribute) : NULL;
+            if (properties && attribute->value_len == 4) {
+                uint32_t value = service->objects[
+                    service->current_object_index].properties;
+                properties[0] = (uint8_t)value;
+                properties[1] = (uint8_t)(value >> 8);
+                properties[2] = (uint8_t)(value >> 16);
+                properties[3] = (uint8_t)(value >> 24);
+            }
+        }
+        return gatt_ots_olcp_response(service, opcode, 0x01);
+    }
+
+    return gatt_ots_olcp_response(service, opcode, 0x02);
 }
 
 static inline int gatt_ots_features_valid(
@@ -1563,7 +1761,12 @@ static uint8_t gatt_ots_oacp_write(
     ble_gatt_attribute *cccd = gatt_server_find(
         service->server, service->action_control_point_cccd_handle);
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
-    if (service->active_control_point) return 0xfe;
+    if (service->active_control_point || gatt_dts_cp_busy(service->server,
+            service->action_control_point_handle) ||
+        (service->object_list_control_point_handle &&
+         gatt_dts_cp_busy(service->server,
+            service->object_list_control_point_handle))
+    ) return 0xfe;
 
     uint8_t opcode = value[0];
     uint8_t valid_length = 0;
@@ -1588,11 +1791,51 @@ static uint8_t gatt_ots_oacp_write(
     else if (opcode == 0x06 && (value[9] & 0x02) &&
              !(service->features[0] & 0x80)) response_code = 0x08;
 
-    if (response_code != 0x01) {
-        uint8_t response[] = {0x60, opcode, response_code};
-        return gatt_queue_event(service->server,
-            service->action_control_point_handle, response,
-            sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+    if (response_code != 0x01)
+        return gatt_ots_oacp_response(service, opcode, response_code);
+
+    if (opcode != 0x01) {
+        if (!service->current_object_valid)
+            return gatt_ots_oacp_response(service, opcode, 0x05);
+
+        uint8_t property_bit = opcode == 0x02 ? 0 :
+            opcode == 0x03 || opcode == 0x05 ? 2 :
+            opcode == 0x04 ? 1 : opcode == 0x06 ? 3 : 0xff;
+        if (property_bit != 0xff &&
+            !gatt_ots_object_property(service, property_bit)
+        ) return gatt_ots_oacp_response(service, opcode, 0x08);
+    }
+
+    if (opcode == 0x03 || opcode == 0x05 || opcode == 0x06) {
+        uint32_t offset = gatt_ots_read_u32(value + 1);
+        uint32_t length = gatt_ots_read_u32(value + 5);
+        uint32_t current_size = gatt_ots_object_size(service, 0);
+        uint32_t allocated_size = gatt_ots_object_size(service, 4);
+        if (opcode == 0x03 || opcode == 0x05) {
+            if (offset > current_size ||
+                (length && length > current_size - offset))
+                return gatt_ots_oacp_response(service, opcode, 0x03);
+        }
+        else {
+            uint8_t mode = value[9];
+            if (offset > current_size || offset > allocated_size ||
+                (length && length > allocated_size - offset) ||
+                (mode & 0xfdu))
+                return gatt_ots_oacp_response(service, opcode, 0x03);
+            if (mode & 0x02) {
+                if (!(service->features[0] & 0x80) ||
+                    !gatt_ots_object_property(service, 5))
+                    return gatt_ots_oacp_response(service, opcode, 0x08);
+            }
+            else if (offset == current_size) {
+                if (!(service->features[0] & 0x40) ||
+                    !gatt_ots_object_property(service, 4))
+                    return gatt_ots_oacp_response(service, opcode, 0x08);
+            }
+            else if (!(service->features[1] & 0x01) ||
+                     !gatt_ots_object_property(service, 6))
+                return gatt_ots_oacp_response(service, opcode, 0x08);
+        }
     }
 
     service->request_opcode = opcode;
@@ -1632,17 +1875,17 @@ static inline int gatt_ots_oacp_complete(
         result_code < 1 || result_code > 0x0a ||
         (response_parameter_len && !response_parameter) ||
         response_parameter_len > BLE_GATT_ATT_VALUE_MAX - 3 ||
-        (result_code != 0x01 && response_parameter_len) ||
-        (result_code == 0x01 &&
-         service->request_opcode == 0x03 && response_parameter_len != 4) ||
-        (result_code == 0x01 && service->request_opcode != 0x03 &&
-         service->request_opcode != 0x04 && response_parameter_len)) return 0;
+        (result_code == 0x01 && service->request_opcode == 0x03 &&
+         response_parameter_len != 4) ||
+        ((result_code != 0x01 || service->request_opcode != 0x03) &&
+         response_parameter_len)) return 0;
     uint8_t response[BLE_GATT_ATT_VALUE_MAX];
     response[0] = 0x60;
     response[1] = service->request_opcode;
     response[2] = result_code;
     if (response_parameter_len)
         memcpy(response + 3, response_parameter, response_parameter_len);
+    uint8_t opcode = service->request_opcode;
     if (!gatt_queue_event(service->server,
             service->action_control_point_handle, response,
             (uint16_t)(response_parameter_len + 3), 1)) return 0;
@@ -1651,6 +1894,10 @@ static inline int gatt_ots_oacp_complete(
     service->active_control_point = 0;
     service->request_opcode = 0;
     service->request_parameter_len = 0;
+    if (result_code == 0x01 && opcode == 0x01)
+        service->current_object_valid = 1;
+    else if (result_code == 0x01 && opcode == 0x02)
+        service->current_object_valid = 0;
     return 1;
 }
 
@@ -1676,6 +1923,10 @@ static uint8_t gatt_ots_olcp_write(
         opcode == 6 ? len == 2 :
         (opcode == 7 || opcode == 8) ? len == 1 : 1;
     if (!valid_length) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (service->object_list_control_point_handle &&
+        gatt_dts_cp_busy(service->server,
+            service->object_list_control_point_handle)
+    ) return 0xfe;
     uint8_t response_code = 0x01;
     if (opcode < 0x01 || opcode > 0x08)
         response_code = 0x02;
@@ -1685,17 +1936,17 @@ static uint8_t gatt_ots_olcp_write(
     else if (opcode == 0x06 && !(
         (value[1] >= 0x01 && value[1] <= 0x05) ||
         (value[1] >= 0x11 && value[1] <= 0x15))) response_code = 0x03;
-    if (response_code != 0x01) {
-        uint8_t response[] = {0x70, opcode, response_code};
-        return gatt_queue_event(service->server,
-            service->object_list_control_point_handle, response,
-            sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
-    }
+    if (response_code != 0x01)
+        return gatt_ots_olcp_response(service, opcode, response_code);
+
     service->olcp_opcode = opcode;
-    service->olcp_pending = 1;
-    service->active_control_point = 2;
     if (opcode == 0x05) memcpy(service->olcp_parameter, value + 1, 6);
     else if (opcode == 0x06) service->olcp_order = value[1];
+    if (service->object_list_configured)
+        return gatt_ots_process_olcp(service, opcode);
+
+    service->olcp_pending = 1;
+    service->active_control_point = 2;
     return 0;
 }
 
@@ -1744,12 +1995,15 @@ static inline int gatt_ots_olcp_complete(
     if (!gatt_queue_event(service->server,
             service->object_list_control_point_handle, response,
             response_len, 1)) return 0;
+    uint8_t opcode = service->olcp_opcode;
     service->olcp_pending = 0;
     service->olcp_taken = 0;
     service->olcp_opcode = 0;
     service->active_control_point = 0;
     service->olcp_order = 0;
     memset(service->olcp_parameter, 0, sizeof(service->olcp_parameter));
+    if (result_code == 1 && opcode >= 0x01 && opcode <= 0x05)
+        service->current_object_valid = 1;
     return 1;
 }
 
@@ -1831,6 +2085,7 @@ static inline int gatt_ots_add_type_full(
     service->action_control_point_handle = value_handles[7];
     service->action_control_point_cccd_handle = cccd_handles[7];
     service->server = server;
+    service->current_object_valid = 1;
     memcpy(service->features, features, sizeof(service->features));
     return gatt_ots_bind_oacp_long_write(server, service,
         service->action_control_point_handle);
@@ -1991,6 +2246,7 @@ static inline int gatt_ots_add_multi_type_full(
     service->object_list_filter_handles[1] = values[11];
     service->object_list_filter_handles[2] = values[12];
     service->server = server;
+    service->current_object_valid = 1;
     memcpy(service->features, features, sizeof(service->features));
     if (!gatt_ots_bind_oacp_long_write(server, service,
             service->action_control_point_handle)) return 0;
@@ -2050,6 +2306,48 @@ static inline int gatt_ots_set_list_filter(
 }
 
 // OTS means Object Transfer Service.
+// Attach a caller-owned object table and enable built-in OLCP navigation.
+// The table and callbacks must remain valid for the service lifetime. The
+// selection callback should call gatt_ots_set_object_metadata() for the ID.
+static inline int gatt_ots_set_objects(
+    ble_gatt_ots_service *service, ble_gatt_ots_object *objects,
+    uint16_t count, ble_gatt_ots_select_fn select_object,
+    ble_gatt_ots_order_fn order_objects,
+    ble_gatt_ots_clear_fn clear_marking, void *context
+) {
+    if (!service || !service->server ||
+        !service->object_list_control_point_handle ||
+        (count && (!objects || !select_object))) return 0;
+    for (uint16_t i = 0; i < count; i++)
+        for (uint16_t j = 0; j < i; j++)
+            if (gatt_ots_id_equal(objects[i].id, objects[j].id)) return 0;
+
+    service->objects = objects;
+    service->object_count = count;
+    service->current_object_index = UINT16_MAX;
+    service->select_object = select_object;
+    service->order_objects = order_objects;
+    service->clear_marking = clear_marking;
+    service->object_list_context = context;
+    service->object_list_configured = 1;
+    service->current_object_valid = 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->object_id_handle);
+    const uint8_t *id = attribute ? gatt_attribute_value(
+        service->server, attribute) : NULL;
+    if (id && attribute->value_len == 6) {
+        for (uint16_t i = 0; i < count; i++)
+            if (gatt_ots_id_equal(id, objects[i].id)) {
+                service->current_object_index = i;
+                service->current_object_valid = 1;
+                break;
+            }
+    }
+    return 1;
+}
+
+// OTS means Object Transfer Service.
 static inline int gatt_ots_set_object_metadata(
     ble_gatt_ots_service *service,
     const uint8_t *name, uint16_t name_len,
@@ -2089,6 +2387,7 @@ static inline int gatt_ots_set_object_metadata(
                    attributes[i]->value_capacity - lengths[i]);
         attributes[i]->value_len = lengths[i];
     }
+    service->current_object_valid = 1;
     return 1;
 }
 
@@ -2194,6 +2493,478 @@ static inline int gatt_esl_add(
                                       BLE_GATT_PERM_WRITE_ENC;
     }
 
+    return 1;
+}
+
+// Cookware, Industrial Measurement Device, Tire Pressure, Environmental
+// Sensing, and Binary Sensor services.
+// Cookware Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t value_handles[12], cccd_handles[12];
+    uint8_t characteristic_count;
+} ble_gatt_cws_service;
+
+// Application-facing API
+// Add selected CWS characteristics from the assigned Cookware range. The
+// application chooses characteristics for its supported cooking features
+// and implements their value formats and recipe procedures.
+// CWS means Cookware Service.
+static inline int gatt_cws_add(
+    ble_gatt_server *server, ble_gatt_cws_service *service,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count
+) {
+    if (!server || !service || !characteristics || !count || count > 12)
+        return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = characteristics[i].uuid;
+
+        if (uuid < 0x2c25 || uuid > 0x2c30)
+            return 0;
+
+        for (uint8_t j = 0; j < i; j++)
+            if (characteristics[j].uuid == uuid)
+                return 0;
+    }
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_add(server, 0x185d, characteristics, count,
+            &service->service_handle, service->value_handles,
+            service->cccd_handles)
+    ) return 0;
+
+    service->characteristic_count = count;
+    return 1;
+}
+
+// Indoor Monitoring Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t measurement_handles[8];
+    uint16_t measurement_cccd_handles[8];
+    uint8_t measurement_count;
+    uint16_t status_handle, status_cccd_handle;
+    uint16_t descriptor_changed_handle, descriptor_changed_cccd_handle;
+} ble_gatt_imd_service;
+
+// Application-facing API
+// Add IMDS with one to eight permitted live measurements and optional status
+// characteristics. Measurement descriptors and history procedures remain
+// application-defined.
+static inline int gatt_imd_service_add(
+    ble_gatt_server *server, ble_gatt_imd_service *service,
+    const ble_gatt_sig_characteristic *measurements, uint8_t count,
+    const uint8_t *status, uint16_t status_len,
+    const uint8_t *descriptor_changed, uint16_t descriptor_changed_len
+) {
+    if (!server || !service || !measurements || !count || count > 8 ||
+        (status_len && !status) || (descriptor_changed_len &&
+        !descriptor_changed)
+    ) return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = measurements[i].uuid;
+        uint8_t permitted = uuid == 0x2a6e ||
+                            (uuid >= 0x2c06 && uuid <= 0x2c0b);
+
+        if (!permitted ||
+            !(measurements[i].properties & BLE_GATT_PROP_READ) ||
+            measurements[i].permissions || measurements[i].cccd > 1
+        ) return 0;
+
+        for (uint8_t j = 0; j < i; j++)
+            if (measurements[j].uuid == uuid)
+                return 0;
+    }
+    ble_gatt_sig_characteristic chars[10];
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < count; i++) chars[n++] = measurements[i];
+    uint8_t status_index = 0xff, changed_index = 0xff;
+
+    if (status) {
+        status_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0c, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1, 0,
+            status, status_len, status_len, 1
+        };
+    }
+
+    if (descriptor_changed) {
+        changed_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0d, BLE_GATT_PROP_INDICATE, 1, 0,
+            descriptor_changed, descriptor_changed_len,
+            descriptor_changed_len, 1
+        };
+    }
+
+    uint16_t values[10], cccds[10];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_add(server, 0x185a, chars, n,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->measurement_count = count;
+    for (uint8_t i = 0; i < count; i++) {
+        service->measurement_handles[i] = values[i];
+        service->measurement_cccd_handles[i] = cccds[i];
+    }
+
+    if (status_index != 0xff) {
+        service->status_handle = values[status_index];
+        service->status_cccd_handle = cccds[status_index];
+    }
+
+    if (changed_index != 0xff) {
+        service->descriptor_changed_handle = values[changed_index];
+        service->descriptor_changed_cccd_handle = cccds[changed_index];
+    }
+
+    return 1;
+}
+
+// Tire Pressure Monitoring Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t handles[7];
+    uint16_t cccd_handles[7];
+} ble_gatt_tpms_service;
+
+// Application-facing API
+// Add the mandatory TPMS Properties and Tire Pressure characteristics with
+// optional temperature, acceleration, duty-cycle, position, and signing key.
+// The application encodes each present value and handles TPMS signing.
+// TPMS means Tire Pressure Monitoring Service.
+static inline int gatt_tpms_add(
+    ble_gatt_server *server, ble_gatt_tpms_service *service,
+    const ble_gatt_service_value values_in[7]
+) {
+    if (!server || !service || !values_in || !values_in[0].data ||
+        !values_in[1].data
+    ) return 0;
+
+    static const uint16_t uuids[7] = {
+        0x2c3e, 0x2c3b, 0x2c3c, 0x2c3d, 0x2c3f, 0x2c40, 0x2c41
+    };
+    uint8_t indexes[7], n = 0;
+    ble_gatt_sig_characteristic chars[7];
+    for (uint8_t i = 0; i < 7; i++) {
+        if (!values_in[i].data)
+            continue;
+
+        if (values_in[i].len > values_in[i].capacity ||
+            values_in[i].capacity > BLE_GATT_SERVER_VALUE_MAX
+        ) return 0;
+
+        indexes[n] = i;
+        uint8_t char_properties = BLE_GATT_PROP_READ;
+
+        if (i == 1 || i == 2)
+            char_properties |= BLE_GATT_PROP_NOTIFY;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            uuids[i], char_properties, (uint8_t)(i == 1 || i == 2), 0,
+            values_in[i].data, values_in[i].len, values_in[i].capacity, 1
+        };
+    }
+    uint16_t values[7], cccds[7];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_add(server, 0x1860, chars, n,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    for (uint8_t i = 0; i < n; i++) {
+        service->handles[indexes[i]] = values[i];
+        service->cccd_handles[indexes[i]] = cccds[i];
+    }
+    return 1;
+}
+
+// Environmental Sensing Service
+typedef struct {
+    uint16_t service_handle;
+    uint8_t measurement_count;
+    uint16_t measurement_handles[8];
+    uint16_t measurement_cccd_handles[8];
+} ble_gatt_ess_service;
+
+// Application-facing API
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_add(
+    ble_gatt_server *server, ble_gatt_ess_service *service,
+    const ble_gatt_sig_characteristic *measurements, uint8_t count
+) {
+    if (!server || !service || !measurements || !count || count > 8 ||
+        server->database_sealed
+    ) return 0;
+
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_add(server, 0x181a, measurements, count,
+            &service->service_handle, service->measurement_handles,
+            service->measurement_cccd_handles)
+    ) return 0;
+
+    service->measurement_count = count;
+    return 1;
+}
+
+// Application-facing API
+// Update a stored Environmental Sensing measurement value.
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_set_value(
+    ble_gatt_server *server,
+    const ble_gatt_ess_service *service,
+    uint8_t measurement_index, const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || measurement_index >= service->measurement_count ||
+        !service->measurement_handles[measurement_index] || !value
+    ) return 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->measurement_handles[measurement_index]);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!stored || len > attribute->value_capacity ||
+        (!(attribute->flags & BLE_GATT_ATTR_VAR_LEN) &&
+         len != attribute->value_len)
+    ) return 0;
+
+    memcpy(stored, value, len);
+    attribute->value_len = len;
+    return 1;
+}
+
+// Application-facing API
+// Queue a value for one caller-selected Environmental Sensing measurement.
+// ESS means Environmental Sensing Service.
+static inline int gatt_ess_send(
+    ble_gatt_server *server, const ble_gatt_ess_service *service,
+    uint8_t measurement_index, const uint8_t *value, uint16_t len,
+    int indication
+) {
+    if (!server || !service || measurement_index >= service->measurement_count ||
+        !service->measurement_handles[measurement_index] || (len && !value) ||
+        server->mtu < 3 || len > server->mtu - 3
+    ) return 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->measurement_handles[measurement_index]);
+    uint8_t property = indication ? BLE_GATT_PROP_INDICATE :
+        BLE_GATT_PROP_NOTIFY;
+
+    if (!attribute || !(attribute->properties & property))
+        return 0;
+
+    return gatt_queue_event(server,
+        service->measurement_handles[measurement_index], value, len,
+        indication != 0);
+}
+
+// Binary Sensor Service
+typedef struct {
+    uint16_t service_handle, control_point_handle;
+    uint16_t response_handle, response_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t assembly_active, assembly_next_sequence;
+    uint16_t assembly_len;
+    uint8_t assembly[BLE_GATT_SERVER_VALUE_MAX];
+    uint8_t request_pending, request_message_id, request_parameter_count;
+    uint16_t request_len;
+    uint8_t request[BLE_GATT_SERVER_VALUE_MAX];
+} ble_gatt_bss_service;
+
+static uint8_t gatt_binary_sensor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_bss_service *service = context;
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len < 3 || len > BLE_GATT_SERVER_VALUE_MAX)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->control_point_handle);
+    if (!attribute || len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t header = value[0];
+    uint8_t sequence = (header >> 1) & 0x1f;
+    uint8_t execute = header & 1;
+    if ((header & 0x40) || (header & 0x80))
+        return ATT_ERR_VALUE_NOT_ALLOWED;
+    if (!sequence) {
+        service->assembly_active = 1;
+        service->assembly_next_sequence = 1;
+        service->assembly_len = 0;
+    }
+    else if (!service->assembly_active ||
+             sequence != service->assembly_next_sequence) {
+        service->assembly_active = 0;
+        service->assembly_len = 0;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    uint16_t fragment_len = (uint16_t)(len - 1);
+    if (fragment_len > sizeof(service->assembly) - service->assembly_len) {
+        service->assembly_active = 0;
+        service->assembly_len = 0;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
+    }
+    memcpy(service->assembly + service->assembly_len, value + 1,
+           fragment_len);
+    service->assembly_len = (uint16_t)(service->assembly_len + fragment_len);
+    service->assembly_next_sequence = (uint8_t)((sequence + 1) & 0x1f);
+    if (!execute) return 0;
+
+    service->assembly_active = 0;
+    const uint8_t *message = service->assembly;
+    uint16_t message_len = service->assembly_len;
+    uint8_t valid = message_len >= 4 && !message[0] && !message[2] &&
+        message[3] && (message[1] == 0x00 || message[1] == 0x02);
+    uint16_t offset = 4;
+    uint8_t sensor_type_seen = 0, report_status_seen = 0;
+
+    for (uint16_t i = 0; valid && i < message[3]; i++) {
+        if (message_len - offset < 4 || message[offset + 2] ||
+            message[offset + 3] ||
+            message[offset + 1] > message_len - offset - 4) {
+            valid = 0;
+            break;
+        }
+
+        uint8_t id = message[offset];
+        uint8_t value_len = message[offset + 1];
+        const uint8_t *parameter = message + offset + 4;
+
+        if (id == 0x02) {
+            if (sensor_type_seen++ || value_len != 1 ||
+                !((parameter[0] <= 2) ||
+                  (parameter[0] >= 0x80 && parameter[0] <= 0x82)))
+                valid = 0;
+        }
+        else if (id == 0x03) {
+            if (report_status_seen++ || value_len != 1 || parameter[0] > 1)
+                valid = 0;
+        }
+        else if (id == 0x0c) {
+            if (message[1] != 0x02 || !value_len || value_len > 32)
+                valid = 0;
+        }
+        else {
+            valid = 0;
+        }
+        offset = (uint16_t)(offset + 4 + value_len);
+    }
+
+    if (offset != message_len || !sensor_type_seen ||
+        (message[1] == 0x00 &&
+         (message[3] != 1 || report_status_seen)) ||
+        (message[1] == 0x02 && (message[3] < 2 || !report_status_seen)))
+        valid = 0;
+
+    if (!valid) {
+        service->assembly_len = 0;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    if (service->request_pending)
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
+    memcpy(service->request, service->assembly, service->assembly_len);
+    service->request_len = service->assembly_len;
+    service->request_message_id = service->assembly[1];
+    service->request_parameter_count = service->assembly[3];
+    service->request_pending = 1;
+    service->assembly_len = 0;
+    return 0;
+}
+
+// Application-facing API
+// Add the Binary Sensor Control Point and Response attributes. Control Point
+// writes are reassembled and validated before they are exposed as requests.
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_add_full(
+    ble_gatt_server *server, ble_gatt_bss_service *service,
+    uint16_t control_point_capacity
+) {
+    if (!server || !service || !control_point_capacity ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2b2b, BLE_GATT_PROP_WRITE, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, control_point_capacity, 1},
+        {0x2b2c, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+    ble_gatt_sig_handlers handlers[2] = {0};
+    handlers[0].write_request = gatt_binary_sensor_control_write;
+    handlers[0].context = service;
+
+    if (!gatt_sig_add_handlers(server, 0x183b, chars, 2,
+            &service->service_handle, values, cccds, handlers)
+    ) return 0;
+
+    service->control_point_handle = values[0];
+    service->response_handle = values[1];
+    service->response_cccd_handle = cccds[1];
+    service->server = server;
+    return 1;
+}
+
+// Take one fully reassembled and validated Control Point message. The
+// returned bytes contain the BSS Message Header and parameter records.
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_take_request(
+    ble_gatt_bss_service *service, uint8_t *message,
+    uint16_t *inout_len, uint8_t *message_id, uint8_t *parameter_count
+) {
+    if (!service || !service->request_pending || !message || !inout_len ||
+        !message_id || !parameter_count || *inout_len < service->request_len)
+        return 0;
+    memcpy(message, service->request, service->request_len);
+    *inout_len = service->request_len;
+    *message_id = service->request_message_id;
+    *parameter_count = service->request_parameter_count;
+    service->request_pending = 0;
+    service->request_len = 0;
+    return 1;
+}
+
+// Queue one complete response/event message. Long messages are segmented
+// according to the negotiated ATT MTU and BSS five-bit sequence field.
+// BSS means Binary Sensor Service.
+static inline int gatt_bss_indicate_message(
+    ble_gatt_server *server, ble_gatt_bss_service *service,
+    const uint8_t *message, uint16_t message_len
+) {
+    if (!server || !service || !message || message_len < 2 ||
+        message_len > BLE_GATT_SERVER_VALUE_MAX || server->mtu < 5)
+        return 0;
+    uint16_t payload_limit = (uint16_t)(server->mtu - 4);
+    uint16_t fragment_count = (uint16_t)((message_len + payload_limit - 1) /
+                                          payload_limit);
+    uint32_t queue_bytes = (uint32_t)message_len + fragment_count;
+    if (fragment_count > BLE_GATT_SERVER_EVENT_QUEUE_SIZE - server->event_count ||
+        queue_bytes > BLE_GATT_SERVER_EVENT_BYTES - server->event_used)
+        return 0;
+    uint16_t offset = 0;
+    uint8_t sequence = 0;
+    do {
+        uint16_t chunk = (uint16_t)(message_len - offset);
+        if (chunk > payload_limit) chunk = payload_limit;
+        uint8_t packet[BLE_GATT_ATT_VALUE_MAX];
+        uint8_t final = (uint8_t)(chunk == message_len - offset);
+        packet[0] = (uint8_t)((sequence & 0x1f) << 1) | final | 0x80;
+        memcpy(packet + 1, message + offset, chunk);
+        if (!gatt_queue_event(server, service->response_handle,
+                packet, (uint16_t)(chunk + 1), 1)) return 0;
+        offset = (uint16_t)(offset + chunk);
+        sequence = (uint8_t)((sequence + 1) & 0x1f);
+    } while (offset < message_len);
     return 1;
 }
 

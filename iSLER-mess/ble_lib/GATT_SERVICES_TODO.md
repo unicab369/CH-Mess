@@ -75,10 +75,10 @@ remains available for custom services; it does not replace these builders.
 - [x] Object Transfer (`0x1825`), single- and multi-object layouts including
   conditional First-Created/Last-Modified metadata, Object ID, OLCP, and all
   three Object List Filter instances; feature bitmap validation, OACP/OLCP
-  opcode and parameter validation, correct OLCP Order/Request Number of
-  Objects/Clear Marking mapping, reliable OACP writes, request capture,
-  atomic current-object metadata updates, procedure serialization, and
-  response indications
+  opcode, property, size, and parameter validation, reliable OACP writes,
+  request capture and completion, optional caller-owned object-list
+  navigation with selection/order/marking callbacks, filter configuration,
+  procedure serialization, and response indications
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
   feature-matched Supported Range values, optional Training Status and
   Fitness Machine Status notifications, all 21 Control Point opcode and

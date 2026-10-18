@@ -308,7 +308,6 @@ static inline int gatt_mesh_proxy_add(
 // Service-specific database builders.
 #include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_health.h"
-#include "ble_gatt_service_measurement.h"
 #include "ble_gatt_service_audio.h"
 #include "ble_gatt_service_user.h"
 #include "ble_gatt_service_device.h"

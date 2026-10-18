@@ -2,8 +2,8 @@
 #define BLE_GATT_SERVICE_HEALTH_H
 
 // Contents: Glucose, Health Thermometer, Blood Pressure, Heart Rate,
-// Continuous Glucose Monitoring, Pulse Oximeter, Generic Health Sensor, and
-// Insulin Delivery services.
+// Continuous Glucose Monitoring, Pulse Oximeter, Generic Health Sensor,
+// Insulin Delivery, Body Composition, and Weight Scale services.
 // Health Thermometer Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
@@ -1815,6 +1815,250 @@ static inline int gatt_idd_add(
         cccd->permissions = authorized_cccd_permissions;
     }
     return 1;
+}
+
+// Body Composition and Weight Scale services.
+typedef struct {
+    uint16_t service_handle, measurement_handle, measurement_cccd_handle;
+    uint16_t feature_handle;
+} ble_gatt_bcs_service;
+
+typedef struct {
+    uint16_t service_handle, measurement_handle, measurement_cccd_handle;
+    uint16_t feature_handle;
+} ble_gatt_wss_service;
+
+// Application-facing API
+// BCS means Body Composition Service.
+static inline int gatt_bcs_add(
+    ble_gatt_server *server, ble_gatt_bcs_service *service,
+    uint32_t features
+) {
+    if (!server || !service || (features & ~0x7ffu)) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[4] = {
+        (uint8_t)features, (uint8_t)(features >> 8),
+        (uint8_t)(features >> 16), (uint8_t)(features >> 24)
+    };
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a9c, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0},
+        {0x2a9b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 4}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_add(server, 0x181b, chars, 2,
+                              &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->measurement_handle = values[0];
+    service->measurement_cccd_handle = cccds[0];
+    service->feature_handle = values[1];
+    return 1;
+}
+
+// Application-facing API
+// WSS means Weight Scale Service.
+static inline int gatt_wss_add(
+    ble_gatt_server *server, ble_gatt_wss_service *service,
+    uint16_t features
+) {
+    if (!server || !service || (features & (uint16_t)~0x03ffu)) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[2] = {(uint8_t)features, (uint8_t)(features >> 8)};
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a9d, BLE_GATT_PROP_INDICATE, 1, 0, &unused_value, 0},
+        {0x2a9e, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 2}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_add(server, 0x181d, chars, 2,
+                              &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->measurement_handle = values[0];
+    service->measurement_cccd_handle = cccds[0];
+    service->feature_handle = values[1];
+    return 1;
+}
+
+typedef struct {
+    uint8_t flags;
+    uint16_t weight;
+    uint8_t timestamp[7];
+    uint8_t user_id;
+    uint16_t bmi, height;
+} ble_gatt_weight_measurement;
+
+// Application-facing API
+// Encode and queue one Weight Measurement indication.
+// WSS means Weight Scale Service.
+static inline int gatt_wss_indicate(
+    ble_gatt_server *server, const ble_gatt_wss_service *service,
+    const ble_gatt_weight_measurement *measurement
+) {
+    if (!server || !service || !measurement ||
+        (measurement->flags & 0xf0)
+    ) return 0;
+
+    ble_gatt_attribute *feature_attribute = gatt_server_find(
+        server, service->feature_handle);
+    const uint8_t *feature_value = feature_attribute ?
+        gatt_attribute_value(server, feature_attribute) : NULL;
+
+    if (!feature_attribute || feature_attribute->value_len < 2 ||
+        !feature_value
+    ) return 0;
+
+    uint16_t features = ble_get_le16(feature_value);
+
+    if (
+        ((measurement->flags & 0x02) && !(features & (1u << 0))) ||
+        ((measurement->flags & 0x04) && !(features & (1u << 1))) ||
+        ((measurement->flags & 0x08) && !(features & (1u << 2)))
+    ) return 0;
+
+    uint8_t value[15];
+    uint16_t len = 0;
+    value[len++] = measurement->flags;
+    ble_put_le16(value + len, measurement->weight);
+    len += 2;
+
+    if (measurement->flags & 0x02) {
+        memcpy(value + len, measurement->timestamp, 7);
+        len += 7;
+    }
+
+    if (measurement->flags & 0x04)
+        value[len++] = measurement->user_id;
+
+    if (measurement->flags & 0x08) {
+        ble_put_le16(value + len, measurement->bmi);
+        ble_put_le16(value + len + 2, measurement->height);
+        len += 4;
+    }
+
+    return gatt_queue_event(server, service->measurement_handle,
+                                   value, len, 1);
+}
+
+typedef struct {
+    uint16_t flags;
+    uint16_t body_fat_percentage;
+    uint8_t timestamp[7];
+    uint8_t user_id;
+    uint16_t basal_metabolism, muscle_percentage, muscle_mass;
+    uint16_t fat_free_mass, soft_lean_mass, body_water_mass;
+    uint16_t impedance, weight, height;
+} ble_gatt_bcs_measurement;
+
+// Application-facing API
+// Encode and queue one feature-checked Body Composition Measurement.
+// BCS means Body Composition Service.
+static inline int gatt_bcs_indicate(
+    ble_gatt_server *server, const ble_gatt_bcs_service *service,
+    const ble_gatt_bcs_measurement *measurement
+) {
+    if (!server || !service || !measurement ||
+        (measurement->flags & 0xf000)
+    ) return 0;
+
+    ble_gatt_attribute *feature_attribute = gatt_server_find(
+        server, service->feature_handle);
+    const uint8_t *feature_value = feature_attribute ?
+        gatt_attribute_value(server, feature_attribute) : NULL;
+
+    if (!feature_attribute || feature_attribute->value_len < 4 ||
+        !feature_value
+    ) return 0;
+
+    uint32_t features = (uint32_t)feature_value[0] |
+        (uint32_t)feature_value[1] << 8 |
+        (uint32_t)feature_value[2] << 16 |
+        (uint32_t)feature_value[3] << 24;
+
+    if (
+        ((measurement->flags & 0x0002) && !(features & (1u << 0))) ||
+        ((measurement->flags & 0x0004) && !(features & (1u << 1))) ||
+        ((measurement->flags & 0x0008) && !(features & (1u << 2))) ||
+        ((measurement->flags & 0x0010) && !(features & (1u << 3))) ||
+        ((measurement->flags & 0x0020) && !(features & (1u << 4))) ||
+        ((measurement->flags & 0x0040) && !(features & (1u << 5))) ||
+        ((measurement->flags & 0x0080) && !(features & (1u << 6))) ||
+        ((measurement->flags & 0x0100) && !(features & (1u << 7))) ||
+        ((measurement->flags & 0x0200) && !(features & (1u << 8))) ||
+        ((measurement->flags & 0x0400) && !(features & (1u << 9))) ||
+        ((measurement->flags & 0x0800) && !(features & (1u << 10))) ||
+        server->mtu < 3
+    ) return 0;
+
+    uint8_t value[32];
+    uint16_t len = 0;
+    ble_put_le16(value + len, measurement->flags);
+    len += 2;
+    ble_put_le16(value + len, measurement->body_fat_percentage);
+    len += 2;
+
+    if (measurement->flags & 0x0002) {
+        memcpy(value + len, measurement->timestamp, 7);
+        len += 7;
+    }
+
+    if (measurement->flags & 0x0004)
+        value[len++] = measurement->user_id;
+
+    if (measurement->flags & 0x0008) {
+        ble_put_le16(value + len, measurement->basal_metabolism);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0010) {
+        ble_put_le16(value + len, measurement->muscle_percentage);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0020) {
+        ble_put_le16(value + len, measurement->muscle_mass);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0040) {
+        ble_put_le16(value + len, measurement->fat_free_mass);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0080) {
+        ble_put_le16(value + len, measurement->soft_lean_mass);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0100) {
+        ble_put_le16(value + len, measurement->body_water_mass);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0200) {
+        ble_put_le16(value + len, measurement->impedance);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0400) {
+        ble_put_le16(value + len, measurement->weight);
+        len += 2;
+    }
+
+    if (measurement->flags & 0x0800) {
+        ble_put_le16(value + len, measurement->height);
+        len += 2;
+    }
+
+    if (len > server->mtu - 3)
+        return 0;
+    return gatt_queue_event(server, service->measurement_handle,
+                                   value, len, 1);
 }
 
 #endif

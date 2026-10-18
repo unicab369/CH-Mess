@@ -179,20 +179,25 @@ ATT Write Request size, including 128-bit Object Type Create requests. Use
 which also registers Object ID, OLCP, and all three Object List Filter
 instances. The caller
 supplies the initial values. OACP requests are feature-gated, length-checked,
-and captured by `gatt_ots_take_oacp_request()`; the
-application performs object operations and responds through
-`gatt_ots_oacp_complete()`. Multi-object OLCP requests are
-feature-gated and captured by `gatt_ots_take_olcp_request()`;
-all eight assigned opcodes are supported. Read the Order parameter with
-`gatt_ots_get_olcp_order()` and complete procedures with
-`gatt_ots_olcp_complete()`; Request Number of Objects is
-opcode `0x07`. Configure each filter instance with
-`gatt_ots_set_list_filter()`. The application
-supplies object-list behavior, object storage, and the separate L2CAP object
-transfer channel. Update the visible selected-object attributes atomically with
-`gatt_ots_set_object_metadata()` before completing
-an OACP or OLCP operation. The multi-object `..._type_full()` builder also accepts
-initial date values and the real-time-clock capability.
+and checked against the selected object's properties and size. The application
+takes accepted requests with `gatt_ots_take_oacp_request()`, performs object
+storage operations and the separate L2CAP transfer, then responds through
+`gatt_ots_oacp_complete()`.
+
+For built-in multi-object OLCP navigation, pass a caller-owned
+`ble_gatt_ots_object` table to `gatt_ots_set_objects()`. The table tracks each
+six-byte ID and its property bits. The required selection callback loads that
+object and calls `gatt_ots_set_object_metadata()` to update the visible
+metadata. Optional order and clear-marking callbacks handle catalog ordering
+and persistent marking. With a table registered, First, Last, Previous, Next,
+Go To, Request Number of Objects, and Clear Marking are handled by the service;
+Order uses its callback. Without a table, OLCP requests remain available
+through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
+Configure each Object List Filter instance with `gatt_ots_set_list_filter()`;
+the application applies those filters when it builds or updates the table.
+After create/delete operations, update the table to keep navigation and counts
+current. The multi-object `..._type_full()` builder also accepts initial date
+values and the real-time-clock capability.
 `gatt_ftms_add()` registers Fitness Machine Feature and one
 selected machine-data notification characteristic. The application encodes
 telemetry and queues it with
@@ -402,8 +407,8 @@ Additional service builders include:
   Feature, with reserved feature bits rejected. Both indication helpers enforce
   the negotiated MTU. `gatt_bcs_indicate()`
   encodes the standard fields and checks them against the Feature value; use
-  `gatt_bcs_indicate_value()` when the application
-  already has an encoded payload.
+  `gatt_queue_event(server, service->measurement_handle, value, len, 1)` when
+  the application already has an encoded payload.
 - `gatt_uds_add()` for Database Change Increment, User Index,
   User Control Point, and Registered User. The Database Change Increment
   accepts validated four-octet writes. User Control Point writes are saved as
