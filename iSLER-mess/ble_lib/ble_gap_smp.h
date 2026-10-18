@@ -33,6 +33,25 @@ int GAP_BOND_DELETE(uint8_t slot);
 #define SMP_TIMEOUT_MS 30000
 #endif
 
+#ifndef BLE_GAP_SMP_CORE_TEST
+#define GAP_BOND_SLOTS 4
+#define GAP_BOND_VERSION_LEGACY 1
+#define GAP_BOND_VERSION_CSRK 2
+#define GAP_BOND_VERSION 3
+#define GAP_KEY_DIST_ENCRYPTION 0x01
+#define GAP_KEY_DIST_IDENTITY 0x02
+#define GAP_KEY_DIST_SIGNING 0x04
+
+// Pairing policy and per-link protocol state belong to the SMP adapter.
+#define GAP_IO_DISPLAY_ONLY 0
+#define GAP_IO_DISPLAY_YES_NO 1
+#define GAP_IO_KEYBOARD_ONLY 2
+#define GAP_IO_NONE 3
+#define GAP_IO_KEYBOARD_DISPLAY 4
+#define GAP_PASSKEY_DISPLAY 1
+#define GAP_PASSKEY_INPUT 2
+#endif
+
 enum {
     SMP_PAIRING_REQUEST = 0x01,
     SMP_PAIRING_RESPONSE = 0x02,
@@ -125,7 +144,131 @@ enum {
     SMP_PDU_LEN_65_OPCODES = 1u << SMP_PAIRING_PUBLIC_KEY
 };
 
-static inline int smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
+enum {
+    SMP_AUTH_BONDING_MASK = 0x03,
+    SMP_AUTH_MITM = 0x04,
+    SMP_AUTH_SECURE_CONNECTIONS = 0x08,
+    SMP_AUTH_KEYPRESS = 0x10,
+    SMP_KEY_DIST_ENCRYPTION = 0x01,
+    SMP_KEY_DIST_IDENTITY = 0x02,
+    SMP_KEY_DIST_SIGNING = 0x04,
+    SMP_KEY_DIST_LINK = 0x08,
+    SMP_KEY_DIST_MASK = 0x0f
+};
+
+enum {
+    SMP_MODEL_NONE,
+    SMP_MODEL_PASSKEY_DISPLAY,
+    SMP_MODEL_PASSKEY_INPUT,
+    SMP_MODEL_NUMERIC_COMPARISON
+};
+
+typedef struct {
+    uint8_t io_capability;
+    uint8_t oob_data_flag;
+    uint8_t auth_req;
+    uint8_t max_key_size;
+    uint8_t init_key_dist;
+    uint8_t resp_key_dist;
+} smp_features;
+
+typedef struct {
+    uint8_t max_key_size;
+    uint8_t secure_connections;
+    uint8_t bonding;
+    uint8_t init_key_dist;
+    uint8_t resp_key_dist;
+} ble_smp_negotiated;
+
+typedef struct {
+    l2cap_connection *l2cap;
+    uint8_t tx[SMP_PDU_MAX];
+    uint8_t rx[SMP_PDU_MAX];
+    uint8_t tx_len, rx_len;
+    uint8_t procedure_active;
+    uint32_t now_ms;
+    uint32_t deadline_ms;
+} ble_smp;
+
+#ifndef BLE_GAP_SMP_CORE_TEST
+typedef struct {
+    uint8_t random[16], confirm[16];
+} gap_oob_data;
+
+typedef struct {
+    uint8_t status, blocked, encryption_started;
+    uint8_t bond_tx_waiting;
+    uint8_t previous_bond_valid;
+    gap_bond previous_bond;
+    uint8_t tx[69], tx_len, tx_offset;
+    l2cap_connection l2cap;
+    l2cap_reassembler l2cap_rx;
+    ble_smp bearer;
+    uint8_t random[16], peer_random[16];
+    struct {
+        uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
+        uint8_t confirm_received, bond_requested, secure_connections;
+        uint8_t user_notified, numeric_notified, keypress_active;
+        uint8_t bond_tx_step, bond_rx_step;
+        uint8_t tk[16], request[7], response[7];
+        uint8_t peer_confirm[16], stk[16];
+    } pairing;
+    struct {
+        uint8_t private_key[32], public_key[64], peer_public_key[64];
+        uint8_t dhkey[32], mac_key[16], ltk[16];
+        uint8_t oob_active, oob_peer_present;
+        uint8_t oob_local_random[16];
+        uint8_t numeric_required, numeric_reply;
+        uint8_t passkey_required, passkey_round;
+        uint8_t peer_check_rx, peer_check[16];
+        uint32_t numeric_value;
+    } secure;
+    gap_oob_data oob_peer;
+    uint8_t l2cap_ready, l2cap_rx_pending;
+} gap_smp_context;
+
+typedef struct {
+    uint8_t valid;
+    gap_oob_data data;
+} gap_oob;
+
+typedef struct {
+    gap_oob oob;
+    uint8_t private_key[32], public_key[64];
+} gap_oob_local;
+#endif
+
+#ifndef BLE_GAP_SMP_CORE_TEST
+// LE Secure Connections OOB data exchanged through an authenticated channel.
+// Values use SMP byte order.
+
+static ble_smp_user_request_fn gap_smp_user_request_callback;
+static void *gap_smp_user_request_context;
+static struct {
+    uint8_t enabled, io, authenticated, min_key_size, bonding;
+    uint8_t secure_connections;
+    uint8_t keypress_notifications;
+} gap_pair_cfg = {
+    .enabled = 0,
+    .io = GAP_IO_NONE,
+    .authenticated = 0,
+    .min_key_size = 7,
+    .bonding = 0,
+    .secure_connections = 0,
+    .keypress_notifications = 0
+};
+
+static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
+static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
+
+static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
+
+static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
+#endif
+
+static inline int smp_pdu_valid(
+    const uint8_t *pdu, uint16_t len
+) {
     // Original opcode switch equivalent:
     // case SMP_PAIRING_REQUEST:
     // case SMP_PAIRING_RESPONSE: return len == 7;
@@ -162,42 +305,6 @@ static inline int smp_pdu_valid(const uint8_t *pdu, uint16_t len) {
         default: return 0;
     }
 }
-
-typedef struct {
-    uint8_t io_capability;
-    uint8_t oob_data_flag;
-    uint8_t auth_req;
-    uint8_t max_key_size;
-    uint8_t init_key_dist;
-    uint8_t resp_key_dist;
-} smp_features;
-
-typedef struct {
-    uint8_t max_key_size;
-    uint8_t secure_connections;
-    uint8_t bonding;
-    uint8_t init_key_dist;
-    uint8_t resp_key_dist;
-} ble_smp_negotiated;
-
-enum {
-    SMP_AUTH_BONDING_MASK = 0x03,
-    SMP_AUTH_MITM = 0x04,
-    SMP_AUTH_SECURE_CONNECTIONS = 0x08,
-    SMP_AUTH_KEYPRESS = 0x10,
-    SMP_KEY_DIST_ENCRYPTION = 0x01,
-    SMP_KEY_DIST_IDENTITY = 0x02,
-    SMP_KEY_DIST_SIGNING = 0x04,
-    SMP_KEY_DIST_LINK = 0x08,
-    SMP_KEY_DIST_MASK = 0x0f
-};
-
-enum {
-    SMP_MODEL_NONE,
-    SMP_MODEL_PASSKEY_DISPLAY,
-    SMP_MODEL_PASSKEY_INPUT,
-    SMP_MODEL_NUMERIC_COMPARISON
-};
 
 static inline int smp_features_valid(
     const smp_features *feat
@@ -249,16 +356,6 @@ static inline int smp_opcode_known(uint8_t opcode) {
         default: return 0;
     }
 }
-
-typedef struct {
-    l2cap_connection *l2cap;
-    uint8_t tx[SMP_PDU_MAX];
-    uint8_t rx[SMP_PDU_MAX];
-    uint8_t tx_len, rx_len;
-    uint8_t procedure_active;
-    uint32_t now_ms;
-    uint32_t deadline_ms;
-} ble_smp;
 
 static inline int smp_receive_sdu(
     void *context, uint16_t cid, const uint8_t *sdu, uint16_t len
@@ -316,78 +413,6 @@ static inline int smp_aes128(
 }
 
 #ifndef BLE_GAP_SMP_CORE_TEST
-// LE Secure Connections OOB data exchanged through an authenticated channel.
-// Values use SMP byte order.
-
-#define GAP_BOND_SLOTS 4
-#define GAP_BOND_VERSION_LEGACY 1
-#define GAP_BOND_VERSION_CSRK 2
-#define GAP_BOND_VERSION 3
-#define GAP_KEY_DIST_ENCRYPTION 0x01
-#define GAP_KEY_DIST_IDENTITY 0x02
-#define GAP_KEY_DIST_SIGNING 0x04
-
-// Pairing policy and per-link protocol state belong to the SMP adapter.
-#define GAP_IO_DISPLAY_ONLY 0
-#define GAP_IO_DISPLAY_YES_NO 1
-#define GAP_IO_KEYBOARD_ONLY 2
-#define GAP_IO_NONE 3
-#define GAP_IO_KEYBOARD_DISPLAY 4
-#define GAP_PASSKEY_DISPLAY 1
-#define GAP_PASSKEY_INPUT 2
-static ble_smp_user_request_fn gap_smp_user_request_callback;
-static void *gap_smp_user_request_context;
-static struct {
-    uint8_t enabled, io, authenticated, min_key_size, bonding;
-    uint8_t secure_connections;
-    uint8_t keypress_notifications;
-} gap_pair_cfg = {
-    .enabled = 0,
-    .io = GAP_IO_NONE,
-    .authenticated = 0,
-    .min_key_size = 7,
-    .bonding = 0,
-    .secure_connections = 0,
-    .keypress_notifications = 0
-};
-
-typedef struct {
-    uint8_t random[16], confirm[16];
-} gap_oob_data;
-
-typedef struct {
-    uint8_t status, blocked, encryption_started;
-    uint8_t bond_tx_waiting;
-    uint8_t previous_bond_valid;
-    gap_bond previous_bond;
-    uint8_t tx[69], tx_len, tx_offset;
-    l2cap_connection l2cap;
-    l2cap_reassembler l2cap_rx;
-    ble_smp bearer;
-    uint8_t random[16], peer_random[16];
-    struct {
-        uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
-        uint8_t confirm_received, bond_requested, secure_connections;
-        uint8_t user_notified, numeric_notified, keypress_active;
-        uint8_t bond_tx_step, bond_rx_step;
-        uint8_t tk[16], request[7], response[7];
-        uint8_t peer_confirm[16], stk[16];
-    } pairing;
-    struct {
-        uint8_t private_key[32], public_key[64], peer_public_key[64];
-        uint8_t dhkey[32], mac_key[16], ltk[16];
-        uint8_t oob_active, oob_peer_present;
-        uint8_t oob_local_random[16];
-        uint8_t numeric_required, numeric_reply;
-        uint8_t passkey_required, passkey_round;
-        uint8_t peer_check_rx, peer_check[16];
-        uint32_t numeric_value;
-    } secure;
-    gap_oob_data oob_peer;
-    uint8_t l2cap_ready, l2cap_rx_pending;
-} gap_smp_context;
-
-static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 
 static inline int smp_poll(void) {
     ble_smp *bearer = &gap_smp_contexts[gap_conn_slot].bearer;
@@ -402,22 +427,6 @@ static inline int smp_poll(void) {
     bearer->tx_len = 0;
     return 1;
 }
-
-typedef struct {
-    uint8_t valid;
-    gap_oob_data data;
-} gap_oob;
-
-typedef struct {
-    gap_oob oob;
-    uint8_t private_key[32], public_key[64];
-} gap_oob_local;
-
-static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
-
-static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
-
-static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static void gap_smp_finish(uint8_t status);
 

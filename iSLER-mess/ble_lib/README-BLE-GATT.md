@@ -440,8 +440,13 @@ Additional service builders include:
   (`0x290B`) and Trigger Setting
   (`0x290D`) descriptors validate and retain their standard values; at most
   one configuration and three trigger descriptors are supported per
-  measurement. The application supplies new samples and schedules calls to
-  `gatt_ess_send_at()`.
+  measurement. An optional Descriptor Value Changed characteristic (`0x2A7D`)
+  may be included in the characteristic list with indication support, a CCCD,
+  and at least four octets of value capacity. ESS descriptor writes then queue
+  its standard flags and the associated measurement UUID as an indication.
+  Use `gatt_ess_set_descriptor()` for application-originated descriptor
+  changes; it queues the same indication with the server source flag. The
+  application supplies new samples and schedules calls to `gatt_ess_send_at()`.
 - `gatt_bcs_add()` for Body Composition Measurement and
   Feature, with reserved feature bits rejected. Both indication helpers enforce
   the negotiated MTU. `gatt_bcs_indicate()`

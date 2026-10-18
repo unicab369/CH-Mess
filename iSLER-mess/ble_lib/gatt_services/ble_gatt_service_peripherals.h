@@ -3330,35 +3330,75 @@ static inline int gatt_tpms_add(
 // Environmental Sensing Service
 #define GATT_ESS_MAX_MEASUREMENTS 8
 #define GATT_ESS_MAX_TRIGGERS 3
+#define GATT_ESS_MAX_CHANGED_DESCRIPTORS 8
 
 enum {
     GATT_ESS_DESC_CONFIG,
-    GATT_ESS_DESC_TRIGGER
+    GATT_ESS_DESC_TRIGGER,
+    GATT_ESS_DESC_OTHER
 };
+
+typedef struct ble_gatt_ess_service ble_gatt_ess_service;
 
 typedef struct {
     ble_gatt_server *server;
-    uint16_t handle, measurement_handle;
+    ble_gatt_ess_service *service;
+    uint16_t handle, measurement_handle, uuid;
     uint8_t kind;
 } ble_gatt_ess_desc;
 
-typedef struct {
+struct ble_gatt_ess_service {
     uint16_t service_handle;
+    uint16_t descriptor_value_changed_handle;
+    uint16_t descriptor_value_changed_cccd_handle;
     uint8_t measurement_count;
     uint16_t measurement_handles[GATT_ESS_MAX_MEASUREMENTS];
     uint16_t measurement_cccd_handles[GATT_ESS_MAX_MEASUREMENTS];
     ble_gatt_ess_desc desc[GATT_ESS_MAX_MEASUREMENTS]
-                          [GATT_ESS_MAX_TRIGGERS + 1];
+                          [GATT_ESS_MAX_CHANGED_DESCRIPTORS];
     uint32_t last_send_s[GATT_ESS_MAX_MEASUREMENTS];
     uint8_t sent_mask;
-} ble_gatt_ess_service;
+};
 
-static uint8_t gatt_ess_desc_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
+static uint16_t gatt_ess_changed_flag(uint16_t uuid) {
+    switch (uuid) {
+        case 0x2901: return 0x0010; // Characteristic User Description.
+        case 0x290b: return 0x0004; // Environmental Sensing Configuration.
+        case 0x290c: return 0x0008; // Environmental Sensing Measurement.
+        case 0x290d: return 0x0002; // Environmental Sensing Trigger Setting.
+        default: return 0;
+    }
+}
+
+static void gatt_ess_queue_descriptor_changed(
+    ble_gatt_ess_desc *desc, uint16_t uuid, int source_client
 ) {
-    (void)command;
-    ble_gatt_ess_desc *desc = context;
+    if (!desc || !desc->server || !desc->measurement_handle)
+        return;
+    ble_gatt_ess_service *service = desc->service;
+    if (!service || !service->descriptor_value_changed_handle)
+        return;
+
+    ble_gatt_attribute *measurement = gatt_server_find(
+        desc->server, desc->measurement_handle);
+    if (!measurement)
+        return;
+
+    uint16_t flags = (uint16_t)((source_client ? 1u : 0u) |
+        gatt_ess_changed_flag(uuid));
+    uint16_t characteristic_uuid = gatt_uuid_assigned16(&measurement->uuid);
+    uint8_t value[4] = {
+        (uint8_t)flags, (uint8_t)(flags >> 8),
+        (uint8_t)characteristic_uuid, (uint8_t)(characteristic_uuid >> 8)
+    };
+    (void)gatt_queue_event(desc->server,
+        service->descriptor_value_changed_handle, value, sizeof(value), 1);
+}
+
+static uint8_t gatt_ess_set_desc_value(
+    ble_gatt_ess_desc *desc, uint16_t offset, const uint8_t *value,
+    uint16_t len, int source_client
+) {
     if (!desc || !desc->server || !value)
         return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
@@ -3377,7 +3417,7 @@ static uint8_t gatt_ess_desc_write(
         if (value[0] > 1)
             return ATT_ERR_VALUE_NOT_ALLOWED;
     }
-    else {
+    else if (desc->kind == GATT_ESS_DESC_TRIGGER) {
         if (!len)
             return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         uint8_t condition = value[0];
@@ -3391,12 +3431,24 @@ static uint8_t gatt_ess_desc_write(
             len - 1 != measurement->value_len)
             return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     }
+    else if (!(attr->flags & BLE_GATT_ATTR_VAR_LEN) &&
+             len != attr->value_len)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
-    if (len > attr->value_capacity)
+    if (len > BLE_GATT_ATT_VALUE_MAX || len > attr->value_capacity)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     memcpy(stored, value, len);
     attr->value_len = len;
+    gatt_ess_queue_descriptor_changed(desc, desc->uuid, source_client);
     return 0;
+}
+
+static uint8_t gatt_ess_desc_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    return gatt_ess_set_desc_value(context, offset, value, len, 1);
 }
 
 // Application-facing API
@@ -3406,33 +3458,65 @@ static inline int gatt_ess_add(
     const ble_gatt_sig_characteristic *measurements, uint8_t count
 ) {
     if (!server || !service || !measurements || !count ||
-        count > GATT_ESS_MAX_MEASUREMENTS ||
+        count > GATT_ESS_MAX_MEASUREMENTS + 1 ||
         server->database_sealed
     ) return 0;
 
+    uint8_t measurement_count = 0;
+    int changed_index = -1;
     for (uint8_t i = 0; i < count; i++) {
+        if (measurements[i].uuid == 0x2a7d) {
+            if (changed_index >= 0 ||
+                !(measurements[i].properties & BLE_GATT_PROP_INDICATE) ||
+                !measurements[i].cccd ||
+                (measurements[i].value_capacity ?
+                    measurements[i].value_capacity :
+                    measurements[i].value_len) < 4)
+                return 0;
+            changed_index = i;
+            continue;
+        }
+        if (++measurement_count > GATT_ESS_MAX_MEASUREMENTS)
+            return 0;
         if (measurements[i].descriptor_count && !measurements[i].descriptors)
             return 0;
-        uint8_t triggers = 0, configs = 0;
+        uint8_t triggers = 0, configs = 0, changed_count = 0;
         for (uint8_t j = 0; j < measurements[i].descriptor_count; j++) {
             uint16_t uuid = measurements[i].descriptors[j].uuid;
             if (uuid == 0x290b && ++configs > 1)
                 return 0;
             if (uuid == 0x290d && ++triggers > GATT_ESS_MAX_TRIGGERS)
                 return 0;
+            if (gatt_ess_changed_flag(uuid) && uuid != 0x290b &&
+                uuid != 0x290d && ++changed_count >
+                    GATT_ESS_MAX_CHANGED_DESCRIPTORS -
+                        (GATT_ESS_MAX_TRIGGERS + 1))
+                return 0;
         }
     }
+    if (!measurement_count)
+        return 0;
 
     memset(service, 0, sizeof(*service));
 
+    uint16_t value_handles[GATT_ESS_MAX_MEASUREMENTS + 1] = {0};
+    uint16_t cccd_handles[GATT_ESS_MAX_MEASUREMENTS + 1] = {0};
     if (!gatt_sig_add(server, 0x181a, measurements, count,
-            &service->service_handle, service->measurement_handles,
-            service->measurement_cccd_handles)
+            &service->service_handle, value_handles, cccd_handles)
     ) return 0;
 
+    uint8_t index = 0;
     for (uint8_t i = 0; i < count; i++) {
+        uint16_t value_handle = value_handles[i];
+        if ((int)i == changed_index) {
+            service->descriptor_value_changed_handle = value_handle;
+            service->descriptor_value_changed_cccd_handle = cccd_handles[i];
+            continue;
+        }
         uint8_t trigger_count = 0;
-        uint16_t value_handle = service->measurement_handles[i];
+        uint8_t extra_desc_count = 0;
+        service->measurement_handles[index] = value_handle;
+        service->measurement_cccd_handles[index] = cccd_handles[i];
         for (uint16_t j = 0; j < server->count; j++) {
             ble_gatt_attribute *attr = &server->attrs[j];
             if (attr->handle <= value_handle)
@@ -3441,29 +3525,54 @@ static inline int gatt_ess_add(
                 break;
 
             uint16_t uuid = gatt_uuid_assigned16(&attr->uuid);
-            if (uuid != 0x290b && uuid != 0x290d)
+            uint16_t changed_flag = gatt_ess_changed_flag(uuid);
+            if (!changed_flag)
                 continue;
             if (uuid == 0x290d)
                 trigger_count++;
 
-            ble_gatt_ess_desc *desc = uuid == 0x290b ?
-                &service->desc[i][0] :
-                &service->desc[i][trigger_count];
+            uint8_t slot = uuid == 0x290b ? 0 :
+                uuid == 0x290d ? trigger_count :
+                (uint8_t)(GATT_ESS_MAX_TRIGGERS + 1 + extra_desc_count++);
+            if (slot >= GATT_ESS_MAX_CHANGED_DESCRIPTORS)
+                return 0;
+            ble_gatt_ess_desc *desc = &service->desc[index][slot];
             desc->server = server;
+            desc->service = service;
             desc->handle = attr->handle;
             desc->measurement_handle = value_handle;
+            desc->uuid = uuid;
             desc->kind = uuid == 0x290b ? GATT_ESS_DESC_CONFIG :
-                GATT_ESS_DESC_TRIGGER;
+                uuid == 0x290d ? GATT_ESS_DESC_TRIGGER :
+                GATT_ESS_DESC_OTHER;
             attr->context = desc;
             if (attr->permissions & (BLE_GATT_PERM_WRITE |
                     BLE_GATT_PERM_WRITE_ENC | BLE_GATT_PERM_WRITE_AUTHN |
                     BLE_GATT_PERM_WRITE_AUTHZ))
                 attr->write_request = gatt_ess_desc_write;
         }
+        index++;
     }
 
-    service->measurement_count = count;
+    service->measurement_count = measurement_count;
     return 1;
+}
+
+// Update an ESS descriptor from the sensor application and report the change
+// with the Descriptor Value Changed characteristic when indications are on.
+static inline int gatt_ess_set_descriptor(
+    ble_gatt_ess_service *service, uint8_t measurement_index, uint16_t uuid,
+    const uint8_t *value, uint16_t len
+) {
+    if (!service || measurement_index >= service->measurement_count ||
+        !gatt_ess_changed_flag(uuid) || !value)
+        return 0;
+    for (uint8_t i = 0; i < GATT_ESS_MAX_CHANGED_DESCRIPTORS; i++) {
+        ble_gatt_ess_desc *desc = &service->desc[measurement_index][i];
+        if (desc->handle && desc->uuid == uuid)
+            return !gatt_ess_set_desc_value(desc, 0, value, len, 0);
+    }
+    return 0;
 }
 
 // Application-facing API
@@ -3628,7 +3737,7 @@ static inline int gatt_ess_send_at(
 
     for (uint8_t d = 0; d < GATT_ESS_MAX_TRIGGERS + 1; d++) {
         ble_gatt_ess_desc *binding = &service->desc[index][d];
-        if (!binding->handle)
+        if (!binding->handle || binding->kind == GATT_ESS_DESC_OTHER)
             continue;
         ble_gatt_attribute *desc = gatt_server_find(server, binding->handle);
         const uint8_t *setting = desc ? gatt_attribute_value(server, desc) :
