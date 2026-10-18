@@ -189,6 +189,7 @@ int main(void) {
     gatt_server_init(&server, 23);
     ble_gatt_ess_service ess = {0};
     uint8_t temperature[2] = {0, 0};
+    uint8_t descriptor_value_changed[4] = {0};
     uint8_t logic = 0, trigger[8] = {0}, interval[8] = {0};
     uint8_t minimum[8] = {0};
     const uint8_t presentation[] = {0x06, 0, 0, 0, 0, 0, 0};
@@ -208,21 +209,30 @@ int main(void) {
         {0x2a6e, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
          BLE_GATT_PERM_READ,
          temperature, sizeof(temperature), sizeof(temperature), 0,
-         ess_descs, 5}
+         ess_descs, 5},
+        {0x2a7d, BLE_GATT_PROP_INDICATE, 1, 0,
+         descriptor_value_changed, sizeof(descriptor_value_changed),
+         sizeof(descriptor_value_changed), 0, NULL, 0}
     };
-    assert(gatt_ess_add(&server, &ess, ess_chars, 1));
+    assert(gatt_ess_add(&server, &ess, ess_chars, 2));
     uint16_t config_handle = 0, trigger_handle = 0;
     uint16_t triggers[3] = {0};
+    uint16_t descriptor_value_changed_handle = 0;
     uint8_t found_triggers = 0;
     for (uint16_t i = 0; i < server.count; i++) {
         uint16_t uuid = gatt_uuid_assigned16(&server.attrs[i].uuid);
         if (uuid == 0x290b) config_handle = server.attrs[i].handle;
+        if (uuid == 0x2a7d)
+            descriptor_value_changed_handle = server.attrs[i].handle;
         if (uuid == 0x290d && found_triggers < 3) {
             if (!trigger_handle) trigger_handle = server.attrs[i].handle;
             triggers[found_triggers++] = server.attrs[i].handle;
         }
     }
-    assert(config_handle && trigger_handle && found_triggers == 3);
+    assert(config_handle && trigger_handle && found_triggers == 3 &&
+           descriptor_value_changed_handle ==
+               ess.descriptor_value_changed_handle &&
+           ess.descriptor_value_changed_cccd_handle);
     const uint8_t use_or[] = {1};
     const uint8_t bad_logic[] = {2};
     const uint8_t less_than[] = {4, 30, 0};
@@ -230,7 +240,30 @@ int main(void) {
     const uint8_t min_trigger[] = {2, 5, 0, 0};
     const uint8_t bad_time_trigger[] = {1, 5, 0};
     const uint8_t unsupported_trigger[] = {10, 0, 0};
+    // Descriptor Value Changed is optional and remains silent until its CCCD
+    // enables indications.
     assert(!write_value(&server, config_handle, use_or, sizeof(use_or)));
+    assert(!server.event_count);
+    assert(gatt_server_set_cccd(&server, descriptor_value_changed_handle, 2));
+    const uint8_t use_and[] = {0};
+    assert(!write_value(&server, config_handle, use_and, sizeof(use_and)));
+    assert(server.event_count == 1 && server.events[0].indication &&
+           server.events[0].handle == descriptor_value_changed_handle);
+    const uint8_t *changed = server.event_data + server.events[0].data_offset;
+    assert(server.events[0].len == 4 && changed[0] == 0x05 &&
+           changed[1] == 0 && changed[2] == 0x6e && changed[3] == 0x2a);
+    server.event_count = server.event_used = 0;
+    assert(gatt_ess_set_descriptor(&ess, 0, 0x290b, use_or,
+        sizeof(use_or)));
+    assert(server.event_count == 1 && server.events[0].indication);
+    changed = server.event_data + server.events[0].data_offset;
+    assert(server.events[0].len == 4 && changed[0] == 0x04 &&
+           changed[1] == 0 && changed[2] == 0x6e && changed[3] == 0x2a);
+    server.event_count = server.event_used = 0;
+    assert(gatt_server_set_cccd(&server, descriptor_value_changed_handle, 0));
+    assert(gatt_ess_set_descriptor(&ess, 0, 0x290b, use_and,
+        sizeof(use_and)));
+    assert(!server.event_count);
     assert(write_value(&server, config_handle, bad_logic,
         sizeof(bad_logic)) == ATT_ERR_VALUE_NOT_ALLOWED);
     assert(!write_value(&server, trigger_handle, time_trigger,

@@ -41,7 +41,9 @@ automatically provide each service's application protocol or profile behavior.
   connection-scoped content masks
 - [x] Environmental Sensing (`0x181A`), writable Configuration and Trigger
   Setting validation, interval/value trigger evaluation, and AND/OR event
-  filtering; sample acquisition and call scheduling remain application-owned
+  filtering; optional Descriptor Value Changed (`0x2A7D`) indications report
+  descriptor writes; sample acquisition and call scheduling remain
+  application-owned
 - [x] Body Composition (`0x181B`), reserved Feature-bit validation and
   MTU-bounded Measurement indication encoding
 - [x] User Data (`0x181C`), Database Change Increment writes, User Control

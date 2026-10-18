@@ -1,39 +1,13 @@
 #ifndef BLE_GAP_SMP_H
 #define BLE_GAP_SMP_H
-#ifndef BLE_GAP_SMP_CORE_TEST
 #ifndef GAP_H
 #error "Include ble_gap_smp.h through ble_gap.h"
 #endif
-#endif
 
-// Platforms implement durable whole-record bond storage. LOAD returns 1 for
-// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
-// only after the operation is durable.
-#if defined(__GNUC__)
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
-int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
-#else
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
-int GAP_BOND_DELETE(uint8_t slot);
-#endif
-
-// LE SMP implementation used by GAP. This file keeps the SMP protocol helpers,
-// pairing transaction, and GAP-specific policy and platform integration
-// together because GAP is the only runtime user of SMP in this stack.
+// GAP's LE SMP pairing transaction, policy, and platform integration.
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
-#include "ble_l2cap.h"
 
-#ifndef SMP_PDU_MAX
-#define SMP_PDU_MAX 65
-#endif
-#ifndef SMP_TIMEOUT_MS
-#define SMP_TIMEOUT_MS 30000
-#endif
-
-#ifndef BLE_GAP_SMP_CORE_TEST
 #define GAP_BOND_SLOTS 4
 #define GAP_BOND_VERSION_LEGACY 1
 #define GAP_BOND_VERSION_CSRK 2
@@ -50,7 +24,14 @@ int GAP_BOND_DELETE(uint8_t slot);
 #define GAP_IO_KEYBOARD_DISPLAY 4
 #define GAP_PASSKEY_DISPLAY 1
 #define GAP_PASSKEY_INPUT 2
+
+#ifndef SMP_PDU_MAX
+#define SMP_PDU_MAX 65
 #endif
+#ifndef SMP_TIMEOUT_MS
+#define SMP_TIMEOUT_MS 30000
+#endif
+
 
 enum {
     SMP_PAIRING_REQUEST = 0x01,
@@ -190,7 +171,20 @@ typedef struct {
     uint32_t deadline_ms;
 } ble_smp;
 
-#ifndef BLE_GAP_SMP_CORE_TEST
+// Platforms implement durable whole-record bond storage. LOAD returns 1 for
+// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
+// only after the operation is durable.
+#if defined(__GNUC__)
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
+int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
+#else
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
+int GAP_BOND_DELETE(uint8_t slot);
+#endif
+
+
 typedef struct {
     uint8_t random[16], confirm[16];
 } gap_oob_data;
@@ -238,7 +232,6 @@ typedef struct {
 } gap_oob_local;
 #endif
 
-#ifndef BLE_GAP_SMP_CORE_TEST
 // LE Secure Connections OOB data exchanged through an authenticated channel.
 // Values use SMP byte order.
 
@@ -260,9 +253,7 @@ static struct {
 
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
-
 static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
-
 static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 #endif
 
@@ -412,7 +403,6 @@ static inline int smp_aes128(
     return 1;
 }
 
-#ifndef BLE_GAP_SMP_CORE_TEST
 
 static inline int smp_poll(void) {
     ble_smp *bearer = &gap_smp_contexts[gap_conn_slot].bearer;
@@ -428,7 +418,46 @@ static inline int smp_poll(void) {
     return 1;
 }
 
-static void gap_smp_finish(uint8_t status);
+static void smp_bond_abort(void);
+
+// Stop the procedure and erase temporary secrets on every success/failure path.
+static void gap_smp_finish(uint8_t status) {
+    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
+    if (status) smp_bond_abort();
+
+    if (status && !conn->bonded &&
+        (smp->pairing.phase == SMP_PHASE_BOND_TX ||
+         smp->pairing.phase == SMP_PHASE_BOND_RX)
+    ) gap_wipe(&conn->bond, sizeof(conn->bond));
+
+    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
+    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
+    gap_wipe(smp->tx, sizeof(smp->tx));
+    gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
+    gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
+    gap_wipe(smp->random, sizeof(smp->random));
+    gap_wipe(smp->peer_random, sizeof(smp->peer_random));
+    gap_wipe(&smp->pairing, sizeof(smp->pairing));
+    gap_wipe(&smp->secure, sizeof(smp->secure));
+    gap_wipe(&smp->oob_peer, sizeof(smp->oob_peer));
+
+    smp->bearer.tx_len = 0;
+    smp->bearer.rx_len = 0;
+    smp->bearer.procedure_active = 0;
+    smp->bearer.deadline_ms = 0;
+    memset(&smp->l2cap_rx, 0, sizeof(smp->l2cap_rx));
+    // A new SMP pairing procedure requires a new physical connection, even
+    // after an unsuccessful attempt; preserve only the connection status.
+
+    smp->blocked = 1;
+    smp->status = status;
+    smp->encryption_started = 0;
+    smp->l2cap_rx_pending = 0;
+    smp->previous_bond_valid = 0;
+}
 
 int smp_port_cmac(
     const uint8_t key[16],
@@ -1315,45 +1344,6 @@ static void smp_bond_abort(void) {
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
     }
-}
-
-// Stop the procedure and erase temporary secrets on every success/failure path.
-static void gap_smp_finish(uint8_t status) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
-    if (status) smp_bond_abort();
-
-    if (status && !conn->bonded &&
-        (smp->pairing.phase == SMP_PHASE_BOND_TX ||
-         smp->pairing.phase == SMP_PHASE_BOND_RX)
-    ) gap_wipe(&conn->bond, sizeof(conn->bond));
-
-    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
-    gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
-    gap_wipe(smp->tx, sizeof(smp->tx));
-    gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
-    gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
-    gap_wipe(smp->random, sizeof(smp->random));
-    gap_wipe(smp->peer_random, sizeof(smp->peer_random));
-    gap_wipe(&smp->pairing, sizeof(smp->pairing));
-    gap_wipe(&smp->secure, sizeof(smp->secure));
-    gap_wipe(&smp->oob_peer, sizeof(smp->oob_peer));
-
-    smp->bearer.tx_len = 0;
-    smp->bearer.rx_len = 0;
-    smp->bearer.procedure_active = 0;
-    smp->bearer.deadline_ms = 0;
-    memset(&smp->l2cap_rx, 0, sizeof(smp->l2cap_rx));
-    // A new SMP pairing procedure requires a new physical connection, even
-    // after an unsuccessful attempt; preserve only the connection status.
-
-    smp->blocked = 1;
-    smp->status = status;
-    smp->encryption_started = 0;
-    smp->l2cap_rx_pending = 0;
-    smp->previous_bond_valid = 0;
 }
 
 // Close pairing state and retain only its final status for the GAP API.
@@ -2906,6 +2896,5 @@ static void gap_smp_poll(void) {
     gap_smp_fail(unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
 }
 
-#endif // BLE_GAP_SMP_CORE_TEST
 
 #endif // BLE_GAP_SMP_H

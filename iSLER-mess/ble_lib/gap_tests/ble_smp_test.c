@@ -18,8 +18,8 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
     for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
 }
 
-#define BLE_GAP_SMP_CORE_TEST
-#include "../ble_gap_smp.h"
+#define GAP_SMP_SUPPORT 1
+#include "../ble_gap.h"
 
 typedef struct {
     uint8_t random_fail;
