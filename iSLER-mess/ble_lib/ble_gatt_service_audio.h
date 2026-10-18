@@ -1078,6 +1078,589 @@ static inline int gatt_hearing_access_service_notify_active_preset_index(
         service->active_preset_index_handle, &index, 1, 0);
 }
 
+// Telephone Bearer Service (TBS, GTBS)
+enum {
+    GATT_TBS_PROVIDER_NAME,
+    GATT_TBS_BEARER_UCI,
+    GATT_TBS_BEARER_TECHNOLOGY,
+    GATT_TBS_URI_SCHEMES,
+    GATT_TBS_SIGNAL_STRENGTH,
+    GATT_TBS_SIGNAL_STRENGTH_INTERVAL,
+    GATT_TBS_CURRENT_CALLS,
+    GATT_TBS_CONTENT_CONTROL_ID,
+    GATT_TBS_STATUS_FLAGS,
+    GATT_TBS_INCOMING_CALL_TARGET_URI,
+    GATT_TBS_CALL_STATE,
+    GATT_TBS_CALL_CONTROL_POINT,
+    GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES,
+    GATT_TBS_TERMINATION_REASON,
+    GATT_TBS_INCOMING_CALL,
+    GATT_TBS_CALL_FRIENDLY_NAME,
+    GATT_TBS_CHARACTERISTIC_COUNT
+};
+
+#define GATT_TBS_OPTIONAL_SIGNAL_STRENGTH (1u << GATT_TBS_SIGNAL_STRENGTH)
+#define GATT_TBS_OPTIONAL_SIGNAL_INTERVAL (1u << GATT_TBS_SIGNAL_STRENGTH_INTERVAL)
+#define GATT_TBS_OPTIONAL_TARGET_URI (1u << GATT_TBS_INCOMING_CALL_TARGET_URI)
+#define GATT_TBS_OPTIONAL_FRIENDLY_NAME (1u << GATT_TBS_CALL_FRIENDLY_NAME)
+#define GATT_TBS_OPTIONAL_CHARACTERISTICS_MASK \
+    (GATT_TBS_OPTIONAL_SIGNAL_STRENGTH | GATT_TBS_OPTIONAL_SIGNAL_INTERVAL | \
+     GATT_TBS_OPTIONAL_TARGET_URI | GATT_TBS_OPTIONAL_FRIENDLY_NAME)
+
+typedef struct {
+    const uint8_t *value;
+    uint16_t value_len, value_capacity;
+} ble_gatt_telephone_bearer_value;
+
+typedef struct {
+    uint16_t service_handle;
+    uint16_t value_handles[GATT_TBS_CHARACTERISTIC_COUNT];
+    uint16_t cccd_handles[GATT_TBS_CHARACTERISTIC_COUNT];
+    ble_gatt_server *server;
+    uint8_t pending, request_opcode;
+    uint16_t parameter_len;
+    uint8_t parameters[BLE_GATT_ATT_VALUE_MAX];
+    uint16_t optional_characteristics;
+    uint8_t signal_notification_pending, signal_notify_initialized;
+    uint32_t signal_last_notify_ms;
+} ble_gatt_telephone_bearer_service;
+
+typedef struct {
+    ble_gatt_telephone_bearer_value values[GATT_TBS_CHARACTERISTIC_COUNT];
+    // Must fit the three-octet Control Point Result; increase for longer URIs.
+    uint16_t call_control_point_capacity;
+    uint8_t generic_service;
+    uint16_t optional_characteristics;
+} ble_gatt_telephone_bearer_config;
+
+enum {
+    GATT_TBS_RESULT_SUCCESS = 0x00,
+    GATT_TBS_RESULT_OPCODE_NOT_SUPPORTED = 0x01,
+    GATT_TBS_RESULT_OPERATION_NOT_POSSIBLE = 0x02,
+    GATT_TBS_RESULT_INVALID_CALL_INDEX = 0x03,
+    GATT_TBS_RESULT_STATE_MISMATCH = 0x04,
+    GATT_TBS_RESULT_LACK_OF_RESOURCES = 0x05,
+    GATT_TBS_RESULT_INVALID_OUTGOING_URI = 0x06
+};
+
+static int gatt_tbs_value_is_valid(
+    uint8_t characteristic, const uint8_t *value, uint16_t len
+) {
+    if (len && !value) return 0;
+
+    switch (characteristic) {
+    case GATT_TBS_BEARER_TECHNOLOGY:
+        return len == 1 && value[0] >= 1 && value[0] <= 9;
+    case GATT_TBS_SIGNAL_STRENGTH:
+        return len == 1 && (value[0] <= 100 || value[0] == 255);
+    case GATT_TBS_SIGNAL_STRENGTH_INTERVAL:
+        return len == 1;
+    case GATT_TBS_CONTENT_CONTROL_ID:
+        return len == 1;
+    case GATT_TBS_STATUS_FLAGS:
+        return len == 2 && !(value[0] & 0xfc) && value[1] == 0;
+    case GATT_TBS_CALL_STATE:
+        if (len % 3) return 0;
+
+        for (uint16_t i = 0; i < len; i += 3) {
+            if (!value[i] || value[i + 1] > 6 || (value[i + 2] & 0xf8))
+                return 0;
+
+            for (uint16_t j = 0; j < i; j += 3)
+                if (value[i] == value[j]) return 0;
+        }
+        return 1;
+    case GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES:
+        return len == 2 && !(value[0] & 0xfc) && value[1] == 0;
+    case GATT_TBS_TERMINATION_REASON:
+        return len == 2 && value[0] && value[1] <= 9;
+    case GATT_TBS_CURRENT_CALLS:
+        for (uint16_t i = 0; i < len;) {
+            uint8_t item_len = value[i++];
+
+            if (item_len < 3 || item_len > len - i || !value[i] ||
+                value[i + 1] > 6 || (value[i + 2] & 0xf8)) return 0;
+
+            for (uint16_t j = 0; j < i - 1;) {
+                uint8_t previous_len = value[j++];
+
+                if (value[j] == value[i]) return 0;
+
+                j += previous_len;
+            }
+            i += item_len;
+        }
+        return 1;
+    case GATT_TBS_INCOMING_CALL_TARGET_URI:
+    case GATT_TBS_INCOMING_CALL:
+    case GATT_TBS_CALL_FRIENDLY_NAME:
+        return !len || (len >= 1 && value[0] != 0);
+    case GATT_TBS_CALL_CONTROL_POINT:
+        return len == 0;
+    default:
+        return 1;
+    }
+}
+
+static int gatt_tbs_control_point_busy(
+    const ble_gatt_server *server, uint16_t handle
+) {
+    if (server->indication_pending && server->indication_handle == handle)
+        return 1;
+
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == handle &&
+            server->events[i].indication) return 1;
+
+    return 0;
+}
+
+static int gatt_tbs_queue_result(
+    ble_gatt_telephone_bearer_service *service, uint8_t opcode,
+    uint8_t call_index, uint8_t result
+) {
+    uint8_t response[3] = {opcode, call_index, result};
+    return service && service->server && service->server->mtu >= 6 &&
+        gatt_queue_event(service->server,
+            service->value_handles[GATT_TBS_CALL_CONTROL_POINT],
+            response, sizeof(response), 0);
+}
+
+static uint8_t gatt_tbs_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_telephone_bearer_service *service = context;
+
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (!len) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint16_t handle = service->value_handles[GATT_TBS_CALL_CONTROL_POINT];
+    ble_gatt_attribute *attribute = gatt_server_find(service->server, handle);
+
+    if (!attribute || len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server, handle);
+
+    if (!cccd || !(cccd->cccd & 1)) return 0xfd;
+
+    if (service->pending || gatt_tbs_control_point_busy(service->server, handle))
+        return 0xfe;
+
+    uint8_t opcode = value[0];
+
+    if (opcode > 5) {
+        return gatt_tbs_queue_result(service, opcode, 0,
+            GATT_TBS_RESULT_OPCODE_NOT_SUPPORTED) ?
+            0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+    }
+
+    if ((opcode == 2 || opcode == 3 || opcode == 5)) {
+        ble_gatt_attribute *optional = gatt_server_find(service->server,
+            service->value_handles[GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES]);
+        uint8_t *bits = optional ?
+            gatt_attribute_value(service->server, optional) : NULL;
+        uint8_t required_bit = opcode == 5 ? 1 : 0;
+
+        if (!bits || optional->value_len != 2 ||
+            !(ble_get_le16(bits) & (uint16_t)(1u << required_bit))) {
+            return gatt_tbs_queue_result(service, opcode, 0,
+                GATT_TBS_RESULT_OPCODE_NOT_SUPPORTED) ?
+                0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    if ((opcode <= 3 && len != 2) || (opcode == 4 && len < 2) ||
+        (opcode == 5 && len < 3))
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    if (opcode <= 3 && value[1] == 0)
+        return gatt_tbs_queue_result(service, opcode, 0,
+            GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
+            0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+
+    if (opcode == 5) {
+        for (uint16_t i = 1; i < len; i++) {
+            if (!value[i])
+                return gatt_tbs_queue_result(service, opcode, 0,
+                    GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
+                    0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+
+            for (uint16_t j = 1; j < i; j++)
+                if (value[i] == value[j])
+                    return gatt_tbs_queue_result(service, opcode, 0,
+                        GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
+                        0 : ATT_ERR_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    service->request_opcode = opcode;
+    service->parameter_len = len - 1;
+    memcpy(service->parameters, value + 1, service->parameter_len);
+    service->pending = 1;
+    return 0;
+}
+
+// Application facing
+// Add mandatory and selected optional TBS/GTBS characteristics. Use
+// generic_service for GTBS.
+// The builder validates and captures Call Control Point requests; the
+// application performs telephony actions and updates call state.
+static inline int gatt_telephone_bearer_service_add(
+    ble_gatt_server *server, ble_gatt_telephone_bearer_service *service,
+    const ble_gatt_telephone_bearer_config *config
+) {
+    static const uint16_t uuids[GATT_TBS_CHARACTERISTIC_COUNT] = {
+        0x2bb3, 0x2bb4, 0x2bb5, 0x2bb6, 0x2bb7, 0x2bb8,
+        0x2bb9, 0x2bba, 0x2bbb, 0x2bbc, 0x2bbd, 0x2bbe,
+        0x2bbf, 0x2bc0, 0x2bc1, 0x2bc2
+    };
+    static const uint8_t properties[GATT_TBS_CHARACTERISTIC_COUNT] = {
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
+            BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ,
+        BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
+        BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY
+    };
+
+    if (!server || !service || !config || config->generic_service > 1 ||
+        (config->optional_characteristics & ~GATT_TBS_OPTIONAL_CHARACTERISTICS_MASK) ||
+        (!!(config->optional_characteristics & GATT_TBS_OPTIONAL_SIGNAL_STRENGTH) !=
+         !!(config->optional_characteristics & GATT_TBS_OPTIONAL_SIGNAL_INTERVAL)) ||
+        config->call_control_point_capacity < 3 ||
+        config->call_control_point_capacity > BLE_GATT_SERVER_VALUE_MAX
+    ) return 0;
+
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        const ble_gatt_telephone_bearer_value *value = &config->values[i];
+
+        if (value->value_len > value->value_capacity ||
+            value->value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+            (value->value_len && !value->value)
+        ) return 0;
+    }
+
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++)
+        if (!gatt_tbs_value_is_valid(i, config->values[i].value,
+                config->values[i].value_len)) return 0;
+
+    if (
+        !config->values[GATT_TBS_BEARER_UCI].value_len ||
+        !config->values[GATT_TBS_URI_SCHEMES].value_len ||
+        ((config->optional_characteristics & GATT_TBS_OPTIONAL_SIGNAL_STRENGTH) &&
+         (config->values[GATT_TBS_SIGNAL_STRENGTH].value_len != 1 ||
+          config->values[GATT_TBS_SIGNAL_STRENGTH_INTERVAL].value_len != 1))
+    ) return 0;
+
+    ble_gatt_sig_characteristic characteristics[GATT_TBS_CHARACTERISTIC_COUNT];
+    uint16_t value_handles[GATT_TBS_CHARACTERISTIC_COUNT] = {0};
+    uint16_t cccd_handles[GATT_TBS_CHARACTERISTIC_COUNT] = {0};
+    uint8_t indexes[GATT_TBS_CHARACTERISTIC_COUNT], count = 0;
+    uint8_t empty_value = 0;
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        uint16_t optional_bit = i == GATT_TBS_SIGNAL_STRENGTH ? GATT_TBS_OPTIONAL_SIGNAL_STRENGTH :
+            i == GATT_TBS_SIGNAL_STRENGTH_INTERVAL ? GATT_TBS_OPTIONAL_SIGNAL_INTERVAL :
+            i == GATT_TBS_INCOMING_CALL_TARGET_URI ? GATT_TBS_OPTIONAL_TARGET_URI :
+            i == GATT_TBS_CALL_FRIENDLY_NAME ? GATT_TBS_OPTIONAL_FRIENDLY_NAME : 0;
+
+        if (optional_bit && !(config->optional_characteristics & optional_bit))
+            continue;
+
+        const ble_gatt_telephone_bearer_value *value = &config->values[i];
+        uint16_t permissions = 0;
+
+        if (properties[i] & BLE_GATT_PROP_READ)
+            permissions |= BLE_GATT_PERM_READ_ENC;
+
+        if (properties[i] & (BLE_GATT_PROP_WRITE |
+                             BLE_GATT_PROP_WRITE_NO_RSP)
+        ) permissions |= BLE_GATT_PERM_WRITE_ENC;
+        characteristics[count] = (ble_gatt_sig_characteristic){
+            .uuid = uuids[i], .properties = properties[i],
+            .cccd = !!(properties[i] & BLE_GATT_PROP_NOTIFY),
+            .permissions = permissions,
+            .value = value->value_len ? value->value : &empty_value,
+            .value_len = value->value_len,
+            .value_capacity = i == GATT_TBS_CALL_CONTROL_POINT ?
+                config->call_control_point_capacity : value->value_capacity,
+            .variable_length = i == GATT_TBS_CALL_CONTROL_POINT
+        };
+        indexes[count++] = i;
+    }
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    service->optional_characteristics = config->optional_characteristics;
+    ble_gatt_sig_handlers handlers[GATT_TBS_CHARACTERISTIC_COUNT] = {0};
+    uint8_t cp_index = 0;
+    for (; cp_index < count && indexes[cp_index] != GATT_TBS_CALL_CONTROL_POINT; cp_index++);
+
+    if (cp_index == count) return 0;
+
+    handlers[cp_index].write =
+        gatt_tbs_control_point_write;
+    handlers[cp_index].context = service;
+
+    if (!gatt_sig_service_add_with_handlers(server,
+            config->generic_service ? 0x184c : 0x184b,
+            characteristics, count,
+            &service->service_handle, value_handles,
+            cccd_handles, handlers)
+    ) return 0;
+
+    for (uint8_t n = 0; n < count; n++) {
+        service->value_handles[indexes[n]] = value_handles[n];
+        service->cccd_handles[indexes[n]] = cccd_handles[n];
+    }
+    const uint16_t encrypted_cccd_permissions =
+        BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
+    for (uint8_t i = 0; i < GATT_TBS_CHARACTERISTIC_COUNT; i++) {
+        if (!service->cccd_handles[i])
+            continue;
+
+        ble_gatt_attribute *cccd =
+            gatt_server_find(server, service->cccd_handles[i]);
+
+        if (cccd)
+            cccd->permissions = encrypted_cccd_permissions;
+    }
+    return 1;
+}
+
+// Complete a captured TBS/GTBS call request and queue the required result
+// notification. For non-Originate/Join success, the request's Call Index is
+// reported automatically; Originate and Join require the assigned/first index.
+static inline int gatt_telephone_bearer_service_complete(
+    ble_gatt_telephone_bearer_service *service, uint8_t result,
+    uint8_t call_index
+) {
+    if (!service || !service->server || !service->pending ||
+        result > GATT_TBS_RESULT_INVALID_OUTGOING_URI) return 0;
+
+    uint8_t response_index = 0;
+
+    if (result == GATT_TBS_RESULT_SUCCESS) {
+        if (service->request_opcode == 4)
+            response_index = call_index;
+        else if (service->request_opcode == 5)
+            response_index = service->parameters[0];
+        else
+            response_index = service->parameters[0];
+        if (!response_index) return 0;
+    }
+    else if (call_index) {
+        return 0;
+    }
+
+    if (!gatt_tbs_queue_result(service, service->request_opcode,
+            response_index, result)) return 0;
+
+    service->pending = 0;
+    service->parameter_len = 0;
+    return 1;
+}
+
+// Replace one TBS/GTBS value and optionally queue its standard notification.
+static inline int gatt_telephone_bearer_service_set_value(
+    ble_gatt_server *server, ble_gatt_telephone_bearer_service *service,
+    uint8_t characteristic, const uint8_t *value, uint16_t len,
+    uint8_t notify
+) {
+    if (!server || !service || service->server != server ||
+        characteristic >= GATT_TBS_CHARACTERISTIC_COUNT ||
+        characteristic == GATT_TBS_CALL_CONTROL_POINT ||
+        characteristic == GATT_TBS_SIGNAL_STRENGTH ||
+        characteristic == GATT_TBS_BEARER_UCI ||
+        characteristic == GATT_TBS_CALL_CONTROL_OPTIONAL_OPCODES ||
+        notify > 1 || (len && !value) || len > BLE_GATT_ATT_VALUE_MAX)
+        return 0;
+
+    uint16_t handle = service->value_handles[characteristic];
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!attribute || !stored || len > attribute->value_capacity ||
+        (notify && !(attribute->properties & BLE_GATT_PROP_NOTIFY)))
+        return 0;
+
+    if (!gatt_tbs_value_is_valid(characteristic, value, len))
+        return 0;
+
+    if (len) memcpy(stored, value, len);
+    attribute->value_len = len;
+
+    if (notify) return gatt_queue_event(server, handle, value, len, 0);
+
+    return 1;
+}
+
+// Queue TBS signal strength changes at the configured minimum interval.
+static inline int gatt_telephone_bearer_service_set_signal_strength(
+    ble_gatt_server *server, ble_gatt_telephone_bearer_service *service,
+    uint8_t strength, uint32_t now_ms
+) {
+    if (!server || !service || service->server != server ||
+        !(service->optional_characteristics & GATT_TBS_OPTIONAL_SIGNAL_STRENGTH) ||
+        (strength > 100 && strength != 255)) return 0;
+
+    uint16_t handle = service->value_handles[GATT_TBS_SIGNAL_STRENGTH];
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!stored || attribute->value_capacity < 1) return 0;
+    if (attribute->value_len == 1 && stored[0] == strength) return 1;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server, handle);
+
+    if (!cccd || !(cccd->cccd & 1)) {
+        service->signal_notification_pending = 0;
+        return 1;
+    }
+
+    stored[0] = strength;
+    attribute->value_len = 1;
+    ble_gatt_attribute *interval_attribute = gatt_server_find(server,
+        service->value_handles[GATT_TBS_SIGNAL_STRENGTH_INTERVAL]);
+    const uint8_t *interval = interval_attribute ?
+        gatt_attribute_value(server, interval_attribute) : NULL;
+    uint32_t delay = interval ? (uint32_t)interval[0] * 1000u : 0;
+
+    if (!service->signal_notify_initialized || !delay ||
+        (uint32_t)(now_ms - service->signal_last_notify_ms) >= delay) {
+        if (!gatt_queue_event(server, handle, stored, 1, 0)) {
+            service->signal_notification_pending = 1;
+            return 0;
+        }
+
+        service->signal_notify_initialized = 1;
+        service->signal_last_notify_ms = now_ms;
+        service->signal_notification_pending = 0;
+    }
+    else service->signal_notification_pending = 1;
+    return 1;
+}
+
+static inline int gatt_telephone_bearer_service_poll_signal_strength(
+    ble_gatt_server *server, ble_gatt_telephone_bearer_service *service,
+    uint32_t now_ms
+) {
+    if (!server || !service || service->server != server ||
+        !service->signal_notification_pending) return 0;
+
+    ble_gatt_attribute *interval_attribute = gatt_server_find(server,
+        service->value_handles[GATT_TBS_SIGNAL_STRENGTH_INTERVAL]);
+    ble_gatt_attribute *strength_attribute = gatt_server_find(server,
+        service->value_handles[GATT_TBS_SIGNAL_STRENGTH]);
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(server,
+        service->value_handles[GATT_TBS_SIGNAL_STRENGTH]);
+    const uint8_t *interval = interval_attribute ?
+        gatt_attribute_value(server, interval_attribute) : NULL;
+    const uint8_t *strength = strength_attribute ?
+        gatt_attribute_value(server, strength_attribute) : NULL;
+
+    if (!cccd || !(cccd->cccd & 1)) {
+        service->signal_notification_pending = 0;
+        return 0;
+    }
+
+    uint32_t delay = interval ? (uint32_t)interval[0] * 1000u : 0;
+
+    if (service->signal_notify_initialized && delay &&
+        (uint32_t)(now_ms - service->signal_last_notify_ms) < delay) return 0;
+
+    if (!strength || !gatt_queue_event(server,
+            service->value_handles[GATT_TBS_SIGNAL_STRENGTH], strength, 1, 0))
+        return 0;
+
+    service->signal_notify_initialized = 1;
+    service->signal_last_notify_ms = now_ms;
+    service->signal_notification_pending = 0;
+    return 1;
+}
+
+// Telephony and Media Audio Profile: TMAS, CAS
+typedef struct {
+    uint16_t service_handle, role_handle;
+} ble_gatt_telephony_and_media_audio_service;
+
+// Application facing
+// Add TMAS with the read-only TMAP Role bit field. At least one role bit must
+// be set; the application supplies the roles this device supports.
+static inline int gatt_telephony_and_media_audio_service_add(
+    ble_gatt_server *server,
+    ble_gatt_telephony_and_media_audio_service *service,
+    uint8_t tmap_role
+) {
+    if (!server || !service || !tmap_role)
+        return 0;
+
+    ble_gatt_sig_characteristic characteristic = {
+        0x2b51, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+        &tmap_role, 1
+    };
+    uint16_t values[1];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x1855, &characteristic, 1,
+            &service->service_handle, values, NULL)
+    ) return 0;
+
+    service->role_handle = values[0];
+    return 1;
+}
+
+typedef struct {
+    uint16_t service_handle, csis_include_handle;
+} ble_gatt_common_audio_service;
+
+// Application facing
+// Add CAS, which has no characteristics. Pass a prior CSIS service handle to
+// include it when this device is a member of a Coordinated Set.
+static inline int gatt_common_audio_service_add(
+    ble_gatt_server *server, ble_gatt_common_audio_service *service,
+    uint16_t csis_service_handle
+) {
+    if (!server || !service || server->database_sealed)
+        return 0;
+
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
+    ble_gatt_uuid uuid = {2, {0x53, 0x18}};
+    memset(service, 0, sizeof(*service));
+    int added = gatt_server_add_service(server, &uuid, 1,
+                                         &service->service_handle);
+
+    if (added && csis_service_handle)
+        added = gatt_add_included_service(server, csis_service_handle,
+            &service->csis_include_handle);
+
+    if (!added) {
+        gatt_service_rollback(server, old_count, old_next_handle,
+            old_value_used);
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+
+    return 1;
+}
+
 // Media Control: MCS, GMCS
 typedef struct {
     void *service;
