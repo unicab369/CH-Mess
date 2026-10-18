@@ -496,29 +496,29 @@ typedef struct {
         uint8_t min_spacing_200ms, max_delay_200ms;
     } c_channel;
 
-    // Fields exclusive to one role share storage within this connection.
-    union {
+    // Central-only state.
+    struct {
+        uint8_t central_anchor_set;
+        uint8_t channel_report_queued, channel_report_pending;
+        uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
+    } central;
+
+    // Peripheral-only state.
+    struct {
+        uint8_t rate_req_pending, rate_ack_waiting;
         struct {
-            uint8_t central_anchor_set;
-            uint8_t channel_report_queued, channel_report_pending;
-            uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
-        } central;
+            uint16_t interval_min, interval_max;
+            uint16_t factor_min, factor_max, latency;
+            uint16_t continuation, timeout, periodicity;
+            uint16_t offsets[4];
+        } rate_request;
+        uint16_t latency_remaining;
         struct {
-            uint8_t rate_req_pending, rate_ack_waiting;
-            struct {
-                uint16_t interval_min, interval_max;
-                uint16_t factor_min, factor_max, latency;
-                uint16_t continuation, timeout, periodicity;
-                uint16_t offsets[4];
-            } rate_request;
-            uint16_t latency_remaining;
-            struct {
-                uint16_t factor_min, factor_max, latency, continuation, timeout;
-            } subrate_request;
-            uint8_t channel_status_queued, channel_status_last_sent_valid;
-            uint32_t channel_status_changed_ms, channel_status_last_sent_ms;
-        } peripheral;
-    } role;
+            uint16_t factor_min, factor_max, latency, continuation, timeout;
+        } subrate_request;
+        uint8_t status_queued, last_sent_valid;
+        uint32_t status_changed_ms, status_last_sent_ms;
+    } peripheral;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];

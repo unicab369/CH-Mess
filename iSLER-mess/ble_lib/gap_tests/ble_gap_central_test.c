@@ -2771,7 +2771,7 @@ static void test_connection_context_slots(void) {
         gap_conn_context *connection =
             &gap_conn_ctx[slot];
         connection->is_central = slot == 0;
-        connection->role.central.central_anchor_set = 1;
+        connection->central.central_anchor_set = 1;
         connection->c_link_layer.first_event = 0;
         connection->c_link_state.rx_armed = connection->c_link_state.event_replied = 0;
         connection->c_link_state.channel_selected = 0;
@@ -3868,13 +3868,13 @@ static void test_channel_classification_reporting(void) {
     const uint8_t enable_reporting[3] = {1, 5, 10};
     receive_test_control(0x28, enable_reporting, sizeof(enable_reporting));
     assert(conn->c_channel.enabled &&
-           conn->role.peripheral.channel_status_queued);
+           conn->peripheral.status_queued);
     now_ms += 2000;
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x29 && gap_tx_frame[1] == 11 &&
            memcmp(gap_tx_frame + 3, classification, sizeof(classification)) == 0);
-    assert(!conn->role.peripheral.channel_status_queued &&
-           conn->role.peripheral.channel_status_last_sent_valid);
+    assert(!conn->peripheral.status_queued &&
+           conn->peripheral.last_sent_valid);
     gap_conn_end();
 }
 

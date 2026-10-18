@@ -1531,7 +1531,7 @@ static int gap_pawr_exchange(
     ) return 0;
 
     conn->is_central = 1;
-    conn->role.central.central_anchor_set = 0;
+    conn->central.central_anchor_set = 0;
     conn->c_link_layer.peer_sca_ppm = 500;
 
     if (peer_slot >= 0) {
