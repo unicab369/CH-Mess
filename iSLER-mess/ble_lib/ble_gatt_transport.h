@@ -698,7 +698,7 @@ static inline void gatt_transport_set_connected(
         return;
 
     transport->connected = (uint8_t)connected;
-    l2cap_connection_reset(&transport->l2cap, 0);
+    l2cap_conn_reset(&transport->l2cap, 0);
 #if BLE_GATT_ENABLE_EATT
 
     if (transport->eatt_enabled)
@@ -1038,7 +1038,7 @@ static inline int gatt_transport_poll(
     if (transport->bearer_failed)
         return -1;
 
-    (void)l2cap_connection_tick(&transport->l2cap, now_ms);
+    (void)l2cap_conn_tick(&transport->l2cap, now_ms);
 
 #if BLE_GATT_ENABLE_EATT
     gatt_transport_eatt_poll_tx(transport);

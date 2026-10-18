@@ -125,7 +125,7 @@ int main(void) {
                                         response, sizeof(response)));
     assert(fake.opened == 1);
     uint16_t reconfigure_cids[] = {local_cid};
-    assert(l2cap_ecfc_reconfigure(&conn, reconfigure_cids, 1, 120, 64));
+    assert(l2cap_ecfc_reconfig(&conn, reconfigure_cids, 1, 120, 64));
     assert(fake.pdu[0] == L2CAP_ECFC_RECONFIGURE_REQUEST);
     uint8_t reconfigure_response[] = {
         L2CAP_ECFC_RECONFIGURE_RESPONSE, fake.pdu[1], 2, 0, 0, 0
@@ -191,7 +191,7 @@ int main(void) {
     assert(l2cap_connection_receive(&conn, L2CAP_CID_LE_SIGNALING,
         disconnect_response, sizeof(disconnect_response)));
     assert(fake.closed == 2);
-    assert(l2cap_connection_update_request(&conn, 24, 40, 0, 100));
+    assert(l2cap_update_req(&conn, 24, 40, 0, 100));
     assert(fake.pdu[0] == L2CAP_CONNECTION_PARAMETER_UPDATE_REQUEST);
     uint8_t update_response[] = {
         L2CAP_CONNECTION_PARAMETER_UPDATE_RESPONSE, fake.pdu[1],
@@ -292,9 +292,9 @@ int main(void) {
     assert(l2cap_local_slot(&legacy, legacy_cid) >= 0);
     uint16_t timeout_cid;
     assert(l2cap_ecfc_open(&legacy, 0x0027, &timeout_cid));
-    assert(l2cap_connection_tick(&legacy,
+    assert(l2cap_conn_tick(&legacy,
         L2CAP_SIGNAL_TIMEOUT_MS - 1) == 0);
-    assert(l2cap_connection_tick(&legacy,
+    assert(l2cap_conn_tick(&legacy,
         L2CAP_SIGNAL_TIMEOUT_MS) == 1);
     assert(l2cap_local_slot(&legacy, timeout_cid) < 0);
 

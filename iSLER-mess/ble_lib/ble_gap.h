@@ -1494,7 +1494,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         if (peer->initialized &&
             peer->handle.generation != handle.generation) {
-            l2cap_connection_reset(&peer->connection, 0x0013);
+            l2cap_conn_reset(&peer->connection, 0x0013);
             peer->initialized = 0;
         }
 
@@ -1530,7 +1530,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         if (connected != peer->connected) {
             if (!connected)
-                l2cap_connection_reset(&peer->connection, 0);
+                l2cap_conn_reset(&peer->connection, 0);
             peer->connected = connected;
             peer->tx_len = peer->tx_offset = 0;
             l2cap_reassembler_reset(&peer->reassembler);
@@ -1585,7 +1585,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             else result = received;
         }
 
-        l2cap_connection_tick(&peer->connection, GET_MILLIS());
+        l2cap_conn_tick(&peer->connection, GET_MILLIS());
 
         if (result < 0) {
             gap_conn_slot = previous_slot;
@@ -1601,7 +1601,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (!peer->initialized || seen[slot])
             continue;
 
-        l2cap_connection_reset(&peer->connection, 0x0013);
+        l2cap_conn_reset(&peer->connection, 0x0013);
         memset(peer, 0, sizeof(*peer));
     }
 
