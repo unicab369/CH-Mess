@@ -197,9 +197,9 @@ static void gap_conn_end(void) {
 static void gap_conn_update_apply(uint8_t instant_packet_received) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (conn->c_rate.update_pending &&
-        conn->next_schedule.instant == conn->c_link.event_counter
+        conn->next_schedule.instant == conn->c_link_layer.event_counter
     ) {
-        if (conn->is_central && conn->c_link.tx_pending &&
+        if (conn->is_central && conn->c_link_layer.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
             gap_tx_frame[2] == LL_CONNECTION_RATE_IND
         ) {
@@ -209,16 +209,16 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         }
 
         if (instant_packet_received) {
-            conn->c_link.next_ticks = conn->c_link.next_ticks -
+            conn->c_link_layer.next_ticks = conn->c_link_layer.next_ticks -
                     HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
                     HW_TICKS_FROM_US((uint32_t)conn->next_schedule.interval_125us * 125);
         }
         else {
-            conn->c_link.next_ticks +=
+            conn->c_link_layer.next_ticks +=
                 (uint64_t)conn->next_schedule.win_offset * HW_TICKS_FROM_US(125);
         }
 
-        conn->c_link.last_rx_ms = GET_MILLIS();
+        conn->c_link_layer.last_rx_ms = GET_MILLIS();
         conn->schedule.interval_125us = conn->next_schedule.interval_125us;
         conn->schedule.base_event = conn->next_schedule.instant;
         conn->schedule.factor = conn->next_schedule.factor;
@@ -235,11 +235,11 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     }
 
     if ((conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
-        conn->update_instant == conn->c_link.event_counter
+        conn->update_instant == conn->c_link_layer.event_counter
     ) {
         // Close an unsynchronized Central link instead of retransmitting an
         // unacknowledged timing update once its Instant is no longer in the future.
-        if (conn->is_central && conn->c_link.tx_pending &&
+        if (conn->is_central && conn->c_link_layer.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 12 &&
             gap_tx_frame[2] == LL_CONNECTION_UPDATE_IND
         ) {
@@ -249,12 +249,12 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 
         if (instant_packet_received) {
             // The packet already fixed the new anchor; ignore WinOffset and WinSize.
-            conn->c_link.next_ticks = conn->c_link.next_ticks -
+            conn->c_link_layer.next_ticks = conn->c_link_layer.next_ticks -
                     HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125) +
                     (uint64_t)conn->new_params.interval * HW_TICKS_FROM_US(1250);
         }
         else {
-            conn->c_link.next_ticks += (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
+            conn->c_link_layer.next_ticks += (uint64_t)conn->update_win_offset * HW_TICKS_FROM_US(1250);
         }
 
         if ((uint32_t)conn->new_params.interval * 10 != conn->schedule.interval_125us ) {
@@ -275,7 +275,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         conn->schedule.latency = conn->new_params.latency;
         conn->schedule.timeout = conn->new_params.supervision_timeout;
         conn->window_size = conn->update_window_size;
-        conn->c_link.last_rx_ms = GET_MILLIS();
+        conn->c_link_layer.last_rx_ms = GET_MILLIS();
         conn->c_pending.update_window_active = !instant_packet_received;
         conn->c_subrate.force_event = 1;
         conn->c_pending.procedure_flags &= (uint8_t)~GAP_PENDING_TIMING_UPDATE;
@@ -286,9 +286,9 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     // Switch rates at the shared Instant, including events skipped by polling.
 
     if ((conn->c_pending.procedure_flags & GAP_PENDING_PHY_UPDATE) &&
-        conn->c_phy.instant == conn->c_link.event_counter
+        conn->c_phy.instant == conn->c_link_layer.event_counter
     ) {
-        if (conn->is_central && conn->c_link.tx_pending &&
+        if (conn->is_central && conn->c_link_layer.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 5 &&
             gap_tx_frame[2] == LL_PHY_UPDATE_IND
         ) {
@@ -308,11 +308,11 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
     }
 
     if ((conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) &&
-        conn->map_instant == conn->c_link.event_counter
+        conn->map_instant == conn->c_link_layer.event_counter
     ) {
         // An unacknowledged map change cannot be retried after its Instant;
         // disconnect rather than let the two devices hop on different maps.
-        if (conn->is_central && conn->c_link.tx_pending &&
+        if (conn->is_central && conn->c_link_layer.tx_pending &&
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 8 &&
             gap_tx_frame[2] == LL_CHANNEL_MAP_IND
         ) {
@@ -321,12 +321,12 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             return;
         }
 
-        memcpy(conn->c_link.channel_map, conn->next_channel_map, sizeof(conn->c_link.channel_map));
-        conn->c_link.used_count = 0;
+        memcpy(conn->c_link_layer.channel_map, conn->next_channel_map, sizeof(conn->c_link_layer.channel_map));
+        conn->c_link_layer.used_count = 0;
 
         for (uint8_t channel = 0; channel < 37; channel++)
-            if (conn->c_link.channel_map[channel / 8] & (1 << (channel % 8)))
-                conn->c_link.used_channels[conn->c_link.used_count++] = channel;
+            if (conn->c_link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
+                conn->c_link_layer.used_channels[conn->c_link_layer.used_count++] = channel;
         conn->c_pending.procedure_flags &= (uint8_t)~GAP_PENDING_CHANNEL_MAP;
 
         if (conn->is_central && conn->connection_status == GAP_CONNECTION_PENDING)
@@ -341,12 +341,12 @@ static void gap_conn_event_advance(void) {
     uint8_t subrated =
         // schedule
         (conn->schedule.factor &&
-         ((int32_t)conn->c_link.event_counter -
+         ((int32_t)conn->c_link_layer.event_counter -
           (int32_t)conn->schedule.base_event) % conn->schedule.factor == 0) ||
         (conn->is_central && conn->c_subrate.transition &&
         // next_schedule
          conn->next_schedule.factor &&
-         ((int32_t)conn->c_link.event_counter -
+         ((int32_t)conn->c_link_layer.event_counter -
           (int32_t)conn->next_schedule.base_event) % conn->next_schedule.factor == 0);
 
     if (subrated) {
@@ -370,9 +370,9 @@ static void gap_conn_event_advance(void) {
     conn->c_subrate.event_activity = 0;
     conn->c_subrate.event_received = 0;
     conn->c_subrate.force_event = 0;
-    conn->c_link.event_counter++;
+    conn->c_link_layer.event_counter++;
 
-    if (!conn->c_link.event_counter && conn->schedule.factor > 1) {
+    if (!conn->c_link_layer.event_counter && conn->schedule.factor > 1) {
         // Preserve the event phase across the 16-bit counter wrap.
         uint32_t steps = (65536 - conn->schedule.base_event +
                           conn->schedule.factor - 1) / conn->schedule.factor;
@@ -400,7 +400,7 @@ static void gap_send_conn_update(void) {
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
     // Allow six latency-adjusted event periods plus one extra event of lead.
-    conn->update_instant = (uint16_t)(conn->c_link.event_counter +
+    conn->update_instant = (uint16_t)(conn->c_link_layer.event_counter +
                             6 * (conn->schedule.latency + 1) + 1);
     conn->c_pending.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
     conn->c_queue.local_update = 0;
@@ -468,7 +468,7 @@ static void gap_send_subrate_update(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
-    conn->next_schedule.base_event = conn->c_link.event_counter;
+    conn->next_schedule.base_event = conn->c_link_layer.event_counter;
     conn->c_subrate.queued_flags &=
         (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
     conn->c_subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
@@ -489,7 +489,7 @@ static void gap_send_rate_ind(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
-    conn->next_schedule.instant = (uint16_t)(conn->c_link.event_counter +
+    conn->next_schedule.instant = (uint16_t)(conn->c_link_layer.event_counter +
                                 6 * (uint32_t)conn->next_schedule.factor *
                                 (conn->next_schedule.latency + 1) + 1);
     conn->next_schedule.win_offset = 0;
@@ -810,7 +810,7 @@ static uint8_t gap_conn_control(
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2ull * (latency + 1) * interval_125us * factor
             ) {
-                if ((uint16_t)(instant - conn->c_link.event_counter) >= 0x8000) {
+                if ((uint16_t)(instant - conn->c_link_layer.event_counter) >= 0x8000) {
                     gap_conn_end();
                     return 1;
                 }
@@ -853,8 +853,8 @@ static uint8_t gap_conn_control(
             uint16_t instant = ble_read_u16_le(frame + 8);
 
             if (used_count >= 2 && !(frame[7] & 0xe0) &&
-                (uint16_t)(instant - conn->c_link.event_counter) < 0x8000 &&
-                instant != conn->c_link.event_counter
+                (uint16_t)(instant - conn->c_link_layer.event_counter) < 0x8000 &&
+                instant != conn->c_link_layer.event_counter
             ) {
                 memcpy(conn->next_channel_map, frame + 3, 5);
                 conn->map_instant = instant;
@@ -1482,8 +1482,8 @@ static uint8_t gap_conn_control(
         if (!gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
             interval < gap_conn_min_interval() ||
             win_offset > interval ||
-            (uint16_t)(instant - conn->c_link.event_counter) >= 0x8000 ||
-            instant == conn->c_link.event_counter ||
+            (uint16_t)(instant - conn->c_link_layer.event_counter) >= 0x8000 ||
+            instant == conn->c_link_layer.event_counter ||
             !(conn->c_features.peer_page1[1] & 0x01) ||
             conn->c_rate.update_pending ||
             conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE ||
@@ -1616,7 +1616,7 @@ static uint8_t gap_conn_control(
         }
 
         if ((base >> 14) == 3 &&
-            (conn->c_link.event_counter >> 14) == 0) {
+            (conn->c_link_layer.event_counter >> 14) == 0) {
             // Rounding steps up may make steps * factor exceed the distance to wrap.
             // That excess is the new base event after the counter wraps.
             uint32_t steps = (65536 - base + factor - 1) / factor;
@@ -1779,7 +1779,7 @@ static uint8_t gap_conn_control(
                 if (rx == conn->c_phy.current.rx) rx = 0;
 
                 // Allow six latency-adjusted event periods plus one extra event of lead.
-                conn->c_phy.instant = tx || rx ? (uint16_t)(conn->c_link.event_counter +
+                conn->c_phy.instant = tx || rx ? (uint16_t)(conn->c_link_layer.event_counter +
                                         6 * (conn->schedule.latency + 1) + 1) : 0;
                 conn->c_queue.phy_queued = 0;
                 conn->c_pending.phy_request = 0;
@@ -1840,8 +1840,8 @@ static uint8_t gap_conn_control(
 
         uint16_t instant = ble_read_u16_le(frame + 5);
 
-        if ((uint16_t)(instant - conn->c_link.event_counter) >= 0x8000 ||
-            instant == conn->c_link.event_counter
+        if ((uint16_t)(instant - conn->c_link_layer.event_counter) >= 0x8000 ||
+            instant == conn->c_link_layer.event_counter
         ) {
             conn->c_phy.status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
@@ -1874,7 +1874,7 @@ static uint8_t gap_conn_procedure_busy(void) {
 
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_sec_contexts[gap_conn_slot].phase ||
-        conn->c_link.first_event ||
+        conn->c_link_layer.first_event ||
         conn->c_pending.procedure_flags ||
         conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
         conn->c_pending.length ||
@@ -2094,7 +2094,7 @@ int gap_channel_map_set(const uint8_t channels[5]) {
 
     if (count < 2) return 0;
 
-    if (memcmp(channels, conn->c_link.channel_map, 5) == 0) {
+    if (memcmp(channels, conn->c_link_layer.channel_map, 5) == 0) {
         conn->connection_status = 0;
         return 1;
     }
@@ -2116,7 +2116,7 @@ int gap_channel_reporting_set(
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->is_central ||
-        conn->c_link.first_event ||
+        conn->c_link_layer.first_event ||
         gap_security->phase ||
         enable > 1 ||
         min_spacing_200ms < 5 ||
@@ -2147,7 +2147,7 @@ int gap_channel_class_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link.first_event) || !classification ||
+        (!conn->is_central && conn->c_link_layer.first_event) || !classification ||
         !gap_class_valid(classification)
     ) return 0;
 
@@ -2171,7 +2171,7 @@ int gap_channel_class_set(
 const uint8_t *gap_channel_class_get(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link.first_event) ||
+        (!conn->is_central && conn->c_link_layer.first_event) ||
         !conn->c_channel.classification_valid
     ) return NULL;
 
@@ -2185,7 +2185,7 @@ int gap_peer_class_get(
 ) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || !conn->is_central ||
-        conn->c_link.first_event || !classification ||
+        conn->c_link_layer.first_event || !classification ||
         !conn->c_channel.peer_classification_valid
     ) return 0;
 
@@ -2255,7 +2255,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
     if (!data || !len ||
         (llid != 1 && llid != 2) ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link.first_event) ||
+        (!conn->is_central && conn->c_link_layer.first_event) ||
         gap_security->phase ||
         conn->c_queue.tx_queued ||
         conn->c_link_state.terminate_queued ||
@@ -2293,14 +2293,14 @@ int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link.first_event) ||
+        (!conn->is_central && conn->c_link_layer.first_event) ||
         !reason ||
         conn->c_link_state.terminate_after_reply ||
         conn->c_link_state.terminate_queued ||
         conn->c_link_state.terminate_sent
     ) return 0;
 
-    conn->c_link.local_terminate_reason = reason;
+    conn->c_link_layer.local_terminate_reason = reason;
     conn->c_link_state.terminate_queued = 1;
     return 1;
 }
@@ -2560,7 +2560,7 @@ int gap_encrypted(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-            (conn->is_central || !conn->c_link.first_event) &&
+            (conn->is_central || !conn->c_link_layer.first_event) &&
             !gap_security->phase &&
             gap_security->tx_enabled &&
             gap_security->rx_enabled;

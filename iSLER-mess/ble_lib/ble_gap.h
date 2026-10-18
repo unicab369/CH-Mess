@@ -417,22 +417,15 @@ typedef struct {
     uint8_t length_status;
     uint32_t length_started_ms;
 
-    // Link-layer event and termination state.
+    // Procedures awaiting completion or peer response.
     struct {
-        uint8_t rx_armed, event_replied, channel_selected;
-        uint8_t terminate_after_reply, version_ind_sent;
-        uint8_t terminate_queued, terminate_sent;
-        uint8_t central_anchor_set;
-    } c_link_state;
-    struct {
-        uint8_t first_event;
-        uint8_t local_terminate_reason;
-        uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
-        uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
-        uint16_t peer_sca_ppm, event_counter;
-        uint32_t access_address, crc_init, last_rx_ms;
-        uint64_t next_ticks;
-    } c_link;
+        uint8_t update_window_active;
+        // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
+        uint8_t procedure_flags;
+        uint8_t params_state; // None, remote request, or local request.
+        uint8_t phy_request;
+        uint8_t length;
+    } c_pending;
 
     // Radio queues and connection data.
     struct {
@@ -442,9 +435,24 @@ typedef struct {
         volatile uint8_t local_params, local_map;
         volatile uint8_t length;
     } c_queue;
+
+    // Link-layer event and termination state.
     struct {
-        uint8_t llid, len, data[GAP_CONN_DATA_MAX];
-    } c_tx, c_rx;
+        uint8_t rx_armed, event_replied, channel_selected;
+        uint8_t terminate_after_reply, version_ind_sent;
+        uint8_t terminate_queued, terminate_sent;
+        uint8_t central_anchor_set;
+    } c_link_state;
+
+    // PHY update state.
+    struct {
+        struct {
+            uint8_t tx, rx;
+        } current, preferred, pending;
+        uint8_t status;
+        uint16_t instant;
+        uint32_t started_ms;
+    } c_phy;
 
     // Connection-rate and subrate procedure state.
     struct {
@@ -467,15 +475,15 @@ typedef struct {
         uint32_t started_ms;
     } c_subrate;
 
-    // PHY update state.
     struct {
-        struct {
-            uint8_t tx, rx;
-        } current, preferred, pending;
-        uint8_t status;
-        uint16_t instant;
-        uint32_t started_ms;
-    } c_phy;
+        uint8_t first_event;
+        uint8_t local_terminate_reason;
+        uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
+        uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
+        uint16_t peer_sca_ppm, event_counter;
+        uint32_t access_address, crc_init, last_rx_ms;
+        uint64_t next_ticks;
+    } c_link_layer;
 
     // Link-layer feature exchange and channel classification.
     struct {
@@ -483,6 +491,11 @@ typedef struct {
         uint8_t ext_pending, page1_known, peer_page1[8];
         uint8_t request_pending;
     } c_features;
+
+    // Connection transmit and receive buffers.
+    struct {
+        uint8_t llid, len, data[GAP_CONN_DATA_MAX];
+    } c_tx, c_rx;
     struct {
         uint8_t report_queued, report_pending, status_queued;
         uint8_t enabled, classification_valid, peer_classification_valid;
@@ -493,15 +506,6 @@ typedef struct {
         uint32_t status_changed_ms, status_last_sent_ms;
     } c_channel;
 
-    // Procedures awaiting completion or peer response.
-    struct {
-        uint8_t update_window_active;
-        // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
-        uint8_t procedure_flags;
-        uint8_t params_state; // None, remote request, or local request.
-        uint8_t phy_request;
-        uint8_t length;
-    } c_pending;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
@@ -1290,7 +1294,7 @@ static int gap_conn_accept(
     gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));
     conn->data_capacity = data_capacity;
-    memcpy(conn->c_link.channel_map, frame + 30, 5);
+    memcpy(conn->c_link_layer.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;
     conn->responder.type = (frame[0] >> 7) & 1;
@@ -1301,25 +1305,25 @@ static int gap_conn_accept(
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            conn->c_link.used_channels[count++] = channel;
+            conn->c_link_layer.used_channels[count++] = channel;
 
-    conn->c_link.access_address = (uint32_t)frame[14] |
+    conn->c_link_layer.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
                                 (uint32_t)frame[16] << 16 |
                                 (uint32_t)frame[17] << 24;
-    conn->c_link.crc_init = (uint32_t)frame[18] |
+    conn->c_link_layer.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    conn->c_link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->c_link.next_ticks = received_ticks +
+    conn->c_link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    conn->c_link_layer.next_ticks = received_ticks +
                             (uint64_t)ble_read_u16_le(frame + 22) *
                             unit_ticks + delay_ticks;
-    conn->c_link.used_count = count;
-    conn->c_link.hop = frame[35] & 0x1f;
-    conn->c_link.last_rx_ms = GET_MILLIS();
-    conn->c_link.first_event = 1;
+    conn->c_link_layer.used_count = count;
+    conn->c_link_layer.hop = frame[35] & 0x1f;
+    conn->c_link_layer.last_rx_ms = GET_MILLIS();
+    conn->c_link_layer.first_event = 1;
 
     conn->schedule.factor = 1;
     conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
@@ -1507,7 +1511,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (connected) {
             const gap_conn_context *conn = gap_conn_ctx_current();
             connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-                (conn->is_central || !conn->c_link.first_event);
+                (conn->is_central || !conn->c_link_layer.first_event);
         }
 
         if (connected != peer->connected) {

@@ -21,7 +21,7 @@ static void gap_conn_send_queued(void) {
 
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
         // Allow six latency-adjusted event periods plus one extra event of lead.
-        conn->map_instant = (uint16_t)(conn->c_link.event_counter +
+        conn->map_instant = (uint16_t)(conn->c_link_layer.event_counter +
                                     6 * (conn->schedule.latency + 1) + 1);
         gap_tx_frame[0] = 3;
         gap_tx_frame[1] = 8;
@@ -164,7 +164,7 @@ static void gap_conn_send_queued(void) {
             ble_write_u16_le(gap_tx_frame + 13, conn->c_rate.continuation);
             ble_write_u16_le(gap_tx_frame + 15, conn->c_rate.timeout);
             ble_write_u16_le(gap_tx_frame + 17, conn->c_rate.periodicity);
-            ble_write_u16_le(gap_tx_frame + 19, conn->c_link.event_counter);
+            ble_write_u16_le(gap_tx_frame + 19, conn->c_link_layer.event_counter);
 
             for (uint8_t i = 0; i < 4; i++) {
                 ble_write_u16_le(gap_tx_frame + 21 + i * 2,
@@ -236,7 +236,7 @@ void gap_hw_received(void) {
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->c_link_state.rx_armed) {
         if (conn->is_central) {
-            conn_anchor_ticks = conn->c_link.next_ticks;
+            conn_anchor_ticks = conn->c_link_layer.next_ticks;
         }
         else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
@@ -249,14 +249,14 @@ void gap_hw_received(void) {
 
             conn_anchor_ticks = received_ticks - airtime_ticks;
         }
-        event_counter = conn->c_link.event_counter;
+        event_counter = conn->c_link_layer.event_counter;
     }
 
 #endif
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->c_link_state.rx_armed) {
         uint8_t authenticated = 0;
-        uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->c_link.expected_rx_sn;
+        uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->c_link_layer.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
 
@@ -313,26 +313,26 @@ void gap_hw_received(void) {
         }
 
         if (conn->is_central) {
-            conn->c_link.next_ticks +=
+            conn->c_link_layer.next_ticks +=
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
         else {
             uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(
                 gap_phy_airtime_us(frame[1], conn->c_phy.current.rx));
-            conn->c_link.next_ticks = received_ticks - rx_airtime_ticks +
+            conn->c_link_layer.next_ticks = received_ticks - rx_airtime_ticks +
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
 
-        conn->c_link.last_rx_ms = GET_MILLIS();
+        conn->c_link_layer.last_rx_ms = GET_MILLIS();
         conn->c_link_state.rx_armed = 0;
-        conn->c_link.first_event = 0;
+        conn->c_link_layer.first_event = 0;
         conn->c_link_state.channel_selected = 0;
         conn->c_pending.update_window_active = 0;
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
-        if (conn->c_link.tx_pending &&
-            (((frame[0] >> 2) & 1) != conn->c_link.tx_sn)
+        if (conn->c_link_layer.tx_pending &&
+            (((frame[0] >> 2) & 1) != conn->c_link_layer.tx_sn)
         ) {
             if (conn->is_central && conn->c_channel.report_pending &&
                 (gap_tx_frame[0] & 3) == 3 &&
@@ -362,8 +362,8 @@ void gap_hw_received(void) {
                 conn->c_subrate.status = 0;
             }
 
-            conn->c_link.tx_sn ^= 1;
-            conn->c_link.tx_pending = 0;
+            conn->c_link_layer.tx_sn ^= 1;
+            conn->c_link_layer.tx_pending = 0;
             gap_security->tx_sealed = 0;
 
             if (conn->c_link_state.terminate_sent) {
@@ -380,12 +380,12 @@ void gap_hw_received(void) {
         }
 
         uint8_t llid = frame[0] & 3;
-        uint8_t new_packet = ((frame[0] >> 3) & 1) == conn->c_link.expected_rx_sn;
+        uint8_t new_packet = ((frame[0] >> 3) & 1) == conn->c_link_layer.expected_rx_sn;
 
         // Reject control PDUs without a payload or reply slot, and data PDUs
         // while the receive slot is occupied, so they remain unacknowledged.
         if (new_packet &&
-            ((llid == 3 && (!frame[1] || conn->c_link.tx_pending)) ||
+            ((llid == 3 && (!frame[1] || conn->c_link_layer.tx_pending)) ||
              ((llid == 1 || llid == 2) && frame[1] && conn->c_queue.rx_ready))
         ) new_packet = 0;
 
@@ -447,10 +447,10 @@ void gap_hw_received(void) {
                 conn->c_queue.rx_ready = 1;
             }
 
-            conn->c_link.expected_rx_sn ^= 1;
+            conn->c_link_layer.expected_rx_sn ^= 1;
         }
 
-        if (!conn->c_link.tx_pending) {
+        if (!conn->c_link_layer.tx_pending) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
 
@@ -470,7 +470,7 @@ void gap_hw_received(void) {
                     gap_tx_frame[0] = 0x03;
                     gap_tx_frame[1] = 2;
                     gap_tx_frame[2] = LL_TERMINATE_IND;
-                    gap_tx_frame[3] = conn->c_link.local_terminate_reason;
+                    gap_tx_frame[3] = conn->c_link_layer.local_terminate_reason;
 
                     conn->c_link_state.terminate_queued = 0;
                     conn->c_link_state.terminate_sent = 1;
@@ -552,10 +552,10 @@ void gap_hw_received(void) {
             return;
         }
 
-        conn->c_link.tx_pending = 1;
+        conn->c_link_layer.tx_pending = 1;
         gap_tx_frame[0] = (gap_tx_frame[0] & 0x03) |
-                            (conn->c_link.expected_rx_sn << 2) |
-                            (conn->c_link.tx_sn << 3);
+                            (conn->c_link_layer.expected_rx_sn << 2) |
+                            (conn->c_link_layer.tx_sn << 3);
         uint8_t *transmit = gap_security_tx_frame();
 
         if (!transmit) {
@@ -735,7 +735,7 @@ void gap_hw_received(void) {
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
             conn->c_link_state.central_anchor_set = 0;
-            conn->c_link.peer_sca_ppm = 500; // conservative until clock data exists
+            conn->c_link_layer.peer_sca_ppm = 500; // conservative until clock data exists
             conn->is_central = 1;
 
             if (peer_slot >= 0) {
@@ -914,17 +914,17 @@ static uint64_t gap_conn_close_ticks(
                                     connection->data_capacity - 27 : 0);
     }
 
-    uint32_t window_us = connection->c_link.first_event ||
+    uint32_t window_us = connection->c_link_layer.first_event ||
                         connection->c_pending.update_window_active ?
                         (uint32_t)connection->window_size * 1250 : 1000;
     // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
     // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
-    uint32_t widen_us = ((uint32_t)(now_ms - connection->c_link.last_rx_ms) *
-                            (500 + connection->c_link.peer_sca_ppm) + 999) / 1000;
+    uint32_t widen_us = ((uint32_t)(now_ms - connection->c_link_layer.last_rx_ms) *
+                            (500 + connection->c_link_layer.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max = (uint32_t)connection->schedule.interval_125us * 125 / 2;
 
     if (widen_us > widen_max) widen_us = widen_max;
-    return connection->c_link.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
+    return connection->c_link_layer.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
 }
 
 
@@ -941,7 +941,7 @@ static inline uint8_t gap_conn_can_skip_event(
         ) return 0;
 
         if (conn->is_central) {
-            if (conn->c_link.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
+            if (conn->c_link_layer.tx_pending && (gap_tx_frame[0] & 3) == 3 &&
                 gap_tx_frame[1] == 15 &&
                 gap_tx_frame[2] == LL_CONNECTION_RATE_IND
             ) return 0;
@@ -1065,7 +1065,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((uint32_t)(now_ms - conn->c_link.last_rx_ms) >=
+    if ((uint32_t)(now_ms - conn->c_link_layer.last_rx_ms) >=
         (uint32_t)conn->schedule.timeout * 10
     ) {
         gap_conn_end();
@@ -1083,7 +1083,7 @@ static void gap_conn_poll(void) {
 
     if (conn->c_link_state.event_replied) {
         if (!GAP_HW_TX_DONE()) {
-            if (now > conn->c_link.next_ticks)
+            if (now > conn->c_link_layer.next_ticks)
                 gap_conn_end();
             return;
         }
@@ -1113,7 +1113,7 @@ static void gap_conn_poll(void) {
         uint32_t skipped = 0;
 
         do {
-            conn->c_link.next_ticks +=
+            conn->c_link_layer.next_ticks +=
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
             gap_conn_event_advance();
             gap_conn_update_apply(0);
@@ -1124,19 +1124,19 @@ static void gap_conn_poll(void) {
         } while (now >= gap_conn_close_ticks(conn, now_ms));
 
         uint32_t extra_hops = skipped - conn->c_link_state.channel_selected;
-        conn->c_link.unmapped_channel = (conn->c_link.unmapped_channel +
-                                        extra_hops * conn->c_link.hop) % 37;
+        conn->c_link_layer.unmapped_channel = (conn->c_link_layer.unmapped_channel +
+                                        extra_hops * conn->c_link_layer.hop) % 37;
         conn->c_link_state.channel_selected = 0;
     }
 
     // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
     // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
-    uint32_t widen_us = ((uint32_t)(now_ms - conn->c_link.last_rx_ms) *
-                        (500 + conn->c_link.peer_sca_ppm) + 999) / 1000;
+    uint32_t widen_us = ((uint32_t)(now_ms - conn->c_link_layer.last_rx_ms) *
+                        (500 + conn->c_link_layer.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max = (uint32_t)conn->schedule.interval_125us * 125 / 2;
 
     if (widen_us > widen_max) widen_us = widen_max;
-    uint64_t open_ticks = conn->c_link.next_ticks;
+    uint64_t open_ticks = conn->c_link_layer.next_ticks;
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + (uint64_t)widen_us * HW_TICKS_FROM_US(1);
 
     if (open_ticks > early_ticks)
@@ -1147,11 +1147,11 @@ static void gap_conn_poll(void) {
 
     // During a Central's subrate update, wake for either the old or new
     // subrated events until the indication is acknowledged.
-    if (gap_conn_can_skip_event(conn, conn->c_link.event_counter)) {
+    if (gap_conn_can_skip_event(conn, conn->c_link_layer.event_counter)) {
         // Skipping radio work does not skip the connection event counter or
         // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
-        conn->c_link.unmapped_channel = (conn->c_link.unmapped_channel + conn->c_link.hop) % 37;
-        conn->c_link.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+        conn->c_link_layer.unmapped_channel = (conn->c_link_layer.unmapped_channel + conn->c_link_layer.hop) % 37;
+        conn->c_link_layer.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         gap_conn_event_advance();
         gap_conn_update_apply(0);
         return;
@@ -1170,22 +1170,22 @@ static void gap_conn_poll(void) {
     }
 
     // Legacy CONNECT_IND selects Channel Selection Algorithm #1.
-    uint8_t unmapped = (conn->c_link.unmapped_channel + conn->c_link.hop) % 37;
-    conn->c_link.unmapped_channel = unmapped;
+    uint8_t unmapped = (conn->c_link_layer.unmapped_channel + conn->c_link_layer.hop) % 37;
+    conn->c_link_layer.unmapped_channel = unmapped;
 
     uint8_t channel = unmapped;
-    if (!(conn->c_link.channel_map[unmapped / 8] & (1 << (unmapped % 8))))
-        channel = conn->c_link.used_channels[unmapped % conn->c_link.used_count];
+    if (!(conn->c_link_layer.channel_map[unmapped / 8] & (1 << (unmapped % 8))))
+        channel = conn->c_link_layer.used_channels[unmapped % conn->c_link_layer.used_count];
 
-    GAP_HW_CRC_INIT(conn->c_link.crc_init);
+    GAP_HW_CRC_INIT(conn->c_link_layer.crc_init);
 
     if (conn->is_central) {
         if (!conn->c_link_state.central_anchor_set) {
-            conn->c_link.next_ticks = now;
+            conn->c_link_layer.next_ticks = now;
             conn->c_link_state.central_anchor_set = 1;
         }
 
-        if (!conn->c_link.tx_pending) {
+        if (!conn->c_link_layer.tx_pending) {
             gap_tx_frame[0] = 0x01;
             gap_tx_frame[1] = 0;
 
@@ -1193,18 +1193,18 @@ static void gap_conn_poll(void) {
                 gap_conn_send_queued();
             }
 
-            conn->c_link.tx_pending = 1;
+            conn->c_link_layer.tx_pending = 1;
         }
 
         gap_tx_frame[0] = (gap_tx_frame[0] & 0x03) |
-                        (conn->c_link.expected_rx_sn << 2) |
-                        (conn->c_link.tx_sn << 3);
+                        (conn->c_link_layer.expected_rx_sn << 2) |
+                        (conn->c_link_layer.tx_sn << 3);
         GAP_HW_TX_CLEAR_DONE();
         uint8_t *transmit = gap_security_tx_frame();
 
         if (!transmit) return;
 
-        GAP_HW_LINK_CONFIG(conn->c_link.access_address, channel,
+        GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, channel,
                             transmit, 1, conn->c_phy.current.tx, conn->c_phy.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
@@ -1215,7 +1215,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    GAP_HW_LINK_CONFIG(conn->c_link.access_address, channel,
+    GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, channel,
                         NULL, 0, conn->c_phy.current.tx, conn->c_phy.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
