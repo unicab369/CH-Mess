@@ -1512,7 +1512,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             ops.connection_update = ble_gap_l2cap_connection_update;
             ops.context = peer;
 
-            if (!l2cap_connection_init(&peer->connection, &ops,
+            if (!l2cap_conn_init(&peer->connection, &ops,
                     manager->mtu, manager->mps, manager->initial_credits)) {
                 gap_conn_slot = previous_slot;
                 return -1;

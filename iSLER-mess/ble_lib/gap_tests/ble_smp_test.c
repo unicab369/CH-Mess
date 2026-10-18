@@ -59,11 +59,11 @@ int main(void) {
     ops.send_pdu = fake_send;
     ops.context = &fake;
     l2cap_connection l2cap;
-    assert(l2cap_connection_init(&l2cap, &ops, 64, 64, 1));
+    assert(l2cap_conn_init(&l2cap, &ops, 64, 64, 1));
     ble_smp smp;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    assert(l2cap_connection_register_fixed(&l2cap, L2CAP_CID_SMP,
+    assert(l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
         smp_receive_sdu, &smp));
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16];
     assert(smp_random_bytes(secret, 32) && secret[31] == 0x5a);

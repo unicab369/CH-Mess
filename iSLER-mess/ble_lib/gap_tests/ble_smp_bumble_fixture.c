@@ -65,11 +65,11 @@ int main(void) {
     ops.send_pdu = send_pdu;
     l2cap_connection l2cap;
     ble_smp smp;
-    if (!l2cap_connection_init(&l2cap, &ops, 65, 65, 1))
+    if (!l2cap_conn_init(&l2cap, &ops, 65, 65, 1))
         return 1;
     memset(&smp, 0, sizeof(smp));
     smp.l2cap = &l2cap;
-    if (!l2cap_connection_register_fixed(&l2cap, L2CAP_CID_SMP,
+    if (!l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
             smp_receive_sdu, &smp)
     ) return 1;
 

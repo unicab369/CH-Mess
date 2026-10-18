@@ -450,7 +450,7 @@ static inline void gatt_transport_channel_opened(
     if (!transport || !transport->eatt_enabled || psm != BLE_GATT_EATT_PSM)
         return;
 
-    int slot = l2cap_channel_find_local(&transport->l2cap, local_cid);
+    int slot = l2cap_local_slot(&transport->l2cap, local_cid);
     uint16_t mtu = local_mtu;
 
     if (slot >= 0 && transport->l2cap.channels[slot].remote_mtu < mtu)
@@ -672,11 +672,11 @@ static inline int gatt_transport_init(
     uint16_t mps = L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
         L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
 
-    if (!l2cap_connection_init(
+    if (!l2cap_conn_init(
             &transport->l2cap, &l2cap_ops,
             BLE_GATT_TRANSPORT_MTU_MAX, mps, L2CAP_INITIAL_CREDITS
         ) ||
-        !l2cap_connection_register_fixed(
+        !l2cap_fixed_register(
             &transport->l2cap, BLE_GATT_TRANSPORT_ATT_CID,
             gatt_transport_receive_att, transport
         )
@@ -874,7 +874,7 @@ static inline void gatt_transport_eatt_poll_tx(
 
         if (!bearer->cid) continue;
 
-        int l2cap_slot = l2cap_channel_find_local(&transport->l2cap,
+        int l2cap_slot = l2cap_local_slot(&transport->l2cap,
                                                       bearer->cid);
 
         if (l2cap_slot < 0) {
@@ -1054,7 +1054,7 @@ static inline int gatt_transport_poll(
                 if (!bearer->cid || !bearer->client_tx_pending)
                     continue;
 
-                int slot = l2cap_channel_find_local(&transport->l2cap,
+                int slot = l2cap_local_slot(&transport->l2cap,
                                                          bearer->cid);
                 if (slot < 0 || !transport->l2cap.channels[slot].tx_len) {
                     bearer->client_tx_pending = 0;
@@ -1119,7 +1119,7 @@ static inline int gatt_transport_poll(
 
             if (slot < 0) continue;
 
-            int channel_slot = l2cap_channel_find_local(
+            int channel_slot = l2cap_local_slot(
                 &transport->l2cap, bearer->cid);
             if (channel_slot < 0)
                 continue;

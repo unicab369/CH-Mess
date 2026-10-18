@@ -184,7 +184,7 @@ int main(void) {
         transport.l2cap.ops.context, BLE_GATT_EATT_PSM) == 0);
     assert(gatt_transport_eatt_open(&transport));
     uint16_t local_cid = transport.l2cap.pending_local_cid[0];
-    int channel_slot = l2cap_channel_find_local(&transport.l2cap,
+    int channel_slot = l2cap_local_slot(&transport.l2cap,
                                                     local_cid);
     assert(channel_slot >= 0);
     l2cap_channel *channel = &transport.l2cap.channels[channel_slot];
@@ -299,7 +299,7 @@ int main(void) {
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)bearer_slot;
     assert(gatt_transport_test_poll(&transport, 101) == 0);
-    int second_channel_slot = l2cap_channel_find_local(&transport.l2cap,
+    int second_channel_slot = l2cap_local_slot(&transport.l2cap,
                                                            second->local_cid);
     assert(second_channel_slot >= 0 &&
            transport.l2cap.channels[second_channel_slot].tx_len ==

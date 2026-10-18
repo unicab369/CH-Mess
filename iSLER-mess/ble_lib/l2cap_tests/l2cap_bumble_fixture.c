@@ -72,7 +72,7 @@ int main(void) {
     ops.send_pdu = send_pdu;
     ops.accept_psm = accept_psm;
     ops.channel_data = receive_data;
-    if (!l2cap_connection_init(&connection, &ops, 100, 40, 2) ||
+    if (!l2cap_conn_init(&connection, &ops, 100, 40, 2) ||
         !l2cap_psm_register(&connection, 0x0027)
     ) return 1;
 

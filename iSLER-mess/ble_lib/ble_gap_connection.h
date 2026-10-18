@@ -572,7 +572,7 @@ static uint8_t gap_schedule_parameters_valid(
     uint16_t continuation, uint16_t timeout
 ) {
     return min_factor >= 1 && min_factor <= max_factor && max_factor <= 500 &&
-        ble_connection_latency_timeout_valid(max_latency, timeout) &&
+        max_latency <= 499 && timeout >= 10 && timeout <= 3200 &&
         continuation < min_factor &&
         max_factor * (max_latency + 1) <= 500;
 }
@@ -803,7 +803,7 @@ static uint8_t gap_conn_control(
                                 conn->schedule.factor : 1;
 
             if (win_size && win_size <= 8 &&
-                ble_timing_ranges_valid(interval, interval, latency, timeout) &&
+                ble_timing_valid(interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2ull * (latency + 1) * interval_125us * factor
             ) {
@@ -882,7 +882,7 @@ static uint8_t gap_conn_control(
         uint16_t timeout = ble_read_u16_le(frame + 9);
 
         if (frame[11] > maximum ||
-            !ble_timing_ranges_valid(minimum, maximum, latency, timeout) ||
+            !ble_timing_valid(minimum, maximum, latency, timeout) ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * maximum * 10
         ) return gap_conn_reject_resp(frame[2], error);
 
@@ -1897,7 +1897,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
                         conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() || !conn->is_central ||
-        !ble_timing_ranges_valid(interval, interval, latency, timeout) ||
+        !ble_timing_valid(interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * interval_125us * factor
     ) return 0;
 
@@ -1923,7 +1923,7 @@ int gap_conn_request(
                     conn->schedule.factor : 1;
 
     if (gap_conn_procedure_busy() || gap_conn_rate_busy() ||
-        !ble_timing_ranges_valid( minimum, maximum, latency, timeout) ||
+        !ble_timing_valid( minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * maximum * 10 * factor
     ) return 0;
 

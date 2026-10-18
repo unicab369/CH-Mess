@@ -704,12 +704,12 @@ static int smp_link_init(void) {
         .context = smp
     };
 
-    if (!l2cap_connection_init(&smp->l2cap, &ops, 65, 65, 0))
+    if (!l2cap_conn_init(&smp->l2cap, &ops, 65, 65, 0))
         return 0;
 
     smp->bearer.l2cap = &smp->l2cap;
 
-    if (!l2cap_connection_register_fixed(&smp->l2cap,
+    if (!l2cap_fixed_register(&smp->l2cap,
                     L2CAP_CID_SMP, smp_receive_sdu, &smp->bearer)
     ) return 0;
 
