@@ -86,7 +86,7 @@ static void test_mesh_services_registered_in_generic_database(void) {
            MESH_GATT_HANDLE_PROVISIONING_SERVICE - 1])) ==
            MESH_GATT_PROVISIONING_SERVICE_UUID);
     assert(mesh_gatt.server.attrs[
-           MESH_GATT_HANDLE_PROVISIONING_DATA_IN - 1].write ==
+           MESH_GATT_HANDLE_PROVISIONING_DATA_IN - 1].write_request ==
            mesh_gatt_data_in_write);
     assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_SERVICE - 1].flags &

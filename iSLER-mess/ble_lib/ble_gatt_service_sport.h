@@ -99,7 +99,7 @@ static inline int gatt_cps_add(
     ble_gatt_sig_handlers handlers[6] = {0};
 
     if (control_index != 0xff) {
-        handlers[control_index].write = gatt_cps_cp_write;
+        handlers[control_index].write_request = gatt_cps_cp_write;
         handlers[control_index].context = service;
     }
 
@@ -189,7 +189,7 @@ static inline int gatt_csc_add(
             .value_capacity = 20,
             .variable_length = 1
         };
-        handlers[control_point_index].write = gatt_csc_cp_write;
+        handlers[control_point_index].write_request = gatt_csc_cp_write;
         handlers[control_point_index].context = service;
     }
 
@@ -272,7 +272,7 @@ static inline int gatt_rsc_add(
             .value_capacity = 20,
             .variable_length = 1
         };
-        handlers[control_point_index].write = gatt_rsc_cp_write;
+        handlers[control_point_index].write_request = gatt_rsc_cp_write;
         handlers[control_point_index].context = service;
     }
 
@@ -1565,7 +1565,7 @@ static inline int gatt_ftms_add_controlled(
             BLE_GATT_PERM_WRITE, &initial_control_point, 0,
             control_point_capacity, 1
         };
-        handlers[count].write = gatt_fitness_machine_control_write;
+        handlers[count].write_request = gatt_fitness_machine_control_write;
         handlers[count].context = service;
         count++;
     }
@@ -1708,7 +1708,7 @@ static inline int gatt_ftms_add_full(
             0x2ad9, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE, &initial_control_point, 0,
             options->control_point_capacity, 1};
-        handlers[control_index].write = gatt_fitness_machine_control_write;
+        handlers[control_index].write_request = gatt_fitness_machine_control_write;
         handlers[control_index].context = service;
     }
 
@@ -2140,7 +2140,7 @@ static inline int gatt_pams_add_full(
     ble_gatt_sig_handlers handlers[11] = {0};
     memset(service, 0, sizeof(*service));
     service->server = server;
-    handlers[3].write = gatt_physical_activity_monitor_control_write;
+    handlers[3].write_request = gatt_physical_activity_monitor_control_write;
     handlers[3].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x183e,

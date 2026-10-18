@@ -95,7 +95,7 @@ static inline int gatt_mics_add_aics(
         &service->mute, 1
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_mics_mute_write, .context = service}
+        {.write_request = gatt_mics_mute_write, .context = service}
     };
     uint16_t values[1], cccds[1];
 
@@ -594,7 +594,7 @@ static inline int gatt_vcs_add(
             &service->volume_flags, 1}
     };
     ble_gatt_sig_handlers handlers[3] = {0};
-    handlers[1].write = gatt_vcs_cp_write;
+    handlers[1].write_request = gatt_vcs_cp_write;
     handlers[1].context = service;
     uint16_t values[3], cccds[3];
 
@@ -1390,12 +1390,12 @@ static inline int gatt_mcs_add_full(
             continue;
 
         if (i == 2) {
-            handlers[7 + extra_index].write =
+            handlers[7 + extra_index].write_request =
                 gatt_mcs_order_write;
             handlers[7 + extra_index].context = service;
         }
         else if (i == 4) {
-            handlers[7 + extra_index].write =
+            handlers[7 + extra_index].write_request =
                 gatt_mcs_cp_write;
             handlers[7 + extra_index].context = service;
         }
@@ -1412,14 +1412,14 @@ static inline int gatt_mcs_add_full(
 
         service->object_ctx[i].service = service;
         service->object_ctx[i].index = i;
-        handlers[object_indexes[i]].write =
+        handlers[object_indexes[i]].write_request =
             gatt_mcs_object_id_write;
         handlers[object_indexes[i]].context =
             &service->object_ctx[i];
     }
 
     if (search_enabled) {
-        handlers[search_index].write = gatt_mcs_search_write;
+        handlers[search_index].write_request = gatt_mcs_search_write;
         handlers[search_index].context = service;
     }
 

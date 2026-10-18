@@ -169,7 +169,7 @@ typedef struct ble_gatt_attribute {
     uint16_t parent_handle;
     uint16_t cccd;
     ble_gatt_read_fn read;
-    ble_gatt_write_fn write;
+    ble_gatt_write_fn write_request;
     ble_gatt_prepare_fn prepare;
     ble_gatt_prepare_commit_validate_fn prepare_commit_validate;
     ble_gatt_execute_fn execute;
@@ -445,7 +445,7 @@ static inline int gatt_set_variable_length(
     if (!server || server->database_sealed) return 0;
     ble_gatt_attribute *attr = gatt_server_find(server, handle);
 
-    if (!attr || attr->write ||
+    if (!attr || attr->write_request ||
         attr->prepare ||
         attr->execute ||
         (attr->flags & (BLE_GATT_ATTR_PRIMARY_SERVICE |
@@ -549,7 +549,7 @@ static int gatt_server_add(
     attr->value_capacity = value_capacity;
     attr->value_offset = server->value_used;
     attr->read = read;
-    attr->write = write;
+    attr->write_request = write;
     attr->context = context;
 
     if (value_len) memcpy(server->value_pool + attr->value_offset, value, value_len);
@@ -805,7 +805,7 @@ static inline int gatt_seal_database(ble_gatt_server *server) {
                     value->permissions != (BLE_GATT_PERM_READ |
                                            BLE_GATT_PERM_WRITE) ||
                     value->value_len != 1 || value->value_capacity != 1 ||
-                    value->read || value->write || value->prepare ||
+                    value->read || value->write_request || value->prepare ||
                     value->execute || !gatt_attribute_value(server, value)
                 ) return 0;
 
@@ -829,7 +829,7 @@ static inline int gatt_seal_database(ble_gatt_server *server) {
             attr->properties != BLE_GATT_PROP_READ ||
             attr->permissions != BLE_GATT_PERM_READ ||
             attr->value_len != 16 || attr->value_capacity != 16 ||
-            attr->read || attr->write || attr->prepare ||
+            attr->read || attr->write_request || attr->prepare ||
             attr->execute
         ) return 0;
 
@@ -1649,9 +1649,9 @@ static uint8_t gatt_server_write(
                                       (attr->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
         if (bits & (uint16_t)~allowed)
             return ATT_ERR_VALUE_NOT_ALLOWED;
-        if (attr->write) {
-            uint8_t error = attr->write(attr->context, offset, value, len,
-                                        command);
+        if (attr->write_request) {
+            uint8_t error = attr->write_request(
+                attr->context, offset, value, len, command);
             if (error) return error;
         }
 
@@ -1678,8 +1678,9 @@ static uint8_t gatt_server_write(
         ) return ATT_ERR_VALUE_NOT_ALLOWED;
     }
 
-    if (attr->write) {
-        uint8_t error = attr->write(attr->context, offset, value, len, command);
+    if (attr->write_request) {
+        uint8_t error = attr->write_request(
+            attr->context, offset, value, len, command);
         if (!error) gatt_write_committed(server, attr);
         return error;
     }
@@ -2042,7 +2043,7 @@ static uint8_t gatt_prepare_validate(
         return (attr->prepare && attr->execute) ? 0 :
             ATT_ERR_REQUEST_NOT_SUPPORTED;
 
-    if (attr->write) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (attr->write_request) return ATT_ERR_REQUEST_NOT_SUPPORTED;
 
     // ATT defers static value offset and length validation until Execute Write.
 

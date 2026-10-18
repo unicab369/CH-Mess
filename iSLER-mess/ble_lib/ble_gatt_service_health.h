@@ -1392,11 +1392,11 @@ static inline int gatt_ghs_add_full(
     ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
     service->server = server;
-    handlers[1].write = gatt_generic_health_sensor_control_write;
+    handlers[1].write_request = gatt_generic_health_sensor_control_write;
     handlers[1].context = service;
 
     if (stored_observation_capacity) {
-        handlers[3].write = gatt_generic_health_sensor_racp_write;
+        handlers[3].write_request = gatt_generic_health_sensor_racp_write;
         handlers[3].context = service;
     }
 
@@ -1653,7 +1653,7 @@ static inline int gatt_gls_add(
         .variable_length = 1
     };
     ble_gatt_sig_handlers handlers[4] = {0};
-    handlers[racp_index].write = gatt_glucose_racp_write;
+    handlers[racp_index].write_request = gatt_glucose_racp_write;
     handlers[racp_index].context = service;
     uint16_t values[4], cccds[4];
 

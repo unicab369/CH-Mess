@@ -473,7 +473,7 @@ static inline int gatt_ras_add(
     service->features = features;
     for (uint8_t mode = 0; mode < 4; mode++)
         service->filters[mode] = 0x3fff;
-    handlers[include_realtime ? 3 : 2].write = gatt_ras_cp_write;
+    handlers[include_realtime ? 3 : 2].write_request = gatt_ras_cp_write;
     handlers[include_realtime ? 3 : 2].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x185b, characteristics, count,
@@ -509,7 +509,7 @@ static inline int gatt_ras_add(
             memset(service, 0, sizeof(*service));
             return 0;
         }
-        cccd->write = gatt_ras_rt_cccd_write;
+        cccd->write_request = gatt_ras_rt_cccd_write;
         cccd->context = service;
     }
     ble_gatt_attribute *cccd = gatt_server_find(server,
@@ -520,7 +520,7 @@ static inline int gatt_ras_add(
         memset(service, 0, sizeof(*service));
         return 0;
     }
-    cccd->write = gatt_ras_od_cccd_write;
+    cccd->write_request = gatt_ras_od_cccd_write;
     cccd->context = service;
     return 1;
 }
@@ -1040,7 +1040,7 @@ static inline int gatt_rtus_add(
     };
     uint16_t values[2];
     ble_gatt_sig_handlers handlers[2] = {0};
-    handlers[0].write = gatt_rtus_write;
+    handlers[0].write_request = gatt_rtus_write;
     handlers[0].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x1806, chars, 2,
@@ -1247,7 +1247,7 @@ static inline int gatt_dts_add(
     uint16_t values[4], cccds[4];
     ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
-    handlers[3].write = gatt_dts_cp_write;
+    handlers[3].write_request = gatt_dts_cp_write;
     handlers[3].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x1847,
@@ -1437,7 +1437,7 @@ static inline int gatt_bms_add_auth(
     };
     uint16_t values[2];
     ble_gatt_sig_handlers handlers[2] = {0};
-    handlers[0].write = gatt_bms_control_write;
+    handlers[0].write_request = gatt_bms_control_write;
     handlers[0].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x181e, chars, 2,
@@ -1544,7 +1544,7 @@ static inline int gatt_sps_add(
         {0x2a31, BLE_GATT_PROP_NOTIFY, 1, 0, &refresh_value, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_sps_window_write, .context = service},
+        {.write_request = gatt_sps_window_write, .context = service},
         {0}
     };
     uint16_t values[2], cccds[2];
@@ -1652,7 +1652,7 @@ static inline int gatt_tds_add(
         BLE_GATT_PERM_WRITE, &initial_value, 0, cp_capacity, 1
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_tds_control_point_write, .context = service}
+        {.write_request = gatt_tds_control_point_write, .context = service}
     };
     uint16_t value_handle, cccd_handle;
     service->server = server;
@@ -1911,9 +1911,9 @@ static inline int gatt_acs_add(
     };
     uint16_t values[5], cccds[5];
     ble_gatt_sig_handlers handlers[5] = {0};
-    handlers[1].write = gatt_acs_data_in_write;
+    handlers[1].write_request = gatt_acs_data_in_write;
     handlers[1].context = service;
-    handlers[4].write = gatt_acs_control_point_write;
+    handlers[4].write_request = gatt_acs_control_point_write;
     handlers[4].context = service;
     memset(service, 0, sizeof(*service));
 
@@ -2005,26 +2005,6 @@ static inline int gatt_acs_queue_payload(
         counter = (uint8_t)((counter + 1) & 0x3f);
     } while (offset < payload_len);
     return 1;
-}
-
-// ACS means Authorization Control Service.
-static inline int gatt_acs_notify_data_out(
-    ble_gatt_acs_service *service,
-    const uint8_t *payload, uint16_t payload_len
-) {
-    return gatt_acs_queue_payload(service,
-        service ? service->notify_handle : 0,
-        payload, payload_len, 0);
-}
-
-// ACS means Authorization Control Service.
-static inline int gatt_acs_indicate_data_out(
-    ble_gatt_acs_service *service,
-    const uint8_t *payload, uint16_t payload_len
-) {
-    return gatt_acs_queue_payload(service,
-        service ? service->indicate_handle : 0,
-        payload, payload_len, 1);
 }
 
 // ACS means Authorization Control Service.
@@ -2195,7 +2175,7 @@ static inline int gatt_ias_add(
          &service->alert_level, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_ias_write, .context = service}
+        {.write_request = gatt_ias_write, .context = service}
     };
     uint16_t values[1];
 
@@ -2225,7 +2205,7 @@ static inline int gatt_lls_add(
          &service->alert_level, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.read = gatt_alert_u8_read, .write = gatt_alert_level_write,
+        {.read = gatt_alert_u8_read, .write_request = gatt_alert_level_write,
          .context = &service->alert_level}
     };
     uint16_t values[1];
@@ -2265,7 +2245,7 @@ static inline int gatt_pass_add(
     ble_gatt_sig_handlers handlers[] = {
         {.read = gatt_alert_u8_read, .context = &service->alert_status},
         {.read = gatt_alert_u8_read, .context = &service->ringer},
-        {.write = gatt_phone_ringer_control_write, .context = service}
+        {.write_request = gatt_phone_ringer_control_write, .context = service}
     };
     uint16_t values[3], cccds[3];
 
@@ -2424,7 +2404,7 @@ static inline int gatt_ans_add(
          .variable_length = 1}
     };
     ble_gatt_sig_handlers handlers[5] = {0};
-    handlers[4].write = gatt_ans_control_write;
+    handlers[4].write_request = gatt_ans_control_write;
     handlers[4].context = service;
     uint16_t values[5], cccds[5];
 

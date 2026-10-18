@@ -676,7 +676,7 @@ static inline int gatt_bss_add_full(
     };
     uint16_t values[2], cccds[2];
     ble_gatt_sig_handlers handlers[2] = {0};
-    handlers[0].write = gatt_binary_sensor_control_write;
+    handlers[0].write_request = gatt_binary_sensor_control_write;
     handlers[0].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x183b, chars, 2,

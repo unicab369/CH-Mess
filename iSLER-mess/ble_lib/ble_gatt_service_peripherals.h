@@ -608,7 +608,7 @@ static inline int gatt_lns_add(
     ble_gatt_sig_handlers handlers[5] = {0};
 
     if (control_index != 0xff) {
-        handlers[control_index].write = gatt_lns_control_point_write;
+        handlers[control_index].write_request = gatt_lns_control_point_write;
         handlers[control_index].context = service;
     }
 
@@ -735,7 +735,7 @@ static inline int gatt_ips_append(
     service->write_context[index].service = service;
     service->write_context[index].fixed_length = value_len;
     service->write_context[index].variable_length = variable_length;
-    handlers[index].write = gatt_indoor_positioning_write;
+    handlers[index].write_request = gatt_indoor_positioning_write;
     handlers[index].context = &service->write_context[index];
     (*count)++;
     return 1;
@@ -1228,7 +1228,7 @@ static inline int gatt_hps_add(
     };
     uint16_t values[6], cccds[6];
     ble_gatt_sig_handlers handlers[6] = {0};
-    handlers[4].write = gatt_http_proxy_control_write;
+    handlers[4].write_request = gatt_http_proxy_control_write;
     handlers[4].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x1823, chars, 6,
@@ -1812,7 +1812,7 @@ static inline int gatt_ots_add_type_full(
     };
     uint16_t value_handles[8], cccd_handles[8];
     ble_gatt_sig_handlers handlers[8] = {0};
-    handlers[7].write = gatt_ots_oacp_write;
+    handlers[7].write_request = gatt_ots_oacp_write;
     handlers[7].context = service;
     memset(service, 0, sizeof(*service));
 
@@ -1958,9 +1958,9 @@ static inline int gatt_ots_add_multi_type_full(
     };
     uint16_t values[13], cccds[13];
     ble_gatt_sig_handlers handlers[13] = {0};
-    handlers[8].write = gatt_ots_oacp_write;
+    handlers[8].write_request = gatt_ots_oacp_write;
     handlers[8].context = service;
-    handlers[9].write = gatt_ots_olcp_write;
+    handlers[9].write_request = gatt_ots_olcp_write;
     handlers[9].context = service;
     uint16_t old_count = server->count;
     uint16_t old_next_handle = server->next_handle;

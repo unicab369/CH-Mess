@@ -144,9 +144,9 @@ static inline int gatt_uds_add(
          .variable_length = 1}
     };
     ble_gatt_sig_handlers handlers[4] = {0};
-    handlers[0].write = gatt_user_data_database_change_write;
+    handlers[0].write_request = gatt_user_data_database_change_write;
     handlers[0].context = service;
-    handlers[2].write = gatt_user_data_control_write;
+    handlers[2].write_request = gatt_user_data_control_write;
     handlers[2].context = service;
     uint16_t values[4], cccds[4];
 
@@ -554,7 +554,7 @@ static inline int gatt_hap_add_with_preset_control(
     uint16_t values[3], cccds[3];
     ble_gatt_sig_handlers handlers[3] = {0};
     memset(service, 0, sizeof(*service));
-    handlers[1].write = gatt_hap_control_point_write;
+    handlers[1].write_request = gatt_hap_control_point_write;
     handlers[1].context = service;
 
     if (!gatt_sig_add_handlers(server, 0x1854,
@@ -998,7 +998,7 @@ static inline int gatt_tbs_add(
 
     if (cp_index == count) return 0;
 
-    handlers[cp_index].write =
+    handlers[cp_index].write_request =
         gatt_tbs_control_point_write;
     handlers[cp_index].context = service;
 
