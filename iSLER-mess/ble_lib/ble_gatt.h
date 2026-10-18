@@ -1201,6 +1201,5 @@ static inline int gatt_client_receive(
 
 #include "ble_gatt_server.h"
 #include "ble_gatt_transport.h"
-#include "ble_gatt_eatt.h"
 
 #endif

@@ -749,7 +749,7 @@ python3 -m venv .venv-ble-gatt
 
 EATT is a separate optional extension to the fixed ATT bearer above. Keep the
 GATT database and ATT procedures shared, and put EATT channel management in
-`ble_gatt_eatt.h`. `BLE_GATT_ENABLE_EATT` should allow fixed-bearer-only builds
+`ble_gatt_transport.h`. `BLE_GATT_ENABLE_EATT` should allow fixed-bearer-only builds
 to omit EATT code and per-bearer storage.
 
 - [x] Add the `BLE_GATT_ENABLE_EATT` compile-time option, default it off, and
@@ -762,7 +762,7 @@ to omit EATT code and per-bearer storage.
 - [x] Bind the EATT bearer manager to the LE ECFC implementation on EATT PSM
   0x0027. Register the PSM, require link encryption, and route channel
   open/close/data events through the shared L2CAP connection.
-- [x] Add an optional EATT bearer manager in `ble_gatt_eatt.h`. It tracks
+- [x] Add an optional EATT bearer manager in `ble_gatt_transport.h`. It tracks
   multiple simultaneous channels while leaving the fixed ATT bearer intact.
 - [x] Refactor transport routing so each bearer has its own channel ID,
   fragmentation/reassembly buffers, MTU, transmit queue, and failure state.
