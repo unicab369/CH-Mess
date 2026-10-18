@@ -1159,4 +1159,76 @@ static inline int gatt_object_transfer_service_add_multi_object_secondary(
         object_list_filter, filter_len, filter_capacity);
 }
 
+// Electronic Shelf Label Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t handles[9], cccd_handles[9];
+} ble_gatt_esl_service;
+
+// Application facing
+// Add the ESL GATT database. The nine values are ordered as Address, AP Sync
+// Key Material, Response Key Material, Current Absolute Time, Display Info,
+// Image Info, Sensor Info, LED Info, and Control Point. The application
+// implements ESL synchronization, PAwR, key handling, and control commands.
+static inline int gatt_esl_service_add(
+    ble_gatt_server *server, ble_gatt_esl_service *service,
+    const ble_gatt_service_value values_in[9]
+) {
+    if (!server || !service || !values_in)
+        return 0;
+
+    static const uint16_t uuids[9] = {
+        0x2bf6, 0x2bf7, 0x2bf8, 0x2bf9, 0x2bfa,
+        0x2bfb, 0x2bfc, 0x2bfd, 0x2bfe
+    };
+    ble_gatt_sig_characteristic chars[9];
+    for (uint8_t i = 0; i < 9; i++) {
+        const ble_gatt_service_value *value = &values_in[i];
+
+        if (!value->data || value->len > value->capacity ||
+            value->capacity > BLE_GATT_SERVER_VALUE_MAX
+        ) return 0;
+
+        uint8_t properties = (i <= 3 || i == 8) ?
+            BLE_GATT_PROP_WRITE : BLE_GATT_PROP_READ;
+        uint8_t cccd = 0;
+
+        if (i == 8) {
+            properties |= BLE_GATT_PROP_WRITE_NO_RSP | BLE_GATT_PROP_NOTIFY;
+            cccd = 1;
+        }
+
+        uint16_t permissions = 0;
+
+        if (properties & BLE_GATT_PROP_READ)
+            permissions |= BLE_GATT_PERM_READ_ENC;
+
+        if (properties & (BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP))
+            permissions |= BLE_GATT_PERM_WRITE_ENC;
+        chars[i] = (ble_gatt_sig_characteristic){
+            uuids[i], properties, cccd, permissions,
+            value->data, value->len, value->capacity, 1
+        };
+    }
+    uint16_t cccds[9];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x1857, chars, 9,
+            &service->service_handle, service->handles, cccds)
+    ) return 0;
+
+    memcpy(service->cccd_handles, cccds, sizeof(cccds));
+
+    if (cccds[8]) {
+        ble_gatt_attribute *cccd = gatt_server_find(server, cccds[8]);
+
+        if (cccd)
+            cccd->permissions = BLE_GATT_PERM_READ_ENC |
+                                      BLE_GATT_PERM_WRITE_ENC;
+    }
+
+    return 1;
+}
+
+
 #endif

@@ -2,6 +2,136 @@
 #define BLE_GATT_SERVICE_MEASUREMENT_H
 
 // Weight Scale, Body Composition, and Tire Pressure Monitoring.
+// Cookware Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t value_handles[12], cccd_handles[12];
+    uint8_t characteristic_count;
+} ble_gatt_cookware_service;
+
+// Application facing
+// Add selected CWS characteristics from the assigned Cookware range. The
+// application chooses characteristics for its supported cooking features
+// and implements their value formats and recipe procedures.
+static inline int gatt_cookware_service_add(
+    ble_gatt_server *server, ble_gatt_cookware_service *service,
+    const ble_gatt_sig_characteristic *characteristics, uint8_t count
+) {
+    if (!server || !service || !characteristics || !count || count > 12)
+        return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = characteristics[i].uuid;
+
+        if (uuid < 0x2c25 || uuid > 0x2c30)
+            return 0;
+
+        for (uint8_t j = 0; j < i; j++)
+            if (characteristics[j].uuid == uuid)
+                return 0;
+    }
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x185d, characteristics, count,
+            &service->service_handle, service->value_handles,
+            service->cccd_handles)
+    ) return 0;
+
+    service->characteristic_count = count;
+    return 1;
+}
+
+
+
+// Indoor Monitoring Service
+typedef struct {
+    uint16_t service_handle;
+    uint16_t measurement_handles[8];
+    uint16_t measurement_cccd_handles[8];
+    uint8_t measurement_count;
+    uint16_t status_handle, status_cccd_handle;
+    uint16_t descriptor_changed_handle, descriptor_changed_cccd_handle;
+} ble_gatt_imd_service;
+
+// Application facing
+// Add IMDS with one to eight permitted live measurements and optional status
+// characteristics. Measurement descriptors and history procedures remain
+// application-defined.
+static inline int gatt_imd_service_add(
+    ble_gatt_server *server, ble_gatt_imd_service *service,
+    const ble_gatt_sig_characteristic *measurements, uint8_t count,
+    const uint8_t *status, uint16_t status_len,
+    const uint8_t *descriptor_changed, uint16_t descriptor_changed_len
+) {
+    if (!server || !service || !measurements || !count || count > 8 ||
+        (status_len && !status) || (descriptor_changed_len &&
+        !descriptor_changed)
+    ) return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint16_t uuid = measurements[i].uuid;
+        uint8_t permitted = uuid == 0x2a6e ||
+                            (uuid >= 0x2c06 && uuid <= 0x2c0b);
+
+        if (!permitted ||
+            !(measurements[i].properties & BLE_GATT_PROP_READ) ||
+            measurements[i].permissions || measurements[i].cccd > 1
+        ) return 0;
+
+        for (uint8_t j = 0; j < i; j++)
+            if (measurements[j].uuid == uuid)
+                return 0;
+    }
+    ble_gatt_sig_characteristic chars[10];
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < count; i++) chars[n++] = measurements[i];
+    uint8_t status_index = 0xff, changed_index = 0xff;
+
+    if (status) {
+        status_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0c, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1, 0,
+            status, status_len, status_len, 1
+        };
+    }
+
+    if (descriptor_changed) {
+        changed_index = n;
+        chars[n++] = (ble_gatt_sig_characteristic){
+            0x2c0d, BLE_GATT_PROP_INDICATE, 1, 0,
+            descriptor_changed, descriptor_changed_len,
+            descriptor_changed_len, 1
+        };
+    }
+
+    uint16_t values[10], cccds[10];
+    memset(service, 0, sizeof(*service));
+
+    if (!gatt_sig_service_add(server, 0x185a, chars, n,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->measurement_count = count;
+    for (uint8_t i = 0; i < count; i++) {
+        service->measurement_handles[i] = values[i];
+        service->measurement_cccd_handles[i] = cccds[i];
+    }
+
+    if (status_index != 0xff) {
+        service->status_handle = values[status_index];
+        service->status_cccd_handle = cccds[status_index];
+    }
+
+    if (changed_index != 0xff) {
+        service->descriptor_changed_handle = values[changed_index];
+        service->descriptor_changed_cccd_handle = cccds[changed_index];
+    }
+
+    return 1;
+}
+
+
+
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle;

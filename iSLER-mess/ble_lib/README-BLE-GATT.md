@@ -4,8 +4,8 @@ The goal is a reusable, Mesh-independent GATT stack for LE connections. It
 provides server and client roles over the LE fixed ATT bearer and optional
 EATT, and lets an application register its own services and attributes.
 `ble_gatt_services.h` provides reusable Bluetooth SIG service database
-builders. `ble_gatt_service_registry.h` contains the generic 16-bit UUID
-service builder and the per-characteristic ATT handler binding API.
+builders, generic 16-bit UUID service registration, and per-characteristic
+ATT handler binding.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
 the server and transport remain in focused headers. `ble_gatt.h` owns the shared
