@@ -368,7 +368,7 @@ int gap_pawr_connect(
     uint8_t random_type = type != 0;
 
     if (!peer_address ||
-        gap_conn_slot_active(gap_conn_slot) ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (gap_central.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
@@ -876,7 +876,7 @@ int gap_sync_start(
     if (!address || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 ||
         gap_central.active ||
-        gap_conn_slot_active(gap_conn_slot)
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
@@ -1017,7 +1017,7 @@ int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
         !gap_syncs[slot].used || gap_central.active ||
         !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.timing.has_timing ||
-        gap_conn_slot_active(gap_conn_slot)
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return 0;
 
     gap_syncs[slot].pawr.connect_accept = enabled;
@@ -1378,7 +1378,7 @@ static int gap_pawr_conn_req(
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
         gap_central.active ||
-        gap_conn_slot_active(gap_conn_slot) ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request)
     ) return 0;
@@ -1452,7 +1452,7 @@ static int gap_pawr_exchange(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!set || !set->pawr_connect.pending ||
-        gap_conn_slot_active(gap_conn_slot) || GAP_HW_DATA_MAX() < 27
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || GAP_HW_DATA_MAX() < 27
     ) return 0;
 
     uint8_t *request = gap_central.request;
@@ -2292,7 +2292,7 @@ static int gap_past_encode(
 int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         slot >= GAP_PERIODIC_SYNC_COUNT ||
         !gap_syncs[slot].used ||
         !gap_syncs[slot].established ||
@@ -2370,7 +2370,7 @@ static void gap_connection_take_radio(void) {
 // Check whether a periodic receive window intersects a guarded connection event.
 static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->link.next_ticks ||
         !conn->schedule.interval_125us
     ) return 0;
@@ -2418,7 +2418,7 @@ static int gap_ext_send_due(uint32_t now) {
     // millisecond scheduler jitter. Advance the event counter across missed
     // intervals as required by the periodic channel selection algorithm.
     if ((gap_conn_slot_mask == 0 ||
-         (gap_conn_slot_active(gap_conn_slot) && conn->is_central)) &&
+         ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central)) &&
         !gap_central.active &&
         !gap_scan.active_pending
     ) {
@@ -2450,7 +2450,7 @@ static int gap_ext_send_due(uint32_t now) {
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_ticks += missed * interval;
 
-            if (gap_conn_slot_active(gap_conn_slot) && conn->is_central) {
+            if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central) {
                 uint32_t event_duration_us = gap_periodic_airtime_us(set->periodic.data_len,
                                                    set->aux_phy);
                 if (set->pawr.enabled) {

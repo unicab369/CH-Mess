@@ -446,14 +446,14 @@ static int gap_sc_generate_key(void) {
 
     for (uint8_t attempt = 0; attempt < 8 && !generated; attempt++) {
         if (!smp_random_bytes(private_key, sizeof(private_key)) ||
-            !gap_conn_slot_active(gap_conn_slot) || generation != *security_gen
+            !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || generation != *security_gen
         ) break;
 
         generated = uECC_compute_public_key(private_key, public_key, curve);
     }
 
     uECC_set_rng(previous);
-    generated = generated && gap_conn_slot_active(gap_conn_slot) &&
+    generated = generated && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
                 generation == *security_gen;
 
     if (generated) {
@@ -489,7 +489,9 @@ static int gap_sc_accept_key(const uint8_t on_air[64]) {
     int derived = uECC_shared_secret(smp->secure.peer_public_key,
                                     smp->secure.private_key, dhkey, curve);
     uECC_set_rng(previous);
-    derived = derived && gap_conn_slot_active(gap_conn_slot) && generation == *security_gen;
+    derived = derived &&
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+        generation == *security_gen;
 
     if (derived)
         memcpy(smp->secure.dhkey, dhkey, 32);
@@ -875,7 +877,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!out || !gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
-        !gap_conn_slot_active(gap_conn_slot) ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) ||
         gap_encrypted() || smp->pairing.phase ||
         gap_sec_contexts[gap_conn_slot].phase
@@ -887,7 +889,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
 
     int generated = gap_sc_generate_key() &&
         smp_random_bytes(local->oob.data.random, sizeof(local->oob.data.random)) &&
-        gap_conn_slot_active(gap_conn_slot) && generation == *security_gen;
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && generation == *security_gen;
 
     if (generated) {
         gap_sc_confirm_value(smp->secure.public_key, smp->secure.public_key,
@@ -950,7 +952,7 @@ int gap_passkey_reply(uint32_t value) {
                             (smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY ||
                             smp->pairing.phase == SMP_PHASE_SC_PASSKEY));
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) || !passkey_input_phase ||
         smp->pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
     ) {
@@ -1004,7 +1006,7 @@ int gap_numeric_reply(uint8_t accept) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) ||
         smp->pairing.phase != SMP_PHASE_SC_USER ||
         smp->secure.numeric_reply || accept > 1
@@ -1034,7 +1036,7 @@ int gap_pair(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_pair_cfg.enabled || !gap_conn_slot_active(gap_conn_slot) ||
+    if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) || smp->pairing.phase ||
         smp->blocked || gap_sec_contexts[gap_conn_slot].phase ||
         gap_encrypted() || smp->tx_len || smp->bearer.tx_len
@@ -1583,7 +1585,7 @@ static void smp_bond_peripheral_start(void) {
 // Called from connection polling and before an application takes an RX fragment.
 static void gap_smp_poll(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_conn_slot_active(gap_conn_slot))
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
         return;
 
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
@@ -1949,7 +1951,7 @@ static void gap_smp_poll(void) {
                     return;
                 }
 
-                if (!gap_conn_slot_active(gap_conn_slot)) {
+                if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
                     gap_wipe(&bond_data, sizeof(bond_data));
                     return;
                 }
@@ -2492,7 +2494,7 @@ static void gap_smp_poll(void) {
         uint8_t pairing_random[16];
         int entropy_ready = smp_random_bytes(pairing_random, sizeof(pairing_random));
 
-        if (!gap_conn_slot_active(gap_conn_slot) || generation != *security_gen) {
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || generation != *security_gen) {
             gap_wipe(pairing_random, sizeof(pairing_random));
             return;
         }
@@ -2522,7 +2524,7 @@ static void gap_smp_poll(void) {
             }
 
             if (!use_oob_key && !gap_sc_generate_key()) {
-                if (gap_conn_slot_active(gap_conn_slot) && generation == *security_gen)
+                if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && generation == *security_gen)
                     gap_smp_fail(SMP_FAIL_UNSPECIFIED);
                 return;
             }
@@ -2550,7 +2552,8 @@ static void gap_smp_poll(void) {
                     return;
                 }
 
-                if (!gap_conn_slot_active(gap_conn_slot) || generation != *security_gen) {
+                if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+                    generation != *security_gen) {
                     gap_wipe(bytes, sizeof(bytes));
                     return;
                 }
@@ -2636,7 +2639,7 @@ static void gap_smp_poll(void) {
         uint32_t generation = *security_gen;
 
         if (!gap_sc_accept_key(pdu + 1)) {
-            if (!gap_conn_slot_active(gap_conn_slot) || generation != *security_gen)
+            if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || generation != *security_gen)
                 return;
 
             // Invalid P-256 point or reflected key.
@@ -2741,7 +2744,7 @@ static void gap_smp_poll(void) {
             uint32_t generation = *security_gen;
             int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
 
-            if (!gap_conn_slot_active(gap_conn_slot) || generation != *security_gen) {
+            if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || generation != *security_gen) {
                 gap_wipe(next_nonce, sizeof(next_nonce));
                 return;
             }

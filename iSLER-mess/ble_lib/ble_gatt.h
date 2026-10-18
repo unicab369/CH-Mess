@@ -1230,7 +1230,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
             continue;
 
         const gap_conn_context *conn = gap_conn_ctx_current();
-        if (!gap_conn_slot_active(gap_conn_slot) ||
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
             (!conn->is_central && conn->link.first_event)
         )
             continue;

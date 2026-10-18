@@ -132,24 +132,6 @@ int GAP_CCM_DECRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
     uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
-enum {
-    ADV_IND = 0x00,
-    ADV_DIRECT_IND = 0x01,
-    ADV_NONCONN_IND = 0x02,
-    SCAN_REQ = 0x03,
-    SCAN_RSP = 0x04,
-    CONNECT_IND = 0x05,
-    ADV_SCAN_IND = 0x06,
-    ADV_EXT_IND = 0x07
-};
-
-typedef enum {
-    GAP_CONN_MODE_DIRECT = 0x00,
-    GAP_CONN_MODE_GENERAL = 0x01,
-    GAP_CONN_MODE_SELECTIVE = 0x02,
-    GAP_CONN_MODE_AUTO = 0x04
-} gap_conn_mode;
-
 // Advertising and connection constants.
 #define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
 #define GAP_CONNECTION_PENDING 0xff
@@ -276,6 +258,24 @@ typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
                                        uint32_t value);
 #endif
 
+enum {
+    ADV_IND = 0x00,
+    ADV_DIRECT_IND = 0x01,
+    ADV_NONCONN_IND = 0x02,
+    SCAN_REQ = 0x03,
+    SCAN_RSP = 0x04,
+    CONNECT_IND = 0x05,
+    ADV_SCAN_IND = 0x06,
+    ADV_EXT_IND = 0x07
+};
+
+typedef enum {
+    GAP_CONN_MODE_DIRECT = 0x00,
+    GAP_CONN_MODE_GENERAL = 0x01,
+    GAP_CONN_MODE_SELECTIVE = 0x02,
+    GAP_CONN_MODE_AUTO = 0x04
+} gap_conn_mode;
+
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
 static inline uint32_t gap_phy_airtime_us(
@@ -367,12 +367,13 @@ typedef struct {
     uint16_t base_event, win_offset, instant;
 } gap_conn_schedule;
 
-typedef struct {
 #if GAP_SMP_SUPPORT > 0
-    uint8_t bonded, restore_started, restore_attempted;
-    gap_bond bond;
-#endif
-#if GAP_EXT_ADV_SUPPORT
+typedef struct {
+    uint8_t ltk[16], rand[8], ediv[2];
+} gap_bond_key;
+
+typedef struct {
+    uint8_t if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
     uint8_t sync_transfer_slot;
     uint16_t sync_transfer_id;
@@ -504,10 +505,6 @@ const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
-
-static inline uint8_t gap_conn_slot_active(uint8_t slot) {
-    return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) != 0;
-}
 
 static inline void gap_conn_slot_set_active(uint8_t slot, uint8_t active) {
     uint8_t bit = GAP_CONN_SLOT_BIT(slot);
@@ -729,7 +726,8 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
             timing->interval, timing->interval, timing->latency,
             timing->supervision_timeout) || !timing->attempt_timeout_ms ||
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
-        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_conn_slot_active(gap_conn_slot) ||
+        gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_central.active || timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
@@ -869,7 +867,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
     type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
         (type && !gap_static_addr_valid(address))
     ) return 0;
 
@@ -901,7 +899,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
@@ -924,7 +922,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
 int gap_accept_list_clear(void) {
     if (gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
     ) return 0;
 
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
@@ -941,7 +939,7 @@ int gap_identity_set(
     uint8_t random_type = type != 0;
     if (!address || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
         (random_type && !gap_static_addr_valid(address))
     ) return 0;
 
@@ -990,7 +988,7 @@ int gap_identity_privacy(
     uint8_t random_type = type != 0;
     if (!address || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_central.active
     ) return 0;
 
@@ -1073,7 +1071,7 @@ int gap_identity_local_key(
     uint8_t random_type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
     ) return 0;
 
     int slot = -1;
@@ -1145,7 +1143,7 @@ static void gap_local_addr_select(
 // Timeout is in seconds. NRPA generation uses randomness without AES.
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn_slot_active(gap_conn_slot) ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_central.active || timeout_s > 41400 || (irk && !timeout_s)
     ) return 0;
 
@@ -1213,7 +1211,7 @@ int gap_privacy_set_randomized(
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
     ) return 0;
 
     uint16_t timeout_s;
@@ -1241,7 +1239,7 @@ int gap_privacy_set_randomized(
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
     ) return 0;
 
     gap_privacy.scan_filter = scan;
@@ -1256,7 +1254,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 int gap_set_static_addr(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        gap_conn_slot_active(gap_conn_slot) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
         !gap_static_addr_valid(address)
     ) return 0;
 
@@ -1273,7 +1271,7 @@ int gap_set_static_addr(const uint8_t address[6]) {
 int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        gap_conn_slot_active(gap_conn_slot) ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_central.active
     ) return 0;
 
@@ -1539,7 +1537,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         uint8_t connected = gap_conn_select(handle);
         if (connected) {
             const gap_conn_context *conn = gap_conn_ctx_current();
-            connected = gap_conn_slot_active(gap_conn_slot) &&
+            connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
                 (conn->is_central || !conn->link.first_event);
         }
 

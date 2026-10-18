@@ -190,7 +190,10 @@ For built-in multi-object OLCP navigation, pass a caller-owned
 six-byte ID, property bits, name, type, sizes, and timestamps. The required
 selection callback loads that object and calls `gatt_ots_set_object_metadata()`
 to update the visible metadata. Optional order and clear-marking callbacks
-handle catalog ordering and persistent marking. With a table registered,
+handle catalog ordering and persistent marking. A clear-marking callback must
+apply the active Object List Filters when updating persistent storage; the
+service clears the marked property only on visible table entries. With a table
+registered,
 First, Last, Previous, Next, Go To, Request Number of Objects, and Clear Marking
 are handled by the service; Order uses its callback. The service applies all
 three Object List Filters when navigating and counting, including name, type,

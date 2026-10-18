@@ -122,7 +122,7 @@ static int gap_past_receive(
 
 static void gap_conn_end(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_conn_slot_active(gap_conn_slot))
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
         return;
 
     if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot ) {
@@ -520,7 +520,7 @@ static void gap_send_data_length(uint8_t opcode) {
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
-    if (!gap_privacy.enabled || gap_conn_slot_active(gap_conn_slot) ||
+    if (!gap_privacy.enabled || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_central.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0
@@ -1869,7 +1869,7 @@ static uint8_t gap_conn_control(
 static uint8_t gap_conn_procedure_busy(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
 
-    return !gap_conn_slot_active(gap_conn_slot) ||
+    return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->link.first_event ||
         conn->pending.procedure_flags ||
@@ -2111,7 +2111,7 @@ int gap_channel_reporting_set(
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->is_central ||
         conn->link.first_event ||
         gap_security->phase ||
@@ -2143,7 +2143,7 @@ int gap_channel_class_set(
     const uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) || !classification ||
         !gap_class_valid(classification)
     ) return 0;
@@ -2167,7 +2167,7 @@ int gap_channel_class_set(
 // no valid classification is available. The returned data remains GAP-owned.
 const uint8_t *gap_channel_class_get(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) ||
         !conn->channel.classification_valid
     ) return NULL;
@@ -2181,7 +2181,7 @@ int gap_peer_class_get(
     uint8_t classification[GAP_CHANNEL_CLASSIFICATION_BYTES]
 ) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    if (!gap_conn_slot_active(gap_conn_slot) || !conn->is_central ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || !conn->is_central ||
         conn->link.first_event || !classification ||
         !conn->channel.peer_classification_valid
     ) return 0;
@@ -2251,7 +2251,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 
     if (!data || !len ||
         (llid != 1 && llid != 2) ||
-        !gap_conn_slot_active(gap_conn_slot) ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) ||
         gap_security->phase ||
         conn->queue.tx_queued ||
@@ -2289,7 +2289,7 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
 int gap_disconnect(uint8_t reason) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link.first_event) ||
         !reason ||
         conn->link_state.terminate_after_reply ||
@@ -2477,7 +2477,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     // Entropy collection may take time: recheck the link and procedures before
     // committing a key, so a disconnect/reconnect cannot apply it to another peer.
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (*gap_security_generation) != generation ||
         gap_security->phase ||
         conn->pending.procedure_flags ||
@@ -2522,7 +2522,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
-    if (!gap_conn_slot_active(gap_conn_slot) ||
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_security->phase != GAP_ENC_KEY_REQUEST
     ) return 0;
 
@@ -2537,7 +2537,8 @@ int gap_key_reply(const uint8_t ltk[16]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
-    if (!gap_conn_slot_active(gap_conn_slot) || gap_security->phase != GAP_ENC_KEY_REQUEST) {
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        gap_security->phase != GAP_ENC_KEY_REQUEST) {
         GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
@@ -2564,7 +2565,7 @@ int gap_encrypted(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
-    return gap_conn_slot_active(gap_conn_slot) &&
+    return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
             (conn->is_central || !conn->link.first_event) &&
             !gap_security->phase &&
             gap_security->tx_enabled &&

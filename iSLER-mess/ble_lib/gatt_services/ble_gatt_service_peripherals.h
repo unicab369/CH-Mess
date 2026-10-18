@@ -1407,6 +1407,9 @@ typedef uint8_t (*ble_gatt_ots_order_fn)(
     void *context, uint8_t order, ble_gatt_ots_object *objects,
     uint16_t count
 );
+// Clear Marking must persist changes only for objects visible under the
+// active Object List Filters. The service applies that same visibility rule
+// to the caller-owned table after the callback succeeds.
 typedef uint8_t (*ble_gatt_ots_clear_fn)(
     void *context, ble_gatt_ots_object *objects, uint16_t count
 );
