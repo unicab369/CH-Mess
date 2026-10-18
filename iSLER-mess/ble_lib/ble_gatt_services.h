@@ -310,6 +310,7 @@ static inline int gatt_mesh_proxy_add(
 #include "ble_gatt_service_health.h"
 #include "ble_gatt_service_measurement.h"
 #include "ble_gatt_service_audio.h"
+#include "ble_gatt_service_user.h"
 #include "ble_gatt_service_device.h"
 #include "ble_gatt_service_peripherals.h"
 

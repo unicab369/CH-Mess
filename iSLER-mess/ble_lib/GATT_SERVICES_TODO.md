@@ -118,18 +118,12 @@ remains available for custom services; it does not replace these builders.
 - [x] Generic Telephone Bearer (`0x184C`), shared layout and control handling
 - [x] Microphone Control (`0x184D`), optional AICS includes, Disabled-state
   write errors, and state notifications
-- [x] Audio Stream Control (`0x184E`), caller-defined Sink/Source ASEs and control point
-- [x] Broadcast Audio Scan (`0x184F`), variable Receive State instances
-- [x] Published Audio Capabilities (`0x1850`), PAC records and required audio contexts
 - [n/a] Basic Audio Announcement (`0x1851`), advertising service data
 - [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
-- [x] Common Audio (`0x1853`)
 - [x] Hearing Access (`0x1854`), mandatory features-only layout and optional
   preset Control Point/Active Preset Index request-response layout
-- [x] Telephony and Media Audio (`0x1855`)
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD
-- [x] Gaming Audio (`0x1858`), role and role-specific feature characteristics
 - [n/a] Mesh Proxy Solicitation (`0x1859`), Solicitation PDU/service data rather than a GATT attribute service
 - [x] Industrial Measurement Device (`0x185A`), permitted live measurements and optional status indications
 - [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data
@@ -146,3 +140,9 @@ specifications do not define GATT attributes for these announcements. Mesh
 Proxy Solicitation identifies a Solicitation PDU/service-data format used in
 advertising. Those encoders belong with GAP advertising support, not in the
 GATT service database.
+
+The following services are omitted because they require LE Audio support:
+Audio Stream Control Service (ASCS), Published Audio Capabilities Service
+(PACS), Broadcast Audio Scan Service (BASS), Telephony and Media Audio Service
+(TMAS), Gaming Audio Service (GMAS), and Common Audio Service (CAS).
+

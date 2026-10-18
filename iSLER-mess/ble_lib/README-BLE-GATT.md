@@ -92,13 +92,6 @@ the parent before the parent's characteristics. It validates all five control
 point procedures, maintains the state Change_Counter, and notifies state
 changes. Local state, status, and description changes use its corresponding
 `set_state()`, `set_status()`, and `set_description()` helpers.
-`gatt_telephony_and_media_audio_service_add()` registers TMAS with the
-application's supported TMAP Role bits.
-`gatt_common_audio_service_add()` registers the no-characteristic CAS and can
-include a previously registered CSIS service.
-`gatt_broadcast_audio_scan_service_add()` registers the encrypted BASS control
-point and caller-selected variable-length receive-state instances. The
-application handles synchronization procedures and updates their values.
 `gatt_ctes_add()` registers the required CTE Enable
 value and, when requested, the five advertising-channel controls.
 `gatt_ranging_add()` registers mandatory RAS characteristics and adds
@@ -165,8 +158,6 @@ the full Hearing Aid Features bitfield and validates reserved/type-dependent
 bits. Update the active preset in the database with
 `gatt_hap_set_active_preset()` or update and notify
 with `gatt_hap_notify_active_preset()`.
-`gatt_gaming_audio_service_add()` registers GMAS role discovery and feature
-characteristics for each advertised GMAP role.
 `gatt_ots_add()` registers the single-object OTS metadata
 and OACP characteristics, including First-Created and Last-Modified. It assumes
 the server has a real-time clock; use
@@ -249,11 +240,6 @@ validated and captured for the application, which completes each request with
 action and updating call state. Use
 `gatt_tbs_set_signal_strength()` and its poll helper to
 honor the configured minimum signal notification interval.
-`gatt_pacs_service_add()` registers one or both PAC directions with the
-mandatory Available and Supported Audio Contexts characteristics.
-`gatt_audio_stream_control_service_add()` registers caller-provided Sink and
-Source ASE instances and the ASE Control Point. The application supplies the
-LE Audio state machines, codec configuration, and ISO stream handling.
 `gatt_esl_add()` registers the nine ESL characteristics, including the
 Control Point CCCD. The application implements ESL key setup, PAwR, and
 control-point procedures. `gatt_imd_service_add()` registers permitted live
