@@ -364,6 +364,7 @@ static inline void gatt_eatt_disconnect(ble_gatt_eatt *eatt) {
     eatt->encrypted = 0;
 }
 
+#endif // BLE_GATT_ENABLE_EATT
 
 #define BLE_GATT_TRANSPORT_ATT_CID L2CAP_CID_ATT
 

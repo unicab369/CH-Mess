@@ -107,7 +107,7 @@ int main(void) {
             break;
         }
         case 4:
-            started = gatt_client_chars(&client,
+            started = gatt_client_characteristics(&client,
                 1, 4, NULL, 0, now_ms);
             break;
         case 5:
