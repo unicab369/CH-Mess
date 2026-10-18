@@ -1298,9 +1298,8 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     return failed ? -1 : work;
 }
 
-// Application facing
 // Find the transport attached to a currently live connection handle.
-static inline ble_gatt_transport *ble_gap_gatt_transport_for(
+static ble_gatt_transport *ble_gap_gatt_transport_for(
     ble_gap_gatt *manager, gap_conn_handle handle
 ) {
     if (!manager || handle.slot >= GAP_CONNECTION_COUNT)

@@ -1395,6 +1395,11 @@ typedef struct {
     uint8_t index;
 } ble_gatt_ots_filter_context;
 
+typedef struct {
+    struct ble_gatt_ots_service *service;
+    uint8_t index;
+} ble_gatt_ots_metadata_context;
+
 typedef uint8_t (*ble_gatt_ots_select_fn)(
     void *context, const uint8_t object_id[6]
 );
@@ -1462,8 +1467,13 @@ typedef struct ble_gatt_ots_service {
     ble_gatt_ots_clear_fn clear_marking;
     void *object_list_context;
     ble_gatt_ots_filter_context filter_context[3];
+    ble_gatt_ots_metadata_context metadata_context[3];
 } ble_gatt_ots_service;
 
+static uint8_t gatt_ots_metadata_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
 static uint8_t gatt_ots_oacp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -2362,9 +2372,18 @@ static inline int gatt_ots_add_type_full(
     };
     uint16_t value_handles[9], cccd_handles[9];
     ble_gatt_sig_handlers handlers[9] = {0};
+    static const uint8_t metadata_indexes[] = {1, 4, 5};
+    memset(service, 0, sizeof(*service));
+    for (uint8_t i = 0; i < 3; i++) {
+        service->metadata_context[i].service = service;
+        service->metadata_context[i].index = i;
+        handlers[metadata_indexes[i]].write_request =
+            gatt_ots_metadata_write;
+        handlers[metadata_indexes[i]].context =
+            &service->metadata_context[i];
+    }
     handlers[7].write_request = gatt_ots_oacp_write;
     handlers[7].context = service;
-    memset(service, 0, sizeof(*service));
 
     if (!gatt_sig_register(server, 0x1825,
             primary_service, NULL, 0, characteristics, 9,
@@ -2526,6 +2545,15 @@ static inline int gatt_ots_add_multi_type_full(
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
+    static const uint8_t metadata_indexes[] = {1, 4, 5};
+    for (uint8_t i = 0; i < 3; i++) {
+        service->metadata_context[i].service = service;
+        service->metadata_context[i].index = i;
+        handlers[metadata_indexes[i]].write_request =
+            gatt_ots_metadata_write;
+        handlers[metadata_indexes[i]].context =
+            &service->metadata_context[i];
+    }
     for (uint8_t i = 0; i < 3; i++) {
         service->filter_context[i].service = service;
         service->filter_context[i].index = i;
@@ -2701,6 +2729,57 @@ static inline int gatt_ots_object_changed(
     memcpy(value + 1, object_id, 6);
     return gatt_queue_event(service->server, service->object_changed_handle,
                             value, sizeof(value), 1);
+}
+
+static uint8_t gatt_ots_metadata_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_ots_metadata_context *write = context;
+    ble_gatt_ots_service *service = write ? write->service : NULL;
+    if (!service || !service->server || (len && !value))
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (len > BLE_GATT_ATT_VALUE_MAX)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint16_t handle;
+    uint16_t fixed_len = 0;
+    switch (write->index) {
+    case 0: handle = service->object_name_handle; break;
+    case 1: handle = service->object_first_created_handle; fixed_len = 7; break;
+    case 2: handle = service->object_last_modified_handle; fixed_len = 7; break;
+    default: return ATT_ERR_UNLIKELY_ERROR;
+    }
+    if (fixed_len && len != fixed_len)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_attribute *attribute = gatt_server_find(service->server, handle);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored) return ATT_ERR_UNLIKELY_ERROR;
+    if (len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t object_id[6];
+    uint8_t send_change = gatt_ots_change_enabled(service) &&
+        gatt_ots_current_id(service, object_id);
+    if (send_change && (service->server->event_count >=
+            BLE_GATT_SERVER_EVENT_QUEUE_SIZE ||
+        sizeof(object_id) + 1 > BLE_GATT_SERVER_EVENT_BYTES -
+            service->server->event_used))
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
+
+    if (send_change && !gatt_ots_object_changed(service,
+            GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_METADATA, object_id))
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
+
+    if (len) memcpy(stored, value, len);
+    if (!fixed_len && len < attribute->value_capacity)
+        memset(stored + len, 0, attribute->value_capacity - len);
+    attribute->value_len = fixed_len ? fixed_len : len;
+    return 0;
 }
 
 // OTS means Object Transfer Service.

@@ -204,6 +204,9 @@ OACP. Successful OACP Create, Delete, and Write completions automatically
 queue Created, Deleted, and Contents Changed indications when subscribed. For
 Create, call `gatt_ots_set_object_metadata()` with the new object ID before
 `gatt_ots_oacp_complete()` so the indication identifies the created object.
+Client writes to Object Name, writable First-Created, and writable
+Last-Modified metadata automatically queue client-sourced Metadata Changed
+indications when subscribed and the current Object ID is known.
 For single-object OTS, initialize the current ID through the same setter so
 automatic Delete and Write indications can identify the object.
 After create/delete operations, update the table to keep navigation and counts
@@ -549,8 +552,8 @@ static int gatt_services_init(void) {
 The manager selects each live GAP handle while moving received LL fragments,
 updating transport security, and sending queued ATT traffic. Per-connection
 server state keeps CCCDs, MTU, prepared writes, and indications isolated.
-Applications can obtain a link's transport with
-`ble_gap_gatt_transport_for()` and its current `gap_conn_handle`.
+Applications can retrieve a link's transport with
+`ble_gap_gatt_transport_for()` using its current `gap_conn_handle`.
 
 The L2CAP connection manager implements LE Credit Based Flow Control and ECFC.
 `gatt_transport_eatt_init()` binds EATT channel setup, encryption policy,
