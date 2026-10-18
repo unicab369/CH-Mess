@@ -1900,4 +1900,402 @@ static inline int gatt_body_comp_indicate(
     return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
+
+typedef struct {
+    uint16_t service_handle, live_observations_handle;
+    uint16_t live_observations_cccd_handle, control_point_handle;
+    uint16_t control_point_cccd_handle;
+    uint16_t stored_observations_handle, stored_observations_cccd_handle;
+    uint16_t racp_handle, racp_cccd_handle;
+    ble_gatt_server *server;
+    uint8_t live_observations_started, control_point_request_count;
+    uint8_t stored_observations_notify;
+    uint8_t racp_pending, racp_opcode, racp_operator, racp_request_len;
+    uint8_t racp_request[20];
+    uint8_t rolling_segment_counter, observation_segment_queued;
+    uint16_t observation_len, observation_offset;
+    uint8_t observation_data[BLE_GATT_ATT_VALUE_MAX];
+} ble_gatt_generic_health_sensor_service;
+
+enum {
+    GATT_GHS_RACP_REPORT_STORED_RECORDS = 0x07,
+    GATT_GHS_RACP_DELETE_STORED_RECORDS = 0x02,
+    GATT_GHS_RACP_ABORT_OPERATION = 0x03,
+    GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS = 0x04,
+    GATT_GHS_RACP_NUMBER_OF_RECORDS_RESPONSE = 0x05,
+    GATT_GHS_RACP_RESPONSE_CODE = 0x06,
+    GATT_GHS_RACP_REPORT_STORED_RECORDS_RESPONSE = 0x08,
+    GATT_GHS_RACP_RESPONSE_SUCCESS = 0x01,
+    GATT_GHS_RACP_RESPONSE_NO_RECORDS_FOUND = 0x06,
+    GATT_GHS_RACP_RESPONSE_OPCODE_NOT_SUPPORTED = 0x02,
+    GATT_GHS_RACP_RESPONSE_OPERAND_NOT_SUPPORTED = 0x09,
+    GATT_GHS_RACP_RESPONSE_PROCEDURE_NOT_COMPLETED = 0x08
+};
+
+// Internal: accept the record-number RACP procedures provided by this helper.
+static uint8_t gatt_generic_health_sensor_racp_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_generic_health_sensor_service *service = context;
+
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (command)
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
+
+    if (len < 2 || len > sizeof(service->racp_request))
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t opcode = value[0], oper = value[1];
+    uint8_t filter_len = (uint8_t)(len - 2);
+
+    if (opcode == GATT_GHS_RACP_ABORT_OPERATION) {
+        if (oper != 0 || filter_len)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    }
+    else if (opcode == GATT_GHS_RACP_DELETE_STORED_RECORDS ||
+               opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS ||
+               opcode == GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS) {
+        if (oper == 1) {
+            if (filter_len)
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        }
+        else if (oper == 2 || oper == 3) {
+            if (filter_len != 5 && filter_len != 7)
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        }
+        else if (oper == 4) {
+            if (filter_len != 9 && filter_len != 13)
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        }
+        else if (oper == 5 || oper == 6) {
+            if (filter_len)
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        }
+    }
+
+    ble_gatt_attribute *racp_cccd = gatt_server_cccd_for(
+        service->server, service->racp_handle);
+
+    if (!racp_cccd || !(racp_cccd->cccd & 2))
+        return 0xfd;
+
+    if (opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS) {
+        ble_gatt_attribute *data_cccd = gatt_server_cccd_for(
+            service->server, service->stored_observations_handle);
+        if (!data_cccd || !data_cccd->cccd)
+            return 0xfd;
+    }
+
+    if (service->racp_pending || service->server->indication_pending)
+        return 0xfe;
+
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication)
+            return 0xfe;
+
+    memcpy(service->racp_request, value, len);
+    service->racp_request_len = (uint8_t)len;
+    service->racp_opcode = opcode;
+    service->racp_operator = oper;
+    service->racp_pending = 1;
+    return 0;
+}
+
+// Internal
+static uint8_t gatt_generic_health_sensor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_generic_health_sensor_service *service = context;
+
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (len != 1)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (command)
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
+
+    if (value[0] != 0x01 && value[0] != 0x02)
+        return 0x81;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        service->server, service->control_point_handle);
+
+    if (!cccd || !(cccd->cccd & 0x02))
+        return 0xfd;
+
+    uint8_t response = 0x80;
+
+    if (!gatt_queue_event(service->server,
+            service->control_point_handle, &response, 1, 1)
+    ) return ATT_ERR_UNLIKELY_ERROR;
+
+    service->live_observations_started = value[0] == 0x01;
+    service->control_point_request_count++;
+    return 0;
+}
+
+// Application facing
+// Add the live-observation-only GHS layout. The service handles its start/stop
+// Control Point and success indications; the application supplies observations.
+static inline int gatt_generic_health_sensor_service_add_full(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint16_t observation_capacity, uint16_t stored_observation_capacity,
+    uint8_t stored_observations_notify
+) {
+    if (!server || !service || observation_capacity < 2 ||
+        observation_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        stored_observation_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        stored_observations_notify > 1 ||
+        (!stored_observation_capacity && stored_observations_notify)
+    ) return 0;
+
+    uint8_t observation_initial = 0;
+    uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic characteristics[4] = {
+        {0x2b8b, BLE_GATT_PROP_INDICATE, 1, 0,
+            &observation_initial, 0, observation_capacity, 1},
+        {0x2bf4, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 1, 1}
+    };
+    uint8_t count = 2;
+
+    if (stored_observation_capacity) {
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2bdd, stored_observations_notify ? BLE_GATT_PROP_NOTIFY :
+                                                BLE_GATT_PROP_INDICATE,
+            1, 0, &observation_initial, 0,
+            stored_observation_capacity, 1
+        };
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            0x2a52, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &control_point_initial, 0, 20, 1
+        };
+    }
+
+    uint16_t values[4], cccds[4];
+    ble_gatt_sig_handlers handlers[4] = {0};
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    handlers[1].write = gatt_generic_health_sensor_control_write;
+    handlers[1].context = service;
+
+    if (stored_observation_capacity) {
+        handlers[3].write = gatt_generic_health_sensor_racp_write;
+        handlers[3].context = service;
+    }
+
+    if (!gatt_sig_service_add_with_handlers(server, 0x1840,
+            characteristics, count, &service->service_handle, values, cccds,
+            handlers)) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+
+    service->live_observations_handle = values[0];
+    service->live_observations_cccd_handle = cccds[0];
+    service->control_point_handle = values[1];
+    service->control_point_cccd_handle = cccds[1];
+
+    if (stored_observation_capacity) {
+        service->stored_observations_handle = values[2];
+        service->stored_observations_cccd_handle = cccds[2];
+        service->racp_handle = values[3];
+        service->racp_cccd_handle = cccds[3];
+        service->stored_observations_notify = stored_observations_notify;
+    }
+
+    return 1;
+}
+
+// Queue one already-encoded, segmented Stored Health Observations value.
+// Record filtering and ordering remain owned by the application's record store.
+static inline int gatt_generic_health_sensor_service_queue_stored_segment(
+    ble_gatt_server *server,
+    const ble_gatt_generic_health_sensor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server ||
+        !service->stored_observations_handle || !service->racp_pending ||
+        service->racp_opcode != GATT_GHS_RACP_REPORT_STORED_RECORDS ||
+        !value || !len
+    ) return 0;
+
+    return gatt_queue_event(server,
+        service->stored_observations_handle, value, len,
+        (uint8_t)!service->stored_observations_notify);
+}
+
+// Compatibility builder for live-observation-only GHS.
+static inline int gatt_generic_health_sensor_service_add(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint16_t observation_capacity
+) {
+    return gatt_generic_health_sensor_service_add_full(server, service,
+        observation_capacity, 0, 0);
+}
+
+// Complete the pending RACP procedure after application-owned record access.
+// For report-number requests, provide the matching count response operand;
+// for other procedures, pass NULL and zero length on success.
+static inline int gatt_generic_health_sensor_service_racp_complete(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    uint8_t response_code, const uint8_t *operand, uint8_t operand_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->racp_pending || (operand_len && !operand)
+    ) return 0;
+
+    uint8_t response[6] = {0};
+    uint16_t response_len;
+
+    if (response_code == GATT_GHS_RACP_RESPONSE_SUCCESS &&
+        service->racp_opcode == GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS) {
+        if (operand_len != 4) return 0;
+
+        response[0] = GATT_GHS_RACP_NUMBER_OF_RECORDS_RESPONSE;
+        response[1] = 0;
+        memcpy(response + 2, operand, 4);
+        response_len = 6;
+    }
+    else if (response_code == GATT_GHS_RACP_RESPONSE_SUCCESS &&
+               service->racp_opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS) {
+        if (operand_len != 4) return 0;
+
+        response[0] = GATT_GHS_RACP_REPORT_STORED_RECORDS_RESPONSE;
+        response[1] = 0;
+        memcpy(response + 2, operand, 4);
+        response_len = 6;
+    }
+    else {
+        if (operand_len || response_code == 0 || response_code > 10)
+            return 0;
+
+        response[0] = GATT_GHS_RACP_RESPONSE_CODE;
+        response[1] = 0;
+        response[2] = service->racp_opcode;
+        response[3] = response_code;
+        response_len = 4;
+    }
+    int queued = gatt_queue_event(server, service->racp_handle,
+        response, response_len, 1);
+
+    if (queued > 0)
+        service->racp_pending = 0;
+    return queued;
+}
+
+// Application facing
+// Queue an encoded live Health Observation after the Control Point starts it.
+static inline int gatt_generic_health_sensor_service_continue_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service
+);
+
+static inline int gatt_generic_health_sensor_service_indicate_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server ||
+        !service->live_observations_started ||
+        !value || !len || len > sizeof(service->observation_data) ||
+        service->observation_len || service->observation_segment_queued ||
+        server->indication_pending
+    ) return 0;
+
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->live_observations_handle)
+            return 0;
+
+    memcpy(service->observation_data, value, len);
+    service->observation_len = len;
+    service->observation_offset = 0;
+
+    if (gatt_generic_health_sensor_service_continue_observation(server,
+            service)
+    ) return 1;
+
+    service->observation_len = 0;
+    service->observation_offset = 0;
+    return 0;
+}
+
+// Application facing
+// Queue the next observation segment. Retry after indication confirmation if
+// blocked by another queued event; observation_len reaches zero once all
+// segments have been queued.
+static inline int gatt_generic_health_sensor_service_continue_observation(
+    ble_gatt_server *server,
+    ble_gatt_generic_health_sensor_service *service
+) {
+    if (!server || !service || service->server != server ||
+        !service->live_observations_started || !service->observation_len
+    ) return 0;
+
+    if (server->indication_pending)
+        return 0;
+
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->live_observations_handle &&
+            server->events[i].indication
+        ) return 0;
+
+    service->observation_segment_queued = 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->live_observations_handle);
+
+    if (!attribute || !attribute->value_capacity)
+        return 0;
+
+    uint16_t segment_limit = (uint16_t)(server->mtu - 4);
+
+    if (segment_limit > attribute->value_capacity - 1)
+        segment_limit = (uint16_t)(attribute->value_capacity - 1);
+
+    if (!segment_limit) return 0;
+
+    uint16_t remaining = (uint16_t)(service->observation_len -
+                                    service->observation_offset);
+    uint16_t segment_len = remaining < segment_limit ? remaining :
+                                                        segment_limit;
+    uint8_t first = service->observation_offset == 0;
+    uint8_t last = segment_len == remaining;
+    uint8_t segment[BLE_GATT_ATT_VALUE_MAX];
+    segment[0] = (uint8_t)((service->rolling_segment_counter & 0x3f) << 2) |
+        (uint8_t)(first ? 1 : 0) | (uint8_t)(last ? 2 : 0);
+    memcpy(segment + 1,
+           service->observation_data + service->observation_offset,
+           segment_len);
+
+    if (gatt_queue_event(server, service->live_observations_handle,
+            segment, (uint16_t)(segment_len + 1), 1) != 1
+    ) return 0;
+
+    service->observation_offset = (uint16_t)(service->observation_offset +
+                                             segment_len);
+    service->rolling_segment_counter = (uint8_t)(
+        (service->rolling_segment_counter + 1) & 0x3f);
+
+    if (last) {
+        service->observation_len = 0;
+        service->observation_offset = 0;
+    }
+    else {
+        service->observation_segment_queued = 1;
+    }
+    return 1;
+}
 #endif
