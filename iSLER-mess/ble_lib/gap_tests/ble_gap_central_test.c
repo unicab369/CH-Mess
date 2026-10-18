@@ -408,7 +408,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     static const uint8_t advertising_data[] = {2, 0x01, 0x06};
     static const uint8_t peer_address[6] = {0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6};
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     memset(&gap_central, 0, sizeof(gap_central));
     gap_scanner.scanning = 0;
@@ -576,10 +576,10 @@ static void test_private_rotation(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
     gap_conn_cancel();
-    gap_conn_slot_set_active(gap_conn_slot, 1);
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) != 0);
     assert(gap_privacy_set(NULL, 0));
@@ -1167,7 +1167,7 @@ static void test_periodic_advertising_with_central_connection(void) {
     static const uint8_t advertising_data[] = {2, 0x01, 0x06};
     static const uint8_t periodic_data[] = {2, 0x09, 'C'};
     memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     now_ms = 860;
     fake_radio_ticks = 5000000;
@@ -1183,7 +1183,7 @@ static void test_periodic_advertising_with_central_connection(void) {
 
     // A PAwR advertiser that accepted a connection becomes Central while its
     // periodic advertising state remains active. Transmit in radio gaps.
-    gap_conn_slot_set_active(gap_conn_slot, 1);
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->is_central = 1;
     conn->procedures.params.interval = 24;
     conn->link.last_rx_ms = now_ms;
@@ -1206,7 +1206,7 @@ static void test_periodic_advertising_with_central_connection(void) {
     assert(captured_extended_count == 1 && set->periodic_event_counter == 2 &&
            set->periodic_next_event_ticks == next_periodic + interval_ticks);
 
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     assert(gap_periodic_adv_stop(0));
     assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
@@ -1347,7 +1347,7 @@ static void test_pawr_advertiser_connection(void) {
     static const uint8_t periodic_data[] = {2, 0x09, 'A'};
     static const uint8_t peer_address[6] = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36};
     memset(gap_ext_adv, 0, sizeof(gap_ext_adv));
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     memset(&gap_central, 0, sizeof(gap_central));
     gap_scanner.scanning = 0;
@@ -1413,7 +1413,7 @@ static void test_pawr_advertiser_connection(void) {
     assert(conn->link.next_ticks ==
            gap_ext_pawr.connect.request_end_ticks + HW_TICKS_FROM_US(2500));
 
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     assert(gap_periodic_adv_stop(0));
     assert(gap_ext_adv_stop(0));
     fake_radio_tick_autoincrement = 0;
@@ -1426,7 +1426,7 @@ static void test_pawr_connection_accept(void) {
     static const uint8_t local_address[6] = {1, 2, 3, 4, 5, 6};
     uint8_t request[36] = {0};
     gap_sync_context *sync = &gap_syncs[0];
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     memset(&gap_central, 0, sizeof(gap_central));
     memset(gap_syncs, 0, sizeof(gap_syncs));
@@ -1521,7 +1521,7 @@ static void test_pawr_observer_response(void) {
     gap_sync_context *sync = &gap_syncs[0];
     gap_periodic_report report;
     gap_scan_stop();
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     gap_central.active = 0;
     gap_scan.active_pending = 0;
@@ -1902,14 +1902,14 @@ static void test_periodic_sync_connection_arbitration(void) {
     fake_radio_ticks = 4000000;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     memset(gap_syncs, 0, sizeof(gap_syncs));
     gap_rx_armed = gap_scan.active_pending = 0;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
     gap_scan.applied_generation = gap_scanner.generation;
-    gap_conn_slot_set_active(gap_conn_slot, 1);
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->procedures.params.interval = 24;
     conn->procedures.data_capacity = 27;
     conn->link.last_rx_ms = now_ms;
@@ -1951,7 +1951,7 @@ static void test_periodic_sync_connection_arbitration(void) {
            sync->missed_events == 2 &&
            sync->event_counter == 5);
 
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     memset(conn, 0, sizeof(*conn));
     memset(gap_syncs, 0, sizeof(gap_syncs));
     fake_radio_ticks_enabled = 0;

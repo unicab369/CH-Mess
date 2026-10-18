@@ -227,20 +227,6 @@ static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
-#if GAP_SMP_SUPPORT > 0
-typedef struct {
-    uint8_t ltk[16], rand[8], ediv[2];
-} gap_bond_key;
-
-typedef struct {
-    uint8_t key[16];
-    uint8_t present;
-} bond_opt_key;
-
-typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
-                                       uint32_t value);
-#endif
-
 // GAP state and connection data types.
 typedef struct {
     uint8_t scanning, active, generation;
@@ -267,6 +253,15 @@ typedef struct {
 } gap_address;
 
 #if GAP_SMP_SUPPORT > 0
+typedef struct {
+    uint8_t ltk[16], rand[8], ediv[2];
+} gap_bond_key;
+
+typedef struct {
+    uint8_t key[16];
+    uint8_t present;
+} bond_opt_key;
+
 // One peer's persistent LE bond. Addresses and key identifiers use Bluetooth
 // little-endian byte order; unused keys and reserved bytes are zero.
 typedef struct {
@@ -278,6 +273,9 @@ typedef struct {
     uint8_t key_size, authenticated;
     uint8_t has_peripheral_ltk;
 } gap_bond;
+
+typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
+                                       uint32_t value);
 #endif
 
 // GAP protocol and procedure enum values.
@@ -343,7 +341,6 @@ typedef struct {
     uint16_t generation;
 } gap_conn_handle;
 
-
 typedef struct {
     volatile uint16_t phase;
     uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
@@ -353,8 +350,6 @@ typedef struct {
     uint64_t tx_counter, rx_counter;
     uint32_t started_ms;
 } gap_security_context;
-
-
 
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
@@ -382,8 +377,6 @@ static struct {
     uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
 } gap_adv;
 
-
-
 static gap_scanner_state gap_scanner = {
     .interval_ms = 20,
     .window_ms = 20,
@@ -399,11 +392,6 @@ static struct {
     volatile uint8_t ready;
     volatile int8_t rssi;
 } gap_rx;
-
-
-
-
-
 
 typedef struct {
 #if GAP_SMP_SUPPORT > 0
@@ -542,16 +530,6 @@ const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
-
-// Internal slot allocation and activation helpers.
-static inline void gap_conn_slot_set_active(uint8_t slot, uint8_t active) {
-    uint8_t bit = GAP_CONN_SLOT_BIT(slot);
-    if (active)
-        gap_conn_slot_mask |= bit;
-    else
-        gap_conn_slot_mask &= (uint8_t)~bit;
-}
-
 static int gap_conn_free_slot(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
@@ -608,7 +586,6 @@ static inline int gap_conn_current(gap_conn_handle *handle) {
 static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 // Per-slot counters invalidate security work after a link ends or is replaced.
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
-
 
 // Connection request validation and byte/security helpers.
 // Validate a data-channel access address against the Bluetooth Core rules.
@@ -1243,7 +1220,6 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     return 1;
 }
 
-
 // Local address API.
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
@@ -1367,11 +1343,11 @@ static int gap_conn_accept(
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
-    gap_conn_slot_set_active(gap_conn_slot, 1);
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
 #if GAP_SMP_SUPPORT > 0
 
     if (!smp_link_init()) {
-        gap_conn_slot_set_active(gap_conn_slot, 0);
+        gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
         return 0;
     }
 
@@ -1383,7 +1359,6 @@ static int gap_conn_accept(
 #endif
     return 1;
 }
-
 
 #include "ble_gap_connection_poll.h"
 

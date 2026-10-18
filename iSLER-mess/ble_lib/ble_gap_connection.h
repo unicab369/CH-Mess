@@ -151,7 +151,7 @@ static void gap_conn_end(void) {
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->link_state, 0, sizeof(conn->link_state));
-    gap_conn_slot_set_active(gap_conn_slot, 0);
+    gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->is_central = 0;
     memset(&conn->pending, 0, sizeof(conn->pending));
     memset(&conn->features, 0, sizeof(conn->features));
