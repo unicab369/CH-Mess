@@ -1444,6 +1444,10 @@ typedef struct ble_gatt_ots_service {
     uint8_t request_pending, request_taken, request_opcode;
     uint8_t active_control_point;
     uint8_t current_object_valid;
+    uint8_t current_object_id[6], current_object_id_valid;
+    uint8_t request_object_id[6], request_object_id_valid;
+    uint8_t request_size[8], request_modified[7];
+    uint8_t request_metadata_valid;
     uint16_t request_parameter_len;
     uint8_t request_parameters[BLE_GATT_ATT_VALUE_MAX - 1];
     uint8_t oacp_prepared[21], oacp_prepared_coverage[21];
@@ -1465,6 +1469,38 @@ static uint8_t gatt_ots_oacp_write(
     uint16_t len, uint8_t command
 );
 static void gatt_ots_oacp_execute(void *context, uint8_t commit);
+static inline int gatt_ots_object_changed(
+    ble_gatt_ots_service *service, uint8_t flags,
+    const uint8_t object_id[6]
+);
+
+static inline int gatt_ots_current_id(
+    ble_gatt_ots_service *service, uint8_t object_id[6]
+) {
+    if (service->current_object_id_valid) {
+        memcpy(object_id, service->current_object_id, 6);
+        return (object_id[0] | object_id[1] | object_id[2] |
+                object_id[3] | object_id[4] | object_id[5]) != 0;
+    }
+    ble_gatt_attribute *attribute = service->object_id_handle ?
+        gatt_server_find(service->server, service->object_id_handle) : NULL;
+    const uint8_t *value = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (value && attribute->value_len == 6) {
+        memcpy(object_id, value, 6);
+        return (object_id[0] | object_id[1] | object_id[2] |
+                object_id[3] | object_id[4] | object_id[5]) != 0;
+    }
+    return 0;
+}
+
+static inline int gatt_ots_change_enabled(
+    ble_gatt_ots_service *service
+) {
+    ble_gatt_attribute *cccd = gatt_server_find(service->server,
+        service->object_changed_cccd_handle);
+    return service->object_changed_handle && cccd && (cccd->cccd & 2);
+}
 
 static inline uint8_t gatt_ots_oacp_feature_bit(uint8_t opcode) {
     switch (opcode) {
@@ -1723,6 +1759,8 @@ static inline uint8_t gatt_ots_select_list_object(
         service->server, attribute) : NULL;
     if (properties && attribute->value_len == 4)
         service->objects[index].properties = gatt_ots_read_u32(properties);
+    memcpy(service->current_object_id, service->objects[index].id, 6);
+    service->current_object_id_valid = 1;
     service->current_object_index = index;
     service->current_object_valid = 1;
     return gatt_ots_olcp_response(service, service->olcp_opcode, 0x01);
@@ -2030,6 +2068,27 @@ static uint8_t gatt_ots_oacp_write(
         }
     }
 
+    service->request_object_id_valid = 0;
+    if (opcode != 0x01)
+        service->request_object_id_valid = (uint8_t)gatt_ots_current_id(
+            service, service->request_object_id);
+    service->request_metadata_valid = 0;
+    if (opcode == 0x06) {
+        ble_gatt_attribute *size = gatt_server_find(service->server,
+            service->object_size_handle);
+        ble_gatt_attribute *modified = gatt_server_find(service->server,
+            service->object_last_modified_handle);
+        const uint8_t *size_value = size ? gatt_attribute_value(
+            service->server, size) : NULL;
+        const uint8_t *modified_value = modified ? gatt_attribute_value(
+            service->server, modified) : NULL;
+        if (size_value && size->value_len == 8 && modified_value &&
+            modified->value_len == 7) {
+            memcpy(service->request_size, size_value, 8);
+            memcpy(service->request_modified, modified_value, 7);
+            service->request_metadata_valid = 1;
+        }
+    }
     service->request_opcode = opcode;
     service->request_parameter_len = (uint16_t)(len - 1);
     if (len > 1)
@@ -2057,7 +2116,8 @@ static inline int gatt_ots_take_oacp_request(
     return 1;
 }
 
-// Complete an accepted OACP request with a standard response indication.
+// Complete an accepted OACP request with its response and any required
+// Object Changed indication. Create success needs updated metadata first.
 // OTS means Object Transfer Service.
 static inline int gatt_ots_oacp_complete(
     ble_gatt_ots_service *service, uint8_t result_code,
@@ -2078,18 +2138,58 @@ static inline int gatt_ots_oacp_complete(
     if (response_parameter_len)
         memcpy(response + 3, response_parameter, response_parameter_len);
     uint8_t opcode = service->request_opcode;
+    uint8_t change_flags = 0;
+    if (result_code == 0x01 && opcode == 0x01)
+        change_flags = GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_CREATED;
+    else if (result_code == 0x01 && opcode == 0x02)
+        change_flags = GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_DELETED;
+    else if (result_code == 0x01 && opcode == 0x06) {
+        change_flags = GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_CONTENTS;
+        ble_gatt_attribute *size = gatt_server_find(service->server,
+            service->object_size_handle);
+        ble_gatt_attribute *modified = gatt_server_find(service->server,
+            service->object_last_modified_handle);
+        const uint8_t *size_value = size ? gatt_attribute_value(
+            service->server, size) : NULL;
+        const uint8_t *modified_value = modified ? gatt_attribute_value(
+            service->server, modified) : NULL;
+        if (service->request_metadata_valid &&
+            ((size_value && size->value_len == 8 &&
+              memcmp(size_value, service->request_size, 8)) ||
+             (modified_value && modified->value_len == 7 &&
+              memcmp(modified_value, service->request_modified, 7))))
+            change_flags |= GATT_OTS_CHANGE_METADATA;
+    }
+    uint8_t send_change = change_flags &&
+        service->request_object_id_valid &&
+        gatt_ots_change_enabled(service);
+    uint16_t response_len = (uint16_t)(response_parameter_len + 3);
+    if (send_change && (BLE_GATT_SERVER_EVENT_QUEUE_SIZE < 2 ||
+        service->server->event_count > BLE_GATT_SERVER_EVENT_QUEUE_SIZE - 2 ||
+        BLE_GATT_SERVER_EVENT_BYTES < response_len + 7 ||
+        service->server->event_used >
+            BLE_GATT_SERVER_EVENT_BYTES - response_len - 7)) return 0;
     if (!gatt_queue_event(service->server,
             service->action_control_point_handle, response,
-            (uint16_t)(response_parameter_len + 3), 1)) return 0;
+            response_len, 1)) return 0;
+    if (send_change)
+        (void)gatt_ots_object_changed(service, change_flags,
+                                      service->request_object_id);
     service->request_pending = 0;
     service->request_taken = 0;
     service->active_control_point = 0;
     service->request_opcode = 0;
     service->request_parameter_len = 0;
+    service->request_object_id_valid = 0;
+    service->request_metadata_valid = 0;
+    memset(service->request_object_id, 0,
+           sizeof(service->request_object_id));
     if (result_code == 0x01 && opcode == 0x01)
         service->current_object_valid = 1;
-    else if (result_code == 0x01 && opcode == 0x02)
+    else if (result_code == 0x01 && opcode == 0x02) {
         service->current_object_valid = 0;
+        service->current_object_id_valid = 0;
+    }
     return 1;
 }
 
@@ -2460,6 +2560,10 @@ static inline int gatt_ots_add_multi_type_full(
     service->object_changed_cccd_handle = cccds[13];
     service->server = server;
     service->current_object_valid = 1;
+    memcpy(service->current_object_id, object_id, 6);
+    service->current_object_id_valid = (uint8_t)(
+        object_id[0] | object_id[1] | object_id[2] |
+        object_id[3] | object_id[4] | object_id[5]);
     memcpy(service->features, features, sizeof(service->features));
     if (!gatt_ots_bind_oacp_long_write(server, service,
             service->action_control_point_handle)) return 0;
@@ -2553,6 +2657,9 @@ static inline int gatt_ots_set_objects(
     service->object_list_context = context;
     service->object_list_configured = 1;
     service->current_object_valid = 0;
+    service->current_object_id_valid = 0;
+    memset(service->current_object_id, 0,
+           sizeof(service->current_object_id));
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->object_id_handle);
@@ -2561,6 +2668,8 @@ static inline int gatt_ots_set_objects(
     if (id && attribute->value_len == 6) {
         for (uint16_t i = 0; i < count; i++)
             if (gatt_ots_id_equal(id, objects[i].id)) {
+                memcpy(service->current_object_id, objects[i].id, 6);
+                service->current_object_id_valid = 1;
                 service->current_object_index = i;
                 service->current_object_valid = 1;
                 break;
@@ -2570,8 +2679,9 @@ static inline int gatt_ots_set_objects(
 }
 
 // OTS means Object Transfer Service.
-// Queue one Object Changed indication. Set the client-source bit when another
-// client caused the change; creation/deletion cannot combine with other flags.
+// Queue an Object Changed indication for changes outside OACP completion.
+// Set the client-source bit when a client caused the change; creation and
+// deletion cannot combine with contents/metadata change flags.
 static inline int gatt_ots_object_changed(
     ble_gatt_ots_service *service, uint8_t flags,
     const uint8_t object_id[6]
@@ -2632,6 +2742,17 @@ static inline int gatt_ots_set_object_metadata(
             memset(stored[i] + lengths[i], 0,
                    attributes[i]->value_capacity - lengths[i]);
         attributes[i]->value_len = lengths[i];
+    }
+    if (object_id) {
+        memcpy(service->current_object_id, object_id, 6);
+        service->current_object_id_valid = (uint8_t)(
+            object_id[0] | object_id[1] | object_id[2] |
+            object_id[3] | object_id[4] | object_id[5]);
+        if (service->request_pending && service->request_opcode == 0x01) {
+            memcpy(service->request_object_id, object_id, 6);
+            service->request_object_id_valid =
+                service->current_object_id_valid;
+        }
     }
     service->current_object_valid = 1;
     return 1;

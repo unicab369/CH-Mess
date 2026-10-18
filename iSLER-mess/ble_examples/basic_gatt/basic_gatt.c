@@ -16,7 +16,6 @@ void gap_hw_radio_transmitted(void);
 #include "../../ble_lib/ble_gap.h"
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 #include "../../ble_lib/gatt_services/ble_gatt_services.h"
-#include "../../ble_lib/ble_gap_gatt.h"
 
 uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);

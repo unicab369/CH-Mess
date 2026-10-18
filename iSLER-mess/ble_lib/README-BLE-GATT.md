@@ -199,7 +199,13 @@ available through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
 Keep the table and its name pointers valid for the service lifetime. Configure
 each Object List Filter instance with `gatt_ots_set_list_filter()`.
 Queue Object Changed indications with `gatt_ots_object_changed()` and the
-standard change flags plus the affected nonzero Object ID.
+standard change flags plus the affected nonzero Object ID for changes outside
+OACP. Successful OACP Create, Delete, and Write completions automatically
+queue Created, Deleted, and Contents Changed indications when subscribed. For
+Create, call `gatt_ots_set_object_metadata()` with the new object ID before
+`gatt_ots_oacp_complete()` so the indication identifies the created object.
+For single-object OTS, initialize the current ID through the same setter so
+automatic Delete and Write indications can identify the object.
 After create/delete operations, update the table to keep navigation and counts
 current. The multi-object `..._type_full()` builder also accepts initial date
 values and the real-time-clock capability.
@@ -510,7 +516,7 @@ the Bluetooth specification; the remaining standard layouts are tracked in
 
 ## GAP connection integration
 
-`ble_gap_gatt.h` polls the fixed ATT bearer for each configured GAP link. Give
+`ble_gatt.h` provides `ble_gap_gatt_poll()` to poll the fixed ATT bearer for each configured GAP link. Give
 each connection slot its own server, transport, client (when used), and service
 state. Register services before binding because transport initialization seals
 the server database. This adapter reads GAP fragments directly, so do not also
@@ -518,7 +524,6 @@ call `ble_gap_l2cap_poll()` for the same links.
 
 ```c
 #include "gatt_services/ble_gatt_services.h"
-#include "ble_gap_gatt.h"
 
 static ble_gap_gatt gatt_links;
 static ble_gatt_server servers[GAP_CONNECTION_COUNT];
