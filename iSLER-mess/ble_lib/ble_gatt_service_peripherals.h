@@ -1,8 +1,8 @@
 #ifndef BLE_GATT_SERVICE_PERIPHERALS_H
 #define BLE_GATT_SERVICE_PERIPHERALS_H
 
-// HID, HTTP Proxy, Object Transfer, Automation IO, Indoor Positioning,
-// Location and Navigation, and ESL services.
+// Contents: Automation IO, Location and Navigation, Indoor Positioning, HID,
+// HTTP Proxy, Object Transfer, and Electronic Shelf Label.
 // Automation IO Service
 typedef struct {
     uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
@@ -10,7 +10,7 @@ typedef struct {
     uint16_t channel_handles[8], channel_cccd_handles[8];
 } ble_gatt_aio_service;
 
-// Application facing
+// Application-facing API
 // Add Automation IO Digital and Analog characteristics, optionally including
 // an Aggregate characteristic whose value lists the channel value handles.
 // AIO means Automation IO Service.
@@ -123,7 +123,7 @@ typedef struct {
     uint8_t control_point_pending_opcode, control_point_request_count;
 } ble_gatt_lns_service;
 
-// Internal
+// Internal helper
 static inline int gatt_lns_feature32(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
@@ -144,7 +144,7 @@ static inline int gatt_lns_feature32(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Reset connection-scoped state when a new peer connection is established.
 // LNS means Location and Navigation Service.
 static inline int gatt_lns_reset_connection(
@@ -159,14 +159,14 @@ static inline int gatt_lns_reset_connection(
     return 1;
 }
 
-// Internal
+// Internal helper
 static inline void gatt_lns_put_le24(uint8_t *out, uint32_t value) {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
     out[2] = (uint8_t)(value >> 16);
 }
 
-// Internal
+// Internal helper
 static inline void gatt_lns_put_le32(uint8_t *out, uint32_t value) {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
@@ -174,7 +174,7 @@ static inline void gatt_lns_put_le32(uint8_t *out, uint32_t value) {
     out[3] = (uint8_t)(value >> 24);
 }
 
-// Application facing
+// Application-facing API
 // Queue one Location and Speed notification. Fields are supplied in the
 // characteristic's fixed wire units; utc_time is the seven-byte Date Time
 // value when flag 6 is present.
@@ -258,7 +258,7 @@ static inline int gatt_lns_notify_location(
                                    value, index, 0);
 }
 
-// Application facing
+// Application-facing API
 // Queue one Navigation notification using the standard field order.
 // LNS means Location and Navigation Service.
 static inline int gatt_lns_notify_nav(
@@ -315,7 +315,7 @@ static inline int gatt_lns_notify_nav(
                                    value, index, 0);
 }
 
-// Internal
+// Internal helper
 static inline int gatt_lns_control_busy(
     const ble_gatt_server *server, uint16_t handle
 ) {
@@ -330,7 +330,7 @@ static inline int gatt_lns_control_busy(
     return 0;
 }
 
-// Internal
+// Internal helper
 static inline uint8_t gatt_lns_control_response(
     ble_gatt_server *server, uint16_t handle, uint8_t request_opcode,
     uint8_t response_code, const uint8_t *parameters, uint16_t parameter_len
@@ -353,7 +353,7 @@ static inline uint8_t gatt_lns_control_response(
         ATT_ERR_INSUFFICIENT_RESOURCES;
 }
 
-// Internal
+// Internal helper
 static inline uint8_t gatt_lns_control_point_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -486,7 +486,7 @@ static inline uint8_t gatt_lns_control_point_write(
     return error;
 }
 
-// Application facing
+// Application-facing API
 // Complete an asynchronous LN Control Point route operation.
 // LNS means Location and Navigation Service.
 static inline int gatt_lns_complete_control(
@@ -520,13 +520,13 @@ static inline int gatt_lns_complete_control(
     return 1;
 }
 
-// Internal
+// Internal helper
 static inline uint8_t gatt_lns_control_point_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
 
-// Application facing
+// Application-facing API
 // LNS means Location and Navigation Service.
 static inline int gatt_lns_add(
     ble_gatt_server *server, ble_gatt_lns_service *service,
@@ -958,7 +958,7 @@ typedef struct {
     uint8_t report_count;
 } ble_gatt_hid_service;
 
-// Application facing
+// Application-facing API
 // Add the HID core characteristics and up to eight Report characteristics.
 // Report type is 1 (input), 2 (output), or 3 (feature); report values and the
 // HID Report Map are copied into the server database.
@@ -1037,7 +1037,7 @@ typedef struct {
     uint16_t operation_mode_cccd_handle;
 } ble_gatt_hid_iso_service;
 
-// Application facing
+// Application-facing API
 // Add HID ISO Properties and LE HID Operation Mode. Properties are the
 // caller-encoded Properties value; the application
 // implements mode switching and ISO report transport.
@@ -1192,7 +1192,7 @@ static uint8_t gatt_http_proxy_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the HTTP Proxy attributes and validate/capture HTTP request opcodes.
 // HPS means HTTP Proxy Service.
 static inline int gatt_hps_add(
@@ -1753,7 +1753,7 @@ static inline int gatt_ots_olcp_complete(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Add the single-object OTS layout. Multi-object servers also need Object ID,
 // OLCP, and the Object List Filter characteristics. The application handles
 // OACP procedures and the separate L2CAP object-transfer channel.
@@ -1879,7 +1879,7 @@ static inline int gatt_ots_add_secondary(
         object_size, object_properties);
 }
 
-// Application facing
+// Application-facing API
 // Add the multi-object OTS attributes to the single-object OTS layout. The
 // caller owns the Object List Filter state and implements OACP/OLCP procedures
 // and object transfers.
@@ -2131,7 +2131,7 @@ typedef struct {
     uint16_t handles[9], cccd_handles[9];
 } ble_gatt_esl_service;
 
-// Application facing
+// Application-facing API
 // Add the ESL GATT database. The nine values are ordered as Address, AP Sync
 // Key Material, Response Key Material, Current Absolute Time, Display Info,
 // Image Info, Sensor Info, LED Info, and Control Point. The application
@@ -2196,6 +2196,5 @@ static inline int gatt_esl_add(
 
     return 1;
 }
-
 
 #endif

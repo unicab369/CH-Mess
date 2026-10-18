@@ -159,7 +159,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
 }
 
 // Add a primary service with included services and per-characteristic handlers.
-static inline int gatt_sig_service_add_with_includes_and_handlers(
+static inline int gatt_sig_service_add_full(
     ble_gatt_server *server, uint16_t service_uuid16,
     const uint16_t *included_service_handles, uint8_t include_count,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
@@ -180,7 +180,7 @@ static inline int gatt_sig_service_add_with_handlers(
     uint16_t *service_handle, uint16_t *value_handles,
     uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
 ) {
-    return gatt_sig_service_add_with_includes_and_handlers(server,
+    return gatt_sig_service_add_full(server,
         service_uuid16, NULL, 0, characteristics, count, service_handle,
         value_handles, cccd_handles, handlers);
 }

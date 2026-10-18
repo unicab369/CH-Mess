@@ -56,23 +56,23 @@ IP Support service, `gatt_tds_add()` for the optional
 TDS Control Point, which captures Activate Transport requests and indicates
 completion through `gatt_tds_complete()`,
 `gatt_ecs_add()` for encrypted Emergency ID/Text, and `gatt_elapsed_add()` for Current Elapsed
-Time. `gatt_microphone_control_service_add()` registers encrypted MICS Mute,
-and `gatt_volume_control_service_add()` registers encrypted VCS state, control
+Time. `gatt_mics_add()` registers encrypted MICS Mute,
+and `gatt_vcs_add()` registers encrypted VCS state, control
 point, and flags. Except for the MICS and volume-control handlers described
 below, these builders add the database but leave service-specific control
 point behavior and notification policy to the application. MICS rejects
 client writes of Disabled and returns Mute Disabled when writes arrive while
 that state is active; local microphone changes use
-`gatt_microphone_control_service_set_mute()`. Register AICS instances first,
-then use `gatt_microphone_control_service_add_with_aics()` to include them. VCS
+`gatt_mics_set_mute()`. Register AICS instances first,
+then use `gatt_mics_add_aics()` to include them. VCS
 implements all seven Volume Control Point opcodes, validates Change_Counter,
 uses a step size of one, and updates/notifies Volume State; local changes use
-`gatt_volume_control_service_set_state()`.
-`gatt_volume_offset_control_service_add()` registers an encrypted VOCS
+`gatt_vcs_set_state()`.
+`gatt_vocs_add()` registers an encrypted VOCS
 secondary service. Add it before its parent and include it from the parent. Its
 Set Volume Offset procedure validates Change_Counter and the signed offset
 range, then updates and notifies Volume Offset State. Local changes use
-`gatt_volume_offset_control_service_set_offset()`.
+`gatt_vocs_set_offset()`.
 `gatt_rcs_add()` registers a base RCS with no
 optional features. Its five-byte RC Feature value must contain CRC `0xffff`
 and three zero feature bytes.
@@ -81,12 +81,12 @@ for a basic device that supports one epoch and does not enable optional time
 logging. Its DTCP handler validates Propose/Force Time Update requests and
 stores the pending request in the service state; the application applies or
 rejects the update, then calls
-`gatt_dts_complete_control_point()` to send the indication.
+`gatt_dts_complete()` to send the indication.
 Other DTCP procedures are reported as unsupported by this base builder.
 `gatt_csis_add()` registers CSIS SIRK and
 optional size, lock, and rank characteristics with encrypted permissions. The
 application implements SIRK protection and the lock protocol.
-`gatt_audio_input_control_service_add()` registers the encrypted AICS secondary
+`gatt_aics_add()` registers the encrypted AICS secondary
 service. Register it before its parent, then place the Include declaration in
 the parent before the parent's characteristics. It validates all five control
 point procedures, maintains the state Change_Counter, and notifies state
@@ -94,7 +94,7 @@ changes. Local state, status, and description changes use its corresponding
 `set_state()`, `set_status()`, and `set_description()` helpers.
 `gatt_ctes_add()` registers the required CTE Enable
 value and, when requested, the five advertising-channel controls.
-`gatt_ranging_add()` registers mandatory RAS characteristics and adds
+`gatt_ras_add()` registers mandatory RAS characteristics and adds
 Real-time Ranging Data when feature bit 0 is set. The application supplies the
 Channel Sounding integration and implements RAS procedures and data transfer.
 `gatt_ghs_add()` registers the live-observation GHS
@@ -112,10 +112,10 @@ confirmation until `observation_len` is zero.
 `gatt_acs_add()` registers the mandatory ACS
 characteristics and binds segmented Data In and Control Point reassembly.
 Retrieve complete payloads with `gatt_acs_take_data_in()`
-and `gatt_acs_take_control_point()`. Queue segmented
+and `gatt_acs_take_cp()`. Queue segmented
 Data Out notifications/indications with the corresponding helpers, and complete
 Control Point requests with
-`gatt_acs_complete_control_point()`. The application
+`gatt_acs_complete_cp()`. The application
 still implements ACS cryptography, opcode policy, protected-resource access,
 and updates the Status value through `gatt_acs_set_status()`.
 `gatt_pams_add()` registers the mandatory PAMS
@@ -210,9 +210,9 @@ IDD Command Control Point/Data and IDD Record Access Control Point/History Data
 are included as capacity-paired options. Their notification-only values use
 event authorization permissions; the application still implements the command
 and history protocols.
-`gatt_media_control_service_add()` registers mandatory MCS or GMCS metadata
+`gatt_mcs_add()` registers mandatory MCS or GMCS metadata
 from initial values. Set `generic_service` for GMCS, which also requires Media
-Player Name notifications. Use `gatt_media_control_service_add_full()` to add
+Player Name notifications. Use `gatt_mcs_add_full()` to add
 optional playback/order values, the paired Media Control Point and Supported
 Opcodes, OTS-backed Object IDs, Icon URL, and Search Control Point/Results.
 Register OTS first as a secondary service with
@@ -222,15 +222,15 @@ in the MCS optional config; the builder inserts the Include declaration. The
 builder validates feature dependencies, Object ID sizes, supported opcode and
 playing-order bitfields, and search request framing. Control Point and Search
 requests are captured in service state for the application to perform and
-complete with `gatt_media_control_service_control_point_complete()` and
-`gatt_media_control_service_search_complete()`. Writable Object ID requests
+complete with `gatt_mcs_cp_complete()` and
+`gatt_mcs_search_complete()`. Writable Object ID requests
 are captured in `object_id_write_index` and `object_id_write_value`; finish
-their player action with `gatt_media_control_service_object_id_write_complete()`.
+their player action with `gatt_mcs_object_write_done()`.
 Set and notify populated
-Search Results with `gatt_media_control_service_set_search_results_object_id()`.
+Search Results with `gatt_mcs_set_results_id()`.
 The app handles the media player actions and OTS object storage; notify changed
-MCS values with `gatt_media_control_service_notify_optional()` and update
-notified Object IDs with `gatt_media_control_service_notify_object_id()`.
+MCS values with `gatt_mcs_notify_value()` and update
+notified Object IDs with `gatt_mcs_notify_object()`.
 `gatt_tbs_add()` registers the mandatory TBS/GTBS
 characteristics and caller-selected optional signal-strength, target-URI, and
 friendly-name characteristics with encrypted permissions. Its config selects
@@ -262,8 +262,8 @@ Additional service database builders are available:
   implement Alert Level reads and validated writes. The service state exposes
   the latest level to the application; Immediate Alert also increments a
   request counter so repeated writes can trigger repeated device actions.
-- `gatt_tx_power_add()` registers the signed Tx Power Level;
-  `gatt_tx_power_set_level()` updates its readable database value.
+- `gatt_tx_add()` registers the signed Tx Power Level;
+  `gatt_tx_set_level()` updates its readable database value.
 - `gatt_cts_add()` registers Current Time and optionally
   Local Time Information and Reference Time Information. The Current Time
   value supports notifications; `gatt_cts_notify()` updates
@@ -335,7 +335,7 @@ Additional service builders include:
 - `gatt_sps_add()` for Scan Interval Window and Scan
   Refresh. The Scan Interval Window handler validates the Bluetooth ranges
   and updates the service state; the application applies it to its scanner.
-  Call `gatt_sps_notify_refresh()` when the client should
+  Call `gatt_sps_refresh()` when the client should
   refresh its scan parameters.
 - `gatt_csc_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.

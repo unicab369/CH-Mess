@@ -1,7 +1,8 @@
 #ifndef BLE_GATT_SERVICE_USER_H
 #define BLE_GATT_SERVICE_USER_H
 
-// User data, voice, hearing, telephone, coordinated set, and emergency services.
+// Contents: User Data, Voice Assistant, Hearing Access, Telephone Bearer,
+// Coordinated Set Identification, and Emergency Configuration.
 // User Data Service
 typedef struct {
     uint16_t service_handle, database_change_handle;
@@ -28,8 +29,7 @@ enum {
     GATT_UDS_RESPONSE_USER_NOT_AUTHORIZED = 5
 };
 
-
-// Internal
+// Internal helper
 static uint8_t gatt_user_data_database_change_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -58,7 +58,7 @@ static uint8_t gatt_user_data_database_change_write(
     return 0;
 }
 
-// Internal
+// Internal helper
 static uint8_t gatt_user_data_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -100,7 +100,7 @@ static uint8_t gatt_user_data_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // UDS means User Data Service.
 static inline int gatt_uds_add(
     ble_gatt_server *server, ble_gatt_uds_service *service,
@@ -164,7 +164,7 @@ static inline int gatt_uds_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Queue one Registered User indication segment. Increment the 6-bit segment
 // counter for each segment and wrap it from 63 back to 0.
 // UDS means User Data Service.
@@ -201,7 +201,7 @@ static inline int gatt_uds_indicate_user_segment(
         value, value_len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Update the Database Change Increment value and its readable database copy.
 // UDS means User Data Service.
 static inline int gatt_uds_set_db_change(
@@ -226,7 +226,7 @@ static inline int gatt_uds_set_db_change(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update Database Change Increment and queue its notification.
 // UDS means User Data Service.
 static inline int gatt_uds_notify_db_change(
@@ -246,7 +246,7 @@ static inline int gatt_uds_notify_db_change(
         value, sizeof(value), 0);
 }
 
-// Application facing
+// Application-facing API
 // Update the User Index value and its readable database copy.
 // UDS means User Data Service.
 static inline int gatt_uds_set_user_index(
@@ -268,7 +268,7 @@ static inline int gatt_uds_set_user_index(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Complete a User Control Point request with an indicated Response Code.
 // Response values are 1 through 5; successful registration includes the
 // assigned User Index as its one-byte response parameter.
@@ -313,7 +313,7 @@ typedef struct {
     uint8_t characteristic_count;
 } ble_gatt_vas_service;
 
-// Application facing
+// Application-facing API
 // Add the common VAS/Generic VAS characteristic database. The first four
 // values (name, UUID, service control point, session state) are required;
 // session flag, languages, and features are optional. The application handles
@@ -407,7 +407,7 @@ enum {
     GATT_HAS_ATT_ERR_OUT_OF_RANGE = 0xff
 };
 
-// Internal
+// Internal helper
 // HAP means Hearing Access Service.
 static inline int gatt_hap_features_valid(uint8_t features) {
     uint8_t type = features & 0x03;
@@ -429,7 +429,7 @@ static inline int gatt_hap_features_valid(uint8_t features) {
     return 1;
 }
 
-// Internal
+// Internal helper
 // HAP means Hearing Access Service.
 static inline uint8_t gatt_hap_control_point_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -500,7 +500,7 @@ static inline uint8_t gatt_hap_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the mandatory HAS Hearing Aid Features characteristic without preset
 // control support. `features` contains only the hearing-aid type bits.
 // HAP means Hearing Access Service.
@@ -526,7 +526,7 @@ static inline int gatt_hap_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Add HAS with preset control enabled. The application validates preset
 // requests, updates the active index when appropriate, then completes each
 // request with the encoded indication payload defined by HAS.
@@ -572,7 +572,7 @@ static inline int gatt_hap_add_with_preset_control(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Queue one encoded Preset Control Point response indication. Set is_last to
 // zero when more response records follow, as for a multi-record read request.
 // HAP means Hearing Access Service.
@@ -598,7 +598,7 @@ static inline int gatt_hap_control_point_indicate(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Queue a final response indication for the pending Preset Control Point
 // request.
 // HAP means Hearing Access Service.
@@ -610,7 +610,7 @@ static inline int gatt_hap_complete_control_point(
         response, response_len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Indicate an unsolicited Preset Changed operation. Preset changes require
 // Dynamic Presets support in the configured Hearing Aid Features value.
 // HAP means Hearing Access Service.
@@ -627,7 +627,7 @@ static inline int gatt_hap_indicate_preset_change(
         service->preset_control_point_handle, value, value_len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Update the one-octet Active Preset Index value in the GATT database.
 // HAP means Hearing Access Service.
 static inline int gatt_hap_set_active_preset(
@@ -648,7 +648,7 @@ static inline int gatt_hap_set_active_preset(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update Active Preset Index and queue its notification.
 // HAP means Hearing Access Service.
 static inline int gatt_hap_notify_active_preset(
@@ -890,7 +890,7 @@ static uint8_t gatt_tbs_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add mandatory and selected optional TBS/GTBS characteristics. Use
 // generic_service for GTBS.
 // The builder validates and captures Call Control Point requests; the
@@ -1191,7 +1191,7 @@ typedef struct {
     uint16_t member_rank_handle;
 } ble_gatt_csis_service;
 
-// Application facing
+// Application-facing API
 // Add CSIS with a 17-byte SIRK value and optional size, lock, and rank.
 // Encrypted access is required; the application implements lock arbitration,
 // timeout, persistence, SIRK encryption, and any resulting notifications.
@@ -1265,13 +1265,12 @@ static inline int gatt_csis_add(
     return 1;
 }
 
-
 // Emergency Configuration Service
 typedef struct {
     uint16_t service_handle, emergency_id_handle, emergency_text_handle;
 } ble_gatt_ecs_service;
 
-// Application facing
+// Application-facing API
 // Add the encrypted Emergency ID and optional encrypted Emergency Text.
 // ECS means Emergency Configuration Service.
 static inline int gatt_ecs_add(

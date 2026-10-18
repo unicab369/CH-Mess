@@ -1,11 +1,15 @@
 #ifndef BLE_GATT_SERVICE_AUDIO_H
 #define BLE_GATT_SERVICE_AUDIO_H
 
-// ASCS, PACS, BASS, TMAS, GMAS, and CAS are omitted because they require
-// LE Audio support.
+// Contents: Microphone/Input Control (MICS/AICS), Volume Control (VCS/VOCS),
+// and Media Control (MCS/GMCS).
+// Audio Stream Control, Published Audio Capabilities, Broadcast Audio Scan,
+// Telephony and Media Audio, Gaming Audio, and Common Audio services are
+// omitted because they require LE Audio support.
 // This header contains standalone GATT audio controls and related services.
 
 // Microphone and Input Control: MICS, AICS
+// MICS means Microphone Control Service.
 
 typedef struct {
     uint16_t service_handle, mute_handle, mute_cccd_handle;
@@ -16,7 +20,7 @@ typedef struct {
 enum { GATT_MICS_ATT_ERR_MUTE_DISABLED = 0x80 };
 
 // Internal: validate and apply a MICS Mute write, then notify subscribers.
-static uint8_t gatt_microphone_control_mute_write(
+static uint8_t gatt_mics_mute_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -54,10 +58,10 @@ static uint8_t gatt_microphone_control_mute_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add MICS with its encrypted Mute characteristic. Writes validate and update
 // the mute state and notify subscribed clients; local changes use the setter.
-static inline int gatt_microphone_control_service_add_with_aics(
+static inline int gatt_mics_add_aics(
     ble_gatt_server *server, ble_gatt_mics_service *service,
     uint8_t mute, const uint16_t *aics_service_handles, uint8_t aics_count
 ) {
@@ -86,11 +90,11 @@ static inline int gatt_microphone_control_service_add_with_aics(
         &service->mute, 1
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_microphone_control_mute_write, .context = service}
+        {.write = gatt_mics_mute_write, .context = service}
     };
     uint16_t values[1], cccds[1];
 
-    if (!gatt_sig_service_add_with_includes_and_handlers(server, 0x184d,
+    if (!gatt_sig_service_add_full(server, 0x184d,
             aics_service_handles, aics_count, &characteristic, 1,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
@@ -101,18 +105,18 @@ static inline int gatt_microphone_control_service_add_with_aics(
 }
 
 // Add standalone MICS without included AICS instances.
-static inline int gatt_microphone_control_service_add(
+static inline int gatt_mics_add(
     ble_gatt_server *server, ble_gatt_mics_service *service,
     uint8_t mute
 ) {
-    return gatt_microphone_control_service_add_with_aics(server, service,
+    return gatt_mics_add_aics(server, service,
                                                          mute, NULL, 0);
 }
 
 // Update MICS Mute after a local microphone-state change and notify clients
 // that enabled the characteristic's CCCD. Returns 1 when the value is set;
 // notification queueing can fail independently if the queue is full.
-static inline int gatt_microphone_control_service_set_mute(
+static inline int gatt_mics_set_mute(
     ble_gatt_server *server, ble_gatt_mics_service *service,
     uint8_t mute
 ) {
@@ -180,7 +184,7 @@ static void gatt_aics_commit_state(
                                   state, 4, 0);
 }
 
-static uint8_t gatt_aics_control_point_write(
+static uint8_t gatt_aics_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -239,7 +243,7 @@ static uint8_t gatt_aics_control_point_write(
     return 0;
 }
 
-static uint8_t gatt_aics_description_write(
+static uint8_t gatt_aics_desc_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -274,12 +278,13 @@ static uint8_t gatt_aics_description_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
+// AICS means Audio Input Control Service.
 // Add an AICS secondary service. Add it before its parent service, then add
 // its Include declaration to the parent before the parent's characteristics.
 // Its five control-point procedures validate Change_Counter, supported modes,
 // mute state, and gain bounds, then update and notify Audio Input State.
-static inline int gatt_audio_input_control_service_add(
+static inline int gatt_aics_add(
     ble_gatt_server *server, ble_gatt_aics_service *service,
     const uint8_t state[4], const uint8_t gain_properties[3],
     uint8_t input_type, uint8_t status, const uint8_t *description,
@@ -349,7 +354,7 @@ static inline int gatt_audio_input_control_service_add(
         gatt_add_characteristic(server, &control_uuid,
             BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
-            NULL, gatt_aics_control_point_write, service,
+            NULL, gatt_aics_cp_write, service,
             &declaration, &control_handle);
 
     if (added)
@@ -363,7 +368,7 @@ static inline int gatt_audio_input_control_service_add(
             BLE_GATT_PERM_READ_ENC |
                 (description_writable ? BLE_GATT_PERM_WRITE_ENC : 0),
             description, description_len, description_capacity,
-            NULL, description_writable ? gatt_aics_description_write : NULL,
+            NULL, description_writable ? gatt_aics_desc_write : NULL,
             description_writable ? service : NULL, &declaration,
             &description_handle);
 
@@ -397,7 +402,7 @@ static inline int gatt_audio_input_control_service_add(
 
 // Apply an application-owned gain, mute, or mode change and notify clients.
 // The Change_Counter advances once when any state field changes.
-static inline int gatt_audio_input_control_service_set_state(
+static inline int gatt_aics_set_state(
     ble_gatt_server *server, ble_gatt_aics_service *service,
     int8_t gain, uint8_t mute, uint8_t gain_mode
 ) {
@@ -413,7 +418,7 @@ static inline int gatt_audio_input_control_service_set_state(
 }
 
 // Update AICS Audio Input Status and notify clients when it changes.
-static inline int gatt_audio_input_control_service_set_status(
+static inline int gatt_aics_set_status(
     ble_gatt_server *server, ble_gatt_aics_service *service,
     uint8_t status
 ) {
@@ -435,7 +440,7 @@ static inline int gatt_audio_input_control_service_set_status(
 }
 
 // Update AICS Audio Input Description after an application-side change.
-static inline int gatt_audio_input_control_service_set_description(
+static inline int gatt_aics_set_desc(
     ble_gatt_server *server, ble_gatt_aics_service *service,
     const uint8_t *description, uint16_t len
 ) {
@@ -461,6 +466,7 @@ static inline int gatt_audio_input_control_service_set_description(
 }
 
 // Volume Control: VCS, VOCS
+// VCS means Volume Control Service; VOCS means Volume Offset Control Service.
 typedef struct {
     uint16_t service_handle, volume_state_handle, volume_state_cccd_handle;
     uint16_t control_point_handle, volume_flags_handle;
@@ -476,7 +482,7 @@ enum {
 };
 
 // Internal: commit a changed VCS state and send its required notification.
-static void gatt_volume_control_apply_state(
+static void gatt_vcs_apply_state(
     ble_gatt_vcs_service *service, uint8_t volume, uint8_t mute
 ) {
     if (!service || !service->server || mute > 1 ||
@@ -502,7 +508,7 @@ static void gatt_volume_control_apply_state(
 }
 
 // Internal: process the VCS Volume Control Point request and Change_Counter.
-static uint8_t gatt_volume_control_point_write(
+static uint8_t gatt_vcs_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -560,14 +566,14 @@ static uint8_t gatt_volume_control_point_write(
         mute = 1;
         break;
     }
-    gatt_volume_control_apply_state(service, volume, mute);
+    gatt_vcs_apply_state(service, volume, mute);
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add VCS state, control point, and flags. The control point validates all
 // seven opcodes and Change_Counter operands and applies a step size of one.
-static inline int gatt_volume_control_service_add(
+static inline int gatt_vcs_add(
     ble_gatt_server *server, ble_gatt_vcs_service *service,
     const uint8_t volume_state[3], uint8_t volume_flags,
     uint8_t volume_flags_changeable
@@ -592,7 +598,7 @@ static inline int gatt_volume_control_service_add(
             &service->volume_flags, 1}
     };
     ble_gatt_sig_handlers handlers[3] = {0};
-    handlers[1].write = gatt_volume_control_point_write;
+    handlers[1].write = gatt_vcs_cp_write;
     handlers[1].context = service;
     uint16_t values[3], cccds[3];
 
@@ -610,20 +616,20 @@ static inline int gatt_volume_control_service_add(
 
 // Update VCS state after a local audio change and notify subscribed clients.
 // The Change_Counter advances once only when Volume_Setting or Mute changes.
-static inline int gatt_volume_control_service_set_state(
+static inline int gatt_vcs_set_state(
     ble_gatt_server *server, ble_gatt_vcs_service *service,
     uint8_t volume, uint8_t mute
 ) {
     if (!server || !service || service->server != server || mute > 1)
         return 0;
 
-    gatt_volume_control_apply_state(service, volume, mute);
+    gatt_vcs_apply_state(service, volume, mute);
     return 1;
 }
 
 typedef struct {
     uint16_t service_handle, state_handle, state_cccd_handle;
-    uint16_t audio_location_handle, audio_location_cccd_handle;
+    uint16_t location_handle, location_cccd_handle;
     uint16_t control_point_handle, description_handle, description_cccd_handle;
     uint8_t state[3];
     ble_gatt_server *server;
@@ -635,14 +641,14 @@ enum {
     GATT_VOCS_ATT_ERR_VALUE_OUT_OF_RANGE = 0x82
 };
 
-static int16_t gatt_volume_offset_decode(const uint8_t value[2]) {
+static int16_t gatt_vocs_decode_offset(const uint8_t value[2]) {
     uint16_t raw = ble_get_le16(value);
     int32_t signed_value = (raw & 0x8000u) ? (int32_t)raw - 65536 : raw;
     return (int16_t)signed_value;
 }
 
 // Internal: process the VOCS Set Volume Offset request.
-static uint8_t gatt_volume_offset_control_point_write(
+static uint8_t gatt_vocs_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -663,12 +669,12 @@ static uint8_t gatt_volume_offset_control_point_write(
     if (value[1] != service->state[2])
         return GATT_VOCS_ATT_ERR_INVALID_CHANGE_COUNTER;
 
-    int16_t requested = gatt_volume_offset_decode(value + 2);
+    int16_t requested = gatt_vocs_decode_offset(value + 2);
 
     if (requested < -255 || requested > 255)
         return GATT_VOCS_ATT_ERR_VALUE_OUT_OF_RANGE;
 
-    int16_t current = gatt_volume_offset_decode(service->state);
+    int16_t current = gatt_vocs_decode_offset(service->state);
 
     if (requested == current) return 0;
 
@@ -689,11 +695,11 @@ static uint8_t gatt_volume_offset_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add one VOCS secondary service. Register it before the parent service and
 // include it there. The Set Volume Offset procedure validates its change
 // counter and range, updates the state, and notifies subscribed clients.
-static inline int gatt_volume_offset_control_service_add(
+static inline int gatt_vocs_add(
     ble_gatt_server *server,
     ble_gatt_vocs_service *service,
     const uint8_t state[3], const uint8_t audio_location[4],
@@ -702,8 +708,8 @@ static inline int gatt_volume_offset_control_service_add(
 ) {
     if (!server || !service || !state || !audio_location || !description ||
         control_point_capacity < 4 ||
-        gatt_volume_offset_decode(state) < -255 ||
-        gatt_volume_offset_decode(state) > 255 ||
+        gatt_vocs_decode_offset(state) < -255 ||
+        gatt_vocs_decode_offset(state) > 255 ||
         description_len > description_capacity ||
         description_capacity > BLE_GATT_SERVER_VALUE_MAX
     ) return 0;
@@ -745,7 +751,7 @@ static inline int gatt_volume_offset_control_service_add(
         gatt_add_characteristic(server, &control_point_uuid,
             BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
-            NULL, gatt_volume_offset_control_point_write, service,
+            NULL, gatt_vocs_cp_write, service,
             &declaration, &control_point_handle);
 
     if (added)
@@ -777,8 +783,8 @@ static inline int gatt_volume_offset_control_service_add(
     service->service_handle = service_handle;
     service->state_handle = state_handle;
     service->state_cccd_handle = state_cccd;
-    service->audio_location_handle = location_handle;
-    service->audio_location_cccd_handle = location_cccd;
+    service->location_handle = location_handle;
+    service->location_cccd_handle = location_cccd;
     service->control_point_handle = control_point_handle;
     service->description_handle = description_handle;
     service->description_cccd_handle = description_cccd;
@@ -786,7 +792,7 @@ static inline int gatt_volume_offset_control_service_add(
 }
 
 // Update VOCS state after a local audio-output offset change and notify clients.
-static inline int gatt_volume_offset_control_service_set_offset(
+static inline int gatt_vocs_set_offset(
     ble_gatt_server *server,
     ble_gatt_vocs_service *service,
     int16_t offset
@@ -795,7 +801,7 @@ static inline int gatt_volume_offset_control_service_set_offset(
         offset < -255 || offset > 255
     ) return 0;
 
-    int16_t current = gatt_volume_offset_decode(service->state);
+    int16_t current = gatt_vocs_decode_offset(service->state);
 
     if (offset == current) return 1;
 
@@ -816,44 +822,45 @@ static inline int gatt_volume_offset_control_service_set_offset(
 }
 
 // Media Control: MCS, GMCS
+// MCS means Media Control Service; GMCS means Generic Media Control Service.
 typedef struct {
     void *service;
     uint8_t index;
-} ble_gatt_mcs_object_write_ctx;
+} ble_gatt_mcs_object_ctx;
 
 typedef struct {
     uint16_t service_handle;
-    uint16_t media_player_name_handle, media_player_name_cccd_handle;
+    uint16_t player_name_handle, player_name_cccd_handle;
     uint16_t track_changed_handle, track_changed_cccd_handle;
     uint16_t track_title_handle, track_title_cccd_handle;
     uint16_t track_duration_handle, track_duration_cccd_handle;
     uint16_t track_position_handle, track_position_cccd_handle;
     uint16_t media_state_handle, media_state_cccd_handle;
-    uint16_t content_control_id_handle;
+    uint16_t ccid_handle;
     uint16_t playback_speed_handle, playback_speed_cccd_handle;
     uint16_t seeking_speed_handle, seeking_speed_cccd_handle;
     uint16_t playing_order_handle, playing_order_cccd_handle;
-    uint16_t playing_orders_supported_handle;
+    uint16_t orders_supported_handle;
     uint16_t control_point_handle, control_point_cccd_handle;
-    uint16_t control_point_opcodes_handle;
+    uint16_t cp_opcodes_handle;
     uint16_t object_id_handle[7], object_id_cccd_handle[7];
-    uint16_t media_player_icon_url_handle;
-    uint16_t search_control_point_handle, search_control_point_cccd_handle;
-    uint8_t search_control_point_pending, search_request_len;
+    uint16_t icon_url_handle;
+    uint16_t search_cp_handle, search_cp_cccd_handle;
+    uint8_t search_pending, search_request_len;
     uint8_t search_request[64];
-    ble_gatt_mcs_object_write_ctx object_write_context[7];
+    ble_gatt_mcs_object_ctx object_write_context[7];
     uint16_t supported_playing_orders;
-    uint32_t supported_control_point_opcodes;
-    uint8_t control_point_pending, control_point_opcode;
-    uint8_t control_point_parameter_len, control_point_parameter[4];
+    uint32_t supported_cp_opcodes;
+    uint8_t cp_pending, cp_opcode;
+    uint8_t cp_param_len, cp_param[4];
     uint8_t object_id_write_pending, object_id_write_index;
     uint8_t object_id_write_len, object_id_write_value[6];
-    uint8_t object_id_write_previous_len, object_id_write_previous[6];
+    uint8_t object_prev_len, object_prev[6];
     ble_gatt_server *server;
 } ble_gatt_mcs_service;
 
 // Internal: ignore unsupported playing-order values as required by MCS.
-static uint8_t gatt_media_control_playing_order_write(
+static uint8_t gatt_mcs_order_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -908,14 +915,14 @@ typedef struct {
     const uint8_t *playback_speed;
     const uint8_t *seeking_speed;
     const uint8_t *playing_order;
-    const uint8_t *playing_orders_supported; // little-endian uint16 bitfield
-    uint16_t control_point_capacity;
-    const uint8_t *control_point_opcodes; // little-endian uint32 bitfield
+    const uint8_t *playing_orders; // little-endian uint16 bitfield
+    uint16_t cp_capacity;
+    const uint8_t *cp_opcodes; // little-endian uint32 bitfield
     uint16_t ots_service_handle;
-    uint8_t object_id_mask, object_id_notify_mask;
+    uint8_t object_mask, object_notify_mask;
     ble_gatt_mcs_string object_ids[7];
-    ble_gatt_mcs_string media_player_icon_url;
-    uint16_t search_control_point_capacity;
+    ble_gatt_mcs_string icon_url;
+    uint16_t search_cp_capacity;
 } ble_gatt_mcs_optional_config;
 
 enum {
@@ -954,7 +961,7 @@ enum {
     GATT_MCS_RESULT_COMMAND_CANNOT_BE_COMPLETED = 0x04
 };
 
-static inline int gatt_media_control_opcode_bit(uint8_t opcode) {
+static inline int gatt_mcs_opcode_bit(uint8_t opcode) {
     switch (opcode) {
     case 0x01: return 0; case 0x02: return 1; case 0x03: return 2;
     case 0x04: return 3; case 0x05: return 4; case 0x10: return 5;
@@ -968,7 +975,7 @@ static inline int gatt_media_control_opcode_bit(uint8_t opcode) {
 }
 
 // Internal: capture a validated MCS opcode request for the application.
-static uint8_t gatt_media_control_point_write(
+static uint8_t gatt_mcs_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -994,34 +1001,34 @@ static uint8_t gatt_media_control_point_write(
 
     if (!cccd || !(cccd->cccd & 1))
         return 0xfd;
-    if (service->control_point_pending)
+    if (service->cp_pending)
         return 0xfe;
 
     uint8_t opcode = value[0];
-    int bit = gatt_media_control_opcode_bit(opcode);
+    int bit = gatt_mcs_opcode_bit(opcode);
     uint8_t supported = bit >= 0 &&
-        (service->supported_control_point_opcodes & (1u << bit));
+        (service->supported_cp_opcodes & (1u << bit));
     uint8_t has_parameter = opcode == 0x10 || opcode == 0x24 ||
                             opcode == 0x34 || opcode == 0x44;
 
     if (supported && len != (has_parameter ? 5 : 1))
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
-    service->control_point_opcode = opcode;
-    service->control_point_parameter_len = (uint8_t)(len - 1);
+    service->cp_opcode = opcode;
+    service->cp_param_len = (uint8_t)(len - 1);
 
     if (len > 1)
-        memcpy(service->control_point_parameter, value + 1, len - 1);
-    service->control_point_pending = 1;
+        memcpy(service->cp_param, value + 1, len - 1);
+    service->cp_pending = 1;
     return 0;
 }
 
-static uint8_t gatt_media_control_object_id_write(
+static uint8_t gatt_mcs_object_id_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
     (void)command;
-    ble_gatt_mcs_object_write_ctx *write_context = context;
+    ble_gatt_mcs_object_ctx *write_context = context;
     ble_gatt_mcs_service *service = write_context ?
         write_context->service : NULL;
 
@@ -1044,10 +1051,10 @@ static uint8_t gatt_media_control_object_id_write(
     if (service->object_id_write_pending)
         return 0xfe;
 
-    service->object_id_write_previous_len = (uint8_t)attribute->value_len;
+    service->object_prev_len = (uint8_t)attribute->value_len;
 
     if (attribute->value_len == 6)
-        memcpy(service->object_id_write_previous, stored, 6);
+        memcpy(service->object_prev, stored, 6);
 
     if (len) memcpy(stored, value, len);
     attribute->value_len = len;
@@ -1060,7 +1067,7 @@ static uint8_t gatt_media_control_object_id_write(
     return 0;
 }
 
-static uint8_t gatt_media_control_search_write(
+static uint8_t gatt_mcs_search_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1077,18 +1084,18 @@ static uint8_t gatt_media_control_search_write(
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
-        service->search_control_point_handle);
+        service->search_cp_handle);
 
     if (!attribute || len > attribute->value_capacity)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
-        service->search_control_point_handle);
+        service->search_cp_handle);
 
     if (!cccd || !(cccd->cccd & 1))
         return 0xfd;
 
-    if (service->search_control_point_pending)
+    if (service->search_pending)
         return 0xfe;
 
     uint16_t offset_in_value = 0;
@@ -1109,15 +1116,15 @@ static uint8_t gatt_media_control_search_write(
     if (len)
         memcpy(service->search_request, value, len);
     service->search_request_len = (uint8_t)len;
-    service->search_control_point_pending = 1;
+    service->search_pending = 1;
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the mandatory MCS/GMCS media metadata layout. Set generic_service for
 // GMCS; its Media Player Name notification is mandatory. The extended variant
 // can add playback, order, and Media Control Point characteristics.
-static inline int gatt_media_control_service_add_full(
+static inline int gatt_mcs_add_full(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     const ble_gatt_mcs_config *config,
     const ble_gatt_mcs_optional_config *optional
@@ -1139,7 +1146,7 @@ static inline int gatt_media_control_service_add_full(
 
     uint8_t option_mask = optional ? optional->characteristic_mask : 0;
     uint16_t notify_mask = optional ? optional->notify_mask : 0;
-    const uint8_t *mcp_opcodes = optional ? optional->control_point_opcodes : NULL;
+    const uint8_t *mcp_opcodes = optional ? optional->cp_opcodes : NULL;
     uint32_t supported_mcp_opcodes = mcp_opcodes ?
         (uint32_t)mcp_opcodes[0] | ((uint32_t)mcp_opcodes[1] << 8) |
         ((uint32_t)mcp_opcodes[2] << 16) |
@@ -1156,14 +1163,14 @@ static inline int gatt_media_control_service_add_full(
          (!optional->playing_order || *optional->playing_order < 1 ||
           *optional->playing_order > 10)) ||
         ((option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
-         (!optional->playing_orders_supported ||
-          !ble_get_le16(optional->playing_orders_supported) ||
-          (ble_get_le16(optional->playing_orders_supported) & 0xfc00))) ||
+         (!optional->playing_orders ||
+          !ble_get_le16(optional->playing_orders) ||
+          (ble_get_le16(optional->playing_orders) & 0xfc00))) ||
         ((option_mask & (GATT_MCS_OPTION_PLAYING_ORDER |
                          GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)) ==
          (GATT_MCS_OPTION_PLAYING_ORDER |
           GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
-         !(ble_get_le16(optional->playing_orders_supported) &
+         !(ble_get_le16(optional->playing_orders) &
            (1u << (*optional->playing_order - 1))))
     ) return 0;
 
@@ -1176,14 +1183,14 @@ static inline int gatt_media_control_service_add_full(
          GATT_MCS_OPTION_CONTROL_POINT_OPCODES)
     ) return 0;
 
-    if (mcp_options && (!mcp_opcodes || optional->control_point_capacity < 5 ||
-        optional->control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+    if (mcp_options && (!mcp_opcodes || optional->cp_capacity < 5 ||
+        optional->cp_capacity > BLE_GATT_SERVER_VALUE_MAX ||
         !supported_mcp_opcodes || (supported_mcp_opcodes & 0xffe00000))
     ) return 0;
 
-    uint8_t object_mask = optional ? optional->object_id_mask : 0;
+    uint8_t object_mask = optional ? optional->object_mask : 0;
     uint8_t object_notify_mask = optional ?
-        optional->object_id_notify_mask : 0;
+        optional->object_notify_mask : 0;
     uint8_t search_enabled =
         (option_mask & GATT_MCS_OPTION_SEARCH_CONTROL_POINT) != 0;
     uint8_t ots_needed = object_mask || search_enabled;
@@ -1210,15 +1217,15 @@ static inline int gatt_media_control_service_add_full(
           gatt_uuid_assigned16(&gatt_server_find(server,
               optional->ots_service_handle)->uuid) != 0x1825)) ||
         ((option_mask & GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL) &&
-         ((optional->media_player_icon_url.value_len &&
-           !optional->media_player_icon_url.value) ||
-          !optional->media_player_icon_url.value_capacity ||
-          optional->media_player_icon_url.value_len >
-              optional->media_player_icon_url.value_capacity ||
-          optional->media_player_icon_url.value_capacity >
+         ((optional->icon_url.value_len &&
+           !optional->icon_url.value) ||
+          !optional->icon_url.value_capacity ||
+          optional->icon_url.value_len >
+              optional->icon_url.value_capacity ||
+          optional->icon_url.value_capacity >
               BLE_GATT_SERVER_VALUE_MAX)) ||
-        (search_enabled && (!optional->search_control_point_capacity ||
-          optional->search_control_point_capacity > 64))
+        (search_enabled && (!optional->search_cp_capacity ||
+          optional->search_cp_capacity > 64))
     ) return 0;
 
     for (uint8_t i = 0; i < 7; i++) {
@@ -1273,9 +1280,9 @@ static inline int gatt_media_control_service_add_full(
         optional ? optional->playback_speed : NULL,
         optional ? optional->seeking_speed : NULL,
         optional ? optional->playing_order : NULL,
-        optional ? optional->playing_orders_supported : NULL,
+        optional ? optional->playing_orders : NULL,
         &empty_value,
-        optional ? optional->control_point_opcodes : NULL
+        optional ? optional->cp_opcodes : NULL
     };
     uint8_t extra_count = 0;
     for (uint8_t i = 0; i < 6; i++) {
@@ -1296,7 +1303,7 @@ static inline int gatt_media_control_service_add_full(
                 (notify ? BLE_GATT_PROP_NOTIFY : 0);
         uint16_t value_len = i == 3 ? 2 : (i == 5 ? 4 : 1);
         uint16_t value_capacity = control_point ?
-            optional->control_point_capacity : value_len;
+            optional->cp_capacity : value_len;
         uint8_t permissions = (control_point ? 0 :
             BLE_GATT_PERM_READ_ENC) |
             (writable || control_point ? BLE_GATT_PERM_WRITE_ENC : 0);
@@ -1339,7 +1346,7 @@ static inline int gatt_media_control_service_add_full(
     if (option_mask & GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL) {
         icon_url_index = (uint8_t)(7 + extra_count);
         const ble_gatt_mcs_string *url =
-            &optional->media_player_icon_url;
+            &optional->icon_url;
         characteristics[7 + extra_count++] = (ble_gatt_sig_characteristic){
             0x2b95, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
             url->value_len ? url->value : &empty_value, url->value_len,
@@ -1355,7 +1362,7 @@ static inline int gatt_media_control_service_add_full(
             0x2ba7, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP |
                     BLE_GATT_PROP_NOTIFY,
             1, BLE_GATT_PERM_WRITE_ENC, &empty_value, 0,
-            optional->search_control_point_capacity, 1
+            optional->search_cp_capacity, 1
         };
     }
 
@@ -1367,7 +1374,7 @@ static inline int gatt_media_control_service_add_full(
 
     if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
         service->supported_playing_orders =
-            ble_get_le16(optional->playing_orders_supported);
+            ble_get_le16(optional->playing_orders);
     uint8_t extra_index = 0;
     for (uint8_t i = 0; i < 6; i++) {
         uint8_t bit = (uint8_t)(1u << i);
@@ -1377,12 +1384,12 @@ static inline int gatt_media_control_service_add_full(
 
         if (i == 2) {
             handlers[7 + extra_index].write =
-                gatt_media_control_playing_order_write;
+                gatt_mcs_order_write;
             handlers[7 + extra_index].context = service;
         }
         else if (i == 4) {
             handlers[7 + extra_index].write =
-                gatt_media_control_point_write;
+                gatt_mcs_cp_write;
             handlers[7 + extra_index].context = service;
         }
 
@@ -1399,13 +1406,13 @@ static inline int gatt_media_control_service_add_full(
         service->object_write_context[i].service = service;
         service->object_write_context[i].index = i;
         handlers[object_indexes[i]].write =
-            gatt_media_control_object_id_write;
+            gatt_mcs_object_id_write;
         handlers[object_indexes[i]].context =
             &service->object_write_context[i];
     }
 
     if (search_enabled) {
-        handlers[search_index].write = gatt_media_control_search_write;
+        handlers[search_index].write = gatt_mcs_search_write;
         handlers[search_index].context = service;
     }
 
@@ -1415,7 +1422,7 @@ static inline int gatt_media_control_service_add_full(
     if (include_count)
         include_handles[0] = optional->ots_service_handle;
 
-    if (!gatt_sig_service_add_with_includes_and_handlers(server,
+    if (!gatt_sig_service_add_full(server,
             config->generic_service ? 0x1849 : 0x1848,
             include_count ? include_handles : NULL, include_count,
             characteristics, characteristic_count,
@@ -1425,8 +1432,8 @@ static inline int gatt_media_control_service_add_full(
         return 0;
     }
 
-    service->media_player_name_handle = value_handles[0];
-    service->media_player_name_cccd_handle = cccd_handles[0];
+    service->player_name_handle = value_handles[0];
+    service->player_name_cccd_handle = cccd_handles[0];
     service->track_changed_handle = value_handles[1];
     service->track_changed_cccd_handle = cccd_handles[1];
     service->track_title_handle = value_handles[2];
@@ -1437,7 +1444,7 @@ static inline int gatt_media_control_service_add_full(
     service->track_position_cccd_handle = cccd_handles[4];
     service->media_state_handle = value_handles[5];
     service->media_state_cccd_handle = cccd_handles[5];
-    service->content_control_id_handle = value_handles[6];
+    service->ccid_handle = value_handles[6];
     const uint16_t encrypted_cccd_permissions =
         BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
     for (uint8_t i = 0; i < characteristic_count; i++) {
@@ -1466,14 +1473,14 @@ static inline int gatt_media_control_service_add_full(
     }
 
     if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
-        service->playing_orders_supported_handle = value_handles[value_index++];
+        service->orders_supported_handle = value_handles[value_index++];
 
     if (option_mask & GATT_MCS_OPTION_CONTROL_POINT) {
         service->control_point_handle = value_handles[value_index];
         service->control_point_cccd_handle = cccd_handles[value_index++];
-        service->supported_control_point_opcodes =
+        service->supported_cp_opcodes =
             supported_mcp_opcodes;
-        service->control_point_opcodes_handle = value_handles[value_index];
+        service->cp_opcodes_handle = value_handles[value_index];
     }
 
     for (uint8_t i = 0; i < 7; i++) {
@@ -1485,11 +1492,11 @@ static inline int gatt_media_control_service_add_full(
     }
 
     if (icon_url_index != 0xff)
-        service->media_player_icon_url_handle = value_handles[icon_url_index];
+        service->icon_url_handle = value_handles[icon_url_index];
 
     if (search_index != 0xff) {
-        service->search_control_point_handle = value_handles[search_index];
-        service->search_control_point_cccd_handle =
+        service->search_cp_handle = value_handles[search_index];
+        service->search_cp_cccd_handle =
             cccd_handles[search_index];
     }
 
@@ -1497,15 +1504,15 @@ static inline int gatt_media_control_service_add_full(
 }
 
 // Compatibility builder for mandatory MCS/GMCS metadata characteristics.
-static inline int gatt_media_control_service_add(
+static inline int gatt_mcs_add(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     const ble_gatt_mcs_config *config
 ) {
-    return gatt_media_control_service_add_full(server, service, config, NULL);
+    return gatt_mcs_add_full(server, service, config, NULL);
 }
 
 // Update and queue a notification for a notifiable MCS value.
-static inline int gatt_media_control_service_notify_optional(
+static inline int gatt_mcs_notify_value(
     ble_gatt_server *server,
     const ble_gatt_mcs_service *service,
     uint16_t value_handle, const uint8_t *value, uint16_t len
@@ -1521,7 +1528,7 @@ static inline int gatt_media_control_service_notify_optional(
         return 0;
 
     uint8_t allowed = value_handle == service->track_changed_handle ||
-        value_handle == service->media_player_name_handle ||
+        value_handle == service->player_name_handle ||
         value_handle == service->track_title_handle ||
         value_handle == service->track_duration_handle ||
         value_handle == service->track_position_handle ||
@@ -1529,7 +1536,7 @@ static inline int gatt_media_control_service_notify_optional(
         value_handle == service->playback_speed_handle ||
         value_handle == service->seeking_speed_handle ||
         value_handle == service->playing_order_handle ||
-        value_handle == service->control_point_opcodes_handle;
+        value_handle == service->cp_opcodes_handle;
 
     if (!allowed) return 0;
 
@@ -1546,7 +1553,7 @@ static inline int gatt_media_control_service_notify_optional(
          value_handle == service->playing_order_handle) && len != 1
     ) return 0;
 
-    if (value_handle == service->control_point_opcodes_handle && len != 4)
+    if (value_handle == service->cp_opcodes_handle && len != 4)
         return 0;
 
     if (len) memcpy(stored, value, len);
@@ -1555,7 +1562,7 @@ static inline int gatt_media_control_service_notify_optional(
         attribute->value_len = len;
     uint16_t notify_len = len;
 
-    if (value_handle == service->media_player_name_handle ||
+    if (value_handle == service->player_name_handle ||
         value_handle == service->track_title_handle) {
         if (server->mtu < 3) return 0;
 
@@ -1569,26 +1576,26 @@ static inline int gatt_media_control_service_notify_optional(
 }
 
 // Complete a captured MCS opcode request and notify its opcode/result pair.
-static inline int gatt_media_control_service_control_point_complete(
+static inline int gatt_mcs_cp_complete(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     uint8_t result_code
 ) {
     if (!server || !service || service->server != server ||
-        !service->control_point_pending || result_code < GATT_MCS_RESULT_SUCCESS ||
+        !service->cp_pending || result_code < GATT_MCS_RESULT_SUCCESS ||
         result_code > GATT_MCS_RESULT_COMMAND_CANNOT_BE_COMPLETED
     ) return 0;
 
-    uint8_t response[2] = {service->control_point_opcode, result_code};
+    uint8_t response[2] = {service->cp_opcode, result_code};
     int queued = gatt_queue_event(server,
         service->control_point_handle, response, sizeof(response), 0);
 
     if (queued > 0)
-        service->control_point_pending = 0;
+        service->cp_pending = 0;
     return queued;
 }
 
 // Update an exposed MCS Object ID. An Object ID is empty or a uint48 value.
-static inline int gatt_media_control_service_set_object_id(
+static inline int gatt_mcs_set_object_id(
     ble_gatt_server *server, const ble_gatt_mcs_service *service,
     uint8_t object, const uint8_t *value, uint16_t len
 ) {
@@ -1611,7 +1618,7 @@ static inline int gatt_media_control_service_set_object_id(
 
 // Finish the application action associated with a client Object ID write.
 // Pass the resulting Object ID, or the previous value if the selection failed.
-static inline int gatt_media_control_service_object_id_write_complete(
+static inline int gatt_mcs_object_write_done(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     const uint8_t *value, uint16_t len
 ) {
@@ -1622,22 +1629,22 @@ static inline int gatt_media_control_service_object_id_write_complete(
 
     uint8_t index = service->object_id_write_index;
 
-    if (!gatt_media_control_service_set_object_id(server, service, index,
+    if (!gatt_mcs_set_object_id(server, service, index,
             value, len)
     ) return 0;
 
     service->object_id_write_pending = 0;
     service->object_id_write_len = 0;
-    service->object_id_write_previous_len = 0;
+    service->object_prev_len = 0;
     return 1;
 }
 
 // Update and notify a changed MCS Object ID, when its CCCD is enabled.
-static inline int gatt_media_control_service_notify_object_id(
+static inline int gatt_mcs_notify_object(
     ble_gatt_server *server, const ble_gatt_mcs_service *service,
     uint8_t object, const uint8_t *value, uint16_t len
 ) {
-    if (!gatt_media_control_service_set_object_id(server, service,
+    if (!gatt_mcs_set_object_id(server, service,
             object, value, len) || !service->object_id_cccd_handle[object]
     ) return 0;
 
@@ -1653,31 +1660,31 @@ static inline int gatt_media_control_service_notify_object_id(
 }
 
 // Complete a captured Search Control Point request with success or failure.
-static inline int gatt_media_control_service_search_complete(
+static inline int gatt_mcs_search_complete(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     uint8_t result
 ) {
     if (!server || !service || service->server != server ||
-        !service->search_control_point_pending ||
+        !service->search_pending ||
         (result != GATT_MCS_SEARCH_SUCCESS &&
          result != GATT_MCS_SEARCH_FAILURE)
     ) return 0;
 
     int queued = gatt_queue_event(server,
-        service->search_control_point_handle, &result, 1, 0);
+        service->search_cp_handle, &result, 1, 0);
 
     if (queued > 0)
-        service->search_control_point_pending = 0;
+        service->search_pending = 0;
     return queued;
 }
 
 // Store the completed Search Results Object ID and notify if subscribed.
-static inline int gatt_media_control_service_set_search_results_object_id(
+static inline int gatt_mcs_set_results_id(
     ble_gatt_server *server, const ble_gatt_mcs_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!service || !service->object_id_handle[GATT_MCS_OBJECT_SEARCH_RESULTS] ||
-        !gatt_media_control_service_set_object_id(server, service,
+        !gatt_mcs_set_object_id(server, service,
             GATT_MCS_OBJECT_SEARCH_RESULTS, value, len)
     ) return 0;
 
@@ -1687,7 +1694,7 @@ static inline int gatt_media_control_service_set_search_results_object_id(
     if (!cccd || !(cccd->cccd & 1))
         return 1;
 
-    return gatt_media_control_service_notify_object_id(server, service,
+    return gatt_mcs_notify_object(server, service,
         GATT_MCS_OBJECT_SEARCH_RESULTS, value, len);
 }
 #endif

@@ -1,7 +1,10 @@
 #ifndef BLE_GATT_SERVICE_DEVICE_H
 #define BLE_GATT_SERVICE_DEVICE_H
 
-// Device, radio, time, connection, and alert services.
+// Contents: Ranging, Constant Tone Extension, Battery, Device Information,
+// Generic Access, Tx Power, time, Reconnection Configuration, Bond Management,
+// Scan Parameters, Transport Discovery, Internet Protocol Support, Elapsed
+// Time, Authorization Control, and alert services.
 // Ranging Service
 typedef struct {
     uint16_t service_handle, features_handle;
@@ -12,11 +15,12 @@ typedef struct {
     uint16_t data_overwritten_handle, data_overwritten_cccd_handle;
 } ble_gatt_ranging_service;
 
-// Application facing
+// Application-facing API
+// RAS means Ranging Service.
 // Add the mandatory RAS characteristics and optional real-time data. Values
 // are initialized empty/zero; the application handles Channel Sounding data,
 // client-specific CCCDs, control-point procedures, and notifications.
-static inline int gatt_ranging_add(
+static inline int gatt_ras_add(
     ble_gatt_server *server, ble_gatt_ranging_service *service,
     uint32_t features, uint16_t ranging_data_capacity,
     uint16_t control_point_capacity
@@ -98,7 +102,6 @@ static inline int gatt_ranging_add(
     return 1;
 }
 
-
 // Constant Tone Extension Service
 typedef struct {
     uint16_t service_handle, enable_handle;
@@ -106,7 +109,7 @@ typedef struct {
     uint16_t transmit_duration_handle, interval_handle, phy_handle;
 } ble_gatt_ctes_service;
 
-// Application facing
+// Application-facing API
 // Add CTES, including advertising-channel controls when supported. The
 // application applies accepted writes to the Link Layer/advertising setup.
 // CTES means Constant Tone Extension Service.
@@ -164,7 +167,7 @@ typedef struct {
     uint8_t level;
 } ble_gatt_bas_service;
 
-static uint8_t gatt_battery_level_read(
+static uint8_t gatt_bas_level_read(
     void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
 ) {
     if (!context || !out || !inout_len)
@@ -182,7 +185,7 @@ static uint8_t gatt_battery_level_read(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the standard Battery Service with a readable, notifiable Battery Level.
 // Keep one service state per GATT server/connection and keep it alive while
 // that server may read the characteristic.
@@ -207,7 +210,7 @@ static inline int gatt_bas_add(
                                          &battery->service_handle) &&
         gatt_add_characteristic(server, &level_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, BLE_GATT_PERM_READ,
-            &battery->level, 1, 1, gatt_battery_level_read, NULL, battery,
+            &battery->level, 1, 1, gatt_bas_level_read, NULL, battery,
             NULL, &battery->level_handle) &&
         gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
@@ -223,7 +226,7 @@ static inline int gatt_bas_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // BAS means Battery Service.
 static inline int gatt_bas_set_level(
     ble_gatt_bas_service *battery, uint8_t level
@@ -235,7 +238,7 @@ static inline int gatt_bas_set_level(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update Battery Level and queue its notification.
 // BAS means Battery Service.
 static inline int gatt_bas_notify_level(
@@ -274,7 +277,7 @@ typedef struct {
     const uint8_t *pnp_id;
 } ble_gatt_dis_info;
 
-static uint16_t gatt_device_info_string_len(const char *value) {
+static uint16_t gatt_dis_str_len(const char *value) {
     if (!value) return 0;
 
     uint16_t len = 0;
@@ -282,7 +285,7 @@ static uint16_t gatt_device_info_string_len(const char *value) {
     return len;
 }
 
-static int gatt_device_info_add_string(
+static int gatt_dis_add_str(
     ble_gatt_server *server, uint16_t uuid16, const char *value,
     uint16_t *handle
 ) {
@@ -291,7 +294,7 @@ static int gatt_device_info_add_string(
         return 1;
     }
 
-    uint16_t len = gatt_device_info_string_len(value);
+    uint16_t len = gatt_dis_str_len(value);
 
     if (!len) {
         *handle = 0;
@@ -304,7 +307,7 @@ static int gatt_device_info_add_string(
         (const uint8_t *)value, len, len, NULL, NULL, NULL, NULL, handle);
 }
 
-// Application facing
+// Application-facing API
 // Add the standard Device Information Service. Optional strings and IDs are
 // copied into the server database; omitted fields have a zero handle. IDs use
 // the Bluetooth-defined 8-byte System ID and 7-byte PnP ID formats.
@@ -325,20 +328,20 @@ static inline int gatt_dis_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &service->service_handle) &&
-        gatt_device_info_add_string(server, 0x2a29,
+        gatt_dis_add_str(server, 0x2a29,
             information->manufacturer_name,
             &service->manufacturer_name_handle) &&
-        gatt_device_info_add_string(server, 0x2a24,
+        gatt_dis_add_str(server, 0x2a24,
             information->model_number, &service->model_number_handle) &&
-        gatt_device_info_add_string(server, 0x2a25,
+        gatt_dis_add_str(server, 0x2a25,
             information->serial_number, &service->serial_number_handle) &&
-        gatt_device_info_add_string(server, 0x2a27,
+        gatt_dis_add_str(server, 0x2a27,
             information->hardware_revision,
             &service->hardware_revision_handle) &&
-        gatt_device_info_add_string(server, 0x2a26,
+        gatt_dis_add_str(server, 0x2a26,
             information->firmware_revision,
             &service->firmware_revision_handle) &&
-        gatt_device_info_add_string(server, 0x2a28,
+        gatt_dis_add_str(server, 0x2a28,
             information->software_revision,
             &service->software_revision_handle);
 
@@ -374,7 +377,7 @@ typedef struct {
     uint16_t appearance_handle;
 } ble_gatt_gap_service;
 
-// Application facing
+// Application-facing API
 // Add the Generic Access Service with read-only Device Name and Appearance.
 // The name is UTF-8 and follows GAP's 248-octet maximum; values are copied to
 // the server database during registration.
@@ -386,7 +389,7 @@ static inline int gatt_gap_add(
     if (!server || !service || !device_name || server->database_sealed)
         return 0;
 
-    uint16_t name_len = gatt_device_info_string_len(device_name);
+    uint16_t name_len = gatt_dis_str_len(device_name);
 
     if (!name_len || name_len > 248)
         return 0;
@@ -444,8 +447,9 @@ typedef struct {
     uint16_t service_handle, time_with_dst_handle;
 } ble_gatt_ndcs_service;
 
-// Application facing
-static inline int gatt_tx_power_add(
+// Application-facing API
+// TX means Tx Power Service.
+static inline int gatt_tx_add(
     ble_gatt_server *server, ble_gatt_tx_power_service *service,
     int8_t tx_power_dbm
 ) {
@@ -466,9 +470,9 @@ static inline int gatt_tx_power_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update the signed Tx Power Level stored in the server database.
-static inline int gatt_tx_power_set_level(
+static inline int gatt_tx_set_level(
     ble_gatt_server *server, const ble_gatt_tx_power_service *service,
     int8_t tx_power_dbm
 ) {
@@ -486,7 +490,7 @@ static inline int gatt_tx_power_set_level(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // CTS means Current Time Service.
 static inline int gatt_cts_add(
     ble_gatt_server *server, ble_gatt_cts_service *service,
@@ -535,7 +539,7 @@ static inline int gatt_cts_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update the readable Current Time value and queue its notification.
 // CTS means Current Time Service.
 static inline int gatt_cts_notify(
@@ -558,8 +562,8 @@ static inline int gatt_cts_notify(
                                    current_time, 10, 0);
 }
 
-// Internal
-static uint8_t gatt_reference_time_update_write(
+// Internal helper
+static uint8_t gatt_rtus_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -599,7 +603,7 @@ static uint8_t gatt_reference_time_update_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // RTUS means Reference Time Update Service.
 static inline int gatt_rtus_add(
     ble_gatt_server *server, ble_gatt_rtus_service *service,
@@ -618,7 +622,7 @@ static inline int gatt_rtus_add(
     };
     uint16_t values[2];
     ble_gatt_sig_handlers handlers[2] = {0};
-    handlers[0].write = gatt_reference_time_update_write;
+    handlers[0].write = gatt_rtus_write;
     handlers[0].context = service;
 
     if (!gatt_sig_service_add_with_handlers(server, 0x1806, chars, 2,
@@ -632,7 +636,7 @@ static inline int gatt_rtus_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Finish a pending update with its Reference Time Update result code.
 // RTUS means Reference Time Update Service.
 static inline int gatt_rtus_complete(
@@ -655,7 +659,7 @@ static inline int gatt_rtus_complete(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // NDCS means Next DST Change Service.
 static inline int gatt_ndcs_add(
     ble_gatt_server *server, ble_gatt_ndcs_service *service,
@@ -679,7 +683,7 @@ static inline int gatt_ndcs_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update the seven-octet Time with DST value in the server database.
 // NDCS means Next DST Change Service.
 static inline int gatt_ndcs_set_time(
@@ -714,8 +718,8 @@ typedef struct {
     uint8_t control_point_request[11];
 } ble_gatt_dts_service;
 
-// Internal
-static inline uint8_t gatt_dts_control_point_write(
+// Internal helper
+static inline uint8_t gatt_dts_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -785,7 +789,7 @@ static inline uint8_t gatt_dts_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add DTS mandatory characteristics. Feature is the four-byte CRC/feature
 // value; device_time is the fixed eight-byte base time and status value.
 // The application supplies Device Time Parameters and applies accepted time
@@ -825,7 +829,7 @@ static inline int gatt_dts_add(
     uint16_t values[4], cccds[4];
     ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
-    handlers[3].write = gatt_dts_control_point_write;
+    handlers[3].write = gatt_dts_cp_write;
     handlers[3].context = service;
 
     if (!gatt_sig_service_add_with_handlers(server, 0x1847,
@@ -845,11 +849,11 @@ static inline int gatt_dts_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Complete a pending Propose/Force Time Update with a DTCP response.
 // Rejection flags are required only when response_value is 0x05.
 // DTS means Device Time Service.
-static inline int gatt_dts_complete_control_point(
+static inline int gatt_dts_complete(
     ble_gatt_dts_service *service, uint8_t response_value,
     uint16_t rejection_flags
 ) {
@@ -883,7 +887,7 @@ typedef struct {
     uint16_t service_handle, feature_handle;
 } ble_gatt_rcs_service;
 
-// Application facing
+// Application-facing API
 // Add the base RCS instance with no optional features. Its five-byte input is
 // the 0xffff CRC followed by a zero three-byte feature bit field.
 // RCS means Reconnection Configuration Service.
@@ -997,7 +1001,7 @@ static inline int gatt_bms_features_valid(
 // authorizer checks authorization-code writes before the ATT Write Response;
 // the application then performs the captured bond operation.
 // BMS means Bond Management Service.
-static inline int gatt_bms_add_with_authorizer(
+static inline int gatt_bms_add_auth(
     ble_gatt_server *server, ble_gatt_bms_service *service,
     const uint8_t *features, uint16_t feature_len,
     uint16_t control_point_capacity,
@@ -1054,7 +1058,7 @@ static inline int gatt_bms_add(
     const uint8_t *features, uint16_t feature_len,
     uint16_t control_point_capacity
 ) {
-    return gatt_bms_add_with_authorizer(server, service,
+    return gatt_bms_add_auth(server, service,
         features, feature_len, control_point_capacity, NULL, NULL);
 }
 
@@ -1090,8 +1094,8 @@ typedef struct {
 
 // Scan Parameters Service protocol behavior. The application applies valid
 // parameters to its scanner and decides when to request a client refresh.
-// Internal
-static uint8_t gatt_scan_parameters_window_write(
+// Internal helper
+static uint8_t gatt_sps_window_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1116,7 +1120,7 @@ static uint8_t gatt_scan_parameters_window_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add Scan Parameters Service with a validated initial interval and window.
 // Valid client writes update service state; the application applies the new
 // parameters to its scanner.
@@ -1148,7 +1152,7 @@ static inline int gatt_sps_add(
         {0x2a31, BLE_GATT_PROP_NOTIFY, 1, 0, &refresh_value, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_scan_parameters_window_write, .context = service},
+        {.write = gatt_sps_window_write, .context = service},
         {0}
     };
     uint16_t values[2], cccds[2];
@@ -1163,10 +1167,10 @@ static inline int gatt_sps_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Notify the client that it should refresh its scan parameters.
 // SPS means Scan Parameters Service.
-static inline int gatt_sps_notify_refresh(
+static inline int gatt_sps_refresh(
     ble_gatt_server *server,
     const ble_gatt_sps_service *service
 ) {
@@ -1243,7 +1247,7 @@ static uint8_t gatt_tds_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add TDS with its optional Control Point. Set capacity to zero to omit it.
 // The builder captures Activate Transport requests; the application performs
 // organization-specific activation and completes each request with an indication.
@@ -1323,7 +1327,7 @@ typedef struct {
     uint16_t service_handle;
 } ble_gatt_ipsp_service;
 
-// Application facing
+// Application-facing API
 // Add the Internet Protocol Support service. IPSP defines no characteristics.
 // IPSP means Internet Protocol Support Profile.
 static inline int gatt_ipsp_add(
@@ -1343,7 +1347,7 @@ typedef struct {
     uint16_t current_elapsed_time_cccd_handle;
 } ble_gatt_elapsed_service;
 
-// Application facing
+// Application-facing API
 // Add Current Elapsed Time as a readable, indicatable 11-byte value. The value
 // contains the 9-byte elapsed-time field followed by clock status/capabilities.
 static inline int gatt_elapsed_add(
@@ -1509,7 +1513,7 @@ static uint8_t gatt_acs_control_point_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add ACS attributes and bind segmented Data In/Control Point reassembly.
 // ACS means Authorization Control Service.
 static inline int gatt_acs_add(
@@ -1582,7 +1586,7 @@ static inline int gatt_acs_take_data_in(
 }
 
 // ACS means Authorization Control Service.
-static inline int gatt_acs_take_control_point(
+static inline int gatt_acs_take_cp(
     ble_gatt_acs_service *service, uint8_t *payload,
     uint16_t *inout_payload_len
 ) {
@@ -1675,7 +1679,7 @@ static inline int gatt_acs_set_status(
 }
 
 // ACS means Authorization Control Service.
-static inline int gatt_acs_complete_control_point(
+static inline int gatt_acs_complete_cp(
     ble_gatt_acs_service *service,
     const uint8_t *response, uint16_t response_len
 ) {
@@ -1708,14 +1712,6 @@ typedef struct {
     uint8_t ringer_control_count;
 } ble_gatt_pass_service;
 
-
-
-
-
-
-
-
-
 typedef struct {
     uint16_t service_handle, supported_new_alerts_handle;
     uint16_t supported_unread_alerts_handle, new_alert_handle;
@@ -1726,12 +1722,11 @@ typedef struct {
     uint8_t last_command, last_category, control_count;
 } ble_gatt_ans_service;
 
-
 // Protocol behavior for Immediate Alert, Link Loss, and Phone Alert Status.
 // The application observes the state fields to perform device-specific
 // actions.
 
-// Internal
+// Internal helper
 static uint8_t gatt_alert_u8_read(
     void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
 ) {
@@ -1750,7 +1745,7 @@ static uint8_t gatt_alert_u8_read(
     return 0;
 }
 
-// Internal
+// Internal helper
 static uint8_t gatt_alert_level_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1769,8 +1764,8 @@ static uint8_t gatt_alert_level_write(
     return 0;
 }
 
-// Internal
-static uint8_t gatt_immediate_alert_write(
+// Internal helper
+static uint8_t gatt_ias_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1790,7 +1785,7 @@ static uint8_t gatt_immediate_alert_write(
     return 0;
 }
 
-// Internal
+// Internal helper
 static uint8_t gatt_phone_ringer_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1816,7 +1811,7 @@ static uint8_t gatt_phone_ringer_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add Immediate Alert. Valid writes update alert_level and increment
 // request_count so the application can detect repeated requests.
 // IAS means Immediate Alert Service.
@@ -1834,7 +1829,7 @@ static inline int gatt_ias_add(
          &service->alert_level, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.write = gatt_immediate_alert_write, .context = service}
+        {.write = gatt_ias_write, .context = service}
     };
     uint16_t values[1];
 
@@ -1846,7 +1841,7 @@ static inline int gatt_ias_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Add Link Loss Alert Level with readable state and validated writes.
 // LLS means Link Loss Service.
 static inline int gatt_lls_add(
@@ -1877,7 +1872,7 @@ static inline int gatt_lls_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Add Phone Alert Status. Valid Ringer Control Point writes update the
 // exposed state; the application performs the corresponding phone behavior
 // and sends notifications when the values change.
@@ -1920,7 +1915,7 @@ static inline int gatt_pass_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // PASS means Phone Alert Status Service.
 static inline int gatt_pass_set_status(
     ble_gatt_pass_service *service, uint8_t alert_status
@@ -1933,7 +1928,7 @@ static inline int gatt_pass_set_status(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update Alert Status and queue its notification.
 // PASS means Phone Alert Status Service.
 static inline int gatt_pass_notify_status(
@@ -1949,7 +1944,7 @@ static inline int gatt_pass_notify_status(
         &service->alert_status, 1, 0);
 }
 
-// Application facing
+// Application-facing API
 // PASS means Phone Alert Status Service.
 static inline int gatt_pass_set_ringer(
     ble_gatt_pass_service *service, uint8_t ringer_setting
@@ -1961,7 +1956,7 @@ static inline int gatt_pass_set_ringer(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update Ringer Setting and queue its notification.
 // PASS means Phone Alert Status Service.
 static inline int gatt_pass_notify_ringer(
@@ -1977,13 +1972,12 @@ static inline int gatt_pass_notify_ringer(
         &service->ringer_setting, 1, 0);
 }
 
-
 // Alert Notification Profile control point protocol. The application owns
 // alert records and sends any requested notifications.
 #define GATT_ALERT_CATEGORY_MASK 0x03ffu
 #define GATT_ALERT_CATEGORY_ALL  0xffu
 
-// Internal
+// Internal helper
 static uint8_t gatt_ans_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -2028,7 +2022,7 @@ static uint8_t gatt_ans_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add Alert Notification Service with supported categories. Control point
 // writes update enable masks and the last-command fields; the application
 // handles alert data and sends requested notifications.
@@ -2082,7 +2076,7 @@ static inline int gatt_ans_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Queue a New Alert notification for an enabled, supported category. Text is
 // optional and limited to the 18 octets allowed by the characteristic format.
 // ANS means Alert Notification Service.
@@ -2109,7 +2103,7 @@ static inline int gatt_ans_notify_new(
         value, (uint16_t)(2 + text_len), 0);
 }
 
-// Application facing
+// Application-facing API
 // Queue an Unread Alert Status notification for an enabled, supported
 // category.
 // ANS means Alert Notification Service.

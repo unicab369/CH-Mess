@@ -1,7 +1,9 @@
 #ifndef BLE_GATT_SERVICE_MEASUREMENT_H
 #define BLE_GATT_SERVICE_MEASUREMENT_H
 
-// Weight Scale, Body Composition, and Tire Pressure Monitoring.
+// Contents: Cookware, Industrial Measurement Device, Body Composition, Weight
+// Scale, Tire Pressure Monitoring, Environmental Sensing, and Binary Sensor.
+// Measurement, environmental, and sensor services.
 // Cookware Service
 typedef struct {
     uint16_t service_handle;
@@ -9,7 +11,7 @@ typedef struct {
     uint8_t characteristic_count;
 } ble_gatt_cws_service;
 
-// Application facing
+// Application-facing API
 // Add selected CWS characteristics from the assigned Cookware range. The
 // application chooses characteristics for its supported cooking features
 // and implements their value formats and recipe procedures.
@@ -42,8 +44,6 @@ static inline int gatt_cws_add(
     return 1;
 }
 
-
-
 // Indoor Monitoring Service
 typedef struct {
     uint16_t service_handle;
@@ -54,7 +54,7 @@ typedef struct {
     uint16_t descriptor_changed_handle, descriptor_changed_cccd_handle;
 } ble_gatt_imd_service;
 
-// Application facing
+// Application-facing API
 // Add IMDS with one to eight permitted live measurements and optional status
 // characteristics. Measurement descriptors and history procedures remain
 // application-defined.
@@ -131,8 +131,6 @@ static inline int gatt_imd_service_add(
     return 1;
 }
 
-
-
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle;
@@ -143,7 +141,7 @@ typedef struct {
     uint16_t feature_handle;
 } ble_gatt_wss_service;
 
-// Application facing
+// Application-facing API
 // BCS means Body Composition Service.
 static inline int gatt_bcs_add(
     ble_gatt_server *server, ble_gatt_bcs_service *service,
@@ -173,7 +171,7 @@ static inline int gatt_bcs_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // WSS means Weight Scale Service.
 static inline int gatt_wss_add(
     ble_gatt_server *server, ble_gatt_wss_service *service,
@@ -208,7 +206,7 @@ typedef struct {
     uint16_t bmi, height;
 } ble_gatt_weight_measurement;
 
-// Internal
+// Internal helper
 static inline int gatt_weight_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
@@ -225,7 +223,7 @@ static inline int gatt_weight_feature(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Weight Measurement indication.
 // WSS means Weight Scale Service.
 static inline int gatt_wss_indicate(
@@ -276,7 +274,7 @@ typedef struct {
     uint16_t impedance, weight, height;
 } ble_gatt_bcs_measurement;
 
-// Application facing
+// Application-facing API
 // Queue a pre-encoded Body Composition Measurement indication.
 // BCS means Body Composition Service.
 static inline int gatt_bcs_indicate_value(
@@ -292,7 +290,7 @@ static inline int gatt_bcs_indicate_value(
                                    value, len, 1);
 }
 
-// Internal
+// Internal helper
 static inline int gatt_body_comp_feature(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
@@ -313,7 +311,7 @@ static inline int gatt_body_comp_feature(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one feature-checked Body Composition Measurement.
 // BCS means Body Composition Service.
 static inline int gatt_bcs_indicate(
@@ -411,7 +409,7 @@ typedef struct {
     uint16_t cccd_handles[7];
 } ble_gatt_tpms_service;
 
-// Application facing
+// Application-facing API
 // Add the mandatory TPMS Properties and Tire Pressure characteristics with
 // optional temperature, acceleration, duty-cycle, position, and signing key.
 // The application encodes each present value and handles TPMS signing.
@@ -469,7 +467,7 @@ typedef struct {
     uint16_t measurement_cccd_handles[8];
 } ble_gatt_ess_service;
 
-// Application facing
+// Application-facing API
 // ESS means Environmental Sensing Service.
 static inline int gatt_ess_add(
     ble_gatt_server *server, ble_gatt_ess_service *service,
@@ -490,7 +488,7 @@ static inline int gatt_ess_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Update a stored Environmental Sensing measurement value.
 // ESS means Environmental Sensing Service.
 static inline int gatt_ess_set_value(
@@ -516,7 +514,7 @@ static inline int gatt_ess_set_value(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Queue a value for one caller-selected Environmental Sensing measurement.
 // ESS means Environmental Sensing Service.
 static inline int gatt_ess_send(
@@ -658,7 +656,7 @@ static uint8_t gatt_binary_sensor_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the Binary Sensor Control Point and Response attributes. Control Point
 // writes are reassembled and validated before they are exposed as requests.
 // BSS means Binary Sensor Service.

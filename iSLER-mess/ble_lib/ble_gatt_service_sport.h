@@ -1,6 +1,8 @@
 #ifndef BLE_GATT_SERVICE_SPORT_H
 #define BLE_GATT_SERVICE_SPORT_H
 
+// Contents: Cycling Power, Cycling Speed and Cadence, Running Speed and
+// Cadence, Fitness Machine, and Physical Activity Monitor.
 // Cycling Power Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
@@ -17,14 +19,14 @@ typedef struct {
     uint8_t factory_calibration_date[7], factory_calibration_date_set;
 } ble_gatt_cps_service;
 
-// Internal
+// Internal helper
 // CPS means Cycling Power Service.
 static inline uint8_t gatt_cps_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
 
-// Application facing
+// Application-facing API
 // CPS means Cycling Power Service.
 static inline int gatt_cps_add(
     ble_gatt_server *server, ble_gatt_cps_service *service,
@@ -141,7 +143,7 @@ typedef struct {
     uint8_t sensor_location;
 } ble_gatt_csc_service;
 
-// Internal
+// Internal helper
 // CSC means Cycling Speed and Cadence Service.
 static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -224,7 +226,7 @@ typedef struct {
     uint8_t calibration_request_count;
 } ble_gatt_rsc_service;
 
-// Internal
+// Internal helper
 // RSC means Running Speed and Cadence Service.
 static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -343,7 +345,7 @@ typedef struct {
     uint8_t torque_count;
 } ble_gatt_cps_vector;
 
-// Internal
+// Internal helper
 static inline int gatt_sport_feature16(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
@@ -363,7 +365,7 @@ static inline int gatt_sport_feature16(
     return 1;
 }
 
-// Internal
+// Internal helper
 static inline int gatt_sport_feature32(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
@@ -384,7 +386,7 @@ static inline int gatt_sport_feature32(
     return 1;
 }
 
-// Internal
+// Internal helper
 // CPS means Cycling Power Service.
 static inline int gatt_cps_features_valid(
     uint16_t flags, uint32_t features
@@ -423,7 +425,7 @@ static inline uint16_t gatt_cps_content_mask(
     return flags;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Cycling Power Measurement notification.
 // CPS means Cycling Power Service.
 static inline int gatt_cps_notify(
@@ -523,7 +525,7 @@ static inline int gatt_cps_notify(
                                    value, len, 0);
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Cycling Power Vector notification.
 // CPS means Cycling Power Service.
 static inline int gatt_cps_notify_vector(
@@ -585,7 +587,7 @@ static inline int gatt_cps_notify_vector(
                                    value, len, 0);
 }
 
-// Internal
+// Internal helper
 static inline int gatt_sport_cp_busy(
     const ble_gatt_server *server, uint16_t handle
 ) {
@@ -600,7 +602,7 @@ static inline int gatt_sport_cp_busy(
     return 0;
 }
 
-// Internal
+// Internal helper
 static inline uint8_t gatt_sport_cp_response(
     ble_gatt_server *server, uint16_t handle, uint8_t response_opcode,
     uint8_t request_opcode, uint8_t response_code,
@@ -623,7 +625,7 @@ static inline uint8_t gatt_sport_cp_response(
         ATT_ERR_INSUFFICIENT_RESOURCES;
 }
 
-// Internal
+// Internal helper
 static inline uint8_t gatt_sport_cp_ready(
     ble_gatt_server *server, uint16_t handle
 ) {
@@ -638,7 +640,7 @@ static inline uint8_t gatt_sport_cp_ready(
     return 0;
 }
 
-// Internal
+// Internal helper
 static inline int gatt_sport_locations_valid(
     uint32_t locations, uint8_t current_location
 ) {
@@ -651,7 +653,7 @@ static inline int gatt_sport_locations_valid(
     return locations && (locations & (locations - 1u));
 }
 
-// Internal
+// Internal helper
 static inline int gatt_sport_location_store(
     ble_gatt_server *server, uint16_t handle, uint8_t location
 ) {
@@ -666,7 +668,7 @@ static inline int gatt_sport_location_store(
     return 1;
 }
 
-// Internal
+// Internal helper
 // RSC means Running Speed and Cadence Service.
 static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -752,7 +754,7 @@ static inline uint8_t gatt_rsc_cp_write(
         opcode == 4 && response == 1 ? location_count : 0);
 }
 
-// Internal
+// Internal helper
 // CSC means Cycling Speed and Cadence Service.
 static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -824,7 +826,7 @@ static inline uint8_t gatt_csc_cp_write(
         opcode == 4 && response == 1 ? location_count : 0);
 }
 
-// Internal
+// Internal helper
 // CPS means Cycling Power Service.
 static inline uint8_t gatt_cps_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
@@ -1019,7 +1021,7 @@ static inline uint8_t gatt_cps_cp_write(
     return response_error;
 }
 
-// Application facing
+// Application-facing API
 // Configure the supported locations after adding RSC and before connection.
 // RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_set_locations(
@@ -1038,7 +1040,7 @@ static inline int gatt_rsc_set_locations(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Configure the supported locations after adding CSC and before connection.
 // CSC means Cycling Speed and Cadence Service.
 static inline int gatt_csc_set_locations(
@@ -1057,7 +1059,7 @@ static inline int gatt_csc_set_locations(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Configure supported Cycling Power sensor locations before connection.
 // CPS means Cycling Power Service.
 static inline int gatt_cps_set_locations(
@@ -1089,7 +1091,7 @@ static inline void gatt_cps_reset(
     service->control_point_pending_opcode = 0;
 }
 
-// Application facing
+// Application-facing API
 // Complete an asynchronous Cycling Power Control Point procedure.
 // CPS means Cycling Power Service.
 static inline int gatt_cps_complete_control(
@@ -1115,7 +1117,7 @@ static inline int gatt_cps_complete_control(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Set the sampling rate returned by Cycling Power Control Point opcode 14.
 // CPS means Cycling Power Service.
 static inline void gatt_cps_set_rate(
@@ -1125,7 +1127,7 @@ static inline void gatt_cps_set_rate(
         service->sampling_rate = samples_per_second;
 }
 
-// Application facing
+// Application-facing API
 // Set the Factory Calibration Date characteristic and its Control Point value.
 // CPS means Cycling Power Service.
 static inline int gatt_cps_set_cal_date(
@@ -1152,7 +1154,7 @@ static inline int gatt_cps_set_cal_date(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Complete an RSC Start Calibration request and queue its response indication.
 // RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_calibration_complete(
@@ -1173,7 +1175,7 @@ static inline int gatt_rsc_calibration_complete(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Running Speed and Cadence Measurement notification.
 // RSC means Running Speed and Cadence Service.
 static inline int gatt_rsc_notify(
@@ -1213,7 +1215,7 @@ static inline int gatt_rsc_notify(
                                    value, len, 0);
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Cycling Speed and Cadence Measurement notification.
 // CSC means Cycling Speed and Cadence Service.
 static inline int gatt_csc_notify(
@@ -1295,7 +1297,7 @@ enum {
     GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED = 5
 };
 
-// Application facing
+// Application-facing API
 // Add the FTMS feature characteristic and one selected machine-data
 // characteristic. The application encodes machine data and sends its
 // notifications; optional ranges, training status, and remote control are
@@ -1337,7 +1339,7 @@ static inline int gatt_ftms_add(
     return 1;
 }
 
-// Internal
+// Internal helper
 static uint8_t gatt_fitness_machine_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1379,7 +1381,7 @@ static uint8_t gatt_fitness_machine_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add Fitness Machine Data with optional Training Status and Control Point.
 // The application handles Training Status encoding and Control Point policy.
 // FTMS means Fitness Machine Service.
@@ -1464,7 +1466,7 @@ static inline int gatt_ftms_add_controlled(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Build a full selected FTMS layout, including any feature-matched Supported
 // Range characteristics, Training Status, Fitness Machine Status, and Control
 // Point. Range values are the standard encoded 6-octet values, except Heart
@@ -1592,7 +1594,7 @@ static inline int gatt_ftms_add_full(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Add an encoded Training Status notification characteristic.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_notify_training(
@@ -1614,7 +1616,7 @@ static inline int gatt_ftms_notify_training(
                                    value, len, 0);
 }
 
-// Application facing
+// Application-facing API
 // Queue an encoded Fitness Machine Status notification.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_notify_status(
@@ -1635,7 +1637,7 @@ static inline int gatt_ftms_notify_status(
         service->fitness_machine_status_handle, value, len, 0);
 }
 
-// Application facing
+// Application-facing API
 // Complete a pending Fitness Machine Control Point request with an indication.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_complete_control_point(
@@ -1670,7 +1672,7 @@ static inline int gatt_ftms_complete_control_point(
     return queued;
 }
 
-// Application facing
+// Application-facing API
 // Queue one encoded Fitness Machine Data notification.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_notify_data(
@@ -1734,7 +1736,7 @@ enum {
     GATT_PAMS_ERROR_OPERATION_FAILED = 0x8a
 };
 
-// Internal
+// Internal helper
 static uint8_t gatt_physical_activity_monitor_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1894,7 +1896,7 @@ static uint8_t gatt_physical_activity_monitor_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add mandatory PAMS characteristics and selected optional data streams.
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_add_full(
@@ -2045,7 +2047,7 @@ static inline int gatt_pams_add(
         control_point_capacity, session_descriptor_capacity, 0, NULL);
 }
 
-// Application facing
+// Application-facing API
 // Queue an encoded PAMS Instantaneous Activity Data notification.
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_notify_activity(
@@ -2062,7 +2064,7 @@ static inline int gatt_pams_notify_activity(
                                    value, len, 0);
 }
 
-// Application facing
+// Application-facing API
 // Queue an encoded PAMS Summary Data indication.
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_indicate_summary(
@@ -2079,7 +2081,7 @@ static inline int gatt_pams_indicate_summary(
                                    value, len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Queue an encoded PAMS Session Descriptor indication.
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_indicate_descriptor(
@@ -2096,7 +2098,7 @@ static inline int gatt_pams_indicate_descriptor(
                                    value, len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Update the readable 17-byte Current Session value.
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_set_session(
@@ -2119,7 +2121,7 @@ static inline int gatt_pams_set_session(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Indicate the current value previously set with set_current_session().
 // PAMS means Physical Activity Monitor Service.
 static inline int gatt_pams_indicate_session(
@@ -2140,7 +2142,7 @@ static inline int gatt_pams_indicate_session(
                                    value, 17, 1);
 }
 
-// Application facing
+// Application-facing API
 // Complete an Enquire or Get Ended Session Data procedure with its PAMS
 // success or error response opcode and response parameters.
 // PAMS means Physical Activity Monitor Service.
@@ -2218,7 +2220,7 @@ static inline int gatt_pams_complete_cp(
     return queued;
 }
 
-// Application facing
+// Application-facing API
 // Finish Start, Stop, Delete Ended Session, or Set Average Activity Type after
 // the application has applied the request and queued any required indications.
 // PAMS means Physical Activity Monitor Service.

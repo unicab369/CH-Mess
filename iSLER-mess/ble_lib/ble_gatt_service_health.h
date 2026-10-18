@@ -1,6 +1,9 @@
 #ifndef BLE_GATT_SERVICE_HEALTH_H
 #define BLE_GATT_SERVICE_HEALTH_H
 
+// Contents: Glucose, Health Thermometer, Blood Pressure, Heart Rate,
+// Continuous Glucose Monitoring, Pulse Oximeter, Generic Health Sensor, and
+// Insulin Delivery services.
 // Health Thermometer Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
@@ -8,7 +11,7 @@ typedef struct {
     uint16_t intermediate_temperature_cccd_handle, temperature_type_handle;
 } ble_gatt_hts_service;
 
-// Application facing
+// Application-facing API
 // HTS means Health Thermometer Service.
 static inline int gatt_hts_add(
     ble_gatt_server *server, ble_gatt_hts_service *service,
@@ -67,7 +70,7 @@ typedef struct {
     uint16_t intermediate_cuff_pressure_cccd_handle, feature_handle;
 } ble_gatt_bp_service;
 
-// Application facing
+// Application-facing API
 // BP means Blood Pressure Service.
 static inline int gatt_bp_add(
     ble_gatt_server *server, ble_gatt_bp_service *service,
@@ -142,13 +145,7 @@ typedef struct {
     uint16_t specific_ops_handle, specific_ops_cccd_handle;
 } ble_gatt_cgm_service;
 
-
-
-
-
-
-
-// Application facing
+// Application-facing API
 // Add the Continuous Glucose Monitoring attribute database. The application
 // supplies encoded static values and implements record storage and control
 // point procedures. Variable-value capacities are configurable because the
@@ -232,15 +229,13 @@ static inline int gatt_cgm_service_add(
     return 1;
 }
 
-
-
 typedef struct {
     uint16_t service_handle, spot_check_handle, spot_check_cccd_handle;
     uint16_t continuous_handle, continuous_cccd_handle, feature_handle;
     uint16_t record_access_handle, record_access_cccd_handle;
 } ble_gatt_plx_service;
 
-// Application facing
+// Application-facing API
 // Add a Pulse Oximeter database. At least one measurement mode is required;
 // include_record_access should be set when spot-check records are stored.
 // PLX means Pulse Oximeter Service.
@@ -306,7 +301,6 @@ static inline int gatt_plx_add(
     return 1;
 }
 
-
 typedef struct {
     uint8_t flags;
     // IEEE-11073 FLOAT wire value: signed exponent byte, then signed mantissa.
@@ -342,7 +336,7 @@ typedef struct {
     uint16_t body_sensor_location_handle;
 } ble_gatt_hrs_service;
 
-// Application facing
+// Application-facing API
 // Add the standard Heart Rate Service. Set body_sensor_location to 0xff to
 // omit the optional characteristic; otherwise use the assigned value 0..6.
 // HRS means Heart Rate Service.
@@ -390,7 +384,7 @@ static inline int gatt_hrs_add(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode a Heart Rate Measurement value. The output capacity bounds optional
 // RR Interval entries, and only complete 16-bit values are written.
 // HRS means Heart Rate Service.
@@ -442,7 +436,7 @@ static inline int gatt_hrs_encode_measurement(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode a Heart Rate Measurement into caller storage and queue its notification.
 // HRS means Heart Rate Service.
 static inline int gatt_hrs_notify(
@@ -462,7 +456,7 @@ static inline int gatt_hrs_notify(
                                    buffer, len, 0);
 }
 
-// Internal
+// Internal helper
 static inline int gatt_temp_encode(
     const ble_gatt_hts_measurement *measurement,
     uint8_t value[13], uint16_t *len
@@ -491,7 +485,7 @@ static inline int gatt_temp_encode(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue a Health Thermometer measurement indication.
 // HTS means Health Thermometer Service.
 static inline int gatt_hts_indicate(
@@ -510,7 +504,7 @@ static inline int gatt_hts_indicate(
                                    value, len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue an Intermediate Temperature notification.
 // HTS means Health Thermometer Service.
 static inline int gatt_hts_notify_intermediate(
@@ -529,7 +523,7 @@ static inline int gatt_hts_notify_intermediate(
         service->intermediate_temperature_handle, value, len, 0);
 }
 
-// Internal
+// Internal helper
 static inline int gatt_blood_pressure_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
@@ -549,7 +543,7 @@ static inline int gatt_blood_pressure_feature(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue a Blood Pressure Measurement indication.
 // BP means Blood Pressure Service.
 static inline int gatt_bp_indicate(
@@ -599,7 +593,7 @@ static inline int gatt_bp_indicate(
                                    value, len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue an Intermediate Cuff Pressure notification.
 // BP means Blood Pressure Service.
 static inline int gatt_bp_notify_intermediate(
@@ -648,7 +642,6 @@ static inline int gatt_bp_notify_intermediate(
     return gatt_queue_event(server,
         service->intermediate_cuff_pressure_handle, value, len, 0);
 }
-
 
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
@@ -884,7 +877,7 @@ static inline int gatt_gls_racp_complete(
     return queued;
 }
 
-// Internal
+// Internal helper
 static inline int gatt_glucose_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
@@ -904,7 +897,7 @@ static inline int gatt_glucose_feature(
     return 1;
 }
 
-// Internal
+// Internal helper
 static inline int gatt_glucose_status_supported(
     uint16_t feature, uint16_t status
 ) {
@@ -925,7 +918,7 @@ static inline int gatt_glucose_status_supported(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue one Glucose Measurement notification.
 // GLS means Glucose Service.
 static inline int gatt_gls_notify_measurement(
@@ -987,7 +980,7 @@ static inline int gatt_gls_notify_measurement(
     return queued;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue the Context notification matching a measurement sequence.
 // GLS means Glucose Service.
 static inline int gatt_gls_notify_context(
@@ -1081,7 +1074,7 @@ typedef struct {
     uint16_t pulse_amplitude_index;
 } ble_gatt_spo2_continuous;
 
-// Internal
+// Internal helper
 static inline int gatt_spo2_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
@@ -1101,7 +1094,7 @@ static inline int gatt_spo2_feature(
     return 1;
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue a PLX Spot-check Measurement indication.
 // PLX means Pulse Oximeter Service.
 static inline int gatt_plx_indicate_spot(
@@ -1153,7 +1146,7 @@ static inline int gatt_plx_indicate_spot(
                                    value, len, 1);
 }
 
-// Application facing
+// Application-facing API
 // Encode and queue a PLX Continuous Measurement notification.
 // PLX means Pulse Oximeter Service.
 static inline int gatt_plx_notify_continuous(
@@ -1212,7 +1205,6 @@ static inline int gatt_plx_notify_continuous(
     return gatt_queue_event(server, service->continuous_handle,
                                    value, len, 0);
 }
-
 
 typedef struct {
     uint16_t service_handle, live_observations_handle;
@@ -1319,7 +1311,7 @@ static uint8_t gatt_generic_health_sensor_racp_write(
     return 0;
 }
 
-// Internal
+// Internal helper
 static uint8_t gatt_generic_health_sensor_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1356,7 +1348,7 @@ static uint8_t gatt_generic_health_sensor_control_write(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Add the live-observation-only GHS layout. The service handles its start/stop
 // Control Point and success indications; the application supplies observations.
 // GHS means Generic Health Sensor Service.
@@ -1513,7 +1505,7 @@ static inline int gatt_ghs_racp_complete(
     return queued;
 }
 
-// Application facing
+// Application-facing API
 // Queue an encoded live Health Observation after the Control Point starts it.
 // GHS means Generic Health Sensor Service.
 static inline int gatt_ghs_continue_observation(
@@ -1551,7 +1543,7 @@ static inline int gatt_ghs_indicate_observation(
     return 0;
 }
 
-// Application facing
+// Application-facing API
 // Queue the next observation segment. Retry after indication confirmation if
 // blocked by another queued event; observation_len reaches zero once all
 // segments have been queued.
@@ -1620,7 +1612,7 @@ static inline int gatt_ghs_continue_observation(
 }
 
 // Glucose service database builder
-// Application facing
+// Application-facing API
 // GLS means Glucose Service.
 static inline int gatt_gls_add(
     ble_gatt_server *server, ble_gatt_gls_service *service,
@@ -1718,7 +1710,7 @@ typedef struct {
     uint16_t history_data_capacity;
 } ble_gatt_idd_config;
 
-// Application facing
+// Application-facing API
 // Add the mandatory IDD status, features, and Status Reader Control Point
 // characteristics. The application supplies encoded initial values and must
 // authorize access, implement the control point, and send indications.
@@ -1864,6 +1856,5 @@ static inline int gatt_idd_add(
     }
     return 1;
 }
-
 
 #endif
