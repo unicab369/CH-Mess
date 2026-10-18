@@ -3328,12 +3328,74 @@ static inline int gatt_tpms_add(
 }
 
 // Environmental Sensing Service
+#define GATT_ESS_MAX_MEASUREMENTS 8
+#define GATT_ESS_MAX_TRIGGERS 3
+
+enum {
+    GATT_ESS_DESC_CONFIG,
+    GATT_ESS_DESC_TRIGGER
+};
+
+typedef struct {
+    ble_gatt_server *server;
+    uint16_t handle, measurement_handle;
+    uint8_t kind;
+} ble_gatt_ess_desc;
+
 typedef struct {
     uint16_t service_handle;
     uint8_t measurement_count;
-    uint16_t measurement_handles[8];
-    uint16_t measurement_cccd_handles[8];
+    uint16_t measurement_handles[GATT_ESS_MAX_MEASUREMENTS];
+    uint16_t measurement_cccd_handles[GATT_ESS_MAX_MEASUREMENTS];
+    ble_gatt_ess_desc desc[GATT_ESS_MAX_MEASUREMENTS]
+                          [GATT_ESS_MAX_TRIGGERS + 1];
 } ble_gatt_ess_service;
+
+static uint8_t gatt_ess_desc_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_ess_desc *desc = context;
+    if (!desc || !desc->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+
+    ble_gatt_attribute *attr = gatt_server_find(desc->server, desc->handle);
+    ble_gatt_attribute *measurement = gatt_server_find(
+        desc->server, desc->measurement_handle);
+    uint8_t *stored = attr ? gatt_attribute_value(desc->server, attr) : NULL;
+    if (!attr || !measurement || !stored)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (desc->kind == GATT_ESS_DESC_CONFIG) {
+        if (len != 1)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (value[0] > 1)
+            return ATT_ERR_VALUE_NOT_ALLOWED;
+    }
+    else {
+        if (!len)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        uint8_t condition = value[0];
+        if (condition > 9)
+            return 0x81; // Environmental Sensing: Condition Not Supported.
+        if ((condition == 0 && len != 1) ||
+            ((condition == 1 || condition == 2) && len != 4) ||
+            (condition >= 3 && len < 2))
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (condition >= 3 && measurement->value_len &&
+            len - 1 != measurement->value_len)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    }
+
+    if (len > attr->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    memcpy(stored, value, len);
+    attr->value_len = len;
+    return 0;
+}
 
 // Application-facing API
 // ESS means Environmental Sensing Service.
@@ -3341,9 +3403,23 @@ static inline int gatt_ess_add(
     ble_gatt_server *server, ble_gatt_ess_service *service,
     const ble_gatt_sig_characteristic *measurements, uint8_t count
 ) {
-    if (!server || !service || !measurements || !count || count > 8 ||
+    if (!server || !service || !measurements || !count ||
+        count > GATT_ESS_MAX_MEASUREMENTS ||
         server->database_sealed
     ) return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        if (measurements[i].descriptor_count && !measurements[i].descriptors)
+            return 0;
+        uint8_t triggers = 0, configs = 0;
+        for (uint8_t j = 0; j < measurements[i].descriptor_count; j++) {
+            uint16_t uuid = measurements[i].descriptors[j].uuid;
+            if (uuid == 0x290b && ++configs > 1)
+                return 0;
+            if (uuid == 0x290d && ++triggers > GATT_ESS_MAX_TRIGGERS)
+                return 0;
+        }
+    }
 
     memset(service, 0, sizeof(*service));
 
@@ -3351,6 +3427,38 @@ static inline int gatt_ess_add(
             &service->service_handle, service->measurement_handles,
             service->measurement_cccd_handles)
     ) return 0;
+
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t trigger_count = 0;
+        uint16_t value_handle = service->measurement_handles[i];
+        for (uint16_t j = 0; j < server->count; j++) {
+            ble_gatt_attribute *attr = &server->attrs[j];
+            if (attr->handle <= value_handle)
+                continue;
+            if (attr->flags & BLE_GATT_ATTR_CHAR)
+                break;
+
+            uint16_t uuid = gatt_uuid_assigned16(&attr->uuid);
+            if (uuid != 0x290b && uuid != 0x290d)
+                continue;
+            if (uuid == 0x290d)
+                trigger_count++;
+
+            ble_gatt_ess_desc *desc = uuid == 0x290b ?
+                &service->desc[i][0] :
+                &service->desc[i][trigger_count];
+            desc->server = server;
+            desc->handle = attr->handle;
+            desc->measurement_handle = value_handle;
+            desc->kind = uuid == 0x290b ? GATT_ESS_DESC_CONFIG :
+                GATT_ESS_DESC_TRIGGER;
+            attr->context = desc;
+            if (attr->permissions & (BLE_GATT_PERM_WRITE |
+                    BLE_GATT_PERM_WRITE_ENC | BLE_GATT_PERM_WRITE_AUTHN |
+                    BLE_GATT_PERM_WRITE_AUTHZ))
+                attr->write_request = gatt_ess_desc_write;
+        }
+    }
 
     service->measurement_count = count;
     return 1;

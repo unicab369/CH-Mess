@@ -285,6 +285,12 @@ static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED 0
 #endif
 
+// Address types are shared by GAP and SMP.
+typedef struct {
+    // Zero is public; any nonzero value is treated as random.
+    uint8_t type, address[6];
+} gap_address;
+
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
@@ -310,12 +316,6 @@ typedef struct {
     uint8_t has_peripheral_ltk;
 } gap_bond;
 #endif
-
-// Address types are shared by GAP and SMP.
-typedef struct {
-    // Zero is public; any nonzero value is treated as random.
-    uint8_t type, address[6];
-} gap_address;
 
 // GAP state and connection data types.
 typedef struct {
@@ -1346,18 +1346,17 @@ static int gap_conn_accept(
 
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
 #if GAP_SMP_SUPPORT > 0
-
     if (!smp_link_init()) {
         gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
         return 0;
     }
-
 #endif
 
-    gap_adv.enabled = 0;
 #if GAP_EXT_ADV_SUPPORT
     gap_ext_adv_connection_accept();
 #endif
+
+    gap_adv.enabled = 0;
     return 1;
 }
 

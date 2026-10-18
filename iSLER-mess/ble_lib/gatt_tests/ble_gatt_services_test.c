@@ -19,6 +19,27 @@ static uint8_t read_battery_level(
     return response[0];
 }
 
+static uint8_t write_value(
+    ble_gatt_server *server, uint16_t handle,
+    const uint8_t *value, uint16_t len
+) {
+    uint8_t request[BLE_GATT_ATT_VALUE_MAX + 3];
+    request[0] = ATT_OP_WRITE_REQ;
+    request[1] = (uint8_t)handle;
+    request[2] = (uint8_t)(handle >> 8);
+    memcpy(request + 3, value, len);
+    uint8_t response[BLE_GATT_SERVER_MTU_MAX];
+    uint16_t response_len = 0;
+    assert(gatt_server_att(server, request, len + 3, response,
+        sizeof(response), &response_len) == 1);
+    if (response[0] == ATT_OP_ERROR_RSP) {
+        assert(response_len == 5);
+        return response[4];
+    }
+    assert(response[0] == ATT_OP_WRITE_RSP && response_len == 1);
+    return 0;
+}
+
 static uint8_t ots_change_count, ots_last_change, ots_last_id[6];
 
 static void ots_change_observer(
@@ -162,6 +183,47 @@ int main(void) {
            response[4] == ATT_ERR_WRITE_NOT_PERMITTED);
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 42);
+
+    // ESS accepts valid trigger/configuration descriptor writes and rejects
+    // unsupported logic, condition codes, and malformed time operands.
+    gatt_server_init(&server, 23);
+    ble_gatt_ess_service ess = {0};
+    uint8_t temperature[2] = {0, 0};
+    uint8_t logic = 0, trigger[8] = {0};
+    const ble_gatt_sig_descriptor ess_descs[] = {
+        {0x290b, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         &logic, 1, 1},
+        {0x290d, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         trigger, 1, sizeof(trigger)}
+    };
+    const ble_gatt_sig_characteristic ess_chars[] = {
+        {0x2a6e, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
+         BLE_GATT_PERM_READ,
+         temperature, sizeof(temperature), sizeof(temperature), 0,
+         ess_descs, 2}
+    };
+    assert(gatt_ess_add(&server, &ess, ess_chars, 1));
+    uint16_t config_handle = 0, trigger_handle = 0;
+    for (uint16_t i = 0; i < server.count; i++) {
+        uint16_t uuid = gatt_uuid_assigned16(&server.attrs[i].uuid);
+        if (uuid == 0x290b) config_handle = server.attrs[i].handle;
+        if (uuid == 0x290d) trigger_handle = server.attrs[i].handle;
+    }
+    assert(config_handle && trigger_handle);
+    const uint8_t use_or[] = {1};
+    const uint8_t bad_logic[] = {2};
+    const uint8_t time_trigger[] = {1, 5, 0, 0};
+    const uint8_t bad_time_trigger[] = {1, 5, 0};
+    const uint8_t unsupported_trigger[] = {10, 0, 0};
+    assert(!write_value(&server, config_handle, use_or, sizeof(use_or)));
+    assert(write_value(&server, config_handle, bad_logic,
+        sizeof(bad_logic)) == ATT_ERR_VALUE_NOT_ALLOWED);
+    assert(!write_value(&server, trigger_handle, time_trigger,
+        sizeof(time_trigger)));
+    assert(write_value(&server, trigger_handle, bad_time_trigger,
+        sizeof(bad_time_trigger)) == ATT_ERR_INVALID_ATTRIBUTE_LENGTH);
+    assert(write_value(&server, trigger_handle, unsupported_trigger,
+        sizeof(unsupported_trigger)) == 0x81);
 
     // FTMS applies its standardized start/stop state rules and completes
     // synchronous machine actions through the application callback.

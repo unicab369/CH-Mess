@@ -39,7 +39,9 @@ automatically provide each service's application protocol or profile behavior.
   feature-gated Control Point procedures, MTU-bounded route responses, and
   MTU-bounded Location and Speed/Navigation notification encoders with
   connection-scoped content masks
-- [x] Environmental Sensing (`0x181A`)
+- [x] Environmental Sensing (`0x181A`), writable Configuration and Trigger
+  Setting validation/storage; sample timing and trigger scheduling remain
+  application-owned
 - [x] Body Composition (`0x181B`), reserved Feature-bit validation and
   MTU-bounded Measurement indication encoding
 - [x] User Data (`0x181C`), Database Change Increment writes, User Control
