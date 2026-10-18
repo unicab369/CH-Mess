@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "../gatt_services/ble_gatt_services.h"
 
@@ -16,6 +17,36 @@ static uint8_t read_battery_level(
     assert(response_len == 2 && response[0] == ATT_OP_READ_RSP);
     *value = response[1];
     return response[0];
+}
+
+static uint8_t ots_change_count, ots_last_change, ots_last_id[6];
+
+static void ots_change_observer(
+    void *context, uint8_t flags, const uint8_t object_id[6]
+) {
+    (void)context;
+    ots_change_count++;
+    ots_last_change = flags;
+    memcpy(ots_last_id, object_id, sizeof(ots_last_id));
+}
+
+static uint8_t ots_select_for_test(void *context, const uint8_t object_id[6]) {
+    ble_gatt_ots_service *service = context;
+    for (uint16_t i = 0; i < service->object_count; i++) {
+        ble_gatt_ots_object *object = &service->objects[i];
+        if (memcmp(object->id, object_id, 6)) continue;
+        uint8_t properties[4] = {
+            (uint8_t)object->properties,
+            (uint8_t)(object->properties >> 8),
+            (uint8_t)(object->properties >> 16),
+            (uint8_t)(object->properties >> 24)
+        };
+        return (uint8_t)gatt_ots_set_object_metadata(service,
+            object->name, object->name_len, object->type, object->type_len,
+            object->size, object->created, object->modified, object->id,
+            properties);
+    }
+    return 0;
 }
 
 int main(void) {
@@ -131,6 +162,119 @@ int main(void) {
            cgm_config.measurement_capacity);
     assert(gatt_server_find(&server, cgm.record_access_cccd_handle)->permissions ==
            (BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_AUTHN));
+
+    // OTS returns Object Not Selected for metadata reads and writes when the
+    // current object is invalid, and routes client changes to the app for
+    // fan-out instead of indicating them back to the writing client.
+    gatt_server_init(&server, 23);
+    ble_gatt_ots_service ots = {0};
+    const uint8_t ots_features[8] = {0xe3, 0x01, 0, 0, 0x01, 0, 0, 0};
+    const uint8_t ots_name[] = {'a'};
+    const uint8_t ots_type[] = {0x00, 0x18};
+    const uint8_t ots_size[8] = {2, 0, 0, 0, 4, 0, 0, 0};
+    const uint8_t ots_properties[4] = {0x79, 0, 0, 0};
+    const uint8_t ots_id[6] = {0x00, 0x01, 0, 0, 0, 0};
+    assert(gatt_ots_add_multi(&server, &ots, ots_features,
+        ots_name, sizeof(ots_name), ots_type, sizeof(ots_type), ots_size,
+        ots_properties, ots_id, NULL, 0, 32));
+    server.encrypted = 1;
+    gatt_ots_set_change_observer(&ots, ots_change_observer, NULL);
+    uint8_t read_name[] = {
+        ATT_OP_READ_REQ, (uint8_t)ots.object_name_handle,
+        (uint8_t)(ots.object_name_handle >> 8)
+    };
+    assert(gatt_server_att(&server, read_name, sizeof(read_name), response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == ATT_OP_READ_RSP && response_len == 2 &&
+           response[1] == 'a');
+    ots.current_object_valid = 0;
+    assert(gatt_server_att(&server, read_name, sizeof(read_name), response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == ATT_OP_ERROR_RSP && response[4] == 0x81);
+    uint8_t write_name[] = {
+        ATT_OP_WRITE_REQ, (uint8_t)ots.object_name_handle,
+        (uint8_t)(ots.object_name_handle >> 8), 'b'
+    };
+    assert(gatt_server_att(&server, write_name, sizeof(write_name), response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == ATT_OP_ERROR_RSP && response[4] == 0x81 &&
+           ots_change_count == 0);
+    ots.current_object_valid = 1;
+    assert(gatt_server_att(&server, write_name, sizeof(write_name), response,
+        sizeof(response), &response_len) == 1);
+    assert(response[0] == ATT_OP_WRITE_RSP && response_len == 1 &&
+           ots_change_count == 1 && ots_last_change ==
+           (GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_METADATA) &&
+           !memcmp(ots_last_id, ots_id, sizeof(ots_id)) &&
+           server.event_count == 0);
+    ble_gatt_attribute *ots_oacp_cccd = gatt_server_find(&server,
+        ots.action_control_point_cccd_handle);
+    assert(ots_oacp_cccd);
+    ots_oacp_cccd->cccd = 2;
+    const uint8_t append_write[] = {
+        0x06, 2, 0, 0, 0, 3, 0, 0, 0, 0
+    };
+    assert(gatt_ots_oacp_write(&ots, 0, append_write,
+        sizeof(append_write), 0) == 0 && ots.request_pending);
+    ots.request_pending = 0;
+    ots.active_control_point = 0;
+    ots.features[0] &= (uint8_t)~0x40;
+    assert(gatt_ots_oacp_write(&ots, 0, append_write,
+        sizeof(append_write), 0) == 0 && server.event_count == 1);
+    assert(server.event_data[server.events[0].data_offset + 2] == 0x03);
+
+    // A filter that excludes the current object invalidates it. Go To ignores
+    // filters, selects the requested object, and resets every filter.
+    gatt_server_init(&server, 23);
+    memset(&ots, 0, sizeof(ots));
+    const uint8_t ots_id_2[6] = {0x01, 0x01, 0, 0, 0, 0};
+    assert(gatt_ots_add_multi(&server, &ots, ots_features,
+        ots_name, sizeof(ots_name), ots_type, sizeof(ots_type), ots_size,
+        ots_properties, ots_id, NULL, 0, 32));
+    server.encrypted = 1;
+    ble_gatt_ots_object objects[2] = {
+        {
+            .id = {0x00, 0x01, 0, 0, 0, 0}, .properties = 0x79,
+            .name = (const uint8_t *)"a", .name_len = 1,
+            .type = {0x00, 0x18}, .type_len = 2
+        },
+        {
+            .id = {0x01, 0x01, 0, 0, 0, 0}, .properties = 0x79,
+            .name = (const uint8_t *)"b", .name_len = 1,
+            .type = {0x00, 0x18}, .type_len = 2
+        }
+    };
+    assert(gatt_ots_set_objects(&ots, objects, 2,
+        ots_select_for_test, NULL, NULL, &ots));
+    const uint8_t name_filter[] = {0x04, 'b'};
+    assert(gatt_ots_set_list_filter(&ots, 0, name_filter,
+                                    sizeof(name_filter)));
+    assert(!ots.current_object_valid);
+    ble_gatt_attribute *oacp_cccd = gatt_server_find(&server,
+        ots.action_control_point_cccd_handle);
+    assert(oacp_cccd);
+    oacp_cccd->cccd = 2;
+    const uint8_t delete_request[] = {0x02};
+    assert(gatt_ots_oacp_write(&ots, 0, delete_request,
+        sizeof(delete_request), 0) == 0);
+    assert(server.event_count == 1 &&
+           server.event_data[server.events[0].data_offset + 2] == 0x05);
+    ble_gatt_attribute *olcp_cccd = gatt_server_find(&server,
+        ots.object_list_control_point_cccd_handle);
+    assert(olcp_cccd);
+    olcp_cccd->cccd = 2;
+    const uint8_t go_to[] = {0x05, 0x01, 0x01, 0, 0, 0, 0};
+    assert(gatt_ots_olcp_write(&ots, 0, go_to, sizeof(go_to), 0) == 0);
+    assert(ots.current_object_valid &&
+           !memcmp(ots.current_object_id, ots_id_2, sizeof(ots_id_2)));
+    for (uint8_t i = 0; i < 3; i++) {
+        ble_gatt_attribute *filter = gatt_server_find(&server,
+            ots.object_list_filter_handles[i]);
+        const uint8_t *filter_value = filter ?
+            gatt_attribute_value(&server, filter) : NULL;
+        assert(filter && filter_value && filter->value_len == 1 &&
+               filter_value[0] == 0);
+    }
 
     return 0;
 }

@@ -1396,7 +1396,7 @@ static inline int gatt_ghs_add_full(
         service->stored_obs_cccd_handle = cccds[2];
         service->racp_handle = values[3];
         service->racp_cccd_handle = cccds[3];
-        service->stored_obs_notify = stored_obs_notify;
+        service->stored_obs_notify = stored_observations_notify;
     }
 
     return 1;

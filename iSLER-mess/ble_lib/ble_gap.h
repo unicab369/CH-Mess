@@ -14,6 +14,77 @@
 #define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
 #endif
 
+// GAP feature, capacity, and protocol constants.
+// Build-time feature and capacity settings.
+#ifndef GAP_EXT_ADV_SUPPORT
+#define GAP_EXT_ADV_SUPPORT 0
+#endif
+
+// Default secondary advertising PHY support for each target family.
+#ifndef GAP_HW_ADV_PHY_MASK
+    #if defined(CH582_CH583) || defined(CH32V208)
+        #define GAP_HW_ADV_PHY_MASK \
+            (GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED)
+    #else
+        #define GAP_HW_ADV_PHY_MASK GAP_PHY_1M
+    #endif
+#endif
+
+#ifndef GAP_CONN_DATA_MAX
+    #if GAP_EXT_ADV_SUPPORT
+        #define GAP_CONN_DATA_MAX 35
+    #else
+        #define GAP_CONN_DATA_MAX 27
+    #endif
+#endif
+#if GAP_CONN_DATA_MAX < 27 || GAP_CONN_DATA_MAX > 251
+#error "GAP_CONN_DATA_MAX must be between 27 and 251"
+#endif
+
+#ifndef GAP_EXT_ADV_SET_COUNT
+#define GAP_EXT_ADV_SET_COUNT 2
+#endif
+#if GAP_EXT_ADV_SET_COUNT < 1 || GAP_EXT_ADV_SET_COUNT > 4
+#error "GAP_EXT_ADV_SET_COUNT must be between 1 and 4"
+#endif
+
+#ifndef GAP_EXT_ADV_DATA_MAX
+#define GAP_EXT_ADV_DATA_MAX 1650
+#endif
+#if GAP_EXT_ADV_DATA_MAX < 1 || GAP_EXT_ADV_DATA_MAX > 1650
+#error "GAP_EXT_ADV_DATA_MAX must be between 1 and 1650"
+#endif
+
+#ifndef GAP_CONNECTION_COUNT
+#define GAP_CONNECTION_COUNT 2
+#endif
+#if GAP_CONNECTION_COUNT < 1 || GAP_CONNECTION_COUNT > 4
+#error "GAP_CONNECTION_COUNT must be between 1 and 4"
+#endif
+
+#ifndef GAP_L2CAP_LL_MAX
+#define GAP_L2CAP_LL_MAX 251
+#endif
+
+// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
+#ifndef GAP_SMP_SUPPORT
+#define GAP_SMP_SUPPORT 0
+#endif
+
+#ifndef GAP_IDENTITY_COUNT
+#define GAP_IDENTITY_COUNT 4
+#endif
+#if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
+#error "GAP_IDENTITY_COUNT must be between 1 and 32"
+#endif
+
+#ifndef GAP_ACCEPT_LIST_COUNT
+#define GAP_ACCEPT_LIST_COUNT 4
+#endif
+#if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
+#error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
+#endif
+
 uint32_t GET_MILLIS(void);
 // AES uses standard byte order; the platform must serialize shared hardware use.
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *in, uint8_t *out);
@@ -61,21 +132,6 @@ int GAP_CCM_DECRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
     uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
-// Build-time feature and capacity settings.
-#ifndef GAP_EXT_ADV_SUPPORT
-#define GAP_EXT_ADV_SUPPORT 0
-#endif
-
-// Default secondary advertising PHY support for each target family.
-#ifndef GAP_HW_ADV_PHY_MASK
-    #if defined(CH582_CH583) || defined(CH32V208)
-        #define GAP_HW_ADV_PHY_MASK \
-            (GAP_PHY_1M | GAP_PHY_2M | GAP_PHY_CODED)
-    #else
-        #define GAP_HW_ADV_PHY_MASK GAP_PHY_1M
-    #endif
-#endif
-
 enum {
     ADV_IND = 0x00,
     ADV_DIRECT_IND = 0x01,
@@ -93,78 +149,6 @@ typedef enum {
     GAP_CONN_MODE_SELECTIVE = 0x02,
     GAP_CONN_MODE_AUTO = 0x04
 } gap_conn_mode;
-
-#ifndef GAP_CONN_DATA_MAX
-    #if GAP_EXT_ADV_SUPPORT
-        #define GAP_CONN_DATA_MAX 35
-    #else
-        #define GAP_CONN_DATA_MAX 27
-    #endif
-#endif
-#if GAP_CONN_DATA_MAX < 27 || GAP_CONN_DATA_MAX > 251
-#error "GAP_CONN_DATA_MAX must be between 27 and 251"
-#endif
-
-#ifndef GAP_EXT_ADV_SET_COUNT
-#define GAP_EXT_ADV_SET_COUNT 2
-#endif
-#if GAP_EXT_ADV_SET_COUNT < 1 || GAP_EXT_ADV_SET_COUNT > 4
-#error "GAP_EXT_ADV_SET_COUNT must be between 1 and 4"
-#endif
-
-#ifndef GAP_EXT_ADV_DATA_MAX
-#define GAP_EXT_ADV_DATA_MAX 1650
-#endif
-#if GAP_EXT_ADV_DATA_MAX < 1 || GAP_EXT_ADV_DATA_MAX > 1650
-#error "GAP_EXT_ADV_DATA_MAX must be between 1 and 1650"
-#endif
-
-#ifndef GAP_CONNECTION_COUNT
-#define GAP_CONNECTION_COUNT 2
-#endif
-#if GAP_CONNECTION_COUNT < 1 || GAP_CONNECTION_COUNT > 4
-#error "GAP_CONNECTION_COUNT must be between 1 and 4"
-#endif
-
-// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
-#ifndef GAP_SMP_SUPPORT
-#define GAP_SMP_SUPPORT 0
-#endif
-
-// Advertising payload limits and extended advertising storage.
-#define GAP_ADV_DATA_MAX 31
-#define GAP_ADV_INTERVAL_MIN_MS 100
-#define GAP_ADV_INTERVAL_MAX_MS 10240
-#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
-#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
-#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
-#define GAP_EXT_ADV_CONTEXT_COUNT 2
-#define GAP_EXT_ADV_REPORT_COUNT 2
-#define GAP_EXT_ADV_SEEN_COUNT 4
-#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
-#define GAP_PAWR_RESPONSE_DATA_MAX 249
-#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
-
-// Scanner, periodic synchronization, and identity storage capacities.
-#define GAP_SCAN_REPORT_COUNT 4
-#define GAP_SCAN_SEEN_COUNT 4
-#define GAP_PERIODIC_SYNC_COUNT 2
-#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
-#define GAP_PERIODIC_REPORT_COUNT 2
-
-#ifndef GAP_IDENTITY_COUNT
-#define GAP_IDENTITY_COUNT 4
-#endif
-#if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
-#error "GAP_IDENTITY_COUNT must be between 1 and 32"
-#endif
-
-#ifndef GAP_ACCEPT_LIST_COUNT
-#define GAP_ACCEPT_LIST_COUNT 4
-#endif
-#if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
-#error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
-#endif
 
 // Advertising and connection constants.
 #define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
@@ -192,31 +176,25 @@ typedef enum {
 #define GAP_LL_FEATURES_EXTENDED 0x80
 #define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
 
-// Return conservative on-air time for a Link Layer PDU payload length.
-// LE Coded uses the slower S=8 data coding as its scheduling upper bound.
-static inline uint32_t gap_phy_airtime_us(
-    uint16_t payload_len, uint8_t phy
-) {
-    if (phy == GAP_PHY_2M)
-        return ((uint32_t)payload_len + 11) * 4;
-    if (phy == GAP_PHY_CODED)
-        return 976 + (uint32_t)payload_len * 64;
+// Advertising payload limits and extended advertising storage.
+#define GAP_ADV_DATA_MAX 31
+#define GAP_ADV_INTERVAL_MIN_MS 100
+#define GAP_ADV_INTERVAL_MAX_MS 10240
+#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
+#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
+#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
+#define GAP_EXT_ADV_CONTEXT_COUNT 2
+#define GAP_EXT_ADV_REPORT_COUNT 2
+#define GAP_EXT_ADV_SEEN_COUNT 4
+#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
+#define GAP_PAWR_RESPONSE_DATA_MAX 249
+#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
 
-    return ((uint32_t)payload_len + 10) * 8;
-}
-
-// Advertising, scanning, and periodic-sync state.
-static struct {
-    uint8_t enabled, pdu_type, data_len, scan_resp_len;
-    struct {
-        uint8_t type, address[6];
-    } local, target;
-    int8_t peer_slot;
-    uint8_t scan_accept, connection_accept;
-    uint16_t interval_ms;
-    uint32_t next_event_ms;
-    uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
-} gap_adv;
+#define GAP_SCAN_REPORT_COUNT 4
+#define GAP_SCAN_SEEN_COUNT 4
+#define GAP_PERIODIC_SYNC_COUNT 2
+#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
+#define GAP_PERIODIC_REPORT_COUNT 2
 
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
@@ -268,22 +246,6 @@ static void gap_ext_adv_connection_accept(void);
 #endif
 
 typedef struct {
-    uint8_t scanning, active, generation;
-    uint16_t interval_ms, window_ms;
-    uint8_t discovery_mode, filter_duplicates;
-} gap_scanner_state;
-static gap_scanner_state gap_scanner = {
-    .interval_ms = 20,
-    .window_ms = 20,
-    .discovery_mode = GAP_DISCOVERY_ALL
-};
-
-// Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
-typedef struct {
-    uint16_t tx_octets, tx_time, rx_octets, rx_time;
-} gap_data_length;
-
-typedef struct {
     // Zero is public; any nonzero value is treated as random.
     uint8_t type, address[6];
 } gap_address;
@@ -313,6 +275,50 @@ typedef struct {
 typedef int (*ble_smp_user_request_fn)(void *context, uint8_t action,
                                        uint32_t value);
 #endif
+
+// Return conservative on-air time for a Link Layer PDU payload length.
+// LE Coded uses the slower S=8 data coding as its scheduling upper bound.
+static inline uint32_t gap_phy_airtime_us(
+    uint16_t payload_len, uint8_t phy
+) {
+    if (phy == GAP_PHY_2M)
+        return ((uint32_t)payload_len + 11) * 4;
+    if (phy == GAP_PHY_CODED)
+        return 976 + (uint32_t)payload_len * 64;
+
+    return ((uint32_t)payload_len + 10) * 8;
+}
+
+// Advertising, scanning, and periodic-sync state.
+static struct {
+    uint8_t enabled, pdu_type, data_len, scan_resp_len;
+    struct {
+        uint8_t type, address[6];
+    } local, target;
+    int8_t peer_slot;
+    uint8_t scan_accept, connection_accept;
+    uint16_t interval_ms;
+    uint32_t next_event_ms;
+    uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
+} gap_adv;
+
+
+
+typedef struct {
+    uint8_t scanning, active, generation;
+    uint16_t interval_ms, window_ms;
+    uint8_t discovery_mode, filter_duplicates;
+} gap_scanner_state;
+static gap_scanner_state gap_scanner = {
+    .interval_ms = 20,
+    .window_ms = 20,
+    .discovery_mode = GAP_DISCOVERY_ALL
+};
+
+// Negotiated payload sizes and packet durations in microseconds (LE 1M PHY).
+typedef struct {
+    uint16_t tx_octets, tx_time, rx_octets, rx_time;
+} gap_data_length;
 
 // Per-link connection, encryption, SMP, and Central initiation state.
 // Radio receive control shared by scanning and connection polling.
@@ -362,6 +368,42 @@ typedef struct {
 } gap_conn_schedule;
 
 typedef struct {
+#if GAP_SMP_SUPPORT > 0
+    uint8_t bonded, restore_started, restore_attempted;
+    gap_bond bond;
+#endif
+#if GAP_EXT_ADV_SUPPORT
+    volatile uint8_t sync_transfer_queued;
+    uint8_t sync_transfer_slot;
+    uint16_t sync_transfer_id;
+#endif
+
+    // Connection identity and security state.
+    gap_address initiator, responder, peer;
+    uint8_t is_central;
+    uint8_t authenticated, enc_key_size;
+    uint8_t load_pending;
+
+    // Radio and connection data.
+    uint8_t window_size, update_window_size;
+    uint16_t tx_l2cap_remaining;
+
+    // Connection parameters and timing state.
+    uint8_t next_channel_map[5];
+    uint8_t connection_status;
+    uint16_t params_min, params_max, params_latency, params_timeout;
+    uint32_t params_started_ms;
+    uint16_t update_instant, update_win_offset, map_instant;
+    gap_conn_schedule schedule, next_schedule;
+    gap_conn_params new_params;
+
+    // Data-length negotiation.
+    uint16_t data_capacity, local_tx_octets;
+    gap_data_length data_length, remote_data_length;
+    uint8_t length_status;
+    uint32_t length_started_ms;
+
+    // Link-layer event and termination state.
     struct {
         uint8_t rx_armed, event_replied, channel_selected;
         uint8_t terminate_after_reply, version_ind_sent;
@@ -377,15 +419,8 @@ typedef struct {
         uint32_t access_address, crc_init, last_rx_ms;
         uint64_t next_ticks;
     } link;
-    // Connection endpoint and peer identity addresses.
-    gap_address initiator, responder, peer;
-    uint8_t is_central;
-    uint8_t authenticated, enc_key_size;
-    uint8_t load_pending;
-#if GAP_SMP_SUPPORT > 0
-    uint8_t bonded, restore_started, restore_attempted;
-    gap_bond bond;
-#endif
+
+    // Radio queues and connection data.
     struct {
         volatile uint8_t phy_queued;
         volatile uint8_t tx_queued, rx_ready;
@@ -393,28 +428,11 @@ typedef struct {
         volatile uint8_t local_params, local_map;
         volatile uint8_t length;
     } queue;
-
-    // Radio queues and connection data.
-    uint8_t window_size, update_window_size;
-#if GAP_EXT_ADV_SUPPORT
-    volatile uint8_t sync_transfer_queued;
-    uint8_t sync_transfer_slot;
-    uint16_t sync_transfer_id;
-#endif
-    uint16_t tx_l2cap_remaining;
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } tx, rx;
 
-    // Connection parameter and channel-map procedures.
-    uint8_t next_channel_map[5];
-    uint8_t connection_status;
-    uint16_t params_min, params_max, params_latency, params_timeout;
-    uint32_t params_started_ms;
-    uint16_t update_instant, update_win_offset, map_instant;
-
-    // Active and pending connection timing and subrate schedules.
-    gap_conn_schedule schedule, next_schedule;
+    // Connection-rate and subrate procedure state.
     struct {
         uint8_t queued_flags; // Local set and peer request pending bits.
         uint8_t update_pending;
@@ -424,7 +442,6 @@ typedef struct {
         uint16_t continuation, timeout, periodicity;
         uint16_t offsets[4];
     } rate;
-    gap_conn_params new_params;
     struct {
         uint8_t transition, event_activity, event_received, force_event;
         uint16_t continuations, latency_remaining;
@@ -436,11 +453,17 @@ typedef struct {
         uint32_t started_ms;
     } subrate;
 
-    // Data-length negotiation.
-    uint16_t data_capacity, local_tx_octets;
-    gap_data_length data_length, remote_data_length;
-    uint8_t length_status;
-    uint32_t length_started_ms;
+    // PHY update state.
+    struct {
+        struct {
+            uint8_t tx, rx;
+        } current, preferred, pending;
+        uint8_t status;
+        uint16_t instant;
+        uint32_t started_ms;
+    } phy;
+
+    // Link-layer feature exchange and channel classification.
     struct {
         uint8_t known, peer[8];
         uint8_t ext_pending, page1_known, peer_page1[8];
@@ -455,14 +478,8 @@ typedef struct {
         uint8_t peer_classification[GAP_CHANNEL_CLASSIFICATION_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } channel;
-    struct {
-        struct {
-            uint8_t tx, rx;
-        } current, preferred, pending;
-        uint8_t status;
-        uint16_t instant;
-        uint32_t started_ms;
-    } phy;
+
+    // Procedures awaiting completion or peer response.
     struct {
         uint8_t update_window_active;
         // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
@@ -479,13 +496,14 @@ static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 
+#define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
+
 // Application facing
 // Return the read-only context for the currently selected connection slot.
 const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
-#define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
 static inline uint8_t gap_conn_slot_active(uint8_t slot) {
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) != 0;
@@ -1377,9 +1395,6 @@ static int gap_conn_accept(
 #include "ble_gap_connection_poll.h"
 
 // GAP-backed L2CAP link adapter.
-#ifndef GAP_L2CAP_LL_MAX
-#define GAP_L2CAP_LL_MAX 251
-#endif
 
 typedef struct {
     gap_conn_handle handle;

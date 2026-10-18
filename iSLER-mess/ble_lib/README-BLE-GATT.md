@@ -198,15 +198,18 @@ date, size, and marked-object filters. Without a table, OLCP requests remain
 available through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
 Keep the table and its name pointers valid for the service lifetime. Configure
 each Object List Filter instance with `gatt_ots_set_list_filter()`.
-Queue Object Changed indications with `gatt_ots_object_changed()` and the
-standard change flags plus the affected nonzero Object ID for changes outside
-OACP. Successful OACP Create, Delete, and Write completions automatically
-queue Created, Deleted, and Contents Changed indications when subscribed. For
-Create, call `gatt_ots_set_object_metadata()` with the new object ID before
-`gatt_ots_oacp_complete()` so the indication identifies the created object.
-Client writes to Object Name, writable First-Created, and writable
-Last-Modified metadata automatically queue client-sourced Metadata Changed
-indications when subscribed and the current Object ID is known.
+Queue server-originated Object Changed indications with
+`gatt_ots_object_changed()` and the standard change flags plus the affected
+Object ID. Client-originated OACP and metadata changes call the optional
+`gatt_ots_set_change_observer()` hook. Use it to fan indications out to
+subscribed peer connections; the client that made the change must not receive
+its own Object Changed indication. For Create, call
+`gatt_ots_set_object_metadata()` with the new Object ID before
+`gatt_ots_oacp_complete()` so the observer can identify the created object.
+Object Name writes on a configured object table require a name-store callback
+from `gatt_ots_set_name_store()` so the application can retain the new name;
+the service rejects duplicate nonempty names. Writable First-Created and
+Last-Modified writes update the selected table entry automatically.
 For single-object OTS, initialize the current ID through the same setter so
 automatic Delete and Write indications can identify the object.
 After create/delete operations, update the table to keep navigation and counts

@@ -1410,6 +1410,13 @@ typedef uint8_t (*ble_gatt_ots_order_fn)(
 typedef uint8_t (*ble_gatt_ots_clear_fn)(
     void *context, ble_gatt_ots_object *objects, uint16_t count
 );
+typedef void (*ble_gatt_ots_change_fn)(
+    void *context, uint8_t flags, const uint8_t object_id[6]
+);
+typedef uint8_t (*ble_gatt_ots_name_store_fn)(
+    void *context, const uint8_t object_id[6], const uint8_t *name,
+    uint16_t name_len
+);
 
 enum {
     GATT_OTS_CHANGE_CLIENT = 1u << 0,
@@ -1466,10 +1473,17 @@ typedef struct ble_gatt_ots_service {
     ble_gatt_ots_order_fn order_objects;
     ble_gatt_ots_clear_fn clear_marking;
     void *object_list_context;
+    ble_gatt_ots_change_fn change_observer;
+    void *change_context;
+    ble_gatt_ots_name_store_fn name_store;
+    void *name_context;
     ble_gatt_ots_filter_context filter_context[3];
-    ble_gatt_ots_metadata_context metadata_context[3];
+    ble_gatt_ots_metadata_context metadata_context[7];
 } ble_gatt_ots_service;
 
+static uint8_t gatt_ots_metadata_read(
+    void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
+);
 static uint8_t gatt_ots_metadata_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
@@ -1483,6 +1497,11 @@ static inline int gatt_ots_object_changed(
     ble_gatt_ots_service *service, uint8_t flags,
     const uint8_t object_id[6]
 );
+static inline void gatt_ots_report_change(
+    ble_gatt_ots_service *service, uint8_t flags,
+    const uint8_t object_id[6]
+);
+static inline void gatt_ots_clear_filters(ble_gatt_ots_service *service);
 
 static inline int gatt_ots_current_id(
     ble_gatt_ots_service *service, uint8_t object_id[6]
@@ -1502,14 +1521,6 @@ static inline int gatt_ots_current_id(
                 object_id[3] | object_id[4] | object_id[5]) != 0;
     }
     return 0;
-}
-
-static inline int gatt_ots_change_enabled(
-    ble_gatt_ots_service *service
-) {
-    ble_gatt_attribute *cccd = gatt_server_find(service->server,
-        service->object_changed_cccd_handle);
-    return service->object_changed_handle && cccd && (cccd->cccd & 2);
 }
 
 static inline uint8_t gatt_ots_oacp_feature_bit(uint8_t opcode) {
@@ -1576,7 +1587,13 @@ static inline int gatt_ots_id_equal(
     return !memcmp(first, second, 6);
 }
 
+static inline int gatt_ots_id_valid(const uint8_t id[6]) {
+    return id && (id[0] | id[1] | id[2] | id[3] | id[4] | id[5]) &&
+        (id[1] | id[2] | id[3] | id[4] | id[5]);
+}
+
 static inline int gatt_ots_time_valid(const uint8_t time[7]);
+static inline int gatt_ots_utf8_valid(const uint8_t *value, uint16_t len);
 static inline int gatt_ots_time_compare(
     const uint8_t first[7], const uint8_t second[7]
 );
@@ -1584,13 +1601,14 @@ static inline int gatt_ots_time_compare(
 static inline int gatt_ots_filter_valid(
     const uint8_t *value, uint16_t len
 ) {
-    if (!len || !value) return len == 0;
+    if (!len || !value) return 0;
     switch (value[0]) {
     case 0x00: return len == 1;
     case 0x01:
     case 0x02:
     case 0x03:
-    case 0x04: return 1;
+    case 0x04: return gatt_ots_utf8_valid(value + 1,
+                                          (uint16_t)(len - 1));
     case 0x05: return len == 3 || len == 17;
     case 0x06:
     case 0x07:
@@ -1623,6 +1641,40 @@ static inline int gatt_ots_time_compare(
     for (uint8_t i = 2; i < 7; i++)
         if (first[i] != second[i]) return first[i] < second[i] ? -1 : 1;
     return 0;
+}
+
+static inline int gatt_ots_utf8_valid(const uint8_t *value, uint16_t len) {
+    for (uint16_t i = 0; i < len;) {
+        uint8_t first = value[i++];
+        if (first < 0x80) continue;
+        uint8_t continuation;
+        uint32_t codepoint;
+        if (first >= 0xc2 && first <= 0xdf) {
+            continuation = 1;
+            codepoint = first & 0x1f;
+        }
+        else if (first >= 0xe0 && first <= 0xef) {
+            continuation = 2;
+            codepoint = first & 0x0f;
+        }
+        else if (first >= 0xf0 && first <= 0xf4) {
+            continuation = 3;
+            codepoint = first & 0x07;
+        }
+        else return 0;
+        if (continuation > len - i) return 0;
+        for (uint8_t j = 0; j < continuation; j++) {
+            uint8_t next = value[i++];
+            if ((next & 0xc0) != 0x80) return 0;
+            codepoint = (codepoint << 6) | (next & 0x3f);
+        }
+        if ((continuation == 1 && codepoint < 0x80) ||
+            (continuation == 2 && codepoint < 0x800) ||
+            (continuation == 3 && codepoint < 0x10000) ||
+            (codepoint >= 0xd800 && codepoint <= 0xdfff) ||
+            codepoint > 0x10ffff) return 0;
+    }
+    return 1;
 }
 
 static inline int gatt_ots_bytes_contains(
@@ -1680,9 +1732,9 @@ static inline int gatt_ots_object_visible(
         case 0x07: {
             const uint8_t *time = filter[0] == 0x06 ?
                 object->created : object->modified;
-            if (!gatt_ots_time_valid(time) ||
-                gatt_ots_time_compare(time, parameter) < 0 ||
-                gatt_ots_time_compare(time, parameter + 7) > 0) return 0;
+            if (gatt_ots_time_valid(time) &&
+                (gatt_ots_time_compare(time, parameter) < 0 ||
+                 gatt_ots_time_compare(time, parameter + 7) > 0)) return 0;
             break;
         }
         case 0x08:
@@ -1701,6 +1753,19 @@ static inline int gatt_ots_object_visible(
         }
     }
     return 1;
+}
+
+static inline void gatt_ots_update_current_valid(
+    ble_gatt_ots_service *service
+) {
+    if (!service || !service->object_list_configured) return;
+    service->current_object_valid = 0;
+    if (service->current_object_index < service->object_count &&
+        service->current_object_id_valid &&
+        gatt_ots_id_equal(service->current_object_id,
+            service->objects[service->current_object_index].id))
+        service->current_object_valid = (uint8_t)gatt_ots_object_visible(
+            service, &service->objects[service->current_object_index]);
 }
 
 static uint8_t gatt_ots_filter_write(
@@ -1726,6 +1791,7 @@ static uint8_t gatt_ots_filter_write(
     if (len < attribute->value_capacity)
         memset(stored + len, 0, attribute->value_capacity - len);
     attribute->value_len = len;
+    gatt_ots_update_current_valid(service);
     return 0;
 }
 
@@ -1747,11 +1813,30 @@ static inline uint8_t gatt_ots_olcp_respond(
         0 : ATT_ERR_INSUFFICIENT_RESOURCES;
 }
 
+static inline void gatt_ots_clear_filters(ble_gatt_ots_service *service) {
+    if (!service || !service->server) return;
+    for (uint8_t i = 0; i < 3; i++) {
+        ble_gatt_attribute *attribute = gatt_server_find(service->server,
+            service->object_list_filter_handles[i]);
+        uint8_t *value = attribute ?
+            gatt_attribute_value(service->server, attribute) : NULL;
+        if (attribute && value) {
+            memset(value, 0, attribute->value_capacity);
+            value[0] = 0;
+            attribute->value_len = 1;
+        }
+    }
+    gatt_ots_update_current_valid(service);
+}
+
 static inline uint8_t gatt_ots_select_list_object(
-    ble_gatt_ots_service *service, uint16_t index
+    ble_gatt_ots_service *service, uint16_t index, uint8_t ignore_filters
 ) {
     if (index >= service->object_count)
         return gatt_ots_olcp_response(service, service->olcp_opcode, 0x07);
+    if (!ignore_filters && !gatt_ots_object_visible(
+            service, &service->objects[index]))
+        return gatt_ots_olcp_response(service, service->olcp_opcode, 0x08);
     if (!service->select_object ||
         !service->select_object(service->object_list_context,
             service->objects[index].id)
@@ -1773,6 +1858,7 @@ static inline uint8_t gatt_ots_select_list_object(
     service->current_object_id_valid = 1;
     service->current_object_index = index;
     service->current_object_valid = 1;
+    if (ignore_filters) gatt_ots_clear_filters(service);
     return gatt_ots_olcp_response(service, service->olcp_opcode, 0x01);
 }
 
@@ -1788,7 +1874,7 @@ static inline uint8_t gatt_ots_process_olcp(
             for (;;) {
                 if (gatt_ots_object_visible(service,
                         &service->objects[index]))
-                    return gatt_ots_select_list_object(service, index);
+                    return gatt_ots_select_list_object(service, index, 0);
                 if (opcode == 0x01) {
                     if (++index >= service->object_count) break;
                 }
@@ -1807,7 +1893,7 @@ static inline uint8_t gatt_ots_process_olcp(
                 index--;
                 if (gatt_ots_object_visible(service,
                         &service->objects[index]))
-                    return gatt_ots_select_list_object(service, index);
+                    return gatt_ots_select_list_object(service, index, 0);
             }
             return gatt_ots_olcp_response(service, opcode, 0x05);
         }
@@ -1815,16 +1901,15 @@ static inline uint8_t gatt_ots_process_olcp(
              index < service->object_count; index++)
             if (gatt_ots_object_visible(service,
                     &service->objects[index]))
-                return gatt_ots_select_list_object(service, index);
+                return gatt_ots_select_list_object(service, index, 0);
         return gatt_ots_olcp_response(service, opcode, 0x05);
     }
 
     if (opcode == 0x05) {
         for (uint16_t i = 0; i < service->object_count; i++)
             if (gatt_ots_id_equal(service->objects[i].id,
-                    service->olcp_parameter) &&
-                gatt_ots_object_visible(service, &service->objects[i]))
-                return gatt_ots_select_list_object(service, i);
+                    service->olcp_parameter))
+                return gatt_ots_select_list_object(service, i, 1);
         return gatt_ots_olcp_response(service, opcode, 0x08);
     }
 
@@ -1870,7 +1955,9 @@ static inline uint8_t gatt_ots_process_olcp(
                 return gatt_ots_olcp_response(service, opcode, result);
         }
         for (uint16_t i = 0; i < service->object_count; i++)
-            service->objects[i].properties &= ~GATT_OTS_OBJECT_MARKED;
+            if (gatt_ots_object_visible(service, &service->objects[i]))
+                service->objects[i].properties &=
+                    ~GATT_OTS_OBJECT_MARKED;
         if (service->current_object_index < service->object_count) {
             ble_gatt_attribute *attribute = gatt_server_find(service->server,
                 service->object_properties_handle);
@@ -2058,8 +2145,7 @@ static uint8_t gatt_ots_oacp_write(
         }
         else {
             uint8_t mode = value[9];
-            if (offset > current_size || offset > allocated_size ||
-                (length && length > allocated_size - offset) ||
+            if (offset > current_size || current_size > allocated_size ||
                 (mode & 0xfdu))
                 return gatt_ots_oacp_response(service, opcode, 0x03);
             if (mode & 0x02) {
@@ -2067,14 +2153,17 @@ static uint8_t gatt_ots_oacp_write(
                     !gatt_ots_object_property(service, 5))
                     return gatt_ots_oacp_response(service, opcode, 0x08);
             }
-            else if (offset == current_size) {
-                if (!(service->features[0] & 0x40) ||
-                    !gatt_ots_object_property(service, 4))
+            else if (offset < current_size &&
+                     (!(service->features[1] & 0x01) ||
+                      !gatt_ots_object_property(service, 6)))
+                return gatt_ots_oacp_response(service, opcode, 0x08);
+
+            if (length > allocated_size - offset) {
+                if (!(service->features[0] & 0x40))
+                    return gatt_ots_oacp_response(service, opcode, 0x03);
+                if (!gatt_ots_object_property(service, 4))
                     return gatt_ots_oacp_response(service, opcode, 0x08);
             }
-            else if (!(service->features[1] & 0x01) ||
-                     !gatt_ots_object_property(service, 6))
-                return gatt_ots_oacp_response(service, opcode, 0x08);
         }
     }
 
@@ -2171,20 +2260,16 @@ static inline int gatt_ots_oacp_complete(
             change_flags |= GATT_OTS_CHANGE_METADATA;
     }
     uint8_t send_change = change_flags &&
-        service->request_object_id_valid &&
-        gatt_ots_change_enabled(service);
+        service->request_object_id_valid;
     uint16_t response_len = (uint16_t)(response_parameter_len + 3);
-    if (send_change && (BLE_GATT_SERVER_EVENT_QUEUE_SIZE < 2 ||
-        service->server->event_count > BLE_GATT_SERVER_EVENT_QUEUE_SIZE - 2 ||
-        BLE_GATT_SERVER_EVENT_BYTES < response_len + 7 ||
-        service->server->event_used >
-            BLE_GATT_SERVER_EVENT_BYTES - response_len - 7)) return 0;
     if (!gatt_queue_event(service->server,
             service->action_control_point_handle, response,
             response_len, 1)) return 0;
     if (send_change)
-        (void)gatt_ots_object_changed(service, change_flags,
-                                      service->request_object_id);
+        gatt_ots_report_change(service, change_flags,
+                               service->request_object_id);
+    if (result_code == 0x01 && opcode == 0x01)
+        gatt_ots_clear_filters(service);
     service->request_pending = 0;
     service->request_taken = 0;
     service->active_control_point = 0;
@@ -2372,15 +2457,26 @@ static inline int gatt_ots_add_type_full(
     };
     uint16_t value_handles[9], cccd_handles[9];
     ble_gatt_sig_handlers handlers[9] = {0};
-    static const uint8_t metadata_indexes[] = {1, 4, 5};
+    static const uint8_t metadata_indexes[] = {1, 2, 3, 4, 5, 6};
+    static const uint8_t metadata_context_indexes[] = {0, 1, 2, 3, 4, 6};
     memset(service, 0, sizeof(*service));
-    for (uint8_t i = 0; i < 3; i++) {
-        service->metadata_context[i].service = service;
-        service->metadata_context[i].index = i;
-        handlers[metadata_indexes[i]].write_request =
-            gatt_ots_metadata_write;
+    for (uint8_t i = 0; i < 6; i++) {
+        uint8_t context_index = metadata_context_indexes[i];
+        service->metadata_context[context_index].service = service;
+        service->metadata_context[context_index].index = context_index;
+        handlers[metadata_indexes[i]].read_value = gatt_ots_metadata_read;
         handlers[metadata_indexes[i]].context =
-            &service->metadata_context[i];
+            &service->metadata_context[context_index];
+    }
+    handlers[1].write_request = gatt_ots_metadata_write;
+    handlers[1].context = &service->metadata_context[0];
+    if (first_created_properties & BLE_GATT_PROP_WRITE) {
+        handlers[4].write_request = gatt_ots_metadata_write;
+        handlers[4].context = &service->metadata_context[3];
+    }
+    if (last_modified_properties & BLE_GATT_PROP_WRITE) {
+        handlers[5].write_request = gatt_ots_metadata_write;
+        handlers[5].context = &service->metadata_context[4];
     }
     handlers[7].write_request = gatt_ots_oacp_write;
     handlers[7].context = service;
@@ -2476,12 +2572,12 @@ static inline int gatt_ots_add_multi_type_full(
     if (!server || !service || !gatt_ots_features_valid(features, 1) ||
         !object_id || !object_size || !first_created || !last_modified ||
         has_realtime_clock > 1 ||
-        !object_properties || !object_type ||
+        !object_properties || !object_type || !gatt_ots_id_valid(object_id) ||
         (object_type_len != 2 && object_type_len != 16) ||
         (object_name_len && !object_name) ||
         object_name_len > object_name_capacity || !filter_capacity ||
         filter_len > filter_capacity ||
-        !gatt_ots_filter_valid(object_list_filter, filter_len)
+        (filter_len && !gatt_ots_filter_valid(object_list_filter, filter_len))
     ) return 0;
 
     uint8_t initial_control_point = 0;
@@ -2524,13 +2620,13 @@ static inline int gatt_ots_add_multi_type_full(
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
             BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
             filter_len ? object_list_filter : &initial_filter,
-            filter_len, filter_capacity, 1},
+            filter_len ? filter_len : 1, filter_capacity, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
             BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
-            &initial_filter, 0, filter_capacity, 1},
+            &initial_filter, 1, filter_capacity, 1},
         {0x2ac7, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
             BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC,
-            &initial_filter, 0, filter_capacity, 1},
+            &initial_filter, 1, filter_capacity, 1},
         {0x2ac8, BLE_GATT_PROP_INDICATE, 1, 0,
             initial_changed, sizeof(initial_changed),
             sizeof(initial_changed), 0}
@@ -2545,14 +2641,25 @@ static inline int gatt_ots_add_multi_type_full(
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
-    static const uint8_t metadata_indexes[] = {1, 4, 5};
-    for (uint8_t i = 0; i < 3; i++) {
+    static const uint8_t metadata_indexes[] = {
+        1, 2, 3, 4, 5, 6, 7
+    };
+    for (uint8_t i = 0; i < 7; i++) {
         service->metadata_context[i].service = service;
         service->metadata_context[i].index = i;
-        handlers[metadata_indexes[i]].write_request =
-            gatt_ots_metadata_write;
+        handlers[metadata_indexes[i]].read_value = gatt_ots_metadata_read;
         handlers[metadata_indexes[i]].context =
             &service->metadata_context[i];
+    }
+    handlers[1].write_request = gatt_ots_metadata_write;
+    handlers[1].context = &service->metadata_context[0];
+    if (first_created_properties & BLE_GATT_PROP_WRITE) {
+        handlers[4].write_request = gatt_ots_metadata_write;
+        handlers[4].context = &service->metadata_context[3];
+    }
+    if (last_modified_properties & BLE_GATT_PROP_WRITE) {
+        handlers[5].write_request = gatt_ots_metadata_write;
+        handlers[5].context = &service->metadata_context[4];
     }
     for (uint8_t i = 0; i < 3; i++) {
         service->filter_context[i].service = service;
@@ -2638,17 +2745,21 @@ static inline int gatt_ots_set_list_filter(
     const uint8_t *filter, uint16_t filter_len
 ) {
     if (!service || !service->server || index >= 3 ||
-        !gatt_ots_filter_valid(filter, filter_len)) return 0;
+        (filter_len && !gatt_ots_filter_valid(filter, filter_len))) return 0;
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->object_list_filter_handles[index]);
     uint8_t *stored = attribute ?
         gatt_attribute_value(service->server, attribute) : NULL;
     if (!attribute || !stored || filter_len > attribute->value_capacity)
         return 0;
+    uint16_t stored_len = filter_len ? filter_len : 1;
     if (filter_len) memcpy(stored, filter, filter_len);
-    if (filter_len < attribute->value_capacity)
-        memset(stored + filter_len, 0, attribute->value_capacity - filter_len);
-    attribute->value_len = filter_len;
+    else stored[0] = 0;
+    if (stored_len < attribute->value_capacity)
+        memset(stored + stored_len, 0,
+               attribute->value_capacity - stored_len);
+    attribute->value_len = stored_len;
+    gatt_ots_update_current_valid(service);
     return 1;
 }
 
@@ -2667,7 +2778,9 @@ static inline int gatt_ots_set_objects(
         !service->object_list_control_point_handle ||
         (count && (!objects || !select_object))) return 0;
     for (uint16_t i = 0; i < count; i++) {
-        if ((objects[i].name_len && !objects[i].name) ||
+        if (!gatt_ots_id_valid(objects[i].id) ||
+            (objects[i].name_len && !objects[i].name) ||
+            !gatt_ots_utf8_valid(objects[i].name, objects[i].name_len) ||
             objects[i].name_len > 120 ||
             (objects[i].type_len != 2 && objects[i].type_len != 16) ||
             gatt_ots_read_u32(objects[i].size) >
@@ -2699,10 +2812,10 @@ static inline int gatt_ots_set_objects(
                 memcpy(service->current_object_id, objects[i].id, 6);
                 service->current_object_id_valid = 1;
                 service->current_object_index = i;
-                service->current_object_valid = 1;
                 break;
             }
     }
+    gatt_ots_update_current_valid(service);
     return 1;
 }
 
@@ -2715,9 +2828,8 @@ static inline int gatt_ots_object_changed(
     const uint8_t object_id[6]
 ) {
     if (!service || !service->server || !service->object_changed_handle ||
-        !object_id || (flags & (uint8_t)~0x1fu) || !(flags & 0x1eu) ||
-        !(object_id[0] | object_id[1] | object_id[2] |
-          object_id[3] | object_id[4] | object_id[5])) return 0;
+        !gatt_ots_id_valid(object_id) || (flags & (uint8_t)~0x1fu) ||
+        !(flags & 0x1eu)) return 0;
     uint8_t special = flags & (GATT_OTS_CHANGE_CREATED |
                                GATT_OTS_CHANGE_DELETED);
     if (special && (special == (GATT_OTS_CHANGE_CREATED |
@@ -2729,6 +2841,70 @@ static inline int gatt_ots_object_changed(
     memcpy(value + 1, object_id, 6);
     return gatt_queue_event(service->server, service->object_changed_handle,
                             value, sizeof(value), 1);
+}
+
+static inline void gatt_ots_report_change(
+    ble_gatt_ots_service *service, uint8_t flags,
+    const uint8_t object_id[6]
+) {
+    if (service && service->change_observer &&
+        gatt_ots_id_valid(object_id))
+        service->change_observer(service->change_context, flags, object_id);
+}
+
+// Register an application hook to fan client-originated changes out to other
+// connected OTS clients. The hook receives the source connection's service
+// context; it should queue indications on subscribed peer service instances.
+static inline void gatt_ots_set_change_observer(
+    ble_gatt_ots_service *service, ble_gatt_ots_change_fn observer,
+    void *context
+) {
+    if (!service) return;
+    service->change_observer = observer;
+    service->change_context = context;
+}
+
+// OTS means Object Transfer Service.
+// Store a client-written name in the application's persistent object table.
+static inline void gatt_ots_set_name_store(
+    ble_gatt_ots_service *service, ble_gatt_ots_name_store_fn store,
+    void *context
+) {
+    if (!service) return;
+    service->name_store = store;
+    service->name_context = context;
+}
+
+static uint8_t gatt_ots_metadata_read(
+    void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
+) {
+    ble_gatt_ots_metadata_context *read = context;
+    ble_gatt_ots_service *service = read ? read->service : NULL;
+    if (!service || !service->server || !out || !inout_len)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (!service->current_object_valid) return 0x81;
+
+    uint16_t handle;
+    switch (read->index) {
+    case 0: handle = service->object_name_handle; break;
+    case 1: handle = service->object_type_handle; break;
+    case 2: handle = service->object_size_handle; break;
+    case 3: handle = service->object_first_created_handle; break;
+    case 4: handle = service->object_last_modified_handle; break;
+    case 5: handle = service->object_id_handle; break;
+    case 6: handle = service->object_properties_handle; break;
+    default: return ATT_ERR_UNLIKELY_ERROR;
+    }
+    ble_gatt_attribute *attribute = gatt_server_find(service->server, handle);
+    const uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored) return ATT_ERR_UNLIKELY_ERROR;
+    if (offset > attribute->value_len) return ATT_ERR_INVALID_OFFSET;
+    uint16_t len = (uint16_t)(attribute->value_len - offset);
+    if (len > *inout_len) len = *inout_len;
+    if (len) memcpy(out, stored + offset, len);
+    *inout_len = len;
+    return 0;
 }
 
 static uint8_t gatt_ots_metadata_write(
@@ -2743,13 +2919,14 @@ static uint8_t gatt_ots_metadata_write(
     if (offset) return ATT_ERR_INVALID_OFFSET;
     if (len > BLE_GATT_ATT_VALUE_MAX)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!service->current_object_valid) return 0x81;
 
     uint16_t handle;
     uint16_t fixed_len = 0;
     switch (write->index) {
     case 0: handle = service->object_name_handle; break;
-    case 1: handle = service->object_first_created_handle; fixed_len = 7; break;
-    case 2: handle = service->object_last_modified_handle; fixed_len = 7; break;
+    case 3: handle = service->object_first_created_handle; fixed_len = 7; break;
+    case 4: handle = service->object_last_modified_handle; fixed_len = 7; break;
     default: return ATT_ERR_UNLIKELY_ERROR;
     }
     if (fixed_len && len != fixed_len)
@@ -2761,24 +2938,43 @@ static uint8_t gatt_ots_metadata_write(
     if (!attribute || !stored) return ATT_ERR_UNLIKELY_ERROR;
     if (len > attribute->value_capacity)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!fixed_len && !gatt_ots_utf8_valid(value, len))
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     uint8_t object_id[6];
-    uint8_t send_change = gatt_ots_change_enabled(service) &&
-        gatt_ots_current_id(service, object_id);
-    if (send_change && (service->server->event_count >=
-            BLE_GATT_SERVER_EVENT_QUEUE_SIZE ||
-        sizeof(object_id) + 1 > BLE_GATT_SERVER_EVENT_BYTES -
-            service->server->event_used))
-        return ATT_ERR_INSUFFICIENT_RESOURCES;
-
-    if (send_change && !gatt_ots_object_changed(service,
-            GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_METADATA, object_id))
-        return ATT_ERR_INSUFFICIENT_RESOURCES;
+    uint8_t send_change = gatt_ots_current_id(service, object_id);
+    if (write->index == 0 && service->object_list_configured) {
+        if (!send_change ||
+            service->current_object_index >= service->object_count ||
+            !service->name_store) return ATT_ERR_INSUFFICIENT_RESOURCES;
+        if (len) {
+            for (uint16_t i = 0; i < service->object_count; i++) {
+                const ble_gatt_ots_object *object = &service->objects[i];
+                if (i != service->current_object_index &&
+                    object->name_len == len && object->name &&
+                    !memcmp(object->name, value, len)) return 0x83;
+            }
+        }
+        if (!service->name_store(service->name_context, object_id,
+                                 value, len)) return 0x80;
+    }
 
     if (len) memcpy(stored, value, len);
     if (!fixed_len && len < attribute->value_capacity)
         memset(stored + len, 0, attribute->value_capacity - len);
     attribute->value_len = fixed_len ? fixed_len : len;
+    if (service->object_list_configured &&
+        service->current_object_index < service->object_count) {
+        ble_gatt_ots_object *object =
+            &service->objects[service->current_object_index];
+        if (write->index == 3)
+            memcpy(object->created, value, 7);
+        else if (write->index == 4)
+            memcpy(object->modified, value, 7);
+    }
+    if (send_change)
+        gatt_ots_report_change(service,
+            GATT_OTS_CHANGE_CLIENT | GATT_OTS_CHANGE_METADATA, object_id);
     return 0;
 }
 
@@ -2794,6 +2990,7 @@ static inline int gatt_ots_set_object_metadata(
     if (!service || !service->server || (name_len && !name) || !type ||
         (type_len != 2 && type_len != 16) || !size || !first_created ||
         !last_modified || !properties ||
+        (object_id && !gatt_ots_id_valid(object_id)) ||
         (service->object_id_handle && !object_id)) return 0;
     const uint16_t handles[] = {service->object_name_handle,
         service->object_type_handle, service->object_size_handle,
@@ -2824,9 +3021,8 @@ static inline int gatt_ots_set_object_metadata(
     }
     if (object_id) {
         memcpy(service->current_object_id, object_id, 6);
-        service->current_object_id_valid = (uint8_t)(
-            object_id[0] | object_id[1] | object_id[2] |
-            object_id[3] | object_id[4] | object_id[5]);
+        service->current_object_id_valid = (uint8_t)
+            gatt_ots_id_valid(object_id);
         if (service->request_pending && service->request_opcode == 0x01) {
             memcpy(service->request_object_id, object_id, 6);
             service->request_object_id_valid =
@@ -3271,20 +3467,22 @@ static uint8_t gatt_binary_sensor_control_write(
     uint16_t message_len = service->assembly_len;
     uint8_t valid = message_len >= 4 && !message[0] && !message[2] &&
         message[3] && (message[1] == 0x00 || message[1] == 0x02);
-    uint16_t offset = 4;
+    uint16_t parameter_offset = 4;
     uint8_t sensor_type_seen = 0, report_status_seen = 0;
 
     for (uint16_t i = 0; valid && i < message[3]; i++) {
-        if (message_len - offset < 4 || message[offset + 2] ||
-            message[offset + 3] ||
-            message[offset + 1] > message_len - offset - 4) {
+        if (message_len - parameter_offset < 4 ||
+            message[parameter_offset + 2] ||
+            message[parameter_offset + 3] ||
+            message[parameter_offset + 1] >
+                message_len - parameter_offset - 4) {
             valid = 0;
             break;
         }
 
-        uint8_t id = message[offset];
-        uint8_t value_len = message[offset + 1];
-        const uint8_t *parameter = message + offset + 4;
+        uint8_t id = message[parameter_offset];
+        uint8_t value_len = message[parameter_offset + 1];
+        const uint8_t *parameter = message + parameter_offset + 4;
 
         if (id == 0x02) {
             if (sensor_type_seen++ || value_len != 1 ||
@@ -3303,7 +3501,7 @@ static uint8_t gatt_binary_sensor_control_write(
         else {
             valid = 0;
         }
-        offset = (uint16_t)(offset + 4 + value_len);
+        parameter_offset = (uint16_t)(parameter_offset + 4 + value_len);
     }
 
     if (offset != message_len || !sensor_type_seen ||
