@@ -1383,7 +1383,17 @@ static inline int gatt_hps_set_cert_validity(
 typedef struct {
     uint8_t id[6];
     uint32_t properties;
+    const uint8_t *name;
+    uint16_t name_len;
+    uint8_t type[16], type_len;
+    uint8_t size[8];
+    uint8_t created[7], modified[7];
 } ble_gatt_ots_object;
+
+typedef struct {
+    struct ble_gatt_ots_service *service;
+    uint8_t index;
+} ble_gatt_ots_filter_context;
 
 typedef uint8_t (*ble_gatt_ots_select_fn)(
     void *context, const uint8_t object_id[6]
@@ -1407,7 +1417,7 @@ enum {
     GATT_OTS_OBJECT_MARKED = 1u << 7
 };
 
-typedef struct {
+typedef struct ble_gatt_ots_service {
     uint16_t service_handle;
     uint16_t features_handle;
     uint16_t object_name_handle;
@@ -1441,6 +1451,7 @@ typedef struct {
     ble_gatt_ots_order_fn order_objects;
     ble_gatt_ots_clear_fn clear_marking;
     void *object_list_context;
+    ble_gatt_ots_filter_context filter_context[3];
 } ble_gatt_ots_service;
 
 static uint8_t gatt_ots_oacp_write(
@@ -1513,6 +1524,159 @@ static inline int gatt_ots_id_equal(
     return !memcmp(first, second, 6);
 }
 
+static inline int gatt_ots_time_valid(const uint8_t time[7]);
+static inline int gatt_ots_time_compare(
+    const uint8_t first[7], const uint8_t second[7]
+);
+
+static inline int gatt_ots_filter_valid(
+    const uint8_t *value, uint16_t len
+) {
+    if (!len || !value) return len == 0;
+    switch (value[0]) {
+    case 0x00: return len == 1;
+    case 0x01:
+    case 0x02:
+    case 0x03:
+    case 0x04: return 1;
+    case 0x05: return len == 3 || len == 17;
+    case 0x06:
+    case 0x07:
+        return len == 15 && gatt_ots_time_valid(value + 1) &&
+            gatt_ots_time_valid(value + 8) &&
+            gatt_ots_time_compare(value + 1, value + 8) <= 0;
+    case 0x08:
+    case 0x09:
+        return len == 9 &&
+            gatt_ots_read_u32(value + 1) <=
+            gatt_ots_read_u32(value + 5);
+    case 0x0a: return len == 1;
+    default: return 0;
+    }
+}
+
+static inline int gatt_ots_time_valid(const uint8_t time[7]) {
+    uint16_t year = (uint16_t)(time[0] | (uint16_t)time[1] << 8);
+    return year && year != 0xffff && time[2] >= 1 && time[2] <= 12 &&
+        time[3] >= 1 && time[3] <= 31 && time[4] <= 23 &&
+        time[5] <= 59 && time[6] <= 59;
+}
+
+static inline int gatt_ots_time_compare(
+    const uint8_t first[7], const uint8_t second[7]
+) {
+    uint16_t first_year = (uint16_t)(first[0] | (uint16_t)first[1] << 8);
+    uint16_t second_year = (uint16_t)(second[0] | (uint16_t)second[1] << 8);
+    if (first_year != second_year) return first_year < second_year ? -1 : 1;
+    for (uint8_t i = 2; i < 7; i++)
+        if (first[i] != second[i]) return first[i] < second[i] ? -1 : 1;
+    return 0;
+}
+
+static inline int gatt_ots_bytes_contains(
+    const uint8_t *value, uint16_t value_len,
+    const uint8_t *part, uint16_t part_len
+) {
+    if (!part_len) return 1;
+    if (!value || !part || part_len > value_len) return 0;
+    for (uint16_t i = 0; i <= value_len - part_len; i++)
+        if (!memcmp(value + i, part, part_len)) return 1;
+    return 0;
+}
+
+static inline int gatt_ots_object_visible(
+    ble_gatt_ots_service *service, const ble_gatt_ots_object *object
+) {
+    for (uint8_t i = 0; i < 3; i++) {
+        ble_gatt_attribute *attribute = gatt_server_find(service->server,
+            service->object_list_filter_handles[i]);
+        const uint8_t *filter = attribute ? gatt_attribute_value(
+            service->server, attribute) : NULL;
+        uint16_t len = attribute ? attribute->value_len : 0;
+        if (!len) continue;
+        if (!gatt_ots_filter_valid(filter, len)) return 0;
+        uint16_t parameter_len = (uint16_t)(len - 1);
+        const uint8_t *parameter = filter + 1;
+        switch (filter[0]) {
+        case 0x00:
+            break;
+        case 0x01:
+            if (parameter_len > object->name_len ||
+                (parameter_len && (!object->name ||
+                 memcmp(object->name, parameter, parameter_len)))) return 0;
+            break;
+        case 0x02:
+            if (parameter_len > object->name_len ||
+                (parameter_len && (!object->name ||
+                 memcmp(object->name + object->name_len - parameter_len,
+                        parameter, parameter_len)))) return 0;
+            break;
+        case 0x03:
+            if (!gatt_ots_bytes_contains(object->name, object->name_len,
+                    parameter, parameter_len)) return 0;
+            break;
+        case 0x04:
+            if (parameter_len != object->name_len ||
+                (parameter_len && (!object->name ||
+                 memcmp(object->name, parameter, parameter_len)))) return 0;
+            break;
+        case 0x05:
+            if (object->type_len != parameter_len ||
+                memcmp(object->type, parameter, parameter_len)) return 0;
+            break;
+        case 0x06:
+        case 0x07: {
+            const uint8_t *time = filter[0] == 0x06 ?
+                object->created : object->modified;
+            if (!gatt_ots_time_valid(time) ||
+                gatt_ots_time_compare(time, parameter) < 0 ||
+                gatt_ots_time_compare(time, parameter + 7) > 0) return 0;
+            break;
+        }
+        case 0x08:
+        case 0x09: {
+            uint32_t size = gatt_ots_read_u32(object->size +
+                (filter[0] == 0x08 ? 0 : 4));
+            if (size < gatt_ots_read_u32(parameter) ||
+                size > gatt_ots_read_u32(parameter + 4)) return 0;
+            break;
+        }
+        case 0x0a:
+            if (!(object->properties & GATT_OTS_OBJECT_MARKED)) return 0;
+            break;
+        default:
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static uint8_t gatt_ots_filter_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_ots_filter_context *filter_context = context;
+    ble_gatt_ots_service *service = filter_context ?
+        filter_context->service : NULL;
+    if (!service || !service->server || (len && !value))
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len > BLE_GATT_ATT_VALUE_MAX || !gatt_ots_filter_valid(value, len))
+        return ATT_ERR_VALUE_NOT_ALLOWED;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->object_list_filter_handles[filter_context->index]);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored || len > attribute->value_capacity)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (len) memcpy(stored, value, len);
+    if (len < attribute->value_capacity)
+        memset(stored + len, 0, attribute->value_capacity - len);
+    attribute->value_len = len;
+    return 0;
+}
+
 static inline uint8_t gatt_ots_olcp_respond(
     ble_gatt_ots_service *service, uint8_t opcode, uint8_t result,
     uint32_t object_count
@@ -1564,29 +1728,48 @@ static inline uint8_t gatt_ots_process_olcp(
     if (opcode >= 0x01 && opcode <= 0x04) {
         if (!service->object_count)
             return gatt_ots_olcp_response(service, opcode, 0x07);
-        if (opcode == 0x01)
-            return gatt_ots_select_list_object(service, 0);
-        if (opcode == 0x02)
-            return gatt_ots_select_list_object(service,
-                (uint16_t)(service->object_count - 1));
+        if (opcode == 0x01 || opcode == 0x02) {
+            uint16_t index = opcode == 0x01 ? 0 :
+                (uint16_t)(service->object_count - 1);
+            for (;;) {
+                if (gatt_ots_object_visible(service,
+                        &service->objects[index]))
+                    return gatt_ots_select_list_object(service, index);
+                if (opcode == 0x01) {
+                    if (++index >= service->object_count) break;
+                }
+                else {
+                    if (!index) break;
+                    index--;
+                }
+            }
+            return gatt_ots_olcp_response(service, opcode, 0x07);
+        }
         if (service->current_object_index >= service->object_count)
             return gatt_ots_olcp_response(service, opcode, 0x07);
         if (opcode == 0x03) {
-            if (!service->current_object_index)
-                return gatt_ots_olcp_response(service, opcode, 0x05);
-            return gatt_ots_select_list_object(service,
-                (uint16_t)(service->current_object_index - 1));
-        }
-        if (service->current_object_index + 1 >= service->object_count)
+            uint16_t index = service->current_object_index;
+            while (index) {
+                index--;
+                if (gatt_ots_object_visible(service,
+                        &service->objects[index]))
+                    return gatt_ots_select_list_object(service, index);
+            }
             return gatt_ots_olcp_response(service, opcode, 0x05);
-        return gatt_ots_select_list_object(service,
-            (uint16_t)(service->current_object_index + 1));
+        }
+        for (uint16_t index = (uint16_t)(service->current_object_index + 1);
+             index < service->object_count; index++)
+            if (gatt_ots_object_visible(service,
+                    &service->objects[index]))
+                return gatt_ots_select_list_object(service, index);
+        return gatt_ots_olcp_response(service, opcode, 0x05);
     }
 
     if (opcode == 0x05) {
         for (uint16_t i = 0; i < service->object_count; i++)
             if (gatt_ots_id_equal(service->objects[i].id,
-                    service->olcp_parameter))
+                    service->olcp_parameter) &&
+                gatt_ots_object_visible(service, &service->objects[i]))
                 return gatt_ots_select_list_object(service, i);
         return gatt_ots_olcp_response(service, opcode, 0x08);
     }
@@ -1615,9 +1798,12 @@ static inline uint8_t gatt_ots_process_olcp(
         return gatt_ots_olcp_response(service, opcode, 0x01);
     }
 
-    if (opcode == 0x07)
-        return gatt_ots_olcp_respond(service, opcode, 0x01,
-                                     service->object_count);
+    if (opcode == 0x07) {
+        uint32_t count = 0;
+        for (uint16_t i = 0; i < service->object_count; i++)
+            count += gatt_ots_object_visible(service, &service->objects[i]);
+        return gatt_ots_olcp_respond(service, opcode, 0x01, count);
+    }
 
     if (opcode == 0x08) {
         if (service->clear_marking) {
@@ -2161,7 +2347,8 @@ static inline int gatt_ots_add_multi_type_full(
         (object_type_len != 2 && object_type_len != 16) ||
         (object_name_len && !object_name) ||
         object_name_len > object_name_capacity || !filter_capacity ||
-        filter_len > filter_capacity || (filter_len && !object_list_filter)
+        filter_len > filter_capacity ||
+        !gatt_ots_filter_valid(object_list_filter, filter_len)
     ) return 0;
 
     uint8_t initial_control_point = 0;
@@ -2221,6 +2408,12 @@ static inline int gatt_ots_add_multi_type_full(
     uint16_t old_next_handle = server->next_handle;
     uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
+    for (uint8_t i = 0; i < 3; i++) {
+        service->filter_context[i].service = service;
+        service->filter_context[i].index = i;
+        handlers[10 + i].write_request = gatt_ots_filter_write;
+        handlers[10 + i].context = &service->filter_context[i];
+    }
 
     if (!gatt_sig_register(server,
             0x1825, primary_service, NULL, 0, characteristics, 13,
@@ -2291,7 +2484,7 @@ static inline int gatt_ots_set_list_filter(
     const uint8_t *filter, uint16_t filter_len
 ) {
     if (!service || !service->server || index >= 3 ||
-        (filter_len && !filter)) return 0;
+        !gatt_ots_filter_valid(filter, filter_len)) return 0;
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->object_list_filter_handles[index]);
     uint8_t *stored = attribute ?
@@ -2306,9 +2499,10 @@ static inline int gatt_ots_set_list_filter(
 }
 
 // OTS means Object Transfer Service.
-// Attach a caller-owned object table and enable built-in OLCP navigation.
-// The table and callbacks must remain valid for the service lifetime. The
-// selection callback should call gatt_ots_set_object_metadata() for the ID.
+// Attach a caller-owned object table and enable filtered OLCP navigation.
+// The table, names, and callbacks must remain valid for the service lifetime.
+// Fill in each object's metadata for filtering. The selection callback should
+// call gatt_ots_set_object_metadata() for the selected ID.
 static inline int gatt_ots_set_objects(
     ble_gatt_ots_service *service, ble_gatt_ots_object *objects,
     uint16_t count, ble_gatt_ots_select_fn select_object,
@@ -2318,9 +2512,15 @@ static inline int gatt_ots_set_objects(
     if (!service || !service->server ||
         !service->object_list_control_point_handle ||
         (count && (!objects || !select_object))) return 0;
-    for (uint16_t i = 0; i < count; i++)
+    for (uint16_t i = 0; i < count; i++) {
+        if ((objects[i].name_len && !objects[i].name) ||
+            objects[i].name_len > 120 ||
+            (objects[i].type_len != 2 && objects[i].type_len != 16) ||
+            gatt_ots_read_u32(objects[i].size) >
+                gatt_ots_read_u32(objects[i].size + 4)) return 0;
         for (uint16_t j = 0; j < i; j++)
             if (gatt_ots_id_equal(objects[i].id, objects[j].id)) return 0;
+    }
 
     service->objects = objects;
     service->object_count = count;

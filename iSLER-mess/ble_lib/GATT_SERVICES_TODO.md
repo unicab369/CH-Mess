@@ -78,7 +78,8 @@ remains available for custom services; it does not replace these builders.
   opcode, property, size, and parameter validation, reliable OACP writes,
   request capture and completion, optional caller-owned object-list
   navigation with selection/order/marking callbacks, filter configuration,
-  procedure serialization, and response indications
+  name/type/date/size/mark matching across all three filters, procedure
+  serialization, and response indications
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
   feature-matched Supported Range values, optional Training Status and
   Fitness Machine Status notifications, all 21 Control Point opcode and

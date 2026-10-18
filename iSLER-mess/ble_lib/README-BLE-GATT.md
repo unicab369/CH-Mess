@@ -186,15 +186,17 @@ storage operations and the separate L2CAP transfer, then responds through
 
 For built-in multi-object OLCP navigation, pass a caller-owned
 `ble_gatt_ots_object` table to `gatt_ots_set_objects()`. The table tracks each
-six-byte ID and its property bits. The required selection callback loads that
-object and calls `gatt_ots_set_object_metadata()` to update the visible
-metadata. Optional order and clear-marking callbacks handle catalog ordering
-and persistent marking. With a table registered, First, Last, Previous, Next,
-Go To, Request Number of Objects, and Clear Marking are handled by the service;
-Order uses its callback. Without a table, OLCP requests remain available
-through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
-Configure each Object List Filter instance with `gatt_ots_set_list_filter()`;
-the application applies those filters when it builds or updates the table.
+six-byte ID, property bits, name, type, sizes, and timestamps. The required
+selection callback loads that object and calls `gatt_ots_set_object_metadata()`
+to update the visible metadata. Optional order and clear-marking callbacks
+handle catalog ordering and persistent marking. With a table registered,
+First, Last, Previous, Next, Go To, Request Number of Objects, and Clear Marking
+are handled by the service; Order uses its callback. The service applies all
+three Object List Filters when navigating and counting, including name, type,
+date, size, and marked-object filters. Without a table, OLCP requests remain
+available through `gatt_ots_take_olcp_request()` and `gatt_ots_olcp_complete()`.
+Keep the table and its name pointers valid for the service lifetime. Configure
+each Object List Filter instance with `gatt_ots_set_list_filter()`.
 After create/delete operations, update the table to keep navigation and counts
 current. The multi-object `..._type_full()` builder also accepts initial date
 values and the real-time-clock capability.

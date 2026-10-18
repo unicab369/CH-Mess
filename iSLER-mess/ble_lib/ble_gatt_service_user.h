@@ -434,28 +434,6 @@ enum {
 
 // Internal helper
 // HAP means Hearing Access Service.
-static inline int gatt_hap_features_valid(uint8_t features) {
-    uint8_t type = features & 0x03;
-    uint8_t independent = (features & 0x08) != 0;
-    uint8_t synchronized = (features & 0x04) != 0;
-
-    if ((features & 0xc0) || type == 3)
-        return 0;
-
-    if (type != 0 && (independent || synchronized))
-        return 0;
-
-    if (independent && synchronized)
-        return 0;
-
-    if ((features & 0x20) && !(features & 0x10))
-        return 0;
-
-    return 1;
-}
-
-// Internal helper
-// HAP means Hearing Access Service.
 static inline ble_gatt_hap_preset *gatt_hap_find_preset(
     ble_gatt_hap_service *service, uint8_t index
 ) {
@@ -737,7 +715,14 @@ static inline int gatt_hap_add_with_preset_control(
     uint8_t features, uint8_t active_preset_index,
     uint16_t control_point_capacity
 ) {
-    if (!server || !service || !gatt_hap_features_valid(features) ||
+    uint8_t type = features & 0x03;
+    uint8_t independent = (features & 0x08) != 0;
+    uint8_t synchronized = (features & 0x04) != 0;
+    int features_valid = !(features & 0xc0) && type != 3 &&
+        (type == 0 || (!independent && !synchronized)) &&
+        !(independent && synchronized) &&
+        (!(features & 0x20) || (features & 0x10));
+    if (!server || !service || !features_valid ||
         server->local_mtu < 49 || control_point_capacity <
             ((features & 0x10) ? 46 : 44) ||
         control_point_capacity > BLE_GATT_ATT_VALUE_MAX
