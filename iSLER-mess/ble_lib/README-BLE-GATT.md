@@ -38,9 +38,9 @@ temporary during registration. Keep one handle-state object per server.
 Device Name and Appearance. The supplied UTF-8 name is copied into the
 database and must be 1–248 octets.
 
-`gatt_heart_rate_service_add()` adds Heart Rate Measurement with its CCCD and
+`gatt_hrs_add()` adds Heart Rate Measurement with its CCCD and
 can optionally add Body Sensor Location.
-`gatt_heart_rate_service_notify_measurement()` encodes into a caller-provided
+`gatt_hrs_notify()` encodes into a caller-provided
 reusable buffer and queues the notification. Set its capacity to the current
 server's `mtu - 3` so optional RR Interval entries are omitted as whole
 16-bit values when they do not fit.
@@ -104,17 +104,17 @@ value and, when requested, the five advertising-channel controls.
 `gatt_ranging_service_add()` registers mandatory RAS characteristics and adds
 Real-time Ranging Data when feature bit 0 is set. The application supplies the
 Channel Sounding integration and implements RAS procedures and data transfer.
-`gatt_generic_health_sensor_service_add()` registers the live-observation GHS
-layout. Use `gatt_generic_health_sensor_service_add_full()` to include Stored
+`gatt_ghs_add()` registers the live-observation GHS
+layout. Use `gatt_ghs_add_full()` to include Stored
 Health Observations and its RACP, selecting notify or indicate delivery. The
 RACP handler validates request structure and captures it for the
 application; complete procedures with
-`gatt_generic_health_sensor_service_racp_complete()` after queueing stored
-segments through `gatt_generic_health_sensor_service_queue_stored_segment()`.
+`gatt_ghs_racp_complete()` after queueing stored
+segments through `gatt_ghs_queue_stored_segment()`.
 The live Control Point handles start/stop commands and queues success
 indications. The application encodes observations and starts segmented
-indications with `gatt_generic_health_sensor_service_indicate_observation()`;
-call `gatt_generic_health_sensor_service_continue_observation()` after each
+indications with `gatt_ghs_indicate_observation()`;
+call `gatt_ghs_continue_observation()` after each
 confirmation until `observation_len` is zero.
 `gatt_authorization_control_service_add()` registers the mandatory ACS
 characteristics and binds segmented Data In and Control Point reassembly.
@@ -125,11 +125,11 @@ Control Point requests with
 `gatt_authorization_control_service_complete_control_point()`. The application
 still implements ACS cryptography, opcode policy, protected-resource access,
 and updates the Status value through `gatt_authorization_control_service_set_status()`.
-`gatt_physical_activity_monitor_service_add()` registers the mandatory PAMS
-characteristics. Use `gatt_physical_activity_monitor_service_add_full()` to
+`gatt_pams_add()` registers the mandatory PAMS
+characteristics. Use `gatt_pams_add_full()` to
 select optional cardio-respiratory, step-counter, and sleep data streams;
 each selected stream must have at least one matching advertised feature.
-`gatt_physical_activity_monitor_service_queue_optional_data()` queues their
+`gatt_pams_queue_optional_data()` queues their
 encoded notifications or indications. Get Ended Session Data supports all
 seven standard data-type values and checks the registered stream's correct
 notification or indication subscription. Control Point writes are
@@ -137,19 +137,19 @@ captured in `control_point_opcode`, `control_point_parameter`, and
 `control_point_parameter_len`; the application supplies session storage and
 handles the requested procedure. Complete Enquire Sessions, Enquire
 Sub-sessions, and Get Ended Session Data with
-`gatt_physical_activity_monitor_service_control_point_complete()` after
+`gatt_pams_complete_control_point()` after
 queueing their data indications. Finish Start, Stop, Delete Ended Session, and
 Set Average Activity Type with
-`gatt_physical_activity_monitor_service_finish_request()` after updating
+`gatt_pams_finish_request()` after updating
 session state and queuing any required indications.
-`gatt_physical_activity_monitor_service_notify_instantaneous()` queues
+`gatt_pams_notify_activity()` queues
 encoded Instantaneous Activity Data.
-`gatt_physical_activity_monitor_service_indicate_summary()` and
-`gatt_physical_activity_monitor_service_indicate_session_descriptor()` queue
+`gatt_pams_indicate_summary()` and
+`gatt_pams_indicate_session_descriptor()` queue
 the corresponding indications. Use
-`gatt_physical_activity_monitor_service_set_current_session()` to update the
+`gatt_pams_set_session()` to update the
 readable 17-byte session value and
-`gatt_physical_activity_monitor_service_indicate_current_session()` to
+`gatt_pams_indicate_session()` to
 indicate it.
 `gatt_hearing_access_service_add()` registers the mandatory HAS Hearing Aid
 Features characteristic for a device that does not expose preset control.
@@ -211,7 +211,7 @@ plus Fitness Machine Status when the Control Point is enabled (required in that
 case by FTMS). Range payloads are read-only standard encoded values; queue
 status updates with
 `gatt_fitness_machine_service_notify_status()`.
-`gatt_insulin_delivery_service_add()` registers the mandatory authorized IDD
+`gatt_idd_add()` registers the mandatory authorized IDD
 status, feature, and Status Reader Control Point characteristics from caller-
 encoded values. The application must install a GATT authorizer and implement
 the medical-device control-point procedures and indication behavior. Optional
@@ -292,31 +292,31 @@ Additional service database builders are available:
   Ringer Setting with a CCCD, and Ringer Control Point. The control point
   validates its opcode and updates service state; the application performs
   device-specific actions and sends notifications.
-- `gatt_health_thermometer_service_add()` registers Temperature Measurement
+- `gatt_hts_add()` registers Temperature Measurement
   with an indication CCCD and optional Intermediate Temperature notification
-  and Temperature Type. `gatt_temp_indicate()` encodes
+  and Temperature Type. `gatt_hts_indicate()` encodes
   temperature values and optional timestamp/type fields;
-  `gatt_temp_notify_intermediate()` encodes and queues
+  `gatt_hts_notify_intermediate()` encodes and queues
   an Intermediate Temperature measurement.
-- `gatt_bp_service_add()` registers Blood Pressure Measurement,
+- `gatt_bp_add()` registers Blood Pressure Measurement,
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
   `gatt_bp_indicate()` encodes measurements, validates
   Measurement Status bits against the configured feature value, and queues an
   indication. `gatt_bp_notify_intermediate()` encodes and
   queues an Intermediate Cuff Pressure notification, including the required
   NaN unused pressure fields.
-- `gatt_pulse_oximeter_service_add()` registers PLX Spot-check and/or
-  Continuous Measurement. `gatt_spo2_indicate_spot()`
-  and `gatt_spo2_notify_continuous()` encode optional fields
+- `gatt_plx_add()` registers PLX Spot-check and/or
+  Continuous Measurement. `gatt_plx_indicate_spot()`
+  and `gatt_plx_notify_continuous()` encode optional fields
   and check them against the service feature bits.
-- `gatt_glucose_notify_measurement()` encodes Glucose Measurement
+- `gatt_gls_notify_measurement()` encodes Glucose Measurement
   notifications and maps the twelve Sensor Status Annunciation bits to the
   supported Glucose Feature bits. If the record has context, set its
   context-follows flag and then queue the matching sequence number with
-  `gatt_glucose_notify_context()`; the service enforces that pairing.
+  `gatt_gls_notify_context()`; the service enforces that pairing.
   The authenticated Record Access Control Point validates supported filter
   layouts and captures requests in the service state; the application runs
-  its record operation and calls `gatt_glucose_racp_complete()` with
+  its record operation and calls `gatt_gls_racp_complete()` with
   the result (and record count for Report Number).
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
   Location. `gatt_rsc_notify()` encodes and queues
@@ -333,7 +333,7 @@ service state object for each server/connection.
 
 Additional service builders include:
 
-- `gatt_glucose_service_add()` for Glucose Measurement, optional Measurement
+- `gatt_gls_add()` for Glucose Measurement, optional Measurement
   Context, Glucose Feature, and the authenticated Record Access Control Point.
 - `gatt_cgm_service_add()` for Continuous Glucose Monitoring measurements,
   authenticated feature/status/session values, and both control points. The
@@ -401,20 +401,20 @@ Additional service builders include:
   encodes the standard fields and checks them against the Feature value; use
   `gatt_body_comp_indicate_value()` when the application
   already has an encoded payload.
-- `gatt_user_data_service_add()` for Database Change Increment, User Index,
+- `gatt_uds_add()` for Database Change Increment, User Index,
   User Control Point, and Registered User. The Database Change Increment
   accepts validated four-octet writes. User Control Point writes are saved as
   a pending request in `request_opcode`, `request_parameter`, and
   `request_parameter_len`; the application handles registration, consent, and
   deletion, then completes the request with
-  `gatt_user_data_service_complete()`. Successful registration
+  `gatt_uds_complete()`. Successful registration
   updates the readable User Index. Update the values with
-  `gatt_user_data_service_set_database_change_increment()` and
-  `gatt_user_data_service_set_user_index()`; the notification helper also
+  `gatt_uds_set_db_change()` and
+  `gatt_uds_set_user_index()`; the notification helper also
   queues a Database Change Increment notification. List All Users and Delete
   Users (a list of user indices) are delivered as application requests. Queue
   Registered User indications with
-  `gatt_user_data_service_indicate_registered_user_segment()`; put the flags
+  `gatt_uds_indicate_user_segment()`; put the flags
   and user index in the first segment, then pass only name bytes in continuation
   segments. Complete List All Users with a one-byte response parameter
   containing the number of users returned.

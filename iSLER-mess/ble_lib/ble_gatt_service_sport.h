@@ -1662,4 +1662,548 @@ static inline int gatt_fitness_machine_service_notify_data(
                                    value, len, 0);
 }
 
+// Physical Activity Monitor Service (PAMS)
+typedef struct {
+    uint16_t service_handle, features_handle;
+    uint16_t instantaneous_data_handle, instantaneous_data_cccd_handle;
+    uint16_t summary_data_handle, summary_data_cccd_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t current_session_handle, current_session_cccd_handle;
+    uint16_t session_descriptor_handle, session_descriptor_cccd_handle;
+    uint16_t optional_data_handle[5], optional_data_cccd_handle[5];
+    ble_gatt_server *server;
+    uint8_t control_point_pending, control_point_opcode;
+    uint8_t control_point_parameter_len, control_point_request_count;
+    uint8_t control_point_parameter[5];
+} ble_gatt_pams_service;
+
+enum {
+    GATT_PAMS_OP_ENQUIRE_SESSIONS = 0x01,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS = 0x02,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA = 0x03,
+    GATT_PAMS_OP_START_SESSION = 0x04,
+    GATT_PAMS_OP_STOP_SESSION = 0x05,
+    GATT_PAMS_OP_DELETE_ENDED_SESSION = 0x06,
+    GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE = 0x07,
+    GATT_PAMS_OP_ENQUIRE_SESSIONS_RESPONSE = 0xfc,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_RESPONSE = 0xfb,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA_RESPONSE = 0xfa,
+    GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR = 0xfd,
+    GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR = 0xfe,
+    GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR = 0xff,
+    GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED = 0x80,
+    GATT_PAMS_ERROR_INVALID_SESSION_ID = 0x81,
+    GATT_PAMS_ERROR_INVALID_SUBSESSION_ID = 0x82,
+    GATT_PAMS_ERROR_SESSION_STILL_RUNNING = 0x83,
+    GATT_PAMS_ERROR_NO_DATA_AVAILABLE = 0x84,
+    GATT_PAMS_ERROR_NO_SESSIONS_AVAILABLE = 0x85,
+    GATT_PAMS_ERROR_INVALID_TYPE = 0x86,
+    GATT_PAMS_ERROR_NO_SESSION_RUNNING = 0x87,
+    GATT_PAMS_ERROR_NOTHING_TO_STOP = 0x88,
+    GATT_PAMS_ERROR_ACTIVITY_TYPE_OUT_OF_RANGE = 0x89,
+    GATT_PAMS_ERROR_OPERATION_FAILED = 0x8a
+};
+
+// Internal
+static uint8_t gatt_physical_activity_monitor_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_pams_service *service = context;
+
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (command)
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (!len || len > 6)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    uint8_t opcode = value[0];
+    uint8_t parameter_len = (uint8_t)(len - 1);
+    uint8_t expected_len;
+    switch (opcode) {
+    case GATT_PAMS_OP_ENQUIRE_SESSIONS:
+    case GATT_PAMS_OP_STOP_SESSION:
+        expected_len = 0;
+        break;
+    case GATT_PAMS_OP_ENQUIRE_SUBSESSIONS:
+    case GATT_PAMS_OP_DELETE_ENDED_SESSION:
+        expected_len = 2;
+        break;
+    case GATT_PAMS_OP_START_SESSION:
+        expected_len = 1;
+        break;
+    case GATT_PAMS_OP_GET_ENDED_SESSION_DATA:
+        expected_len = 5;
+        break;
+    case GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE:
+        expected_len = 2;
+        break;
+    default:
+        return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+
+    if (parameter_len != expected_len)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    if (opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS ||
+        opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION) {
+        if (ble_get_le16(value + 1) == 0xffff)
+            return GATT_PAMS_ERROR_INVALID_SESSION_ID;
+    }
+
+    if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        if (ble_get_le16(value + 1) == 0xffff)
+            return GATT_PAMS_ERROR_INVALID_SESSION_ID;
+
+        if (value[5] > 6)
+            return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+
+    if (opcode == GATT_PAMS_OP_START_SESSION && value[1] > 1)
+        return GATT_PAMS_ERROR_INVALID_TYPE;
+
+    if (opcode == GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE) {
+        if (value[1] > 1)
+            return GATT_PAMS_ERROR_INVALID_TYPE;
+
+        if (value[2] > 14 && value[2] != 0xff)
+            return GATT_PAMS_ERROR_ACTIVITY_TYPE_OUT_OF_RANGE;
+
+        ble_gatt_attribute *feature_attribute = gatt_server_find(
+            service->server, service->features_handle);
+        const uint8_t *feature = feature_attribute ?
+            gatt_attribute_value(service->server, feature_attribute) : NULL;
+        if (!feature || !(feature[3] & 1))
+            return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+    }
+
+    ble_gatt_attribute *current_attribute = gatt_server_find(
+        service->server, service->current_session_handle);
+    const uint8_t *current = current_attribute ?
+        gatt_attribute_value(service->server, current_attribute) : NULL;
+    uint8_t session_running = current && current_attribute->value_len == 17 &&
+        (current[0] & 1);
+    uint16_t current_session_id = session_running ? ble_get_le16(current + 1) :
+                                                   0xffff;
+
+    if ((opcode == GATT_PAMS_OP_START_SESSION && value[1] == 1 &&
+         !session_running) ||
+        (opcode == GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE &&
+         !session_running)
+    ) return GATT_PAMS_ERROR_NO_SESSION_RUNNING;
+
+    if (opcode == GATT_PAMS_OP_STOP_SESSION && !session_running)
+        return GATT_PAMS_ERROR_NOTHING_TO_STOP;
+
+    if (opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION && session_running &&
+        ble_get_le16(value + 1) == current_session_id
+    ) return GATT_PAMS_ERROR_SESSION_STILL_RUNNING;
+
+    if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA && session_running &&
+        ble_get_le16(value + 1) == current_session_id
+    ) return GATT_PAMS_ERROR_SESSION_STILL_RUNNING;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
+        service->control_point_handle);
+
+    if (!cccd || !(cccd->cccd & 2))
+        return 0xfd;
+
+    if (service->control_point_pending ||
+        service->server->indication_pending
+    ) return 0xfe;
+
+    for (uint16_t i = 0; i < service->server->event_count; i++)
+        if (service->server->events[i].indication)
+            return 0xfe;
+
+    uint16_t required_cccd_handle = 0;
+    uint16_t required_cccd_bit = 2;
+
+    if (opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS ||
+        opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS ||
+        opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION) {
+        required_cccd_handle = service->session_descriptor_handle;
+    }
+    else if (opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        uint8_t data_type = value[5];
+
+        if (data_type < 2)
+            required_cccd_handle = data_type ? service->summary_data_handle :
+                                               service->instantaneous_data_handle;
+        else {
+            uint8_t stream = (uint8_t)(data_type - 2);
+
+            if (stream >= 5 || !service->optional_data_handle[stream])
+                return GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED;
+
+            required_cccd_handle = service->optional_data_handle[data_type - 2];
+        }
+        required_cccd_bit = data_type < 2 ? (data_type ? 2 : 1) :
+            ((data_type == 2 || data_type == 5) ? 1 : 2);
+    }
+
+    if (required_cccd_handle) {
+        ble_gatt_attribute *required_cccd = gatt_server_cccd_for(
+            service->server, required_cccd_handle);
+        if (!required_cccd || !(required_cccd->cccd & required_cccd_bit))
+            return 0xfd;
+    }
+
+    service->control_point_opcode = opcode;
+    service->control_point_parameter_len = parameter_len;
+
+    if (parameter_len)
+        memcpy(service->control_point_parameter, value + 1, parameter_len);
+    service->control_point_pending = 1;
+    service->control_point_request_count++;
+    return 0;
+}
+
+// Application facing
+// Add mandatory PAMS characteristics and selected optional data streams.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_add_full(
+    ble_gatt_server *server,
+    ble_gatt_pams_service *service,
+    uint64_t features, const uint8_t current_session[17],
+    uint16_t instantaneous_capacity, uint16_t summary_capacity,
+    uint16_t control_point_capacity, uint16_t session_descriptor_capacity,
+    uint8_t optional_data_mask, const uint16_t optional_data_capacity[5]
+) {
+    if (!server || !service || !features || (features >> 55) ||
+        !current_session || !instantaneous_capacity || !summary_capacity ||
+        !control_point_capacity || !session_descriptor_capacity ||
+        instantaneous_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        summary_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        control_point_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        session_descriptor_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (optional_data_mask & 0xe0) ||
+        (optional_data_mask && !optional_data_capacity)
+    ) return 0;
+
+    const uint64_t cardio_instantaneous_features =
+        ((uint64_t)0x7f << 31);
+    const uint64_t cardio_summary_features =
+        ((uint64_t)0xfff << 26);
+    const uint64_t step_summary_features =
+        ((uint64_t)0x7 << 38) | ((uint64_t)1 << 12) |
+        ((uint64_t)1 << 25);
+    const uint64_t sleep_instantaneous_features = (uint64_t)0x1f << 50;
+    const uint64_t sleep_summary_features = (uint64_t)0x1ff << 41;
+
+    if (((optional_data_mask & (1u << 0)) &&
+         !(features & cardio_instantaneous_features)) ||
+        ((optional_data_mask & (1u << 1)) &&
+         !(features & cardio_summary_features)) ||
+        ((optional_data_mask & (1u << 2)) &&
+         !(features & step_summary_features)) ||
+        ((optional_data_mask & (1u << 3)) &&
+         !(features & sleep_instantaneous_features)) ||
+        ((optional_data_mask & (1u << 4)) &&
+         !(features & sleep_summary_features))
+    ) return 0;
+
+    for (uint8_t i = 0; i < 5; i++)
+        if ((optional_data_mask & (1u << i)) &&
+            (!optional_data_capacity[i] ||
+             optional_data_capacity[i] > BLE_GATT_SERVER_VALUE_MAX)
+        ) return 0;
+
+    uint8_t feature_value[8];
+    for (uint8_t i = 0; i < sizeof(feature_value); i++)
+        feature_value[i] = (uint8_t)(features >> (8 * i));
+    uint8_t initial = 0;
+    ble_gatt_sig_characteristic characteristics[11] = {
+        {0x2b3b, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            feature_value, sizeof(feature_value)},
+        {0x2b3c, BLE_GATT_PROP_NOTIFY, 1, 0,
+            &initial, 0, instantaneous_capacity, 1},
+        {0x2b3d, BLE_GATT_PROP_INDICATE, 1, 0,
+            &initial, 0, summary_capacity, 1},
+        {0x2b43, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_WRITE, &initial, 0, control_point_capacity, 1},
+        {0x2b44, BLE_GATT_PROP_READ | BLE_GATT_PROP_INDICATE, 1,
+            BLE_GATT_PERM_READ, current_session, 17, 17},
+        {0x2b45, BLE_GATT_PROP_INDICATE, 1, 0,
+            &initial, 0, session_descriptor_capacity, 1}
+    };
+    static const uint16_t optional_uuid[5] = {0x2b3e, 0x2b3f, 0x2b40,
+                                              0x2b41, 0x2b42};
+    uint8_t count = 6;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!(optional_data_mask & (1u << i)))
+            continue;
+
+        uint8_t notify = (i == 0 || i == 3);
+        characteristics[count++] = (ble_gatt_sig_characteristic){
+            optional_uuid[i], notify ? BLE_GATT_PROP_NOTIFY :
+                                      BLE_GATT_PROP_INDICATE,
+            1, 0, &initial, 0, optional_data_capacity[i], 1
+        };
+    }
+    uint16_t values[11], cccds[11];
+    ble_gatt_sig_handlers handlers[11] = {0};
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    handlers[3].write = gatt_physical_activity_monitor_control_write;
+    handlers[3].context = service;
+
+    if (!gatt_sig_service_add_with_handlers(server, 0x183e,
+            characteristics, count, &service->service_handle, values, cccds,
+            handlers)) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+
+    service->features_handle = values[0];
+    service->instantaneous_data_handle = values[1];
+    service->instantaneous_data_cccd_handle = cccds[1];
+    service->summary_data_handle = values[2];
+    service->summary_data_cccd_handle = cccds[2];
+    service->control_point_handle = values[3];
+    service->control_point_cccd_handle = cccds[3];
+    service->current_session_handle = values[4];
+    service->current_session_cccd_handle = cccds[4];
+    service->session_descriptor_handle = values[5];
+    service->session_descriptor_cccd_handle = cccds[5];
+    uint8_t value_index = 6;
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!(optional_data_mask & (1u << i)))
+            continue;
+
+        service->optional_data_handle[i] = values[value_index];
+        service->optional_data_cccd_handle[i] = cccds[value_index++];
+    }
+    return 1;
+}
+
+// Queue an encoded optional PAMS data stream. Stream indexes are: 0 cardio-
+// respiratory instantaneous, 1 cardio-respiratory summary, 2 step summary,
+// 3 sleep instantaneous, 4 sleep summary.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_queue_optional_data(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service,
+    uint8_t stream, const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || stream >= 5 ||
+        !value || !len || server->mtu < 3 || len > server->mtu - 3 ||
+        !service->optional_data_handle[stream]
+    ) return 0;
+
+    return gatt_queue_event(server,
+        service->optional_data_handle[stream], value, len,
+        stream == 0 || stream == 3 ? 0 : 1);
+}
+
+// Compatibility builder for the mandatory PAMS layout.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_add(
+    ble_gatt_server *server,
+    ble_gatt_pams_service *service,
+    uint64_t features, const uint8_t current_session[17],
+    uint16_t instantaneous_capacity, uint16_t summary_capacity,
+    uint16_t control_point_capacity, uint16_t session_descriptor_capacity
+) {
+    return gatt_pams_add_full(server, service,
+        features, current_session, instantaneous_capacity, summary_capacity,
+        control_point_capacity, session_descriptor_capacity, 0, NULL);
+}
+
+// Application facing
+// Queue an encoded PAMS Instantaneous Activity Data notification.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_notify_activity(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value || !len ||
+        server->mtu < 3 || len > server->mtu - 3
+    )
+        return 0;
+
+    return gatt_queue_event(server, service->instantaneous_data_handle,
+                                   value, len, 0);
+}
+
+// Application facing
+// Queue an encoded PAMS Summary Data indication.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_indicate_summary(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value || !len ||
+        server->mtu < 3 || len > server->mtu - 3
+    )
+        return 0;
+
+    return gatt_queue_event(server, service->summary_data_handle,
+                                   value, len, 1);
+}
+
+// Application facing
+// Queue an encoded PAMS Session Descriptor indication.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_indicate_session_descriptor(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server || !value || !len ||
+        server->mtu < 3 || len > server->mtu - 3
+    )
+        return 0;
+
+    return gatt_queue_event(server, service->session_descriptor_handle,
+                                   value, len, 1);
+}
+
+// Application facing
+// Update the readable 17-byte Current Session value.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_set_session(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service,
+    const uint8_t value[17]
+) {
+    if (!server || !service || service->server != server || !value)
+        return 0;
+
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->current_session_handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!stored || attribute->value_len != 17 ||
+        attribute->value_capacity < 17
+    ) return 0;
+
+    memcpy(stored, value, 17);
+    return 1;
+}
+
+// Application facing
+// Indicate the current value previously set with set_current_session().
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_indicate_session(
+    ble_gatt_server *server,
+    const ble_gatt_pams_service *service
+) {
+    if (!server || !service || service->server != server) return 0;
+
+    ble_gatt_attribute *attribute =
+        gatt_server_find(server, service->current_session_handle);
+    const uint8_t *value = attribute ?
+        gatt_attribute_value(server, attribute) : NULL;
+
+    if (!value || attribute->value_len != 17)
+        return 0;
+
+    return gatt_queue_event(server, service->current_session_handle,
+                                   value, 17, 1);
+}
+
+// Application facing
+// Complete an Enquire or Get Ended Session Data procedure with its PAMS
+// success or error response opcode and response parameters.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_complete_control_point(
+    ble_gatt_server *server,
+    ble_gatt_pams_service *service,
+    uint8_t response_opcode, const uint8_t *parameters,
+    uint8_t parameter_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending || (parameter_len && !parameters)
+    ) return 0;
+
+    uint8_t request = service->control_point_opcode;
+    uint8_t expected_len = 0;
+
+    if (request == GATT_PAMS_OP_ENQUIRE_SESSIONS) {
+        if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_RESPONSE)
+            expected_len = 2;
+        else if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR)
+            expected_len = 1;
+        else return 0;
+    }
+    else if (request == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS) {
+        if (response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_RESPONSE)
+            expected_len = 2;
+        else if (response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR)
+            expected_len = 1;
+        else return 0;
+    }
+    else if (request == GATT_PAMS_OP_GET_ENDED_SESSION_DATA) {
+        if (response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_RESPONSE)
+            expected_len = 3;
+        else if (response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR)
+            expected_len = 1;
+        else return 0;
+    }
+    else {
+        return 0;
+    }
+
+    if (parameter_len != expected_len)
+        return 0;
+
+    if (response_opcode == GATT_PAMS_OP_ENQUIRE_SESSIONS_ERROR ||
+        response_opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS_ERROR ||
+        response_opcode == GATT_PAMS_OP_GET_ENDED_SESSION_DATA_ERROR) {
+        if (parameters[0] < GATT_PAMS_ERROR_OPCODE_NOT_SUPPORTED ||
+            parameters[0] > GATT_PAMS_ERROR_OPERATION_FAILED
+        ) return 0;
+    }
+    else {
+        uint8_t count_nonzero = 0;
+        for (uint8_t i = 0; i < parameter_len; i++)
+            count_nonzero |= parameters[i];
+
+        if (!count_nonzero) return 0;
+    }
+    uint8_t response[4] = {response_opcode};
+
+    if (parameter_len)
+        memcpy(response + 1, parameters, parameter_len);
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->control_point_handle);
+
+    if (!attribute || parameter_len + 1 > attribute->value_capacity)
+        return 0;
+
+    int queued = gatt_queue_event(server,
+        service->control_point_handle, response,
+        (uint16_t)(parameter_len + 1), 1);
+
+    if (queued > 0)
+        service->control_point_pending = 0;
+    return queued;
+}
+
+// Application facing
+// Finish Start, Stop, Delete Ended Session, or Set Average Activity Type after
+// the application has applied the request and queued any required indications.
+// PAMS means Physical Activity Monitor Service.
+static inline int gatt_pams_finish_request(
+    ble_gatt_server *server,
+    ble_gatt_pams_service *service
+) {
+    if (!server || !service || service->server != server ||
+        !service->control_point_pending ||
+        service->control_point_opcode < GATT_PAMS_OP_START_SESSION ||
+        service->control_point_opcode >
+            GATT_PAMS_OP_SET_AVERAGE_ACTIVITY_TYPE
+    ) return 0;
+
+    service->control_point_pending = 0;
+    return 1;
+}
 #endif

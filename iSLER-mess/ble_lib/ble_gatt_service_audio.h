@@ -2128,5 +2128,4 @@ static inline int gatt_broadcast_audio_scan_service_add(
     return 1;
 }
 
-
 #endif

@@ -2,6 +2,310 @@
 #define BLE_GATT_SERVICE_DEVICE_H
 
 // Battery, Device Information, GAP, and time services.
+// User Data Service
+typedef struct {
+    uint16_t service_handle, database_change_handle;
+    uint16_t database_change_cccd_handle, user_index_handle;
+    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t registered_user_handle, registered_user_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t database_change_increment;
+    uint8_t user_index, request_opcode, request_parameter_len;
+    uint8_t request_parameter[15], request_pending, request_count;
+} ble_gatt_uds_service;
+
+enum {
+    GATT_UDS_OP_REGISTER_NEW_USER = 1,
+    GATT_UDS_OP_CONSENT = 2,
+    GATT_UDS_OP_DELETE_USER_DATA = 3,
+    GATT_UDS_OP_LIST_ALL_USERS = 4,
+    GATT_UDS_OP_DELETE_USERS = 5,
+    GATT_UDS_OP_RESPONSE_CODE = 0x20,
+    GATT_UDS_RESPONSE_SUCCESS = 1,
+    GATT_UDS_RESPONSE_NOT_SUPPORTED = 2,
+    GATT_UDS_RESPONSE_INVALID_PARAMETER = 3,
+    GATT_UDS_RESPONSE_FAILED = 4,
+    GATT_UDS_RESPONSE_USER_NOT_AUTHORIZED = 5
+};
+
+
+// Internal
+static uint8_t gatt_user_data_database_change_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    if (!context || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (len != 4)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_uds_service *service = context;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+        service->database_change_handle);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+
+    if (!stored || attribute->value_len != 4)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    memcpy(stored, value, 4);
+    service->database_change_increment = (uint32_t)value[0] |
+        (uint32_t)value[1] << 8 | (uint32_t)value[2] << 16 |
+        (uint32_t)value[3] << 24;
+    return 0;
+}
+
+// Internal
+static uint8_t gatt_user_data_control_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    if (!context || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (!len || len > 16)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    ble_gatt_uds_service *service = context;
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
+        service->control_point_handle);
+
+    if (!cccd || !(cccd->cccd & 2))
+        return 0xfd;
+    if (service->request_pending)
+        return 0xfe;
+
+    uint8_t opcode = value[0];
+    uint8_t parameter_len = (uint8_t)(len - 1);
+
+    if ((opcode == GATT_UDS_OP_REGISTER_NEW_USER && parameter_len != 2) ||
+        (opcode == GATT_UDS_OP_CONSENT && parameter_len != 3) ||
+        ((opcode == GATT_UDS_OP_DELETE_USER_DATA ||
+          opcode == GATT_UDS_OP_LIST_ALL_USERS) && parameter_len != 0) ||
+        (opcode == GATT_UDS_OP_DELETE_USERS && !parameter_len)
+    ) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+
+    service->request_opcode = opcode;
+    service->request_parameter_len = parameter_len;
+
+    if (parameter_len)
+        memcpy(service->request_parameter, value + 1, parameter_len);
+    service->request_pending = 1;
+    service->request_count++;
+    return 0;
+}
+
+// Application facing
+// UDS means User Data Service.
+static inline int gatt_uds_add(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint32_t database_change_increment, uint8_t user_index
+) {
+    if (!server || !service) return 0;
+
+    memset(service, 0, sizeof(*service));
+    service->server = server;
+    service->database_change_increment = database_change_increment;
+    service->user_index = user_index;
+    uint8_t increment[4] = {
+        (uint8_t)database_change_increment,
+        (uint8_t)(database_change_increment >> 8),
+        (uint8_t)(database_change_increment >> 16),
+        (uint8_t)(database_change_increment >> 24)
+    };
+    static const uint8_t control_point_initial = 0;
+    static const uint8_t registered_user_initial = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2a99, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
+                    BLE_GATT_PROP_NOTIFY, 1,
+         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, increment, 4},
+        {0x2a9a, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+         &user_index, 1},
+        {.uuid = 0x2a9f,
+         .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
+         .cccd = 1,
+         .permissions = BLE_GATT_PERM_WRITE_AUTHN,
+         .value = &control_point_initial,
+         .value_len = 0,
+         .value_capacity = 16,
+         .variable_length = 1},
+        {.uuid = 0x2b37,
+         .properties = BLE_GATT_PROP_INDICATE,
+         .cccd = 1,
+         .permissions = 0,
+         .value = &registered_user_initial,
+         .value_len = 0,
+         .value_capacity = BLE_GATT_SERVER_VALUE_MAX,
+         .variable_length = 1}
+    };
+    ble_gatt_sig_handlers handlers[4] = {0};
+    handlers[0].write = gatt_user_data_database_change_write;
+    handlers[0].context = service;
+    handlers[2].write = gatt_user_data_control_write;
+    handlers[2].context = service;
+    uint16_t values[4], cccds[4];
+
+    if (!gatt_sig_service_add_with_handlers(server, 0x181c, chars, 4,
+            &service->service_handle, values, cccds, handlers)
+    ) return 0;
+
+    service->database_change_handle = values[0];
+    service->database_change_cccd_handle = cccds[0];
+    service->user_index_handle = values[1];
+    service->control_point_handle = values[2];
+    service->control_point_cccd_handle = cccds[2];
+    service->registered_user_handle = values[3];
+    service->registered_user_cccd_handle = cccds[3];
+    return 1;
+}
+
+// Application facing
+// Queue one Registered User indication segment. Increment the 6-bit segment
+// counter for each segment and wrap it from 63 back to 0.
+// UDS means User Data Service.
+static inline int gatt_uds_indicate_user_segment(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint8_t segment_number, uint8_t first_segment, uint8_t last_segment,
+    uint8_t user_index, const uint8_t *name, uint16_t name_len,
+    uint8_t name_present, uint8_t name_truncated
+) {
+    if (!server || !service || service->server != server ||
+        segment_number > 63 || first_segment > 1 || last_segment > 1 ||
+        name_present > 1 || name_truncated > 1 || (name_len && !name) ||
+        (!first_segment && (name_present || name_truncated)) ||
+        (name_truncated && !name_present) ||
+        name_len > server->mtu - 4 - (first_segment ? 2 : 0) ||
+        name_len > BLE_GATT_SERVER_VALUE_MAX - 3
+    ) return 0;
+
+    uint8_t value[BLE_GATT_SERVER_VALUE_MAX];
+    value[0] = (uint8_t)((segment_number << 2) |
+        (first_segment ? 1 : 0) | (last_segment ? 2 : 0));
+    uint16_t value_len = 1;
+
+    if (first_segment) {
+        value[value_len++] = (uint8_t)((name_present ? 1 : 0) |
+            (name_truncated ? 2 : 0));
+        value[value_len++] = user_index;
+    }
+
+    if (name_len)
+        memcpy(value + value_len, name, name_len);
+    value_len += name_len;
+    return gatt_queue_event(server, service->registered_user_handle,
+        value, value_len, 1);
+}
+
+// Application facing
+// Update the Database Change Increment value and its readable database copy.
+// UDS means User Data Service.
+static inline int gatt_uds_set_db_change(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint32_t increment
+) {
+    if (!server || !service || service->server != server)
+        return 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->database_change_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!value || attribute->value_len != 4)
+        return 0;
+
+    value[0] = (uint8_t)increment;
+    value[1] = (uint8_t)(increment >> 8);
+    value[2] = (uint8_t)(increment >> 16);
+    value[3] = (uint8_t)(increment >> 24);
+    service->database_change_increment = increment;
+    return 1;
+}
+
+// Application facing
+// Update Database Change Increment and queue its notification.
+// UDS means User Data Service.
+static inline int gatt_uds_notify_db_change(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint32_t increment
+) {
+    if (!gatt_uds_set_db_change(
+            server, service, increment)
+    ) return 0;
+
+    uint8_t value[4];
+    value[0] = (uint8_t)increment;
+    value[1] = (uint8_t)(increment >> 8);
+    value[2] = (uint8_t)(increment >> 16);
+    value[3] = (uint8_t)(increment >> 24);
+    return gatt_queue_event(server, service->database_change_handle,
+        value, sizeof(value), 0);
+}
+
+// Application facing
+// Update the User Index value and its readable database copy.
+// UDS means User Data Service.
+static inline int gatt_uds_set_user_index(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint8_t user_index
+) {
+    if (!server || !service || service->server != server)
+        return 0;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->user_index_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(server, attribute) : NULL;
+
+    if (!value || attribute->value_len != 1)
+        return 0;
+
+    value[0] = user_index;
+    service->user_index = user_index;
+    return 1;
+}
+
+// Application facing
+// Complete a User Control Point request with an indicated Response Code.
+// Response values are 1 through 5; successful registration includes the
+// assigned User Index as its one-byte response parameter.
+// UDS means User Data Service.
+static inline int gatt_uds_complete(
+    ble_gatt_server *server, ble_gatt_uds_service *service,
+    uint8_t response, const uint8_t *parameter, uint8_t parameter_len
+) {
+    if (!server || !service || service->server != server ||
+        !service->request_pending || response < 1 || response > 5 ||
+        parameter_len > 13 || (parameter_len && !parameter) ||
+        (response == 1 && service->request_opcode == 1 &&
+         parameter_len != 1) ||
+        (response == 1 && service->request_opcode == 4 &&
+         parameter_len != 1)
+    ) return 0;
+
+    uint8_t value[16] = {
+        GATT_UDS_OP_RESPONSE_CODE, service->request_opcode, response
+    };
+
+    if (parameter_len)
+        memcpy(value + 3, parameter, parameter_len);
+    int queued = gatt_queue_event(server, service->control_point_handle,
+        value, (uint16_t)(3 + parameter_len), 1);
+
+    if (queued > 0) {
+        if (response == GATT_UDS_RESPONSE_SUCCESS &&
+            service->request_opcode == GATT_UDS_OP_REGISTER_NEW_USER
+        ) gatt_uds_set_user_index(server, service,
+                parameter[0]);
+        service->request_pending = 0;
+    }
+
+    return queued;
+}
+
 // Voice Assistant Service
 typedef struct {
     uint16_t service_handle;
