@@ -1148,7 +1148,10 @@ static inline int gatt_client_receive(
     return 1;
 }
 
+// A direct ble_gatt_server.h include must finish defining the server first.
+#ifndef BLE_GATT_SERVER_H
 #include "ble_gatt_server.h"
 #include "ble_gatt_transport.h"
+#endif
 
 #endif

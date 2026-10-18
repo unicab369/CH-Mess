@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "ble_gatt.h"
+#include "ble_gatt_server.h"
 
 // =============================================================================
 // Configuration

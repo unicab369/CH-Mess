@@ -969,9 +969,8 @@ static inline uint8_t gap_conn_can_skip_event(
         conn->next_schedule.factor
     ) {
         int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-        if ((int32_t)event - (int32_t)conn->next_schedule.base_event
-            % conn->next_schedule.factor == 0
-        ) return 0;
+        if (next_offset % conn->next_schedule.factor == 0)
+            return 0;
     }
 
     return 1;
