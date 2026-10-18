@@ -178,6 +178,64 @@ int GAP_CCM_DECRYPT(
 #define GAP_PERIODIC_SYNC_EVENT_COUNT 4
 #define GAP_PERIODIC_REPORT_COUNT 2
 
+// GAP protocol and procedure enum values.
+// Encryption procedure state; timed phases occupy the low nine bits.
+enum {
+    GAP_ENC_IDLE = 0,
+    GAP_ENC_WAIT_RSP = 1u << 0,
+    GAP_ENC_WAIT_START = 1u << 1,
+    GAP_ENC_WAIT_FINAL = 1u << 2,
+    GAP_ENC_KEY_REQUEST = 1u << 3,
+    GAP_ENC_START_QUEUED = 1u << 4,
+    GAP_ENC_PERIPHERAL_START = 1u << 5,
+    GAP_ENC_WAIT_PAUSE = 1u << 6,
+    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
+    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
+    GAP_ENC_QUEUED = 1u << 9,
+    GAP_ENC_PAUSE_QUEUED = 1u << 10,
+    GAP_ENC_RESTART_QUEUED = 1u << 11,
+    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
+};
+enum {
+    ADV_IND = 0x00,
+    ADV_DIRECT_IND = 0x01,
+    ADV_NONCONN_IND = 0x02,
+    SCAN_REQ = 0x03,
+    SCAN_RSP = 0x04,
+    CONNECT_IND = 0x05,
+    ADV_SCAN_IND = 0x06,
+    ADV_EXT_IND = 0x07
+};
+typedef enum {
+    GAP_CONN_MODE_DIRECT = 0x00,
+    GAP_CONN_MODE_GENERAL = 0x01,
+    GAP_CONN_MODE_SELECTIVE = 0x02,
+    GAP_CONN_MODE_AUTO = 0x04
+} gap_conn_mode;
+enum {
+    GAP_RATE_QUEUED_SET = 1u << 0,
+    GAP_RATE_QUEUED_REQUEST = 1u << 1
+};
+enum {
+    GAP_PENDING_TIMING_UPDATE = 1u << 0,
+    GAP_PENDING_CHANNEL_MAP = 1u << 1,
+    GAP_PENDING_PHY_UPDATE = 1u << 2
+};
+enum {
+    GAP_CONN_PARAMS_NONE,
+    GAP_CONN_PARAMS_REMOTE,
+    GAP_CONN_PARAMS_LOCAL
+};
+enum {
+    GAP_SUBRATE_QUEUED_UPDATE = 1u << 0,
+    GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
+};
+enum {
+    GAP_SUBRATE_IDLE,
+    GAP_SUBRATE_UPDATE_PENDING,
+    GAP_SUBRATE_REQUEST_PENDING
+};
+
 #if GAP_EXT_ADV_SUPPORT
 typedef struct {
     uint8_t channel_map[5];
@@ -278,64 +336,6 @@ typedef struct {
     uint16_t interval_125us, factor, latency, continuation, timeout;
     uint16_t base_event, win_offset, instant;
 } gap_conn_schedule;
-
-// GAP protocol and procedure enum values.
-// Encryption procedure state; timed phases occupy the low nine bits.
-enum {
-    GAP_ENC_IDLE = 0,
-    GAP_ENC_WAIT_RSP = 1u << 0,
-    GAP_ENC_WAIT_START = 1u << 1,
-    GAP_ENC_WAIT_FINAL = 1u << 2,
-    GAP_ENC_KEY_REQUEST = 1u << 3,
-    GAP_ENC_START_QUEUED = 1u << 4,
-    GAP_ENC_PERIPHERAL_START = 1u << 5,
-    GAP_ENC_WAIT_PAUSE = 1u << 6,
-    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
-    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
-    GAP_ENC_QUEUED = 1u << 9,
-    GAP_ENC_PAUSE_QUEUED = 1u << 10,
-    GAP_ENC_RESTART_QUEUED = 1u << 11,
-    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
-};
-enum {
-    ADV_IND = 0x00,
-    ADV_DIRECT_IND = 0x01,
-    ADV_NONCONN_IND = 0x02,
-    SCAN_REQ = 0x03,
-    SCAN_RSP = 0x04,
-    CONNECT_IND = 0x05,
-    ADV_SCAN_IND = 0x06,
-    ADV_EXT_IND = 0x07
-};
-typedef enum {
-    GAP_CONN_MODE_DIRECT = 0x00,
-    GAP_CONN_MODE_GENERAL = 0x01,
-    GAP_CONN_MODE_SELECTIVE = 0x02,
-    GAP_CONN_MODE_AUTO = 0x04
-} gap_conn_mode;
-enum {
-    GAP_RATE_QUEUED_SET = 1u << 0,
-    GAP_RATE_QUEUED_REQUEST = 1u << 1
-};
-enum {
-    GAP_PENDING_TIMING_UPDATE = 1u << 0,
-    GAP_PENDING_CHANNEL_MAP = 1u << 1,
-    GAP_PENDING_PHY_UPDATE = 1u << 2
-};
-enum {
-    GAP_CONN_PARAMS_NONE,
-    GAP_CONN_PARAMS_REMOTE,
-    GAP_CONN_PARAMS_LOCAL
-};
-enum {
-    GAP_SUBRATE_QUEUED_UPDATE = 1u << 0,
-    GAP_SUBRATE_QUEUED_REQUEST = 1u << 1
-};
-enum {
-    GAP_SUBRATE_IDLE,
-    GAP_SUBRATE_UPDATE_PENDING,
-    GAP_SUBRATE_REQUEST_PENDING
-};
 
 typedef struct {
     uint8_t slot;
@@ -506,11 +506,40 @@ typedef struct {
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
-
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 
+static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
+// Per-slot counters invalidate security work after a link ends or is replaced.
+static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
+
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
+
+// Connection selection and application-facing handles.
+// Return the read-only context for the currently selected connection slot.
+const gap_conn_context *gap_conn_ctx_current(void) {
+    return &gap_conn_ctx[gap_conn_slot];
+}
+
+// Volatile stores keep the compiler from removing the wipe as dead code.
+static void gap_wipe(volatile void *data, size_t len) {
+    volatile uint8_t *bytes = data;
+    while (len--) *bytes++ = 0;
+}
+
+static inline void gap_bytes_reverse(
+    uint8_t *out, const uint8_t *in, size_t len
+) {
+    for (size_t i = 0; i < len; i++)
+        out[i] = in[len - 1 - i];
+}
+
+static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
+    dst[0] = (uint8_t)value;
+    dst[1] = (uint8_t)(value >> 8);
+    dst[2] = (uint8_t)(value >> 16);
+    dst[3] = (uint8_t)(value >> 24);
+}
 
 // Return conservative on-air time for a Link Layer PDU payload length.
 // LE Coded uses the slower S=8 data coding as its scheduling upper bound.
@@ -523,12 +552,6 @@ static inline uint32_t gap_phy_airtime_us(
         return 976 + (uint32_t)payload_len * 64;
 
     return ((uint32_t)payload_len + 10) * 8;
-}
-
-// Connection selection and application-facing handles.
-// Return the read-only context for the currently selected connection slot.
-const gap_conn_context *gap_conn_ctx_current(void) {
-    return &gap_conn_ctx[gap_conn_slot];
 }
 
 static int gap_conn_free_slot(void) {
@@ -584,9 +607,6 @@ static inline int gap_conn_current(gap_conn_handle *handle) {
     return handle->generation != 0;
 }
 
-static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
-// Per-slot counters invalidate security work after a link ends or is replaced.
-static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 // Connection request validation and byte/security helpers.
 // Validate a data-channel access address against the Bluetooth Core rules.
@@ -654,26 +674,6 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
         (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
         (uint32_t)frame[17] << 24;
     return count >= 2 && gap_access_address_valid(access_address);
-}
-
-// Volatile stores keep the compiler from removing the wipe as dead code.
-static void gap_wipe(volatile void *data, size_t len) {
-    volatile uint8_t *bytes = data;
-    while (len--) *bytes++ = 0;
-}
-
-static inline void gap_bytes_reverse(
-    uint8_t *out, const uint8_t *in, size_t len
-) {
-    for (size_t i = 0; i < len; i++)
-        out[i] = in[len - 1 - i];
-}
-
-static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
-    dst[0] = (uint8_t)value;
-    dst[1] = (uint8_t)(value >> 8);
-    dst[2] = (uint8_t)(value >> 16);
-    dst[3] = (uint8_t)(value >> 24);
 }
 
 static struct {
