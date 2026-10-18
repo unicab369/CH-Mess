@@ -541,8 +541,8 @@ static void gap_send_data_length(uint8_t opcode) {
     gap_tx_frame[0] = 3;
     gap_tx_frame[1] = 9;
     gap_tx_frame[2] = opcode;
-    ble_write_u16_le(gap_tx_frame + 3, conn->data_capacity);
-    ble_write_u16_le(gap_tx_frame + 5, (conn->data_capacity + 14) * 8);
+    ble_write_u16_le(gap_tx_frame + 3, gap_data_capacity);
+    ble_write_u16_le(gap_tx_frame + 5, (gap_data_capacity + 14) * 8);
     ble_write_u16_le(gap_tx_frame + 7, conn->local_tx_octets);
     ble_write_u16_le(gap_tx_frame + 9, (conn->local_tx_octets + 14) * 8);
 }
@@ -1722,13 +1722,13 @@ static uint8_t gap_conn_control(
             // already queued fragments retain their original length.
             gap_data_length remote = conn->remote_data_length;
             uint16_t tx_time = (uint16_t)((conn->local_tx_octets + 14) * 8);
-            uint16_t rx_time = (uint16_t)((conn->data_capacity + 14) * 8);
+            uint16_t rx_time = (uint16_t)((gap_data_capacity + 14) * 8);
 
             conn->data_length.tx_octets = conn->local_tx_octets < remote.rx_octets ?
                                         conn->local_tx_octets : remote.rx_octets;
             conn->data_length.tx_time = tx_time < remote.rx_time ? tx_time : remote.rx_time;
-            conn->data_length.rx_octets = conn->data_capacity < remote.tx_octets ?
-                                        conn->data_capacity : remote.tx_octets;
+            conn->data_length.rx_octets = gap_data_capacity < remote.tx_octets ?
+                                        gap_data_capacity : remote.tx_octets;
             conn->data_length.rx_time = rx_time < remote.tx_time ? rx_time : remote.tx_time;
 
             if (frame[2] == LL_LENGTH_REQ) {
@@ -2232,7 +2232,7 @@ int gap_peer_class_get(
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() || octets < 27 ||
-        octets > conn->data_capacity
+        octets > gap_data_capacity
     ) return 0;
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x20)) {

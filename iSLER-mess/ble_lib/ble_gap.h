@@ -412,7 +412,7 @@ typedef struct {
     gap_conn_params new_params;
 
     // Data-length negotiation.
-    uint16_t data_capacity, local_tx_octets;
+    uint16_t local_tx_octets;
     gap_data_length data_length, remote_data_length;
     uint8_t length_status;
     uint32_t length_started_ms;
@@ -509,7 +509,9 @@ typedef struct {
 } gap_conn_context; // 552 B
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
+// Hardware payload capacity is shared by all links on this controller.
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
+static uint16_t gap_data_capacity;
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 // Shared radio assessment; an all-zero value means every channel is unknown.
@@ -1289,13 +1291,13 @@ static int gap_conn_accept(
 
     if (free_slot < 0) return 0;
 
-    // Must precede conn->data_capacity; conn uses this slot index.
+    // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
     gap_security = &gap_sec_contexts[gap_conn_slot];
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));
-    conn->data_capacity = data_capacity;
+    gap_data_capacity = data_capacity;
     memcpy(conn->c_link_layer.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;

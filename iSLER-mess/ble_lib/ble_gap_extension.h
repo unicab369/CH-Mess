@@ -2385,7 +2385,7 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     uint64_t event_ticks = conn->c_link_layer.next_ticks;
     uint32_t event_window_us = conn->c_link_layer.first_event ||
             conn->c_pending.update_window_active ? conn->window_size * 1250 : 1000;
-    uint16_t packet_capacity = conn->data_capacity > 27 ? conn->data_capacity : 27;
+    uint16_t packet_capacity = gap_data_capacity > 27 ? gap_data_capacity : 27;
     uint32_t packet_guard_us = 400 + 16 * (packet_capacity - 27);
     uint64_t open_ticks, close_ticks;
 

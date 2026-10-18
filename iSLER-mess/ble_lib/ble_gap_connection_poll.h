@@ -271,7 +271,7 @@ void gap_hw_received(void) {
             uint64_t cnt = gap_security->rx_counter;
             if (duplicate && cnt) cnt--;
 
-            if (frame[1] <= 4 || frame[1] > conn->data_capacity + 4 ||
+            if (frame[1] <= 4 || frame[1] > gap_data_capacity + 4 ||
                 cnt >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
             ) {
                 gap_security->status = 0x3d;
@@ -903,14 +903,14 @@ static uint64_t gap_conn_close_ticks(
         // payloads add 64 us per octet. S=2 packets finish sooner.
         // Exchange as: 2 * (976 us + payload octets * 64 us) + 150 us
         // Simplified: 2102 us + payload octets * 128 us.
-        packet_us = 2102 + (uint32_t)connection->data_capacity * 128;
+        packet_us = 2102 + (uint32_t)gap_data_capacity * 128;
     }
     else {
         // Two packets add 8 us per octet above 27 bytes: 400 us +
         // 2 * max(data_capacity - 27, 0) * 8 us.
         // Simplified: 400 us + 16 us * max(data_capacity - 27, 0).
-        packet_us = 400 + 16 * (connection->data_capacity > 27 ?
-                                    connection->data_capacity - 27 : 0);
+        packet_us = 400 + 16 * (gap_data_capacity > 27 ?
+                                    gap_data_capacity - 27 : 0);
     }
 
     uint32_t window_us = connection->c_link_layer.first_event ||
