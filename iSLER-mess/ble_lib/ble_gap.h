@@ -1344,10 +1344,8 @@ static int gap_conn_accept(
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
-    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
 #if GAP_SMP_SUPPORT > 0
     if (!smp_link_init()) {
-        gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
         return 0;
     }
 #endif
@@ -1357,6 +1355,7 @@ static int gap_conn_accept(
 #endif
 
     gap_adv.enabled = 0;
+    gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     return 1;
 }
 

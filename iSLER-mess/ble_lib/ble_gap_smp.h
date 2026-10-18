@@ -6,6 +6,18 @@
 #endif
 #endif
 
+// Platforms implement durable whole-record bond storage. LOAD returns 1 for
+// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
+// only after the operation is durable.
+#if defined(__GNUC__)
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
+int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
+#else
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
+int GAP_BOND_DELETE(uint8_t slot);
+#endif
 
 // LE SMP implementation used by GAP. This file keeps the SMP protocol helpers,
 // pairing transaction, and GAP-specific policy and platform integration
@@ -408,19 +420,6 @@ static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
 static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static void gap_smp_finish(uint8_t status);
-
-// Platforms implement durable whole-record bond storage. LOAD returns 1 for
-// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
-// only after the operation is durable.
-#if defined(__GNUC__)
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
-int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
-#else
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
-int GAP_BOND_DELETE(uint8_t slot);
-#endif
 
 int smp_port_cmac(
     const uint8_t key[16],
