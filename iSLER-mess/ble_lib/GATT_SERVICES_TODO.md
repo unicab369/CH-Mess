@@ -81,7 +81,10 @@ remains available for custom services; it does not replace these builders.
   response indications
 - [x] Fitness Machine (`0x1826`), selected machine-data characteristic,
   feature-matched Supported Range values, optional Training Status and
-  Fitness Machine Status notifications, and Control Point handling
+  Fitness Machine Status notifications, all 21 Control Point opcode and
+  parameter-length checks, target-feature/range checks, and standard error
+  indications. Machine actions and successful procedure responses remain
+  application-controlled.
 - [x] Reconnection Configuration (`0x1829`), base featureless layout
 - [x] Insulin Delivery (`0x183A`), mandatory authorized status and
   Status Reader Control Point, plus paired optional command/data and

@@ -198,10 +198,16 @@ telemetry and queues it with
 `gatt_ftms_add_controlled()` to also add optional Training
 Status and Fitness Machine Control Point characteristics. The application
 queues data through `service.base` and provides encoded Training Status values.
-Control Point writes are saved in `control_point_opcode`,
+The Control Point validates all 21 assigned opcodes, parameter lengths,
+target-setting feature bits, and values against any registered Supported Range.
+Unsupported and invalid requests receive standard response indications.
+Valid requests are saved in `control_point_opcode`,
 `control_point_parameter`, and `control_point_parameter_len`; the application
-handles each request and completes it with
-`gatt_ftms_complete_control_point()`. The simpler
+performs the machine action and completes each request with
+`gatt_ftms_complete_control_point()`. A successful Request Control response
+grants connection-scoped control permission. Call `gatt_ftms_reset()` when the
+client disconnects, and call `gatt_ftms_revoke_control()` to revoke permission
+and queue the standard Control Permission Lost status notification. The simpler
 controlled builder omits the optional Supported Range and Fitness Machine
 Status characteristics. Use `gatt_ftms_add_full()` for
 feature-matched Supported
@@ -343,8 +349,9 @@ Additional service builders include:
 - `gatt_sps_add()` for Scan Interval Window and Scan
   Refresh. The Scan Interval Window handler validates the Bluetooth ranges
   and updates the service state; the application applies it to its scanner.
-  Call `gatt_sps_refresh()` when the client should
-  refresh its scan parameters.
+  Queue a Scan Refresh notification with value `0` using
+  `gatt_queue_event(server, service->refresh_handle, &refresh, 1, 0)` when the
+  client should refresh its scan parameters.
 - `gatt_csc_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
   `gatt_csc_notify()` encodes and queues feature-checked

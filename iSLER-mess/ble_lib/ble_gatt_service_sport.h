@@ -1273,7 +1273,7 @@ typedef struct {
     uint16_t fitness_machine_status_handle;
     uint16_t fitness_machine_status_cccd_handle;
     ble_gatt_server *server;
-    uint8_t control_point_pending, control_point_opcode;
+    uint8_t control_point_pending, control_point_opcode, control_granted;
     uint8_t control_point_parameter_len, control_point_request_count;
     uint8_t control_point_parameter[19];
 } ble_gatt_ftms_controlled_service;
@@ -1289,13 +1289,112 @@ typedef struct {
 } ble_gatt_ftms_options;
 
 enum {
+    GATT_FTMS_OP_REQUEST_CONTROL = 0x00,
+    GATT_FTMS_OP_RESET = 0x01,
+    GATT_FTMS_OP_SET_SPEED = 0x02,
+    GATT_FTMS_OP_SET_INCLINATION = 0x03,
+    GATT_FTMS_OP_SET_RESISTANCE = 0x04,
+    GATT_FTMS_OP_SET_POWER = 0x05,
+    GATT_FTMS_OP_SET_HEART_RATE = 0x06,
+    GATT_FTMS_OP_START_RESUME = 0x07,
+    GATT_FTMS_OP_STOP_PAUSE = 0x08,
+    GATT_FTMS_OP_SET_ENERGY = 0x09,
+    GATT_FTMS_OP_SET_STEPS = 0x0a,
+    GATT_FTMS_OP_SET_STRIDES = 0x0b,
+    GATT_FTMS_OP_SET_DISTANCE = 0x0c,
+    GATT_FTMS_OP_SET_TRAINING_TIME = 0x0d,
+    GATT_FTMS_OP_SET_HR_ZONE2 = 0x0e,
+    GATT_FTMS_OP_SET_HR_ZONE3 = 0x0f,
+    GATT_FTMS_OP_SET_HR_ZONE5 = 0x10,
+    GATT_FTMS_OP_SET_SIMULATION = 0x11,
+    GATT_FTMS_OP_SET_WHEEL_CIRCUMFERENCE = 0x12,
+    GATT_FTMS_OP_SPIN_DOWN = 0x13,
+    GATT_FTMS_OP_SET_CADENCE = 0x14,
     GATT_FTMS_OP_RESPONSE_CODE = 0x80,
+    GATT_FTMS_STATUS_CONTROL_LOST = 0xff,
     GATT_FTMS_RESPONSE_SUCCESS = 1,
     GATT_FTMS_RESPONSE_NOT_SUPPORTED = 2,
     GATT_FTMS_RESPONSE_INVALID_PARAMETER = 3,
     GATT_FTMS_RESPONSE_FAILED = 4,
     GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED = 5
 };
+
+// Internal helper
+static inline int gatt_ftms_opcode_info(
+    uint8_t opcode, uint8_t *parameter_len, uint8_t *target_feature
+) {
+    static const uint8_t parameter_lengths[0x15] = {
+        0, 0, 2, 2, 2, 2, 1, 0, 1, 2, 2, 2, 3, 2, 4, 6, 10, 6, 2, 1, 2
+    };
+    static const uint8_t target_features[0x15] = {
+        0xff, 0xff, 0, 1, 2, 3, 4, 0xff, 0xff, 5, 6, 7, 8, 9, 10, 11,
+        12, 13, 14, 15, 16
+    };
+    if (opcode > GATT_FTMS_OP_SET_CADENCE) return 0;
+    *parameter_len = parameter_lengths[opcode];
+    *target_feature = target_features[opcode];
+    return 1;
+}
+
+// Internal helper
+static inline int gatt_ftms_target_supported(
+    ble_gatt_server *server, const ble_gatt_ftms_controlled_service *service,
+    uint8_t feature
+) {
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->base.features_handle);
+    const uint8_t *value = attribute ?
+        gatt_attribute_value(server, attribute) : NULL;
+    if (!value || attribute->value_len < 8 || feature > 16) return -1;
+    return !!(value[4 + feature / 8] & (uint8_t)(1u << (feature % 8)));
+}
+
+// Internal helper
+static inline int gatt_ftms_value_in_range(
+    ble_gatt_server *server, const ble_gatt_ftms_controlled_service *service,
+    uint8_t opcode, const uint8_t *parameter
+) {
+    uint8_t range_index = opcode == GATT_FTMS_OP_SET_SPEED ? 0 :
+        opcode == GATT_FTMS_OP_SET_INCLINATION ? 1 :
+        opcode == GATT_FTMS_OP_SET_RESISTANCE ? 2 :
+        opcode == GATT_FTMS_OP_SET_HEART_RATE ? 3 :
+        opcode == GATT_FTMS_OP_SET_POWER ? 4 : 0xff;
+    if (range_index == 0xff ||
+        !service->supported_range_handles[range_index]) return 1;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        server, service->supported_range_handles[range_index]);
+    const uint8_t *range = attribute ?
+        gatt_attribute_value(server, attribute) : NULL;
+    uint8_t expected_len = opcode == GATT_FTMS_OP_SET_HEART_RATE ? 3 : 6;
+    if (!range || attribute->value_len != expected_len) return -1;
+
+    if (opcode == GATT_FTMS_OP_SET_SPEED) {
+        uint16_t value = ble_get_le16(parameter);
+        return value >= ble_get_le16(range) &&
+               value <= ble_get_le16(range + 2);
+    }
+    if (opcode == GATT_FTMS_OP_SET_HEART_RATE)
+        return parameter[0] >= range[0] && parameter[0] <= range[1];
+
+    int16_t value = (int16_t)ble_get_le16(parameter);
+    int16_t minimum = (int16_t)ble_get_le16(range);
+    int16_t maximum = (int16_t)ble_get_le16(range + 2);
+    return value >= minimum && value <= maximum;
+}
+
+// Internal helper
+static inline uint8_t gatt_ftms_queue_response(
+    ble_gatt_server *server, ble_gatt_ftms_controlled_service *service,
+    uint8_t opcode, uint8_t result
+) {
+    uint8_t response[3] = {
+        GATT_FTMS_OP_RESPONSE_CODE, opcode, result
+    };
+    return gatt_queue_event(server, service->control_point_handle,
+        response, sizeof(response), 1) > 0 ? 0 :
+        ATT_ERR_INSUFFICIENT_RESOURCES;
+}
 
 // Application-facing API
 // Add the FTMS feature characteristic and one selected machine-data
@@ -1353,7 +1452,7 @@ static uint8_t gatt_fitness_machine_control_write(
     if (command)
         return ATT_ERR_REQUEST_NOT_SUPPORTED;
 
-    if (!len || len > sizeof(service->control_point_parameter) + 1)
+    if (!len)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
@@ -1371,8 +1470,39 @@ static uint8_t gatt_fitness_machine_control_write(
                 service->control_point_handle
         ) return 0xfe;
 
-    service->control_point_opcode = value[0];
-    service->control_point_parameter_len = (uint8_t)(len - 1);
+    uint8_t opcode = value[0], parameter_len, target_feature;
+    if (!gatt_ftms_opcode_info(opcode, &parameter_len, &target_feature))
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_NOT_SUPPORTED);
+    if (len != (uint16_t)parameter_len + 1)
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_INVALID_PARAMETER);
+    if (target_feature != 0xff) {
+        int supported = gatt_ftms_target_supported(
+            service->server, service, target_feature);
+        if (supported < 0) return ATT_ERR_UNLIKELY_ERROR;
+        if (!supported)
+            return gatt_ftms_queue_response(service->server, service, opcode,
+                GATT_FTMS_RESPONSE_NOT_SUPPORTED);
+    }
+    int in_range = gatt_ftms_value_in_range(
+        service->server, service, opcode, value + 1);
+    if (in_range < 0) return ATT_ERR_UNLIKELY_ERROR;
+    if (!in_range)
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_INVALID_PARAMETER);
+    if ((opcode == GATT_FTMS_OP_STOP_PAUSE &&
+         value[1] != 1 && value[1] != 2) ||
+        (opcode == GATT_FTMS_OP_SPIN_DOWN &&
+         value[1] != 1 && value[1] != 2))
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_INVALID_PARAMETER);
+    if (opcode != GATT_FTMS_OP_REQUEST_CONTROL && !service->control_granted)
+        return gatt_ftms_queue_response(service->server, service, opcode,
+            GATT_FTMS_RESPONSE_CONTROL_NOT_PERMITTED);
+
+    service->control_point_opcode = opcode;
+    service->control_point_parameter_len = parameter_len;
 
     if (len > 1)
         memcpy(service->control_point_parameter, value + 1, len - 1);
@@ -1383,7 +1513,7 @@ static uint8_t gatt_fitness_machine_control_write(
 
 // Application-facing API
 // Add Fitness Machine Data with optional Training Status and Control Point.
-// The application handles Training Status encoding and Control Point policy.
+// The application encodes Training Status and performs machine actions.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_add_controlled(
     ble_gatt_server *server,
@@ -1406,7 +1536,8 @@ static inline int gatt_ftms_add_controlled(
         (training_status_len && !training_status) ||
         training_status_len > training_status_capacity ||
         training_status_capacity > BLE_GATT_SERVER_VALUE_MAX ||
-        control_point_capacity > 20
+        (control_point_capacity &&
+         (control_point_capacity < 3 || control_point_capacity > 20))
     ) return 0;
 
     uint8_t initial_data = 0;
@@ -1466,12 +1597,36 @@ static inline int gatt_ftms_add_controlled(
     return 1;
 }
 
+// Clear connection-scoped FTMS control permission and pending request state.
+static inline void gatt_ftms_reset(
+    ble_gatt_ftms_controlled_service *service
+) {
+    if (!service) return;
+    service->control_point_pending = 0;
+    service->control_point_opcode = 0;
+    service->control_point_parameter_len = 0;
+    service->control_granted = 0;
+}
+
+// Revoke the client's control permission and send the standard status event.
+static inline int gatt_ftms_revoke_control(
+    ble_gatt_server *server, ble_gatt_ftms_controlled_service *service
+) {
+    if (!server || !service || service->server != server) return 0;
+    if (!service->control_granted) return 1;
+    service->control_granted = 0;
+    if (!service->fitness_machine_status_handle) return 1;
+    uint8_t event = GATT_FTMS_STATUS_CONTROL_LOST;
+    return gatt_queue_event(server, service->fitness_machine_status_handle,
+                            &event, sizeof(event), 0);
+}
+
 // Application-facing API
 // Build a full selected FTMS layout, including any feature-matched Supported
 // Range characteristics, Training Status, Fitness Machine Status, and Control
 // Point. Range values are the standard encoded 6-octet values, except Heart
 // Rate Range which is 3 octets. The application supplies status/data payloads
-// and retains Control Point policy.
+// and leaves machine actions to the application.
 // FTMS means Fitness Machine Service.
 static inline int gatt_ftms_add_full(
     ble_gatt_server *server,
@@ -1669,6 +1824,9 @@ static inline int gatt_ftms_complete_control_point(
 
     if (queued > 0)
         service->control_point_pending = 0;
+    if (queued > 0 && service->control_point_opcode ==
+        GATT_FTMS_OP_REQUEST_CONTROL && result == GATT_FTMS_RESPONSE_SUCCESS)
+        service->control_granted = 1;
     return queued;
 }
 

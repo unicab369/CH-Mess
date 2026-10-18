@@ -1348,11 +1348,6 @@ typedef struct {
 static uint8_t gatt_bms_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
-);
-// BMS means Bond Management Service.
-static uint8_t gatt_bms_control_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
 ) {
     ble_gatt_bms_service *service = context;
     if (!service || !service->server || !value)
@@ -1459,17 +1454,6 @@ static inline int gatt_bms_add_auth(
     return 1;
 }
 
-// Add Bond Management attributes without an authorization-code callback.
-// BMS means Bond Management Service.
-static inline int gatt_bms_add(
-    ble_gatt_server *server, ble_gatt_bms_service *service,
-    const uint8_t *features, uint16_t feature_len,
-    uint16_t cp_capacity
-) {
-    return gatt_bms_add_auth(server, service,
-        features, feature_len, cp_capacity, NULL, NULL);
-}
-
 // Copy one validated request for application-owned bond-store processing.
 // The operation is cleared only when the caller passes a sufficient buffer.
 // BMS means Bond Management Service.
@@ -1573,21 +1557,6 @@ static inline int gatt_sps_add(
     service->refresh_handle = values[1];
     service->refresh_cccd_handle = cccds[1];
     return 1;
-}
-
-// Application-facing API
-// Notify the client that it should refresh its scan parameters.
-// SPS means Scan Parameters Service.
-static inline int gatt_sps_refresh(
-    ble_gatt_server *server,
-    const ble_gatt_sps_service *service
-) {
-    if (!server || !service || !service->refresh_handle)
-        return 0;
-
-    const uint8_t refresh = 0;
-    return gatt_queue_event(server, service->refresh_handle,
-        &refresh, sizeof(refresh), 0);
 }
 
 // Transport Discovery, Internet Protocol Support, and Elapsed Time
@@ -1803,17 +1772,6 @@ typedef struct {
     uint16_t cp_msg_len;
     uint8_t cp_msg[BLE_GATT_SERVER_VALUE_MAX];
 } ble_gatt_acs_service;
-
-// ACS means Authorization Control Service.
-static uint8_t gatt_acs_data_in_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
-// ACS means Authorization Control Service.
-static uint8_t gatt_acs_control_point_write(
-    void *context, uint16_t offset, const uint8_t *value,
-    uint16_t len, uint8_t command
-);
 
 // ACS means Authorization Control Service.
 static inline uint8_t gatt_acs_receive_segment(
