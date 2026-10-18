@@ -1,7 +1,8 @@
 #ifndef BLE_GATT_SERVICE_PERIPHERALS_H
 #define BLE_GATT_SERVICE_PERIPHERALS_H
 
-// HID, HTTP Proxy, Object Transfer, Automation IO, Navigation, and ESL services.
+// HID, HTTP Proxy, Object Transfer, Automation IO, Indoor Positioning,
+// Location and Navigation, and ESL services.
 // Automation IO Service
 typedef struct {
     uint16_t service_handle, aggregate_handle, aggregate_cccd_handle;
@@ -635,6 +636,309 @@ static inline int gatt_lns_add(
         service->control_point_cccd_handle = cccds[control_index];
     }
 
+    return 1;
+}
+
+// Indoor Positioning Service
+// Indoor Positioning
+typedef struct ble_gatt_ips_service
+    ble_gatt_ips_service;
+
+typedef struct {
+    ble_gatt_ips_service *service;
+    uint16_t handle, fixed_length;
+    uint8_t variable_length;
+} ble_gatt_ips_write_ctx;
+
+typedef struct {
+    const uint8_t *local_north, *local_east;
+    const uint8_t *floor_number, *altitude, *uncertainty;
+    const uint8_t *location_name;
+    uint16_t location_name_len, location_name_capacity;
+} ble_gatt_ips_values;
+
+struct ble_gatt_ips_service {
+    uint16_t service_handle, configuration_handle, latitude_handle;
+    uint16_t longitude_handle;
+    uint16_t local_north_handle, local_east_handle, floor_number_handle;
+    uint16_t altitude_handle, uncertainty_handle, location_name_handle;
+    ble_gatt_server *server;
+    uint8_t broadcast_data_changed;
+    ble_gatt_ips_write_ctx write_context[9];
+};
+
+static uint8_t gatt_indoor_positioning_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_ips_write_ctx *write = context;
+    ble_gatt_ips_service *service =
+        write ? write->service : NULL;
+
+    if (!service || !service->server || !write || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (command)
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len > BLE_GATT_ATT_VALUE_MAX)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                                                      write->handle);
+    uint8_t *stored = attribute ?
+        gatt_attribute_value(service->server, attribute) : NULL;
+    if (!attribute || !stored)
+        return ATT_ERR_UNLIKELY_ERROR;
+
+    if (!write->variable_length) {
+        if (offset)
+            return ATT_ERR_INVALID_OFFSET;
+        if (len != write->fixed_length)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (attribute->value_capacity < write->fixed_length)
+            return ATT_ERR_UNLIKELY_ERROR;
+        memcpy(stored, value, write->fixed_length);
+    }
+    else {
+        if (offset > attribute->value_len)
+            return ATT_ERR_INVALID_OFFSET;
+        if (len > attribute->value_capacity - offset)
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        if (len)
+            memcpy(stored + offset, value, len);
+        if (!offset)
+            attribute->value_len = len;
+        else if (offset + len > attribute->value_len)
+            attribute->value_len = offset + len;
+    }
+    if (write->handle != service->location_name_handle)
+        service->broadcast_data_changed = 1;
+    return 0;
+}
+
+// IPS means Indoor Positioning Service.
+static inline int gatt_ips_append(
+    ble_gatt_ips_service *service,
+    ble_gatt_sig_characteristic characteristics[9],
+    ble_gatt_sig_handlers handlers[9], uint8_t *count,
+    uint16_t uuid, const uint8_t *value, uint16_t value_len,
+    uint16_t value_capacity, uint8_t variable_length
+) {
+    uint8_t index = *count;
+    if (index >= 9 || value_len > value_capacity ||
+        value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
+        (value_len && !value))
+        return 0;
+    characteristics[index] = (ble_gatt_sig_characteristic){
+        uuid, BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE, 0,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+        value, value_len, value_capacity, variable_length
+    };
+    service->write_context[index].service = service;
+    service->write_context[index].fixed_length = value_len;
+    service->write_context[index].variable_length = variable_length;
+    handlers[index].write = gatt_indoor_positioning_write;
+    handlers[index].context = &service->write_context[index];
+    (*count)++;
+    return 1;
+}
+
+// Add mandatory Indoor Positioning characteristics and optional values.
+// Configured optional broadcast fields must have corresponding values.
+// IPS means Indoor Positioning Service.
+static inline int gatt_ips_add_full(
+    ble_gatt_server *server, ble_gatt_ips_service *service,
+    uint8_t configuration, const uint8_t latitude[4],
+    const uint8_t longitude[4],
+    const ble_gatt_ips_values *optional
+) {
+    if (!server || !service || !latitude || !longitude ||
+        server->database_sealed ||
+        ((configuration & 0x01) && (configuration & 0x02) &&
+         (!optional || !optional->local_north || !optional->local_east)) ||
+        ((configuration & 0x08) && (!optional || !optional->altitude)) ||
+        ((configuration & 0x10) && (!optional || !optional->floor_number)) ||
+        ((configuration & 0x20) && (!optional || !optional->uncertainty)) ||
+        ((configuration & 0x40) && (!optional || !optional->location_name)) ||
+        (optional && (!!optional->local_north != !!optional->local_east)) ||
+        (optional && (optional->location_name_len >
+                      optional->location_name_capacity ||
+                      optional->location_name_capacity >
+                      BLE_GATT_SERVER_VALUE_MAX ||
+                      (optional->location_name_len &&
+                       !optional->location_name) ||
+                      (!optional->location_name &&
+                       (optional->location_name_len ||
+                        optional->location_name_capacity)) ||
+                      (optional->location_name &&
+                       !optional->location_name_capacity)))
+    )
+        return 0;
+
+    memset(service, 0, sizeof(*service));
+    ble_gatt_sig_characteristic chars[9];
+    ble_gatt_sig_handlers handlers[9] = {0};
+    uint8_t count = 0;
+    if (!gatt_ips_append(service, chars, handlers, &count,
+            0x2aad, &configuration, 1, 1, 0) ||
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2aae, latitude, 4, 4, 0) ||
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2aaf, longitude, 4, 4, 0))
+        return 0;
+    if (optional && optional->local_north &&
+        (!gatt_ips_append(service, chars, handlers, &count,
+             0x2ab0, optional->local_north, 2, 2, 0) ||
+         !gatt_ips_append(service, chars, handlers, &count,
+             0x2ab1, optional->local_east, 2, 2, 0)))
+        return 0;
+    if (optional && optional->floor_number &&
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2ab2, optional->floor_number, 1, 1, 0))
+        return 0;
+    if (optional && optional->altitude &&
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2ab3, optional->altitude, 2, 2, 0))
+        return 0;
+    if (optional && optional->uncertainty &&
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2ab4, optional->uncertainty, 1, 1, 0))
+        return 0;
+    if (optional && optional->location_name &&
+        !gatt_ips_append(service, chars, handlers, &count,
+            0x2ab5, optional->location_name, optional->location_name_len,
+            optional->location_name_capacity, 1))
+        return 0;
+    uint16_t values[9];
+    service->server = server;
+    if (!gatt_sig_service_add_with_handlers(server, 0x1821, chars, count,
+            &service->service_handle, values, NULL, handlers)
+    ) {
+        service->server = NULL;
+        return 0;
+    }
+
+    for (uint8_t i = 0; i < count; i++)
+        service->write_context[i].handle = values[i];
+    service->configuration_handle = values[0];
+    service->latitude_handle = values[1];
+    service->longitude_handle = values[2];
+    uint8_t i = 3;
+    if (optional && optional->local_north) {
+        service->local_north_handle = values[i++];
+        service->local_east_handle = values[i++];
+    }
+
+    if (optional && optional->floor_number)
+        service->floor_number_handle = values[i++];
+    if (optional && optional->altitude)
+        service->altitude_handle = values[i++];
+    if (optional && optional->uncertainty)
+        service->uncertainty_handle = values[i++];
+    if (optional && optional->location_name)
+        service->location_name_handle = values[i++];
+    service->broadcast_data_changed = 1;
+    return 1;
+}
+
+// Backward-compatible mandatory-only Indoor Positioning builder.
+// IPS means Indoor Positioning Service.
+static inline int gatt_ips_add(
+    ble_gatt_server *server, ble_gatt_ips_service *service,
+    uint8_t configuration, const uint8_t latitude[4],
+    const uint8_t longitude[4]
+) {
+    return gatt_ips_add_full(server, service,
+        configuration, latitude, longitude, NULL);
+}
+
+// Return and clear the flag after regenerating Indoor Positioning advertising
+// data from the readable characteristic values.
+// IPS means Indoor Positioning Service.
+static inline int gatt_ips_take_broadcast_update(
+    ble_gatt_ips_service *service
+) {
+    if (!service || !service->server || !service->broadcast_data_changed)
+        return 0;
+    service->broadcast_data_changed = 0;
+    return 1;
+}
+
+// Encode the Indoor Positioning Service AD structure from the current GATT
+// values. tx_power_present must describe a Tx Power AD field supplied by GAP.
+// IPS means Indoor Positioning Service.
+static inline int gatt_ips_encode_advertising_data(
+    const ble_gatt_ips_service *service,
+    uint8_t tx_power_present, int8_t tx_power,
+    uint8_t *out, uint16_t capacity, uint16_t *out_len
+) {
+    if (!service || !service->server || !out || !out_len ||
+        tx_power_present > 1)
+        return 0;
+    *out_len = 0;
+    ble_gatt_attribute *configuration_attribute = gatt_server_find(
+        service->server, service->configuration_handle);
+    const uint8_t *configuration_value = configuration_attribute ?
+        gatt_attribute_value(service->server, configuration_attribute) : NULL;
+    if (!configuration_value || configuration_attribute->value_len != 1)
+        return 0;
+    uint8_t configuration = configuration_value[0] & 0x7f;
+    if ((configuration & 0x04) && !tx_power_present)
+        return 0;
+
+    uint8_t value[20];
+    uint16_t len = 1;
+    value[len++] = 0x25; // Indoor Positioning AD type.
+    if (configuration) value[len++] = configuration;
+
+    if (configuration & 0x01) {
+        uint16_t first_handle = (configuration & 0x02) ?
+            service->local_north_handle : service->latitude_handle;
+        uint16_t second_handle = (configuration & 0x02) ?
+            service->local_east_handle : service->longitude_handle;
+        uint16_t coordinate_len = (configuration & 0x02) ? 2 : 4;
+        ble_gatt_attribute *first = gatt_server_find(service->server,
+                                                      first_handle);
+        ble_gatt_attribute *second = gatt_server_find(service->server,
+                                                       second_handle);
+        const uint8_t *first_value = first ?
+            gatt_attribute_value(service->server, first) : NULL;
+        const uint8_t *second_value = second ?
+            gatt_attribute_value(service->server, second) : NULL;
+        if (!first_value || !second_value ||
+            first->value_len != coordinate_len ||
+            second->value_len != coordinate_len)
+            return 0;
+        memcpy(value + len, first_value, coordinate_len);
+        len += coordinate_len;
+        memcpy(value + len, second_value, coordinate_len);
+        len += coordinate_len;
+    }
+    if (configuration & 0x04)
+        value[len++] = (uint8_t)tx_power;
+
+    const uint8_t flags[] = {0x10, 0x08, 0x20};
+    const uint16_t handles[] = {
+        service->floor_number_handle,
+        service->altitude_handle,
+        service->uncertainty_handle
+    };
+    const uint8_t lengths[] = {1, 2, 1};
+    for (uint8_t i = 0; i < 3; i++) {
+        if (!(configuration & flags[i])) continue;
+        ble_gatt_attribute *attribute = gatt_server_find(service->server,
+                                                          handles[i]);
+        const uint8_t *field = attribute ?
+            gatt_attribute_value(service->server, attribute) : NULL;
+        if (!field || attribute->value_len != lengths[i])
+            return 0;
+        memcpy(value + len, field, lengths[i]);
+        len += lengths[i];
+    }
+
+    if (len - 1 > 0xff || len > capacity)
+        return 0;
+    value[0] = (uint8_t)(len - 1);
+    memcpy(out, value, len);
+    *out_len = len;
     return 1;
 }
 
