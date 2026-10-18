@@ -149,7 +149,7 @@ static void gap_conn_send_queued(void) {
             conn->connection_status = 0x1a;
         }
         else if (conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)) {
-            gap_send_rate_ind();
+            gap_send_rate_ind(0, NULL);
         }
         else if (!conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST)) {
             gap_tx_frame[0] = 0x03;

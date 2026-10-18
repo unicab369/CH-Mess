@@ -3788,7 +3788,7 @@ static void test_connection_rate_exchange(void) {
 
     start_test_central_link();
     conn->is_central = 0;
-    assert(gap_conn_rate_request(60, 120, 2, 4, 1, 1, 200));
+    assert(gap_conn_rate_request(60, 120, 2, 4, 1, 1, 200, 0, NULL));
     receive_test_link_packet(1);
     assert(gap_tx_frame[2] == 0x0e && gap_tx_frame[1] == 9);
     receive_test_control(0x09, features, sizeof(features));

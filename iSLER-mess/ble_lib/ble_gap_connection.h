@@ -485,7 +485,8 @@ static void gap_send_subrate_update(void) {
     ble_write_u16_le(gap_tx_frame + 11, conn->next_schedule.timeout);
 }
 
-static void gap_send_rate_ind(void) {
+static void gap_send_rate_ind(uint16_t reference_event,
+                              const uint16_t offsets[4]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_tx_frame[1]) return;
 
@@ -493,6 +494,22 @@ static void gap_send_rate_ind(void) {
                                 6 * (uint32_t)conn->next_schedule.factor *
                                 (conn->next_schedule.latency + 1) + 1);
     conn->next_schedule.win_offset = 0;
+
+    if (offsets && offsets[0] != 0xffff) {
+        // Core timing equation:
+        // Δt = (new_interval - ((Instant - reference_event) * old_interval)
+        //       % new_interval + Offset0) % new_interval.
+        int32_t event_delta = (int16_t)(conn->next_schedule.instant -
+                                       reference_event);
+        int32_t old_phase = (event_delta *
+                             conn->schedule.interval_125us) %
+                            conn->next_schedule.interval_125us;
+        if (old_phase < 0)
+            old_phase += conn->next_schedule.interval_125us;
+        conn->next_schedule.win_offset = (uint16_t)(
+            (conn->next_schedule.interval_125us - old_phase + offsets[0]) %
+            conn->next_schedule.interval_125us);
+    }
     conn->c_rate.update_pending = 1;
     conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
@@ -1382,10 +1399,12 @@ static uint8_t gap_conn_control(
         uint16_t continuation = ble_read_u16_le(frame + 13);
         uint16_t timeout    = ble_read_u16_le(frame + 15);
         uint16_t periodicity = ble_read_u16_le(frame + 17);
+        uint16_t reference_event = ble_read_u16_le(frame + 19);
+        uint16_t offsets[4];
         uint8_t invalid_offset = 0, offsets_valid = 1;
 
         for (uint8_t i = 0; i < 4; i++) {
-            uint16_t offset = ble_read_u16_le(frame + 21 + i * 2);
+            uint16_t offset = offsets[i] = ble_read_u16_le(frame + 21 + i * 2);
 
             if (offset == 0xffff)
                 invalid_offset = 1;
@@ -1393,9 +1412,7 @@ static uint8_t gap_conn_control(
                 offsets_valid = 0;
 
             for (uint8_t j = 0; j < i; j++) {
-                uint16_t previous = ble_read_u16_le(frame + 21 + j * 2);
-
-                if (offset != 0xffff && offset == previous)
+                if (offset != 0xffff && offset == offsets[j])
                     offsets_valid = 0;
             }
         }
@@ -1436,10 +1453,19 @@ static uint8_t gap_conn_control(
                 interval = minimum;
 
             if (periodicity) {
-                uint16_t preferred = (uint16_t)(
-                    ((interval + periodicity - 1) / periodicity) * periodicity);
-                if (preferred <= maximum)
-                    interval = preferred;
+                uint32_t lower = ((uint32_t)interval / periodicity) * periodicity;
+                uint32_t upper = lower + periodicity;
+                uint8_t lower_valid = lower >= minimum &&
+                                      lower >= gap_conn_min_interval();
+                uint8_t upper_valid = upper <= maximum;
+
+                if (lower_valid && upper_valid)
+                    interval = (interval - lower <= upper - interval) ?
+                               (uint16_t)lower : (uint16_t)upper;
+                else if (upper_valid)
+                    interval = (uint16_t)upper;
+                else if (lower_valid)
+                    interval = (uint16_t)lower;
             }
 
             if (interval < gap_conn_min_interval())
@@ -1454,7 +1480,7 @@ static uint8_t gap_conn_control(
                 conn->next_schedule.latency = latency;
                 conn->next_schedule.continuation = continuation;
                 conn->next_schedule.timeout = timeout;
-                gap_send_rate_ind();
+                gap_send_rate_ind(reference_event, offsets);
                 break;
             }
 
@@ -2040,12 +2066,15 @@ int gap_conn_rate_set(
 }
 
 // Application facing
-// Request a Core 6.2 connection-rate range as the Peripheral. The Central
-// selects the interval and subrate values; the anchor offset is unspecified.
+// Request a Core 6.2 connection-rate range as the Peripheral. Offset values
+// are 125-us candidates relative to the ReferenceConnEventCount placed in the
+// request; NULL leaves all four candidates unused. Candidates are ordered by
+// preference, and unused entries must trail valid entries.
 int gap_conn_rate_request(
     uint16_t interval_min,
     uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
-    uint16_t max_latency, uint16_t continuation, uint16_t timeout
+    uint16_t max_latency, uint16_t continuation, uint16_t timeout,
+    uint16_t preferred_periodicity, const uint16_t offsets[4]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() ||
@@ -2054,10 +2083,27 @@ int gap_conn_rate_request(
         interval_min < 3 ||
         interval_max > 32000 ||
         interval_min > interval_max ||
+        preferred_periodicity > interval_max ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * interval_max * factor_max * (max_latency + 1)
     ) return 0;
+
+    uint8_t unused_offset = 0;
+    for (uint8_t i = 0; offsets && i < 4; i++) {
+        if (offsets[i] == 0xffff) {
+            unused_offset = 1;
+            continue;
+        }
+
+        if (unused_offset || offsets[i] >= interval_max)
+            return 0;
+
+        for (uint8_t j = 0; j < i; j++) {
+            if (offsets[i] == offsets[j])
+                return 0;
+        }
+    }
 
     conn->c_rate.interval_min = interval_min;
     conn->c_rate.interval_max = interval_max;
@@ -2066,10 +2112,10 @@ int gap_conn_rate_request(
     conn->c_rate.latency = max_latency;
     conn->c_rate.continuation = continuation;
     conn->c_rate.timeout = timeout;
-    conn->c_rate.periodicity = 0;
+    conn->c_rate.periodicity = preferred_periodicity;
 
     for (uint8_t i = 0; i < 4; i++)
-        conn->c_rate.offsets[i] = 0xffff;
+        conn->c_rate.offsets[i] = offsets ? offsets[i] : 0xffff;
     conn->c_rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
