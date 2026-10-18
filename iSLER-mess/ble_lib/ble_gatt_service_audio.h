@@ -148,11 +148,11 @@ typedef struct {
 } ble_gatt_aics_service;
 
 enum {
-    GATT_AICS_ATT_ERR_INVALID_CHANGE_COUNTER = 0x80,
-    GATT_AICS_ATT_ERR_OPCODE_NOT_SUPPORTED = 0x81,
-    GATT_AICS_ATT_ERR_MUTE_DISABLED = 0x82,
-    GATT_AICS_ATT_ERR_VALUE_OUT_OF_RANGE = 0x83,
-    GATT_AICS_ATT_ERR_GAIN_MODE_CHANGE_NOT_ALLOWED = 0x84
+    ATT_AICS_ERR_INVALID_CHANGE_COUNTER = 0x80,
+    ATT_AICS_ERR_OPCODE_NOT_SUPPORTED = 0x81,
+    ATT_AICS_ERR_MUTE_DISABLED = 0x82,
+    ATT_AICS_ERR_VALUE_OUT_OF_RANGE = 0x83,
+    ATT_AICS_ERR_GAIN_MODE_CHANGE_NOT_ALLOWED = 0x84
 };
 
 static int8_t gatt_aics_decode_s8(uint8_t value) {
@@ -196,11 +196,11 @@ static uint8_t gatt_aics_cp_write(
     uint8_t opcode = value[0];
 
     if (opcode < 1 || opcode > 5)
-        return GATT_AICS_ATT_ERR_OPCODE_NOT_SUPPORTED;
+        return ATT_AICS_ERR_OPCODE_NOT_SUPPORTED;
     if (len != (opcode == 1 ? 3 : 2))
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[1] != service->state[3])
-        return GATT_AICS_ATT_ERR_INVALID_CHANGE_COUNTER;
+        return ATT_AICS_ERR_INVALID_CHANGE_COUNTER;
 
     uint8_t next[4];
     memcpy(next, service->state, sizeof(next));
@@ -211,21 +211,21 @@ static uint8_t gatt_aics_cp_write(
         int8_t maximum = gatt_aics_decode_s8(service->gain_properties[2]);
 
         if (gain < minimum || gain > maximum)
-            return GATT_AICS_ATT_ERR_VALUE_OUT_OF_RANGE;
+            return ATT_AICS_ERR_VALUE_OUT_OF_RANGE;
 
         if (next[2] == 0 || next[2] == 2) next[0] = value[2];
         break;
     }
     case 2:
     case 3:
-        if (next[1] == 2) return GATT_AICS_ATT_ERR_MUTE_DISABLED;
+        if (next[1] == 2) return ATT_AICS_ERR_MUTE_DISABLED;
 
         next[1] = opcode == 2 ? 0 : 1;
         break;
     case 4:
     case 5:
         if (next[2] < 2)
-            return GATT_AICS_ATT_ERR_GAIN_MODE_CHANGE_NOT_ALLOWED;
+            return ATT_AICS_ERR_GAIN_MODE_CHANGE_NOT_ALLOWED;
 
         next[2] = opcode == 4 ? 2 : 3;
         break;
@@ -922,14 +922,14 @@ typedef struct {
 } ble_gatt_mcs_optional_config;
 
 enum {
-    GATT_MCS_OPTION_PLAYBACK_SPEED = 0x01,
-    GATT_MCS_OPTION_SEEKING_SPEED = 0x02,
-    GATT_MCS_OPTION_PLAYING_ORDER = 0x04,
-    GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED = 0x08,
-    GATT_MCS_OPTION_CONTROL_POINT = 0x10,
-    GATT_MCS_OPTION_CONTROL_POINT_OPCODES = 0x20,
-    GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL = 0x40,
-    GATT_MCS_OPTION_SEARCH_CONTROL_POINT = 0x80
+    GATT_MCS_OPT_PLAYBACK_SPEED = 0x01,
+    GATT_MCS_OPT_SEEKING_SPEED = 0x02,
+    GATT_MCS_OPT_PLAYING_ORDER = 0x04,
+    GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED = 0x08,
+    GATT_MCS_OPT_CONTROL_POINT = 0x10,
+    GATT_MCS_OPT_CONTROL_POINT_OPCODES = 0x20,
+    GATT_MCS_OPT_MEDIA_PLAYER_ICON_URL = 0x40,
+    GATT_MCS_OPT_SEARCH_CONTROL_POINT = 0x80
 };
 
 enum {
@@ -956,19 +956,6 @@ enum {
     GATT_MCS_RESULT_MEDIA_PLAYER_INACTIVE = 0x03,
     GATT_MCS_RESULT_COMMAND_CANNOT_BE_COMPLETED = 0x04
 };
-
-static inline int gatt_mcs_opcode_bit(uint8_t opcode) {
-    switch (opcode) {
-    case 0x01: return 0; case 0x02: return 1; case 0x03: return 2;
-    case 0x04: return 3; case 0x05: return 4; case 0x10: return 5;
-    case 0x20: return 6; case 0x21: return 7; case 0x22: return 8;
-    case 0x23: return 9; case 0x24: return 10; case 0x30: return 11;
-    case 0x31: return 12; case 0x32: return 13; case 0x33: return 14;
-    case 0x34: return 15; case 0x40: return 16; case 0x41: return 17;
-    case 0x42: return 18; case 0x43: return 19; case 0x44: return 20;
-    default: return -1;
-    }
-}
 
 // Internal: capture a validated MCS opcode request for the application.
 static uint8_t gatt_mcs_cp_write(
@@ -1001,7 +988,31 @@ static uint8_t gatt_mcs_cp_write(
         return 0xfe;
 
     uint8_t opcode = value[0];
-    int bit = gatt_mcs_opcode_bit(opcode);
+    int bit;
+    switch (opcode) {
+    case 0x01: bit = 0; break;
+    case 0x02: bit = 1; break;
+    case 0x03: bit = 2; break;
+    case 0x04: bit = 3; break;
+    case 0x05: bit = 4; break;
+    case 0x10: bit = 5; break;
+    case 0x20: bit = 6; break;
+    case 0x21: bit = 7; break;
+    case 0x22: bit = 8; break;
+    case 0x23: bit = 9; break;
+    case 0x24: bit = 10; break;
+    case 0x30: bit = 11; break;
+    case 0x31: bit = 12; break;
+    case 0x32: bit = 13; break;
+    case 0x33: bit = 14; break;
+    case 0x34: bit = 15; break;
+    case 0x40: bit = 16; break;
+    case 0x41: bit = 17; break;
+    case 0x42: bit = 18; break;
+    case 0x43: bit = 19; break;
+    case 0x44: bit = 20; break;
+    default: bit = -1; break;
+    }
     uint8_t supported = bit >= 0 &&
         (service->cp_opcode_mask & (1u << bit));
     uint8_t has_parameter = opcode == 0x10 || opcode == 0x24 ||
@@ -1151,32 +1162,32 @@ static inline int gatt_mcs_add_full(
 
     if ((notify_mask & (uint16_t)~0x072f) ||
         (optional_notify_mask & (uint16_t)~option_mask) ||
-        ((option_mask & GATT_MCS_OPTION_PLAYBACK_SPEED) &&
+        ((option_mask & GATT_MCS_OPT_PLAYBACK_SPEED) &&
          !optional->playback_speed) ||
-        ((option_mask & GATT_MCS_OPTION_SEEKING_SPEED) &&
+        ((option_mask & GATT_MCS_OPT_SEEKING_SPEED) &&
          !optional->seeking_speed) ||
-        ((option_mask & GATT_MCS_OPTION_PLAYING_ORDER) &&
+        ((option_mask & GATT_MCS_OPT_PLAYING_ORDER) &&
          (!optional->playing_order || *optional->playing_order < 1 ||
           *optional->playing_order > 10)) ||
-        ((option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
+        ((option_mask & GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED) &&
          (!optional->playing_orders ||
           !ble_get_le16(optional->playing_orders) ||
           (ble_get_le16(optional->playing_orders) & 0xfc00))) ||
-        ((option_mask & (GATT_MCS_OPTION_PLAYING_ORDER |
-                         GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)) ==
-         (GATT_MCS_OPTION_PLAYING_ORDER |
-          GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED) &&
+        ((option_mask & (GATT_MCS_OPT_PLAYING_ORDER |
+                         GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED)) ==
+         (GATT_MCS_OPT_PLAYING_ORDER |
+          GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED) &&
          !(ble_get_le16(optional->playing_orders) &
            (1u << (*optional->playing_order - 1))))
     ) return 0;
 
     uint8_t mcp_options = (uint8_t)(option_mask &
-        (GATT_MCS_OPTION_CONTROL_POINT |
-         GATT_MCS_OPTION_CONTROL_POINT_OPCODES));
+        (GATT_MCS_OPT_CONTROL_POINT |
+         GATT_MCS_OPT_CONTROL_POINT_OPCODES));
 
     if (mcp_options && mcp_options !=
-        (GATT_MCS_OPTION_CONTROL_POINT |
-         GATT_MCS_OPTION_CONTROL_POINT_OPCODES)
+        (GATT_MCS_OPT_CONTROL_POINT |
+         GATT_MCS_OPT_CONTROL_POINT_OPCODES)
     ) return 0;
 
     if (mcp_options && (!mcp_opcodes || optional->cp_capacity < 5 ||
@@ -1188,7 +1199,7 @@ static inline int gatt_mcs_add_full(
     uint8_t object_notify_mask = optional ?
         optional->object_notify_mask : 0;
     uint8_t search_enabled =
-        (option_mask & GATT_MCS_OPTION_SEARCH_CONTROL_POINT) != 0;
+        (option_mask & GATT_MCS_OPT_SEARCH_CONTROL_POINT) != 0;
     uint8_t ots_needed = object_mask || search_enabled;
     const uint8_t track_object_dependencies =
         (uint8_t)((1u << GATT_MCS_OBJECT_TRACK_SEGMENTS) |
@@ -1212,7 +1223,7 @@ static inline int gatt_mcs_add_full(
             BLE_GATT_ATTR_SECONDARY_SERVICE) ||
           gatt_uuid_assigned16(&gatt_server_find(server,
               optional->ots_service_handle)->uuid) != 0x1825)) ||
-        ((option_mask & GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL) &&
+        ((option_mask & GATT_MCS_OPT_MEDIA_PLAYER_ICON_URL) &&
          ((optional->icon_url.value_len &&
            !optional->icon_url.value) ||
           !optional->icon_url.value_capacity ||
@@ -1339,7 +1350,7 @@ static inline int gatt_mcs_add_full(
     }
     uint8_t icon_url_index = 0xff;
 
-    if (option_mask & GATT_MCS_OPTION_MEDIA_PLAYER_ICON_URL) {
+    if (option_mask & GATT_MCS_OPT_MEDIA_PLAYER_ICON_URL) {
         icon_url_index = (uint8_t)(7 + extra_count);
         const ble_gatt_mcs_string *url =
             &optional->icon_url;
@@ -1368,7 +1379,7 @@ static inline int gatt_mcs_add_full(
     memset(service, 0, sizeof(*service));
     service->server = server;
 
-    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
+    if (option_mask & GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED)
         service->orders_supported =
             ble_get_le16(optional->playing_orders);
     uint8_t extra_index = 0;
@@ -1453,25 +1464,25 @@ static inline int gatt_mcs_add_full(
     }
     uint8_t value_index = 7;
 
-    if (option_mask & GATT_MCS_OPTION_PLAYBACK_SPEED) {
+    if (option_mask & GATT_MCS_OPT_PLAYBACK_SPEED) {
         service->playback_handle = value_handles[value_index];
         service->playback_cccd_handle = cccd_handles[value_index++];
     }
 
-    if (option_mask & GATT_MCS_OPTION_SEEKING_SPEED) {
+    if (option_mask & GATT_MCS_OPT_SEEKING_SPEED) {
         service->seeking_handle = value_handles[value_index];
         service->seeking_cccd_handle = cccd_handles[value_index++];
     }
 
-    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDER) {
+    if (option_mask & GATT_MCS_OPT_PLAYING_ORDER) {
         service->order_handle = value_handles[value_index];
         service->order_cccd_handle = cccd_handles[value_index++];
     }
 
-    if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
+    if (option_mask & GATT_MCS_OPT_PLAYING_ORDERS_SUPPORTED)
         service->orders_handle = value_handles[value_index++];
 
-    if (option_mask & GATT_MCS_OPTION_CONTROL_POINT) {
+    if (option_mask & GATT_MCS_OPT_CONTROL_POINT) {
         service->control_point_handle = value_handles[value_index];
         service->cp_cccd_handle = cccd_handles[value_index++];
         service->cp_opcode_mask =
@@ -1497,14 +1508,6 @@ static inline int gatt_mcs_add_full(
     }
 
     return 1;
-}
-
-// Compatibility builder for mandatory MCS/GMCS metadata characteristics.
-static inline int gatt_mcs_add(
-    ble_gatt_server *server, ble_gatt_mcs_service *service,
-    const ble_gatt_mcs_config *config
-) {
-    return gatt_mcs_add_full(server, service, config, NULL);
 }
 
 // Update and queue a notification for a notifiable MCS value.
@@ -1635,26 +1638,6 @@ static inline int gatt_mcs_object_done(
     return 1;
 }
 
-// Update and notify a changed MCS Object ID, when its CCCD is enabled.
-static inline int gatt_mcs_notify_object(
-    ble_gatt_server *server, const ble_gatt_mcs_service *service,
-    uint8_t object, const uint8_t *value, uint16_t len
-) {
-    if (!gatt_mcs_set_object_id(server, service,
-            object, value, len) || !service->object_cccd_handle[object]
-    ) return 0;
-
-    ble_gatt_attribute *attribute = gatt_server_find(server,
-        service->object_handle[object]);
-    const uint8_t *stored = attribute ?
-        gatt_attribute_value(server, attribute) : NULL;
-
-    if (!attribute || !stored) return 0;
-
-    return gatt_queue_event(server, service->object_handle[object],
-                                   stored, len, 0);
-}
-
 // Complete a captured Search Control Point request with success or failure.
 static inline int gatt_mcs_search_complete(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
@@ -1690,7 +1673,14 @@ static inline int gatt_mcs_set_results_id(
     if (!cccd || !(cccd->cccd & 1))
         return 1;
 
-    return gatt_mcs_notify_object(server, service,
-        GATT_MCS_OBJECT_SEARCH_RESULTS, value, len);
+    uint16_t value_handle =
+        service->object_handle[GATT_MCS_OBJECT_SEARCH_RESULTS];
+    ble_gatt_attribute *attribute = gatt_server_find(server, value_handle);
+    const uint8_t *stored = attribute ?
+        gatt_attribute_value(server, attribute) : NULL;
+
+    if (!attribute || !stored) return 0;
+
+    return gatt_queue_event(server, value_handle, stored, len, 0);
 }
 #endif

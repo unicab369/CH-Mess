@@ -13,13 +13,401 @@ typedef struct {
     uint16_t cp_handle, cp_cccd_handle;
     uint16_t ready_handle, ready_cccd_handle;
     uint16_t overwritten_handle, overwritten_cccd;
+    ble_gatt_server *server;
+    uint32_t features;
+    uint16_t filters[4];
+    uint16_t request_counter;
+    uint16_t last_get_counter;
+    uint8_t last_segment_index;
+    uint8_t request[5], request_len;
+    uint8_t prior_request[5], prior_request_len, prior_taken;
+    uint16_t prior_counter;
+    uint8_t cp_pending, cp_taken, cp_opcode, aborted_opcode;
+    uint8_t get_completed;
+    uint8_t data_mode_started;
 } ble_gatt_ranging_service;
+
+enum {
+    GATT_RAS_GET_DATA = 0x00,
+    GATT_RAS_ACK_DATA = 0x01,
+    GATT_RAS_RETRIEVE_SEGMENTS = 0x02,
+    GATT_RAS_ABORT = 0x03,
+    GATT_RAS_SET_FILTER = 0x04,
+    GATT_RAS_RSP_COMPLETE_DATA = 0x00,
+    GATT_RAS_RSP_COMPLETE_SEGMENTS = 0x01,
+    GATT_RAS_RSP_CODE = 0x02,
+    GATT_RAS_SUCCESS = 0x01,
+    GATT_RAS_OPCODE_UNSUPPORTED = 0x02,
+    GATT_RAS_INVALID_PARAM = 0x03,
+    GATT_RAS_SUCCESS_PERSISTED = 0x04,
+    GATT_RAS_ABORT_FAILED = 0x05,
+    GATT_RAS_PROCEDURE_FAILED = 0x06,
+    GATT_RAS_BUSY = 0x07,
+    GATT_RAS_NO_RECORD = 0x08
+};
+
+static int gatt_ras_cp_respond(
+    ble_gatt_ranging_service *service, uint8_t result
+) {
+    uint8_t response[] = {GATT_RAS_RSP_CODE, result};
+    return gatt_queue_event(service->server, service->cp_handle,
+                            response, sizeof(response), 1);
+}
+
+static inline int gatt_ras_filter(
+    const ble_gatt_ranging_service *service, uint8_t mode, uint8_t bit
+) {
+    return service && mode < 4 && bit < 14 &&
+        (service->filters[mode] & (uint16_t)(1u << bit));
+}
+
+static inline int gatt_ras_data_event(
+    ble_gatt_server *server, ble_gatt_ranging_service *service,
+    uint16_t handle, uint16_t cccd_handle, uint16_t counter
+) {
+    if (!server || !service || service->server != server || counter > 0x0fff ||
+        !handle || !cccd_handle) return 0;
+    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
+    ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handle);
+    uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
+    if (!attribute || !stored || attribute->value_capacity < 2 || !cccd)
+        return 0;
+    ble_put_le16(stored, counter);
+    attribute->value_len = 2;
+    return gatt_queue_event(server, handle, stored, 2, 1);
+}
+
+// Signal that a completed Channel Sounding procedure has stored ranging data.
+static inline int gatt_ras_data_ready(
+    ble_gatt_server *server, ble_gatt_ranging_service *service,
+    uint16_t counter
+) {
+    if (!server || !service || service->server != server) return 0;
+    ble_gatt_attribute *rt_cccd = service->rt_data_cccd_handle ?
+        gatt_server_find(server, service->rt_data_cccd_handle) : NULL;
+    ble_gatt_attribute *od_cccd = gatt_server_find(
+        server, service->od_data_cccd_handle);
+    if ((rt_cccd && rt_cccd->cccd) || !od_cccd || !od_cccd->cccd) return 0;
+    return gatt_ras_data_event(server, service,
+        service ? service->ready_handle : 0,
+        service ? service->ready_cccd_handle : 0, counter);
+}
+
+// Signal that unread on-demand ranging data was overwritten.
+static inline int gatt_ras_overwritten(
+    ble_gatt_server *server, ble_gatt_ranging_service *service,
+    uint16_t counter
+) {
+    if (!server || !service || service->server != server) return 0;
+    ble_gatt_attribute *rt_cccd = service->rt_data_cccd_handle ?
+        gatt_server_find(server, service->rt_data_cccd_handle) : NULL;
+    ble_gatt_attribute *od_cccd = gatt_server_find(
+        server, service->od_data_cccd_handle);
+    if ((rt_cccd && rt_cccd->cccd) || !od_cccd || !od_cccd->cccd) return 0;
+    return gatt_ras_data_event(server, service,
+        service ? service->overwritten_handle : 0,
+        service ? service->overwritten_cccd : 0, counter);
+}
+
+// Send one MTU-bounded RAS data segment. The caller supplies its segment
+// index and whether it is the first or last segment in the ranging body.
+static inline int gatt_ras_send_segment(
+    ble_gatt_server *server, ble_gatt_ranging_service *service,
+    uint8_t realtime, uint8_t index, uint8_t first, uint8_t last,
+    const uint8_t *data, uint16_t len
+) {
+    if (!server || !service || service->server != server || realtime > 1 ||
+        index > 63 || first > 1 || last > 1 || (len && !data) ||
+        server->mtu < 5 ||
+        len > server->mtu - 4) return 0;
+    uint16_t handle = realtime ? service->rt_data_handle :
+                                 service->od_data_handle;
+    uint16_t cccd_handle = realtime ? service->rt_data_cccd_handle :
+                                      service->od_data_cccd_handle;
+    if (!handle || !cccd_handle) return 0;
+    ble_gatt_attribute *cccd = gatt_server_find(server, cccd_handle);
+    ble_gatt_attribute *rt_cccd = service->rt_data_cccd_handle ?
+        gatt_server_find(server, service->rt_data_cccd_handle) : NULL;
+    ble_gatt_attribute *od_cccd = gatt_server_find(server,
+        service->od_data_cccd_handle);
+    if (realtime && (!rt_cccd || !rt_cccd->cccd)) return 0;
+    if (realtime && od_cccd && od_cccd->cccd) return 0;
+    if (!realtime && (rt_cccd && rt_cccd->cccd)) return 0;
+    if (!realtime && (!service->cp_pending ||
+        (service->cp_opcode != GATT_RAS_GET_DATA &&
+         service->cp_opcode != GATT_RAS_RETRIEVE_SEGMENTS))) return 0;
+    uint8_t indication;
+    if (!cccd) return 0;
+    if (cccd->cccd & 1u)
+        indication = 0;
+    else if (cccd->cccd & 2u)
+        indication = 1;
+    else
+        return 0;
+    uint8_t packet[BLE_GATT_ATT_VALUE_MAX];
+    packet[0] = (uint8_t)((first ? 1u : 0u) | (last ? 2u : 0u) |
+                          (index << 2));
+    if (len) memcpy(packet + 1, data, len);
+    int queued = gatt_queue_event(server, handle, packet,
+                                  (uint16_t)(len + 1), indication);
+    if (queued > 0 && !realtime)
+        service->last_segment_index = index;
+    return queued;
+}
+
+static uint8_t gatt_ras_rt_cccd_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_ranging_service *service = context;
+    if (!service || !service->server || !value || offset || len != 2)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (ble_get_le16(value)) {
+        ble_gatt_attribute *od_cccd = gatt_server_find(service->server,
+            service->od_data_cccd_handle);
+        if (od_cccd && od_cccd->cccd) return 0xfd;
+        service->data_mode_started = 1;
+    }
+    return 0;
+}
+
+static uint8_t gatt_ras_od_cccd_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    (void)command;
+    ble_gatt_ranging_service *service = context;
+    if (!service || !service->server || !value || offset || len != 2)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (ble_get_le16(value) && service->rt_data_cccd_handle) {
+        ble_gatt_attribute *rt_cccd = gatt_server_find(service->server,
+            service->rt_data_cccd_handle);
+        if (rt_cccd && rt_cccd->cccd) return 0xfd;
+    }
+    if (ble_get_le16(value)) service->data_mode_started = 1;
+    return 0;
+}
+
+static uint8_t gatt_ras_cp_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+) {
+    ble_gatt_ranging_service *service = context;
+    if (!service || !service->server || !value)
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset)
+        return ATT_ERR_INVALID_OFFSET;
+    if (!command)
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (!len)
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ble_gatt_attribute *cp_cccd = gatt_server_find(
+        service->server, service->cp_cccd_handle);
+    if (!cp_cccd || !(cp_cccd->cccd & 2u))
+        return 0xfd; // CCCD improperly configured.
+
+    uint8_t opcode = value[0];
+    uint8_t expected = opcode == GATT_RAS_GET_DATA ||
+        opcode == GATT_RAS_ACK_DATA ? 3 :
+        opcode == GATT_RAS_RETRIEVE_SEGMENTS ? 5 :
+        opcode == GATT_RAS_ABORT ? 1 :
+        opcode == GATT_RAS_SET_FILTER ? 3 : 0;
+    if (!expected || len != expected)
+        return gatt_ras_cp_respond(service,
+            expected ? GATT_RAS_INVALID_PARAM :
+                       GATT_RAS_OPCODE_UNSUPPORTED) > 0 ? 0 :
+                       ATT_ERR_UNLIKELY_ERROR;
+    if ((opcode == GATT_RAS_GET_DATA || opcode == GATT_RAS_ACK_DATA ||
+         opcode == GATT_RAS_RETRIEVE_SEGMENTS) &&
+        (ble_get_le16(value + 1) & 0xf000u))
+        return gatt_ras_cp_respond(service,
+            GATT_RAS_INVALID_PARAM) > 0 ? 0 : ATT_ERR_UNLIKELY_ERROR;
+
+    uint32_t feature = opcode == GATT_RAS_RETRIEVE_SEGMENTS ? 2u :
+        opcode == GATT_RAS_ABORT ? 4u :
+        opcode == GATT_RAS_SET_FILTER ? 8u : 0u;
+    if (feature && !(service->features & feature))
+        return gatt_ras_cp_respond(service,
+            GATT_RAS_OPCODE_UNSUPPORTED) > 0 ? 0 : ATT_ERR_UNLIKELY_ERROR;
+
+    if (service->cp_pending && opcode != GATT_RAS_ABORT)
+        return gatt_ras_cp_respond(service, GATT_RAS_BUSY) > 0 ?
+            0 : ATT_ERR_UNLIKELY_ERROR;
+
+    if (opcode == GATT_RAS_SET_FILTER) {
+        ble_gatt_attribute *rt_cccd = service->rt_data_cccd_handle ?
+            gatt_server_find(service->server,
+                             service->rt_data_cccd_handle) : NULL;
+        ble_gatt_attribute *od_cccd = gatt_server_find(
+            service->server, service->od_data_cccd_handle);
+        uint16_t config = ble_get_le16(value + 1);
+        uint8_t mode = (uint8_t)(config & 3u);
+        if (service->data_mode_started ||
+            (rt_cccd && rt_cccd->cccd) || (od_cccd && od_cccd->cccd))
+            return gatt_ras_cp_respond(service,
+                GATT_RAS_INVALID_PARAM) > 0 ? 0 : ATT_ERR_UNLIKELY_ERROR;
+        service->filters[mode] = (uint16_t)(config >> 2);
+        return gatt_ras_cp_respond(service, GATT_RAS_SUCCESS) > 0 ?
+            0 : ATT_ERR_UNLIKELY_ERROR;
+    }
+
+    if (opcode == GATT_RAS_ABORT && !service->cp_pending)
+        return gatt_ras_cp_respond(service, GATT_RAS_ABORT_FAILED) > 0 ?
+            0 : ATT_ERR_UNLIKELY_ERROR;
+
+    if (opcode != GATT_RAS_ABORT) {
+        ble_gatt_attribute *rt_cccd = service->rt_data_cccd_handle ?
+            gatt_server_find(service->server,
+                             service->rt_data_cccd_handle) : NULL;
+        if ((rt_cccd && rt_cccd->cccd) ||
+            (opcode != GATT_RAS_ACK_DATA && opcode != GATT_RAS_GET_DATA &&
+             opcode != GATT_RAS_RETRIEVE_SEGMENTS))
+            return gatt_ras_cp_respond(service,
+                GATT_RAS_INVALID_PARAM) > 0 ? 0 : ATT_ERR_UNLIKELY_ERROR;
+        if (opcode == GATT_RAS_GET_DATA || opcode == GATT_RAS_ACK_DATA ||
+            opcode == GATT_RAS_RETRIEVE_SEGMENTS) {
+            ble_gatt_attribute *od_cccd = gatt_server_find(
+                service->server, service->od_data_cccd_handle);
+            if (!od_cccd || !od_cccd->cccd)
+                return gatt_ras_cp_respond(service,
+                    GATT_RAS_INVALID_PARAM) > 0 ? 0 :
+                           ATT_ERR_UNLIKELY_ERROR;
+        }
+    }
+
+    if (opcode == GATT_RAS_RETRIEVE_SEGMENTS &&
+        ((value[4] != 0xff && value[4] < value[3]) ||
+         value[3] > 63 || (value[4] != 0xff && value[4] > 63) ||
+         !service->get_completed ||
+         ble_get_le16(value + 1) != service->last_get_counter))
+        return gatt_ras_cp_respond(service,
+            GATT_RAS_INVALID_PARAM) > 0 ? 0 : ATT_ERR_UNLIKELY_ERROR;
+
+    if (service->cp_pending) {
+        service->aborted_opcode = service->cp_opcode;
+        memcpy(service->prior_request, service->request,
+               service->request_len);
+        service->prior_request_len = service->request_len;
+        service->prior_counter = service->request_counter;
+        service->prior_taken = service->cp_taken;
+    }
+    else {
+        service->aborted_opcode = 0;
+        service->prior_request_len = 0;
+    }
+    memcpy(service->request, value, len);
+    service->request_len = (uint8_t)len;
+    service->request_counter = len >= 3 ? ble_get_le16(value + 1) : 0;
+    service->cp_opcode = opcode;
+    service->cp_pending = 1;
+    service->cp_taken = 0;
+    return 0;
+}
+
+// Return a validated RAS command once; the application supplies the ranging
+// records and performs record storage operations.
+static inline int gatt_ras_take_request(
+    ble_gatt_ranging_service *service, uint8_t *opcode,
+    uint8_t *parameters, uint8_t *inout_len
+) {
+    if (!service || !service->cp_pending || service->cp_taken || !opcode ||
+        !inout_len || (*inout_len && !parameters) ||
+        *inout_len < service->request_len - 1) return 0;
+    *opcode = service->cp_opcode;
+    *inout_len = (uint8_t)(service->request_len - 1);
+    if (*inout_len)
+        memcpy(parameters, service->request + 1, *inout_len);
+    service->cp_taken = 1;
+    return 1;
+}
+
+// Clear per-connection procedures and restore the default all-enabled filters.
+static inline void gatt_ras_reset(ble_gatt_ranging_service *service) {
+    if (!service) return;
+    service->cp_pending = 0;
+    service->cp_taken = 0;
+    service->cp_opcode = 0;
+    service->aborted_opcode = 0;
+    service->request_len = 0;
+    service->prior_request_len = 0;
+    service->get_completed = 0;
+    service->data_mode_started = 0;
+    service->last_get_counter = 0;
+    service->last_segment_index = 0;
+    for (uint8_t mode = 0; mode < 4; mode++)
+        service->filters[mode] = 0x3fff;
+}
+
+// Complete a captured RAS command with a SIG response code. Successful Get
+// and segment-retry requests use their dedicated response formats.
+static inline int gatt_ras_complete(
+    ble_gatt_ranging_service *service, uint8_t result
+) {
+    if (!service || !service->server || !service->cp_pending ||
+        result < GATT_RAS_SUCCESS || result > GATT_RAS_NO_RECORD)
+        return 0;
+    uint8_t response[5];
+    uint16_t len = 2;
+    if (result == GATT_RAS_SUCCESS &&
+        service->cp_opcode == GATT_RAS_GET_DATA) {
+        response[0] = GATT_RAS_RSP_COMPLETE_DATA;
+        ble_put_le16(response + 1, service->request_counter);
+        len = 3;
+    }
+    else if (result == GATT_RAS_SUCCESS &&
+             service->cp_opcode == GATT_RAS_RETRIEVE_SEGMENTS) {
+        response[0] = GATT_RAS_RSP_COMPLETE_SEGMENTS;
+        ble_put_le16(response + 1, service->request_counter);
+        response[3] = service->request[3];
+        response[4] = service->request[4] == 0xff ?
+            service->last_segment_index : service->request[4];
+        len = 5;
+    }
+    else {
+        response[0] = GATT_RAS_RSP_CODE;
+        response[1] = result;
+    }
+    int queued = gatt_queue_event(service->server, service->cp_handle,
+                                  response, len, 1);
+    if (queued > 0) {
+        if (service->cp_opcode == GATT_RAS_ABORT &&
+            result == GATT_RAS_ABORT_FAILED) {
+            service->cp_opcode = service->aborted_opcode;
+            memcpy(service->request, service->prior_request,
+                   service->prior_request_len);
+            service->request_len = service->prior_request_len;
+            service->request_counter = service->prior_counter;
+            service->cp_taken = service->prior_taken;
+            service->aborted_opcode = 0;
+            service->prior_request_len = 0;
+            return queued;
+        }
+        if (result == GATT_RAS_SUCCESS &&
+            service->cp_opcode == GATT_RAS_GET_DATA) {
+            service->last_get_counter = service->request_counter;
+            service->get_completed = 1;
+        }
+        if (result == GATT_RAS_SUCCESS &&
+            service->cp_opcode == GATT_RAS_ACK_DATA)
+            service->get_completed = 0;
+        if (result == GATT_RAS_SUCCESS &&
+            service->cp_opcode == GATT_RAS_ABORT)
+            service->get_completed = 0;
+        service->cp_pending = 0;
+        service->cp_taken = 0;
+        service->cp_opcode = 0;
+        service->aborted_opcode = 0;
+        service->request_len = 0;
+        service->prior_request_len = 0;
+    }
+    return queued;
+}
 
 // Application-facing API
 // RAS means Ranging Service.
-// Add the mandatory RAS characteristics and optional real-time data. Values
-// are initialized empty/zero; the application handles Channel Sounding data,
-// client-specific CCCDs, control-point procedures, and notifications.
+// Add mandatory RAS characteristics and optional real-time data. Control
+// Point commands are validated and captured for application record handling.
 static inline int gatt_ras_add(
     ble_gatt_server *server, ble_gatt_ranging_service *service,
     uint32_t features, uint16_t ranging_data_capacity,
@@ -76,11 +464,24 @@ static inline int gatt_ras_add(
 
     uint16_t values[6], cccds[6];
     uint16_t service_handle;
+    ble_gatt_sig_handlers handlers[6] = {0};
+    uint16_t old_count = server->count;
+    uint16_t old_next_handle = server->next_handle;
+    uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
+    service->server = server;
+    service->features = features;
+    for (uint8_t mode = 0; mode < 4; mode++)
+        service->filters[mode] = 0x3fff;
+    handlers[include_realtime ? 3 : 2].write = gatt_ras_cp_write;
+    handlers[include_realtime ? 3 : 2].context = service;
 
-    if (!gatt_sig_add(server, 0x185b, characteristics, count,
-            &service_handle, values, cccds)
-    ) return 0;
+    if (!gatt_sig_add_handlers(server, 0x185b, characteristics, count,
+            &service_handle, values, cccds, handlers)
+    ) {
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
 
     service->service_handle = service_handle;
     i = 0;
@@ -99,6 +500,28 @@ static inline int gatt_ras_add(
     service->ready_cccd_handle = cccds[i++];
     service->overwritten_handle = values[i];
     service->overwritten_cccd = cccds[i];
+    if (service->rt_data_cccd_handle) {
+        ble_gatt_attribute *cccd = gatt_server_find(server,
+            service->rt_data_cccd_handle);
+        if (!cccd) {
+            gatt_service_rollback(server, old_count, old_next_handle,
+                                  old_value_used);
+            memset(service, 0, sizeof(*service));
+            return 0;
+        }
+        cccd->write = gatt_ras_rt_cccd_write;
+        cccd->context = service;
+    }
+    ble_gatt_attribute *cccd = gatt_server_find(server,
+        service->od_data_cccd_handle);
+    if (!cccd) {
+        gatt_service_rollback(server, old_count, old_next_handle,
+                              old_value_used);
+        memset(service, 0, sizeof(*service));
+        return 0;
+    }
+    cccd->write = gatt_ras_od_cccd_write;
+    cccd->context = service;
     return 1;
 }
 

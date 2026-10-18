@@ -7,8 +7,8 @@
 // Health Thermometer Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
-    uint16_t intermediate_temperature_handle;
-    uint16_t intermediate_temperature_cccd_handle, temperature_type_handle;
+    uint16_t intermediate_temp_handle;
+    uint16_t intermediate_temp_cccd_handle, temperature_type_handle;
 } ble_gatt_hts_service;
 
 // Application-facing API
@@ -54,8 +54,8 @@ static inline int gatt_hts_add(
     service->measurement_cccd_handle = cccds[i++];
 
     if (include_intermediate_temperature) {
-        service->intermediate_temperature_handle = values[i];
-        service->intermediate_temperature_cccd_handle = cccds[i++];
+        service->intermediate_temp_handle = values[i];
+        service->intermediate_temp_cccd_handle = cccds[i++];
     }
 
     if (temperature_type != 0xff)
@@ -66,8 +66,8 @@ static inline int gatt_hts_add(
 // Blood Pressure Service
 typedef struct {
     uint16_t service_handle, measurement_handle, measurement_cccd_handle;
-    uint16_t intermediate_cuff_pressure_handle;
-    uint16_t intermediate_cuff_pressure_cccd_handle, feature_handle;
+    uint16_t intermediate_cuff_handle;
+    uint16_t intermediate_cuff_cccd_handle, feature_handle;
 } ble_gatt_bp_service;
 
 // Application-facing API
@@ -114,8 +114,8 @@ static inline int gatt_bp_add(
     service->measurement_cccd_handle = cccds[i++];
 
     if (include_intermediate_cuff_pressure) {
-        service->intermediate_cuff_pressure_handle = values[i];
-        service->intermediate_cuff_pressure_cccd_handle = cccds[i++];
+        service->intermediate_cuff_handle = values[i];
+        service->intermediate_cuff_cccd_handle = cccds[i++];
     }
 
     service->feature_handle = values[i];
@@ -140,7 +140,7 @@ typedef struct {
     uint16_t service_handle;
     uint16_t measurement_handle, measurement_cccd_handle;
     uint16_t feature_handle, feature_cccd_handle;
-    uint16_t status_handle, session_start_time_handle, session_run_time_handle;
+    uint16_t status_handle, session_start_handle, session_run_handle;
     uint16_t record_access_handle, record_access_cccd_handle;
     uint16_t specific_ops_handle, specific_ops_cccd_handle;
 } ble_gatt_cgm_service;
@@ -203,8 +203,8 @@ static inline int gatt_cgm_service_add(
     service->feature_handle = values[1];
     service->feature_cccd_handle = cccds[1];
     service->status_handle = values[2];
-    service->session_start_time_handle = values[3];
-    service->session_run_time_handle = values[4];
+    service->session_start_handle = values[3];
+    service->session_run_handle = values[4];
     service->record_access_handle = values[5];
     service->record_access_cccd_handle = cccds[5];
     service->specific_ops_handle = values[6];
@@ -515,12 +515,12 @@ static inline int gatt_hts_notify_intermediate(
     uint8_t value[13];
     uint16_t len;
 
-    if (!server || !service || !service->intermediate_temperature_handle ||
+    if (!server || !service || !service->intermediate_temp_handle ||
         !gatt_temp_encode(measurement, value, &len)
     ) return 0;
 
     return gatt_queue_event(server,
-        service->intermediate_temperature_handle, value, len, 0);
+        service->intermediate_temp_handle, value, len, 0);
 }
 
 // Internal helper
@@ -603,7 +603,7 @@ static inline int gatt_bp_notify_intermediate(
 ) {
     uint16_t features;
 
-    if (!server || !service || !service->intermediate_cuff_pressure_handle ||
+    if (!server || !service || !service->intermediate_cuff_handle ||
         !measurement || (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
         !gatt_blood_pressure_feature(server, service->feature_handle,
@@ -640,7 +640,7 @@ static inline int gatt_bp_notify_intermediate(
     }
 
     return gatt_queue_event(server,
-        service->intermediate_cuff_pressure_handle, value, len, 0);
+        service->intermediate_cuff_handle, value, len, 0);
 }
 
 typedef struct {
@@ -1683,12 +1683,12 @@ typedef struct {
     uint16_t status_handle, status_cccd_handle;
     uint16_t annunciation_status_handle, annunciation_status_cccd_handle;
     uint16_t features_handle, features_cccd_handle;
-    uint16_t status_reader_control_point_handle;
-    uint16_t status_reader_control_point_cccd_handle;
-    uint16_t command_control_point_handle, command_control_point_cccd_handle;
+    uint16_t status_reader_cp_handle;
+    uint16_t status_reader_cp_cccd_handle;
+    uint16_t command_cp_handle, command_cp_cccd_handle;
     uint16_t command_data_handle, command_data_cccd_handle;
-    uint16_t record_access_control_point_handle;
-    uint16_t record_access_control_point_cccd_handle;
+    uint16_t record_access_cp_handle;
+    uint16_t record_access_cp_cccd_handle;
     uint16_t history_data_handle, history_data_cccd_handle;
 } ble_gatt_idd_service;
 
@@ -1702,11 +1702,11 @@ typedef struct {
     ble_gatt_idd_value status;
     ble_gatt_idd_value annunciation_status;
     ble_gatt_idd_value features;
-    uint16_t status_reader_control_point_capacity;
+    uint16_t status_reader_cp_capacity;
     uint8_t features_indicate;
-    uint16_t command_control_point_capacity;
+    uint16_t command_cp_capacity;
     uint16_t command_data_capacity;
-    uint16_t record_access_control_point_capacity;
+    uint16_t record_access_cp_capacity;
     uint16_t history_data_capacity;
 } ble_gatt_idd_config;
 
@@ -1737,25 +1737,25 @@ static inline int gatt_idd_add(
         config->features.value_len > config->features.value_capacity ||
         config->features.value_capacity > BLE_GATT_SERVER_VALUE_MAX ||
         config->features_indicate > 1 ||
-        config->status_reader_control_point_capacity < 2 ||
-        config->status_reader_control_point_capacity >
+        config->status_reader_cp_capacity < 2 ||
+        config->status_reader_cp_capacity >
             BLE_GATT_SERVER_VALUE_MAX ||
-        (config->command_control_point_capacity &&
-         (config->command_control_point_capacity < 2 ||
-          config->command_control_point_capacity >
+        (config->command_cp_capacity &&
+         (config->command_cp_capacity < 2 ||
+          config->command_cp_capacity >
               BLE_GATT_SERVER_VALUE_MAX)) ||
-        (config->record_access_control_point_capacity &&
-         (config->record_access_control_point_capacity < 2 ||
-          config->record_access_control_point_capacity >
+        (config->record_access_cp_capacity &&
+         (config->record_access_cp_capacity < 2 ||
+          config->record_access_cp_capacity >
               BLE_GATT_SERVER_VALUE_MAX)) ||
-        (config->command_control_point_capacity &&
+        (config->command_cp_capacity &&
          config->command_data_capacity < 2) ||
-        (!!config->command_control_point_capacity !=
+        (!!config->command_cp_capacity !=
          !!config->command_data_capacity) ||
         (config->command_data_capacity > BLE_GATT_SERVER_VALUE_MAX) ||
-        (config->record_access_control_point_capacity &&
+        (config->record_access_cp_capacity &&
          config->history_data_capacity < 8) ||
-        (!!config->record_access_control_point_capacity !=
+        (!!config->record_access_cp_capacity !=
          !!config->history_data_capacity) ||
         (config->history_data_capacity > BLE_GATT_SERVER_VALUE_MAX)
     ) return 0;
@@ -1781,28 +1781,28 @@ static inline int gatt_idd_add(
             config->features.value_capacity},
         {0x2b24, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
-            config->status_reader_control_point_capacity, 1}
+            config->status_reader_cp_capacity, 1}
     };
     count = 5;
 
-    if (config->command_control_point_capacity) {
+    if (config->command_cp_capacity) {
         indexes[0] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b25, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
-            config->command_control_point_capacity, 1};
+            config->command_cp_capacity, 1};
         indexes[1] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b26, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHZ,
             &control_point_initial, 0, config->command_data_capacity, 1};
     }
 
-    if (config->record_access_control_point_capacity) {
+    if (config->record_access_cp_capacity) {
         indexes[2] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b27, BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE, 1,
             BLE_GATT_PERM_WRITE_AUTHZ, &control_point_initial, 0,
-            config->record_access_control_point_capacity, 1};
+            config->record_access_cp_capacity, 1};
         indexes[3] = count;
         characteristics[count++] = (ble_gatt_sig_characteristic){
             0x2b28, BLE_GATT_PROP_NOTIFY, 1, BLE_GATT_PERM_EVENT_AUTHZ,
@@ -1824,20 +1824,20 @@ static inline int gatt_idd_add(
     service->annunciation_status_cccd_handle = cccd_handles[2];
     service->features_handle = value_handles[3];
     service->features_cccd_handle = cccd_handles[3];
-    service->status_reader_control_point_handle = value_handles[4];
-    service->status_reader_control_point_cccd_handle = cccd_handles[4];
+    service->status_reader_cp_handle = value_handles[4];
+    service->status_reader_cp_cccd_handle = cccd_handles[4];
 
     if (indexes[0] != 0xff) {
-        service->command_control_point_handle = value_handles[indexes[0]];
-        service->command_control_point_cccd_handle =
+        service->command_cp_handle = value_handles[indexes[0]];
+        service->command_cp_cccd_handle =
             cccd_handles[indexes[0]];
         service->command_data_handle = value_handles[indexes[1]];
         service->command_data_cccd_handle = cccd_handles[indexes[1]];
     }
 
     if (indexes[2] != 0xff) {
-        service->record_access_control_point_handle = value_handles[indexes[2]];
-        service->record_access_control_point_cccd_handle =
+        service->record_access_cp_handle = value_handles[indexes[2]];
+        service->record_access_cp_cccd_handle =
             cccd_handles[indexes[2]];
         service->history_data_handle = value_handles[indexes[3]];
         service->history_data_cccd_handle = cccd_handles[indexes[3]];

@@ -96,8 +96,15 @@ changes. Local state, status, and description changes use its corresponding
 `gatt_ctes_add()` registers the required CTE Enable
 value and, when requested, the five advertising-channel controls.
 `gatt_ras_add()` registers mandatory RAS characteristics and adds
-Real-time Ranging Data when feature bit 0 is set. The application supplies the
-Channel Sounding integration and implements RAS procedures and data transfer.
+Real-time Ranging Data when feature bit 0 is set. It validates Control Point
+commands, handles Set Filter, and captures Get, ACK, Retrieve Lost Segments,
+and Abort requests for the application. Call `gatt_ras_take_request()` to
+retrieve a request and `gatt_ras_complete()` to queue its standard response.
+`gatt_ras_send_segment()` adds the RAS segmentation header to one MTU-bounded
+segment; the application supplies and retains Channel Sounding records,
+streams segments in order, applies the selected filters to record data,
+performs the requested record operations, and supervises the five-second ACK
+timeout. Call `gatt_ras_reset()` when the client disconnects.
 `gatt_ghs_add()` registers the live-observation GHS
 layout. Use `gatt_ghs_add_full()` to include Stored
 Health Observations and its RACP, selecting notify or indicate delivery. The
@@ -211,11 +218,11 @@ IDD Command Control Point/Data and IDD Record Access Control Point/History Data
 are included as capacity-paired options. Their notification-only values use
 event authorization permissions; the application still implements the command
 and history protocols.
-`gatt_mcs_add()` registers mandatory MCS or GMCS metadata
-from initial values. Set `generic_service` for GMCS, which also requires Media
-Player Name notifications. Use `gatt_mcs_add_full()` to add
-optional playback/order values, the paired Media Control Point and Supported
-Opcodes, OTS-backed Object IDs, Icon URL, and Search Control Point/Results.
+`gatt_mcs_add_full()` registers mandatory MCS or GMCS metadata from initial
+values. Pass `NULL` for optional config to add only those characteristics, or
+configure optional playback/order values, the paired Media Control Point and
+Supported Opcodes, OTS-backed Object IDs, Icon URL, and Search Control
+Point/Results.
 Register OTS first as a secondary service with
 `gatt_ots_add_secondary()` or
 `gatt_ots_add_multi_secondary()` and pass its handle

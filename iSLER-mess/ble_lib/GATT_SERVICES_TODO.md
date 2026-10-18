@@ -126,7 +126,11 @@ remains available for custom services; it does not replace these builders.
 - [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD
 - [n/a] Mesh Proxy Solicitation (`0x1859`), Solicitation PDU/service data rather than a GATT attribute service
 - [x] Industrial Measurement Device (`0x185A`), permitted live measurements and optional status indications
-- [x] Ranging (`0x185B`), mandatory characteristics and optional real-time data
+- [x] Ranging (`0x185B`), mandatory characteristics, optional real-time data,
+  Control Point command validation/capture and responses, client filter state,
+  segment headers, and ready/overwrite indications. The application supplies
+  the Channel Sounding results, retains/looks up records, streams filtered
+  segments in order, and supervises the five-second ACK timeout.
 - [x] HID ISO (`0x185C`), Properties and LE HID Operation Mode
 - [x] Cookware (`0x185D`), all twelve assigned characteristic UUIDs supported
   through the caller-configured characteristic builder

@@ -1649,6 +1649,11 @@ static uint8_t gatt_server_write(
                                       (attr->properties & BLE_GATT_PROP_INDICATE ? 2 : 0));
         if (bits & (uint16_t)~allowed)
             return ATT_ERR_VALUE_NOT_ALLOWED;
+        if (attr->write) {
+            uint8_t error = attr->write(attr->context, offset, value, len,
+                                        command);
+            if (error) return error;
+        }
 
         attr->cccd = bits;
         gatt_drop_disabled_events(server, attr->parent_handle, bits);

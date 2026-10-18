@@ -124,7 +124,7 @@ int main(void) {
     assert(gatt_cgm_service_add(&server, &cgm, &cgm_config));
     assert(cgm.measurement_handle && cgm.measurement_cccd_handle &&
            cgm.feature_handle && cgm.feature_cccd_handle && cgm.status_handle &&
-           cgm.session_start_time_handle && cgm.session_run_time_handle &&
+           cgm.session_start_handle && cgm.session_run_handle &&
            cgm.record_access_handle && cgm.record_access_cccd_handle &&
            cgm.specific_ops_handle && cgm.specific_ops_cccd_handle);
     assert(gatt_server_find(&server, cgm.measurement_handle)->value_capacity ==
