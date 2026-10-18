@@ -367,13 +367,12 @@ typedef struct {
     uint16_t base_event, win_offset, instant;
 } gap_conn_schedule;
 
+typedef struct {
 #if GAP_SMP_SUPPORT > 0
-typedef struct {
-    uint8_t ltk[16], rand[8], ediv[2];
-} gap_bond_key;
-
-typedef struct {
-    uint8_t if GAP_EXT_ADV_SUPPORT
+    uint8_t bonded, restore_started, restore_attempted;
+    gap_bond bond;
+#endif
+#if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
     uint8_t sync_transfer_slot;
     uint16_t sync_transfer_id;
@@ -499,13 +498,14 @@ static uint8_t gap_conn_slot_mask;
 
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
-// Application facing
+// Connection selection and application-facing handles.
 // Return the read-only context for the currently selected connection slot.
 const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
 }
 
 
+// Internal slot allocation and activation helpers.
 static inline void gap_conn_slot_set_active(uint8_t slot, uint8_t active) {
     uint8_t bit = GAP_CONN_SLOT_BIT(slot);
     if (active)
@@ -528,7 +528,7 @@ typedef struct {
     uint16_t generation;
 } gap_conn_handle;
 
-// Application facing
+// Application-facing connection handle operations.
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
@@ -536,7 +536,6 @@ static inline uint8_t gap_conn_count(void) {
     return count;
 }
 
-// Application facing
 // Return the handle for the active connection at this zero-based list index.
 static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
     if (!handle) return 0;
@@ -554,7 +553,6 @@ static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
     return 0;
 }
 
-// Application facing
 // Select a live link for the existing connection-specific GAP operations.
 static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
@@ -566,7 +564,6 @@ static inline int gap_conn_select(gap_conn_handle handle) {
     return 1;
 }
 
-// Application facing
 // Capture the currently selected link's handle for later API calls.
 static inline int gap_conn_current(gap_conn_handle *handle) {
     if (!handle || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
@@ -610,6 +607,7 @@ static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 
+// Connection request validation and byte/security helpers.
 // Validate a data-channel access address against the Bluetooth Core rules.
 static int gap_access_address_valid(uint32_t address) {
     uint32_t address_xor = address ^ BLE_ADV_ACCESS_ADDRESS;
@@ -705,7 +703,7 @@ static struct {
     uint32_t deadline_ms;
 } gap_central;
 
-// Central initiation timing and configuration.
+// Central initiation configuration.
 // Initial LE connection settings. Connection interval is in 1.25 ms units,
 // supervision timeout in 10 ms units, and attempt timeout in milliseconds.
 typedef struct {
@@ -742,7 +740,7 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
     return 1;
 }
 
-// GAP privacy, identity resolution, and Filter Accept List operations.
+// Privacy and identity state.
 
 static gap_address gap_own_address;
 static gap_address gap_identity_address;
@@ -769,6 +767,7 @@ static struct {
     uint32_t next_rotation_ms;
 } gap_privacy;
 
+// Identity resolution helpers.
 // Bluetooth ah: encrypt the padded prand and keep the low 24 bits as hash.
 static void gap_address_hash(
     const uint8_t irk[16], const uint8_t prand[3], uint8_t hash[3]
@@ -860,8 +859,8 @@ static int gap_accept_list_match(
     return 0;
 }
 
-// Application facing
-// Add an identity address to the bounded Filter Accept List while GAP is idle.
+// Filter Accept List API.
+// Add an identity address to the bounded list while GAP is idle.
 int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
     // NOTE: Zero is public; any nonzero address type is treated as random.
     type = type != 0;
@@ -892,7 +891,6 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
     return 1;
 }
 
-// Application facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     // NOTE: Use the same public/nonzero-random convention as add.
@@ -917,7 +915,6 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     return 0;
 }
 
-// Application facing
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     if (gap_scanner.scanning || gap_adv.enabled ||
@@ -930,7 +927,7 @@ int gap_accept_list_clear(void) {
     return 1;
 }
 
-// Application facing
+// Peer identity API.
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
 int gap_identity_set(
@@ -980,7 +977,6 @@ int gap_identity_set(
     return 1;
 }
 
-// Application facing
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(
     const uint8_t address[6], uint8_t type, uint8_t mode
@@ -1004,7 +1000,6 @@ int gap_identity_privacy(
     return 0;
 }
 
-// Application facing
 // Resolve without replacing the received address, which is needed on the air.
 int gap_resolve(
     const uint8_t address[6], uint8_t type,
@@ -1022,6 +1017,7 @@ int gap_resolve(
     return 1;
 }
 
+// Local address generation and selection.
 static int gap_private_addr_generate(
     const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
 ) {
@@ -1062,7 +1058,6 @@ static int gap_private_addr_generate(
     return 0;
 }
 
-// Application facing
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(
@@ -1137,7 +1132,7 @@ static void gap_local_addr_select(
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
-// Application facing
+// Privacy configuration API.
 // Set rotating private addresses while GAP is idle: an IRK selects RPAs,
 // null IRK with a timeout selects NRPAs; null IRK and zero selects public address.
 // Timeout is in seconds. NRPA generation uses randomness without AES.
@@ -1202,7 +1197,6 @@ static int gap_privacy_timeout_pick(
     return 0;
 }
 
-// Application facing
 // Generate local RPAs using a uniformly selected timeout for every rotation.
 // Bounds follow HCI LE Set Resolvable Private Address Timeout v2: 1..3600 s.
 int gap_privacy_set_randomized(
@@ -1233,7 +1227,6 @@ int gap_privacy_set_randomized(
     return 1;
 }
 
-// Application facing
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
@@ -1248,7 +1241,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 }
 
 
-// Application facing
+// Local address API.
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
 int gap_set_static_addr(const uint8_t address[6]) {
@@ -1266,7 +1259,6 @@ int gap_set_static_addr(const uint8_t address[6]) {
     return 1;
 }
 
-// Application facing
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
@@ -1392,7 +1384,7 @@ static int gap_conn_accept(
 
 #include "ble_gap_connection_poll.h"
 
-// GAP-backed L2CAP link adapter.
+// L2CAP adapter types and operations.
 
 typedef struct {
     gap_conn_handle handle;
