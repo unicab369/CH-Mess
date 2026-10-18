@@ -26,7 +26,7 @@ typedef struct {
 } ble_gatt_sig_characteristic;
 
 typedef struct {
-    ble_gatt_read_fn read;
+    ble_gatt_read_fn read_value;
     ble_gatt_write_fn write_request;
     void *context;
     ble_gatt_prepare_fn prepare;
@@ -83,7 +83,7 @@ static inline int gatt_sig_register(
             characteristics[i].value_capacity ?
                 characteristics[i].value_capacity :
                 characteristics[i].value_len,
-            handlers ? handlers[i].read : NULL,
+            handlers ? handlers[i].read_value : NULL,
             handlers ? handlers[i].write_request : NULL,
             handlers ? handlers[i].context : NULL, NULL,
             &value_handles[i]);

@@ -168,7 +168,7 @@ typedef struct ble_gatt_attribute {
     uint16_t value_offset;
     uint16_t parent_handle;
     uint16_t cccd;
-    ble_gatt_read_fn read;
+    ble_gatt_read_fn read_value;
     ble_gatt_write_fn write_request;
     ble_gatt_prepare_fn prepare;
     ble_gatt_prepare_commit_validate_fn prepare_commit_validate;
@@ -548,7 +548,7 @@ static int gatt_server_add(
     attr->value_len = value_len;
     attr->value_capacity = value_capacity;
     attr->value_offset = server->value_used;
-    attr->read = read;
+    attr->read_value = read;
     attr->write_request = write;
     attr->context = context;
 
@@ -805,7 +805,7 @@ static inline int gatt_seal_database(ble_gatt_server *server) {
                     value->permissions != (BLE_GATT_PERM_READ |
                                            BLE_GATT_PERM_WRITE) ||
                     value->value_len != 1 || value->value_capacity != 1 ||
-                    value->read || value->write_request || value->prepare ||
+                    value->read_value || value->write_request || value->prepare ||
                     value->execute || !gatt_attribute_value(server, value)
                 ) return 0;
 
@@ -829,7 +829,7 @@ static inline int gatt_seal_database(ble_gatt_server *server) {
             attr->properties != BLE_GATT_PROP_READ ||
             attr->permissions != BLE_GATT_PERM_READ ||
             attr->value_len != 16 || attr->value_capacity != 16 ||
-            attr->read || attr->write_request || attr->prepare ||
+            attr->read_value || attr->write_request || attr->prepare ||
             attr->execute
         ) return 0;
 
@@ -1380,9 +1380,9 @@ static uint8_t gatt_server_read(
         return 0;
     }
 
-    if (attr->read) {
+    if (attr->read_value) {
         uint16_t capacity = *out_len;
-        uint8_t error = attr->read(attr->context, offset, out, out_len);
+        uint8_t error = attr->read_value(attr->context, offset, out, out_len);
 
         if (!error && (*out_len > capacity ||
             (uint32_t)offset + *out_len > BLE_GATT_ATT_VALUE_MAX)

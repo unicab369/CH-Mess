@@ -524,7 +524,7 @@ static inline int gatt_hts_notify_intermediate(
 }
 
 // Internal helper
-static inline int gatt_blood_pressure_feature(
+static inline int gatt_bp_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
     if (!server || !handle || !features)
@@ -556,7 +556,7 @@ static inline int gatt_bp_indicate(
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
-        !gatt_blood_pressure_feature(server, service->feature_handle,
+        !gatt_bp_feature(server, service->feature_handle,
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
@@ -606,7 +606,7 @@ static inline int gatt_bp_notify_intermediate(
     if (!server || !service || !service->intermediate_cuff_handle ||
         !measurement || (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
-        !gatt_blood_pressure_feature(server, service->feature_handle,
+        !gatt_bp_feature(server, service->feature_handle,
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
@@ -720,7 +720,7 @@ static inline uint8_t gatt_racp_reject(
 }
 
 // Internal: capture a valid request for the application's persistent record store.
-static inline uint8_t gatt_glucose_racp_write(
+static inline uint8_t gatt_gls_racp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -877,47 +877,6 @@ static inline int gatt_gls_racp_complete(
     return queued;
 }
 
-// Internal helper
-static inline int gatt_glucose_feature(
-    ble_gatt_server *server, uint16_t handle, uint16_t *features
-) {
-    if (!server || !handle || !features)
-        return 0;
-
-    ble_gatt_attribute *attribute = gatt_server_find(server, handle);
-
-    if (!attribute || attribute->value_len < 2)
-        return 0;
-
-    const uint8_t *value = gatt_attribute_value(server, attribute);
-
-    if (!value) return 0;
-
-    *features = ble_get_le16(value);
-    return 1;
-}
-
-// Internal helper
-static inline int gatt_glucose_status_supported(
-    uint16_t feature, uint16_t status
-) {
-    if (status & 0xf000u)
-        return 0;
-    if ((status & 0x001fu) & (uint16_t)~feature)
-        return 0;
-    if ((status & 0x0060u) && !(feature & (1u << 5)))
-        return 0;
-    if ((status & 0x0180u) && !(feature & (1u << 6)))
-        return 0;
-    if ((status & 0x0200u) && !(feature & (1u << 7)))
-        return 0;
-    if ((status & 0x0400u) && !(feature & (1u << 8)))
-        return 0;
-    if ((status & 0x0800u) && !(feature & (1u << 9)))
-        return 0;
-    return 1;
-}
-
 // Application-facing API
 // Encode and queue one Glucose Measurement notification.
 // GLS means Glucose Service.
@@ -925,18 +884,38 @@ static inline int gatt_gls_notify_measurement(
     ble_gatt_server *server, ble_gatt_gls_service *service,
     const ble_gatt_gls_measurement *measurement
 ) {
-    uint16_t features;
-
     if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->sensor_status & (uint16_t)~0x0fff) ||
-        service->measurement_context_pending ||
-        !gatt_glucose_feature(server, service->feature_handle, &features) ||
-        ((measurement->flags & 0x08) &&
-         !gatt_glucose_status_supported(features,
-                                        measurement->sensor_status)) ||
-        ((measurement->flags & 0x10) && !service->context_handle)
+        service->measurement_context_pending
     ) return 0;
+
+    ble_gatt_attribute *feature_attribute = gatt_server_find(
+        server, service->feature_handle);
+    const uint8_t *feature_value = feature_attribute ?
+        gatt_attribute_value(server, feature_attribute) : NULL;
+
+    if (!feature_attribute || feature_attribute->value_len < 2 ||
+        !feature_value
+    ) return 0;
+
+    uint16_t features = ble_get_le16(feature_value);
+
+    if (measurement->flags & 0x08) {
+        uint16_t status = measurement->sensor_status;
+
+        if ((status & 0xf000u) ||
+            ((status & 0x001fu) & (uint16_t)~features) ||
+            ((status & 0x0060u) && !(features & (1u << 5))) ||
+            ((status & 0x0180u) && !(features & (1u << 6))) ||
+            ((status & 0x0200u) && !(features & (1u << 7))) ||
+            ((status & 0x0400u) && !(features & (1u << 8))) ||
+            ((status & 0x0800u) && !(features & (1u << 9)))
+        ) return 0;
+    }
+
+    if ((measurement->flags & 0x10) && !service->context_handle)
+        return 0;
 
     if (measurement->flags & 0x10) {
         ble_gatt_attribute *context_cccd = gatt_server_cccd_for(
@@ -1207,14 +1186,14 @@ static inline int gatt_plx_notify_continuous(
 }
 
 typedef struct {
-    uint16_t service_handle, live_observations_handle;
-    uint16_t live_observations_cccd_handle, control_point_handle;
-    uint16_t control_point_cccd_handle;
-    uint16_t stored_observations_handle, stored_observations_cccd_handle;
+    uint16_t service_handle, live_obs_handle;
+    uint16_t live_obs_cccd_handle, cp_handle;
+    uint16_t cp_cccd_handle;
+    uint16_t stored_obs_handle, stored_obs_cccd_handle;
     uint16_t racp_handle, racp_cccd_handle;
     ble_gatt_server *server;
-    uint8_t live_observations_started, control_point_request_count;
-    uint8_t stored_observations_notify;
+    uint8_t live_obs_started, cp_request_count;
+    uint8_t stored_obs_notify;
     uint8_t racp_pending, racp_opcode, racp_operator, racp_request_len;
     uint8_t racp_request[20];
     uint8_t rolling_segment_counter, observation_segment_queued;
@@ -1238,7 +1217,7 @@ enum {
 };
 
 // Internal: accept the record-number RACP procedures provided by this helper.
-static uint8_t gatt_generic_health_sensor_racp_write(
+static uint8_t gatt_ghs_racp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1291,7 +1270,7 @@ static uint8_t gatt_generic_health_sensor_racp_write(
 
     if (opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS) {
         ble_gatt_attribute *data_cccd = gatt_server_cccd_for(
-            service->server, service->stored_observations_handle);
+            service->server, service->stored_obs_handle);
         if (!data_cccd || !data_cccd->cccd)
             return 0xfd;
     }
@@ -1312,7 +1291,7 @@ static uint8_t gatt_generic_health_sensor_racp_write(
 }
 
 // Internal helper
-static uint8_t gatt_generic_health_sensor_control_write(
+static uint8_t gatt_ghs_control_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1332,7 +1311,7 @@ static uint8_t gatt_generic_health_sensor_control_write(
         return 0x81;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
-        service->server, service->control_point_handle);
+        service->server, service->cp_handle);
 
     if (!cccd || !(cccd->cccd & 0x02))
         return 0xfd;
@@ -1340,11 +1319,11 @@ static uint8_t gatt_generic_health_sensor_control_write(
     uint8_t response = 0x80;
 
     if (!gatt_queue_event(service->server,
-            service->control_point_handle, &response, 1, 1)
+            service->cp_handle, &response, 1, 1)
     ) return ATT_ERR_UNLIKELY_ERROR;
 
-    service->live_observations_started = value[0] == 0x01;
-    service->control_point_request_count++;
+    service->live_obs_started = value[0] == 0x01;
+    service->cp_request_count++;
     return 0;
 }
 
@@ -1392,11 +1371,11 @@ static inline int gatt_ghs_add_full(
     ble_gatt_sig_handlers handlers[4] = {0};
     memset(service, 0, sizeof(*service));
     service->server = server;
-    handlers[1].write_request = gatt_generic_health_sensor_control_write;
+    handlers[1].write_request = gatt_ghs_control_write;
     handlers[1].context = service;
 
     if (stored_observation_capacity) {
-        handlers[3].write_request = gatt_generic_health_sensor_racp_write;
+        handlers[3].write_request = gatt_ghs_racp_write;
         handlers[3].context = service;
     }
 
@@ -1407,17 +1386,17 @@ static inline int gatt_ghs_add_full(
         return 0;
     }
 
-    service->live_observations_handle = values[0];
-    service->live_observations_cccd_handle = cccds[0];
-    service->control_point_handle = values[1];
-    service->control_point_cccd_handle = cccds[1];
+    service->live_obs_handle = values[0];
+    service->live_obs_cccd_handle = cccds[0];
+    service->cp_handle = values[1];
+    service->cp_cccd_handle = cccds[1];
 
     if (stored_observation_capacity) {
-        service->stored_observations_handle = values[2];
-        service->stored_observations_cccd_handle = cccds[2];
+        service->stored_obs_handle = values[2];
+        service->stored_obs_cccd_handle = cccds[2];
         service->racp_handle = values[3];
         service->racp_cccd_handle = cccds[3];
-        service->stored_observations_notify = stored_observations_notify;
+        service->stored_obs_notify = stored_obs_notify;
     }
 
     return 1;
@@ -1432,25 +1411,14 @@ static inline int gatt_ghs_queue_stored_segment(
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server ||
-        !service->stored_observations_handle || !service->racp_pending ||
+        !service->stored_obs_handle || !service->racp_pending ||
         service->racp_opcode != GATT_GHS_RACP_REPORT_STORED_RECORDS ||
         !value || !len
     ) return 0;
 
     return gatt_queue_event(server,
-        service->stored_observations_handle, value, len,
-        (uint8_t)!service->stored_observations_notify);
-}
-
-// Compatibility builder for live-observation-only GHS.
-// GHS means Generic Health Sensor Service.
-static inline int gatt_ghs_add(
-    ble_gatt_server *server,
-    ble_gatt_ghs_service *service,
-    uint16_t observation_capacity
-) {
-    return gatt_ghs_add_full(server, service,
-        observation_capacity, 0, 0);
+        service->stored_obs_handle, value, len,
+        (uint8_t)!service->stored_obs_notify);
 }
 
 // Complete the pending RACP procedure after application-owned record access.
@@ -1506,44 +1474,6 @@ static inline int gatt_ghs_racp_complete(
 }
 
 // Application-facing API
-// Queue an encoded live Health Observation after the Control Point starts it.
-// GHS means Generic Health Sensor Service.
-static inline int gatt_ghs_continue_observation(
-    ble_gatt_server *server,
-    ble_gatt_ghs_service *service
-);
-
-// GHS means Generic Health Sensor Service.
-static inline int gatt_ghs_indicate_observation(
-    ble_gatt_server *server,
-    ble_gatt_ghs_service *service,
-    const uint8_t *value, uint16_t len
-) {
-    if (!server || !service || service->server != server ||
-        !service->live_observations_started ||
-        !value || !len || len > sizeof(service->observation_data) ||
-        service->observation_len || service->observation_segment_queued ||
-        server->indication_pending
-    ) return 0;
-
-    for (uint16_t i = 0; i < server->event_count; i++)
-        if (server->events[i].handle == service->live_observations_handle)
-            return 0;
-
-    memcpy(service->observation_data, value, len);
-    service->observation_len = len;
-    service->observation_offset = 0;
-
-    if (gatt_ghs_continue_observation(server,
-            service)
-    ) return 1;
-
-    service->observation_len = 0;
-    service->observation_offset = 0;
-    return 0;
-}
-
-// Application-facing API
 // Queue the next observation segment. Retry after indication confirmation if
 // blocked by another queued event; observation_len reaches zero once all
 // segments have been queued.
@@ -1553,21 +1483,21 @@ static inline int gatt_ghs_continue_observation(
     ble_gatt_ghs_service *service
 ) {
     if (!server || !service || service->server != server ||
-        !service->live_observations_started || !service->observation_len
+        !service->live_obs_started || !service->observation_len
     ) return 0;
 
     if (server->indication_pending)
         return 0;
 
     for (uint16_t i = 0; i < server->event_count; i++)
-        if (server->events[i].handle == service->live_observations_handle &&
+        if (server->events[i].handle == service->live_obs_handle &&
             server->events[i].indication
         ) return 0;
 
     service->observation_segment_queued = 0;
 
     ble_gatt_attribute *attribute = gatt_server_find(
-        server, service->live_observations_handle);
+        server, service->live_obs_handle);
 
     if (!attribute || !attribute->value_capacity)
         return 0;
@@ -1592,7 +1522,7 @@ static inline int gatt_ghs_continue_observation(
            service->observation_data + service->observation_offset,
            segment_len);
 
-    if (gatt_queue_event(server, service->live_observations_handle,
+    if (gatt_queue_event(server, service->live_obs_handle,
             segment, (uint16_t)(segment_len + 1), 1) != 1
     ) return 0;
 
@@ -1609,6 +1539,36 @@ static inline int gatt_ghs_continue_observation(
         service->observation_segment_queued = 1;
     }
     return 1;
+}
+
+// GHS means Generic Health Sensor Service.
+static inline int gatt_ghs_indicate_observation(
+    ble_gatt_server *server,
+    ble_gatt_ghs_service *service,
+    const uint8_t *value, uint16_t len
+) {
+    if (!server || !service || service->server != server ||
+        !service->live_obs_started ||
+        !value || !len || len > sizeof(service->observation_data) ||
+        service->observation_len || service->observation_segment_queued ||
+        server->indication_pending
+    ) return 0;
+
+    for (uint16_t i = 0; i < server->event_count; i++)
+        if (server->events[i].handle == service->live_obs_handle)
+            return 0;
+
+    memcpy(service->observation_data, value, len);
+    service->observation_len = len;
+    service->observation_offset = 0;
+
+    if (gatt_ghs_continue_observation(server,
+            service)
+    ) return 1;
+
+    service->observation_len = 0;
+    service->observation_offset = 0;
+    return 0;
 }
 
 // Glucose service database builder
@@ -1653,7 +1613,7 @@ static inline int gatt_gls_add(
         .variable_length = 1
     };
     ble_gatt_sig_handlers handlers[4] = {0};
-    handlers[racp_index].write_request = gatt_glucose_racp_write;
+    handlers[racp_index].write_request = gatt_gls_racp_write;
     handlers[racp_index].context = service;
     uint16_t values[4], cccds[4];
 
@@ -1679,9 +1639,9 @@ static inline int gatt_gls_add(
 // Insulin Delivery Service (IDD)
 typedef struct {
     uint16_t service_handle;
-    uint16_t status_changed_handle, status_changed_cccd_handle;
+    uint16_t status_chg_handle, status_chg_cccd_handle;
     uint16_t status_handle, status_cccd_handle;
-    uint16_t annunciation_status_handle, annunciation_status_cccd_handle;
+    uint16_t ann_status_handle, ann_status_cccd_handle;
     uint16_t features_handle, features_cccd_handle;
     uint16_t status_reader_cp_handle;
     uint16_t status_reader_cp_cccd_handle;
@@ -1816,12 +1776,12 @@ static inline int gatt_idd_add(
             &service->service_handle, value_handles, cccd_handles)
     ) return 0;
 
-    service->status_changed_handle = value_handles[0];
-    service->status_changed_cccd_handle = cccd_handles[0];
+    service->status_chg_handle = value_handles[0];
+    service->status_chg_cccd_handle = cccd_handles[0];
     service->status_handle = value_handles[1];
     service->status_cccd_handle = cccd_handles[1];
-    service->annunciation_status_handle = value_handles[2];
-    service->annunciation_status_cccd_handle = cccd_handles[2];
+    service->ann_status_handle = value_handles[2];
+    service->ann_status_cccd_handle = cccd_handles[2];
     service->features_handle = value_handles[3];
     service->features_cccd_handle = cccd_handles[3];
     service->status_reader_cp_handle = value_handles[4];

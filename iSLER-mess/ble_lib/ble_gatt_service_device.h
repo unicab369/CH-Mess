@@ -2205,7 +2205,8 @@ static inline int gatt_lls_add(
          &service->alert_level, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.read = gatt_alert_u8_read, .write_request = gatt_alert_level_write,
+        {.read_value = gatt_alert_u8_read,
+         .write_request = gatt_alert_level_write,
          .context = &service->alert_level}
     };
     uint16_t values[1];
@@ -2243,8 +2244,8 @@ static inline int gatt_pass_add(
          NULL, 0, 1}
     };
     ble_gatt_sig_handlers handlers[] = {
-        {.read = gatt_alert_u8_read, .context = &service->alert_status},
-        {.read = gatt_alert_u8_read, .context = &service->ringer},
+        {.read_value = gatt_alert_u8_read, .context = &service->alert_status},
+        {.read_value = gatt_alert_u8_read, .context = &service->ringer},
         {.write_request = gatt_phone_ringer_control_write, .context = service}
     };
     uint16_t values[3], cccds[3];

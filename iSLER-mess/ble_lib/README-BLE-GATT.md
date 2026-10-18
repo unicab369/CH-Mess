@@ -105,9 +105,10 @@ segment; the application supplies and retains Channel Sounding records,
 streams segments in order, applies the selected filters to record data,
 performs the requested record operations, and supervises the five-second ACK
 timeout. Call `gatt_ras_reset()` when the client disconnects.
-`gatt_ghs_add()` registers the live-observation GHS
-layout. Use `gatt_ghs_add_full()` to include Stored
-Health Observations and its RACP, selecting notify or indicate delivery. The
+`gatt_ghs_add_full()` registers the live-observation GHS layout and can include
+Stored Health Observations and its RACP, selecting notify or indicate delivery.
+Pass zero stored-observation capacity to register the live-observation layout
+only. The
 RACP handler validates request structure and captures it for the
 application; complete procedures with
 `gatt_ghs_racp_complete()` after queueing stored
@@ -155,17 +156,18 @@ indicate it.
 `gatt_hap_add()` registers the mandatory HAS Hearing Aid
 Features characteristic for a device that does not expose preset control.
 Use `gatt_hap_add_with_preset_control()` to add the
-encrypted Preset Control Point and Active Preset Index. The application handles
-the preset list and operations using the captured request fields, then queues
-encoded response indications with
-`gatt_hap_control_point_indicate()`; mark the last record
-to finish a multi-record Read Presets response. Use
-`gatt_hap_indicate_preset_change()` for unsolicited
-changes when Dynamic Presets is enabled. The preset-enabled builder accepts
-the full Hearing Aid Features bitfield and validates reserved/type-dependent
-bits. Update the active preset in the database with
-`gatt_hap_set_active_preset()` or update and notify
-with `gatt_hap_notify_active_preset()`.
+encrypted Preset Control Point and Active Preset Index. Call
+`gatt_hap_set_presets()` to attach a sorted, mutable preset table and an
+optional callback that applies an active preset to device state. HAS handles
+Read Presets, Write Preset Name, Set Active/Next/Previous Preset, synchronized
+selection, and Active Preset Index notifications. Keep the table alive for the
+service lifetime. After an application-side dynamic list change, call
+`gatt_hap_preset_changed()` with the matching change type and record index;
+this encodes and queues the SIG Preset Changed event. The builder validates
+the full Hearing Aid Features bitfield, and the table setter checks preset
+records. Use
+`gatt_hap_set_active_preset()` or `gatt_hap_notify_active_preset()` after an
+active preset change initiated outside the control point.
 `gatt_ots_add()` registers the single-object OTS metadata
 and OACP characteristics, including First-Created and Last-Modified. It assumes
 the server has a real-time clock; use

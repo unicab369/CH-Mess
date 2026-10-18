@@ -123,8 +123,9 @@ remains available for custom services; it does not replace these builders.
   write errors, and state notifications
 - [n/a] Basic Audio Announcement (`0x1851`), advertising service data
 - [n/a] Broadcast Audio Announcement (`0x1852`), advertising service data
-- [x] Hearing Access (`0x1854`), mandatory features-only layout and optional
-  preset Control Point/Active Preset Index request-response layout
+- [x] Hearing Access (`0x1854`), preset table validation, Read Presets and
+  Write Preset Name procedures, active/next/previous selection, synchronized
+  selection, and Active Preset Index notifications
 - [n/a] Public Broadcast Announcement (`0x1856`), advertising service data
 - [x] Electronic Shelf Label (`0x1857`), nine ESL characteristics and Control Point CCCD
 - [n/a] Mesh Proxy Solicitation (`0x1859`), Solicitation PDU/service data rather than a GATT attribute service

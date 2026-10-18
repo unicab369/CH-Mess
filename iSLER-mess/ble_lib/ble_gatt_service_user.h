@@ -388,23 +388,48 @@ static inline int gatt_vas_add(
 
 // Hearing Access: HAS
 typedef struct {
+    uint8_t index, properties, name_len;
+    uint8_t name[40];
+} ble_gatt_hap_preset;
+
+typedef uint8_t (*ble_gatt_hap_activate_fn)(
+    void *context, uint8_t index, uint8_t synchronized
+);
+
+typedef struct {
     uint16_t service_handle, features_handle;
     uint16_t preset_control_point_handle, preset_control_point_cccd_handle;
     uint16_t active_preset_index_handle, active_preset_index_cccd_handle;
     ble_gatt_server *server;
     uint8_t features;
-    uint8_t control_point_pending;
-    uint16_t control_point_request_len;
-    uint8_t control_point_request[BLE_GATT_ATT_VALUE_MAX];
+    ble_gatt_hap_preset *presets;
+    uint8_t preset_count;
+    uint8_t active_preset_index;
+    ble_gatt_hap_activate_fn activate;
+    void *context;
 } ble_gatt_hap_service;
 
 enum {
     GATT_HAS_ATT_ERR_INVALID_OPCODE = 0x80,
-    GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH = 0x81,
-    GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE = 0x82,
-    GATT_HAS_ATT_ERR_PRESET_SYNCHRONIZATION_NOT_SUPPORTED = 0x83,
-    GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS = 0x80,
+    GATT_HAS_ATT_ERR_WRITE_NAME_NOT_ALLOWED = 0x81,
+    GATT_HAS_ATT_ERR_PRESET_SYNCHRONIZATION_NOT_SUPPORTED = 0x82,
+    GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE = 0x83,
+    GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH = 0x84,
+    GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS = 0xfe,
     GATT_HAS_ATT_ERR_OUT_OF_RANGE = 0xff
+};
+
+enum {
+    GATT_HAS_PRESET_WRITABLE = 1u << 0,
+    GATT_HAS_PRESET_AVAILABLE = 1u << 1,
+    GATT_HAS_PRESET_PROPERTIES_MASK = 0x03
+};
+
+enum {
+    GATT_HAS_PRESET_CHANGE_UPDATE,
+    GATT_HAS_PRESET_CHANGE_DELETE,
+    GATT_HAS_PRESET_CHANGE_AVAILABLE,
+    GATT_HAS_PRESET_CHANGE_UNAVAILABLE
 };
 
 // Internal helper
@@ -427,6 +452,81 @@ static inline int gatt_hap_features_valid(uint8_t features) {
         return 0;
 
     return 1;
+}
+
+// Internal helper
+// HAP means Hearing Access Service.
+static inline ble_gatt_hap_preset *gatt_hap_find_preset(
+    ble_gatt_hap_service *service, uint8_t index
+) {
+    if (!service || !index) return NULL;
+
+    for (uint8_t i = 0; i < service->preset_count; i++)
+        if (service->presets[i].index == index)
+            return &service->presets[i];
+
+    return NULL;
+}
+
+// Internal helper
+// HAP means Hearing Access Service.
+static inline int gatt_hap_utf8_valid(const uint8_t *text, uint8_t len) {
+    for (uint8_t i = 0; i < len;) {
+        uint8_t c = text[i++];
+        if (c < 0x80) continue;
+        uint8_t extra = c >= 0xc2 && c <= 0xdf ? 1 :
+                        c >= 0xe0 && c <= 0xef ? 2 :
+                        c >= 0xf0 && c <= 0xf4 ? 3 : 0xff;
+        if (extra == 0xff || extra > len - i) return 0;
+        uint8_t first = text[i];
+        if ((c == 0xe0 && first < 0xa0) ||
+            (c == 0xed && first >= 0xa0) ||
+            (c == 0xf0 && first < 0x90) ||
+            (c == 0xf4 && first >= 0x90)) return 0;
+        while (extra--) {
+            if ((text[i] & 0xc0) != 0x80) return 0;
+            i++;
+        }
+    }
+    return 1;
+}
+
+// Internal helper
+// HAP means Hearing Access Service.
+static inline uint8_t gatt_hap_set_active(
+    ble_gatt_hap_service *service, uint8_t index, uint8_t synchronized
+) {
+    ble_gatt_hap_preset *preset = gatt_hap_find_preset(service, index);
+    if (!preset) return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
+    if (!(preset->properties & GATT_HAS_PRESET_AVAILABLE))
+        return GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE;
+
+    if (service->active_preset_index == index) return 0;
+
+    ble_gatt_attribute *cccd = gatt_server_cccd_for(
+        service->server, service->active_preset_index_handle);
+    if (cccd && (cccd->cccd & 1) &&
+        (service->server->event_count >= BLE_GATT_SERVER_EVENT_QUEUE_SIZE ||
+         service->server->event_used + 1 > BLE_GATT_SERVER_EVENT_BYTES)
+    ) return ATT_ERR_INSUFFICIENT_RESOURCES;
+
+    if (service->activate &&
+        !service->activate(service->context, index, synchronized)
+    ) return GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE;
+
+    ble_gatt_attribute *attribute = gatt_server_find(
+        service->server, service->active_preset_index_handle);
+    uint8_t *value = attribute ? gatt_attribute_value(
+        service->server, attribute) : NULL;
+    if (!value || attribute->value_len != 1)
+        return ATT_ERR_UNLIKELY_ERROR;
+    service->active_preset_index = index;
+    value[0] = index;
+
+    if (cccd && (cccd->cccd & 1))
+        (void)gatt_queue_event(service->server,
+            service->active_preset_index_handle, &index, 1, 0);
+    return 0;
 }
 
 // Internal helper
@@ -455,29 +555,22 @@ static inline uint8_t gatt_hap_control_point_write(
             return GATT_HAS_ATT_ERR_INVALID_OPCODE;
         if (len < 3 || len > 42)
             return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
-
         break;
     case 0x05: case 0x08: required_len = 2; break;
-    case 0x06: case 0x07: required_len = 1; break;
-    case 0x09: case 0x0a:
-        if (!(service->features & 0x04))
-            return GATT_HAS_ATT_ERR_INVALID_OPCODE;
-
-        required_len = 1;
-        break;
+    case 0x06: case 0x07: case 0x09: case 0x0a: required_len = 1; break;
     default:
         return GATT_HAS_ATT_ERR_INVALID_OPCODE;
     }
 
+    if ((opcode == 0x08 || opcode == 0x09 || opcode == 0x0a) &&
+        !(service->features & 0x04)
+    ) return GATT_HAS_ATT_ERR_PRESET_SYNCHRONIZATION_NOT_SUPPORTED;
+
     if (required_len && len != required_len)
         return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
 
-    if (len > sizeof(service->control_point_request))
-        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
-
     if ((opcode == 0x01 && (!value[1] || !value[2])) ||
-        ((opcode == 0x04 || opcode == 0x05 || opcode == 0x08) &&
-         !value[1])
+        ((opcode == 0x04 || opcode == 0x05 || opcode == 0x08) && !value[1])
     ) return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
@@ -487,17 +580,126 @@ static inline uint8_t gatt_hap_control_point_write(
          opcode == 0x08) && (!cccd || !(cccd->cccd & 2))
     ) return 0xfd;
 
-    if (service->control_point_pending)
-        return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
-
     if (gatt_dts_cp_busy(service->server,
             service->preset_control_point_handle)
     ) return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
 
-    memcpy(service->control_point_request, value, len);
-    service->control_point_request_len = len;
-    service->control_point_pending = 1;
-    return 0;
+    if (opcode == 0x01) {
+        uint8_t start = value[1], requested = value[2], sent = 0;
+        uint8_t available = 0;
+        uint16_t bytes = 0;
+        for (uint8_t i = 0; i < service->preset_count &&
+                available < requested; i++) {
+            ble_gatt_hap_preset *preset = &service->presets[i];
+            if (preset->index < start) continue;
+            available++;
+            bytes = (uint16_t)(bytes + 4 + preset->name_len);
+            if ((uint16_t)(4 + preset->name_len) >
+                service->server->mtu - 3
+            ) return ATT_ERR_INSUFFICIENT_RESOURCES;
+        }
+        if (!available) return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
+        if (available > BLE_GATT_SERVER_EVENT_QUEUE_SIZE -
+                service->server->event_count ||
+            bytes > BLE_GATT_SERVER_EVENT_BYTES - service->server->event_used
+        ) return ATT_ERR_INSUFFICIENT_RESOURCES;
+
+        for (uint8_t i = 0; i < service->preset_count && sent < requested; i++) {
+            ble_gatt_hap_preset *preset = &service->presets[i];
+            if (preset->index < start) continue;
+
+            uint8_t response[44];
+            response[0] = 0x02;
+            response[1] = 0;
+            response[2] = preset->index;
+            response[3] = preset->properties;
+            memcpy(response + 4, preset->name, preset->name_len);
+            if (sent + 1 == requested || i + 1 == service->preset_count)
+                response[1] = 1;
+            if (!gatt_queue_event(service->server,
+                    service->preset_control_point_handle, response,
+                    (uint16_t)(4 + preset->name_len), 1)
+            ) return GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE;
+            sent++;
+            if (response[1]) break;
+        }
+        if (!sent) return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
+        return 0;
+    }
+
+    if (opcode == 0x04) {
+        ble_gatt_hap_preset *preset = gatt_hap_find_preset(service, value[1]);
+        if (!preset) return GATT_HAS_ATT_ERR_OUT_OF_RANGE;
+        if (!(preset->properties & GATT_HAS_PRESET_WRITABLE))
+            return GATT_HAS_ATT_ERR_WRITE_NAME_NOT_ALLOWED;
+        if (len - 2 > sizeof(preset->name))
+            return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
+        if (!gatt_hap_utf8_valid(value + 2, (uint8_t)(len - 2)))
+            return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
+        if (service->server->event_count >= BLE_GATT_SERVER_EVENT_QUEUE_SIZE ||
+            service->server->event_used + len + 4 >
+                BLE_GATT_SERVER_EVENT_BYTES || len + 4 >
+                service->server->mtu - 3
+        ) return ATT_ERR_INSUFFICIENT_RESOURCES;
+        preset->name_len = (uint8_t)(len - 2);
+        memcpy(preset->name, value + 2, preset->name_len);
+        uint8_t response[46] = {0x03, 0x00, 0x01, 0x00};
+        response[4] = preset->index;
+        response[5] = preset->properties;
+        memcpy(response + 6, preset->name, preset->name_len);
+        for (uint8_t i = 0; i < service->preset_count; i++)
+            if (service->presets[i].index < preset->index)
+                response[3] = service->presets[i].index;
+        (void)gatt_queue_event(service->server,
+            service->preset_control_point_handle, response,
+            (uint16_t)(6 + preset->name_len), 1);
+        return 0;
+    }
+
+    if (opcode == 0x05 || opcode == 0x08)
+        return gatt_hap_set_active(service, value[1], opcode == 0x08);
+
+    uint8_t active = service->active_preset_index;
+    uint8_t selected = 0;
+    if (!active)
+        return GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE;
+
+    if (opcode == 0x06 || opcode == 0x09) {
+        for (uint8_t n = 0; n < service->preset_count; n++) {
+            uint8_t i = n;
+            if (service->presets[i].index > active &&
+                (service->presets[i].properties & GATT_HAS_PRESET_AVAILABLE)) {
+                selected = service->presets[i].index;
+                break;
+            }
+        }
+        if (!selected)
+            for (uint8_t i = 0; i < service->preset_count; i++)
+                if (service->presets[i].properties & GATT_HAS_PRESET_AVAILABLE) {
+                    selected = service->presets[i].index;
+                    break;
+                }
+    }
+    else {
+        for (uint8_t n = service->preset_count; n > 0; n--) {
+            ble_gatt_hap_preset *preset = &service->presets[n - 1];
+            if (preset->index < active &&
+                (preset->properties & GATT_HAS_PRESET_AVAILABLE)) {
+                selected = preset->index;
+                break;
+            }
+        }
+        if (!selected)
+            for (uint8_t n = service->preset_count; n > 0; n--)
+                if (service->presets[n - 1].properties &
+                    GATT_HAS_PRESET_AVAILABLE) {
+                    selected = service->presets[n - 1].index;
+                    break;
+                }
+    }
+    if (!selected) return GATT_HAS_ATT_ERR_PRESET_OPERATION_NOT_POSSIBLE;
+    return gatt_hap_set_active(service, selected,
+        opcode == 0x09 || opcode == 0x0a);
 }
 
 // Application-facing API
@@ -527,9 +729,8 @@ static inline int gatt_hap_add(
 }
 
 // Application-facing API
-// Add HAS with preset control enabled. The application validates preset
-// requests, updates the active index when appropriate, then completes each
-// request with the encoded indication payload defined by HAS.
+// Add HAS with preset control enabled. Attach an application-owned preset
+// table with gatt_hap_set_presets() before accepting preset requests.
 // HAP means Hearing Access Service.
 static inline int gatt_hap_add_with_preset_control(
     ble_gatt_server *server, ble_gatt_hap_service *service,
@@ -569,62 +770,92 @@ static inline int gatt_hap_add_with_preset_control(
     service->active_preset_index_cccd_handle = cccds[2];
     service->server = server;
     service->features = features;
+    service->active_preset_index = active_preset_index;
     return 1;
 }
 
 // Application-facing API
-// Queue one encoded Preset Control Point response indication. Set is_last to
-// zero when more response records follow, as for a multi-record read request.
+// Attach the application-owned, increasing-index preset list and the callback
+// that applies active-preset changes. Names in the records are writable.
 // HAP means Hearing Access Service.
-static inline int gatt_hap_control_point_indicate(
-    ble_gatt_hap_service *service,
-    const uint8_t *response, uint16_t response_len, uint8_t is_last
+static inline int gatt_hap_set_presets(
+    ble_gatt_hap_service *service, ble_gatt_hap_preset *presets,
+    uint8_t count, ble_gatt_hap_activate_fn activate, void *context
 ) {
-    if (!service || !service->server || !service->control_point_pending ||
-        !response || !response_len ||
-        response_len > BLE_GATT_ATT_VALUE_MAX ||
-        response_len > service->server->mtu - 3 || is_last > 1
+    if (!service || !service->server || !presets || !count ||
+        !service->preset_control_point_handle
     ) return 0;
 
-    if (!gatt_queue_event(service->server,
-            service->preset_control_point_handle, response, response_len, 1)
+    uint8_t writable = 0, active_found = !service->active_preset_index;
+    for (uint8_t i = 0; i < count; i++) {
+        ble_gatt_hap_preset *preset = &presets[i];
+        if (!preset->index || !preset->name_len || preset->name_len > 40 ||
+            (preset->properties & ~GATT_HAS_PRESET_PROPERTIES_MASK) ||
+            (i && presets[i - 1].index >= preset->index) ||
+            !gatt_hap_utf8_valid(preset->name, preset->name_len)
+        ) return 0;
+        writable |= preset->properties & GATT_HAS_PRESET_WRITABLE;
+        if (preset->index == service->active_preset_index) {
+            if (!(preset->properties & GATT_HAS_PRESET_AVAILABLE)) return 0;
+            active_found = 1;
+        }
+    }
+    if (!active_found || (!!writable != !!(service->features & 0x20)))
+        return 0;
+
+    service->presets = presets;
+    service->preset_count = count;
+    service->activate = activate;
+    service->context = context;
+    return 1;
+}
+
+// Application-facing API
+// Queue one encoded Preset Changed operation after updating the preset table.
+// Use UPDATE for an added or renamed record, and set is_last when this is the
+// final event in a batch of changes.
+// HAP means Hearing Access Service.
+static inline int gatt_hap_preset_changed(
+    ble_gatt_hap_service *service, uint8_t change_id, uint8_t index,
+    uint8_t is_last
+) {
+    if (!service || !service->server || !(service->features & 0x10) ||
+        !index || is_last > 1
     ) return 0;
 
-    if (is_last) {
-        service->control_point_pending = 0;
-        service->control_point_request_len = 0;
+    uint8_t value[46] = {0x03, change_id, is_last, index};
+    uint16_t len = 4;
+    if (change_id == GATT_HAS_PRESET_CHANGE_UPDATE) {
+        ble_gatt_hap_preset *preset = gatt_hap_find_preset(service, index);
+        if (!preset) return 0;
+        value[3] = 0;
+        for (uint8_t i = 0; i < service->preset_count; i++)
+            if (service->presets[i].index < index)
+                value[3] = service->presets[i].index;
+        value[4] = preset->index;
+        value[5] = preset->properties;
+        memcpy(value + 6, preset->name, preset->name_len);
+        len = (uint16_t)(6 + preset->name_len);
+    }
+    else {
+        ble_gatt_hap_preset *preset = gatt_hap_find_preset(service, index);
+        if (change_id == GATT_HAS_PRESET_CHANGE_DELETE) {
+            if (preset) return 0;
+        }
+        else if (change_id == GATT_HAS_PRESET_CHANGE_AVAILABLE) {
+            if (!preset || !(preset->properties & GATT_HAS_PRESET_AVAILABLE))
+                return 0;
+        }
+        else if (change_id == GATT_HAS_PRESET_CHANGE_UNAVAILABLE) {
+            if (!preset || (preset->properties & GATT_HAS_PRESET_AVAILABLE))
+                return 0;
+        }
+        else return 0;
     }
 
-    return 1;
-}
-
-// Application-facing API
-// Queue a final response indication for the pending Preset Control Point
-// request.
-// HAP means Hearing Access Service.
-static inline int gatt_hap_complete_control_point(
-    ble_gatt_hap_service *service,
-    const uint8_t *response, uint16_t response_len
-) {
-    return gatt_hap_control_point_indicate(service,
-        response, response_len, 1);
-}
-
-// Application-facing API
-// Indicate an unsolicited Preset Changed operation. Preset changes require
-// Dynamic Presets support in the configured Hearing Aid Features value.
-// HAP means Hearing Access Service.
-static inline int gatt_hap_indicate_preset_change(
-    ble_gatt_hap_service *service,
-    const uint8_t *value, uint16_t value_len
-) {
-    if (!service || !service->server || !service->preset_control_point_handle ||
-        !(service->features & 0x10) || !value || !value_len ||
-        value_len > service->server->mtu - 3
-    ) return 0;
-
+    if (len > service->server->mtu - 3) return 0;
     return gatt_queue_event(service->server,
-        service->preset_control_point_handle, value, value_len, 1);
+        service->preset_control_point_handle, value, len, 1);
 }
 
 // Application-facing API
@@ -635,6 +866,11 @@ static inline int gatt_hap_set_active_preset(
 ) {
     if (!service || !service->server || !service->active_preset_index_handle)
         return 0;
+    if (service->presets) {
+        ble_gatt_hap_preset *preset = gatt_hap_find_preset(service, index);
+        if (index && (!preset || !(preset->properties &
+                GATT_HAS_PRESET_AVAILABLE))) return 0;
+    }
 
     ble_gatt_attribute *attribute = gatt_server_find(
         service->server, service->active_preset_index_handle);
@@ -645,6 +881,7 @@ static inline int gatt_hap_set_active_preset(
         return 0;
 
     value[0] = index;
+    service->active_preset_index = index;
     return 1;
 }
 
