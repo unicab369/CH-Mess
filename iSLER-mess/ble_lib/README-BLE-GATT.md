@@ -225,7 +225,7 @@ requests are captured in service state for the application to perform and
 complete with `gatt_mcs_cp_complete()` and
 `gatt_mcs_search_complete()`. Writable Object ID requests
 are captured in `object_id_write_index` and `object_id_write_value`; finish
-their player action with `gatt_mcs_object_write_done()`.
+their player action with `gatt_mcs_object_done()`.
 Set and notify populated
 Search Results with `gatt_mcs_set_results_id()`.
 The app handles the media player actions and OTS object storage; notify changed
@@ -462,7 +462,7 @@ validity through
 Call `gatt_hps_link_reset()` when the owning ATT link resets.
 The application still performs HTTP transport and response parsing.
 
-`gatt_sig_service_add()` is the application-facing builder for other
+`gatt_sig_add()` is the application-facing builder for other
 16-bit UUID services, including assigned services without a dedicated helper.
 Pass the service UUID and the characteristic definitions required by that
 service; the builder adds the service, characteristics, and requested CCCDs
@@ -470,13 +470,13 @@ transactionally and returns their handles. This registers the database only:
 the application remains responsible for choosing the specification-correct
 characteristics and implementing service procedures.
 
-For services with ATT-level behavior, `gatt_sig_service_add_with_handlers()`
+For services with ATT-level behavior, `gatt_sig_add_handlers()`
 binds per-characteristic read, write, and reliable-write handlers as part of
 transactional registration. Protocol handlers belong in service-specific
 modules; product behavior such as changing a display, reading a sensor, or
 controlling a media player belongs in the application.
 
-For an unfinished service, `gatt_sig_service_add()` can register a
+For an unfinished service, `gatt_sig_add()` can register a
 caller-supplied characteristic list. It does not validate that list against
 the Bluetooth specification; the remaining standard layouts are tracked in
 `GATT_SERVICES_TODO.md`.

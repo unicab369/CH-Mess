@@ -150,7 +150,7 @@ static inline int gatt_uds_add(
     handlers[2].context = service;
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x181c, chars, 4,
+    if (!gatt_sig_add_handlers(server, 0x181c, chars, 4,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -366,7 +366,7 @@ static inline int gatt_vas_add(
     uint16_t values[7], cccds[7];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, generic_service ? 0x185f : 0x185e,
+    if (!gatt_sig_add(server, generic_service ? 0x185f : 0x185e,
             chars, count, &service->service_handle, values, cccds)
     ) return 0;
 
@@ -490,7 +490,7 @@ static inline uint8_t gatt_hap_control_point_write(
     if (service->control_point_pending)
         return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
 
-    if (gatt_dts_control_point_busy(service->server,
+    if (gatt_dts_cp_busy(service->server,
             service->preset_control_point_handle)
     ) return GATT_HAS_ATT_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
 
@@ -518,7 +518,7 @@ static inline int gatt_hap_add(
     uint16_t value_handle;
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1854, &characteristic, 1,
+    if (!gatt_sig_add(server, 0x1854, &characteristic, 1,
             &service->service_handle, &value_handle, NULL)
     ) return 0;
 
@@ -557,7 +557,7 @@ static inline int gatt_hap_add_with_preset_control(
     handlers[1].write = gatt_hap_control_point_write;
     handlers[1].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1854,
+    if (!gatt_sig_add_handlers(server, 0x1854,
             characteristics, 3, &service->service_handle, values, cccds,
             handlers)
     ) return 0;
@@ -1002,7 +1002,7 @@ static inline int gatt_tbs_add(
         gatt_tbs_control_point_write;
     handlers[cp_index].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server,
+    if (!gatt_sig_add_handlers(server,
             config->generic_service ? 0x184c : 0x184b,
             characteristics, count,
             &service->service_handle, value_handles,
@@ -1243,7 +1243,7 @@ static inline int gatt_csis_add(
     uint16_t values[4], cccds[4];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1846, characteristics, count,
+    if (!gatt_sig_add(server, 0x1846, characteristics, count,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -1299,7 +1299,7 @@ static inline int gatt_ecs_add(
     uint8_t count = emergency_text ? 2 : 1;
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add(server, 0x183c, characteristics, count,
+    if (!gatt_sig_add(server, 0x183c, characteristics, count,
             &service->service_handle, values, cccds)
     ) return 0;
 

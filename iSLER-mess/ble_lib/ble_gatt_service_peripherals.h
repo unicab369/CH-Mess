@@ -79,7 +79,7 @@ static inline int gatt_aio_add(
 
     uint16_t values[9], cccds[9];
 
-    if (!gatt_sig_service_add(server, 0x1815, characteristics, count,
+    if (!gatt_sig_add(server, 0x1815, characteristics, count,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -615,7 +615,7 @@ static inline int gatt_lns_add(
     service->server = server;
     uint16_t values[5], cccds[5];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1819, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1819, chars, count,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -809,7 +809,7 @@ static inline int gatt_ips_add_full(
         return 0;
     uint16_t values[9];
     service->server = server;
-    if (!gatt_sig_service_add_with_handlers(server, 0x1821, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1821, chars, count,
             &service->service_handle, values, NULL, handlers)
     ) {
         service->server = NULL;
@@ -1015,7 +1015,7 @@ static inline int gatt_hid_add(
     uint16_t values[4 + BLE_GATT_HID_MAX_REPORTS];
     uint16_t cccds[4 + BLE_GATT_HID_MAX_REPORTS];
 
-    if (!gatt_sig_service_add(server, 0x1812, characteristics,
+    if (!gatt_sig_add(server, 0x1812, characteristics,
             (uint8_t)(4 + report_count), &service->service_handle,
             values, cccds)
     ) return 0;
@@ -1066,7 +1066,7 @@ static inline int gatt_hid_iso_add(
     uint16_t values[2], cccds[2];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x185c, chars, 2,
+    if (!gatt_sig_add(server, 0x185c, chars, 2,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -1231,7 +1231,7 @@ static inline int gatt_hps_add(
     handlers[4].write = gatt_http_proxy_control_write;
     handlers[4].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1823, chars, 6,
+    if (!gatt_sig_add_handlers(server, 0x1823, chars, 6,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -1816,7 +1816,7 @@ static inline int gatt_ots_add_type_full(
     handlers[7].context = service;
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_register_with_includes_and_handlers(server, 0x1825,
+    if (!gatt_sig_register(server, 0x1825,
             primary_service, NULL, 0, characteristics, 8,
             &service->service_handle, value_handles, cccd_handles, handlers)
     ) return 0;
@@ -1967,7 +1967,7 @@ static inline int gatt_ots_add_multi_type_full(
     uint16_t old_value_used = server->value_used;
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_register_with_includes_and_handlers(server,
+    if (!gatt_sig_register(server,
             0x1825, primary_service, NULL, 0, characteristics, 13,
             &service->service_handle, values, cccds, handlers)) {
         memset(service, 0, sizeof(*service));
@@ -2180,7 +2180,7 @@ static inline int gatt_esl_add(
     uint16_t cccds[9];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1857, chars, 9,
+    if (!gatt_sig_add(server, 0x1857, chars, 9,
             &service->service_handle, service->handles, cccds)
     ) return 0;
 

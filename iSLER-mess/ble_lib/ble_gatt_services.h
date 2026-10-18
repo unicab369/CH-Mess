@@ -37,7 +37,7 @@ typedef struct {
 // Add a 16-bit UUID service and its caller-defined characteristics as one
 // transaction. The caller supplies the assigned characteristic UUIDs,
 // properties, permissions, values, and optional CCCDs.
-static inline int gatt_sig_service_register_with_includes_and_handlers(
+static inline int gatt_sig_register(
     ble_gatt_server *server, uint16_t service_uuid16, uint8_t primary_service,
     const uint16_t *included_service_handles, uint8_t include_count,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
@@ -159,14 +159,14 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
 }
 
 // Add a primary service with included services and per-characteristic handlers.
-static inline int gatt_sig_service_add_full(
+static inline int gatt_sig_add_full(
     ble_gatt_server *server, uint16_t service_uuid16,
     const uint16_t *included_service_handles, uint8_t include_count,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
     uint16_t *service_handle, uint16_t *value_handles,
     uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
 ) {
-    return gatt_sig_service_register_with_includes_and_handlers(server,
+    return gatt_sig_register(server,
         service_uuid16, 1, included_service_handles, include_count,
         characteristics, count, service_handle, value_handles,
         cccd_handles, handlers);
@@ -174,39 +174,39 @@ static inline int gatt_sig_service_add_full(
 
 // Add a service with caller-selected included services and per-characteristic
 // ATT handlers as one rollback-safe database operation.
-static inline int gatt_sig_service_add_with_handlers(
+static inline int gatt_sig_add_handlers(
     ble_gatt_server *server, uint16_t service_uuid16,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
     uint16_t *service_handle, uint16_t *value_handles,
     uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
 ) {
-    return gatt_sig_service_add_full(server,
+    return gatt_sig_add_full(server,
         service_uuid16, NULL, 0, characteristics, count, service_handle,
         value_handles, cccd_handles, handlers);
 }
 
 // Add a secondary service with caller-supplied characteristics and handlers.
-static inline int gatt_sig_secondary_service_add_with_handlers(
+static inline int gatt_sig_add_secondary(
     ble_gatt_server *server, uint16_t service_uuid16,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
     uint16_t *service_handle, uint16_t *value_handles,
     uint16_t *cccd_handles, const ble_gatt_sig_handlers *handlers
 ) {
-    return gatt_sig_service_register_with_includes_and_handlers(server,
+    return gatt_sig_register(server,
         service_uuid16, 0, NULL, 0, characteristics, count, service_handle,
         value_handles, cccd_handles, handlers);
 }
 
 // Add a service with per-characteristic read, write, and reliable-write
 // handlers. Service modules use this to connect profile procedures to the
-// generic ATT server; simple static databases can use gatt_sig_service_add().
-static inline int gatt_sig_service_add(
+// generic ATT server; simple static databases can use gatt_sig_add().
+static inline int gatt_sig_add(
     ble_gatt_server *server, uint16_t service_uuid16,
     const ble_gatt_sig_characteristic *characteristics, uint8_t count,
     uint16_t *service_handle, uint16_t *value_handles,
     uint16_t *cccd_handles
 ) {
-    return gatt_sig_service_add_with_handlers(server, service_uuid16,
+    return gatt_sig_add_handlers(server, service_uuid16,
         characteristics, count, service_handle, value_handles, cccd_handles,
         NULL);
 }
@@ -225,7 +225,7 @@ static inline void gatt_service_rollback(
     server->value_used = old_value_used;
 }
 
-static inline int gatt_dts_control_point_busy(
+static inline int gatt_dts_cp_busy(
     const ble_gatt_server *server, uint16_t handle
 ) {
     if (server->indication_pending && server->indication_handle == handle)
@@ -271,7 +271,7 @@ static inline int gatt_mesh_prov_add(
     };
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add(server, 0x1827, chars, 2,
+    if (!gatt_sig_add(server, 0x1827, chars, 2,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -295,7 +295,7 @@ static inline int gatt_mesh_proxy_add(
     };
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add(server, 0x1828, chars, 2,
+    if (!gatt_sig_add(server, 0x1828, chars, 2,
             &service->service_handle, values, cccds)
     ) return 0;
 

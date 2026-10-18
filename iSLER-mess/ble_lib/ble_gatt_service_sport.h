@@ -108,7 +108,7 @@ static inline int gatt_cps_add(
     service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[6], cccds[6];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1818, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1818, chars, count,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -198,7 +198,7 @@ static inline int gatt_csc_add(
     service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1816, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1816, chars, count,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -281,7 +281,7 @@ static inline int gatt_rsc_add(
     service->supported_sensor_locations = 1u << sensor_location;
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1814, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1814, chars, count,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -1329,7 +1329,7 @@ static inline int gatt_ftms_add(
     uint16_t value_handles[2], cccd_handles[2];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1826, characteristics, 2,
+    if (!gatt_sig_add(server, 0x1826, characteristics, 2,
             &service->service_handle, value_handles, cccd_handles)
     ) return 0;
 
@@ -1441,7 +1441,7 @@ static inline int gatt_ftms_add_controlled(
 
     uint16_t value_handles[4], cccd_handles[4];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1826, characteristics,
+    if (!gatt_sig_add_handlers(server, 0x1826, characteristics,
             count, &service->base.service_handle, value_handles,
             cccd_handles, handlers)) {
         memset(service, 0, sizeof(*service));
@@ -1561,7 +1561,7 @@ static inline int gatt_ftms_add_full(
     memset(service, 0, sizeof(*service));
     service->server = server;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1826, characteristics,
+    if (!gatt_sig_add_handlers(server, 0x1826, characteristics,
             count, &service->base.service_handle, value_handles,
             cccd_handles, handlers)) {
         memset(service, 0, sizeof(*service));
@@ -1985,7 +1985,7 @@ static inline int gatt_pams_add_full(
     handlers[3].write = gatt_physical_activity_monitor_control_write;
     handlers[3].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x183e,
+    if (!gatt_sig_add_handlers(server, 0x183e,
             characteristics, count, &service->service_handle, values, cccds,
             handlers)) {
         memset(service, 0, sizeof(*service));

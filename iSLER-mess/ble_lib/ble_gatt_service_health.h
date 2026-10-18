@@ -45,7 +45,7 @@ static inline int gatt_hts_add(
 
     uint16_t values[3], cccds[3];
 
-    if (!gatt_sig_service_add(server, 0x1809, chars, count,
+    if (!gatt_sig_add(server, 0x1809, chars, count,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -105,7 +105,7 @@ static inline int gatt_bp_add(
     };
     uint16_t values[3], cccds[3];
 
-    if (!gatt_sig_service_add(server, 0x1810, chars, count,
+    if (!gatt_sig_add(server, 0x1810, chars, count,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -194,7 +194,7 @@ static inline int gatt_cgm_service_add(
     };
     uint16_t values[7], cccds[7];
 
-    if (!gatt_sig_service_add(server, 0x181f, chars, 7,
+    if (!gatt_sig_add(server, 0x181f, chars, 7,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -275,7 +275,7 @@ static inline int gatt_plx_add(
 
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add(server, 0x1822, chars, count,
+    if (!gatt_sig_add(server, 0x1822, chars, count,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -1400,7 +1400,7 @@ static inline int gatt_ghs_add_full(
         handlers[3].context = service;
     }
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1840,
+    if (!gatt_sig_add_handlers(server, 0x1840,
             characteristics, count, &service->service_handle, values, cccds,
             handlers)) {
         memset(service, 0, sizeof(*service));
@@ -1657,7 +1657,7 @@ static inline int gatt_gls_add(
     handlers[racp_index].context = service;
     uint16_t values[4], cccds[4];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1808, chars, count,
+    if (!gatt_sig_add_handlers(server, 0x1808, chars, count,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -1812,7 +1812,7 @@ static inline int gatt_idd_add(
     uint16_t value_handles[9], cccd_handles[9];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x183a, characteristics, count,
+    if (!gatt_sig_add(server, 0x183a, characteristics, count,
             &service->service_handle, value_handles, cccd_handles)
     ) return 0;
 

@@ -78,7 +78,7 @@ static inline int gatt_ras_add(
     uint16_t service_handle;
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x185b, characteristics, count,
+    if (!gatt_sig_add(server, 0x185b, characteristics, count,
             &service_handle, values, cccds)
     ) return 0;
 
@@ -144,7 +144,7 @@ static inline int gatt_ctes_add(
     uint16_t values[6];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x184a, characteristics, count,
+    if (!gatt_sig_add(server, 0x184a, characteristics, count,
             &service->service_handle, values, NULL)
     ) return 0;
 
@@ -462,7 +462,7 @@ static inline int gatt_tx_add(
     };
     uint16_t values[1];
 
-    if (!gatt_sig_service_add(server, 0x1804, chars, 1,
+    if (!gatt_sig_add(server, 0x1804, chars, 1,
                               &service->service_handle, values, NULL)
     ) return 0;
 
@@ -525,7 +525,7 @@ static inline int gatt_cts_add(
 
     uint16_t values[3], cccds[3];
 
-    if (!gatt_sig_service_add(server, 0x1805, chars, count,
+    if (!gatt_sig_add(server, 0x1805, chars, count,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -625,7 +625,7 @@ static inline int gatt_rtus_add(
     handlers[0].write = gatt_rtus_write;
     handlers[0].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1806, chars, 2,
+    if (!gatt_sig_add_handlers(server, 0x1806, chars, 2,
             &service->service_handle, values, NULL, handlers)) {
         memset(service, 0, sizeof(*service));
         return 0;
@@ -675,7 +675,7 @@ static inline int gatt_ndcs_add(
     };
     uint16_t values[1];
 
-    if (!gatt_sig_service_add(server, 0x1807, chars, 1,
+    if (!gatt_sig_add(server, 0x1807, chars, 1,
                               &service->service_handle, values, NULL)
     ) return 0;
 
@@ -742,7 +742,7 @@ static inline uint8_t gatt_dts_cp_write(
         return 0xfd;
 
     if (service->control_point_pending_opcode ||
-        gatt_dts_control_point_busy(server, service->control_point_handle)
+        gatt_dts_cp_busy(server, service->control_point_handle)
     ) return 0xfe;
 
     uint8_t opcode = value[0];
@@ -832,7 +832,7 @@ static inline int gatt_dts_add(
     handlers[3].write = gatt_dts_cp_write;
     handlers[3].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1847,
+    if (!gatt_sig_add_handlers(server, 0x1847,
             characteristics, 4, &service->service_handle, values, cccds,
             handlers)
     ) return 0;
@@ -906,7 +906,7 @@ static inline int gatt_rcs_add(
     uint16_t values[1];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1829, &characteristic, 1,
+    if (!gatt_sig_add(server, 0x1829, &characteristic, 1,
             &service->service_handle, values, NULL)
     ) return 0;
 
@@ -1037,7 +1037,7 @@ static inline int gatt_bms_add_auth(
     handlers[0].write = gatt_bms_control_write;
     handlers[0].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x181e, chars, 2,
+    if (!gatt_sig_add_handlers(server, 0x181e, chars, 2,
             &service->service_handle, values, NULL, handlers)
     ) return 0;
 
@@ -1157,7 +1157,7 @@ static inline int gatt_sps_add(
     };
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1813, chars, 2,
+    if (!gatt_sig_add_handlers(server, 0x1813, chars, 2,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -1223,7 +1223,7 @@ static uint8_t gatt_tds_control_point_write(
 
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
 
-    if (service->pending || gatt_dts_control_point_busy(service->server,
+    if (service->pending || gatt_dts_cp_busy(service->server,
             service->control_point_handle)) return 0xfe;
 
     if (value[0] != 1) {
@@ -1280,7 +1280,7 @@ static inline int gatt_tds_add(
     uint16_t value_handle, cccd_handle;
     service->server = server;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1824, &characteristic,
+    if (!gatt_sig_add_handlers(server, 0x1824, &characteristic,
             1, &service->service_handle, &value_handle, &cccd_handle,
             handlers)
     ) return 0;
@@ -1364,7 +1364,7 @@ static inline int gatt_elapsed_add(
     };
     uint16_t values[1], cccds[1];
 
-    if (!gatt_sig_service_add(server, 0x183f, &characteristic, 1,
+    if (!gatt_sig_add(server, 0x183f, &characteristic, 1,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -1551,7 +1551,7 @@ static inline int gatt_acs_add(
     handlers[4].context = service;
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x183d, characteristics,
+    if (!gatt_sig_add_handlers(server, 0x183d, characteristics,
             5, &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -1833,7 +1833,7 @@ static inline int gatt_ias_add(
     };
     uint16_t values[1];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1802, chars, 1,
+    if (!gatt_sig_add_handlers(server, 0x1802, chars, 1,
             &service->service_handle, values, NULL, handlers)
     ) return 0;
 
@@ -1864,7 +1864,7 @@ static inline int gatt_lls_add(
     };
     uint16_t values[1];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1803, chars, 1,
+    if (!gatt_sig_add_handlers(server, 0x1803, chars, 1,
             &service->service_handle, values, NULL, handlers)
     ) return 0;
 
@@ -1903,7 +1903,7 @@ static inline int gatt_pass_add(
     };
     uint16_t values[3], cccds[3];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x180e, chars, 3,
+    if (!gatt_sig_add_handlers(server, 0x180e, chars, 3,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -2062,7 +2062,7 @@ static inline int gatt_ans_add(
     handlers[4].context = service;
     uint16_t values[5], cccds[5];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1811, chars, 5,
+    if (!gatt_sig_add_handlers(server, 0x1811, chars, 5,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 

@@ -35,7 +35,7 @@ static inline int gatt_cws_add(
     }
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x185d, characteristics, count,
+    if (!gatt_sig_add(server, 0x185d, characteristics, count,
             &service->service_handle, service->value_handles,
             service->cccd_handles)
     ) return 0;
@@ -108,7 +108,7 @@ static inline int gatt_imd_service_add(
     uint16_t values[10], cccds[10];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x185a, chars, n,
+    if (!gatt_sig_add(server, 0x185a, chars, n,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -161,7 +161,7 @@ static inline int gatt_bcs_add(
     };
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add(server, 0x181b, chars, 2,
+    if (!gatt_sig_add(server, 0x181b, chars, 2,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -188,7 +188,7 @@ static inline int gatt_wss_add(
     };
     uint16_t values[2], cccds[2];
 
-    if (!gatt_sig_service_add(server, 0x181d, chars, 2,
+    if (!gatt_sig_add(server, 0x181d, chars, 2,
                               &service->service_handle, values, cccds)
     ) return 0;
 
@@ -448,7 +448,7 @@ static inline int gatt_tpms_add(
     uint16_t values[7], cccds[7];
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x1860, chars, n,
+    if (!gatt_sig_add(server, 0x1860, chars, n,
             &service->service_handle, values, cccds)
     ) return 0;
 
@@ -479,7 +479,7 @@ static inline int gatt_ess_add(
 
     memset(service, 0, sizeof(*service));
 
-    if (!gatt_sig_service_add(server, 0x181a, measurements, count,
+    if (!gatt_sig_add(server, 0x181a, measurements, count,
             &service->service_handle, service->measurement_handles,
             service->measurement_cccd_handles)
     ) return 0;
@@ -679,7 +679,7 @@ static inline int gatt_bss_add_full(
     handlers[0].write = gatt_binary_sensor_control_write;
     handlers[0].context = service;
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x183b, chars, 2,
+    if (!gatt_sig_add_handlers(server, 0x183b, chars, 2,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
 

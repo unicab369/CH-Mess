@@ -94,7 +94,7 @@ static inline int gatt_mics_add_aics(
     };
     uint16_t values[1], cccds[1];
 
-    if (!gatt_sig_service_add_full(server, 0x184d,
+    if (!gatt_sig_add_full(server, 0x184d,
             aics_service_handles, aics_count, &characteristic, 1,
             &service->service_handle, values, cccds, handlers)
     ) return 0;
@@ -602,7 +602,7 @@ static inline int gatt_vcs_add(
     handlers[1].context = service;
     uint16_t values[3], cccds[3];
 
-    if (!gatt_sig_service_add_with_handlers(server, 0x1844, characteristics,
+    if (!gatt_sig_add_handlers(server, 0x1844, characteristics,
             3, &service->service_handle, values, cccds, handlers)
     ) return 0;
 
@@ -831,30 +831,30 @@ typedef struct {
 typedef struct {
     uint16_t service_handle;
     uint16_t player_name_handle, player_name_cccd_handle;
-    uint16_t track_changed_handle, track_changed_cccd_handle;
-    uint16_t track_title_handle, track_title_cccd_handle;
-    uint16_t track_duration_handle, track_duration_cccd_handle;
-    uint16_t track_position_handle, track_position_cccd_handle;
-    uint16_t media_state_handle, media_state_cccd_handle;
+    uint16_t track_changed_handle, changed_cccd_handle;
+    uint16_t track_title_handle, title_cccd_handle;
+    uint16_t track_duration_handle, duration_cccd_handle;
+    uint16_t track_position_handle, position_cccd_handle;
+    uint16_t media_state_handle, media_cccd_handle;
     uint16_t ccid_handle;
-    uint16_t playback_speed_handle, playback_speed_cccd_handle;
-    uint16_t seeking_speed_handle, seeking_speed_cccd_handle;
-    uint16_t playing_order_handle, playing_order_cccd_handle;
-    uint16_t orders_supported_handle;
-    uint16_t control_point_handle, control_point_cccd_handle;
+    uint16_t playback_handle, playback_cccd_handle;
+    uint16_t seeking_handle, seeking_cccd_handle;
+    uint16_t order_handle, order_cccd_handle;
+    uint16_t orders_handle;
+    uint16_t control_point_handle, cp_cccd_handle;
     uint16_t cp_opcodes_handle;
-    uint16_t object_id_handle[7], object_id_cccd_handle[7];
+    uint16_t object_handle[7], object_cccd_handle[7];
     uint16_t icon_url_handle;
     uint16_t search_cp_handle, search_cp_cccd_handle;
     uint8_t search_pending, search_request_len;
     uint8_t search_request[64];
-    ble_gatt_mcs_object_ctx object_write_context[7];
-    uint16_t supported_playing_orders;
-    uint32_t supported_cp_opcodes;
+    ble_gatt_mcs_object_ctx object_ctx[7];
+    uint16_t orders_supported;
+    uint32_t cp_opcode_mask;
     uint8_t cp_pending, cp_opcode;
     uint8_t cp_param_len, cp_param[4];
-    uint8_t object_id_write_pending, object_id_write_index;
-    uint8_t object_id_write_len, object_id_write_value[6];
+    uint8_t object_write_pending, object_write_index;
+    uint8_t object_write_len, object_write_value[6];
     uint8_t object_prev_len, object_prev[6];
     ble_gatt_server *server;
 } ble_gatt_mcs_service;
@@ -877,12 +877,12 @@ static uint8_t gatt_mcs_order_write(
 
     uint8_t order = value[0];
 
-    if (order < 1 || order > 10 || (service->supported_playing_orders &&
-        !(service->supported_playing_orders & (1u << (order - 1))))
+    if (order < 1 || order > 10 || (service->orders_supported &&
+        !(service->orders_supported & (1u << (order - 1))))
     ) return 0;
 
     ble_gatt_attribute *attribute = gatt_server_find(
-        service->server, service->playing_order_handle);
+        service->server, service->order_handle);
     uint8_t *stored = attribute ?
         gatt_attribute_value(service->server, attribute) : NULL;
 
@@ -904,7 +904,7 @@ typedef struct {
     const uint8_t *track_duration;
     const uint8_t *track_position;
     uint8_t media_state;
-    uint8_t content_control_id;
+    uint8_t ccid;
     uint8_t generic_service;
     uint8_t player_name_notify;
 } ble_gatt_mcs_config;
@@ -1007,7 +1007,7 @@ static uint8_t gatt_mcs_cp_write(
     uint8_t opcode = value[0];
     int bit = gatt_mcs_opcode_bit(opcode);
     uint8_t supported = bit >= 0 &&
-        (service->supported_cp_opcodes & (1u << bit));
+        (service->cp_opcode_mask & (1u << bit));
     uint8_t has_parameter = opcode == 0x10 || opcode == 0x24 ||
                             opcode == 0x34 || opcode == 0x44;
 
@@ -1041,14 +1041,14 @@ static uint8_t gatt_mcs_object_id_write(
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
-        service->object_id_handle[write_context->index]);
+        service->object_handle[write_context->index]);
     uint8_t *stored = attribute ?
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!attribute || !stored || len > attribute->value_capacity)
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
-    if (service->object_id_write_pending)
+    if (service->object_write_pending)
         return 0xfe;
 
     service->object_prev_len = (uint8_t)attribute->value_len;
@@ -1058,12 +1058,12 @@ static uint8_t gatt_mcs_object_id_write(
 
     if (len) memcpy(stored, value, len);
     attribute->value_len = len;
-    service->object_id_write_pending = 1;
-    service->object_id_write_index = write_context->index;
-    service->object_id_write_len = (uint8_t)len;
+    service->object_write_pending = 1;
+    service->object_write_index = write_context->index;
+    service->object_write_len = (uint8_t)len;
 
     if (len)
-        memcpy(service->object_id_write_value, value, len);
+        memcpy(service->object_write_value, value, len);
     return 0;
 }
 
@@ -1272,7 +1272,7 @@ static inline int gatt_mcs_add_full(
         {0x2ba3, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
             BLE_GATT_PERM_READ_ENC, &config->media_state, 1},
         {0x2ba8, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ_ENC,
-            &config->content_control_id, 1}
+            &config->ccid, 1}
     };
     static const uint16_t optional_uuid[6] = {0x2b9a, 0x2b9b, 0x2ba1,
         0x2ba2, 0x2ba4, 0x2ba5};
@@ -1373,7 +1373,7 @@ static inline int gatt_mcs_add_full(
     service->server = server;
 
     if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
-        service->supported_playing_orders =
+        service->orders_supported =
             ble_get_le16(optional->playing_orders);
     uint8_t extra_index = 0;
     for (uint8_t i = 0; i < 6; i++) {
@@ -1403,12 +1403,12 @@ static inline int gatt_mcs_add_full(
              i != GATT_MCS_OBJECT_CURRENT_GROUP)
         ) continue;
 
-        service->object_write_context[i].service = service;
-        service->object_write_context[i].index = i;
+        service->object_ctx[i].service = service;
+        service->object_ctx[i].index = i;
         handlers[object_indexes[i]].write =
             gatt_mcs_object_id_write;
         handlers[object_indexes[i]].context =
-            &service->object_write_context[i];
+            &service->object_ctx[i];
     }
 
     if (search_enabled) {
@@ -1422,7 +1422,7 @@ static inline int gatt_mcs_add_full(
     if (include_count)
         include_handles[0] = optional->ots_service_handle;
 
-    if (!gatt_sig_service_add_full(server,
+    if (!gatt_sig_add_full(server,
             config->generic_service ? 0x1849 : 0x1848,
             include_count ? include_handles : NULL, include_count,
             characteristics, characteristic_count,
@@ -1435,15 +1435,15 @@ static inline int gatt_mcs_add_full(
     service->player_name_handle = value_handles[0];
     service->player_name_cccd_handle = cccd_handles[0];
     service->track_changed_handle = value_handles[1];
-    service->track_changed_cccd_handle = cccd_handles[1];
+    service->changed_cccd_handle = cccd_handles[1];
     service->track_title_handle = value_handles[2];
-    service->track_title_cccd_handle = cccd_handles[2];
+    service->title_cccd_handle = cccd_handles[2];
     service->track_duration_handle = value_handles[3];
-    service->track_duration_cccd_handle = cccd_handles[3];
+    service->duration_cccd_handle = cccd_handles[3];
     service->track_position_handle = value_handles[4];
-    service->track_position_cccd_handle = cccd_handles[4];
+    service->position_cccd_handle = cccd_handles[4];
     service->media_state_handle = value_handles[5];
-    service->media_state_cccd_handle = cccd_handles[5];
+    service->media_cccd_handle = cccd_handles[5];
     service->ccid_handle = value_handles[6];
     const uint16_t encrypted_cccd_permissions =
         BLE_GATT_PERM_READ_ENC | BLE_GATT_PERM_WRITE_ENC;
@@ -1458,27 +1458,27 @@ static inline int gatt_mcs_add_full(
     uint8_t value_index = 7;
 
     if (option_mask & GATT_MCS_OPTION_PLAYBACK_SPEED) {
-        service->playback_speed_handle = value_handles[value_index];
-        service->playback_speed_cccd_handle = cccd_handles[value_index++];
+        service->playback_handle = value_handles[value_index];
+        service->playback_cccd_handle = cccd_handles[value_index++];
     }
 
     if (option_mask & GATT_MCS_OPTION_SEEKING_SPEED) {
-        service->seeking_speed_handle = value_handles[value_index];
-        service->seeking_speed_cccd_handle = cccd_handles[value_index++];
+        service->seeking_handle = value_handles[value_index];
+        service->seeking_cccd_handle = cccd_handles[value_index++];
     }
 
     if (option_mask & GATT_MCS_OPTION_PLAYING_ORDER) {
-        service->playing_order_handle = value_handles[value_index];
-        service->playing_order_cccd_handle = cccd_handles[value_index++];
+        service->order_handle = value_handles[value_index];
+        service->order_cccd_handle = cccd_handles[value_index++];
     }
 
     if (option_mask & GATT_MCS_OPTION_PLAYING_ORDERS_SUPPORTED)
-        service->orders_supported_handle = value_handles[value_index++];
+        service->orders_handle = value_handles[value_index++];
 
     if (option_mask & GATT_MCS_OPTION_CONTROL_POINT) {
         service->control_point_handle = value_handles[value_index];
-        service->control_point_cccd_handle = cccd_handles[value_index++];
-        service->supported_cp_opcodes =
+        service->cp_cccd_handle = cccd_handles[value_index++];
+        service->cp_opcode_mask =
             supported_mcp_opcodes;
         service->cp_opcodes_handle = value_handles[value_index];
     }
@@ -1487,8 +1487,8 @@ static inline int gatt_mcs_add_full(
         if (object_indexes[i] == 0xff)
             continue;
 
-        service->object_id_handle[i] = value_handles[object_indexes[i]];
-        service->object_id_cccd_handle[i] = cccd_handles[object_indexes[i]];
+        service->object_handle[i] = value_handles[object_indexes[i]];
+        service->object_cccd_handle[i] = cccd_handles[object_indexes[i]];
     }
 
     if (icon_url_index != 0xff)
@@ -1533,9 +1533,9 @@ static inline int gatt_mcs_notify_value(
         value_handle == service->track_duration_handle ||
         value_handle == service->track_position_handle ||
         value_handle == service->media_state_handle ||
-        value_handle == service->playback_speed_handle ||
-        value_handle == service->seeking_speed_handle ||
-        value_handle == service->playing_order_handle ||
+        value_handle == service->playback_handle ||
+        value_handle == service->seeking_handle ||
+        value_handle == service->order_handle ||
         value_handle == service->cp_opcodes_handle;
 
     if (!allowed) return 0;
@@ -1548,9 +1548,9 @@ static inline int gatt_mcs_notify_value(
     ) return 0;
 
     if ((value_handle == service->media_state_handle ||
-         value_handle == service->playback_speed_handle ||
-         value_handle == service->seeking_speed_handle ||
-         value_handle == service->playing_order_handle) && len != 1
+         value_handle == service->playback_handle ||
+         value_handle == service->seeking_handle ||
+         value_handle == service->order_handle) && len != 1
     ) return 0;
 
     if (value_handle == service->cp_opcodes_handle && len != 4)
@@ -1600,12 +1600,12 @@ static inline int gatt_mcs_set_object_id(
     uint8_t object, const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server || object >= 7 ||
-        !service->object_id_handle[object] || (len != 0 && len != 6) ||
+        !service->object_handle[object] || (len != 0 && len != 6) ||
         (len && !value)
     ) return 0;
 
     ble_gatt_attribute *attribute = gatt_server_find(server,
-        service->object_id_handle[object]);
+        service->object_handle[object]);
     uint8_t *stored = attribute ? gatt_attribute_value(server, attribute) : NULL;
 
     if (!attribute || !stored || attribute->value_capacity < len)
@@ -1618,23 +1618,23 @@ static inline int gatt_mcs_set_object_id(
 
 // Finish the application action associated with a client Object ID write.
 // Pass the resulting Object ID, or the previous value if the selection failed.
-static inline int gatt_mcs_object_write_done(
+static inline int gatt_mcs_object_done(
     ble_gatt_server *server, ble_gatt_mcs_service *service,
     const uint8_t *value, uint16_t len
 ) {
     if (!server || !service || service->server != server ||
-        !service->object_id_write_pending || (len && !value) ||
+        !service->object_write_pending || (len && !value) ||
         (len != 0 && len != 6)
     ) return 0;
 
-    uint8_t index = service->object_id_write_index;
+    uint8_t index = service->object_write_index;
 
     if (!gatt_mcs_set_object_id(server, service, index,
             value, len)
     ) return 0;
 
-    service->object_id_write_pending = 0;
-    service->object_id_write_len = 0;
+    service->object_write_pending = 0;
+    service->object_write_len = 0;
     service->object_prev_len = 0;
     return 1;
 }
@@ -1645,17 +1645,17 @@ static inline int gatt_mcs_notify_object(
     uint8_t object, const uint8_t *value, uint16_t len
 ) {
     if (!gatt_mcs_set_object_id(server, service,
-            object, value, len) || !service->object_id_cccd_handle[object]
+            object, value, len) || !service->object_cccd_handle[object]
     ) return 0;
 
     ble_gatt_attribute *attribute = gatt_server_find(server,
-        service->object_id_handle[object]);
+        service->object_handle[object]);
     const uint8_t *stored = attribute ?
         gatt_attribute_value(server, attribute) : NULL;
 
     if (!attribute || !stored) return 0;
 
-    return gatt_queue_event(server, service->object_id_handle[object],
+    return gatt_queue_event(server, service->object_handle[object],
                                    stored, len, 0);
 }
 
@@ -1683,13 +1683,13 @@ static inline int gatt_mcs_set_results_id(
     ble_gatt_server *server, const ble_gatt_mcs_service *service,
     const uint8_t *value, uint16_t len
 ) {
-    if (!service || !service->object_id_handle[GATT_MCS_OBJECT_SEARCH_RESULTS] ||
+    if (!service || !service->object_handle[GATT_MCS_OBJECT_SEARCH_RESULTS] ||
         !gatt_mcs_set_object_id(server, service,
             GATT_MCS_OBJECT_SEARCH_RESULTS, value, len)
     ) return 0;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server,
-        service->object_id_handle[GATT_MCS_OBJECT_SEARCH_RESULTS]);
+        service->object_handle[GATT_MCS_OBJECT_SEARCH_RESULTS]);
 
     if (!cccd || !(cccd->cccd & 1))
         return 1;
