@@ -13,17 +13,17 @@ static uint8_t gatt_alert_notification_control_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 2)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t cmd = value[0];
     uint8_t category = value[1];
 
     if (cmd > 5 || (category > 9 && category != GATT_ALERT_CATEGORY_ALL))
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     ble_gatt_alert_notification_service *service = context;
     uint16_t supported = (cmd == 1 || cmd == 3 || cmd == 5) ?
@@ -32,7 +32,7 @@ static uint8_t gatt_alert_notification_control_write(
         supported : (uint16_t)(1u << category);
 
     if (category_bit & (uint16_t)~supported)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     if (cmd == 0 || cmd == 1) {
         uint16_t *enabled = cmd == 0 ? &service->enabled_new_alerts :
@@ -126,7 +126,7 @@ static inline int gatt_alert_notification_service_notify_new(
 
     if (text_len)
         memcpy(value + 2, text, text_len);
-    return gatt_server_queue_event(server, service->new_alert_handle,
+    return gatt_queue_event(server, service->new_alert_handle,
         value, (uint16_t)(2 + text_len), 0);
 }
 
@@ -148,7 +148,7 @@ static inline int gatt_alert_notification_service_notify_unread(
     ) return 0;
 
     uint8_t value[2] = {category, count};
-    return gatt_server_queue_event(server, service->unread_alert_status_handle,
+    return gatt_queue_event(server, service->unread_alert_status_handle,
         value, sizeof(value), 0);
 }
 

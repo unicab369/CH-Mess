@@ -10,9 +10,9 @@ static uint8_t gatt_alert_u8_read(
     void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
 ) {
     if (!context || !out || !inout_len)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset > 1)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
 
     if (!offset && *inout_len) {
         out[0] = *(uint8_t *)context;
@@ -31,13 +31,13 @@ static uint8_t gatt_alert_level_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] > 2)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     *(uint8_t *)context = value[0];
     return 0;
@@ -50,13 +50,13 @@ static uint8_t gatt_immediate_alert_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] > 2)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     ble_gatt_immediate_alert_service *service = context;
     service->alert_level = value[0];
@@ -71,13 +71,13 @@ static uint8_t gatt_phone_ringer_control_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] < 1 || value[0] > 3)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     ble_gatt_phone_alert_status_service *service = context;
     service->last_ringer_control = value[0];
@@ -214,7 +214,7 @@ static inline int gatt_phone_alert_status_service_notify_alert_status(
             alert_status)
     ) return 0;
 
-    return gatt_server_queue_event(server, service->alert_status_handle,
+    return gatt_queue_event(server, service->alert_status_handle,
         &service->alert_status, 1, 0);
 }
 
@@ -240,7 +240,7 @@ static inline int gatt_phone_alert_status_service_notify_ringer_setting(
             ringer_setting)
     ) return 0;
 
-    return gatt_server_queue_event(server, service->ringer_setting_handle,
+    return gatt_queue_event(server, service->ringer_setting_handle,
         &service->ringer_setting, 1, 0);
 }
 

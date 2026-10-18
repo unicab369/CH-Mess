@@ -46,7 +46,7 @@ int main(void) {
         response, sizeof(response), &response_len) == 1);
     assert(response_len == 5 && response[0] == ATT_OP_ERROR_RSP &&
            response[1] == ATT_OP_WRITE_REQ &&
-           response[4] == BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED);
+           response[4] == ATT_ERR_WRITE_NOT_PERMITTED);
     assert(read_battery_level(&server, battery.level_handle, &level));
     assert(level == 42);
 
@@ -60,13 +60,13 @@ int main(void) {
            provisioning.data_out_cccd_handle);
     assert(proxy.service_handle && proxy.data_in_handle &&
            proxy.data_out_handle && proxy.data_out_cccd_handle);
-    assert(server.attributes[provisioning.data_in_handle - 1].uuid.value[0] ==
+    assert(server.attrs[provisioning.data_in_handle - 1].uuid.value[0] ==
            0xdb);
-    assert(server.attributes[provisioning.data_out_handle - 1].properties ==
+    assert(server.attrs[provisioning.data_out_handle - 1].properties ==
            BLE_GATT_PROP_NOTIFY);
-    assert(server.attributes[proxy.data_in_handle - 1].uuid.value[0] ==
+    assert(server.attrs[proxy.data_in_handle - 1].uuid.value[0] ==
            0xdd);
-    assert(server.attributes[proxy.data_out_handle - 1].properties ==
+    assert(server.attrs[proxy.data_out_handle - 1].properties ==
            BLE_GATT_PROP_NOTIFY);
 
     uint8_t digital_value = 1;
@@ -96,11 +96,11 @@ int main(void) {
     assert(gatt_binary_sensor_service_add(&server, &binary_sensor));
     assert(binary_sensor.service_handle && binary_sensor.control_point_handle &&
            binary_sensor.response_handle && binary_sensor.response_cccd_handle);
-    assert(server.attributes[binary_sensor.control_point_handle - 1].uuid.value[0]
+    assert(server.attrs[binary_sensor.control_point_handle - 1].uuid.value[0]
            == 0x2b);
-    assert(server.attributes[binary_sensor.control_point_handle - 1].properties
+    assert(server.attrs[binary_sensor.control_point_handle - 1].properties
            == BLE_GATT_PROP_WRITE);
-    assert(server.attributes[binary_sensor.response_handle - 1].properties ==
+    assert(server.attrs[binary_sensor.response_handle - 1].properties ==
            BLE_GATT_PROP_INDICATE);
 
     const uint8_t cgm_feature[] = {0x01, 0x00};

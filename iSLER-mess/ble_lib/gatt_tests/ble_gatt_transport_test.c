@@ -366,7 +366,7 @@ static void test_transport_rejects_incomplete_gatt_database(void) {
     ble_gatt_uuid value_uuid = {2, {0xf3, 0xff}};
     uint16_t service, declaration, value;
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_characteristic(&server, &value_uuid,
+    assert(gatt_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL,
         &declaration, &value));
     ble_gatt_transport_test_ops ops = {
@@ -389,8 +389,8 @@ static void test_simultaneous_client_and_server(void) {
     uint16_t service, value_handle;
     const uint8_t initial = 0x11;
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_attribute(&server, &value_uuid,
-        BLE_GATT_PERM_READ, &initial, 1, 1, NULL, NULL, NULL, &value_handle));
+    assert(gatt_server_add(&server, &value_uuid,
+        BLE_GATT_PERM_READ, 0, 0, &initial, 1, 1, NULL, NULL, NULL, &value_handle));
     ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
         fake_security_state
@@ -453,10 +453,10 @@ static void test_dual_role_mtu_synchronization(void) {
     uint16_t service, declaration, value, cccd;
     const uint8_t initial = 0;
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_characteristic(&server, &value_uuid,
+    assert(gatt_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, BLE_GATT_PERM_READ,
         &initial, 1, 1, NULL, NULL, NULL, &declaration, &value));
-    assert(gatt_server_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
+    assert(gatt_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
         NULL, NULL, NULL, &cccd));
     ble_gatt_transport_test_ops ops = {
         fake_connected, fake_receive, fake_send, fake_max_payload, &link,
@@ -474,7 +474,7 @@ static void test_dual_role_mtu_synchronization(void) {
 
     uint8_t value_data[30];
     memset(value_data, 0x5a, sizeof(value_data));
-    assert(gatt_server_queue_event(&server, value, value_data,
+    assert(gatt_queue_event(&server, value, value_data,
                                        sizeof(value_data), 0));
     assert(server.events[0].len == sizeof(value_data));
     assert(!gatt_client_mtu(&client, 64, 2));
@@ -557,11 +557,11 @@ static void test_bonded_cccd_restore(void) {
     uint16_t service, declaration, value_handle, cccd_handle;
     const uint8_t initial = 0x11;
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_characteristic(&server, &value_uuid,
+    assert(gatt_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY | BLE_GATT_PROP_INDICATE,
         BLE_GATT_PERM_READ, &initial, 1, 1, NULL, NULL, NULL, &declaration,
         &value_handle));
-    assert(gatt_server_add_descriptor(&server, &cccd_uuid,
+    assert(gatt_add_descriptor(&server, &cccd_uuid,
         BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, NULL, 0, 0, NULL, NULL,
         NULL, &cccd_handle));
     link.cccd_handle = value_handle;
@@ -616,7 +616,7 @@ static void test_database_version_reconnect_flow(void) {
     link.database_hash_valid = 1;
     memset(link.database_hash, 0xa5, sizeof(link.database_hash));
     gatt_server_init(&server, 64);
-    assert(gatt_server_add_standard_gatt_service(&server, &handles));
+    assert(gatt_add_standard_service(&server, &handles));
     gatt_set_cccd_persistence(&server, fake_cccd_load,
                                          fake_cccd_store, &link);
     gatt_set_hash_persistence(&server,
@@ -669,8 +669,8 @@ int main(void) {
     uint8_t value[22];
     for (uint8_t i = 0; i < sizeof(value); i++) value[i] = (uint8_t)(0xa0 + i);
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_attribute(&server, &value_uuid,
-        BLE_GATT_PERM_READ, value, sizeof(value), sizeof(value), NULL, NULL,
+    assert(gatt_server_add(&server, &value_uuid,
+        BLE_GATT_PERM_READ, 0, 0, value, sizeof(value), sizeof(value), NULL, NULL,
         NULL, &value_handle));
     assert(gatt_set_min_key_size(&server, value_handle, 12));
     ble_gatt_transport_test_ops ops = {

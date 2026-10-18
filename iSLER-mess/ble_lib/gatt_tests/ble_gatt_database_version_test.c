@@ -34,7 +34,7 @@ int main(void) {
     ble_gatt_standard_service_handles handles;
     peer_store peer = {.service_changed_cccd = 2};
     gatt_server_init(&server, 64);
-    assert(gatt_server_add_standard_gatt_service(&server, &handles));
+    assert(gatt_add_standard_service(&server, &handles));
     assert(gatt_seal_database(&server));
     gatt_set_hash_persistence(&server, load_hash,
                                                    save_hash, &peer);
@@ -43,7 +43,7 @@ int main(void) {
     // A first connection records a baseline without sending Service Changed.
     assert(gatt_server_set_cccd(&server,
         handles.service_changed_handle, peer.service_changed_cccd));
-    assert(gatt_server_check_database_version(&server));
+    assert(gatt_check_db_version(&server));
     assert(peer.valid && peer.stores == 1 &&
            memcmp(peer.hash, server.database_hash, 16) == 0 &&
            !server.event_count);
@@ -63,7 +63,7 @@ int main(void) {
     assert(server.database_hash_update_pending && server.event_count == 1);
     uint8_t indication[BLE_GATT_SERVER_MTU_MAX];
     uint16_t indication_len;
-    assert(gatt_server_poll_event(&server, 10, indication,
+    assert(gatt_poll(&server, 10, indication,
         sizeof(indication), &indication_len) == 1);
     assert(indication_len == 7 && indication[0] == 0x1d &&
            ble_get_le16(indication + 3) == 1 &&
@@ -77,7 +77,7 @@ int main(void) {
     peer.service_changed_cccd = 0;
     assert(gatt_server_set_cccd(&server,
         handles.service_changed_handle, peer.service_changed_cccd));
-    assert(!gatt_server_check_database_version(&server));
+    assert(!gatt_check_db_version(&server));
     assert(peer.stores == 1 && !server.event_count);
 
     // Enabling indications later through ATT schedules the pending change.
@@ -91,7 +91,7 @@ int main(void) {
         &write_response_len) == 1);
     assert(write_response[0] == 0x13);
     assert(server.database_hash_update_pending && server.event_count == 1);
-    assert(gatt_server_poll_event(&server, 20, indication,
+    assert(gatt_poll(&server, 20, indication,
         sizeof(indication), &indication_len) == 1);
     const uint8_t confirmation[] = {0x1e};
     uint8_t response[BLE_GATT_SERVER_MTU_MAX];

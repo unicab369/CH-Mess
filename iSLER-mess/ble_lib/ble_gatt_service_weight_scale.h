@@ -65,7 +65,7 @@ static inline int gatt_weight_scale_service_indicate_measurement(
         len += 4;
     }
 
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
 

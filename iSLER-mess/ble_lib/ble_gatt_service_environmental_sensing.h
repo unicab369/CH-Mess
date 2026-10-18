@@ -46,7 +46,7 @@ static inline int gatt_environmental_sensing_service_send(
     if (!attribute || !(attribute->properties & property))
         return 0;
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->measurement_handles[measurement_index], value, len,
         indication != 0);
 }

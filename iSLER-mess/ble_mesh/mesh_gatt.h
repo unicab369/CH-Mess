@@ -195,9 +195,9 @@ static uint8_t mesh_gatt_gap_device_name_read(
 ) {
     (void)context;
     if (!inout_len || (out == NULL && *inout_len))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset > mesh_gatt.gap_device_name_len)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     uint16_t len = (uint16_t)(mesh_gatt.gap_device_name_len - offset);
     if (len > *inout_len)
         len = *inout_len;
@@ -215,12 +215,12 @@ static uint8_t mesh_gatt_gap_edkm_read(
     (void)context;
     uint8_t material[24];
     if (!inout_len || (out == NULL && *inout_len))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (!gap_ead_key_get(material))
-        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
     if (offset > sizeof(material)) {
         memset(material, 0, sizeof(material));
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     }
 
     uint16_t len = (uint16_t)(sizeof(material) - offset);
@@ -294,11 +294,11 @@ static uint8_t mesh_gatt_data_in_write(
 ) {
     uint8_t provisioning = *(const uint8_t *)context;
     if (!command)
-        return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
+        return ATT_ERR_WRITE_NOT_PERMITTED;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t header = value[0];
     if ((header & 0x30) || (provisioning &&
         (header & 0x0f) != MESH_GATT_PROXY_PROVISIONING)
@@ -347,25 +347,25 @@ static int mesh_gatt_register_services(void) {
     uint16_t service, decl, value, descriptor;
     if (!gatt_server_add_service(&mesh_gatt.server, &proxy_service, 1,
             &service) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server, &proxy_in,
+        !gatt_add_characteristic(&mesh_gatt.server, &proxy_in,
             BLE_GATT_PROP_WRITE_NO_RSP, BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, mesh_gatt_data_in_write,
             &mesh_gatt_proxy_write_context, &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server, &proxy_out,
+        !gatt_add_characteristic(&mesh_gatt.server, &proxy_out,
             BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL,
             &decl, &value) ||
-        !gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
+        !gatt_add_descriptor(&mesh_gatt.server, &cccd,
             0, NULL, 0, 0, NULL, NULL, NULL, &descriptor) ||
         !gatt_server_add_service(&mesh_gatt.server,
             &provisioning_service, 1, &service) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &provisioning_in, BLE_GATT_PROP_WRITE_NO_RSP,
             BLE_GATT_PERM_WRITE, NULL, 0, 0, NULL, mesh_gatt_data_in_write,
             &mesh_gatt_provisioning_write_context, &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &provisioning_out, BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0,
             NULL, NULL, NULL, &decl, &value) ||
-        !gatt_server_add_descriptor(&mesh_gatt.server, &cccd,
+        !gatt_add_descriptor(&mesh_gatt.server, &cccd,
             0, NULL, 0, 0, NULL, NULL, NULL, &descriptor)
     ) return 0;
     uint8_t appearance[2] = {
@@ -387,24 +387,24 @@ static int mesh_gatt_register_services(void) {
 #endif
     if (!gatt_server_add_service(&mesh_gatt.server, &gap_service, 1,
             &service) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &gap_device_name, BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHN,
             NULL, 0, 0, mesh_gatt_gap_device_name_read, NULL, NULL,
             &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &gap_appearance, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             appearance, sizeof(appearance), sizeof(appearance), NULL, NULL,
             NULL, &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &gap_ppcp, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             ppcp, sizeof(ppcp), sizeof(ppcp), NULL, NULL, NULL,
             &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server, &gap_car,
+        !gatt_add_characteristic(&mesh_gatt.server, &gap_car,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &central_address_resolution, 1, 1, NULL, NULL, NULL,
             &decl, &value) ||
-        !gatt_server_add_characteristic(&mesh_gatt.server,
+        !gatt_add_characteristic(&mesh_gatt.server,
             &gap_security_levels, BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             gap_security_level_requirements,
             sizeof(gap_security_level_requirements),
@@ -412,7 +412,7 @@ static int mesh_gatt_register_services(void) {
             &decl, &value)
     ) return 0;
 #if MESH_GATT_RPA_ONLY_SUPPORT
-    if (!gatt_server_add_characteristic(&mesh_gatt.server,
+    if (!gatt_add_characteristic(&mesh_gatt.server,
             &gap_rpa_only_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &gap_rpa_only_value, 1, 1, NULL, NULL, NULL,
@@ -420,7 +420,7 @@ static int mesh_gatt_register_services(void) {
     ) return 0;
 #endif
 #if MESH_GATT_EAD_SUPPORT
-    if (!gatt_server_add_characteristic(&mesh_gatt.server, &gap_edkm,
+    if (!gatt_add_characteristic(&mesh_gatt.server, &gap_edkm,
             BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHN | BLE_GATT_PERM_READ_AUTHZ,
             NULL, 0, 24, mesh_gatt_gap_edkm_read, NULL, NULL,
@@ -753,7 +753,7 @@ static void mesh_gatt_notify_poll(void) {
            mesh_gatt.proxy_tx[slot].offset, chunk);
     uint16_t handle = provisioning ? MESH_GATT_HANDLE_PROVISIONING_DATA_OUT :
                                      MESH_GATT_HANDLE_DATA_OUT;
-    if (!gatt_server_queue_event(&mesh_gatt.server, handle, value,
+    if (!gatt_queue_event(&mesh_gatt.server, handle, value,
                                       chunk + 1, 0)
     ) return;
     if (sar == 1) {

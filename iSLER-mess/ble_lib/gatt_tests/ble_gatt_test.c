@@ -70,43 +70,43 @@ static void set_cccd(uint16_t handle, uint16_t value) {
 static void test_mesh_services_registered_in_generic_database(void) {
     assert(mesh_gatt_ensure_initialized());
     assert(mesh_gatt.server.count == 27);
-    assert(mesh_gatt.server.attributes[0].handle ==
+    assert(mesh_gatt.server.attrs[0].handle ==
            MESH_GATT_HANDLE_PROXY_SERVICE);
     assert(ble_get_le16(gatt_attribute_value(&mesh_gatt.server,
-           &mesh_gatt.server.attributes[0])) == MESH_GATT_PROXY_SERVICE_UUID);
-    assert(mesh_gatt.server.attributes[MESH_GATT_HANDLE_DATA_IN - 1].
+           &mesh_gatt.server.attrs[0])) == MESH_GATT_PROXY_SERVICE_UUID);
+    assert(mesh_gatt.server.attrs[MESH_GATT_HANDLE_DATA_IN - 1].
            properties == BLE_GATT_PROP_WRITE_NO_RSP);
-    assert(mesh_gatt.server.attributes[MESH_GATT_HANDLE_DATA_OUT - 1].
+    assert(mesh_gatt.server.attrs[MESH_GATT_HANDLE_DATA_OUT - 1].
            properties == BLE_GATT_PROP_NOTIFY);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_DATA_OUT_CCCD - 1].flags &
            BLE_GATT_ATTR_CCCD);
     assert(ble_get_le16(gatt_attribute_value(&mesh_gatt.server,
-           &mesh_gatt.server.attributes[
+           &mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_PROVISIONING_SERVICE - 1])) ==
            MESH_GATT_PROVISIONING_SERVICE_UUID);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_PROVISIONING_DATA_IN - 1].write ==
            mesh_gatt_data_in_write);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_SERVICE - 1].flags &
            BLE_GATT_ATTR_PRIMARY_SERVICE);
     assert(ble_get_le16(gatt_attribute_value(&mesh_gatt.server,
-           &mesh_gatt.server.attributes[
+           &mesh_gatt.server.attrs[
                MESH_GATT_HANDLE_GAP_SERVICE - 1])) ==
            MESH_GATT_GAP_SERVICE_UUID);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ_AUTHN);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_CAR - 1].permissions ==
            BLE_GATT_PERM_READ);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_SECURITY_LEVELS - 1].permissions ==
            BLE_GATT_PERM_READ);
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_RPA_ONLY - 1].permissions == BLE_GATT_PERM_READ);
-    assert(mesh_gatt.server.attributes[MESH_GATT_HANDLE_GAP_EDKM - 1].permissions ==
+    assert(mesh_gatt.server.attrs[MESH_GATT_HANDLE_GAP_EDKM - 1].permissions ==
            (BLE_GATT_PERM_READ_AUTHN |
             BLE_GATT_PERM_READ_AUTHZ));
 }
@@ -117,7 +117,7 @@ static void test_gap_service_characteristics(void) {
     assert(gap_adv_start_connectable(flags, sizeof(flags),
                                                    NULL, 0, 100));
     mesh_gatt_gap_policy_update();
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ);
     uint8_t response[64];
@@ -212,7 +212,7 @@ static void test_gap_service_characteristics(void) {
     assert(gatt_server_att(&mesh_gatt.server, read_edkm,
         sizeof(read_edkm), response, sizeof(response), &response_len) == 1);
     assert(response[0] == 0x01 && response[4] ==
-           BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION);
+           ATT_ERR_INSUFFICIENT_AUTHORIZATION);
     assert(mesh_gatt_set_authorizer(NULL, NULL));
     mesh_gatt.server.encrypted = 0;
     mesh_gatt.server.authenticated = 0;
@@ -222,13 +222,13 @@ static void test_gap_service_characteristics(void) {
 
     gap_adv_stop();
     mesh_gatt_gap_policy_update();
-    assert(mesh_gatt.server.attributes[
+    assert(mesh_gatt.server.attrs[
            MESH_GATT_HANDLE_GAP_DEVICE_NAME - 1].permissions ==
            BLE_GATT_PERM_READ_AUTHN);
     assert(gatt_server_att(&mesh_gatt.server, read_name,
         sizeof(read_name), response, sizeof(response), &response_len) == 1);
     assert(response[0] == 0x01 && response[4] ==
-           BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHENTICATION);
+           ATT_ERR_INSUFFICIENT_AUTHENTICATION);
 }
 
 static void test_gap_adv_data_helpers(void) {
@@ -365,7 +365,7 @@ static void test_mesh_notification_sar_uses_generic_queue(void) {
 
     uint8_t att[517];
     uint16_t att_len;
-    assert(gatt_server_poll_event(&mesh_gatt.server, 0, att, sizeof(att),
+    assert(gatt_poll(&mesh_gatt.server, 0, att, sizeof(att),
                                       &att_len) == 1);
     assert(att[0] == 0x1b && att[3] == 0x42);
     mesh_gatt_notify_poll();

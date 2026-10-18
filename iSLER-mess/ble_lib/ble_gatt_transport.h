@@ -1050,7 +1050,7 @@ static inline void gatt_transport_set_connected(
 
         if (server->cccd_load) {
             for (uint16_t i = 0; i < server->count; i++) {
-                ble_gatt_attribute *cccd = &server->attributes[i];
+                ble_gatt_attribute *cccd = &server->attrs[i];
 
                 if (!(cccd->flags & BLE_GATT_ATTR_CCCD))
                     continue;
@@ -1063,7 +1063,7 @@ static inline void gatt_transport_set_connected(
             }
         }
 
-        (void)gatt_server_check_database_version(server);
+        (void)gatt_check_db_version(server);
     }
 }
 
@@ -1460,7 +1460,7 @@ static inline int gatt_transport_poll(
             ble_gatt_transport_server_bearer active =
                 transport->server->bearer;
             transport->server->bearer = bearer->server;
-            int result = gatt_server_poll_event(transport->server, now_ms,
+            int result = gatt_poll(transport->server, now_ms,
                 att, sizeof(att), &att_len);
             bearer->server = transport->server->bearer;
             transport->server->bearer = active;
@@ -1498,7 +1498,7 @@ static inline int gatt_transport_poll(
         transport->client->request.pending &&
         transport->client->request.opcode == 0x02;
     int event_result = transport->server && !mtu_exchange_pending ?
-        gatt_server_poll_event(transport->server, now_ms, event,
+        gatt_poll(transport->server, now_ms, event,
                                    sizeof(event), &event_len) : 0;
 
     if (event_result == 1)

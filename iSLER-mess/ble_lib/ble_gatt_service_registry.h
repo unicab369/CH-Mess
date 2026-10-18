@@ -68,14 +68,14 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                                          primary_service,
                                          service_handle);
     for (uint8_t i = 0; added && i < include_count; i++)
-        added = gatt_server_add_included_service(server,
+        added = gatt_add_included_service(server,
             included_service_handles[i], NULL);
     for (uint8_t i = 0; added && i < count; i++) {
         ble_gatt_uuid uuid = {
             2, {(uint8_t)characteristics[i].uuid,
                 (uint8_t)(characteristics[i].uuid >> 8)}
         };
-        added = gatt_server_add_characteristic(server, &uuid,
+        added = gatt_add_characteristic(server, &uuid,
             characteristics[i].properties, characteristics[i].permissions,
             characteristics[i].value, characteristics[i].value_len,
             characteristics[i].value_capacity ?
@@ -109,7 +109,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
         }
 
         if (added && characteristics[i].variable_length)
-            server->attributes[server->count - 1].flags |=
+            server->attrs[server->count - 1].flags |=
                 BLE_GATT_ATTR_VAR_LEN;
 
         if (added && characteristics[i].cccd) {
@@ -117,7 +117,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                 added = 0;
             }
             else {
-                added = gatt_server_add_descriptor(server, &cccd_uuid,
+                added = gatt_add_descriptor(server, &cccd_uuid,
                     BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
                     NULL, 0, 0, NULL, NULL, NULL, &cccd_handles[i]);
             }
@@ -131,7 +131,7 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
                 2, {(uint8_t)descriptor->uuid,
                     (uint8_t)(descriptor->uuid >> 8)}
             };
-            added = gatt_server_add_descriptor(server, &descriptor_uuid,
+            added = gatt_add_descriptor(server, &descriptor_uuid,
                 descriptor->permissions, descriptor->value,
                 descriptor->value_len, descriptor->value_capacity,
                 NULL, NULL, NULL, NULL);
@@ -139,8 +139,8 @@ static inline int gatt_sig_service_register_with_includes_and_handlers(
     }
 
     if (!added) {
-        memset(server->attributes + old_count, 0,
-               (server->count - old_count) * sizeof(server->attributes[0]));
+        memset(server->attrs + old_count, 0,
+               (server->count - old_count) * sizeof(server->attrs[0]));
         memset(server->value_pool + old_value_used, 0,
                server->value_used - old_value_used);
         server->count = old_count;

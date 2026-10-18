@@ -9,8 +9,8 @@ static inline void gatt_service_rollback(
     ble_gatt_server *server, uint16_t old_count, uint16_t old_next_handle,
     uint16_t old_value_used
 ) {
-    memset(server->attributes + old_count, 0,
-           (server->count - old_count) * sizeof(server->attributes[0]));
+    memset(server->attrs + old_count, 0,
+           (server->count - old_count) * sizeof(server->attrs[0]));
     memset(server->value_pool + old_value_used, 0,
            server->value_used - old_value_used);
     server->count = old_count;
@@ -27,9 +27,9 @@ static uint8_t gatt_battery_level_read(
     void *context, uint16_t offset, uint8_t *out, uint16_t *inout_len
 ) {
     if (!context || !out || !inout_len)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset > 1)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
 
     if (!offset && *inout_len) {
         out[0] = ((ble_gatt_battery_service *)context)->level;
@@ -63,11 +63,11 @@ static inline int gatt_battery_service_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &battery->service_handle) &&
-        gatt_server_add_characteristic(server, &level_uuid,
+        gatt_add_characteristic(server, &level_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, BLE_GATT_PERM_READ,
             &battery->level, 1, 1, gatt_battery_level_read, NULL, battery,
             NULL, &battery->level_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &battery->level_cccd_handle);
 
@@ -102,7 +102,7 @@ static inline int gatt_battery_service_notify_level(
         !gatt_battery_service_set_level(battery, level)
     ) return 0;
 
-    return gatt_server_queue_event(server, battery->level_handle,
+    return gatt_queue_event(server, battery->level_handle,
                                    &battery->level, 1, 0);
 }
 
@@ -154,7 +154,7 @@ static int gatt_device_info_add_string(
     }
 
     ble_gatt_uuid uuid = {2, {(uint8_t)uuid16, (uint8_t)(uuid16 >> 8)}};
-    return gatt_server_add_characteristic(server, &uuid,
+    return gatt_add_characteristic(server, &uuid,
         BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
         (const uint8_t *)value, len, len, NULL, NULL, NULL, NULL, handle);
 }
@@ -198,7 +198,7 @@ static inline int gatt_device_information_service_add(
 
     if (added && information->system_id) {
         ble_gatt_uuid uuid = {2, {0x23, 0x2a}};
-        added = gatt_server_add_characteristic(server, &uuid,
+        added = gatt_add_characteristic(server, &uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             information->system_id, 8, 8, NULL, NULL, NULL, NULL,
             &service->system_id_handle);
@@ -206,7 +206,7 @@ static inline int gatt_device_information_service_add(
 
     if (added && information->pnp_id) {
         ble_gatt_uuid uuid = {2, {0x50, 0x2a}};
-        added = gatt_server_add_characteristic(server, &uuid,
+        added = gatt_add_characteristic(server, &uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             information->pnp_id, 7, 7, NULL, NULL, NULL, NULL,
             &service->pnp_id_handle);
@@ -257,11 +257,11 @@ static inline int gatt_gap_service_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &service->service_handle) &&
-        gatt_server_add_characteristic(server, &name_uuid,
+        gatt_add_characteristic(server, &name_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             (const uint8_t *)device_name, name_len, name_len,
             NULL, NULL, NULL, NULL, &service->device_name_handle) &&
-        gatt_server_add_characteristic(server, &appearance_uuid,
+        gatt_add_characteristic(server, &appearance_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             appearance_value, sizeof(appearance_value),
             sizeof(appearance_value), NULL, NULL, NULL, NULL,
@@ -305,17 +305,17 @@ static inline int gatt_heart_rate_service_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &service->service_handle) &&
-        gatt_server_add_characteristic(server, &measurement_uuid,
+        gatt_add_characteristic(server, &measurement_uuid,
             BLE_GATT_PROP_NOTIFY, 0, NULL, 0, 0, NULL, NULL, NULL, NULL,
             &service->measurement_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL,
             &service->measurement_cccd_handle);
 
     if (added && body_sensor_location != 0xff) {
         ble_gatt_uuid location_uuid = {2, {0x38, 0x2a}};
-        added = gatt_server_add_characteristic(server, &location_uuid,
+        added = gatt_add_characteristic(server, &location_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &body_sensor_location, 1, 1, NULL, NULL, NULL, NULL,
             &service->body_sensor_location_handle);
@@ -397,7 +397,7 @@ static inline int gatt_heart_rate_service_notify_measurement(
             rr_interval_count, buffer, capacity, &len)
     ) return 0;
 
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    buffer, len, 0);
 }
 
@@ -420,14 +420,14 @@ static uint8_t gatt_microphone_control_mute_write(
     ble_gatt_microphone_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] > 1)
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->mute_handle);
@@ -435,7 +435,7 @@ static uint8_t gatt_microphone_control_mute_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!attribute || !stored || attribute->value_capacity < 1)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (stored[0] == 2) return GATT_MICS_ATT_ERR_MUTE_DISABLED;
 
@@ -445,7 +445,7 @@ static uint8_t gatt_microphone_control_mute_write(
     attribute->value_len = 1;
 
     if (changed)
-        (void)gatt_server_queue_event(service->server, service->mute_handle,
+        (void)gatt_queue_event(service->server, service->mute_handle,
                                       value, 1, 0);
     return 0;
 }
@@ -528,7 +528,7 @@ static inline int gatt_microphone_control_service_set_mute(
     attribute->value_len = 1;
 
     if (changed)
-        (void)gatt_server_queue_event(server, service->mute_handle, &mute, 1, 0);
+        (void)gatt_queue_event(server, service->mute_handle, &mute, 1, 0);
     return 1;
 }
 
@@ -598,7 +598,7 @@ static void gatt_volume_control_apply_state(
     service->volume_state[2]++;
     memcpy(stored, service->volume_state, 3);
     attribute->value_len = 3;
-    (void)gatt_server_queue_event(service->server,
+    (void)gatt_queue_event(service->server,
         service->volume_state_handle, service->volume_state, 3, 0);
 }
 
@@ -611,12 +611,12 @@ static uint8_t gatt_volume_control_point_write(
     ble_gatt_volume_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t opcode = value[0];
 
@@ -626,7 +626,7 @@ static uint8_t gatt_volume_control_point_write(
     uint16_t expected_len = opcode == 4 ? 3 : 2;
 
     if (len != expected_len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if (value[1] != service->volume_state[2])
         return GATT_VCS_ATT_ERR_INVALID_CHANGE_COUNTER;
@@ -751,16 +751,16 @@ static uint8_t gatt_volume_offset_control_point_write(
     ble_gatt_volume_offset_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[0] != 1)
         return GATT_VOCS_ATT_ERR_OPCODE_NOT_SUPPORTED;
     if (len != 4)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[1] != service->state[2])
         return GATT_VOCS_ATT_ERR_INVALID_CHANGE_COUNTER;
 
@@ -779,13 +779,13 @@ static uint8_t gatt_volume_offset_control_point_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!attribute || !stored || attribute->value_capacity < 3)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     ble_put_le16(service->state, (uint16_t)requested);
     service->state[2]++;
     memcpy(stored, service->state, 3);
     attribute->value_len = 3;
-    (void)gatt_server_queue_event(service->server, service->state_handle,
+    (void)gatt_queue_event(service->server, service->state_handle,
                                   service->state, 3, 0);
     return 0;
 }
@@ -829,44 +829,44 @@ static inline int gatt_volume_offset_control_service_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 0,
                                          &service_handle) &&
-        gatt_server_add_characteristic(server, &state_uuid,
+        gatt_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, state, 3, 3, NULL, NULL, NULL,
             &declaration, &state_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
-        gatt_server_add_characteristic(server, &location_uuid,
+        gatt_add_characteristic(server, &location_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, audio_location, 4, 4,
             NULL, NULL, NULL, &declaration, &location_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &location_cccd) &&
-        gatt_server_add_characteristic(server, &control_point_uuid,
+        gatt_add_characteristic(server, &control_point_uuid,
             BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
             NULL, gatt_volume_offset_control_point_write, service,
             &declaration, &control_point_handle);
 
     if (added)
-        server->attributes[server->count - 1].flags |=
+        server->attrs[server->count - 1].flags |=
             BLE_GATT_ATTR_VAR_LEN;
 
     if (added)
-        added = gatt_server_add_characteristic(server, &description_uuid,
+        added = gatt_add_characteristic(server, &description_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, description, description_len,
             description_capacity, NULL, NULL, NULL, &declaration,
             &description_handle);
 
     if (added)
-        added = gatt_server_add_descriptor(server, &cccd_uuid,
+        added = gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &description_cccd);
 
     if (added && description_capacity > description_len)
-        server->attributes[server->count - 2].flags |=
+        server->attrs[server->count - 2].flags |=
             BLE_GATT_ATTR_VAR_LEN;
 
     if (!added) {
@@ -911,7 +911,7 @@ static inline int gatt_volume_offset_control_service_set_offset(
     service->state[2]++;
     memcpy(stored, service->state, 3);
     attribute->value_len = 3;
-    (void)gatt_server_queue_event(server, service->state_handle,
+    (void)gatt_queue_event(server, service->state_handle,
                                   service->state, 3, 0);
     return 1;
 }
@@ -951,12 +951,12 @@ static inline uint8_t gatt_dts_control_point_write(
     ble_gatt_device_time_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
@@ -977,12 +977,12 @@ static inline uint8_t gatt_dts_control_point_write(
         ble_gatt_attribute *feature = gatt_server_find(
             server, service->feature_handle);
         if (!feature || feature->value_len != 4)
-            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+            return ATT_ERR_UNLIKELY_ERROR;
 
         uint8_t *feature_value = gatt_attribute_value(server, feature);
 
         if (!feature_value)
-            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+            return ATT_ERR_UNLIKELY_ERROR;
 
         uint16_t features = ble_get_le16(feature_value + 2);
 
@@ -1006,9 +1006,9 @@ static inline uint8_t gatt_dts_control_point_write(
         }
     }
 
-    if (!gatt_server_queue_event(server, service->control_point_handle,
+    if (!gatt_queue_event(server, service->control_point_handle,
             response, response_len, 1)
-    ) return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+    ) return ATT_ERR_INSUFFICIENT_RESOURCES;
 
     return 0;
 }
@@ -1093,7 +1093,7 @@ static inline int gatt_device_time_service_control_point_complete(
     };
     uint16_t len = response_value == 5 ? 5 : 3;
 
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->control_point_handle, response, len, 1)
     ) return 0;
 
@@ -1224,7 +1224,7 @@ static void gatt_aics_commit_state(
     memcpy(service->state, state, 4);
     memcpy(stored, state, 4);
     attribute->value_len = 4;
-    (void)gatt_server_queue_event(service->server, service->state_handle,
+    (void)gatt_queue_event(service->server, service->state_handle,
                                   state, 4, 0);
 }
 
@@ -1236,17 +1236,17 @@ static uint8_t gatt_aics_control_point_write(
     ble_gatt_audio_input_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (!len) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t opcode = value[0];
 
     if (opcode < 1 || opcode > 5)
         return GATT_AICS_ATT_ERR_OPCODE_NOT_SUPPORTED;
     if (len != (opcode == 1 ? 3 : 2))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (value[1] != service->state[3])
         return GATT_AICS_ATT_ERR_INVALID_CHANGE_COUNTER;
 
@@ -1295,12 +1295,12 @@ static uint8_t gatt_aics_description_write(
     ble_gatt_audio_input_control_service *service = context;
 
     if (!service || !service->server || (len && !value))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
 
     if (len > BLE_GATT_ATT_VALUE_MAX)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->description_handle);
@@ -1308,7 +1308,7 @@ static uint8_t gatt_aics_description_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!attribute || !stored || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t changed = attribute->value_len != len ||
         (len && memcmp(stored, value, len) != 0);
@@ -1317,7 +1317,7 @@ static uint8_t gatt_aics_description_write(
     attribute->value_len = len;
 
     if (changed)
-        (void)gatt_server_queue_event(service->server,
+        (void)gatt_queue_event(service->server,
             service->description_handle, value, len, 0);
     return 0;
 }
@@ -1373,39 +1373,39 @@ static inline int gatt_audio_input_control_service_add(
     service->server = server;
     int added = gatt_server_add_service(server, &service_uuid, 0,
                                          &service_handle) &&
-        gatt_server_add_characteristic(server, &state_uuid,
+        gatt_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, service->state, 4, 4, NULL, NULL, NULL,
             &declaration, &state_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &state_cccd) &&
-        gatt_server_add_characteristic(server, &gain_uuid,
+        gatt_add_characteristic(server, &gain_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENC,
             service->gain_properties, 3, 3, NULL, NULL, NULL, &declaration,
             &gain_handle) &&
-        gatt_server_add_characteristic(server, &type_uuid,
+        gatt_add_characteristic(server, &type_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ_ENC,
             &input_type, 1, 1, NULL, NULL, NULL, &declaration, &type_handle) &&
-        gatt_server_add_characteristic(server, &status_uuid,
+        gatt_add_characteristic(server, &status_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, &service->status, 1, 1, NULL, NULL, NULL,
             &declaration, &status_handle) &&
-        gatt_server_add_descriptor(server, &cccd_uuid,
+        gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &status_cccd) &&
-        gatt_server_add_characteristic(server, &control_uuid,
+        gatt_add_characteristic(server, &control_uuid,
             BLE_GATT_PROP_WRITE, BLE_GATT_PERM_WRITE_ENC,
             &control_point_initial, 0, control_point_capacity,
             NULL, gatt_aics_control_point_write, service,
             &declaration, &control_handle);
 
     if (added)
-        server->attributes[server->count - 1].flags |=
+        server->attrs[server->count - 1].flags |=
             BLE_GATT_ATTR_VAR_LEN;
 
     if (added)
-        added = gatt_server_add_characteristic(server, &description_uuid,
+        added = gatt_add_characteristic(server, &description_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY |
                 (description_writable ? BLE_GATT_PROP_WRITE_NO_RSP : 0),
             BLE_GATT_PERM_READ_ENC |
@@ -1416,12 +1416,12 @@ static inline int gatt_audio_input_control_service_add(
             &description_handle);
 
     if (added)
-        added = gatt_server_add_descriptor(server, &cccd_uuid,
+        added = gatt_add_descriptor(server, &cccd_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             NULL, 0, 0, NULL, NULL, NULL, &description_cccd);
 
     if (added && description_capacity > description_len)
-        server->attributes[server->count - 2].flags |=
+        server->attrs[server->count - 2].flags |=
             BLE_GATT_ATTR_VAR_LEN;
 
     if (!added) {
@@ -1477,7 +1477,7 @@ static inline int gatt_audio_input_control_service_set_status(
     service->status = stored[0] = status;
     attribute->value_len = 1;
 
-    if (changed) (void)gatt_server_queue_event(server, service->status_handle,
+    if (changed) (void)gatt_queue_event(server, service->status_handle,
                                                &status, 1, 0);
     return 1;
 }
@@ -1503,7 +1503,7 @@ static inline int gatt_audio_input_control_service_set_description(
     if (len) memcpy(stored, description, len);
     attribute->value_len = len;
 
-    if (changed) (void)gatt_server_queue_event(server,
+    if (changed) (void)gatt_queue_event(server,
         service->description_handle, description, len, 0);
     return 1;
 }
@@ -1561,7 +1561,7 @@ static inline int gatt_common_audio_service_add(
                                          &service->service_handle);
 
     if (added && csis_service_handle)
-        added = gatt_server_add_included_service(server, csis_service_handle,
+        added = gatt_add_included_service(server, csis_service_handle,
             &service->csis_include_handle);
 
     if (!added) {
@@ -1610,28 +1610,28 @@ static inline int gatt_broadcast_audio_scan_service_add(
 
     int added = gatt_server_add_service(server, &service_uuid, 1,
                                          &service->service_handle) &&
-        gatt_server_add_characteristic(server, &control_uuid,
+        gatt_add_characteristic(server, &control_uuid,
             BLE_GATT_PROP_WRITE | BLE_GATT_PROP_WRITE_NO_RSP,
             BLE_GATT_PERM_WRITE_ENC, NULL, 0,
             control_point_capacity, NULL, NULL, NULL, &declaration,
             &service->control_point_handle);
 
     if (added)
-        server->attributes[server->count - 1].flags |=
+        server->attrs[server->count - 1].flags |=
             BLE_GATT_ATTR_VAR_LEN;
     for (uint8_t i = 0; added && i < receive_state_count; i++) {
-        added = gatt_server_add_characteristic(server, &state_uuid,
+        added = gatt_add_characteristic(server, &state_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY,
             BLE_GATT_PERM_READ_ENC, NULL, 0,
             receive_state_capacity, NULL, NULL, NULL, &declaration,
             &receive_state_handles[i]);
 
         if (added)
-            server->attributes[server->count - 1].flags |=
+            server->attrs[server->count - 1].flags |=
                 BLE_GATT_ATTR_VAR_LEN;
 
         if (added)
-            added = gatt_server_add_descriptor(server, &cccd_uuid,
+            added = gatt_add_descriptor(server, &cccd_uuid,
                 BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
                 NULL, 0, 0, NULL, NULL, NULL,
                 &receive_state_cccd_handles[i]);
@@ -1930,41 +1930,41 @@ static uint8_t gatt_generic_health_sensor_racp_write(
     ble_gatt_generic_health_sensor_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
 
     if (len < 2 || len > sizeof(service->racp_request))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t opcode = value[0], oper = value[1];
     uint8_t filter_len = (uint8_t)(len - 2);
 
     if (opcode == GATT_GHS_RACP_ABORT_OPERATION) {
         if (oper != 0 || filter_len)
-            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     }
     else if (opcode == GATT_GHS_RACP_DELETE_STORED_RECORDS ||
                opcode == GATT_GHS_RACP_REPORT_STORED_RECORDS ||
                opcode == GATT_GHS_RACP_REPORT_NUMBER_OF_RECORDS) {
         if (oper == 1) {
             if (filter_len)
-                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         }
         else if (oper == 2 || oper == 3) {
             if (filter_len != 5 && filter_len != 7)
-                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         }
         else if (oper == 4) {
             if (filter_len != 9 && filter_len != 13)
-                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         }
         else if (oper == 5 || oper == 6) {
             if (filter_len)
-                return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+                return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         }
     }
 
@@ -2004,14 +2004,14 @@ static uint8_t gatt_generic_health_sensor_control_write(
     ble_gatt_generic_health_sensor_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
 
     if (value[0] != 0x01 && value[0] != 0x02)
         return 0x81;
@@ -2024,9 +2024,9 @@ static uint8_t gatt_generic_health_sensor_control_write(
 
     uint8_t response = 0x80;
 
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->control_point_handle, &response, 1, 1)
-    ) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    ) return ATT_ERR_UNLIKELY_ERROR;
 
     service->live_observations_started = value[0] == 0x01;
     service->control_point_request_count++;
@@ -2120,7 +2120,7 @@ static inline int gatt_generic_health_sensor_service_queue_stored_segment(
         !value || !len
     ) return 0;
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->stored_observations_handle, value, len,
         (uint8_t)!service->stored_observations_notify);
 }
@@ -2178,7 +2178,7 @@ static inline int gatt_generic_health_sensor_service_racp_complete(
         response[3] = response_code;
         response_len = 4;
     }
-    int queued = gatt_server_queue_event(server, service->racp_handle,
+    int queued = gatt_queue_event(server, service->racp_handle,
         response, response_len, 1);
 
     if (queued > 0)
@@ -2270,7 +2270,7 @@ static inline int gatt_generic_health_sensor_service_continue_observation(
            service->observation_data + service->observation_offset,
            segment_len);
 
-    if (gatt_server_queue_event(server, service->live_observations_handle,
+    if (gatt_queue_event(server, service->live_observations_handle,
             segment, (uint16_t)(segment_len + 1), 1) != 1
     ) return 0;
 
@@ -2326,7 +2326,7 @@ static inline uint8_t gatt_authorization_control_receive_segment(
     uint8_t **complete, uint16_t *complete_len
 ) {
     if (!len || len > 21)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t header = value[0];
     uint8_t first = header & 1;
     uint8_t last = (header >> 1) & 1;
@@ -2339,7 +2339,7 @@ static inline uint8_t gatt_authorization_control_receive_segment(
     else if (!*active || counter != *next_counter) {
         *active = 0;
         *assembly_len = 0;
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
     }
     else *next_counter = (uint8_t)((counter + 1) & 0x3f);
 
@@ -2347,7 +2347,7 @@ static inline uint8_t gatt_authorization_control_receive_segment(
     if (payload_len > BLE_GATT_SERVER_VALUE_MAX - *assembly_len) {
         *active = 0;
         *assembly_len = 0;
-        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
     }
     if (payload_len) memcpy(assembly + *assembly_len, value + 1, payload_len);
     *assembly_len = (uint16_t)(*assembly_len + payload_len);
@@ -2366,14 +2366,14 @@ static uint8_t gatt_authorization_control_data_in_write(
 ) {
     ble_gatt_authorization_control_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (service->data_in_pending) return 0x80;
     ble_gatt_attribute *attribute = gatt_server_find(
         service->server, service->data_in_handle);
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t *complete = NULL;
     uint16_t complete_len = 0;
     uint8_t result = gatt_authorization_control_receive_segment(
@@ -2395,9 +2395,9 @@ static uint8_t gatt_authorization_control_point_write(
 ) {
     ble_gatt_authorization_control_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
     ble_gatt_attribute *cccd = gatt_server_find(
         service->server, service->control_point_cccd_handle);
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
@@ -2405,7 +2405,7 @@ static uint8_t gatt_authorization_control_point_write(
     ble_gatt_attribute *attribute = gatt_server_find(
         service->server, service->control_point_handle);
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t *complete = NULL;
     uint16_t complete_len = 0;
     uint8_t result = gatt_authorization_control_receive_segment(
@@ -2539,7 +2539,7 @@ static inline int gatt_authorization_control_service_queue_payload(
         packet[0] = (uint8_t)((counter << 2) | (first ? 1 : 0) |
                               (last ? 2 : 0));
         memcpy(packet + 1, payload + offset, chunk);
-        if (!gatt_server_queue_event(service->server, handle, packet,
+        if (!gatt_queue_event(service->server, handle, packet,
                 (uint16_t)(chunk + 1), indication)) return 0;
         offset = (uint16_t)(offset + chunk);
         counter = (uint8_t)((counter + 1) & 0x3f);
@@ -2577,7 +2577,7 @@ static inline int gatt_authorization_control_service_set_status(
     if (!stored) return 0;
     memcpy(stored, status, 3);
     if (!indicate) return 1;
-    return gatt_server_queue_event(service->server, service->status_handle,
+    return gatt_queue_event(service->server, service->status_handle,
                                     status, 3, 1) == 1;
 }
 
@@ -2644,14 +2644,14 @@ static uint8_t gatt_physical_activity_monitor_control_write(
     ble_gatt_physical_activity_monitor_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (!len || len > 6)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t opcode = value[0];
     uint8_t parameter_len = (uint8_t)(len - 1);
@@ -2679,7 +2679,7 @@ static uint8_t gatt_physical_activity_monitor_control_write(
     }
 
     if (parameter_len != expected_len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if (opcode == GATT_PAMS_OP_ENQUIRE_SUBSESSIONS ||
         opcode == GATT_PAMS_OP_DELETE_ENDED_SESSION) {
@@ -2926,7 +2926,7 @@ static inline int gatt_physical_activity_monitor_service_queue_optional_data(
         !service->optional_data_handle[stream]
     ) return 0;
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->optional_data_handle[stream], value, len,
         stream == 0 || stream == 3 ? 0 : 1);
 }
@@ -2956,7 +2956,7 @@ static inline int gatt_physical_activity_monitor_service_notify_instantaneous(
     )
         return 0;
 
-    return gatt_server_queue_event(server, service->instantaneous_data_handle,
+    return gatt_queue_event(server, service->instantaneous_data_handle,
                                    value, len, 0);
 }
 
@@ -2972,7 +2972,7 @@ static inline int gatt_physical_activity_monitor_service_indicate_summary(
     )
         return 0;
 
-    return gatt_server_queue_event(server, service->summary_data_handle,
+    return gatt_queue_event(server, service->summary_data_handle,
                                    value, len, 1);
 }
 
@@ -2988,7 +2988,7 @@ static inline int gatt_physical_activity_monitor_service_indicate_session_descri
     )
         return 0;
 
-    return gatt_server_queue_event(server, service->session_descriptor_handle,
+    return gatt_queue_event(server, service->session_descriptor_handle,
                                    value, len, 1);
 }
 
@@ -3030,7 +3030,7 @@ static inline int gatt_physical_activity_monitor_service_indicate_current_sessio
     if (!value || attribute->value_len != 17)
         return 0;
 
-    return gatt_server_queue_event(server, service->current_session_handle,
+    return gatt_queue_event(server, service->current_session_handle,
                                    value, 17, 1);
 }
 
@@ -3102,7 +3102,7 @@ static inline int gatt_physical_activity_monitor_service_control_point_complete(
     if (!attribute || parameter_len + 1 > attribute->value_capacity)
         return 0;
 
-    int queued = gatt_server_queue_event(server,
+    int queued = gatt_queue_event(server,
         service->control_point_handle, response,
         (uint16_t)(parameter_len + 1), 1);
 
@@ -3179,10 +3179,10 @@ static inline uint8_t gatt_has_control_point_write(
     ble_gatt_hearing_access_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
         return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
 
@@ -3213,7 +3213,7 @@ static inline uint8_t gatt_has_control_point_write(
         return GATT_HAS_ATT_ERR_INVALID_PARAMETERS_LENGTH;
 
     if (len > sizeof(service->control_point_request))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if ((opcode == 0x01 && (!value[1] || !value[2])) ||
         ((opcode == 0x04 || opcode == 0x05 || opcode == 0x08) &&
@@ -3323,7 +3323,7 @@ static inline int gatt_hearing_access_service_control_point_indicate(
         response_len > service->server->mtu - 3 || is_last > 1
     ) return 0;
 
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->preset_control_point_handle, response, response_len, 1)
     ) return 0;
 
@@ -3358,7 +3358,7 @@ static inline int gatt_hearing_access_service_indicate_preset_change(
         value_len > service->server->mtu - 3
     ) return 0;
 
-    return gatt_server_queue_event(service->server,
+    return gatt_queue_event(service->server,
         service->preset_control_point_handle, value, value_len, 1);
 }
 
@@ -3391,7 +3391,7 @@ static inline int gatt_hearing_access_service_notify_active_preset_index(
         !gatt_hearing_access_service_set_active_preset_index(service, index)
     ) return 0;
 
-    return gatt_server_queue_event(service->server,
+    return gatt_queue_event(service->server,
         service->active_preset_index_handle, &index, 1, 0);
 }
 
@@ -3516,12 +3516,12 @@ static uint8_t gatt_media_control_playing_order_write(
     ble_gatt_media_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t order = value[0];
 
@@ -3535,7 +3535,7 @@ static uint8_t gatt_media_control_playing_order_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!stored || attribute->value_capacity < 1)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     stored[0] = order;
     return 0;
@@ -3631,18 +3631,18 @@ static uint8_t gatt_media_control_point_write(
     ble_gatt_media_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len || len > 5)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(
         service->server, service->control_point_handle);
 
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         service->server, service->control_point_handle);
@@ -3660,7 +3660,7 @@ static uint8_t gatt_media_control_point_write(
                             opcode == 0x34 || opcode == 0x44;
 
     if (supported && len != (has_parameter ? 5 : 1))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     service->control_point_opcode = opcode;
     service->control_point_parameter_len = (uint8_t)(len - 1);
@@ -3681,12 +3681,12 @@ static uint8_t gatt_media_control_object_id_write(
         write_context->service : NULL;
 
     if (!service || !service->server || !value || write_context->index >= 7)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 0 && len != 6)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->object_id_handle[write_context->index]);
@@ -3694,7 +3694,7 @@ static uint8_t gatt_media_control_object_id_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!attribute || !stored || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if (service->object_id_write_pending)
         return 0xfe;
@@ -3723,19 +3723,19 @@ static uint8_t gatt_media_control_search_write(
     ble_gatt_media_control_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
 
     if (len > sizeof(service->search_request))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->search_control_point_handle);
 
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
         service->search_control_point_handle);
@@ -3751,12 +3751,12 @@ static uint8_t gatt_media_control_search_write(
         uint8_t item_len = value[offset_in_value];
 
         if (!item_len || item_len > len - offset_in_value - 1)
-            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
         uint8_t type = value[offset_in_value + 1];
 
         if ((type == 0x08 || type == 0x09) && item_len != 1)
-            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
         offset_in_value = (uint16_t)(offset_in_value + 1 + item_len);
     }
@@ -4220,7 +4220,7 @@ static inline int gatt_media_control_service_notify_optional(
             notify_len = mtu_limit;
     }
 
-    return gatt_server_queue_event(server, value_handle, stored, notify_len, 0);
+    return gatt_queue_event(server, value_handle, stored, notify_len, 0);
 }
 
 // Complete a captured MCS opcode request and notify its opcode/result pair.
@@ -4234,7 +4234,7 @@ static inline int gatt_media_control_service_control_point_complete(
     ) return 0;
 
     uint8_t response[2] = {service->control_point_opcode, result_code};
-    int queued = gatt_server_queue_event(server,
+    int queued = gatt_queue_event(server,
         service->control_point_handle, response, sizeof(response), 0);
 
     if (queued > 0)
@@ -4303,7 +4303,7 @@ static inline int gatt_media_control_service_notify_object_id(
 
     if (!attribute || !stored) return 0;
 
-    return gatt_server_queue_event(server, service->object_id_handle[object],
+    return gatt_queue_event(server, service->object_id_handle[object],
                                    stored, len, 0);
 }
 
@@ -4318,7 +4318,7 @@ static inline int gatt_media_control_service_search_complete(
          result != GATT_MCS_SEARCH_FAILURE)
     ) return 0;
 
-    int queued = gatt_server_queue_event(server,
+    int queued = gatt_queue_event(server,
         service->search_control_point_handle, &result, 1, 0);
 
     if (queued > 0)
@@ -4703,7 +4703,7 @@ static int gatt_tbs_queue_result(
 ) {
     uint8_t response[3] = {opcode, call_index, result};
     return service && service->server && service->server->mtu >= 6 &&
-        gatt_server_queue_event(service->server,
+        gatt_queue_event(service->server,
             service->value_handles[GATT_TBS_CALL_CONTROL_POINT],
             response, sizeof(response), 0);
 }
@@ -4716,16 +4716,16 @@ static uint8_t gatt_tbs_control_point_write(
     ble_gatt_telephone_bearer_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (!len) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (!len) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint16_t handle = service->value_handles[GATT_TBS_CALL_CONTROL_POINT];
     ble_gatt_attribute *attribute = gatt_server_find(service->server, handle);
 
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server, handle);
 
@@ -4739,7 +4739,7 @@ static uint8_t gatt_tbs_control_point_write(
     if (opcode > 5) {
         return gatt_tbs_queue_result(service, opcode, 0,
             GATT_TBS_RESULT_OPCODE_NOT_SUPPORTED) ?
-            0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+            0 : ATT_ERR_INSUFFICIENT_RESOURCES;
     }
 
     if ((opcode == 2 || opcode == 3 || opcode == 5)) {
@@ -4753,31 +4753,31 @@ static uint8_t gatt_tbs_control_point_write(
             !(ble_get_le16(bits) & (uint16_t)(1u << required_bit))) {
             return gatt_tbs_queue_result(service, opcode, 0,
                 GATT_TBS_RESULT_OPCODE_NOT_SUPPORTED) ?
-                0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+                0 : ATT_ERR_INSUFFICIENT_RESOURCES;
         }
     }
 
     if ((opcode <= 3 && len != 2) || (opcode == 4 && len < 2) ||
         (opcode == 5 && len < 3))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if (opcode <= 3 && value[1] == 0)
         return gatt_tbs_queue_result(service, opcode, 0,
             GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
-            0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+            0 : ATT_ERR_INSUFFICIENT_RESOURCES;
 
     if (opcode == 5) {
         for (uint16_t i = 1; i < len; i++) {
             if (!value[i])
                 return gatt_tbs_queue_result(service, opcode, 0,
                     GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
-                    0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+                    0 : ATT_ERR_INSUFFICIENT_RESOURCES;
 
             for (uint16_t j = 1; j < i; j++)
                 if (value[i] == value[j])
                     return gatt_tbs_queue_result(service, opcode, 0,
                         GATT_TBS_RESULT_INVALID_CALL_INDEX) ?
-                        0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+                        0 : ATT_ERR_INSUFFICIENT_RESOURCES;
         }
     }
 
@@ -4987,7 +4987,7 @@ static inline int gatt_telephone_bearer_service_set_value(
     if (len) memcpy(stored, value, len);
     attribute->value_len = len;
 
-    if (notify) return gatt_server_queue_event(server, handle, value, len, 0);
+    if (notify) return gatt_queue_event(server, handle, value, len, 0);
 
     return 1;
 }
@@ -5025,7 +5025,7 @@ static inline int gatt_telephone_bearer_service_set_signal_strength(
 
     if (!service->signal_notify_initialized || !delay ||
         (uint32_t)(now_ms - service->signal_last_notify_ms) >= delay) {
-        if (!gatt_server_queue_event(server, handle, stored, 1, 0)) {
+        if (!gatt_queue_event(server, handle, stored, 1, 0)) {
             service->signal_notification_pending = 1;
             return 0;
         }
@@ -5066,7 +5066,7 @@ static inline int gatt_telephone_bearer_service_poll_signal_strength(
     if (service->signal_notify_initialized && delay &&
         (uint32_t)(now_ms - service->signal_last_notify_ms) < delay) return 0;
 
-    if (!strength || !gatt_server_queue_event(server,
+    if (!strength || !gatt_queue_event(server,
             service->value_handles[GATT_TBS_SIGNAL_STRENGTH], strength, 1, 0))
         return 0;
 
@@ -5144,10 +5144,10 @@ static uint8_t gatt_ots_oacp_prepare(
 ) {
     ble_gatt_object_transfer_service *service = context;
     if (!service || (len && !value))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (!len || offset > sizeof(service->oacp_prepared) ||
         len > sizeof(service->oacp_prepared) - offset)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (!service->oacp_prepare_active) {
         memset(service->oacp_prepared, 0, sizeof(service->oacp_prepared));
         memset(service->oacp_prepared_coverage, 0,
@@ -5164,11 +5164,11 @@ static uint8_t gatt_ots_oacp_prepare_commit_validate(
 ) {
     ble_gatt_object_transfer_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (!len || len > 21)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (!service->oacp_prepared_coverage[0])
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     uint8_t opcode = value[0];
     uint8_t valid_length = 0;
     switch (opcode) {
@@ -5181,10 +5181,10 @@ static uint8_t gatt_ots_oacp_prepare_commit_validate(
     case 0x06: valid_length = len == 10; break;
     default: valid_length = 1; break;
     }
-    if (!valid_length) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!valid_length) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     for (uint16_t i = 0; i < len; i++)
         if (!service->oacp_prepared_coverage[i])
-            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+            return ATT_ERR_INVALID_OFFSET;
     ble_gatt_attribute *cccd = gatt_server_find(service->server,
         service->action_control_point_cccd_handle);
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
@@ -5228,11 +5228,11 @@ static uint8_t gatt_ots_oacp_write(
 ) {
     ble_gatt_object_transfer_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (!len || len > 21)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_find(
         service->server, service->action_control_point_cccd_handle);
@@ -5251,7 +5251,7 @@ static uint8_t gatt_ots_oacp_write(
     case 0x06: valid_length = len == 10; break;
     default: valid_length = 1; break;
     }
-    if (!valid_length) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!valid_length) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t feature_bit = gatt_ots_oacp_feature_bit(opcode);
     uint8_t response_code = 0x01;
     if (feature_bit == 0xff ||
@@ -5264,9 +5264,9 @@ static uint8_t gatt_ots_oacp_write(
 
     if (response_code != 0x01) {
         uint8_t response[] = {0x60, opcode, response_code};
-        return gatt_server_queue_event(service->server,
+        return gatt_queue_event(service->server,
             service->action_control_point_handle, response,
-            sizeof(response), 1) ? 0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+            sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
     }
 
     service->request_opcode = opcode;
@@ -5315,7 +5315,7 @@ static inline int gatt_object_transfer_service_oacp_complete(
     response[2] = result_code;
     if (response_parameter_len)
         memcpy(response + 3, response_parameter, response_parameter_len);
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->action_control_point_handle, response,
             (uint16_t)(response_parameter_len + 3), 1)) return 0;
     service->request_pending = 0;
@@ -5332,11 +5332,11 @@ static uint8_t gatt_ots_olcp_write(
 ) {
     ble_gatt_object_transfer_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (!len || len > 7)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     ble_gatt_attribute *cccd = gatt_server_find(
         service->server, service->object_list_control_point_cccd_handle);
     if (!cccd || !(cccd->cccd & 2)) return 0xfd;
@@ -5347,7 +5347,7 @@ static uint8_t gatt_ots_olcp_write(
         opcode == 5 ? len == 7 :
         opcode == 6 ? len == 2 :
         (opcode == 7 || opcode == 8) ? len == 1 : 1;
-    if (!valid_length) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (!valid_length) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     uint8_t response_code = 0x01;
     if (opcode < 0x01 || opcode > 0x08)
         response_code = 0x02;
@@ -5359,9 +5359,9 @@ static uint8_t gatt_ots_olcp_write(
         (value[1] >= 0x11 && value[1] <= 0x15))) response_code = 0x03;
     if (response_code != 0x01) {
         uint8_t response[] = {0x70, opcode, response_code};
-        return gatt_server_queue_event(service->server,
+        return gatt_queue_event(service->server,
             service->object_list_control_point_handle, response,
-            sizeof(response), 1) ? 0 : BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+            sizeof(response), 1) ? 0 : ATT_ERR_INSUFFICIENT_RESOURCES;
     }
     service->olcp_opcode = opcode;
     service->olcp_pending = 1;
@@ -5410,7 +5410,7 @@ static inline int gatt_object_transfer_service_olcp_complete(
         response[6] = (uint8_t)(object_count >> 24);
         response_len = 7;
     }
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->object_list_control_point_handle, response,
             response_len, 1)) return 0;
     service->olcp_pending = 0;
@@ -5807,17 +5807,17 @@ static uint8_t gatt_tds_control_point_write(
     ble_gatt_transport_discovery_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
-    if (command) return BLE_GATT_ATT_ERR_WRITE_NOT_PERMITTED;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (len < 2) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    if (command) return ATT_ERR_WRITE_NOT_PERMITTED;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (len < 2) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
         service->control_point_handle);
 
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
         service->control_point_handle);
@@ -5830,10 +5830,10 @@ static uint8_t gatt_tds_control_point_write(
     if (value[0] != 1) {
         uint8_t response[2] = {value[0], GATT_TDS_RESULT_OPCODE_NOT_SUPPORTED};
 
-        if (service->server->mtu < 5 || !gatt_server_queue_event(
+        if (service->server->mtu < 5 || !gatt_queue_event(
                 service->server, service->control_point_handle,
                 response, sizeof(response), 1))
-            return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+            return ATT_ERR_INSUFFICIENT_RESOURCES;
 
         return 0;
     }
@@ -5913,7 +5913,7 @@ static inline int gatt_transport_discovery_service_complete(
     if (response_parameter_len)
         memcpy(response + 2, response_parameter, response_parameter_len);
 
-    if (!gatt_server_queue_event(service->server,
+    if (!gatt_queue_event(service->server,
             service->control_point_handle, response,
             response_parameter_len + 2, 1)) return 0;
 
@@ -6009,15 +6009,15 @@ static uint8_t gatt_fitness_machine_control_write(
 ) {
     ble_gatt_fitness_machine_controlled_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
 
     if (!len || len > sizeof(service->control_point_parameter) + 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         service->server, service->control_point_handle);
@@ -6272,7 +6272,7 @@ static inline int gatt_fitness_machine_service_notify_training_status(
         len > server->mtu - 3
     ) return 0;
 
-    return gatt_server_queue_event(server, service->training_status_handle,
+    return gatt_queue_event(server, service->training_status_handle,
                                    value, len, 0);
 }
 
@@ -6292,7 +6292,7 @@ static inline int gatt_fitness_machine_service_notify_status(
     if (!attribute || len > attribute->value_capacity || len > server->mtu - 3)
         return 0;
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->fitness_machine_status_handle, value, len, 0);
 }
 
@@ -6322,7 +6322,7 @@ static inline int gatt_fitness_machine_service_control_point_complete(
     if (!attribute || response_parameter_len + 3 > attribute->value_capacity)
         return 0;
 
-    int queued = gatt_server_queue_event(server, service->control_point_handle,
+    int queued = gatt_queue_event(server, service->control_point_handle,
         response, (uint16_t)(3 + response_parameter_len), 1);
 
     if (queued > 0)
@@ -6347,7 +6347,7 @@ static inline int gatt_fitness_machine_service_notify_data(
         len > server->mtu - 3
     ) return 0;
 
-    return gatt_server_queue_event(server, service->machine_data_handle,
+    return gatt_queue_event(server, service->machine_data_handle,
                                    value, len, 0);
 }
 
@@ -6747,7 +6747,7 @@ static inline int gatt_current_time_service_notify(
     ) return 0;
 
     memcpy(stored, current_time, 10);
-    return gatt_server_queue_event(server, service->current_time_handle,
+    return gatt_queue_event(server, service->current_time_handle,
                                    current_time, 10, 0);
 }
 
@@ -6760,12 +6760,12 @@ static uint8_t gatt_reference_time_update_write(
     ble_gatt_reference_time_update_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 1)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     if (value[0] != 0x01 && value[0] != 0x02)
         return 0;
@@ -6777,7 +6777,7 @@ static uint8_t gatt_reference_time_update_write(
 
     if (!state || attribute->value_len != 2 ||
         attribute->value_capacity < 2
-    ) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    ) return ATT_ERR_UNLIKELY_ERROR;
 
     if (value[0] == 0x01) {
         state[0] = 1;
@@ -7662,11 +7662,11 @@ static uint8_t gatt_user_data_database_change_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 4)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_user_data_service *service = context;
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
@@ -7675,7 +7675,7 @@ static uint8_t gatt_user_data_database_change_write(
         gatt_attribute_value(service->server, attribute) : NULL;
 
     if (!stored || attribute->value_len != 4)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     memcpy(stored, value, 4);
     service->database_change_increment = (uint32_t)value[0] |
@@ -7691,11 +7691,11 @@ static uint8_t gatt_user_data_control_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len || len > 16)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_user_data_service *service = context;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(service->server,
@@ -7714,7 +7714,7 @@ static uint8_t gatt_user_data_control_write(
         ((opcode == GATT_UDS_OP_DELETE_USER_DATA ||
           opcode == GATT_UDS_OP_LIST_ALL_USERS) && parameter_len != 0) ||
         (opcode == GATT_UDS_OP_DELETE_USERS && !parameter_len)
-    ) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+    ) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     service->request_opcode = opcode;
     service->request_parameter_len = parameter_len;
@@ -7821,7 +7821,7 @@ static inline int gatt_user_data_service_indicate_registered_user_segment(
     if (name_len)
         memcpy(value + value_len, name, name_len);
     value_len += name_len;
-    return gatt_server_queue_event(server, service->registered_user_handle,
+    return gatt_queue_event(server, service->registered_user_handle,
         value, value_len, 1);
 }
 
@@ -7864,7 +7864,7 @@ static inline int gatt_user_data_service_notify_database_change(
     value[1] = (uint8_t)(increment >> 8);
     value[2] = (uint8_t)(increment >> 16);
     value[3] = (uint8_t)(increment >> 24);
-    return gatt_server_queue_event(server, service->database_change_handle,
+    return gatt_queue_event(server, service->database_change_handle,
         value, sizeof(value), 0);
 }
 
@@ -7912,7 +7912,7 @@ static inline int gatt_user_data_service_complete(
 
     if (parameter_len)
         memcpy(value + 3, parameter, parameter_len);
-    int queued = gatt_server_queue_event(server, service->control_point_handle,
+    int queued = gatt_queue_event(server, service->control_point_handle,
         value, (uint16_t)(3 + parameter_len), 1);
 
     if (queued > 0) {
@@ -8035,21 +8035,21 @@ static uint8_t gatt_binary_sensor_control_write(
 ) {
     ble_gatt_binary_sensor_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (len < 3 || len > BLE_GATT_SERVER_VALUE_MAX)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     ble_gatt_attribute *attribute = gatt_server_find(
         service->server, service->control_point_handle);
     if (!attribute || len > attribute->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint8_t header = value[0];
     uint8_t sequence = (header >> 1) & 0x1f;
     uint8_t execute = header & 1;
     if ((header & 0x40) || (header & 0x80))
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
     if (!sequence) {
         service->assembly_active = 1;
         service->assembly_next_sequence = 1;
@@ -8059,13 +8059,13 @@ static uint8_t gatt_binary_sensor_control_write(
              sequence != service->assembly_next_sequence) {
         service->assembly_active = 0;
         service->assembly_len = 0;
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
     }
     uint16_t fragment_len = (uint16_t)(len - 1);
     if (fragment_len > sizeof(service->assembly) - service->assembly_len) {
         service->assembly_active = 0;
         service->assembly_len = 0;
-        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
     }
     memcpy(service->assembly + service->assembly_len, value + 1,
            fragment_len);
@@ -8077,10 +8077,10 @@ static uint8_t gatt_binary_sensor_control_write(
     if (!gatt_binary_sensor_message_valid(service->assembly,
                                            service->assembly_len)) {
         service->assembly_len = 0;
-        return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+        return ATT_ERR_VALUE_NOT_ALLOWED;
     }
     if (service->request_pending)
-        return BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+        return ATT_ERR_INSUFFICIENT_RESOURCES;
     memcpy(service->request, service->assembly, service->assembly_len);
     service->request_len = service->assembly_len;
     service->request_message_id = service->assembly[1];
@@ -8172,7 +8172,7 @@ static inline int gatt_binary_sensor_service_indicate_message(
         uint8_t final = (uint8_t)(chunk == message_len - offset);
         packet[0] = (uint8_t)((sequence & 0x1f) << 1) | final | 0x80;
         memcpy(packet + 1, message + offset, chunk);
-        if (!gatt_server_queue_event(server, service->response_handle,
+        if (!gatt_queue_event(server, service->response_handle,
                 packet, (uint16_t)(chunk + 1), 1)) return 0;
         offset = (uint16_t)(offset + chunk);
         sequence = (uint8_t)((sequence + 1) & 0x1f);
@@ -8430,18 +8430,18 @@ static uint8_t gatt_bond_management_control_write(
 ) {
     ble_gatt_bond_management_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (!len || len > BLE_GATT_SERVER_VALUE_MAX ||
         len - 1 > sizeof(service->request_parameter))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     ble_gatt_attribute *control_point = gatt_server_find(
         service->server, service->control_point_handle);
     if (!control_point || len > control_point->value_capacity)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     if (service->request_pending)
         return 0x81; // Operation failed while the previous request is pending.
 
@@ -8459,10 +8459,10 @@ static uint8_t gatt_bond_management_control_write(
     if (!auth_supported && !base_supported)
         return 0x80;
     if ((code_len && !auth_supported) || (!code_len && !base_supported))
-        return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
+        return ATT_ERR_INSUFFICIENT_AUTHORIZATION;
     for (uint16_t i = 0; i < code_len; i++)
         if (value[i + 1] < '0' || value[i + 1] > '9')
-            return BLE_GATT_ATT_ERR_INSUFFICIENT_AUTHORIZATION;
+            return ATT_ERR_INSUFFICIENT_AUTHORIZATION;
     if (service->authorize) {
         uint8_t error = service->authorize(service->authorize_context,
             opcode, code_len ? value + 1 : NULL, code_len);
@@ -8608,32 +8608,32 @@ static uint8_t gatt_indoor_positioning_write(
         write ? write->service : NULL;
 
     if (!service || !service->server || !write || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (len > BLE_GATT_ATT_VALUE_MAX)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     ble_gatt_attribute *attribute = gatt_server_find(service->server,
                                                       write->handle);
     uint8_t *stored = attribute ?
         gatt_attribute_value(service->server, attribute) : NULL;
     if (!attribute || !stored)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (!write->variable_length) {
         if (offset)
-            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+            return ATT_ERR_INVALID_OFFSET;
         if (len != write->fixed_length)
-            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         if (attribute->value_capacity < write->fixed_length)
-            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+            return ATT_ERR_UNLIKELY_ERROR;
         memcpy(stored, value, write->fixed_length);
     }
     else {
         if (offset > attribute->value_len)
-            return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+            return ATT_ERR_INVALID_OFFSET;
         if (len > attribute->value_capacity - offset)
-            return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+            return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
         if (len)
             memcpy(stored + offset, value, len);
         if (!offset)
@@ -8991,10 +8991,10 @@ static uint8_t gatt_http_proxy_control_write(
 ) {
     ble_gatt_http_proxy_service *service = context;
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
-    if (offset) return BLE_GATT_ATT_ERR_INVALID_OFFSET;
-    if (command) return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
-    if (len != 1) return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_UNLIKELY_ERROR;
+    if (offset) return ATT_ERR_INVALID_OFFSET;
+    if (command) return ATT_ERR_REQUEST_NOT_SUPPORTED;
+    if (len != 1) return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
         service->server, service->status_code_handle);
     if (!cccd || !(cccd->cccd & 1)) return 0xfd;
@@ -9008,7 +9008,7 @@ static uint8_t gatt_http_proxy_control_write(
         return 0;
     }
     if (opcode < 0x01 || opcode > 0x0a)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (service->request_pending)
         return GATT_HTTP_PROXY_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
     if (!service->uri_configured || !service->headers_configured ||
@@ -9031,7 +9031,7 @@ static uint8_t gatt_http_proxy_control_write(
         if (!headers || !body || !uri_value ||
             (headers->value_len && !headers_value) ||
             (body->value_len && !body_value))
-            return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+            return ATT_ERR_UNLIKELY_ERROR;
         uint8_t error = service->request_validate(
             service->request_validate_context, opcode,
             uri_value, uri->value_len, headers_value, headers->value_len,
@@ -9159,7 +9159,7 @@ static inline int gatt_http_proxy_service_complete_with_data_status(
         return 0;
     uint8_t status[3] = {(uint8_t)status_code,
                          (uint8_t)(status_code >> 8), data_status};
-    if (!gatt_server_queue_event(service->server, service->status_code_handle,
+    if (!gatt_queue_event(service->server, service->status_code_handle,
             status, sizeof(status), 0)) return 0;
     service->request_pending = 0;
     service->request_taken = 0;

@@ -22,10 +22,10 @@ int main(void) {
     uint16_t service, declaration, value_handle;
     uint16_t hash_declaration, hash_handle;
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
-    assert(gatt_server_add_characteristic(&server, &value_uuid,
+    assert(gatt_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_READ, BLE_GATT_PERM_READ, &value, 1, 1,
         NULL, NULL, NULL, &declaration, &value_handle));
-    assert(gatt_server_add_characteristic(&server, &hash_uuid,
+    assert(gatt_add_characteristic(&server, &hash_uuid,
         BLE_GATT_PROP_READ, BLE_GATT_PERM_READ, initial_hash,
         sizeof(initial_hash), sizeof(initial_hash), NULL, NULL, NULL,
         &hash_declaration, &hash_handle));

@@ -79,60 +79,60 @@ int main(void) {
     };
     ble_gatt_standard_service_handles gatt_service;
     if (!gatt_server_add_service(&server, &service_uuid, 1, &service) ||
-        !gatt_server_add_characteristic(&server, &characteristic_uuid,
+        !gatt_add_characteristic(&server, &characteristic_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_WRITE |
                 BLE_GATT_PROP_EXTENDED,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, initial,
             sizeof(initial), 100, NULL, NULL, NULL, &declaration, &value) ||
-        !gatt_server_add_attribute(&server, &extended_properties_uuid,
-            BLE_GATT_PERM_READ, writable_auxiliaries,
+        !gatt_server_add(&server, &extended_properties_uuid,
+            BLE_GATT_PERM_READ, 0, 0, writable_auxiliaries,
             sizeof(writable_auxiliaries), sizeof(writable_auxiliaries),
             NULL, NULL, NULL, NULL) ||
-        !gatt_server_add_descriptor(&server, &descriptor_uuid,
+        !gatt_add_descriptor(&server, &descriptor_uuid,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
             (const uint8_t *)"x", 1, 32,
             NULL, NULL, NULL, &descriptor) ||
         !gatt_server_add_service(&server, &aggregate_uuid, 1, &aggregate) ||
-        !gatt_server_add_included_service(&server, service, NULL) ||
-        !gatt_server_add_attribute(&server, &protected_uuid,
-            BLE_GATT_PERM_READ_ENC, (const uint8_t *)"protected",
+        !gatt_add_included_service(&server, service, NULL) ||
+        !gatt_server_add(&server, &protected_uuid,
+            BLE_GATT_PERM_READ_ENC, 0, 0, (const uint8_t *)"protected",
             9, 9, NULL, NULL, NULL, &protected_value) ||
-        !gatt_server_add_attribute(&server, &authenticated_uuid,
-            BLE_GATT_PERM_READ_AUTHN,
+        !gatt_server_add(&server, &authenticated_uuid,
+            BLE_GATT_PERM_READ_AUTHN, 0, 0,
             (const uint8_t *)"authenticated", 13, 13, NULL, NULL, NULL,
             &authenticated_value) ||
-        !gatt_server_add_attribute(&server, &authorized_uuid,
-            BLE_GATT_PERM_READ_AUTHZ, (const uint8_t *)"authorized",
+        !gatt_server_add(&server, &authorized_uuid,
+            BLE_GATT_PERM_READ_AUTHZ, 0, 0, (const uint8_t *)"authorized",
             10, 10, NULL, NULL, NULL, &authorized_value) ||
-        !gatt_server_add_standard_gatt_service(&server, &gatt_service) ||
+        !gatt_add_standard_service(&server, &gatt_service) ||
         !gatt_server_add_service(&server, &gap_uuid, 1, &service) ||
-        !gatt_server_add_characteristic(&server, &device_name_uuid,
+        !gatt_add_characteristic(&server, &device_name_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             (const uint8_t *)"CH-Mess", 7, 7, NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &appearance_uuid,
+        !gatt_add_characteristic(&server, &appearance_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ, appearance,
             sizeof(appearance), sizeof(appearance), NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &ppcp_uuid,
+        !gatt_add_characteristic(&server, &ppcp_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ, ppcp,
             sizeof(ppcp), sizeof(ppcp), NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &car_uuid,
+        !gatt_add_characteristic(&server, &car_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             &central_address_resolution, 1, 1, NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &security_levels_uuid,
+        !gatt_add_characteristic(&server, &security_levels_uuid,
             BLE_GATT_PROP_READ, BLE_GATT_PERM_READ,
             security_level_requirements, sizeof(security_level_requirements),
             sizeof(security_level_requirements), NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &edkm_uuid,
+        !gatt_add_characteristic(&server, &edkm_uuid,
             BLE_GATT_PROP_READ,
             BLE_GATT_PERM_READ_AUTHN | BLE_GATT_PERM_READ_AUTHZ,
             edkm, sizeof(edkm), sizeof(edkm), NULL, NULL, NULL,
             &declaration, &value) ||
-        !gatt_server_add_characteristic(&server, &signed_uuid,
+        !gatt_add_characteristic(&server, &signed_uuid,
             BLE_GATT_PROP_READ | BLE_GATT_PROP_AUTH_SIGNED_WRITE,
             BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE_SIGNED,
             (const uint8_t *)"\0", 1, 1, NULL, NULL, NULL,
@@ -177,8 +177,8 @@ int main(void) {
             ble_get_le16(request + 1) ==
                 gatt_service.service_changed_cccd_handle &&
             ble_get_le16(request + 3) == 2) {
-            (void)gatt_server_service_changed(&server, 1, 0xffff);
-            (void)gatt_server_poll_event(&server, 1, event,
+            (void)gatt_service_changed(&server, 1, 0xffff);
+            (void)gatt_poll(&server, 1, event,
                                              sizeof(event), &event_len);
         }
 

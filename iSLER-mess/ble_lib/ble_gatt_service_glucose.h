@@ -59,9 +59,9 @@ static inline uint8_t gatt_glucose_racp_reject(
         opcode,
         response_code
     };
-    return gatt_server_queue_event(service->server,
+    return gatt_queue_event(service->server,
         service->record_access_handle, response, sizeof(response), 1) > 0 ?
-        0 : BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        0 : ATT_ERR_UNLIKELY_ERROR;
 }
 
 // Internal: capture a valid request for the application's persistent record store.
@@ -72,13 +72,13 @@ static inline uint8_t gatt_glucose_racp_write(
     ble_gatt_glucose_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (command)
-        return BLE_GATT_ATT_ERR_REQUEST_NOT_SUPPORTED;
+        return ATT_ERR_REQUEST_NOT_SUPPORTED;
     if (len < 2 || len > sizeof(service->racp_request))
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_attribute *racp_cccd = gatt_server_cccd_for(
         service->server, service->record_access_handle);
@@ -210,7 +210,7 @@ static inline int gatt_glucose_service_racp_complete(
         response[3] = response_code;
         response_len = 4;
     }
-    int queued = gatt_server_queue_event(server,
+    int queued = gatt_queue_event(server,
         service->record_access_handle, response, response_len, 1);
     if (queued > 0) {
         service->racp_pending = 0;
@@ -312,7 +312,7 @@ static inline int gatt_glucose_service_notify_measurement(
         len += 2;
     }
 
-    int queued = gatt_server_queue_event(server, service->measurement_handle,
+    int queued = gatt_queue_event(server, service->measurement_handle,
                                          value, len, 0);
     if (queued > 0) {
         service->last_measurement_sequence = measurement->sequence_number;
@@ -388,7 +388,7 @@ static inline int gatt_glucose_service_notify_context(
 
     if (context->flags & 0x80)
         value[len++] = context->extended_flags;
-    int queued = gatt_server_queue_event(server, service->context_handle,
+    int queued = gatt_queue_event(server, service->context_handle,
                                          value, len, 0);
     if (queued > 0)
         service->measurement_context_pending = 0;

@@ -10,18 +10,18 @@ static uint8_t gatt_scan_parameters_window_write(
 ) {
     (void)command;
     if (!context || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (len != 4)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     uint16_t interval = ble_get_le16(value);
     uint16_t window = ble_get_le16(value + 2);
 
     if (interval < 4 || interval > 0x4000 || window < 4 ||
         window > interval
-    ) return BLE_GATT_ATT_ERR_VALUE_NOT_ALLOWED;
+    ) return ATT_ERR_VALUE_NOT_ALLOWED;
 
     ble_gatt_scan_parameters_service *service = context;
     service->scan_interval = interval;
@@ -85,7 +85,7 @@ static inline int gatt_scan_parameters_service_notify_refresh(
         return 0;
 
     const uint8_t refresh = 0;
-    return gatt_server_queue_event(server, service->scan_refresh_handle,
+    return gatt_queue_event(server, service->scan_refresh_handle,
         &refresh, sizeof(refresh), 0);
 }
 

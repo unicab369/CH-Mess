@@ -22,7 +22,7 @@ static inline int gatt_body_composition_service_indicate_value(
     )
         return 0;
 
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
 
@@ -134,7 +134,7 @@ static inline int gatt_body_composition_service_indicate_measurement(
 
     if (len > server->mtu - 3)
         return 0;
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
 

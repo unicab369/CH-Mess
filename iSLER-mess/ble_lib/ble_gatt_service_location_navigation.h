@@ -130,7 +130,7 @@ static inline int gatt_location_navigation_service_notify_location_speed(
     if (server->mtu < 3 || index > server->mtu - 3)
         return 0;
 
-    return gatt_server_queue_event(server, service->location_speed_handle,
+    return gatt_queue_event(server, service->location_speed_handle,
                                    value, index, 0);
 }
 
@@ -186,7 +186,7 @@ static inline int gatt_location_navigation_service_notify_navigation(
     if (server->mtu < 3 || index > server->mtu - 3)
         return 0;
 
-    return gatt_server_queue_event(server, service->navigation_handle,
+    return gatt_queue_event(server, service->navigation_handle,
                                    value, index, 0);
 }
 
@@ -215,7 +215,7 @@ static inline uint8_t gatt_lns_control_response(
         server->mtu < 6 ||
         parameter_len > server->mtu - 6 ||
         (parameter_len && !parameters)
-    ) return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+    ) return ATT_ERR_UNLIKELY_ERROR;
 
     response[0] = 0x20;
     response[1] = request_opcode;
@@ -223,9 +223,9 @@ static inline uint8_t gatt_lns_control_response(
 
     if (parameter_len)
         memcpy(response + 3, parameters, parameter_len);
-    return gatt_server_queue_event(server, handle, response,
+    return gatt_queue_event(server, handle, response,
         (uint16_t)(parameter_len + 3), 1) ? 0 :
-        BLE_GATT_ATT_ERR_INSUFFICIENT_RESOURCES;
+        ATT_ERR_INSUFFICIENT_RESOURCES;
 }
 
 // Internal
@@ -237,12 +237,12 @@ static inline uint8_t gatt_lns_control_point_write(
     ble_gatt_location_navigation_service *service = context;
 
     if (!service || !service->server || !value)
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     if (offset)
-        return BLE_GATT_ATT_ERR_INVALID_OFFSET;
+        return ATT_ERR_INVALID_OFFSET;
     if (!len)
-        return BLE_GATT_ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
+        return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
     ble_gatt_attribute *cccd = gatt_server_cccd_for(
@@ -258,7 +258,7 @@ static inline uint8_t gatt_lns_control_point_write(
     uint32_t features = 0;
 
     if (!gatt_lns_feature32(server, service->feature_handle, &features))
-        return BLE_GATT_ATT_ERR_UNLIKELY_ERROR;
+        return ATT_ERR_UNLIKELY_ERROR;
 
     uint8_t opcode = value[0];
     uint8_t response = 1;

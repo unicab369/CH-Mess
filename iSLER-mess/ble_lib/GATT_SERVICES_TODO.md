@@ -8,7 +8,7 @@ automatically provide each service's application protocol or profile behavior.
 ## Available
 
 - [x] GAP (`0x1800`), including Device Name and Appearance
-- [x] GATT (`0x1801`), provided by `gatt_server_add_standard_gatt_service()`
+- [x] GATT (`0x1801`), provided by `gatt_add_standard_service()`
 - [x] Immediate Alert (`0x1802`)
 - [x] Link Loss (`0x1803`)
 - [x] Tx Power (`0x1804`)

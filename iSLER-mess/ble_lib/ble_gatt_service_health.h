@@ -71,7 +71,7 @@ static inline int gatt_health_thermometer_service_indicate(
         !gatt_health_thermometer_measurement_encode(measurement, value, &len)
     ) return 0;
 
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
 
@@ -89,7 +89,7 @@ static inline int gatt_health_thermometer_service_notify_intermediate(
         !gatt_health_thermometer_measurement_encode(measurement, value, &len)
     ) return 0;
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->intermediate_temperature_handle, value, len, 0);
 }
 
@@ -158,7 +158,7 @@ static inline int gatt_blood_pressure_service_indicate(
         len += 2;
     }
 
-    return gatt_server_queue_event(server, service->measurement_handle,
+    return gatt_queue_event(server, service->measurement_handle,
                                    value, len, 1);
 }
 
@@ -207,7 +207,7 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
         len += 2;
     }
 
-    return gatt_server_queue_event(server,
+    return gatt_queue_event(server,
         service->intermediate_cuff_pressure_handle, value, len, 0);
 }
 

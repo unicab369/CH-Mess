@@ -146,8 +146,8 @@ int main(void) {
     ble_gatt_uuid value_uuid = gatt_uuid16(0xfff1);
     const uint8_t initial_value[] = {1, 2, 3, 4};
     uint16_t value_handle = 0;
-    assert(gatt_server_add_attribute(&server, &value_uuid,
-        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+    assert(gatt_server_add(&server, &value_uuid,
+        BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE, 0, 0,
         initial_value, sizeof(initial_value),
         sizeof(initial_value), NULL, NULL, NULL, &value_handle));
     ble_gatt_uuid service_uuid = gatt_uuid16(0x180f);
@@ -157,10 +157,10 @@ int main(void) {
     uint16_t cccd_handle;
     assert(gatt_server_add_service(&server, &service_uuid, 1,
                                         &service_handle));
-    assert(gatt_server_add_characteristic(&server, &indicate_uuid,
+    assert(gatt_add_characteristic(&server, &indicate_uuid,
         BLE_GATT_PROP_INDICATE, 0, NULL, 0, 0, NULL, NULL, NULL,
         &declaration_handle, &indication_handle));
-    assert(gatt_server_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
+    assert(gatt_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
         NULL, NULL, NULL, &cccd_handle));
     assert(gatt_server_set_cccd(&server, indication_handle, 2));
     ble_gatt_transport transport;
@@ -288,14 +288,14 @@ int main(void) {
     // Server indications keep pending/timeout state per bearer and use that
     // bearer's MTU and channel when the shared event queue is polled.
     const uint8_t indication_value[] = {0x5a};
-    assert(gatt_server_queue_event(&server, indication_handle,
+    assert(gatt_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
     assert(gatt_transport_test_poll(&transport, 100) == 0);
     assert(channel->tx_len == sizeof(indication_value) + 3 &&
            channel->tx_data[0] == 0x1d &&
            transport.eatt_contexts[bearer_slot].server.indication_pending);
     channel->tx_len = channel->tx_offset = 0;
-    assert(gatt_server_queue_event(&server, indication_handle,
+    assert(gatt_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)bearer_slot;
     assert(gatt_transport_test_poll(&transport, 101) == 0);
@@ -317,7 +317,7 @@ int main(void) {
            !transport.eatt_contexts[second_bearer_slot].server.indication_pending);
     transport.tx_len = transport.tx_offset = 0;
 
-    assert(gatt_server_queue_event(&server, indication_handle,
+    assert(gatt_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)second_bearer_slot;
     assert(gatt_transport_test_poll(&transport, 200) == 0);
