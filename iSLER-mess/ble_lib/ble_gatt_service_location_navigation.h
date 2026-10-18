@@ -1,6 +1,21 @@
 #ifndef BLE_GATT_SERVICE_LOCATION_NAVIGATION_H
 #define BLE_GATT_SERVICE_LOCATION_NAVIGATION_H
 
+typedef struct {
+    uint16_t service_handle, feature_handle;
+    uint16_t location_speed_handle, location_speed_cccd_handle;
+    uint16_t navigation_handle, navigation_cccd_handle;
+    uint16_t position_quality_handle, control_point_handle;
+    uint16_t control_point_cccd_handle;
+    ble_gatt_server *server;
+    uint32_t total_distance;
+    int32_t elevation;
+    uint16_t location_speed_content_mask, selected_route;
+    uint16_t control_point_request_parameter;
+    uint8_t fix_rate, navigation_command, navigation_running;
+    uint8_t control_point_pending_opcode, control_point_request_count;
+} ble_gatt_location_navigation_service;
+
 // Internal
 static inline int gatt_lns_feature32(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
@@ -391,6 +406,124 @@ static inline int gatt_location_navigation_service_control_point_complete(
     if (response == 1 && service->control_point_pending_opcode == 6)
         service->selected_route = service->control_point_request_parameter;
     service->control_point_pending_opcode = 0;
+    return 1;
+}
+
+// Internal
+static inline uint8_t gatt_lns_control_point_write(
+    void *context, uint16_t offset, const uint8_t *value,
+    uint16_t len, uint8_t command
+);
+
+// Application facing
+static inline int gatt_location_navigation_service_add(
+    ble_gatt_server *server, ble_gatt_location_navigation_service *service,
+    uint32_t features, int include_navigation,
+    const uint8_t *position_quality, uint16_t position_quality_len,
+    int include_control_point
+) {
+    uint16_t position_quality_flags = 0;
+    if (position_quality && position_quality_len >= 2)
+        position_quality_flags = ble_get_le16(position_quality);
+    uint16_t position_quality_features =
+        (uint16_t)((features >> 10) & 0x7fu);
+    uint16_t expected_position_quality_len = 2;
+
+    for (uint8_t bit = 0; bit < 7; bit++) {
+        if (position_quality_flags & (1u << bit))
+            expected_position_quality_len += bit == 2 ? 2 :
+                (bit == 3 || bit == 4 ? 4 : 1);
+    }
+    if (!server || !service || include_navigation < 0 ||
+        include_navigation > 1 || include_control_point < 0 ||
+        include_control_point > 1 || (features & 0xffe00000u) ||
+        ((!position_quality && position_quality_len) ||
+                     (position_quality && position_quality_len < 2)) ||
+        (position_quality_features && !position_quality) ||
+        (position_quality && (!position_quality_flags ||
+            (position_quality_flags & ~0x007fu) ||
+            (position_quality_flags & ~position_quality_features) ||
+            position_quality_len != expected_position_quality_len))
+    ) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t feature[4] = {
+        (uint8_t)features, (uint8_t)(features >> 8),
+        (uint8_t)(features >> 16), (uint8_t)(features >> 24)
+    };
+    uint8_t unused_value = 0;
+    static const uint8_t control_point_initial = 0;
+    ble_gatt_sig_characteristic chars[5];
+    uint8_t count = 0;
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a6a, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ, feature, 4
+    };
+    chars[count++] = (ble_gatt_sig_characteristic){
+        0x2a67, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+    };
+    uint8_t navigation_index = 0xff, quality_index = 0xff;
+    uint8_t control_index = 0xff;
+
+    if (include_navigation) {
+        navigation_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a68, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0
+        };
+    }
+
+    if (position_quality) {
+        quality_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            0x2a69, BLE_GATT_PROP_READ, 0, BLE_GATT_PERM_READ,
+            position_quality, position_quality_len
+        };
+    }
+
+    if (include_control_point) {
+        control_index = count;
+        chars[count++] = (ble_gatt_sig_characteristic){
+            .uuid = 0x2a6b,
+            .properties = BLE_GATT_PROP_WRITE | BLE_GATT_PROP_INDICATE,
+            .cccd = 1,
+            .permissions = BLE_GATT_PERM_WRITE,
+            .value = &control_point_initial,
+            .value_len = 0,
+            .value_capacity = 20,
+            .variable_length = 1
+        };
+    }
+
+    ble_gatt_sig_handlers handlers[5] = {0};
+
+    if (control_index != 0xff) {
+        handlers[control_index].write = gatt_lns_control_point_write;
+        handlers[control_index].context = service;
+    }
+
+    service->server = server;
+    uint16_t values[5], cccds[5];
+
+    if (!gatt_sig_service_add_with_handlers(server, 0x1819, chars, count,
+            &service->service_handle, values, cccds, handlers)
+    ) return 0;
+
+    service->feature_handle = values[0];
+    service->location_speed_handle = values[1];
+    service->location_speed_cccd_handle = cccds[1];
+
+    if (navigation_index != 0xff) {
+        service->navigation_handle = values[navigation_index];
+        service->navigation_cccd_handle = cccds[navigation_index];
+    }
+
+    if (quality_index != 0xff)
+        service->position_quality_handle = values[quality_index];
+
+    if (control_index != 0xff) {
+        service->control_point_handle = values[control_index];
+        service->control_point_cccd_handle = cccds[control_index];
+    }
+
     return 1;
 }
 
