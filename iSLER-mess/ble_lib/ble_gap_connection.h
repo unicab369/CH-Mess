@@ -1764,7 +1764,8 @@ static uint8_t gap_conn_control(
                 // A single identical peer preference requests symmetry: choose it in
                 // both directions or leave both unchanged, as required by PHY negotiation.
                 if (peer_tx == peer_rx &&
-                    (peer_tx == GAP_PHY_1M || peer_tx == GAP_PHY_2M ||
+                    (peer_tx == GAP_PHY_1M ||
+                    peer_tx == GAP_PHY_2M ||
                      peer_tx == GAP_PHY_CODED) &&
                     ((tx ? tx : conn->phy.current.tx) != peer_tx ||
                      (rx ? rx : conn->phy.current.rx) != peer_rx)

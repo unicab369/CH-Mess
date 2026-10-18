@@ -1846,10 +1846,7 @@ static void gap_ext_scan_process(void) {
             uint8_t aux_phy = fields.aux_phy == 0 ? GAP_PHY_1M :
                             fields.aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
 
-            if ((GAP_HW_PHY_MASK() & aux_phy) &&
-                (packet_phy == GAP_PHY_1M || packet_phy == GAP_PHY_2M ||
-                 packet_phy == GAP_PHY_CODED)
-            ) {
+            if (GAP_HW_PHY_MASK() & aux_phy) {
                 uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
 
                 if (fields.aux_offset_us > airtime_us) {
@@ -2031,10 +2028,7 @@ static void gap_ext_scan_process(void) {
         uint8_t aux_phy = fields.aux_phy == 0 ? GAP_PHY_1M :
                             fields.aux_phy == 1 ? GAP_PHY_2M : GAP_PHY_CODED;
 
-        if ((GAP_HW_PHY_MASK() & aux_phy) &&
-            (packet_phy == GAP_PHY_1M || packet_phy == GAP_PHY_2M ||
-             packet_phy == GAP_PHY_CODED)
-        ) {
+        if (GAP_HW_PHY_MASK() & aux_phy) {
             uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
 
             if (fields.aux_offset_us > airtime_us) {
@@ -2063,8 +2057,8 @@ static void gap_ext_scan_process(void) {
                 uint32_t start_us = after_packet_us > widen_us ?
                                     after_packet_us - widen_us : 0;
                 uint64_t start_offset_ticks = HW_TICKS_FROM_US(start_us);
-                uint64_t end_offset_ticks = HW_TICKS_FROM_US(
-                    after_packet_us + offset_unit_us + widen_us);
+                uint64_t end_offset_ticks = HW_TICKS_FROM_US(after_packet_us +
+                                                    offset_unit_us + widen_us);
 
                 gap_aux_request[aux_slot].start_ticks = gap_ext_scan.ticks +
                                                         start_offset_ticks;
@@ -2494,7 +2488,6 @@ static int gap_ext_send_due(uint32_t now) {
             set->periodic.next_ticks += interval;
             gap_periodic_advertising_next_set = (periodic_set + 1) % GAP_EXT_ADV_SET_COUNT;
             if (!transmitted) return -1;
-
             return 1;
         }
     }
@@ -2600,8 +2593,7 @@ static int gap_ext_send_due(uint32_t now) {
             }
 
             uint64_t tx_deadline_ticks = GAP_HW_TICKS() + HW_TICKS_FROM_US(1000);
-            while (!GAP_HW_TX_DONE() &&
-                   GAP_HW_TICKS() < tx_deadline_ticks) {}
+            while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < tx_deadline_ticks) {}
 
             if (!GAP_HW_TX_DONE()) {
                 transmit_result = 0;
