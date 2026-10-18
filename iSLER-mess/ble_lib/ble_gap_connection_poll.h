@@ -358,7 +358,6 @@ void gap_hw_received(void) {
                 conn->schedule.continuation = conn->next_schedule.continuation;
                 conn->schedule.timeout = conn->next_schedule.timeout;
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-                conn->c_subrate.transition = 0;
                 conn->c_subrate.status = 0;
             }
 
@@ -965,7 +964,7 @@ static inline uint8_t gap_conn_can_skip_event(
         return 0;
 
     if (conn->is_central &&
-        conn->c_subrate.transition &&
+        conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
         conn->next_schedule.factor
     ) {
         int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
@@ -1059,7 +1058,6 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - conn->c_subrate.started_ms) >= 40000
     ) {
         conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-        conn->c_subrate.transition = 0;
         conn->c_subrate.status = 0x22;
         gap_conn_end();
         return;

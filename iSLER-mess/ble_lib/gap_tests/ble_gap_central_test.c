@@ -3606,12 +3606,12 @@ static void test_connection_subrating(void) {
     assert(gap_tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
     assert(gap_tx_frame[2] == 0x27 && gap_tx_frame[1] == 11);
-    assert(conn->c_subrate.transition &&
-           conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
+    assert(conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
     assert(gap_tx_frame[3] == 5 && gap_tx_frame[4] == 0);
     assert(gap_tx_frame[7] == 1 && gap_tx_frame[9] == 1);
     receive_test_link_packet(1);
-    assert(conn->c_subrate.factor == 5 && !conn->c_subrate.transition &&
+    assert(conn->c_subrate.factor == 5 &&
+           conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE &&
            gap_subrate_status() == 0);
     const gap_conn_schedule *schedule = gap_conn_schedule_get();
     assert(schedule->factor == 5 && schedule->base_event < 5 &&
@@ -3674,7 +3674,6 @@ static void test_connection_subrating(void) {
 
     start_test_central_link();
     conn->c_subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
-    conn->c_subrate.transition = 1;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.started_ms = now_ms - 40000;
     gap_conn_poll();

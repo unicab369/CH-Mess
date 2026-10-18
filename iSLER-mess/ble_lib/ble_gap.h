@@ -465,7 +465,7 @@ typedef struct {
         uint16_t offsets[4];
     } c_rate;
     struct {
-        uint8_t transition, event_activity, event_received, force_event;
+        uint8_t event_activity, event_received, force_event;
         uint16_t continuations, latency_remaining;
         uint8_t procedure_state; // GAP_SUBRATE_* state.
         uint8_t queued_flags; // GAP_SUBRATE_QUEUED_UPDATE and _REQUEST bits.
@@ -506,8 +506,7 @@ typedef struct {
         uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
     } c_channel;
-
-} gap_conn_context;
+} gap_conn_context; // 552 B
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
