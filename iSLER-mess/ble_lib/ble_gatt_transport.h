@@ -628,8 +628,7 @@ static inline void gatt_transport_eatt_client_init(
     bearer->client.local_mtu = local_mtu;
 
     if (transport->eatt_sign || (transport->client && transport->client->sign))
-        gatt_client_set_signer(&bearer->client,
-            gatt_transport_eatt_client_sign);
+        bearer->client.sign = gatt_transport_eatt_client_sign;
     bearer->client_enabled = transport->eatt_result != NULL ||
         (transport->client && transport->client->result != NULL);
 }

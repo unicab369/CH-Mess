@@ -332,7 +332,7 @@ int main(void) {
     assert(gatt_client_receive(&client, execute_response,
                                    sizeof(execute_response)) == 1);
 
-    gatt_client_set_signer(&client, sign_pdu);
+    client.sign = sign_pdu;
     assert(gatt_client_write_signed(&client, 0x0004,
                                         read_response + 1, 1));
     assert(sent_len == 16 && sent[0] == 0xd2 && sent[1] == 4 &&
@@ -434,21 +434,21 @@ int main(void) {
            result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
     const uint8_t empty_value_uuid[] = {0x34, 0x12};
-    assert(gatt_client_read_by_uuid(&client, 1, 0xffff,
+    assert(gatt_client_read_uuid(&client, 1, 0xffff,
         empty_value_uuid, sizeof(empty_value_uuid), 51200));
     const uint8_t empty_value_by_type[] = {0x09, 2, 1, 0};
     assert(gatt_client_receive(&client, empty_value_by_type,
         sizeof(empty_value_by_type)) == 1);
     assert(result_status == 0);
 
-    assert(gatt_client_read_by_uuid(&client, 1, 0xffff,
+    assert(gatt_client_read_uuid(&client, 1, 0xffff,
         empty_value_uuid, sizeof(empty_value_uuid), 51300));
     const uint8_t malformed_empty_by_type[] = {0x09, 2, 1};
     assert(gatt_client_receive(&client, malformed_empty_by_type,
         sizeof(malformed_empty_by_type)) == -1);
     assert(result_status == BLE_GATT_CLIENT_PROTOCOL_ERROR);
 
-    assert(gatt_client_characteristics(&client, 1, 0xffff,
+    assert(gatt_client_chars(&client, 1, 0xffff,
                                                      NULL, 0, 51400));
     const uint8_t characteristic16[] = {
         0x09, 7, 2, 0, 0x12, 3, 0, 0x19, 0x2a
@@ -459,7 +459,7 @@ int main(void) {
 
     // A partial discovery range may end at the declaration handle while the
     // characteristic value attribute follows just outside that range.
-    assert(gatt_client_characteristics(&client, 2, 2,
+    assert(gatt_client_chars(&client, 2, 2,
         NULL, 0, 51425));
     assert(gatt_client_receive(&client, characteristic16,
         sizeof(characteristic16)) == 1);
@@ -469,13 +469,13 @@ int main(void) {
         0xfb, 0x34, 0x9b, 0x5f, 0x80, 0, 0, 0x80,
         0, 0x10, 0, 0, 0, 0, 0x03, 0x28
     };
-    assert(gatt_client_characteristics(&client, 1, 0xffff,
+    assert(gatt_client_chars(&client, 1, 0xffff,
         characteristic_uuid128, sizeof(characteristic_uuid128), 51450));
     assert(gatt_client_receive(&client, characteristic16,
         sizeof(characteristic16)) == 1);
     assert(result_status == 0);
 
-    assert(gatt_client_characteristics(&client, 1, 0xffff,
+    assert(gatt_client_chars(&client, 1, 0xffff,
                                                      NULL, 0, 51500));
     const uint8_t characteristic128[] = {
         0x09, 21, 2, 0, 0x12, 3, 0,
@@ -485,7 +485,7 @@ int main(void) {
         sizeof(characteristic128)) == 1);
     assert(result_status == 0);
 
-    assert(gatt_client_characteristics(&client, 1, 0xffff,
+    assert(gatt_client_chars(&client, 1, 0xffff,
                                                      NULL, 0, 51600));
     const uint8_t wrong_characteristic_size[] = {
         0x09, 6, 2, 0, 0x12, 3, 0

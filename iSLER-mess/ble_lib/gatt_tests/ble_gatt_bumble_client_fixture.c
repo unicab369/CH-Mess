@@ -74,7 +74,7 @@ static void on_event(
 int main(void) {
     gatt_client_init(&client, send_pdu, on_result, on_event, on_event,
                          NULL);
-    gatt_client_set_signer(&client, sign_with_test_csrk);
+    client.sign = sign_with_test_csrk;
     uint32_t now_ms = 0;
     for (;;) {
         int command = fgetc(stdin);
@@ -107,7 +107,7 @@ int main(void) {
             break;
         }
         case 4:
-            started = gatt_client_characteristics(&client,
+            started = gatt_client_chars(&client,
                 1, 4, NULL, 0, now_ms);
             break;
         case 5:
@@ -167,7 +167,7 @@ int main(void) {
         }
         case 19: {
             const uint8_t uuid[] = {0x01, 0x29};
-            started = gatt_client_read_by_uuid(&client, 1, 0xffff,
+            started = gatt_client_read_uuid(&client, 1, 0xffff,
                 uuid, sizeof(uuid), now_ms);
             break;
         }
