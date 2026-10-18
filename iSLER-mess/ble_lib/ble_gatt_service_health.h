@@ -7,7 +7,7 @@ typedef struct {
     uint32_t temperature;
     uint8_t timestamp[7];
     uint8_t temperature_type;
-} ble_gatt_temperature_measurement;
+} ble_gatt_temp_measurement;
 
 typedef struct {
     uint8_t flags;
@@ -29,8 +29,8 @@ typedef struct {
 } ble_gatt_intermediate_cuff_pressure;
 
 // Internal
-static inline int gatt_health_thermometer_measurement_encode(
-    const ble_gatt_temperature_measurement *measurement,
+static inline int gatt_temp_encode(
+    const ble_gatt_temp_measurement *measurement,
     uint8_t value[13], uint16_t *len
 ) {
     if (!measurement || !value || !len ||
@@ -59,16 +59,16 @@ static inline int gatt_health_thermometer_measurement_encode(
 
 // Application facing
 // Encode and queue a Health Thermometer measurement indication.
-static inline int gatt_health_thermometer_service_indicate(
+static inline int gatt_temp_indicate(
     ble_gatt_server *server,
     const ble_gatt_health_thermometer_service *service,
-    const ble_gatt_temperature_measurement *measurement
+    const ble_gatt_temp_measurement *measurement
 ) {
     uint8_t value[13];
     uint16_t len;
 
     if (!server || !service ||
-        !gatt_health_thermometer_measurement_encode(measurement, value, &len)
+        !gatt_temp_encode(measurement, value, &len)
     ) return 0;
 
     return gatt_queue_event(server, service->measurement_handle,
@@ -77,16 +77,16 @@ static inline int gatt_health_thermometer_service_indicate(
 
 // Application facing
 // Encode and queue an Intermediate Temperature notification.
-static inline int gatt_health_thermometer_service_notify_intermediate(
+static inline int gatt_temp_notify_intermediate(
     ble_gatt_server *server,
     const ble_gatt_health_thermometer_service *service,
-    const ble_gatt_temperature_measurement *measurement
+    const ble_gatt_temp_measurement *measurement
 ) {
     uint8_t value[13];
     uint16_t len;
 
     if (!server || !service || !service->intermediate_temperature_handle ||
-        !gatt_health_thermometer_measurement_encode(measurement, value, &len)
+        !gatt_temp_encode(measurement, value, &len)
     ) return 0;
 
     return gatt_queue_event(server,
@@ -94,7 +94,7 @@ static inline int gatt_health_thermometer_service_notify_intermediate(
 }
 
 // Internal
-static inline int gatt_blood_pressure_feature16(
+static inline int gatt_blood_pressure_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
     if (!server || !handle || !features)
@@ -115,7 +115,7 @@ static inline int gatt_blood_pressure_feature16(
 
 // Application facing
 // Encode and queue a Blood Pressure Measurement indication.
-static inline int gatt_blood_pressure_service_indicate(
+static inline int gatt_bp_indicate(
     ble_gatt_server *server,
     const ble_gatt_blood_pressure_service *service,
     const ble_gatt_blood_pressure_measurement *measurement
@@ -125,7 +125,7 @@ static inline int gatt_blood_pressure_service_indicate(
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
-        !gatt_blood_pressure_feature16(server, service->feature_handle,
+        !gatt_blood_pressure_feature(server, service->feature_handle,
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
@@ -164,7 +164,7 @@ static inline int gatt_blood_pressure_service_indicate(
 
 // Application facing
 // Encode and queue an Intermediate Cuff Pressure notification.
-static inline int gatt_blood_pressure_service_notify_intermediate(
+static inline int gatt_bp_notify_intermediate(
     ble_gatt_server *server,
     const ble_gatt_blood_pressure_service *service,
     const ble_gatt_intermediate_cuff_pressure *measurement
@@ -174,7 +174,7 @@ static inline int gatt_blood_pressure_service_notify_intermediate(
     if (!server || !service || !service->intermediate_cuff_pressure_handle ||
         !measurement || (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->measurement_status & (uint16_t)~0x003f) ||
-        !gatt_blood_pressure_feature16(server, service->feature_handle,
+        !gatt_blood_pressure_feature(server, service->feature_handle,
                                        &features) ||
         ((measurement->flags & 0x10) &&
          ((measurement->measurement_status & 0x003f) &
@@ -256,7 +256,7 @@ enum {
 };
 
 // Internal: queue a protocol response for an invalid RACP procedure request.
-static inline uint8_t gatt_glucose_racp_reject(
+static inline uint8_t gatt_racp_reject(
     ble_gatt_glucose_service *service, uint8_t opcode, uint8_t response_code
 ) {
     if (service->server->indication_pending)
@@ -300,7 +300,7 @@ static inline uint8_t gatt_glucose_racp_write(
     uint8_t operand_len = (uint8_t)(len - 2);
     if (opcode == GATT_RACP_ABORT) {
         if (oper != GATT_RACP_OP_NULL || operand_len)
-            return gatt_glucose_racp_reject(service, opcode, 5);
+            return gatt_racp_reject(service, opcode, 5);
     }
     else if (opcode == GATT_RACP_REPORT_RECORDS ||
              opcode == GATT_RACP_DELETE_RECORDS ||
@@ -309,13 +309,13 @@ static inline uint8_t gatt_glucose_racp_write(
             oper == GATT_RACP_OP_FIRST ||
             oper == GATT_RACP_OP_LAST) {
             if (operand_len)
-                return gatt_glucose_racp_reject(service, opcode, 5);
+                return gatt_racp_reject(service, opcode, 5);
         }
         else if (oper == GATT_RACP_OP_LE ||
                  oper == GATT_RACP_OP_GE ||
                  oper == GATT_RACP_OP_RANGE) {
             if (!operand_len)
-                return gatt_glucose_racp_reject(service, opcode, 5);
+                return gatt_racp_reject(service, opcode, 5);
             uint8_t filter = value[2];
             uint8_t width = filter == GATT_RACP_FILTER_SEQ_NUM ?
                 2 : filter == GATT_RACP_FILTER_USER_TIME ? 7 : 0;
@@ -323,9 +323,9 @@ static inline uint8_t gatt_glucose_racp_write(
                 (oper == GATT_RACP_OP_RANGE ?
                     (uint8_t)(1 + 2 * width) : (uint8_t)(1 + width)) : 0;
             if (!expected)
-                return gatt_glucose_racp_reject(service, opcode, 9);
+                return gatt_racp_reject(service, opcode, 9);
             if (operand_len != expected)
-                return gatt_glucose_racp_reject(service, opcode, 5);
+                return gatt_racp_reject(service, opcode, 5);
             if (oper == GATT_RACP_OP_RANGE) {
                 int reversed = 0;
                 if (width == 2)
@@ -340,15 +340,15 @@ static inline uint8_t gatt_glucose_racp_write(
                                 width - 2) > 0);
                 }
                 if (reversed)
-                    return gatt_glucose_racp_reject(service, opcode, 5);
+                    return gatt_racp_reject(service, opcode, 5);
             }
         }
         else {
-            return gatt_glucose_racp_reject(service, opcode, 3);
+            return gatt_racp_reject(service, opcode, 3);
         }
     }
     else {
-        return gatt_glucose_racp_reject(service, opcode, 2);
+        return gatt_racp_reject(service, opcode, 2);
     }
     if (opcode == GATT_RACP_REPORT_RECORDS) {
         ble_gatt_attribute *measurement_cccd = gatt_server_cccd_for(
@@ -395,7 +395,7 @@ static inline uint8_t gatt_glucose_racp_write(
 
 // Complete a captured RACP request after application-owned record handling.
 // For a successful Report Number request, supply the count in record_count.
-static inline int gatt_glucose_service_racp_complete(
+static inline int gatt_glucose_racp_complete(
     ble_gatt_server *server, ble_gatt_glucose_service *service,
     uint8_t response_code, uint16_t record_count
 ) {
@@ -433,7 +433,7 @@ static inline int gatt_glucose_service_racp_complete(
 }
 
 // Internal
-static inline int gatt_glucose_feature16(
+static inline int gatt_glucose_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
     if (!server || !handle || !features)
@@ -475,7 +475,7 @@ static inline int gatt_glucose_status_supported(
 
 // Application facing
 // Encode and queue one Glucose Measurement notification.
-static inline int gatt_glucose_service_notify_measurement(
+static inline int gatt_glucose_notify_measurement(
     ble_gatt_server *server, ble_gatt_glucose_service *service,
     const ble_gatt_glucose_measurement *measurement
 ) {
@@ -485,7 +485,7 @@ static inline int gatt_glucose_service_notify_measurement(
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->sensor_status & (uint16_t)~0x0fff) ||
         service->measurement_context_pending ||
-        !gatt_glucose_feature16(server, service->feature_handle, &features) ||
+        !gatt_glucose_feature(server, service->feature_handle, &features) ||
         ((measurement->flags & 0x08) &&
          !gatt_glucose_status_supported(features,
                                         measurement->sensor_status)) ||
@@ -536,7 +536,7 @@ static inline int gatt_glucose_service_notify_measurement(
 
 // Application facing
 // Encode and queue the Context notification matching a measurement sequence.
-static inline int gatt_glucose_service_notify_context(
+static inline int gatt_glucose_notify_context(
     ble_gatt_server *server, ble_gatt_glucose_service *service,
     const ble_gatt_glucose_context *context
 ) {
@@ -614,7 +614,7 @@ typedef struct {
     uint16_t measurement_status;
     uint32_t device_sensor_status;
     uint16_t pulse_amplitude_index;
-} ble_gatt_pulse_oximeter_spot_check;
+} ble_gatt_spo2_spot;
 
 typedef struct {
     uint8_t flags;
@@ -625,10 +625,10 @@ typedef struct {
     uint16_t measurement_status;
     uint32_t device_sensor_status;
     uint16_t pulse_amplitude_index;
-} ble_gatt_pulse_oximeter_continuous;
+} ble_gatt_spo2_continuous;
 
 // Internal
-static inline int gatt_pulse_oximeter_feature16(
+static inline int gatt_spo2_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
     if (!server || !handle || !features)
@@ -649,16 +649,16 @@ static inline int gatt_pulse_oximeter_feature16(
 
 // Application facing
 // Encode and queue a PLX Spot-check Measurement indication.
-static inline int gatt_pulse_oximeter_service_indicate_spot_check(
+static inline int gatt_spo2_indicate_spot(
     ble_gatt_server *server, const ble_gatt_pulse_oximeter_service *service,
-    const ble_gatt_pulse_oximeter_spot_check *measurement
+    const ble_gatt_spo2_spot *measurement
 ) {
     uint16_t features;
 
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->device_sensor_status & 0xff000000u) ||
-        !gatt_pulse_oximeter_feature16(server, service->feature_handle,
+        !gatt_spo2_feature(server, service->feature_handle,
                                        &features) ||
         (!!(measurement->flags & 0x01) != !!(features & (1u << 3))) ||
         (!!(measurement->flags & 0x02) != !!(features & (1u << 0))) ||
@@ -700,16 +700,16 @@ static inline int gatt_pulse_oximeter_service_indicate_spot_check(
 
 // Application facing
 // Encode and queue a PLX Continuous Measurement notification.
-static inline int gatt_pulse_oximeter_service_notify_continuous(
+static inline int gatt_spo2_notify_continuous(
     ble_gatt_server *server, const ble_gatt_pulse_oximeter_service *service,
-    const ble_gatt_pulse_oximeter_continuous *measurement
+    const ble_gatt_spo2_continuous *measurement
 ) {
     uint16_t features;
 
     if (!server || !service || !measurement ||
         (measurement->flags & (uint8_t)~0x1f) ||
         (measurement->device_sensor_status & 0xff000000u) ||
-        !gatt_pulse_oximeter_feature16(server, service->feature_handle,
+        !gatt_spo2_feature(server, service->feature_handle,
                                        &features) ||
         (!!(measurement->flags & 0x01) != !!(features & (1u << 4))) ||
         (!!(measurement->flags & 0x02) != !!(features & (1u << 5))) ||
@@ -846,7 +846,7 @@ static inline int gatt_sport_feature32(
 }
 
 // Internal
-static inline int gatt_cycling_power_measurement_features_valid(
+static inline int gatt_cycling_power_features_valid(
     uint16_t flags, uint32_t features
 ) {
     uint8_t context_torque = !!(features & (1u << 16));
@@ -867,7 +867,7 @@ static inline int gatt_cycling_power_measurement_features_valid(
         (!(flags & 0x1000) || (features & (1u << 8)));
 }
 
-static inline uint16_t gatt_cycling_power_apply_content_mask(
+static inline uint16_t gatt_cycling_power_content_mask(
     uint16_t flags, uint16_t mask
 ) {
     if (mask & (1u << 0)) flags &= (uint16_t)~0x0003;
@@ -884,7 +884,7 @@ static inline uint16_t gatt_cycling_power_apply_content_mask(
 
 // Application facing
 // Encode and queue one Cycling Power Measurement notification.
-static inline int gatt_cycling_power_service_notify_measurement(
+static inline int gatt_cycling_power_notify(
     ble_gatt_server *server,
     const ble_gatt_cycling_power_service *service,
     const ble_gatt_cycling_power_measurement *measurement
@@ -894,11 +894,11 @@ static inline int gatt_cycling_power_service_notify_measurement(
     if (!server || !service || service->server != server || !measurement ||
         (measurement->flags & (uint16_t)~0x1fff) ||
         !gatt_sport_feature32(server, service->feature_handle, &features) ||
-        !gatt_cycling_power_measurement_features_valid(
-            gatt_cycling_power_apply_content_mask(measurement->flags,
+        !gatt_cycling_power_features_valid(
+            gatt_cycling_power_content_mask(measurement->flags,
                 service->measurement_content_mask),
             features) ||
-        ((gatt_cycling_power_apply_content_mask(measurement->flags,
+        ((gatt_cycling_power_content_mask(measurement->flags,
             service->measurement_content_mask) & 0x0100) &&
          (measurement->maximum_angle > 0x0fff ||
           measurement->minimum_angle > 0x0fff))
@@ -906,7 +906,7 @@ static inline int gatt_cycling_power_service_notify_measurement(
 
     uint8_t value[36];
     uint16_t len = 0;
-    uint16_t flags = gatt_cycling_power_apply_content_mask(
+    uint16_t flags = gatt_cycling_power_content_mask(
         measurement->flags, service->measurement_content_mask);
     ble_put_le16(value + len, flags);
     len += 2;
@@ -983,7 +983,7 @@ static inline int gatt_cycling_power_service_notify_measurement(
 
 // Application facing
 // Encode and queue one Cycling Power Vector notification.
-static inline int gatt_cycling_power_service_notify_vector(
+static inline int gatt_cycling_power_notify_vector(
     ble_gatt_server *server,
     const ble_gatt_cycling_power_service *service,
     const ble_gatt_cycling_power_vector *vector
@@ -1043,7 +1043,7 @@ static inline int gatt_cycling_power_service_notify_vector(
 }
 
 // Internal
-static inline int gatt_sport_control_busy(
+static inline int gatt_sport_cp_busy(
     const ble_gatt_server *server, uint16_t handle
 ) {
     if (server->indication_pending && server->indication_handle == handle)
@@ -1058,7 +1058,7 @@ static inline int gatt_sport_control_busy(
 }
 
 // Internal
-static inline uint8_t gatt_sport_control_point_response(
+static inline uint8_t gatt_sport_cp_response(
     ble_gatt_server *server, uint16_t handle, uint8_t response_opcode,
     uint8_t request_opcode, uint8_t response_code,
     const uint8_t *parameters, uint16_t parameter_len
@@ -1081,7 +1081,7 @@ static inline uint8_t gatt_sport_control_point_response(
 }
 
 // Internal
-static inline uint8_t gatt_sport_control_ready(
+static inline uint8_t gatt_sport_cp_ready(
     ble_gatt_server *server, uint16_t handle
 ) {
     ble_gatt_attribute *cccd = gatt_server_cccd_for(server, handle);
@@ -1089,14 +1089,14 @@ static inline uint8_t gatt_sport_control_ready(
     if (!cccd || !(cccd->cccd & 2))
         return GATT_SC_ERR_CCCD_IMPROPERLY_CONFIGURED;
 
-    if (gatt_sport_control_busy(server, handle))
+    if (gatt_sport_cp_busy(server, handle))
         return GATT_SC_ERR_PROCEDURE_ALREADY_IN_PROGRESS;
 
     return 0;
 }
 
 // Internal
-static inline int gatt_sport_supported_locations_valid(
+static inline int gatt_sport_locations_valid(
     uint32_t locations, uint8_t current_location
 ) {
     if (current_location > 16 || (locations & ~0x1ffffu))
@@ -1109,7 +1109,7 @@ static inline int gatt_sport_supported_locations_valid(
 }
 
 // Internal
-static inline int gatt_sport_sensor_location_store(
+static inline int gatt_sport_location_store(
     ble_gatt_server *server, uint16_t handle, uint8_t location
 ) {
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
@@ -1124,7 +1124,7 @@ static inline int gatt_sport_sensor_location_store(
 }
 
 // Internal
-static inline uint8_t gatt_rsc_control_point_write(
+static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1140,7 +1140,7 @@ static inline uint8_t gatt_rsc_control_point_write(
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
-    uint8_t error = gatt_sport_control_ready(server,
+    uint8_t error = gatt_sport_cp_ready(server,
                                               service->control_point_handle);
 
     if (error) return error;
@@ -1184,7 +1184,7 @@ static inline uint8_t gatt_rsc_control_point_write(
         else if (len != 2 || value[1] > 16 ||
                  !(service->supported_sensor_locations &
                    (1u << value[1]))) response = 3;
-        else if (!gatt_sport_sensor_location_store(server,
+        else if (!gatt_sport_location_store(server,
                      service->sensor_location_handle, value[1]))
             return ATT_ERR_UNLIKELY_ERROR;
         else service->sensor_location = value[1];
@@ -1202,14 +1202,14 @@ static inline uint8_t gatt_rsc_control_point_write(
     else {
         response = 2;
     }
-    return gatt_sport_control_point_response(server,
+    return gatt_sport_cp_response(server,
         service->control_point_handle, 0x10, opcode, response,
         opcode == 4 && response == 1 ? locations : NULL,
         opcode == 4 && response == 1 ? location_count : 0);
 }
 
 // Internal
-static inline uint8_t gatt_csc_control_point_write(
+static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1225,7 +1225,7 @@ static inline uint8_t gatt_csc_control_point_write(
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
-    uint8_t error = gatt_sport_control_ready(server,
+    uint8_t error = gatt_sport_cp_ready(server,
                                               service->control_point_handle);
 
     if (error) return error;
@@ -1255,7 +1255,7 @@ static inline uint8_t gatt_csc_control_point_write(
         else if (len != 2 || value[1] > 16 ||
                  !(service->supported_sensor_locations &
                    (1u << value[1]))) response = 3;
-        else if (!gatt_sport_sensor_location_store(server,
+        else if (!gatt_sport_location_store(server,
                      service->sensor_location_handle, value[1]))
             return ATT_ERR_UNLIKELY_ERROR;
         else service->sensor_location = value[1];
@@ -1273,14 +1273,14 @@ static inline uint8_t gatt_csc_control_point_write(
     else {
         response = 2;
     }
-    return gatt_sport_control_point_response(server,
+    return gatt_sport_cp_response(server,
         service->control_point_handle, 0x10, opcode, response,
         opcode == 4 && response == 1 ? locations : NULL,
         opcode == 4 && response == 1 ? location_count : 0);
 }
 
 // Internal
-static inline uint8_t gatt_cycling_power_control_point_write(
+static inline uint8_t gatt_cycling_power_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 ) {
@@ -1296,7 +1296,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
         return ATT_ERR_INVALID_ATTRIBUTE_LENGTH;
 
     ble_gatt_server *server = service->server;
-    uint8_t error = gatt_sport_control_ready(server,
+    uint8_t error = gatt_sport_cp_ready(server,
                                               service->control_point_handle);
 
     if (error) return error;
@@ -1440,7 +1440,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
     else {
         response = 2;
     }
-    uint8_t response_error = gatt_sport_control_point_response(server,
+    uint8_t response_error = gatt_sport_cp_response(server,
         service->control_point_handle, 0x20, opcode, response,
         opcode == 3 && response == 1 ? locations :
             response == 1 && parameter_len ? parameters : NULL,
@@ -1454,7 +1454,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
             requested_cumulative_revolutions;
 
     if (update_sensor_location) {
-        if (!gatt_sport_sensor_location_store(server,
+        if (!gatt_sport_location_store(server,
                 service->sensor_location_handle, requested_sensor_location))
             return ATT_ERR_UNLIKELY_ERROR;
 
@@ -1475,7 +1475,7 @@ static inline uint8_t gatt_cycling_power_control_point_write(
 
 // Application facing
 // Configure the supported locations after adding RSC and before connection.
-static inline int gatt_rsc_service_set_supported_locations(
+static inline int gatt_rsc_set_locations(
     ble_gatt_rsc_service *service, uint32_t locations
 ) {
     uint16_t features;
@@ -1483,7 +1483,7 @@ static inline int gatt_rsc_service_set_supported_locations(
     if (!service || !service->server ||
         !gatt_sport_feature16(service->server, service->feature_handle,
                               &features) || !(features & 0x0008) ||
-        !gatt_sport_supported_locations_valid(locations,
+        !gatt_sport_locations_valid(locations,
                                                service->sensor_location)
     ) return 0;
 
@@ -1493,7 +1493,7 @@ static inline int gatt_rsc_service_set_supported_locations(
 
 // Application facing
 // Configure the supported locations after adding CSC and before connection.
-static inline int gatt_csc_service_set_supported_locations(
+static inline int gatt_csc_set_locations(
     ble_gatt_csc_service *service, uint32_t locations
 ) {
     uint16_t features;
@@ -1501,7 +1501,7 @@ static inline int gatt_csc_service_set_supported_locations(
     if (!service || !service->server ||
         !gatt_sport_feature16(service->server, service->feature_handle,
                               &features) || !(features & 0x0004) ||
-        !gatt_sport_supported_locations_valid(locations,
+        !gatt_sport_locations_valid(locations,
                                                service->sensor_location)
     ) return 0;
 
@@ -1511,7 +1511,7 @@ static inline int gatt_csc_service_set_supported_locations(
 
 // Application facing
 // Configure supported Cycling Power sensor locations before connection.
-static inline int gatt_cycling_power_service_set_supported_locations(
+static inline int gatt_cycling_power_set_locations(
     ble_gatt_cycling_power_service *service, uint32_t locations
 ) {
     uint32_t features;
@@ -1519,7 +1519,7 @@ static inline int gatt_cycling_power_service_set_supported_locations(
     if (!service || !service->server ||
         !gatt_sport_feature32(service->server, service->feature_handle,
                               &features) || !(features & (1u << 11)) ||
-        !gatt_sport_supported_locations_valid(locations,
+        !gatt_sport_locations_valid(locations,
                                                service->sensor_location)
     ) return 0;
 
@@ -1530,7 +1530,7 @@ static inline int gatt_cycling_power_service_set_supported_locations(
 // Reset connection-scoped CPS state after each new link. The specification
 // requires the Measurement Content mask to return to its default (no fields
 // disabled) for every connection.
-static inline void gatt_cycling_power_service_reset_connection(
+static inline void gatt_cycling_power_reset(
     ble_gatt_cycling_power_service *service
 ) {
     if (!service) return;
@@ -1541,7 +1541,7 @@ static inline void gatt_cycling_power_service_reset_connection(
 
 // Application facing
 // Complete an asynchronous Cycling Power Control Point procedure.
-static inline int gatt_cycling_power_service_control_point_complete(
+static inline int gatt_cycling_power_control_complete(
     ble_gatt_server *server, ble_gatt_cycling_power_service *service,
     uint8_t response, const uint8_t *parameters, uint16_t parameter_len
 ) {
@@ -1551,10 +1551,10 @@ static inline int gatt_cycling_power_service_control_point_complete(
         (response == 1 && service->control_point_pending_opcode == 12 &&
          parameter_len != 2) ||
         (parameter_len && !parameters) || parameter_len > 17 ||
-        gatt_sport_control_busy(server, service->control_point_handle)
+        gatt_sport_cp_busy(server, service->control_point_handle)
     ) return 0;
 
-    if (!gatt_sport_control_point_response(server,
+    if (!gatt_sport_cp_response(server,
             service->control_point_handle, 0x20,
             service->control_point_pending_opcode, response,
             parameters, parameter_len)
@@ -1566,7 +1566,7 @@ static inline int gatt_cycling_power_service_control_point_complete(
 
 // Application facing
 // Set the sampling rate returned by Cycling Power Control Point opcode 14.
-static inline void gatt_cycling_power_service_set_sampling_rate(
+static inline void gatt_cycling_power_set_rate(
     ble_gatt_cycling_power_service *service, uint8_t samples_per_second
 ) {
     if (service)
@@ -1575,7 +1575,7 @@ static inline void gatt_cycling_power_service_set_sampling_rate(
 
 // Application facing
 // Set the Factory Calibration Date characteristic and its Control Point value.
-static inline int gatt_cycling_power_service_set_factory_calibration_date(
+static inline int gatt_cycling_power_set_cal_date(
     ble_gatt_cycling_power_service *service, const uint8_t date[7]
 ) {
     if (!service || !service->server || !service->factory_calibration_date_handle ||
@@ -1601,12 +1601,12 @@ static inline int gatt_cycling_power_service_set_factory_calibration_date(
 
 // Application facing
 // Complete an RSC Start Calibration request and queue its response indication.
-static inline int gatt_rsc_service_calibration_complete(
+static inline int gatt_rsc_calibration_complete(
     ble_gatt_server *server, ble_gatt_rsc_service *service, int success
 ) {
     if (!server || !service || service->server != server ||
         !service->calibration_pending ||
-        gatt_sport_control_busy(server, service->control_point_handle)
+        gatt_sport_cp_busy(server, service->control_point_handle)
     ) return 0;
 
     uint8_t response[3] = {0x10, 0x02, success ? 0x01 : 0x04};
@@ -1621,7 +1621,7 @@ static inline int gatt_rsc_service_calibration_complete(
 
 // Application facing
 // Encode and queue one Running Speed and Cadence Measurement notification.
-static inline int gatt_rsc_service_notify_measurement(
+static inline int gatt_rsc_notify(
     ble_gatt_server *server, const ble_gatt_rsc_service *service,
     const ble_gatt_rsc_measurement *measurement
 ) {
@@ -1660,7 +1660,7 @@ static inline int gatt_rsc_service_notify_measurement(
 
 // Application facing
 // Encode and queue one Cycling Speed and Cadence Measurement notification.
-static inline int gatt_csc_service_notify_measurement(
+static inline int gatt_csc_notify(
     ble_gatt_server *server, const ble_gatt_csc_service *service,
     const ble_gatt_csc_measurement *measurement
 ) {
@@ -1708,19 +1708,16 @@ typedef struct {
 } ble_gatt_weight_measurement;
 
 // Internal
-static inline int gatt_weight_scale_feature16(
+static inline int gatt_weight_feature(
     ble_gatt_server *server, uint16_t handle, uint16_t *features
 ) {
-    if (!server || !handle || !features)
-        return 0;
-
+    if (!server || !handle || !features) return 0;
     ble_gatt_attribute *attribute = gatt_server_find(server, handle);
 
     if (!attribute || attribute->value_len < 2)
         return 0;
 
     const uint8_t *value = gatt_attribute_value(server, attribute);
-
     if (!value) return 0;
 
     *features = ble_get_le16(value);
@@ -1729,14 +1726,14 @@ static inline int gatt_weight_scale_feature16(
 
 // Application facing
 // Encode and queue one Weight Measurement indication.
-static inline int gatt_weight_scale_service_indicate_measurement(
+static inline int gatt_weight_indicate(
     ble_gatt_server *server, const ble_gatt_weight_scale_service *service,
     const ble_gatt_weight_measurement *measurement
 ) {
     uint16_t features;
 
     if (!service || !measurement || (measurement->flags & 0xf0) ||
-        !gatt_weight_scale_feature16(server, service->feature_handle,
+        !gatt_weight_feature(server, service->feature_handle,
                                      &features) ||
         ((measurement->flags & 0x02) && !(features & (1u << 0))) ||
         ((measurement->flags & 0x04) && !(features & (1u << 1))) ||
@@ -1779,7 +1776,7 @@ typedef struct {
 
 // Application facing
 // Queue a pre-encoded Body Composition Measurement indication.
-static inline int gatt_body_composition_service_indicate_value(
+static inline int gatt_body_comp_indicate_value(
     ble_gatt_server *server, const ble_gatt_body_composition_service *service,
     const uint8_t *value, uint16_t len
 ) {
@@ -1793,7 +1790,7 @@ static inline int gatt_body_composition_service_indicate_value(
 }
 
 // Internal
-static inline int gatt_body_composition_feature32(
+static inline int gatt_body_comp_feature(
     ble_gatt_server *server, uint16_t handle, uint32_t *features
 ) {
     if (!server || !handle || !features)
@@ -1815,14 +1812,14 @@ static inline int gatt_body_composition_feature32(
 
 // Application facing
 // Encode and queue one feature-checked Body Composition Measurement.
-static inline int gatt_body_composition_service_indicate_measurement(
+static inline int gatt_body_comp_indicate(
     ble_gatt_server *server, const ble_gatt_body_composition_service *service,
     const ble_gatt_body_composition_measurement *measurement
 ) {
     uint32_t features;
 
     if (!service || !measurement || (measurement->flags & 0xf000) ||
-        !gatt_body_composition_feature32(server, service->feature_handle,
+        !gatt_body_comp_feature(server, service->feature_handle,
                                          &features) ||
         ((measurement->flags & 0x0002) && !(features & (1u << 0))) ||
         ((measurement->flags & 0x0004) && !(features & (1u << 1))) ||

@@ -294,36 +294,36 @@ Additional service database builders are available:
   device-specific actions and sends notifications.
 - `gatt_health_thermometer_service_add()` registers Temperature Measurement
   with an indication CCCD and optional Intermediate Temperature notification
-  and Temperature Type. `gatt_health_thermometer_service_indicate()` encodes
+  and Temperature Type. `gatt_temp_indicate()` encodes
   temperature values and optional timestamp/type fields;
-  `gatt_health_thermometer_service_notify_intermediate()` encodes and queues
+  `gatt_temp_notify_intermediate()` encodes and queues
   an Intermediate Temperature measurement.
-- `gatt_blood_pressure_service_add()` registers Blood Pressure Measurement,
+- `gatt_bp_service_add()` registers Blood Pressure Measurement,
   optional Intermediate Cuff Pressure, and Blood Pressure Feature.
-  `gatt_blood_pressure_service_indicate()` encodes measurements, validates
+  `gatt_bp_indicate()` encodes measurements, validates
   Measurement Status bits against the configured feature value, and queues an
-  indication. `gatt_blood_pressure_service_notify_intermediate()` encodes and
+  indication. `gatt_bp_notify_intermediate()` encodes and
   queues an Intermediate Cuff Pressure notification, including the required
   NaN unused pressure fields.
 - `gatt_pulse_oximeter_service_add()` registers PLX Spot-check and/or
-  Continuous Measurement. `gatt_pulse_oximeter_service_indicate_spot_check()`
-  and `gatt_pulse_oximeter_service_notify_continuous()` encode optional fields
+  Continuous Measurement. `gatt_spo2_indicate_spot()`
+  and `gatt_spo2_notify_continuous()` encode optional fields
   and check them against the service feature bits.
-- `gatt_glucose_service_notify_measurement()` encodes Glucose Measurement
+- `gatt_glucose_notify_measurement()` encodes Glucose Measurement
   notifications and maps the twelve Sensor Status Annunciation bits to the
   supported Glucose Feature bits. If the record has context, set its
   context-follows flag and then queue the matching sequence number with
-  `gatt_glucose_service_notify_context()`; the service enforces that pairing.
+  `gatt_glucose_notify_context()`; the service enforces that pairing.
   The authenticated Record Access Control Point validates supported filter
   layouts and captures requests in the service state; the application runs
-  its record operation and calls `gatt_glucose_service_racp_complete()` with
+  its record operation and calls `gatt_glucose_racp_complete()` with
   the result (and record count for Report Number).
 - `gatt_rsc_service_add()` registers RSC Measurement, RSC Feature, and Sensor
-  Location. `gatt_rsc_service_notify_measurement()` encodes and queues
+  Location. `gatt_rsc_notify()` encodes and queues
   feature-checked measurements. Its SC Control Point validates and applies
   cumulative-distance and sensor-location requests, and exposes calibration
   requests for the application to complete with
-  `gatt_rsc_service_calibration_complete()`.
+  `gatt_rsc_calibration_complete()`.
 
 These builders add service and characteristic database entries and return
 their handles. Applications supply profile-specific measurement payloads and
@@ -353,27 +353,27 @@ Additional service builders include:
   refresh its scan parameters.
 - `gatt_csc_service_add()` for Cycling Speed and Cadence Measurement, Feature,
   Sensor Location, and the conditional SC Control Point.
-  `gatt_csc_service_notify_measurement()` encodes and queues feature-checked
+  `gatt_csc_notify()` encodes and queues feature-checked
   wheel and crank measurements. The control point handles cumulative wheel
   revolutions, sensor-location changes, and supported-location requests.
   Configure each service's supported-location mask before accepting
   connections when its multiple-location feature is set.
 - `gatt_cycling_power_service_add()` registers Cycling Power Measurement,
   Feature, Sensor Location, and optional Vector and Control Point
-  characteristics. `gatt_cycling_power_service_notify_measurement()` encodes
+  characteristics. `gatt_cycling_power_notify()` encodes
   all defined measurement fields and checks them against the Feature value.
-  `gatt_cycling_power_service_notify_vector()` encodes one MTU-bounded Vector
+  `gatt_cycling_power_notify_vector()` encodes one MTU-bounded Vector
   packet. For continuation packets, pass the remaining samples and clear the
   First Crank Measurement Angle flag. Its
   Control Point handles cumulative wheel count, sensor location, crank/chain
   settings, measurement content masking, sampling-rate and calibration-date
   requests. Offset compensation procedures are completed by the application
-  with `gatt_cycling_power_service_control_point_complete()`. Configure
+  with `gatt_cycling_power_control_complete()`. Configure
   supported locations, sampling rate, and factory calibration date before
   accepting connections when those features are used. The service state keeps
   the latest Control Point cumulative count and adjustable crank/chain values;
   use those values when producing subsequent measurements. Call
-  `gatt_cycling_power_service_reset_connection()` on each new connection so
+  `gatt_cycling_power_reset()` on each new connection so
   the optional Measurement Content mask returns to its default.
 - `gatt_location_navigation_service_add()` for LN Feature and Location and
   Speed, with optional Navigation, Position Quality, and Control Point. The
@@ -397,9 +397,9 @@ Additional service builders include:
   notification or indication that fits the negotiated ATT MTU.
 - `gatt_body_composition_service_add()` for Body Composition Measurement and
   Feature, with reserved feature bits rejected. Both indication helpers enforce
-  the negotiated MTU. `gatt_body_composition_service_indicate_measurement()`
+  the negotiated MTU. `gatt_body_comp_indicate()`
   encodes the standard fields and checks them against the Feature value; use
-  `gatt_body_composition_service_indicate_value()` when the application
+  `gatt_body_comp_indicate_value()` when the application
   already has an encoded payload.
 - `gatt_user_data_service_add()` for Database Change Increment, User Index,
   User Control Point, and Registered User. The Database Change Increment
@@ -419,7 +419,7 @@ Additional service builders include:
   segments. Complete List All Users with a one-byte response parameter
   containing the number of users returned.
 - `gatt_weight_scale_service_add()` for Weight Measurement and Weight Scale
-  Feature. `gatt_weight_scale_service_indicate_measurement()` encodes the
+  Feature. `gatt_weight_indicate()` encodes the
   measurement and checks optional fields against supported features.
 
 These are database builders. The application supplies record storage and

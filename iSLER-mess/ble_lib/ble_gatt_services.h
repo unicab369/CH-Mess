@@ -6943,7 +6943,7 @@ static inline int gatt_health_thermometer_service_add(
 }
 
 // Application facing
-static inline int gatt_blood_pressure_service_add(
+static inline int gatt_bp_service_add(
     ble_gatt_server *server, ble_gatt_blood_pressure_service *service,
     uint16_t blood_pressure_feature, int include_intermediate_cuff_pressure
 ) {
@@ -6994,7 +6994,7 @@ static inline int gatt_blood_pressure_service_add(
 }
 
 // Internal
-static inline uint8_t gatt_rsc_control_point_write(
+static inline uint8_t gatt_rsc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
@@ -7037,7 +7037,7 @@ static inline int gatt_rsc_service_add(
             .value_capacity = 20,
             .variable_length = 1
         };
-        handlers[control_point_index].write = gatt_rsc_control_point_write;
+        handlers[control_point_index].write = gatt_rsc_cp_write;
         handlers[control_point_index].context = service;
     }
 
@@ -7307,7 +7307,7 @@ static inline int gatt_insulin_delivery_service_add(
 }
 
 // Internal
-static inline uint8_t gatt_csc_control_point_write(
+static inline uint8_t gatt_csc_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
@@ -7350,7 +7350,7 @@ static inline int gatt_csc_service_add(
             .value_capacity = 20,
             .variable_length = 1
         };
-        handlers[control_point_index].write = gatt_csc_control_point_write;
+        handlers[control_point_index].write = gatt_csc_cp_write;
         handlers[control_point_index].context = service;
     }
 
@@ -7377,7 +7377,7 @@ static inline int gatt_csc_service_add(
 }
 
 // Internal
-static inline uint8_t gatt_cycling_power_control_point_write(
+static inline uint8_t gatt_cycling_power_cp_write(
     void *context, uint16_t offset, const uint8_t *value,
     uint16_t len, uint8_t command
 );
@@ -7454,7 +7454,7 @@ static inline int gatt_cycling_power_service_add(
     ble_gatt_sig_handlers handlers[6] = {0};
 
     if (control_index != 0xff) {
-        handlers[control_index].write = gatt_cycling_power_control_point_write;
+        handlers[control_index].write = gatt_cycling_power_cp_write;
         handlers[control_index].context = service;
     }
 
