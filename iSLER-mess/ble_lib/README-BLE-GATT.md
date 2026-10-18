@@ -445,8 +445,10 @@ Additional service builders include:
   and at least four octets of value capacity. ESS descriptor writes then queue
   its standard flags and the associated measurement UUID as an indication.
   Use `gatt_ess_set_descriptor()` for application-originated descriptor
-  changes; it queues the same indication with the server source flag. The
-  application supplies new samples and schedules calls to `gatt_ess_send_at()`.
+  changes, or `gatt_ess_set_descriptors()` to update multiple descriptors
+  atomically with one combined indication. These helpers set the server source
+  flag. The application supplies new samples and schedules calls to
+  `gatt_ess_send_at()`.
 - `gatt_bcs_add()` for Body Composition Measurement and
   Feature, with reserved feature bits rejected. Both indication helpers enforce
   the negotiated MTU. `gatt_bcs_indicate()`

@@ -3,22 +3,27 @@
 #define BLE_GAP_EXTENSION_H
 
 #if GAP_EXT_ADV_SUPPORT
-static uint8_t gap_ext_adv_next_set;
-static uint8_t gap_periodic_advertising_next_set;
 
-static void gap_ext_adv_connection_accept(void) {
-    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        gap_ext_adv[i].enabled = 0;
-}
-
-// -----------------------------------------------------------------------------
-// Extended scan reassembly and duplicate filtering
-// -----------------------------------------------------------------------------
 enum {
     GAP_EXT_ADV_PRIMARY_PDU = 0,
     GAP_EXT_ADV_AUXILIARY_PDU = 1,
     GAP_EXT_ADV_PERIODIC_PDU = 2
 };
+enum {
+    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
+    GAP_PERIODIC_SYNC_LOST = 2,
+    GAP_PERIODIC_SYNC_CANCELLED = 3,
+    GAP_PERIODIC_SYNC_TERMINATED = 4
+};
+enum {
+    GAP_EXT_SCAN_NONE,
+    GAP_EXT_SCAN_AUX,
+    GAP_EXT_SCAN_PERIODIC
+};
+
+// -----------------------------------------------------------------------------
+// Extended scan reassembly and duplicate filtering
+// -----------------------------------------------------------------------------
 
 typedef struct {
     uint8_t used;
@@ -34,13 +39,6 @@ static gap_ext_seen_entry gap_ext_adv_seen[GAP_EXT_ADV_SEEN_COUNT];
 // -----------------------------------------------------------------------------
 static const uint16_t gap_sca_ppm[8] = {
     500, 250, 150, 100, 75, 50, 30, 20
-};
-
-enum {
-    GAP_PERIODIC_SYNC_ESTABLISHED = 1,
-    GAP_PERIODIC_SYNC_LOST = 2,
-    GAP_PERIODIC_SYNC_CANCELLED = 3,
-    GAP_PERIODIC_SYNC_TERMINATED = 4
 };
 
 typedef struct {
@@ -123,11 +121,6 @@ static struct {
 // Extended scan and periodic radio state
 // -----------------------------------------------------------------------------
 // Extended scan state
-enum {
-    GAP_EXT_SCAN_NONE,
-    GAP_EXT_SCAN_AUX,
-    GAP_EXT_SCAN_PERIODIC
-};
 
 typedef struct {
     uint64_t start_ticks;
@@ -168,6 +161,63 @@ static struct {
         uint64_t request_end_ticks;
     } connect;
 } gap_ext_pawr;
+
+// Extended scan report and decoded advertising header types.
+// -----------------------------------------------------------------------------
+// Extended scan report state
+// -----------------------------------------------------------------------------
+typedef struct {
+    uint8_t has_address;
+    gap_address peer;
+    uint8_t resolved;
+    gap_address identity;
+    uint8_t has_adi, sid;
+    uint16_t did;
+    int8_t rssi;
+    uint16_t data_len;
+    uint8_t data[GAP_EXT_ADV_DATA_MAX];
+} gap_ext_report;
+
+static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
+
+// -----------------------------------------------------------------------------
+// Extended advertising decode and scan report assembly
+// -----------------------------------------------------------------------------
+typedef struct {
+    // Common extended header and advertiser identity.
+    uint8_t mode, flags;
+    gap_ext_identity identity;
+
+    // AuxPtr scheduling information.
+    uint8_t has_aux_ptr, aux_offset_zero;
+    uint8_t aux_channel, aux_ca, aux_offset_unit, aux_phy;
+    uint32_t aux_offset_us;
+
+    // Periodic SyncInfo.
+    struct {
+        uint8_t has_info, offset_unit, offset_adjust;
+        gap_periodic_params params;
+        uint16_t event_counter;
+        uint32_t offset_us;
+    } sync;
+
+    // PAwR timing extension.
+    gap_pawr_timing pawr;
+
+    // Advertising data follows the extended header.
+    struct {
+        const uint8_t *data;
+        uint16_t len;
+    } payload;
+} gap_ext_fields;
+
+static uint8_t gap_ext_adv_next_set;
+static uint8_t gap_periodic_advertising_next_set;
+
+static void gap_ext_adv_connection_accept(void) {
+    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
+        gap_ext_adv[i].enabled = 0;
+}
 
 // -----------------------------------------------------------------------------
 // Extended advertising and periodic advertising control
@@ -508,55 +558,6 @@ int gap_ext_adv_stop(uint8_t set_id) {
 
     return 1;
 }
-
-
-// -----------------------------------------------------------------------------
-// Extended scan report state
-// -----------------------------------------------------------------------------
-typedef struct {
-    uint8_t has_address;
-    gap_address peer;
-    uint8_t resolved;
-    gap_address identity;
-    uint8_t has_adi, sid;
-    uint16_t did;
-    int8_t rssi;
-    uint16_t data_len;
-    uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_report;
-
-static gap_ext_report gap_ext_adv_reports[GAP_EXT_ADV_REPORT_COUNT];
-
-// -----------------------------------------------------------------------------
-// Extended advertising decode and scan report assembly
-// -----------------------------------------------------------------------------
-typedef struct {
-    // Common extended header and advertiser identity.
-    uint8_t mode, flags;
-    gap_ext_identity identity;
-
-    // AuxPtr scheduling information.
-    uint8_t has_aux_ptr, aux_offset_zero;
-    uint8_t aux_channel, aux_ca, aux_offset_unit, aux_phy;
-    uint32_t aux_offset_us;
-
-    // Periodic SyncInfo.
-    struct {
-        uint8_t has_info, offset_unit, offset_adjust;
-        gap_periodic_params params;
-        uint16_t event_counter;
-        uint32_t offset_us;
-    } sync;
-
-    // PAwR timing extension.
-    gap_pawr_timing pawr;
-
-    // Advertising data follows the extended header.
-    struct {
-        const uint8_t *data;
-        uint16_t len;
-    } payload;
-} gap_ext_fields;
 
 // Decode the common extended advertising header, rejecting truncated fields.
 static int gap_ext_adv_decode(
@@ -1743,8 +1744,6 @@ static int gap_periodic_tx(gap_ext_adv_set *set) {
     return 1;
 }
 
-
-
 // -----------------------------------------------------------------------------
 // Extended scan radio processing and periodic sync transfer
 // -----------------------------------------------------------------------------
@@ -2306,7 +2305,6 @@ int gap_periodic_sync_transfer(uint8_t slot, uint16_t id) {
     conn->sync_transfer_queued = 1;
     return 1;
 }
-
 
 static void gap_sync_window_missed(uint8_t slot) {
     gap_sync_context *sync = &gap_syncs[slot];

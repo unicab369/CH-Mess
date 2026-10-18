@@ -192,6 +192,9 @@ int main(void) {
     uint8_t descriptor_value_changed[4] = {0};
     uint8_t logic = 0, trigger[8] = {0}, interval[8] = {0};
     uint8_t minimum[8] = {0};
+    uint8_t measurement_descriptor[3] = {0};
+    const uint8_t extended_properties[] = {2, 0};
+    const uint8_t user_description[] = {'T', 'e', 'm', 'p'};
     const uint8_t presentation[] = {0x06, 0, 0, 0, 0, 0, 0};
     const ble_gatt_sig_descriptor ess_descs[] = {
         {0x290b, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
@@ -203,13 +206,20 @@ int main(void) {
         {0x290d, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
          minimum, 1, sizeof(minimum)},
         {0x2904, BLE_GATT_PERM_READ, presentation,
-         sizeof(presentation), sizeof(presentation)}
+         sizeof(presentation), sizeof(presentation)},
+        {0x290c, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         measurement_descriptor, sizeof(measurement_descriptor),
+         sizeof(measurement_descriptor)},
+        {0x2900, BLE_GATT_PERM_READ, extended_properties,
+         sizeof(extended_properties), sizeof(extended_properties)},
+        {0x2901, BLE_GATT_PERM_READ | BLE_GATT_PERM_WRITE,
+         user_description, sizeof(user_description), sizeof(user_description)}
     };
     const ble_gatt_sig_characteristic ess_chars[] = {
         {0x2a6e, BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, 1,
          BLE_GATT_PERM_READ,
          temperature, sizeof(temperature), sizeof(temperature), 0,
-         ess_descs, 5},
+         ess_descs, 8},
         {0x2a7d, BLE_GATT_PROP_INDICATE, 1, 0,
          descriptor_value_changed, sizeof(descriptor_value_changed),
          sizeof(descriptor_value_changed), 0, NULL, 0}
@@ -217,11 +227,17 @@ int main(void) {
     assert(gatt_ess_add(&server, &ess, ess_chars, 2));
     uint16_t config_handle = 0, trigger_handle = 0;
     uint16_t triggers[3] = {0};
+    uint16_t measurement_descriptor_handle = 0;
+    uint16_t user_description_handle = 0;
     uint16_t descriptor_value_changed_handle = 0;
     uint8_t found_triggers = 0;
     for (uint16_t i = 0; i < server.count; i++) {
         uint16_t uuid = gatt_uuid_assigned16(&server.attrs[i].uuid);
         if (uuid == 0x290b) config_handle = server.attrs[i].handle;
+        if (uuid == 0x290c)
+            measurement_descriptor_handle = server.attrs[i].handle;
+        if (uuid == 0x2901)
+            user_description_handle = server.attrs[i].handle;
         if (uuid == 0x2a7d)
             descriptor_value_changed_handle = server.attrs[i].handle;
         if (uuid == 0x290d && found_triggers < 3) {
@@ -230,6 +246,7 @@ int main(void) {
         }
     }
     assert(config_handle && trigger_handle && found_triggers == 3 &&
+           measurement_descriptor_handle && user_description_handle &&
            descriptor_value_changed_handle ==
                ess.descriptor_value_changed_handle &&
            ess.descriptor_value_changed_cccd_handle);
@@ -260,6 +277,46 @@ int main(void) {
     assert(server.events[0].len == 4 && changed[0] == 0x04 &&
            changed[1] == 0 && changed[2] == 0x6e && changed[3] == 0x2a);
     server.event_count = server.event_used = 0;
+
+    // Check the remaining standardized descriptor flag mappings.
+    assert(!write_value(&server, triggers[0], time_trigger,
+        sizeof(time_trigger)));
+    assert(server.event_count == 1);
+    changed = server.event_data + server.events[0].data_offset;
+    assert(changed[0] == 0x03 && changed[1] == 0);
+    server.event_count = server.event_used = 0;
+    const uint8_t measurement_descriptor_update[] = {1, 2, 3};
+    assert(!write_value(&server, measurement_descriptor_handle,
+        measurement_descriptor_update, sizeof(measurement_descriptor_update)));
+    assert(server.event_count == 1);
+    changed = server.event_data + server.events[0].data_offset;
+    assert(changed[0] == 0x09 && changed[1] == 0);
+    server.event_count = server.event_used = 0;
+    const uint8_t description_update[] = {'R', 'o', 'o', 'm'};
+    assert(!write_value(&server, user_description_handle,
+        description_update, sizeof(description_update)));
+    assert(server.event_count == 1);
+    changed = server.event_data + server.events[0].data_offset;
+    assert(changed[0] == 0x11 && changed[1] == 0);
+    server.event_count = server.event_used = 0;
+
+    // A server-side batch reports several descriptor types with one flags
+    // field and one indication.
+    const ble_gatt_ess_desc_update combined_updates[] = {
+        {0x290b, use_or, sizeof(use_or)},
+        {0x290d, time_trigger, sizeof(time_trigger)},
+        {0x290c, measurement_descriptor_update,
+         sizeof(measurement_descriptor_update)},
+        {0x2901, description_update, sizeof(description_update)}
+    };
+    assert(gatt_ess_set_descriptors(&ess, 0, combined_updates,
+        sizeof(combined_updates) / sizeof(combined_updates[0])));
+    assert(server.event_count == 1 && server.events[0].indication);
+    changed = server.event_data + server.events[0].data_offset;
+    assert(changed[0] == 0x1e && changed[1] == 0 &&
+           changed[2] == 0x6e && changed[3] == 0x2a);
+    server.event_count = server.event_used = 0;
+
     assert(gatt_server_set_cccd(&server, descriptor_value_changed_handle, 0));
     assert(gatt_ess_set_descriptor(&ess, 0, 0x290b, use_and,
         sizeof(use_and)));

@@ -5,6 +5,21 @@
 #endif
 
 // GAP's LE SMP pairing transaction, policy, and platform integration.
+// Platforms implement durable whole-record bond storage. LOAD returns 1 for
+// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
+// only after the operation is durable.
+#if defined(__GNUC__)
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
+int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
+#else
+int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
+int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
+int GAP_BOND_DELETE(uint8_t slot);
+#endif
+
+int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
+
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
 
@@ -102,9 +117,6 @@ enum {
     SMP_USER_KEYPRESS = 4
 };
 
-// Platform methods used by the SMP procedure. GAP provides these methods;
-// tests can provide a fake implementation without configuring a callback table.
-int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 
 // LE SMP command lengths include the one-octet command code. Reserved command
 // codes are rejected here so the protocol owner can choose to ignore them.
@@ -171,18 +183,6 @@ typedef struct {
     uint32_t deadline_ms;
 } ble_smp;
 
-// Platforms implement durable whole-record bond storage. LOAD returns 1 for
-// a record, 0 for an empty slot, or -1 on failure. SAVE/DELETE return nonzero
-// only after the operation is durable.
-#if defined(__GNUC__)
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) __attribute__((weak));
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond) __attribute__((weak));
-int GAP_BOND_DELETE(uint8_t slot) __attribute__((weak));
-#else
-int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond);
-int GAP_BOND_SAVE(uint8_t slot, const gap_bond *bond);
-int GAP_BOND_DELETE(uint8_t slot);
-#endif
 
 
 typedef struct {
@@ -230,7 +230,6 @@ typedef struct {
     gap_oob oob;
     uint8_t private_key[32], public_key[64];
 } gap_oob_local;
-#endif
 
 // LE Secure Connections OOB data exchanged through an authenticated channel.
 // Values use SMP byte order.
@@ -255,7 +254,6 @@ static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
 static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
 static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
 static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
-#endif
 
 static inline int smp_pdu_valid(
     const uint8_t *pdu, uint16_t len
