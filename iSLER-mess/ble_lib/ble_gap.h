@@ -423,7 +423,7 @@ typedef struct {
         uint8_t terminate_after_reply, version_ind_sent;
         uint8_t terminate_queued, terminate_sent;
         uint8_t central_anchor_set;
-    } link_state;
+    } c_link_state;
     struct {
         uint8_t first_event;
         uint8_t local_terminate_reason;
@@ -432,7 +432,7 @@ typedef struct {
         uint16_t peer_sca_ppm, event_counter;
         uint32_t access_address, crc_init, last_rx_ms;
         uint64_t next_ticks;
-    } link;
+    } c_link;
 
     // Radio queues and connection data.
     struct {
@@ -441,10 +441,10 @@ typedef struct {
         volatile uint8_t local_update;
         volatile uint8_t local_params, local_map;
         volatile uint8_t length;
-    } queue;
+    } c_queue;
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
-    } tx, rx;
+    } c_tx, c_rx;
 
     // Connection-rate and subrate procedure state.
     struct {
@@ -455,7 +455,7 @@ typedef struct {
         uint16_t factor_min, factor_max, latency;
         uint16_t continuation, timeout, periodicity;
         uint16_t offsets[4];
-    } rate;
+    } c_rate;
     struct {
         uint8_t transition, event_activity, event_received, force_event;
         uint16_t continuations, latency_remaining;
@@ -465,7 +465,7 @@ typedef struct {
         uint16_t request_min, request_max, request_latency, request_continuation;
         uint16_t request_timeout;
         uint32_t started_ms;
-    } subrate;
+    } c_subrate;
 
     // PHY update state.
     struct {
@@ -475,14 +475,14 @@ typedef struct {
         uint8_t status;
         uint16_t instant;
         uint32_t started_ms;
-    } phy;
+    } c_phy;
 
     // Link-layer feature exchange and channel classification.
     struct {
         uint8_t known, peer[8];
         uint8_t ext_pending, page1_known, peer_page1[8];
         uint8_t request_pending;
-    } features;
+    } c_features;
     struct {
         uint8_t report_queued, report_pending, status_queued;
         uint8_t enabled, classification_valid, peer_classification_valid;
@@ -491,7 +491,7 @@ typedef struct {
         uint8_t local_class[GAP_CHANN_CLASS_BYTES];
         uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
         uint32_t status_changed_ms, status_last_sent_ms;
-    } channel;
+    } c_channel;
 
     // Procedures awaiting completion or peer response.
     struct {
@@ -501,7 +501,7 @@ typedef struct {
         uint8_t params_state; // None, remote request, or local request.
         uint8_t phy_request;
         uint8_t length;
-    } pending;
+    } c_pending;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
@@ -1290,7 +1290,7 @@ static int gap_conn_accept(
     gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));
     conn->data_capacity = data_capacity;
-    memcpy(conn->link.channel_map, frame + 30, 5);
+    memcpy(conn->c_link.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;
     conn->responder.type = (frame[0] >> 7) & 1;
@@ -1301,25 +1301,25 @@ static int gap_conn_accept(
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            conn->link.used_channels[count++] = channel;
+            conn->c_link.used_channels[count++] = channel;
 
-    conn->link.access_address = (uint32_t)frame[14] |
+    conn->c_link.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
                                 (uint32_t)frame[16] << 16 |
                                 (uint32_t)frame[17] << 24;
-    conn->link.crc_init = (uint32_t)frame[18] |
+    conn->c_link.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    conn->link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->link.next_ticks = received_ticks +
+    conn->c_link.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    conn->c_link.next_ticks = received_ticks +
                             (uint64_t)ble_read_u16_le(frame + 22) *
                             unit_ticks + delay_ticks;
-    conn->link.used_count = count;
-    conn->link.hop = frame[35] & 0x1f;
-    conn->link.last_rx_ms = GET_MILLIS();
-    conn->link.first_event = 1;
+    conn->c_link.used_count = count;
+    conn->c_link.hop = frame[35] & 0x1f;
+    conn->c_link.last_rx_ms = GET_MILLIS();
+    conn->c_link.first_event = 1;
 
     conn->schedule.factor = 1;
     conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
@@ -1331,14 +1331,14 @@ static int gap_conn_accept(
     conn->local_tx_octets = 27;
     conn->load_pending = 1;
 
-    conn->channel.classification_valid = 1;
-    conn->channel.min_spacing_200ms = 5;
-    conn->channel.max_delay_200ms = 5;
-    conn->channel.status_changed_ms = GET_MILLIS();
-    conn->phy.current.tx = GAP_PHY_1M;
-    conn->phy.current.rx = GAP_PHY_1M;
-    conn->phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
-    conn->phy.preferred.rx = conn->phy.preferred.tx;
+    conn->c_channel.classification_valid = 1;
+    conn->c_channel.min_spacing_200ms = 5;
+    conn->c_channel.max_delay_200ms = 5;
+    conn->c_channel.status_changed_ms = GET_MILLIS();
+    conn->c_phy.current.tx = GAP_PHY_1M;
+    conn->c_phy.current.rx = GAP_PHY_1M;
+    conn->c_phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
+    conn->c_phy.preferred.rx = conn->c_phy.preferred.tx;
     gap_security_generations[gap_conn_slot]++;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)
@@ -1507,7 +1507,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (connected) {
             const gap_conn_context *conn = gap_conn_ctx_current();
             connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-                (conn->is_central || !conn->link.first_event);
+                (conn->is_central || !conn->c_link.first_event);
         }
 
         if (connected != peer->connected) {
