@@ -1,8 +1,9 @@
 #ifndef BLE_GATT_H
 #define BLE_GATT_H
 
-// Generic GATT client, server, and transport API. Mesh service definitions
-// live in ../ble_mesh/mesh_gatt.h.
+// Generic GATT client, server, and transport API. Bluetooth Mesh GATT service
+// builders live in ble_gatt_services.h; Mesh protocol handling lives in
+// ../ble_mesh/mesh_gatt.h.
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

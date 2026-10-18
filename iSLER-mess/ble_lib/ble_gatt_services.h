@@ -245,6 +245,66 @@ typedef struct {
     uint16_t len, capacity;
 } ble_gatt_service_value;
 
+// Bluetooth Mesh Provisioning and Proxy GATT services.
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_prov_service;
+
+typedef struct {
+    uint16_t service_handle, data_in_handle;
+    uint16_t data_out_handle, data_out_cccd_handle;
+} ble_gatt_mesh_proxy_service;
+
+// Application-facing builders. The application implements the Mesh protocol.
+static inline int gatt_mesh_prov_add(
+    ble_gatt_server *server, ble_gatt_mesh_prov_service *service
+) {
+    if (!service) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2adb, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 65, 1},
+        {0x2adc, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_service_add(server, 0x1827, chars, 2,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
+static inline int gatt_mesh_proxy_add(
+    ble_gatt_server *server, ble_gatt_mesh_proxy_service *service
+) {
+    if (!service) return 0;
+
+    memset(service, 0, sizeof(*service));
+    uint8_t unused_value = 0;
+    ble_gatt_sig_characteristic chars[] = {
+        {0x2add, BLE_GATT_PROP_WRITE_NO_RSP, 0, BLE_GATT_PERM_WRITE,
+         &unused_value, 0, 66, 1},
+        {0x2ade, BLE_GATT_PROP_NOTIFY, 1, 0, &unused_value, 0}
+    };
+    uint16_t values[2], cccds[2];
+
+    if (!gatt_sig_service_add(server, 0x1828, chars, 2,
+            &service->service_handle, values, cccds)
+    ) return 0;
+
+    service->data_in_handle = values[0];
+    service->data_out_handle = values[1];
+    service->data_out_cccd_handle = cccds[1];
+    return 1;
+}
+
 // Service-specific database builders.
 #include "ble_gatt_service_sport.h"
 #include "ble_gatt_service_health.h"
