@@ -109,11 +109,11 @@ static void gap_conn_send_queued(void) {
                 gap_tx_frame[1] = 11;
                 gap_tx_frame[2] = LL_SUBRATE_REQ;
 
-                ble_write_u16_le(gap_tx_frame + 3, conn->c_subrate.request_min);
-                ble_write_u16_le(gap_tx_frame + 5, conn->c_subrate.request_max);
-                ble_write_u16_le(gap_tx_frame + 7, conn->c_subrate.request_latency);
-                ble_write_u16_le(gap_tx_frame + 9, conn->c_subrate.request_continuation);
-                ble_write_u16_le(gap_tx_frame + 11, conn->c_subrate.request_timeout);
+                ble_write_u16_le(gap_tx_frame + 3, conn->c_subrate.peripheral_request.factor_min);
+                ble_write_u16_le(gap_tx_frame + 5, conn->c_subrate.peripheral_request.factor_max);
+                ble_write_u16_le(gap_tx_frame + 7, conn->c_subrate.peripheral_request.latency);
+                ble_write_u16_le(gap_tx_frame + 9, conn->c_subrate.peripheral_request.continuation);
+                ble_write_u16_le(gap_tx_frame + 11, conn->c_subrate.peripheral_request.timeout);
             }
         }
     }
@@ -156,19 +156,19 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[1] = 27;
             gap_tx_frame[2] = LL_CONNECTION_RATE_REQ;
 
-            ble_write_u16_le(gap_tx_frame + 3, conn->c_rate.interval_min);
-            ble_write_u16_le(gap_tx_frame + 5, conn->c_rate.interval_max);
-            ble_write_u16_le(gap_tx_frame + 7, conn->c_rate.factor_min);
-            ble_write_u16_le(gap_tx_frame + 9, conn->c_rate.factor_max);
-            ble_write_u16_le(gap_tx_frame + 11, conn->c_rate.latency);
-            ble_write_u16_le(gap_tx_frame + 13, conn->c_rate.continuation);
-            ble_write_u16_le(gap_tx_frame + 15, conn->c_rate.timeout);
-            ble_write_u16_le(gap_tx_frame + 17, conn->c_rate.periodicity);
+            ble_write_u16_le(gap_tx_frame + 3, conn->c_rate.peripheral_request.interval_min);
+            ble_write_u16_le(gap_tx_frame + 5, conn->c_rate.peripheral_request.interval_max);
+            ble_write_u16_le(gap_tx_frame + 7, conn->c_rate.peripheral_request.factor_min);
+            ble_write_u16_le(gap_tx_frame + 9, conn->c_rate.peripheral_request.factor_max);
+            ble_write_u16_le(gap_tx_frame + 11, conn->c_rate.peripheral_request.latency);
+            ble_write_u16_le(gap_tx_frame + 13, conn->c_rate.peripheral_request.continuation);
+            ble_write_u16_le(gap_tx_frame + 15, conn->c_rate.peripheral_request.timeout);
+            ble_write_u16_le(gap_tx_frame + 17, conn->c_rate.peripheral_request.periodicity);
             ble_write_u16_le(gap_tx_frame + 19, conn->c_link_layer.event_counter);
 
             for (uint8_t i = 0; i < 4; i++) {
                 ble_write_u16_le(gap_tx_frame + 21 + i * 2,
-                                 conn->c_rate.offsets[i]);
+                                 conn->c_rate.peripheral_request.offsets[i]);
             }
             conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
             conn->c_rate.req_pending = 1;

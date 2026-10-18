@@ -2029,11 +2029,11 @@ int gap_subrate_request(
         return 0;
     }
 
-    conn->c_subrate.request_min = factor_min;
-    conn->c_subrate.request_max = factor_max;
-    conn->c_subrate.request_latency = max_latency;
-    conn->c_subrate.request_continuation = continuation;
-    conn->c_subrate.request_timeout = timeout;
+    conn->c_subrate.peripheral_request.factor_min = factor_min;
+    conn->c_subrate.peripheral_request.factor_max = factor_max;
+    conn->c_subrate.peripheral_request.latency = max_latency;
+    conn->c_subrate.peripheral_request.continuation = continuation;
+    conn->c_subrate.peripheral_request.timeout = timeout;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_REQUEST;
     return 1;
@@ -2105,17 +2105,17 @@ int gap_conn_rate_request(
         }
     }
 
-    conn->c_rate.interval_min = interval_min;
-    conn->c_rate.interval_max = interval_max;
-    conn->c_rate.factor_min = factor_min;
-    conn->c_rate.factor_max = factor_max;
-    conn->c_rate.latency = max_latency;
-    conn->c_rate.continuation = continuation;
-    conn->c_rate.timeout = timeout;
-    conn->c_rate.periodicity = preferred_periodicity;
+    conn->c_rate.peripheral_request.interval_min = interval_min;
+    conn->c_rate.peripheral_request.interval_max = interval_max;
+    conn->c_rate.peripheral_request.factor_min = factor_min;
+    conn->c_rate.peripheral_request.factor_max = factor_max;
+    conn->c_rate.peripheral_request.latency = max_latency;
+    conn->c_rate.peripheral_request.continuation = continuation;
+    conn->c_rate.peripheral_request.timeout = timeout;
+    conn->c_rate.peripheral_request.periodicity = preferred_periodicity;
 
     for (uint8_t i = 0; i < 4; i++)
-        conn->c_rate.offsets[i] = offsets ? offsets[i] : 0xffff;
+        conn->c_rate.peripheral_request.offsets[i] = offsets ? offsets[i] : 0xffff;
     conn->c_rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;

@@ -459,10 +459,12 @@ typedef struct {
         uint8_t queued_flags; // Local set and peer request pending bits.
         uint8_t update_pending;
         uint8_t req_pending, ack_waiting;
-        uint16_t interval_min, interval_max;
-        uint16_t factor_min, factor_max, latency;
-        uint16_t continuation, timeout, periodicity;
-        uint16_t offsets[4];
+        struct {
+            uint16_t interval_min, interval_max;
+            uint16_t factor_min, factor_max, latency;
+            uint16_t continuation, timeout, periodicity;
+            uint16_t offsets[4];
+        } peripheral_request;
     } c_rate;
     struct {
         uint8_t event_activity, event_received, force_event;
@@ -470,8 +472,9 @@ typedef struct {
         uint8_t procedure_state; // GAP_SUBRATE_* state.
         uint8_t queued_flags; // GAP_SUBRATE_QUEUED_UPDATE and _REQUEST bits.
         uint8_t status;
-        uint16_t request_min, request_max, request_latency, request_continuation;
-        uint16_t request_timeout;
+        struct {
+            uint16_t factor_min, factor_max, latency, continuation, timeout;
+        } peripheral_request;
         uint32_t started_ms;
     } c_subrate;
 
