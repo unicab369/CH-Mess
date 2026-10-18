@@ -8,8 +8,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "ble_att.h"
-#include "ble_gatt_crypto.h"
+#include "ble_gatt.h"
+#include "ble_crypto.h"
 
 // =============================================================================
 // Server limits

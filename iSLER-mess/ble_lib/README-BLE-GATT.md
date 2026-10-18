@@ -8,8 +8,8 @@ builders. `ble_gatt_service_registry.h` contains the generic 16-bit UUID
 service builder and the per-characteristic ATT handler binding API.
 
 `ble_gatt.h` is the generic include. The client API is defined there;
-the server and transport remain in focused headers. `ble_att.h` owns shared ATT opcodes,
-errors, value limits, byte-order helpers, and request/response matching.
+the server and transport remain in focused headers. `ble_gatt.h` owns the shared
+ATT opcodes, errors, value limits, byte-order helpers, and request/response matching.
 `ble_gatt_server.h` handles ATT server PDU procedures against its attribute
 database. The GATT modules own
 attribute storage, service construction, client-side GATT operations, and

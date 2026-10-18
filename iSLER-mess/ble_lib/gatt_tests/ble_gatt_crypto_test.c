@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
-#include "../ble_gatt_crypto.h"
+#include "../ble_crypto.h"
 
 static const uint8_t key[16] = {
     0x2b,0x7e,0x15,0x16,0x28,0xae,0xd2,0xa6,

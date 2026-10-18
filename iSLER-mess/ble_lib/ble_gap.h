@@ -904,7 +904,6 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
 // Application facing
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
         gap_conn_slot_active(gap_conn_slot) || gap_central.active

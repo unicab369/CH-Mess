@@ -520,8 +520,6 @@ static void gap_send_data_length(uint8_t opcode) {
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-
     if (!gap_privacy.enabled || gap_conn_slot_active(gap_conn_slot) ||
         gap_central.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
@@ -2523,16 +2521,13 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 // reply with that peer's matching key, or NULL if none is available.
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!gap_conn_slot_active(gap_conn_slot) ||
         gap_security->phase != GAP_ENC_KEY_REQUEST
     ) return 0;
 
-    if (random)
-        memcpy(random, gap_security->random, 8);
-    if (ediv)
-        *ediv = gap_security->ediv;
+    if (random) memcpy(random, gap_security->random, 8);
+    if (ediv) *ediv = gap_security->ediv;
     return 1;
 }
 
@@ -2570,10 +2565,10 @@ int gap_encrypted(void) {
     gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
 
     return gap_conn_slot_active(gap_conn_slot) &&
-                                (conn->is_central || !conn->link.first_event) &&
-                                !gap_security->phase &&
-                                gap_security->tx_enabled &&
-                                gap_security->rx_enabled;
+            (conn->is_central || !conn->link.first_event) &&
+            !gap_security->phase &&
+            gap_security->tx_enabled &&
+            gap_security->rx_enabled;
 }
 
 // Application facing

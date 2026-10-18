@@ -436,7 +436,6 @@ int smp_port_cmac(
 static int gap_sc_generate_key(void) {
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     uECC_Curve curve = uECC_secp256r1();
     uECC_RNG_Function previous = uECC_get_rng();
@@ -470,7 +469,6 @@ static int gap_sc_generate_key(void) {
 static int gap_sc_accept_key(const uint8_t on_air[64]) {
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
         gap_bytes_reverse(smp->secure.peer_public_key + 32 * coordinate,
