@@ -25,6 +25,11 @@ enum {
     GAP_LL_ERR_INSTANT = 0x28
 };
 
+enum {
+    GAP_STATUS_CONNECTION_TIMEOUT = 0x08,
+    GAP_STATUS_LL_RESPONSE_TIMEOUT = 0x22
+};
+
 // On radio receive, LLE_IRQHandler invokes ble_mesh_rx_received(), which calls
 // gap_hw_received(). Incoming Link Layer control PDUs are processed there,
 // while foreground code may also update shared flags. Do not track independently
@@ -153,7 +158,7 @@ static void gap_conn_end(void) {
 #endif
     // Preserve the final status while clearing the rest of the security state.
     uint8_t security_status = gap_sec_contexts[gap_conn_slot].status ==
-        GAP_CONNECTION_PENDING ? 0x08 : gap_sec_contexts[gap_conn_slot].status;
+        GAP_CONNECTION_PENDING ? GAP_STATUS_CONNECTION_TIMEOUT : gap_sec_contexts[gap_conn_slot].status;
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
@@ -181,13 +186,13 @@ static void gap_conn_end(void) {
 #endif
 
     if (conn->connection_status == GAP_CONNECTION_PENDING)
-        conn->connection_status = 0x08; // Connection timeout/loss.
+        conn->connection_status = GAP_STATUS_CONNECTION_TIMEOUT; // Connection timeout/loss.
 
     if (conn->c_phy.status == GAP_CONNECTION_PENDING)
-        conn->c_phy.status = 0x08;
+        conn->c_phy.status = GAP_STATUS_CONNECTION_TIMEOUT;
 
     if (conn->length_status == GAP_CONNECTION_PENDING)
-        conn->length_status = 0x08;
+        conn->length_status = GAP_STATUS_CONNECTION_TIMEOUT;
 
     gap_scan.applied_generation = gap_scanner.generation - 1;
 }
@@ -204,7 +209,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 15 &&
             gap_tx_frame[2] == LL_CONNECTION_RATE_IND
         ) {
-            conn->connection_status = 0x28;
+            conn->connection_status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
             return;
         }
@@ -296,7 +301,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 5 &&
             gap_tx_frame[2] == LL_PHY_UPDATE_IND
         ) {
-            conn->c_phy.status = 0x28;
+            conn->c_phy.status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
             return;
         }
@@ -320,7 +325,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
             (gap_tx_frame[0] & 3) == 3 && gap_tx_frame[1] == 8 &&
             gap_tx_frame[2] == LL_CHANNEL_MAP_IND
         ) {
-            conn->connection_status = 0x28; // Instant passed.
+            conn->connection_status = GAP_LL_ERR_INSTANT; // Instant passed.
             gap_conn_end();
             return;
         }
@@ -1966,7 +1971,7 @@ int gap_conn_request(
     ) return 0;
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
-        conn->connection_status = 0x1a;
+        conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 
@@ -2000,7 +2005,7 @@ int gap_subrate_set(
     if (conn->c_features.known &&
         (conn->c_features.peer_feature_4 & required) != required
     ) {
-        conn->c_subrate.status = 0x1a;
+        conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 
@@ -2034,7 +2039,7 @@ int gap_subrate_request(
     if (conn->c_features.known &&
         (conn->c_features.peer_feature_4 & required) != required
     ) {
-        conn->c_subrate.status = 0x1a;
+        conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 
@@ -2247,7 +2252,7 @@ int gap_data_length_set(uint16_t octets) {
     ) return 0;
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x20)) {
-        conn->length_status = 0x1a;
+        conn->length_status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 
@@ -2276,7 +2281,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
         if (!(peer_supported & 6) || !(tx & peer_supported) ||
             !(rx & peer_supported)
         ) {
-            conn->c_phy.status = 0x1a;
+            conn->c_phy.status = GAP_LL_ERR_REMOTE_FEATURE;
             return 0;
         }
     }
@@ -2498,7 +2503,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     #endif
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 1)) {
-        gap_security->status = 0x1a;
+        gap_security->status = GAP_LL_ERR_REMOTE_FEATURE;
         return 0;
     }
 

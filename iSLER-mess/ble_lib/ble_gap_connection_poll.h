@@ -37,7 +37,7 @@ static void gap_conn_send_queued(void) {
         // Exchange features before sending the application's timing range.
         if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
             conn->c_queue.local_params = 0;
-            conn->connection_status = 0x1a;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (!conn->c_features.known) {
             gap_send_feature_request();
@@ -91,7 +91,7 @@ static void gap_conn_send_queued(void) {
                                     GAP_LL_FEATURES_SUBRATING_HOST;
             if ((conn->c_features.peer_feature_4 & required) != required) {
                 conn->c_subrate.queued_flags = 0;
-                conn->c_subrate.status = 0x1a;
+                conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
             else if (conn->is_central &&
                 (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
@@ -128,7 +128,7 @@ static void gap_conn_send_queued(void) {
         }
         else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->c_rate.queued_flags = 0;
-            conn->connection_status = 0x1a;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (!conn->c_features.page1_known) {
             // Exchange page 1 after the legacy page advertised extended features.
@@ -146,7 +146,7 @@ static void gap_conn_send_queued(void) {
         }
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
             conn->c_rate.queued_flags = 0;
-            conn->connection_status = 0x1a;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)) {
             gap_send_rate_ind(0, NULL);
@@ -186,7 +186,7 @@ static void gap_conn_send_queued(void) {
         else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
             conn->central.channel_report_queued = 0;
             conn->central.channel_report_pending = 0;
-            conn->connection_status = 0x1a;
+            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else {
             conn->central.channel_report_queued = 0;
@@ -1010,7 +1010,7 @@ static void gap_conn_poll(void) {
     if ((gap_security->phase & GAP_ENC_TIMEOUT_MASK) &&
         (uint32_t)(now_ms - gap_security->started_ms) >= 40000
     ) {
-        gap_security->status = 0x22;
+        gap_security->status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         gap_conn_end();
         return;
     }
@@ -1019,7 +1019,7 @@ static void gap_conn_poll(void) {
     if (conn->c_pending.phy_request &&
         (uint32_t)(now_ms - conn->c_phy.started_ms) >= 40000
     ) {
-        conn->c_phy.status = 0x22;
+        conn->c_phy.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         gap_conn_end();
         return;
     }
@@ -1028,7 +1028,7 @@ static void gap_conn_poll(void) {
     if (conn->c_pending.length &&
         (uint32_t)(now_ms - conn->length_started_ms) >= 40000
     ) {
-        conn->length_status = 0x22; // LL response timeout.
+        conn->length_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
         gap_conn_end();
         return;
     }
@@ -1040,14 +1040,14 @@ static void gap_conn_poll(void) {
          conn->c_rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
-        conn->connection_status = 0x22; // LL response timeout.
+        conn->connection_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
         if (conn->c_subrate.queued_flags ||
             conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
         ) {
             conn->c_subrate.queued_flags = 0;
             if (conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING)
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-            conn->c_subrate.status = 0x22;
+            conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         }
 
         gap_conn_end();
@@ -1058,7 +1058,7 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - conn->c_subrate.started_ms) >= 40000
     ) {
         conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-        conn->c_subrate.status = 0x22;
+        conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         gap_conn_end();
         return;
     }
