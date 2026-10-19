@@ -1403,7 +1403,8 @@ static void smp_bond_restore_poll(void) {
         !gap_security->phase && !smp->pairing.phase
     ) {
         if (bond_repair_pending[gap_conn_slot] &&
-            !conn->c_link_layer.tx_pending && !conn->c_queue.tx_queued &&
+            !conn->c_link_layer.tx_pending &&
+            !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining && gap_pair()
         ) {
             bond_repair_pending[gap_conn_slot] = 0;
@@ -1886,7 +1887,8 @@ static void gap_smp_poll(void) {
         }
 
         if (!smp->encryption_started && !smp->tx_len &&
-            !conn->tx_l2cap_remaining && !conn->c_link_layer.tx_pending &&
+            !conn->tx_l2cap_remaining &&
+            !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued
         ) {
             if (conn->is_central && !gap_security->phase) {

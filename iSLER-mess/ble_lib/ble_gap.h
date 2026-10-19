@@ -491,6 +491,7 @@ typedef struct {
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } c_tx, c_rx;
+
     struct {
         uint8_t enabled;
         uint8_t min_spacing_200ms, max_delay_200ms;
