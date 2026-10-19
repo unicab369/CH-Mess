@@ -115,7 +115,7 @@ const gap_conn_schedule *gap_conn_schedule_get(void) {
 
 // Application facing
 uint8_t gap_subrate_status(void) {
-    return gap_conn_ctx_current()->subrate.status;
+    return gap_conn_ctx_current()->c_subrate.status;
 }
 
 static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {

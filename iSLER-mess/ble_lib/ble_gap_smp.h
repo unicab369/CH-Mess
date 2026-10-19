@@ -20,6 +20,9 @@ int GAP_BOND_DELETE(uint8_t slot);
 
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 
+// Declared here because SMP abort handling calls it before its definition.
+int gap_bond_remove(void);
+
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
 

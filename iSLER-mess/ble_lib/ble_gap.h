@@ -453,20 +453,6 @@ typedef struct {
         uint32_t started_ms;
     } c_phy;
 
-    // Connection-rate and subrate procedure state.
-    struct {
-        uint8_t queued_flags; // Local set and peer request pending bits.
-        uint8_t update_pending;
-    } c_rate;
-    struct {
-        uint8_t event_activity, event_received, force_event;
-        uint16_t continuations;
-        uint8_t procedure_state; // GAP_SUBRATE_* state.
-        uint8_t queued_flags; // GAP_SUBRATE_QUEUED_UPDATE and _REQUEST bits.
-        uint8_t status;
-        uint32_t started_ms;
-    } c_subrate;
-
     struct {
         uint8_t first_event;
         uint8_t local_terminate_reason;
@@ -496,6 +482,37 @@ typedef struct {
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } c_rx;
+
+    // Connection-rate and subrate procedure state.
+    struct {
+        // Pending rate action: GAP_RATE_QUEUED_SET or
+        // GAP_RATE_QUEUED_REQUEST, depending on role and procedure.
+        uint8_t queued_flags;
+        // Rate update signaled and waiting to take effect at its Instant.
+        uint8_t update_pending;
+    } c_rate;
+
+    struct {
+        // Non-empty packet activity in the current event; starts or extends
+        // the continuation window.
+        uint8_t event_activity;
+        // A non-empty packet was received in the current event; refreshes the
+        // Peripheral's latency skip allowance at a subrated event.
+        uint8_t event_received;
+        // Keep the next connection event active even if the subrate schedule
+        // would otherwise skip it, such as after a timing Instant.
+        uint8_t force_event;
+        // Current procedure state: idle, update pending, or request pending.
+        uint8_t procedure_state;
+        // Pending local update or Peripheral request, using GAP_SUBRATE_QUEUED_* bits.
+        uint8_t queued_flags;
+        // Result of the latest subrate operation: pending, success, or error code.
+        uint8_t status;
+        // Number of continuation events still active after recent packet activity.
+        uint16_t continuations;
+        // Millisecond start time for the active procedure's response timeout.
+        uint32_t started_ms;
+    } c_subrate;
 
     // Shared channel-classification reporting state: the Central configures
     // reporting, and the Peripheral reports classification changes. Timing
