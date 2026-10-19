@@ -2083,13 +2083,13 @@ int gap_conn_rate_set(
 }
 
 // Application facing
-// Request a Core 6.2 connection-rate range as the Peripheral. Offset values
-// are 125-us candidates relative to the ReferenceConnEventCount placed in the
-// request; NULL leaves all four candidates unused. Candidates are ordered by
-// preference, and unused entries must trail valid entries.
+// Request a Core 6.2 connection-rate range as the Peripheral. Interval bounds
+// and offset candidates use 125-us units. Offsets are relative to the
+// ReferenceConnEventCount in the request; NULL leaves them unused. Candidates
+// are ordered by preference, and unused entries must trail valid entries.
 int gap_conn_rate_request(
-    uint16_t interval_min,
-    uint16_t interval_max, uint16_t factor_min, uint16_t factor_max,
+    uint16_t intv_min_125us,
+    uint16_t intv_max_125us, uint16_t factor_min, uint16_t factor_max,
     uint16_t max_latency, uint16_t continuation, uint16_t timeout,
     uint16_t preferred_periodicity, const uint16_t offsets[4]
 ) {
@@ -2097,13 +2097,13 @@ int gap_conn_rate_request(
     if (gap_conn_procedure_busy() ||
         gap_conn_rate_busy() ||
         conn->is_central ||
-        interval_min < 3 ||
-        interval_max > 32000 ||
-        interval_min > interval_max ||
-        preferred_periodicity > interval_max ||
+        intv_min_125us < 3 ||
+        intv_max_125us > 32000 ||
+        intv_min_125us > intv_max_125us ||
+        preferred_periodicity > intv_max_125us ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout) ||
-        (uint64_t)timeout * 80 <= 2ull * interval_max * factor_max * (max_latency + 1)
+        (uint64_t)timeout * 80 <= 2ull * intv_max_125us * factor_max * (max_latency + 1)
     ) return 0;
 
     uint8_t unused_offset = 0;
@@ -2113,7 +2113,7 @@ int gap_conn_rate_request(
             continue;
         }
 
-        if (unused_offset || offsets[i] >= interval_max)
+        if (unused_offset || offsets[i] >= intv_max_125us)
             return 0;
 
         for (uint8_t j = 0; j < i; j++) {
@@ -2122,8 +2122,8 @@ int gap_conn_rate_request(
         }
     }
 
-    conn->peripheral.rate_request.interval_min = interval_min;
-    conn->peripheral.rate_request.interval_max = interval_max;
+    conn->peripheral.rate_request.intv_min_125us = intv_min_125us;
+    conn->peripheral.rate_request.intv_max_125us = intv_max_125us;
     conn->peripheral.rate_request.factor_min = factor_min;
     conn->peripheral.rate_request.factor_max = factor_max;
     conn->peripheral.rate_request.latency = max_latency;

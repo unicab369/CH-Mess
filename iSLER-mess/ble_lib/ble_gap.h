@@ -520,17 +520,38 @@ typedef struct {
 
     // Peripheral-only state.
     struct {
-        uint8_t rate_req_pending, rate_ack_waiting;
+        // Set after sending LL_CONNECTION_RATE_REQ; remains set until the
+        // Central rejects it or the accepted rate update takes effect at its Instant.
+        uint8_t rate_req_pending;
+        // After receiving LL_CONNECTION_RATE_IND, keep events active until
+        // the Central acknowledges the Peripheral's response to that indication.
+        uint8_t rate_ack_waiting;
+
+        // Peripheral's proposed interval and subrate settings sent together in
+        // LL_CONNECTION_RATE_REQ; the Central chooses whether and how to apply them.
         struct {
-            uint16_t interval_min, interval_max;
+            // Connection interval: time between event starts, not event duration.
+            // Bounds are 3..32000 in 125-us units (375 us..4 s).
+            // After the Instant, the Central uses its selected interval to
+            // schedule each event and opens the radio around that event; it
+            // does not listen throughout the interval. Subrating or latency
+            // may allow some scheduled events to be skipped.
+            uint16_t intv_min_125us, intv_max_125us;
+            // Subrate-factor range the Central may choose (1..500): N allows
+            // active events every N intervals, subject to latency/continuation.
             uint16_t factor_min, factor_max, latency;
             uint16_t continuation, timeout, periodicity;
             uint16_t offsets[4];
         } rate_request;
+
         uint16_t latency_remaining;
+        // Parameters for the separate LL_SUBRATE_REQ procedure. The factor
+        // bounds have the same meaning as in rate_request, without interval bounds.
         struct {
-            uint16_t factor_min, factor_max, latency, continuation, timeout;
+            uint16_t factor_min, factor_max, latency;
+            uint16_t continuation, timeout;
         } subrate_request;
+
         uint8_t status_queued, last_sent_valid;
         uint32_t status_changed_ms, status_last_sent_ms;
     } peripheral;

@@ -156,8 +156,8 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[1] = 27;
             gap_tx_frame[2] = LL_CONNECTION_RATE_REQ;
 
-            ble_write_u16_le(gap_tx_frame + 3, conn->peripheral.rate_request.interval_min);
-            ble_write_u16_le(gap_tx_frame + 5, conn->peripheral.rate_request.interval_max);
+            ble_write_u16_le(gap_tx_frame + 3, conn->peripheral.rate_request.intv_min_125us);
+            ble_write_u16_le(gap_tx_frame + 5, conn->peripheral.rate_request.intv_max_125us);
             ble_write_u16_le(gap_tx_frame + 7, conn->peripheral.rate_request.factor_min);
             ble_write_u16_le(gap_tx_frame + 9, conn->peripheral.rate_request.factor_max);
             ble_write_u16_le(gap_tx_frame + 11, conn->peripheral.rate_request.latency);
