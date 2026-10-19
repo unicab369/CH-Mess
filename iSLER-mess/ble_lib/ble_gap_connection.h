@@ -1471,8 +1471,7 @@ static uint8_t gap_conn_control(
                 interval = minimum;
 
             if (periodicity_125us) {
-                uint32_t lower = ((uint32_t)interval / periodicity_125us) *
-                                 periodicity_125us;
+                uint32_t lower = ((uint32_t)interval / periodicity_125us) * periodicity_125us;
                 uint32_t upper = lower + periodicity_125us;
                 uint8_t lower_valid = lower >= minimum &&
                                       lower >= gap_conn_min_interval();
@@ -2135,8 +2134,7 @@ int gap_conn_rate_request(
     conn->peripheral.rate_request.latency = max_latency;
     conn->peripheral.rate_request.continuation = continuation;
     conn->peripheral.rate_request.timeout_10ms = timeout_10ms;
-    conn->peripheral.rate_request.periodicity_125us =
-        preferred_periodicity_125us;
+    conn->peripheral.rate_request.periodicity_125us = preferred_periodicity_125us;
 
     for (uint8_t i = 0; i < 4; i++)
         conn->peripheral.rate_request.offsets[i] = offsets ? offsets[i] : 0xffff;

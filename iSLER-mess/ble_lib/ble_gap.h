@@ -587,8 +587,21 @@ typedef struct {
         // data to send, then must listen again at 120 ms. Intervening base
         // events are skipped too while this allowance remains nonzero.
         uint16_t latency_remaining;
-        uint8_t status_queued, last_sent_valid;
-        uint32_t status_changed_ms, status_last_sent_ms;
+        // The Peripheral owes the Central an LL_CHANNEL_STATUS_IND containing
+        // gap_local_class. Set when reporting is enabled or local classification
+        // changes. Poll sends the latest classification after max_delay_200ms
+        // since the change and min_spacing_200ms since the previous report,
+        // then clears this flag when it queues the PDU for transmission.
+        uint8_t status_queued;
+        // Indicates status_last_sent_ms is valid; false allows the first report
+        // without waiting for the minimum-spacing timer.
+        uint8_t last_sent_valid;
+        // Time the local channel classification last changed, used to enforce
+        // max_delay_200ms before reporting the change.
+        uint32_t status_changed_ms;
+        // Time the latest LL_CHANNEL_STATUS_IND was queued, used to enforce
+        // min_spacing_200ms before queuing another report.
+        uint32_t status_last_sent_ms;
     } peripheral;
 } gap_conn_context;
 
