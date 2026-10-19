@@ -50,8 +50,8 @@ static void gap_conn_send_queued(void) {
             gap_tx_frame[1] = 24;
             gap_tx_frame[2] = LL_CONNECTION_PARAM_REQ;
 
-            ble_write_u16_le(gap_tx_frame + 3, conn->params_min);
-            ble_write_u16_le(gap_tx_frame + 5, conn->params_max);
+            ble_write_u16_le(gap_tx_frame + 3, conn->params_min_1p25ms);
+            ble_write_u16_le(gap_tx_frame + 5, conn->params_max_1p25ms);
             ble_write_u16_le(gap_tx_frame + 7, conn->params_latency);
             ble_write_u16_le(gap_tx_frame + 9, conn->params_timeout);
 

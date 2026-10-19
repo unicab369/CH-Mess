@@ -319,56 +319,91 @@ typedef struct {
 
 // GAP state and connection data types.
 typedef struct {
-    uint8_t scanning, active, generation;
-    uint16_t interval_ms, window_ms;
-    uint8_t discovery_mode, filter_duplicates;
+    uint8_t scanning;          // Scanner is enabled and scheduling scan windows.
+    uint8_t active;            // Active scanning is enabled; send scan requests when applicable.
+    uint8_t generation;        // Incremented when scan state changes to invalidate stale work.
+    uint16_t interval_ms;      // Time between scan-window starts, in milliseconds.
+    uint16_t window_ms;         // Duration of each scan window, in milliseconds.
+    uint8_t discovery_mode;    // Which advertising report classes the scanner accepts.
+    uint8_t filter_duplicates; // Suppress repeated reports for the same advertiser/data.
 } gap_scanner_state;
 
 typedef struct {
-    uint16_t tx_octets, tx_time, rx_octets, rx_time;
+    uint16_t tx_octets; // Maximum Link Layer payload bytes this device can transmit.
+    uint16_t tx_time;   // Maximum transmit time, in microseconds, for that payload.
+    uint16_t rx_octets; // Maximum Link Layer payload bytes this device can receive.
+    uint16_t rx_time;   // Maximum receive time, in microseconds, for that payload.
 } gap_data_length;
 
 typedef struct {
-    uint16_t interval, latency, supervision_timeout;
+    uint16_t interval;            // Connection interval in 1.25-ms units.
+    uint16_t latency;             // Peripheral latency in connection events.
+    uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
 } gap_conn_params;
 
 typedef struct {
-    uint16_t interval_125us, factor, latency, continuation, timeout;
-    uint16_t base_event, win_offset, instant;
+    uint16_t interval_125us; // Base connection-event interval in 125-us units.
+    uint16_t factor;          // Subrate factor: normally one active event per this many base events.
+    uint16_t latency;         // Maximum consecutive subrated events the Peripheral may skip.
+    uint16_t continuation;    // Extra events kept active after packet activity.
+    uint16_t timeout;         // Supervision timeout in 10-ms units.
+    uint16_t base_event;      // Event-counter origin used to calculate this schedule's events.
+    uint16_t win_offset;      // Connection anchor shift in 1.25-ms units at an update.
+    uint16_t instant;         // Event counter when this schedule becomes active.
 } gap_conn_schedule;
 
 typedef struct {
-    uint8_t slot;
-    uint16_t generation;
+    uint8_t slot;        // Index of the connection in the context table.
+    uint16_t generation; // Slot generation; rejects handles left over from a prior link.
 } gap_conn_handle;
 
 typedef struct {
-    volatile uint16_t phase;
-    uint8_t tx_enabled, rx_enabled, tx_sealed, status, refreshing;
-    uint8_t ltk[16], session_key[16], skd[16], iv[8], random[8];
-    uint8_t next_skd[8], next_iv[4];
-    uint16_t ediv;
-    uint64_t tx_counter, rx_counter;
-    uint32_t started_ms;
+    volatile uint16_t phase; // Current SMP/encryption state-machine phase, shared with radio callbacks.
+    uint8_t tx_enabled;      // Link Layer encryption is enabled for outgoing packets.
+    uint8_t rx_enabled;      // Link Layer encryption is enabled for incoming packets.
+    uint8_t tx_sealed;       // Outgoing packet has been encrypted and is ready for transmission.
+    uint8_t status;          // Result of the current security procedure.
+    uint8_t refreshing;      // Session keys are being refreshed during an encrypted connection.
+    uint8_t ltk[16];         // Long-term key used to derive this connection's session key.
+    uint8_t session_key[16]; // Current Link Layer session key.
+    uint8_t skd[16];         // Session key diversifier exchanged by the two devices.
+    uint8_t iv[8];           // Current eight-byte Link Layer encryption IV.
+    uint8_t random[8];       // Local random value used during key setup.
+    uint8_t next_skd[8];     // Pending SKD bytes for the next key refresh.
+    uint8_t next_iv[4];      // Pending IV bytes for the next key refresh.
+    uint16_t ediv;           // Encrypted diversifier identifying a legacy LTK.
+    uint64_t tx_counter;     // Outgoing packet encryption counter.
+    uint64_t rx_counter;     // Expected incoming encryption packet counter.
+    uint32_t started_ms;     // Start time used to enforce procedure timeouts.
 } gap_security_context;
 
 // Advertising, scanning, and periodic-sync state.
 static struct {
-    uint8_t enabled, pdu_type, data_len, scan_resp_len;
+    uint8_t enabled;      // Legacy advertising is enabled.
+    uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
+    uint8_t data_len;      // Number of valid bytes in data.
+    uint8_t scan_resp_len; // Number of valid bytes in scan_response.
     struct {
-        uint8_t type, address[6];
-    } local, target;
-    int8_t peer_slot;
-    uint8_t scan_accept, connection_accept;
-    uint16_t interval_ms;
-    uint32_t next_event_ms;
-    uint8_t data[GAP_ADV_DATA_MAX], scan_response[GAP_ADV_DATA_MAX];
+        uint8_t type;       // Address type used in the advertising PDU.
+        uint8_t address[6]; // Device address in Bluetooth byte order.
+    } local;                // Local advertiser address.
+    struct {
+        uint8_t type;       // Target address type for directed advertising.
+        uint8_t address[6]; // Target device address in Bluetooth byte order.
+    } target;
+    int8_t peer_slot;          // Accepted peer's connection slot, or a negative value if none.
+    uint8_t scan_accept;       // A scan request was accepted and needs a scan response.
+    uint8_t connection_accept; // A connection request was accepted and needs link setup.
+    uint16_t interval_ms;      // Time between advertising events, in milliseconds.
+    uint32_t next_event_ms;    // Scheduled time of the next advertising event.
+    uint8_t data[GAP_ADV_DATA_MAX]; // Advertising payload bytes.
+    uint8_t scan_response[GAP_ADV_DATA_MAX]; // Scan-response payload bytes.
 } gap_adv;
 
 static gap_scanner_state gap_scanner = {
-    .interval_ms = 20,
+    .interval_ms = 20, // Scan continuously by default: window equals interval.
     .window_ms = 20,
-    .discovery_mode = GAP_DISCOVERY_ALL
+    .discovery_mode = GAP_DISCOVERY_ALL // Report all supported advertiser types.
 };
 
 // Per-link connection, encryption, SMP, and Central initiation state.
@@ -393,84 +428,118 @@ typedef struct {
 #endif
 
     // Connection identity and security state.
-    gap_address initiator, responder, peer;
-    uint8_t is_central;
-    uint8_t authenticated, enc_key_size;
-    uint8_t load_pending;
+    gap_address initiator; // Address that initiated the link.
+    gap_address responder; // Address that accepted the link.
+    gap_address peer;      // The other device's address for this local endpoint.
+    uint8_t is_central;    // Nonzero when this device is the Central on this link.
+    uint8_t authenticated; // Link has completed authenticated pairing.
+    uint8_t enc_key_size;  // Negotiated encryption key size in bytes; zero when unencrypted.
+    uint8_t load_pending;  // Link is accepted; poll still needs to initialize its runtime state.
 
     // Radio and connection data.
-    uint8_t window_size, update_window_size;
-    uint16_t tx_l2cap_remaining;
+    uint8_t window_size;        // Initial connection receive-window size from the connection request.
+    uint8_t update_window_size; // Receive-window size used when applying a connection update.
+    uint16_t tx_l2cap_remaining; // L2CAP payload bytes still to send after the current LL fragment.
 
     // Connection parameters and timing state.
-    uint8_t next_channel_map[5];
-    uint8_t connection_status;
-    uint16_t params_min, params_max, params_latency, params_timeout;
-    uint32_t params_started_ms;
-    uint16_t update_instant, update_win_offset, map_instant;
-    gap_conn_schedule schedule, next_schedule;
-    gap_conn_params new_params;
+    uint8_t next_channel_map[5]; // Channel map to install at map_instant.
+    uint8_t connection_status;  // Result/status reported for connection and parameter procedures.
+    uint16_t params_min_1p25ms;  // Minimum requested connection interval.
+    uint16_t params_max_1p25ms;  // Maximum requested connection interval.
+    uint16_t params_latency;     // Requested Peripheral latency, in connection events.
+    uint16_t params_timeout;     // Requested supervision timeout, in 10-ms units.
+    uint32_t params_started_ms;  // Start time used to expire a pending parameter procedure.
+    uint16_t update_instant;     // Event counter when a pending connection timing update takes effect.
+    uint16_t update_win_offset;  // Initial anchor shift for that update, in 1.25-ms units.
+    uint16_t map_instant;        // Event counter when next_channel_map takes effect.
+    gap_conn_schedule schedule;      // Currently active event timing and subrate schedule.
+    gap_conn_schedule next_schedule; // Schedule selected for the pending update instant.
+    gap_conn_params new_params;       // Connection parameters to install at update_instant.
 
     // Data-length negotiation.
-    uint16_t local_tx_octets;
-    gap_data_length data_length, remote_data_length;
-    uint8_t length_status;
-    uint32_t length_started_ms;
+    uint16_t local_tx_octets;           // Maximum LL payload this device will transmit.
+    gap_data_length data_length;        // Current negotiated transmit and receive data limits.
+    gap_data_length remote_data_length; // Data limits most recently reported by the peer.
+    uint8_t length_status;              // Status/result of the data-length procedure.
+    uint32_t length_started_ms;         // Start time used to expire a pending length exchange.
 
     // Procedures awaiting completion or peer response.
     struct {
-        uint8_t update_window_active;
+        uint8_t update_window_active; // Scheduler is inside the connection-update window.
         // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
         uint8_t procedure_flags;
-        uint8_t params_state; // None, remote request, or local request.
-        uint8_t phy_request;
-        uint8_t length;
+        uint8_t params_state; // None, remote request, or local request is being handled.
+        uint8_t phy_request;  // A PHY request awaits its response/procedure completion.
+        uint8_t length;       // A data-length exchange awaits completion.
     } c_pending;
 
     // Radio queues and connection data.
     struct {
-        volatile uint8_t phy_queued;
-        volatile uint8_t tx_queued, rx_ready;
-        volatile uint8_t local_update;
-        volatile uint8_t local_params, local_map;
-        volatile uint8_t length;
+        volatile uint8_t phy_queued;       // PHY control work is waiting for the connection poll.
+        volatile uint8_t tx_queued;        // A staged outgoing packet is ready for radio transmission.
+        volatile uint8_t rx_ready;         // A received packet is ready for connection processing.
+        volatile uint8_t local_update;     // A locally requested timing update needs processing.
+        volatile uint8_t local_params;     // A local connection-parameter request needs processing.
+        volatile uint8_t local_map;        // A local channel-map update needs processing.
+        volatile uint8_t length;           // A data-length update needs processing.
     } c_queue;
 
     // Link-layer event and termination state.
     struct {
-        uint8_t rx_armed, event_replied, channel_selected;
-        uint8_t terminate_after_reply, version_ind_sent;
-        uint8_t terminate_queued, terminate_sent;
+        uint8_t rx_armed;             // Radio receive is armed for this link.
+        uint8_t event_replied;        // A reply has already been sent in the current event.
+        uint8_t channel_selected;     // Current event's data channel has already been selected.
+        uint8_t terminate_after_reply; // Send termination after the required reply is sent.
+        uint8_t version_ind_sent;     // LL_VERSION_IND was already sent on this link.
+        uint8_t terminate_queued;     // Local termination is waiting to be transmitted.
+        uint8_t terminate_sent;       // LL_TERMINATE_IND was sent; finish link shutdown.
     } c_link_state;
 
     // PHY update state.
     struct {
         struct {
             uint8_t tx, rx;
-        } current, preferred, pending;
-        uint8_t status;
-        uint16_t instant;
-        uint32_t started_ms;
+        } current; // PHY currently in use for each direction.
+        struct {
+            uint8_t tx, rx;
+        } preferred; // Locally preferred PHY masks for each direction.
+        struct {
+            uint8_t tx, rx;
+        } pending; // Negotiated PHY values waiting for their instant.
+        uint8_t status;       // Result/status of the PHY update procedure.
+        uint16_t instant;     // Event counter when pending PHY values take effect.
+        uint32_t started_ms;  // Start time used to expire a pending PHY procedure.
     } c_phy;
 
     struct {
-        uint8_t first_event;
-        uint8_t local_terminate_reason;
-        uint8_t hop, unmapped_channel, channel_map[5], used_channels[37];
-        uint8_t used_count, expected_rx_sn, tx_sn, tx_pending;
-        uint16_t peer_sca_ppm, event_counter;
-        uint32_t access_address, crc_init, last_rx_ms;
-        uint64_t next_ticks;
+        uint8_t first_event; // First event has not yet completed normal link scheduling.
+        uint8_t local_terminate_reason; // HCI reason code for a locally requested termination.
+        uint8_t hop; // CSA#1 hop increment used to advance the unmapped channel.
+        uint8_t unmapped_channel; // Previous channel before applying the channel map.
+        uint8_t channel_map[5]; // Active 37-channel map received from/used with the peer.
+        uint8_t used_channels[37]; // Active channel numbers in lookup order for remapping.
+        uint8_t used_count; // Number of enabled data channels in used_channels.
+        uint8_t expected_rx_sn; // Next LLID sequence number expected from the peer.
+        uint8_t tx_sn; // Sequence number assigned to the next new transmitted LL packet.
+        uint8_t tx_pending; // A transmitted packet is awaiting acknowledgment/retransmission.
+        uint16_t peer_sca_ppm; // Peer sleep-clock accuracy used to widen receive timing.
+        uint16_t event_counter; // Current 16-bit connection event counter.
+        uint32_t access_address; // Access address used for this connection's radio packets.
+        uint32_t crc_init; // CRC initialization value used for this connection.
+        uint32_t last_rx_ms; // Time of the last received packet, used for timing-widening calculations.
+        uint64_t next_ticks; // Radio timer tick for the next scheduled connection event.
     } c_link_layer;
 
     // Link-layer feature exchange and channel classification.
     struct {
-        uint8_t known;
+        uint8_t known; // Peer feature set is available and valid.
         // These are the feature-set octets used by this stack.
-        uint8_t peer_feature_0, peer_feature_1;
-        uint8_t peer_feature_4, peer_feature_7;
-        uint8_t ext_pending, page1_known, peer_page1[8];
-        uint8_t request_pending;
+        uint8_t peer_feature_0, peer_feature_1; // Received feature octets at Core indices 0 and 1.
+        uint8_t peer_feature_4, peer_feature_7; // Received feature octets at Core indices 4 and 7.
+        uint8_t ext_pending; // Extended feature exchange is awaiting completion.
+        uint8_t page1_known; // Peer extended feature page 1 has been received.
+        uint8_t peer_page1[8]; // Peer feature bits from extended feature page 1.
+        uint8_t request_pending; // A local LL_FEATURE_REQ is queued or awaiting its response.
     } c_features;
 
     // One outgoing Link Layer data packet staged until the radio sends it.

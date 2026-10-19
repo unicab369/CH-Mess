@@ -962,8 +962,8 @@ static uint8_t gap_conn_control(
         ) return gap_conn_reject_resp(frame[2], error);
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
-            if (minimum < conn->params_min) minimum = conn->params_min;
-            if (maximum > conn->params_max) maximum = conn->params_max;
+            if (minimum < conn->params_min_1p25ms) minimum = conn->params_min_1p25ms;
+            if (maximum > conn->params_max_1p25ms) maximum = conn->params_max_1p25ms;
 
             error = GAP_LL_ERR_UNSUPPORTED_PARAM; // Unsupported LL parameter value.
             if (minimum > maximum)
@@ -1983,8 +1983,8 @@ int gap_conn_request(
         return 0;
     }
 
-    conn->params_min = minimum;
-    conn->params_max = maximum;
+    conn->params_min_1p25ms = minimum;
+    conn->params_max_1p25ms = maximum;
     conn->params_latency = latency;
     conn->params_timeout = timeout;
     conn->connection_status = GAP_CONNECTION_PENDING;
