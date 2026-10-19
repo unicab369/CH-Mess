@@ -1416,7 +1416,7 @@ static uint8_t gap_conn_control(
         uint16_t latency    = ble_read_u16_le(frame + 11);
         uint16_t continuation = ble_read_u16_le(frame + 13);
         uint16_t timeout    = ble_read_u16_le(frame + 15);
-        uint16_t periodicity = ble_read_u16_le(frame + 17);
+        uint16_t periodicity_125us = ble_read_u16_le(frame + 17);
         uint16_t reference_event = ble_read_u16_le(frame + 19);
         uint16_t offsets[4];
         uint8_t invalid_offset = 0, offsets_valid = 1;
@@ -1438,7 +1438,7 @@ static uint8_t gap_conn_control(
         if (minimum < 3 || maximum > 32000 || minimum > maximum ||
             !gap_schedule_parameters_valid(factor_min, factor_max, latency,
                                          continuation, timeout) ||
-            periodicity > maximum || !offsets_valid ||
+            periodicity_125us > maximum || !offsets_valid ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)maximum * factor_max * (latency + 1)
         ) {
             error = GAP_LL_ERR_INVALID_PARAMS;
@@ -1470,9 +1470,10 @@ static uint8_t gap_conn_control(
             if (interval < minimum || interval > maximum)
                 interval = minimum;
 
-            if (periodicity) {
-                uint32_t lower = ((uint32_t)interval / periodicity) * periodicity;
-                uint32_t upper = lower + periodicity;
+            if (periodicity_125us) {
+                uint32_t lower = ((uint32_t)interval / periodicity_125us) *
+                                 periodicity_125us;
+                uint32_t upper = lower + periodicity_125us;
                 uint8_t lower_valid = lower >= minimum &&
                                       lower >= gap_conn_min_interval();
                 uint8_t upper_valid = upper <= maximum;
@@ -1928,9 +1929,7 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
         conn->c_link_state.terminate_sent;
 }
 
-static uint8_t gap_conn_procedure_busy(void) {
-    const gap_conn_context *conn = gap_conn_ctx_current();
-
+static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->c_link_layer.first_event ||
@@ -1947,7 +1946,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                         conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) || !conn->is_central ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * interval_125us * factor
@@ -1974,7 +1973,7 @@ int gap_conn_request(
                     conn->schedule.interval_125us <= maximum * 10 ?
                     conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
         !ble_timing_valid( minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * maximum * 10 * factor
@@ -2003,7 +2002,7 @@ int gap_subrate_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
         !conn->is_central ||
         !gap_rate_parameters_valid(conn->schedule.interval_125us,
@@ -2036,7 +2035,7 @@ int gap_subrate_request(
     uint16_t timeout_10ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) || conn->is_central ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
@@ -2071,7 +2070,7 @@ int gap_conn_rate_set(
     uint16_t latency, uint16_t continuation, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
         !conn->is_central ||
         interval < gap_conn_min_interval() ||
@@ -2090,24 +2089,24 @@ int gap_conn_rate_set(
 }
 
 // Application facing
-// Request a Core 6.2 connection-rate range as the Peripheral. Interval bounds
-// and offset candidates use 125-us units. Offsets are relative to the
-// ReferenceConnEventCount in the request; NULL leaves them unused. Candidates
-// are ordered by preference, and unused entries must trail valid entries.
+// Request a Core 6.2 connection-rate range as the Peripheral. Interval bounds,
+// preferred periodicity, and offset candidates use 125-us units. Offsets are
+// relative to ReferenceConnEventCount in the request; NULL leaves them unused.
+// Candidates are ordered by preference, and unused entries must trail valid entries.
 int gap_conn_rate_request(
     uint16_t intv_min_125us,
     uint16_t intv_max_125us, uint16_t factor_min, uint16_t factor_max,
     uint16_t max_latency, uint16_t continuation, uint16_t timeout_10ms,
-    uint16_t preferred_periodicity, const uint16_t offsets[4]
+    uint16_t preferred_periodicity_125us, const uint16_t offsets[4]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
         conn->is_central ||
         intv_min_125us < 3 ||
         intv_max_125us > 32000 ||
         intv_min_125us > intv_max_125us ||
-        preferred_periodicity > intv_max_125us ||
+        preferred_periodicity_125us > intv_max_125us ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
         (uint64_t)timeout_10ms * 80 <= 2ull * intv_max_125us * factor_max * (max_latency + 1)
@@ -2136,7 +2135,8 @@ int gap_conn_rate_request(
     conn->peripheral.rate_request.latency = max_latency;
     conn->peripheral.rate_request.continuation = continuation;
     conn->peripheral.rate_request.timeout_10ms = timeout_10ms;
-    conn->peripheral.rate_request.periodicity = preferred_periodicity;
+    conn->peripheral.rate_request.periodicity_125us =
+        preferred_periodicity_125us;
 
     for (uint8_t i = 0; i < 4; i++)
         conn->peripheral.rate_request.offsets[i] = offsets ? offsets[i] : 0xffff;
@@ -2152,7 +2152,7 @@ int gap_conn_rate_request(
 int gap_channel_map_set(const uint8_t channels[5]) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (!channels || gap_conn_procedure_busy() ||
+    if (!channels || gap_conn_procedure_busy(conn) ||
         !conn->is_central ||
         (channels[4] & 0xe0)
     ) return 0;
@@ -2257,7 +2257,7 @@ int gap_peer_class_get(
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy() || octets < 27 ||
+    if (gap_conn_procedure_busy(conn) || octets < 27 ||
         octets > gap_data_capacity
     ) return 0;
 
@@ -2279,7 +2279,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t supported = GAP_HW_PHY_MASK() & 7;
 
-    if (gap_conn_procedure_busy() ||
+    if (gap_conn_procedure_busy(conn) ||
         !(supported & 6) || !tx || !rx ||
         (tx & ~supported) || (rx & ~supported)
     ) return 0;
@@ -2504,7 +2504,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!ltk || !random || !conn->is_central ||
-        gap_conn_procedure_busy() ||
+        gap_conn_procedure_busy(conn) ||
         conn->c_features.request_pending
     ) return 0;
 

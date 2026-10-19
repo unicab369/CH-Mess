@@ -542,7 +542,12 @@ typedef struct {
             // Factor bounds are 1..500 and control which interval ticks are used.
             uint16_t factor_min, factor_max;
             uint16_t latency;
-            uint16_t continuation, timeout_10ms, periodicity;
+            uint16_t continuation;
+            uint16_t timeout_10ms;
+            // Preferred multiple for the selected interval, in 125-us units;
+            // zero means no preference. For example, 80 (10 ms) prefers
+            // intervals of 10, 20, 30 ms, and so on.
+            uint16_t periodicity_125us;
             uint16_t offsets[4];
         } rate_request;
 
@@ -562,9 +567,25 @@ typedef struct {
             // Valid range is 0..499, further limited by
             // factor_max * (latency + 1) <= 500.
             uint16_t latency;
-            uint16_t continuation, timeout_10ms;
+            // Number of extra connection events that may stay active after
+            // data is exchanged; valid range is 0..factor_min - 1. For example,
+            // with a 10-ms interval, factor 4 normally uses events at 0, 40,
+            // 80 ms... If data is exchanged at 40 ms and continuation is 2,
+            // events at 50 and 60 ms can also be used; if idle, the next normal
+            // event is at 80 ms.
+            uint16_t continuation;
+            uint16_t timeout_10ms;
         } subrate_request;
 
+        // Runtime countdown of the Peripheral's skip allowance, counted in
+        // subrated events. The configured schedule latency is the Central's
+        // chosen maximum; the request's latency is only the Peripheral's proposal.
+        // This value is reset to the chosen maximum after received data, then
+        // counts down as subrated events are skipped.
+        // With a 10-ms interval, factor 4, and latency 2, after receiving data
+        // at 0 ms it may skip the subrated events at 40 and 80 ms if it has no
+        // data to send, then must listen again at 120 ms. Intervening base
+        // events are skipped too while this allowance remains nonzero.
         uint16_t latency_remaining;
         uint8_t status_queued, last_sent_valid;
         uint32_t status_changed_ms, status_last_sent_ms;

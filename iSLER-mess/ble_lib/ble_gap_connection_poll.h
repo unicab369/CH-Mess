@@ -163,7 +163,7 @@ static void gap_conn_send_queued(void) {
             ble_write_u16_le(gap_tx_frame + 11, conn->peripheral.rate_request.latency);
             ble_write_u16_le(gap_tx_frame + 13, conn->peripheral.rate_request.continuation);
             ble_write_u16_le(gap_tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
-            ble_write_u16_le(gap_tx_frame + 17, conn->peripheral.rate_request.periodicity);
+            ble_write_u16_le(gap_tx_frame + 17, conn->peripheral.rate_request.periodicity_125us);
             ble_write_u16_le(gap_tx_frame + 19, conn->c_link_layer.event_counter);
 
             for (uint8_t i = 0; i < 4; i++) {
