@@ -487,10 +487,15 @@ typedef struct {
         uint8_t request_pending;
     } c_features;
 
-    // Connection transmit and receive buffers.
+    // One outgoing Link Layer data packet staged until the radio sends it.
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
-    } c_tx, c_rx;
+    } c_tx;
+    // One received Link Layer data packet staged while the stack or application
+    // processes it; these are packet buffers, not queues for whole messages.
+    struct {
+        uint8_t llid, len, data[GAP_CONN_DATA_MAX];
+    } c_rx;
 
     // Shared channel-classification reporting state: the Central configures
     // reporting, and the Peripheral reports classification changes. Timing
@@ -502,7 +507,8 @@ typedef struct {
         uint8_t max_delay_200ms;   // Maximum delay after a status change.
     } c_channel;
 
-    // Central-only state.
+    // Central-only state. Current size is 13 bytes; the Peripheral-only state
+    // below is 40 bytes, so it is 27 bytes larger (including alignment padding).
     struct {
         // Internal scheduler flag: set when the first event initializes
         // next_ticks, so later polls do not reset the schedule to "now".
@@ -527,55 +533,57 @@ typedef struct {
         // the Central acknowledges the Peripheral's response to that indication.
         uint8_t rate_ack_waiting;
 
-        // LL_CONNECTION_RATE_REQ: the Peripheral proposes both a base interval
-        // (375 us..4 s) and a subrate factor. The factor can make active events
-        // farther apart than 4 s; the Central chooses whether and what to apply.
-        struct {
-            // Connection interval: time between event starts, not event duration.
-            // The requested base interval is 3..32000 in 125-us units
-            // (375 us..4 s); subrating can make active events farther apart.
-            // After the Instant, the Central uses its selected interval to
-            // schedule each event and opens the radio around that event; it
-            // does not listen throughout the interval. Subrating or latency
-            // may allow some scheduled events to be skipped.
-            uint16_t intv_min_125us, intv_max_125us;
-            // Factor bounds are 1..500 and control which interval ticks are used.
-            uint16_t factor_min, factor_max;
-            uint16_t latency;
-            uint16_t continuation;
-            uint16_t timeout_10ms;
-            // Preferred multiple for the selected interval, in 125-us units;
-            // zero means no preference. For example, 80 (10 ms) prefers
-            // intervals of 10, 20, 30 ms, and so on.
-            uint16_t periodicity_125us;
-            uint16_t offsets[4];
-        } rate_request;
+        // These request payloads cannot be pending together, so they share storage.
+        union {
+            // LL_CONNECTION_RATE_REQ: the Peripheral proposes both a base interval
+            // (375 us..4 s) and a subrate factor. The factor can make active events
+            // farther apart than 4 s; the Central chooses whether and what to apply.
+            struct {
+                // Connection interval: time between event starts, not event duration.
+                // The requested base interval is 3..32000 in 125-us units
+                // (375 us..4 s); subrating can make active events farther apart.
+                // After the Instant, the Central uses its selected interval to
+                // schedule each event and opens the radio around that event; it
+                // does not listen throughout the interval. Subrating or latency
+                // may allow some scheduled events to be skipped.
+                uint16_t intv_min_125us, intv_max_125us;
+                // Preferred multiple for the selected interval, in 125-us units;
+                // zero means no preference. For example, 80 (10 ms) prefers
+                // intervals of 10, 20, 30 ms, and so on.
+                uint16_t periodicity_125us;
+                uint16_t offsets[4];
+                uint16_t factor_min, factor_max;
+                uint16_t latency;
+                uint16_t continuation;
+                uint16_t timeout_10ms;
+            } rate_request;
 
-        // LL_SUBRATE_REQ: the Peripheral proposes only a subrate factor, keeping
-        // the current connection interval. Unlike rate_request, it has no interval
-        // bounds; the factor bounds have the same meaning in both requests.
-        struct {
-            // Factor bounds are 1..500 and control which interval ticks are used.
-            // For a 10-ms interval, factor 1 uses 0, 10, 20, 30, 40... ms;
-            // factor 4 normally uses 0, 40, 80... ms. The interval stays 10 ms.
-            // Continuation events and Peripheral latency can alter this pattern.
-            uint16_t factor_min, factor_max;
-            // Maximum consecutive subrated events the Peripheral may skip
-            // when it has no data to send; the Central chooses the final value.
-            // Example: with a 10-ms interval and factor 4, latency 2 lets it
-            // skip events at 40 and 80 ms, then listen at 120 ms.
-            // Valid range is 0..499, further limited by
-            // factor_max * (latency + 1) <= 500.
-            uint16_t latency;
-            // Number of extra connection events that may stay active after
-            // data is exchanged; valid range is 0..factor_min - 1. For example,
-            // with a 10-ms interval, factor 4 normally uses events at 0, 40,
-            // 80 ms... If data is exchanged at 40 ms and continuation is 2,
-            // events at 50 and 60 ms can also be used; if idle, the next normal
-            // event is at 80 ms.
-            uint16_t continuation;
-            uint16_t timeout_10ms;
-        } subrate_request;
+            // LL_SUBRATE_REQ: the Peripheral proposes only a subrate factor, keeping
+            // the current connection interval. Unlike rate_request, it has no interval
+            // bounds; the factor bounds have the same meaning in both requests.
+            struct {
+                // Factor bounds are 1..500 and control which interval ticks are used.
+                // For a 10-ms interval, factor 1 uses 0, 10, 20, 30, 40... ms;
+                // factor 4 normally uses 0, 40, 80... ms. The interval stays 10 ms.
+                // Continuation events and Peripheral latency can alter this pattern.
+                uint16_t factor_min, factor_max;
+                // Maximum consecutive subrated events the Peripheral may skip
+                // when it has no data to send; the Central chooses the final value.
+                // Example: with a 10-ms interval and factor 4, latency 2 lets it
+                // skip events at 40 and 80 ms, then listen at 120 ms.
+                // Valid range is 0..499, further limited by
+                // factor_max * (latency + 1) <= 500.
+                uint16_t latency;
+                // Number of extra connection events that may stay active after
+                // data is exchanged; valid range is 0..factor_min - 1. For example,
+                // with a 10-ms interval, factor 4 normally uses events at 0, 40,
+                // 80 ms... If data is exchanged at 40 ms and continuation is 2,
+                // events at 50 and 60 ms can also be used; if idle, the next normal
+                // event is at 80 ms.
+                uint16_t continuation;
+                uint16_t timeout_10ms;
+            } subrate_request;
+        };
 
         // Runtime countdown of the Peripheral's skip allowance, counted in
         // subrated events. The configured schedule latency is the Central's
