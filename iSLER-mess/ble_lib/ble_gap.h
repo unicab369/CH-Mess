@@ -428,71 +428,117 @@ typedef struct {
 #endif
 
     // Connection identity and security state.
-    gap_address initiator; // Address that initiated the link.
-    gap_address responder; // Address that accepted the link.
-    gap_address peer;      // The other device's address for this local endpoint.
-    uint8_t is_central;    // Nonzero when this device is the Central on this link.
-    uint8_t authenticated; // Link has completed authenticated pairing.
-    uint8_t enc_key_size;  // Negotiated encryption key size in bytes; zero when unencrypted.
-    uint8_t load_pending;  // Link is accepted; poll still needs to initialize its runtime state.
+    // Address from the CONNECT_IND initiator; with is_central, identifies which side is local.
+    gap_address initiator;
+    // Address from the CONNECT_IND responder; with is_central, identifies which side is local.
+    gap_address responder;
+    // Peer identity used by GAP/SMP; may be resolved from initiator or responder after setup.
+    gap_address peer;
+    // Selects the local Central or Peripheral role and the matching initiator/responder address.
+    uint8_t is_central;
+    // Pairing result associated with this link; bond keys are in bond and runtime keys in gap_sec_contexts.
+    uint8_t authenticated;
+    // Negotiated key size associated with authenticated and this slot's gap_sec_contexts entry.
+    uint8_t enc_key_size;
+    // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
+    uint8_t load_pending;
 
     // Radio and connection data.
-    uint8_t window_size;        // Initial connection receive-window size from the connection request.
-    uint8_t update_window_size; // Receive-window size used when applying a connection update.
-    uint16_t tx_l2cap_remaining; // L2CAP payload bytes still to send after the current LL fragment.
+    // Active receive-window size, initialized from the connection request and later updated at update_instant.
+    uint8_t window_size;
+    // Replacement receive-window size carried with the timing update at update_instant.
+    uint8_t update_window_size;
+    // Bytes remaining in the L2CAP PDU after the fragment staged in c_tx.
+    uint16_t tx_l2cap_remaining;
 
     // Connection parameters and timing state.
-    uint8_t next_channel_map[5]; // Channel map to install at map_instant.
-    uint8_t connection_status;  // Result/status reported for connection and parameter procedures.
-    uint16_t params_min_1p25ms;  // Minimum requested connection interval.
-    uint16_t params_max_1p25ms;  // Maximum requested connection interval.
-    uint16_t params_latency;     // Requested Peripheral latency, in connection events.
-    uint16_t params_timeout;     // Requested supervision timeout, in 10-ms units.
-    uint32_t params_started_ms;  // Start time used to expire a pending parameter procedure.
-    uint16_t update_instant;     // Event counter when a pending connection timing update takes effect.
-    uint16_t update_win_offset;  // Initial anchor shift for that update, in 1.25-ms units.
-    uint16_t map_instant;        // Event counter when next_channel_map takes effect.
-    gap_conn_schedule schedule;      // Currently active event timing and subrate schedule.
-    gap_conn_schedule next_schedule; // Schedule selected for the pending update instant.
-    gap_conn_params new_params;       // Connection parameters to install at update_instant.
+    // Replacement for c_link_layer.channel_map, applied when map_instant arrives.
+    uint8_t next_channel_map[5];
+    // Result for pending procedures, including the request tracked by c_pending.params_state.
+    uint8_t connection_status;
+    // Lower bound paired with params_max_1p25ms in the request queued by c_queue.local_params.
+    uint16_t params_min_1p25ms;
+    // Upper bound paired with params_min_1p25ms in the request queued by c_queue.local_params.
+    uint16_t params_max_1p25ms;
+    // Requested latency paired with the interval bounds and timeout in that same request.
+    uint16_t params_latency;
+    // Requested timeout paired with params_latency and the interval bounds; units are 10 ms.
+    uint16_t params_timeout;
+    // Start time for timeout checks on pending procedures such as c_pending.params_state.
+    uint32_t params_started_ms;
+    // Event counter when new_params takes effect; update_win_offset shifts its first anchor.
+    uint16_t update_instant;
+    // Initial anchor shift for the update described by new_params, in 1.25-ms units.
+    uint16_t update_win_offset;
+    // Event counter when next_channel_map replaces c_link_layer.channel_map.
+    uint16_t map_instant;
+    // Currently active timing and subrate values; replaced from next_schedule at its instant.
+    gap_conn_schedule schedule;
+    // Pending timing/subrate values; its instant identifies when schedule is updated.
+    gap_conn_schedule next_schedule;
+    // New interval, latency, and timeout installed into schedule at update_instant.
+    gap_conn_params new_params;
 
     // Data-length negotiation.
-    uint16_t local_tx_octets;           // Maximum LL payload this device will transmit.
-    gap_data_length data_length;        // Current negotiated transmit and receive data limits.
-    gap_data_length remote_data_length; // Data limits most recently reported by the peer.
-    uint8_t length_status;              // Status/result of the data-length procedure.
-    uint32_t length_started_ms;         // Start time used to expire a pending length exchange.
+    // Local TX limit advertised to the peer; caps data_length.tx_octets.
+    uint16_t local_tx_octets;
+    // Effective limits after comparing local limits with remote_data_length.
+    gap_data_length data_length;
+    // Peer limits; used with local_tx_octets to calculate data_length.
+    gap_data_length remote_data_length;
+    // Data-length procedure result; GAP_CONNECTION_PENDING means it is unfinished.
+    uint8_t length_status;
+    // Start time for the pending exchange tracked by length_status.
+    uint32_t length_started_ms;
 
     // Procedures awaiting completion or peer response.
     struct {
-        uint8_t update_window_active; // Scheduler is inside the connection-update window.
-        // GAP_PENDING_* flags: timing, channel-map, and PHY procedures.
+        // Set while scheduling the receive window described by update_window_size.
+        uint8_t update_window_active;
+        // GAP_PENDING_* bits for timing, channel-map, and PHY procedures; cleared on completion.
         uint8_t procedure_flags;
-        uint8_t params_state; // None, remote request, or local request is being handled.
-        uint8_t phy_request;  // A PHY request awaits its response/procedure completion.
-        uint8_t length;       // A data-length exchange awaits completion.
+        // Tracks the local/remote parameter request associated with params_* and c_queue.local_params.
+        uint8_t params_state;
+        // PHY procedure response state associated with c_phy and c_queue.phy_queued.
+        uint8_t phy_request;
+        // Data-length exchange state associated with length_status and c_queue.length.
+        uint8_t length;
     } c_pending;
 
     // Radio queues and connection data.
     struct {
-        volatile uint8_t phy_queued;       // PHY control work is waiting for the connection poll.
-        volatile uint8_t tx_queued;        // A staged outgoing packet is ready for radio transmission.
-        volatile uint8_t rx_ready;         // A received packet is ready for connection processing.
-        volatile uint8_t local_update;     // A locally requested timing update needs processing.
-        volatile uint8_t local_params;     // A local connection-parameter request needs processing.
-        volatile uint8_t local_map;        // A local channel-map update needs processing.
-        volatile uint8_t length;           // A data-length update needs processing.
+        // PHY control work is waiting for the poll; parameters are in c_phy.preferred.
+        volatile uint8_t phy_queued;
+        // c_tx contains an outgoing packet waiting for radio transmission.
+        volatile uint8_t tx_queued;
+        // c_rx contains a received packet waiting for connection processing.
+        volatile uint8_t rx_ready;
+        // A locally selected timing update is waiting to be sent using new_params.
+        volatile uint8_t local_update;
+        // A local connection-parameter request is waiting; values are in params_*.
+        volatile uint8_t local_params;
+        // A local channel-map update is waiting; values are in next_channel_map.
+        volatile uint8_t local_map;
+        // A data-length update is waiting; local limit is in local_tx_octets.
+        volatile uint8_t length;
     } c_queue;
 
     // Link-layer event and termination state.
     struct {
-        uint8_t rx_armed;             // Radio receive is armed for this link.
-        uint8_t event_replied;        // A reply has already been sent in the current event.
-        uint8_t channel_selected;     // Current event's data channel has already been selected.
-        uint8_t terminate_after_reply; // Send termination after the required reply is sent.
-        uint8_t version_ind_sent;     // LL_VERSION_IND was already sent on this link.
-        uint8_t terminate_queued;     // Local termination is waiting to be transmitted.
-        uint8_t terminate_sent;       // LL_TERMINATE_IND was sent; finish link shutdown.
+        // Radio receive is armed for this link, alongside the shared gap_rx_armed state.
+        uint8_t rx_armed;
+        // A reply was sent in the current event; reset when advancing event_counter.
+        uint8_t event_replied;
+        // This event's data channel was selected from c_link_layer.channel_map.
+        uint8_t channel_selected;
+        // Defer termination until the current reply is sent; then queue termination.
+        uint8_t terminate_after_reply;
+        // LL_VERSION_IND was sent; prevents sending it again during feature/version exchange.
+        uint8_t version_ind_sent;
+        // Local disconnect is waiting for transmission; reason is in local_terminate_reason.
+        uint8_t terminate_queued;
+        // LL_TERMINATE_IND was sent; link closes after its acknowledgment/cleanup.
+        uint8_t terminate_sent;
     } c_link_state;
 
     // PHY update state.
