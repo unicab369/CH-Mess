@@ -1581,11 +1581,11 @@ static uint8_t gap_conn_control(
                 !gap_conn_rate_busy() &&
                 !conn->c_pending.procedure_flags &&
                 !conn->c_queue.local_update &&
-                conn->c_pending.params_state == GAP_CONN_PARAMS_NONE &&
                 !conn->c_queue.local_params &&
+                !conn->c_queue.local_map &&
+                conn->c_pending.params_state == GAP_CONN_PARAMS_NONE &&
                 conn->c_subrate.procedure_state != GAP_SUBRATE_UPDATE_PENDING &&
                 !(conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) &&
-                !conn->c_queue.local_map &&
                 !conn->c_queue.phy_queued &&
                 !conn->c_pending.phy_request &&
                 !conn->c_queue.length &&
@@ -1909,24 +1909,28 @@ static uint8_t gap_conn_control(
     return 0;
 }
 
+static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
+    return conn->c_pending.procedure_flags ||
+        conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
+        conn->c_pending.length ||
+        conn->c_pending.phy_request ||
+        conn->c_queue.local_update ||
+        conn->c_queue.local_params ||
+        conn->c_queue.local_map ||
+        conn->c_queue.length ||
+        conn->c_queue.phy_queued ||
+        conn->c_link_state.terminate_after_reply ||
+        conn->c_link_state.terminate_queued ||
+        conn->c_link_state.terminate_sent;
+}
+
 static uint8_t gap_conn_procedure_busy(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
 
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_sec_contexts[gap_conn_slot].phase ||
         conn->c_link_layer.first_event ||
-        conn->c_pending.procedure_flags ||
-        conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
-        conn->c_pending.length ||
-        conn->c_pending.phy_request ||
-        conn->c_queue.local_update ||
-        conn->c_queue.local_params ||
-        conn->c_queue.length ||
-        conn->c_queue.local_map ||
-        conn->c_queue.phy_queued ||
-        conn->c_link_state.terminate_after_reply ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent;
+        gap_conn_pending_procedure_busy(conn);
 }
 
 // Application facing
@@ -2523,19 +2527,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (*gap_security_generation) != generation ||
         gap_security->phase ||
-        conn->c_pending.procedure_flags ||
-        conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
-        conn->c_queue.local_update ||
-        conn->c_queue.local_map ||
-        conn->c_queue.local_params ||
         conn->c_features.request_pending ||
-        conn->c_queue.length ||
-        conn->c_pending.length ||
-        conn->c_queue.phy_queued ||
-        conn->c_pending.phy_request ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent ||
-        conn->c_link_state.terminate_after_reply
+        gap_conn_pending_procedure_busy(conn)
     ) {
         gap_wipe(entropy, sizeof(entropy));
         GAP_CRITICAL_EXIT(irq_state);
