@@ -492,15 +492,29 @@ typedef struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
     } c_tx, c_rx;
 
+    // Shared channel-classification reporting state: the Central configures
+    // reporting, and the Peripheral reports classification changes. Timing
+    // values are in 200 ms units (5..150, or 1..30 s); max delay must be at
+    // least the minimum spacing.
     struct {
         uint8_t enabled;
-        uint8_t min_spacing_200ms, max_delay_200ms;
+        uint8_t min_spacing_200ms; // Minimum time between status reports.
+        uint8_t max_delay_200ms;   // Maximum delay after a status change.
     } c_channel;
 
     // Central-only state.
     struct {
+        // Internal scheduler flag: set when the first event initializes
+        // next_ticks, so later polls do not reset the schedule to "now".
         uint8_t central_anchor_set;
-        uint8_t channel_report_queued, channel_report_pending;
+        // Application request accepted; the scheduler may need to finish
+        // feature exchange or wait for a transmit slot before sending it.
+        uint8_t channel_report_queued;
+        // LL_CHANNEL_REPORTING_IND sent; waiting for the Peripheral's
+        // acknowledgment or response before completing the procedure.
+        uint8_t channel_report_pending;
+        // Latest classification received from the peer in LL_CHANNEL_STATUS_IND;
+        // one 2-bit value per data channel.
         uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
     } central;
 
@@ -528,7 +542,10 @@ static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 static uint16_t gap_data_capacity;
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
-// Shared radio assessment; an all-zero value means every channel is unknown.
+
+// Packed 2-bit classification for each of 37 data channels (74 bits total);
+// per channel: 0=unknown, 1=good, 2=reserved, 3=bad. Channel 0 uses the
+// lowest 2 bits; the upper 6 bits of the final byte are unused.
 static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
 
 static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];

@@ -231,16 +231,15 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
         conn->schedule.latency = conn->next_schedule.latency;
         conn->schedule.continuation = conn->next_schedule.continuation;
         conn->schedule.timeout = conn->next_schedule.timeout;
-        if (!conn->is_central)
-            conn->peripheral.latency_remaining = 0;
+        conn->connection_status = 0;
         conn->c_subrate.continuations = 0;
         conn->c_subrate.force_event = 1;
         conn->c_rate.update_pending = 0;
         if (!conn->is_central) {
+            conn->peripheral.latency_remaining = 0;
             conn->peripheral.rate_req_pending = 0;
             conn->peripheral.rate_ack_waiting = 0;
         }
-        conn->connection_status = 0;
     }
 
     if ((conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
