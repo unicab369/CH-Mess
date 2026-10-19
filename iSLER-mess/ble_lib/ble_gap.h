@@ -527,31 +527,45 @@ typedef struct {
         // the Central acknowledges the Peripheral's response to that indication.
         uint8_t rate_ack_waiting;
 
-        // Peripheral's proposed interval and subrate settings sent together in
-        // LL_CONNECTION_RATE_REQ; the Central chooses whether and how to apply them.
+        // LL_CONNECTION_RATE_REQ: the Peripheral proposes both a base interval
+        // (375 us..4 s) and a subrate factor. The factor can make active events
+        // farther apart than 4 s; the Central chooses whether and what to apply.
         struct {
             // Connection interval: time between event starts, not event duration.
-            // Bounds are 3..32000 in 125-us units (375 us..4 s).
+            // The requested base interval is 3..32000 in 125-us units
+            // (375 us..4 s); subrating can make active events farther apart.
             // After the Instant, the Central uses its selected interval to
             // schedule each event and opens the radio around that event; it
             // does not listen throughout the interval. Subrating or latency
             // may allow some scheduled events to be skipped.
             uint16_t intv_min_125us, intv_max_125us;
-            // Subrate-factor range the Central may choose (1..500): N allows
-            // active events every N intervals, subject to latency/continuation.
-            uint16_t factor_min, factor_max, latency;
-            uint16_t continuation, timeout, periodicity;
+            // Factor bounds are 1..500 and control which interval ticks are used.
+            uint16_t factor_min, factor_max;
+            uint16_t latency;
+            uint16_t continuation, timeout_10ms, periodicity;
             uint16_t offsets[4];
         } rate_request;
 
-        uint16_t latency_remaining;
-        // Parameters for the separate LL_SUBRATE_REQ procedure. The factor
-        // bounds have the same meaning as in rate_request, without interval bounds.
+        // LL_SUBRATE_REQ: the Peripheral proposes only a subrate factor, keeping
+        // the current connection interval. Unlike rate_request, it has no interval
+        // bounds; the factor bounds have the same meaning in both requests.
         struct {
-            uint16_t factor_min, factor_max, latency;
-            uint16_t continuation, timeout;
+            // Factor bounds are 1..500 and control which interval ticks are used.
+            // For a 10-ms interval, factor 1 uses 0, 10, 20, 30, 40... ms;
+            // factor 4 normally uses 0, 40, 80... ms. The interval stays 10 ms.
+            // Continuation events and Peripheral latency can alter this pattern.
+            uint16_t factor_min, factor_max;
+            // Maximum consecutive subrated events the Peripheral may skip
+            // when it has no data to send; the Central chooses the final value.
+            // Example: with a 10-ms interval and factor 4, latency 2 lets it
+            // skip events at 40 and 80 ms, then listen at 120 ms.
+            // Valid range is 0..499, further limited by
+            // factor_max * (latency + 1) <= 500.
+            uint16_t latency;
+            uint16_t continuation, timeout_10ms;
         } subrate_request;
 
+        uint16_t latency_remaining;
         uint8_t status_queued, last_sent_valid;
         uint32_t status_changed_ms, status_last_sent_ms;
     } peripheral;

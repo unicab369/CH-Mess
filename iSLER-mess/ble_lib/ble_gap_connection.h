@@ -2026,14 +2026,14 @@ int gap_subrate_set(
 int gap_subrate_request(
     uint16_t factor_min, uint16_t factor_max,
     uint16_t max_latency, uint16_t continuation,
-    uint16_t timeout
+    uint16_t timeout_10ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy() ||
         gap_conn_rate_busy() || conn->is_central ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
-                                      continuation, timeout) ||
-        (uint64_t)timeout * 80 <= 2ull * conn->schedule.interval_125us * factor_min *
+                                      continuation, timeout_10ms) ||
+        (uint64_t)timeout_10ms * 80 <= 2ull * conn->schedule.interval_125us * factor_min *
                                 (max_latency + 1)
     ) return 0;
 
@@ -2050,7 +2050,7 @@ int gap_subrate_request(
     conn->peripheral.subrate_request.factor_max = factor_max;
     conn->peripheral.subrate_request.latency = max_latency;
     conn->peripheral.subrate_request.continuation = continuation;
-    conn->peripheral.subrate_request.timeout = timeout;
+    conn->peripheral.subrate_request.timeout_10ms = timeout_10ms;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_REQUEST;
     return 1;
@@ -2090,7 +2090,7 @@ int gap_conn_rate_set(
 int gap_conn_rate_request(
     uint16_t intv_min_125us,
     uint16_t intv_max_125us, uint16_t factor_min, uint16_t factor_max,
-    uint16_t max_latency, uint16_t continuation, uint16_t timeout,
+    uint16_t max_latency, uint16_t continuation, uint16_t timeout_10ms,
     uint16_t preferred_periodicity, const uint16_t offsets[4]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
@@ -2102,8 +2102,8 @@ int gap_conn_rate_request(
         intv_min_125us > intv_max_125us ||
         preferred_periodicity > intv_max_125us ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
-                                      continuation, timeout) ||
-        (uint64_t)timeout * 80 <= 2ull * intv_max_125us * factor_max * (max_latency + 1)
+                                      continuation, timeout_10ms) ||
+        (uint64_t)timeout_10ms * 80 <= 2ull * intv_max_125us * factor_max * (max_latency + 1)
     ) return 0;
 
     uint8_t unused_offset = 0;
@@ -2128,7 +2128,7 @@ int gap_conn_rate_request(
     conn->peripheral.rate_request.factor_max = factor_max;
     conn->peripheral.rate_request.latency = max_latency;
     conn->peripheral.rate_request.continuation = continuation;
-    conn->peripheral.rate_request.timeout = timeout;
+    conn->peripheral.rate_request.timeout_10ms = timeout_10ms;
     conn->peripheral.rate_request.periodicity = preferred_periodicity;
 
     for (uint8_t i = 0; i < 4; i++)

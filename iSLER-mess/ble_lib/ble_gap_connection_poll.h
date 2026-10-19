@@ -113,7 +113,7 @@ static void gap_conn_send_queued(void) {
                 ble_write_u16_le(gap_tx_frame + 5, conn->peripheral.subrate_request.factor_max);
                 ble_write_u16_le(gap_tx_frame + 7, conn->peripheral.subrate_request.latency);
                 ble_write_u16_le(gap_tx_frame + 9, conn->peripheral.subrate_request.continuation);
-                ble_write_u16_le(gap_tx_frame + 11, conn->peripheral.subrate_request.timeout);
+                ble_write_u16_le(gap_tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
             }
         }
     }
@@ -162,7 +162,7 @@ static void gap_conn_send_queued(void) {
             ble_write_u16_le(gap_tx_frame + 9, conn->peripheral.rate_request.factor_max);
             ble_write_u16_le(gap_tx_frame + 11, conn->peripheral.rate_request.latency);
             ble_write_u16_le(gap_tx_frame + 13, conn->peripheral.rate_request.continuation);
-            ble_write_u16_le(gap_tx_frame + 15, conn->peripheral.rate_request.timeout);
+            ble_write_u16_le(gap_tx_frame + 15, conn->peripheral.rate_request.timeout_10ms);
             ble_write_u16_le(gap_tx_frame + 17, conn->peripheral.rate_request.periodicity);
             ble_write_u16_le(gap_tx_frame + 19, conn->c_link_layer.event_counter);
 
