@@ -297,6 +297,32 @@ typedef struct {
     uint8_t type, address[6];
 } gap_address;
 
+// Privacy and identity state.
+static gap_address gap_own_address;
+static gap_address gap_identity_address;
+// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
+static uint32_t gap_accept_list_mask;
+static struct {
+    gap_address peer;
+} gap_accept_list[GAP_ACCEPT_LIST_COUNT];
+
+// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
+// Addresses use PDU byte order; IRKs use standard AES byte order.
+typedef struct {
+    uint8_t used;
+    gap_address peer;
+    uint8_t irk[16];
+    uint8_t privacy_mode, has_irk;
+    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
+} gap_identity;
+static gap_identity gap_identities[GAP_IDENTITY_COUNT];
+
+static struct {
+    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
+    uint16_t timeout_s, timeout_min_s, timeout_max_s;
+    uint32_t next_rotation_ms;
+} gap_privacy;
+
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
@@ -340,12 +366,6 @@ typedef struct {
     uint16_t rx_octets; // Maximum Link Layer payload bytes this device can receive.
     uint16_t rx_time;   // Maximum receive time, in microseconds, for that payload.
 } gap_data_length;
-
-typedef struct {
-    uint16_t interval;            // Connection interval in 1.25-ms units.
-    uint16_t latency;             // Peripheral latency in connection events.
-    uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
-} gap_conn_params;
 
 typedef struct {
     uint16_t interval_125us; // Base connection-event interval in 125-us units.
@@ -465,14 +485,26 @@ typedef struct {
     uint8_t next_channel_map[5];
     // Result for pending procedures, including the request tracked by c_pending.params_state.
     uint8_t connection_status;
-    // Lower bound paired with params_max_1p25ms in the request queued by c_queue.local_params.
-    uint16_t params_min_1p25ms;
-    // Upper bound paired with params_min_1p25ms in the request queued by c_queue.local_params.
-    uint16_t params_max_1p25ms;
-    // Requested latency paired with the interval bounds and timeout in that same request.
-    uint16_t params_latency;
-    // Requested timeout paired with params_latency and the interval bounds; units are 10 ms.
-    uint16_t params_timeout;
+    // Request bounds are needed while negotiating; selected parameters are
+    // needed after selection through update_instant, so they share storage.
+    union {
+        struct {
+            // Lower bound paired with params_max_1p25ms in the request queued by c_queue.local_params.
+            uint16_t params_min_1p25ms;
+            // Upper bound paired with params_min_1p25ms in that request.
+            uint16_t params_max_1p25ms;
+            // Requested latency paired with the interval bounds and timeout.
+            uint16_t params_latency;
+            // Requested timeout paired with the other request values; units are 10 ms.
+            uint16_t params_timeout;
+        };
+        // Selected interval, latency, and timeout installed at update_instant.
+        struct {
+            uint16_t interval;            // Connection interval in 1.25-ms units.
+            uint16_t latency;             // Peripheral latency in connection events.
+            uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
+        } new_params;
+    };
     // Start time for timeout checks on pending procedures such as c_pending.params_state.
     uint32_t params_started_ms;
     // Event counter when new_params takes effect; update_win_offset shifts its first anchor.
@@ -485,9 +517,6 @@ typedef struct {
     gap_conn_schedule schedule;
     // Pending timing/subrate values; its instant identifies when schedule is updated.
     gap_conn_schedule next_schedule;
-    // New interval, latency, and timeout installed into schedule at update_instant.
-    gap_conn_params new_params;
-
     // Data-length negotiation.
     // Local TX limit advertised to the peer; caps data_length.tx_octets.
     uint16_t local_tx_octets;
@@ -966,33 +995,6 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
     gap_conn_timing = *timing;
     return 1;
 }
-
-// Privacy and identity state.
-
-static gap_address gap_own_address;
-static gap_address gap_identity_address;
-// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
-static uint32_t gap_accept_list_mask;
-static struct {
-    gap_address peer;
-} gap_accept_list[GAP_ACCEPT_LIST_COUNT];
-
-// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
-// Addresses use PDU byte order; IRKs use standard AES byte order.
-typedef struct {
-    uint8_t used;
-    gap_address peer;
-    uint8_t irk[16];
-    uint8_t privacy_mode, has_irk;
-    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
-} gap_identity;
-static gap_identity gap_identities[GAP_IDENTITY_COUNT];
-
-static struct {
-    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
-    uint16_t timeout_s, timeout_min_s, timeout_max_s;
-    uint32_t next_rotation_ms;
-} gap_privacy;
 
 // Identity resolution helpers.
 // Bluetooth ah: encrypt the padded prand and keep the low 24 bits as hash.
