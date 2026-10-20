@@ -36,7 +36,7 @@ enum {
 };
 
 #if GAP_EXT_ADV_SUPPORT
-typedef struct {
+static struct {
     uint8_t has_address;
     gap_address peer;
     uint8_t has_adi, sid;
@@ -79,7 +79,7 @@ typedef struct {
     uint8_t data[GAP_ADV_DATA_MAX];
 } gap_scan_report;
 
-typedef struct {
+static struct {
     // Scanner radio scheduling and active-scan request state.
     uint8_t channel_index, applied_generation;
     uint32_t interval_start_ms;
@@ -93,7 +93,7 @@ typedef struct {
     uint8_t seen_count, seen_next;
     uint8_t response_accepted;
     gap_address response_peer;
-} gap_scan_ctx;
+} gap_scan;
 
 // Encrypted Advertising Data key state.
 static struct {
@@ -110,7 +110,6 @@ static struct {
 } gap_adv_scan;
 
 static gap_scan_report gap_scan_reports[GAP_SCAN_REPORT_COUNT];
-static gap_scan_ctx gap_scan;
 static struct {
     gap_address peer;
     uint8_t pdu_type, data_len;
@@ -629,7 +628,7 @@ void gap_scan_start(uint8_t active) {
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
-    gap_scan = (gap_scan_ctx){0};
+    memset(&gap_scan, 0, sizeof(gap_scan));
     gap_central.active = 0;
     gap_scanner.scanning = 1;
     gap_scanner.active = active;
@@ -656,7 +655,7 @@ int gap_scan_configure(
     gap_scanner.window_ms = window_ms;
     gap_scanner.discovery_mode = discovery_mode;
     gap_scanner.filter_duplicates = filter_duplicates;
-    gap_scan = (gap_scan_ctx){0};
+    memset(&gap_scan, 0, sizeof(gap_scan));
     gap_scanner.generation++;
     return 1;
 }
@@ -735,7 +734,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     else {
         gap_scanner.scanning = 1;
         gap_scanner.active = active_scan;
-        gap_scan = (gap_scan_ctx){0};
+        memset(&gap_scan, 0, sizeof(gap_scan));
         gap_scanner.generation++;
     }
 
