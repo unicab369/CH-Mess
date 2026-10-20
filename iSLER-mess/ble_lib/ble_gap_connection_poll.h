@@ -601,16 +601,17 @@ void gap_hw_received(void) {
         return;
     }
 
-    if ((gap_scanner.scanning ||
-         gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC) &&
+    uint8_t periodic_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC);
+    uint8_t aux_scan = (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX);
+
+    if ((gap_scanner.scanning || periodic_scan) &&
         !gap_ext_scan.ready &&
-        ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND &&
-            gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC &&
-            frame[1] == 34))
+        ((pdu_type == ADV_EXT_IND) ||
+            (pdu_type == CONNECT_IND && periodic_scan && frame[1] == 34))
     ) {
-        gap_ext_scan.kind = gap_ext_scan.listen_state == GAP_EXT_SCAN_PERIODIC
+        gap_ext_scan.kind = periodic_scan
                             ? GAP_EXT_ADV_PERIODIC_PDU
-                            : gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX
+                            : aux_scan
                             ? GAP_EXT_ADV_AUXILIARY_PDU
                             : GAP_EXT_ADV_PRIMARY_PDU;
 
@@ -624,7 +625,7 @@ void gap_hw_received(void) {
         return;
     }
 
-    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
+    if (aux_scan) {
         gap_conn_slot = previous_slot;
         return;
     }
@@ -679,10 +680,9 @@ void gap_hw_received(void) {
             }
 
             uint8_t target_type = (frame[0] >> 7) & 1;
-            uint8_t request_type = (gap_central.request[0] >> 6) & 1;
             int target_matches = 0;
 
-            if (target_type == request_type)
+            if (target_type == ((gap_central.request[0] >> 6) & 1))
                 target_matches = memcmp(frame + 8, gap_central.request + 2, 6) == 0;
 
             if ((frame[13] & 0xc0) == 0x40 &&
@@ -750,9 +750,12 @@ void gap_hw_received(void) {
         return;
     }
 
+    uint8_t scan_frame_valid = gap_scanner.active &&
+                               frame[1] >= 6 && frame[1] <= 37;
     if ((pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
-        frame[1] >= 6 && frame[1] <= 37 &&
-        gap_scanner.active && !adv_evt.rx_event && !gap_scan.active_pending &&
+        scan_frame_valid &&
+        !adv_evt.rx_event &&
+        !gap_scan.active_pending &&
         (gap_central.mode != GAP_CONN_MODE_SELECTIVE || peer_matches)
     ) {
         if (gap_privacy.scan_filter && peer_slot < 0) {
@@ -781,8 +784,8 @@ void gap_hw_received(void) {
         return;
     }
 
-    if (pdu_type == SCAN_RSP && frame[1] >= 6 && frame[1] <= 37 &&
-        gap_scanner.active && gap_scan.active_pending &&
+    if (pdu_type == SCAN_RSP && scan_frame_valid &&
+        gap_scan.active_pending &&
         ((frame[0] >> 6) & 1) == gap_scan.active_address_type &&
         memcmp(frame + 2, gap_scan.active_address, 6) == 0
     ) {
@@ -802,7 +805,7 @@ void gap_hw_received(void) {
     ) {
         uint8_t adv_pdu_type = adv_evt.adv_frame[0] & 0x0f;
         uint8_t peer_in_accept_list = gap_accept_list_match(
-                                    frame + 2, (frame[0] >> 6) & 1, peer_slot);
+            frame + 2, (frame[0] >> 6) & 1, peer_slot);
 
         if (adv_pdu_type != ADV_DIRECT_IND && frame[1] == 12 &&
             (frame[0] & 0x0f) == SCAN_REQ &&
@@ -1029,11 +1032,12 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
         conn->connection_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
-        if (conn->c_subrate.queued_flags ||
-            conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING
-        ) {
+        uint8_t subrate_req =
+            conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING;
+
+        if (conn->c_subrate.queued_flags || subrate_req) {
             conn->c_subrate.queued_flags = 0;
-            if (conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING)
+            if (subrate_req)
                 conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
             conn->c_subrate.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         }
@@ -1064,7 +1068,6 @@ static void gap_conn_poll(void) {
 
     if (gap_poll.slot_valid && gap_poll.slot != gap_conn_slot)
         return;
-
     uint64_t now = GAP_HW_TICKS();
 
     if (conn->c_link_state.event_replied) {
@@ -1247,9 +1250,7 @@ static inline void gap_conn_poll_all(void) {
         gap_conn_slot = order[index];
         gap_conn_poll();
 
-        if (gap_poll.slot_valid &&
-            gap_poll.slot != owner_at_entry
-        ) {
+        if (gap_poll.slot_valid && gap_poll.slot != owner_at_entry ) {
             // Rotate ties so one link cannot repeatedly win an overlapping
             // event window just because it occupies the lower-numbered slot.
             gap_poll.poll_cursor = (uint8_t)((gap_poll.slot + 1) % GAP_CONNECTION_COUNT);
@@ -1420,10 +1421,8 @@ void gap_hw_scan_poll(void) {
                     GAP_HW_CRC_INIT(sync->params.crc_init);
 
                     uint8_t channel = sync->window_chain ? sync->aux_channel :
-                            gap_sync_channel(&sync->params,
-                                sync->event_counter ^
-                                    (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0)
-                            );
+                            gap_sync_channel(&sync->params, sync->event_counter ^
+                                    (sync->pawr.timing.has_timing ? sync->pawr.subevent : 0));
                     uint8_t phy = sync->window_chain ? sync->aux_phy : sync->phy;
                     gap_ext_scan.periodic_rx_phy = phy;
 
@@ -1439,7 +1438,6 @@ void gap_hw_scan_poll(void) {
 
         if (slot >= 0) {
             gap_aux_request_context *request = &gap_aux_request[slot];
-
             if (ticks > request->start_ticks + request->duration_ticks) {
                 request->active = 0;
             }
@@ -1451,8 +1449,8 @@ void gap_hw_scan_poll(void) {
                 gap_ext_scan.listen_state = GAP_EXT_SCAN_AUX;
 
                 GAP_HW_LINK_CONFIG(BLE_ADV_ACCESS_ADDRESS,
-                        request->channel, NULL, 0,
-                        gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy);
+                                request->channel, NULL, 0,
+                                gap_ext_scan.aux_rx_phy, gap_ext_scan.aux_rx_phy);
                 GAP_HW_LINK_RX();
                 gap_rx_armed = 1;
                 return;
