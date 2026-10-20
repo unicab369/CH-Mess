@@ -9,7 +9,7 @@ static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_send_security();
 
-    if (gap_sec_contexts[gap_conn_slot].phase)
+    if (gap_conn_ctx[gap_conn_slot].security.phase)
         return;
 
     if (conn->c_queue.local_update)
@@ -215,7 +215,7 @@ void gap_hw_received(void) {
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_EXT_ADV_SUPPORT
@@ -1002,7 +1002,7 @@ static void gap_conn_poll(void) {
     gap_smp_poll();
 #endif
     uint32_t now_ms = GET_MILLIS();
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
 
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
     // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.

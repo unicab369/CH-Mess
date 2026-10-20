@@ -437,9 +437,11 @@ typedef struct {
     gap_address peer;
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
-    // Pairing result associated with this link; bond keys are in bond and runtime keys in gap_sec_contexts.
+    // Link encryption state shared by SMP and encrypted data handling.
+    gap_security_context security;
+    // Pairing result associated with this link; persistent bond keys are in bond.
     uint8_t authenticated;
-    // Negotiated key size associated with authenticated and this slot's gap_sec_contexts entry.
+    // Negotiated key size associated with authenticated and security.
     uint8_t enc_key_size;
     // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
     uint8_t load_pending;
@@ -758,7 +760,6 @@ static uint8_t gap_conn_slot_mask;
 // lowest 2 bits; the upper 6 bits of the final byte are unused.
 static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
 
-static gap_security_context gap_sec_contexts[GAP_CONNECTION_COUNT];
 // Per-slot counters invalidate security work after a link ends or is replaced.
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
@@ -1534,7 +1535,7 @@ static int gap_conn_accept(
 
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
-    gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security = &gap_conn_ctx[gap_conn_slot].security;
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));

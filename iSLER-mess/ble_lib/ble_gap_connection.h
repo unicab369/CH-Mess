@@ -162,16 +162,17 @@ static void gap_conn_end(void) {
     conn->restore_started = 0;
 #endif
     // Preserve the final status while clearing the rest of the security state.
-    uint8_t security_status = gap_sec_contexts[gap_conn_slot].status ==
-        GAP_CONNECTION_PENDING ? GAP_STATUS_CONNECTION_TIMEOUT : gap_sec_contexts[gap_conn_slot].status;
+    gap_security_context *security = &conn->security;
+    uint8_t security_status = security->status == GAP_CONNECTION_PENDING ?
+                              GAP_STATUS_CONNECTION_TIMEOUT : security->status;
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(&gap_conn_buff[gap_conn_slot], sizeof(gap_conn_buff[gap_conn_slot]));
     gap_wipe(&conn->c_tx, sizeof(conn->c_tx));
     gap_wipe(&conn->c_rx, sizeof(conn->c_rx));
     gap_wipe(&conn->c_queue, sizeof(conn->c_queue));
-    gap_wipe(&gap_sec_contexts[gap_conn_slot], sizeof(gap_sec_contexts[gap_conn_slot]));
-    gap_sec_contexts[gap_conn_slot].status = security_status;
+    gap_wipe(security, sizeof(*security));
+    security->status = security_status;
 
     // Clear link and queued procedure state after stopping radio use.
     memset(&conn->c_link_state, 0, sizeof(conn->c_link_state));
@@ -651,7 +652,7 @@ static uint16_t gap_conn_min_interval(void) {
 
 // Bluetooth e uses little-endian inputs; the AES/CCM hooks use standard byte order.
 static void gap_security_derive(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     uint8_t ltk[16], skd[16];
     gap_bytes_reverse(ltk, gap_security->ltk, sizeof(ltk));
     gap_bytes_reverse(skd, gap_security->skd, sizeof(skd));
@@ -693,7 +694,7 @@ static uint8_t gap_conn_control(
     uint8_t authenticated, uint64_t connection_anchor_ticks,
     uint16_t conn_event_counter
 ) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     switch (frame[2]) {
@@ -1930,7 +1931,7 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
 
 static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_sec_contexts[gap_conn_slot].phase ||
+        gap_conn_ctx[gap_conn_slot].security.phase ||
         conn->c_link_layer.first_event ||
         gap_conn_pending_procedure_busy(conn);
 }
@@ -2179,7 +2180,7 @@ int gap_channel_map_set(const uint8_t channels[5]) {
 int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms, uint8_t max_delay_200ms
 ) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -2306,7 +2307,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!data || !len ||
@@ -2392,7 +2393,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 static void gap_security_nonce(
     uint8_t nonce[13], uint64_t counter, uint8_t central
 ) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     for (uint8_t i = 0; i < 5; i++)
         nonce[i] = (uint8_t)(counter >> (i * 8));
     nonce[4] |= central ? 0x80 : 0;
@@ -2402,7 +2403,7 @@ static void gap_security_nonce(
 // Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
 // only SN/NESN/MD may change, and those bits are excluded from CCM authentication.
 static uint8_t *gap_security_tx_frame(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t *cipher = gap_conn_buff[gap_conn_slot].cipher;
 
@@ -2443,7 +2444,7 @@ static uint8_t *gap_security_tx_frame(void) {
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(void) {
     if (gap_tx_frame[1]) return;
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     uint16_t phase = gap_security->phase;
@@ -2498,7 +2499,7 @@ static void gap_send_security(void) {
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
 // Application facing
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!ltk || !random || !conn->is_central ||
@@ -2560,7 +2561,7 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_security->phase != GAP_ENC_KEY_REQUEST
@@ -2573,7 +2574,7 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
 
 // Application facing
 int gap_key_reply(const uint8_t ltk[16]) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
@@ -2603,7 +2604,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
 // Application facing
 int gap_encrypted(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
 
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
             (conn->is_central || !conn->c_link_layer.first_event) &&
@@ -2625,7 +2626,7 @@ uint8_t gap_key_size(void) {
 
 // Application facing
 uint8_t gap_security_status(void) {
-    return gap_sec_contexts[gap_conn_slot].status;
+    return gap_conn_ctx[gap_conn_slot].security.status;
 }
 
 #endif // GAP_CONNECTION_H

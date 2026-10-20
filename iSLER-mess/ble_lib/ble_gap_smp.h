@@ -1043,7 +1043,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->c_link_layer.first_event) ||
         gap_encrypted() || smp->pairing.phase ||
-        gap_sec_contexts[gap_conn_slot].phase
+        gap_conn_ctx[gap_conn_slot].security.phase
     ) return 0;
 
     gap_oob_local *local = &smp->local_oob;
@@ -1200,7 +1200,7 @@ int gap_pair(void) {
 
     if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->c_link_layer.first_event) || smp->pairing.phase ||
-        smp->blocked || gap_sec_contexts[gap_conn_slot].phase ||
+        smp->blocked || gap_conn_ctx[gap_conn_slot].security.phase ||
         gap_encrypted() || smp->tx_len || smp->bearer.tx_len
     ) return 0;
 
@@ -1361,7 +1361,7 @@ static void gap_smp_link_close(void) {
     }
 
     if (conn->is_central && conn->restore_started &&
-        gap_sec_contexts[gap_conn_slot].status == 0x3d
+        gap_conn_ctx[gap_conn_slot].security.status == 0x3d
     ) {
         gap_bond_remove();
         conn->bond_repair_pending = 1;
@@ -1374,7 +1374,7 @@ static void gap_smp_link_close(void) {
 
 // Handle bond restoration and repair without exposing SMP phase state to GAP.
 static void smp_bond_restore_poll(void) {
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
@@ -1585,7 +1585,7 @@ static void gap_smp_poll(void) {
         return;
 
     uint32_t *security_gen = &gap_security_generations[gap_conn_slot];
-    gap_security_context *gap_security = &gap_sec_contexts[gap_conn_slot];
+    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     typeof(smp->pairing) *pairing = &smp->pairing;
 
