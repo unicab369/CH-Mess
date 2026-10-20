@@ -427,7 +427,8 @@ static int mesh_gatt_register_services(void) {
             &decl, &value)
     ) return 0;
 #endif
-    if (!gatt_transport_init(&mesh_gatt.transport, &mesh_gatt.server))
+    if (!gatt_transport_init(&mesh_gatt.transport, &mesh_gatt.server,
+                             NULL, NULL))
         return 0;
     return mesh_gatt.server.next_handle ==
         24 + (MESH_GATT_RPA_ONLY_SUPPORT ? 2 : 0) +
@@ -786,6 +787,27 @@ void mesh_gatt_poll(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
     uint8_t connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         (conn->is_central || !conn->link.first_event);
+    if (connected) {
+        gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
+        l2cap_connection *l2cap = &link->l2cap;
+        l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
+        if (!link->l2cap_initialized || !tx_queue->data ||
+            tx_queue->capacity < 4 || !l2cap->psm_registry
+        ) {
+            (void)gap_disconnect(0x13);
+            return;
+        }
+        mesh_gatt.transport.l2cap_link = l2cap;
+        mesh_gatt.transport.tx_queue_link = tx_queue;
+        mesh_gatt.transport.shared_l2cap = 1;
+        l2cap->ops.tx_queue = tx_queue;
+        l2cap->ops.context = &mesh_gatt.transport;
+        if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,
+                gatt_transport_receive_att, &mesh_gatt.transport)) {
+            (void)gap_disconnect(0x13);
+            return;
+        }
+    }
     gatt_transport_set_connected(&mesh_gatt.transport, connected);
     gatt_transport_set_security(&mesh_gatt.transport,
         gap_encrypted(), gap_authenticated(), gap_key_size());
@@ -810,7 +832,7 @@ void mesh_gatt_poll(void) {
     mesh_gatt_notify_poll();
     uint32_t now_ms = GET_MILLIS();
 
-    if (!mesh_gatt.transport.tx_len) {
+    if (!mesh_gatt.transport.tx_queue_link->length) {
         uint8_t llid, fragment[BLE_GATT_TRANSPORT_LL_MAX];
         size_t len = sizeof(fragment);
         int received = gap_receive_data(&llid, fragment, &len);
@@ -829,7 +851,7 @@ void mesh_gatt_poll(void) {
         return;
     }
 
-    if (mesh_gatt.transport.tx_len) {
+    if (mesh_gatt.transport.tx_queue_link->length) {
         uint8_t llid;
         const uint8_t *fragment;
         uint16_t len;

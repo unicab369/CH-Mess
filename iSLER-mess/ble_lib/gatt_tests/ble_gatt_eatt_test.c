@@ -173,27 +173,27 @@ int main(void) {
                                        &lower));
     gatt_transport_set_eatt_client_callbacks(&transport, NULL,
         eatt_client_result_with_cid, NULL, NULL, &lower);
-    assert(l2cap_psm_is_registered(&transport.psm_registry,
+    assert(l2cap_psm_is_registered(transport.l2cap_link->psm_registry,
                                       BLE_GATT_EATT_PSM));
     transport.connected = 1;
-    assert(transport.l2cap.ops.authorize_psm(
-        transport.l2cap.ops.context, BLE_GATT_EATT_PSM) == 8);
+    assert(transport.l2cap_link->ops.authorize_psm(
+        transport.l2cap_link->ops.context, BLE_GATT_EATT_PSM) == 8);
     lower.encrypted = 1;
     gatt_transport_set_security(&transport, 1, 0, 0);
-    assert(transport.l2cap.ops.authorize_psm(
-        transport.l2cap.ops.context, BLE_GATT_EATT_PSM) == 0);
+    assert(transport.l2cap_link->ops.authorize_psm(
+        transport.l2cap_link->ops.context, BLE_GATT_EATT_PSM) == 0);
     assert(gatt_transport_eatt_open(&transport));
-    uint16_t local_cid = transport.l2cap.pending_local_cid[0];
-    int channel_slot = l2cap_local_slot(&transport.l2cap,
+    uint16_t local_cid = transport.l2cap_link->pending_local_cid[0];
+    int channel_slot = l2cap_local_slot(transport.l2cap_link,
                                                     local_cid);
     assert(channel_slot >= 0);
-    l2cap_channel *channel = &transport.l2cap.channels[channel_slot];
+    l2cap_channel *channel = &transport.l2cap_link->channels[channel_slot];
     channel->state = L2CAP_CHANNEL_OPEN;
     channel->remote_cid = 0x0041;
     channel->remote_mtu = 80;
-    transport.l2cap.pending_id = 0;
-    transport.l2cap.pending_count = 0;
-    transport.l2cap.pending_code = 0;
+    transport.l2cap_link->pending_id = 0;
+    transport.l2cap_link->pending_count = 0;
+    transport.l2cap_link->pending_code = 0;
     assert(gatt_transport_sync_l2cap_channels(&transport) == 0);
     int bearer_slot = gatt_eatt_find(&transport.eatt, local_cid);
     assert(bearer_slot >= 0 && transport.eatt.bearers[bearer_slot].mtu == 80);
@@ -215,7 +215,7 @@ int main(void) {
     channel->tx_len = channel->tx_offset = 0;
 
     // A second EATT channel gets an independent ATT MTU and prepare queue.
-    l2cap_channel *second = &transport.l2cap.channels[1];
+    l2cap_channel *second = &transport.l2cap_link->channels[1];
     memset(second, 0, sizeof(*second));
     second->psm = BLE_GATT_EATT_PSM;
     second->local_cid = 0x0042;
@@ -299,15 +299,15 @@ int main(void) {
         indication_value, sizeof(indication_value), 1));
     transport.eatt_event_cursor = (uint8_t)bearer_slot;
     assert(gatt_transport_test_poll(&transport, 101) == 0);
-    int second_channel_slot = l2cap_local_slot(&transport.l2cap,
+    int second_channel_slot = l2cap_local_slot(transport.l2cap_link,
                                                            second->local_cid);
     assert(second_channel_slot >= 0 &&
-           transport.l2cap.channels[second_channel_slot].tx_len ==
+           transport.l2cap_link->channels[second_channel_slot].tx_len ==
                sizeof(indication_value) + 3 &&
-           transport.l2cap.channels[second_channel_slot].tx_data[0] == 0x1d &&
+           transport.l2cap_link->channels[second_channel_slot].tx_data[0] == 0x1d &&
            transport.eatt_contexts[second_bearer_slot].server.indication_pending);
-    transport.l2cap.channels[second_channel_slot].tx_len =
-        transport.l2cap.channels[second_channel_slot].tx_offset = 0;
+    transport.l2cap_link->channels[second_channel_slot].tx_len =
+        transport.l2cap_link->channels[second_channel_slot].tx_offset = 0;
     uint8_t confirmation[] = {0x1e};
     assert(gatt_transport_eatt_receive_att(&transport, local_cid,
         confirmation, sizeof(confirmation)) == 1);
@@ -315,7 +315,7 @@ int main(void) {
         confirmation, sizeof(confirmation)) == 1);
     assert(!transport.eatt_contexts[bearer_slot].server.indication_pending &&
            !transport.eatt_contexts[second_bearer_slot].server.indication_pending);
-    transport.tx_queue.length = transport.tx_queue.offset = 0;
+    transport.tx_queue_link->length = transport.tx_queue_link->offset = 0;
 
     assert(gatt_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
@@ -324,11 +324,11 @@ int main(void) {
     assert(gatt_transport_test_poll(&transport, 201) == 0);
     assert(gatt_transport_test_poll(&transport,
         201 + BLE_GATT_SERVER_INDICATION_TIMEOUT_MS) == 0);
-    transport.tx_queue.length = transport.tx_queue.offset = 0;
+    transport.tx_queue_link->length = transport.tx_queue_link->offset = 0;
     assert(second_channel_slot >= 0 &&
-           transport.l2cap.channels[second_channel_slot].state ==
+           transport.l2cap_link->channels[second_channel_slot].state ==
                L2CAP_CHANNEL_CLOSING &&
-           transport.l2cap.channels[channel_slot].state ==
+           transport.l2cap_link->channels[channel_slot].state ==
                L2CAP_CHANNEL_OPEN);
     assert(gatt_eatt_find(&transport.eatt, local_cid) >= 0);
     transport.connected = 0;

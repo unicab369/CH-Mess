@@ -1177,7 +1177,7 @@ static inline int ble_gap_gatt_bind(
     if (peer->bound || peer->connected)
         return 0;
 
-    if (!gatt_transport_init(transport, server))
+    if (!gatt_transport_init(transport, server, NULL, NULL))
         return 0;
 
     if (client)
@@ -1252,20 +1252,15 @@ static inline int ble_gap_gatt_poll(
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
         if (transport->eatt_enabled) {
-            l2cap->ops.authorize_psm = gatt_transport_authorize_psm;
-            uint8_t registered = 1;
-            for (uint8_t i = 0; i < transport->psm_registry.count; i++)
-                if (!l2cap_psm_register(
-                        l2cap->psm_registry,
-                        transport->psm_registry.psm[i])) {
-                    registered = 0;
-                    break;
-                }
-            if (!registered) {
+            if (l2cap->local_mps < L2CAP_ECFC_MPS_MIN ||
+                !l2cap_psm_register(l2cap->psm_registry,
+                                    BLE_GATT_EATT_PSM)) {
                 (void)gap_disconnect(0x13);
                 failed = 1;
                 continue;
             }
+            l2cap->local_mtu = transport->eatt.local_mtu;
+            l2cap->ops.authorize_psm = gatt_transport_authorize_psm;
         }
 #endif
         if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,

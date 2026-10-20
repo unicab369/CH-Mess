@@ -205,11 +205,9 @@ int main(void) {
         24, 0, 40, 0, 0, 0, 100, 0};
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         peer_update, sizeof(peer_update)));
-    uint16_t interval_min, interval_max, latency, timeout;
-    assert(l2cap_connection_update_get(&conn, &interval_min, &interval_max,
-                                        &latency, &timeout));
-    assert(interval_min == 24 && interval_max == 40 && !latency &&
-           timeout == 100 && !fake.len);
+    assert(conn.remote_update_pending && conn.remote_update_min == 24 &&
+           conn.remote_update_max == 40 && !conn.remote_update_latency &&
+           conn.remote_update_timeout == 100 && !fake.len);
     assert(l2cap_connection_update_reply(&conn, 1));
     assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_RESP &&
            ble_read_u16_le(fake.pdu + 4) == 0);

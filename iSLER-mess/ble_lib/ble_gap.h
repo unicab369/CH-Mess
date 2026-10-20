@@ -1799,11 +1799,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         }
 
         if (connected) {
-            uint16_t minimum, maximum, latency, timeout;
             l2cap_connection *l2cap = peer->connection;
 
-            if (l2cap_connection_update_get(l2cap, &minimum, &maximum,
-                                             &latency, &timeout)) {
+            if (l2cap->remote_update_pending) {
                 int request_expired = !peer->update_applied &&
                     l2cap->remote_update_deadline_ms &&
                     (int32_t)(GET_MILLIS() -
@@ -1820,12 +1818,15 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                         if (!peer->update_applied) {
                             uint16_t current = (uint16_t)(
                                 conn->schedule.interval_125us / 10u);
-                            uint16_t interval = current >= minimum &&
-                                current <= maximum ? current : minimum;
+                            uint16_t interval = current >= l2cap->remote_update_min &&
+                                current <= l2cap->remote_update_max ? current :
+                                l2cap->remote_update_min;
 
                             // GAP may be busy with another procedure. Leave
                             // this request pending and retry on the next poll.
-                            if (gap_conn_update(interval, latency, timeout))
+                            if (gap_conn_update(interval,
+                                    l2cap->remote_update_latency,
+                                    l2cap->remote_update_timeout))
                                 peer->update_applied = 1;
                         }
 

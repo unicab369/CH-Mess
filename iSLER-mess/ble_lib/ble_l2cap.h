@@ -819,23 +819,6 @@ static inline int l2cap_update_req(
 }
 
 // Application facing
-// Read a peer's pending connection-parameter request. Intervals are in 1.25-ms
-// units and timeout is in 10-ms units. Reply explicitly; tick rejects requests
-// that the application leaves unanswered.
-static inline int l2cap_connection_update_get(
-    const l2cap_connection *conn, uint16_t *interval_min,
-    uint16_t *interval_max, uint16_t *latency, uint16_t *timeout
-) {
-    if (!conn || !conn->remote_update_pending)
-        return 0;
-    if (interval_min) *interval_min = conn->remote_update_min;
-    if (interval_max) *interval_max = conn->remote_update_max;
-    if (latency) *latency = conn->remote_update_latency;
-    if (timeout) *timeout = conn->remote_update_timeout;
-    return 1;
-}
-
-// Application facing
 static inline int l2cap_connection_update_reply(
     l2cap_connection *conn, int accept
 ) {
@@ -942,8 +925,8 @@ static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
             memcpy(frame, ch->tx_data + ch->tx_offset, used);
         }
 
-        if (!l2cap_tx_queue_pdu(conn, ch->remote_cid,
-                                frame, used)) return 0;
+        if (!l2cap_tx_queue_pdu(conn, ch->remote_cid, frame, used))
+            return 0;
 
         ch->tx_credits--;
         ch->tx_offset = (uint16_t)(ch->tx_offset + used - (ch->tx_offset ? 0 : 2));
@@ -957,14 +940,6 @@ static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
 // =============================================================================
 // LE signaling
 // =============================================================================
-static inline int l2cap_signal_reject(
-    l2cap_connection *conn, uint8_t identifier, uint16_t reason) {
-    uint8_t payload[2];
-    ble_write_u16_le(payload, reason);
-    return l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
-                            identifier, payload, sizeof(payload));
-}
-
 // Dispatch one complete SDU from the link layer. Dynamic CIDs are local CIDs;
 // fixed ATT/SMP handlers register by CID. Signaling uses the internal manager.
 // Application facing
@@ -975,8 +950,13 @@ static inline int l2cap_receive(
     if (!conn || !sdu || !len) return 0;
 
     if (cid == L2CAP_CID_LE_SIGNALING) {
-        if (len > L2CAP_SIGNALING_MTU)
-            return len >= 2 ? l2cap_signal_reject(conn, sdu[1], 2) : 0;
+        uint8_t reject_reason[2] = {0, 0};
+        if (len > L2CAP_SIGNALING_MTU) {
+            if (len < 2) return 0;
+            reject_reason[0] = 2;
+            return l2cap_send_signal(conn, L2CAP_COMMAND_REJECT, sdu[1],
+                                     reject_reason, sizeof(reject_reason));
+        }
 
         uint16_t offset = 0;
         while (offset < len) {
@@ -989,7 +969,8 @@ static inline int l2cap_receive(
             if (!identifier) return 0;
 
             if (command_len > len - offset)
-                return l2cap_signal_reject(conn, identifier, 0);
+                return l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
+                    identifier, reject_reason, sizeof(reject_reason));
 
             const uint8_t *p = sdu + offset;
             if (identifier == conn->pending_id && code == conn->pending_code &&
@@ -998,7 +979,8 @@ static inline int l2cap_receive(
                  code == L2CAP_ECFC_RECONFIGURE_REQUEST ||
                  code == L2CAP_CONN_PARAM_UPDATE_REQ)
             ) {
-                if (!l2cap_signal_reject(conn, identifier, 0))
+                if (!l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
+                        identifier, reject_reason, sizeof(reject_reason)))
                     return 0;
                 offset = (uint16_t)(offset + command_len);
                 continue;
@@ -1036,7 +1018,8 @@ static inline int l2cap_receive(
             }
 
             if (!handled) {
-                if (!l2cap_signal_reject(conn, identifier, 0))
+                if (!l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
+                        identifier, reject_reason, sizeof(reject_reason)))
                     return 0;
                 offset = (uint16_t)(offset + command_len);
                 continue;
@@ -1598,7 +1581,8 @@ static inline int l2cap_receive(
             }
 
             if (!handled) {
-                if (!l2cap_signal_reject(conn, identifier, 0))
+                if (!l2cap_send_signal(conn, L2CAP_COMMAND_REJECT,
+                        identifier, reject_reason, sizeof(reject_reason)))
                     return 0;
             }
 

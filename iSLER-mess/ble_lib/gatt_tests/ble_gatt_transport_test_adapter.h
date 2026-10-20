@@ -17,6 +17,10 @@ typedef struct {
 static ble_gatt_transport_test_ops gatt_transport_test_ops;
 static uint8_t (*gatt_transport_test_key_size)(void *context);
 static void (*gatt_transport_test_terminate)(void *context);
+static l2cap_psm_registry gatt_transport_test_psm_registry;
+static l2cap_connection gatt_transport_test_l2cap;
+static l2cap_tx_queue gatt_transport_test_tx_queue;
+static uint8_t gatt_transport_test_tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
 
 static inline int gatt_transport_test_init(
     ble_gatt_transport *transport, ble_gatt_server *server,
@@ -28,7 +32,22 @@ static inline int gatt_transport_test_init(
     gatt_transport_test_ops = *ops;
     gatt_transport_test_key_size = NULL;
     gatt_transport_test_terminate = NULL;
-    return gatt_transport_init(transport, server);
+    memset(&gatt_transport_test_psm_registry, 0,
+           sizeof(gatt_transport_test_psm_registry));
+    gatt_transport_test_tx_queue = (l2cap_tx_queue){
+        .data = gatt_transport_test_tx,
+        .capacity = sizeof(gatt_transport_test_tx)
+    };
+    l2cap_ops l2cap_ops = {0};
+    l2cap_ops.tx_queue = &gatt_transport_test_tx_queue;
+    uint16_t mps = L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
+        L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
+    if (!l2cap_conn_init(&gatt_transport_test_l2cap, &l2cap_ops,
+            &gatt_transport_test_psm_registry,
+            BLE_GATT_TRANSPORT_MTU_MAX, mps, L2CAP_INITIAL_CREDITS))
+        return 0;
+    return gatt_transport_init(transport, server,
+        &gatt_transport_test_l2cap, &gatt_transport_test_tx_queue);
 }
 
 static inline void gatt_transport_test_set_key_size_callback(
@@ -68,7 +87,7 @@ static inline int gatt_transport_test_poll(
 
     if (!connected) return status;
 
-    if (transport->tx_queue.length) {
+    if (transport->tx_queue_link->length) {
         uint8_t llid;
         const uint8_t *fragment;
         uint16_t len;
