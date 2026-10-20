@@ -12,9 +12,10 @@
 #define FUNCONF_USE_DEBUGPRINTF   1
 #define RANDOM_STRENGTH           2
 
-#define GAP_CONNECTION_COUNT      1
-#define GAP_SMP_SUPPORT           0
-#define GAP_IDENTITY_COUNT        1
-#define GAP_ACCEPT_LIST_COUNT     1
-
+#define GAP_CONNECTION_COUNT        1
+#define GAP_SMP_SUPPORT             0
+#define GAP_IDENTITY_COUNT          1
+#define GAP_ACCEPT_LIST_COUNT       1
+#define GAP_SCAN_REPORT_COUNT       1
+#define GAP_SCAN_SEEN_COUNT         1
 #endif

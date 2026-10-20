@@ -21,3 +21,52 @@ A device can support more than one role. In a connection, the Central initiates
 the link and the Peripheral accepts it; either side can provide GATT client or
 server functionality, though Central clients and Peripheral servers are common.
 
+## GAP state sizes
+
+These are `sizeof` results for the CH582 target ABI (`rv32imac`, `ilp32`).
+`gap_conn_context` is one entry; the stack allocates
+`GAP_CONNECTION_COUNT` entries (2 by default). The table lists the structures
+you asked about, their allocation scope, and the relevant build configuration.
+
+| Structure | Purpose | Size | Allocation / build configuration |
+| --- | --- | ---: | --- |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 592 bytes each (1,184 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=0` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 728 bytes each (1,456 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 640 bytes each (1,280 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=0` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 776 bytes each (1,552 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,720 bytes each (3,440 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=0` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,856 bytes each (3,712 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=1` |
+| `gap_scanner_state` | Scan timing, discovery mode, and duplicate-filter settings. | 10 bytes | One global scanner state |
+| `gap_adv` | Advertising payloads, addresses, timing, and advertising status. | 92 bytes | One global state; `GAP_ADV_DATA_MAX=31` |
+| `adv_evt` | Advertising and scan-response radio frames plus connection-request event data. | 128 bytes | One global event state; `GAP_ADV_DATA_MAX=31` |
+| `gap_security_context` | Per-link encryption keys, counters, and encryption procedure state. | 112 bytes | Embedded in each `gap_conn_context`; already counted above |
+| `gap_smp_context` | Per-link pairing, SMP L2CAP, and Secure Connections procedure state. | 5,876 bytes each | SMP enabled; one per connection (`GAP_CONNECTION_COUNT`, 2 by default) |
+| `gap_pair_cfg` | Global pairing policy, such as IO capability and bonding options. | 7 bytes | One global pairing configuration |
+
+The SMP-enabled `gap_conn_context` size includes its per-link bond record, but
+not the separate `gap_smp_context` array. The 128-byte `adv_evt` contains the
+advertising and scan-response radio frames, connection-request frame, and its
+receive timestamp. The table above does not include extended advertising
+buffers or every other GAP global; selected additional legacy allocations
+follow.
+
+### Additional legacy GAP allocations
+
+These additional sizes were measured for the CH582 ABI with
+`GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, and `GAP_SMP_SUPPORT=0`.
+Array totals use the default counts shown in the configuration column.
+
+| Allocation | Purpose | Size | Configuration |
+| --- | --- | ---: | --- |
+| `gap_scan_reports` | Queue of parsed legacy advertising reports. | 228 bytes | 4 reports × 57 bytes each |
+| `gap_scan_seen` | Cache for duplicate filtering and scan-response matching. | 160 bytes | 4 entries × 40 bytes each |
+| `gap_scan` | Scan scheduling, active-scan request, and queue bookkeeping. | 48 bytes | One global state |
+| `gap_rx` | Shared received Link Layer packet and RSSI. | 41 bytes | One global buffer |
+| `gap_adv_scan` | Received advertising packet and RSSI awaiting processing. | 41 bytes | One global buffer |
+| `gap_identities` | Configured peer identities and privacy/filter policy. | 200 bytes | 4 identities |
+| `gap_accept_list` and mask | Controller accept-list addresses and membership bits. | 32 bytes | 4 addresses plus mask |
+
+Extended advertising adds further buffers and queues whose total depends on
+`GAP_EXT_ADV_DATA_MAX` and the configured set, report, and sync counts; those
+allocations are not included in the legacy-only measurements above.
+
