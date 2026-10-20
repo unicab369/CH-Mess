@@ -59,6 +59,31 @@ static int fake_channel_data(
     f->data_count++; f->data_len = len; memcpy(f->data, sdu, len); return 1;
 }
 
+void L2CAP_INTERFACE_CHANNEL_OPENED(
+    void *ctx, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
+) {
+    fake_channel_opened(ctx, psm, local, remote, mtu);
+}
+
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *ctx, uint16_t psm, uint16_t local, uint16_t remote, uint16_t reason
+) {
+    fake_channel_closed(ctx, psm, local, remote, reason);
+}
+
+int L2CAP_INTERFACE_CHANNEL_DATA(
+    void *ctx, uint16_t local, const uint8_t *sdu, uint16_t len
+) {
+    return fake_channel_data(ctx, local, sdu, len);
+}
+
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *ctx, uint16_t min, uint16_t max, uint16_t latency, uint16_t timeout
+) {
+    (void)ctx; (void)min; (void)max; (void)latency; (void)timeout;
+    return 0;
+}
+
 int main(void) {
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
@@ -99,9 +124,6 @@ int main(void) {
     ops.send_pdu = fake_send_pdu;
     ops.accept_psm = fake_accept_psm;
     ops.authorize_psm = fake_authorize_psm;
-    ops.channel_opened = fake_channel_opened;
-    ops.channel_closed = fake_channel_closed;
-    ops.channel_data = fake_channel_data;
     ops.context = &fake;
     l2cap_connection conn;
     assert(l2cap_conn_init(&conn, &ops, 120, 80, 4));

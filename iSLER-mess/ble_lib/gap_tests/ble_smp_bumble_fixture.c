@@ -21,6 +21,31 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
 #define GAP_SMP_SUPPORT 1
 #include "../ble_gap.h"
 
+void L2CAP_INTERFACE_CHANNEL_OPENED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
+) {
+    (void)context; (void)psm; (void)local; (void)remote; (void)mtu;
+}
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote,
+    uint16_t reason
+) {
+    (void)context; (void)psm; (void)local; (void)remote; (void)reason;
+}
+int L2CAP_INTERFACE_CHANNEL_DATA(
+    void *context, uint16_t cid, const uint8_t *data, uint16_t len
+) {
+    (void)context; (void)cid; (void)data; (void)len;
+    return 0;
+}
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *context, uint16_t min, uint16_t max, uint16_t latency,
+    uint16_t timeout
+) {
+    (void)context; (void)min; (void)max; (void)latency; (void)timeout;
+    return 0;
+}
+
 static uint8_t outbound[L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
 

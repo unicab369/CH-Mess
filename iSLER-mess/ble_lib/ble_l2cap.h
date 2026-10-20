@@ -82,16 +82,23 @@ typedef struct {
     void *context;
 } l2cap_channel_handler;
 
-typedef void (*l2cap_channel_event_fn)(
+// Fixed upper-layer interface. Applications provide these functions once at
+// link time; each call receives the connection's interface_context.
+void L2CAP_INTERFACE_CHANNEL_OPENED(
     void *context, uint16_t psm, uint16_t local_cid,
     uint16_t remote_cid, uint16_t mtu
 );
-typedef int (*l2cap_channel_data_fn)(
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *context, uint16_t psm, uint16_t local_cid,
+    uint16_t remote_cid, uint16_t reason
+);
+int L2CAP_INTERFACE_CHANNEL_DATA(
     void *context, uint16_t local_cid, const uint8_t *sdu, uint16_t len
 );
-typedef int (*l2cap_connection_update_fn)(void *context,
-    uint16_t interval_min, uint16_t interval_max, uint16_t latency,
-    uint16_t timeout);
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *context, uint16_t interval_min, uint16_t interval_max,
+    uint16_t latency, uint16_t timeout
+);
 
 typedef struct {
     uint16_t psm;
@@ -116,15 +123,12 @@ typedef struct {
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
     uint16_t (*authorize_psm)(void *context, uint16_t psm);
-    l2cap_channel_event_fn channel_opened;
-    l2cap_channel_event_fn channel_closed;
-    l2cap_channel_data_fn channel_data;
-    l2cap_connection_update_fn connection_update;
     void *context;
 } l2cap_ops;
 
 typedef struct {
     l2cap_ops ops;
+    void *interface_context;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     uint16_t registered_psm[L2CAP_PSM_MAX];
@@ -188,6 +192,7 @@ static inline int l2cap_conn_init(
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
+    conn->interface_context = ops->context;
     conn->local_mtu = mtu;
     conn->local_mps = mps;
     conn->local_credits = initial_credits;
@@ -203,10 +208,9 @@ static inline void l2cap_channel_clear(
     uint16_t psm = ch->psm, local = ch->local_cid, remote = ch->remote_cid;
     memset(ch, 0, sizeof(*ch));
 
-    if (conn->ops.channel_closed && local) {
-        conn->ops.channel_closed(conn->ops.context, psm,
-                                local, remote, (uint16_t)reason);
-    }
+    if (local)
+        L2CAP_INTERFACE_CHANNEL_CLOSED(conn->interface_context, psm,
+                                       local, remote, (uint16_t)reason);
 }
 
 // Application facing
@@ -911,9 +915,8 @@ static inline int l2cap_receive(
                     ch->tx_credits = credits;
                     ch->state = L2CAP_CHANNEL_OPEN;
 
-                    if (conn->ops.channel_opened)
-                        conn->ops.channel_opened(conn->ops.context, psm,
-                                            local_cid, remote_cid, ch->local_mtu);
+                    L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context, psm,
+                        local_cid, remote_cid, ch->local_mtu);
                 }
 
                 break;
@@ -954,9 +957,8 @@ static inline int l2cap_receive(
                         ch->tx_credits = credits;
                         ch->state = L2CAP_CHANNEL_OPEN;
 
-                        if (conn->ops.channel_opened)
-                            conn->ops.channel_opened(conn->ops.context, ch->psm,
-                                ch->local_cid, ch->remote_cid, ch->local_mtu);
+                        L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context,
+                            ch->psm, ch->local_cid, ch->remote_cid, ch->local_mtu);
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
@@ -1102,14 +1104,14 @@ static inline int l2cap_receive(
                             memset(ch, 0, sizeof(*ch));
                         }
 
-                if (sent && !result && conn->ops.channel_opened)
+                if (sent && !result)
                     for (uint8_t i = 0; i < count; i++) {
                         if (channel_result[i])
                             continue;
 
                         l2cap_channel *ch = &conn->channels[slots[i]];
-                        conn->ops.channel_opened(conn->ops.context, psm,
-                                ch->local_cid, ch->remote_cid, ch->local_mtu);
+                        L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context,
+                            psm, ch->local_cid, ch->remote_cid, ch->local_mtu);
                     }
 
                 if (!sent) return 0;
@@ -1263,9 +1265,9 @@ static inline int l2cap_receive(
                             ch->tx_credits = credits;
                             ch->state = L2CAP_CHANNEL_OPEN;
 
-                            if (conn->ops.channel_opened)
-                                conn->ops.channel_opened(conn->ops.context,
-                                    ch->psm, ch->local_cid, remote, ch->local_mtu);
+                            L2CAP_INTERFACE_CHANNEL_OPENED(
+                                conn->interface_context, ch->psm,
+                                ch->local_cid, remote, ch->local_mtu);
                         }
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
@@ -1305,9 +1307,9 @@ static inline int l2cap_receive(
                     int timeout_valid = (uint32_t)timeout * 8u >
                                     2u * (uint32_t)(latency + 1u) * interval_max;
                     int update_accepted = timing_valid && timeout_valid &&
-                                conn->ops.connection_update &&
-                                conn->ops.connection_update(conn->ops.context,
-                                interval_min, interval_max, latency, timeout);
+                        L2CAP_INTERFACE_CONNECTION_UPDATE(
+                            conn->interface_context, interval_min, interval_max,
+                            latency, timeout);
                     uint8_t response[2];
 
                     ble_write_u16_le(response, update_accepted ? 0 : 1);
@@ -1459,9 +1461,9 @@ static inline int l2cap_receive(
         ch->rx_used = (uint16_t)(ch->rx_used + chunk);
 
         if (ch->rx_used == ch->rx_expected) {
-            if (!conn->ops.channel_data ||
-                !conn->ops.channel_data(conn->ops.context, ch->local_cid,
-                                        ch->rx_data, ch->rx_expected)
+            if (!L2CAP_INTERFACE_CHANNEL_DATA(conn->interface_context,
+                                               ch->local_cid, ch->rx_data,
+                                               ch->rx_expected)
             ) {
                 l2cap_channel_clear(conn, (uint8_t)slot, 2);
                 return 0;

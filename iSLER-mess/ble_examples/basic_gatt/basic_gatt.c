@@ -17,6 +17,33 @@ void gap_hw_radio_transmitted(void);
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 #include "../../ble_lib/gatt_services/ble_gatt_services.h"
 
+void L2CAP_INTERFACE_CHANNEL_OPENED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
+) {
+    gatt_transport_channel_opened(context, psm, local, remote, mtu);
+}
+
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote,
+    uint16_t reason
+) {
+    gatt_transport_channel_closed(context, psm, local, remote, reason);
+}
+
+int L2CAP_INTERFACE_CHANNEL_DATA(
+    void *context, uint16_t local, const uint8_t *sdu, uint16_t len
+) {
+    return gatt_transport_channel_data(context, local, sdu, len);
+}
+
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *context, uint16_t min, uint16_t max, uint16_t latency,
+    uint16_t timeout
+) {
+    (void)context; (void)min; (void)max; (void)latency; (void)timeout;
+    return 0;
+}
+
 uint32_t GET_MILLIS(void) {
     return (uint32_t)(funSysTick64() / DELAY_MS_TIME);
 }

@@ -3,6 +3,33 @@
 
 #include "../ble_gatt_transport.h"
 
+void L2CAP_INTERFACE_CHANNEL_OPENED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
+) {
+    gatt_transport_channel_opened(context, psm, local, remote, mtu);
+}
+
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote,
+    uint16_t reason
+) {
+    gatt_transport_channel_closed(context, psm, local, remote, reason);
+}
+
+int L2CAP_INTERFACE_CHANNEL_DATA(
+    void *context, uint16_t local, const uint8_t *sdu, uint16_t len
+) {
+    return gatt_transport_channel_data(context, local, sdu, len);
+}
+
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *context, uint16_t min, uint16_t max, uint16_t latency,
+    uint16_t timeout
+) {
+    (void)context; (void)min; (void)max; (void)latency; (void)timeout;
+    return 0;
+}
+
 typedef struct {
     int (*connected)(void *context);
     int (*receive)(void *context, uint8_t *llid, uint8_t *data, size_t *len);

@@ -194,7 +194,7 @@ int main(void) {
     transport.l2cap.pending_id = 0;
     transport.l2cap.pending_count = 0;
     transport.l2cap.pending_code = 0;
-    transport.l2cap.ops.channel_opened(transport.l2cap.ops.context,
+    L2CAP_INTERFACE_CHANNEL_OPENED(transport.l2cap.interface_context,
         BLE_GATT_EATT_PSM, local_cid, channel->remote_cid, channel->local_mtu);
     int bearer_slot = gatt_eatt_find(&transport.eatt, local_cid);
     assert(bearer_slot >= 0 && transport.eatt.bearers[bearer_slot].mtu == 80);
@@ -225,7 +225,7 @@ int main(void) {
     second->remote_mtu = 70;
     second->local_mps = second->remote_mps = 100;
     second->state = L2CAP_CHANNEL_OPEN;
-    transport.l2cap.ops.channel_opened(transport.l2cap.ops.context,
+    L2CAP_INTERFACE_CHANNEL_OPENED(transport.l2cap.interface_context,
         BLE_GATT_EATT_PSM, second->local_cid, second->remote_cid,
         second->local_mtu);
     int second_bearer_slot = gatt_eatt_find(&transport.eatt,
@@ -278,7 +278,7 @@ int main(void) {
     channel->tx_len = channel->tx_offset = 0;
     uint8_t read_request[] = {0x0a, (uint8_t)value_handle,
                               (uint8_t)(value_handle >> 8)};
-    assert(transport.l2cap.ops.channel_data(transport.l2cap.ops.context,
+    assert(L2CAP_INTERFACE_CHANNEL_DATA(transport.l2cap.interface_context,
         local_cid, read_request, sizeof(read_request)));
     assert(channel->tx_len == 5 && channel->tx_data[0] == 0x0b &&
            channel->tx_data[1] == 0xaa);

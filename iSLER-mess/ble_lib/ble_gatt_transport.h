@@ -901,9 +901,7 @@ static inline int gatt_transport_eatt_init(
 
     transport->l2cap.local_mtu = transport->eatt.local_mtu;
     transport->l2cap.ops.authorize_psm = gatt_transport_authorize_psm;
-    transport->l2cap.ops.channel_opened = gatt_transport_channel_opened;
-    transport->l2cap.ops.channel_closed = gatt_transport_channel_closed;
-    transport->l2cap.ops.channel_data = gatt_transport_channel_data;
+    transport->l2cap.interface_context = transport;
     transport->eatt_enabled = 1;
     return 1;
 }

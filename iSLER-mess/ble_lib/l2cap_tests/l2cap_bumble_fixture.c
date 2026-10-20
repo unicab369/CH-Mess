@@ -40,6 +40,33 @@ static int receive_data(
     return 1;
 }
 
+void L2CAP_INTERFACE_CHANNEL_OPENED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
+) {
+    (void)context; (void)psm; (void)local; (void)remote; (void)mtu;
+}
+
+void L2CAP_INTERFACE_CHANNEL_CLOSED(
+    void *context, uint16_t psm, uint16_t local, uint16_t remote,
+    uint16_t reason
+) {
+    (void)context; (void)psm; (void)local; (void)remote; (void)reason;
+}
+
+int L2CAP_INTERFACE_CHANNEL_DATA(
+    void *context, uint16_t cid, const uint8_t *data, uint16_t len
+) {
+    return receive_data(context, cid, data, len);
+}
+
+int L2CAP_INTERFACE_CONNECTION_UPDATE(
+    void *context, uint16_t min, uint16_t max, uint16_t latency,
+    uint16_t timeout
+) {
+    (void)context; (void)min; (void)max; (void)latency; (void)timeout;
+    return 0;
+}
+
 static int write_record(const uint8_t *data, uint16_t len) {
     uint8_t header[2] = {(uint8_t)len, (uint8_t)(len >> 8)};
     return fwrite(header, 1, 2, stdout) == 2 &&
@@ -71,7 +98,6 @@ int main(void) {
     l2cap_ops ops = {0};
     ops.send_pdu = send_pdu;
     ops.accept_psm = accept_psm;
-    ops.channel_data = receive_data;
     if (!l2cap_conn_init(&connection, &ops, 100, 40, 2) ||
         !l2cap_psm_register(&connection, 0x0027)
     ) return 1;

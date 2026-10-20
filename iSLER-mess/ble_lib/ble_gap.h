@@ -1649,45 +1649,6 @@ static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
         peer->upper.context, psm);
 }
 
-static inline void ble_gap_l2cap_channel_opened(
-    void *context, uint16_t psm,
-    uint16_t local, uint16_t remote, uint16_t mtu
-) {
-    ble_gap_l2cap_peer *peer = context;
-
-    if (peer->upper.channel_opened)
-        peer->upper.channel_opened(
-        peer->upper.context, psm, local, remote, mtu);
-}
-
-static inline void ble_gap_l2cap_channel_closed(
-    void *context, uint16_t psm,
-    uint16_t local, uint16_t remote, uint16_t reason
-) {
-    ble_gap_l2cap_peer *peer = context;
-
-    if (peer->upper.channel_closed)
-        peer->upper.channel_closed(
-        peer->upper.context, psm, local, remote, reason);
-}
-
-static inline int ble_gap_l2cap_channel_data(
-    void *context, uint16_t local, const uint8_t *sdu, uint16_t len
-) {
-    ble_gap_l2cap_peer *peer = context;
-    return peer->upper.channel_data && peer->upper.channel_data(
-        peer->upper.context, local, sdu, len);
-}
-
-static inline int ble_gap_l2cap_connection_update(
-    void *context,
-    uint16_t minimum, uint16_t maximum, uint16_t latency, uint16_t timeout
-) {
-    ble_gap_l2cap_peer *peer = context;
-    return peer->upper.connection_update && peer->upper.connection_update(
-        peer->upper.context, minimum, maximum, latency, timeout);
-}
-
 // Application facing
 static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const l2cap_ops *upper,
@@ -1734,10 +1695,6 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             l2cap_ops ops = {0};
             ops.send_pdu = ble_gap_l2cap_send_pdu;
             ops.accept_psm = ble_gap_l2cap_accept_psm;
-            ops.channel_opened = ble_gap_l2cap_channel_opened;
-            ops.channel_closed = ble_gap_l2cap_channel_closed;
-            ops.channel_data = ble_gap_l2cap_channel_data;
-            ops.connection_update = ble_gap_l2cap_connection_update;
             ops.context = peer;
 
             if (!l2cap_conn_init(&peer->connection, &ops,
@@ -1746,6 +1703,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 return -1;
             }
 
+            peer->connection.interface_context = manager->upper.context;
             peer->initialized = 1;
         }
 

@@ -193,6 +193,16 @@ typedef struct {
 } gap_oob_data;
 
 typedef struct {
+    uint8_t valid;
+    gap_oob_data data;
+} gap_oob;
+
+typedef struct {
+    gap_oob oob;
+    uint8_t private_key[32], public_key[64];
+} gap_oob_local;
+
+typedef struct {
     uint8_t status, blocked, encryption_started;
     uint8_t bond_tx_waiting;
     uint8_t previous_bond_valid;
@@ -220,19 +230,11 @@ typedef struct {
         uint8_t peer_check_rx, peer_check[16];
         uint32_t numeric_value;
     } secure;
+    gap_oob_local local_oob;
+    gap_oob peer_oob;
     gap_oob_data oob_peer;
     uint8_t l2cap_ready, l2cap_rx_pending;
 } gap_smp_context;
-
-typedef struct {
-    uint8_t valid;
-    gap_oob_data data;
-} gap_oob;
-
-typedef struct {
-    gap_oob oob;
-    uint8_t private_key[32], public_key[64];
-} gap_oob_local;
 
 // LE Secure Connections OOB data exchanged through an authenticated channel.
 // Values use SMP byte order.
@@ -254,8 +256,6 @@ static struct {
 };
 
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
-static gap_oob_local gap_oob_locals[GAP_CONNECTION_COUNT];
-static gap_oob gap_oob_peers[GAP_CONNECTION_COUNT];
 static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static inline int smp_pdu_valid(
@@ -562,8 +562,8 @@ static void gap_smp_finish(uint8_t status) {
          smp->pairing.phase == SMP_PHASE_BOND_RX)
     ) gap_wipe(&conn->bond, sizeof(conn->bond));
 
-    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&smp->local_oob, sizeof(smp->local_oob));
+    gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
     gap_wipe(smp->tx, sizeof(smp->tx));
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
@@ -865,8 +865,6 @@ static int gap_smp_link_send_pdu(
 static int smp_link_init(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_wipe(smp, sizeof(*smp));
-    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
 
     l2cap_ops ops = {
         .send_pdu = gap_smp_link_send_pdu,
@@ -1028,8 +1026,9 @@ int gap_secure_connections_set(uint8_t enabled) {
     gap_pair_cfg.secure_connections = enabled;
 
     if (!enabled) {
-        gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-        gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+        gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+        gap_wipe(&smp->local_oob, sizeof(smp->local_oob));
+        gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
     }
 
     return 1;
@@ -1050,7 +1049,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
         gap_sec_contexts[gap_conn_slot].phase
     ) return 0;
 
-    gap_oob_local *local = &gap_oob_locals[gap_conn_slot];
+    gap_oob_local *local = &smp->local_oob;
     gap_wipe(local, sizeof(*local));
     uint32_t generation = *security_gen;
 
@@ -1078,15 +1077,14 @@ int gap_sc_oob_get(gap_oob_data *out) {
 // Application facing
 // Provide the peer's OOB commitment and random value. Pass NULL to clear it.
 int gap_sc_oob_set_peer(const gap_oob_data *peer) {
-    if (!gap_pair_cfg.secure_connections ||
-        gap_smp_contexts[gap_conn_slot].pairing.phase
-    ) return 0;
+    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    if (!gap_pair_cfg.secure_connections || smp->pairing.phase) return 0;
 
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+    gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
 
     if (peer) {
-        gap_oob_peers[gap_conn_slot].valid = 1;
-        memcpy(&gap_oob_peers[gap_conn_slot].data, peer, sizeof(*peer));
+        smp->peer_oob.valid = 1;
+        memcpy(&smp->peer_oob.data, peer, sizeof(*peer));
     }
 
     return 1;
@@ -1224,7 +1222,7 @@ int gap_pair(void) {
         request[0] = 1;
         request[1] = gap_pair_cfg.io;
         request[2] = gap_pair_cfg.secure_connections &&
-                     gap_oob_peers[gap_conn_slot].valid;
+                     smp->peer_oob.valid;
         request[3] = (gap_pair_cfg.authenticated ? 4 : 0) |
                      (gap_pair_cfg.bonding ? 1 : 0) |
                      (gap_pair_cfg.secure_connections ? 8 : 0) |
@@ -1375,8 +1373,6 @@ static void gap_smp_link_close(void) {
     uint8_t status = smp->pairing.phase ? 0x08 : smp->status;
     gap_wipe(smp, sizeof(*smp));
     smp->status = status;
-    gap_wipe(&gap_oob_locals[gap_conn_slot], sizeof(gap_oob_locals[gap_conn_slot]));
-    gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
 }
 
 // Handle bond restoration and repair without exposing SMP phase state to GAP.
@@ -2356,7 +2352,7 @@ static void gap_smp_poll(void) {
         else {
             local = (smp_features){
                 .io_capability = gap_pair_cfg.io,
-                .oob_data_flag = gap_oob_locals[gap_conn_slot].oob.valid,
+                .oob_data_flag = smp->local_oob.oob.valid,
                 .max_key_size = 16,
                 .init_key_dist = key_dist_supported,
                 .resp_key_dist = key_dist_supported,
@@ -2419,7 +2415,7 @@ static void gap_smp_poll(void) {
         }
 
         if (pdu[2] && (!pairing->secure_connections ||
-             !gap_oob_locals[gap_conn_slot].oob.valid)
+             !smp->local_oob.oob.valid)
         ) {
             gap_smp_fail(SMP_FAIL_OOB_NOT_AVAILABLE);
             return;
@@ -2428,7 +2424,7 @@ static void gap_smp_poll(void) {
         // The local flag means we have the peer's data; pdu[2] means the peer
         // has ours. The latter determines whether our own f6 R is nonzero.
         uint8_t local_oob_flag = (op == SMP_PAIRING_REQUEST)
-                                ? gap_oob_peers[gap_conn_slot].valid : pairing->request[2];
+                                ? smp->peer_oob.valid : pairing->request[2];
         smp->secure.oob_active = pairing->secure_connections && (local_oob_flag || pdu[2]);
 
         uint8_t bond_requested = negotiated.bonding && (pairing->secure_connections ||
@@ -2518,7 +2514,7 @@ static void gap_smp_poll(void) {
 
             if (smp->secure.oob_active) {
                 smp->secure.oob_peer_present = local_oob_flag;
-                oob = &gap_oob_locals[gap_conn_slot];
+                oob = &smp->local_oob;
                 use_oob_key = oob->oob.valid;
 
                 if (oob->oob.valid) {
@@ -2537,10 +2533,10 @@ static void gap_smp_poll(void) {
                 if (pdu[2])
                     memcpy(smp->secure.oob_local_random, oob->oob.data.random, 16);
                 if (local_oob_flag)
-                    smp->oob_peer = gap_oob_peers[gap_conn_slot].data;
+                    smp->oob_peer = smp->peer_oob.data;
 
                 gap_wipe(oob, sizeof(*oob));
-                gap_wipe(&gap_oob_peers[gap_conn_slot], sizeof(gap_oob_peers[gap_conn_slot]));
+                gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
             }
         }
 
