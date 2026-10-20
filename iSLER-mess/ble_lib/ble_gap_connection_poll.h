@@ -7,13 +7,13 @@
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    gap_send_security();
+    gap_send_security(conn);
 
-    if (gap_conn_ctx[gap_conn_slot].security.phase)
+    if (conn->security.phase)
         return;
 
     if (conn->c_queue.local_update)
-        gap_send_conn_update();
+        gap_send_conn_update(conn);
 
     if (conn->c_queue.local_map && !gap_tx_frame[1]) {
         conn->c_pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
@@ -40,7 +40,7 @@ static void gap_conn_send_queued(void) {
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (!conn->c_features.known) {
-            gap_send_feature_request();
+            gap_send_feature_request(conn);
         }
         else {
             conn->params_started_ms = GET_MILLIS();
@@ -63,7 +63,7 @@ static void gap_conn_send_queued(void) {
     }
 
     if (conn->c_queue.length)
-        gap_send_data_length(LL_LENGTH_REQ);
+        gap_send_data_length(conn, LL_LENGTH_REQ);
 
     if (conn->c_queue.phy_queued && !gap_tx_frame[1]) {
         // Encode local preferences once earlier TX has been acknowledged.
@@ -84,7 +84,7 @@ static void gap_conn_send_queued(void) {
     ) {
         // Wait for the peer Link Layer and Host to confirm subrating support.
         if (!conn->c_features.known) {
-            gap_send_feature_request();
+            gap_send_feature_request(conn);
         }
         else {
             const uint8_t required = GAP_LL_FEATURES_SUBRATING |
@@ -96,7 +96,7 @@ static void gap_conn_send_queued(void) {
             else if (conn->is_central &&
                 (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
             ) {
-                gap_send_subrate_update();
+                gap_send_subrate_update(conn);
             }
             else if (!conn->is_central &&
                 (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST)
@@ -124,7 +124,7 @@ static void gap_conn_send_queued(void) {
         !gap_tx_frame[1]
     ) {
         if (!conn->c_features.known) {
-            gap_send_feature_request();
+            gap_send_feature_request(conn);
         }
         else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
             conn->c_rate.queued_flags = 0;
@@ -149,7 +149,7 @@ static void gap_conn_send_queued(void) {
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else if (conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)) {
-            gap_send_rate_ind(0, NULL);
+            gap_send_rate_ind(conn, 0, NULL);
         }
         else if (!conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST)) {
             gap_tx_frame[0] = 0x03;
@@ -181,7 +181,7 @@ static void gap_conn_send_queued(void) {
         !conn->c_features.request_pending
     ) {
         if (!conn->c_features.known) {
-            gap_send_feature_request();
+            gap_send_feature_request(conn);
         }
         else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
             conn->central.channel_report_queued = 0;
@@ -215,7 +215,7 @@ void gap_hw_received(void) {
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
+    gap_security_context *gap_security = &conn->security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_EXT_ADV_SUPPORT
@@ -284,7 +284,7 @@ void gap_hw_received(void) {
             uint8_t *plain = gap_conn_buff[gap_conn_slot].plain;
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
-            gap_security_nonce(nonce, cnt, !conn->is_central);
+            gap_security_nonce(gap_security, nonce, cnt, !conn->is_central);
 
             if (!GAP_CCM_DECRYPT(gap_security->session_key, nonce, frame[0] & 0xe3,
                     plain + 2, plain[1], frame + 2 + plain[1])
@@ -533,7 +533,7 @@ void gap_hw_received(void) {
                 gap_tx_frame[0] = 0x01;
         }
 
-        gap_conn_update_apply(1);
+        gap_conn_update_apply(conn, 1);
         if (gap_tx_frame[1])
             conn->c_subrate.event_activity = 1;
         // Each update stage can close the slot, so check before continuing.
@@ -542,8 +542,8 @@ void gap_hw_received(void) {
             return;
         }
 
-        gap_conn_event_advance();
-        gap_conn_update_apply(0);
+        gap_conn_event_advance(conn);
+        gap_conn_update_apply(conn, 0);
         // This stage can also close the slot, so it needs a separate check.
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
             gap_conn_slot = previous_slot;
@@ -554,7 +554,7 @@ void gap_hw_received(void) {
         gap_tx_frame[0] = (gap_tx_frame[0] & 0x03) |
                             (conn->c_link_layer.expected_rx_sn << 2) |
                             (conn->c_link_layer.tx_sn << 3);
-        uint8_t *transmit = gap_security_tx_frame();
+        uint8_t *transmit = gap_security_tx_frame(conn);
 
         if (!transmit) {
             gap_conn_slot = previous_slot;
@@ -1002,7 +1002,7 @@ static void gap_conn_poll(void) {
     gap_smp_poll();
 #endif
     uint32_t now_ms = GET_MILLIS();
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
+    gap_security_context *gap_security = &conn->security;
 
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
     // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.
@@ -1112,8 +1112,8 @@ static void gap_conn_poll(void) {
         do {
             conn->c_link_layer.next_ticks +=
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-            gap_conn_event_advance();
-            gap_conn_update_apply(0);
+            gap_conn_event_advance(conn);
+            gap_conn_update_apply(conn, 0);
             if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
                 return;
 
@@ -1149,8 +1149,8 @@ static void gap_conn_poll(void) {
         // CSA#1 channel sequence. Advance at the anchor, not ahead of time.
         conn->c_link_layer.unmapped_channel = (conn->c_link_layer.unmapped_channel + conn->c_link_layer.hop) % 37;
         conn->c_link_layer.next_ticks += HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-        gap_conn_event_advance();
-        gap_conn_update_apply(0);
+        gap_conn_event_advance(conn);
+        gap_conn_update_apply(conn, 0);
         return;
     }
 
@@ -1197,7 +1197,7 @@ static void gap_conn_poll(void) {
                         (conn->c_link_layer.expected_rx_sn << 2) |
                         (conn->c_link_layer.tx_sn << 3);
         GAP_HW_TX_CLEAR_DONE();
-        uint8_t *transmit = gap_security_tx_frame();
+        uint8_t *transmit = gap_security_tx_frame(conn);
 
         if (!transmit) return;
 

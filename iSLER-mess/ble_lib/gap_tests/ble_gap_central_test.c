@@ -3391,7 +3391,7 @@ static void test_channel_map_updates(void) {
     assert(gap_tx_frame[2] == 0x01 && (conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
     // Reaching the Instant without an ACK must close the link.
     conn->c_link_layer.event_counter = conn->procedures.map_instant;
-    gap_conn_update_apply(0);
+    gap_conn_update_apply(conn, 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->connection_status == 0x28);
     assert(!conn->c_queue.local_map_queued && !(conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
 
@@ -3708,7 +3708,7 @@ static void test_connection_subrating(void) {
     conn->c_subrate.event_activity = 0;
     assert(gap_subrate_event_is_subrated(65532, 42, 5));
     assert(!gap_subrate_event_is_subrated(0, 42, 5));
-    gap_conn_event_advance();
+    gap_conn_event_advance(conn);
     assert(conn->c_link_layer.event_counter == 0 && conn->c_subrate.base_event == 1);
     assert(!gap_subrate_event_is_subrated(0, conn->c_subrate.base_event,
                                           conn->c_subrate.factor));
@@ -3723,12 +3723,12 @@ static void test_connection_subrating(void) {
     conn->procedures.new_params.latency = 2;
     conn->procedures.new_params.supervision_timeout = 300;
     conn->procedures.update_instant = (uint16_t)(conn->c_link_layer.event_counter + 1);
-    gap_conn_event_advance();
-    gap_conn_update_apply(0);
+    gap_conn_event_advance(conn);
+    gap_conn_update_apply(conn, 0);
     assert(conn->c_subrate.factor == 1 && conn->c_subrate.continuation == 0 &&
            conn->c_subrate.latency == 2 && conn->c_subrate.force_event);
     assert(gap_subrate_event_is_active(conn->c_link_layer.event_counter));
-    gap_conn_event_advance();
+    gap_conn_event_advance(conn);
     assert(!conn->c_subrate.force_event);
     gap_conn_end();
 }
@@ -3779,7 +3779,7 @@ static void test_connection_rate_exchange(void) {
     assert(events_until_instant >= 6 && events_until_instant < 0x8000);
     receive_test_link_packet(1);
     conn->c_link_layer.event_counter = instant;
-    gap_conn_update_apply(0);
+    gap_conn_update_apply(conn, 0);
     assert(!conn->procedures.rate_update_pending && conn->c_link_layer.interval_125us == 80 &&
            conn->c_subrate.factor == 2 && conn->c_subrate.continuation == 1 &&
            conn->procedures.params.supervision_timeout == 100 &&
@@ -3809,7 +3809,7 @@ static void test_connection_rate_exchange(void) {
     receive_test_link_packet(1);
     assert(!conn->procedures.rate_ack_waiting);
     conn->c_link_layer.event_counter = conn->procedures.rate_instant;
-    gap_conn_update_apply(0);
+    gap_conn_update_apply(conn, 0);
     assert(!conn->procedures.rate_update_pending && conn->c_link_layer.interval_125us == 80 &&
            conn->c_subrate.factor == 2 && conn->c_subrate.latency == 1 &&
            conn->c_subrate.continuation == 1 &&

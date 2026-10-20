@@ -206,8 +206,9 @@ static void gap_conn_end(void) {
 // Apply connection or channel-map settings when their Instant event
 // arrives. Connection timing controls when this device wakes to exchange data;
 // the instant event follows the old interval, then uses the new transmit window.
-static void gap_conn_update_apply(uint8_t instant_packet_received) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_conn_update_apply(
+    gap_conn_context *conn, uint8_t instant_packet_received
+) {
     if (conn->c_rate.update_pending &&
         conn->next_schedule.instant == conn->c_link_layer.event_counter
     ) {
@@ -350,8 +351,7 @@ static void gap_conn_update_apply(uint8_t instant_packet_received) {
 
 // Advance one connection event, including events skipped by subrating. The
 // event counter and channel hop still advance for every connection interval.
-static void gap_conn_event_advance(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_conn_event_advance(gap_conn_context *conn) {
     uint8_t subrated =
         // schedule
         (conn->schedule.factor &&
@@ -409,8 +409,7 @@ static void gap_conn_event_advance(void) {
 
 // Build the queued Central update only when its TX slot is free, so the
 // Instant stays in the future while earlier packets wait for acknowledgement.
-static void gap_send_conn_update(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_send_conn_update(gap_conn_context *conn) {
     if (gap_tx_frame[1]) return;
 
     conn->update_window_size = 1;
@@ -457,8 +456,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
-static void gap_send_feature_request(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_send_feature_request(gap_conn_context *conn) {
     if (gap_tx_frame[1]) return;
 
     uint8_t supported_phys = GAP_HW_PHY_MASK();
@@ -480,8 +478,7 @@ static void gap_send_feature_request(void) {
 
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
-static void gap_send_subrate_update(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_send_subrate_update(gap_conn_context *conn) {
     if (gap_tx_frame[1]) return;
 
     conn->next_schedule.base_event = conn->c_link_layer.event_counter;
@@ -500,9 +497,10 @@ static void gap_send_subrate_update(void) {
     ble_write_u16_le(gap_tx_frame + 11, conn->next_schedule.timeout);
 }
 
-static void gap_send_rate_ind(uint16_t reference_event,
-                              const uint16_t offsets[4]) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_send_rate_ind(
+    gap_conn_context *conn, uint16_t reference_event,
+    const uint16_t offsets[4]
+) {
     if (gap_tx_frame[1]) return;
 
     conn->next_schedule.instant = (uint16_t)(conn->c_link_layer.event_counter +
@@ -543,8 +541,7 @@ static void gap_send_rate_ind(uint16_t reference_event,
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
-static void gap_send_data_length(uint8_t opcode) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
     if (gap_tx_frame[1]) return;
 
     if (opcode == LL_LENGTH_REQ) {
@@ -631,8 +628,7 @@ static uint8_t gap_rate_parameters_valid(
         (uint64_t)timeout * 80 > 2ull * interval * factor * (latency + 1);
 }
 
-static uint16_t gap_conn_min_interval(void) {
-    const gap_conn_context *conn = gap_conn_ctx_current();
+static uint16_t gap_conn_min_interval(const gap_conn_context *conn) {
     uint32_t rx_time = conn->data_length.rx_time;
     uint32_t coded_limit = (uint32_t)conn->data_length.rx_octets * 64 + 976;
     uint8_t peripheral_tx_phy = conn->is_central ? conn->c_phy.current.rx :
@@ -651,8 +647,7 @@ static uint16_t gap_conn_min_interval(void) {
 }
 
 // Bluetooth e uses little-endian inputs; the AES/CCM hooks use standard byte order.
-static void gap_security_derive(void) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
+static void gap_security_derive(gap_security_context *gap_security) {
     uint8_t ltk[16], skd[16];
     gap_bytes_reverse(ltk, gap_security->ltk, sizeof(ltk));
     gap_bytes_reverse(skd, gap_security->skd, sizeof(skd));
@@ -672,8 +667,9 @@ static inline uint8_t gap_conn_unknown_resp(uint8_t opcode) {
     return 0;
 }
 
-static uint8_t gap_conn_reject_resp(uint8_t opcode, uint8_t error) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static uint8_t gap_conn_reject_resp(
+    gap_conn_context *conn, uint8_t opcode, uint8_t error
+) {
     gap_tx_frame[1] = 3;
     gap_tx_frame[2] = LL_REJECT_EXT_IND;
     gap_tx_frame[3] = opcode;
@@ -694,8 +690,8 @@ static uint8_t gap_conn_control(
     uint8_t authenticated, uint64_t connection_anchor_ticks,
     uint16_t conn_event_counter
 ) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
 
     switch (frame[2]) {
     case LL_ENC_REQ: { // LL_ENC_REQ (Central to Peripheral)
@@ -751,7 +747,7 @@ static uint8_t gap_conn_control(
 
         memcpy(gap_security->skd + 8, frame + 3, 8);
         memcpy(gap_security->iv + 4, frame + 11, 4);
-        gap_security_derive();
+        gap_security_derive(gap_security);
         gap_security->phase = GAP_ENC_WAIT_START;
         break;
 
@@ -909,7 +905,7 @@ static uint8_t gap_conn_control(
             (frame[2] == LL_CONNECTION_PARAM_RSP &&
                 (!conn->is_central || conn->c_pending.params_state != GAP_CONN_PARAMS_LOCAL)
             )
-        ) return gap_conn_reject_resp(frame[2], error);
+        ) return gap_conn_reject_resp(conn, frame[2], error);
 
         uint16_t minimum = ble_read_u16_le(frame + 3);
         uint16_t maximum = ble_read_u16_le(frame + 5);
@@ -919,7 +915,7 @@ static uint8_t gap_conn_control(
         if (frame[11] > maximum ||
             !ble_timing_valid(minimum, maximum, latency, timeout) ||
             (uint32_t)timeout * 80 <= 2 * (uint32_t)(latency + 1) * maximum * 10
-        ) return gap_conn_reject_resp(frame[2], error);
+        ) return gap_conn_reject_resp(conn, frame[2], error);
 
         // Offset hints must be unique, below Interval_Max, and
         // ordered before unspecified (0xffff) offsets.
@@ -933,17 +929,17 @@ static uint8_t gap_conn_control(
             }
 
             if (unspecified || offset >= maximum)
-                return gap_conn_reject_resp(frame[2], error);
+                return gap_conn_reject_resp(conn, frame[2], error);
 
             for (uint8_t j = 0; j < i; j++)
                 if (ble_read_u16_le(frame + 14 + j * 2) == offset)
-                    return gap_conn_reject_resp(frame[2], error);
+                    return gap_conn_reject_resp(conn, frame[2], error);
 
             has_offset = 1;
         }
 
         if (has_offset && minimum != maximum && !frame[11])
-            return gap_conn_reject_resp(frame[2], error);
+            return gap_conn_reject_resp(conn, frame[2], error);
 
         error = GAP_LL_ERR_COLLISION; // LL procedure collision.
 
@@ -960,7 +956,7 @@ static uint8_t gap_conn_control(
                                     conn->c_queue.local_params)
                 )
             ))
-        ) return gap_conn_reject_resp(frame[2], error);
+        ) return gap_conn_reject_resp(conn, frame[2], error);
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
             if (minimum < conn->params_min_1p25ms) minimum = conn->params_min_1p25ms;
@@ -968,7 +964,7 @@ static uint8_t gap_conn_control(
 
             error = GAP_LL_ERR_UNSUPPORTED_PARAM; // Unsupported LL parameter value.
             if (minimum > maximum)
-                return gap_conn_reject_resp(frame[2], error);
+                return gap_conn_reject_resp(conn, frame[2], error);
         }
 
         if (conn->is_central) {
@@ -990,12 +986,12 @@ static uint8_t gap_conn_control(
             error = GAP_LL_ERR_UNSUPPORTED_PARAM;
             if ((uint32_t)timeout * 80 <= 2ull *
                 (uint32_t)(latency + 1) * interval_125us * factor
-            ) return gap_conn_reject_resp(frame[2], error);
+            ) return gap_conn_reject_resp(conn, frame[2], error);
 
             conn->new_params.interval = interval;
             conn->new_params.latency = latency;
             conn->new_params.supervision_timeout = timeout;
-            gap_send_conn_update();
+            gap_send_conn_update(conn);
         }
         else {
             // The Central's procedure takes precedence over a
@@ -1444,7 +1440,7 @@ static uint8_t gap_conn_control(
         ) {
             error = GAP_LL_ERR_INVALID_PARAMS;
         }
-        else if (maximum < gap_conn_min_interval()) {
+        else if (maximum < gap_conn_min_interval(conn)) {
             error = GAP_LL_ERR_UNSUPPORTED_FEATURE;
         }
         else if (!(conn->c_features.peer_page1[1] & 0x02)) {
@@ -1475,7 +1471,7 @@ static uint8_t gap_conn_control(
                 uint32_t lower = ((uint32_t)interval / periodicity_125us) * periodicity_125us;
                 uint32_t upper = lower + periodicity_125us;
                 uint8_t lower_valid = lower >= minimum &&
-                                      lower >= gap_conn_min_interval();
+                                      lower >= gap_conn_min_interval(conn);
                 uint8_t upper_valid = upper <= maximum;
 
                 if (lower_valid && upper_valid)
@@ -1487,8 +1483,8 @@ static uint8_t gap_conn_control(
                     interval = (uint16_t)lower;
             }
 
-            if (interval < gap_conn_min_interval())
-                interval = gap_conn_min_interval();
+            if (interval < gap_conn_min_interval(conn))
+                interval = gap_conn_min_interval(conn);
 
             if (interval <= maximum &&
                 gap_rate_parameters_valid(interval, factor_max,
@@ -1499,7 +1495,7 @@ static uint8_t gap_conn_control(
                 conn->next_schedule.latency = latency;
                 conn->next_schedule.continuation = continuation;
                 conn->next_schedule.timeout = timeout;
-                gap_send_rate_ind(reference_event, offsets);
+                gap_send_rate_ind(conn, reference_event, offsets);
                 break;
             }
 
@@ -1525,7 +1521,7 @@ static uint8_t gap_conn_control(
         uint16_t timeout = ble_read_u16_le(frame + 15);
 
         if (!gap_rate_parameters_valid(interval, factor, latency, continuation, timeout) ||
-            interval < gap_conn_min_interval() ||
+            interval < gap_conn_min_interval(conn) ||
             win_offset > interval ||
             (uint16_t)(instant - conn->c_link_layer.event_counter) >= 0x8000 ||
             instant == conn->c_link_layer.event_counter ||
@@ -1617,7 +1613,7 @@ static uint8_t gap_conn_control(
                     conn->next_schedule.continuation = continuation;
                     conn->next_schedule.timeout = timeout;
                     conn->c_subrate.status = GAP_CONNECTION_PENDING;
-                    gap_send_subrate_update();
+                    gap_send_subrate_update(conn);
                     break;
                 }
             }
@@ -1751,7 +1747,7 @@ static uint8_t gap_conn_control(
             conn->data_length.rx_time = rx_time < remote.tx_time ? rx_time : remote.tx_time;
 
             if (frame[2] == LL_LENGTH_REQ) {
-                gap_send_data_length(LL_LENGTH_RSP);
+                gap_send_data_length(conn, LL_LENGTH_RSP);
 
                 // A queued local change is advertised in this response.
                 if (conn->c_queue.length) {
@@ -1931,7 +1927,7 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
 
 static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
     return !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_conn_ctx[gap_conn_slot].security.phase ||
+        conn->security.phase ||
         conn->c_link_layer.first_event ||
         gap_conn_pending_procedure_busy(conn);
 }
@@ -2073,7 +2069,7 @@ int gap_conn_rate_set(
     if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
         !conn->is_central ||
-        interval < gap_conn_min_interval() ||
+        interval < gap_conn_min_interval(conn) ||
         !gap_rate_parameters_valid(interval, factor, latency, continuation,
                                    timeout)
     ) return 0;
@@ -2180,8 +2176,8 @@ int gap_channel_map_set(const uint8_t channels[5]) {
 int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms, uint8_t max_delay_200ms
 ) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         !conn->is_central ||
@@ -2307,8 +2303,8 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
 
     if (!data || !len ||
         (llid != 1 && llid != 2) ||
@@ -2391,20 +2387,19 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
 #include "../micro-ecc/uECC.h"
 
 static void gap_security_nonce(
-    uint8_t nonce[13], uint64_t counter, uint8_t central
+    const gap_security_context *security, uint8_t nonce[13],
+    uint64_t counter, uint8_t central
 ) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     for (uint8_t i = 0; i < 5; i++)
         nonce[i] = (uint8_t)(counter >> (i * 8));
     nonce[4] |= central ? 0x80 : 0;
-    memcpy(nonce + 5, gap_security->iv, 8);
+    memcpy(nonce + 5, security->iv, 8);
 }
 
 // Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
 // only SN/NESN/MD may change, and those bits are excluded from CCM authentication.
-static uint8_t *gap_security_tx_frame(void) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
+    gap_security_context *gap_security = &conn->security;
     uint8_t *cipher = gap_conn_buff[gap_conn_slot].cipher;
 
     if (gap_security->tx_sealed) {
@@ -2422,7 +2417,7 @@ static uint8_t *gap_security_tx_frame(void) {
     }
 
     uint8_t nonce[13];
-    gap_security_nonce(nonce, gap_security->tx_counter, conn->is_central);
+    gap_security_nonce(gap_security, nonce, gap_security->tx_counter, conn->is_central);
     memcpy(cipher, gap_tx_frame, gap_tx_frame[1] + 2);
 
     if (!GAP_CCM_ENCRYPT(gap_security->session_key, nonce,
@@ -2442,10 +2437,9 @@ static uint8_t *gap_security_tx_frame(void) {
 
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
-static void gap_send_security(void) {
+static void gap_send_security(gap_conn_context *conn) {
     if (gap_tx_frame[1]) return;
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
 
     uint16_t phase = gap_security->phase;
 
@@ -2499,8 +2493,8 @@ static void gap_send_security(void) {
 // Pairing uses STK with zero Rand/EDIV; a bond supplies its saved LTK identifiers.
 // Application facing
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
 
     if (!ltk || !random || !conn->is_central ||
         gap_conn_procedure_busy(conn) ||
@@ -2561,7 +2555,8 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
 // Pending Peripheral key lookup for SMP or a bond store; the application must
 // reply with that peer's matching key, or NULL if none is available.
 int gap_key_request(uint8_t random[8], uint16_t *ediv) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
+    gap_security_context *gap_security =
+        &gap_conn_ctx[gap_conn_slot].security;
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_security->phase != GAP_ENC_KEY_REQUEST
@@ -2574,8 +2569,8 @@ int gap_key_request(uint8_t random[8], uint16_t *ediv) {
 
 // Application facing
 int gap_key_reply(const uint8_t ltk[16]) {
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_security_context *gap_security = &conn->security;
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
@@ -2588,7 +2583,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
         conn->authenticated = 0;
         conn->enc_key_size = 0;
         memcpy(gap_security->ltk, ltk, 16);
-        gap_security_derive();
+        gap_security_derive(gap_security);
         gap_security->phase = GAP_ENC_START_QUEUED;
     }
     else {
@@ -2604,7 +2599,7 @@ int gap_key_reply(const uint8_t ltk[16]) {
 // Application facing
 int gap_encrypted(void) {
     const gap_conn_context *conn = gap_conn_ctx_current();
-    gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
+    const gap_security_context *gap_security = &conn->security;
 
     return (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
             (conn->is_central || !conn->c_link_layer.first_event) &&
