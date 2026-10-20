@@ -41,6 +41,12 @@
 #error "GAP_CONN_DATA_MAX must be between 27 and 251"
 #endif
 
+#if GAP_EXT_ADV_SUPPORT && GAP_CONN_DATA_MAX < 35
+#define GAP_CONN_PACKET_BUFFER_MAX 35
+#else
+#define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
+#endif
+
 #ifndef GAP_EXT_ADV_SET_COUNT
 #define GAP_EXT_ADV_SET_COUNT 2
 #endif
@@ -746,6 +752,11 @@ typedef struct {
         // min_spacing_200ms before queuing another report.
         uint32_t status_last_sent_ms;
     } peripheral;
+
+    // Per-link radio buffers. TX and cipher must remain radio aligned.
+    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
+    GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
+    uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
