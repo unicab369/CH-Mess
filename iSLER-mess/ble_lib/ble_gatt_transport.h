@@ -771,10 +771,9 @@ static inline uint16_t gatt_transport_authorize_psm(
 }
 
 static inline void gatt_transport_channel_opened(
-    void *context, uint16_t psm, uint16_t local_cid,
+    ble_gatt_transport *transport, uint16_t psm, uint16_t local_cid,
     uint16_t remote_cid, uint16_t local_mtu
 ) {
-    ble_gatt_transport *transport = context;
     (void)remote_cid;
 
     if (!transport || !transport->eatt_enabled || psm != BLE_GATT_EATT_PSM)
@@ -823,10 +822,9 @@ static inline void gatt_transport_channel_opened(
 }
 
 static inline void gatt_transport_channel_closed(
-    void *context, uint16_t psm, uint16_t local_cid,
+    ble_gatt_transport *transport, uint16_t psm, uint16_t local_cid,
     uint16_t remote_cid, uint16_t reason
 ) {
-    ble_gatt_transport *transport = context;
     (void)remote_cid;
 
     if (transport && transport->eatt_enabled && psm == BLE_GATT_EATT_PSM) {
@@ -857,14 +855,79 @@ static inline void gatt_transport_channel_closed(
 }
 
 static inline int gatt_transport_channel_data(
-    void *context,
+    ble_gatt_transport *transport,
     uint16_t local_cid, const uint8_t *sdu, uint16_t len
 ) {
-    ble_gatt_transport *transport = context;
     if (!transport || !transport->eatt_enabled)
         return 0;
 
     return gatt_eatt_receive(&transport->eatt, local_cid, sdu, len);
+}
+
+// Discover L2CAP channel state and pull completed SDUs into EATT. L2CAP does
+// not call application hooks; this adapter polls its public channel state.
+static inline int gatt_transport_sync_l2cap_channels(
+    ble_gatt_transport *transport
+) {
+#if BLE_GATT_ENABLE_EATT
+    if (!transport || !transport->eatt_enabled)
+        return 0;
+
+    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
+        uint16_t psm, local_cid, remote_cid, reason;
+        if (!l2cap_channel_closed_get(&transport->l2cap, i, &psm,
+                &local_cid, &remote_cid, &reason) ||
+            psm != BLE_GATT_EATT_PSM)
+            continue;
+        gatt_transport_channel_closed(transport, psm, local_cid,
+                                       remote_cid, reason);
+        (void)l2cap_channel_closed_ack(&transport->l2cap, i);
+    }
+
+    for (uint8_t i = 0; i < BLE_GATT_EATT_MAX_BEARERS; i++) {
+        ble_gatt_transport_eatt_context *bearer =
+            &transport->eatt_contexts[i];
+        if (bearer->cid && l2cap_local_slot(&transport->l2cap,
+                                             bearer->cid) < 0)
+            gatt_transport_channel_closed(transport, BLE_GATT_EATT_PSM,
+                                           bearer->cid, 0, 0);
+    }
+
+    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
+        const l2cap_channel *channel =
+            l2cap_channel_at(&transport->l2cap, i);
+        if (!channel || channel->state != L2CAP_CHANNEL_OPEN ||
+            channel->psm != BLE_GATT_EATT_PSM)
+            continue;
+
+        int eatt_slot = gatt_eatt_find(&transport->eatt, channel->local_cid);
+        if (eatt_slot < 0 || transport->eatt.bearers[eatt_slot].state ==
+                               BLE_GATT_EATT_OPENING)
+            gatt_transport_channel_opened(transport, channel->psm,
+                channel->local_cid, channel->remote_cid, channel->local_mtu);
+
+        const uint8_t *sdu;
+        uint16_t len;
+        if (l2cap_channel_rx_peek(&transport->l2cap, channel->local_cid,
+                                  &sdu, &len)) {
+            int received = gatt_transport_channel_data(
+                transport, channel->local_cid, sdu, len);
+            if (received < 0)
+                return -1;
+            if (!received) {
+                (void)l2cap_channel_close(&transport->l2cap,
+                                           channel->local_cid);
+                continue;
+            }
+            (void)l2cap_channel_rx_consume(&transport->l2cap,
+                                           channel->local_cid);
+        }
+    }
+    return 0;
+#else
+    (void)transport;
+    return 0;
+#endif
 }
 
 // Bind EATT channel lifecycle and per-bearer ATT routing to shared L2CAP ECFC.
@@ -901,7 +964,6 @@ static inline int gatt_transport_eatt_init(
 
     transport->l2cap.local_mtu = transport->eatt.local_mtu;
     transport->l2cap.ops.authorize_psm = gatt_transport_authorize_psm;
-    transport->l2cap.interface_context = transport;
     transport->eatt_enabled = 1;
     return 1;
 }
@@ -1028,7 +1090,7 @@ static inline void gatt_transport_set_connected(
     transport->connected = (uint8_t)connected;
     l2cap_conn_reset(&transport->l2cap, 0);
 #if BLE_GATT_ENABLE_EATT
-
+    (void)gatt_transport_sync_l2cap_channels(transport);
     if (transport->eatt_enabled)
         gatt_eatt_set_encrypted(&transport->eatt, 0);
 #endif
@@ -1291,7 +1353,13 @@ static inline int gatt_transport_receive_fragment(
     if (complete <= 0) return complete;
 
     int result = l2cap_receive(&transport->l2cap, cid, att, att_len);
-    return result < 0 ? gatt_transport_fail_bearer(transport) : result;
+    if (result < 0)
+        return gatt_transport_fail_bearer(transport);
+#if BLE_GATT_ENABLE_EATT
+    if (gatt_transport_sync_l2cap_channels(transport) < 0)
+        return gatt_transport_fail_bearer(transport);
+#endif
+    return result;
 }
 
 // Application facing
@@ -1365,6 +1433,10 @@ static inline int gatt_transport_poll(
         return -1;
 
     (void)l2cap_conn_tick(&transport->l2cap, now_ms);
+#if BLE_GATT_ENABLE_EATT
+    if (gatt_transport_sync_l2cap_channels(transport) < 0)
+        return gatt_transport_fail_bearer(transport);
+#endif
 
 #if BLE_GATT_ENABLE_EATT
     gatt_transport_eatt_poll_tx(transport);

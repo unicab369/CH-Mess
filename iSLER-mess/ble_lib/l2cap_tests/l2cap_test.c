@@ -17,11 +17,16 @@ static int route_att(
 typedef struct {
     uint16_t cid, len;
     uint8_t pdu[L2CAP_CHANNEL_MTU_MAX];
-    uint8_t opened, closed, data_count, block_send;
+    uint8_t block_send;
     uint16_t authorization_result;
-    uint16_t data_len;
-    uint8_t data[16];
 } fake_l2cap;
+
+static uint8_t open_channel_count(const l2cap_connection *conn) {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
+        count += conn->channels[i].state == L2CAP_CHANNEL_OPEN;
+    return count;
+}
 static int fake_send_pdu(
     void *ctx, uint16_t cid, const uint8_t *pdu,
                          uint16_t len
@@ -37,53 +42,6 @@ static int fake_accept_psm(void *ctx, uint16_t psm) {
 static uint16_t fake_authorize_psm(void *ctx, uint16_t psm) {
     (void)psm; return ((fake_l2cap *)ctx)->authorization_result;
 }
-static void fake_channel_opened(
-    void *ctx, uint16_t psm, uint16_t local,
-    uint16_t remote, uint16_t mtu
-) {
-    fake_l2cap *f = ctx; assert(psm == 0x0027 && local >= 0x40 &&
-                                remote >= 0x40 && mtu >= 23); f->opened++;
-}
-static void fake_channel_closed(
-    void *ctx, uint16_t psm, uint16_t local,
-    uint16_t remote, uint16_t reason
-) {
-    fake_l2cap *f = ctx; (void)psm; (void)local; (void)remote; (void)reason;
-    f->closed++;
-}
-static int fake_channel_data(
-    void *ctx, uint16_t local, const uint8_t *sdu,
-                             uint16_t len
-) {
-    fake_l2cap *f = ctx; assert(local >= 0x40 && len <= sizeof(f->data));
-    f->data_count++; f->data_len = len; memcpy(f->data, sdu, len); return 1;
-}
-
-void L2CAP_INTERFACE_CHANNEL_OPENED(
-    void *ctx, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
-) {
-    fake_channel_opened(ctx, psm, local, remote, mtu);
-}
-
-void L2CAP_INTERFACE_CHANNEL_CLOSED(
-    void *ctx, uint16_t psm, uint16_t local, uint16_t remote, uint16_t reason
-) {
-    fake_channel_closed(ctx, psm, local, remote, reason);
-}
-
-int L2CAP_INTERFACE_CHANNEL_DATA(
-    void *ctx, uint16_t local, const uint8_t *sdu, uint16_t len
-) {
-    return fake_channel_data(ctx, local, sdu, len);
-}
-
-int L2CAP_INTERFACE_CONNECTION_UPDATE(
-    void *ctx, uint16_t min, uint16_t max, uint16_t latency, uint16_t timeout
-) {
-    (void)ctx; (void)min; (void)max; (void)latency; (void)timeout;
-    return 0;
-}
-
 int main(void) {
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
@@ -145,7 +103,7 @@ int main(void) {
         fake.pdu[1], 10, 0, 120, 0, 80, 0, 5, 0, 0, 0, 0x44, 0};
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
                                         response, sizeof(response)));
-    assert(fake.opened == 1);
+    assert(open_channel_count(&conn) == 1);
     uint16_t reconfigure_cids[] = {local_cid};
     assert(l2cap_ecfc_reconfig(&conn, reconfigure_cids, 1, 120, 64));
     assert(fake.pdu[0] == L2CAP_ECFC_RECONFIGURE_REQUEST);
@@ -162,7 +120,7 @@ int main(void) {
         10, 0, 0x27, 0, 64, 0, 64, 0, 3, 0, 0x45, 0};
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         incoming_open, sizeof(incoming_open)));
-    assert(fake.opened == 2 && fake.pdu[0] ==
+    assert(open_channel_count(&conn) == 2 && fake.pdu[0] ==
            L2CAP_ECFC_CONNECTION_RESPONSE);
     uint8_t incoming_reconfigure[] = {
         L2CAP_ECFC_RECONFIGURE_REQUEST, 15, 6, 0,
@@ -179,8 +137,14 @@ int main(void) {
         (uint8_t)inbound_local, (uint8_t)(inbound_local >> 8), 0x45, 0};
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         disconnect, sizeof(disconnect)));
-    assert(fake.closed == 1 && fake.pdu[0] ==
+    assert(open_channel_count(&conn) == 1 && fake.pdu[0] ==
            L2CAP_DISCONNECTION_RESPONSE);
+    uint16_t closed_psm, closed_local, closed_remote, close_reason;
+    assert(l2cap_channel_closed_get(&conn, (uint8_t)inbound_slot,
+        &closed_psm, &closed_local, &closed_remote, &close_reason));
+    assert(closed_psm == 0x0027 && closed_local == inbound_local &&
+           closed_remote == 0x0045);
+    assert(l2cap_channel_closed_ack(&conn, (uint8_t)inbound_slot));
     uint8_t outgoing[100];
     for (uint8_t i = 0; i < sizeof(outgoing); i++) outgoing[i] = i;
     assert(l2cap_ecfc_send(&conn, local_cid, outgoing, sizeof(outgoing)));
@@ -196,8 +160,13 @@ int main(void) {
                                         sizeof(kframe1)));
     assert(l2cap_receive(&conn, local_cid, kframe2,
                                         sizeof(kframe2)));
-    assert(fake.data_count == 1 && fake.data_len == 4 &&
-           fake.data[0] == 0xaa && fake.data[3] == 0xdd);
+    const uint8_t *received_sdu;
+    uint16_t received_len;
+    assert(l2cap_channel_rx_peek(&conn, local_cid,
+                                 &received_sdu, &received_len));
+    assert(received_len == 4 && received_sdu[0] == 0xaa &&
+           received_sdu[3] == 0xdd);
+    assert(l2cap_channel_rx_consume(&conn, local_cid));
     fake.block_send = 0;
     assert(l2cap_ecfc_pump(&conn));
     assert(fake.cid == L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
@@ -210,9 +179,13 @@ int main(void) {
         L2CAP_DISCONNECTION_RESPONSE, fake.pdu[1], 4, 0,
         fake.pdu[4], fake.pdu[5], fake.pdu[6], fake.pdu[7]
     };
+    int outgoing_slot = l2cap_local_slot(&conn, local_cid);
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         disconnect_response, sizeof(disconnect_response)));
-    assert(fake.closed == 2);
+    assert(open_channel_count(&conn) == 0);
+    assert(outgoing_slot >= 0 && l2cap_channel_closed_get(&conn,
+        (uint8_t)outgoing_slot, NULL, NULL, NULL, NULL));
+    assert(l2cap_channel_closed_ack(&conn, (uint8_t)outgoing_slot));
     assert(l2cap_update_req(&conn, 24, 40, 0, 100));
     assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_REQ);
     uint8_t update_response[] = {
@@ -221,6 +194,20 @@ int main(void) {
     };
     assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
         update_response, sizeof(update_response)));
+
+    fake.len = 0;
+    uint8_t peer_update[] = {L2CAP_CONN_PARAM_UPDATE_REQ, 30, 8, 0,
+        24, 0, 40, 0, 0, 0, 100, 0};
+    assert(l2cap_receive(&conn, L2CAP_CID_LE_SIGNALING,
+        peer_update, sizeof(peer_update)));
+    uint16_t interval_min, interval_max, latency, timeout;
+    assert(l2cap_connection_update_get(&conn, &interval_min, &interval_max,
+                                        &latency, &timeout));
+    assert(interval_min == 24 && interval_max == 40 && !latency &&
+           timeout == 100 && !fake.len);
+    assert(l2cap_connection_update_reply(&conn, 1));
+    assert(fake.pdu[0] == L2CAP_CONN_PARAM_UPDATE_RESP &&
+           ble_read_u16_le(fake.pdu + 4) == 0);
 
     // ECFC can establish several channels in one request, and LE CIDs wrap
     // only inside the assigned 0x0040..0x007F dynamic range.
@@ -246,7 +233,7 @@ int main(void) {
            ble_read_u16_le(partial_fake.pdu + 10) == 9 &&
            ble_read_u16_le(partial_fake.pdu + 12) == 0 &&
            ble_read_u16_le(partial_fake.pdu + 14) != 0 &&
-           partial_fake.opened == 1);
+           open_channel_count(&partial_server) == 1);
     uint16_t multi_cids[2];
     assert(l2cap_ecfc_open_many(&multi, 0x0027, multi_cids, 2));
     assert(multi_fake.pdu[0] == L2CAP_ECFC_CONNECTION_REQUEST &&
@@ -256,7 +243,7 @@ int main(void) {
         0x46, 0, 0x47, 0};
     assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         multi_response, sizeof(multi_response)));
-    assert(multi_fake.opened == 2 &&
+    assert(open_channel_count(&multi) == 2 &&
            l2cap_local_slot(&multi, multi_cids[1]) >= 0);
     uint16_t partial_cids[2];
     assert(l2cap_ecfc_open_many(&multi, 0x0027, partial_cids, 2));
@@ -265,7 +252,7 @@ int main(void) {
         0x48, 0, 0, 0};
     assert(l2cap_receive(&multi, L2CAP_CID_LE_SIGNALING,
         partial_response, sizeof(partial_response)));
-    assert(multi_fake.opened == 3 &&
+    assert(open_channel_count(&multi) == 3 &&
            l2cap_local_slot(&multi, partial_cids[0]) >= 0 &&
            l2cap_local_slot(&multi, partial_cids[1]) < 0);
     multi.next_cid = L2CAP_DYNAMIC_CID_MAX;

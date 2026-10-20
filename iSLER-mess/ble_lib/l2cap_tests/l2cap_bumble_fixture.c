@@ -7,8 +7,6 @@ static l2cap_connection connection;
 static l2cap_reassembler reassembler;
 static uint8_t outbound[L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
-static uint8_t received[32];
-static uint16_t received_len;
 
 static int send_pdu(
     void *context, uint16_t cid, const uint8_t *sdu,
@@ -25,46 +23,6 @@ static int send_pdu(
 static int accept_psm(void *context, uint16_t psm) {
     (void)context;
     return psm == 0x0027;
-}
-
-static int receive_data(
-    void *context, uint16_t cid, const uint8_t *data,
-                        uint16_t len
-) {
-    (void)context;
-    (void)cid;
-    if (len > sizeof(received))
-        return 0;
-    memcpy(received, data, len);
-    received_len = len;
-    return 1;
-}
-
-void L2CAP_INTERFACE_CHANNEL_OPENED(
-    void *context, uint16_t psm, uint16_t local, uint16_t remote, uint16_t mtu
-) {
-    (void)context; (void)psm; (void)local; (void)remote; (void)mtu;
-}
-
-void L2CAP_INTERFACE_CHANNEL_CLOSED(
-    void *context, uint16_t psm, uint16_t local, uint16_t remote,
-    uint16_t reason
-) {
-    (void)context; (void)psm; (void)local; (void)remote; (void)reason;
-}
-
-int L2CAP_INTERFACE_CHANNEL_DATA(
-    void *context, uint16_t cid, const uint8_t *data, uint16_t len
-) {
-    return receive_data(context, cid, data, len);
-}
-
-int L2CAP_INTERFACE_CONNECTION_UPDATE(
-    void *context, uint16_t min, uint16_t max, uint16_t latency,
-    uint16_t timeout
-) {
-    (void)context; (void)min; (void)max; (void)latency; (void)timeout;
-    return 0;
 }
 
 static int write_record(const uint8_t *data, uint16_t len) {
@@ -112,8 +70,16 @@ int main(void) {
     outbound_len = 0;
 
     if (!read_record(frame, sizeof(frame), &frame_len) ||
-        !receive_frame(frame, frame_len, &cid) || received_len != 5 ||
-        memcmp(received, "hello", 5) || !write_record(received, received_len) ||
+        !receive_frame(frame, frame_len, &cid)
+    ) return 3;
+    int slot = l2cap_local_slot(&connection, cid);
+    const uint8_t *received;
+    uint16_t received_len;
+    if (slot < 0 || !l2cap_channel_rx_peek(
+            &connection, cid, &received, &received_len) ||
+        received_len != 5 || memcmp(received, "hello", 5) ||
+        !write_record(received, received_len) ||
+        !l2cap_channel_rx_consume(&connection, cid) ||
         !outbound_len || !write_record(outbound, outbound_len)
     ) return 3;
     return 0;

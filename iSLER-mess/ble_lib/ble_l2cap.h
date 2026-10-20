@@ -71,7 +71,7 @@ enum {
 };
 
 // =============================================================================
-// Callbacks and connection state
+// Connection and channel state
 // =============================================================================
 typedef int (*l2cap_sdu_fn)(void *context, uint16_t cid,
                                 const uint8_t *sdu, uint16_t len);
@@ -82,24 +82,6 @@ typedef struct {
     void *context;
 } l2cap_channel_handler;
 
-// Fixed upper-layer interface. Applications provide these functions once at
-// link time; each call receives the connection's interface_context.
-void L2CAP_INTERFACE_CHANNEL_OPENED(
-    void *context, uint16_t psm, uint16_t local_cid,
-    uint16_t remote_cid, uint16_t mtu
-);
-void L2CAP_INTERFACE_CHANNEL_CLOSED(
-    void *context, uint16_t psm, uint16_t local_cid,
-    uint16_t remote_cid, uint16_t reason
-);
-int L2CAP_INTERFACE_CHANNEL_DATA(
-    void *context, uint16_t local_cid, const uint8_t *sdu, uint16_t len
-);
-int L2CAP_INTERFACE_CONNECTION_UPDATE(
-    void *context, uint16_t interval_min, uint16_t interval_max,
-    uint16_t latency, uint16_t timeout
-);
-
 typedef struct {
     uint16_t psm;
     uint16_t local_cid, remote_cid;
@@ -109,8 +91,11 @@ typedef struct {
     uint16_t rx_credit_pending;
     uint8_t state;
     uint8_t disconnect_id;
+    uint8_t rx_ready;
+    uint8_t closed_pending;
+    uint16_t close_reason;
     uint32_t deadline_ms;
-    uint16_t tx_len, tx_offset;
+    uint16_t tx_len, tx_offset, rx_frames;
     uint16_t rx_expected, rx_used;
     uint8_t tx_data[L2CAP_CHANNEL_MTU_MAX];
     uint8_t rx_data[L2CAP_CHANNEL_MTU_MAX];
@@ -128,7 +113,6 @@ typedef struct {
 
 typedef struct {
     l2cap_ops ops;
-    void *interface_context;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
     uint16_t registered_psm[L2CAP_PSM_MAX];
@@ -141,6 +125,10 @@ typedef struct {
     uint16_t pending_mps;
     uint8_t pending_count, pending_id;
     uint8_t pending_code;
+    uint8_t remote_update_pending, remote_update_id;
+    uint16_t remote_update_min, remote_update_max;
+    uint16_t remote_update_latency, remote_update_timeout;
+    uint32_t remote_update_deadline_ms;
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
@@ -192,7 +180,6 @@ static inline int l2cap_conn_init(
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
-    conn->interface_context = ops->context;
     conn->local_mtu = mtu;
     conn->local_mps = mps;
     conn->local_credits = initial_credits;
@@ -205,12 +192,17 @@ static inline void l2cap_channel_clear(
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX) return;
     l2cap_channel *ch = &conn->channels[slot];
-    uint16_t psm = ch->psm, local = ch->local_cid, remote = ch->remote_cid;
+    uint16_t psm = ch->psm;
+    uint16_t local_cid = ch->local_cid;
+    uint16_t remote_cid = ch->remote_cid;
     memset(ch, 0, sizeof(*ch));
-
-    if (local)
-        L2CAP_INTERFACE_CHANNEL_CLOSED(conn->interface_context, psm,
-                                       local, remote, (uint16_t)reason);
+    if (local_cid) {
+        ch->psm = psm;
+        ch->local_cid = local_cid;
+        ch->remote_cid = remote_cid;
+        ch->close_reason = (uint16_t)reason;
+        ch->closed_pending = 1;
+    }
 }
 
 // Application facing
@@ -322,6 +314,18 @@ static inline int l2cap_local_slot(
     return -1;
 }
 
+static inline int l2cap_cid_reserved(
+    const l2cap_connection *conn, uint16_t cid
+) {
+    if (!conn) return 0;
+    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
+        if (conn->channels[i].local_cid == cid &&
+            (conn->channels[i].state != L2CAP_CHANNEL_CLOSED ||
+             conn->channels[i].closed_pending))
+            return 1;
+    return 0;
+}
+
 static inline int l2cap_remote_slot(
     const l2cap_connection *conn, uint16_t cid
 ) {
@@ -338,6 +342,77 @@ static inline int l2cap_remote_slot(
     return -1;
 }
 
+static inline int l2cap_credit_flush(
+    l2cap_connection *conn, l2cap_channel *ch
+);
+
+// Inspect OPENING/OPEN/CLOSING state by slot. Closed channels are reported via
+// l2cap_channel_closed_get() and their slot is released by closed_ack().
+static inline const l2cap_channel *l2cap_channel_at(
+    const l2cap_connection *conn, uint8_t slot
+) {
+    return conn && slot < L2CAP_CHANNEL_MAX ? &conn->channels[slot] : NULL;
+}
+
+// Read and acknowledge one channel-close record. A closed slot is held until
+// acknowledged, so applications can safely poll after processing link data.
+static inline int l2cap_channel_closed_get(
+    const l2cap_connection *conn, uint8_t slot, uint16_t *psm,
+    uint16_t *local_cid, uint16_t *remote_cid, uint16_t *reason
+) {
+    if (!conn || slot >= L2CAP_CHANNEL_MAX ||
+        !conn->channels[slot].closed_pending)
+        return 0;
+
+    const l2cap_channel *ch = &conn->channels[slot];
+    if (psm) *psm = ch->psm;
+    if (local_cid) *local_cid = ch->local_cid;
+    if (remote_cid) *remote_cid = ch->remote_cid;
+    if (reason) *reason = ch->close_reason;
+    return 1;
+}
+
+static inline int l2cap_channel_closed_ack(
+    l2cap_connection *conn, uint8_t slot
+) {
+    if (!conn || slot >= L2CAP_CHANNEL_MAX ||
+        !conn->channels[slot].closed_pending)
+        return 0;
+    memset(&conn->channels[slot], 0, sizeof(conn->channels[slot]));
+    return 1;
+}
+
+// Peek at one completed received SDU. Consume it before accepting another SDU
+// on this channel; consuming returns credits for its K-frames.
+static inline int l2cap_channel_rx_peek(
+    const l2cap_connection *conn, uint16_t local_cid,
+    const uint8_t **sdu, uint16_t *len
+) {
+    int slot = l2cap_local_slot(conn, local_cid);
+    if (slot < 0 || !sdu || !len || !conn->channels[slot].rx_ready)
+        return 0;
+
+    *sdu = conn->channels[slot].rx_data;
+    *len = conn->channels[slot].rx_expected;
+    return 1;
+}
+
+static inline int l2cap_channel_rx_consume(
+    l2cap_connection *conn, uint16_t local_cid
+) {
+    int slot = l2cap_local_slot(conn, local_cid);
+    if (slot < 0 || !conn->channels[slot].rx_ready)
+        return 0;
+
+    l2cap_channel *ch = &conn->channels[slot];
+    uint32_t pending = (uint32_t)ch->rx_credit_pending + ch->rx_frames;
+    ch->rx_credit_pending = pending > 65535u ? 65535u : (uint16_t)pending;
+    ch->rx_expected = ch->rx_used = ch->rx_frames = 0;
+    ch->rx_ready = 0;
+    (void)l2cap_credit_flush(conn, ch);
+    return 1;
+}
+
 static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
     if (!conn) return 0;
 
@@ -351,7 +426,7 @@ static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
 
         if (cid >= L2CAP_DYNAMIC_CID_MIN &&
             cid <= L2CAP_DYNAMIC_CID_MAX &&
-            l2cap_local_slot(conn, cid) < 0
+            !l2cap_cid_reserved(conn, cid)
         ) return cid;
     }
     return 0;
@@ -408,7 +483,8 @@ static inline int l2cap_ecfc_open_many(
         slots[i] = -1;
 
         for (uint8_t slot = 0; slot < L2CAP_CHANNEL_MAX; slot++) {
-            if (conn->channels[slot].state != L2CAP_CHANNEL_CLOSED)
+            if (conn->channels[slot].state != L2CAP_CHANNEL_CLOSED ||
+                conn->channels[slot].closed_pending)
                 continue;
             uint8_t used = 0;
 
@@ -477,7 +553,8 @@ static inline int l2cap_le_credit_open(
 
     int slot = -1;
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-        if (conn->channels[i].state == L2CAP_CHANNEL_CLOSED) {
+        if (conn->channels[i].state == L2CAP_CHANNEL_CLOSED &&
+            !conn->channels[i].closed_pending) {
             slot = i;
             break;
         }
@@ -647,6 +724,40 @@ static inline int l2cap_update_req(
     return 1;
 }
 
+// Read a peer's pending connection-parameter request. Intervals are in 1.25-ms
+// units and timeout is in 10-ms units. Reply explicitly; tick rejects requests
+// that the application leaves unanswered.
+static inline int l2cap_connection_update_get(
+    const l2cap_connection *conn, uint16_t *interval_min,
+    uint16_t *interval_max, uint16_t *latency, uint16_t *timeout
+) {
+    if (!conn || !conn->remote_update_pending)
+        return 0;
+    if (interval_min) *interval_min = conn->remote_update_min;
+    if (interval_max) *interval_max = conn->remote_update_max;
+    if (latency) *latency = conn->remote_update_latency;
+    if (timeout) *timeout = conn->remote_update_timeout;
+    return 1;
+}
+
+static inline int l2cap_connection_update_reply(
+    l2cap_connection *conn, int accept
+) {
+    if (!conn || !conn->remote_update_pending)
+        return 0;
+
+    uint8_t result[2];
+    ble_write_u16_le(result, accept ? 0 : 1);
+    if (!l2cap_send_signal(conn, L2CAP_CONN_PARAM_UPDATE_RESP,
+            conn->remote_update_id, result, sizeof(result)))
+        return 0;
+
+    conn->remote_update_pending = 0;
+    conn->remote_update_id = 0;
+    conn->remote_update_deadline_ms = 0;
+    return 1;
+}
+
 static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
     if (!conn) return;
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
@@ -654,6 +765,8 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
             l2cap_channel_clear(conn, i, reason);
     conn->pending_id = conn->pending_count = conn->pending_code = 0;
     conn->pending_deadline_ms = 0;
+    conn->remote_update_pending = conn->remote_update_id = 0;
+    conn->remote_update_deadline_ms = 0;
 }
 
 // Advance signaling/channel timers using a monotonic millisecond clock.
@@ -679,6 +792,13 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
         conn->pending_id = conn->pending_count = conn->pending_code = 0;
         conn->pending_deadline_ms = 0;
         expired++;
+    }
+
+    if (conn->remote_update_pending && conn->remote_update_deadline_ms &&
+        (int32_t)(now_ms - conn->remote_update_deadline_ms) >= 0
+    ) {
+        if (l2cap_connection_update_reply(conn, 0))
+            expired++;
     }
 
     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
@@ -872,7 +992,8 @@ static inline int l2cap_receive(
                 int slot = -1;
                 if (!result) {
                     for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++) {
-                        if (conn->channels[i].state == L2CAP_CHANNEL_CLOSED) {
+                        if (conn->channels[i].state == L2CAP_CHANNEL_CLOSED &&
+                            !conn->channels[i].closed_pending) {
                             slot = i;
                             break;
                         }
@@ -914,9 +1035,6 @@ static inline int l2cap_receive(
                     ch->rx_credits = conn->local_credits;
                     ch->tx_credits = credits;
                     ch->state = L2CAP_CHANNEL_OPEN;
-
-                    L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context, psm,
-                        local_cid, remote_cid, ch->local_mtu);
                 }
 
                 break;
@@ -956,9 +1074,6 @@ static inline int l2cap_receive(
                         ch->remote_mps = mps;
                         ch->tx_credits = credits;
                         ch->state = L2CAP_CHANNEL_OPEN;
-
-                        L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context,
-                            ch->psm, ch->local_cid, ch->remote_cid, ch->local_mtu);
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
                     conn->pending_deadline_ms = 0;
@@ -1022,7 +1137,8 @@ static inline int l2cap_receive(
                         slots[i] = -1;
                         for (uint8_t slot = 0;
                              slot < L2CAP_CHANNEL_MAX; slot++) {
-                            if (conn->channels[slot].state == L2CAP_CHANNEL_CLOSED) {
+                            if (conn->channels[slot].state == L2CAP_CHANNEL_CLOSED &&
+                                !conn->channels[slot].closed_pending) {
                                 slots[i] = slot;
                                 break;
                             }
@@ -1103,16 +1219,6 @@ static inline int l2cap_receive(
                             l2cap_channel *ch = &conn->channels[slots[i]];
                             memset(ch, 0, sizeof(*ch));
                         }
-
-                if (sent && !result)
-                    for (uint8_t i = 0; i < count; i++) {
-                        if (channel_result[i])
-                            continue;
-
-                        l2cap_channel *ch = &conn->channels[slots[i]];
-                        L2CAP_INTERFACE_CHANNEL_OPENED(conn->interface_context,
-                            psm, ch->local_cid, ch->remote_cid, ch->local_mtu);
-                    }
 
                 if (!sent) return 0;
                 break;
@@ -1264,10 +1370,6 @@ static inline int l2cap_receive(
                             ch->remote_mps = mps;
                             ch->tx_credits = credits;
                             ch->state = L2CAP_CHANNEL_OPEN;
-
-                            L2CAP_INTERFACE_CHANNEL_OPENED(
-                                conn->interface_context, ch->psm,
-                                ch->local_cid, remote, ch->local_mtu);
                         }
                     }
                     conn->pending_id = conn->pending_count = conn->pending_code = 0;
@@ -1306,16 +1408,25 @@ static inline int l2cap_receive(
                                     interval_max, latency, timeout);
                     int timeout_valid = (uint32_t)timeout * 8u >
                                     2u * (uint32_t)(latency + 1u) * interval_max;
-                    int update_accepted = timing_valid && timeout_valid &&
-                        L2CAP_INTERFACE_CONNECTION_UPDATE(
-                            conn->interface_context, interval_min, interval_max,
-                            latency, timeout);
-                    uint8_t response[2];
-
-                    ble_write_u16_le(response, update_accepted ? 0 : 1);
-                    if (!l2cap_send_signal(conn, L2CAP_CONN_PARAM_UPDATE_RESP,
-                                        identifier, response, sizeof(response))
-                    ) return 0;
+                    if (!timing_valid || !timeout_valid ||
+                        conn->remote_update_pending
+                    ) {
+                        uint8_t response[2] = {1, 0};
+                        if (!l2cap_send_signal(conn,
+                                L2CAP_CONN_PARAM_UPDATE_RESP, identifier,
+                                response, sizeof(response)))
+                            return 0;
+                    }
+                    else {
+                        conn->remote_update_pending = 1;
+                        conn->remote_update_id = identifier;
+                        conn->remote_update_min = interval_min;
+                        conn->remote_update_max = interval_max;
+                        conn->remote_update_latency = latency;
+                        conn->remote_update_timeout = timeout;
+                        conn->remote_update_deadline_ms = conn->now_ms +
+                            L2CAP_SIGNAL_TIMEOUT_MS;
+                    }
                 }
                 break;
 
@@ -1427,13 +1538,15 @@ static inline int l2cap_receive(
         l2cap_channel *ch = &conn->channels[slot];
 
         if (ch->state != L2CAP_CHANNEL_OPEN ||
-            len > ch->local_mps || !ch->rx_credits
+            len > ch->local_mps || !ch->rx_credits || ch->rx_ready
         ) {
             l2cap_channel_clear(conn, (uint8_t)slot, 1);
             return 0;
         }
 
         ch->rx_credits--;
+        if (ch->rx_frames != 65535u)
+            ch->rx_frames++;
         uint16_t offset = 0;
         if (!ch->rx_expected) {
             if (len < 3) {
@@ -1460,22 +1573,8 @@ static inline int l2cap_receive(
         memcpy(ch->rx_data + ch->rx_used, sdu + offset, chunk);
         ch->rx_used = (uint16_t)(ch->rx_used + chunk);
 
-        if (ch->rx_used == ch->rx_expected) {
-            if (!L2CAP_INTERFACE_CHANNEL_DATA(conn->interface_context,
-                                               ch->local_cid, ch->rx_data,
-                                               ch->rx_expected)
-            ) {
-                l2cap_channel_clear(conn, (uint8_t)slot, 2);
-                return 0;
-            }
-
-            ch->rx_expected = ch->rx_used = 0;
-        }
-        // Replenish each consumed K-frame after its payload has been copied or
-        // delivered to the application, keeping receive buffering bounded.
-        if (ch->rx_credit_pending != 65535u)
-            ch->rx_credit_pending++;
-        (void)l2cap_credit_flush(conn, ch);
+        if (ch->rx_used == ch->rx_expected)
+            ch->rx_ready = 1;
         return 1;
     }
 

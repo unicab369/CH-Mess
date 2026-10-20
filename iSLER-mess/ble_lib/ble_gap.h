@@ -1703,7 +1703,6 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 return -1;
             }
 
-            peer->connection.interface_context = manager->upper.context;
             peer->initialized = 1;
         }
 
@@ -1795,7 +1794,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 }
 
 // Application facing
-// Return a live connection's L2CAP instance for channel registration and use.
+// Return a live connection's L2CAP instance to register PSMs, inspect channel
+// state/read SDUs, or accept/reject a pending peer parameter request.
 static inline l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {
