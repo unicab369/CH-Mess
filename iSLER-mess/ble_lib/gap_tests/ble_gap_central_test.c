@@ -2197,8 +2197,8 @@ static void test_connect_by_identity(void) {
 
 static void test_general_connection_establishment(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    assert(!gap_conn_start_general(2));
-    assert(gap_conn_start_general(1));
+    assert(!gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, 2));
+    assert(gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, 1));
     assert(gap_central.active && gap_central.any_peer);
     assert(gap_scanner.scanning && gap_scanner.active);
 
@@ -2234,7 +2234,7 @@ static void test_selective_connection_establishment(void) {
         (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1, test_irk));
     assert(gap_accept_list_add(test_identity, 0));
     assert(gap_accept_list_add(test_identity, 0)); // Duplicate is harmless.
-    assert(gap_conn_start_selective(0));
+    assert(gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, 0));
     assert(gap_central.active && gap_central.selective &&
            !gap_central.any_peer && gap_scanner.scanning && !gap_scanner.active);
     assert(!gap_accept_list_remove(test_identity, 0)); // Frozen while scanning.
@@ -2257,7 +2257,7 @@ static void test_selective_connection_establishment(void) {
     gap_conn_end();
 
     assert(gap_accept_list_remove(test_identity, 0));
-    assert(!gap_conn_start_selective(0));
+    assert(!gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, 0));
     assert(gap_accept_list_clear());
 }
 
@@ -2265,7 +2265,7 @@ static void test_auto_connection_establishment(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     assert(gap_accept_list_clear());
     assert(gap_accept_list_add(test_identity, 0));
-    assert(gap_conn_start_auto());
+    assert(gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0));
     assert(gap_central.active && gap_central.auto_connect &&
            gap_scanner.scanning && !gap_scanner.active);
     now_ms += 12000;
@@ -2276,7 +2276,7 @@ static void test_auto_connection_establishment(void) {
     assert(!gap_central.active && !gap_central.auto_connect &&
            !gap_scanner.scanning);
 
-    assert(gap_conn_start_auto());
+    assert(gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);

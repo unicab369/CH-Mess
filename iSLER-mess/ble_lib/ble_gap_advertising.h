@@ -165,7 +165,6 @@ int gap_ad_append(
 // Application facing
 int gap_ad_flags(gap_ad_builder *builder, uint8_t flags) {
     if (flags & 0xe0) return 0;
-
     return gap_ad_append(builder, GAP_AD_FLAGS, &flags, 1);
 }
 
@@ -184,9 +183,7 @@ int gap_ad_uuid16_list(
     gap_ad_builder *builder, const uint16_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if ((!uuids && count) || count > 254 / 2)
-        return 0;
-
+    if ((!uuids && count) || count > 254 / 2) return 0;
     uint8_t type = complete ? GAP_AD_UUID16_COMPLETE : GAP_AD_UUID16_INCOMPLETE;
     size_t value_len = count * 2;
 
@@ -207,9 +204,7 @@ int gap_ad_uuid32_list(
     gap_ad_builder *builder, const uint32_t *uuids,
     size_t count, uint8_t complete
 ) {
-    if ((!uuids && count) || count > 252 / 4)
-        return 0;
-
+    if ((!uuids && count) || count > 252 / 4) return 0;
     uint8_t type = complete ? GAP_AD_UUID32_COMPLETE : GAP_AD_UUID32_INCOMPLETE;
     size_t value_len = count * 4;
 
@@ -231,7 +226,6 @@ int gap_ad_uuid128_list(
     size_t count, uint8_t complete
 ) {
     if (count > 254 / 16) return 0;
-
     uint8_t type = complete ? GAP_AD_UUID128_COMPLETE : GAP_AD_UUID128_INCOMPLETE;
     return gap_ad_append(builder, type, uuids, count * 16);
 }
@@ -268,8 +262,7 @@ int gap_ad_service_data(
     memcpy(uuid_copy, uuid, uuid_len);
     uint8_t *out = builder->data + builder->len;
 
-    if (len)
-        memmove(out + 2 + uuid_len, data, len);
+    if (len) memmove(out + 2 + uuid_len, data, len);
     memcpy(out + 2, uuid_copy, uuid_len);
     out[0] = (uint8_t)(uuid_len + len + 1);
     out[1] = type;
@@ -289,7 +282,6 @@ int gap_ad_parse_next(
     ) return -1;
 
     if (*offset == len) return 0;
-
     uint8_t field_len = data[*offset];
 
     if (!field_len) {
@@ -336,9 +328,7 @@ int gap_ead_key_set(const uint8_t session_key[16], const uint8_t iv[8]) {
 // Application facing
 // Copy the current EAD session key and IV for application key distribution.
 int gap_ead_key_get(uint8_t out[24]) {
-    if (!out || !gap_ead_key.set)
-        return 0;
-
+    if (!out || !gap_ead_key.set) return 0;
     memcpy(out, gap_ead_key.session_key, GAP_EAD_KEY_LEN);
     memcpy(out + GAP_EAD_KEY_LEN, gap_ead_key.iv, GAP_EAD_IV_LEN);
     return 1;
@@ -419,7 +409,6 @@ int gap_ead_decrypt(
     ) return 0;
 
     size_t plaintext_len = ead_len - 11;
-
     if (plaintext_len > GAP_EAD_PLAINTEXT_MAX || plaintext_len > out_capacity)
         return 0;
 
@@ -476,10 +465,8 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
         }
 
         // The length byte counts the type and value bytes that follow it.
-
         if (offset + (size_t)field_len + 1 > len)
             return 0;
-
         offset += (size_t)field_len + 1;
     }
     return 1;
@@ -501,27 +488,18 @@ static inline int gap_adv_start_payload(
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
-    if (GAP_EXT_ADVERTISING_ENABLED)
-        return 0;
-
+    if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
-
     if (gap_central.active ||
         !gap_ad_data_valid(data, data_len) ||
         !gap_ad_data_valid(scan_response, resp_len) ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
-    ) {
-        return 0;
-    }
+    ) return 0;
 
-    if (data_len)
-        memcpy(gap_adv.data, data, data_len);
+    if (data_len) memcpy(gap_adv.data, data, data_len);
     // Save the payload to send when this device receives a scan request.
-
-    if (resp_len)
-        memcpy(gap_adv.scan_response, scan_response, resp_len);
-
+    if (resp_len) memcpy(gap_adv.scan_response, scan_response, resp_len);
     gap_adv.target.type = 0;
     gap_adv.data_len = (uint8_t)data_len;
     gap_adv.scan_resp_len = (uint8_t)resp_len;
@@ -532,8 +510,7 @@ static inline int gap_adv_start_payload(
 // Application facing
 // Start legacy non-connectable, non-scannable advertising.
 int gap_adv_start(const uint8_t *data, size_t len, uint16_t interval_ms) {
-    return gap_adv_start_payload(
-        ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
+    return gap_adv_start_payload(ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
 }
 
 // Application facing
@@ -542,9 +519,7 @@ int gap_adv_start_scannable(
     const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
-    if (!scan_response || !resp_len)
-        return 0;
-
+    if (!scan_response || !resp_len) return 0;
     return gap_adv_start_payload(
         ADV_SCAN_IND, data, len, scan_response, resp_len, interval_ms);
 }
@@ -566,9 +541,7 @@ int gap_adv_start_directed(
     const uint8_t address[6], uint8_t type, uint16_t interval_ms
 ) {
 #if GAP_EXT_ADV_SUPPORT
-    if (GAP_EXT_ADVERTISING_ENABLED)
-        return 0;
-
+    if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
 
     if (gap_central.active || !address ||
@@ -607,9 +580,7 @@ void gap_adv_stop(void) {
 // Restrict Peripheral scan and connection requests to peers in the Filter
 // Accept List. This is advertising policy, separate from privacy resolution.
 int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
-    if (scan_accept > 1 || connection_accept > 1)
-        return 0;
-
+    if (scan_accept > 1 || connection_accept > 1) return 0;
     gap_adv.scan_accept = scan_accept;
     gap_adv.connection_accept = connection_accept;
     return 1;
@@ -675,6 +646,10 @@ void gap_scan_stop(void) {
     gap_scanner.generation++;
 }
 
+// General:   gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, active_scan);
+// Selective: gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, active_scan);
+// Auto:      gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0);
+// Direct is called by gap_conn_start after it stores the peer address.
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
@@ -683,12 +658,10 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
          !gap_accept_list_mask)
     ) return 0;
 
-    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ?
-                        gap_central.peer.type : 0;
+    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_central.peer.type : 0;
     const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
                                   gap_central.peer.address : NULL;
     uint32_t access_address;
-
     if (!gap_access_addr(&access_address))
         return 0;
 
@@ -704,7 +677,6 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     gap_local_addr_select(peer_slot, gap_central.request + 2, &local_type);
     gap_central.request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     gap_central.request[1] = 34;
-
     ble_write_u32_le(gap_central.request + 14, access_address);
 
     uint8_t crc_init[3];
@@ -754,32 +726,11 @@ int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
 
     gap_central.peer.type = peer_type != 0;
     memcpy(gap_central.peer.address, peer_address, 6);
-
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 
     memset(&gap_central.peer, 0, sizeof(gap_central.peer));
     return 0;
-}
-
-// Application facing
-// General Connection Establishment: scan and connect to the first acceptable
-// connectable advertiser. `active_scan` requests scan-response data as well.
-int gap_conn_start_general(uint8_t active_scan) {
-    return gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, active_scan);
-}
-
-// Application facing
-// Selective Connection Establishment scans for an advertiser in the accept list.
-int gap_conn_start_selective(uint8_t active_scan) {
-    return gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, active_scan);
-}
-
-// Application facing
-// Auto Connection Establishment scans in the background until a listed peer
-// connects or the application cancels; it does not time out after one attempt.
-int gap_conn_start_auto(void) {
-    return gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0);
 }
 
 // Application facing
@@ -796,9 +747,7 @@ void gap_conn_cancel(void) {
 // Application facing
 // Return 1 with a report, 0 when empty. Reports are copied out of a bounded FIFO.
 int gap_scan_poll(gap_scan_report *report) {
-    if (!report || !gap_scan.count)
-        return 0;
-
+    if (!report || !gap_scan.count) return 0;
     *report = gap_scan_reports[gap_scan.head];
     gap_scan.head = (gap_scan.head + 1) % GAP_SCAN_REPORT_COUNT;
     gap_scan.count--;
@@ -816,10 +765,9 @@ static inline void gap_receive_report(
     // Legacy advertising, directed advertising, scan response. Requests and
     // connection indications are link-layer control traffic, not GAP reports.
 
-    if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type)))
-        return;
-
-    if (pdu_type == ADV_DIRECT_IND && payload_len != 12)
+    if (!(GAP_SCAN_REPORT_PDU_MASK & (1u << pdu_type)) ||
+        (pdu_type == ADV_DIRECT_IND && payload_len != 12)
+    )
         return;
 
     uint8_t data_len = payload_len - 6;
@@ -832,20 +780,16 @@ static inline void gap_receive_report(
     uint8_t address_type = (frame[0] >> 6) & 1;
     int slot = gap_identity_find(frame + 2, address_type);
 
-    if (!gap_peer_allowed(slot, frame + 2, address_type))
-        return;
-
-    if (gap_privacy.scan_filter && slot < 0)
-        return;
+    if (!gap_peer_allowed(slot, frame + 2, address_type) ||
+        (gap_privacy.scan_filter && slot < 0)
+    ) return;
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {
-
             if (!gap_scan.response_accepted ||
                 gap_scan.response_peer.type != address_type ||
                 memcmp(gap_scan.response_peer.address, frame + 2, 6) != 0
             ) return;
-
         }
         else {
             uint8_t flags = 0;
