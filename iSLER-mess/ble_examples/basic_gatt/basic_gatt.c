@@ -32,8 +32,8 @@ static int gatt_start(void) {
     if (!gatt_bas_add(&gatt_server, &battery_service, 50))
         return 0;
 
-    return ble_gap_gatt_bind_slot(gatt_links, 0, &gatt_transport,
-                                  &gatt_server, NULL);
+    return ble_gap_gatt_bind(&gatt_links[0], &gatt_transport,
+                             &gatt_server, NULL);
 }
 
 int main(void) {

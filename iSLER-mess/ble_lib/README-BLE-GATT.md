@@ -573,8 +573,8 @@ static int gatt_services_init(void) {
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gatt_server_init(&servers[slot], 23);
         if (!gatt_bas_add(&servers[slot], &batteries[slot], 100) ||
-            !ble_gap_gatt_bind_slot(gatt_links, slot, &transports[slot],
-                                    &servers[slot], NULL))
+            !ble_gap_gatt_bind(&gatt_links[slot], &transports[slot],
+                               &servers[slot], NULL))
             return 0;
     }
     return 1;
