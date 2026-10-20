@@ -1230,6 +1230,51 @@ static inline int ble_gap_gatt_poll(
         )
             continue;
 
+        gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
+        ble_gatt_transport *transport = peer->transport;
+        l2cap_connection *l2cap = &link->l2cap;
+        l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
+        if (!transport || !link->l2cap_initialized || !tx_queue->data ||
+            tx_queue->capacity < 4 || !l2cap->psm_registry ||
+            (transport->connected && (!transport->shared_l2cap ||
+             transport->l2cap_link != l2cap ||
+             transport->tx_queue_link != tx_queue))
+        ) {
+            (void)gap_disconnect(0x13);
+            failed = 1;
+            continue;
+        }
+
+        transport->l2cap_link = l2cap;
+        transport->tx_queue_link = tx_queue;
+        transport->shared_l2cap = 1;
+        l2cap->ops.tx_queue = tx_queue;
+        l2cap->ops.context = transport;
+#if BLE_GATT_ENABLE_EATT
+        if (transport->eatt_enabled) {
+            l2cap->ops.authorize_psm = gatt_transport_authorize_psm;
+            uint8_t registered = 1;
+            for (uint8_t i = 0; i < transport->psm_registry.count; i++)
+                if (!l2cap_psm_register(
+                        l2cap->psm_registry,
+                        transport->psm_registry.psm[i])) {
+                    registered = 0;
+                    break;
+                }
+            if (!registered) {
+                (void)gap_disconnect(0x13);
+                failed = 1;
+                continue;
+            }
+        }
+#endif
+        if (!l2cap_fixed_register(l2cap, BLE_GATT_TRANSPORT_ATT_CID,
+                                  gatt_transport_receive_att, transport)) {
+            (void)gap_disconnect(0x13);
+            failed = 1;
+            continue;
+        }
+
         if (!peer->connected) {
             gatt_transport_set_connected(peer->transport, 1);
             peer->connected = 1;

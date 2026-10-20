@@ -561,6 +561,10 @@ state. Register services before binding because transport initialization seals
 the server database. This adapter reads GAP fragments directly, so do not also
 call `ble_gap_l2cap_poll()` for the same links.
 
+GAP owns one L2CAP connection and transmit queue per live link. The attached
+ATT transport and SMP use that same connection, so fixed and dynamic channels
+share channel state and outgoing L2CAP traffic is serialized per link.
+
 ```c
 #include "gatt_services/ble_gatt_services.h"
 

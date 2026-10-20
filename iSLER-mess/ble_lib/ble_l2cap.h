@@ -191,16 +191,18 @@ static inline int l2cap_tx_queue_pdu(
     l2cap_connection *conn, uint16_t cid,
     const uint8_t *payload, uint16_t len
 ) {
-    if (!conn || !payload || !len)
-        return 0;
+    if (!conn || !payload || !len) return 0;
 
 #ifdef L2CAP_TEST_CALLBACK_COMPAT
     if (!conn->ops.send_pdu) return 0;
     return conn->ops.send_pdu(conn->ops.context, cid, payload, len);
 #else
     l2cap_tx_queue *queue = conn->ops.tx_queue;
-    if (!queue || !queue->data || queue->capacity < 4 || queue->length ||
-        len > conn->local_mtu || len > L2CAP_SDU_MAX ||
+    if (!queue || !queue->data ||
+        queue->capacity < 4 ||
+        queue->length ||
+        len > conn->local_mtu ||
+        len > L2CAP_SDU_MAX ||
         len > queue->capacity - 4u
     ) return 0;
 
@@ -407,8 +409,7 @@ static inline int l2cap_send_signal(
     packet[0] = code;
     packet[1] = identifier;
     ble_write_u16_le(packet + 2, payload_len);
-    if (payload_len)
-        memcpy(packet + 4, payload, payload_len);
+    if (payload_len) memcpy(packet + 4, payload, payload_len);
 
     return l2cap_tx_queue_pdu(conn, L2CAP_CID_LE_SIGNALING,
                               packet, payload_len + 4);

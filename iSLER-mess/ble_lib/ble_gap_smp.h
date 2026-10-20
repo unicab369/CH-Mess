@@ -186,9 +186,9 @@ typedef struct {
     uint8_t bond_tx_waiting;
     uint8_t previous_bond_valid;
     gap_bond previous_bond;
-    l2cap_tx_queue tx_queue;
-    uint8_t tx[69];
-    l2cap_connection l2cap;
+    l2cap_tx_queue *tx_queue;
+    uint8_t *tx;
+    l2cap_connection *l2cap;
     l2cap_reassembler l2cap_rx;
     struct {
         l2cap_connection *l2cap;
@@ -551,8 +551,13 @@ static void gap_smp_finish(
     gap_wipe(&smp->local_oob, sizeof(smp->local_oob));
     gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
-    gap_wipe(smp->tx, sizeof(smp->tx));
-    smp->tx_queue.length = smp->tx_queue.offset = 0;
+    if (smp->tx_queue && smp->tx_queue->length >= 4 &&
+        smp->tx_queue->data[2] == (uint8_t)L2CAP_CID_SMP &&
+        smp->tx_queue->data[3] == 0
+    ) {
+        gap_wipe(smp->tx_queue->data, smp->tx_queue->capacity);
+        smp->tx_queue->length = smp->tx_queue->offset = 0;
+    }
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
     gap_wipe(smp->random, sizeof(smp->random));
@@ -574,6 +579,12 @@ static void gap_smp_finish(
     smp->encryption_started = 0;
     smp->l2cap_rx_pending = 0;
     smp->previous_bond_valid = 0;
+}
+
+static int smp_tx_pending(const gap_smp_context *smp) {
+    return smp->tx_queue && smp->tx_queue->length >= 4 &&
+        smp->tx_queue->data[2] == (uint8_t)L2CAP_CID_SMP &&
+        smp->tx_queue->data[3] == 0;
 }
 
 int smp_port_cmac(
@@ -836,20 +847,19 @@ static void gap_smp_confirm(
     gap_wipe(block, sizeof(block));
 }
 
-static int smp_link_init(gap_smp_context *smp) {
+static int smp_link_init(
+    gap_smp_context *smp, l2cap_connection *l2cap
+) {
     gap_wipe(smp, sizeof(*smp));
-
-    smp->tx_queue.data = smp->tx;
-    smp->tx_queue.capacity = sizeof(smp->tx);
-    l2cap_ops ops = {0};
-    ops.tx_queue = &smp->tx_queue;
-
-    if (!l2cap_conn_init(&smp->l2cap, &ops, NULL, 65, 65, 0))
+    if (!l2cap || !l2cap->ops.tx_queue)
         return 0;
 
-    smp->bearer.l2cap = &smp->l2cap;
+    smp->l2cap = l2cap;
+    smp->tx_queue = l2cap->ops.tx_queue;
+    smp->tx = l2cap->ops.tx_queue->data;
+    smp->bearer.l2cap = l2cap;
 
-    if (!l2cap_fixed_register(&smp->l2cap,
+    if (!l2cap_fixed_register(l2cap,
                     L2CAP_CID_SMP, smp_receive_sdu, smp)
     ) return 0;
 
@@ -1182,7 +1192,7 @@ int gap_pair(void) {
     if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->c_link_layer.first_event) || smp->pairing.phase ||
         smp->blocked || conn->security.phase ||
-        gap_encrypted() || smp->tx_queue.length || smp->bearer.tx_len
+        gap_encrypted() || smp->tx_queue->length || smp->bearer.tx_len
     ) return 0;
 
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
@@ -1635,7 +1645,7 @@ static void gap_smp_poll_context(
             smp->secure.numeric_reply = 1;
     }
 
-    if (!smp->tx_queue.length && smp->bearer.tx_len)
+    if (!smp->tx_queue->length && smp->bearer.tx_len)
         (void)smp_poll(smp);
 
     if (pairing->phase == SMP_PHASE_SC_USER && smp->secure.numeric_reply) {
@@ -1772,22 +1782,22 @@ static void gap_smp_poll_context(
     }
 
     if (pairing->phase == SMP_PHASE_BOND_TX) {
-        if (!smp->bond_tx_waiting && smp->tx_queue.length &&
+        if (!smp->bond_tx_waiting && smp_tx_pending(smp) &&
             !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining &&
-            gap_send_data(2, smp->tx, smp->tx_queue.length)
+            gap_send_data(2, smp->tx_queue->data, smp->tx_queue->length)
         ) {
-            smp->tx_queue.length = 0;
+            smp->tx_queue->length = 0;
             smp->bond_tx_waiting = 1;
-            gap_wipe(smp->tx, sizeof(smp->tx));
+            gap_wipe(smp->tx_queue->data, smp->tx_queue->capacity);
         }
 
         return;
     }
 
-    if (smp->tx_queue.length) {
-        if (conn->tx_l2cap_remaining && !smp->tx_queue.offset)
+    if (smp_tx_pending(smp)) {
+        if (conn->tx_l2cap_remaining && !smp->tx_queue->offset)
             return;
 
         size_t max_len = conn->data_length.tx_octets;
@@ -1797,27 +1807,27 @@ static void gap_smp_poll_context(
         if (max_len > time_len)
             max_len = time_len;
 
-        size_t remaining = smp->tx_queue.length - smp->tx_queue.offset;
+        size_t remaining = smp->tx_queue->length - smp->tx_queue->offset;
 
         if (max_len > remaining)
             max_len = remaining;
 
-        if (!max_len || !gap_send_data(smp->tx_queue.offset ? 1 : 2,
-                smp->tx + smp->tx_queue.offset, max_len)
+        if (!max_len || !gap_send_data(smp->tx_queue->offset ? 1 : 2,
+                smp->tx_queue->data + smp->tx_queue->offset, max_len)
         ) return;
 
-        smp->tx_queue.offset += (uint8_t)max_len;
-        if (smp->tx_queue.offset == smp->tx_queue.length) {
-            smp->tx_queue.length = 0;
-            smp->tx_queue.offset = 0;
-            gap_wipe(smp->tx, sizeof(smp->tx));
+        smp->tx_queue->offset += (uint8_t)max_len;
+        if (smp->tx_queue->offset == smp->tx_queue->length) {
+            smp->tx_queue->length = 0;
+            smp->tx_queue->offset = 0;
+            gap_wipe(smp->tx_queue->data, smp->tx_queue->capacity);
         }
     }
 
     if (pairing->phase == SMP_PHASE_SC_PASSKEY &&
         pairing->passkey_action != GAP_PASSKEY_INPUT &&
         (pairing->confirm_received || conn->is_central) &&
-        !smp->tx_queue.length &&
+        !smp->tx_queue->length &&
         !conn->tx_l2cap_remaining &&
         !conn->c_link_layer.tx_pending &&
         !conn->c_queue.tx_queued
@@ -1872,7 +1882,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (!smp->encryption_started && !smp->tx_queue.length &&
+        if (!smp->encryption_started && !smp->tx_queue->length &&
             !conn->tx_l2cap_remaining &&
             !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued
@@ -2061,7 +2071,7 @@ static void gap_smp_poll_context(
         return;
 
     // Keep the RX slot occupied until L2CAP finishes processing the SDU.
-    int dispatched = l2cap_receive(&smp->l2cap, completed_cid, sdu, sdu_len);
+    int dispatched = l2cap_receive(smp->l2cap, completed_cid, sdu, sdu_len);
     conn->c_queue.rx_ready = 0;
     smp->l2cap_rx_pending = 0;
 
@@ -2259,12 +2269,12 @@ static void gap_smp_poll_context(
         if (gap_pair()) {
             if (pdu[1] & 4) {
                 pairing->request[3] |= 4;
-                smp->tx[7] |= 4;
+                smp->tx_queue->data[7] |= 4;
             }
 
             if ((pdu[1] & 0x10) && gap_pair_cfg.keypress_notifications) {
                 pairing->request[3] |= 0x10;
-                smp->tx[7] |= 0x10;
+                smp->tx_queue->data[7] |= 0x10;
             }
         }
 

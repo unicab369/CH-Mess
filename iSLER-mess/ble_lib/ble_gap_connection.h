@@ -147,6 +147,11 @@ static void gap_conn_end(void) {
     conn->bonded = 0;
     conn->restore_started = 0;
 #endif
+    if (conn->l2cap_initialized) {
+        l2cap_conn_reset(&conn->l2cap, 0x0013);
+        conn->l2cap_tx_queue.length = conn->l2cap_tx_queue.offset = 0;
+        gap_wipe(conn->l2cap_tx, sizeof(conn->l2cap_tx));
+    }
     // Preserve the final status while clearing the rest of the security state.
     gap_security_context *security = &conn->security;
     uint8_t security_status = security->status == GAP_CONNECTION_PENDING ?
