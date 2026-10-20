@@ -531,8 +531,17 @@ int gap_adv_start_connectable(
     const uint8_t *data, size_t len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
+#if !GAP_PERIPHERAL_SUPPORT
+    (void)data;
+    (void)len;
+    (void)scan_response;
+    (void)resp_len;
+    (void)interval_ms;
+    return 0;
+#else
     return gap_adv_start_payload(
         ADV_IND, data, len, scan_response, resp_len, interval_ms);
+#endif
 }
 
 // Application facing
@@ -540,6 +549,12 @@ int gap_adv_start_connectable(
 int gap_adv_start_directed(
     const uint8_t address[6], uint8_t type, uint16_t interval_ms
 ) {
+#if !GAP_PERIPHERAL_SUPPORT
+    (void)address;
+    (void)type;
+    (void)interval_ms;
+    return 0;
+#else
 #if GAP_EXT_ADV_SUPPORT
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
@@ -569,6 +584,7 @@ int gap_adv_start_directed(
     gap_adv.scan_resp_len = 0;
     gap_adv_enable(ADV_DIRECT_IND, interval_ms, slot);
     return 1;
+#endif
 }
 
 // Application facing
@@ -651,6 +667,11 @@ void gap_scan_stop(void) {
 // Auto:      gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0);
 // Direct is called by gap_conn_start after it stores the peer address.
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
+#if !GAP_CENTRAL_SUPPORT
+    (void)mode;
+    (void)active_scan;
+    return 0;
+#else
     if (gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_adv.enabled || gap_central.active) ||
         GAP_EXT_ADVERTISING_ENABLED ||
@@ -714,6 +735,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     gap_central.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 :
                         GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
     return 1;
+#endif
 }
 
 // Application facing

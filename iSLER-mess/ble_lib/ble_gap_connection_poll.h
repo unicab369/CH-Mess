@@ -826,6 +826,7 @@ void gap_hw_received(void) {
             return;
         }
 
+#if GAP_PERIPHERAL_SUPPORT
         if ((pdu_type == CONNECT_IND) &&
             frame[1] == 34 && !(frame[0] & 0x20) &&
             (adv_pdu_type == ADV_IND || adv_pdu_type == ADV_DIRECT_IND) &&
@@ -841,6 +842,7 @@ void gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
+#endif
     }
 
     if (frame[1] <= 37) {

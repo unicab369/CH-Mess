@@ -20,6 +20,21 @@
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
 
+// Set either role to 0 to reject procedures that establish that local role.
+#ifndef GAP_CENTRAL_SUPPORT
+#define GAP_CENTRAL_SUPPORT 1
+#endif
+#ifndef GAP_PERIPHERAL_SUPPORT
+#define GAP_PERIPHERAL_SUPPORT 1
+#endif
+#if (GAP_CENTRAL_SUPPORT != 0 && GAP_CENTRAL_SUPPORT != 1) || \
+    (GAP_PERIPHERAL_SUPPORT != 0 && GAP_PERIPHERAL_SUPPORT != 1)
+#error "GAP_CENTRAL_SUPPORT and GAP_PERIPHERAL_SUPPORT must be 0 or 1"
+#endif
+#if !GAP_CENTRAL_SUPPORT && !GAP_PERIPHERAL_SUPPORT
+#error "Enable central support, peripheral support, or both"
+#endif
+
 // Default secondary advertising PHY support for each target family.
 #ifndef GAP_HW_ADV_PHY_MASK
     #if defined(CH582_CH583) || defined(CH32V208)

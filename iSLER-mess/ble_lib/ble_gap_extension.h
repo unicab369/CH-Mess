@@ -411,6 +411,13 @@ int gap_pawr_connect(
     uint8_t set_id, uint8_t subevent,
     uint8_t type, const uint8_t peer_address[6]
 ) {
+#if !GAP_CENTRAL_SUPPORT
+    (void)set_id;
+    (void)subevent;
+    (void)type;
+    (void)peer_address;
+    return 0;
+#else
     if (set_id >= GAP_EXT_ADV_SET_COUNT)
         return 0;
 
@@ -437,6 +444,7 @@ int gap_pawr_connect(
     memcpy(set->pawr_connect.peer_address, peer_address, 6);
     set->pawr_connect.pending = 1;
     return 1;
+#endif
 }
 
 // Application facing
@@ -1374,6 +1382,13 @@ static void gap_pawr_report_push(
 static int gap_pawr_conn_req(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
+#if !GAP_PERIPHERAL_SUPPORT
+    (void)slot;
+    (void)request;
+    (void)request_len;
+    (void)received_ticks;
+    return 0;
+#else
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
@@ -1444,6 +1459,7 @@ static int gap_pawr_conn_req(
     gap_central.active = 0;
     gap_scanner.generation++;
     return 1;
+#endif
 }
 
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
