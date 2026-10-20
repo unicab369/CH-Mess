@@ -90,11 +90,6 @@ typedef struct {
 } l2cap_tx_queue;
 typedef struct l2cap_connection l2cap_connection;
 
-static inline int l2cap_tx_queue_pdu(
-    l2cap_connection *conn, uint16_t cid,
-    const uint8_t *payload, uint16_t len
-);
-
 typedef struct {
     uint16_t psm;
     uint16_t local_cid, remote_cid;
@@ -185,6 +180,32 @@ static inline uint32_t ble_read_u32_le(const uint8_t *p) {
 static inline void ble_write_u16_le(uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)value;
     p[1] = (uint8_t)(value >> 8);
+}
+
+static inline int l2cap_tx_queue_pdu(
+    l2cap_connection *conn, uint16_t cid,
+    const uint8_t *payload, uint16_t len
+) {
+    if (!conn || !payload || !len)
+        return 0;
+
+#ifdef L2CAP_TEST_CALLBACK_COMPAT
+    if (!conn->ops.send_pdu) return 0;
+    return conn->ops.send_pdu(conn->ops.context, cid, payload, len);
+#else
+    l2cap_tx_queue *queue = conn->ops.tx_queue;
+    if (!queue || !queue->data || queue->capacity < 4 || queue->length ||
+        len > conn->local_mtu || len > L2CAP_SDU_MAX ||
+        len > queue->capacity - 4u
+    ) return 0;
+
+    ble_write_u16_le(queue->data, len);
+    ble_write_u16_le(queue->data + 2, cid);
+    memcpy(queue->data + 4, payload, len);
+    queue->length = (uint16_t)(len + 4u);
+    queue->offset = 0;
+    return 1;
+#endif
 }
 
 static inline int ble_timing_valid(
@@ -1609,32 +1630,6 @@ static inline int l2cap_receive(
             return conn->fixed[i].receive(conn->fixed[i].context, cid, sdu, len);
     }
     return 0;
-}
-
-static inline int l2cap_tx_queue_pdu(
-    l2cap_connection *conn, uint16_t cid,
-    const uint8_t *payload, uint16_t len
-) {
-    if (!conn || !payload || !len)
-        return 0;
-
-#ifdef L2CAP_TEST_CALLBACK_COMPAT
-    if (!conn->ops.send_pdu) return 0;
-    return conn->ops.send_pdu(conn->ops.context, cid, payload, len);
-#else
-    l2cap_tx_queue *queue = conn->ops.tx_queue;
-    if (!queue || !queue->data || queue->capacity < 4 || queue->length ||
-        len > conn->local_mtu || len > L2CAP_SDU_MAX ||
-        len > queue->capacity - 4u)
-        return 0;
-
-    ble_write_u16_le(queue->data, len);
-    ble_write_u16_le(queue->data + 2, cid);
-    memcpy(queue->data + 4, payload, len);
-    queue->length = (uint16_t)(len + 4u);
-    queue->offset = 0;
-    return 1;
-#endif
 }
 
 // Feed one LL data fragment. Returns 1 with a complete SDU, 0 while
