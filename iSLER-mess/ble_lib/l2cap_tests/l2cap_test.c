@@ -47,8 +47,10 @@ int main(void) {
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
     uint8_t packet[16], first[5];
-    int packet_len = l2cap_encode(packet, sizeof(packet),
-        L2CAP_CID_ATT, pdu, sizeof(pdu));
+    ble_write_u16_le(packet, sizeof(pdu));
+    ble_write_u16_le(packet + 2, L2CAP_CID_ATT);
+    memcpy(packet + 4, pdu, sizeof(pdu));
+    int packet_len = sizeof(pdu) + 4;
     assert(packet_len == 7);
     assert(ble_read_u16_le(packet) == sizeof(pdu));
     assert(ble_read_u16_le(packet + 2) == L2CAP_CID_ATT);
@@ -63,8 +65,9 @@ int main(void) {
     assert(memcmp(sdu, pdu, sizeof(pdu)) == 0);
 
     // Complete unknown-CID SDUs are still reassembled for the caller to route.
-    assert(l2cap_encode(packet, sizeof(packet), L2CAP_CID_SMP,
-        pdu, sizeof(pdu)) == 7);
+    ble_write_u16_le(packet, sizeof(pdu));
+    ble_write_u16_le(packet + 2, L2CAP_CID_SMP);
+    memcpy(packet + 4, pdu, sizeof(pdu));
     assert(l2cap_reassembler_feed(&rx, 2, packet, 7,
         &cid, &sdu, &sdu_len) == 1);
     assert(cid == L2CAP_CID_SMP && sdu_len == sizeof(pdu));

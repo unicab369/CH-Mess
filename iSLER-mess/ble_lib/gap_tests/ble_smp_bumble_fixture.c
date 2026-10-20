@@ -25,13 +25,15 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
 static uint8_t outbound[L2CAP_SDU_MAX + 4];
 static uint16_t outbound_len;
 
-static int poll_smp(ble_smp *smp) {
-    if (!smp->l2cap || !smp->tx_len || !smp->l2cap->ops.send_pdu ||
-        !smp->l2cap->ops.send_pdu(smp->l2cap->ops.context,
-            L2CAP_CID_SMP, smp->tx, smp->tx_len)
+static int poll_smp(gap_smp_context *context) {
+    typeof(context->bearer) *bearer = &context->bearer;
+    if (!bearer->l2cap || !bearer->tx_len ||
+        !bearer->l2cap->ops.send_pdu ||
+        !bearer->l2cap->ops.send_pdu(bearer->l2cap->ops.context,
+            L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
     ) return 0;
-    gap_wipe(smp->tx, sizeof(smp->tx));
-    smp->tx_len = 0;
+    gap_wipe(bearer->tx, sizeof(bearer->tx));
+    bearer->tx_len = 0;
     return 1;
 }
 
@@ -40,10 +42,12 @@ static int send_pdu(
                     uint16_t len
 ) {
     (void)context;
-    int encoded = l2cap_encode(outbound, sizeof(outbound), cid, pdu, len);
-    if (!encoded || outbound_len)
+    if (!pdu || !len || len > sizeof(outbound) - 4 || outbound_len)
         return 0;
-    outbound_len = (uint16_t)encoded;
+    ble_write_u16_le(outbound, len);
+    ble_write_u16_le(outbound + 2, cid);
+    memcpy(outbound + 4, pdu, len);
+    outbound_len = (uint16_t)(len + 4u);
     return 1;
 }
 
@@ -65,22 +69,22 @@ int main(void) {
     l2cap_ops ops = {0};
     ops.send_pdu = send_pdu;
     l2cap_connection l2cap;
-    ble_smp smp;
+    gap_smp_context smp = {0};
+    typeof(smp.bearer) *bearer = &smp.bearer;
     if (!l2cap_conn_init(&l2cap, &ops, 65, 65, 1))
         return 1;
-    memset(&smp, 0, sizeof(smp));
-    smp.l2cap = &l2cap;
+    bearer->l2cap = &l2cap;
     if (!l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
             smp_receive_sdu, &smp)
     ) return 1;
 
     const uint8_t request[] = {SMP_PAIRING_REQUEST, 3, 0, 0x09, 16, 3, 3};
-    if (!smp_pdu_valid(request, sizeof(request)) || smp.tx_len)
+    if (!smp_pdu_valid(request, sizeof(request)) || bearer->tx_len)
         return 2;
-    memcpy(smp.tx, request, sizeof(request));
-    smp.tx_len = sizeof(request);
-    smp.procedure_active = 1;
-    smp.deadline_ms = smp.now_ms + SMP_TIMEOUT_MS;
+    memcpy(bearer->tx, request, sizeof(request));
+    bearer->tx_len = sizeof(request);
+    bearer->procedure_active = 1;
+    bearer->deadline_ms = bearer->now_ms + SMP_TIMEOUT_MS;
     if (!poll_smp(&smp) || !outbound_len ||
         !write_record(outbound, outbound_len)
     ) return 2;
@@ -94,7 +98,7 @@ int main(void) {
     if (l2cap_reassembler_feed(&rx, 2, frame, frame_len,
             &cid, &sdu, &sdu_len) != 1 || cid != L2CAP_CID_SMP ||
         !l2cap_receive(&l2cap, cid, sdu, sdu_len) ||
-        !smp.rx_len || !write_record(smp.rx, smp.rx_len)
+        !bearer->rx_len || !write_record(bearer->rx, bearer->rx_len)
     ) return 4;
     return 0;
 }

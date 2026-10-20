@@ -450,20 +450,6 @@ static inline int gatt_transport_is_client_pdu(uint8_t opcode) {
     }
 }
 
-// Queue any L2CAP channel PDU through this transport's LL-fragment TX path.
-static inline int gatt_transport_send_l2cap_pdu(
-    void *context,
-    uint16_t cid, const uint8_t *payload, uint16_t len
-) {
-    ble_gatt_transport *transport = (ble_gatt_transport *)context;
-
-    if (!transport || !transport->connected || transport->tx_queue.length ||
-        !payload || !len
-    ) return 0;
-
-    return l2cap_tx_queue_pdu(&transport->l2cap, cid, payload, len);
-}
-
 #if BLE_GATT_ENABLE_EATT
 // =============================================================================
 // EATT bearer state and callbacks
@@ -1029,8 +1015,9 @@ static inline int gatt_transport_receive_att(
     if (has_response < 0) return -1;
 
     if (!dispatched_to_client && has_response > 0)
-        (void)gatt_transport_send_l2cap_pdu(
-            transport, BLE_GATT_TRANSPORT_ATT_CID, response, response_len
+        (void)l2cap_tx_queue_pdu(
+            &transport->l2cap, BLE_GATT_TRANSPORT_ATT_CID,
+            response, response_len
         );
     return 1;
 }
@@ -1175,9 +1162,9 @@ static inline int gatt_transport_send_client(
                          transport->server->local_mtu)
     ) return 0;
 
-    (void)gatt_transport_send_l2cap_pdu(
-        transport, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
-    );
+    if (!l2cap_tx_queue_pdu(
+            &transport->l2cap, BLE_GATT_TRANSPORT_ATT_CID, att, att_len
+        )) return 0;
     transport->tx_client_request = 1;
     return 1;
 }
@@ -1569,8 +1556,9 @@ static inline int gatt_transport_poll(
                                    sizeof(event), &event_len) : 0;
 
     if (event_result == 1)
-        (void)gatt_transport_send_l2cap_pdu(
-            transport, BLE_GATT_TRANSPORT_ATT_CID, event, event_len
+        (void)l2cap_tx_queue_pdu(
+            &transport->l2cap, BLE_GATT_TRANSPORT_ATT_CID,
+            event, event_len
         );
 
     if (event_result < 0)

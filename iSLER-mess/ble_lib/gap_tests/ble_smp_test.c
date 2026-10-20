@@ -61,9 +61,9 @@ int main(void) {
     ops.context = &fake;
     l2cap_connection l2cap;
     assert(l2cap_conn_init(&l2cap, &ops, 64, 64, 1));
-    ble_smp smp;
-    memset(&smp, 0, sizeof(smp));
-    smp.l2cap = &l2cap;
+    gap_smp_context smp = {0};
+    typeof(smp.bearer) *bearer = &smp.bearer;
+    bearer->l2cap = &l2cap;
     assert(l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
         smp_receive_sdu, &smp));
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16];
@@ -75,22 +75,22 @@ int main(void) {
     fake.random_fail = 0;
     assert(smp_aes128(key, input, output) && output[0] == 1);
     const uint8_t pairing_request[] = {0x01, 0x03, 0, 1, 16, 0, 0};
-    memcpy(smp.rx, pairing_request, sizeof(pairing_request));
-    smp.rx_len = sizeof(pairing_request);
-    assert(smp.rx_len == sizeof(pairing_request) &&
-           !memcmp(smp.rx, pairing_request, smp.rx_len));
-    smp.rx_len = 0;
+    memcpy(bearer->rx, pairing_request, sizeof(pairing_request));
+    bearer->rx_len = sizeof(pairing_request);
+    assert(bearer->rx_len == sizeof(pairing_request) &&
+           !memcmp(bearer->rx, pairing_request, bearer->rx_len));
+    bearer->rx_len = 0;
     assert(smp_pdu_valid(pairing_request, sizeof(pairing_request)) &&
-           !smp.tx_len);
+           !bearer->tx_len);
     assert(l2cap_receive(&l2cap, L2CAP_CID_SMP,
         pairing_request, sizeof(pairing_request)));
-    assert(smp.rx_len == sizeof(pairing_request) &&
-           !memcmp(smp.rx, pairing_request, smp.rx_len));
-    smp.rx_len = 0;
+    assert(bearer->rx_len == sizeof(pairing_request) &&
+           !memcmp(bearer->rx, pairing_request, bearer->rx_len));
+    bearer->rx_len = 0;
     uint8_t l2cap_packet[sizeof(pairing_request) + 4];
-    assert(l2cap_encode(l2cap_packet, sizeof(l2cap_packet),
-        L2CAP_CID_SMP, pairing_request, sizeof(pairing_request)) ==
-        sizeof(l2cap_packet));
+    ble_write_u16_le(l2cap_packet, sizeof(pairing_request));
+    ble_write_u16_le(l2cap_packet + 2, L2CAP_CID_SMP);
+    memcpy(l2cap_packet + 4, pairing_request, sizeof(pairing_request));
     l2cap_reassembler rx = {0};
     uint16_t cid, sdu_len;
     const uint8_t *sdu;
@@ -100,9 +100,9 @@ int main(void) {
         sizeof(l2cap_packet) - 6, &cid, &sdu, &sdu_len) == 1);
     assert(cid == L2CAP_CID_SMP &&
         l2cap_receive(&l2cap, cid, sdu, sdu_len));
-    assert(smp.rx_len == sizeof(pairing_request) &&
-           !memcmp(smp.rx, pairing_request, smp.rx_len));
-    smp.rx_len = 0;
+    assert(bearer->rx_len == sizeof(pairing_request) &&
+           !memcmp(bearer->rx, pairing_request, bearer->rx_len));
+    bearer->rx_len = 0;
     const uint8_t invalid_length[] = {0x01, 0x03};
     assert(!l2cap_receive(&l2cap, L2CAP_CID_SMP,
         invalid_length, sizeof(invalid_length)));

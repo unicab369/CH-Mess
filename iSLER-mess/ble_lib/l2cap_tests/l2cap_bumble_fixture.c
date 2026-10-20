@@ -15,9 +15,11 @@ static int send_pdu(
 ) {
     (void)context;
     if (outbound_len) return 0;
-    int encoded = l2cap_encode(outbound, sizeof(outbound), cid, sdu, len);
-    if (!encoded) return 0;
-    outbound_len = (uint16_t)encoded;
+    if (!sdu || !len || len > sizeof(outbound) - 4) return 0;
+    ble_write_u16_le(outbound, len);
+    ble_write_u16_le(outbound + 2, cid);
+    memcpy(outbound + 4, sdu, len);
+    outbound_len = (uint16_t)(len + 4u);
     return 1;
 }
 

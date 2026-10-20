@@ -90,10 +90,6 @@ typedef struct {
 } l2cap_tx_queue;
 typedef struct l2cap_connection l2cap_connection;
 
-static inline int l2cap_encode(
-    uint8_t *out, size_t capacity, uint16_t cid,
-    const uint8_t *sdu, uint16_t len
-);
 static inline int l2cap_tx_queue_pdu(
     l2cap_connection *conn, uint16_t cid,
     const uint8_t *payload, uint16_t len
@@ -1615,19 +1611,6 @@ static inline int l2cap_receive(
     return 0;
 }
 
-static inline int l2cap_encode(
-    uint8_t *out, size_t capacity,
-    uint16_t cid, const uint8_t *sdu, uint16_t sdu_len
-) {
-    if (!out || !sdu || !sdu_len || capacity < (size_t)sdu_len + 4)
-        return 0;
-
-    ble_write_u16_le(out, sdu_len);
-    ble_write_u16_le(out + 2, cid);
-    memcpy(out + 4, sdu, sdu_len);
-    return (int)sdu_len + 4;
-}
-
 static inline int l2cap_tx_queue_pdu(
     l2cap_connection *conn, uint16_t cid,
     const uint8_t *payload, uint16_t len
@@ -1645,11 +1628,10 @@ static inline int l2cap_tx_queue_pdu(
         len > queue->capacity - 4u)
         return 0;
 
-    int encoded = l2cap_encode(queue->data, queue->capacity,
-                               cid, payload, len);
-    if (!encoded) return 0;
-
-    queue->length = (uint16_t)encoded;
+    ble_write_u16_le(queue->data, len);
+    ble_write_u16_le(queue->data + 2, cid);
+    memcpy(queue->data + 4, payload, len);
+    queue->length = (uint16_t)(len + 4u);
     queue->offset = 0;
     return 1;
 #endif
