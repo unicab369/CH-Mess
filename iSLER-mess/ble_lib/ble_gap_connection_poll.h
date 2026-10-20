@@ -78,98 +78,95 @@ static void gap_conn_send_queued(void) {
         conn->tx[4] = conn->c_phy.preferred.rx;
     }
 
-    if (conn->c_subrate.queued_flags &&
-        !conn->c_features.request_pending &&
-        !conn->tx[1]
-    ) {
-        // Wait for the peer Link Layer and Host to confirm subrating support.
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
+    if (!conn->c_features.request_pending && !conn->tx[1]) {
+        if (conn->c_subrate.queued_flags) {
+            // Wait for the peer Link Layer and Host to confirm subrating support.
+            if (!conn->c_features.known) {
+                gap_send_feature_request(conn);
+            }
+            else {
+                const uint8_t required = GAP_LL_FEATURES_SUBRATING |
+                                        GAP_LL_FEATURES_SUBRATING_HOST;
+                if ((conn->c_features.peer_feature_4 & required) != required) {
+                    conn->c_subrate.queued_flags = 0;
+                    conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+                }
+                else if (conn->is_central) {
+                    if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
+                        gap_send_subrate_update(conn);
+                }
+                else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
+                    conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
+                    conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
+                    conn->c_subrate.started_ms = GET_MILLIS();
+
+                    conn->tx[0] = 0x03;
+                    conn->tx[1] = 11;
+                    conn->tx[2] = LL_SUBRATE_REQ;
+                    ble_write_u16_le(conn->tx + 3, conn->peripheral.subrate_request.factor_min);
+                    ble_write_u16_le(conn->tx + 5, conn->peripheral.subrate_request.factor_max);
+                    ble_write_u16_le(conn->tx + 7, conn->peripheral.subrate_request.latency);
+                    ble_write_u16_le(conn->tx + 9, conn->peripheral.subrate_request.continuation);
+                    ble_write_u16_le(conn->tx + 11, conn->peripheral.subrate_request.timeout_10ms);
+                }
+            }
         }
-        else {
-            const uint8_t required = GAP_LL_FEATURES_SUBRATING |
-                                    GAP_LL_FEATURES_SUBRATING_HOST;
-            if ((conn->c_features.peer_feature_4 & required) != required) {
-                conn->c_subrate.queued_flags = 0;
-                conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
+
+        if (conn->c_rate.queued_flags && !conn->c_features.ext_pending &&
+            !conn->tx[1]
+        ) {
+            if (!conn->c_features.known) {
+                gap_send_feature_request(conn);
             }
-            else if (conn->is_central) {
-                if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
-                    gap_send_subrate_update(conn);
+            else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
+                conn->c_rate.queued_flags = 0;
+                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
             }
-            else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
-                conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
-                conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
-                conn->c_subrate.started_ms = GET_MILLIS();
+            else if (!conn->c_features.page1_known) {
+                // Exchange page 1 after the legacy page advertised extended features.
+                conn->c_features.ext_pending = 1;
+                conn->params_started_ms = GET_MILLIS();
 
                 conn->tx[0] = 0x03;
                 conn->tx[1] = 11;
-                conn->tx[2] = LL_SUBRATE_REQ;
-                ble_write_u16_le(conn->tx + 3, conn->peripheral.subrate_request.factor_min);
-                ble_write_u16_le(conn->tx + 5, conn->peripheral.subrate_request.factor_max);
-                ble_write_u16_le(conn->tx + 7, conn->peripheral.subrate_request.latency);
-                ble_write_u16_le(conn->tx + 9, conn->peripheral.subrate_request.continuation);
-                ble_write_u16_le(conn->tx + 11, conn->peripheral.subrate_request.timeout_10ms);
+                conn->tx[2] = LL_FEATURE_EXT_REQ;
+                conn->tx[3] = 1;    // MaxPage.
+                conn->tx[4] = 1;    // PageNumber.
+                conn->tx[5] = 0;
+                conn->tx[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
+                memset(conn->tx + 7, 0, 6);
             }
-        }
-    }
-
-    if (conn->c_rate.queued_flags &&
-        !conn->c_features.request_pending &&
-        !conn->c_features.ext_pending &&
-        !conn->tx[1]
-    ) {
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-        }
-        else if (!(conn->c_features.peer_feature_7 & GAP_LL_FEATURES_EXTENDED)) {
-            conn->c_rate.queued_flags = 0;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-        else if (!conn->c_features.page1_known) {
-            // Exchange page 1 after the legacy page advertised extended features.
-            conn->c_features.ext_pending = 1;
-            conn->params_started_ms = GET_MILLIS();
-
-            conn->tx[0] = 0x03;
-            conn->tx[1] = 11;
-            conn->tx[2] = LL_FEATURE_EXT_REQ;
-            conn->tx[3] = 1;    // MaxPage.
-            conn->tx[4] = 1;    // PageNumber.
-            conn->tx[5] = 0;
-            conn->tx[6] = GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS;
-            memset(conn->tx + 7, 0, 6);
-        }
-        else if (!(conn->c_features.peer_page1[1] & 0x02)) {
-            conn->c_rate.queued_flags = 0;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-        else if (conn->is_central) {
-            if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)
-                gap_send_rate_ind(conn, 0, NULL);
-        }
-        else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
-            conn->tx[0] = 0x03;
-            conn->tx[1] = 27;
-            conn->tx[2] = LL_CONNECTION_RATE_REQ;
-
-            ble_write_u16_le(conn->tx + 3, conn->peripheral.rate_request.intv_min_125us);
-            ble_write_u16_le(conn->tx + 5, conn->peripheral.rate_request.intv_max_125us);
-            ble_write_u16_le(conn->tx + 7, conn->peripheral.rate_request.factor_min);
-            ble_write_u16_le(conn->tx + 9, conn->peripheral.rate_request.factor_max);
-            ble_write_u16_le(conn->tx + 11, conn->peripheral.rate_request.latency);
-            ble_write_u16_le(conn->tx + 13, conn->peripheral.rate_request.continuation);
-            ble_write_u16_le(conn->tx + 15, conn->peripheral.rate_request.timeout_10ms);
-            ble_write_u16_le(conn->tx + 17, conn->peripheral.rate_request.periodicity_125us);
-            ble_write_u16_le(conn->tx + 19, conn->c_link_layer.event_counter);
-
-            for (uint8_t i = 0; i < 4; i++) {
-                ble_write_u16_le(conn->tx + 21 + i * 2,
-                                 conn->peripheral.rate_request.offsets[i]);
+            else if (!(conn->c_features.peer_page1[1] & 0x02)) {
+                conn->c_rate.queued_flags = 0;
+                conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
             }
-            conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
-            conn->peripheral.rate_req_pending = 1;
-            conn->params_started_ms = GET_MILLIS();
+            else if (conn->is_central) {
+                if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)
+                    gap_send_rate_ind(conn, 0, NULL);
+            }
+            else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
+                conn->tx[0] = 0x03;
+                conn->tx[1] = 27;
+                conn->tx[2] = LL_CONNECTION_RATE_REQ;
+
+                ble_write_u16_le(conn->tx + 3, conn->peripheral.rate_request.intv_min_125us);
+                ble_write_u16_le(conn->tx + 5, conn->peripheral.rate_request.intv_max_125us);
+                ble_write_u16_le(conn->tx + 7, conn->peripheral.rate_request.factor_min);
+                ble_write_u16_le(conn->tx + 9, conn->peripheral.rate_request.factor_max);
+                ble_write_u16_le(conn->tx + 11, conn->peripheral.rate_request.latency);
+                ble_write_u16_le(conn->tx + 13, conn->peripheral.rate_request.continuation);
+                ble_write_u16_le(conn->tx + 15, conn->peripheral.rate_request.timeout_10ms);
+                ble_write_u16_le(conn->tx + 17, conn->peripheral.rate_request.periodicity_125us);
+                ble_write_u16_le(conn->tx + 19, conn->c_link_layer.event_counter);
+
+                for (uint8_t i = 0; i < 4; i++) {
+                    ble_write_u16_le(conn->tx + 21 + i * 2,
+                                     conn->peripheral.rate_request.offsets[i]);
+                }
+                conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_REQUEST;
+                conn->peripheral.rate_req_pending = 1;
+                conn->params_started_ms = GET_MILLIS();
+            }
         }
     }
 
@@ -231,7 +228,9 @@ void gap_hw_received(void) {
         return;
     }
 
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->c_link_state.rx_armed) {
+    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+        conn->c_link_state.rx_armed
+    ) {
         if (conn->is_central) {
             conn_anchor_ticks = conn->c_link_layer.next_ticks;
         }
@@ -243,15 +242,15 @@ void gap_hw_received(void) {
                 gap_conn_slot = previous_slot;
                 return;
             }
-
             conn_anchor_ticks = received_ticks - airtime_ticks;
         }
         event_counter = conn->c_link_layer.event_counter;
     }
-
 #endif
 
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->c_link_state.rx_armed) {
+    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+        conn->c_link_state.rx_armed
+    ) {
         uint8_t authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->c_link_layer.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
@@ -298,13 +297,13 @@ void gap_hw_received(void) {
 
         // Extended LL control PDUs (including PAST) can exceed 27 bytes after
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
-        if (frame[1] > conn->data_length.rx_octets) {
-            gap_conn_end();
-            gap_conn_slot = previous_slot;
-            return;
-        }
-
         if (frame[1]) {
+            if (frame[1] > conn->data_length.rx_octets) {
+                gap_conn_end();
+                gap_conn_slot = previous_slot;
+                return;
+            }
+
             conn->c_subrate.event_activity = 1;
             conn->c_subrate.event_received = 1;
         }
