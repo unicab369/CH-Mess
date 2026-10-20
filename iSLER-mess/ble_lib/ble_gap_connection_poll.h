@@ -998,8 +998,9 @@ static void gap_conn_poll(void) {
 
     // Bond loading is one-time; restoration and SMP protocol work are polled each event.
 #if GAP_SMP_SUPPORT > 0
-    smp_bond_restore_poll();
-    gap_smp_poll();
+    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    smp_bond_restore_poll(smp, conn);
+    gap_smp_poll_context(smp, conn);
 #endif
     uint32_t now_ms = GET_MILLIS();
     gap_security_context *gap_security = &conn->security;

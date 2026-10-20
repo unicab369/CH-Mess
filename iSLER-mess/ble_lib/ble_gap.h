@@ -1593,7 +1593,7 @@ static int gap_conn_accept(
         gap_conn_generations[gap_conn_slot] = 1;
 
 #if GAP_SMP_SUPPORT > 0
-    if (!smp_link_init()) {
+    if (!smp_link_init(&gap_smp_contexts[gap_conn_slot])) {
         return 0;
     }
 #endif
