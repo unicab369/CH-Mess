@@ -169,14 +169,6 @@ typedef struct {
 } smp_features;
 
 typedef struct {
-    uint8_t max_key_size;
-    uint8_t secure_connections;
-    uint8_t bonding;
-    uint8_t init_key_dist;
-    uint8_t resp_key_dist;
-} ble_smp_negotiated;
-
-typedef struct {
     l2cap_connection *l2cap;
     uint8_t tx[SMP_PDU_MAX];
     uint8_t rx[SMP_PDU_MAX];
@@ -262,7 +254,6 @@ static struct {
 };
 
 static gap_smp_context gap_smp_contexts[GAP_CONNECTION_COUNT];
-static uint8_t bond_repair_pending[GAP_CONNECTION_COUNT];
 
 static inline int smp_pdu_valid(
     const uint8_t *pdu, uint16_t len
@@ -1366,14 +1357,14 @@ static void gap_smp_link_close(void) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
         smp_bond_abort();
-        bond_repair_pending[gap_conn_slot] = 1;
+        conn->bond_repair_pending = 1;
     }
 
     if (conn->is_central && conn->restore_started &&
         gap_sec_contexts[gap_conn_slot].status == 0x3d
     ) {
         gap_bond_remove();
-        bond_repair_pending[gap_conn_slot] = 1;
+        conn->bond_repair_pending = 1;
     }
 
     uint8_t status = smp->pairing.phase ? 0x08 : smp->status;
@@ -1401,22 +1392,22 @@ static void smp_bond_restore_poll(void) {
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
         conn->restore_started = 0;
-        bond_repair_pending[gap_conn_slot] = 1;
+        conn->bond_repair_pending = 1;
     }
 
     if (conn->is_central && !conn->c_link_layer.first_event &&
         !gap_security->phase && !smp->pairing.phase
     ) {
-        if (bond_repair_pending[gap_conn_slot] &&
+        if (conn->bond_repair_pending &&
             !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining && gap_pair()
         ) {
-            bond_repair_pending[gap_conn_slot] = 0;
+            conn->bond_repair_pending = 0;
         }
 
         // Pairing may have started above, so recheck both procedure states.
-        if (!bond_repair_pending[gap_conn_slot] && conn->bonded &&
+        if (!conn->bond_repair_pending && conn->bonded &&
             !conn->restore_attempted &&
             !gap_security->phase && !smp->pairing.phase
         ) {
@@ -2383,23 +2374,10 @@ static void gap_smp_poll(void) {
             return;
         }
 
-        // Negotiate the validated local and peer feature fields.
-        ble_smp_negotiated negotiated = {
-            .max_key_size = key_size,
-            .secure_connections = sc,
-            .bonding = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
-                        (peer.auth_req & SMP_AUTH_BONDING_MASK),
-            .init_key_dist = local.init_key_dist & peer.init_key_dist &
-                            key_dist_supported,
-            .resp_key_dist = local.resp_key_dist & peer.resp_key_dist &
-                            key_dist_supported
-        };
-        if (sc) {
-            negotiated.init_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
-            negotiated.resp_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
-        }
-
-        pairing->secure_connections = negotiated.secure_connections;
+        // Keep the negotiated bonding flag with the key size and SC result.
+        uint8_t bonding = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
+                          (peer.auth_req & SMP_AUTH_BONDING_MASK);
+        pairing->secure_connections = sc;
         uint8_t configured_auth_req =   (gap_pair_cfg.bonding ? 1 : 0) |
                                         (gap_pair_cfg.authenticated ? 4 : 0) |
                                         (gap_pair_cfg.secure_connections ? 8 : 0) |
@@ -2408,7 +2386,7 @@ static void gap_smp_poll(void) {
                             ? local.auth_req : configured_auth_req;
         pairing->keypress_active = (auth_req & 0x10) && (peer.auth_req & 0x10);
 
-        if (pairing->secure_connections && negotiated.max_key_size != 16) {
+        if (pairing->secure_connections && key_size != 16) {
             gap_smp_fail(SMP_FAIL_ENCRYPTION_KEY_SIZE);
             return;
         }
@@ -2433,7 +2411,7 @@ static void gap_smp_poll(void) {
                                 ? smp->peer_oob.valid : pairing->request[2];
         smp->secure.oob_active = pairing->secure_connections && (local_oob_flag || pdu[2]);
 
-        uint8_t bond_requested = negotiated.bonding && (pairing->secure_connections ||
+        uint8_t bond_requested = bonding && (pairing->secure_connections ||
                                 (peer.init_key_dist & GAP_KEY_DIST_ENCRYPTION));
         pairing->bond_requested = bond_requested;
 
@@ -2493,7 +2471,7 @@ static void gap_smp_poll(void) {
         else if (model == SMP_MODEL_PASSKEY_DISPLAY)
             pairing->passkey_action = GAP_PASSKEY_DISPLAY;
 
-        pairing->key_size = negotiated.max_key_size;
+        pairing->key_size = key_size;
         memset(pairing->tk, 0, sizeof(pairing->tk));
 
         uint32_t generation = *security_gen;
