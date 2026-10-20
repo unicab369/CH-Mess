@@ -91,10 +91,13 @@ static void gap_conn_send_queued(void) {
                     conn->c_subrate.queued_flags = 0;
                     conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
                 }
+#if GAP_CENTRAL_SUPPORT
                 else if (conn->is_central) {
                     if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
                         gap_send_subrate_update(conn);
                 }
+#endif
+#if GAP_PERIPHERAL_SUPPORT
                 else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
                     conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
                     conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
@@ -109,6 +112,7 @@ static void gap_conn_send_queued(void) {
                     ble_write_u16_le(conn->tx + 9, conn->peripheral.subrate_request.continuation);
                     ble_write_u16_le(conn->tx + 11, conn->peripheral.subrate_request.timeout_10ms);
                 }
+#endif
             }
         }
 
@@ -140,10 +144,13 @@ static void gap_conn_send_queued(void) {
                 conn->c_rate.queued_flags = 0;
                 conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
             }
+#if GAP_CENTRAL_SUPPORT
             else if (conn->is_central) {
                 if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)
                     gap_send_rate_ind(conn, 0, NULL);
             }
+#endif
+#if GAP_PERIPHERAL_SUPPORT
             else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
                 conn->tx[0] = 0x03;
                 conn->tx[1] = 27;
@@ -167,9 +174,11 @@ static void gap_conn_send_queued(void) {
                 conn->peripheral.rate_req_pending = 1;
                 conn->params_started_ms = GET_MILLIS();
             }
+#endif
         }
     }
 
+#if GAP_CENTRAL_SUPPORT
     if (!conn->tx[1] && conn->is_central &&
         conn->central.channel_report_queued &&
         !conn->c_features.request_pending
@@ -195,6 +204,7 @@ static void gap_conn_send_queued(void) {
             conn->tx[5] = conn->c_channel.max_delay_200ms;
         }
     }
+#endif
 }
 
 // Handle the radio callback under its connection context, then restore the
@@ -227,6 +237,7 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+#endif
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         conn->c_link_state.rx_armed
@@ -246,7 +257,6 @@ void gap_hw_received(void) {
         }
         event_counter = conn->c_link_layer.event_counter;
     }
-#endif
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         conn->c_link_state.rx_armed
@@ -330,6 +340,7 @@ void gap_hw_received(void) {
         if (conn->c_link_layer.tx_pending &&
             (((frame[0] >> 2) & 1) != conn->c_link_layer.tx_sn)
         ) {
+#if GAP_CENTRAL_SUPPORT
             if (conn->is_central) {
                 if (conn->central.channel_report_pending &&
                     (conn->tx[0] & 3) == 3 && conn->tx[1] == 4 &&
@@ -352,9 +363,12 @@ void gap_hw_received(void) {
                     conn->c_subrate.status = 0;
                 }
             }
-            else if (conn->peripheral.rate_ack_waiting) {
+#endif
+#if GAP_PERIPHERAL_SUPPORT
+            if (!conn->is_central && conn->peripheral.rate_ack_waiting) {
                 conn->peripheral.rate_ack_waiting = 0;
             }
+#endif
 
             conn->c_link_layer.tx_sn ^= 1;
             conn->c_link_layer.tx_pending = 0;
@@ -483,6 +497,7 @@ void gap_hw_received(void) {
 #endif
             }
             if (!gap_security->phase) {
+#if GAP_PERIPHERAL_SUPPORT
                 if (!conn->is_central &&
                     conn->c_channel.enabled && conn->peripheral.status_queued
                 ) {
@@ -505,6 +520,7 @@ void gap_hw_received(void) {
                         memcpy(conn->tx + 3, gap_local_class, GAP_CHANN_CLASS_BYTES);
                     }
                 }
+#endif
 
                 if (conn->tx[1] == 0 && conn->c_queue.tx_queued &&
                     !conn->c_link_state.terminate_after_reply
@@ -720,7 +736,9 @@ void gap_hw_received(void) {
                             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_CENTRAL_SUPPORT
             conn->central.central_anchor_set = 0;
+#endif
             conn->c_link_layer.peer_sca_ppm = 500; // conservative until clock data exists
             conn->is_central = 1;
 
@@ -931,38 +949,45 @@ static inline uint8_t gap_conn_can_skip_event(
             event == (uint16_t)(conn->next_schedule.instant - 1)
         ) return 0;
 
-        if (conn->is_central) {
-            if (conn->c_link_layer.tx_pending && (conn->tx[0] & 3) == 3 &&
-                conn->tx[1] == 15 &&
-                conn->tx[2] == LL_CONNECTION_RATE_IND
-            ) return 0;
-        }
-        else {
+#if GAP_PERIPHERAL_SUPPORT
+        if (!conn->is_central) {
             uint16_t instant_delta = (uint16_t)(conn->next_schedule.instant - event);
             if (conn->peripheral.rate_ack_waiting && instant_delta < 0x8000)
                 return 0;
         }
+#endif
     }
+
+#if GAP_CENTRAL_SUPPORT
+    if (conn->is_central) {
+        if (conn->c_rate.update_pending && conn->c_link_layer.tx_pending &&
+            (conn->tx[0] & 3) == 3 && conn->tx[1] == 15 &&
+            conn->tx[2] == LL_CONNECTION_RATE_IND
+        ) return 0;
+
+        if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
+            conn->next_schedule.factor
+        ) {
+            int32_t next_offset = (int32_t)event -
+                                  (int32_t)conn->next_schedule.base_event;
+            if (next_offset % conn->next_schedule.factor == 0)
+                return 0;
+        }
+    }
+#endif
 
     if ((conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
     ) return 0;
 
+#if GAP_PERIPHERAL_SUPPORT
     if (!conn->is_central && conn->peripheral.latency_remaining)
         return 1;
+#endif
 
     int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
     if (conn->schedule.factor && current_offset % conn->schedule.factor == 0)
         return 0;
-
-    if (conn->is_central &&
-        conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
-        conn->next_schedule.factor
-    ) {
-        int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
-        if (next_offset % conn->next_schedule.factor == 0)
-            return 0;
-    }
 
     return 1;
 }
@@ -1029,7 +1054,9 @@ static void gap_conn_poll(void) {
     if ((conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
          conn->c_features.request_pending ||
          conn->c_features.ext_pending ||
+#if GAP_PERIPHERAL_SUPPORT
          (!conn->is_central && conn->peripheral.rate_req_pending) ||
+#endif
          conn->c_rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
@@ -1170,6 +1197,7 @@ static void gap_conn_poll(void) {
 
     GAP_HW_CRC_INIT(conn->c_link_layer.crc_init);
 
+#if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
         if (!conn->central.central_anchor_set) {
             conn->c_link_layer.next_ticks = now;
@@ -1205,6 +1233,7 @@ static void gap_conn_poll(void) {
         GAP_HW_LINK_TX();
         return;
     }
+#endif
 
     GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, channel,
                         NULL, 0, conn->c_phy.current.tx, conn->c_phy.current.rx);

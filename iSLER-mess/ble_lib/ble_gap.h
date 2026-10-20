@@ -667,9 +667,10 @@ typedef struct {
     } c_channel;
 
     // Central and Peripheral roles are mutually exclusive for a link, so their
-    // role-specific state shares storage. This uses the larger role state and
-    // saves 8 bytes per connection on the CH582 ABI after structure padding.
+    // role-specific state shares storage. A Central-only build omits the larger
+    // Peripheral state and saves 32 bytes per connection on the CH582 ABI.
     union {
+#if GAP_CENTRAL_SUPPORT
         struct {
             // Internal scheduler flag: set when the first event initializes
             // next_ticks, so later polls do not reset the schedule to "now".
@@ -684,7 +685,9 @@ typedef struct {
             // one 2-bit value per data channel.
             uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
         } central;
+#endif
 
+#if GAP_PERIPHERAL_SUPPORT
         struct {
             // Set after sending LL_CONNECTION_RATE_REQ; remains set until the
             // Central rejects it or the accepted rate update takes effect at its Instant.
@@ -771,6 +774,7 @@ typedef struct {
             // min_spacing_200ms before queuing another report.
             uint32_t status_last_sent_ms;
         } peripheral;
+#endif
     };
 
     // Per-link radio buffers. TX and cipher must remain radio aligned.

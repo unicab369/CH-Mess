@@ -30,6 +30,8 @@ you asked about, their allocation scope, and the relevant build configuration.
 The Central-only and Peripheral-only fields share storage, as do the requested
 connection-parameter bounds and the selected update parameters. Together these
 unions save 16 bytes per connection on this ABI; the listed sizes include them.
+With `GAP_PERIPHERAL_SUPPORT=0` (Central-only), the Peripheral member is omitted
+from each connection context, saving another 32 bytes per link on the CH582 ABI.
 
 | Structure | Purpose | Size | Allocation / build configuration |
 | --- | --- | ---: | --- |
