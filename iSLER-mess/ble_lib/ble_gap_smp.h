@@ -176,9 +176,7 @@ typedef struct {
 typedef struct {
     struct {
         uint8_t valid;
-        struct {
-            uint8_t random[16], confirm[16];
-        } data;
+        gap_oob_data data;
     } oob;
     uint8_t private_key[32], public_key[64];
 } gap_oob_local;
@@ -223,13 +221,9 @@ typedef struct {
     gap_oob_local local_oob;
     struct {
         uint8_t valid;
-        struct {
-            uint8_t random[16], confirm[16];
-        } data;
+        gap_oob_data data;
     } peer_oob;
-    struct {
-        uint8_t random[16], confirm[16];
-    } oob_peer;
+    gap_oob_data oob_peer;
     uint8_t l2cap_ready, l2cap_rx_pending;
 } gap_smp_context;
 
@@ -1067,7 +1061,7 @@ int gap_sc_oob_set_peer(const gap_oob_data *peer) {
 
     if (peer) {
         smp->peer_oob.valid = 1;
-        memcpy(&smp->peer_oob.data, peer, sizeof(*peer));
+        smp->peer_oob.data = *peer;
     }
 
     return 1;
