@@ -297,32 +297,6 @@ typedef struct {
     uint8_t type, address[6];
 } gap_address;
 
-// Privacy and identity state.
-static gap_address gap_own_address;
-static gap_address gap_identity_address;
-// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
-static uint32_t gap_accept_list_mask;
-static struct {
-    gap_address peer;
-} gap_accept_list[GAP_ACCEPT_LIST_COUNT];
-
-// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
-// Addresses use PDU byte order; IRKs use standard AES byte order.
-typedef struct {
-    uint8_t used;
-    gap_address peer;
-    uint8_t irk[16];
-    uint8_t privacy_mode, has_irk;
-    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
-} gap_identity;
-static gap_identity gap_identities[GAP_IDENTITY_COUNT];
-
-static struct {
-    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
-    uint16_t timeout_s, timeout_min_s, timeout_max_s;
-    uint32_t next_rotation_ms;
-} gap_privacy;
-
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
@@ -806,6 +780,32 @@ static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
 static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
+
+// Privacy and identity state.
+static gap_address gap_own_address;
+static gap_address gap_identity_address;
+// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
+static uint32_t gap_accept_list_mask;
+static struct {
+    gap_address peer;
+} gap_accept_list[GAP_ACCEPT_LIST_COUNT];
+
+// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
+// Addresses use PDU byte order; IRKs use standard AES byte order.
+typedef struct {
+    uint8_t used;
+    gap_address peer;
+    uint8_t irk[16];
+    uint8_t privacy_mode, has_irk;
+    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
+} gap_identity;
+static gap_identity gap_identities[GAP_IDENTITY_COUNT];
+
+static struct {
+    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
+    uint16_t timeout_s, timeout_min_s, timeout_max_s;
+    uint32_t next_rotation_ms;
+} gap_privacy;
 
 // Connection selection and application-facing handles.
 // Return the read-only context for the currently selected connection slot.
