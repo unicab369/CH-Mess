@@ -124,6 +124,12 @@ typedef struct {
     void *context;
 } l2cap_ops;
 
+// Local services supported by one L2CAP manager, shared by its connections.
+typedef struct {
+    uint16_t psm[L2CAP_PSM_MAX];
+    uint8_t count;
+} l2cap_psm_registry;
+
 static inline int l2cap_output_configured(const l2cap_ops *ops) {
     if (!ops) return 0;
 #ifdef L2CAP_TEST_CALLBACK_COMPAT
@@ -136,10 +142,9 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
 
 struct l2cap_connection {
     l2cap_ops ops;
+    l2cap_psm_registry *psm_registry;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
-    uint16_t registered_psm[L2CAP_PSM_MAX];
-    uint8_t registered_psm_count;
     uint16_t local_mtu, local_mps;
     uint16_t next_cid;
     uint16_t local_credits;
@@ -217,8 +222,10 @@ static inline int ble_timing_valid(
         timeout >= 10 && timeout <= 3200;
 }
 
+// Application facing
 static inline int l2cap_conn_init(
     l2cap_connection *conn, const l2cap_ops *ops,
+    l2cap_psm_registry *psm_registry,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
 ) {
     if (!conn || !l2cap_output_configured(ops) ||
@@ -229,6 +236,7 @@ static inline int l2cap_conn_init(
 
     memset(conn, 0, sizeof(*conn));
     conn->ops = *ops;
+    conn->psm_registry = psm_registry;
     conn->local_mtu = mtu;
     conn->local_mps = mps;
     conn->local_credits = initial_credits;
@@ -245,6 +253,7 @@ static inline void l2cap_channel_clear(
     uint16_t local_cid = ch->local_cid;
     uint16_t remote_cid = ch->remote_cid;
     memset(ch, 0, sizeof(*ch));
+
     if (local_cid) {
         ch->psm = psm;
         ch->local_cid = local_cid;
@@ -255,16 +264,18 @@ static inline void l2cap_channel_clear(
 }
 
 // Application facing
-static inline int l2cap_psm_register(l2cap_connection *conn, uint16_t psm) {
-    if (!conn || !psm || psm > 0x00ffu) return 0;
+static inline int l2cap_psm_register(
+    l2cap_psm_registry *registry, uint16_t psm
+) {
+    if (!registry || !psm || psm > 0x00ffu) return 0;
 
-    for (uint8_t i = 0; i < conn->registered_psm_count; i++)
-        if (conn->registered_psm[i] == psm)
+    for (uint8_t i = 0; i < registry->count; i++)
+        if (registry->psm[i] == psm)
             return 1;
 
-    if (conn->registered_psm_count >= L2CAP_PSM_MAX)
+    if (registry->count >= L2CAP_PSM_MAX)
         return 0;
-    conn->registered_psm[conn->registered_psm_count++] = psm;
+    registry->psm[registry->count++] = psm;
     return 1;
 }
 
@@ -289,15 +300,18 @@ static inline uint8_t l2cap_id_alloc(l2cap_connection *conn) {
     return 0;
 }
 
-static inline int l2cap_psm_unregister(l2cap_connection *conn, uint16_t psm) {
-    if (!conn || !psm) return 0;
-    for (uint8_t i = 0; i < conn->registered_psm_count; i++) {
-        if (conn->registered_psm[i] != psm)
+// Application facing
+static inline int l2cap_psm_unregister(
+    l2cap_psm_registry *registry, uint16_t psm
+) {
+    if (!registry || !psm) return 0;
+    for (uint8_t i = 0; i < registry->count; i++) {
+        if (registry->psm[i] != psm)
             continue;
 
-        for (uint8_t j = i + 1; j < conn->registered_psm_count; j++)
-            conn->registered_psm[j - 1] = conn->registered_psm[j];
-        conn->registered_psm_count--;
+        for (uint8_t j = i + 1; j < registry->count; j++)
+            registry->psm[j - 1] = registry->psm[j];
+        registry->count--;
         return 1;
     }
     return 0;
@@ -305,11 +319,11 @@ static inline int l2cap_psm_unregister(l2cap_connection *conn, uint16_t psm) {
 
 // Application facing
 static inline int l2cap_psm_is_registered(
-    const l2cap_connection *conn, uint16_t psm
+    const l2cap_psm_registry *registry, uint16_t psm
 ) {
-    if (!conn || !psm) return 0;
-    for (uint8_t i = 0; i < conn->registered_psm_count; i++)
-        if (conn->registered_psm[i] == psm)
+    if (!registry || !psm) return 0;
+    for (uint8_t i = 0; i < registry->count; i++)
+        if (registry->psm[i] == psm)
             return 1;
     return 0;
 }
@@ -317,7 +331,7 @@ static inline int l2cap_psm_is_registered(
 static inline uint16_t l2cap_psm_authorize(
     l2cap_connection *conn, uint16_t psm
 ) {
-    if (!l2cap_psm_is_registered(conn, psm))
+    if (!l2cap_psm_is_registered(conn->psm_registry, psm))
         return 2;
 
     if (conn->ops.authorize_psm) {
@@ -379,10 +393,51 @@ static inline int l2cap_remote_slot(
     return -1;
 }
 
+static inline int l2cap_send_signal(
+    l2cap_connection *conn,
+    uint8_t code, uint8_t identifier, const uint8_t *payload,
+    uint16_t payload_len
+) {
+    uint8_t packet[L2CAP_SIGNALING_MTU];
+    if (!conn || !identifier ||
+        payload_len > sizeof(packet) - 4 ||
+        (payload_len && !payload)
+    ) return 0;
+
+    packet[0] = code;
+    packet[1] = identifier;
+    ble_write_u16_le(packet + 2, payload_len);
+    if (payload_len)
+        memcpy(packet + 4, payload, payload_len);
+
+    return l2cap_tx_queue_pdu(conn, L2CAP_CID_LE_SIGNALING,
+                              packet, payload_len + 4);
+}
+
 static inline int l2cap_credit_flush(
     l2cap_connection *conn, l2cap_channel *ch
-);
+) {
+    uint8_t payload[4];
+    if (!conn || !ch || !ch->rx_credit_pending ||
+        ch->rx_credit_pending > 65535u - ch->rx_credits
+    ) return 0;
 
+    // The peer addresses its channel by the source CID it supplied at setup.
+    ble_write_u16_le(payload, ch->remote_cid);
+    ble_write_u16_le(payload + 2, ch->rx_credit_pending);
+
+    uint8_t id = l2cap_id_alloc(conn);
+    if (!id) return 0;
+    if (!l2cap_send_signal(conn, L2CAP_FLOW_CONTROL_CREDIT,
+                               id, payload, sizeof(payload))
+    ) return 0;
+
+    ch->rx_credits = (uint16_t)(ch->rx_credits + ch->rx_credit_pending);
+    ch->rx_credit_pending = 0;
+    return 1;
+}
+
+// Application facing
 // Inspect OPENING/OPEN/CLOSING state by slot. Closed channels are reported via
 // l2cap_channel_closed_get() and their slot is released by closed_ack().
 static inline const l2cap_channel *l2cap_channel_at(
@@ -391,6 +446,7 @@ static inline const l2cap_channel *l2cap_channel_at(
     return conn && slot < L2CAP_CHANNEL_MAX ? &conn->channels[slot] : NULL;
 }
 
+// Application facing
 // Read and acknowledge one channel-close record. A closed slot is held until
 // acknowledged, so applications can safely poll after processing link data.
 static inline int l2cap_channel_closed_get(
@@ -409,16 +465,19 @@ static inline int l2cap_channel_closed_get(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_channel_closed_ack(
     l2cap_connection *conn, uint8_t slot
 ) {
     if (!conn || slot >= L2CAP_CHANNEL_MAX ||
-        !conn->channels[slot].closed_pending)
-        return 0;
+        !conn->channels[slot].closed_pending
+    ) return 0;
+
     memset(&conn->channels[slot], 0, sizeof(conn->channels[slot]));
     return 1;
 }
 
+// Application facing
 // Peek at one completed received SDU. Consume it before accepting another SDU
 // on this channel; consuming returns credits for its K-frames.
 static inline int l2cap_channel_rx_peek(
@@ -434,6 +493,7 @@ static inline int l2cap_channel_rx_peek(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_channel_rx_consume(
     l2cap_connection *conn, uint16_t local_cid
 ) {
@@ -477,27 +537,6 @@ static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
         if (!reserved) return cid;
     }
     return 0;
-}
-
-static inline int l2cap_send_signal(
-    l2cap_connection *conn,
-    uint8_t code, uint8_t identifier, const uint8_t *payload,
-    uint16_t payload_len
-) {
-    uint8_t packet[L2CAP_SIGNALING_MTU];
-    if (!conn || !identifier ||
-        payload_len > sizeof(packet) - 4 ||
-        (payload_len && !payload)
-    ) return 0;
-
-    packet[0] = code;
-    packet[1] = identifier;
-    ble_write_u16_le(packet + 2, payload_len);
-    if (payload_len)
-        memcpy(packet + 4, payload, payload_len);
-
-    return l2cap_tx_queue_pdu(conn, L2CAP_CID_LE_SIGNALING,
-                              packet, payload_len + 4);
 }
 
 // Start an ECFC request for one or more channels, up to the LE signaling
@@ -580,6 +619,7 @@ static inline int l2cap_ecfc_open_many(
     return 1;
 }
 
+// Application facing
 // Start one Enhanced Credit Based Flow Control channel request. The platform
 // carries emitted signaling PDUs on fixed signaling CID 5.
 static inline int l2cap_ecfc_open(
@@ -591,6 +631,7 @@ static inline int l2cap_ecfc_open(
     return 1;
 }
 
+// Application facing
 // Legacy LE Credit Based Connection Request (one channel per request).
 static inline int l2cap_le_credit_open(
     l2cap_connection *conn, uint16_t psm, uint16_t *local_cid_out
@@ -645,6 +686,7 @@ static inline int l2cap_le_credit_open(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_ecfc_send(
     l2cap_connection *conn,
     uint16_t local_cid, const uint8_t *sdu, uint16_t len
@@ -663,6 +705,7 @@ static inline int l2cap_ecfc_send(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_channel_close(
     l2cap_connection *conn, uint16_t local_cid
 ) {
@@ -687,6 +730,7 @@ static inline int l2cap_channel_close(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_ecfc_reconfig(
     l2cap_connection *conn, const uint16_t *local_cids,
     uint8_t count, uint16_t mtu, uint16_t mps
@@ -745,6 +789,7 @@ static inline int l2cap_ecfc_reconfig(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_update_req(
     l2cap_connection *conn, uint16_t interval_min, uint16_t interval_max,
     uint16_t latency, uint16_t timeout
@@ -772,6 +817,7 @@ static inline int l2cap_update_req(
     return 1;
 }
 
+// Application facing
 // Read a peer's pending connection-parameter request. Intervals are in 1.25-ms
 // units and timeout is in 10-ms units. Reply explicitly; tick rejects requests
 // that the application leaves unanswered.
@@ -788,6 +834,7 @@ static inline int l2cap_connection_update_get(
     return 1;
 }
 
+// Application facing
 static inline int l2cap_connection_update_reply(
     l2cap_connection *conn, int accept
 ) {
@@ -860,27 +907,6 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
         }
     }
     return expired;
-}
-
-static inline int l2cap_credit_flush(l2cap_connection *conn, l2cap_channel *ch) {
-    uint8_t payload[4];
-    if (!conn || !ch || !ch->rx_credit_pending ||
-        ch->rx_credit_pending > 65535u - ch->rx_credits
-    ) return 0;
-
-    // The peer addresses its channel by the source CID it supplied at setup.
-    ble_write_u16_le(payload, ch->remote_cid);
-    ble_write_u16_le(payload + 2, ch->rx_credit_pending);
-
-    uint8_t id = l2cap_id_alloc(conn);
-    if (!id) return 0;
-    if (!l2cap_send_signal(conn, L2CAP_FLOW_CONTROL_CREDIT,
-                               id, payload, sizeof(payload))
-    ) return 0;
-
-    ch->rx_credits = (uint16_t)(ch->rx_credits + ch->rx_credit_pending);
-    ch->rx_credit_pending = 0;
-    return 1;
 }
 
 static inline int l2cap_ecfc_pump(l2cap_connection *conn) {

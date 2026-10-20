@@ -56,11 +56,12 @@ static int receive_frame(
 }
 
 int main(void) {
+    l2cap_psm_registry psm_registry = {0};
     l2cap_ops ops = {0};
     ops.send_pdu = send_pdu;
     ops.accept_psm = accept_psm;
-    if (!l2cap_conn_init(&connection, &ops, 100, 40, 2) ||
-        !l2cap_psm_register(&connection, 0x0027)
+    if (!l2cap_conn_init(&connection, &ops, &psm_registry, 100, 40, 2) ||
+        !l2cap_psm_register(&psm_registry, 0x0027)
     ) return 1;
 
     uint8_t frame[L2CAP_SDU_MAX + 4];

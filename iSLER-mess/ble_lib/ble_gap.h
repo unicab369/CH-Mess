@@ -469,6 +469,13 @@ typedef struct {
     // Bytes remaining in the L2CAP PDU after the fragment staged in c_tx.
     uint16_t tx_l2cap_remaining;
 
+    // One L2CAP connection and bearer buffer set shared by this GAP link.
+    l2cap_connection l2cap;
+    l2cap_reassembler l2cap_rx;
+    l2cap_tx_queue l2cap_tx_queue;
+    uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
+    uint8_t l2cap_initialized;
+
     // Connection parameters and timing state.
     // Replacement for c_link_layer.channel_map, applied when map_instant arrives.
     uint8_t next_channel_map[5];
@@ -1641,6 +1648,7 @@ typedef struct {
 
 typedef struct {
     ble_gap_l2cap_peer peers[GAP_CONNECTION_COUNT];
+    l2cap_psm_registry psm_registry;
     l2cap_ops upper;
     uint16_t mtu, mps, initial_credits;
 } ble_gap_l2cap;
@@ -1707,7 +1715,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             ops.context = peer;
 
             if (!l2cap_conn_init(&peer->connection, &ops,
-                    manager->mtu, manager->mps, manager->initial_credits)) {
+                    &manager->psm_registry, manager->mtu,
+                    manager->mps, manager->initial_credits)) {
                 gap_conn_slot = previous_slot;
                 return -1;
             }
@@ -1853,8 +1862,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 }
 
 // Application facing
-// Return a live connection's L2CAP instance to register PSMs, inspect channel
-// state/read SDUs, or accept/reject a pending peer parameter request.
+// Return a live connection's L2CAP instance to inspect channels/read SDUs or
+// accept/reject a pending peer parameter request.
 static inline l2cap_connection *ble_gap_l2cap_for(
     ble_gap_l2cap *manager, gap_conn_handle handle
 ) {

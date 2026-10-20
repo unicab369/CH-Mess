@@ -173,7 +173,7 @@ int main(void) {
                                        &lower));
     gatt_transport_set_eatt_client_callbacks(&transport, NULL,
         eatt_client_result_with_cid, NULL, NULL, &lower);
-    assert(l2cap_psm_is_registered(&transport.l2cap,
+    assert(l2cap_psm_is_registered(&transport.psm_registry,
                                       BLE_GATT_EATT_PSM));
     transport.connected = 1;
     assert(transport.l2cap.ops.authorize_psm(

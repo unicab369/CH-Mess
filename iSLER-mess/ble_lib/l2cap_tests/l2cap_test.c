@@ -44,6 +44,7 @@ static uint16_t fake_authorize_psm(void *ctx, uint16_t psm) {
     (void)psm; return ((fake_l2cap *)ctx)->authorization_result;
 }
 int main(void) {
+    l2cap_psm_registry psm_registry = {0};
     l2cap_reassembler rx = {0};
     uint8_t pdu[] = {0x0a, 0x01, 0x00};
     uint8_t packet[16], first[5];
@@ -88,7 +89,7 @@ int main(void) {
     ops.authorize_psm = fake_authorize_psm;
     ops.context = &fake;
     l2cap_connection conn;
-    assert(l2cap_conn_init(&conn, &ops, 120, 80, 4));
+    assert(l2cap_conn_init(&conn, &ops, &psm_registry, 120, 80, 4));
     assert(l2cap_fixed_register(
         &conn, L2CAP_CID_ATT, route_att, NULL));
     assert(l2cap_receive(&conn, L2CAP_CID_ATT,
@@ -96,9 +97,9 @@ int main(void) {
     assert(l2cap_receive(&conn, L2CAP_CID_SMP,
         pdu, sizeof(pdu)) == 0);
     assert(routed == 1);
-    assert(l2cap_psm_register(&conn, 0x0027));
-    assert(l2cap_psm_register(&conn, 0x0028));
-    assert(!l2cap_psm_register(&conn, 0x0100));
+    assert(l2cap_psm_register(&psm_registry, 0x0027));
+    assert(l2cap_psm_register(&psm_registry, 0x0028));
+    assert(!l2cap_psm_register(&psm_registry, 0x0100));
     uint16_t local_cid;
     assert(l2cap_ecfc_open(&conn, 0x0027, &local_cid));
     assert(fake.cid == L2CAP_CID_LE_SIGNALING && fake.pdu[0] ==
@@ -218,14 +219,13 @@ int main(void) {
     fake_l2cap multi_fake = {0};
     ops.context = &multi_fake;
     l2cap_connection multi;
-    assert(l2cap_conn_init(&multi, &ops, 100, 64, 2));
-    assert(l2cap_psm_register(&multi, 0x0027));
+    assert(l2cap_conn_init(&multi, &ops, &psm_registry, 100, 64, 2));
     fake_l2cap partial_fake = {0};
     l2cap_ops partial_ops = ops;
     partial_ops.context = &partial_fake;
     l2cap_connection partial_server;
-    assert(l2cap_conn_init(&partial_server, &partial_ops, 100, 64, 2));
-    assert(l2cap_psm_register(&partial_server, 0x0027));
+    assert(l2cap_conn_init(&partial_server, &partial_ops, &psm_registry,
+                           100, 64, 2));
     uint8_t incoming_partial[] = {
         L2CAP_ECFC_CONNECTION_REQUEST, 20, 12, 0,
         0x27, 0, 80, 0, 64, 0, 2, 0, 0x30, 0, 0x4a, 0
@@ -294,8 +294,7 @@ int main(void) {
     fake_l2cap legacy_fake = {0};
     ops.context = &legacy_fake;
     l2cap_connection legacy;
-    assert(l2cap_conn_init(&legacy, &ops, 100, 64, 4));
-    assert(l2cap_psm_register(&legacy, 0x0027));
+    assert(l2cap_conn_init(&legacy, &ops, &psm_registry, 100, 64, 4));
     uint16_t legacy_cid;
     assert(l2cap_le_credit_open(&legacy, 0x0027, &legacy_cid));
     uint8_t legacy_response[] = {L2CAP_LE_CREDIT_CONN_RESP,
@@ -314,7 +313,7 @@ int main(void) {
     fake_l2cap zero_fake = {0};
     ops.context = &zero_fake;
     l2cap_connection zero_credit;
-    assert(l2cap_conn_init(&zero_credit, &ops, 100, 40, 0));
+    assert(l2cap_conn_init(&zero_credit, &ops, &psm_registry, 100, 40, 0));
     assert(l2cap_le_credit_open(&zero_credit, 0x0027, &local_cid));
     uint8_t colliding_open[] = {L2CAP_LE_CREDIT_CONN_REQ,
         zero_fake.pdu[1], 10, 0, 0x27, 0, 0x48, 0, 80, 0, 40, 0, 0, 0};
@@ -339,7 +338,7 @@ int main(void) {
     fake_l2cap reject_fake = {0};
     ops.context = &reject_fake;
     l2cap_connection reject_conn;
-    assert(l2cap_conn_init(&reject_conn, &ops, 100, 40, 1));
+    assert(l2cap_conn_init(&reject_conn, &ops, &psm_registry, 100, 40, 1));
     uint8_t unknown_signal[] = {0x55, 12, 0, 0};
     assert(l2cap_signaling_receive(&reject_conn, unknown_signal,
                                        sizeof(unknown_signal)));

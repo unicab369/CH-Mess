@@ -71,7 +71,7 @@ int main(void) {
     l2cap_connection l2cap;
     gap_smp_context smp = {0};
     typeof(smp.bearer) *bearer = &smp.bearer;
-    if (!l2cap_conn_init(&l2cap, &ops, 65, 65, 1))
+    if (!l2cap_conn_init(&l2cap, &ops, NULL, 65, 65, 1))
         return 1;
     bearer->l2cap = &l2cap;
     if (!l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,

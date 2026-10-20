@@ -844,7 +844,7 @@ static int smp_link_init(gap_smp_context *smp) {
     l2cap_ops ops = {0};
     ops.tx_queue = &smp->tx_queue;
 
-    if (!l2cap_conn_init(&smp->l2cap, &ops, 65, 65, 0))
+    if (!l2cap_conn_init(&smp->l2cap, &ops, NULL, 65, 65, 0))
         return 0;
 
     smp->bearer.l2cap = &smp->l2cap;

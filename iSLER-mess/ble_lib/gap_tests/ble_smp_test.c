@@ -60,7 +60,7 @@ int main(void) {
     ops.send_pdu = fake_send;
     ops.context = &fake;
     l2cap_connection l2cap;
-    assert(l2cap_conn_init(&l2cap, &ops, 64, 64, 1));
+    assert(l2cap_conn_init(&l2cap, &ops, NULL, 64, 64, 1));
     gap_smp_context smp = {0};
     typeof(smp.bearer) *bearer = &smp.bearer;
     bearer->l2cap = &l2cap;

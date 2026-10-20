@@ -133,6 +133,7 @@ typedef struct {
 struct ble_gatt_transport {
     ble_gatt_server *server;
     ble_gatt_client *client;
+    l2cap_psm_registry psm_registry;
     l2cap_connection l2cap;
     uint8_t connected, encrypted, authenticated, key_size;
     uint8_t bearer_failed, tx_client_request;
@@ -934,7 +935,7 @@ static inline int gatt_transport_eatt_init(
     transport->eatt_receive_att = receive_att;
     transport->eatt_context = context;
 
-    if (!l2cap_psm_register(&transport->l2cap, BLE_GATT_EATT_PSM)) {
+    if (!l2cap_psm_register(&transport->psm_registry, BLE_GATT_EATT_PSM)) {
         memset(&transport->eatt, 0, sizeof(transport->eatt));
         transport->eatt_receive_att = NULL;
         transport->eatt_context = NULL;
@@ -1046,6 +1047,7 @@ static inline int gatt_transport_init(
 
     if (!l2cap_conn_init(
             &transport->l2cap, &l2cap_ops,
+            &transport->psm_registry,
             BLE_GATT_TRANSPORT_MTU_MAX, mps, L2CAP_INITIAL_CREDITS
         ) ||
         !l2cap_fixed_register(
