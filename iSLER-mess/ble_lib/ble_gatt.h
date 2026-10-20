@@ -1164,15 +1164,6 @@ typedef struct {
 } ble_gap_gatt_peer;
 
 // Application facing
-// Initialize one peer-state array indexed by GAP connection slot.
-static inline void ble_gap_gatt_init(
-    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT]
-) {
-    if (peers)
-        memset(peers, 0, sizeof(ble_gap_gatt_peer) * GAP_CONNECTION_COUNT);
-}
-
-// Application facing
 // Bind a transport in the peer-state array to one GAP connection slot.
 // Keep the transport, server, client, and service state alive while bound.
 static inline int ble_gap_gatt_bind_slot(
@@ -1215,9 +1206,14 @@ static inline int ble_gap_gatt_poll(
     int failed = 0;
     gap_conn_handle handle;
 
-    for (uint8_t index = 0; gap_conn_handle_at(index, &handle); index++) {
-        ble_gap_gatt_peer *peer = &peers[handle.slot];
-        seen[handle.slot] = 1;
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+            continue;
+
+        handle.slot = slot;
+        handle.generation = gap_conn_generations[slot];
+        ble_gap_gatt_peer *peer = &peers[slot];
+        seen[slot] = 1;
 
         if (!peer->bound) continue;
 

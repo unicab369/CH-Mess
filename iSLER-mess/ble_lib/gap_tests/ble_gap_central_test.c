@@ -2685,15 +2685,10 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_slot == 1 && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
            !conn->is_central && conn->c_link_layer.tx_sn == 0);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_conn_handle second_handle, enumerated_handle;
+    gap_conn_handle second_handle, current_handle;
     assert(gap_conn_current(&second_handle));
     assert(second_handle.slot != first_handle.slot);
     assert(gap_conn_count() == 2);
-    assert(gap_conn_handle_at(0, &enumerated_handle));
-    assert(enumerated_handle.slot == first_handle.slot);
-    assert(gap_conn_handle_at(1, &enumerated_handle));
-    assert(enumerated_handle.slot == second_handle.slot);
-    assert(!gap_conn_handle_at(2, &enumerated_handle));
     // A shared-radio RX callback must update the link that armed the radio,
     // even when application code most recently selected the other handle.
     gap_conn_select_slot(first_handle.slot);
@@ -2844,9 +2839,9 @@ static void test_connection_context_slots(void) {
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     assert(gap_conn_count() == 2);
     assert(!gap_conn_select(second_handle));
-    assert(gap_conn_current(&enumerated_handle));
-    assert(enumerated_handle.slot == second_handle.slot &&
-           enumerated_handle.generation != second_handle.generation);
+    assert(gap_conn_current(&current_handle));
+    assert(current_handle.slot == second_handle.slot &&
+           current_handle.generation != second_handle.generation);
     gap_conn_end();
     gap_conn_select_slot(0);
     conn = &gap_conn_ctx[gap_conn_slot];

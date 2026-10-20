@@ -819,23 +819,6 @@ static inline uint8_t gap_conn_count(void) {
     return count;
 }
 
-// Return the handle for the active connection at this zero-based list index.
-static inline int gap_conn_handle_at(uint8_t index, gap_conn_handle *handle) {
-    if (!handle) return 0;
-
-    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
-            continue;
-
-        if (index--) continue;
-
-        handle->slot = slot;
-        handle->generation = gap_conn_generations[slot];
-        return 1;
-    }
-    return 0;
-}
-
 // Select a live link for the existing connection-specific GAP operations.
 static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
@@ -1662,9 +1645,14 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     int work = 0;
     gap_conn_handle handle;
 
-    for (uint8_t index = 0; gap_conn_handle_at(index, &handle); index++) {
-        ble_gap_l2cap_peer *peer = &manager->peers[handle.slot];
-        seen[handle.slot] = 1;
+    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+            continue;
+
+        handle.slot = slot;
+        handle.generation = gap_conn_generations[slot];
+        ble_gap_l2cap_peer *peer = &manager->peers[slot];
+        seen[slot] = 1;
 
         if (peer->initialized &&
             peer->handle.generation != handle.generation) {

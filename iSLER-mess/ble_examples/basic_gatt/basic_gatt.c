@@ -24,7 +24,7 @@ uint32_t GET_MILLIS(void) {
 static ble_gatt_server gatt_server;
 static ble_gatt_transport gatt_transport;
 static ble_gatt_bas_service battery_service;
-static ble_gap_gatt_peer gatt_links[GAP_CONNECTION_COUNT];
+static ble_gap_gatt_peer gatt_links[GAP_CONNECTION_COUNT] = {0};
 
 static int gatt_start(void) {
     gatt_server_init(&gatt_server, 64);
@@ -32,7 +32,6 @@ static int gatt_start(void) {
     if (!gatt_bas_add(&gatt_server, &battery_service, 50))
         return 0;
 
-    ble_gap_gatt_init(gatt_links);
     return ble_gap_gatt_bind_slot(gatt_links, 0, &gatt_transport,
                                   &gatt_server, NULL);
 }
