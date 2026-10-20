@@ -469,13 +469,6 @@ typedef struct {
     // Bytes remaining in the L2CAP PDU after the fragment staged in c_tx.
     uint16_t tx_l2cap_remaining;
 
-    // One L2CAP connection and bearer buffer set shared by this GAP link.
-    l2cap_psm_registry l2cap_psm_registry;
-    l2cap_connection l2cap;
-    l2cap_tx_queue l2cap_tx_queue;
-    uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
-    uint8_t l2cap_initialized;
-
     // Connection parameters and timing state.
     // Replacement for c_link_layer.channel_map, applied when map_instant arrives.
     uint8_t next_channel_map[5];
@@ -788,6 +781,13 @@ typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
     GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
+
+    // One L2CAP connection and bearer buffer set shared by this GAP link.
+    l2cap_psm_registry l2cap_psm_registry;
+    l2cap_connection l2cap;
+    l2cap_tx_queue l2cap_tx_queue;
+    uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
+    uint8_t l2cap_initialized;
 } gap_conn_context;
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];

@@ -6,7 +6,7 @@
 #include <string.h>
 
 #ifndef L2CAP_SDU_MAX
-#define L2CAP_SDU_MAX 517
+#define L2CAP_SDU_MAX 32
 #endif
 
 #define L2CAP_CID_ATT 0x0004u
@@ -88,7 +88,6 @@ typedef struct {
     uint16_t capacity; // Storage size, including the four-byte L2CAP header.
     uint16_t length, offset;
 } l2cap_tx_queue;
-typedef struct l2cap_connection l2cap_connection;
 
 typedef struct {
     uint16_t psm;
@@ -140,7 +139,7 @@ static inline int l2cap_output_configured(const l2cap_ops *ops) {
 #endif
 }
 
-struct l2cap_connection {
+typedef struct l2cap_connection {
     l2cap_ops ops;
     l2cap_psm_registry *psm_registry;
     l2cap_channel_handler fixed[2];
@@ -160,7 +159,7 @@ struct l2cap_connection {
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
-};
+} l2cap_connection;
 
 typedef struct {
     uint16_t expected, used;
@@ -201,8 +200,8 @@ static inline int l2cap_tx_queue_pdu(
     if (!queue || !queue->data ||
         queue->capacity < 4 ||
         queue->length ||
-        len > conn->local_mtu ||
         len > L2CAP_SDU_MAX ||
+        len > conn->local_mtu ||
         len > queue->capacity - 4u
     ) return 0;
 
@@ -220,8 +219,8 @@ static inline int ble_timing_valid(
     uint16_t latency, uint16_t timeout
 ) {
     return interval_min >= 6 && interval_min <= interval_max &&
-        interval_max <= 3200 && latency <= 499 &&
-        timeout >= 10 && timeout <= 3200;
+            interval_max <= 3200 && latency <= 499 &&
+            timeout >= 10 && timeout <= 3200;
 }
 
 // Application facing
@@ -1608,9 +1607,9 @@ static inline int l2cap_receive(
         }
 
         ch->rx_credits--;
-        if (ch->rx_frames != 65535u)
-            ch->rx_frames++;
+        if (ch->rx_frames != 65535u) ch->rx_frames++;
         uint16_t offset = 0;
+
         if (!ch->rx_expected) {
             if (len < 3) {
                 l2cap_channel_clear(conn, (uint8_t)slot, 1);
@@ -1665,10 +1664,9 @@ static inline int l2cap_reassembler_feed(
         if (len < 4) return -1;
 
         uint16_t payload_len = ble_read_u16_le(fragment);
-        uint16_t channel_id = ble_read_u16_le(fragment + 2);
         if (!payload_len) return -1;
 
-        rx->cid = channel_id;
+        rx->cid = ble_read_u16_le(fragment + 2);
         if (payload_len > L2CAP_SDU_MAX) {
             if (len > (uint32_t)payload_len + 4u)
                 return -1;
@@ -1691,7 +1689,8 @@ static inline int l2cap_reassembler_feed(
 
     uint16_t remaining = (uint16_t)(rx->expected - rx->used);
     if (len > remaining) {
-        rx->expected = rx->used = 0;
+        rx->expected = 0;
+        rx->used = 0;
         return -1;
     }
 
