@@ -68,7 +68,7 @@ static inline int gatt_transport_test_poll(
 
     if (!connected) return status;
 
-    if (transport->tx_len) {
+    if (transport->tx_queue.length) {
         uint8_t llid;
         const uint8_t *fragment;
         uint16_t len;

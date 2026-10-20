@@ -137,7 +137,7 @@ struct ble_gatt_transport {
     uint8_t connected, encrypted, authenticated, key_size;
     uint8_t bearer_failed, tx_client_request;
     l2cap_reassembler l2cap_rx;
-    uint16_t tx_len, tx_offset;
+    l2cap_tx_queue tx_queue;
     uint8_t tx[4 + BLE_GATT_TRANSPORT_MTU_MAX];
 #if BLE_GATT_ENABLE_EATT
     ble_gatt_eatt eatt;
@@ -457,18 +457,11 @@ static inline int gatt_transport_send_l2cap_pdu(
 ) {
     ble_gatt_transport *transport = (ble_gatt_transport *)context;
 
-    if (!transport || !transport->connected || transport->tx_len ||
+    if (!transport || !transport->connected || transport->tx_queue.length ||
         !payload || !len
     ) return 0;
 
-    int encoded = l2cap_encode(transport->tx, sizeof(transport->tx),
-                                    cid, payload, len);
-
-    if (!encoded) return 0;
-
-    transport->tx_len = (uint16_t)encoded;
-    transport->tx_offset = 0;
-    return 1;
+    return l2cap_tx_queue_pdu(&transport->l2cap, cid, payload, len);
 }
 
 #if BLE_GATT_ENABLE_EATT
@@ -1052,12 +1045,14 @@ static inline int gatt_transport_init(
 
     memset(transport, 0, sizeof(*transport));
     transport->server = server;
+    transport->tx_queue.data = transport->tx;
+    transport->tx_queue.capacity = sizeof(transport->tx);
 
     if (server && !gatt_seal_database(server))
         return 0;
 
     l2cap_ops l2cap_ops = {0};
-    l2cap_ops.send_pdu = gatt_transport_send_l2cap_pdu;
+    l2cap_ops.tx_queue = &transport->tx_queue;
     l2cap_ops.context = transport;
     uint16_t mps = L2CAP_CHANNEL_MPS_MAX < BLE_GATT_TRANSPORT_MTU_MAX ?
         L2CAP_CHANNEL_MPS_MAX : BLE_GATT_TRANSPORT_MTU_MAX;
@@ -1095,7 +1090,7 @@ static inline void gatt_transport_set_connected(
         gatt_eatt_set_encrypted(&transport->eatt, 0);
 #endif
     memset(&transport->l2cap_rx, 0, sizeof(transport->l2cap_rx));
-    transport->tx_len = transport->tx_offset = 0;
+    transport->tx_queue.length = transport->tx_queue.offset = 0;
     transport->bearer_failed = 0;
     transport->tx_client_request = 0;
     transport->encrypted = transport->authenticated = transport->key_size = 0;
@@ -1172,7 +1167,7 @@ static inline int gatt_transport_send_client(
 ) {
     ble_gatt_transport *transport = (ble_gatt_transport *)context;
     if (!transport || !transport->connected || !att || !att_len ||
-        att_len > BLE_GATT_TRANSPORT_MTU_MAX || transport->tx_len
+        att_len > BLE_GATT_TRANSPORT_MTU_MAX || transport->tx_queue.length
     ) return 0;
 
     if (transport->server && att[0] == 0x02 &&
@@ -1372,15 +1367,15 @@ static inline int gatt_transport_tx_peek(
     if (!transport || !llid || !fragment || !len)
         return -1;
 
-    if (!transport->connected || !transport->tx_len)
+    if (!transport->connected || !transport->tx_queue.length)
         return 0;
 
     if (max_payload < 4 || max_payload > BLE_GATT_TRANSPORT_LL_MAX)
         return -1;
 
-    uint16_t remaining = transport->tx_len - transport->tx_offset;
-    *llid = transport->tx_offset ? 1 : 2;
-    *fragment = transport->tx + transport->tx_offset;
+    uint16_t remaining = transport->tx_queue.length - transport->tx_queue.offset;
+    *llid = transport->tx_queue.offset ? 1 : 2;
+    *fragment = transport->tx + transport->tx_queue.offset;
     *len = remaining < max_payload ? remaining : max_payload;
     return 1;
 }
@@ -1389,14 +1384,14 @@ static inline int gatt_transport_tx_peek(
 static inline int gatt_transport_tx_sent(
     ble_gatt_transport *transport, uint16_t len, uint32_t now_ms
 ) {
-    if (!transport || !len || !transport->tx_len ||
-        len > transport->tx_len - transport->tx_offset
+    if (!transport || !len || !transport->tx_queue.length ||
+        len > transport->tx_queue.length - transport->tx_queue.offset
     ) return 0;
 
-    transport->tx_offset += len;
+    transport->tx_queue.offset += len;
 
-    if (transport->tx_offset == transport->tx_len) {
-        transport->tx_len = transport->tx_offset = 0;
+    if (transport->tx_queue.offset == transport->tx_queue.length) {
+        transport->tx_queue.length = transport->tx_queue.offset = 0;
         if (transport->tx_client_request && transport->client &&
             transport->client->request.pending
         ) transport->client->deadline_ms = now_ms +
@@ -1442,7 +1437,7 @@ static inline int gatt_transport_poll(
     gatt_transport_eatt_poll_tx(transport);
 #endif
 
-    if (!transport->tx_len) {
+    if (!transport->tx_queue.length) {
         (void)l2cap_ecfc_pump(&transport->l2cap);
 #if BLE_GATT_ENABLE_EATT
         if (transport->eatt_enabled)
@@ -1465,7 +1460,7 @@ static inline int gatt_transport_poll(
 #endif
     }
 
-    if (transport->tx_len) return 1;
+    if (transport->tx_queue.length) return 1;
 
     if (transport->client)
         transport->client->now_ms = now_ms;

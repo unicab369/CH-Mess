@@ -1618,7 +1618,7 @@ typedef struct {
     l2cap_reassembler reassembler;
     uint8_t initialized, connected;
     uint8_t update_applied;
-    uint16_t tx_len, tx_offset;
+    l2cap_tx_queue tx_queue;
     uint8_t tx[4 + L2CAP_SDU_MAX];
 } ble_gap_l2cap_peer;
 
@@ -1627,24 +1627,6 @@ typedef struct {
     l2cap_ops upper;
     uint16_t mtu, mps, initial_credits;
 } ble_gap_l2cap;
-
-static inline int ble_gap_l2cap_send_pdu(
-    void *context, uint16_t cid, const uint8_t *payload, uint16_t len
-) {
-    ble_gap_l2cap_peer *peer = context;
-
-    if (!peer || peer->tx_len || !peer->connected)
-        return 0;
-
-    int encoded = l2cap_encode(peer->tx, sizeof(peer->tx), cid,
-                                   payload, len);
-
-    if (!encoded) return 0;
-
-    peer->tx_len = (uint16_t)encoded;
-    peer->tx_offset = 0;
-    return 1;
-}
 
 static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
     ble_gap_l2cap_peer *peer = context;
@@ -1694,9 +1676,11 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             memset(peer, 0, sizeof(*peer));
             peer->handle = handle;
             peer->upper = manager->upper;
+            peer->tx_queue.data = peer->tx;
+            peer->tx_queue.capacity = sizeof(peer->tx);
 
             l2cap_ops ops = {0};
-            ops.send_pdu = ble_gap_l2cap_send_pdu;
+            ops.tx_queue = &peer->tx_queue;
             ops.accept_psm = ble_gap_l2cap_accept_psm;
             ops.context = peer;
 
@@ -1720,13 +1704,13 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             if (!connected)
                 l2cap_conn_reset(&peer->connection, 0);
             peer->connected = connected;
-            peer->tx_len = peer->tx_offset = 0;
+            peer->tx_queue.length = peer->tx_queue.offset = 0;
             memset(&peer->reassembler, 0, sizeof(peer->reassembler));
         }
 
         int result = 0;
 
-        if (connected && peer->tx_len) {
+        if (connected && peer->tx_queue.length) {
             uint16_t max_len = gap_conn_ctx_current()->data_length.tx_octets;
 
             if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
@@ -1734,19 +1718,22 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                 return -1;
             }
 
-            uint16_t remaining = peer->tx_len - peer->tx_offset;
+            uint16_t remaining = peer->tx_queue.length - peer->tx_queue.offset;
             uint16_t chunk = remaining < max_len ? remaining : max_len;
-            uint8_t llid = peer->tx_offset ? 1 : 2;
+            uint8_t llid = peer->tx_queue.offset ? 1 : 2;
 
-            if (gap_send_data(llid, peer->tx + peer->tx_offset, chunk)) {
-                peer->tx_offset = (uint16_t)(peer->tx_offset + chunk);
-                if (peer->tx_offset == peer->tx_len)
-                    peer->tx_len = peer->tx_offset = 0;
+            if (gap_send_data(llid,
+                    peer->tx_queue.data + peer->tx_queue.offset, chunk)
+            ) {
+                peer->tx_queue.offset = (uint16_t)(peer->tx_queue.offset + chunk);
+                if (peer->tx_queue.offset == peer->tx_queue.length)
+                    peer->tx_queue.length = peer->tx_queue.offset = 0;
                 result = 1;
             }
         }
         else if (connected &&
-                   l2cap_ecfc_pump(&peer->connection) && peer->tx_len) {
+                   l2cap_ecfc_pump(&peer->connection) &&
+                   peer->tx_queue.length) {
             result = 1;
         }
         else if (connected) {

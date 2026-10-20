@@ -315,7 +315,7 @@ int main(void) {
         confirmation, sizeof(confirmation)) == 1);
     assert(!transport.eatt_contexts[bearer_slot].server.indication_pending &&
            !transport.eatt_contexts[second_bearer_slot].server.indication_pending);
-    transport.tx_len = transport.tx_offset = 0;
+    transport.tx_queue.length = transport.tx_queue.offset = 0;
 
     assert(gatt_queue_event(&server, indication_handle,
         indication_value, sizeof(indication_value), 1));
@@ -324,7 +324,7 @@ int main(void) {
     assert(gatt_transport_test_poll(&transport, 201) == 0);
     assert(gatt_transport_test_poll(&transport,
         201 + BLE_GATT_SERVER_INDICATION_TIMEOUT_MS) == 0);
-    transport.tx_len = transport.tx_offset = 0;
+    transport.tx_queue.length = transport.tx_queue.offset = 0;
     assert(second_channel_slot >= 0 &&
            transport.l2cap.channels[second_channel_slot].state ==
                L2CAP_CHANNEL_CLOSING &&

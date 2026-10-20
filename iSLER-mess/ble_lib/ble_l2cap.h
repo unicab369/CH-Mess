@@ -82,6 +82,23 @@ typedef struct {
     void *context;
 } l2cap_channel_handler;
 
+// One-packet output slot owned and drained by the transport poller.
+typedef struct {
+    uint8_t *data;
+    uint16_t capacity; // Storage size, including the four-byte L2CAP header.
+    uint16_t length, offset;
+} l2cap_tx_queue;
+typedef struct l2cap_connection l2cap_connection;
+
+static inline int l2cap_encode(
+    uint8_t *out, size_t capacity, uint16_t cid,
+    const uint8_t *sdu, uint16_t len
+);
+static inline int l2cap_tx_queue_pdu(
+    l2cap_connection *conn, uint16_t cid,
+    const uint8_t *payload, uint16_t len
+);
+
 typedef struct {
     uint16_t psm;
     uint16_t local_cid, remote_cid;
@@ -102,8 +119,13 @@ typedef struct {
 } l2cap_channel;
 
 typedef struct {
+    // Test-only adapter for existing host fixtures; production uses tx_queue.
+#ifdef L2CAP_TEST_CALLBACK_COMPAT
     int (*send_pdu)(void *context, uint16_t cid,
                     const uint8_t *payload, uint16_t len);
+#else
+    l2cap_tx_queue *tx_queue;
+#endif
     int (*accept_psm)(void *context, uint16_t psm);
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
@@ -111,7 +133,17 @@ typedef struct {
     void *context;
 } l2cap_ops;
 
-typedef struct {
+static inline int l2cap_output_configured(const l2cap_ops *ops) {
+    if (!ops) return 0;
+#ifdef L2CAP_TEST_CALLBACK_COMPAT
+    return ops->send_pdu != NULL;
+#else
+    return ops->tx_queue && ops->tx_queue->data &&
+           ops->tx_queue->capacity >= 4;
+#endif
+}
+
+struct l2cap_connection {
     l2cap_ops ops;
     l2cap_channel_handler fixed[2];
     l2cap_channel channels[L2CAP_CHANNEL_MAX];
@@ -132,7 +164,7 @@ typedef struct {
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
-} l2cap_connection;
+};
 
 typedef struct {
     uint16_t expected, used;
@@ -172,7 +204,7 @@ static inline int l2cap_conn_init(
     l2cap_connection *conn, const l2cap_ops *ops,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
 ) {
-    if (!conn || !ops || !ops->send_pdu ||\
+    if (!conn || !l2cap_output_configured(ops) ||
         mtu < 23 || mps < 23 ||
         mtu > L2CAP_CHANNEL_MTU_MAX ||
         mps > L2CAP_CHANNEL_MPS_MAX
@@ -447,8 +479,8 @@ static inline int l2cap_send_signal(
     if (payload_len)
         memcpy(packet + 4, payload, payload_len);
 
-    return conn->ops.send_pdu(conn->ops.context,
-                L2CAP_CID_LE_SIGNALING, packet, payload_len + 4);
+    return l2cap_tx_queue_pdu(conn, L2CAP_CID_LE_SIGNALING,
+                              packet, payload_len + 4);
 }
 
 // Start an ECFC request for one or more channels, up to the LE signaling
@@ -464,7 +496,8 @@ static inline int l2cap_ecfc_open_many(
         count > L2CAP_CHANNEL_MAX
     ) return 0;
 
-    if (conn->pending_id || !conn->local_credits || !conn->ops.send_pdu ||
+    if (conn->pending_id || !conn->local_credits ||
+        !l2cap_output_configured(&conn->ops) ||
         conn->local_mtu < L2CAP_ECFC_MTU_MIN ||
         conn->local_mps < L2CAP_ECFC_MPS_MIN
     ) return 0;
@@ -546,7 +579,7 @@ static inline int l2cap_le_credit_open(
     l2cap_connection *conn, uint16_t psm, uint16_t *local_cid_out
 ) {
     if (!conn || !psm || psm > 0x00ffu ||
-        !conn->ops.send_pdu || conn->pending_id
+        !l2cap_output_configured(&conn->ops) || conn->pending_id
     ) return 0;
 
     int slot = -1;
@@ -865,9 +898,8 @@ static inline int l2cap_ecfc_pump(l2cap_connection *conn) {
             memcpy(frame, ch->tx_data + ch->tx_offset, used);
         }
 
-        if (!conn->ops.send_pdu(conn->ops.context, ch->remote_cid,
-                                frame, used)
-        ) return 0;
+        if (!l2cap_tx_queue_pdu(conn, ch->remote_cid,
+                                frame, used)) return 0;
 
         ch->tx_credits--;
         ch->tx_offset = (uint16_t)(ch->tx_offset + used - (ch->tx_offset ? 0 : 2));
@@ -1594,6 +1626,33 @@ static inline int l2cap_encode(
     ble_write_u16_le(out + 2, cid);
     memcpy(out + 4, sdu, sdu_len);
     return (int)sdu_len + 4;
+}
+
+static inline int l2cap_tx_queue_pdu(
+    l2cap_connection *conn, uint16_t cid,
+    const uint8_t *payload, uint16_t len
+) {
+    if (!conn || !payload || !len)
+        return 0;
+
+#ifdef L2CAP_TEST_CALLBACK_COMPAT
+    if (!conn->ops.send_pdu) return 0;
+    return conn->ops.send_pdu(conn->ops.context, cid, payload, len);
+#else
+    l2cap_tx_queue *queue = conn->ops.tx_queue;
+    if (!queue || !queue->data || queue->capacity < 4 || queue->length ||
+        len > conn->local_mtu || len > L2CAP_SDU_MAX ||
+        len > queue->capacity - 4u)
+        return 0;
+
+    int encoded = l2cap_encode(queue->data, queue->capacity,
+                               cid, payload, len);
+    if (!encoded) return 0;
+
+    queue->length = (uint16_t)encoded;
+    queue->offset = 0;
+    return 1;
+#endif
 }
 
 // Feed one LL data fragment. Returns 1 with a complete SDU, 0 while

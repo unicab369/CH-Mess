@@ -168,16 +168,6 @@ typedef struct {
     uint8_t resp_key_dist;
 } smp_features;
 
-typedef struct {
-    l2cap_connection *l2cap;
-    uint8_t tx[SMP_PDU_MAX];
-    uint8_t rx[SMP_PDU_MAX];
-    uint8_t tx_len, rx_len;
-    uint8_t procedure_active;
-    uint32_t now_ms;
-    uint32_t deadline_ms;
-} ble_smp;
-
 // Public Secure Connections OOB value passed between the application and SMP.
 typedef struct {
     uint8_t random[16], confirm[16];
@@ -198,10 +188,19 @@ typedef struct {
     uint8_t bond_tx_waiting;
     uint8_t previous_bond_valid;
     gap_bond previous_bond;
-    uint8_t tx[69], tx_len, tx_offset;
+    l2cap_tx_queue tx_queue;
+    uint8_t tx[69];
     l2cap_connection l2cap;
     l2cap_reassembler l2cap_rx;
-    ble_smp bearer;
+    struct {
+        l2cap_connection *l2cap;
+        uint8_t tx[SMP_PDU_MAX];
+        uint8_t rx[SMP_PDU_MAX];
+        uint8_t tx_len, rx_len;
+        uint8_t procedure_active;
+        uint32_t now_ms;
+        uint32_t deadline_ms;
+    } bearer;
     uint8_t random[16], peer_random[16];
     struct {
         uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
@@ -349,9 +348,10 @@ static inline int smp_opcode_known(uint8_t opcode) {
 static inline int smp_receive_sdu(
     void *context, uint16_t cid, const uint8_t *sdu, uint16_t len
 ) {
-    ble_smp *smp = (ble_smp *)context;
+    gap_smp_context *smp = (gap_smp_context *)context;
+    typeof(smp->bearer) *bearer = smp ? &smp->bearer : NULL;
 
-    if (!smp || cid != L2CAP_CID_SMP || !sdu || !len)
+    if (!bearer || cid != L2CAP_CID_SMP || !sdu || !len)
         return 0;
 
     // Reserved command codes are ignored by SMP, as required by the spec.
@@ -359,16 +359,16 @@ static inline int smp_receive_sdu(
     if (!smp_opcode_known(sdu[0]))
         return 1;
 
-    if (len > sizeof(smp->rx) || !smp_pdu_valid(sdu, len) || smp->rx_len)
+    if (len > sizeof(bearer->rx) || !smp_pdu_valid(sdu, len) || bearer->rx_len)
         return 0;
 
     if (sdu[0] == SMP_PAIRING_REQUEST || sdu[0] == SMP_SECURITY_REQUEST)
-        smp->procedure_active = 1;
+        bearer->procedure_active = 1;
 
-    if (smp->procedure_active)
-        smp->deadline_ms = smp->now_ms + SMP_TIMEOUT_MS;
-    memcpy(smp->rx, sdu, len);
-    smp->rx_len = (uint8_t)len;
+    if (bearer->procedure_active)
+        bearer->deadline_ms = bearer->now_ms + SMP_TIMEOUT_MS;
+    memcpy(bearer->rx, sdu, len);
+    bearer->rx_len = (uint8_t)len;
     return 1;
 }
 
@@ -403,13 +403,13 @@ static inline int smp_aes128(
 
 
 static inline int smp_poll(void) {
-    ble_smp *bearer = &gap_smp_contexts[gap_conn_slot].bearer;
-    if (!bearer->l2cap || !bearer->tx_len || !bearer->l2cap->ops.send_pdu)
+    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    typeof(smp->bearer) *bearer = &smp->bearer;
+    if (!bearer->l2cap || !bearer->tx_len)
         return 0;
 
-    if (!bearer->l2cap->ops.send_pdu(bearer->l2cap->ops.context,
-            L2CAP_CID_SMP, bearer->tx, bearer->tx_len)
-    ) return 0;
+    if (!l2cap_tx_queue_pdu(bearer->l2cap, L2CAP_CID_SMP,
+                            bearer->tx, bearer->tx_len)) return 0;
 
     gap_wipe(bearer->tx, sizeof(bearer->tx));
     bearer->tx_len = 0;
@@ -563,6 +563,7 @@ static void gap_smp_finish(uint8_t status) {
     gap_wipe(&smp->peer_oob, sizeof(smp->peer_oob));
     gap_wipe(&smp->previous_bond, sizeof(smp->previous_bond));
     gap_wipe(smp->tx, sizeof(smp->tx));
+    smp->tx_queue.length = smp->tx_queue.offset = 0;
     gap_wipe(smp->bearer.tx, sizeof(smp->bearer.tx));
     gap_wipe(smp->bearer.rx, sizeof(smp->bearer.rx));
     gap_wipe(smp->random, sizeof(smp->random));
@@ -843,30 +844,14 @@ static void gap_smp_confirm(const uint8_t random[16], uint8_t confirm[16]) {
     gap_wipe(block, sizeof(block));
 }
 
-static int gap_smp_link_send_pdu(
-    void *context, uint16_t cid, const uint8_t *payload, uint16_t len
-) {
-    gap_smp_context *ctx = context;
-    if (!ctx || !ctx->l2cap_ready || ctx->tx_len || !payload || !len)
-        return 0;
-
-    int encoded = l2cap_encode(ctx->tx, sizeof(ctx->tx), cid, payload, len);
-
-    if (!encoded) return 0;
-
-    ctx->tx_len = (uint8_t)encoded;
-    ctx->tx_offset = 0;
-    return 1;
-}
-
 static int smp_link_init(void) {
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_wipe(smp, sizeof(*smp));
 
-    l2cap_ops ops = {
-        .send_pdu = gap_smp_link_send_pdu,
-        .context = smp
-    };
+    smp->tx_queue.data = smp->tx;
+    smp->tx_queue.capacity = sizeof(smp->tx);
+    l2cap_ops ops = {0};
+    ops.tx_queue = &smp->tx_queue;
 
     if (!l2cap_conn_init(&smp->l2cap, &ops, 65, 65, 0))
         return 0;
@@ -874,7 +859,7 @@ static int smp_link_init(void) {
     smp->bearer.l2cap = &smp->l2cap;
 
     if (!l2cap_fixed_register(&smp->l2cap,
-                    L2CAP_CID_SMP, smp_receive_sdu, &smp->bearer)
+                    L2CAP_CID_SMP, smp_receive_sdu, smp)
     ) return 0;
 
     smp->l2cap_ready = 1;
@@ -1201,7 +1186,7 @@ int gap_pair(void) {
     if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->c_link_layer.first_event) || smp->pairing.phase ||
         smp->blocked || gap_conn_ctx[gap_conn_slot].security.phase ||
-        gap_encrypted() || smp->tx_len || smp->bearer.tx_len
+        gap_encrypted() || smp->tx_queue.length || smp->bearer.tx_len
     ) return 0;
 
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
@@ -1644,7 +1629,7 @@ static void gap_smp_poll(void) {
             smp->secure.numeric_reply = 1;
     }
 
-    if (!smp->tx_len && smp->bearer.tx_len)
+    if (!smp->tx_queue.length && smp->bearer.tx_len)
         (void)smp_poll();
 
     if (pairing->phase == SMP_PHASE_SC_USER && smp->secure.numeric_reply) {
@@ -1782,13 +1767,13 @@ static void gap_smp_poll(void) {
     }
 
     if (pairing->phase == SMP_PHASE_BOND_TX) {
-        if (!smp->bond_tx_waiting && smp->tx_len &&
+        if (!smp->bond_tx_waiting && smp->tx_queue.length &&
             !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining &&
-            gap_send_data(2, smp->tx, smp->tx_len)
+            gap_send_data(2, smp->tx, smp->tx_queue.length)
         ) {
-            smp->tx_len = 0;
+            smp->tx_queue.length = 0;
             smp->bond_tx_waiting = 1;
             gap_wipe(smp->tx, sizeof(smp->tx));
         }
@@ -1796,8 +1781,8 @@ static void gap_smp_poll(void) {
         return;
     }
 
-    if (smp->tx_len) {
-        if (conn->tx_l2cap_remaining && !smp->tx_offset)
+    if (smp->tx_queue.length) {
+        if (conn->tx_l2cap_remaining && !smp->tx_queue.offset)
             return;
 
         size_t max_len = conn->data_length.tx_octets;
@@ -1807,19 +1792,19 @@ static void gap_smp_poll(void) {
         if (max_len > time_len)
             max_len = time_len;
 
-        size_t remaining = smp->tx_len - smp->tx_offset;
+        size_t remaining = smp->tx_queue.length - smp->tx_queue.offset;
 
         if (max_len > remaining)
             max_len = remaining;
 
-        if (!max_len || !gap_send_data(smp->tx_offset ? 1 : 2,
-                smp->tx + smp->tx_offset, max_len)
+        if (!max_len || !gap_send_data(smp->tx_queue.offset ? 1 : 2,
+                smp->tx + smp->tx_queue.offset, max_len)
         ) return;
 
-        smp->tx_offset += (uint8_t)max_len;
-        if (smp->tx_offset == smp->tx_len) {
-            smp->tx_len = 0;
-            smp->tx_offset = 0;
+        smp->tx_queue.offset += (uint8_t)max_len;
+        if (smp->tx_queue.offset == smp->tx_queue.length) {
+            smp->tx_queue.length = 0;
+            smp->tx_queue.offset = 0;
             gap_wipe(smp->tx, sizeof(smp->tx));
         }
     }
@@ -1827,7 +1812,7 @@ static void gap_smp_poll(void) {
     if (pairing->phase == SMP_PHASE_SC_PASSKEY &&
         pairing->passkey_action != GAP_PASSKEY_INPUT &&
         (pairing->confirm_received || conn->is_central) &&
-        !smp->tx_len &&
+        !smp->tx_queue.length &&
         !conn->tx_l2cap_remaining &&
         !conn->c_link_layer.tx_pending &&
         !conn->c_queue.tx_queued
@@ -1882,7 +1867,7 @@ static void gap_smp_poll(void) {
             return;
         }
 
-        if (!smp->encryption_started && !smp->tx_len &&
+        if (!smp->encryption_started && !smp->tx_queue.length &&
             !conn->tx_l2cap_remaining &&
             !conn->c_link_layer.tx_pending &&
             !conn->c_queue.tx_queued

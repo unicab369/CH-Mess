@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#define L2CAP_TEST_CALLBACK_COMPAT 1
 static void gap_wipe(volatile void *data, size_t len) {
     volatile uint8_t *bytes = data;
     while (len--) *bytes++ = 0;

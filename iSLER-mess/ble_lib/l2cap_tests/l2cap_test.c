@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+#define L2CAP_TEST_CALLBACK_COMPAT 1
 #include "../ble_l2cap.h"
 
 static uint8_t routed;

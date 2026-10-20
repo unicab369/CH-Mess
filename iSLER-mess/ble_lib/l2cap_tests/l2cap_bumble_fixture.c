@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#define L2CAP_TEST_CALLBACK_COMPAT 1
 #include "../ble_l2cap.h"
 
 static l2cap_connection connection;
