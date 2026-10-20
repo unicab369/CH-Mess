@@ -35,12 +35,12 @@ static void gap_conn_send_queued(void) {
         !conn->tx[1]
     ) {
         // Exchange features before sending the application's timing range.
-        if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x02)) {
+        if (!conn->c_features.known) {
+            gap_send_feature_request(conn);
+        }
+        else if (!(conn->c_features.peer_feature_0 & 0x02)) {
             conn->c_queue.local_params = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-        else if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
         }
         else {
             conn->params_started_ms = GET_MILLIS();
@@ -93,14 +93,11 @@ static void gap_conn_send_queued(void) {
                 conn->c_subrate.queued_flags = 0;
                 conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
             }
-            else if (conn->is_central &&
-                (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
-            ) {
-                gap_send_subrate_update(conn);
+            else if (conn->is_central) {
+                if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
+                    gap_send_subrate_update(conn);
             }
-            else if (!conn->is_central &&
-                (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST)
-            ) {
+            else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
                 conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
                 conn->c_subrate.procedure_state = GAP_SUBRATE_REQUEST_PENDING;
                 conn->c_subrate.started_ms = GET_MILLIS();
@@ -108,7 +105,6 @@ static void gap_conn_send_queued(void) {
                 conn->tx[0] = 0x03;
                 conn->tx[1] = 11;
                 conn->tx[2] = LL_SUBRATE_REQ;
-
                 ble_write_u16_le(conn->tx + 3, conn->peripheral.subrate_request.factor_min);
                 ble_write_u16_le(conn->tx + 5, conn->peripheral.subrate_request.factor_max);
                 ble_write_u16_le(conn->tx + 7, conn->peripheral.subrate_request.latency);
@@ -148,10 +144,11 @@ static void gap_conn_send_queued(void) {
             conn->c_rate.queued_flags = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
-        else if (conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)) {
-            gap_send_rate_ind(conn, 0, NULL);
+        else if (conn->is_central) {
+            if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)
+                gap_send_rate_ind(conn, 0, NULL);
         }
-        else if (!conn->is_central && (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST)) {
+        else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
             conn->tx[0] = 0x03;
             conn->tx[1] = 27;
             conn->tx[2] = LL_CONNECTION_RATE_REQ;
