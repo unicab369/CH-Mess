@@ -2363,6 +2363,17 @@ static void gap_smp_poll(void) {
                      (peer.auth_req & SMP_AUTH_SECURE_CONNECTIONS);
         uint8_t key_size = local.max_key_size < peer.max_key_size ?
                            local.max_key_size : peer.max_key_size;
+        uint8_t init_key_dist = local.init_key_dist & peer.init_key_dist &
+                                key_dist_supported;
+        uint8_t resp_key_dist = local.resp_key_dist & peer.resp_key_dist &
+                                key_dist_supported;
+
+        // EncKey is ignored for LE Secure Connections; never use it to send
+        // legacy Encryption Information or Central Identification commands.
+        if (sc) {
+            init_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
+            resp_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
+        }
 
         if (gap_pair_cfg.secure_connections && !sc) {
             gap_smp_fail(SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
@@ -2411,8 +2422,9 @@ static void gap_smp_poll(void) {
                                 ? smp->peer_oob.valid : pairing->request[2];
         smp->secure.oob_active = pairing->secure_connections && (local_oob_flag || pdu[2]);
 
-        uint8_t bond_requested = bonding && (pairing->secure_connections ||
-                                (peer.init_key_dist & GAP_KEY_DIST_ENCRYPTION));
+        uint8_t bond_requested = bonding &&
+            (pairing->secure_connections ||
+             ((init_key_dist | resp_key_dist) & GAP_KEY_DIST_ENCRYPTION));
         pairing->bond_requested = bond_requested;
 
         if (gap_pair_cfg.bonding && !bond_requested) {
@@ -2580,19 +2592,18 @@ static void gap_smp_poll(void) {
                 (pairing->secure_connections ? 8 : 0) |
                 (pairing->keypress_active ? 0x10 : 0);
             pairing->response[4] = 16;
-            pairing->response[5] = 0;
-
-            if (pairing->bond_requested) {
-                pairing->response[5] = pdu[5] & key_dist_supported;
-                if (pairing->secure_connections)
-                    pairing->response[5] &= (uint8_t)~GAP_KEY_DIST_ENCRYPTION;
-            }
-
-            pairing->response[6] = responder_keys;
+            pairing->response[5] = pairing->bond_requested ?
+                                   init_key_dist : 0;
+            pairing->response[6] = pairing->bond_requested ?
+                (resp_key_dist & responder_keys) : 0;
             gap_smp_queue(SMP_PAIRING_RESPONSE, pairing->response + 1, 6);
         }
         else {
             memcpy(pairing->response, pdu, 7);
+            pairing->response[5] = pairing->bond_requested ?
+                                   init_key_dist : 0;
+            pairing->response[6] = pairing->bond_requested ?
+                                   resp_key_dist : 0;
             if (pairing->secure_connections) {
                 uint8_t public_key[64];
 

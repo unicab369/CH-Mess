@@ -1651,47 +1651,6 @@ static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
         peer->upper.context, psm);
 }
 
-// L2CAP's legacy parameter-update request is handled by the Central. Queue
-// the corresponding GAP timing update before accepting the signaling request.
-static inline int ble_gap_l2cap_update_poll(ble_gap_l2cap_peer *peer) {
-    uint16_t minimum, maximum, latency, timeout;
-    l2cap_connection *l2cap = &peer->connection;
-
-    if (!l2cap_connection_update_get(l2cap, &minimum, &maximum,
-                                     &latency, &timeout)) {
-        peer->update_applied = 0;
-        return 0;
-    }
-
-    if (!peer->update_applied && l2cap->remote_update_deadline_ms &&
-        (int32_t)(GET_MILLIS() - l2cap->remote_update_deadline_ms) >= 0)
-        return 0;
-
-    gap_conn_context *conn = gap_conn_ctx_current();
-    if (!conn->is_central) {
-        return l2cap_connection_update_reply(l2cap, 0);
-    }
-
-    if (!peer->update_applied) {
-        uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-        uint16_t interval = current >= minimum && current <= maximum ?
-                            current : minimum;
-
-        // A failed queue can mean GAP is handling another procedure. Keep the
-        // request pending so a later poll can retry; L2CAP times it out safely.
-        if (!gap_conn_update(interval, latency, timeout))
-            return 0;
-
-        peer->update_applied = 1;
-    }
-
-    if (!l2cap_connection_update_reply(l2cap, 1))
-        return 0;
-
-    peer->update_applied = 0;
-    return 1;
-}
-
 // Application facing
 static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const l2cap_ops *upper,
@@ -1812,8 +1771,49 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             else result = received;
         }
 
-        if (connected && ble_gap_l2cap_update_poll(peer))
-            result = 1;
+        if (connected) {
+            uint16_t minimum, maximum, latency, timeout;
+            l2cap_connection *l2cap = &peer->connection;
+
+            if (l2cap_connection_update_get(l2cap, &minimum, &maximum,
+                                             &latency, &timeout)) {
+                int request_expired = !peer->update_applied &&
+                    l2cap->remote_update_deadline_ms &&
+                    (int32_t)(GET_MILLIS() -
+                        l2cap->remote_update_deadline_ms) >= 0;
+
+                if (!request_expired) {
+                    gap_conn_context *conn = gap_conn_ctx_current();
+
+                    if (!conn->is_central) {
+                        if (l2cap_connection_update_reply(l2cap, 0))
+                            result = 1;
+                    }
+                    else {
+                        if (!peer->update_applied) {
+                            uint16_t current = (uint16_t)(
+                                conn->schedule.interval_125us / 10u);
+                            uint16_t interval = current >= minimum &&
+                                current <= maximum ? current : minimum;
+
+                            // GAP may be busy with another procedure. Leave
+                            // this request pending and retry on the next poll.
+                            if (gap_conn_update(interval, latency, timeout))
+                                peer->update_applied = 1;
+                        }
+
+                        if (peer->update_applied &&
+                            l2cap_connection_update_reply(l2cap, 1)) {
+                            peer->update_applied = 0;
+                            result = 1;
+                        }
+                    }
+                }
+            }
+            else {
+                peer->update_applied = 0;
+            }
+        }
 
         // Once GAP queued the update, keep retrying the L2CAP response rather
         // than timing out and rejecting a change that GAP has already queued.

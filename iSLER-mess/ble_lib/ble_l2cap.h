@@ -314,18 +314,6 @@ static inline int l2cap_local_slot(
     return -1;
 }
 
-static inline int l2cap_cid_reserved(
-    const l2cap_connection *conn, uint16_t cid
-) {
-    if (!conn) return 0;
-    for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
-        if (conn->channels[i].local_cid == cid &&
-            (conn->channels[i].state != L2CAP_CHANNEL_CLOSED ||
-             conn->channels[i].closed_pending))
-            return 1;
-    return 0;
-}
-
 static inline int l2cap_remote_slot(
     const l2cap_connection *conn, uint16_t cid
 ) {
@@ -424,10 +412,20 @@ static inline uint16_t l2cap_cid_alloc(l2cap_connection *conn) {
         if (conn->next_cid > L2CAP_DYNAMIC_CID_MAX)
             conn->next_cid = L2CAP_DYNAMIC_CID_MIN;
 
-        if (cid >= L2CAP_DYNAMIC_CID_MIN &&
-            cid <= L2CAP_DYNAMIC_CID_MAX &&
-            !l2cap_cid_reserved(conn, cid)
-        ) return cid;
+        if (cid < L2CAP_DYNAMIC_CID_MIN ||
+            cid > L2CAP_DYNAMIC_CID_MAX
+        ) continue;
+
+        uint8_t reserved = 0;
+        for (uint8_t i = 0; i < L2CAP_CHANNEL_MAX; i++)
+            if (conn->channels[i].local_cid == cid &&
+                (conn->channels[i].state != L2CAP_CHANNEL_CLOSED ||
+                 conn->channels[i].closed_pending)
+            ) {
+                reserved = 1;
+                break;
+            }
+        if (!reserved) return cid;
     }
     return 0;
 }
