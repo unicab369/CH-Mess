@@ -338,14 +338,14 @@ int main(void) {
     l2cap_connection reject_conn;
     assert(l2cap_conn_init(&reject_conn, &ops, &psm_registry, 100, 40, 1));
     uint8_t unknown_signal[] = {0x55, 12, 0, 0};
-    assert(l2cap_signaling_receive(&reject_conn, unknown_signal,
+    assert(l2cap_receive(&reject_conn, L2CAP_CID_LE_SIGNALING, unknown_signal,
                                        sizeof(unknown_signal)));
     assert(reject_fake.pdu[0] == L2CAP_COMMAND_REJECT &&
            reject_fake.pdu[1] == 12 &&
            ble_read_u16_le(reject_fake.pdu + 6) == 0);
     uint8_t malformed_signal[] = {L2CAP_CONN_PARAM_UPDATE_REQ,
         13, 4, 0, 1, 0, 2, 0};
-    assert(l2cap_signaling_receive(&reject_conn, malformed_signal,
+    assert(l2cap_receive(&reject_conn, L2CAP_CID_LE_SIGNALING, malformed_signal,
                                        sizeof(malformed_signal)));
     assert(reject_fake.pdu[0] == L2CAP_COMMAND_REJECT &&
            reject_fake.pdu[1] == 13);

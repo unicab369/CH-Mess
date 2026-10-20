@@ -451,11 +451,12 @@ static void test_dual_role_mtu_synchronization(void) {
     ble_gatt_uuid value_uuid = {2, {0xf4, 0xff}};
     ble_gatt_uuid cccd_uuid = {2, {0x02, 0x29}};
     uint16_t service, declaration, value, cccd;
-    const uint8_t initial = 0;
+    uint8_t initial[30] = {0};
     assert(gatt_server_add_service(&server, &service_uuid, 1, &service));
     assert(gatt_add_characteristic(&server, &value_uuid,
         BLE_GATT_PROP_READ | BLE_GATT_PROP_NOTIFY, BLE_GATT_PERM_READ,
-        &initial, 1, 1, NULL, NULL, NULL, &declaration, &value));
+        initial, sizeof(initial), sizeof(initial), NULL, NULL, NULL,
+        &declaration, &value));
     assert(gatt_add_descriptor(&server, &cccd_uuid, 0, NULL, 0, 0,
         NULL, NULL, NULL, &cccd));
     ble_gatt_transport_test_ops ops = {
@@ -494,9 +495,9 @@ static void test_dual_role_mtu_synchronization(void) {
     assert(gatt_transport_test_poll(&transport, 6) == 1);
     assert(!client.request.pending && client.mtu == 80 && server.mtu == 80 &&
            server.mtu_exchanged && client.mtu_exchanged);
-    assert(transport.tx_queue_link->length);
+    assert(gatt_transport_test_poll(&transport, 7) == 1);
     while (transport.tx_queue_link->length)
-        assert(gatt_transport_test_poll(&transport, 7) == 1);
+        assert(gatt_transport_test_poll(&transport, 8) == 1);
     uint8_t packet[64];
     uint16_t packet_len = collect_tx(&link, packet);
     assert(packet_len == 37 && packet[4] == 0x1b &&
@@ -630,8 +631,8 @@ static void test_database_version_reconnect_flow(void) {
                                                fake_terminate_link);
     link.cccd_handle = handles.service_changed_handle;
     link.connected = 1;
-    assert(gatt_transport_test_poll(&transport, 1) == 0);
-    assert(server.database_hash_update_pending && transport.tx_queue_link->length);
+    assert(gatt_transport_test_poll(&transport, 1) == 1);
+    assert(server.database_hash_update_pending && !transport.tx_queue_link->length);
     while (transport.tx_queue_link->length)
         assert(gatt_transport_test_poll(&transport, 2) == 1);
     assert(link.tx_count == 1 && link.tx_data[0][4] == 0x1d &&

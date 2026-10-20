@@ -1808,7 +1808,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                         l2cap->remote_update_deadline_ms) >= 0;
 
                 if (!request_expired) {
-                    gap_conn_context *conn = gap_conn_ctx_current();
+                    const gap_conn_context *conn = gap_conn_ctx_current();
 
                     if (!conn->is_central) {
                         if (l2cap_connection_update_reply(l2cap, 0))

@@ -786,7 +786,7 @@ void mesh_gatt_poll(void) {
     mesh_gatt_gap_policy_update();
     const gap_conn_context *conn = gap_conn_ctx_current();
     uint8_t connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        (conn->is_central || !conn->link.first_event);
+        (conn->is_central || !conn->c_link_layer.first_event);
     if (connected) {
         gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
         l2cap_connection *l2cap = &link->l2cap;
