@@ -564,17 +564,17 @@ call `ble_gap_l2cap_poll()` for the same links.
 ```c
 #include "gatt_services/ble_gatt_services.h"
 
-static ble_gap_gatt gatt_links;
+static ble_gap_gatt_peer gatt_links[GAP_CONNECTION_COUNT];
 static ble_gatt_server servers[GAP_CONNECTION_COUNT];
 static ble_gatt_transport transports[GAP_CONNECTION_COUNT];
 static ble_gatt_bas_service batteries[GAP_CONNECTION_COUNT];
 
 static int gatt_services_init(void) {
-    ble_gap_gatt_init(&gatt_links);
+    ble_gap_gatt_init(gatt_links);
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         gatt_server_init(&servers[slot], 23);
         if (!gatt_bas_add(&servers[slot], &batteries[slot], 100) ||
-            !ble_gap_gatt_bind_slot(&gatt_links, slot, &transports[slot],
+            !ble_gap_gatt_bind_slot(gatt_links, slot, &transports[slot],
                                     &servers[slot], NULL))
             return 0;
     }
@@ -582,7 +582,7 @@ static int gatt_services_init(void) {
 }
 
 // Call from the application's main loop after GAP polling.
-(void)ble_gap_gatt_poll(&gatt_links);
+(void)ble_gap_gatt_poll(gatt_links);
 ```
 
 The manager selects each live GAP handle while moving received LL fragments,

@@ -1163,28 +1163,28 @@ typedef struct {
     uint8_t bound, connected;
 } ble_gap_gatt_peer;
 
-typedef struct {
-    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT];
-} ble_gap_gatt;
-
 // Application facing
-static inline void ble_gap_gatt_init(ble_gap_gatt *manager) {
-    if (manager)
-        memset(manager, 0, sizeof(*manager));
+// Initialize one peer-state array indexed by GAP connection slot.
+static inline void ble_gap_gatt_init(
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT]
+) {
+    if (peers)
+        memset(peers, 0, sizeof(ble_gap_gatt_peer) * GAP_CONNECTION_COUNT);
 }
 
 // Application facing
-// Bind a transport already configured with this link's server and/or client.
+// Bind a transport in the peer-state array to one GAP connection slot.
 // Keep the transport, server, client, and service state alive while bound.
 static inline int ble_gap_gatt_bind_slot(
-    ble_gap_gatt *manager, uint8_t slot, ble_gatt_transport *transport,
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], uint8_t slot,
+    ble_gatt_transport *transport,
     ble_gatt_server *server, ble_gatt_client *client
 ) {
-    if (!manager || slot >= GAP_CONNECTION_COUNT || !transport ||
+    if (!peers || slot >= GAP_CONNECTION_COUNT || !transport ||
         (!server && !client)
     ) return 0;
 
-    ble_gap_gatt_peer *peer = &manager->peers[slot];
+    ble_gap_gatt_peer *peer = &peers[slot];
 
     if (peer->bound || peer->connected)
         return 0;
@@ -1203,8 +1203,10 @@ static inline int ble_gap_gatt_bind_slot(
 // Poll every live connection, moving one GAP LL fragment in each direction.
 // A negative result means at least one GATT bearer failed and its link was
 // asked to disconnect; positive values count processed fragments/work.
-static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
-    if (!manager) return -1;
+static inline int ble_gap_gatt_poll(
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT]
+) {
+    if (!peers) return -1;
 
     uint8_t previous_slot = gap_conn_slot;
     uint8_t seen[GAP_CONNECTION_COUNT] = {0};
@@ -1214,7 +1216,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     gap_conn_handle handle;
 
     for (uint8_t index = 0; gap_conn_handle_at(index, &handle); index++) {
-        ble_gap_gatt_peer *peer = &manager->peers[handle.slot];
+        ble_gap_gatt_peer *peer = &peers[handle.slot];
         seen[handle.slot] = 1;
 
         if (!peer->bound) continue;
@@ -1284,7 +1286,7 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
     }
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        ble_gap_gatt_peer *peer = &manager->peers[slot];
+        ble_gap_gatt_peer *peer = &peers[slot];
 
         if (!peer->bound || !peer->connected || seen[slot])
             continue;
@@ -1300,12 +1302,12 @@ static inline int ble_gap_gatt_poll(ble_gap_gatt *manager) {
 
 // Find the transport attached to a currently live connection handle.
 static ble_gatt_transport *ble_gap_gatt_transport_for(
-    ble_gap_gatt *manager, gap_conn_handle handle
+    ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], gap_conn_handle handle
 ) {
-    if (!manager || handle.slot >= GAP_CONNECTION_COUNT)
+    if (!peers || handle.slot >= GAP_CONNECTION_COUNT)
         return NULL;
 
-    ble_gap_gatt_peer *peer = &manager->peers[handle.slot];
+    ble_gap_gatt_peer *peer = &peers[handle.slot];
 
     if (!peer->bound || !peer->connected ||
         peer->handle.generation != handle.generation
