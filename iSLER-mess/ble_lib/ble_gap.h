@@ -1050,7 +1050,9 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
     if (!timing || !ble_timing_valid(
             timing->interval, timing->interval, timing->latency,
-            timing->supervision_timeout) || !timing->attempt_timeout_s ||
+            timing->supervision_timeout
+        ) ||
+        !timing->attempt_timeout_s ||
         timing->attempt_timeout_s > 600 || gap_is_busy() ||
         timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
@@ -1518,9 +1520,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
 int gap_set_static_addr(const uint8_t address[6]) {
-    if (!address || gap_is_busy() ||
-        !gap_static_addr_valid(address)
-    ) return 0;
+    if (gap_is_busy() || !gap_static_addr_valid(address)) return 0;
 
     memcpy(gap_own_address.address, address, 6);
     memcpy(gap_identity_address.address, address, 6);
@@ -1790,7 +1790,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             int received = gap_receive_data(&llid, fragment, &len);
 
             if (received > 0) {
-                if (!len || len > sizeof(fragment)) {
+                if (!len) {
                     memset(&peer->reassembler, 0, sizeof(peer->reassembler));
                 }
                 else {
