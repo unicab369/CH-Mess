@@ -1523,9 +1523,21 @@ void gap_hw_scan_poll(void) {
         gap_scan.active_pending = 0;
     }
 
-    uint16_t interval_ms = gap_initiator.mode == GAP_CONN_MODE_AUTO ?
-                        gap_conn_timing.scan_interval_ms :
-                        (gap_scanner.scanning ? gap_scanner.interval_ms : 20);
+    uint16_t interval_ms, window_ms;
+
+    if (gap_initiator.mode == GAP_CONN_MODE_AUTO) {
+        interval_ms = gap_conn_timing.scan_interval_ms;
+        window_ms = gap_conn_timing.scan_window_ms;
+    }
+    else if (gap_scanner.scanning) {
+        interval_ms = gap_scanner.interval_ms;
+        window_ms = gap_scanner.window_ms;
+    }
+    else {
+        interval_ms = 20;
+        window_ms = 20;
+    }
+
     uint32_t elapsed = now - gap_scan.interval_start_ms;
 
     if (elapsed >= interval_ms) {
@@ -1539,10 +1551,6 @@ void gap_hw_scan_poll(void) {
             gap_rx_armed = 0;
         }
     }
-
-    uint16_t window_ms = gap_initiator.mode == GAP_CONN_MODE_AUTO ?
-                        gap_conn_timing.scan_window_ms :
-                        (gap_scanner.scanning ? gap_scanner.window_ms : 20);
 
     if (elapsed >= window_ms) {
         if (gap_rx_armed) {

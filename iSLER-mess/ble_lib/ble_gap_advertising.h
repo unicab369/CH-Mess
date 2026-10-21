@@ -732,7 +732,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 
     gap_initiator.active = 1;
     gap_initiator.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 :
-                        GET_MILLIS() + gap_conn_timing.attempt_timeout_ms;
+                        GET_MILLIS() + (uint32_t)gap_conn_timing.attempt_timeout_s * 1000;
     return 1;
 #endif
 }

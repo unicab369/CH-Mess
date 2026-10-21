@@ -472,7 +472,7 @@ static void test_connection_timing_configuration(void) {
            timing.supervision_timeout == 200 &&
            timing.scan_interval_ms == 1280 &&
            timing.scan_window_ms == 12 &&
-           timing.attempt_timeout_ms == 30720);
+           timing.attempt_timeout_s == 31);
     gap_timing_cfg invalid = timing;
     invalid.interval = 5;
     assert(!gap_conn_timing_set(&invalid));
@@ -481,7 +481,7 @@ static void test_connection_timing_configuration(void) {
     invalid.supervision_timeout = 300; // Fails the supervision timeout relation.
     assert(!gap_conn_timing_set(&invalid));
     invalid = timing;
-    invalid.attempt_timeout_ms = 0;
+    invalid.attempt_timeout_s = 0;
     assert(!gap_conn_timing_set(&invalid));
     invalid = timing;
     invalid.scan_window_ms =
@@ -491,7 +491,7 @@ static void test_connection_timing_configuration(void) {
     timing.interval = 40;
     timing.latency = 2;
     timing.supervision_timeout = 400;
-    timing.attempt_timeout_ms = 45000;
+    timing.attempt_timeout_s = 45;
     assert(gap_conn_timing_set(&timing));
     const uint8_t peer[6] = {9, 8, 7, 6, 5, 4};
     assert(gap_conn_start(test_address(peer, 0)));
@@ -503,10 +503,10 @@ static void test_connection_timing_configuration(void) {
     assert(!gap_conn_timing_set(&timing)); // Settings are locked while scanning.
     gap_conn_cancel();
 
-    timing.attempt_timeout_ms = 250;
+    timing.attempt_timeout_s = 1;
     assert(gap_conn_timing_set(&timing));
     assert(gap_conn_start(test_address(peer, 0)));
-    now_ms += 251;
+    now_ms += 1001;
     gap_hw_scan_poll();
     assert(!gap_initiator.active && !gap_scanner.scanning);
 
@@ -515,7 +515,7 @@ static void test_connection_timing_configuration(void) {
     timing.supervision_timeout = 200;
     timing.scan_interval_ms = 1280;
     timing.scan_window_ms = 12;
-    timing.attempt_timeout_ms = 30720;
+    timing.attempt_timeout_s = 31;
     assert(gap_conn_timing_set(&timing));
 }
 

@@ -869,11 +869,18 @@ static struct {
 
 // Central initiation configuration.
 // Initial LE connection settings. Connection interval is in 1.25 ms units,
-// supervision timeout in 10 ms units, and attempt timeout in milliseconds.
+// supervision timeout in 10 ms units, and attempt timeout in seconds.
+// Scan interval is start-to-start; scan window is how long each scan listens.
+// With these defaults (diagram not to scale):
+//   Scan start 1                                  Scan start 2
+//       |                                               |
+//       |<---scan interval: 1280 ms ------------------->|
+//       |<-- scan window: 12 ms -->|
+//       [ listen for 12 ms ] [ sleep for 1268 ms ]      [ listen ... ]
 typedef struct {
     uint16_t interval, latency, supervision_timeout;
     uint16_t scan_interval_ms, scan_window_ms;
-    uint32_t attempt_timeout_ms;
+    uint16_t attempt_timeout_s;
 } gap_timing_cfg;
 
 static gap_timing_cfg gap_conn_timing = {
@@ -882,7 +889,7 @@ static gap_timing_cfg gap_conn_timing = {
     .supervision_timeout = 200, // 10..3200 units: 100 ms..32000 ms (32 s).
     .scan_interval_ms = 1280,   // 3..40959 ms (0.003..40.959 s).
     .scan_window_ms = 12,       // 3 ms..scan_interval_ms (up to 40.959 s).
-    .attempt_timeout_ms = 30720 // 1..2147483647 ms (up to ~35,791 min).
+    .attempt_timeout_s = 31     // 1..600 s; 31 s covers the 30.72 s fast-scan period.
 };
 
 // Return whether scanning, advertising, a connection, or initiation is active.
@@ -1043,8 +1050,8 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
     if (!timing || !ble_timing_valid(
             timing->interval, timing->interval, timing->latency,
-            timing->supervision_timeout) || !timing->attempt_timeout_ms ||
-        timing->attempt_timeout_ms > 0x7fffffffUL || gap_is_busy() ||
+            timing->supervision_timeout) || !timing->attempt_timeout_s ||
+        timing->attempt_timeout_s > 600 || gap_is_busy() ||
         timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
