@@ -240,7 +240,7 @@ void gap_hw_received(void) {
 #endif
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        conn->c_link_state.rx_armed
+        conn->link_state.rx_armed
     ) {
         if (conn->is_central) {
             conn_anchor_ticks = conn->link_layer.next_ticks;
@@ -259,7 +259,7 @@ void gap_hw_received(void) {
     }
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        conn->c_link_state.rx_armed
+        conn->link_state.rx_armed
     ) {
         uint8_t authenticated = 0;
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
@@ -330,9 +330,9 @@ void gap_hw_received(void) {
         }
 
         conn->link_layer.last_rx_ms = GET_MILLIS();
-        conn->c_link_state.rx_armed = 0;
+        conn->link_state.rx_armed = 0;
         conn->link_layer.first_event = 0;
-        conn->c_link_state.channel_selected = 0;
+        conn->link_state.channel_selected = 0;
         conn->c_pending.update_window_active = 0;
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
@@ -378,7 +378,7 @@ void gap_hw_received(void) {
             // The in-place ciphertext is no longer a queued PDU after ACK.
             conn->tx_frame[1] = 0;
 
-            if (conn->c_link_state.terminate_sent) {
+            if (conn->link_state.terminate_sent) {
                 if ((frame[0] & 3) != 3 ||
                     frame[1] != 2 || frame[2] != LL_TERMINATE_IND
                 ) {
@@ -387,7 +387,7 @@ void gap_hw_received(void) {
                     return;
                 }
                 // Process a simultaneous peer termination so it gets ACKed.
-                conn->c_link_state.terminate_sent = 0;
+                conn->link_state.terminate_sent = 0;
             }
         }
 
@@ -473,15 +473,15 @@ void gap_hw_received(void) {
                 }
             }
 
-            if (!conn->c_link_state.terminate_after_reply) {
-                if (gap_conn_tx_payload_len(conn) == 0 && conn->c_link_state.terminate_queued) {
+            if (!conn->link_state.terminate_after_reply) {
+                if (gap_conn_tx_payload_len(conn) == 0 && conn->link_state.terminate_queued) {
                     conn->tx_frame[0] = 0x03;
                     conn->tx_frame[1] = 2;
                     conn->tx_frame[2] = LL_TERMINATE_IND;
                     conn->tx_frame[3] = conn->link_layer.local_terminate_reason;
 
-                    conn->c_link_state.terminate_queued = 0;
-                    conn->c_link_state.terminate_sent = 1;
+                    conn->link_state.terminate_queued = 0;
+                    conn->link_state.terminate_sent = 1;
                     conn->c_queue.tx_queued = 0;
                 }
                 gap_conn_send_queued();
@@ -527,7 +527,7 @@ void gap_hw_received(void) {
 #endif
 
                 if (gap_conn_tx_payload_len(conn) == 0 && conn->c_queue.tx_queued &&
-                    !conn->c_link_state.terminate_after_reply
+                    !conn->link_state.terminate_after_reply
                 ) {
                     conn->tx_frame[0] = conn->c_tx.llid;
                     conn->tx_frame[1] = conn->c_tx.len;
@@ -571,7 +571,7 @@ void gap_hw_received(void) {
 
         // Set the buffer, mark the reply, then start the radio in this order.
         GAP_HW_TX_BUFFER(transmit);
-        conn->c_link_state.event_replied = 1;
+        conn->link_state.event_replied = 1;
         GAP_HW_LINK_TX();
         gap_conn_slot = previous_slot;
         return;
@@ -1103,7 +1103,7 @@ static void gap_conn_poll(void) {
         return;
     uint64_t now = GAP_HW_TICKS();
 
-    if (conn->c_link_state.event_replied) {
+    if (conn->link_state.event_replied) {
         if (!GAP_HW_TX_DONE()) {
             if (now > conn->link_layer.next_ticks)
                 gap_conn_end();
@@ -1113,9 +1113,9 @@ static void gap_conn_poll(void) {
         GAP_HW_STOP();
         gap_rx_armed = 0;
         gap_poll.slot_valid = 0;
-        conn->c_link_state.event_replied = 0;
+        conn->link_state.event_replied = 0;
 
-        if (conn->c_link_state.terminate_after_reply) {
+        if (conn->link_state.terminate_after_reply) {
             gap_conn_end();
             return;
         }
@@ -1123,7 +1123,7 @@ static void gap_conn_poll(void) {
     }
 
     if (now >= gap_conn_close_ticks(conn, now_ms)) {
-        if (conn->c_link_state.rx_armed) {
+        if (conn->link_state.rx_armed) {
             GAP_HW_STOP();
             gap_rx_armed = 0;
         }
@@ -1131,7 +1131,7 @@ static void gap_conn_poll(void) {
         if (gap_poll.slot_valid && gap_poll.slot == gap_conn_slot)
             gap_poll.slot_valid = 0;
 
-        conn->c_link_state.rx_armed = 0;
+        conn->link_state.rx_armed = 0;
         uint32_t skipped = 0;
 
         do {
@@ -1145,10 +1145,10 @@ static void gap_conn_poll(void) {
             skipped++;
         } while (now >= gap_conn_close_ticks(conn, now_ms));
 
-        uint32_t extra_hops = skipped - conn->c_link_state.channel_selected;
+        uint32_t extra_hops = skipped - conn->link_state.channel_selected;
         conn->link_layer.unmapped_channel = (conn->link_layer.unmapped_channel +
                                         extra_hops * conn->link_layer.hop) % 37;
-        conn->c_link_state.channel_selected = 0;
+        conn->link_state.channel_selected = 0;
     }
 
     // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
@@ -1164,7 +1164,7 @@ static void gap_conn_poll(void) {
     if (open_ticks > early_ticks)
         open_ticks -= early_ticks;
 
-    if (conn->c_link_state.rx_armed || now < open_ticks)
+    if (conn->link_state.rx_armed || now < open_ticks)
         return;
 
     // During a Central's subrate update, wake for either the old or new
@@ -1232,7 +1232,7 @@ static void gap_conn_poll(void) {
             conn->tx_frame[0] = 0x01;
             conn->tx_frame[1] = 0;
 
-            if (!conn->c_link_state.terminate_queued && !conn->c_link_state.terminate_sent) {
+            if (!conn->link_state.terminate_queued && !conn->link_state.terminate_sent) {
                 gap_conn_send_queued();
             }
 
@@ -1251,8 +1251,8 @@ static void gap_conn_poll(void) {
                             transmit, 1, conn->c_phy.current.tx, conn->c_phy.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
-        conn->c_link_state.rx_armed = 1;
-        conn->c_link_state.channel_selected = 1;
+        conn->link_state.rx_armed = 1;
+        conn->link_state.channel_selected = 1;
         gap_rx_armed = 1;
         GAP_HW_LINK_TX();
         return;
@@ -1263,8 +1263,8 @@ static void gap_conn_poll(void) {
                         NULL, 0, conn->c_phy.current.tx, conn->c_phy.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
-    conn->c_link_state.rx_armed = 1;
-    conn->c_link_state.channel_selected = 1;
+    conn->link_state.rx_armed = 1;
+    conn->link_state.channel_selected = 1;
     gap_rx_armed = 1;
     GAP_HW_LINK_RX();
 }
@@ -1355,7 +1355,7 @@ void gap_hw_scan_poll(void) {
 
     const gap_conn_context *conn = gap_conn_ctx_current();
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        (conn->c_link_state.rx_armed || conn->c_link_state.event_replied)
+        (conn->link_state.rx_armed || conn->link_state.event_replied)
     ) return;
 
     uint8_t reset_scan = gap_scan.applied_generation != gap_scanner.generation;

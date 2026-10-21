@@ -568,7 +568,7 @@ typedef struct {
         uint8_t terminate_queued;
         // LL_TERMINATE_IND was sent; link closes after its acknowledgment/cleanup.
         uint8_t terminate_sent;
-    } c_link_state;
+    } link_state;
 
     // Shared by Central and Peripheral links. The Peripheral reports its PHY
     // preferences; the Central chooses the PHY and sends the update. Pending

@@ -179,7 +179,7 @@ static void gap_conn_end(void) {
     security->status = security_status;
 
     // Clear link and queued procedure state after stopping radio use.
-    memset(&conn->c_link_state, 0, sizeof(conn->c_link_state));
+    memset(&conn->link_state, 0, sizeof(conn->link_state));
     gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->is_central = 0;
     memset(&conn->c_pending, 0, sizeof(conn->c_pending));
@@ -720,7 +720,7 @@ static uint8_t gap_conn_control(
             gap_security->status = GAP_LL_ERR_UNSPECIFIED;
 
             if (restart) {
-                conn->c_link_state.terminate_after_reply = 1;
+                conn->link_state.terminate_after_reply = 1;
                 conn->tx_frame[1] = 2;
                 conn->tx_frame[2] = LL_TERMINATE_IND;
                 conn->tx_frame[3] = GAP_LL_ERR_UNSPECIFIED;
@@ -1025,7 +1025,7 @@ static uint8_t gap_conn_control(
     case LL_TERMINATE_IND:
         if (frame[1] == 2) {
             // The empty response acknowledges termination in NESN.
-            conn->c_link_state.terminate_after_reply = 1;
+            conn->link_state.terminate_after_reply = 1;
             conn->tx_frame[0] = 0x01;
             break;
         }
@@ -1238,7 +1238,7 @@ static uint8_t gap_conn_control(
         if (frame[1] != 6)
             return gap_conn_unknown_resp(conn, frame[2]);
 
-        if (!conn->c_link_state.version_ind_sent) {
+        if (!conn->link_state.version_ind_sent) {
             conn->tx_frame[1] = 6;
             conn->tx_frame[2] = LL_VERSION_IND;
             conn->tx_frame[3] = 0x09; // Bluetooth 5.0 LL
@@ -1246,7 +1246,7 @@ static uint8_t gap_conn_control(
             conn->tx_frame[5] = 0x07;
             conn->tx_frame[6] = 0;
             conn->tx_frame[7] = 0;
-            conn->c_link_state.version_ind_sent = 1;
+            conn->link_state.version_ind_sent = 1;
         }
 
         break;
@@ -1948,9 +1948,9 @@ static uint8_t gap_conn_pending_procedure_busy(const gap_conn_context *conn) {
         conn->c_queue.local_map ||
         conn->c_queue.length ||
         conn->c_queue.phy_queued ||
-        conn->c_link_state.terminate_after_reply ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent;
+        conn->link_state.terminate_after_reply ||
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent;
 }
 
 static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
@@ -2246,9 +2246,9 @@ int gap_channel_reporting_set(
         max_delay_200ms > 150 ||
         conn->central.channel_report_queued ||
         conn->central.channel_report_pending ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent ||
-        conn->c_link_state.terminate_after_reply
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent ||
+        conn->link_state.terminate_after_reply
     ) return 0;
 
     conn->channel_report.enabled = enable;
@@ -2376,9 +2376,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         (!conn->is_central && conn->link_layer.first_event) ||
         gap_security->phase ||
         conn->c_queue.tx_queued ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent ||
-        conn->c_link_state.terminate_after_reply ||
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent ||
+        conn->link_state.terminate_after_reply ||
         len > conn->data_length.tx_octets ||
         (len + 10 + (gap_security->tx_enabled ? 4 : 0)) * 8 > conn->data_length.tx_time ||
         (llid == 2 && len < 4)
@@ -2413,13 +2413,13 @@ int gap_disconnect(uint8_t reason) {
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (!conn->is_central && conn->link_layer.first_event) ||
         !reason ||
-        conn->c_link_state.terminate_after_reply ||
-        conn->c_link_state.terminate_queued ||
-        conn->c_link_state.terminate_sent
+        conn->link_state.terminate_after_reply ||
+        conn->link_state.terminate_queued ||
+        conn->link_state.terminate_sent
     ) return 0;
 
     conn->link_layer.local_terminate_reason = reason;
-    conn->c_link_state.terminate_queued = 1;
+    conn->link_state.terminate_queued = 1;
     return 1;
 }
 
@@ -2526,7 +2526,7 @@ static void gap_send_security(gap_conn_context *conn) {
             conn->tx_frame[1] = 2;
             conn->tx_frame[2] = LL_TERMINATE_IND;
             conn->tx_frame[3] = 0x06;
-            conn->c_link_state.terminate_sent = 1;
+            conn->link_state.terminate_sent = 1;
         }
         else {
             conn->tx_frame[1] = 3;

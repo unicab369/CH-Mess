@@ -2638,7 +2638,7 @@ static void start_test_central_link(void) {
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central);
     now_ms += 2;
     gap_conn_poll();
-    assert(conn->c_link_state.rx_armed);
+    assert(conn->link_state.rx_armed);
     rx_frame[0] = 0x05; rx_frame[1] = 0; // ACK the first empty Central packet.
     gap_hw_received();
     assert(!conn->link_layer.first_event);
@@ -2695,7 +2695,7 @@ static void test_connection_context_slots(void) {
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &gap_smp_contexts[gap_conn_slot];
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     conn->c_queue.rx_ready = 0;
     gap_connection_slot = first_handle.slot;
     gap_connection_slot_valid = 1;
@@ -2717,8 +2717,8 @@ static void test_connection_context_slots(void) {
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &gap_smp_contexts[gap_conn_slot];
-    conn->c_link_state.event_replied = 0;
-    conn->c_link_state.rx_armed = 0;
+    conn->link_state.event_replied = 0;
+    conn->link_state.rx_armed = 0;
     gap_connection_slot_valid = 0;
     gap_conn_select_slot(second_handle.slot);
     conn = &gap_conn_ctx[gap_conn_slot];
@@ -2768,8 +2768,8 @@ static void test_connection_context_slots(void) {
         connection->is_central = slot == 0;
         connection->central.central_anchor_set = 1;
         connection->link_layer.first_event = 0;
-        connection->c_link_state.rx_armed = connection->c_link_state.event_replied = 0;
-        connection->c_link_state.channel_selected = 0;
+        connection->link_state.rx_armed = connection->link_state.event_replied = 0;
+        connection->link_state.channel_selected = 0;
         connection->link_layer.access_address = 0x12345670u + slot;
         connection->link_layer.next_ticks = 9000;
         connection->link_layer.last_rx_ms = now_ms;
@@ -2853,7 +2853,7 @@ static void test_connection_context_slots(void) {
 
 static void receive_test_link_packet(uint8_t acknowledged) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) |
         ((conn->link_layer.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = 0;
@@ -2864,7 +2864,7 @@ static void test_extended_length_control_pdu(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     start_test_central_link();
     conn->procedures.data_length.rx_octets = 251; // Simulate a completed DLE exchange.
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
         ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 36;
@@ -2914,7 +2914,7 @@ static void test_periodic_sync_transfer_receive(void) {
     memcpy(rx_frame + 29, advertiser, sizeof(advertiser));
     rx_frame[35] = (uint8_t)current_event;
     rx_frame[36] = (uint8_t)(current_event >> 8);
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
     memcpy(valid_transfer, rx_frame, sizeof(valid_transfer));
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_syncs[0].used &&
@@ -2967,13 +2967,13 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[1] = 35;
     rx_frame[2] = 0x1c;
     rx_frame[28] = 3; // Reserved periodic PHY encoding.
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_syncs[0].used);
     rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
         ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[28] = 1;
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_syncs[0].used);
 
@@ -2987,7 +2987,7 @@ static void test_periodic_sync_transfer_receive(void) {
     rx_frame[24] = (uint8_t)((timeout_event + 1) >> 8);
     rx_frame[35] = (uint8_t)timeout_event;
     rx_frame[36] = (uint8_t)(timeout_event >> 8);
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
     assert(gap_syncs[0].used && !gap_syncs[0].established);
     now_ms += 100;
@@ -3051,8 +3051,8 @@ static void test_connection_timing_updates(void) {
     conn->link_layer.event_counter = 0xfffe;
     conn->procedures.params.latency = 3;
     conn->link_layer.tx_pending = 0;
-    conn->c_link_state.event_replied = 0;
-    conn->c_link_state.rx_armed = 0;
+    conn->link_state.event_replied = 0;
+    conn->link_state.rx_armed = 0;
     conn->link_layer.next_ticks = (uint64_t)now_ms * 1000;
     assert(gap_conn_update(72, 0, 300));
     gap_conn_poll();
@@ -3074,7 +3074,7 @@ static void test_connection_timing_updates(void) {
 
 static void receive_test_control(uint8_t opcode, const uint8_t *data, uint8_t len) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = len + 1;
@@ -3247,7 +3247,7 @@ static void test_data_length(void) {
     rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = capacity;
     memcpy(rx_frame + 2, data, capacity);
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
     uint8_t llid;
     size_t received_len = sizeof(data);
@@ -3380,7 +3380,7 @@ static void test_channel_map_updates(void) {
     // The Central foreground send path also builds a queued map update.
     start_test_central_link();
     assert(gap_channel_map_set(channels));
-    conn->link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
+    conn->link_layer.tx_pending = conn->link_state.event_replied = conn->link_state.rx_armed = 0;
     now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(conn->tx_frame[2] == 0x01 && (conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
@@ -3437,7 +3437,7 @@ static void test_phy_updates(void) {
     }
     assert(conn->c_phy.current.tx == 2 && conn->c_phy.current.rx == 2 &&
            conn->c_phy.status == 0);
-    conn->c_link_state.rx_armed = conn->c_link_state.event_replied = 0;
+    conn->link_state.rx_armed = conn->link_state.event_replied = 0;
     now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(configured_tx_phy == 2 && configured_rx_phy == 2);
@@ -3472,7 +3472,7 @@ static void test_phy_updates(void) {
     // The foreground Central send path also starts a queued PHY request.
     start_test_central_link();
     assert(gap_phy_set(2, 2));
-    conn->link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
+    conn->link_layer.tx_pending = conn->link_state.event_replied = conn->link_state.rx_armed = 0;
     now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(conn->tx_frame[2] == 0x16 && conn->c_pending.phy_request);
@@ -3555,7 +3555,7 @@ static void test_phy_updates(void) {
     while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->c_phy.current.tx == GAP_PHY_CODED &&
            conn->c_phy.current.rx == GAP_PHY_CODED);
-    conn->c_link_state.rx_armed = conn->c_link_state.event_replied = 0;
+    conn->link_state.rx_armed = conn->link_state.event_replied = 0;
     now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(configured_tx_phy == GAP_PHY_CODED &&
@@ -3679,21 +3679,21 @@ static void test_connection_subrating(void) {
     conn->c_subrate.base_event = 0;
     conn->c_subrate.continuations = 0;
     conn->link_layer.event_counter = 1;
-    conn->link_layer.tx_pending = conn->c_queue.tx_queued = conn->c_link_state.rx_armed = 0;
-    conn->c_link_state.event_replied = 0;
+    conn->link_layer.tx_pending = conn->c_queue.tx_queued = conn->link_state.rx_armed = 0;
+    conn->link_state.event_replied = 0;
     gap_connection_slot_valid = 0;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
     fake_radio_ticks = conn->link_layer.next_ticks;
     uint8_t previous_channel = conn->link_layer.unmapped_channel;
     gap_conn_poll();
-    assert(conn->link_layer.event_counter == 2 && !conn->c_link_state.rx_armed &&
+    assert(conn->link_layer.event_counter == 2 && !conn->link_state.rx_armed &&
            conn->link_layer.unmapped_channel == (previous_channel + conn->link_layer.hop) % 37);
     conn->link_layer.event_counter = 3;
     conn->c_subrate.continuations = 1;
     conn->link_layer.next_ticks = fake_radio_ticks;
     gap_conn_poll();
-    assert(conn->c_link_state.rx_armed); // Continuation event.
+    assert(conn->link_state.rx_armed); // Continuation event.
     fake_radio_ticks_enabled = 0;
     gap_conn_end();
 
@@ -3918,7 +3918,7 @@ static void receive_secure_test_pdu(
     EVP_CIPHER_CTX_free(ctx);
     if (tampered)
         rx_frame[2 + len] ^= 1;
-    conn->c_link_state.rx_armed = 1;
+    conn->link_state.rx_armed = 1;
     gap_hw_received();
 }
 
@@ -3945,7 +3945,7 @@ static void start_test_encrypted_central(void) {
     assert(!gap_encrypted() && gap_security->tx_counter == 1);
     // An unacknowledged plaintext START request retries the same encrypted response.
     rx_frame[0] = 3 | ((conn->link_layer.expected_rx_sn ^ 1) << 3) | (conn->link_layer.tx_sn << 2);
-    rx_frame[1] = 1; rx_frame[2] = 0x05; conn->c_link_state.rx_armed = 1;
+    rx_frame[1] = 1; rx_frame[2] = 0x05; conn->link_state.rx_armed = 1;
     gap_hw_received();
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
     assert(gap_security->tx_counter == 1);
@@ -4072,7 +4072,7 @@ static void test_link_encryption(void) {
     assert(gap_encrypt(encryption_ltk, encryption_random, 0));
     receive_test_link_packet(1);
     rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
-    rx_frame[1] = 1; rx_frame[2] = 0x55; conn->c_link_state.rx_armed = 1;
+    rx_frame[1] = 1; rx_frame[2] = 0x55; conn->link_state.rx_armed = 1;
     gap_hw_received();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
 

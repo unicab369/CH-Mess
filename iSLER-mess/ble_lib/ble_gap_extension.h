@@ -2478,7 +2478,7 @@ static int gap_ext_send_due(uint32_t now) {
                         event_duration_us = response_end_us;
                 }
 
-                if (conn->c_link_state.rx_armed || conn->c_link_state.event_replied)
+                if (conn->link_state.rx_armed || conn->link_state.event_replied)
                     return 1;
 
                 if (gap_sync_conn_overlap(set->periodic.next_ticks,
