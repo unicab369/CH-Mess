@@ -1191,13 +1191,33 @@ static void gap_conn_poll(void) {
         gap_rx_armed = 0;
     }
 
-    // Legacy CONNECT_IND selects Channel Selection Algorithm #1.
+    // Channel selection for this event (Channel Selection Algorithm #1):
+    // 1. Advance by the hop increment to calculate the unmapped channel.
     uint8_t unmapped = (conn->c_link_layer.unmapped_channel + conn->c_link_layer.hop) % 37;
     conn->c_link_layer.unmapped_channel = unmapped;
 
-    uint8_t channel = unmapped;
-    if (!(conn->c_link_layer.channel_map[unmapped / 8] & (1 << (unmapped % 8))))
-        channel = conn->c_link_layer.used_channels[unmapped % conn->c_link_layer.used_count];
+    // 2. Use that channel if it is enabled in the channel map.
+    uint8_t selected_channel = unmapped;
+
+    // 3. If disabled, scan the map for enabled channel (unmapped % used_count).
+    if (!(conn->c_link_layer.channel_map[unmapped / 8] & (1 << (unmapped % 8)))) {
+        uint8_t remapped_index = unmapped % conn->c_link_layer.used_count;
+
+        for (uint8_t candidate_channel = 0; candidate_channel < 37; candidate_channel++) {
+            // Skip disabled channels; the remap index counts enabled ones only.
+            if (!(conn->c_link_layer.channel_map[candidate_channel / 8] &
+                    (1 << (candidate_channel % 8)))
+            ) continue;
+
+            // Select this channel when the requested enabled-channel index is 0.
+            if (!remapped_index) {
+                selected_channel = candidate_channel;
+                break;
+            }
+            // This enabled channel comes before the requested index.
+            remapped_index--;
+        }
+    }
 
     GAP_HW_CRC_INIT(conn->c_link_layer.crc_init);
 
@@ -1227,7 +1247,7 @@ static void gap_conn_poll(void) {
 
         if (!transmit) return;
 
-        GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, channel,
+        GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, selected_channel,
                             transmit, 1, conn->c_phy.current.tx, conn->c_phy.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
@@ -1239,7 +1259,7 @@ static void gap_conn_poll(void) {
     }
 #endif
 
-    GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, channel,
+    GAP_HW_LINK_CONFIG(conn->c_link_layer.access_address, selected_channel,
                         NULL, 0, conn->c_phy.current.tx, conn->c_phy.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;

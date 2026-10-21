@@ -349,7 +349,7 @@ static void gap_conn_update_apply(
 
         for (uint8_t channel = 0; channel < 37; channel++)
             if (conn->c_link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
-                conn->c_link_layer.used_channels[conn->c_link_layer.used_count++] = channel;
+                conn->c_link_layer.used_count++;
         conn->c_pending.procedure_flags &= (uint8_t)~GAP_PENDING_CHANNEL_MAP;
 
         if (conn->is_central && conn->connection_status == GAP_CONNECTION_PENDING)

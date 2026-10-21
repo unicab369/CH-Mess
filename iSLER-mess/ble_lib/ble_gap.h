@@ -552,7 +552,7 @@ typedef struct {
         volatile uint8_t length;
     } c_queue;
 
-    // Link-layer event and termination state.
+    // Tracks radio receive/reply progress and disconnect handling between polls.
     struct {
         // Radio receive is armed for this link, alongside the shared gap_rx_armed state.
         uint8_t rx_armed;
@@ -570,7 +570,9 @@ typedef struct {
         uint8_t terminate_sent;
     } c_link_state;
 
-    // PHY update state.
+    // Shared by Central and Peripheral links. The Peripheral reports its PHY
+    // preferences; the Central chooses the PHY and sends the update. Pending
+    // values become current at the update instant.
     struct {
         struct {
             uint8_t tx, rx;
@@ -592,8 +594,7 @@ typedef struct {
         uint8_t hop; // CSA#1 hop increment used to advance the unmapped channel.
         uint8_t unmapped_channel; // Previous channel before applying the channel map.
         uint8_t channel_map[5]; // Active 37-channel map received from/used with the peer.
-        uint8_t used_channels[37]; // Active channel numbers in lookup order for remapping.
-        uint8_t used_count; // Number of enabled data channels in used_channels.
+        uint8_t used_count; // Number of enabled data channels in channel_map.
         uint8_t expected_rx_sn; // Next LLID sequence number expected from the peer.
         uint8_t tx_sn; // Sequence number assigned to the next new transmitted LL packet.
         uint8_t tx_pending; // A transmitted packet is awaiting acknowledgment/retransmission.
@@ -1597,8 +1598,8 @@ static int gap_conn_accept(
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (frame[30 + channel / 8] & (1 << (channel % 8)))
-            conn->c_link_layer.used_channels[count++] = channel;
+        if (conn->c_link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
+            count++;
 
     conn->c_link_layer.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
