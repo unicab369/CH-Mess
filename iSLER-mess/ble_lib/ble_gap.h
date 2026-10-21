@@ -474,13 +474,13 @@ typedef struct {
     // Connection parameters and timing state.
     // Replacement for link_layer.channel_map, applied when map_instant arrives.
     uint8_t next_channel_map[5];
-    // Result for pending procedures, including the request tracked by c_pending.params_state.
+    // Result for pending procedures, including the request tracked by procedure_state.params_state.
     uint8_t connection_status;
     // Request bounds are needed while negotiating; selected parameters are
     // needed after selection through update_instant, so they share storage.
     union {
         struct {
-            // Lower bound paired with params_max_1p25ms in the request queued by c_queue.local_params.
+            // Lower bound paired with params_max_1p25ms in the request queued by queue_state.local_params.
             uint16_t params_min_1p25ms;
             // Upper bound paired with params_min_1p25ms in that request.
             uint16_t params_max_1p25ms;
@@ -496,7 +496,7 @@ typedef struct {
             uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
         } new_params;
     };
-    // Start time for timeout checks on pending procedures such as c_pending.params_state.
+    // Start time for timeout checks on pending procedures such as procedure_state.params_state.
     uint32_t params_started_ms;
     // Event counter when new_params takes effect; update_win_offset shifts its first anchor.
     uint16_t update_instant;
@@ -526,17 +526,17 @@ typedef struct {
         uint8_t update_window_active;
         // GAP_PENDING_* bits for timing, channel-map, and PHY procedures; cleared on completion.
         uint8_t procedure_flags;
-        // Tracks the local/remote parameter request associated with params_* and c_queue.local_params.
+        // Tracks the local/remote parameter request associated with params_* and queue_state.local_params.
         uint8_t params_state;
-        // PHY procedure response state associated with c_phy and c_queue.phy_queued.
+        // PHY procedure response state associated with phy_state and queue_state.phy_queued.
         uint8_t phy_request;
-        // Data-length exchange state associated with length_status and c_queue.length.
+        // Data-length exchange state associated with length_status and queue_state.length.
         uint8_t length;
-    } c_pending;
+    } procedure_state;
 
     // Radio queues and connection data.
     struct {
-        // PHY control work is waiting for the poll; parameters are in c_phy.preferred.
+        // PHY control work is waiting for the poll; parameters are in phy_state.preferred.
         volatile uint8_t phy_queued;
         // c_tx contains an outgoing packet waiting for radio transmission.
         volatile uint8_t tx_queued;
@@ -550,7 +550,7 @@ typedef struct {
         volatile uint8_t local_map;
         // A data-length update is waiting; local limit is in local_tx_octets.
         volatile uint8_t length;
-    } c_queue;
+    } queue_state;
 
     // Tracks radio receive/reply progress and disconnect handling between polls.
     struct {
@@ -586,7 +586,7 @@ typedef struct {
         uint8_t status;       // Result/status of the PHY update procedure.
         uint16_t instant;     // Event counter when pending PHY values take effect.
         uint32_t started_ms;  // Start time used to expire a pending PHY procedure.
-    } c_phy;
+    } phy_state;
 
     struct {
         uint8_t first_event; // First event has not yet completed normal link scheduling.
@@ -1632,10 +1632,10 @@ static int gap_conn_accept(
 
     conn->channel_report.min_spacing_200ms = 5;
     conn->channel_report.max_delay_200ms = 5;
-    conn->c_phy.current.tx = GAP_PHY_1M;
-    conn->c_phy.current.rx = GAP_PHY_1M;
-    conn->c_phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
-    conn->c_phy.preferred.rx = conn->c_phy.preferred.tx;
+    conn->phy_state.current.tx = GAP_PHY_1M;
+    conn->phy_state.current.rx = GAP_PHY_1M;
+    conn->phy_state.preferred.tx = GAP_HW_PHY_MASK() & 7;
+    conn->phy_state.preferred.rx = conn->phy_state.preferred.tx;
     gap_security_generations[gap_conn_slot]++;
 
     if (++gap_conn_generations[gap_conn_slot] == 0)

@@ -1398,7 +1398,7 @@ static void smp_bond_restore_poll(
     ) {
         if (conn->bond_repair_pending &&
             !conn->link_layer.tx_pending &&
-            !conn->c_queue.tx_queued &&
+            !conn->queue_state.tx_queued &&
             !conn->tx_l2cap_remaining && gap_pair()
         ) {
             conn->bond_repair_pending = 0;
@@ -1689,7 +1689,7 @@ static void gap_smp_poll_context(
     if (pairing->phase == SMP_PHASE_BOND_TX &&
         smp->bond_tx_waiting
     ) {
-        if (conn->link_layer.tx_pending || conn->c_queue.tx_queued)
+        if (conn->link_layer.tx_pending || conn->queue_state.tx_queued)
             return;
 
         smp->bond_tx_waiting = 0;
@@ -1791,7 +1791,7 @@ static void gap_smp_poll_context(
     if (pairing->phase == SMP_PHASE_BOND_TX) {
         if (!smp->bond_tx_waiting && smp_tx_pending(smp) &&
             !conn->link_layer.tx_pending &&
-            !conn->c_queue.tx_queued &&
+            !conn->queue_state.tx_queued &&
             !conn->tx_l2cap_remaining &&
             gap_send_data(2, smp->tx_queue->data, smp->tx_queue->length)
         ) {
@@ -1837,7 +1837,7 @@ static void gap_smp_poll_context(
         !smp->tx_queue->length &&
         !conn->tx_l2cap_remaining &&
         !conn->link_layer.tx_pending &&
-        !conn->c_queue.tx_queued
+        !conn->queue_state.tx_queued
     ) {
         // The initiator commits first; the responder waits for its confirm.
         uint8_t confirm[16];
@@ -1892,7 +1892,7 @@ static void gap_smp_poll_context(
         if (!smp->encryption_started && !smp->tx_queue->length &&
             !conn->tx_l2cap_remaining &&
             !conn->link_layer.tx_pending &&
-            !conn->c_queue.tx_queued
+            !conn->queue_state.tx_queued
         ) {
             if (conn->is_central && !gap_security->phase) {
                 if (gap_encrypt(smp->key.secure_ltk, (const uint8_t[8]){0}, 0))
@@ -2047,7 +2047,7 @@ static void gap_smp_poll_context(
         }
     }
 
-    if (!conn->c_queue.rx_ready || smp->l2cap_rx_pending)
+    if (!conn->queue_state.rx_ready || smp->l2cap_rx_pending)
         return;
 
     smp->l2cap_rx_pending = 1;
@@ -2064,7 +2064,7 @@ static void gap_smp_poll_context(
 
     if (assembled <= 0) {
         if (cid == L2CAP_CID_SMP) {
-            conn->c_queue.rx_ready = 0;
+            conn->queue_state.rx_ready = 0;
             smp->l2cap_rx_pending = 0;
 
             if (assembled < 0 && !smp->blocked)
@@ -2079,7 +2079,7 @@ static void gap_smp_poll_context(
 
     // Keep the RX slot occupied until L2CAP finishes processing the SDU.
     int dispatched = l2cap_receive(smp->l2cap, completed_cid, sdu, sdu_len);
-    conn->c_queue.rx_ready = 0;
+    conn->queue_state.rx_ready = 0;
     smp->l2cap_rx_pending = 0;
 
     if (!dispatched) {

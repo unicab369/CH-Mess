@@ -12,12 +12,12 @@ static void gap_conn_send_queued(void) {
     if (conn->security.phase)
         return;
 
-    if (conn->c_queue.local_update)
+    if (conn->queue_state.local_update)
         gap_send_conn_update(conn);
 
-    if (conn->c_queue.local_map && !gap_conn_tx_payload_len(conn)) {
-        conn->c_pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
-        conn->c_queue.local_map = 0;
+    if (conn->queue_state.local_map && !gap_conn_tx_payload_len(conn)) {
+        conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
+        conn->queue_state.local_map = 0;
 
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
         // Allow six latency-adjusted event periods plus one extra event of lead.
@@ -30,7 +30,7 @@ static void gap_conn_send_queued(void) {
         ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
     }
 
-    if (conn->c_queue.local_params &&
+    if (conn->queue_state.local_params &&
         !conn->c_features.request_pending &&
         !gap_conn_tx_payload_len(conn)
     ) {
@@ -39,13 +39,13 @@ static void gap_conn_send_queued(void) {
             gap_send_feature_request(conn);
         }
         else if (!(conn->c_features.peer_feature_0 & 0x02)) {
-            conn->c_queue.local_params = 0;
+            conn->queue_state.local_params = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
         }
         else {
             conn->params_started_ms = GET_MILLIS();
-            conn->c_queue.local_params = 0;
-            conn->c_pending.params_state = GAP_CONN_PARAMS_LOCAL;
+            conn->queue_state.local_params = 0;
+            conn->procedure_state.params_state = GAP_CONN_PARAMS_LOCAL;
             conn->tx_frame[0] = 3;
             conn->tx_frame[1] = 24;
             conn->tx_frame[2] = LL_CONNECTION_PARAM_REQ;
@@ -62,20 +62,20 @@ static void gap_conn_send_queued(void) {
         }
     }
 
-    if (conn->c_queue.length)
+    if (conn->queue_state.length)
         gap_send_data_length(conn, LL_LENGTH_REQ);
 
-    if (conn->c_queue.phy_queued && !gap_conn_tx_payload_len(conn)) {
+    if (conn->queue_state.phy_queued && !gap_conn_tx_payload_len(conn)) {
         // Encode local preferences once earlier TX has been acknowledged.
-        conn->c_queue.phy_queued = 0;
-        conn->c_pending.phy_request = 1;
-        conn->c_phy.started_ms = GET_MILLIS();
+        conn->queue_state.phy_queued = 0;
+        conn->procedure_state.phy_request = 1;
+        conn->phy_state.started_ms = GET_MILLIS();
 
         conn->tx_frame[0] = 3;
         conn->tx_frame[1] = 3;
         conn->tx_frame[2] = LL_PHY_REQ;
-        conn->tx_frame[3] = conn->c_phy.preferred.tx;
-        conn->tx_frame[4] = conn->c_phy.preferred.rx;
+        conn->tx_frame[3] = conn->phy_state.preferred.tx;
+        conn->tx_frame[4] = conn->phy_state.preferred.rx;
     }
 
     if (!conn->c_features.request_pending && !gap_conn_tx_payload_len(conn)) {
@@ -247,7 +247,7 @@ void gap_hw_received(void) {
         }
         else {
             uint64_t airtime_ticks = HW_TICKS_FROM_US(
-                gap_phy_airtime_us((uint16_t)frame[1], conn->c_phy.current.rx));
+                gap_phy_airtime_us((uint16_t)frame[1], conn->phy_state.current.rx));
 
             if (received_ticks < airtime_ticks) {
                 gap_conn_slot = previous_slot;
@@ -324,7 +324,7 @@ void gap_hw_received(void) {
         }
         else {
             uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(
-                gap_phy_airtime_us(frame[1], conn->c_phy.current.rx));
+                gap_phy_airtime_us(frame[1], conn->phy_state.current.rx));
             conn->link_layer.next_ticks = received_ticks - rx_airtime_ticks +
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
@@ -333,7 +333,7 @@ void gap_hw_received(void) {
         conn->link_state.rx_armed = 0;
         conn->link_layer.first_event = 0;
         conn->link_state.channel_selected = 0;
-        conn->c_pending.update_window_active = 0;
+        conn->procedure_state.update_window_active = 0;
 
         // NESN is the peer's next expected TX sequence number; a changed NESN
         // acknowledges the packet currently pending for transmission.
@@ -397,7 +397,7 @@ void gap_hw_received(void) {
         uint8_t new_packet =
             ((frame[0] >> 3) & 1) == conn->link_layer.expected_rx_sn &&
             !((llid == 3 && (!frame[1] || conn->link_layer.tx_pending)) ||
-              ((llid == 1 || llid == 2) && frame[1] && conn->c_queue.rx_ready));
+              ((llid == 1 || llid == 2) && frame[1] && conn->queue_state.rx_ready));
 
         if (new_packet) {
             if (frame[1] && gap_security->phase &&
@@ -453,7 +453,7 @@ void gap_hw_received(void) {
                 conn->c_rx.llid = llid;
                 conn->c_rx.len = frame[1];
                 memcpy(conn->c_rx.data, frame + 2, frame[1]);
-                conn->c_queue.rx_ready = 1;
+                conn->queue_state.rx_ready = 1;
             }
             conn->link_layer.expected_rx_sn ^= 1;
         }
@@ -482,7 +482,7 @@ void gap_hw_received(void) {
 
                     conn->link_state.terminate_queued = 0;
                     conn->link_state.terminate_sent = 1;
-                    conn->c_queue.tx_queued = 0;
+                    conn->queue_state.tx_queued = 0;
                 }
                 gap_conn_send_queued();
 
@@ -526,13 +526,13 @@ void gap_hw_received(void) {
                 }
 #endif
 
-                if (gap_conn_tx_payload_len(conn) == 0 && conn->c_queue.tx_queued &&
+                if (gap_conn_tx_payload_len(conn) == 0 && conn->queue_state.tx_queued &&
                     !conn->link_state.terminate_after_reply
                 ) {
                     conn->tx_frame[0] = conn->c_tx.llid;
                     conn->tx_frame[1] = conn->c_tx.len;
                     memcpy(conn->tx_frame + 2, conn->c_tx.data, conn->c_tx.len);
-                    conn->c_queue.tx_queued = 0;
+                    conn->queue_state.tx_queued = 0;
                 }
             }
             // Control responses with no payload acknowledge using an empty
@@ -910,8 +910,8 @@ static uint64_t gap_conn_close_ticks(
     const gap_conn_context *connection, uint32_t now_ms
 ) {
     uint32_t packet_us;
-    if (connection->c_phy.current.tx == GAP_PHY_CODED ||
-        connection->c_phy.current.rx == GAP_PHY_CODED
+    if (connection->phy_state.current.tx == GAP_PHY_CODED ||
+        connection->phy_state.current.rx == GAP_PHY_CODED
     ) {
         // T_IFS. A 27-byte payload takes 2704 us on LE Coded S=8; larger DLE
         // payloads add 64 us per octet. S=2 packets finish sooner.
@@ -928,7 +928,7 @@ static uint64_t gap_conn_close_ticks(
     }
 
     uint32_t window_us = connection->link_layer.first_event ||
-                        connection->c_pending.update_window_active ?
+                        connection->procedure_state.update_window_active ?
                         (uint32_t)connection->window_size * 1250 : 1000;
     // Window widening: elapsed ms × combined clock error (ppm), rounded up to us.
     // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
@@ -980,7 +980,7 @@ static inline uint8_t gap_conn_can_skip_event(
     }
 #endif
 
-    if ((conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
+    if ((conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
     ) return 0;
 
@@ -1038,16 +1038,16 @@ static void gap_conn_poll(void) {
     }
 
     // phy.status
-    if (conn->c_pending.phy_request &&
-        (uint32_t)(now_ms - conn->c_phy.started_ms) >= 40000
+    if (conn->procedure_state.phy_request &&
+        (uint32_t)(now_ms - conn->phy_state.started_ms) >= 40000
     ) {
-        conn->c_phy.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
+        conn->phy_state.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         gap_conn_end();
         return;
     }
 
     // length_status
-    if (conn->c_pending.length &&
+    if (conn->procedure_state.length &&
         (uint32_t)(now_ms - conn->length_started_ms) >= 40000
     ) {
         conn->length_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
@@ -1055,7 +1055,7 @@ static void gap_conn_poll(void) {
         return;
     }
 
-    if ((conn->c_pending.params_state != GAP_CONN_PARAMS_NONE ||
+    if ((conn->procedure_state.params_state != GAP_CONN_PARAMS_NONE ||
          conn->c_features.request_pending ||
          conn->c_features.ext_pending ||
 #if GAP_PERIPHERAL_SUPPORT
@@ -1248,7 +1248,7 @@ static void gap_conn_poll(void) {
         if (!transmit) return;
 
         GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                            transmit, 1, conn->c_phy.current.tx, conn->c_phy.current.rx);
+                            transmit, 1, conn->phy_state.current.tx, conn->phy_state.current.rx);
         gap_poll.slot = gap_conn_slot;
         gap_poll.slot_valid = 1;
         conn->link_state.rx_armed = 1;
@@ -1260,7 +1260,7 @@ static void gap_conn_poll(void) {
 #endif
 
     GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                        NULL, 0, conn->c_phy.current.tx, conn->c_phy.current.rx);
+                        NULL, 0, conn->phy_state.current.tx, conn->phy_state.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
     conn->link_state.rx_armed = 1;
