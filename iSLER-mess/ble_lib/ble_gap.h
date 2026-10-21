@@ -544,12 +544,8 @@ typedef struct {
         volatile uint8_t tx_queued;
         // c_rx contains a received packet waiting for connection processing.
         volatile uint8_t rx_ready;
-        // A locally selected timing update is waiting to be sent using new_params.
-        volatile uint8_t local_update;
         // A local connection-parameter request is waiting; values are in params_*.
         volatile uint8_t local_params;
-        // A local channel-map update is waiting; values are in next_channel_map.
-        volatile uint8_t local_map;
         // A data-length update is waiting; local limit is in local_tx_octets.
         volatile uint8_t length;
     } queue_state;
@@ -683,7 +679,6 @@ typedef struct {
             // After receiving LL_CONNECTION_RATE_IND, keep events active until
             // the Central acknowledges the Peripheral's response to that indication.
             uint8_t rate_ack_waiting;
-
             // These request payloads cannot be pending together, so they share storage.
             union {
                 // LL_CONNECTION_RATE_REQ: the Peripheral proposes both a base interval
@@ -766,6 +761,10 @@ typedef struct {
 
 #if GAP_CENTRAL_SUPPORT
         struct {
+            // A locally selected timing update is waiting to be sent using new_params.
+            volatile uint8_t local_update;
+            // A local channel-map update is waiting; values are in next_channel_map.
+            volatile uint8_t local_map;
             // Internal scheduler flag: set when the first event initializes
             // next_ticks, so later polls do not reset the schedule to "now".
             uint8_t central_anchor_set;

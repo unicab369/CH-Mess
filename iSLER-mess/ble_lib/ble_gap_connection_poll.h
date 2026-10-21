@@ -12,12 +12,14 @@ static void gap_conn_send_queued(void) {
     if (conn->security.phase)
         return;
 
-    if (conn->queue_state.local_update)
+#if GAP_CENTRAL_SUPPORT
+    if (conn->is_central && conn->central.local_update)
         gap_send_conn_update(conn);
 
-    if (conn->queue_state.local_map && !gap_conn_tx_payload_len(conn)) {
+    if (conn->is_central && conn->central.local_map &&
+        !gap_conn_tx_payload_len(conn)) {
         conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
-        conn->queue_state.local_map = 0;
+        conn->central.local_map = 0;
 
         // Choose the Instant when the TX slot opens so it stays ahead of retries.
         // Allow six latency-adjusted event periods plus one extra event of lead.
@@ -29,6 +31,7 @@ static void gap_conn_send_queued(void) {
         memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
         ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
     }
+#endif
 
     if (conn->queue_state.local_params &&
         !conn->c_features.request_pending &&
