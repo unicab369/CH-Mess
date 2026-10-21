@@ -791,9 +791,7 @@ void mesh_gatt_poll(void) {
         gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
         l2cap_connection *l2cap = &link->l2cap;
         l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
-        if (!tx_queue->data ||
-            tx_queue->capacity < 4 || !l2cap->psm_registry
-        ) {
+        if (!tx_queue->data || tx_queue->capacity < 4) {
             (void)gap_disconnect(0x13);
             return;
         }

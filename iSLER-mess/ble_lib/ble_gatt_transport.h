@@ -1595,6 +1595,10 @@ typedef struct {
     ble_gatt_transport *transport;
     gap_conn_handle handle;
     uint8_t bound, connected;
+#if BLE_GATT_ENABLE_EATT
+    // Per-link dynamic PSMs, including EATT when this transport enables it.
+    l2cap_psm_registry psm_registry;
+#endif
 } ble_gap_gatt_peer;
 
 // Application facing
@@ -1609,6 +1613,9 @@ static inline int ble_gap_gatt_bind(
     if (peer->bound || peer->connected) return 0;
     if (!gatt_transport_init(transport, server, NULL, NULL)) return 0;
     if (client) gatt_transport_set_client(transport, client);
+#if BLE_GATT_ENABLE_EATT
+    memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+#endif
     peer->transport = transport;
     peer->bound = 1;
     return 1;
@@ -1637,9 +1644,15 @@ static inline int ble_gap_gatt_poll(
         seen[slot] = 1;
         if (!peer->bound) continue;
 
-        if (peer->connected && peer->handle.generation != handle.generation) {
-            gatt_transport_set_connected(peer->transport, 0);
-            peer->connected = 0;
+        if (peer->handle.generation &&
+            peer->handle.generation != handle.generation) {
+            if (peer->connected) {
+                gatt_transport_set_connected(peer->transport, 0);
+                peer->connected = 0;
+            }
+#if BLE_GATT_ENABLE_EATT
+            memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+#endif
         }
         peer->handle = handle;
         if (!gap_conn_select(handle)) continue;
@@ -1654,7 +1667,7 @@ static inline int ble_gap_gatt_poll(
         l2cap_connection *l2cap = &link->l2cap;
         l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
         if (!transport || !tx_queue->data ||
-            tx_queue->capacity < 4 || !l2cap->psm_registry ||
+            tx_queue->capacity < 4 ||
             (transport->connected && (!transport->shared_l2cap ||
              transport->l2cap_link != l2cap ||
              transport->tx_queue_link != tx_queue))) {
@@ -1666,6 +1679,10 @@ static inline int ble_gap_gatt_poll(
         transport->l2cap_link = l2cap;
         transport->tx_queue_link = tx_queue;
         transport->shared_l2cap = 1;
+#if BLE_GATT_ENABLE_EATT
+        if (!peer->connected)
+            l2cap->psm_registry = &peer->psm_registry;
+#endif
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
@@ -1734,6 +1751,9 @@ static inline int ble_gap_gatt_poll(
         gatt_transport_set_connected(peer->transport, 0);
         peer->connected = 0;
         memset(&peer->handle, 0, sizeof(peer->handle));
+#if BLE_GATT_ENABLE_EATT
+        memset(&peer->psm_registry, 0, sizeof(peer->psm_registry));
+#endif
     }
     gap_conn_slot = previous_slot;
     return failed ? -1 : work;

@@ -448,9 +448,12 @@ typedef struct {
     // Connection identity and security state.
     // Address from the CONNECT_IND initiator; with is_central, identifies which side is local.
     gap_address initiator;
+#if GAP_SMP_SUPPORT > 0
     // Address from the CONNECT_IND responder; with is_central, identifies which side is local.
+    // SMP pairing uses the address as it appeared during connection setup.
     gap_address responder;
-    // Peer identity used by GAP/SMP; may be resolved from initiator or responder after setup.
+#endif
+    // Peer identity used by GAP/SMP; may be resolved after setup.
     gap_address peer;
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
@@ -788,7 +791,7 @@ typedef struct {
     GAP_RADIO_BUFFER_ATTR uint8_t tx_frame[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
 
     // One L2CAP connection and bearer buffer set shared by this GAP link.
-    l2cap_psm_registry l2cap_psm_registry;
+    // The owning GATT or L2CAP adapter supplies its PSM registry when needed.
     l2cap_connection l2cap;
     l2cap_tx_queue l2cap_tx_queue;
     uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
@@ -1584,9 +1587,11 @@ static int gap_conn_accept(
     memcpy(conn->link_layer.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;
-    conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->initiator.address, frame + 2, 6);
+#if GAP_SMP_SUPPORT > 0
+    conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->responder.address, frame + 8, 6);
+#endif
     conn->peer = conn->initiator;
 
     conn->l2cap_tx_queue.data = conn->l2cap_tx;
@@ -1594,7 +1599,7 @@ static int gap_conn_accept(
     l2cap_ops l2cap_ops = {0};
     l2cap_ops.tx_queue = &conn->l2cap_tx_queue;
     if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops,
-            &conn->l2cap_psm_registry,
+            NULL,
             L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX, 0))
         return 0;
     uint8_t count = 0;

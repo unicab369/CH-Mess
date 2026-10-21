@@ -14,6 +14,7 @@ void gap_hw_radio_transmitted(void);
 #endif
 #define GAP_RADIO_BUFFER_ATTR ISLER_BUF_ATTR
 #include "../../ble_lib/ble_gap.h"
+#include "../../ble_lib/ble_gatt_transport.h"
 #include "../../ble_lib/gap_ports/ch58x_isler.h"
 #include "../../ble_lib/gatt_services/ble_gatt_services.h"
 
