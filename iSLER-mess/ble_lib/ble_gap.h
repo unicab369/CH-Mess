@@ -793,7 +793,6 @@ typedef struct {
     l2cap_connection l2cap;
     l2cap_tx_queue l2cap_tx_queue;
     uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
-    uint8_t l2cap_initialized;
 } gap_conn_context;
 
 // Outgoing data path:
@@ -1596,8 +1595,6 @@ static int gap_conn_accept(
             &conn->l2cap_psm_registry,
             L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX, 0))
         return 0;
-    conn->l2cap_initialized = 1;
-
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
         if (conn->link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
@@ -1732,10 +1729,6 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->handle = handle;
             peer->upper = manager->upper;
             gap_conn_context *link = &gap_conn_ctx[slot];
-            if (!link->l2cap_initialized) {
-                gap_conn_slot = previous_slot;
-                return -1;
-            }
             peer->connection = &link->l2cap;
             peer->tx_queue = &link->l2cap_tx_queue;
             peer->connection->local_mtu = manager->mtu;

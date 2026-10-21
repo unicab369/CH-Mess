@@ -1653,7 +1653,7 @@ static inline int ble_gap_gatt_poll(
         ble_gatt_transport *transport = peer->transport;
         l2cap_connection *l2cap = &link->l2cap;
         l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
-        if (!transport || !link->l2cap_initialized || !tx_queue->data ||
+        if (!transport || !tx_queue->data ||
             tx_queue->capacity < 4 || !l2cap->psm_registry ||
             (transport->connected && (!transport->shared_l2cap ||
              transport->l2cap_link != l2cap ||
