@@ -2,23 +2,12 @@
 #include <stdint.h>
 #include <string.h>
 
-#define L2CAP_TEST_CALLBACK_COMPAT 1
-static void gap_wipe(volatile void *data, size_t len) {
-    volatile uint8_t *bytes = data;
-    while (len--) *bytes++ = 0;
-}
-
-static void gap_bytes_reverse(
-    uint8_t *out, const uint8_t *in, size_t len
-) {
-    for (size_t i = 0; i < len; i++) out[i] = in[len - 1 - i];
-}
-
 void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
                        uint8_t *output) {
     for (size_t i = 0; i < 16; i++) output[i] = key[i] ^ input[i];
 }
 
+#include "../ble_crypto.h"
 #define GAP_SMP_SUPPORT 1
 #include "../ble_gap.h"
 
@@ -27,16 +16,6 @@ typedef struct {
 } fake_smp;
 
 static fake_smp *fake_random_state;
-
-static int fake_send(
-    void *context, uint16_t cid, const uint8_t *pdu,
-                     uint16_t len
-) {
-    (void)context;
-    (void)cid;
-    (void)pdu;
-    return len != 0;
-}
 
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
     if (!fake_random_state || fake_random_state->random_fail)
@@ -56,16 +35,20 @@ int main(void) {
 
     fake_smp fake = {0};
     fake_random_state = &fake;
+    uint8_t tx_data[4 + L2CAP_SDU_MAX];
+    l2cap_tx_queue tx_queue = {
+        .data = tx_data,
+        .capacity = sizeof(tx_data)
+    };
     l2cap_ops ops = {0};
-    ops.send_pdu = fake_send;
-    ops.context = &fake;
+    ops.tx_queue = &tx_queue;
     l2cap_connection l2cap;
-    assert(l2cap_conn_init(&l2cap, &ops, NULL, 64, 64, 1));
+    assert(l2cap_conn_init(&l2cap, &ops, NULL, 23, 23, 1));
     gap_smp_context smp = {0};
+    assert(smp_link_init(&smp, &l2cap));
+    smp.key.stk[0] = 0x5a;
+    assert(smp.key.secure_ltk[0] == 0x5a);
     typeof(smp.bearer) *bearer = &smp.bearer;
-    bearer->l2cap = &l2cap;
-    assert(l2cap_fixed_register(&l2cap, L2CAP_CID_SMP,
-        smp_receive_sdu, &smp));
     uint8_t secret[64], key[16] = {0}, input[16] = {1}, output[16];
     assert(smp_random_bytes(secret, 32) && secret[31] == 0x5a);
     fake.random_fail = 1;

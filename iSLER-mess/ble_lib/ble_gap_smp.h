@@ -206,11 +206,11 @@ typedef struct {
         uint8_t user_notified, numeric_notified, keypress_active;
         uint8_t bond_tx_step, bond_rx_step;
         uint8_t tk[16], request[7], response[7];
-        uint8_t peer_confirm[16], stk[16];
+        uint8_t peer_confirm[16];
     } pairing;
     struct {
         uint8_t private_key[32], public_key[64], peer_public_key[64];
-        uint8_t dhkey[32], mac_key[16], ltk[16];
+        uint8_t dhkey[32], mac_key[16];
         uint8_t oob_active, oob_peer_present;
         uint8_t oob_local_random[16];
         uint8_t numeric_required, numeric_reply;
@@ -218,6 +218,12 @@ typedef struct {
         uint8_t peer_check_rx, peer_check[16];
         uint32_t numeric_value;
     } secure;
+    // Legacy pairing's STK and Secure Connections' LTK are used by
+    // mutually exclusive pairing procedures, so they share one key buffer.
+    union {
+        uint8_t stk[16];
+        uint8_t secure_ltk[16];
+    } key;
     gap_oob_local local_oob;
     struct {
         uint8_t valid;
@@ -564,6 +570,7 @@ static void gap_smp_finish(
     gap_wipe(smp->peer_random, sizeof(smp->peer_random));
     gap_wipe(&smp->pairing, sizeof(smp->pairing));
     gap_wipe(&smp->secure, sizeof(smp->secure));
+    gap_wipe(&smp->key, sizeof(smp->key));
     gap_wipe(&smp->oob_peer, sizeof(smp->oob_peer));
 
     smp->bearer.tx_len = 0;
@@ -700,10 +707,10 @@ static int gap_sc_derive_keys(
     }
 
     if (ok)
-        gap_bytes_reverse(smp->secure.ltk, ltk, sizeof(ltk));
+        gap_bytes_reverse(smp->key.secure_ltk, ltk, sizeof(ltk));
     else {
         memset(smp->secure.mac_key, 0, sizeof(smp->secure.mac_key));
-        memset(smp->secure.ltk, 0, sizeof(smp->secure.ltk));
+        memset(smp->key.secure_ltk, 0, sizeof(smp->key.secure_ltk));
     }
     gap_wipe(t, sizeof(t));
     gap_wipe(message, sizeof(message));
@@ -1857,7 +1864,7 @@ static void gap_smp_poll_context(
                     .key_size = 16,
                     .authenticated = pairing->authenticated
                 };
-                memcpy(conn->bond.central.ltk, smp->secure.ltk, 16);
+                memcpy(conn->bond.central.ltk, smp->key.secure_ltk, 16);
 
                 if (conn->is_central) {
                     pairing->phase = SMP_PHASE_BOND_RX;
@@ -1888,7 +1895,7 @@ static void gap_smp_poll_context(
             !conn->c_queue.tx_queued
         ) {
             if (conn->is_central && !gap_security->phase) {
-                if (gap_encrypt(smp->secure.ltk, (const uint8_t[8]){0}, 0))
+                if (gap_encrypt(smp->key.secure_ltk, (const uint8_t[8]){0}, 0))
 
                     smp->encryption_started = 1;
             }
@@ -1899,7 +1906,7 @@ static void gap_smp_poll_context(
                 for (uint8_t i = 0; i < 8; i++)
                     identifiers |= gap_security->random[i];
 
-                gap_key_reply(identifiers ? NULL : smp->secure.ltk);
+                gap_key_reply(identifiers ? NULL : smp->key.secure_ltk);
                 smp->encryption_started = 1;
                 if (identifiers)
                     gap_smp_finish(smp, conn, SMP_FAIL_UNSPECIFIED);
@@ -1995,7 +2002,7 @@ static void gap_smp_poll_context(
         }
 
         if (conn->is_central && !smp->encryption_started && !gap_security->phase) {
-            if (!gap_encrypt(pairing->stk, (const uint8_t[8]){0}, 0)) {
+            if (!gap_encrypt(smp->key.stk, (const uint8_t[8]){0}, 0)) {
 
                 gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
                 return;
@@ -2009,7 +2016,7 @@ static void gap_smp_poll_context(
             for (unsigned i = 0; i < 8; i++)
                 zero |= gap_security->random[i];
 
-            gap_key_reply(zero ? NULL : pairing->stk);
+            gap_key_reply(zero ? NULL : smp->key.stk);
             smp->encryption_started = 1;
 
             if (zero) {
@@ -2870,7 +2877,7 @@ static void gap_smp_poll_context(
         uint8_t s1_random[16];
         memcpy(s1_random, conn->is_central ? smp->random : pdu + 1, 8);
         memcpy(s1_random + 8, conn->is_central ? pdu + 1 : smp->random, 8);
-        int stk_ready = smp_aes128(pairing->tk, s1_random, pairing->stk);
+        int stk_ready = smp_aes128(pairing->tk, s1_random, smp->key.stk);
         gap_wipe(s1_random, sizeof(s1_random));
 
         if (!stk_ready) {
@@ -2881,7 +2888,7 @@ static void gap_smp_poll_context(
         gap_wipe(pairing->tk, 16);
         pairing->passkey_action = 0;
         for (unsigned i = pairing->key_size; i < 16; i++)
-            pairing->stk[i] = 0;
+            smp->key.stk[i] = 0;
 
         if (!conn->is_central)
             gap_smp_queue(smp, SMP_PAIRING_RANDOM, smp->random, 16);

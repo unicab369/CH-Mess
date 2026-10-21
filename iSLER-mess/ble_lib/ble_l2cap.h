@@ -18,7 +18,7 @@
 #endif
 
 #ifndef L2CAP_CHANNEL_MAX
-#define L2CAP_CHANNEL_MAX 4
+#define L2CAP_CHANNEL_MAX 2
 #endif
 #ifndef L2CAP_PSM_MAX
 #define L2CAP_PSM_MAX 4
