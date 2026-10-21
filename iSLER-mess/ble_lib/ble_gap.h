@@ -472,7 +472,7 @@ typedef struct {
     uint16_t tx_l2cap_remaining;
 
     // Connection parameters and timing state.
-    // Replacement for c_link_layer.channel_map, applied when map_instant arrives.
+    // Replacement for link_layer.channel_map, applied when map_instant arrives.
     uint8_t next_channel_map[5];
     // Result for pending procedures, including the request tracked by c_pending.params_state.
     uint8_t connection_status;
@@ -502,7 +502,7 @@ typedef struct {
     uint16_t update_instant;
     // Initial anchor shift for the update described by new_params, in 1.25-ms units.
     uint16_t update_win_offset;
-    // Event counter when next_channel_map replaces c_link_layer.channel_map.
+    // Event counter when next_channel_map replaces link_layer.channel_map.
     uint16_t map_instant;
     // Currently active timing and subrate values; replaced from next_schedule at its instant.
     gap_conn_schedule schedule;
@@ -558,7 +558,7 @@ typedef struct {
         uint8_t rx_armed;
         // A reply was sent in the current event; reset when advancing event_counter.
         uint8_t event_replied;
-        // This event's data channel was selected from c_link_layer.channel_map.
+        // This event's data channel was selected from link_layer.channel_map.
         uint8_t channel_selected;
         // Defer termination until the current reply is sent; then queue termination.
         uint8_t terminate_after_reply;
@@ -604,7 +604,7 @@ typedef struct {
         uint32_t crc_init; // CRC initialization value used for this connection.
         uint32_t last_rx_ms; // Time of the last received packet, used for timing-widening calculations.
         uint64_t next_ticks; // Radio timer tick for the next scheduled connection event.
-    } c_link_layer;
+    } link_layer;
 
     // Link-layer feature exchange and channel classification.
     struct {
@@ -667,29 +667,12 @@ typedef struct {
         uint8_t enabled;
         uint8_t min_spacing_200ms; // Minimum time between status reports.
         uint8_t max_delay_200ms;   // Maximum delay after a status change.
-    } c_channel;
+    } channel_report;
 
     // Central and Peripheral roles are mutually exclusive for a link, so their
     // role-specific state shares storage. A Central-only build omits the larger
     // Peripheral state and saves 32 bytes per connection on the CH582 ABI.
     union {
-#if GAP_CENTRAL_SUPPORT
-        struct {
-            // Internal scheduler flag: set when the first event initializes
-            // next_ticks, so later polls do not reset the schedule to "now".
-            uint8_t central_anchor_set;
-            // Application request accepted; the scheduler may need to finish
-            // feature exchange or wait for a transmit slot before sending it.
-            uint8_t channel_report_queued;
-            // LL_CHANNEL_REPORTING_IND sent; waiting for the Peripheral's
-            // acknowledgment or response before completing the procedure.
-            uint8_t channel_report_pending;
-            // Latest classification received from the peer in LL_CHANNEL_STATUS_IND;
-            // one 2-bit value per data channel.
-            uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
-        } central;
-#endif
-
 #if GAP_PERIPHERAL_SUPPORT
         struct {
             // Set after sending LL_CONNECTION_RATE_REQ; remains set until the
@@ -778,12 +761,30 @@ typedef struct {
             uint32_t status_last_sent_ms;
         } peripheral;
 #endif
+
+#if GAP_CENTRAL_SUPPORT
+        struct {
+            // Internal scheduler flag: set when the first event initializes
+            // next_ticks, so later polls do not reset the schedule to "now".
+            uint8_t central_anchor_set;
+            // Application request accepted; the scheduler may need to finish
+            // feature exchange or wait for a transmit slot before sending it.
+            uint8_t channel_report_queued;
+            // LL_CHANNEL_REPORTING_IND sent; waiting for the Peripheral's
+            // acknowledgment or response before completing the procedure.
+            uint8_t channel_report_pending;
+            // Latest classification received from the peer in LL_CHANNEL_STATUS_IND;
+            // one 2-bit value per data channel.
+            uint8_t peer_classification[GAP_CHANN_CLASS_BYTES];
+        } central;
+#endif
+
     };
 
     // TX is encrypted in place, so it includes 4 bytes for the MIC. While the
     // packet awaits ACK, security.tx_plain_len and security.tx_opcode retain
     // its original length and opcode because encryption overwrites those bytes.
-    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
+    GAP_RADIO_BUFFER_ATTR uint8_t tx_frame[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 
     // One L2CAP connection and bearer buffer set shared by this GAP link.
@@ -801,7 +802,7 @@ typedef struct {
 // 3. ble_gap_l2cap_poll() passes each fragment to gap_send_data(), which
 //    stages it in c_tx. Direct gap_send_data() calls start here.
 // 4. The connection poller copies c_tx into tx for the next radio packet.
-// 5. If encryption is enabled, gap_security_tx_frame() seals it in tx and
+// 5. If encryption is enabled, gap_security_tx_frame() seals it in tx_frame and
 //    retains that ciphertext and MIC for retransmission.
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
@@ -1578,7 +1579,7 @@ static int gap_conn_accept(
     gap_wipe(conn, sizeof(*conn));
     gap_wipe(gap_security, sizeof(*gap_security));
     gap_data_capacity = data_capacity;
-    memcpy(conn->c_link_layer.channel_map, frame + 30, 5);
+    memcpy(conn->link_layer.channel_map, frame + 30, 5);
 
     conn->initiator.type = (frame[0] >> 6) & 1;
     conn->responder.type = (frame[0] >> 7) & 1;
@@ -1598,26 +1599,26 @@ static int gap_conn_accept(
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
-        if (conn->c_link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
+        if (conn->link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
             count++;
 
-    conn->c_link_layer.access_address = (uint32_t)frame[14] |
+    conn->link_layer.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
                                 (uint32_t)frame[16] << 16 |
                                 (uint32_t)frame[17] << 24;
-    conn->c_link_layer.crc_init = (uint32_t)frame[18] |
+    conn->link_layer.crc_init = (uint32_t)frame[18] |
                             (uint32_t)frame[19] << 8 |
                             (uint32_t)frame[20] << 16;
 
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
-    conn->c_link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
-    conn->c_link_layer.next_ticks = received_ticks +
+    conn->link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
+    conn->link_layer.next_ticks = received_ticks +
                             (uint64_t)ble_read_u16_le(frame + 22) *
                             unit_ticks + delay_ticks;
-    conn->c_link_layer.used_count = count;
-    conn->c_link_layer.hop = frame[35] & 0x1f;
-    conn->c_link_layer.last_rx_ms = GET_MILLIS();
-    conn->c_link_layer.first_event = 1;
+    conn->link_layer.used_count = count;
+    conn->link_layer.hop = frame[35] & 0x1f;
+    conn->link_layer.last_rx_ms = GET_MILLIS();
+    conn->link_layer.first_event = 1;
 
     conn->schedule.factor = 1;
     conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
@@ -1629,8 +1630,8 @@ static int gap_conn_accept(
     conn->local_tx_octets = 27;
     conn->load_pending = 1;
 
-    conn->c_channel.min_spacing_200ms = 5;
-    conn->c_channel.max_delay_200ms = 5;
+    conn->channel_report.min_spacing_200ms = 5;
+    conn->channel_report.max_delay_200ms = 5;
     conn->c_phy.current.tx = GAP_PHY_1M;
     conn->c_phy.current.rx = GAP_PHY_1M;
     conn->c_phy.preferred.tx = GAP_HW_PHY_MASK() & 7;
@@ -1750,7 +1751,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (connected) {
             const gap_conn_context *conn = gap_conn_ctx_current();
             connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-                (conn->is_central || !conn->c_link_layer.first_event);
+                (conn->is_central || !conn->link_layer.first_event);
         }
 
         if (connected != peer->connected) {

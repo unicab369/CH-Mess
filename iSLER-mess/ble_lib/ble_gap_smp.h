@@ -1038,7 +1038,7 @@ int gap_sc_oob_get(gap_oob_data *out) {
 
     if (!out || !gap_pair_cfg.enabled || !gap_pair_cfg.secure_connections ||
         !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) ||
+        (!conn->is_central && conn->link_layer.first_event) ||
         gap_encrypted() || smp->pairing.phase ||
         conn->security.phase
     ) return 0;
@@ -1112,7 +1112,7 @@ int gap_passkey_reply(uint32_t value) {
                             smp->pairing.phase == SMP_PHASE_SC_PASSKEY));
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) || !passkey_input_phase ||
+        (!conn->is_central && conn->link_layer.first_event) || !passkey_input_phase ||
         smp->pairing.passkey_action != GAP_PASSKEY_INPUT || value > 999999
     ) {
         GAP_CRITICAL_EXIT(irq_state);
@@ -1166,7 +1166,7 @@ int gap_numeric_reply(uint8_t accept) {
     uint32_t irq_state = GAP_CRITICAL_ENTER();
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) ||
+        (!conn->is_central && conn->link_layer.first_event) ||
         smp->pairing.phase != SMP_PHASE_SC_USER ||
         smp->secure.numeric_reply || accept > 1
     ) {
@@ -1197,7 +1197,7 @@ int gap_pair(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
     if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->c_link_layer.first_event) || smp->pairing.phase ||
+        (!conn->is_central && conn->link_layer.first_event) || smp->pairing.phase ||
         smp->blocked || conn->security.phase ||
         gap_encrypted() || smp->tx_queue->length || smp->bearer.tx_len
     ) return 0;
@@ -1393,11 +1393,11 @@ static void smp_bond_restore_poll(
         conn->bond_repair_pending = 1;
     }
 
-    if (conn->is_central && !conn->c_link_layer.first_event &&
+    if (conn->is_central && !conn->link_layer.first_event &&
         !gap_security->phase && !smp->pairing.phase
     ) {
         if (conn->bond_repair_pending &&
-            !conn->c_link_layer.tx_pending &&
+            !conn->link_layer.tx_pending &&
             !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining && gap_pair()
         ) {
@@ -1689,7 +1689,7 @@ static void gap_smp_poll_context(
     if (pairing->phase == SMP_PHASE_BOND_TX &&
         smp->bond_tx_waiting
     ) {
-        if (conn->c_link_layer.tx_pending || conn->c_queue.tx_queued)
+        if (conn->link_layer.tx_pending || conn->c_queue.tx_queued)
             return;
 
         smp->bond_tx_waiting = 0;
@@ -1790,7 +1790,7 @@ static void gap_smp_poll_context(
 
     if (pairing->phase == SMP_PHASE_BOND_TX) {
         if (!smp->bond_tx_waiting && smp_tx_pending(smp) &&
-            !conn->c_link_layer.tx_pending &&
+            !conn->link_layer.tx_pending &&
             !conn->c_queue.tx_queued &&
             !conn->tx_l2cap_remaining &&
             gap_send_data(2, smp->tx_queue->data, smp->tx_queue->length)
@@ -1836,7 +1836,7 @@ static void gap_smp_poll_context(
         (pairing->confirm_received || conn->is_central) &&
         !smp->tx_queue->length &&
         !conn->tx_l2cap_remaining &&
-        !conn->c_link_layer.tx_pending &&
+        !conn->link_layer.tx_pending &&
         !conn->c_queue.tx_queued
     ) {
         // The initiator commits first; the responder waits for its confirm.
@@ -1891,7 +1891,7 @@ static void gap_smp_poll_context(
 
         if (!smp->encryption_started && !smp->tx_queue->length &&
             !conn->tx_l2cap_remaining &&
-            !conn->c_link_layer.tx_pending &&
+            !conn->link_layer.tx_pending &&
             !conn->c_queue.tx_queued
         ) {
             if (conn->is_central && !gap_security->phase) {

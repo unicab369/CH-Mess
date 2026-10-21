@@ -1452,7 +1452,7 @@ static int gap_pawr_conn_req(
                                                 HW_TICKS_FROM_US(2500))
     ) return 0;
 
-    conn->c_link_layer.peer_sca_ppm = 500;
+    conn->link_layer.peer_sca_ppm = 500;
     conn->is_central = 0;
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
@@ -1548,7 +1548,7 @@ static int gap_pawr_exchange(
 
     conn->is_central = 1;
     conn->central.central_anchor_set = 0;
-    conn->c_link_layer.peer_sca_ppm = 500;
+    conn->link_layer.peer_sca_ppm = 500;
 
     if (peer_slot >= 0) {
         conn->peer = gap_identities[peer_slot].peer;
@@ -2385,12 +2385,12 @@ static void gap_connection_take_radio(void) {
 static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        !conn->c_link_layer.next_ticks ||
+        !conn->link_layer.next_ticks ||
         !conn->schedule.interval_125us
     ) return 0;
 
-    uint32_t widen_us = ((uint32_t)(GET_MILLIS() - conn->c_link_layer.last_rx_ms) *
-                        (500 + conn->c_link_layer.peer_sca_ppm) + 999) / 1000;
+    uint32_t widen_us = ((uint32_t)(GET_MILLIS() - conn->link_layer.last_rx_ms) *
+                        (500 + conn->link_layer.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max_us = conn->schedule.interval_125us * 125 / 2;
 
     if (widen_us > widen_max_us) widen_us = widen_max_us;
@@ -2398,8 +2398,8 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     uint64_t interval_ticks = HW_TICKS_FROM_US(
         (uint32_t)conn->schedule.interval_125us * 125
     );
-    uint64_t event_ticks = conn->c_link_layer.next_ticks;
-    uint32_t event_window_us = conn->c_link_layer.first_event ||
+    uint64_t event_ticks = conn->link_layer.next_ticks;
+    uint32_t event_window_us = conn->link_layer.first_event ||
             conn->c_pending.update_window_active ? conn->window_size * 1250 : 1000;
     uint16_t packet_capacity = gap_data_capacity > 27 ? gap_data_capacity : 27;
     uint32_t packet_guard_us = 400 + 16 * (packet_capacity - 27);

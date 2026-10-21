@@ -442,7 +442,7 @@ static void test_mesh_sar_timeout_and_link_cleanup(void) {
     assert(mesh_gatt_proxy_sar_timeout_poll());
     assert(!mesh_gatt.proxy_rx_active && mesh_gatt.proxy_sar_disconnect_pending);
     assert(conn->c_link_state.terminate_queued &&
-           conn->c_link_layer.local_terminate_reason == 0x13);
+           conn->link_layer.local_terminate_reason == 0x13);
 
     mesh_gatt.filter_type = 1;
     mesh_gatt.filter_count = 1;

@@ -1186,8 +1186,8 @@ static void test_periodic_advertising_with_central_connection(void) {
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->is_central = 1;
     conn->procedures.params.interval = 24;
-    conn->c_link_layer.last_rx_ms = now_ms;
-    conn->c_link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(40000);
+    conn->link_layer.last_rx_ms = now_ms;
+    conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(40000);
     set->periodic_next_event_ticks = fake_radio_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(captured_extended_count == 1 &&
@@ -1197,7 +1197,7 @@ static void test_periodic_advertising_with_central_connection(void) {
     // If a periodic event overlaps a connection event, skip that event and
     // preserve the connection radio window.
     set->periodic_next_event_ticks = fake_radio_ticks;
-    conn->c_link_layer.next_ticks = set->periodic_next_event_ticks +
+    conn->link_layer.next_ticks = set->periodic_next_event_ticks +
         HW_TICKS_FROM_US(100);
     uint64_t next_periodic = set->periodic_next_event_ticks;
     uint64_t interval_ticks = HW_TICKS_FROM_US(
@@ -1410,7 +1410,7 @@ static void test_pawr_advertiser_connection(void) {
            configured_radio_channel == gap_sync_channel(&set->periodic.params,
                (uint16_t)(connect_event_counter ^ 1u)) &&
            configured_receive_after_tx);
-    assert(conn->c_link_layer.next_ticks ==
+    assert(conn->link_layer.next_ticks ==
            gap_ext_pawr.connect.request_end_ticks + HW_TICKS_FROM_US(2500));
 
     gap_conn_slot_mask &= (uint8_t)~GAP_CONN_SLOT_BIT(gap_conn_slot);
@@ -1500,10 +1500,10 @@ static void test_pawr_connection_accept(void) {
            captured_extended_channels[0] == gap_sync_channel(&sync->params, (uint16_t)(20 ^ 1)) &&
            captured_extended_ticks[0] >= 8000150 &&
            captured_extended_ticks[0] <= 8000153 &&
-           conn->c_link_layer.initiator_type == 0 && conn->c_link_layer.responder_type == 0 &&
-           !memcmp(conn->c_link_layer.initiator, advertiser, sizeof(advertiser)) &&
-           !memcmp(conn->c_link_layer.responder, local_address, sizeof(local_address)) &&
-           conn->c_link_layer.next_ticks == 8002500);
+           conn->link_layer.initiator_type == 0 && conn->link_layer.responder_type == 0 &&
+           !memcmp(conn->link_layer.initiator, advertiser, sizeof(advertiser)) &&
+           !memcmp(conn->link_layer.responder, local_address, sizeof(local_address)) &&
+           conn->link_layer.next_ticks == 8002500);
 
     gap_conn_end();
     memset(gap_syncs, 0, sizeof(gap_syncs));
@@ -1912,8 +1912,8 @@ static void test_periodic_sync_connection_arbitration(void) {
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     conn->procedures.params.interval = 24;
     conn->procedures.data_capacity = 27;
-    conn->c_link_layer.last_rx_ms = now_ms;
-    conn->c_link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(20000);
+    conn->link_layer.last_rx_ms = now_ms;
+    conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(20000);
 
     gap_sync_context *sync = &gap_syncs[0];
     sync->used = sync->established = 1;
@@ -1943,7 +1943,7 @@ static void test_periodic_sync_connection_arbitration(void) {
     // A window intersecting the guarded connection event is skipped up front.
     sync->next_event_ticks = fake_radio_ticks + HW_TICKS_FROM_US(1000);
     sync->window_active = 0;
-    conn->c_link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(2200);
+    conn->link_layer.next_ticks = fake_radio_ticks + HW_TICKS_FROM_US(2200);
     gap_hw_scan_poll();
     fake_radio_ticks = sync->start_ticks;
     gap_hw_scan_poll();
@@ -2641,7 +2641,7 @@ static void start_test_central_link(void) {
     assert(conn->c_link_state.rx_armed);
     rx_frame[0] = 0x05; rx_frame[1] = 0; // ACK the first empty Central packet.
     gap_hw_received();
-    assert(!conn->c_link_layer.first_event);
+    assert(!conn->link_layer.first_event);
     gap_conn_poll(); // Complete the reply before the next event.
 }
 
@@ -2658,10 +2658,10 @@ static void test_connection_context_slots(void) {
     gap_conn_handle first_handle;
     assert(gap_conn_current(&first_handle));
     assert(gap_conn_count() == 1);
-    conn->c_link_layer.tx_sn = 1;
+    conn->link_layer.tx_sn = 1;
     gap_security->tx_counter = 0x12345678;
     smp->status = 0x31;
-    conn->tx[3] = 0xa0;
+    conn->tx_frame[3] = 0xa0;
 
     uint8_t request[36] = {0x05, 34};
     const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
@@ -2683,7 +2683,7 @@ static void test_connection_context_slots(void) {
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &gap_smp_contexts[gap_conn_slot];
     assert(gap_conn_slot == 1 && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-           !conn->is_central && conn->c_link_layer.tx_sn == 0);
+           !conn->is_central && conn->link_layer.tx_sn == 0);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_handle second_handle, current_handle;
     assert(gap_conn_current(&second_handle));
@@ -2699,8 +2699,8 @@ static void test_connection_context_slots(void) {
     conn->c_queue.rx_ready = 0;
     gap_connection_slot = first_handle.slot;
     gap_connection_slot_valid = 1;
-    rx_frame[0] = (uint8_t)(2 | (conn->c_link_layer.expected_rx_sn << 3) |
-                            (conn->c_link_layer.tx_sn << 2));
+    rx_frame[0] = (uint8_t)(2 | (conn->link_layer.expected_rx_sn << 3) |
+                            (conn->link_layer.tx_sn << 2));
     rx_frame[1] = 4;
     rx_frame[2] = 4; rx_frame[3] = 0;
     rx_frame[4] = 4; rx_frame[5] = 0;
@@ -2729,22 +2729,22 @@ static void test_connection_context_slots(void) {
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     gap_security->tx_counter = 0xabcdef;
     smp->status = 0x52;
-    conn->tx[3] = 0xb1;
+    conn->tx_frame[3] = 0xb1;
 
     assert(gap_conn_select(first_handle));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &gap_smp_contexts[gap_conn_slot];
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central && conn->c_link_layer.tx_sn == 1);
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central && conn->link_layer.tx_sn == 1);
     assert(gap_security->tx_counter == 0x12345678 && smp->status == 0x31);
-    assert(conn->tx[3] == 0xa0);
+    assert(conn->tx_frame[3] == 0xa0);
     assert(gap_conn_select(second_handle));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
     smp = &gap_smp_contexts[gap_conn_slot];
-    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && conn->c_link_layer.tx_sn == 0);
+    assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && conn->link_layer.tx_sn == 0);
     assert(gap_security->tx_counter == 0xabcdef && smp->status == 0x52);
-    assert(conn->tx[3] == 0xb1);
+    assert(conn->tx_frame[3] == 0xb1);
 
     // Both links have an open event window. The radio poll rotates its tie
     // break after servicing one connection so the lower slot cannot starve
@@ -2767,25 +2767,25 @@ static void test_connection_context_slots(void) {
             &gap_conn_ctx[slot];
         connection->is_central = slot == 0;
         connection->central.central_anchor_set = 1;
-        connection->c_link_layer.first_event = 0;
+        connection->link_layer.first_event = 0;
         connection->c_link_state.rx_armed = connection->c_link_state.event_replied = 0;
         connection->c_link_state.channel_selected = 0;
-        connection->c_link_layer.access_address = 0x12345670u + slot;
-        connection->c_link_layer.next_ticks = 9000;
-        connection->c_link_layer.last_rx_ms = now_ms;
+        connection->link_layer.access_address = 0x12345670u + slot;
+        connection->link_layer.next_ticks = 9000;
+        connection->link_layer.last_rx_ms = now_ms;
         connection->procedures.params.interval = 24;
         connection->procedures.params.supervision_timeout = 200;
-        connection->c_link_layer.peer_sca_ppm = 500;
+        connection->link_layer.peer_sca_ppm = 500;
         connection->procedures.window_size = 1;
         connection->procedures.data_capacity = 27;
-        connection->c_link_layer.unmapped_channel = 0;
-        connection->c_link_layer.hop = 5;
-        connection->c_link_layer.used_count = 37;
-        memset(connection->c_link_layer.channel_map, 0xff,
-               sizeof(connection->c_link_layer.channel_map));
+        connection->link_layer.unmapped_channel = 0;
+        connection->link_layer.hop = 5;
+        connection->link_layer.used_count = 37;
+        memset(connection->link_layer.channel_map, 0xff,
+               sizeof(connection->link_layer.channel_map));
         for (uint8_t channel = 0; channel < 37; channel++)
-            connection->c_link_layer.used_channels[channel] = channel;
-        connection->c_link_layer.tx_pending = connection->c_queue.tx_queued = 0;
+            connection->link_layer.used_channels[channel] = channel;
+        connection->link_layer.tx_pending = connection->c_queue.tx_queued = 0;
         connection->procedures.tx_l2cap_remaining = 0;
         connection->c_phy.current.tx = connection->c_phy.current.rx = GAP_PHY_1M;
     }
@@ -2854,8 +2854,8 @@ static void test_connection_context_slots(void) {
 static void receive_test_link_packet(uint8_t acknowledged) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     conn->c_link_state.rx_armed = 1;
-    rx_frame[0] = 1 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ acknowledged) << 2);
+    rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = 0;
     gap_hw_received();
 }
@@ -2865,8 +2865,8 @@ static void test_extended_length_control_pdu(void) {
     start_test_central_link();
     conn->procedures.data_length.rx_octets = 251; // Simulate a completed DLE exchange.
     conn->c_link_state.rx_armed = 1;
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 36;
     rx_frame[2] = 0x2a; // LL_PERIODIC_SYNC_WR_IND is still unsupported.
     memset(rx_frame + 3, 0, 35);
@@ -2890,9 +2890,9 @@ static void test_periodic_sync_transfer_receive(void) {
     start_test_central_link();
     conn->procedures.data_length.rx_octets = 251;
 
-    uint16_t current_event = conn->c_link_layer.event_counter;
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    uint16_t current_event = conn->link_layer.event_counter;
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 35;
     memset(rx_frame + 2, 0, 35);
     rx_frame[2] = 0x1c; // LL_PERIODIC_SYNC_IND.
@@ -2962,16 +2962,16 @@ static void test_periodic_sync_transfer_receive(void) {
 
     // Invalid PHY and malformed SyncInfo must not allocate sync state.
     memset(rx_frame, 0, sizeof(rx_frame));
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 35;
     rx_frame[2] = 0x1c;
     rx_frame[28] = 3; // Reserved periodic PHY encoding.
     conn->c_link_state.rx_armed = 1;
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_syncs[0].used);
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[28] = 1;
     conn->c_link_state.rx_armed = 1;
     gap_hw_received();
@@ -2980,9 +2980,9 @@ static void test_periodic_sync_transfer_receive(void) {
     // An accepted transfer that never receives its first PA event times out.
     assert(gap_past_enable(1, 100));
     memcpy(rx_frame, valid_transfer, sizeof(valid_transfer));
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) |
-        ((conn->c_link_layer.tx_sn ^ 1) << 2);
-    uint16_t timeout_event = conn->c_link_layer.event_counter;
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) |
+        ((conn->link_layer.tx_sn ^ 1) << 2);
+    uint16_t timeout_event = conn->link_layer.event_counter;
     rx_frame[23] = (uint8_t)(timeout_event + 1);
     rx_frame[24] = (uint8_t)((timeout_event + 1) >> 8);
     rx_frame[35] = (uint8_t)timeout_event;
@@ -3024,46 +3024,46 @@ static void test_connection_timing_updates(void) {
     assert(conn->c_queue.local_update_queued && !(conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     receive_test_link_packet(1);
     assert(!conn->c_queue.local_update_queued && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
-    assert((conn->tx[0] & 3) == 3 && conn->tx[1] == 12);
-    assert(memcmp(conn->tx + 2,
+    assert((conn->tx_frame[0] & 3) == 3 && conn->tx_frame[1] == 12);
+    assert(memcmp(conn->tx_frame + 2,
         (uint8_t[]){0, 1, 0, 0, 48, 0, 1, 0, 44, 1}, 10) == 0);
     uint16_t instant = conn->procedures.update_instant;
-    assert((uint16_t)(instant - conn->c_link_layer.event_counter) >= 6);
+    assert((uint16_t)(instant - conn->link_layer.event_counter) >= 6);
     uint8_t payload[12];
-    memcpy(payload, conn->tx + 2, 12);
+    memcpy(payload, conn->tx_frame + 2, 12);
     receive_test_link_packet(0);
-    assert(memcmp(payload, conn->tx + 2, 12) == 0);
+    assert(memcmp(payload, conn->tx_frame + 2, 12) == 0);
     receive_test_link_packet(1);
-    while (conn->c_link_layer.event_counter != instant) {
+    while (conn->link_layer.event_counter != instant) {
         assert(conn->procedures.params.interval == 24);
         receive_test_link_packet(1);
     }
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->procedures.params.interval == 48 && conn->procedures.params.latency == 1);
     assert(conn->procedures.params.supervision_timeout == 300 && !(conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
-    uint64_t next_tick = conn->c_link_layer.next_ticks;
+    uint64_t next_tick = conn->link_layer.next_ticks;
     receive_test_link_packet(1);
-    assert(conn->c_link_layer.next_ticks == next_tick + 48u * 1250);
+    assert(conn->link_layer.next_ticks == next_tick + 48u * 1250);
     gap_conn_end();
 
     // Generate a fresh Instant when polling sends the first queued update;
     // preserve its lead time across event counter wrap and Peripheral latency.
     start_test_central_link();
-    conn->c_link_layer.event_counter = 0xfffe;
+    conn->link_layer.event_counter = 0xfffe;
     conn->procedures.params.latency = 3;
-    conn->c_link_layer.tx_pending = 0;
+    conn->link_layer.tx_pending = 0;
     conn->c_link_state.event_replied = 0;
     conn->c_link_state.rx_armed = 0;
-    conn->c_link_layer.next_ticks = (uint64_t)now_ms * 1000;
+    conn->link_layer.next_ticks = (uint64_t)now_ms * 1000;
     assert(gap_conn_update(72, 0, 300));
     gap_conn_poll();
     assert((conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !conn->c_queue.local_update_queued);
-    assert((uint16_t)(conn->procedures.update_instant - conn->c_link_layer.event_counter) == 25);
+    assert((uint16_t)(conn->procedures.update_instant - conn->link_layer.event_counter) == 25);
     assert(conn->procedures.update_instant < 0xfffe);
     // Lost acknowledgements must not let the Central apply an unsynchronized
     // update or keep retransmitting an indication with an expired Instant.
     instant = conn->procedures.update_instant;
     while ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) receive_test_link_packet(0);
-    assert(conn->c_link_layer.event_counter == instant);
+    assert(conn->link_layer.event_counter == instant);
     assert(!(conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE) && !conn->c_queue.local_update_queued);
 
     start_test_central_link();
@@ -3076,7 +3076,7 @@ static void receive_test_control(uint8_t opcode, const uint8_t *data, uint8_t le
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     conn->c_link_state.rx_armed = 1;
     memset(rx_frame, 0, sizeof(rx_frame));
-    rx_frame[0] = 3 | (conn->c_link_layer.expected_rx_sn << 3) | ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 3 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = len + 1;
     rx_frame[2] = opcode;
     if (len)
@@ -3103,17 +3103,17 @@ static void test_connection_parameter_requests(void) {
     assert(!gap_conn_update(48, 1, 300));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(conn->c_features.request_pending && conn->tx[2] == 0x08);
+    assert(conn->c_features.request_pending && conn->tx_frame[2] == 0x08);
     receive_test_control(0x09, features, sizeof(features));
     assert(conn->c_features.known && conn->c_pending.params_state != GAP_CONN_PARAMS_NONE);
-    assert(conn->tx[2] == 0x0f && conn->tx[1] == 24);
-    assert(memcmp(conn->tx + 3, parameters, 8) == 0);
-    for (uint8_t i = 14; i < 26; i++) assert(conn->tx[i] == 0xff);
+    assert(conn->tx_frame[2] == 0x0f && conn->tx_frame[1] == 24);
+    assert(memcmp(conn->tx_frame + 3, parameters, 8) == 0);
+    for (uint8_t i = 14; i < 26; i++) assert(conn->tx_frame[i] == 0xff);
     receive_test_control(0x10, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0 && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
+    assert(conn->tx_frame[2] == 0 && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     assert(conn->procedures.new_params.interval == 50); // Honor preferred periodicity.
     uint16_t instant = conn->procedures.update_instant;
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->procedures.params.interval == 50 && conn->connection_status == 0);
     gap_conn_end();
 
@@ -3122,9 +3122,9 @@ static void test_connection_parameter_requests(void) {
     conn->is_central = 0;
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x0e);
+    assert(conn->tx_frame[2] == 0x0e);
     receive_test_control(0x09, features, sizeof(features));
-    assert(conn->tx[2] == 0x0f && conn->c_pending.params_state != GAP_CONN_PARAMS_NONE);
+    assert(conn->tx_frame[2] == 0x0f && conn->c_pending.params_state != GAP_CONN_PARAMS_NONE);
     receive_test_control(0x11, (uint8_t[]){0x08, 0x20}, 2);
     assert(conn->c_pending.params_state != GAP_CONN_PARAMS_NONE); // Unrelated rejection cannot cancel it.
     receive_test_control(0x11, (uint8_t[]){0x0f, 0x20}, 2);
@@ -3132,12 +3132,12 @@ static void test_connection_parameter_requests(void) {
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     uint8_t update[11] = {1, 0, 0, 54, 0, 1, 0, 44, 1, 0, 0};
-    instant = conn->c_link_layer.event_counter + 7;
+    instant = conn->link_layer.event_counter + 7;
     update[9] = (uint8_t)instant;
     update[10] = (uint8_t)(instant >> 8);
     receive_test_control(0x00, update, sizeof(update));
     assert(conn->c_pending.params_state == GAP_CONN_PARAMS_NONE && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->procedures.params.interval == 54 && conn->connection_status == 0);
     gap_conn_end();
 
@@ -3145,12 +3145,12 @@ static void test_connection_parameter_requests(void) {
     start_test_central_link();
     conn->is_central = 0;
     receive_test_control(0x08, features, sizeof(features));
-    assert(conn->tx[2] == 9 && conn->tx[3] == 0x0e);
+    assert(conn->tx_frame[2] == 9 && conn->tx_frame[3] == 0x0e);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0x10);
-    assert(memcmp(conn->tx + 3, parameters, sizeof(parameters)) == 0);
+    assert(conn->tx_frame[2] == 0x10);
+    assert(memcmp(conn->tx_frame + 3, parameters, sizeof(parameters)) == 0);
     assert(conn->c_pending.params_state == GAP_CONN_PARAMS_REMOTE);
     assert(conn->connection_status == 0x23); // Central wins the collision.
     gap_conn_end();
@@ -3158,27 +3158,27 @@ static void test_connection_parameter_requests(void) {
     // A Central accepts a Peripheral request directly with UPDATE_IND.
     start_test_central_link();
     receive_test_control(0x0e, features, sizeof(features));
-    assert(conn->tx[2] == 9 && conn->tx[3] == 0x0e);
+    assert(conn->tx_frame[2] == 9 && conn->tx_frame[3] == 0x0e);
     parameters[0] = 5;
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x1e);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x1e);
     parameters[0] = 48;
     parameters[11] = 1; parameters[12] = 0;
     parameters[13] = 1; parameters[14] = 0; // Duplicate offset hints.
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x1e);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x1e);
     memset(parameters + 11, 0xff, 12);
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x23);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x23);
     assert(conn->c_pending.params_state == GAP_CONN_PARAMS_LOCAL);
     receive_test_control(0x07, (uint8_t[]){0x0f}, 1);
     assert(conn->c_pending.params_state == GAP_CONN_PARAMS_NONE && conn->connection_status == 0x1a);
     gap_conn_end();
     start_test_central_link();
     receive_test_control(0x0f, parameters, sizeof(parameters));
-    assert(conn->tx[2] == 0 && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
+    assert(conn->tx_frame[2] == 0 && (conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     gap_conn_end();
 
     start_test_central_link();
@@ -3195,7 +3195,7 @@ static void test_connection_parameter_requests(void) {
     assert(gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
     now_ms = conn->procedures.params_started_ms + 40000;
-    conn->c_link_layer.last_rx_ms = now_ms;
+    conn->link_layer.last_rx_ms = now_ms;
     gap_conn_poll();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->connection_status == 0x22);
 }
@@ -3216,17 +3216,17 @@ static void test_data_length(void) {
     assert(gap_data_length_set(capacity));
     assert(!gap_conn_request(48, 60, 1, 300));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x14 && conn->tx[1] == 9);
-    assert(conn->tx[3] == capacity && conn->tx[7] == capacity);
-    uint16_t duration = (uint16_t)conn->tx[4] << 8 | conn->tx[3];
+    assert(conn->tx_frame[2] == 0x14 && conn->tx_frame[1] == 9);
+    assert(conn->tx_frame[3] == capacity && conn->tx_frame[7] == capacity);
+    uint16_t duration = (uint16_t)conn->tx_frame[4] << 8 | conn->tx_frame[3];
     assert(duration == capacity);
-    duration = (uint16_t)conn->tx[6] << 8 | conn->tx[5];
+    duration = (uint16_t)conn->tx_frame[6] << 8 | conn->tx_frame[5];
     assert(duration == (capacity + 14) * 8);
     receive_test_link_packet(0);
-    assert(conn->tx[2] == 0x14 && conn->c_pending.length);
+    assert(conn->tx_frame[2] == 0x14 && conn->c_pending.length);
     // Simultaneous requests are answered while our own response remains pending.
     receive_test_control(0x14, limits, 8);
-    assert(conn->tx[2] == 0x15 && conn->c_pending.length);
+    assert(conn->tx_frame[2] == 0x15 && conn->c_pending.length);
     receive_test_control(0x15, limits, 8);
     assert(conn->length_status == 0);
     state = conn->data_length;
@@ -3239,12 +3239,12 @@ static void test_data_length(void) {
     assert(conn->c_queue.tx_queued && conn->procedures.tx_len == capacity);
     assert(conn->data_length.tx_octets == 27);
     receive_test_link_packet(1);
-    assert(conn->tx[1] == capacity);
+    assert(conn->tx_frame[1] == capacity);
     receive_test_link_packet(1);
     assert(!gap_send_data(1, data, 28));
     // Receive a full negotiated fragment, including >27-byte configured builds.
     memset(rx_frame, 0, sizeof(rx_frame));
-    rx_frame[0] = 1 | (conn->c_link_layer.expected_rx_sn << 3) | ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = capacity;
     memcpy(rx_frame + 2, data, capacity);
     conn->c_link_state.rx_armed = 1;
@@ -3269,7 +3269,7 @@ static void test_data_length(void) {
     assert(conn->data_length.rx_octets == capacity);
     limits[0] = 26;
     receive_test_control(0x14, limits, 8);
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x1e);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x1e);
     gap_conn_end();
 
     start_test_central_link();
@@ -3290,10 +3290,10 @@ static void test_data_length(void) {
     limits[0] = limits[4] = 251;
     limits[2] = limits[6] = 0x48; limits[3] = limits[7] = 0x08;
     receive_test_control(0x14, limits, 8);
-    assert(conn->tx[2] == 0x15);
+    assert(conn->tx_frame[2] == 0x15);
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x14);
+    assert(conn->tx_frame[2] == 0x14);
     receive_test_control(0x15, limits, 8);
     assert(conn->length_status == 0);
     gap_conn_end();
@@ -3306,7 +3306,7 @@ static void test_data_length(void) {
     assert(gap_data_length_set(capacity));
     receive_test_link_packet(1);
     now_ms = conn->procedures.length_started_ms + 40000;
-    conn->c_link_layer.last_rx_ms = now_ms;
+    conn->link_layer.last_rx_ms = now_ms;
     gap_conn_poll();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->length_status == 0x22);
 
@@ -3315,7 +3315,7 @@ static void test_data_length(void) {
     start_test_central_link();
     assert(!gap_data_length_set(28));
     receive_test_control(0x14, limits, 8);
-    assert(conn->tx[3] == 27 && conn->data_length.rx_octets == 27);
+    assert(conn->tx_frame[3] == 27 && conn->data_length.rx_octets == 27);
     gap_conn_end();
     radio_data_max = GAP_CONN_DATA_MAX;
 }
@@ -3330,10 +3330,10 @@ static void test_channel_map_updates(void) {
     assert(!gap_channel_map_set((uint8_t[5]){0}));
     assert(!gap_channel_map_set((uint8_t[5]){1}));
     assert(!gap_channel_map_set(invalid));
-    assert(gap_channel_map_set(conn->c_link_layer.channel_map));
+    assert(gap_channel_map_set(conn->link_layer.channel_map));
     assert(!conn->c_queue.local_map_queued && conn->connection_status == 0);
     uint8_t old_map[5];
-    memcpy(old_map, conn->c_link_layer.channel_map, 5);
+    memcpy(old_map, conn->link_layer.channel_map, 5);
     assert(gap_channel_map_set(channels));
     assert(conn->connection_status == GAP_CONNECTION_PENDING);
     assert(!gap_channel_map_set(channels));
@@ -3343,28 +3343,28 @@ static void test_channel_map_updates(void) {
     // Earlier unacknowledged packets delay construction of the map PDU.
     receive_test_link_packet(0);
     assert(conn->c_queue.local_map_queued && !(conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
-    conn->c_link_layer.event_counter = 0xfffe;
+    conn->link_layer.event_counter = 0xfffe;
     conn->procedures.params.latency = 3;
     receive_test_link_packet(1);
     assert(!conn->c_queue.local_map_queued && (conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
-    assert(conn->tx[2] == 0x01 && conn->tx[1] == 8);
-    assert(memcmp(conn->tx + 3, channels, 5) == 0);
-    uint16_t instant = (uint16_t)conn->tx[8] |
-        (uint16_t)conn->tx[9] << 8;
+    assert(conn->tx_frame[2] == 0x01 && conn->tx_frame[1] == 8);
+    assert(memcmp(conn->tx_frame + 3, channels, 5) == 0);
+    uint16_t instant = (uint16_t)conn->tx_frame[8] |
+        (uint16_t)conn->tx_frame[9] << 8;
     assert(instant == 23); // The Instant wraps safely through event zero.
-    assert(memcmp(conn->c_link_layer.channel_map, old_map, 5) == 0);
+    assert(memcmp(conn->link_layer.channel_map, old_map, 5) == 0);
     uint8_t pending_frame[10];
-    memcpy(pending_frame, conn->tx, sizeof(pending_frame));
+    memcpy(pending_frame, conn->tx_frame, sizeof(pending_frame));
     receive_test_link_packet(0);
-    assert(memcmp(pending_frame + 1, conn->tx + 1, 9) == 0);
-    while (conn->c_link_layer.event_counter != instant) {
-        assert(memcmp(conn->c_link_layer.channel_map, old_map, 5) == 0);
+    assert(memcmp(pending_frame + 1, conn->tx_frame + 1, 9) == 0);
+    while (conn->link_layer.event_counter != instant) {
+        assert(memcmp(conn->link_layer.channel_map, old_map, 5) == 0);
         receive_test_link_packet(1);
     }
     assert(!(conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP) && conn->connection_status == 0);
-    assert(memcmp(conn->c_link_layer.channel_map, channels, 5) == 0);
-    assert(conn->c_link_layer.used_count == 2 && conn->c_link_layer.used_channels[0] == 0 &&
-        conn->c_link_layer.used_channels[1] == 1);
+    assert(memcmp(conn->link_layer.channel_map, channels, 5) == 0);
+    assert(conn->link_layer.used_count == 2 && conn->link_layer.used_channels[0] == 0 &&
+        conn->link_layer.used_channels[1] == 1);
     gap_conn_end();
 
     // A peer timing request must not start a second procedure before our map is sent.
@@ -3373,19 +3373,19 @@ static void test_channel_map_updates(void) {
     uint8_t timing[23] = {48, 0, 60, 0, 0, 0, 200, 0};
     memset(timing + 11, 0xff, 12);
     receive_test_control(0x0f, timing, sizeof(timing));
-    assert(conn->tx[2] == 0x11 && !(conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
+    assert(conn->tx_frame[2] == 0x11 && !(conn->c_pending.procedure_flags & GAP_PENDING_TIMING_UPDATE));
     assert(conn->c_queue.local_map_queued && conn->connection_status == GAP_CONNECTION_PENDING);
     gap_conn_end();
 
     // The Central foreground send path also builds a queued map update.
     start_test_central_link();
     assert(gap_channel_map_set(channels));
-    conn->c_link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
-    now_ms = (uint32_t)((conn->c_link_layer.next_ticks + 999) / 1000);
+    conn->link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
+    now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
-    assert(conn->tx[2] == 0x01 && (conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
+    assert(conn->tx_frame[2] == 0x01 && (conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
     // Reaching the Instant without an ACK must close the link.
-    conn->c_link_layer.event_counter = conn->procedures.map_instant;
+    conn->link_layer.event_counter = conn->procedures.map_instant;
     gap_conn_update_apply(conn, 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->connection_status == 0x28);
     assert(!conn->c_queue.local_map_queued && !(conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
@@ -3395,13 +3395,13 @@ static void test_channel_map_updates(void) {
     conn->is_central = 0;
     assert(!gap_channel_map_set(channels));
     uint8_t parameters[7] = {3, 0, 0, 0, 0, 0, 0};
-    instant = conn->c_link_layer.event_counter + 7;
+    instant = conn->link_layer.event_counter + 7;
     parameters[5] = (uint8_t)instant;
     parameters[6] = (uint8_t)(instant >> 8);
     receive_test_control(0x01, parameters, sizeof(parameters));
     assert((conn->c_pending.procedure_flags & GAP_PENDING_CHANNEL_MAP));
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
-    assert(memcmp(conn->c_link_layer.channel_map, channels, 5) == 0);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
+    assert(memcmp(conn->link_layer.channel_map, channels, 5) == 0);
     gap_conn_end();
 }
 
@@ -3417,34 +3417,34 @@ static void test_phy_updates(void) {
     assert(!gap_data_length_set(27));
     receive_test_link_packet(0);
     assert(conn->c_queue.phy_queued && !conn->c_pending.phy_request);
-    conn->c_link_layer.event_counter = 0xfffd;
+    conn->link_layer.event_counter = 0xfffd;
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x16 && conn->tx[3] == 2);
+    assert(conn->tx_frame[2] == 0x16 && conn->tx_frame[3] == 2);
     receive_test_link_packet(0);
-    assert(conn->tx[2] == 0x16 && conn->c_phy.status == 0xff);
+    assert(conn->tx_frame[2] == 0x16 && conn->c_phy.status == 0xff);
     // Central wins a simultaneous PHY request and keeps its pending request.
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x23);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x23);
     assert(conn->c_pending.phy_request);
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
-    assert(conn->tx[2] == 0x18 && conn->tx[3] == 2 &&
-           conn->tx[4] == 2);
+    assert(conn->tx_frame[2] == 0x18 && conn->tx_frame[3] == 2 &&
+           conn->tx_frame[4] == 2);
     uint16_t instant = conn->c_phy.instant;
     assert((conn->c_pending.procedure_flags & GAP_PENDING_PHY_UPDATE) && instant < 10);
-    while (conn->c_link_layer.event_counter != instant) {
+    while (conn->link_layer.event_counter != instant) {
         assert(conn->c_phy.current.tx == 1 && conn->c_phy.current.rx == 1);
         receive_test_link_packet(1);
     }
     assert(conn->c_phy.current.tx == 2 && conn->c_phy.current.rx == 2 &&
            conn->c_phy.status == 0);
     conn->c_link_state.rx_armed = conn->c_link_state.event_replied = 0;
-    now_ms = (uint32_t)((conn->c_link_layer.next_ticks + 999) / 1000);
+    now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(configured_tx_phy == 2 && configured_rx_phy == 2);
     // A peer's asymmetric preference can change only one direction.
     receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
-    assert(conn->tx[2] == 0x18 && conn->tx[3] == 0 &&
-           conn->tx[4] == 0);
+    assert(conn->tx_frame[2] == 0x18 && conn->tx_frame[3] == 0 &&
+           conn->tx_frame[4] == 0);
     // No shared preference: unchanged rates and immediate completion.
     assert(!(conn->c_pending.procedure_flags & GAP_PENDING_PHY_UPDATE));
     gap_conn_end();
@@ -3452,10 +3452,10 @@ static void test_phy_updates(void) {
     // The Central can select different supported rates in each direction.
     start_test_central_link();
     receive_test_control(0x16, (uint8_t[]){1, 2}, 2);
-    assert(conn->tx[2] == 0x18 && conn->tx[3] == 2 &&
-           conn->tx[4] == 0);
+    assert(conn->tx_frame[2] == 0x18 && conn->tx_frame[3] == 2 &&
+           conn->tx_frame[4] == 0);
     instant = conn->c_phy.instant;
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->c_phy.current.tx == 2 && conn->c_phy.current.rx == 1);
     gap_conn_end();
 
@@ -3464,7 +3464,7 @@ static void test_phy_updates(void) {
     assert(gap_phy_set(2, 1));
     receive_test_link_packet(1);
     receive_test_control(0x17, (uint8_t[]){2, 2}, 2);
-    assert(conn->tx[3] == 0 && conn->tx[4] == 0);
+    assert(conn->tx_frame[3] == 0 && conn->tx_frame[4] == 0);
     assert(conn->c_phy.status == 0 &&
            !(conn->c_pending.procedure_flags & GAP_PENDING_PHY_UPDATE));
     gap_conn_end();
@@ -3472,10 +3472,10 @@ static void test_phy_updates(void) {
     // The foreground Central send path also starts a queued PHY request.
     start_test_central_link();
     assert(gap_phy_set(2, 2));
-    conn->c_link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
-    now_ms = (uint32_t)((conn->c_link_layer.next_ticks + 999) / 1000);
+    conn->link_layer.tx_pending = conn->c_link_state.event_replied = conn->c_link_state.rx_armed = 0;
+    now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
-    assert(conn->tx[2] == 0x16 && conn->c_pending.phy_request);
+    assert(conn->tx_frame[2] == 0x16 && conn->c_pending.phy_request);
     gap_conn_end();
 
     // Peripheral responds and applies independent directions at the Instant.
@@ -3484,11 +3484,11 @@ static void test_phy_updates(void) {
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(conn->tx[2] == 0x17 && conn->c_pending.phy_request);
-    instant = conn->c_link_layer.event_counter + 7;
+    assert(conn->tx_frame[2] == 0x17 && conn->c_pending.phy_request);
+    instant = conn->link_layer.event_counter + 7;
     receive_test_control(0x18,
                          (uint8_t[]){2, 1, (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->c_phy.current.tx == 1 && conn->c_phy.current.rx == 2);
     assert(conn->c_phy.status == 0);
     gap_conn_end();
@@ -3518,14 +3518,14 @@ static void test_phy_updates(void) {
     assert(gap_phy_set(2, 2));
     receive_test_link_packet(1);
     now_ms = conn->c_phy.started_ms + 40000;
-    conn->c_link_layer.last_rx_ms = now_ms;
+    conn->link_layer.last_rx_ms = now_ms;
     gap_conn_poll();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->c_phy.status == 0x22);
 
     // Feature exchange advertises 2M in byte 1, and caches the peer's support.
     start_test_central_link();
     receive_test_control(0x0e, (uint8_t[]){0x2e, 1, 0, 0, 0, 0, 0, 0}, 8);
-    assert(conn->tx[2] == 0x09 && conn->tx[4] == 1);
+    assert(conn->tx_frame[2] == 0x09 && conn->tx_frame[4] == 1);
     assert(gap_phy_set(2, 2));
     gap_conn_end();
     start_test_central_link();
@@ -3539,24 +3539,24 @@ static void test_phy_updates(void) {
     start_test_central_link();
     receive_test_control(0x0e,
         (uint8_t[]){0x2e, 0x08, 0, 0, 0, 0, 0, 0}, 8);
-    assert(conn->tx[2] == 0x09 && conn->tx[4] == 0x09);
+    assert(conn->tx_frame[2] == 0x09 && conn->tx_frame[4] == 0x09);
     assert(gap_phy_set(GAP_PHY_CODED, GAP_PHY_CODED));
     receive_test_link_packet(0);
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x16 &&
-           conn->tx[3] == GAP_PHY_CODED &&
-           conn->tx[4] == GAP_PHY_CODED);
+    assert(conn->tx_frame[2] == 0x16 &&
+           conn->tx_frame[3] == GAP_PHY_CODED &&
+           conn->tx_frame[4] == GAP_PHY_CODED);
     receive_test_control(0x17,
         (uint8_t[]){GAP_PHY_CODED, GAP_PHY_CODED}, 2);
-    assert(conn->tx[2] == 0x18 &&
-           conn->tx[3] == GAP_PHY_CODED &&
-           conn->tx[4] == GAP_PHY_CODED);
+    assert(conn->tx_frame[2] == 0x18 &&
+           conn->tx_frame[3] == GAP_PHY_CODED &&
+           conn->tx_frame[4] == GAP_PHY_CODED);
     instant = conn->c_phy.instant;
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->c_phy.current.tx == GAP_PHY_CODED &&
            conn->c_phy.current.rx == GAP_PHY_CODED);
     conn->c_link_state.rx_armed = conn->c_link_state.event_replied = 0;
-    now_ms = (uint32_t)((conn->c_link_layer.next_ticks + 999) / 1000);
+    now_ms = (uint32_t)((conn->link_layer.next_ticks + 999) / 1000);
     gap_conn_poll();
     assert(configured_tx_phy == GAP_PHY_CODED &&
            configured_rx_phy == GAP_PHY_CODED);
@@ -3565,11 +3565,11 @@ static void test_phy_updates(void) {
     // A Peripheral accepts a Central-selected Coded PHY at the Instant.
     start_test_central_link();
     conn->is_central = 0;
-    instant = conn->c_link_layer.event_counter + 7;
+    instant = conn->link_layer.event_counter + 7;
     receive_test_control(0x18, (uint8_t[]){
         GAP_PHY_CODED, GAP_PHY_CODED,
         (uint8_t)instant, (uint8_t)(instant >> 8)}, 4);
-    while (conn->c_link_layer.event_counter != instant) receive_test_link_packet(1);
+    while (conn->link_layer.event_counter != instant) receive_test_link_packet(1);
     assert(conn->c_phy.current.tx == GAP_PHY_CODED &&
            conn->c_phy.current.rx == GAP_PHY_CODED);
     gap_conn_end();
@@ -3578,12 +3578,12 @@ static void test_phy_updates(void) {
     start_test_central_link();
     assert(!gap_phy_set(2, 2));
     receive_test_control(0x0e, (uint8_t[8]){0x2e}, 8);
-    assert(conn->tx[4] == 0);
+    assert(conn->tx_frame[4] == 0);
     receive_test_control(0x16, (uint8_t[]){2, 2}, 2);
-    assert(conn->tx[2] == 0x07);
+    assert(conn->tx_frame[2] == 0x07);
     receive_test_control(0x16,
         (uint8_t[]){GAP_PHY_CODED, GAP_PHY_CODED}, 2);
-    assert(conn->tx[2] == 0x07);
+    assert(conn->tx_frame[2] == 0x07);
     gap_conn_end();
     radio_phy_mask = GAP_PHY_1M | GAP_PHY_2M;
 }
@@ -3597,13 +3597,13 @@ static void test_connection_subrating(void) {
     assert(!gap_subrate_set(501, 0, 0, 300));
     assert(gap_subrate_set(5, 1, 1, 300));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x08 && conn->tx[1] == 9);
-    assert(conn->tx[7] == 0xe0);
+    assert(conn->tx_frame[2] == 0x08 && conn->tx_frame[1] == 9);
+    assert(conn->tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
-    assert(conn->tx[2] == 0x27 && conn->tx[1] == 11);
+    assert(conn->tx_frame[2] == 0x27 && conn->tx_frame[1] == 11);
     assert(conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
-    assert(conn->tx[3] == 5 && conn->tx[4] == 0);
-    assert(conn->tx[7] == 1 && conn->tx[9] == 1);
+    assert(conn->tx_frame[3] == 5 && conn->tx_frame[4] == 0);
+    assert(conn->tx_frame[7] == 1 && conn->tx_frame[9] == 1);
     receive_test_link_packet(1);
     assert(conn->c_subrate.factor == 5 &&
            conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE &&
@@ -3620,10 +3620,10 @@ static void test_connection_subrating(void) {
     assert(gap_subrate_request(2, 6, 2, 1, 300));
     assert(!gap_subrate_request(1, 6, 2, 1, 300));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x0e && conn->tx[7] == 0xe0);
+    assert(conn->tx_frame[2] == 0x0e && conn->tx_frame[7] == 0xe0);
     receive_test_control(0x09, peer_features, sizeof(peer_features));
-    assert(conn->tx[2] == 0x26 && conn->tx[1] == 11);
-    assert(conn->tx[3] == 2 && conn->tx[5] == 6);
+    assert(conn->tx_frame[2] == 0x26 && conn->tx_frame[1] == 11);
+    assert(conn->tx_frame[3] == 2 && conn->tx_frame[5] == 6);
     uint8_t indication[10] = {6, 0, 4, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x27, indication, sizeof(indication));
     assert(conn->c_subrate.factor == 6 && conn->c_subrate.base_event == 4 &&
@@ -3637,7 +3637,7 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     uint8_t request[10] = {2, 0, 6, 0, 2, 0, 1, 0, 44, 1};
     receive_test_control(0x26, request, sizeof(request));
-    assert(conn->tx[2] == 0x27 &&
+    assert(conn->tx_frame[2] == 0x27 &&
            conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
     assert(conn->c_subrate.pending_factor == 6);
     receive_test_link_packet(1);
@@ -3647,8 +3647,8 @@ static void test_connection_subrating(void) {
     start_test_central_link();
     request[0] = 0;
     receive_test_control(0x26, request, sizeof(request));
-    assert(conn->tx[2] == 0x11 && conn->tx[3] == 0x26 &&
-           conn->tx[4] == 0x1e);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[3] == 0x26 &&
+           conn->tx_frame[4] == 0x1e);
     gap_conn_end();
 
     // Subrating skips radio work but continues event-counter and channel
@@ -3678,33 +3678,33 @@ static void test_connection_subrating(void) {
     conn->c_subrate.factor = 5;
     conn->c_subrate.base_event = 0;
     conn->c_subrate.continuations = 0;
-    conn->c_link_layer.event_counter = 1;
-    conn->c_link_layer.tx_pending = conn->c_queue.tx_queued = conn->c_link_state.rx_armed = 0;
+    conn->link_layer.event_counter = 1;
+    conn->link_layer.tx_pending = conn->c_queue.tx_queued = conn->c_link_state.rx_armed = 0;
     conn->c_link_state.event_replied = 0;
     gap_connection_slot_valid = 0;
     fake_radio_ticks_enabled = 1;
     fake_radio_tick_autoincrement = 0;
-    fake_radio_ticks = conn->c_link_layer.next_ticks;
-    uint8_t previous_channel = conn->c_link_layer.unmapped_channel;
+    fake_radio_ticks = conn->link_layer.next_ticks;
+    uint8_t previous_channel = conn->link_layer.unmapped_channel;
     gap_conn_poll();
-    assert(conn->c_link_layer.event_counter == 2 && !conn->c_link_state.rx_armed &&
-           conn->c_link_layer.unmapped_channel == (previous_channel + conn->c_link_layer.hop) % 37);
-    conn->c_link_layer.event_counter = 3;
+    assert(conn->link_layer.event_counter == 2 && !conn->c_link_state.rx_armed &&
+           conn->link_layer.unmapped_channel == (previous_channel + conn->link_layer.hop) % 37);
+    conn->link_layer.event_counter = 3;
     conn->c_subrate.continuations = 1;
-    conn->c_link_layer.next_ticks = fake_radio_ticks;
+    conn->link_layer.next_ticks = fake_radio_ticks;
     gap_conn_poll();
     assert(conn->c_link_state.rx_armed); // Continuation event.
     fake_radio_ticks_enabled = 0;
     gap_conn_end();
 
-    conn->c_link_layer.event_counter = 0xffff;
+    conn->link_layer.event_counter = 0xffff;
     conn->c_subrate.factor = 5;
     conn->c_subrate.base_event = 42;
     conn->c_subrate.event_activity = 0;
     assert(gap_subrate_event_is_subrated(65532, 42, 5));
     assert(!gap_subrate_event_is_subrated(0, 42, 5));
     gap_conn_event_advance(conn);
-    assert(conn->c_link_layer.event_counter == 0 && conn->c_subrate.base_event == 1);
+    assert(conn->link_layer.event_counter == 0 && conn->c_subrate.base_event == 1);
     assert(!gap_subrate_event_is_subrated(0, conn->c_subrate.base_event,
                                           conn->c_subrate.factor));
     assert(gap_subrate_event_is_subrated(1, conn->c_subrate.base_event,
@@ -3717,12 +3717,12 @@ static void test_connection_subrating(void) {
     conn->procedures.new_params.interval = conn->procedures.params.interval + 1;
     conn->procedures.new_params.latency = 2;
     conn->procedures.new_params.supervision_timeout = 300;
-    conn->procedures.update_instant = (uint16_t)(conn->c_link_layer.event_counter + 1);
+    conn->procedures.update_instant = (uint16_t)(conn->link_layer.event_counter + 1);
     gap_conn_event_advance(conn);
     gap_conn_update_apply(conn, 0);
     assert(conn->c_subrate.factor == 1 && conn->c_subrate.continuation == 0 &&
            conn->c_subrate.latency == 2 && conn->c_subrate.force_event);
-    assert(gap_subrate_event_is_active(conn->c_link_layer.event_counter));
+    assert(gap_subrate_event_is_active(conn->link_layer.event_counter));
     gap_conn_event_advance(conn);
     assert(!conn->c_subrate.force_event);
     gap_conn_end();
@@ -3733,20 +3733,20 @@ static void test_extended_feature_page(void) {
     start_test_central_link();
     const uint8_t peer_features[8] = {0, 0, 0, 0, 0, 0, 0, 0x80};
     receive_test_control(0x0e, peer_features, sizeof(peer_features));
-    assert(conn->tx[2] == 0x09 && conn->tx[10] == 0x80);
+    assert(conn->tx_frame[2] == 0x09 && conn->tx_frame[10] == 0x80);
     const uint8_t page_request[10] = {1, 1};
     receive_test_control(0x2b, page_request, sizeof(page_request));
-    assert(conn->tx[1] == 11 && conn->tx[2] == 0x2c);
-    assert(conn->tx[3] == 1 && conn->tx[4] == 1);
-    assert(conn->tx[5] == 0 && conn->tx[6] == 0x03);
+    assert(conn->tx_frame[1] == 11 && conn->tx_frame[2] == 0x2c);
+    assert(conn->tx_frame[3] == 1 && conn->tx_frame[4] == 1);
+    assert(conn->tx_frame[5] == 0 && conn->tx_frame[6] == 0x03);
     gap_conn_end();
 
     start_test_central_link();
     receive_test_control(0x0e, peer_features, sizeof(peer_features));
-    conn->tx[1] = 0;
+    conn->tx_frame[1] = 0;
     gap_conn_feature_ext_request_send();
-    assert(conn->tx[1] == 11 && conn->tx[2] == 0x2b);
-    assert(conn->tx[3] == 1 && conn->tx[4] == 1);
+    assert(conn->tx_frame[1] == 11 && conn->tx_frame[2] == 0x2b);
+    assert(conn->tx_frame[3] == 1 && conn->tx_frame[4] == 1);
     uint8_t page_response[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page_response, sizeof(page_response));
     assert(!conn->c_features.ext_pending &&
@@ -3760,22 +3760,22 @@ static void test_connection_rate_exchange(void) {
     assert(!conn->c_features.page1_known && !conn->c_features.peer_feature_7);
     assert(gap_conn_rate_set(80, 2, 0, 1, 100));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x08);
+    assert(conn->tx_frame[2] == 0x08);
     uint8_t features[8] = {0};
     features[7] = 0x80;
     receive_test_control(0x09, features, sizeof(features));
-    assert(conn->tx[2] == 0x2b && conn->c_features.ext_pending);
+    assert(conn->tx_frame[2] == 0x2b && conn->c_features.ext_pending);
     uint8_t page[10] = {1, 1, 0, 3};
     receive_test_control(0x2c, page, sizeof(page));
-    assert(conn->tx[2] == 0x3f && conn->tx[1] == 15);
-    assert(conn->tx[5] == 80 && conn->tx[9] == 2);
+    assert(conn->tx_frame[2] == 0x3f && conn->tx_frame[1] == 15);
+    assert(conn->tx_frame[5] == 80 && conn->tx_frame[9] == 2);
     uint16_t instant = conn->procedures.rate_instant;
-    uint16_t events_until_instant = (uint16_t)(instant - conn->c_link_layer.event_counter);
+    uint16_t events_until_instant = (uint16_t)(instant - conn->link_layer.event_counter);
     assert(events_until_instant >= 6 && events_until_instant < 0x8000);
     receive_test_link_packet(1);
-    conn->c_link_layer.event_counter = instant;
+    conn->link_layer.event_counter = instant;
     gap_conn_update_apply(conn, 0);
-    assert(!conn->procedures.rate_update_pending && conn->c_link_layer.interval_125us == 80 &&
+    assert(!conn->procedures.rate_update_pending && conn->link_layer.interval_125us == 80 &&
            conn->c_subrate.factor == 2 && conn->c_subrate.continuation == 1 &&
            conn->procedures.params.supervision_timeout == 100 &&
            conn->connection_status == 0);
@@ -3785,27 +3785,27 @@ static void test_connection_rate_exchange(void) {
     conn->is_central = 0;
     assert(gap_conn_rate_request(60, 120, 2, 4, 1, 1, 200, 0, NULL));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x0e && conn->tx[1] == 9);
+    assert(conn->tx_frame[2] == 0x0e && conn->tx_frame[1] == 9);
     receive_test_control(0x09, features, sizeof(features));
-    assert(conn->tx[2] == 0x2b);
+    assert(conn->tx_frame[2] == 0x2b);
     receive_test_control(0x2c, page, sizeof(page));
-    assert(conn->tx[2] == 0x3e && conn->tx[1] == 27);
-    assert(conn->tx[3] == 60 && conn->tx[5] == 120 &&
-           conn->tx[21] == 0xff && conn->tx[23] == 0xff);
+    assert(conn->tx_frame[2] == 0x3e && conn->tx_frame[1] == 27);
+    assert(conn->tx_frame[3] == 60 && conn->tx_frame[5] == 120 &&
+           conn->tx_frame[21] == 0xff && conn->tx_frame[23] == 0xff);
     uint8_t indication[14] = {
         0, 0, 80, 0, 12, 0, 2, 0, 1, 0, 1, 0, 200, 0
     };
     receive_test_control(0x3f, indication, sizeof(indication));
     assert(conn->procedures.rate_update_pending && conn->procedures.rate_interval == 80 &&
            conn->procedures.rate_factor == 2 && conn->procedures.rate_ack_waiting &&
-           gap_subrate_event_is_active((uint16_t)(conn->c_link_layer.event_counter + 1u)));
-    conn->c_link_layer.tx_pending = 1;
-    conn->c_link_layer.tx_sn = 0;
+           gap_subrate_event_is_active((uint16_t)(conn->link_layer.event_counter + 1u)));
+    conn->link_layer.tx_pending = 1;
+    conn->link_layer.tx_sn = 0;
     receive_test_link_packet(1);
     assert(!conn->procedures.rate_ack_waiting);
-    conn->c_link_layer.event_counter = conn->procedures.rate_instant;
+    conn->link_layer.event_counter = conn->procedures.rate_instant;
     gap_conn_update_apply(conn, 0);
-    assert(!conn->procedures.rate_update_pending && conn->c_link_layer.interval_125us == 80 &&
+    assert(!conn->procedures.rate_update_pending && conn->link_layer.interval_125us == 80 &&
            conn->c_subrate.factor == 2 && conn->c_subrate.latency == 1 &&
            conn->c_subrate.continuation == 1 &&
            conn->procedures.params.supervision_timeout == 200);
@@ -3819,9 +3819,9 @@ static void test_connection_rate_exchange(void) {
     };
     memset(request + 18, 0xff, 8);
     request[18] = request[19] = 0;
-    assert(conn->c_link_layer.interval_125us > 120);
+    assert(conn->link_layer.interval_125us > 120);
     receive_test_control(0x3e, request, sizeof(request));
-    assert(conn->tx[2] == 0x3f && conn->tx[1] == 15);
+    assert(conn->tx_frame[2] == 0x3f && conn->tx_frame[1] == 15);
     assert(conn->procedures.rate_interval == 60 && conn->procedures.rate_factor == 4 &&
            conn->procedures.rate_update_pending);
     gap_conn_end();
@@ -3838,9 +3838,9 @@ static void test_channel_classification_reporting(void) {
     conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     assert(gap_channel_reporting_set(1, 5, 10));
     gap_channel_reporting_start_queued();
-    assert(conn->tx[2] == 0x28 && conn->tx[1] == 4 &&
-           conn->tx[3] == 1 && conn->tx[4] == 5 &&
-           conn->tx[5] == 10);
+    assert(conn->tx_frame[2] == 0x28 && conn->tx_frame[1] == 4 &&
+           conn->tx_frame[3] == 1 && conn->tx_frame[4] == 5 &&
+           conn->tx_frame[5] == 10);
     receive_test_link_packet(1);
     assert(conn->connection_status == 0);
     uint8_t report[GAP_CHANN_CLASS_BYTES] = {0};
@@ -3862,12 +3862,12 @@ static void test_channel_classification_reporting(void) {
         0, 0, 0, 0, 0, 0x04})); // Reserved high bits must be zero.
     const uint8_t enable_reporting[3] = {1, 5, 10};
     receive_test_control(0x28, enable_reporting, sizeof(enable_reporting));
-    assert(conn->c_channel.enabled &&
+    assert(conn->channel_report.enabled &&
            conn->peripheral.status_queued);
     now_ms += 2000;
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x29 && conn->tx[1] == 11 &&
-           memcmp(conn->tx + 3, classification, sizeof(classification)) == 0);
+    assert(conn->tx_frame[2] == 0x29 && conn->tx_frame[1] == 11 &&
+           memcmp(conn->tx_frame + 3, classification, sizeof(classification)) == 0);
     assert(!conn->peripheral.status_queued &&
            conn->peripheral.last_sent_valid);
     gap_conn_end();
@@ -3896,8 +3896,8 @@ static void receive_secure_test_pdu(
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t nonce[13], aad;
-    rx_frame[0] = llid | ((conn->c_link_layer.expected_rx_sn ^ duplicate) << 3) |
-        ((conn->c_link_layer.tx_sn ^ acknowledged) << 2);
+    rx_frame[0] = llid | ((conn->link_layer.expected_rx_sn ^ duplicate) << 3) |
+        ((conn->link_layer.tx_sn ^ acknowledged) << 2);
     rx_frame[1] = (uint8_t)(len + 4);
     for (uint8_t i = 0; i < 5; i++) nonce[i] = (uint8_t)(counter >> (8 * i));
     if (!conn->is_central)
@@ -3930,9 +3930,9 @@ static void start_test_encrypted_central(void) {
     secure_random_force = 1;
     assert(gap_encrypt(encryption_ltk, encryption_random, 0x2474));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x03 && conn->tx[1] == 23);
-    assert(memcmp(conn->tx + 3, encryption_random, 8) == 0);
-    assert(conn->tx[11] == 0x74 && conn->tx[12] == 0x24);
+    assert(conn->tx_frame[2] == 0x03 && conn->tx_frame[1] == 23);
+    assert(memcmp(conn->tx_frame + 3, encryption_random, 8) == 0);
+    assert(conn->tx_frame[11] == 0x74 && conn->tx_frame[12] == 0x24);
     receive_test_control(0x04, peripheral_entropy, 12);
     const uint8_t session[16] = {
         0x99, 0xad, 0x1b, 0x52, 0x26, 0xa3, 0x7e, 0x3e,
@@ -3944,7 +3944,7 @@ static void start_test_encrypted_central(void) {
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
     assert(!gap_encrypted() && gap_security->tx_counter == 1);
     // An unacknowledged plaintext START request retries the same encrypted response.
-    rx_frame[0] = 3 | ((conn->c_link_layer.expected_rx_sn ^ 1) << 3) | (conn->c_link_layer.tx_sn << 2);
+    rx_frame[0] = 3 | ((conn->link_layer.expected_rx_sn ^ 1) << 3) | (conn->link_layer.tx_sn << 2);
     rx_frame[1] = 1; rx_frame[2] = 0x05; conn->c_link_state.rx_armed = 1;
     gap_hw_received();
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0x9f, 0xcd, 0xa7, 0xf4, 0x48}, 5) == 0);
@@ -3991,7 +3991,7 @@ static void test_link_encryption(void) {
     receive_secure_test_pdu(1, central_data, 27, 2, 0, 1, 0);
     assert(gap_security->rx_counter == 3 && conn->c_queue.rx_ready);
     receive_secure_test_pdu(3, (uint8_t[]){0x12}, 1, 3, 0, 1, 0);
-    assert(conn->tx[2] == 0x13 && tx_buffer[1] == 5);
+    assert(conn->tx_frame[2] == 0x13 && tx_buffer[1] == 5);
     // Authentication failure disconnects before a packet reaches the application.
     receive_secure_test_pdu(1, central_data, 27, 4, 0, 1, 1);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
@@ -4006,12 +4006,12 @@ static void test_link_encryption(void) {
     assert(!gap_send_data(1, central_data, 1));
     assert(memcmp(gap_security->iv, old_iv, 8) == 0);
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x0a && tx_buffer[1] == 5);
+    assert(conn->tx_frame[2] == 0x0a && tx_buffer[1] == 5);
     receive_secure_test_pdu(3, (uint8_t[]){0x0b}, 1, 1, 0, 1, 0);
-    assert(conn->tx[2] == 0x0b && tx_buffer[1] == 1);
+    assert(conn->tx_frame[2] == 0x0b && tx_buffer[1] == 1);
     assert(!gap_security->tx_enabled && !gap_security->rx_enabled);
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x03 && conn->tx[11] == 0x34);
+    assert(conn->tx_frame[2] == 0x03 && conn->tx_frame[11] == 0x34);
     receive_test_control(0x04, peripheral_entropy, 12);
     receive_test_control(0x05, NULL, 0);
     assert(gap_security->tx_counter == 1);
@@ -4026,18 +4026,18 @@ static void test_link_encryption(void) {
     memcpy(request, encryption_random, 8); request[8] = 0x74; request[9] = 0x24;
     memcpy(request + 10, central_entropy, 12);
     receive_test_control(0x03, request, sizeof(request));
-    assert(conn->tx[2] == 0x04 && conn->tx[1] == 13);
+    assert(conn->tx_frame[2] == 0x04 && conn->tx_frame[1] == 13);
     uint8_t requested_random[8]; uint16_t ediv;
     assert(gap_key_request(requested_random, &ediv));
     assert(ediv == 0x2474 && memcmp(requested_random, encryption_random, 8) == 0);
     assert(gap_key_reply(encryption_ltk));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x05 && tx_buffer[1] == 1);
+    assert(conn->tx_frame[2] == 0x05 && tx_buffer[1] == 1);
     receive_secure_test_pdu(3, (uint8_t[]){0x06}, 1, 0, 0, 1, 0);
     assert(gap_encrypted() && tx_buffer[1] == 5);
     assert(memcmp(tx_buffer + 2, (uint8_t[]){0xa3, 0x4c, 0x13, 0xa4, 0x15}, 5) == 0);
     receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 0, 1, 0);
-    assert(conn->tx[2] == 0x0b && !gap_security->rx_enabled);
+    assert(conn->tx_frame[2] == 0x0b && !gap_security->rx_enabled);
     uint64_t transmitted = gap_security->tx_counter;
     receive_secure_test_pdu(3, (uint8_t[]){0x0a}, 1, 1, 1, 0, 0);
     assert(gap_security->tx_counter == transmitted);
@@ -4046,7 +4046,7 @@ static void test_link_encryption(void) {
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x02 && conn->tx[3] == 0x06);
+    assert(conn->tx_frame[2] == 0x02 && conn->tx_frame[3] == 0x06);
     receive_test_link_packet(1);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x06);
     secure_random_force = 0;
@@ -4056,7 +4056,7 @@ static void test_link_encryption(void) {
     receive_test_control(0x03, request, sizeof(request));
     assert(gap_key_reply(NULL));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x06);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x06);
     assert(!gap_encrypted() && !gap_key_request(NULL, NULL));
     gap_conn_end();
     start_test_central_link();
@@ -4071,7 +4071,7 @@ static void test_link_encryption(void) {
     start_test_central_link();
     assert(gap_encrypt(encryption_ltk, encryption_random, 0));
     receive_test_link_packet(1);
-    rx_frame[0] = 1 | (conn->c_link_layer.expected_rx_sn << 3) | ((conn->c_link_layer.tx_sn ^ 1) << 2);
+    rx_frame[0] = 1 | (conn->link_layer.expected_rx_sn << 3) | ((conn->link_layer.tx_sn ^ 1) << 2);
     rx_frame[1] = 1; rx_frame[2] = 0x55; conn->c_link_state.rx_armed = 1;
     gap_hw_received();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x3d);
@@ -4080,7 +4080,7 @@ static void test_link_encryption(void) {
     start_test_encrypted_central();
     assert(gap_data_length_set(GAP_CONN_DATA_MAX));
     receive_test_link_packet(1);
-    assert(conn->tx[2] == 0x14);
+    assert(conn->tx_frame[2] == 0x14);
     receive_secure_test_pdu(3, (uint8_t[]){0x15, 251, 0, 0x48, 0x08, 251, 0, 0x48, 0x08},
                             9, 1, 0, 1, 0);
     uint8_t large[GAP_CONN_DATA_MAX]; memset(large, 0xab, sizeof(large));
@@ -4106,14 +4106,14 @@ static void test_link_encryption(void) {
     assert(gap_security_status() == 0x1f && !gap_security->phase);
     conn->is_central = 0;
     receive_test_control(0x03, request, sizeof(request));
-    assert(conn->tx[2] == 0x11 && conn->tx[4] == 0x1f);
+    assert(conn->tx_frame[2] == 0x11 && conn->tx_frame[4] == 0x1f);
     secure_random_available = 1;
     gap_conn_end();
     start_test_central_link();
     assert(gap_encrypt(encryption_ltk, encryption_random, 0));
     receive_test_link_packet(1);
     now_ms = gap_security->started_ms + 40000;
-    conn->c_link_layer.last_rx_ms = now_ms;
+    conn->link_layer.last_rx_ms = now_ms;
     gap_conn_poll();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_security_status() == 0x22);
     start_test_encrypted_central();
@@ -4159,8 +4159,8 @@ static void test_smp_pairing(void) {
                             0xea,0x88,0x89,0x87,0xef,0x3f,0x1e,0x1e}, confirm[16];
     memcpy(smp->pairing.request, request, 7);
     memcpy(smp->pairing.response, response, 7);
-    memcpy(conn->c_link_layer.initiator, ia, 6); memcpy(conn->c_link_layer.responder, ra, 6);
-    conn->c_link_layer.initiator_type = 1; conn->c_link_layer.responder_type = 0;
+    memcpy(conn->link_layer.initiator, ia, 6); memcpy(conn->link_layer.responder, ra, 6);
+    conn->link_layer.initiator_type = 1; conn->link_layer.responder_type = 0;
     gap_smp_confirm(random, confirm);
     assert(!memcmp(confirm, expected, 16));
     uint8_t s1_input[16] = {0,0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,
@@ -4390,16 +4390,16 @@ static void test_smp_signing_key_distribution(void) {
            !memcmp(conn->bond.peer.address, peer_identity + 2, 6));
     // The Central's set follows the Peripheral's set: encryption key, its
     // Central Identification, then Signing Information.
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_ENCRYPTION_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_CENTRAL_IDENTIFICATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_SIGNING_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(!smp->pairing.phase && conn->bonded &&
            conn->bond.has_peripheral_ltk);
@@ -4425,18 +4425,18 @@ static void test_smp_signing_key_distribution(void) {
            smp->tx[2] == L2CAP_CID_SMP &&
            smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
            conn->bond.has_peripheral_ltk && conn->bond.local_csrk.present);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_CENTRAL_IDENTIFICATION);
     uint8_t peripheral_ltk_copy[16], peripheral_csrk_copy[16];
     memcpy(peripheral_ltk_copy, conn->bond.peripheral.ltk, 16);
     memcpy(peripheral_csrk_copy, conn->bond.local_csrk.key, 16);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->procedures.tx_data[4] == SMP_SIGNING_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX);
     uint8_t central_ltk[17] = {SMP_ENCRYPTION_INFORMATION};
@@ -4466,10 +4466,10 @@ static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uin
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint8_t key[16] = {0}, p1[16], p2[16] = {0}, block[16], encrypted[16];
     for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
-    p1[0] = conn->c_link_layer.initiator_type; p1[1] = conn->c_link_layer.responder_type;
+    p1[0] = conn->link_layer.initiator_type; p1[1] = conn->link_layer.responder_type;
     memcpy(p1 + 2, smp->pairing.request, 7);
     memcpy(p1 + 9, smp->pairing.response, 7);
-    memcpy(p2, conn->c_link_layer.responder, 6); memcpy(p2 + 6, conn->c_link_layer.initiator, 6);
+    memcpy(p2, conn->link_layer.responder, 6); memcpy(p2 + 6, conn->link_layer.initiator, 6);
     for (unsigned i = 0; i < 16; i++) block[15 - i] = random[i] ^ p1[i];
     AES_KEY aes;
     assert(AES_set_encrypt_key(key, 128, &aes) == 0);
@@ -4658,10 +4658,10 @@ static void test_smp_keypress_notifications(void) {
     assert(smp->pairing.keypress_active &&
            smp->pairing.response[3] == 0x14 &&
            smp->pairing.passkey_action == GAP_PASSKEY_INPUT);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Complete the Pairing Response transmission.
     assert(gap_passkey_keypress(SMP_KEYPRESS_STARTED));
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->c_queue.tx_queued && conn->procedures.tx_data[4] ==
            SMP_KEYPRESS_NOTIFICATION && conn->procedures.tx_data[5] ==
@@ -4714,7 +4714,7 @@ static void test_secure_connections_just_works(void) {
     assert(smp->pairing.request[3] == 9 &&
            smp->pairing.request[5] == GAP_KEY_DIST_IDENTITY &&
            smp->pairing.request[6] == GAP_KEY_DIST_IDENTITY);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Pairing Request.
     const uint8_t response[7] = {
         2, GAP_IO_NONE, 0, 9, 16,
@@ -4724,7 +4724,7 @@ static void test_secure_connections_just_works(void) {
     assert(smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY &&
            smp->tx_len == 69);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         assert(conn->procedures.tx_llid == (fragment ? 1 : 2));
     }
@@ -4736,7 +4736,7 @@ static void test_secure_connections_just_works(void) {
     gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && smp->tx[4] == 3);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send the initiator's Pairing Confirm first.
     uint8_t expected_dhkey[32];
     assert(uECC_shared_secret(smp->secure.public_key, peer_private,
@@ -4748,17 +4748,17 @@ static void test_secure_connections_just_works(void) {
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send our Pairing Random.
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY && smp->tx[4] == 13);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send our DHKey Check.
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_QUEUED);
     gap_security->phase = 0; gap_security->status = 0;
@@ -4775,13 +4775,13 @@ static void test_secure_connections_just_works(void) {
     receive_test_smp(sc_peer_identity, sizeof(sc_peer_identity), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx[4] ==
            SMP_IDENTITY_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->c_queue.tx_queued &&
            conn->procedures.tx_data[4] == SMP_IDENTITY_ADDRESS_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_pairing_status() == 0 && !smp->pairing.phase &&
            conn->bonded && conn->bond.peer_irk.present &&
@@ -4794,7 +4794,7 @@ static void test_secure_connections_just_works(void) {
 
     start_test_central_link();
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     const uint8_t bad_pair_response[7] = {
         2, GAP_IO_NONE, 0, 8, 16, 0, 0
@@ -4823,7 +4823,7 @@ static void test_secure_connections_just_works(void) {
     assert(gap_bonding_set(1));
     start_test_central_link(); conn->is_central = 0;
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Security Request.
     const uint8_t request[7] = {
         1, GAP_IO_NONE, 0, 9, 16,
@@ -4834,12 +4834,12 @@ static void test_secure_connections_just_works(void) {
            smp->pairing.response[5] == GAP_KEY_DIST_IDENTITY &&
            smp->pairing.response[6] == GAP_KEY_DIST_IDENTITY);
     assert(smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY && smp->tx[4] == 2);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Pairing Response.
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && smp->tx[4] == 12);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         assert(conn->procedures.tx_llid == (fragment ? 1 : 2));
     }
@@ -4853,21 +4853,21 @@ static void test_secure_connections_just_works(void) {
                          central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM && smp->tx[4] == 3);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     receive_test_smp(central_nonce, sizeof(central_nonce), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY && smp->tx[4] == 4);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT && smp->tx[4] == 13);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     gap_security->phase = GAP_ENC_KEY_REQUEST;
     memset(gap_security->random, 0, 8); gap_security->ediv = 0;
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_START_QUEUED);
     gap_security->phase = 0; gap_security->status = 0;
@@ -4875,13 +4875,13 @@ static void test_secure_connections_just_works(void) {
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx[4] ==
            SMP_IDENTITY_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Peripheral Identity Information.
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Queue Peripheral Identity Address Information.
     assert(conn->c_queue.tx_queued && conn->procedures.tx_data[4] ==
            SMP_IDENTITY_ADDRESS_INFORMATION);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Finish Peripheral's key set.
     uint8_t central_irk[17] = {SMP_IDENTITY_INFORMATION};
     memset(central_irk + 1, 0x92, 16);
@@ -4932,7 +4932,7 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
     assert(gap_sc_oob_set_peer(&bad_peer_oob));
     assert(gap_pair());
     assert(smp->pairing.request[2] == 1);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
 
     const uint8_t response[7] = {2, GAP_IO_NONE, 0, 8, 16, 0, 0};
@@ -4978,7 +4978,7 @@ static void test_secure_connections_oob_success(void) {
     assert(gap_sc_oob_set_peer(&peer_oob));
     assert(gap_pair());
     assert(smp->pairing.request[2] == 1);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
 
     const uint8_t response[7] = {2, GAP_IO_NONE, 1, 8, 16, 0, 0};
@@ -4990,7 +4990,7 @@ static void test_secure_connections_oob_success(void) {
     gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send the initiator's Pairing Confirm.
 
     uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
@@ -5000,18 +5000,18 @@ static void test_secure_connections_oob_success(void) {
                          peer_nonce + 1, 0, peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
 
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_QUEUED);
     gap_security->phase = 0;
@@ -5037,7 +5037,7 @@ static void test_secure_connections_oob_rejects_missing_local_data(void) {
     gap_sc_oob_data peer_oob = {{0}, {0}};
     assert(gap_sc_oob_set_peer(&peer_oob));
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
 
     const uint8_t response[7] = {2, GAP_IO_NONE, 1, 8, 16, 0, 0};
@@ -5074,7 +5074,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     assert(gap_sc_oob_set_peer(&central_oob));
 
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Security Request.
     const uint8_t request[7] = {
         1, GAP_IO_NONE, 1, 8, 16, 0, 0
@@ -5082,7 +5082,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     receive_test_smp(request, sizeof(request), 0);
     assert(smp->pairing.response[2] == 1 &&
            smp->secure.oob_active);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Pairing Response.
 
     uint8_t central_pdu[65] = {12};
@@ -5091,7 +5091,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && smp->tx[4] == 12);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
 
@@ -5102,23 +5102,23 @@ static void test_secure_connections_oob_peripheral_success(void) {
                          central_nonce + 1, 0, central_confirm + 1);
     receive_test_smp(central_confirm, sizeof(central_confirm), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM && smp->tx[4] == 3);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send the responder's Pairing Confirm.
     receive_test_smp(central_nonce, sizeof(central_nonce), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY && smp->tx[4] == 4);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send the responder's Pairing Random.
 
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT && smp->tx[4] == 13);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     gap_security->phase = GAP_ENC_KEY_REQUEST;
     memset(gap_security->random, 0, 8);
     gap_security->ediv = 0;
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_START_QUEUED);
     gap_security->phase = 0;
@@ -5166,7 +5166,7 @@ static void test_secure_connections_numeric_comparison(void) {
         start_test_central_link();
         gap_pairing_set(1);
         assert(gap_pair());
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         const uint8_t response[7] = {
             2, GAP_IO_DISPLAY_YES_NO, 0, 12, 16, 0, 0
@@ -5174,7 +5174,7 @@ static void test_secure_connections_numeric_comparison(void) {
         receive_test_smp(response, sizeof(response), 0);
         assert(smp->secure.numeric_required);
         for (uint8_t fragment = 0; fragment < 3; fragment++) {
-            conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+            conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
             gap_smp_poll();
         }
         uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
@@ -5183,14 +5183,14 @@ static void test_secure_connections_numeric_comparison(void) {
         gap_bytes_reverse(public_pdu + 1, peer_public, 32);
         gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
         receive_test_smp(public_pdu, sizeof(public_pdu), 0);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll(); // Send the initiator's Pairing Confirm.
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++) peer_nonce[i] = i + 90;
         gap_sc_confirm_value(peer_public, smp->secure.public_key,
                              peer_nonce + 1, 0, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
         assert(smp->pairing.phase == SMP_PHASE_SC_USER && !smp->tx_len);
@@ -5203,7 +5203,7 @@ static void test_secure_connections_numeric_comparison(void) {
         assert(!gap_authenticated());
         assert(gap_numeric_reply(accept));
         assert(!gap_numeric_reply(accept));
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         if (!accept) {
             assert(gap_pairing_status() == 0x0c);
@@ -5216,7 +5216,7 @@ static void test_secure_connections_numeric_comparison(void) {
         gap_sc_dhkey_check(0, peer_check + 1);
         receive_test_smp(peer_check, sizeof(peer_check), 0);
         assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         assert(gap_security->phase == GAP_ENC_QUEUED);
         gap_security->phase = 0; gap_security->status = 0;
@@ -5227,13 +5227,13 @@ static void test_secure_connections_numeric_comparison(void) {
     }
     start_test_central_link(); conn->is_central = 0;
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     const uint8_t request[7] = {
         1, GAP_IO_DISPLAY_YES_NO, 0, 12, 16, 0, 0
     };
     receive_test_smp(request, sizeof(request), 0);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
     peer_private[31] = 11;
@@ -5242,7 +5242,7 @@ static void test_secure_connections_numeric_comparison(void) {
     gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_CONFIRM && !smp->tx_len);
@@ -5254,11 +5254,11 @@ static void test_secure_connections_numeric_comparison(void) {
                          peer_confirm + 1);
     receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM && smp->tx[4] == 3);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_USER && smp->tx[4] == 4);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Nb before the Central's DHKey Check arrives.
     uint8_t central_check[17] = {13};
     gap_sc_dhkey_check(1, central_check + 1);
@@ -5268,12 +5268,12 @@ static void test_secure_connections_numeric_comparison(void) {
     uint32_t value;
     assert(gap_numeric_get(&value) && value < 1000000);
     assert(gap_numeric_reply(1));
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT && conn->c_queue.tx_queued);
     gap_security->phase = GAP_ENC_KEY_REQUEST;
     memset(gap_security->random, 0, 8); gap_security->ediv = 0;
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_START_QUEUED);
     gap_security->phase = 0; gap_security->status = 0;
@@ -5296,7 +5296,7 @@ static void test_secure_connections_passkey(void) {
     start_test_central_link();
     gap_pairing_set(1);
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     const uint8_t response[7] = {
         2, GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
@@ -5306,7 +5306,7 @@ static void test_secure_connections_passkey(void) {
            smp->pairing.passkey_action == GAP_PASSKEY_INPUT);
     assert(gap_passkey_reply(123456));
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
     uint8_t peer_private[32] = {0}, peer_public[64], public_pdu[65] = {12};
@@ -5316,7 +5316,7 @@ static void test_secure_connections_passkey(void) {
     gap_bytes_reverse(public_pdu + 33, peer_public + 32, 32);
     receive_test_smp(public_pdu, sizeof(public_pdu), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_PASSKEY);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     uint8_t previous_nonce[16] = {0};
     for (uint8_t round = 0; round < 20; round++) {
@@ -5329,7 +5329,7 @@ static void test_secure_connections_passkey(void) {
         if (round)
             assert(memcmp(previous_nonce, smp->random, 16));
         memcpy(previous_nonce, smp->random, 16);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         uint8_t peer_nonce[17] = {4}, peer_confirm[17] = {3};
         for (uint8_t i = 1; i < sizeof(peer_nonce); i++)
@@ -5338,20 +5338,20 @@ static void test_secure_connections_passkey(void) {
                              peer_nonce + 1, z, peer_confirm + 1);
         receive_test_smp(peer_confirm, sizeof(peer_confirm), 0);
         assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM && smp->tx[4] == 4);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         receive_test_smp(peer_nonce, sizeof(peer_nonce), 0);
         assert(smp->secure.passkey_round ==
                (round < 19 ? round + 1 : round));
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY && smp->tx[4] == 13);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     uint8_t peer_check[17] = {13};
     gap_sc_dhkey_check(0, peer_check + 1);
     receive_test_smp(peer_check, sizeof(peer_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_QUEUED);
     gap_security->phase = 0; gap_security->status = 0;
@@ -5362,7 +5362,7 @@ static void test_secure_connections_passkey(void) {
     assert(gap_security_set(GAP_IO_DISPLAY_ONLY, 1, 16));
     start_test_central_link(); conn->is_central = 0;
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     const uint8_t request[7] = {
         1, GAP_IO_KEYBOARD_ONLY, 0, 12, 16, 0, 0
@@ -5372,7 +5372,7 @@ static void test_secure_connections_passkey(void) {
     assert(smp->secure.passkey_required &&
            gap_passkey(&passkey) == GAP_PASSKEY_DISPLAY &&
            passkey < 1000000);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     uint8_t central_private[32] = {0}, central_public[64], central_pdu[65] = {12};
     central_private[31] = 15;
@@ -5381,7 +5381,7 @@ static void test_secure_connections_passkey(void) {
     gap_bytes_reverse(central_pdu + 33, central_public + 32, 32);
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_PASSKEY);
@@ -5395,18 +5395,18 @@ static void test_secure_connections_passkey(void) {
         receive_test_smp(central_confirm, sizeof(central_confirm), 0);
         assert(smp->pairing.confirm_received &&
                smp->pairing.phase == SMP_PHASE_SC_PASSKEY);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         uint8_t expected_confirm[16];
         gap_sc_confirm_value(smp->secure.public_key, central_public,
                              smp->random, z, expected_confirm);
         assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM &&
                smp->tx[4] == 3 && !memcmp(smp->tx + 5, expected_confirm, 16));
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
         receive_test_smp(central_nonce, sizeof(central_nonce), 0);
         assert(smp->tx[4] == 4);
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_DHKEY);
@@ -5414,11 +5414,11 @@ static void test_secure_connections_passkey(void) {
     gap_sc_dhkey_check(1, central_check + 1);
     receive_test_smp(central_check, sizeof(central_check), 0);
     assert(smp->pairing.phase == SMP_PHASE_SC_ENCRYPT && smp->tx[4] == 13);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     gap_security->phase = GAP_ENC_KEY_REQUEST;
     memset(gap_security->random, 0, 8); gap_security->ediv = 0;
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_security->phase == GAP_ENC_START_QUEUED);
     gap_security->phase = 0; gap_security->status = 0;
@@ -5429,17 +5429,17 @@ static void test_secure_connections_passkey(void) {
     assert(gap_security_set(GAP_IO_KEYBOARD_ONLY, 1, 16));
     start_test_central_link(); conn->is_central = 0;
     assert(gap_pair());
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     const uint8_t input_request[7] = {
         1, GAP_IO_DISPLAY_ONLY, 0, 12, 16, 0, 0
     };
     receive_test_smp(input_request, sizeof(input_request), 0);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     receive_test_smp(central_pdu, sizeof(central_pdu), 0);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
-        conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+        conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();
     }
     assert(smp->pairing.phase == SMP_PHASE_SC_PASSKEY &&
@@ -5449,13 +5449,13 @@ static void test_secure_connections_passkey(void) {
     gap_sc_confirm_value(central_public, smp->secure.public_key,
                          input_nonce + 1, 0x80, input_confirm + 1);
     receive_test_smp(input_confirm, sizeof(input_confirm), 0);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(smp->pairing.confirm_received && !smp->tx_len);
     assert(gap_passkey_reply(654321)); // Different low bit from the peer.
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_SC_RANDOM && smp->tx[4] == 3);
-    conn->c_queue.tx_queued = conn->c_link_layer.tx_pending = 0;
+    conn->c_queue.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     receive_test_smp(input_nonce, sizeof(input_nonce), 0);
     assert(gap_pairing_status() == 4 && !gap_authenticated());
