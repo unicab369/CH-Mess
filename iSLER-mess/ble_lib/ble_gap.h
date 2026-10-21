@@ -786,7 +786,6 @@ typedef struct {
     // packet awaits ACK, security.tx_plain_len and security.tx_opcode retain
     // its original length and opcode because encryption overwrites those bytes.
     GAP_RADIO_BUFFER_ATTR uint8_t tx_frame[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
-    uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 
     // One L2CAP connection and bearer buffer set shared by this GAP link.
     l2cap_psm_registry l2cap_psm_registry;
@@ -811,6 +810,9 @@ static uint16_t gap_conn_generations[GAP_CONNECTION_COUNT];
 static uint16_t gap_data_capacity;
 static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
+// Only one radio receive callback runs at a time. Decrypted frames are consumed
+// there or copied into the receiving link's rx_packet before the callback ends.
+static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 
 // Packed 2-bit classification for each of 37 data channels (74 bits total);
 // per channel: 0=unknown, 1=good, 2=reserved, 3=bad. Channel 0 uses the

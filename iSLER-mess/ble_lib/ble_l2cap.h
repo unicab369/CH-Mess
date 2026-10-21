@@ -119,7 +119,8 @@ typedef struct {
 
 // Local services supported by one L2CAP manager, shared by its connections.
 typedef struct {
-    uint16_t psm[L2CAP_PSM_MAX];
+    // Registration rejects PSMs above 0x00ff, so each entry fits in one byte.
+    uint8_t psm[L2CAP_PSM_MAX];
     uint8_t count;
 } l2cap_psm_registry;
 

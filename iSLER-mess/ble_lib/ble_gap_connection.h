@@ -179,7 +179,7 @@ static void gap_conn_end(void) {
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(conn->tx_frame, sizeof(conn->tx_frame));
-    gap_wipe(conn->plain, sizeof(conn->plain));
+    gap_wipe(gap_rx_plain, sizeof(gap_rx_plain));
     gap_wipe(&conn->tx_packet, sizeof(conn->tx_packet));
     gap_wipe(&conn->rx_packet, sizeof(conn->rx_packet));
     gap_wipe(&conn->queue_state, sizeof(conn->queue_state));

@@ -290,7 +290,7 @@ void gap_hw_received(void) {
             }
 
             uint8_t nonce[13];
-            uint8_t *plain = conn->plain;
+            uint8_t *plain = gap_rx_plain;
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
             gap_security_nonce(gap_security, nonce, cnt, !conn->is_central);
