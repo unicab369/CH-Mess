@@ -476,26 +476,6 @@ typedef struct {
     uint8_t next_channel_map[5];
     // Result for pending procedures, including the request tracked by procedure_state.params_state.
     uint8_t connection_status;
-    // Request bounds are needed while negotiating; selected parameters are
-    // needed after selection through update_instant, so they share storage.
-    union {
-        struct {
-            // Lower bound paired with params_max_1p25ms in the request queued by queue_state.local_params.
-            uint16_t params_min_1p25ms;
-            // Upper bound paired with params_min_1p25ms in that request.
-            uint16_t params_max_1p25ms;
-            // Requested latency paired with the interval bounds and timeout.
-            uint16_t params_latency;
-            // Requested timeout paired with the other request values; units are 10 ms.
-            uint16_t params_timeout;
-        };
-        // Selected interval, latency, and timeout installed at update_instant.
-        struct {
-            uint16_t interval;            // Connection interval in 1.25-ms units.
-            uint16_t latency;             // Peripheral latency in connection events.
-            uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
-        } new_params;
-    };
     // Start time for timeout checks on pending procedures such as procedure_state.params_state.
     uint32_t params_started_ms;
     // Event counter when new_params takes effect; update_win_offset shifts its first anchor.
@@ -519,6 +499,28 @@ typedef struct {
     uint8_t length_status;
     // Start time for the pending exchange tracked by length_status.
     uint32_t length_started_ms;
+
+    union {
+        // Holds a connection parameter request's interval range, latency, and
+        // supervision timeout. After selection, this storage holds new_params
+        // until they take effect at update_instant.
+        struct {
+            // Lower connection interval bound, paired with max_intvl_1p25ms.
+            uint16_t min_intvl_1p25ms;
+            // Upper connection interval bound, paired with min_intvl_1p25ms.
+            uint16_t max_intvl_1p25ms;
+            // Requested latency paired with the interval bounds and timeout.
+            uint16_t latency;
+            // Requested timeout paired with the other request values; units are 10 ms.
+            uint16_t timeout_10ms;
+        } params_request;
+        // Selected interval, latency, and timeout installed at update_instant.
+        struct {
+            uint16_t interval;            // Connection interval in 1.25-ms units.
+            uint16_t latency;             // Peripheral latency in connection events.
+            uint16_t supervision_timeout; // Link supervision timeout in 10-ms units.
+        } new_params;
+    };
 
     // Procedures awaiting completion or peer response.
     struct {

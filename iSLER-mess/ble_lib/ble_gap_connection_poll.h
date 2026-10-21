@@ -50,10 +50,10 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[1] = 24;
             conn->tx_frame[2] = LL_CONNECTION_PARAM_REQ;
 
-            ble_write_u16_le(conn->tx_frame + 3, conn->params_min_1p25ms);
-            ble_write_u16_le(conn->tx_frame + 5, conn->params_max_1p25ms);
-            ble_write_u16_le(conn->tx_frame + 7, conn->params_latency);
-            ble_write_u16_le(conn->tx_frame + 9, conn->params_timeout);
+            ble_write_u16_le(conn->tx_frame + 3, conn->params_request.min_intvl_1p25ms);
+            ble_write_u16_le(conn->tx_frame + 5, conn->params_request.max_intvl_1p25ms);
+            ble_write_u16_le(conn->tx_frame + 7, conn->params_request.latency);
+            ble_write_u16_le(conn->tx_frame + 9, conn->params_request.timeout_10ms);
 
             conn->tx_frame[11] = 0; // No preferred periodicity.
             conn->tx_frame[12] = 0;
