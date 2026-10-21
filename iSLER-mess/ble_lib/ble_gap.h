@@ -340,16 +340,6 @@ typedef struct {
 
 // GAP state and connection data types.
 typedef struct {
-    uint8_t scanning;          // Scanner is enabled and scheduling scan windows.
-    uint8_t active;            // Active scanning is enabled; send scan requests when applicable.
-    uint8_t generation;        // Incremented when scan state changes to invalidate stale work.
-    uint16_t interval_ms;      // Time between scan-window starts, in milliseconds.
-    uint16_t window_ms;         // Duration of each scan window, in milliseconds.
-    uint8_t discovery_mode;    // Which advertising report classes the scanner accepts.
-    uint8_t filter_duplicates; // Suppress repeated reports for the same advertiser/data.
-} gap_scanner_state;
-
-typedef struct {
     uint16_t tx_octets; // Maximum Link Layer payload bytes this device can transmit.
     uint16_t tx_time;   // Maximum transmit time, in microseconds, for that payload.
     uint16_t rx_octets; // Maximum Link Layer payload bytes this device can receive.
@@ -398,8 +388,8 @@ typedef struct {
 static struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
-    uint8_t data_len;      // Number of valid bytes in data.
-    uint8_t scan_resp_len; // Number of valid bytes in scan_response.
+    uint8_t data_len;      // Number of valid bytes in gap_initiator.adv.data.
+    uint8_t scan_resp_len; // Number of valid bytes in gap_initiator.adv.scan_response.
     struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
@@ -413,11 +403,17 @@ static struct {
     uint8_t connection_accept; // A connection request was accepted and needs link setup.
     uint16_t interval_ms;      // Time between advertising events, in milliseconds.
     uint32_t next_event_ms;    // Scheduled time of the next advertising event.
-    uint8_t data[GAP_ADV_DATA_MAX]; // Advertising payload bytes.
-    uint8_t scan_response[GAP_ADV_DATA_MAX]; // Scan-response payload bytes.
 } gap_adv;
 
-static gap_scanner_state gap_scanner = {
+static struct {
+    uint8_t scanning;          // Scanner is enabled and scheduling scan windows.
+    uint8_t active;            // Active scanning is enabled; send scan requests when applicable.
+    uint8_t generation;        // Incremented when scan state changes to invalidate stale work.
+    uint16_t interval_ms;      // Time between scan-window starts, in milliseconds.
+    uint16_t window_ms;        // Duration of each scan window, in milliseconds.
+    uint8_t discovery_mode;    // Which advertising report classes the scanner accepts.
+    uint8_t filter_duplicates; // Suppress repeated reports for the same advertiser/data.
+} gap_scanner = {
     .interval_ms = 20, // Scan continuously by default: window equals interval.
     .window_ms = 20,
     .discovery_mode = GAP_DISCOVERY_ALL // Report all supported advertiser types.
@@ -853,6 +849,37 @@ static struct {
     uint32_t next_rotation_ms;
 } gap_privacy;
 
+static struct {
+    uint8_t active;
+    gap_conn_mode mode;
+    gap_address peer;
+    // Legacy advertising and Central initiation are mutually exclusive.
+    // PAwR requests use this space only while extended advertising is active,
+    // which also excludes legacy advertising. Keep request aligned for radio TX.
+    union {
+        uint8_t request[36];
+        struct {
+            uint8_t data[GAP_ADV_DATA_MAX];
+            uint8_t scan_response[GAP_ADV_DATA_MAX];
+        } adv;
+        uint32_t align_request;
+    };
+    uint32_t deadline_ms;
+} gap_initiator;
+
+// Central initiation configuration.
+// Initial LE connection settings. Connection interval is in 1.25 ms units,
+// supervision timeout in 10 ms units, and attempt timeout in milliseconds.
+typedef struct {
+    uint16_t interval, latency, supervision_timeout;
+    uint16_t scan_interval_ms, scan_window_ms;
+    uint32_t attempt_timeout_ms;
+} gap_timing_cfg;
+
+static gap_timing_cfg gap_conn_timing = {
+    24, 0, 200, 1280, 12, 30720
+};
+
 // Connection selection and application-facing handles.
 // Return the read-only context for the currently selected connection slot.
 const gap_conn_context *gap_conn_ctx_current(void) {
@@ -997,27 +1024,6 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     return count >= 2 && gap_access_address_valid(access_address);
 }
 
-static struct {
-    uint8_t active;
-    gap_conn_mode mode;
-    gap_address peer;
-    uint8_t request[36];
-    uint32_t deadline_ms;
-} gap_central;
-
-// Central initiation configuration.
-// Initial LE connection settings. Connection interval is in 1.25 ms units,
-// supervision timeout in 10 ms units, and attempt timeout in milliseconds.
-typedef struct {
-    uint16_t interval, latency, supervision_timeout;
-    uint16_t scan_interval_ms, scan_window_ms;
-    uint32_t attempt_timeout_ms;
-} gap_timing_cfg;
-
-static gap_timing_cfg gap_conn_timing = {
-    24, 0, 200, 1280, 12, 30720
-};
-
 // Application facing
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
@@ -1028,7 +1034,7 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         timing->attempt_timeout_ms > 0x7fffffffUL || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_central.active || timing->scan_interval_ms < 3 ||
+        gap_initiator.active || timing->scan_interval_ms < 3 ||
         timing->scan_interval_ms >= 40960 ||
         timing->scan_window_ms < 3 ||
         timing->scan_window_ms > timing->scan_interval_ms
@@ -1141,7 +1147,7 @@ int gap_accept_list_add(const uint8_t address[6], uint8_t type) {
     type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active ||
         (type && !gap_static_addr_valid(address))
     ) return 0;
 
@@ -1172,7 +1178,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
     type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
@@ -1194,7 +1200,7 @@ int gap_accept_list_remove(const uint8_t address[6], uint8_t type) {
 int gap_accept_list_clear(void) {
     if (gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active
     ) return 0;
 
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
@@ -1211,7 +1217,7 @@ int gap_identity_set(
     uint8_t random_type = type != 0;
     if (!address || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active ||
         (random_type && !gap_static_addr_valid(address))
     ) return 0;
 
@@ -1260,7 +1266,7 @@ int gap_identity_privacy(
     if (!address || mode > GAP_PRIVACY_DEVICE ||
         gap_scanner.scanning || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_central.active
+        gap_initiator.active
     ) return 0;
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
@@ -1341,7 +1347,7 @@ int gap_identity_local_key(
     uint8_t random_type = type != 0;
     if (!address || gap_scanner.scanning || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active
     ) return 0;
 
     int slot = -1;
@@ -1414,7 +1420,7 @@ static void gap_local_addr_select(
 int gap_privacy_set(const uint8_t irk[16], uint16_t timeout_s) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_central.active || timeout_s > 41400 || (irk && !timeout_s)
+        gap_initiator.active || timeout_s > 41400 || (irk && !timeout_s)
     ) return 0;
 
     if (!irk && !timeout_s) {
@@ -1480,7 +1486,7 @@ int gap_privacy_set_randomized(
     if (!irk || min_timeout_s < 1 || max_timeout_s > 3600 ||
         min_timeout_s > max_timeout_s || gap_adv.enabled ||
         GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active
     ) return 0;
 
     uint16_t timeout_s;
@@ -1507,7 +1513,7 @@ int gap_privacy_set_randomized(
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_scanner.scanning ||
         gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active
     ) return 0;
 
     gap_privacy.scan_filter = scan;
@@ -1521,7 +1527,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 int gap_set_static_addr(const uint8_t address[6]) {
     if (!address || gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_central.active ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || gap_initiator.active ||
         !gap_static_addr_valid(address)
     ) return 0;
 
@@ -1538,7 +1544,7 @@ int gap_use_public_address(void) {
     if (gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_central.active
+        gap_initiator.active
     ) return 0;
 
     gap_privacy.enabled = 0;

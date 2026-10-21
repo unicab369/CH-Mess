@@ -426,7 +426,7 @@ int gap_pawr_connect(
 
     if (!peer_address ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (gap_central.active || gap_scanner.scanning) ||
+        (gap_initiator.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
     ) return 0;
@@ -506,7 +506,7 @@ int gap_ext_adv_start_phy(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
-    if ((gap_conn_slot_mask != 0) || gap_central.active ||
+    if ((gap_conn_slot_mask != 0) || gap_initiator.active ||
         gap_adv.enabled || set->enabled ||
         set->periodic.enabled || sid > 15 ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
@@ -884,7 +884,7 @@ int gap_sync_start(
 
     if (!address || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 ||
-        gap_central.active ||
+        gap_initiator.active ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
@@ -1023,7 +1023,7 @@ int gap_sync_pawr_repeat(uint8_t slot, uint8_t enabled) {
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
 int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
     if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used || gap_central.active ||
+        !gap_syncs[slot].used || gap_initiator.active ||
         !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.timing.has_timing ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
@@ -1393,7 +1393,7 @@ static int gap_pawr_conn_req(
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
-        gap_central.active ||
+        gap_initiator.active ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request)
@@ -1456,7 +1456,7 @@ static int gap_pawr_conn_req(
     conn->is_central = 0;
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
-    gap_central.active = 0;
+    gap_initiator.active = 0;
     gap_scanner.generation++;
     return 1;
 #endif
@@ -1472,7 +1472,7 @@ static int gap_pawr_exchange(
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || GAP_HW_DATA_MAX() < 27
     ) return 0;
 
-    uint8_t *request = gap_central.request;
+    uint8_t *request = gap_initiator.request;
     uint8_t peer_type = set->pawr_connect.peer_type;
     const uint8_t *peer_address = set->pawr_connect.peer_address;
     uint8_t local_address[6], local_type, crc_init[3];
@@ -1485,7 +1485,7 @@ static int gap_pawr_exchange(
         return 0;
     }
 
-    memset(request, 0, sizeof(gap_central.request));
+    memset(request, 0, sizeof(gap_initiator.request));
     request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     request[1] = 34;
     memcpy(request + 2, local_address, 6);
@@ -2433,7 +2433,7 @@ static int gap_ext_send_due(uint32_t now) {
     // intervals as required by the periodic channel selection algorithm.
     if ((gap_conn_slot_mask == 0 ||
          ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central)) &&
-        !gap_central.active &&
+        !gap_initiator.active &&
         !gap_scan.active_pending
     ) {
         uint64_t ticks = GAP_HW_TICKS();

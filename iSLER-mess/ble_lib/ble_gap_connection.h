@@ -583,7 +583,7 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
     if (!gap_privacy.enabled || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_central.active ||
+        gap_initiator.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
         (int32_t)(now - gap_privacy.next_rotation_ms) < 0
     ) return;

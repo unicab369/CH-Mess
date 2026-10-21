@@ -41,8 +41,9 @@ from each connection context, saving another 32 bytes per link on the CH582 ABI.
 | `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 760 bytes each (1,520 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=1` |
 | `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,704 bytes each (3,408 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=0` |
 | `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,840 bytes each (3,680 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=1` |
-| `gap_scanner_state` | Scan timing, discovery mode, and duplicate-filter settings. | 10 bytes | One global scanner state |
-| `gap_adv` | Advertising payloads, addresses, timing, and advertising status. | 92 bytes | One global state; `GAP_ADV_DATA_MAX=31` |
+| `gap_scanner` | Scan timing, discovery mode, and duplicate-filter settings. | 10 bytes | One global scanner state |
+| `gap_adv` | Legacy advertising addresses, timing, and status. | 28 bytes | One global state; payload storage is in `gap_initiator` |
+| `gap_initiator` | Central initiation state and request buffer, shared with legacy advertising payloads. | 84 bytes | One global state; `GAP_ADV_DATA_MAX=31` |
 | `adv_evt` | Advertising and scan-response radio frames plus connection-request event data. | 128 bytes | One global event state; `GAP_ADV_DATA_MAX=31` |
 | `gap_security_context` | Per-link encryption keys, counters, and encryption procedure state. | 112 bytes | Embedded in each `gap_conn_context`; already counted above |
 | `gap_smp_context` | Per-link pairing, SMP L2CAP, and Secure Connections procedure state. | 5,876 bytes each | SMP enabled; one per connection (`GAP_CONNECTION_COUNT`, 2 by default) |
@@ -54,6 +55,9 @@ advertising and scan-response radio frames, connection-request frame, and its
 receive timestamp. The table above does not include extended advertising
 buffers or every other GAP global; selected additional legacy allocations
 follow.
+
+The shared payload storage in `gap_initiator` saves 36 bytes compared with
+separate legacy advertising payloads and a Central connection-request buffer.
 
 ### Additional legacy GAP allocations
 
