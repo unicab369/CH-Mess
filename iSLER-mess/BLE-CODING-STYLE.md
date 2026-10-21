@@ -20,8 +20,7 @@ if (!id) return 0;
 When the condition wraps across lines, put the closing parenthesis and the controlled statement together on a line of their own:
 
 ```c
-if (!conn->ops.send_pdu(conn->ops.context, ch->remote_cid,
-                        frame, used)
+if (!l2cap_tx_queue_pdu(conn, ch->remote_cid, frame, used)
 ) return 0;
 ```
 

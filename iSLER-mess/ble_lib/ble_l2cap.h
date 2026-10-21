@@ -109,13 +109,7 @@ typedef struct {
 } l2cap_channel;
 
 typedef struct {
-    // Test-only adapter for existing host fixtures; production uses tx_queue.
-#ifdef L2CAP_TEST_CALLBACK_COMPAT
-    int (*send_pdu)(void *context, uint16_t cid,
-                    const uint8_t *payload, uint16_t len);
-#else
     l2cap_tx_queue *tx_queue;
-#endif
     int (*accept_psm)(void *context, uint16_t psm);
     // Return 0 to accept or a standardized LE Credit Based Connection result
     // code (2, 4..11) to refuse for a specific security/policy reason.
@@ -130,13 +124,8 @@ typedef struct {
 } l2cap_psm_registry;
 
 static inline int l2cap_output_configured(const l2cap_ops *ops) {
-    if (!ops) return 0;
-#ifdef L2CAP_TEST_CALLBACK_COMPAT
-    return ops->send_pdu != NULL;
-#else
-    return ops->tx_queue && ops->tx_queue->data &&
+    return ops && ops->tx_queue && ops->tx_queue->data &&
            ops->tx_queue->capacity >= 4;
-#endif
 }
 
 typedef struct l2cap_connection {
@@ -192,10 +181,6 @@ static inline int l2cap_tx_queue_pdu(
 ) {
     if (!conn || !payload || !len) return 0;
 
-#ifdef L2CAP_TEST_CALLBACK_COMPAT
-    if (!conn->ops.send_pdu) return 0;
-    return conn->ops.send_pdu(conn->ops.context, cid, payload, len);
-#else
     l2cap_tx_queue *queue = conn->ops.tx_queue;
     if (!queue || !queue->data ||
         queue->capacity < 4 ||
@@ -211,7 +196,6 @@ static inline int l2cap_tx_queue_pdu(
     queue->length = (uint16_t)(len + 4u);
     queue->offset = 0;
     return 1;
-#endif
 }
 
 static inline int ble_timing_valid(

@@ -1,27 +1,17 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#define L2CAP_TEST_CALLBACK_COMPAT 1
+#define L2CAP_SDU_MAX 517
+#define L2CAP_CHANNEL_MTU_MAX 517
 #include "../ble_l2cap.h"
 
 static l2cap_connection connection;
 static l2cap_reassembler reassembler;
 static uint8_t outbound[L2CAP_SDU_MAX + 4];
-static uint16_t outbound_len;
-
-static int send_pdu(
-    void *context, uint16_t cid, const uint8_t *sdu,
-                    uint16_t len
-) {
-    (void)context;
-    if (outbound_len) return 0;
-    if (!sdu || !len || len > sizeof(outbound) - 4) return 0;
-    ble_write_u16_le(outbound, len);
-    ble_write_u16_le(outbound + 2, cid);
-    memcpy(outbound + 4, sdu, len);
-    outbound_len = (uint16_t)(len + 4u);
-    return 1;
-}
+static l2cap_tx_queue tx_queue = {
+    .data = outbound,
+    .capacity = sizeof(outbound)
+};
 
 static int accept_psm(void *context, uint16_t psm) {
     (void)context;
@@ -58,7 +48,7 @@ static int receive_frame(
 int main(void) {
     l2cap_psm_registry psm_registry = {0};
     l2cap_ops ops = {0};
-    ops.send_pdu = send_pdu;
+    ops.tx_queue = &tx_queue;
     ops.accept_psm = accept_psm;
     if (!l2cap_conn_init(&connection, &ops, &psm_registry, 100, 40, 2) ||
         !l2cap_psm_register(&psm_registry, 0x0027)
@@ -68,10 +58,10 @@ int main(void) {
     uint16_t frame_len, cid;
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid) ||
-        cid != L2CAP_CID_LE_SIGNALING || !outbound_len ||
-        !write_record(outbound, outbound_len)
+        cid != L2CAP_CID_LE_SIGNALING || !tx_queue.length ||
+        !write_record(outbound, tx_queue.length)
     ) return 2;
-    outbound_len = 0;
+    tx_queue.length = tx_queue.offset = 0;
 
     if (!read_record(frame, sizeof(frame), &frame_len) ||
         !receive_frame(frame, frame_len, &cid)
@@ -84,7 +74,7 @@ int main(void) {
         received_len != 5 || memcmp(received, "hello", 5) ||
         !write_record(received, received_len) ||
         !l2cap_channel_rx_consume(&connection, cid) ||
-        !outbound_len || !write_record(outbound, outbound_len)
+        !tx_queue.length || !write_record(outbound, tx_queue.length)
     ) return 3;
     return 0;
 }
