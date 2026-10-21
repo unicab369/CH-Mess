@@ -468,7 +468,7 @@ typedef struct {
     uint8_t window_size;
     // Replacement receive-window size carried with the timing update at update_instant.
     uint8_t update_window_size;
-    // Bytes remaining in the L2CAP PDU after the fragment staged in c_tx.
+    // Bytes remaining in the L2CAP PDU after the fragment staged in tx_packet.
     uint16_t tx_l2cap_remaining;
 
     // Connection parameters and timing state.
@@ -540,9 +540,9 @@ typedef struct {
     struct {
         // PHY control work is waiting for the poll; parameters are in phy_state.preferred.
         volatile uint8_t phy_queued;
-        // c_tx contains an outgoing packet waiting for radio transmission.
+        // tx_packet contains an outgoing packet waiting for radio transmission.
         volatile uint8_t tx_queued;
-        // c_rx contains a received packet waiting for connection processing.
+        // rx_packet contains a received packet waiting for connection processing.
         volatile uint8_t rx_ready;
         // A local connection-parameter request is waiting; values are in params_*.
         volatile uint8_t local_params;
@@ -619,12 +619,12 @@ typedef struct {
     // One outgoing Link Layer data packet staged until the radio sends it.
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
-    } c_tx;
+    } tx_packet;
     // One received Link Layer data packet staged while the stack or application
     // processes it; these are packet buffers, not queues for whole messages.
     struct {
         uint8_t llid, len, data[GAP_CONN_DATA_MAX];
-    } c_rx;
+    } rx_packet;
 
     // Connection-rate and subrate procedure state.
     struct {
@@ -800,8 +800,8 @@ typedef struct {
 // 2. l2cap_ecfc_pump() frames one piece into l2cap_tx; l2cap_tx_queue.offset
 //    tracks fragments that do not fit in one Link Layer packet.
 // 3. ble_gap_l2cap_poll() passes each fragment to gap_send_data(), which
-//    stages it in c_tx. Direct gap_send_data() calls start here.
-// 4. The connection poller copies c_tx into tx for the next radio packet.
+//    stages it in tx_packet. Direct gap_send_data() calls start here.
+// 4. The connection poller copies tx_packet into tx for the next radio packet.
 // 5. If encryption is enabled, gap_security_tx_frame() seals it in tx_frame and
 //    retains that ciphertext and MIC for retransmission.
 

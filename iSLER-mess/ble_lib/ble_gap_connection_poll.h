@@ -453,9 +453,9 @@ void gap_hw_received(void) {
             if (authenticated) gap_security->rx_counter++;
 
             if ((llid == 1 || llid == 2) && frame[1]) {
-                conn->c_rx.llid = llid;
-                conn->c_rx.len = frame[1];
-                memcpy(conn->c_rx.data, frame + 2, frame[1]);
+                conn->rx_packet.llid = llid;
+                conn->rx_packet.len = frame[1];
+                memcpy(conn->rx_packet.data, frame + 2, frame[1]);
                 conn->queue_state.rx_ready = 1;
             }
             conn->link_layer.expected_rx_sn ^= 1;
@@ -532,9 +532,9 @@ void gap_hw_received(void) {
                 if (gap_conn_tx_payload_len(conn) == 0 && conn->queue_state.tx_queued &&
                     !conn->link_state.terminate_after_reply
                 ) {
-                    conn->tx_frame[0] = conn->c_tx.llid;
-                    conn->tx_frame[1] = conn->c_tx.len;
-                    memcpy(conn->tx_frame + 2, conn->c_tx.data, conn->c_tx.len);
+                    conn->tx_frame[0] = conn->tx_packet.llid;
+                    conn->tx_frame[1] = conn->tx_packet.len;
+                    memcpy(conn->tx_frame + 2, conn->tx_packet.data, conn->tx_packet.len);
                     conn->queue_state.tx_queued = 0;
                 }
             }

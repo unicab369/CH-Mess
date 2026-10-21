@@ -180,8 +180,8 @@ static void gap_conn_end(void) {
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(conn->tx_frame, sizeof(conn->tx_frame));
     gap_wipe(conn->plain, sizeof(conn->plain));
-    gap_wipe(&conn->c_tx, sizeof(conn->c_tx));
-    gap_wipe(&conn->c_rx, sizeof(conn->c_rx));
+    gap_wipe(&conn->tx_packet, sizeof(conn->tx_packet));
+    gap_wipe(&conn->rx_packet, sizeof(conn->rx_packet));
     gap_wipe(&conn->queue_state, sizeof(conn->queue_state));
     gap_wipe(security, sizeof(*security));
     security->status = security_status;
@@ -2324,18 +2324,40 @@ int gap_peer_class_get(
 // LE 1M, allowing four MIC bytes. Buffer capacity remains a compile-time choice.
 int gap_data_length_set(uint16_t octets) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy(conn) || octets < 27 ||
-        octets > gap_data_capacity
-    ) return 0;
+    if (octets < 27 || octets > gap_data_capacity)
+        return 0;
+
+    uint32_t irq_state = GAP_CRITICAL_ENTER();
+    if (gap_conn_procedure_busy(conn)) {
+        GAP_CRITICAL_EXIT(irq_state);
+        return 0;
+    }
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 0x20)) {
         conn->length_status = GAP_LL_ERR_REMOTE_FEATURE;
+        GAP_CRITICAL_EXIT(irq_state);
         return 0;
     }
 
     conn->local_tx_octets = octets;
+
+    // Apply reductions now. Keep increases pending until the peer receives
+    // the new limit and the length exchange updates the effective limits.
+    uint16_t tx_octets = octets < conn->remote_data_length.rx_octets ?
+                         octets : conn->remote_data_length.rx_octets;
+    uint16_t tx_time = (uint16_t)((octets + 14u) * 8u);
+    if (tx_time > conn->remote_data_length.rx_time)
+        tx_time = conn->remote_data_length.rx_time;
+
+    if (tx_octets < conn->data_length.tx_octets)
+        conn->data_length.tx_octets = tx_octets;
+
+    if (tx_time < conn->data_length.tx_time)
+        conn->data_length.tx_time = tx_time;
+
     conn->length_status = GAP_CONNECTION_PENDING;
     conn->queue_state.length = 1;
+    GAP_CRITICAL_EXIT(irq_state);
     return 1;
 }
 
@@ -2405,9 +2427,9 @@ int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {
         conn->tx_l2cap_remaining = len < conn->tx_l2cap_remaining ?
                                     (uint16_t)(conn->tx_l2cap_remaining - len) : 0;
     }
-    conn->c_tx.llid = llid;
-    conn->c_tx.len = (uint8_t)len;
-    memcpy(conn->c_tx.data, data, len);
+    conn->tx_packet.llid = llid;
+    conn->tx_packet.len = (uint8_t)len;
+    memcpy(conn->tx_packet.data, data, len);
     conn->queue_state.tx_queued = 1;
     return 1;
 }
@@ -2443,11 +2465,11 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     gap_smp_poll();
 #endif
 
-    if (*len < conn->c_rx.len) return -1;
-    if (llid) *llid = conn->c_rx.llid;
+    if (*len < conn->rx_packet.len) return -1;
+    if (llid) *llid = conn->rx_packet.llid;
 
-    *len = conn->c_rx.len;
-    memcpy(data, conn->c_rx.data, conn->c_rx.len);
+    *len = conn->rx_packet.len;
+    memcpy(data, conn->rx_packet.data, conn->rx_packet.len);
     conn->queue_state.rx_ready = 0;
 #if GAP_SMP_SUPPORT > 0
     gap_smp_receive_complete();
