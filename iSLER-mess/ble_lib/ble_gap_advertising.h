@@ -546,12 +546,9 @@ int gap_adv_start_connectable(
 
 // Application facing
 // Low duty cycle directed advertising to one peer; address bytes are PDU order.
-int gap_adv_start_directed(
-    const uint8_t address[6], uint8_t type, uint16_t interval_ms
-) {
+int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
 #if !GAP_PERIPHERAL_SUPPORT
-    (void)address;
-    (void)type;
+    (void)peer;
     (void)interval_ms;
     return 0;
 #else
@@ -559,12 +556,14 @@ int gap_adv_start_directed(
     if (GAP_EXT_ADVERTISING_ENABLED) return 0;
 #endif
 
-    if (gap_initiator.active || !address ||
+    if (gap_initiator.active || !peer ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
         (gap_privacy.enabled && !gap_privacy.resolvable)
     ) return 0;
 
+    const uint8_t *address = peer->address;
+    uint8_t type = peer->type;
     uint8_t target[6];
     memcpy(target, address, sizeof(target));
     int slot = gap_identity_find(address, type);
@@ -741,13 +740,13 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 // Application facing
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
-int gap_conn_start(const uint8_t peer_address[6], uint8_t peer_type) {
-    if (!peer_address || gap_conn_free_slot() < 0 ||
+int gap_conn_start(const gap_address *peer) {
+    if (!peer || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_initiator.active)
     ) return 0;
 
-    gap_initiator.peer.type = peer_type != 0;
-    memcpy(gap_initiator.peer.address, peer_address, 6);
+    gap_initiator.peer = *peer;
+    gap_initiator.peer.type = peer->type != 0;
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 

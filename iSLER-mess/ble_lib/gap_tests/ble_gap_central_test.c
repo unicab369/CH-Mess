@@ -11,6 +11,15 @@
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
 #include "../../tests/mesh_crypto_test.h"
 
+// Build a peer address for an immediate API call from existing PDU-order bytes.
+static const gap_address *test_address(const uint8_t address[6], uint8_t type) {
+    static gap_address peer;
+    if (!address) return NULL;
+    peer.type = type;
+    memcpy(peer.address, address, sizeof(peer.address));
+    return &peer;
+}
+
 static uint8_t test_bond_storage_enabled;
 static gap_bond test_bonds[GAP_BOND_SLOTS];
 typedef struct {
@@ -380,7 +389,7 @@ static void test_connect_request(void) {
         (uint8_t[6]){0, 0, 0, 0, 0, 0xc0}));
     assert(!gap_set_static_addr(
         (uint8_t[6]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}));
-    assert(gap_conn_start(peer, 0));
+    assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.active && gap_scanner.scanning && !gap_scanner.active);
     const uint8_t *request = gap_initiator.request;
     assert(request[0] == 0x05 && request[1] == 34);
@@ -391,13 +400,13 @@ static void test_connect_request(void) {
         (uint32_t)request[17] << 24));
     assert(request[21] == 1 && request[24] == 24 && request[28] == 200);
     assert(request[30] == 0xff && request[33] == 0xff && request[34] == 0x1f);
-    assert(!gap_conn_start(peer, 0));
+    assert(!gap_conn_start(test_address(peer, 0)));
     gap_conn_cancel();
     assert(!gap_initiator.active && !gap_scanner.scanning);
 
     const uint8_t local_random[6] = {0x11, 0x22, 0x33, 0x44, 0x55, 0xc6};
     assert(gap_set_static_addr(local_random));
-    assert(gap_conn_start(peer, 1));
+    assert(gap_conn_start(test_address(peer, 1)));
     request = gap_initiator.request;
     assert(request[0] == 0xc5);
     assert(memcmp(request + 2, local_random, 6) == 0);
@@ -418,7 +427,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     now_ms = 330;
     assert(gap_adv_start_connectable(advertising_data,
         sizeof(advertising_data), NULL, 0, 100));
-    assert(gap_conn_start(peer_address, 0));
+    assert(gap_conn_start(test_address(peer_address, 0)));
     assert(gap_adv.enabled && gap_scanner.scanning &&
            gap_initiator.active);
     int tx_before = link_tx_count;
@@ -448,7 +457,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
     assert(gap_adv_start_connectable(advertising_data,
         sizeof(advertising_data), NULL, 0, 100));
     const uint8_t central_target[6] = {0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6};
-    assert(gap_conn_start(central_target, 0));
+    assert(gap_conn_start(test_address(central_target, 0)));
     inject_peripheral_connect_request = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 2);
     assert(!inject_peripheral_connect_request && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
@@ -485,7 +494,7 @@ static void test_connection_timing_configuration(void) {
     timing.attempt_timeout_ms = 45000;
     assert(gap_conn_timing_set(&timing));
     const uint8_t peer[6] = {9, 8, 7, 6, 5, 4};
-    assert(gap_conn_start(peer, 0));
+    assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.request[24] == 40 &&
            gap_initiator.request[26] == 2 &&
            gap_initiator.request[28] == 0x90 &&
@@ -496,7 +505,7 @@ static void test_connection_timing_configuration(void) {
 
     timing.attempt_timeout_ms = 250;
     assert(gap_conn_timing_set(&timing));
-    assert(gap_conn_start(peer, 0));
+    assert(gap_conn_start(test_address(peer, 0)));
     now_ms += 251;
     gap_hw_scan_poll();
     assert(!gap_initiator.active && !gap_scanner.scanning);
@@ -519,27 +528,28 @@ static const uint8_t test_rpa[6] = {0xaa, 0xfb, 0x0d, 0x94, 0x81, 0x70};
 static const uint8_t test_identity[6] = {1, 2, 3, 4, 5, 6};
 
 static void test_address_resolution(void) {
-    uint8_t hash[3], identity[6], type;
+    uint8_t hash[3];
+    gap_address identity;
     gap_address_hash(test_irk, test_rpa + 3, hash);
     assert(memcmp(hash, test_rpa, 3) == 0);
-    assert(gap_identity_set(test_identity, 0, test_irk));
-    assert(gap_resolve(test_rpa, 1, identity, &type));
-    assert(type == 0 && memcmp(identity, test_identity, 6) == 0);
-    assert(gap_resolve(test_identity, 0, identity, &type));
-    assert(!gap_resolve(test_rpa, 0, identity, &type));
+    assert(gap_identity_set(test_address(test_identity, 0), test_irk));
+    assert(gap_resolve(test_address(test_rpa, 1), &identity));
+    assert(identity.type == 0 && memcmp(identity.address, test_identity, 6) == 0);
+    assert(gap_resolve(test_address(test_identity, 0), &identity));
+    assert(!gap_resolve(test_address(test_rpa, 0), &identity));
     uint8_t bad_rpa[6];
     memcpy(bad_rpa, test_rpa, 6);
     bad_rpa[0] ^= 1;
-    assert(!gap_resolve(bad_rpa, 1, identity, &type));
-    assert(!gap_resolve(NULL, 1, identity, &type));
+    assert(!gap_resolve(test_address(bad_rpa, 1), &identity));
+    assert(!gap_resolve(test_address(NULL, 1), &identity));
     for (uint8_t i = 1; i < GAP_IDENTITY_COUNT; i++) {
         uint8_t peer[6] = {i, 0, 0, 0, 0, 0};
-        assert(gap_identity_set(peer, 0, (uint8_t[16]){0}));
+        assert(gap_identity_set(test_address(peer, 0), (uint8_t[16]){0}));
     }
-    assert(!gap_identity_set((uint8_t[]){99, 0, 0, 0, 0, 0}, 0, test_irk));
-    assert(gap_identity_set(test_identity, 0, NULL));
-    assert(!gap_resolve(test_rpa, 1, identity, &type));
-    assert(gap_identity_set(test_identity, 0, test_irk));
+    assert(!gap_identity_set(test_address((uint8_t[]){99, 0, 0, 0, 0, 0}, 0), test_irk));
+    assert(gap_identity_set(test_address(test_identity, 0), NULL));
+    assert(!gap_resolve(test_address(test_rpa, 1), &identity));
+    assert(gap_identity_set(test_address(test_identity, 0), test_irk));
 }
 
 static void test_private_rotation(void) {
@@ -548,10 +558,11 @@ static void test_private_rotation(void) {
     assert(!gap_privacy_set(test_irk, 0));
     assert(!gap_privacy_set(test_irk, 41401));
     assert(gap_privacy_set(test_irk, 1));
-    uint8_t first[6], identity[6], type;
+    uint8_t first[6];
+    gap_address identity;
     memcpy(first, gap_own_address.address, 6);
     assert((first[5] & 0xc0) == 0x40);
-    assert(gap_resolve(first, 1, identity, &type));
+    assert(gap_resolve(test_address(first, 1), &identity));
     assert(gap_adv_start(NULL, 0, 100));
     assert(!gap_privacy_set(NULL, 0));
     now_ms = 999;
@@ -566,10 +577,10 @@ static void test_private_rotation(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) != 0);
     assert(memcmp(gap_adv.local.address, gap_own_address.address, 6) == 0);
-    assert(gap_resolve(gap_own_address.address, 1, identity, &type));
+    assert(gap_resolve(test_address(gap_own_address.address, 1), &identity));
     gap_adv_stop();
     // Initiation retains InitA even if the rotation timeout expires.
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     memcpy(first, gap_own_address.address, 6);
     now_ms = 2000;
     random_seed++;
@@ -607,7 +618,7 @@ static void test_scan_identity_filter(void) {
     frame[2] ^= 1;
     gap_receive_report(frame, 6, -40);
     assert(!gap_scan_poll(&report));
-    assert(!gap_identity_set(test_identity, 0, NULL));
+    assert(!gap_identity_set(test_address(test_identity, 0), NULL));
     gap_scan_stop();
     assert(gap_scan_configure(20, 20, GAP_DISCOVERY_ALL, 0));
 }
@@ -619,16 +630,16 @@ static void test_accept_list_capacity(void) {
         addresses[i][0] = (uint8_t)(i + 1);
         addresses[i][1] = 0x42;
         addresses[i][5] = 0x20;
-        assert(gap_accept_list_add(addresses[i], 0));
+        assert(gap_accept_list_add(test_address(addresses[i], 0)));
     }
     addresses[GAP_ACCEPT_LIST_COUNT][0] = 0xfe;
     addresses[GAP_ACCEPT_LIST_COUNT][1] = 0x42;
     addresses[GAP_ACCEPT_LIST_COUNT][5] = 0x20;
-    assert(!gap_accept_list_add(addresses[GAP_ACCEPT_LIST_COUNT], 0));
-    assert(gap_accept_list_add(addresses[0], 0)); // Full duplicate is a no-op.
-    assert(gap_accept_list_remove(addresses[GAP_ACCEPT_LIST_COUNT / 2], 0));
-    assert(gap_accept_list_add(addresses[GAP_ACCEPT_LIST_COUNT], 0));
-    assert(gap_accept_list_remove(addresses[GAP_ACCEPT_LIST_COUNT], 0));
+    assert(!gap_accept_list_add(test_address(addresses[GAP_ACCEPT_LIST_COUNT], 0)));
+    assert(gap_accept_list_add(test_address(addresses[0], 0))); // Full duplicate is a no-op.
+    assert(gap_accept_list_remove(test_address(addresses[GAP_ACCEPT_LIST_COUNT / 2], 0)));
+    assert(gap_accept_list_add(test_address(addresses[GAP_ACCEPT_LIST_COUNT], 0)));
+    assert(gap_accept_list_remove(test_address(addresses[GAP_ACCEPT_LIST_COUNT], 0)));
     assert(gap_accept_list_clear());
 }
 
@@ -852,20 +863,20 @@ static void test_scanning_and_advertising_coexistence(void) {
 
     gap_scan_stop();
     const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
-    assert(!gap_conn_start(peer, 0));
+    assert(!gap_conn_start(test_address(peer, 0)));
     now_ms = gap_adv.next_event_ms;
     assert(gap_send_due(NULL, 0, now_ms, &sent_at, &jitter) == 0);
     assert(!gap_initiator.active && !gap_scanner.scanning &&
            gap_adv.enabled && advertising_tx_count == tx_before + 9);
 
     gap_adv_stop();
-    assert(gap_conn_start(peer, 0));
+    assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.active && gap_scanner.scanning);
     gap_conn_cancel();
     static const uint8_t scan_response[] = {2, 0x0a, 0};
     assert(gap_adv_start_connectable(data, sizeof(data),
         scan_response, sizeof(scan_response), 100));
-    assert(!gap_conn_start(peer, 0));
+    assert(!gap_conn_start(test_address(peer, 0)));
     assert(gap_adv.enabled && !gap_initiator.active &&
            !gap_scanner.scanning);
     gap_adv_stop();
@@ -1369,21 +1380,21 @@ static void test_pawr_advertiser_connection(void) {
     set->periodic_sync_info_sent = 1;
     set->periodic_next_event_ticks = fake_radio_ticks;
 
-    assert(!gap_pawr_connect(1, 0, 0,
-        peer_address));
-    assert(!gap_pawr_connect(0, 2, 0,
-        peer_address));
-    assert(gap_pawr_connect(0, 0, 0,
-        peer_address));
-    assert(!gap_pawr_connect(0, 0, 0,
-        peer_address));
+    assert(!gap_pawr_connect(1, 0, test_address(
+        peer_address, 0)));
+    assert(!gap_pawr_connect(0, 2, test_address(
+        peer_address, 0)));
+    assert(gap_pawr_connect(0, 0, test_address(
+        peer_address, 0)));
+    assert(!gap_pawr_connect(0, 0, test_address(
+        peer_address, 0)));
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !set->pawr_connect_pending);
 
     // A malformed response is ignored and does not create a connection.
     set->periodic_next_event_ticks = fake_radio_ticks;
-    assert(gap_pawr_connect(0, 0, 0,
-        peer_address));
+    assert(gap_pawr_connect(0, 0, test_address(
+        peer_address, 0)));
     inject_pawr_connect_response = 1;
     corrupt_pawr_connect_response = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1392,8 +1403,8 @@ static void test_pawr_advertiser_connection(void) {
     // A missing response also discards its one-shot request; the Host can
     // queue another attempt for a later event.
     set->periodic_next_event_ticks = fake_radio_ticks;
-    assert(gap_pawr_connect(0, 1, 0,
-        peer_address));
+    assert(gap_pawr_connect(0, 1, test_address(
+        peer_address, 0)));
     uint16_t connect_event_counter = set->periodic_event_counter;
     inject_pawr_connect_response = 1;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1649,7 +1660,7 @@ static void test_periodic_advertising_sync(void) {
     gap_scan_stop();
     memset(gap_syncs, 0, sizeof(gap_syncs));
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
-    int slot = gap_sync_start(0, advertiser, 6, 1000);
+    int slot = gap_sync_start(test_address(advertiser, 0), 6, 1000);
     assert(slot == 0 && gap_scanner.scanning);
     assert(!gap_sync_event_poll(&event));
     gap_hw_scan_poll();
@@ -1756,7 +1767,7 @@ static void test_periodic_advertising_sync(void) {
            event.slot == slot && !gap_syncs[0].used);
     assert(!gap_scanner.scanning);
 
-    int pending_slot = gap_sync_start(0, advertiser, 7, 1000);
+    int pending_slot = gap_sync_start(test_address(advertiser, 0), 7, 1000);
     assert(pending_slot == 0 && gap_sync_stop((uint8_t)pending_slot, 0));
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_CANCELLED &&
@@ -1765,7 +1776,7 @@ static void test_periodic_advertising_sync(void) {
 
     now_ms = 1900;
     fake_radio_ticks = 2000000;
-    int missed_slot = gap_sync_start(0, advertiser, 7, 1000);
+    int missed_slot = gap_sync_start(test_address(advertiser, 0), 7, 1000);
     assert(missed_slot == 0);
     gap_hw_scan_poll();
     sync_info_pdu[11] = 0x70; // Same SyncInfo, now SID 7.
@@ -2073,7 +2084,7 @@ static void test_extended_scannable_advertising(void) {
         0x51, 0x52, 0x53, 0x54, 0x55, 0x56
     };
     static const uint8_t short_response[] = {2, 0x09, 'F'};
-    assert(gap_accept_list_add(allowed_peer, 0));
+    assert(gap_accept_list_add(test_address(allowed_peer, 0)));
     assert(gap_adv_filter_policy(1, 0));
     captured_extended_count = 0;
     assert(gap_ext_adv_scan_start_phy(0,
@@ -2144,7 +2155,7 @@ static void test_radio_privacy_filter(void) {
     assert(gap_privacy_filter(0, 0));
 
     assert(gap_accept_list_clear());
-    assert(gap_accept_list_add(test_identity, 0));
+    assert(gap_accept_list_add(test_address(test_identity, 0)));
     assert(!gap_adv_filter_policy(2, 0));
     assert(gap_adv_filter_policy(1, 1));
     gap_advertising_rx_event = 1;
@@ -2181,7 +2192,7 @@ static void test_radio_privacy_filter(void) {
 
 static void test_connect_by_identity(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
@@ -2221,22 +2232,22 @@ static void test_selective_connection_establishment(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     const uint8_t other_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
     assert(gap_accept_list_clear());
-    assert(!gap_accept_list_add(NULL, 0));
-    assert(!gap_accept_list_add(test_identity, 2));
-    assert(!gap_accept_list_add((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1));
-    assert(!gap_accept_list_add(
-        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1));
-    assert(!gap_identity_set((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1,
+    assert(!gap_accept_list_add(test_address(NULL, 0)));
+    assert(!gap_accept_list_add(test_address(test_identity, 2)));
+    assert(!gap_accept_list_add(test_address((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1)));
+    assert(!gap_accept_list_add(test_address(
+        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1)));
+    assert(!gap_identity_set(test_address((uint8_t[]){0, 0, 0, 0, 0, 0xc0}, 1),
                                   test_irk));
-    assert(!gap_identity_set(
-        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1, test_irk));
-    assert(gap_accept_list_add(test_identity, 0));
-    assert(gap_accept_list_add(test_identity, 0)); // Duplicate is harmless.
+    assert(!gap_identity_set(test_address(
+        (uint8_t[]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 1), test_irk));
+    assert(gap_accept_list_add(test_address(test_identity, 0)));
+    assert(gap_accept_list_add(test_address(test_identity, 0))); // Duplicate is harmless.
     assert(gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, 0));
     assert(gap_initiator.active && gap_initiator.selective &&
            !gap_initiator.any_peer && gap_scanner.scanning && !gap_scanner.active);
-    assert(!gap_accept_list_remove(test_identity, 0)); // Frozen while scanning.
-    assert(!gap_accept_list_add(other_peer, 0));
+    assert(!gap_accept_list_remove(test_address(test_identity, 0))); // Frozen while scanning.
+    assert(!gap_accept_list_add(test_address(other_peer, 0)));
 
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0x00;
@@ -2254,7 +2265,7 @@ static void test_selective_connection_establishment(void) {
     assert(memcmp(gap_initiator.request + 8, test_rpa, 6) == 0);
     gap_conn_end();
 
-    assert(gap_accept_list_remove(test_identity, 0));
+    assert(gap_accept_list_remove(test_address(test_identity, 0)));
     assert(!gap_conn_procedure_start(GAP_CONN_MODE_SELECTIVE, 0));
     assert(gap_accept_list_clear());
 }
@@ -2262,7 +2273,7 @@ static void test_selective_connection_establishment(void) {
 static void test_auto_connection_establishment(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     assert(gap_accept_list_clear());
-    assert(gap_accept_list_add(test_identity, 0));
+    assert(gap_accept_list_add(test_address(test_identity, 0)));
     assert(gap_conn_procedure_start(GAP_CONN_MODE_AUTO, 0));
     assert(gap_initiator.active && gap_initiator.auto_connect &&
            gap_scanner.scanning && !gap_scanner.active);
@@ -2289,7 +2300,7 @@ static void test_directed_connect_target(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     random_seed++;
     assert(gap_privacy_set(test_irk, 1));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0xc1; rx_frame[1] = 12; // ADV_DIRECT_IND with random addresses
     memcpy(rx_frame + 2, test_rpa, 6);
@@ -2306,7 +2317,7 @@ static void test_directed_connect_target(void) {
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_initiator.active);
     gap_conn_end();
     assert(gap_privacy_set(NULL, 0));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     rx_frame[0] = 0x41; // Public TargetA, random AdvA
     GAP_HW_PUBLIC_ADDRESS(rx_frame + 8);
     gap_hw_received();
@@ -2316,16 +2327,16 @@ static void test_directed_connect_target(void) {
 
 static void test_peer_privacy_modes(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint8_t identity[6], type;
+    gap_address identity;
     assert(gap_identities[gap_identity_find(test_identity, 0)].privacy_mode ==
            GAP_PRIVACY_NETWORK);
-    assert(!gap_identity_privacy(NULL, 0, GAP_PRIVACY_DEVICE));
-    assert(!gap_identity_privacy(test_identity, 2, GAP_PRIVACY_DEVICE));
-    assert(!gap_identity_privacy(test_identity, 0, 2));
-    assert(!gap_identity_privacy(test_rpa, 1, GAP_PRIVACY_DEVICE));
-    assert(!gap_identity_privacy((uint8_t[]){99, 0, 0, 0, 0, 0}, 0, 1));
+    assert(!gap_identity_privacy(test_address(NULL, 0), GAP_PRIVACY_DEVICE));
+    assert(!gap_identity_privacy(test_address(test_identity, 2), GAP_PRIVACY_DEVICE));
+    assert(!gap_identity_privacy(test_address(test_identity, 0), 2));
+    assert(!gap_identity_privacy(test_address(test_rpa, 1), GAP_PRIVACY_DEVICE));
+    assert(!gap_identity_privacy(test_address((uint8_t[]){99, 0, 0, 0, 0, 0}, 0), 1));
     // Resolution identifies host-selected peers independently of RX policy.
-    assert(gap_resolve(test_identity, 0, identity, &type));
+    assert(gap_resolve(test_address(test_identity, 0), &identity));
     assert(gap_privacy_filter(0, 0));
     gap_scan_start(0);
     uint8_t frame[8] = {2, 6};
@@ -2333,7 +2344,7 @@ static void test_peer_privacy_modes(void) {
     gap_scan_report report;
     gap_receive_report(frame, 6, -40);
     assert(!gap_scan_poll(&report));
-    assert(!gap_identity_privacy(test_identity, 0, GAP_PRIVACY_DEVICE));
+    assert(!gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
     frame[0] = 0x42;
     memcpy(frame + 2, test_rpa, 6);
     gap_receive_report(frame, 6, -40);
@@ -2343,22 +2354,22 @@ static void test_peer_privacy_modes(void) {
     gap_receive_report(frame, 6, -40);
     assert(gap_scan_poll(&report) && !report.resolved);
     gap_scan_stop();
-    assert(gap_identity_privacy(test_identity, 0, GAP_PRIVACY_DEVICE));
-    assert(gap_identity_set(test_identity, 0, test_irk)); // Preserve mode
+    assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
+    assert(gap_identity_set(test_address(test_identity, 0), test_irk)); // Preserve mode
     gap_scan_start(0);
     frame[0] = 2;
     memcpy(frame + 2, test_identity, 6);
     gap_receive_report(frame, 6, -40);
     assert(gap_scan_poll(&report) && report.resolved);
     gap_scan_stop();
-    assert(gap_identity_privacy(test_identity, 0, GAP_PRIVACY_NETWORK));
+    assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_NETWORK));
     // All-zero IRKs still allow identity addresses in network mode.
-    assert(gap_identity_set(test_identity, 0, (uint8_t[16]){0}));
+    assert(gap_identity_set(test_address(test_identity, 0), (uint8_t[16]){0}));
     gap_scan_start(0);
     gap_receive_report(frame, 6, -40);
     assert(gap_scan_poll(&report));
     gap_scan_stop();
-    assert(gap_identity_set(test_identity, 0, test_irk));
+    assert(gap_identity_set(test_address(test_identity, 0), test_irk));
 
     // An active scan must not send SCAN_REQ to the prohibited identity.
     gap_scan_start(1);
@@ -2388,7 +2399,7 @@ static void test_peer_privacy_modes(void) {
     assert(gap_connect_request_ready);
     gap_advertising_rx_event = 0;
     gap_connect_request_ready = 0;
-    assert(gap_identity_privacy(test_identity, 0, GAP_PRIVACY_DEVICE));
+    assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
     gap_advertising_rx_event = 1;
     rx_frame[0] = 3; rx_frame[1] = 12;
     memcpy(rx_frame + 2, test_identity, 6);
@@ -2399,10 +2410,10 @@ static void test_peer_privacy_modes(void) {
     assert(gap_connect_request_ready);
     gap_advertising_rx_event = 0;
     gap_connect_request_ready = 0;
-    assert(gap_identity_privacy(test_identity, 0, GAP_PRIVACY_NETWORK));
+    assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_NETWORK));
 
     // Host requests use the identity; only an allowed on-air address connects.
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     rx_frame[0] = 0; rx_frame[1] = 6;
     gap_hw_received();
     assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_initiator.active);
@@ -2411,8 +2422,8 @@ static void test_peer_privacy_modes(void) {
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !gap_initiator.active);
     gap_conn_end();
-    assert(gap_identity_privacy(test_identity, 0, GAP_PRIVACY_DEVICE));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     rx_frame[0] = 0;
     memcpy(rx_frame + 2, test_identity, 6);
     gap_hw_received();
@@ -2427,19 +2438,19 @@ static void test_peer_local_keys(void) {
     local_irk[0] ^= 1;
     int slot = gap_identity_find(test_identity, 0);
     assert(gap_use_public_address());
-    assert(!gap_identity_local_key(NULL, 0, local_irk));
-    assert(!gap_identity_local_key(test_identity, 2, local_irk));
-    assert(!gap_identity_local_key(test_rpa, 1, local_irk));
-    assert(gap_identity_local_key(test_identity, 0, local_irk));
-    assert(gap_identity_set(test_identity, 0, test_irk));
+    assert(!gap_identity_local_key(test_address(NULL, 0), local_irk));
+    assert(!gap_identity_local_key(test_address(test_identity, 2), local_irk));
+    assert(!gap_identity_local_key(test_address(test_rpa, 1), local_irk));
+    assert(gap_identity_local_key(test_address(test_identity, 0), local_irk));
+    assert(gap_identity_set(test_address(test_identity, 0), test_irk));
     assert(memcmp(gap_identities[slot].local_irk, local_irk, 16) == 0);
     random_seed++;
     assert(gap_privacy_set(test_irk, 1));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     assert(gap_initiator.request[0] & 0x40);
     gap_address_hash(local_irk, gap_initiator.request + 5, hash);
     assert(memcmp(hash, gap_initiator.request + 2, 3) == 0);
-    assert(!gap_identity_local_key(test_identity, 0, NULL));
+    assert(!gap_identity_local_key(test_address(test_identity, 0), NULL));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0xc1; rx_frame[1] = 12;
     memcpy(rx_frame + 2, test_rpa, 6);
@@ -2467,7 +2478,7 @@ static void test_peer_local_keys(void) {
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) != 0);
 
-    assert(gap_adv_start_directed(test_identity, 0, 100));
+    assert(gap_adv_start_directed(test_address(test_identity, 0), 100));
     assert(gap_adv.peer_slot == slot && gap_adv.local.type == 1);
     gap_address_hash(local_irk, gap_adv.local.address + 3, hash);
     assert(memcmp(hash, gap_adv.local.address, 3) == 0);
@@ -2497,8 +2508,8 @@ static void test_peer_local_keys(void) {
     gap_adv_stop();
 
     // An explicit zero key uses the configured local identity, never an RPA.
-    assert(gap_identity_local_key(test_identity, 0, (uint8_t[16]){0}));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_identity_local_key(test_address(test_identity, 0), (uint8_t[16]){0}));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     assert(!(gap_initiator.request[0] & 0x40));
     assert(memcmp(gap_initiator.request + 2, test_identity, 6) == 0);
     rx_frame[0] = 0xc1; rx_frame[1] = 12;
@@ -2511,13 +2522,13 @@ static void test_peer_local_keys(void) {
     assert(gap_set_static_addr(static_identity));
     random_seed++;
     assert(gap_privacy_set(test_irk, 1));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     assert(gap_initiator.request[0] & 0x40);
     assert(memcmp(gap_initiator.request + 2, static_identity, 6) == 0);
     gap_conn_cancel();
     // Null removes the override and restores the global RPA.
-    assert(gap_identity_local_key(test_identity, 0, NULL));
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_identity_local_key(test_address(test_identity, 0), NULL));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     assert(memcmp(gap_initiator.request + 2, gap_own_address.address, 6) == 0);
     gap_conn_cancel();
     assert(gap_privacy_set(NULL, 0));
@@ -2558,9 +2569,10 @@ static void test_randomized_private_rotation(void) {
 }
 
 static void test_nonresolvable_private_addresses(void) {
-    uint8_t first[6], identity[6], type;
+    uint8_t first[6];
+    gap_address identity;
     assert(gap_use_public_address());
-    assert(gap_identity_local_key(test_identity, 0, test_irk));
+    assert(gap_identity_local_key(test_address(test_identity, 0), test_irk));
     int before = aes_count;
     assert(!gap_privacy_set(NULL, 41401));
     random_seed++;
@@ -2568,8 +2580,8 @@ static void test_nonresolvable_private_addresses(void) {
     assert(gap_privacy.enabled && !gap_privacy.resolvable);
     assert((gap_own_address.address[5] & 0xc0) == 0);
     assert(aes_count == before);
-    assert(!gap_resolve(gap_own_address.address, 1, identity, &type));
-    assert(!gap_adv_start_directed(test_identity, 0, 100));
+    assert(!gap_resolve(test_address(gap_own_address.address, 1), &identity));
+    assert(!gap_adv_start_directed(test_address(test_identity, 0), 100));
     assert(gap_adv_start(NULL, 0, 100));
     memcpy(first, gap_own_address.address, 6);
     now_ms = gap_privacy.next_rotation_ms - 1;
@@ -2583,7 +2595,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(aes_count == before);
     gap_adv_stop();
     // Local peer keys cannot replace a selected NRPA when initiating.
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     assert((gap_initiator.request[7] & 0xc0) == 0);
     assert(memcmp(gap_initiator.request + 2, gap_own_address.address, 6) == 0);
     gap_conn_cancel();
@@ -2628,7 +2640,7 @@ static void test_nonresolvable_private_addresses(void) {
 
 static void start_test_central_link(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    assert(gap_conn_start(test_identity, 0));
+    assert(gap_conn_start(test_address(test_identity, 0)));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);

@@ -408,40 +408,38 @@ int gap_pawr_slots_set(
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
 int gap_pawr_connect(
-    uint8_t set_id, uint8_t subevent,
-    uint8_t type, const uint8_t peer_address[6]
+    uint8_t set_id, uint8_t subevent, const gap_address *peer
 ) {
 #if !GAP_CENTRAL_SUPPORT
     (void)set_id;
     (void)subevent;
-    (void)type;
-    (void)peer_address;
+    (void)peer;
     return 0;
 #else
     if (set_id >= GAP_EXT_ADV_SET_COUNT)
         return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    uint8_t random_type = type != 0;
-
-    if (!peer_address ||
+    if (!peer ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (gap_initiator.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
     ) return 0;
 
+    uint8_t random_type = peer->type != 0;
+
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
         if (gap_ext_adv[i].pawr_connect.pending)
             return 0;
 
-    if (!gap_peer_allowed(gap_identity_find(peer_address, random_type),
-                          peer_address, random_type)
+    if (!gap_peer_allowed(gap_identity_find(peer->address, random_type),
+                          peer->address, random_type)
     ) return 0;
 
     set->pawr_connect.subevent = subevent;
     set->pawr_connect.peer_type = random_type;
-    memcpy(set->pawr_connect.peer_address, peer_address, 6);
+    memcpy(set->pawr_connect.peer_address, peer->address, 6);
     set->pawr_connect.pending = 1;
     return 1;
 #endif
@@ -876,23 +874,20 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
 // Application facing
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned slot identifies later events.
-int gap_sync_start(
-    uint8_t type, const uint8_t address[6],
-    uint8_t sid, uint32_t timeout_ms
-) {
-    uint8_t random_type = type != 0;
-
-    if (!address || sid > 15 || timeout_ms < 100 ||
+int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
+    if (!peer || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 ||
         gap_initiator.active ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
+    uint8_t random_type = peer->type != 0;
+
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
             gap_syncs[i].peer.type == random_type &&
-            !memcmp(gap_syncs[i].peer.address, address, 6)
+            !memcmp(gap_syncs[i].peer.address, peer->address, 6)
         ) return -1;
 
     int slot = -1;
@@ -915,7 +910,7 @@ int gap_sync_start(
     sync->used = 1;
     sync->sid = sid;
     sync->peer.type = random_type;
-    memcpy(sync->peer.address, address, 6);
+    memcpy(sync->peer.address, peer->address, 6);
     sync->timeout_ms = timeout_ms;
     sync->last_event_ms = GET_MILLIS();
     return slot;
