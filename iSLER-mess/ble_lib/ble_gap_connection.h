@@ -78,6 +78,18 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
+static inline uint8_t gap_conn_tx_payload_len(
+    const gap_conn_context *conn
+) {
+    return conn->security.tx_sealed ? conn->security.tx_plain_len : conn->tx[1];
+}
+
+static inline uint8_t gap_conn_tx_control_opcode(
+    const gap_conn_context *conn
+) {
+    return conn->security.tx_sealed ? conn->security.tx_opcode : conn->tx[2];
+}
+
 static struct {
     uint8_t slot, slot_valid, poll_cursor;
 } gap_poll;
@@ -159,7 +171,6 @@ static void gap_conn_end(void) {
 
     // Wipe per-link keys, packet buffers, and queued data together.
     gap_wipe(conn->tx, sizeof(conn->tx));
-    gap_wipe(conn->cipher, sizeof(conn->cipher));
     gap_wipe(conn->plain, sizeof(conn->plain));
     gap_wipe(&conn->c_tx, sizeof(conn->c_tx));
     gap_wipe(&conn->c_rx, sizeof(conn->c_rx));
@@ -206,8 +217,8 @@ static void gap_conn_update_apply(
         conn->next_schedule.instant == conn->c_link_layer.event_counter
     ) {
         if (conn->is_central && conn->c_link_layer.tx_pending &&
-            (conn->tx[0] & 3) == 3 && conn->tx[1] == 15 &&
-            conn->tx[2] == LL_CONNECTION_RATE_IND
+            (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 15 &&
+            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_RATE_IND
         ) {
             conn->connection_status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
@@ -250,8 +261,8 @@ static void gap_conn_update_apply(
         // Close an unsynchronized Central link instead of retransmitting an
         // unacknowledged timing update once its Instant is no longer in the future.
         if (conn->is_central && conn->c_link_layer.tx_pending &&
-            (conn->tx[0] & 3) == 3 && conn->tx[1] == 12 &&
-            conn->tx[2] == LL_CONNECTION_UPDATE_IND
+            (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 12 &&
+            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_UPDATE_IND
         ) {
             gap_conn_end();
             return;
@@ -301,8 +312,8 @@ static void gap_conn_update_apply(
         conn->c_phy.instant == conn->c_link_layer.event_counter
     ) {
         if (conn->is_central && conn->c_link_layer.tx_pending &&
-            (conn->tx[0] & 3) == 3 && conn->tx[1] == 5 &&
-            conn->tx[2] == LL_PHY_UPDATE_IND
+            (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 5 &&
+            gap_conn_tx_control_opcode(conn) == LL_PHY_UPDATE_IND
         ) {
             conn->c_phy.status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
@@ -325,8 +336,8 @@ static void gap_conn_update_apply(
         // An unacknowledged map change cannot be retried after its Instant;
         // disconnect rather than let the two devices hop on different maps.
         if (conn->is_central && conn->c_link_layer.tx_pending &&
-            (conn->tx[0] & 3) == 3 && conn->tx[1] == 8 &&
-            conn->tx[2] == LL_CHANNEL_MAP_IND
+            (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 8 &&
+            gap_conn_tx_control_opcode(conn) == LL_CHANNEL_MAP_IND
         ) {
             conn->connection_status = GAP_LL_ERR_INSTANT; // Instant passed.
             gap_conn_end();
@@ -409,7 +420,7 @@ static void gap_conn_event_advance(gap_conn_context *conn) {
 // Build the queued Central update only when its TX slot is free, so the
 // Instant stays in the future while earlier packets wait for acknowledgement.
 static void gap_send_conn_update(gap_conn_context *conn) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
 
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
@@ -456,7 +467,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
 static void gap_send_feature_request(gap_conn_context *conn) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
 
     uint8_t supported_phys = GAP_HW_PHY_MASK();
     conn->c_features.request_pending = 1;
@@ -478,7 +489,7 @@ static void gap_send_feature_request(gap_conn_context *conn) {
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
 static void gap_send_subrate_update(gap_conn_context *conn) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
 
     conn->next_schedule.base_event = conn->c_link_layer.event_counter;
     conn->c_subrate.queued_flags &=
@@ -500,7 +511,7 @@ static void gap_send_rate_ind(
     gap_conn_context *conn, uint16_t reference_event,
     const uint16_t offsets[4]
 ) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
 
     conn->next_schedule.instant = (uint16_t)(conn->c_link_layer.event_counter +
                                 6 * (uint32_t)conn->next_schedule.factor *
@@ -541,7 +552,7 @@ static void gap_send_rate_ind(
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
 static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
 
     if (opcode == LL_LENGTH_REQ) {
         conn->c_queue.length = 0;
@@ -1814,7 +1825,7 @@ static uint8_t gap_conn_control(
         }
 
         if (conn->is_central) {
-            if (!conn->tx[1]) {
+            if (!gap_conn_tx_payload_len(conn)) {
                 uint8_t peer_tx = frame[3], peer_rx = frame[4];
                 // An empty intersection leaves that direction unchanged.
                 uint8_t tx = gap_phy_preferred(conn->c_phy.preferred.tx & peer_rx);
@@ -2449,18 +2460,16 @@ static void gap_security_nonce(
     memcpy(nonce + 5, security->iv, 8);
 }
 
-// Encrypt each new nonempty PDU once. Retries reuse ciphertext, MIC and counter;
-// only SN/NESN/MD may change, and those bits are excluded from CCM authentication.
+// Encrypt each new nonempty PDU in place. Retries reuse ciphertext, MIC and
+// counter; only SN/NESN/MD may change, and those bits are excluded from CCM AAD.
 static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
     gap_security_context *gap_security = &conn->security;
-    uint8_t *cipher = conn->cipher;
 
     if (gap_security->tx_sealed) {
-        cipher[0] = conn->tx[0];
-        return cipher;
+        return conn->tx;
     }
 
-    if (!gap_security->tx_enabled || !conn->tx[1])
+    if (!gap_security->tx_enabled || !gap_conn_tx_payload_len(conn))
         return conn->tx;
 
     if (gap_security->tx_counter >= (UINT64_C(1) << 39)) {
@@ -2470,28 +2479,30 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
     }
 
     uint8_t nonce[13];
+    uint8_t payload_len = conn->tx[1];
+    gap_security->tx_plain_len = payload_len;
+    gap_security->tx_opcode = (conn->tx[0] & 3) == 3 ? conn->tx[2] : 0;
     gap_security_nonce(gap_security, nonce, gap_security->tx_counter, conn->is_central);
-    memcpy(cipher, conn->tx, conn->tx[1] + 2);
 
     if (!GAP_CCM_ENCRYPT(gap_security->session_key, nonce,
-            conn->tx[0] & 0xe3, cipher + 2,
-            conn->tx[1], cipher + 2 + conn->tx[1])
+            conn->tx[0] & 0xe3, conn->tx + 2,
+            payload_len, conn->tx + 2 + payload_len)
     ) {
         gap_security->status = 0x3d;
         gap_conn_end();
         return NULL;
     }
 
-    cipher[1] += 4;
+    conn->tx[1] = (uint8_t)(payload_len + 4);
     gap_security->tx_counter++;
     gap_security->tx_sealed = 1;
-    return cipher;
+    return conn->tx;
 }
 
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(gap_conn_context *conn) {
-    if (conn->tx[1]) return;
+    if (gap_conn_tx_payload_len(conn)) return;
     gap_security_context *gap_security = &conn->security;
 
     uint16_t phase = gap_security->phase;

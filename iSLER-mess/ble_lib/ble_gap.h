@@ -377,6 +377,8 @@ typedef struct {
     uint8_t tx_enabled;      // Link Layer encryption is enabled for outgoing packets.
     uint8_t rx_enabled;      // Link Layer encryption is enabled for incoming packets.
     uint8_t tx_sealed;       // Outgoing packet has been encrypted and is ready for transmission.
+    uint8_t tx_plain_len;    // Payload length before MIC insertion; used by ACK/state handling.
+    uint8_t tx_opcode;       // Plaintext control opcode needed while the packet awaits acknowledgment.
     uint8_t status;          // Result of the current security procedure.
     uint8_t refreshing;      // Session keys are being refreshed during an encrypted connection.
     uint8_t ltk[16];         // Long-term key used to derive this connection's session key.
@@ -777,9 +779,10 @@ typedef struct {
 #endif
     };
 
-    // Per-link radio buffers. TX and cipher must remain radio aligned.
-    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX];
-    GAP_RADIO_BUFFER_ATTR uint8_t cipher[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
+    // TX is encrypted in place, so it includes 4 bytes for the MIC. While the
+    // packet awaits ACK, security.tx_plain_len and security.tx_opcode retain
+    // its original length and opcode because encryption overwrites those bytes.
+    GAP_RADIO_BUFFER_ATTR uint8_t tx[2 + GAP_CONN_PACKET_BUFFER_MAX + 4];
     uint8_t plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 
     // One L2CAP connection and bearer buffer set shared by this GAP link.
@@ -789,6 +792,16 @@ typedef struct {
     uint8_t l2cap_tx[4 + L2CAP_SDU_MAX];
     uint8_t l2cap_initialized;
 } gap_conn_context;
+
+// Outgoing data path:
+// 1. l2cap_ecfc_send() copies the complete SDU into l2cap.channels[].tx_data.
+// 2. l2cap_ecfc_pump() frames one piece into l2cap_tx; l2cap_tx_queue.offset
+//    tracks fragments that do not fit in one Link Layer packet.
+// 3. ble_gap_l2cap_poll() passes each fragment to gap_send_data(), which
+//    stages it in c_tx. Direct gap_send_data() calls start here.
+// 4. The connection poller copies c_tx into tx for the next radio packet.
+// 5. If encryption is enabled, gap_security_tx_frame() seals it in tx and
+//    retains that ciphertext and MIC for retransmission.
 
 static gap_conn_context gap_conn_ctx[GAP_CONNECTION_COUNT];
 // Hardware payload capacity is shared by all links on this controller.

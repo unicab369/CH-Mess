@@ -15,7 +15,7 @@ static void gap_conn_send_queued(void) {
     if (conn->c_queue.local_update)
         gap_send_conn_update(conn);
 
-    if (conn->c_queue.local_map && !conn->tx[1]) {
+    if (conn->c_queue.local_map && !gap_conn_tx_payload_len(conn)) {
         conn->c_pending.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
         conn->c_queue.local_map = 0;
 
@@ -32,7 +32,7 @@ static void gap_conn_send_queued(void) {
 
     if (conn->c_queue.local_params &&
         !conn->c_features.request_pending &&
-        !conn->tx[1]
+        !gap_conn_tx_payload_len(conn)
     ) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
@@ -65,7 +65,7 @@ static void gap_conn_send_queued(void) {
     if (conn->c_queue.length)
         gap_send_data_length(conn, LL_LENGTH_REQ);
 
-    if (conn->c_queue.phy_queued && !conn->tx[1]) {
+    if (conn->c_queue.phy_queued && !gap_conn_tx_payload_len(conn)) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->c_queue.phy_queued = 0;
         conn->c_pending.phy_request = 1;
@@ -78,7 +78,7 @@ static void gap_conn_send_queued(void) {
         conn->tx[4] = conn->c_phy.preferred.rx;
     }
 
-    if (!conn->c_features.request_pending && !conn->tx[1]) {
+    if (!conn->c_features.request_pending && !gap_conn_tx_payload_len(conn)) {
         if (conn->c_subrate.queued_flags) {
             // Wait for the peer Link Layer and Host to confirm subrating support.
             if (!conn->c_features.known) {
@@ -117,7 +117,7 @@ static void gap_conn_send_queued(void) {
         }
 
         if (conn->c_rate.queued_flags && !conn->c_features.ext_pending &&
-            !conn->tx[1]
+            !gap_conn_tx_payload_len(conn)
         ) {
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
@@ -179,7 +179,7 @@ static void gap_conn_send_queued(void) {
     }
 
 #if GAP_CENTRAL_SUPPORT
-    if (!conn->tx[1] && conn->is_central &&
+    if (!gap_conn_tx_payload_len(conn) && conn->is_central &&
         conn->central.channel_report_queued &&
         !conn->c_features.request_pending
     ) {
@@ -343,16 +343,16 @@ void gap_hw_received(void) {
 #if GAP_CENTRAL_SUPPORT
             if (conn->is_central) {
                 if (conn->central.channel_report_pending &&
-                    (conn->tx[0] & 3) == 3 && conn->tx[1] == 4 &&
-                    conn->tx[2] == LL_CHANNEL_REPORTING_IND
+                    (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 4 &&
+                    gap_conn_tx_control_opcode(conn) == LL_CHANNEL_REPORTING_IND
                 ) {
                     conn->central.channel_report_pending = 0;
                     conn->connection_status = 0;
                 }
 
                 if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
-                    (conn->tx[0] & 3) == 3 && conn->tx[1] == 11 &&
-                    conn->tx[2] == LL_SUBRATE_IND
+                    (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 11 &&
+                    gap_conn_tx_control_opcode(conn) == LL_SUBRATE_IND
                 ) {
                     conn->schedule.factor = conn->next_schedule.factor;
                     conn->schedule.base_event = conn->next_schedule.base_event;
@@ -373,6 +373,10 @@ void gap_hw_received(void) {
             conn->c_link_layer.tx_sn ^= 1;
             conn->c_link_layer.tx_pending = 0;
             gap_security->tx_sealed = 0;
+            gap_security->tx_plain_len = 0;
+            gap_security->tx_opcode = 0;
+            // The in-place ciphertext is no longer a queued PDU after ACK.
+            conn->tx[1] = 0;
 
             if (conn->c_link_state.terminate_sent) {
                 if ((frame[0] & 3) != 3 ||
@@ -470,7 +474,7 @@ void gap_hw_received(void) {
             }
 
             if (!conn->c_link_state.terminate_after_reply) {
-                if (conn->tx[1] == 0 && conn->c_link_state.terminate_queued) {
+                if (gap_conn_tx_payload_len(conn) == 0 && conn->c_link_state.terminate_queued) {
                     conn->tx[0] = 0x03;
                     conn->tx[1] = 2;
                     conn->tx[2] = LL_TERMINATE_IND;
@@ -483,7 +487,7 @@ void gap_hw_received(void) {
                 gap_conn_send_queued();
 
 #if GAP_EXT_ADV_SUPPORT
-                if (conn->tx[1] == 0 &&
+                if (gap_conn_tx_payload_len(conn) == 0 &&
                     !gap_security->phase && conn->sync_transfer_queued
                 ) {
                     uint8_t slot = conn->sync_transfer_slot;
@@ -503,7 +507,7 @@ void gap_hw_received(void) {
                 ) {
                     uint32_t now_ms = GET_MILLIS();
 
-                    if (!conn->tx[1] &&
+                    if (!gap_conn_tx_payload_len(conn) &&
                         (uint32_t)(now_ms - conn->peripheral.status_changed_ms) >=
                                 (uint32_t)conn->c_channel.max_delay_200ms * 200 &&
                         (!conn->peripheral.last_sent_valid ||
@@ -522,7 +526,7 @@ void gap_hw_received(void) {
                 }
 #endif
 
-                if (conn->tx[1] == 0 && conn->c_queue.tx_queued &&
+                if (gap_conn_tx_payload_len(conn) == 0 && conn->c_queue.tx_queued &&
                     !conn->c_link_state.terminate_after_reply
                 ) {
                     conn->tx[0] = conn->c_tx.llid;
@@ -533,12 +537,12 @@ void gap_hw_received(void) {
             }
             // Control responses with no payload acknowledge using an empty
             // data PDU; a zero-length LL Control PDU is invalid.
-            if (conn->tx[1] == 0)
+            if (gap_conn_tx_payload_len(conn) == 0)
                 conn->tx[0] = 0x01;
         }
 
         gap_conn_update_apply(conn, 1);
-        if (conn->tx[1]) conn->c_subrate.event_activity = 1;
+        if (gap_conn_tx_payload_len(conn)) conn->c_subrate.event_activity = 1;
 
         // Each update stage can close the slot, so check before continuing.
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
@@ -961,8 +965,8 @@ static inline uint8_t gap_conn_can_skip_event(
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
         if (conn->c_rate.update_pending && conn->c_link_layer.tx_pending &&
-            (conn->tx[0] & 3) == 3 && conn->tx[1] == 15 &&
-            conn->tx[2] == LL_CONNECTION_RATE_IND
+            (conn->tx[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 15 &&
+            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_RATE_IND
         ) return 0;
 
         if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
