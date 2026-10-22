@@ -437,37 +437,34 @@ static struct {
 } gap_rx;
 
 typedef struct {
-#if GAP_SMP_SUPPORT > 0
-    uint8_t bonded, restore_started, restore_attempted;
-    uint8_t bond_repair_pending;
-    gap_bond bond;
-#endif
 #if GAP_EXT_ADV_SUPPORT
     volatile uint8_t sync_transfer_queued;
     uint8_t sync_transfer_slot;
     uint16_t sync_transfer_id;
 #endif
 
-    // Connection identity and security state.
-    // Address from the CONNECT_IND initiator; with is_central, identifies which side is local.
-    gap_address initiator;
 #if GAP_SMP_SUPPORT > 0
+    uint8_t bonded, restore_started, restore_attempted;
+    uint8_t bond_repair_pending;
+    gap_bond bond;
     // Address from the CONNECT_IND responder; with is_central, identifies which side is local.
     // SMP pairing uses the address as it appeared during connection setup.
     gap_address responder;
+    // Pairing result associated with this link; persistent bond keys are in bond.
+    uint8_t authenticated;
+    // Negotiated key size associated with authenticated and security.
+    uint8_t enc_key_size;
 #endif
+
+    // Connection identity and security state.
+    // Address from the CONNECT_IND initiator; with is_central, identifies which side is local.
+    gap_address initiator;
     // Peer identity used by GAP/SMP; may be resolved after setup.
     gap_address peer;
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
-#if GAP_SMP_SUPPORT > 0
-    // Pairing result associated with this link; persistent bond keys are in bond.
-    uint8_t authenticated;
-    // Negotiated key size associated with authenticated and security.
-    uint8_t enc_key_size;
-#endif
     // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
     uint8_t load_pending;
 
