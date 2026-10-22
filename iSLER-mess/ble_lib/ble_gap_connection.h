@@ -582,10 +582,10 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
 static void gap_privacy_poll(uint32_t now) {
-    if (!gap_privacy.enabled || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+    if (!gap_privacy_timeout_15s || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_initiator.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
-        (int32_t)(now - gap_privacy.next_rotation_ms) < 0
+        (int32_t)(now - gap_privacy_next_rotation_ms) < 0
     ) return;
 
     if (gap_rx_armed) {
@@ -598,10 +598,10 @@ static void gap_privacy_poll(uint32_t now) {
                                       address, gap_own_address.address)
     ) return;
 
-    uint16_t next_timeout_s;
-    if (!gap_privacy_timeout_pick(gap_privacy.timeout_min_s,
-                                  gap_privacy.timeout_max_s,
-                                  &next_timeout_s)
+    uint8_t next_timeout_15s;
+    if (!gap_privacy_timeout_pick(gap_privacy_timeout_min_15s,
+                                  gap_privacy_timeout_max_15s,
+                                  &next_timeout_15s)
     ) return;
 
     memcpy(gap_own_address.address, address, 6);
@@ -625,8 +625,8 @@ static void gap_privacy_poll(uint32_t now) {
         ) memcpy(gap_adv.target.address, address, 6);
     }
 
-    gap_privacy.timeout_s = next_timeout_s;
-    gap_privacy.next_rotation_ms = now + (uint32_t)next_timeout_s * 1000;
+    gap_privacy_timeout_15s = next_timeout_15s;
+    gap_privacy_next_rotation_ms = now + (uint32_t)next_timeout_15s * 15000;
 }
 
 static uint8_t gap_schedule_parameters_valid(

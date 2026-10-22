@@ -844,10 +844,13 @@ typedef struct {
 static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 
 static struct {
-    uint8_t enabled, resolvable, irk[16], scan_filter, connection_filter;
-    uint16_t timeout_s, timeout_min_s, timeout_max_s;
-    uint32_t next_rotation_ms;
+    uint8_t resolvable, irk[16], scan_filter, connection_filter;
 } gap_privacy;
+// gap_privacy_timeout_15s == 0 means private-address rotation is disabled.
+// Each nonzero unit is 15 seconds; 240 units is one hour.
+static uint8_t gap_privacy_timeout_15s, gap_privacy_timeout_min_15s;
+static uint8_t gap_privacy_timeout_max_15s;
+static uint32_t gap_privacy_next_rotation_ms;
 
 static struct {
     uint8_t active;
@@ -1393,7 +1396,7 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
 static void gap_local_addr_select(
     int slot, uint8_t address[6], uint8_t *type
 ) {
-    if (gap_privacy.enabled &&
+    if (gap_privacy_timeout_15s &&
         gap_privacy.resolvable && slot >= 0 &&
         gap_identities[slot].local_key_set
     ) {
@@ -1419,11 +1422,11 @@ static void gap_local_addr_select(
 
 // Pick an unbiased timeout from an inclusive range; equal bounds use no RNG.
 static int gap_privacy_timeout_pick(
-    uint16_t min_s, uint16_t max_s, uint16_t *timeout_s
+    uint8_t min_15s, uint8_t max_15s, uint8_t *timeout_15s
 ) {
-    uint32_t range = (uint32_t)max_s - min_s + 1;
+    uint32_t range = (uint32_t)max_15s - min_15s + 1;
     if (range == 1) {
-        *timeout_s = min_s;
+        *timeout_15s = min_15s;
         return 1;
     }
 
@@ -1437,53 +1440,55 @@ static int gap_privacy_timeout_pick(
         uint32_t value = (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8;
 
         if (value < limit) {
-            *timeout_s = (uint16_t)(min_s + value % range);
+            *timeout_15s = (uint8_t)(min_15s + value % range);
             return 1;
         }
     }
     return 0;
 }
 
-// Configure local privacy while GAP is idle. Equal nonzero bounds use a fixed
-// timeout up to 41400 s. An IRK with different bounds uses a randomized RPA
-// timeout within 1..3600 s. A null IRK with equal nonzero bounds selects NRPAs;
-// a null IRK with both bounds zero selects the public address.
+// Configure local privacy while GAP is idle. Each timeout unit is 15 seconds;
+// valid nonzero bounds are 1..240 (15 seconds to one hour). Equal bounds use a
+// fixed timeout. An IRK with different bounds selects randomized RPA timing;
+// a null IRK with equal nonzero bounds selects NRPAs. Both bounds zero with a
+// null IRK select the public address. uint16_t arguments reject out-of-range
+// values before they can be narrowed to the stored uint8_t units.
 int gap_privacy_configure(
-    const uint8_t irk[16], uint16_t min_timeout_s, uint16_t max_timeout_s
+    const uint8_t irk[16], uint16_t min_timeout_15s, uint16_t max_timeout_15s
 ) {
-    if (gap_is_busy() || min_timeout_s > max_timeout_s ||
-        max_timeout_s > 41400 ||
-        (!min_timeout_s && (irk || max_timeout_s)) ||
-        (min_timeout_s != max_timeout_s &&
-         (!irk || max_timeout_s > 3600))
+    if (gap_is_busy() || min_timeout_15s > max_timeout_15s ||
+        max_timeout_15s > 240 ||
+        (!min_timeout_15s && (irk || max_timeout_15s)) ||
+        (min_timeout_15s != max_timeout_15s && !irk)
     ) return 0;
 
-    if (!irk && !max_timeout_s) {
+    if (!irk && !max_timeout_15s) {
+        gap_privacy_timeout_15s = 0;
         memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
-        gap_privacy.enabled = 0;
         gap_privacy.resolvable = 0;
         gap_own_address.type = 0;
         return 1;
     }
 
-    uint16_t timeout_s;
+    uint8_t timeout_15s;
     uint8_t address[6];
-    if (!gap_privacy_timeout_pick(min_timeout_s, max_timeout_s, &timeout_s) ||
+    if (!gap_privacy_timeout_pick((uint8_t)min_timeout_15s,
+                                  (uint8_t)max_timeout_15s, &timeout_15s) ||
         !gap_private_addr_generate(irk, address, gap_own_address.address)
     ) return 0;
 
+    gap_privacy_timeout_15s = 0;
     if (irk)
         memcpy(gap_privacy.irk, irk, sizeof(gap_privacy.irk));
     else memset(gap_privacy.irk, 0, sizeof(gap_privacy.irk));
 
     memcpy(gap_own_address.address, address, sizeof(gap_own_address.address));
-    gap_privacy.timeout_s = timeout_s;
-    gap_privacy.timeout_min_s = min_timeout_s;
-    gap_privacy.timeout_max_s = max_timeout_s;
-    gap_privacy.next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_s * 1000;
+    gap_privacy_timeout_min_15s = (uint8_t)min_timeout_15s;
+    gap_privacy_timeout_max_15s = (uint8_t)max_timeout_15s;
+    gap_privacy_next_rotation_ms = GET_MILLIS() + (uint32_t)timeout_15s * 15000;
     gap_privacy.resolvable = irk != NULL;
-    gap_privacy.enabled = 1;
     gap_own_address.type = 1;
+    gap_privacy_timeout_15s = timeout_15s;
     return 1;
 }
 
@@ -1506,7 +1511,7 @@ int gap_set_static_addr(const uint8_t address[6]) {
     memcpy(gap_own_address.address, address, 6);
     memcpy(gap_identity_address.address, address, 6);
     gap_identity_address.type = 1;
-    gap_privacy.enabled = 0;
+    gap_privacy_timeout_15s = 0;
     gap_own_address.type = 1;
     return 1;
 }
@@ -1515,7 +1520,7 @@ int gap_set_static_addr(const uint8_t address[6]) {
 int gap_use_public_address(void) {
     if (gap_is_busy()) return 0;
 
-    gap_privacy.enabled = 0;
+    gap_privacy_timeout_15s = 0;
     gap_identity_address.type = 0;
     gap_own_address.type = 0;
     return 1;

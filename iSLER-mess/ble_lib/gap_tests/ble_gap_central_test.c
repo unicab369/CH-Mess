@@ -556,7 +556,7 @@ static void test_private_rotation(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     now_ms = 0;
     assert(!gap_privacy_configure(test_irk, 0, 0));
-    assert(!gap_privacy_configure(test_irk, 41401, 41401));
+    assert(!gap_privacy_configure(test_irk, 241, 241));
     assert(gap_privacy_configure(test_irk, 1, 1));
     uint8_t first[6];
     gap_address identity;
@@ -2469,7 +2469,7 @@ static void test_peer_local_keys(void) {
     gap_address_hash(local_irk, gap_scan_request + 5, hash);
     assert(memcmp(hash, gap_scan_request + 2, 3) == 0);
     memcpy(first, gap_identities[slot].local_address, 6);
-    now_ms = gap_privacy.next_rotation_ms;
+    now_ms = gap_privacy_next_rotation_ms;
     random_seed++;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_identities[slot].local_address, 6) == 0);
@@ -2487,7 +2487,7 @@ static void test_peer_local_keys(void) {
     assert(memcmp(hash, gap_adv.target.address, 3) == 0);
     memcpy(first, gap_adv.local.address, 6);
     random_seed++;
-    now_ms = gap_privacy.next_rotation_ms;
+    now_ms = gap_privacy_next_rotation_ms;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_adv.local.address, 6) != 0);
     gap_address_hash(local_irk, gap_adv.local.address + 3, hash);
@@ -2538,7 +2538,7 @@ static void test_randomized_private_rotation(void) {
     now_ms = 0;
     assert(!gap_privacy_configure(NULL, 1, 4));
     assert(!gap_privacy_configure(test_irk, 0, 4));
-    assert(!gap_privacy_configure(test_irk, 1, 3601));
+    assert(!gap_privacy_configure(test_irk, 1, 241));
     assert(!gap_privacy_configure(test_irk, 5, 4));
     secure_random_available = 0;
     assert(!gap_privacy_configure(test_irk, 1, 4));
@@ -2546,25 +2546,25 @@ static void test_randomized_private_rotation(void) {
 
     random_seed++;
     assert(gap_privacy_configure(test_irk, 1, 4));
-    assert(gap_privacy.timeout_s >= 1 && gap_privacy.timeout_s <= 4);
-    assert(gap_privacy.next_rotation_ms == now_ms +
-           (uint32_t)gap_privacy.timeout_s * 1000);
-    now_ms = gap_privacy.next_rotation_ms;
+    assert(gap_privacy_timeout_15s >= 1 && gap_privacy_timeout_15s <= 4);
+    assert(gap_privacy_next_rotation_ms == now_ms +
+           (uint32_t)gap_privacy_timeout_15s * 15000);
+    now_ms = gap_privacy_next_rotation_ms;
     uint8_t current_address[6];
     memcpy(current_address, gap_own_address.address, sizeof(current_address));
-    uint32_t current_deadline = gap_privacy.next_rotation_ms;
+    uint32_t current_deadline = gap_privacy_next_rotation_ms;
     random_seed++;
     secure_random_available = 0;
     gap_privacy_poll(now_ms);
     secure_random_available = 1;
     assert(!memcmp(current_address, gap_own_address.address, sizeof(current_address)));
-    assert(gap_privacy.next_rotation_ms == current_deadline);
+    assert(gap_privacy_next_rotation_ms == current_deadline);
     random_seed++;
     gap_privacy_poll(now_ms);
     assert(memcmp(current_address, gap_own_address.address, sizeof(current_address)));
-    assert(gap_privacy.timeout_s >= 1 && gap_privacy.timeout_s <= 4);
-    assert(gap_privacy.next_rotation_ms == now_ms +
-           (uint32_t)gap_privacy.timeout_s * 1000);
+    assert(gap_privacy_timeout_15s >= 1 && gap_privacy_timeout_15s <= 4);
+    assert(gap_privacy_next_rotation_ms == now_ms +
+           (uint32_t)gap_privacy_timeout_15s * 15000);
     assert(gap_privacy_configure(NULL, 0, 0));
 }
 
@@ -2574,17 +2574,17 @@ static void test_nonresolvable_private_addresses(void) {
     assert(gap_use_public_address());
     assert(gap_identity_local_key(test_address(test_identity, 0), test_irk));
     int before = aes_count;
-    assert(!gap_privacy_configure(NULL, 41401, 41401));
+    assert(!gap_privacy_configure(NULL, 241, 241));
     random_seed++;
     assert(gap_privacy_configure(NULL, 1, 1));
-    assert(gap_privacy.enabled && !gap_privacy.resolvable);
+    assert(gap_privacy_timeout_15s && !gap_privacy.resolvable);
     assert((gap_own_address.address[5] & 0xc0) == 0);
     assert(aes_count == before);
     assert(!gap_resolve(test_address(gap_own_address.address, 1), &identity));
     assert(!gap_adv_start_directed(test_address(test_identity, 0), 100));
     assert(gap_adv_start(NULL, 0, 100));
     memcpy(first, gap_own_address.address, 6);
-    now_ms = gap_privacy.next_rotation_ms - 1;
+    now_ms = gap_privacy_next_rotation_ms - 1;
     random_seed++;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
@@ -2608,7 +2608,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(gap_scan.active_pending);
     assert(memcmp(gap_scan_request + 2, gap_own_address.address, 6) == 0);
     memcpy(first, gap_own_address.address, 6);
-    now_ms = gap_privacy.next_rotation_ms;
+    now_ms = gap_privacy_next_rotation_ms;
     random_seed++;
     gap_privacy_poll(now_ms);
     assert(memcmp(first, gap_own_address.address, 6) == 0);
@@ -2635,7 +2635,7 @@ static void test_nonresolvable_private_addresses(void) {
     assert(gap_privacy_configure(test_irk, 1, 1));
     assert(gap_privacy.resolvable && (gap_own_address.address[5] & 0xc0) == 0x40);
     assert(gap_privacy_configure(NULL, 0, 0));
-    assert(!gap_privacy.enabled && !gap_own_address.type);
+    assert(!gap_privacy_timeout_15s && !gap_own_address.type);
 }
 
 static void start_test_central_link(void) {

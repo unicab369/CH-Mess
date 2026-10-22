@@ -710,7 +710,7 @@ void gap_hw_received(void) {
 
             if ((frame[13] & 0xc0) == 0x40 &&
                 !target_matches && target_type &&
-                gap_privacy.enabled && gap_privacy.resolvable
+                gap_privacy_timeout_15s && gap_privacy.resolvable
             ) {
                 const uint8_t *irk = gap_privacy.irk;
 

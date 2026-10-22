@@ -101,7 +101,7 @@ target hardware verification.
 | Public and static random addresses | [x] | Hardware TODO: Verify address type and byte order on air. |
 | Non-resolvable private address generation and rotation | [x] | Hardware TODO: Verify privacy timeout and rotation. |
 | Resolvable private address generation and rotation | [x] | Hardware TODO: Verify RPA generation and rotation with independent peers. |
-| Randomized RPA update timing (Core 6.1+) | [x] | `gap_privacy_configure(irk, min_s, max_s)` selects an unbiased timeout in the configured inclusive 1–3600 s range for each RPA rotation using the secure entropy hook. Equal bounds select a fixed timeout; a null IRK selects nonresolvable addresses or, with both bounds zero, the public address. Hardware TODO: verify the platform entropy source and rotation behavior. |
+| Randomized RPA update timing (Core 6.1+) | [x] | `gap_privacy_configure(irk, min_15s, max_15s)` selects an unbiased timeout from 1–240 units of 15 seconds (15 seconds to 1 hour) using the secure entropy hook. Equal bounds select a fixed timeout; a null IRK selects nonresolvable addresses or, with both bounds zero, the public address. The 15-second resolution does not expose the spec's full one-second timeout range. Hardware TODO: verify the platform entropy source and rotation behavior. |
 | Peer identity list and IRK storage interfaces | [x] | Application supplies durable storage where needed. |
 | RPA resolution and peer identity matching | [x] | Hardware TODO: Verify bonded-peer resolution and filtering. |
 | Network and device privacy modes | [x] | Hardware TODO: Verify identity-address acceptance rules. |

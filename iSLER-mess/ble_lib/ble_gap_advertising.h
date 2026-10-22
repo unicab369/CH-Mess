@@ -559,7 +559,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     if (gap_initiator.active || !peer ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
-        (gap_privacy.enabled && !gap_privacy.resolvable)
+        (gap_privacy_timeout_15s && !gap_privacy.resolvable)
     ) return 0;
 
     const uint8_t *address = peer->address;
@@ -568,7 +568,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     memcpy(target, address, sizeof(target));
     int slot = gap_identity_find(address, type);
 
-    if (gap_privacy.enabled && gap_privacy.resolvable &&
+    if (gap_privacy_timeout_15s && gap_privacy.resolvable &&
         slot >= 0 && gap_identities[slot].has_irk
     ) {
         if (!gap_private_addr_generate(gap_identities[slot].irk, target, address))
