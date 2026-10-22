@@ -1472,7 +1472,7 @@ static int gap_pawr_exchange(
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || GAP_HW_DATA_MAX() < 27
     ) return 0;
 
-    uint8_t *request = gap_adv_init_buffer.connect_request;
+    uint8_t *request = gap_adv_tx_storage.connect_request;
     uint8_t peer_type = set->pawr_connect.peer_type;
     const uint8_t *peer_address = set->pawr_connect.peer_address;
     uint8_t local_address[6], local_type, crc_init[3];
@@ -1485,7 +1485,7 @@ static int gap_pawr_exchange(
         return 0;
     }
 
-    memset(request, 0, sizeof(gap_adv_init_buffer.connect_request));
+    memset(request, 0, sizeof(gap_adv_tx_storage.connect_request));
     request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     request[1] = 34;
     memcpy(request + 2, local_address, 6);

@@ -395,8 +395,8 @@ typedef struct {
 static struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
-    uint8_t data_len;      // Number of valid bytes in gap_adv_init_buffer.advertising.data.
-    uint8_t scan_resp_len; // Number of valid bytes in gap_adv_init_buffer.advertising.scan_response.
+    uint8_t data_len;      // Number of valid bytes in gap_adv_tx_storage.advertising.data.
+    uint8_t scan_resp_len; // Number of valid bytes in gap_adv_tx_storage.advertising.scan_response.
     struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
@@ -863,43 +863,43 @@ static union {
     uint8_t connect_request[36];
     uint32_t align_connect_request;
 #endif
-} gap_adv_init_buffer;
+} gap_adv_tx_storage;
+
 
 #if GAP_CENTRAL_SUPPORT
-static struct {
-    uint8_t active;
-    gap_conn_mode mode;
-    gap_address peer;
-    uint32_t deadline_ms;
-} gap_initiator;
-#endif
+    static struct {
+        uint8_t active;
+        gap_conn_mode mode;
+        gap_address peer;
+        uint32_t deadline_ms;
+    } gap_initiator;
 
-// Central initiation configuration.
-#if GAP_CENTRAL_SUPPORT
-// Initial LE connection settings. Connection interval is in 1.25 ms units,
-// supervision timeout in 10 ms units, and attempt timeout in seconds.
-// Scan interval is start-to-start; scan window is how long each scan listens.
-// With these defaults (diagram not to scale):
-//   Scan start 1                                  Scan start 2
-//       |                                               |
-//       |<---scan interval: 1280 ms ------------------->|
-//       |<-- scan window: 12 ms -->|
-//       [ listen for 12 ms ] [ sleep for 1268 ms ]      [ listen ... ]
-typedef struct {
-    uint16_t interval, latency, supervision_timeout;
-    uint16_t scan_interval_ms, scan_window_ms;
-    uint16_t attempt_timeout_s;
-} gap_timing_cfg;
+    // Central initiation configuration.
+    // Initial LE connection settings. Connection interval is in 1.25 ms units,
+    // supervision timeout in 10 ms units, and attempt timeout in seconds.
+    // Scan interval is start-to-start; scan window is how long each scan listens.
+    // With these defaults (diagram not to scale):
+    //   Scan start 1                                  Scan start 2
+    //       |                                               |
+    //       |<---scan interval: 1280 ms ------------------->|
+    //       |<-- scan window: 12 ms -->|
+    //       [ listen for 12 ms ] [ sleep for 1268 ms ]      [ listen ... ]
+    typedef struct {
+        uint16_t interval, latency, supervision_timeout;
+        uint16_t scan_interval_ms, scan_window_ms;
+        uint16_t attempt_timeout_s;
+    } gap_timing_cfg;
 
-static gap_timing_cfg gap_central_timing = {
-    .interval = 24,             // 6..3200 units: 7.5 ms..4000 ms (4 s).
-    .latency = 0,               // 0..499 connection events.
-    .supervision_timeout = 200, // 10..3200 units: 100 ms..32000 ms (32 s).
-    .scan_interval_ms = 1280,   // 3..40959 ms (0.003..40.959 s).
-    .scan_window_ms = 12,       // 3 ms..scan_interval_ms (up to 40.959 s).
-    .attempt_timeout_s = 31     // 1..600 s; 31 s covers the 30.72 s fast-scan period.
-};
+    static gap_timing_cfg gap_central_timing = {
+        .interval = 24,             // 6..3200 units: 7.5 ms..4000 ms (4 s).
+        .latency = 0,               // 0..499 connection events.
+        .supervision_timeout = 200, // 10..3200 units: 100 ms..32000 ms (32 s).
+        .scan_interval_ms = 1280,   // 3..40959 ms (0.003..40.959 s).
+        .scan_window_ms = 12,       // 3 ms..scan_interval_ms (up to 40.959 s).
+        .attempt_timeout_s = 31     // 1..600 s; 31 s covers the 30.72 s fast-scan period.
+    };
 #endif // GAP_CENTRAL_SUPPORT
+
 
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {

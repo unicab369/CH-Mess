@@ -499,9 +499,9 @@ static inline int gap_adv_start_payload(
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) return 0;
 
-    if (data_len) memcpy(gap_adv_init_buffer.advertising.data, data, data_len);
+    if (data_len) memcpy(gap_adv_tx_storage.advertising.data, data, data_len);
     // Save the payload to send when this device receives a scan request.
-    if (resp_len) memcpy(gap_adv_init_buffer.advertising.scan_response, scan_response, resp_len);
+    if (resp_len) memcpy(gap_adv_tx_storage.advertising.scan_response, scan_response, resp_len);
     gap_adv.target.type = 0;
     gap_adv.data_len = (uint8_t)data_len;
     gap_adv.scan_resp_len = (uint8_t)resp_len;
@@ -679,32 +679,32 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     if (!gap_access_addr(&access_address))
         return 0;
 
-    memset(gap_adv_init_buffer.connect_request, 0,
-           sizeof(gap_adv_init_buffer.connect_request));
+    memset(gap_adv_tx_storage.connect_request, 0,
+           sizeof(gap_adv_tx_storage.connect_request));
     uint8_t local_type;
     int peer_slot = -1;
 
     if (peer_address) {
         peer_slot = gap_identity_find(peer_address, peer_type);
-        memcpy(gap_adv_init_buffer.connect_request + 8, peer_address, 6);
+        memcpy(gap_adv_tx_storage.connect_request + 8, peer_address, 6);
     }
 
-    gap_local_addr_select(peer_slot, gap_adv_init_buffer.connect_request + 2, &local_type);
-    gap_adv_init_buffer.connect_request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
-    gap_adv_init_buffer.connect_request[1] = 34;
-    ble_write_u32_le(gap_adv_init_buffer.connect_request + 14, access_address);
+    gap_local_addr_select(peer_slot, gap_adv_tx_storage.connect_request + 2, &local_type);
+    gap_adv_tx_storage.connect_request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
+    gap_adv_tx_storage.connect_request[1] = 34;
+    ble_write_u32_le(gap_adv_tx_storage.connect_request + 14, access_address);
 
     uint8_t crc_init[3];
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
-    memcpy(gap_adv_init_buffer.connect_request + 18, crc_init, sizeof(crc_init));
-    gap_adv_init_buffer.connect_request[21] = 1; // transmit window size: 1.25 ms
-    ble_write_u16_le(gap_adv_init_buffer.connect_request + 24, gap_central_timing.interval);
-    ble_write_u16_le(gap_adv_init_buffer.connect_request + 26, gap_central_timing.latency);
-    ble_write_u16_le(gap_adv_init_buffer.connect_request + 28, gap_central_timing.supervision_timeout);
+    memcpy(gap_adv_tx_storage.connect_request + 18, crc_init, sizeof(crc_init));
+    gap_adv_tx_storage.connect_request[21] = 1; // transmit window size: 1.25 ms
+    ble_write_u16_le(gap_adv_tx_storage.connect_request + 24, gap_central_timing.interval);
+    ble_write_u16_le(gap_adv_tx_storage.connect_request + 26, gap_central_timing.latency);
+    ble_write_u16_le(gap_adv_tx_storage.connect_request + 28, gap_central_timing.supervision_timeout);
 
-    memset(gap_adv_init_buffer.connect_request + 30, 0xff, 4);
-    gap_adv_init_buffer.connect_request[34] = 0x1f; // data channels 0 through 36
-    gap_adv_init_buffer.connect_request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
+    memset(gap_adv_tx_storage.connect_request + 30, 0xff, 4);
+    gap_adv_tx_storage.connect_request[34] = 0x1f; // data channels 0 through 36
+    gap_adv_tx_storage.connect_request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
 
     gap_initiator.mode = mode;
     gap_initiator.peer.type = peer_type;

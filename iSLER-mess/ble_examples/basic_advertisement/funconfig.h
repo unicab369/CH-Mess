@@ -12,6 +12,9 @@
 #define FUNCONF_USE_DEBUGPRINTF   1
 #define RANDOM_STRENGTH           2
 
+#define L2CAP_SDU_MAX               32
+#define L2CAP_CHANNEL_MAX           1
+
 #define GAP_CONNECTION_COUNT        1
 #define GAP_SMP_SUPPORT             0
 #define GAP_IDENTITY_COUNT          1

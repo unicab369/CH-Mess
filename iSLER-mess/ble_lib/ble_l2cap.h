@@ -20,6 +20,9 @@
 #ifndef L2CAP_CHANNEL_MAX
 #define L2CAP_CHANNEL_MAX 2
 #endif
+#if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
+#error "L2CAP_CHANNEL_MAX must be 1..32"
+#endif
 #ifndef L2CAP_PSM_MAX
 #define L2CAP_PSM_MAX 4
 #endif
@@ -37,9 +40,6 @@
 #define L2CAP_ECFC_CHANNELS_MAX 5u
 #define L2CAP_ECFC_MTU_MIN 64u
 #define L2CAP_ECFC_MPS_MIN 64u
-#if L2CAP_CHANNEL_MAX < 1 || L2CAP_CHANNEL_MAX > 32
-#error "L2CAP_CHANNEL_MAX must be 1..32"
-#endif
 #if L2CAP_CHANNEL_MTU_MAX < 23 || L2CAP_CHANNEL_MTU_MAX > 65535
 #error "L2CAP_CHANNEL_MTU_MAX must be 23..65535"
 #endif

@@ -712,9 +712,9 @@ void gap_hw_received(void) {
             uint8_t target_type = (frame[0] >> 7) & 1;
             int target_matches = 0;
 
-            if (target_type == ((gap_adv_init_buffer.connect_request[0] >> 6) & 1))
+            if (target_type == ((gap_adv_tx_storage.connect_request[0] >> 6) & 1))
                 target_matches = memcmp(frame + 8,
-                    gap_adv_init_buffer.connect_request + 2, 6) == 0;
+                    gap_adv_tx_storage.connect_request + 2, 6) == 0;
 
 #if GAP_PRIVACY_SUPPORT
             if ((frame[13] & 0xc0) == 0x40 &&
@@ -742,17 +742,17 @@ void gap_hw_received(void) {
             }
         }
 
-        gap_adv_init_buffer.connect_request[0] =
-            (gap_adv_init_buffer.connect_request[0] & 0x7f) |
+        gap_adv_tx_storage.connect_request[0] =
+            (gap_adv_tx_storage.connect_request[0] & 0x7f) |
             (frame[0] & 0x40) << 1;
-        memcpy(gap_adv_init_buffer.connect_request + 8, frame + 2, 6);
+        memcpy(gap_adv_tx_storage.connect_request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_scan.channel_index;
         GAP_HW_STOP();
         gap_rx_armed = 0;
 
-        if (GAP_HW_ADV_TX(gap_adv_init_buffer.connect_request,
-                          sizeof(gap_adv_init_buffer.connect_request), channel) &&
-            gap_conn_accept(gap_adv_init_buffer.connect_request, GAP_HW_TICKS(),
+        if (GAP_HW_ADV_TX(gap_adv_tx_storage.connect_request,
+                          sizeof(gap_adv_tx_storage.connect_request), channel) &&
+            gap_conn_accept(gap_adv_tx_storage.connect_request, GAP_HW_TICKS(),
                             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
@@ -860,7 +860,7 @@ void gap_hw_received(void) {
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
 
             if (response_len)
-                memcpy(adv_evt.scan_frame + 8, gap_adv_init_buffer.advertising.scan_response, response_len);
+                memcpy(adv_evt.scan_frame + 8, gap_adv_tx_storage.advertising.scan_response, response_len);
 
             GAP_HW_TX_BUFFER(adv_evt.scan_frame);
             adv_evt.scan_resp_started = 1;
@@ -1639,7 +1639,7 @@ int gap_send_due(
     uint8_t len = fallback_len;
 
     if (send_gap) {
-        data = gap_adv_init_buffer.advertising.data;
+        data = gap_adv_tx_storage.advertising.data;
         random_address = gap_adv.local.type ? gap_adv.local.address : NULL;
         target_type = gap_adv.target.type;
         pdu_type = gap_adv.pdu_type;
