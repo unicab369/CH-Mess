@@ -349,9 +349,9 @@ typedef struct {
 
 // GAP state and connection data types.
 typedef struct {
-    uint16_t tx_octets; // Maximum Link Layer payload bytes this device can transmit.
+    uint8_t tx_octets;  // Maximum Link Layer payload bytes this device can transmit.
+    uint8_t rx_octets;  // Maximum Link Layer payload bytes this device can receive.
     uint16_t tx_time;   // Maximum transmit time, in microseconds, for that payload.
-    uint16_t rx_octets; // Maximum Link Layer payload bytes this device can receive.
     uint16_t rx_time;   // Maximum receive time, in microseconds, for that payload.
 } gap_data_length;
 
@@ -525,7 +525,7 @@ typedef struct {
     gap_conn_schedule next_schedule;
     // Data-length negotiation.
     // Local TX limit advertised to the peer; caps data_length.tx_octets.
-    uint16_t local_tx_octets;
+    uint8_t local_tx_octets;
     // Effective limits after comparing local limits with remote_data_length.
     gap_data_length data_length;
     // Peer limits; used with local_tx_octets to calculate data_length.
@@ -1713,8 +1713,8 @@ static int gap_conn_accept(
     conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
     conn->schedule.latency = ble_read_u16_le(frame + 26);
     conn->schedule.timeout = ble_read_u16_le(frame + 28);
-    conn->data_length = (gap_data_length){27, 328, 27, 328};
-    conn->remote_data_length = (gap_data_length){27, 328, 27, 328};
+    conn->data_length = (gap_data_length){27, 27, 328, 328};
+    conn->remote_data_length = (gap_data_length){27, 27, 328, 328};
     conn->window_size = frame[21];
     conn->local_tx_octets = 27;
     conn->load_pending = 1;

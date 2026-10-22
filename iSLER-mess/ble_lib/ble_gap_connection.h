@@ -7,6 +7,13 @@
 
 #include "ble_crypto.h"
 
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 enum {
     GAP_LL_ERR_UNSUPPORTED_FEATURE = 0x11,
     GAP_LL_ERR_REMOTE_FEATURE = 0x1a,
@@ -689,7 +696,7 @@ static uint16_t gap_conn_min_interval(const gap_conn_context *conn) {
     uint32_t rx_time = conn->data_length.rx_time;
     uint32_t coded_limit = (uint32_t)conn->data_length.rx_octets * 64 + 976;
     uint8_t peripheral_tx_phy = conn->is_central ? conn->phy_state.current.rx :
-                                conn->phy_state.current.tx;
+                                                    conn->phy_state.current.tx;
 
     // Coded PHY needs at least 2704 us, subject to the RX-octet limit.
     if (peripheral_tx_phy == GAP_PHY_CODED && rx_time < 2704)
@@ -697,9 +704,8 @@ static uint16_t gap_conn_min_interval(const gap_conn_context *conn) {
     if (coded_limit < rx_time)
         rx_time = coded_limit;
 
-    uint32_t required = 300 + rx_time +
-                        ((conn->phy_state.current.tx == GAP_PHY_CODED ||
-                        conn->phy_state.current.rx == GAP_PHY_CODED) ? 2704 : 328);
+    uint32_t required = 300 + rx_time + ((conn->phy_state.current.tx == GAP_PHY_CODED ||
+                                        conn->phy_state.current.rx == GAP_PHY_CODED) ? 2704 : 328);
     return (uint16_t)((required + 124) / 125);
 }
 
@@ -1815,8 +1821,9 @@ static uint8_t gap_conn_control(
             if (frame[2] == LL_LENGTH_RSP && !conn->procedure_state.length)
                 break;
 
-            conn->remote_data_length = (gap_data_length){ values[2], values[3],
-                                                        values[0], values[1] };
+            conn->remote_data_length = (gap_data_length){
+                values[2], values[0], values[3], values[1]
+            };
 
             // Combine sender and receiver limits for new fragments;
             // already queued fragments retain their original length.
@@ -1824,12 +1831,10 @@ static uint8_t gap_conn_control(
             uint16_t tx_time = (uint16_t)((conn->local_tx_octets + 14) * 8);
             uint16_t rx_time = (uint16_t)((gap_data_capacity + 14) * 8);
 
-            conn->data_length.tx_octets = conn->local_tx_octets < remote.rx_octets ?
-                                        conn->local_tx_octets : remote.rx_octets;
-            conn->data_length.tx_time = tx_time < remote.rx_time ? tx_time : remote.rx_time;
-            conn->data_length.rx_octets = gap_data_capacity < remote.tx_octets ?
-                                        gap_data_capacity : remote.tx_octets;
-            conn->data_length.rx_time = rx_time < remote.tx_time ? rx_time : remote.tx_time;
+            conn->data_length.tx_octets = MIN(conn->local_tx_octets, remote.rx_octets);
+            conn->data_length.tx_time = MIN(tx_time, remote.rx_time);
+            conn->data_length.rx_octets = MIN(gap_data_capacity, remote.tx_octets);
+            conn->data_length.rx_time = MIN(rx_time, remote.tx_time);
 
             if (frame[2] == LL_LENGTH_REQ) {
                 gap_send_data_length(conn, LL_LENGTH_RSP);
@@ -2362,8 +2367,7 @@ int gap_data_length_set(uint16_t octets) {
 
     // Apply reductions now. Keep increases pending until the peer receives
     // the new limit and the length exchange updates the effective limits.
-    uint16_t tx_octets = octets < conn->remote_data_length.rx_octets ?
-                         octets : conn->remote_data_length.rx_octets;
+    uint16_t tx_octets = MIN(octets, conn->remote_data_length.rx_octets);
     uint16_t tx_time = (uint16_t)((octets + 14u) * 8u);
     if (tx_time > conn->remote_data_length.rx_time)
         tx_time = conn->remote_data_length.rx_time;
