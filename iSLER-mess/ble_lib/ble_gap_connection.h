@@ -104,6 +104,7 @@ static struct {
     uint8_t slot, slot_valid, poll_cursor;
 } gap_poll;
 
+#if GAP_LEGACY_ADV_SUPPORT
 static struct {
     GAP_RADIO_BUFFER_ATTR uint8_t adv_frame[8 + GAP_ADV_DATA_MAX];
     GAP_RADIO_BUFFER_ATTR uint8_t scan_frame[8 + GAP_ADV_DATA_MAX];
@@ -112,6 +113,7 @@ static struct {
     uint8_t conn_req_frame[36];
     uint64_t conn_req_ticks;
 } adv_evt;
+#endif
 
 // Application facing
 // Read the currently applied connection timing and subrate schedule.
@@ -589,9 +591,13 @@ static void gap_privacy_poll(uint32_t now) {
     if (gap_initiator.active) return;
 #endif
     if (!gap_privacy_timeout_15s || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_scan.active_pending || adv_evt.rx_event ||
-        (int32_t)(now - gap_privacy_next_rotation_ms) < 0
+        gap_scan.active_pending
     ) return;
+
+#if GAP_LEGACY_ADV_SUPPORT
+    if (adv_evt.rx_event) return;
+#endif
+    if ((int32_t)(now - gap_privacy_next_rotation_ms) < 0) return;
 
     if (gap_rx_armed) {
         GAP_HW_STOP();
@@ -620,6 +626,7 @@ static void gap_privacy_poll(uint32_t now) {
         ) memcpy(gap_identities[i].local_address, address, 6);
     }
 
+#if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) {
         gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address,
                                  &gap_adv.local.type);
@@ -629,6 +636,7 @@ static void gap_privacy_poll(uint32_t now) {
                                           gap_adv.target.address)
         ) memcpy(gap_adv.target.address, address, 6);
     }
+#endif
 
     gap_privacy_timeout_15s = next_timeout_15s;
     gap_privacy_next_rotation_ms = now + (uint32_t)next_timeout_15s * 15000;

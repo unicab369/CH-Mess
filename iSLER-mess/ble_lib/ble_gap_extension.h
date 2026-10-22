@@ -502,8 +502,11 @@ int gap_ext_adv_start_phy(
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
-    if ((gap_conn_slot_mask != 0) ||
-        gap_adv.enabled || set->enabled ||
+#if GAP_LEGACY_ADV_SUPPORT
+    if (gap_adv.enabled) return 0;
+#endif
+
+    if (gap_conn_slot_mask != 0 || set->enabled ||
         set->periodic.enabled || sid > 15 ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS ||

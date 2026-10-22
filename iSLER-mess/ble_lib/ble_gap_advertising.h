@@ -472,6 +472,7 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
     return 1;
 }
 
+#if GAP_LEGACY_ADV_SUPPORT
 static inline void gap_adv_enable(
     uint8_t pdu_type, uint16_t interval_ms, int slot
 ) {
@@ -584,14 +585,15 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
 void gap_adv_stop(void) {
     gap_adv.enabled = 0;
 }
+#endif // GAP_LEGACY_ADV_SUPPORT
 
 // Application facing
 // Restrict Peripheral scan and connection requests to peers in the Filter
 // Accept List. This is advertising policy, separate from privacy resolution.
 int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
     if (scan_accept > 1 || connection_accept > 1) return 0;
-    gap_adv.scan_accept = scan_accept;
-    gap_adv.connection_accept = connection_accept;
+    gap_adv_filter.scan_accept = scan_accept;
+    gap_adv_filter.connection_accept = connection_accept;
     return 1;
 }
 
@@ -665,9 +667,12 @@ void gap_scan_stop(void) {
 // Direct is called by gap_conn_start after it stores the peer address.
 #if GAP_CENTRAL_SUPPORT
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
-    if (gap_conn_free_slot() < 0 ||
-        (gap_scanner.scanning || gap_adv.enabled || gap_initiator.active) ||
-        GAP_EXT_ADVERTISING_ENABLED ||
+#if GAP_LEGACY_ADV_SUPPORT
+    if (gap_adv.enabled) return 0;
+#endif
+
+    if (gap_conn_free_slot() < 0 || gap_scanner.scanning ||
+        gap_initiator.active || GAP_EXT_ADVERTISING_ENABLED ||
         ((mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) &&
          !gap_accept_list_mask)
     ) return 0;

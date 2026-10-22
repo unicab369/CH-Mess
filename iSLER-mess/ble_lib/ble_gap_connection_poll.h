@@ -607,7 +607,7 @@ void gap_hw_received(void) {
 #if GAP_PRIVACY_SUPPORT
             (gap_privacy.connection_filter && scanner_slot < 0) ||
 #endif
-            (gap_adv.scan_accept &&
+            (gap_adv_filter.scan_accept &&
              !gap_accept_list_match(frame + 2, scanner_type, scanner_slot))
         ) {
             // A request addressed to this advertiser but excluded by its
@@ -791,12 +791,15 @@ void gap_hw_received(void) {
                                frame[1] >= 6 && frame[1] <= 37;
     if ((pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
         scan_frame_valid &&
+#if GAP_LEGACY_ADV_SUPPORT
         !adv_evt.rx_event &&
+#endif
 #if GAP_CENTRAL_SUPPORT
         (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
 #endif
         !gap_scan.active_pending
     ) {
+
 #if GAP_PRIVACY_SUPPORT
         if (gap_privacy.scan_filter && peer_slot < 0) {
             gap_conn_slot = previous_slot;
@@ -839,6 +842,7 @@ void gap_hw_received(void) {
         return;
     }
 
+#if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.rx_event &&
 #if GAP_PRIVACY_SUPPORT
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
@@ -852,7 +856,7 @@ void gap_hw_received(void) {
 
         if (adv_pdu_type != ADV_DIRECT_IND && frame[1] == 12 &&
             (frame[0] & 0x0f) == SCAN_REQ &&
-            (!gap_adv.scan_accept || peer_in_accept_list)
+            (!gap_adv_filter.scan_accept || peer_in_accept_list)
         ) {
             uint8_t response_len = gap_adv.scan_resp_len;
             adv_evt.scan_frame[0] = SCAN_RSP | (adv_evt.adv_frame[0] & 0x40);
@@ -873,7 +877,7 @@ void gap_hw_received(void) {
         if ((pdu_type == CONNECT_IND) &&
             frame[1] == 34 && !(frame[0] & 0x20) &&
             (adv_pdu_type == ADV_IND || adv_pdu_type == ADV_DIRECT_IND) &&
-            (!gap_adv.connection_accept || peer_in_accept_list) &&
+            (!gap_adv_filter.connection_accept || peer_in_accept_list) &&
             (adv_pdu_type != ADV_DIRECT_IND ||
              (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
              (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
@@ -887,6 +891,7 @@ void gap_hw_received(void) {
         }
 #endif
     }
+#endif // GAP_LEGACY_ADV_SUPPORT
 
     if (frame[1] <= 37) {
         memcpy(gap_rx.frame, frame, (size_t)frame[1] + 2);
@@ -920,9 +925,11 @@ void gap_hw_init(void) {
     gap_rx.ready = 0;
     gap_rx.rssi = 127;
     gap_adv_scan.ready = 0;
+#if GAP_LEGACY_ADV_SUPPORT
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
+#endif
     GAP_HW_PACKET_CLEAR();
 }
 
@@ -1619,6 +1626,7 @@ int gap_send_due(
     if (extended_result) return extended_result;
 
 #endif
+#if GAP_LEGACY_ADV_SUPPORT
     int send_gap = gap_adv.enabled != 0 &&
                     (int32_t)(now - gap_adv.next_event_ms) >= 0;
 
@@ -1770,6 +1778,14 @@ int gap_send_due(
     if (sent_at) *sent_at = completed_at;
     if (jitter) *jitter = event_jitter;
     return 1;
+#else
+    (void)fallback_ad;
+    (void)fallback_len;
+    (void)now;
+    (void)sent_at;
+    (void)jitter;
+    return 0;
+#endif // GAP_LEGACY_ADV_SUPPORT
 }
 
 #endif // GAP_CONNECTION_POLL_H

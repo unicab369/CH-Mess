@@ -19,6 +19,9 @@
 #ifndef GAP_EXT_ADV_SUPPORT
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
+#ifndef GAP_LEGACY_ADV_SUPPORT
+#define GAP_LEGACY_ADV_SUPPORT 1
+#endif
 #ifndef GAP_CONNECTION_COUNT
 #define GAP_CONNECTION_COUNT 2
 #endif
@@ -391,7 +394,8 @@ typedef struct {
     uint32_t started_ms;     // Start time used to enforce procedure timeouts.
 } gap_security_context;
 
-// Advertising, scanning, and periodic-sync state.
+// Legacy advertiser state.
+#if GAP_LEGACY_ADV_SUPPORT
 static struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
@@ -406,11 +410,16 @@ static struct {
         uint8_t address[6]; // Target device address in Bluetooth byte order.
     } target;
     int8_t peer_slot;          // Accepted peer's connection slot, or a negative value if none.
-    uint8_t scan_accept;       // A scan request was accepted and needs a scan response.
-    uint8_t connection_accept; // A connection request was accepted and needs link setup.
     uint16_t interval_ms;      // Time between advertising events, in milliseconds.
     uint32_t next_event_ms;    // Scheduled time of the next advertising event.
 } gap_adv;
+#endif
+
+// Filter policy is shared by legacy and extended advertising.
+static struct {
+    uint8_t scan_accept;
+    uint8_t connection_accept;
+} gap_adv_filter;
 
 static struct {
     uint8_t scanning;          // Scanner is enabled and scheduling scan windows.
@@ -847,20 +856,25 @@ typedef struct {
 } gap_identity;
 static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 
-typedef struct {
-    uint8_t data[GAP_ADV_DATA_MAX];
-    uint8_t scan_response[GAP_ADV_DATA_MAX];
-} gap_legacy_adv_data;
-
 static gap_address gap_own_address;
 
 // Legacy advertising payloads and the Central CONNECT_IND use this storage at
 // different times; the Central-only request member is absent in peripheral-only builds.
 static union {
-    gap_legacy_adv_data advertising;
+#if GAP_LEGACY_ADV_SUPPORT
+    struct {
+        uint8_t data[GAP_ADV_DATA_MAX];
+        uint8_t scan_response[GAP_ADV_DATA_MAX];
+    } advertising;
+#endif
+
 #if GAP_CENTRAL_SUPPORT
     uint8_t connect_request[36];
 #endif
+#if !GAP_CENTRAL_SUPPORT && !GAP_LEGACY_ADV_SUPPORT
+    uint8_t unused;
+#endif
+
 } gap_adv_tx_storage GAP_RADIO_BUFFER_ATTR;
 
 
@@ -901,14 +915,15 @@ static union {
 
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
-    return gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
-        gap_scanner.scanning ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-#if GAP_CENTRAL_SUPPORT
-        gap_initiator.active;
-#else
-        0;
+#if GAP_LEGACY_ADV_SUPPORT
+    if (gap_adv.enabled) return 1;
 #endif
+    if (GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) return 1;
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return 1;
+#endif
+    return 0;
 }
 
 // Connection selection and application-facing handles.
@@ -1669,7 +1684,9 @@ static int gap_conn_accept(
     gap_ext_adv_connection_accept();
 #endif
 
+#if GAP_LEGACY_ADV_SUPPORT
     gap_adv.enabled = 0;
+#endif
     gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(gap_conn_slot);
     return 1;
 }
