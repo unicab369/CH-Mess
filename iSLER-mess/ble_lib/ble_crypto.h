@@ -263,7 +263,7 @@ int ccm_auth_decrypt(
 }
 
 // AES-128-CMAC per NIST SP 800-38B.
-static void aes_cmac(
+static void __attribute__((unused)) aes_cmac(
     const uint8_t key[16], const uint8_t *message, size_t len,
     uint8_t mac[16]
 ) {

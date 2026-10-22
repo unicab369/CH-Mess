@@ -38,12 +38,12 @@ from `gap_adv_tx_storage`; Central builds retain its 36-byte connection request.
 
 | Structure | Purpose | Size | Allocation / build configuration |
 | --- | --- | ---: | --- |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 576 bytes each (1,152 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=0` |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 712 bytes each (1,424 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=1` |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 624 bytes each (1,248 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=0` |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 760 bytes each (1,520 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=1` |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,704 bytes each (3,408 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=0` |
-| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,840 bytes each (3,680 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 576 bytes each (1,152 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=0`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 712 bytes each (1,424 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=1`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 624 bytes each (1,248 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=0`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 760 bytes each (1,520 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=35`, `GAP_SMP_SUPPORT=1`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,704 bytes each (3,408 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=0`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
+| `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,840 bytes each (3,680 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=1`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
 | `gap_scanner` | Scan timing, discovery mode, and duplicate-filter settings. | 10 bytes | One global scanner state |
 | `gap_adv` | Legacy advertising addresses, timing, and status. | 28 bytes | One global state; payload storage is in `gap_adv_tx_storage` |
 | `gap_initiator` | Central initiation mode, peer, and timeout state. | 20 bytes with Central support; omitted without | One global state; compiled only when `GAP_CENTRAL_SUPPORT=1` |
@@ -68,7 +68,8 @@ omitted; the two legacy advertising payload buffers remain.
 ### Additional legacy GAP allocations
 
 These additional sizes were measured for the CH582 ABI with
-`GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, and `GAP_SMP_SUPPORT=0`.
+`GAP_EXT_ADV_SUPPORT=0`, `GAP_CONN_DATA_MAX=27`, `GAP_SMP_SUPPORT=0`, and
+`GAP_LINK_ENCRYPTION_SUPPORT=1`.
 Array totals use the default counts shown in the configuration column.
 
 | Allocation | Purpose | Size | Configuration |

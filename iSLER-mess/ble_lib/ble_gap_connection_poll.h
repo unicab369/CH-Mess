@@ -7,9 +7,11 @@
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_LINK_ENCRYPTION_SUPPORT
     gap_send_security(conn);
+#endif
 
-    if (conn->security.phase)
+    if (gap_conn_security_busy(conn))
         return;
 
 #if GAP_CENTRAL_SUPPORT
@@ -212,7 +214,9 @@ static void gap_conn_send_queued(void) {
 
 // Handle the radio callback under its connection context, then restore the
 // application's previously selected handle.
-void gap_hw_received(void) {
+// Keep the receive handler out of the RAM-resident radio ISR. With LTO and
+// encryption disabled, inlining this handler can pull several KB into highcode.
+void __attribute__((noinline)) gap_hw_received(void) {
     const uint8_t *frame = GAP_HW_RX_FRAME();
     uint64_t received_ticks = GAP_HW_TICKS();
     uint8_t pdu_type = frame[0] & 0x0f;
@@ -223,7 +227,6 @@ void gap_hw_received(void) {
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    gap_security_context *gap_security = &conn->security;
 
 #if GAP_EXT_ADV_SUPPORT
     if (pdu_type == ADV_EXT_IND &&
@@ -265,25 +268,26 @@ void gap_hw_received(void) {
         conn->link_state.rx_armed
     ) {
         uint8_t authenticated = 0;
+#if GAP_LINK_ENCRYPTION_SUPPORT
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
 
         if (frame[1] &&
-            ((gap_security->rx_enabled &&
-              !(duplicate && gap_security->phase == GAP_ENC_WAIT_FINAL &&
+            ((conn->security.rx_enabled &&
+              !(duplicate && conn->security.phase == GAP_ENC_WAIT_FINAL &&
                 frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == LL_START_ENC_REQ)) ||
-             (duplicate && gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE &&
+             (duplicate && conn->security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
                 frame[1] == 5 && (frame[0] & 3) == 3)
             )
         ) {
-            uint64_t cnt = gap_security->rx_counter;
+            uint64_t cnt = conn->security.rx_counter;
             if (duplicate && cnt) cnt--;
 
             if (frame[1] <= 4 || frame[1] > gap_data_capacity + 4 ||
-                cnt >= (UINT64_C(1) << 39) || (duplicate && !gap_security->rx_counter)
+                cnt >= (UINT64_C(1) << 39) || (duplicate && !conn->security.rx_counter)
             ) {
-                gap_security->status = 0x3d;
+                conn->security.status = 0x3d;
                 gap_conn_end();
                 gap_conn_slot = previous_slot;
                 return;
@@ -293,12 +297,12 @@ void gap_hw_received(void) {
             uint8_t *plain = gap_rx_plain;
             memcpy(plain, frame, frame[1] - 4 + 2);
             plain[1] -= 4;
-            gap_security_nonce(gap_security, nonce, cnt, !conn->is_central);
+            gap_security_nonce(&conn->security, nonce, cnt, !conn->is_central);
 
-            if (!GAP_CCM_DECRYPT(gap_security->session_key, nonce, frame[0] & 0xe3,
+            if (!GAP_CCM_DECRYPT(conn->security.session_key, nonce, frame[0] & 0xe3,
                     plain + 2, plain[1], frame + 2 + plain[1])
             ) {
-                gap_security->status = 0x3d;
+                conn->security.status = 0x3d;
                 gap_conn_end();
                 gap_conn_slot = previous_slot;
                 return;
@@ -307,6 +311,7 @@ void gap_hw_received(void) {
             frame = plain;
             authenticated = 1;
         }
+#endif
 
         // Extended LL control PDUs (including PAST) can exceed 27 bytes after
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
@@ -375,9 +380,11 @@ void gap_hw_received(void) {
 
             conn->link_layer.tx_sn ^= 1;
             conn->link_layer.tx_pending = 0;
-            gap_security->tx_sealed = 0;
-            gap_security->tx_plain_len = 0;
-            gap_security->tx_opcode = 0;
+#if GAP_LINK_ENCRYPTION_SUPPORT
+            conn->security.tx_sealed = 0;
+            conn->security.tx_plain_len = 0;
+            conn->security.tx_opcode = 0;
+#endif
             // The in-place ciphertext is no longer a queued PDU after ACK.
             conn->tx_frame[1] = 0;
 
@@ -403,21 +410,22 @@ void gap_hw_received(void) {
               ((llid == 1 || llid == 2) && frame[1] && conn->queue_state.rx_ready));
 
         if (new_packet) {
-            if (frame[1] && gap_security->phase &&
-                gap_security->phase != GAP_ENC_QUEUED &&
-                gap_security->phase != GAP_ENC_PAUSE_QUEUED
+#if GAP_LINK_ENCRYPTION_SUPPORT
+            if (frame[1] && conn->security.phase &&
+                conn->security.phase != GAP_ENC_QUEUED &&
+                conn->security.phase != GAP_ENC_PAUSE_QUEUED
             ) {
                 uint8_t opcode = (llid == 3) ? frame[2] : 0xff;
                 uint8_t allowed = (opcode == LL_TERMINATE_IND);
 
-                switch (gap_security->phase) {
+                switch (conn->security.phase) {
                     case GAP_ENC_WAIT_RSP:
                         allowed |= (opcode == LL_ENC_RSP); // Fall through for rejection.
                     case GAP_ENC_WAIT_START:
                         allowed |= (
                             opcode == LL_UNKNOWN_RSP || opcode == LL_REJECT_IND ||
                             opcode == LL_REJECT_EXT_IND ||
-                            (gap_security->phase == GAP_ENC_WAIT_START &&
+                            (conn->security.phase == GAP_ENC_WAIT_START &&
                              opcode == LL_START_ENC_REQ)
                         );
                         break;
@@ -443,14 +451,15 @@ void gap_hw_received(void) {
                 }
 
                 if (!allowed) {
-                    gap_security->status = 0x3d;
+                    conn->security.status = 0x3d;
                     gap_conn_end();
                     gap_conn_slot = previous_slot;
                     return;
                 }
             }
 
-            if (authenticated) gap_security->rx_counter++;
+            if (authenticated) conn->security.rx_counter++;
+#endif
 
             if ((llid == 1 || llid == 2) && frame[1]) {
                 conn->rx_packet.llid = llid;
@@ -491,7 +500,7 @@ void gap_hw_received(void) {
 
 #if GAP_EXT_ADV_SUPPORT
                 if (gap_conn_tx_payload_len(conn) == 0 &&
-                    !gap_security->phase && conn->sync_transfer_queued
+                    !gap_conn_security_busy(conn) && conn->sync_transfer_queued
                 ) {
                     uint8_t slot = conn->sync_transfer_slot;
 
@@ -503,7 +512,7 @@ void gap_hw_received(void) {
                 }
 #endif
             }
-            if (!gap_security->phase) {
+            if (!gap_conn_security_busy(conn)) {
 #if GAP_PERIPHERAL_SUPPORT
                 if (!conn->is_central &&
                     conn->channel_report.enabled && conn->peripheral.status_queued
@@ -1038,14 +1047,14 @@ static void gap_conn_poll(void) {
     if (conn->load_pending) {
         conn->load_pending = 0;
 
+#if GAP_IDENTITY_COUNT > 0
         if (!conn->is_central) {
             int peer_slot = gap_identity_find(conn->initiator.address,
                                               conn->initiator.type);
-#if GAP_IDENTITY_COUNT > 0
             if (peer_slot >= 0)
                 conn->peer = gap_identities[peer_slot].peer;
-#endif
         }
+#endif
 
 #if GAP_SMP_SUPPORT > 0
         if (smp_bond_load())
@@ -1060,17 +1069,18 @@ static void gap_conn_poll(void) {
     gap_smp_poll_context(smp, conn);
 #endif
     uint32_t now_ms = GET_MILLIS();
-    gap_security_context *gap_security = &conn->security;
+#if GAP_LINK_ENCRYPTION_SUPPORT
 
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
     // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.
-    if ((gap_security->phase & GAP_ENC_TIMEOUT_MASK) &&
-        (uint32_t)(now_ms - gap_security->started_ms) >= 40000
+    if ((conn->security.phase & GAP_ENC_TIMEOUT_MASK) &&
+        (uint32_t)(now_ms - conn->security.started_ms) >= 40000
     ) {
-        gap_security->status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
+        conn->security.status = GAP_STATUS_LL_RESPONSE_TIMEOUT;
         gap_conn_end();
         return;
     }
+#endif
 
     // phy.status
     if (conn->procedure_state.phy_request &&

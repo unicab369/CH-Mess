@@ -34,6 +34,16 @@
 #define GAP_SMP_SUPPORT 0
 #endif
 
+// Set to 0 to omit Link Layer encryption state and procedures. SMP requires it.
+// With SMP disabled, applications can still pass a stored LTK to gap_encrypt()
+// and answer Peripheral key lookups through gap_key_request()/gap_key_reply().
+#ifndef GAP_LINK_ENCRYPTION_SUPPORT
+#define GAP_LINK_ENCRYPTION_SUPPORT 1
+#endif
+#if GAP_SMP_SUPPORT > 0 && !GAP_LINK_ENCRYPTION_SUPPORT
+#error "GAP_SMP_SUPPORT requires GAP_LINK_ENCRYPTION_SUPPORT"
+#endif
+
 // Set either role to 0 to reject procedures that establish that local role.
 #ifndef GAP_CENTRAL_SUPPORT
 #define GAP_CENTRAL_SUPPORT 1
@@ -216,23 +226,6 @@ int GAP_CCM_DECRYPT(
     uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
 
 // GAP protocol and procedure enum values.
-// Encryption procedure state; timed phases occupy the low nine bits.
-enum {
-    GAP_ENC_IDLE = 0,
-    GAP_ENC_WAIT_RSP = 1u << 0,
-    GAP_ENC_WAIT_START = 1u << 1,
-    GAP_ENC_WAIT_FINAL = 1u << 2,
-    GAP_ENC_KEY_REQUEST = 1u << 3,
-    GAP_ENC_START_QUEUED = 1u << 4,
-    GAP_ENC_PERIPHERAL_START = 1u << 5,
-    GAP_ENC_WAIT_PAUSE = 1u << 6,
-    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
-    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
-    GAP_ENC_QUEUED = 1u << 9,
-    GAP_ENC_PAUSE_QUEUED = 1u << 10,
-    GAP_ENC_RESTART_QUEUED = 1u << 11,
-    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
-};
 enum {
     ADV_IND = 0x00,
     ADV_DIRECT_IND = 0x01,
@@ -378,6 +371,25 @@ typedef struct {
     uint16_t generation; // Slot generation; rejects handles left over from a prior link.
 } gap_conn_handle;
 
+#if GAP_LINK_ENCRYPTION_SUPPORT
+// Encryption procedure state; timed phases occupy the low nine bits.
+enum {
+    GAP_ENC_IDLE = 0,
+    GAP_ENC_WAIT_RSP = 1u << 0,
+    GAP_ENC_WAIT_START = 1u << 1,
+    GAP_ENC_WAIT_FINAL = 1u << 2,
+    GAP_ENC_KEY_REQUEST = 1u << 3,
+    GAP_ENC_START_QUEUED = 1u << 4,
+    GAP_ENC_PERIPHERAL_START = 1u << 5,
+    GAP_ENC_WAIT_PAUSE = 1u << 6,
+    GAP_ENC_PERIPHERAL_PAUSE = 1u << 7,
+    GAP_ENC_PERIPHERAL_RESTART = 1u << 8,
+    GAP_ENC_QUEUED = 1u << 9,
+    GAP_ENC_PAUSE_QUEUED = 1u << 10,
+    GAP_ENC_RESTART_QUEUED = 1u << 11,
+    GAP_ENC_TIMEOUT_MASK = (1u << 9) - 1
+};
+
 typedef struct {
     volatile uint16_t phase; // Current SMP/encryption state-machine phase, shared with radio callbacks.
     uint8_t tx_enabled;      // Link Layer encryption is enabled for outgoing packets.
@@ -399,6 +411,7 @@ typedef struct {
     uint64_t rx_counter;     // Expected incoming encryption packet counter.
     uint32_t started_ms;     // Start time used to enforce procedure timeouts.
 } gap_security_context;
+#endif
 
 // Legacy advertiser state.
 #if GAP_LEGACY_ADV_SUPPORT
@@ -478,8 +491,10 @@ typedef struct {
     gap_address peer;
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
+#if GAP_LINK_ENCRYPTION_SUPPORT
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
+#endif
     // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
     uint8_t load_pending;
 
@@ -832,15 +847,16 @@ static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 // Only one radio receive callback runs at a time. Decrypted frames are consumed
 // there or copied into the receiving link's rx_packet before the callback ends.
+#if GAP_LINK_ENCRYPTION_SUPPORT
 static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
+// Per-slot counters invalidate security work after a link ends or is replaced.
+static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
+#endif
 
 // Packed 2-bit classification for each of 37 data channels (74 bits total);
 // per channel: 0=unknown, 1=good, 2=reserved, 3=bad. Channel 0 uses the
 // lowest 2 bits; the upper 6 bits of the final byte are unused.
 static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
-
-// Per-slot counters invalidate security work after a link ends or is replaced.
-static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
@@ -1108,6 +1124,7 @@ typedef struct {
 static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 #endif
 
+#if GAP_PRIVACY_SUPPORT || GAP_IDENTITY_COUNT > 0
 static void gap_address_hash(
     const uint8_t irk[16], const uint8_t prand[3], uint8_t hash[3]
 ) {
@@ -1116,6 +1133,7 @@ static void gap_address_hash(
     AES_ENCRYPT_BLOCK(irk, input, output);
     gap_bytes_reverse(hash, output + 13, 3);
 }
+#endif
 
 #if GAP_PRIVACY_SUPPORT
 static gap_address gap_identity_address;
@@ -1626,7 +1644,6 @@ static int gap_conn_accept(
     const uint8_t frame[36], uint64_t received_ticks,
     uint64_t unit_ticks, uint64_t delay_ticks
 ) {
-    gap_security_context *gap_security;
     gap_conn_context *conn;
 
     if (!gap_conn_request_valid(frame))
@@ -1645,10 +1662,11 @@ static int gap_conn_accept(
 
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
-    gap_security = &gap_conn_ctx[gap_conn_slot].security;
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_wipe(conn, sizeof(*conn));
-    gap_wipe(gap_security, sizeof(*gap_security));
+#if GAP_LINK_ENCRYPTION_SUPPORT
+    gap_security_generations[gap_conn_slot]++;
+#endif
     gap_data_capacity = data_capacity;
     memcpy(conn->link_layer.channel_map, frame + 30, 5);
 
@@ -1707,8 +1725,6 @@ static int gap_conn_accept(
     conn->phy_state.current.rx = GAP_PHY_1M;
     conn->phy_state.preferred.tx = GAP_HW_PHY_MASK() & 7;
     conn->phy_state.preferred.rx = conn->phy_state.preferred.tx;
-    gap_security_generations[gap_conn_slot]++;
-
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
