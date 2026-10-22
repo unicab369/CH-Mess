@@ -395,8 +395,8 @@ typedef struct {
 static struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
-    uint8_t data_len;      // Number of valid bytes in gap_initiator.adv.data.
-    uint8_t scan_resp_len; // Number of valid bytes in gap_initiator.adv.scan_response.
+    uint8_t data_len;      // Number of valid bytes in gap_adv_init_buffer.advertising.data.
+    uint8_t scan_resp_len; // Number of valid bytes in gap_adv_init_buffer.advertising.scan_response.
     struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
@@ -848,41 +848,31 @@ typedef struct {
 } gap_identity;
 static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 
-#if GAP_PRIVACY_SUPPORT
-static gap_address gap_identity_address;
-
 typedef struct {
-    uint8_t resolvable, irk[16], scan_filter, connection_filter;
-} gap_privacy_state;
-
-static gap_privacy_state gap_privacy;
-
-// gap_privacy_timeout_15s == 0 means private-address rotation is disabled.
-// Each nonzero unit is 15 seconds; 240 units is one hour.
-static uint8_t gap_privacy_timeout_15s, gap_privacy_timeout_min_15s;
-static uint8_t gap_privacy_timeout_max_15s;
-static uint32_t gap_privacy_next_rotation_ms;
-#endif
+    uint8_t data[GAP_ADV_DATA_MAX];
+    uint8_t scan_response[GAP_ADV_DATA_MAX];
+} gap_legacy_adv_data;
 
 static gap_address gap_own_address;
 
+// Legacy advertising payloads and the Central CONNECT_IND use this storage at
+// different times; the Central-only request member is absent in peripheral-only builds.
+static union {
+    gap_legacy_adv_data advertising;
+#if GAP_CENTRAL_SUPPORT
+    uint8_t connect_request[36];
+    uint32_t align_connect_request;
+#endif
+} gap_adv_init_buffer;
+
+#if GAP_CENTRAL_SUPPORT
 static struct {
     uint8_t active;
     gap_conn_mode mode;
     gap_address peer;
-    // Legacy advertising and Central initiation are mutually exclusive.
-    // PAwR requests use this space only while extended advertising is active,
-    // which also excludes legacy advertising. Keep request aligned for radio TX.
-    union {
-        uint8_t request[36];
-        struct {
-            uint8_t data[GAP_ADV_DATA_MAX];
-            uint8_t scan_response[GAP_ADV_DATA_MAX];
-        } adv;
-        uint32_t align_request;
-    };
     uint32_t deadline_ms;
 } gap_initiator;
+#endif
 
 // Central initiation configuration.
 #if GAP_CENTRAL_SUPPORT
@@ -909,14 +899,18 @@ static gap_timing_cfg gap_central_timing = {
     .scan_window_ms = 12,       // 3 ms..scan_interval_ms (up to 40.959 s).
     .attempt_timeout_s = 31     // 1..600 s; 31 s covers the 30.72 s fast-scan period.
 };
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
     return gap_adv.enabled || GAP_EXT_ADVERTISING_ENABLED ||
         gap_scanner.scanning ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+#if GAP_CENTRAL_SUPPORT
         gap_initiator.active;
+#else
+        0;
+#endif
 }
 
 // Connection selection and application-facing handles.
@@ -1409,40 +1403,21 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
     return 1;
 }
 
-// Select the peer's cached local RPA, our identity for its zero local IRK,
-// or the global address when that peer has no local key override.
-static void gap_local_addr_select(
-    int slot, uint8_t address[6], uint8_t *type
-) {
 #if GAP_PRIVACY_SUPPORT
-    if (gap_privacy_timeout_15s &&
-        gap_privacy.resolvable && slot >= 0 &&
-        gap_identities[slot].local_key_set
-    ) {
-        if (gap_identities[slot].has_local_irk) {
-            *type = 1;
-            memcpy(address, gap_identities[slot].local_address, 6);
-        }
-        else {
-            *type = gap_identity_address.type;
-            if (*type)
-                memcpy(address, gap_identity_address.address, 6);
-            else GAP_HW_PUBLIC_ADDRESS(address);
-        }
-        return;
-    }
-#else
-    (void)slot;
-#endif
+static gap_address gap_identity_address;
 
-    *type = gap_own_address.type;
+typedef struct {
+    uint8_t resolvable, irk[16], scan_filter, connection_filter;
+} gap_privacy_state;
 
-    if (*type)
-        memcpy(address, gap_own_address.address, 6);
-    else GAP_HW_PUBLIC_ADDRESS(address);
-}
+static gap_privacy_state gap_privacy;
 
-#if GAP_PRIVACY_SUPPORT
+// gap_privacy_timeout_15s == 0 means private-address rotation is disabled.
+// Each nonzero unit is 15 seconds; 240 units is one hour.
+static uint8_t gap_privacy_timeout_15s, gap_privacy_timeout_min_15s;
+static uint8_t gap_privacy_timeout_max_15s;
+static uint32_t gap_privacy_next_rotation_ms;
+
 // Pick an unbiased timeout from an inclusive range; equal bounds use no RNG.
 static int gap_privacy_timeout_pick(
     uint8_t min_15s, uint8_t max_15s, uint8_t *timeout_15s
@@ -1524,7 +1499,40 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     gap_privacy.connection_filter = connection;
     return 1;
 }
+#endif // GAP_PRIVACY_SUPPORT
+
+// Select the peer's cached local RPA, our identity for its zero local IRK,
+// or the global address when that peer has no local key override.
+static void gap_local_addr_select(
+    int slot, uint8_t address[6], uint8_t *type
+) {
+#if GAP_PRIVACY_SUPPORT
+    if (gap_privacy_timeout_15s &&
+        gap_privacy.resolvable && slot >= 0 &&
+        gap_identities[slot].local_key_set
+    ) {
+        if (gap_identities[slot].has_local_irk) {
+            *type = 1;
+            memcpy(address, gap_identities[slot].local_address, 6);
+        }
+        else {
+            *type = gap_identity_address.type;
+            if (*type)
+                memcpy(address, gap_identity_address.address, 6);
+            else GAP_HW_PUBLIC_ADDRESS(address);
+        }
+        return;
+    }
+#else
+    (void)slot;
 #endif
+
+    *type = gap_own_address.type;
+
+    if (*type)
+        memcpy(address, gap_own_address.address, 6);
+    else GAP_HW_PUBLIC_ADDRESS(address);
+}
 
 // Local address API.
 // Select a static random address for GAP advertising and active scanning.

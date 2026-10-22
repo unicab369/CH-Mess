@@ -583,8 +583,10 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
 // established connections, and an outstanding active-scan request.
 #if GAP_PRIVACY_SUPPORT
 static void gap_privacy_poll(uint32_t now) {
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return;
+#endif
     if (!gap_privacy_timeout_15s || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_initiator.active ||
         gap_scan.active_pending || adv_evt.rx_event ||
         (int32_t)(now - gap_privacy_next_rotation_ms) < 0
     ) return;
@@ -2059,6 +2061,7 @@ int gap_subrate_set(
     return 1;
 }
 
+#if GAP_PERIPHERAL_SUPPORT
 // Application facing
 // Request subrating as the Peripheral. The Central selects the final values.
 int gap_subrate_request(
@@ -2066,14 +2069,6 @@ int gap_subrate_request(
     uint16_t max_latency, uint16_t continuation,
     uint16_t timeout_10ms
 ) {
-#if !GAP_PERIPHERAL_SUPPORT
-    (void)factor_min;
-    (void)factor_max;
-    (void)max_latency;
-    (void)continuation;
-    (void)timeout_10ms;
-    return 0;
-#else
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) || conn->is_central ||
@@ -2100,33 +2095,6 @@ int gap_subrate_request(
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_REQUEST;
     return 1;
-#endif
-}
-
-// Application facing
-// Queue a Central-selected interval (125-us units) and subrate tuple. Both
-// devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
-int gap_conn_rate_set(
-    uint16_t interval, uint16_t factor,
-    uint16_t latency, uint16_t continuation, uint16_t timeout
-) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
-        !conn->is_central ||
-        interval < gap_conn_min_interval(conn) ||
-        !gap_rate_parameters_valid(interval, factor, latency, continuation,
-                                   timeout)
-    ) return 0;
-
-    conn->next_schedule.interval_125us = interval;
-    conn->next_schedule.factor = factor;
-    conn->next_schedule.latency = latency;
-    conn->next_schedule.continuation = continuation;
-    conn->next_schedule.timeout = timeout;
-    conn->c_rate.queued_flags |= GAP_RATE_QUEUED_SET;
-    conn->connection_status = GAP_CONNECTION_PENDING;
-    return 1;
 }
 
 // Application facing
@@ -2140,18 +2108,6 @@ int gap_conn_rate_request(
     uint16_t max_latency, uint16_t continuation, uint16_t timeout_10ms,
     uint16_t preferred_periodicity_125us, const uint16_t offsets[4]
 ) {
-#if !GAP_PERIPHERAL_SUPPORT
-    (void)intv_min_125us;
-    (void)intv_max_125us;
-    (void)factor_min;
-    (void)factor_max;
-    (void)max_latency;
-    (void)continuation;
-    (void)timeout_10ms;
-    (void)preferred_periodicity_125us;
-    (void)offsets;
-    return 0;
-#else
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     if (gap_conn_procedure_busy(conn) ||
         gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
@@ -2195,7 +2151,33 @@ int gap_conn_rate_request(
     conn->c_rate.queued_flags |= GAP_RATE_QUEUED_REQUEST;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
-#endif
+}
+#endif // GAP_PERIPHERAL_SUPPORT
+
+// Application facing
+// Queue a Central-selected interval (125-us units) and subrate tuple. Both
+// devices apply the complete tuple at the LL_CONNECTION_RATE_IND Instant.
+int gap_conn_rate_set(
+    uint16_t interval, uint16_t factor,
+    uint16_t latency, uint16_t continuation, uint16_t timeout
+) {
+    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    if (gap_conn_procedure_busy(conn) ||
+        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
+        !conn->is_central ||
+        interval < gap_conn_min_interval(conn) ||
+        !gap_rate_parameters_valid(interval, factor, latency, continuation,
+                                   timeout)
+    ) return 0;
+
+    conn->next_schedule.interval_125us = interval;
+    conn->next_schedule.factor = factor;
+    conn->next_schedule.latency = latency;
+    conn->next_schedule.continuation = continuation;
+    conn->next_schedule.timeout = timeout;
+    conn->c_rate.queued_flags |= GAP_RATE_QUEUED_SET;
+    conn->connection_status = GAP_CONNECTION_PENDING;
+    return 1;
 }
 
 // Application facing
@@ -2233,15 +2215,10 @@ int gap_channel_map_set(const uint8_t channels[5]) {
 // Application facing
 // Enable or disable Peripheral channel reports. Spacing and delay use 200-ms
 // units, as required by LL_CHANNEL_REPORTING_IND; status is connection_status.
+#if GAP_CENTRAL_SUPPORT
 int gap_channel_reporting_set(
     uint8_t enable, uint8_t min_spacing_200ms, uint8_t max_delay_200ms
 ) {
-#if !GAP_CENTRAL_SUPPORT
-    (void)enable;
-    (void)min_spacing_200ms;
-    (void)max_delay_200ms;
-    return 0;
-#else
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_security_context *gap_security = &conn->security;
 
@@ -2267,8 +2244,22 @@ int gap_channel_reporting_set(
     conn->central.channel_report_queued = 1;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;
-#endif
 }
+
+// Application facing
+// Read the latest peer classification, or all unknown before the first report.
+int gap_peer_class_get(
+    uint8_t classification[GAP_CHANN_CLASS_BYTES]
+) {
+    const gap_conn_context *conn = gap_conn_ctx_current();
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        !conn->is_central || !classification
+    ) return 0;
+
+    memcpy(classification, conn->central.peer_classification, GAP_CHANN_CLASS_BYTES);
+    return 1;
+}
+#endif // GAP_CENTRAL_SUPPORT
 
 // Application facing
 // Supply local channel classifications packed as four 2-bit values per byte,
@@ -2300,25 +2291,6 @@ int gap_channel_class_set(
     }
 
     return 1;
-}
-
-// Application facing
-// Read the latest peer classification, or all unknown before the first report.
-int gap_peer_class_get(
-    uint8_t classification[GAP_CHANN_CLASS_BYTES]
-) {
-#if !GAP_CENTRAL_SUPPORT
-    (void)classification;
-    return 0;
-#else
-    const gap_conn_context *conn = gap_conn_ctx_current();
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        !conn->is_central || !classification
-    ) return 0;
-
-    memcpy(classification, conn->central.peer_classification, GAP_CHANN_CLASS_BYTES);
-    return 1;
-#endif
 }
 
 // Application facing

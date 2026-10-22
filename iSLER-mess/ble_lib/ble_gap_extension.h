@@ -407,15 +407,10 @@ int gap_pawr_slots_set(
 // Application facing
 // Queue one Central connection attempt to a synchronized PAwR device. The
 // request replaces the selected subevent in the next periodic event.
+#if GAP_CENTRAL_SUPPORT
 int gap_pawr_connect(
     uint8_t set_id, uint8_t subevent, const gap_address *peer
 ) {
-#if !GAP_CENTRAL_SUPPORT
-    (void)set_id;
-    (void)subevent;
-    (void)peer;
-    return 0;
-#else
     if (set_id >= GAP_EXT_ADV_SET_COUNT)
         return 0;
 
@@ -442,8 +437,8 @@ int gap_pawr_connect(
     memcpy(set->pawr_connect.peer_address, peer->address, 6);
     set->pawr_connect.pending = 1;
     return 1;
-#endif
 }
+#endif // GAP_CENTRAL_SUPPORT
 
 // Application facing
 int gap_periodic_adv_update(
@@ -504,7 +499,10 @@ int gap_ext_adv_start_phy(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
 
-    if ((gap_conn_slot_mask != 0) || gap_initiator.active ||
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return 0;
+#endif
+    if ((gap_conn_slot_mask != 0) ||
         gap_adv.enabled || set->enabled ||
         set->periodic.enabled || sid > 15 ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
@@ -877,9 +875,11 @@ static void gap_sync_event_post(uint8_t slot, uint8_t type) {
 // Request synchronization to one advertiser and SID. Scanning is started
 // automatically when needed; the returned slot identifies later events.
 int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return -1;
+#endif
     if (!peer || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 ||
-        gap_initiator.active ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
@@ -1019,8 +1019,11 @@ int gap_sync_pawr_repeat(uint8_t slot, uint8_t enabled) {
 // Application facing
 // Allow a synchronized PAwR device to accept a connection from its advertiser.
 int gap_sync_pawr_accept(uint8_t slot, uint8_t enabled) {
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return 0;
+#endif
     if (enabled > 1 || slot >= GAP_PERIODIC_SYNC_COUNT ||
-        !gap_syncs[slot].used || gap_initiator.active ||
+        !gap_syncs[slot].used ||
         !gap_syncs[slot].established ||
         !gap_syncs[slot].pawr.timing.has_timing ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
@@ -1376,21 +1379,17 @@ static void gap_pawr_report_push(
 }
 
 // Answer an advertiser's AUX_CONNECT_REQ received in a selected PAwR subevent.
+#if GAP_PERIPHERAL_SUPPORT
 static int gap_pawr_conn_req(
     uint8_t slot, const uint8_t *request, size_t request_len, uint64_t received_ticks
 ) {
-#if !GAP_PERIPHERAL_SUPPORT
-    (void)slot;
-    (void)request;
-    (void)request_len;
-    (void)received_ticks;
-    return 0;
-#else
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_CENTRAL_SUPPORT
+    if (gap_initiator.active) return 0;
+#endif
     if (slot >= GAP_PERIODIC_SYNC_COUNT || !request ||
         request_len != 36 ||
         !gap_syncs[slot].pawr.connect_accept ||
-        gap_initiator.active ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         GAP_HW_DATA_MAX() < 27 ||
         !gap_conn_request_valid(request)
@@ -1454,14 +1453,17 @@ static int gap_pawr_conn_req(
     conn->is_central = 0;
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
+#if GAP_CENTRAL_SUPPORT
     gap_initiator.active = 0;
+#endif
     gap_scanner.generation++;
     return 1;
-#endif
 }
+#endif // GAP_PERIPHERAL_SUPPORT
 
 // Send one PAwR AUX_CONNECT_REQ and receive its AUX_CONNECT_RSP on the same
 // periodic channel before starting the Central connection state.
+#if GAP_CENTRAL_SUPPORT
 static int gap_pawr_exchange(
     gap_ext_adv_set *set, uint8_t channel, uint64_t request_start_ticks
 ) {
@@ -1470,7 +1472,7 @@ static int gap_pawr_exchange(
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) || GAP_HW_DATA_MAX() < 27
     ) return 0;
 
-    uint8_t *request = gap_initiator.request;
+    uint8_t *request = gap_adv_init_buffer.connect_request;
     uint8_t peer_type = set->pawr_connect.peer_type;
     const uint8_t *peer_address = set->pawr_connect.peer_address;
     uint8_t local_address[6], local_type, crc_init[3];
@@ -1483,7 +1485,7 @@ static int gap_pawr_exchange(
         return 0;
     }
 
-    memset(request, 0, sizeof(gap_initiator.request));
+    memset(request, 0, sizeof(gap_adv_init_buffer.connect_request));
     request[0] = CONNECT_IND | (local_type << 6) | (peer_type << 7);
     request[1] = 34;
     memcpy(request + 2, local_address, 6);
@@ -1560,6 +1562,7 @@ static int gap_pawr_exchange(
     gap_scanner.generation++;
     return 1;
 }
+#endif // GAP_CENTRAL_SUPPORT
 
 // -----------------------------------------------------------------------------
 // Extended and periodic advertising transmission
@@ -1651,11 +1654,13 @@ static int gap_periodic_tx(gap_ext_adv_set *set) {
             uint8_t channel = gap_sync_channel(&set->periodic.params,
                             (uint16_t)(set->periodic.event_counter ^ subevent));
 
+#if GAP_CENTRAL_SUPPORT
             if (set->pawr_connect.pending && subevent == set->pawr_connect.subevent) {
                 if (gap_pawr_exchange(set, channel, subevent_start))
                     return 1;
                 continue;
             }
+#endif
 
             uint16_t data_len = set->pawr.data_pending ? set->periodic.data_len : 0;
             // AUX_SYNC_SUBEVENT_IND uses the extended advertising PDU format.
@@ -1788,11 +1793,13 @@ static void gap_ext_scan_process(void) {
         gap_ext_scan.aux_rx_phy : periodic ? gap_ext_scan.periodic_rx_phy : GAP_PHY_1M;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
+#if GAP_PERIPHERAL_SUPPORT
     if (periodic && (pdu[0] & 0x0f) == CONNECT_IND) {
         (void)gap_pawr_conn_req((uint8_t)slot, pdu,
             pdu_len, gap_ext_scan.ticks);
         return;
     }
+#endif // GAP_PERIPHERAL_SUPPORT
 
     gap_ext_fields fields;
 
@@ -2431,7 +2438,9 @@ static int gap_ext_send_due(uint32_t now) {
     // intervals as required by the periodic channel selection algorithm.
     if ((gap_conn_slot_mask == 0 ||
          ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central)) &&
+#if GAP_CENTRAL_SUPPORT
         !gap_initiator.active &&
+#endif
         !gap_scan.active_pending
     ) {
         uint64_t ticks = GAP_HW_TICKS();
@@ -2766,6 +2775,6 @@ ext_adv_done:
     gap_ext_adv_next_set = (send_extended + 1) % GAP_EXT_ADV_SET_COUNT;
     return 1;
 }
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
 
 #endif // BLE_GAP_EXTENSION_H

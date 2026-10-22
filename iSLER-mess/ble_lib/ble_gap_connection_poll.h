@@ -669,6 +669,7 @@ void gap_hw_received(void) {
     }
 
     uint8_t advertiser_type = (frame[0] >> 6) & 1;
+#if GAP_CENTRAL_SUPPORT
     int peer_matches = 0;
 
     if (
@@ -711,8 +712,9 @@ void gap_hw_received(void) {
             uint8_t target_type = (frame[0] >> 7) & 1;
             int target_matches = 0;
 
-            if (target_type == ((gap_initiator.request[0] >> 6) & 1))
-                target_matches = memcmp(frame + 8, gap_initiator.request + 2, 6) == 0;
+            if (target_type == ((gap_adv_init_buffer.connect_request[0] >> 6) & 1))
+                target_matches = memcmp(frame + 8,
+                    gap_adv_init_buffer.connect_request + 2, 6) == 0;
 
 #if GAP_PRIVACY_SUPPORT
             if ((frame[13] & 0xc0) == 0x40 &&
@@ -740,20 +742,21 @@ void gap_hw_received(void) {
             }
         }
 
-        gap_initiator.request[0] = (gap_initiator.request[0] & 0x7f) | (frame[0] & 0x40) << 1;
-        memcpy(gap_initiator.request + 8, frame + 2, 6);
+        gap_adv_init_buffer.connect_request[0] =
+            (gap_adv_init_buffer.connect_request[0] & 0x7f) |
+            (frame[0] & 0x40) << 1;
+        memcpy(gap_adv_init_buffer.connect_request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_scan.channel_index;
         GAP_HW_STOP();
         gap_rx_armed = 0;
 
-        if (GAP_HW_ADV_TX(gap_initiator.request, sizeof(gap_initiator.request), channel) &&
-            gap_conn_accept(gap_initiator.request, GAP_HW_TICKS(),
+        if (GAP_HW_ADV_TX(gap_adv_init_buffer.connect_request,
+                          sizeof(gap_adv_init_buffer.connect_request), channel) &&
+            gap_conn_accept(gap_adv_init_buffer.connect_request, GAP_HW_TICKS(),
                             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
-#if GAP_CENTRAL_SUPPORT
             conn->central.central_anchor_set = 0;
-#endif
             conn->link_layer.peer_sca_ppm = 500; // conservative until clock data exists
             conn->is_central = 1;
 
@@ -782,14 +785,17 @@ void gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
+#endif // GAP_CENTRAL_SUPPORT
 
     uint8_t scan_frame_valid = gap_scanner.active &&
                                frame[1] >= 6 && frame[1] <= 37;
     if ((pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
         scan_frame_valid &&
         !adv_evt.rx_event &&
-        !gap_scan.active_pending &&
-        (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches)
+#if GAP_CENTRAL_SUPPORT
+        (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
+#endif
+        !gap_scan.active_pending
     ) {
 #if GAP_PRIVACY_SUPPORT
         if (gap_privacy.scan_filter && peer_slot < 0) {
@@ -854,7 +860,7 @@ void gap_hw_received(void) {
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
 
             if (response_len)
-                memcpy(adv_evt.scan_frame + 8, gap_initiator.adv.scan_response, response_len);
+                memcpy(adv_evt.scan_frame + 8, gap_adv_init_buffer.advertising.scan_response, response_len);
 
             GAP_HW_TX_BUFFER(adv_evt.scan_frame);
             adv_evt.scan_resp_started = 1;
@@ -1336,6 +1342,7 @@ void gap_hw_scan_poll(void) {
     gap_privacy_poll(now);
 #endif
 
+#if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active &&
         gap_initiator.mode != GAP_CONN_MODE_AUTO &&
         (int32_t)(now - gap_initiator.deadline_ms) >= 0
@@ -1346,6 +1353,7 @@ void gap_hw_scan_poll(void) {
         gap_scanner.active = 0;
         gap_scanner.generation++;
     }
+#endif
 
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
@@ -1631,7 +1639,7 @@ int gap_send_due(
     uint8_t len = fallback_len;
 
     if (send_gap) {
-        data = gap_initiator.adv.data;
+        data = gap_adv_init_buffer.advertising.data;
         random_address = gap_adv.local.type ? gap_adv.local.address : NULL;
         target_type = gap_adv.target.type;
         pdu_type = gap_adv.pdu_type;
@@ -1712,8 +1720,10 @@ int gap_send_due(
                     gap_rx_armed = 0;
                     // An incoming Peripheral connection wins over any
                     // simultaneous Central initiation or discovery scan.
+#if GAP_CENTRAL_SUPPORT
                     gap_initiator.active = 0;
                     gap_initiator.mode = GAP_CONN_MODE_DIRECT;
+#endif
                     gap_scanner.scanning = 0;
                     gap_scanner.active = 0;
                     gap_scanner.generation++;
