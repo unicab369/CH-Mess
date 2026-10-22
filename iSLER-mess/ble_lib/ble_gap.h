@@ -462,10 +462,12 @@ typedef struct {
     uint8_t is_central;
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
+#if GAP_SMP_SUPPORT > 0
     // Pairing result associated with this link; persistent bond keys are in bond.
     uint8_t authenticated;
     // Negotiated key size associated with authenticated and security.
     uint8_t enc_key_size;
+#endif
     // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
     uint8_t load_pending;
 
@@ -861,9 +863,8 @@ static union {
     gap_legacy_adv_data advertising;
 #if GAP_CENTRAL_SUPPORT
     uint8_t connect_request[36];
-    uint32_t align_connect_request;
 #endif
-} gap_adv_tx_storage;
+} gap_adv_tx_storage GAP_RADIO_BUFFER_ATTR;
 
 
 #if GAP_CENTRAL_SUPPORT

@@ -193,9 +193,11 @@ static void gap_conn_end(void) {
     memset(&conn->procedure_state, 0, sizeof(conn->procedure_state));
     memset(&conn->c_features, 0, sizeof(conn->c_features));
 
-    // Clear per-link security and bond state.
+    // Clear per-link SMP security and bond state.
+#if GAP_SMP_SUPPORT > 0
     conn->authenticated = 0;
     conn->enc_key_size = 0;
+#endif
 
     // Clear the queued periodic sync transfer.
 #if GAP_EXT_ADV_SUPPORT
@@ -2602,8 +2604,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         return 0;
     }
 
+#if GAP_SMP_SUPPORT > 0
     conn->authenticated = 0;
     conn->enc_key_size = 0;
+#endif
     gap_security->ediv = ediv;
     memcpy(gap_security->ltk, ltk, 16);
     memcpy(gap_security->random, random, 8);
@@ -2648,8 +2652,10 @@ int gap_key_reply(const uint8_t ltk[16]) {
     }
 
     if (ltk) {
+#if GAP_SMP_SUPPORT > 0
         conn->authenticated = 0;
         conn->enc_key_size = 0;
+#endif
         memcpy(gap_security->ltk, ltk, 16);
         gap_security_derive(gap_security);
         gap_security->phase = GAP_ENC_START_QUEUED;
@@ -2678,6 +2684,7 @@ int gap_encrypted(void) {
 
 // Application facing
 // Report achieved security only after encryption completes, never during pairing.
+#if GAP_SMP_SUPPORT > 0
 int gap_authenticated(void) {
     return gap_encrypted() && gap_conn_ctx_current()->authenticated;
 }
@@ -2686,6 +2693,7 @@ int gap_authenticated(void) {
 uint8_t gap_key_size(void) {
     return gap_encrypted() ? gap_conn_ctx_current()->enc_key_size : 0;
 }
+#endif // GAP_SMP_SUPPORT
 
 // Application facing
 uint8_t gap_security_status(void) {
