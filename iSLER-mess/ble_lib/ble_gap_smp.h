@@ -911,6 +911,7 @@ static int gap_smp_queue(
 // Only advertise identity-key distribution when a persistent local IRK has
 // been configured for resolvable private addressing.
 static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
+#if GAP_PRIVACY_SUPPORT
     if (!gap_privacy.resolvable)
         return 0;
 
@@ -929,6 +930,11 @@ static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
     else
         GAP_HW_PUBLIC_ADDRESS(address + 1);
     return 1;
+#else
+    (void)irk;
+    (void)address;
+    return 0;
+#endif
 }
 
 // Finish a failed pairing and notify the peer with the failure reason.

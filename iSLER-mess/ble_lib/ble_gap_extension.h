@@ -748,8 +748,10 @@ static void gap_ext_report_queue(
             return;
     }
 
+#if GAP_PRIVACY_SUPPORT
     if (gap_privacy.scan_filter && identity_slot < 0)
         return;
+#endif
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         // Limited discovery requires the Limited flag; general accepts either.
@@ -1404,9 +1406,10 @@ static int gap_pawr_conn_req(
 
     int peer_slot = gap_identity_find(request + 2, initiator_type);
 
-    if (!gap_peer_allowed(peer_slot, request + 2, initiator_type) ||
-        (gap_privacy.connection_filter && peer_slot < 0)
-    ) return 0;
+    if (!gap_peer_allowed(peer_slot, request + 2, initiator_type)) return 0;
+#if GAP_PRIVACY_SUPPORT
+    if (gap_privacy.connection_filter && peer_slot < 0) return 0;
+#endif
 
     uint8_t local_address[6], local_type;
     gap_local_addr_select(peer_slot, local_address, &local_type);

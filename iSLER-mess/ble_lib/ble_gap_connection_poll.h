@@ -604,7 +604,9 @@ void gap_hw_received(void) {
         int scanner_slot = gap_identity_find(frame + 2, scanner_type);
 
         if (!gap_peer_allowed(scanner_slot, frame + 2, scanner_type) ||
+#if GAP_PRIVACY_SUPPORT
             (gap_privacy.connection_filter && scanner_slot < 0) ||
+#endif
             (gap_adv.scan_accept &&
              !gap_accept_list_match(frame + 2, scanner_type, scanner_slot))
         ) {
@@ -676,7 +678,11 @@ void gap_hw_received(void) {
          (gap_scanner.active && gap_initiator.mode == GAP_CONN_MODE_SELECTIVE))
     ) {
         if (gap_initiator.mode == GAP_CONN_MODE_GENERAL) {
+#if GAP_PRIVACY_SUPPORT
             peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
+#else
+            peer_matches = 1;
+#endif
         }
         else if (gap_initiator.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
@@ -708,6 +714,7 @@ void gap_hw_received(void) {
             if (target_type == ((gap_initiator.request[0] >> 6) & 1))
                 target_matches = memcmp(frame + 8, gap_initiator.request + 2, 6) == 0;
 
+#if GAP_PRIVACY_SUPPORT
             if ((frame[13] & 0xc0) == 0x40 &&
                 !target_matches && target_type &&
                 gap_privacy_timeout_15s && gap_privacy.resolvable
@@ -725,6 +732,7 @@ void gap_hw_received(void) {
                     target_matches = memcmp(frame + 8, hash, 3) == 0;
                 }
             }
+#endif
 
             if (!target_matches) {
                 gap_conn_slot = previous_slot;
@@ -783,10 +791,12 @@ void gap_hw_received(void) {
         !gap_scan.active_pending &&
         (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches)
     ) {
+#if GAP_PRIVACY_SUPPORT
         if (gap_privacy.scan_filter && peer_slot < 0) {
             gap_conn_slot = previous_slot;
             return;
         }
+#endif
 
         // Preserve the advertisement while sending SCAN_REQ promptly.
         memcpy(gap_adv_scan.frame, frame, (size_t)frame[1] + 2);
@@ -824,7 +834,9 @@ void gap_hw_received(void) {
     }
 
     if (adv_evt.rx_event &&
+#if GAP_PRIVACY_SUPPORT
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
+#endif
         ((frame[0] >> 7) & 1) == ((adv_evt.adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, adv_evt.adv_frame + 2, 6) == 0
     ) {
@@ -1320,7 +1332,9 @@ static inline void gap_conn_poll_all(void) {
 
 void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
+#if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
+#endif
 
     if (gap_initiator.active &&
         gap_initiator.mode != GAP_CONN_MODE_AUTO &&
@@ -1583,7 +1597,9 @@ int gap_send_due(
 ) {
     if (gap_poll.slot_valid) return 0;
 
+#if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
+#endif
 #if GAP_EXT_ADV_SUPPORT
     int extended_result = gap_ext_send_due(now);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.

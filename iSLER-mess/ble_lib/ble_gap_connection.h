@@ -581,6 +581,7 @@ static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
 
 // Rotate between radio exchanges; preserve addresses throughout initiation,
 // established connections, and an outstanding active-scan request.
+#if GAP_PRIVACY_SUPPORT
 static void gap_privacy_poll(uint32_t now) {
     if (!gap_privacy_timeout_15s || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         gap_initiator.active ||
@@ -628,6 +629,7 @@ static void gap_privacy_poll(uint32_t now) {
     gap_privacy_timeout_15s = next_timeout_15s;
     gap_privacy_next_rotation_ms = now + (uint32_t)next_timeout_15s * 15000;
 }
+#endif
 
 static uint8_t gap_schedule_parameters_valid(
     uint16_t min_factor, uint16_t max_factor, uint16_t max_latency,

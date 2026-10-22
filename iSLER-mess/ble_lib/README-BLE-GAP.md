@@ -25,6 +25,12 @@ pairing, bonding, and SMP-based authentication are unavailable in that build.
 The application may still start Link Layer encryption with an externally
 provisioned key.
 
+`GAP_PRIVACY_SUPPORT` defaults to `1`. Set it to `0` before including
+`ble_gap.h` to omit local private-address rotation and privacy filters, including
+their global RAM state. The `gap_privacy_filter()` and
+`gap_privacy_configure()` APIs are unavailable in this build. Use
+`gap_use_public_address()` or `gap_set_static_addr()` to select a local address.
+
 An `[x]` is not evidence of Bluetooth qualification. The device owner will do
 target hardware verification.
 

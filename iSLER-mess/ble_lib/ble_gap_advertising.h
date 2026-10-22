@@ -558,8 +558,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
 
     if (gap_initiator.active || !peer ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
-        interval_ms > GAP_ADV_INTERVAL_MAX_MS ||
-        (gap_privacy_timeout_15s && !gap_privacy.resolvable)
+        interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) return 0;
 
     const uint8_t *address = peer->address;
@@ -568,14 +567,18 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     memcpy(target, address, sizeof(target));
     int slot = gap_identity_find(address, type);
 
-    if (gap_privacy_timeout_15s && gap_privacy.resolvable &&
-        slot >= 0 && gap_identities[slot].has_irk
-    ) {
-        if (!gap_private_addr_generate(gap_identities[slot].irk, target, address))
-            return 0;
+#if GAP_PRIVACY_SUPPORT
+    if (gap_privacy_timeout_15s) {
+        if (!gap_privacy.resolvable) return 0;
 
-        type = 1;
+        if (slot >= 0 && gap_identities[slot].has_irk) {
+            if (!gap_private_addr_generate(gap_identities[slot].irk, target, address))
+                return 0;
+
+            type = 1;
+        }
     }
+#endif
 
     gap_adv.target.type = type != 0;
     memcpy(gap_adv.target.address, target, sizeof(target));
@@ -797,9 +800,10 @@ static inline void gap_receive_report(
 
     uint8_t address_type = (frame[0] >> 6) & 1;
     int slot = gap_identity_find(frame + 2, address_type);
-    if (!gap_peer_allowed(slot, frame + 2, address_type) ||
-        (gap_privacy.scan_filter && slot < 0)
-    ) return;
+    if (!gap_peer_allowed(slot, frame + 2, address_type)) return;
+#if GAP_PRIVACY_SUPPORT
+    if (gap_privacy.scan_filter && slot < 0) return;
+#endif
 
     if (gap_scanner.discovery_mode != GAP_DISCOVERY_ALL) {
         if (pdu_type == SCAN_RSP) {

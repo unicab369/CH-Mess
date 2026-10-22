@@ -27,9 +27,8 @@
 #ifndef GAP_PERIPHERAL_SUPPORT
 #define GAP_PERIPHERAL_SUPPORT 1
 #endif
-#if (GAP_CENTRAL_SUPPORT != 0 && GAP_CENTRAL_SUPPORT != 1) || \
-    (GAP_PERIPHERAL_SUPPORT != 0 && GAP_PERIPHERAL_SUPPORT != 1)
-#error "GAP_CENTRAL_SUPPORT and GAP_PERIPHERAL_SUPPORT must be 0 or 1"
+#ifndef GAP_PRIVACY_SUPPORT
+#define GAP_PRIVACY_SUPPORT 1
 #endif
 #if !GAP_CENTRAL_SUPPORT && !GAP_PERIPHERAL_SUPPORT
 #error "Enable central support, peripheral support, or both"
@@ -93,14 +92,14 @@
 #endif
 
 #ifndef GAP_IDENTITY_COUNT
-#define GAP_IDENTITY_COUNT 4
+#define GAP_IDENTITY_COUNT 1
 #endif
 #if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
 #error "GAP_IDENTITY_COUNT must be between 1 and 32"
 #endif
 
 #ifndef GAP_ACCEPT_LIST_COUNT
-#define GAP_ACCEPT_LIST_COUNT 4
+#define GAP_ACCEPT_LIST_COUNT 1
 #endif
 #if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
 #error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
@@ -824,8 +823,6 @@ static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
 // Privacy and identity state.
-static gap_address gap_own_address;
-static gap_address gap_identity_address;
 // Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
 static uint32_t gap_accept_list_mask;
 static struct {
@@ -843,14 +840,19 @@ typedef struct {
 } gap_identity;
 static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 
-static struct {
+#if GAP_PRIVACY_SUPPORT
+static gap_address gap_identity_address;
+typedef struct {
     uint8_t resolvable, irk[16], scan_filter, connection_filter;
-} gap_privacy;
+} gap_privacy_state;
+static gap_privacy_state gap_privacy;
 // gap_privacy_timeout_15s == 0 means private-address rotation is disabled.
 // Each nonzero unit is 15 seconds; 240 units is one hour.
 static uint8_t gap_privacy_timeout_15s, gap_privacy_timeout_min_15s;
 static uint8_t gap_privacy_timeout_max_15s;
 static uint32_t gap_privacy_next_rotation_ms;
+#endif
+static gap_address gap_own_address;
 
 static struct {
     uint8_t active;
@@ -1396,6 +1398,7 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
 static void gap_local_addr_select(
     int slot, uint8_t address[6], uint8_t *type
 ) {
+#if GAP_PRIVACY_SUPPORT
     if (gap_privacy_timeout_15s &&
         gap_privacy.resolvable && slot >= 0 &&
         gap_identities[slot].local_key_set
@@ -1412,6 +1415,9 @@ static void gap_local_addr_select(
         }
         return;
     }
+#else
+    (void)slot;
+#endif
 
     *type = gap_own_address.type;
 
@@ -1420,6 +1426,7 @@ static void gap_local_addr_select(
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
+#if GAP_PRIVACY_SUPPORT
 // Pick an unbiased timeout from an inclusive range; equal bounds use no RNG.
 static int gap_privacy_timeout_pick(
     uint8_t min_15s, uint8_t max_15s, uint8_t *timeout_15s
@@ -1501,6 +1508,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     gap_privacy.connection_filter = connection;
     return 1;
 }
+#endif
 
 // Local address API.
 // Select a static random address for GAP advertising and active scanning.
@@ -1509,9 +1517,11 @@ int gap_set_static_addr(const uint8_t address[6]) {
     if (gap_is_busy() || !gap_static_addr_valid(address)) return 0;
 
     memcpy(gap_own_address.address, address, 6);
+#if GAP_PRIVACY_SUPPORT
     memcpy(gap_identity_address.address, address, 6);
     gap_identity_address.type = 1;
     gap_privacy_timeout_15s = 0;
+#endif
     gap_own_address.type = 1;
     return 1;
 }
@@ -1520,8 +1530,10 @@ int gap_set_static_addr(const uint8_t address[6]) {
 int gap_use_public_address(void) {
     if (gap_is_busy()) return 0;
 
+#if GAP_PRIVACY_SUPPORT
     gap_privacy_timeout_15s = 0;
     gap_identity_address.type = 0;
+#endif
     gap_own_address.type = 0;
     return 1;
 }
