@@ -706,9 +706,9 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(gap_initiator.request + 18, crc_init, sizeof(crc_init));
     gap_initiator.request[21] = 1; // transmit window size: 1.25 ms
-    ble_write_u16_le(gap_initiator.request + 24, gap_conn_timing.interval);
-    ble_write_u16_le(gap_initiator.request + 26, gap_conn_timing.latency);
-    ble_write_u16_le(gap_initiator.request + 28, gap_conn_timing.supervision_timeout);
+    ble_write_u16_le(gap_initiator.request + 24, gap_central_timing.interval);
+    ble_write_u16_le(gap_initiator.request + 26, gap_central_timing.latency);
+    ble_write_u16_le(gap_initiator.request + 28, gap_central_timing.supervision_timeout);
 
     memset(gap_initiator.request + 30, 0xff, 4);
     gap_initiator.request[34] = 0x1f; // data channels 0 through 36
@@ -735,7 +735,7 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 
     gap_initiator.active = 1;
     gap_initiator.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 :
-                        GET_MILLIS() + (uint32_t)gap_conn_timing.attempt_timeout_s * 1000;
+                        GET_MILLIS() + (uint32_t)gap_central_timing.attempt_timeout_s * 1000;
     return 1;
 #endif
 }

@@ -467,7 +467,7 @@ static void test_central_initiation_while_connectable_advertising(void) {
 }
 
 static void test_connection_timing_configuration(void) {
-    gap_timing_cfg timing = gap_conn_timing;
+    gap_timing_cfg timing = gap_central_timing;
     assert(timing.interval == 24 && timing.latency == 0 &&
            timing.supervision_timeout == 200 &&
            timing.scan_interval_ms == 1280 &&
@@ -1361,7 +1361,7 @@ static void test_pawr_advertiser_connection(void) {
     memset(&gap_initiator, 0, sizeof(gap_initiator));
     gap_scanner.scanning = 0;
     gap_scanner.active = 0;
-    gap_conn_timing = (gap_conn_timing){24, 0, 200,
+    gap_central_timing = (gap_timing_cfg){24, 0, 200,
         1280, 12, 30720};
     radio_data_max = GAP_CONN_DATA_MAX;
     now_ms = 945;

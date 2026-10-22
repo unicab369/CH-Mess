@@ -18,5 +18,7 @@
 #define GAP_ACCEPT_LIST_COUNT       1
 #define GAP_SCAN_REPORT_COUNT       1
 #define GAP_SCAN_SEEN_COUNT         1
-#define GAP_CENTRAL_SUPPORT         0
+#define GAP_CENTRAL_SUPPORT         1
+#define GAP_PERIPHERAL_SUPPORT      0
+#define GAP_PRIVACY_SUPPORT         0
 #endif

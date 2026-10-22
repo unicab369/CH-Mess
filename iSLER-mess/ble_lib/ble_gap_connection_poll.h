@@ -1539,11 +1539,14 @@ void gap_hw_scan_poll(void) {
 
     uint16_t interval_ms, window_ms;
 
+#if GAP_CENTRAL_SUPPORT
     if (gap_initiator.mode == GAP_CONN_MODE_AUTO) {
-        interval_ms = gap_conn_timing.scan_interval_ms;
-        window_ms = gap_conn_timing.scan_window_ms;
+        interval_ms = gap_central_timing.scan_interval_ms;
+        window_ms = gap_central_timing.scan_window_ms;
     }
-    else if (gap_scanner.scanning) {
+    else
+#endif
+    if (gap_scanner.scanning) {
         interval_ms = gap_scanner.interval_ms;
         window_ms = gap_scanner.window_ms;
     }

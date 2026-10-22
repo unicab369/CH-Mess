@@ -19,16 +19,29 @@
 #ifndef GAP_EXT_ADV_SUPPORT
 #define GAP_EXT_ADV_SUPPORT 0
 #endif
+#ifndef GAP_CONNECTION_COUNT
+#define GAP_CONNECTION_COUNT 2
+#endif
+#if GAP_CONNECTION_COUNT < 1 || GAP_CONNECTION_COUNT > 4
+#error "GAP_CONNECTION_COUNT must be between 1 and 4"
+#endif
+
+// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
+#ifndef GAP_SMP_SUPPORT
+#define GAP_SMP_SUPPORT 0
+#endif
 
 // Set either role to 0 to reject procedures that establish that local role.
 #ifndef GAP_CENTRAL_SUPPORT
 #define GAP_CENTRAL_SUPPORT 1
 #endif
+
 #ifndef GAP_PERIPHERAL_SUPPORT
-#define GAP_PERIPHERAL_SUPPORT 1
+#define GAP_PERIPHERAL_SUPPORT 0
 #endif
+
 #ifndef GAP_PRIVACY_SUPPORT
-#define GAP_PRIVACY_SUPPORT 1
+#define GAP_PRIVACY_SUPPORT 0
 #endif
 #if !GAP_CENTRAL_SUPPORT && !GAP_PERIPHERAL_SUPPORT
 #error "Enable central support, peripheral support, or both"
@@ -61,6 +74,7 @@
 #define GAP_CONN_PACKET_BUFFER_MAX GAP_CONN_DATA_MAX
 #endif
 
+#if GAP_EXT_ADV_SUPPORT
 #ifndef GAP_EXT_ADV_SET_COUNT
 #define GAP_EXT_ADV_SET_COUNT 2
 #endif
@@ -75,20 +89,60 @@
 #error "GAP_EXT_ADV_DATA_MAX must be between 1 and 1650"
 #endif
 
-#ifndef GAP_CONNECTION_COUNT
-#define GAP_CONNECTION_COUNT 2
+#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
+#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
+#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
+#define GAP_EXT_ADV_CONTEXT_COUNT 2
+#define GAP_EXT_ADV_REPORT_COUNT 2
+#define GAP_EXT_ADV_SEEN_COUNT 4
+#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
+#define GAP_PAWR_RESPONSE_DATA_MAX 249
+#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
+#define GAP_PERIODIC_SYNC_COUNT 2
+#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
+#define GAP_PERIODIC_REPORT_COUNT 2
 #endif
-#if GAP_CONNECTION_COUNT < 1 || GAP_CONNECTION_COUNT > 4
-#error "GAP_CONNECTION_COUNT must be between 1 and 4"
+
+// Legacy advertising payload and interval limits.
+#define GAP_ADV_DATA_MAX 31
+#define GAP_ADV_INTERVAL_MIN_MS 100
+#define GAP_ADV_INTERVAL_MAX_MS 10240
+
+#ifndef GAP_SCAN_REPORT_COUNT
+#define GAP_SCAN_REPORT_COUNT 2
 #endif
+#ifndef GAP_SCAN_SEEN_COUNT
+#define GAP_SCAN_SEEN_COUNT 2
+#endif
+
+// Advertising and connection constants.
+#define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
+#define GAP_CONNECTION_PENDING 0xff
+
+// GAP discovery, privacy, PHY, and Link Layer feature values.
+#define GAP_DISCOVERY_ALL 0
+#define GAP_DISCOVERY_GENERAL 1
+#define GAP_DISCOVERY_LIMITED 2
+
+#define GAP_PRIVACY_NETWORK 0
+#define GAP_PRIVACY_DEVICE 1
+#define GAP_PHY_1M 1
+#define GAP_PHY_2M 2
+#define GAP_PHY_CODED 4
+
+// Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
+#define GAP_LL_FEATURES 0x2f
+#define GAP_LL_FEATURES_SUBRATING 0x20
+#define GAP_LL_FEATURES_SUBRATING_HOST 0x40
+#define GAP_LL_FEATURES_CHANNEL_CLASSIFICATION 0x80
+#define GAP_CHANN_CLASS_BYTES 10
+// Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
+// Shorter Connection Intervals capabilities on feature page 1.
+#define GAP_LL_FEATURES_EXTENDED 0x80
+#define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
 
 #ifndef GAP_L2CAP_LL_MAX
 #define GAP_L2CAP_LL_MAX 251
-#endif
-
-// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
-#ifndef GAP_SMP_SUPPORT
-#define GAP_SMP_SUPPORT 0
 #endif
 
 #ifndef GAP_IDENTITY_COUNT
@@ -151,52 +205,6 @@ int GAP_CCM_ENCRYPT(
 int GAP_CCM_DECRYPT(
     const uint8_t key[16], const uint8_t nonce[13],
     uint8_t aad, uint8_t *data, size_t len, const uint8_t mic[4]);
-
-// Advertising and connection constants.
-#define BLE_ADV_ACCESS_ADDRESS 0x8E89BED6
-#define GAP_CONNECTION_PENDING 0xff
-
-// GAP discovery, privacy, PHY, and Link Layer feature values.
-#define GAP_DISCOVERY_ALL 0
-#define GAP_DISCOVERY_GENERAL 1
-#define GAP_DISCOVERY_LIMITED 2
-
-#define GAP_PRIVACY_NETWORK 0
-#define GAP_PRIVACY_DEVICE 1
-#define GAP_PHY_1M 1
-#define GAP_PHY_2M 2
-#define GAP_PHY_CODED 4
-
-// Encryption, connection parameter requests, extended reject, Peripheral feature exchange, DLE.
-#define GAP_LL_FEATURES 0x2f
-#define GAP_LL_FEATURES_SUBRATING 0x20
-#define GAP_LL_FEATURES_SUBRATING_HOST 0x40
-#define GAP_LL_FEATURES_CHANNEL_CLASSIFICATION 0x80
-#define GAP_CHANN_CLASS_BYTES 10
-// Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
-// Shorter Connection Intervals capabilities on feature page 1.
-#define GAP_LL_FEATURES_EXTENDED 0x80
-#define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
-
-// Advertising payload limits and extended advertising storage.
-#define GAP_ADV_DATA_MAX 31
-#define GAP_ADV_INTERVAL_MIN_MS 100
-#define GAP_ADV_INTERVAL_MAX_MS 10240
-#define GAP_EXT_ADV_FIRST_PDU_DATA_MAX 240
-#define GAP_EXT_ADV_CHAIN_PDU_DATA_MAX 246
-#define GAP_EXT_ADV_FINAL_PDU_DATA_MAX 249
-#define GAP_EXT_ADV_CONTEXT_COUNT 2
-#define GAP_EXT_ADV_REPORT_COUNT 2
-#define GAP_EXT_ADV_SEEN_COUNT 4
-#define GAP_EXT_ADV_CHAIN_TIMEOUT_MS 3000
-#define GAP_PAWR_RESPONSE_DATA_MAX 249
-#define GAP_PAWR_RESPONSE_REPORT_COUNT 4
-
-#define GAP_SCAN_REPORT_COUNT 4
-#define GAP_SCAN_SEEN_COUNT 4
-#define GAP_PERIODIC_SYNC_COUNT 2
-#define GAP_PERIODIC_SYNC_EVENT_COUNT 4
-#define GAP_PERIODIC_REPORT_COUNT 2
 
 // GAP protocol and procedure enum values.
 // Encryption procedure state; timed phases occupy the low nine bits.
@@ -842,16 +850,20 @@ static gap_identity gap_identities[GAP_IDENTITY_COUNT];
 
 #if GAP_PRIVACY_SUPPORT
 static gap_address gap_identity_address;
+
 typedef struct {
     uint8_t resolvable, irk[16], scan_filter, connection_filter;
 } gap_privacy_state;
+
 static gap_privacy_state gap_privacy;
+
 // gap_privacy_timeout_15s == 0 means private-address rotation is disabled.
 // Each nonzero unit is 15 seconds; 240 units is one hour.
 static uint8_t gap_privacy_timeout_15s, gap_privacy_timeout_min_15s;
 static uint8_t gap_privacy_timeout_max_15s;
 static uint32_t gap_privacy_next_rotation_ms;
 #endif
+
 static gap_address gap_own_address;
 
 static struct {
@@ -873,6 +885,7 @@ static struct {
 } gap_initiator;
 
 // Central initiation configuration.
+#if GAP_CENTRAL_SUPPORT
 // Initial LE connection settings. Connection interval is in 1.25 ms units,
 // supervision timeout in 10 ms units, and attempt timeout in seconds.
 // Scan interval is start-to-start; scan window is how long each scan listens.
@@ -888,7 +901,7 @@ typedef struct {
     uint16_t attempt_timeout_s;
 } gap_timing_cfg;
 
-static gap_timing_cfg gap_conn_timing = {
+static gap_timing_cfg gap_central_timing = {
     .interval = 24,             // 6..3200 units: 7.5 ms..4000 ms (4 s).
     .latency = 0,               // 0..499 connection events.
     .supervision_timeout = 200, // 10..3200 units: 100 ms..32000 ms (32 s).
@@ -896,6 +909,7 @@ static gap_timing_cfg gap_conn_timing = {
     .scan_window_ms = 12,       // 3 ms..scan_interval_ms (up to 40.959 s).
     .attempt_timeout_s = 31     // 1..600 s; 31 s covers the 30.72 s fast-scan period.
 };
+#endif
 
 // Return whether scanning, advertising, a connection, or initiation is active.
 static inline int gap_is_busy(void) {
@@ -1052,6 +1066,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
 // Application facing
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
+#if GAP_CENTRAL_SUPPORT
 int gap_conn_timing_set(const gap_timing_cfg *timing) {
     if (!timing || !ble_timing_valid(
             timing->interval, timing->interval, timing->latency,
@@ -1069,9 +1084,10 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         (uint32_t)(timing->latency + 1) * timing->interval
     ) return 0;
 
-    gap_conn_timing = *timing;
+    gap_central_timing = *timing;
     return 1;
 }
+#endif
 
 // Identity resolution helpers.
 // Bluetooth ah: encrypt the padded prand and keep the low 24 bits as hash.

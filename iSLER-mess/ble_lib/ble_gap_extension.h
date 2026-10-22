@@ -1492,9 +1492,9 @@ static int gap_pawr_exchange(
     GAP_HW_RANDOM_BYTES(crc_init, sizeof(crc_init));
     memcpy(request + 18, crc_init, sizeof(crc_init));
     request[21] = 1;
-    ble_write_u16_le(request + 24, gap_conn_timing.interval);
-    ble_write_u16_le(request + 26, gap_conn_timing.latency);
-    ble_write_u16_le(request + 28, gap_conn_timing.supervision_timeout);
+    ble_write_u16_le(request + 24, gap_central_timing.interval);
+    ble_write_u16_le(request + 26, gap_central_timing.latency);
+    ble_write_u16_le(request + 28, gap_central_timing.supervision_timeout);
     memset(request + 30, 0xff, 4);
     request[34] = 0x1f;
     request[35] = 5;
