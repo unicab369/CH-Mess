@@ -2631,8 +2631,6 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
         return 0;
     }
 
-    uint32_t *gap_security_generation = &gap_security_generations[gap_conn_slot];
-    uint32_t generation = (*gap_security_generation);
     uint8_t entropy[12];
 
     if (!GAP_RANDOM_SECURE_BYTES(entropy, sizeof(entropy))) {
@@ -2641,11 +2639,9 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     }
 
     uint32_t irq_state = GAP_CRITICAL_ENTER();
-    // Entropy collection may take time: recheck the link and procedures before
-    // committing a key, so a disconnect/reconnect cannot apply it to another peer.
+    // Recheck the link and procedures before committing the key.
 
     if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (*gap_security_generation) != generation ||
         gap_security->phase ||
         conn->c_features.request_pending ||
         gap_conn_pending_procedure_busy(conn)

@@ -494,6 +494,8 @@ typedef struct {
 #if GAP_LINK_ENCRYPTION_SUPPORT
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
+    // Invalidates security work captured before this connection slot was reused.
+    uint32_t security_generation;
 #endif
     // Set after gap_conn_accept; the poll loop uses it to finish setup using initiator and peer.
     uint8_t load_pending;
@@ -849,8 +851,6 @@ static uint8_t gap_conn_slot_mask;
 // there or copied into the receiving link's rx_packet before the callback ends.
 #if GAP_LINK_ENCRYPTION_SUPPORT
 static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
-// Per-slot counters invalidate security work after a link ends or is replaced.
-static uint32_t gap_security_generations[GAP_CONNECTION_COUNT];
 #endif
 
 // Packed 2-bit classification for each of 37 data channels (74 bits total);
@@ -1663,9 +1663,12 @@ static int gap_conn_accept(
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
     conn = &gap_conn_ctx[gap_conn_slot];
+#if GAP_LINK_ENCRYPTION_SUPPORT
+    uint32_t security_generation = conn->security_generation + 1;
+#endif
     gap_wipe(conn, sizeof(*conn));
 #if GAP_LINK_ENCRYPTION_SUPPORT
-    gap_security_generations[gap_conn_slot]++;
+    conn->security_generation = security_generation;
 #endif
     gap_data_capacity = data_capacity;
     memcpy(conn->link_layer.channel_map, frame + 30, 5);
