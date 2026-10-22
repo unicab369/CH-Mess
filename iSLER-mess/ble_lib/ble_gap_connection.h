@@ -617,6 +617,7 @@ static void gap_privacy_poll(uint32_t now) {
 
     memcpy(gap_own_address.address, address, 6);
     // Refresh cached local RPAs outside the RX interrupt, between exchanges.
+#if GAP_IDENTITY_COUNT > 0
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_privacy.resolvable && gap_identities[i].used &&
             gap_identities[i].local_key_set &&
@@ -625,16 +626,19 @@ static void gap_privacy_poll(uint32_t now) {
                                           gap_identities[i].local_address)
         ) memcpy(gap_identities[i].local_address, address, 6);
     }
+#endif
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) {
         gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address,
                                  &gap_adv.local.type);
+#if GAP_IDENTITY_COUNT > 0
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&
             gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
                                           gap_adv.target.address)
         ) memcpy(gap_adv.target.address, address, 6);
+#endif
     }
 #endif
 

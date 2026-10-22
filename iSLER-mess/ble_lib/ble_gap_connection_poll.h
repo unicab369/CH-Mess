@@ -723,10 +723,12 @@ void gap_hw_received(void) {
             ) {
                 const uint8_t *irk = gap_privacy.irk;
 
+#if GAP_IDENTITY_COUNT > 0
                 if (peer_slot >= 0 && gap_identities[peer_slot].local_key_set) {
                     irk = gap_identities[peer_slot].has_local_irk ?
                             gap_identities[peer_slot].local_irk : NULL;
                 }
+#endif
 
                 if (irk) {
                     uint8_t hash[3];
@@ -760,10 +762,13 @@ void gap_hw_received(void) {
             conn->link_layer.peer_sca_ppm = 500; // conservative until clock data exists
             conn->is_central = 1;
 
+#if GAP_IDENTITY_COUNT > 0
             if (peer_slot >= 0) {
                 conn->peer = gap_identities[peer_slot].peer;
             }
-            else if (gap_initiator.mode != GAP_CONN_MODE_DIRECT) {
+            else
+#endif
+            if (gap_initiator.mode != GAP_CONN_MODE_DIRECT) {
                 // The type is bit 6 of frame[0]; frame[1] is the length, and the
                 // address starts at frame[2], so they cannot be copied as one block.
                 conn->peer.type = advertiser_type;
@@ -1036,8 +1041,10 @@ static void gap_conn_poll(void) {
         if (!conn->is_central) {
             int peer_slot = gap_identity_find(conn->initiator.address,
                                               conn->initiator.type);
+#if GAP_IDENTITY_COUNT > 0
             if (peer_slot >= 0)
                 conn->peer = gap_identities[peer_slot].peer;
+#endif
         }
 
 #if GAP_SMP_SUPPORT > 0

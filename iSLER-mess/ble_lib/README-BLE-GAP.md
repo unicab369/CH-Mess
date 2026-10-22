@@ -36,6 +36,11 @@ their global RAM state. The `gap_privacy_filter()` and
 transmit handling. Scanning, Central connection initiation, and extended
 advertising remain available when their own support is enabled.
 
+`GAP_IDENTITY_COUNT` accepts values from `0` to `32`. Set it to `0` to disable
+peer identity storage and resolution; identity management and resolution APIs
+are unavailable, while raw-address accept-list filtering remains available. No
+peer identity array is allocated in this configuration.
+
 An `[x]` is not evidence of Bluetooth qualification. The device owner will do
 target hardware verification.
 

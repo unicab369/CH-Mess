@@ -43,12 +43,36 @@
 #define GAP_PERIPHERAL_SUPPORT 0
 #endif
 
+#ifndef GAP_L2CAP_LL_MAX
+#define GAP_L2CAP_LL_MAX 251
+#endif
+
+// Controls local private-address generation and rotation. This is independent
+// of GAP_IDENTITY_COUNT: either feature can be enabled without the other.
 #ifndef GAP_PRIVACY_SUPPORT
 #define GAP_PRIVACY_SUPPORT 0
 #endif
 #if !GAP_CENTRAL_SUPPORT && !GAP_PERIPHERAL_SUPPORT
 #error "Enable central support, peripheral support, or both"
 #endif
+
+// Sets the number of peer identities stored for identity matching and RPA
+// resolution (0 disables peer identity support). This is independent of
+// GAP_PRIVACY_SUPPORT, which controls local private-address generation.
+#ifndef GAP_IDENTITY_COUNT
+#define GAP_IDENTITY_COUNT 0
+#endif
+#if GAP_IDENTITY_COUNT < 0 || GAP_IDENTITY_COUNT > 32
+#error "GAP_IDENTITY_COUNT must be between 0 and 32"
+#endif
+
+#ifndef GAP_ACCEPT_LIST_COUNT
+#define GAP_ACCEPT_LIST_COUNT 1
+#endif
+#if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
+#error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
+#endif
+
 
 // Default secondary advertising PHY support for each target family.
 #ifndef GAP_HW_ADV_PHY_MASK
@@ -143,24 +167,6 @@
 // Shorter Connection Intervals capabilities on feature page 1.
 #define GAP_LL_FEATURES_EXTENDED 0x80
 #define GAP_LL_FEATURE_PAGE1_SHORTER_INTERVALS 0x03
-
-#ifndef GAP_L2CAP_LL_MAX
-#define GAP_L2CAP_LL_MAX 251
-#endif
-
-#ifndef GAP_IDENTITY_COUNT
-#define GAP_IDENTITY_COUNT 1
-#endif
-#if GAP_IDENTITY_COUNT < 1 || GAP_IDENTITY_COUNT > 32
-#error "GAP_IDENTITY_COUNT must be between 1 and 32"
-#endif
-
-#ifndef GAP_ACCEPT_LIST_COUNT
-#define GAP_ACCEPT_LIST_COUNT 1
-#endif
-#if GAP_ACCEPT_LIST_COUNT < 1 || GAP_ACCEPT_LIST_COUNT > 32
-#error "GAP_ACCEPT_LIST_COUNT must be between 1 and 32"
-#endif
 
 uint32_t GET_MILLIS(void);
 // AES uses standard byte order; the platform must serialize shared hardware use.
@@ -845,17 +851,6 @@ static struct {
     gap_address peer;
 } gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
-// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
-// Addresses use PDU byte order; IRKs use standard AES byte order.
-typedef struct {
-    uint8_t used;
-    gap_address peer;
-    uint8_t irk[16];
-    uint8_t privacy_mode, has_irk;
-    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
-} gap_identity;
-static gap_identity gap_identities[GAP_IDENTITY_COUNT];
-
 static gap_address gap_own_address;
 
 // Legacy advertising payloads and the Central CONNECT_IND use this storage at
@@ -1098,6 +1093,21 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
 
 // Identity resolution helpers.
 // Bluetooth ah: encrypt the padded prand and keep the low 24 bits as hash.
+#if GAP_IDENTITY_COUNT > 0
+// Peer identities and pre-distributed IRKs; pairing/bond storage supplies these.
+// Addresses use PDU byte order; IRKs use standard AES byte order.
+typedef struct {
+    uint8_t used;
+    gap_address peer;
+    uint8_t irk[16];
+    uint8_t privacy_mode, has_irk;
+#if GAP_PRIVACY_SUPPORT
+    uint8_t local_irk[16], local_address[6], local_key_set, has_local_irk;
+#endif
+} gap_identity;
+static gap_identity gap_identities[GAP_IDENTITY_COUNT];
+#endif
+
 static void gap_address_hash(
     const uint8_t irk[16], const uint8_t prand[3], uint8_t hash[3]
 ) {
@@ -1107,7 +1117,52 @@ static void gap_address_hash(
     gap_bytes_reverse(hash, output + 13, 3);
 }
 
+#if GAP_PRIVACY_SUPPORT
+static gap_address gap_identity_address;
+
+static int gap_private_addr_generate(
+    const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
+) {
+    for (uint8_t attempt = 0; attempt < 32; attempt++) {
+        if (irk) {
+            GAP_HW_RANDOM_BYTES(address + 3, 3);
+            address[5] = (address[5] & 0x3f) | 0x40;
+            uint32_t random = (uint32_t)address[3] |
+                            (uint32_t)address[4] << 8 |
+                            (uint32_t)(address[5] & 0x3f) << 16;
+            if (!random || random == 0x3fffff)
+                continue;
+
+            gap_address_hash(irk, address + 3, address);
+        }
+        else {
+            // NRPA: 46 random bits with address bits 47:46 cleared; no AES.
+            GAP_HW_RANDOM_BYTES(address, 6);
+            address[5] &= 0x3f;
+            uint8_t all_zero = 1, all_one = 1, public_address[6];
+
+            for (uint8_t i = 0; i < 6; i++) {
+                if (address[i])
+                    all_zero = 0;
+
+                if (address[i] != (i == 5 ? 0x3f : 0xff))
+                    all_one = 0;
+            }
+            GAP_HW_PUBLIC_ADDRESS(public_address);
+
+            if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
+                continue;
+        }
+
+        if (!previous || memcmp(address, previous, 6) != 0)
+            return 1;
+    }
+    return 0;
+}
+#endif
+
 // Return the known identity slot for an identity address or matching RPA.
+#if GAP_IDENTITY_COUNT > 0
 static int gap_identity_find(const uint8_t address[6], uint8_t type) {
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (!gap_identities[i].used)
@@ -1129,9 +1184,17 @@ static int gap_identity_find(const uint8_t address[6], uint8_t type) {
     }
     return -1;
 }
+#else
+static int gap_identity_find(const uint8_t address[6], uint8_t type) {
+    (void)address;
+    (void)type;
+    return -1;
+}
+#endif
 
 // Network privacy rejects a known peer's identity address when it has an IRK.
 // Device privacy accepts it; unknown peers still follow the configured filters.
+#if GAP_IDENTITY_COUNT > 0
 static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
     if (slot < 0) return 1;
 
@@ -1142,6 +1205,14 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
         (type != 0) != identity->peer.type ||
         memcmp(address, identity->peer.address, 6) != 0;
 }
+#else
+static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
+    (void)slot;
+    (void)address;
+    (void)type;
+    return 1;
+}
+#endif
 
 // A static random address has 11 type bits and a nonzero, non-all-ones 46-bit
 // random part. Identity and Filter Accept List entries use the same rule.
@@ -1167,8 +1238,12 @@ static int gap_static_addr_valid(const uint8_t address[6]) {
 static int gap_accept_list_match(
     const uint8_t address[6], uint8_t type, int identity_slot
 ) {
+#if GAP_IDENTITY_COUNT > 0
     const gap_identity *identity = identity_slot >= 0 ?
                                     &gap_identities[identity_slot] : NULL;
+#else
+    (void)identity_slot;
+#endif
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (!(gap_accept_list_mask & ((uint32_t)1 << i)))
@@ -1178,11 +1253,13 @@ static int gap_accept_list_match(
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
+#if GAP_IDENTITY_COUNT > 0
         if (!identity || identity->peer.type != gap_accept_list[i].peer.type)
             continue;
 
         if (memcmp(identity->peer.address, gap_accept_list[i].peer.address, 6) == 0)
             return 1;
+#endif
     }
 
     return 0;
@@ -1255,6 +1332,7 @@ int gap_accept_list_clear(void) {
 // Peer identity API.
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
+#if GAP_IDENTITY_COUNT > 0
 int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
     if (!peer) return 0;
     const uint8_t *address = peer->address;
@@ -1332,48 +1410,9 @@ int gap_resolve(const gap_address *address, gap_address *identity) {
     *identity = gap_identities[slot].peer;
     return 1;
 }
+#endif // GAP_IDENTITY_COUNT > 0
 
-// Local address generation and selection.
-static int gap_private_addr_generate(
-    const uint8_t irk[16], uint8_t address[6], const uint8_t previous[6]
-) {
-    for (uint8_t attempt = 0; attempt < 32; attempt++) {
-        if (irk) {
-            GAP_HW_RANDOM_BYTES(address + 3, 3);
-            address[5] = (address[5] & 0x3f) | 0x40;
-            uint32_t random = (uint32_t)address[3] |
-                            (uint32_t)address[4] << 8 |
-                            (uint32_t)(address[5] & 0x3f) << 16;
-            if (!random || random == 0x3fffff)
-                continue;
-
-            gap_address_hash(irk, address + 3, address);
-        }
-        else {
-            // NRPA: 46 random bits with address bits 47:46 cleared; no AES.
-            GAP_HW_RANDOM_BYTES(address, 6);
-            address[5] &= 0x3f;
-            uint8_t all_zero = 1, all_one = 1, public_address[6];
-
-            for (uint8_t i = 0; i < 6; i++) {
-                if (address[i])
-                    all_zero = 0;
-
-                if (address[i] != (i == 5 ? 0x3f : 0xff))
-                    all_one = 0;
-            }
-            GAP_HW_PUBLIC_ADDRESS(public_address);
-
-            if (all_zero || all_one || memcmp(address, public_address, 6) == 0)
-                continue;
-        }
-
-        if (!previous || memcmp(address, previous, 6) != 0)
-            return 1;
-    }
-    return 0;
-}
-
+#if GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
@@ -1396,12 +1435,11 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
     if (slot < 0) return 0;
 
     gap_identity *identity = &gap_identities[slot];
-
     uint8_t key_bits = 0, local[6] = {0};
 
     if (irk)
         for (uint8_t i = 0; i < sizeof(identity->local_irk); i++)
-        key_bits |= irk[i];
+            key_bits |= irk[i];
 
     if (key_bits && !gap_private_addr_generate(irk, local, identity->local_address))
         return 0;
@@ -1415,10 +1453,10 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
     identity->has_local_irk = (key_bits != 0);
     return 1;
 }
+#endif // GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
 
+// Local address generation and selection.
 #if GAP_PRIVACY_SUPPORT
-static gap_address gap_identity_address;
-
 typedef struct {
     uint8_t resolvable, irk[16], scan_filter, connection_filter;
 } gap_privacy_state;
@@ -1519,7 +1557,7 @@ int gap_privacy_filter(uint8_t scan, uint8_t connection) {
 static void gap_local_addr_select(
     int slot, uint8_t address[6], uint8_t *type
 ) {
-#if GAP_PRIVACY_SUPPORT
+#if GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
     if (gap_privacy_timeout_15s &&
         gap_privacy.resolvable && slot >= 0 &&
         gap_identities[slot].local_key_set

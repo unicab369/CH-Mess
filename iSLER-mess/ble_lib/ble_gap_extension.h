@@ -774,8 +774,10 @@ static void gap_ext_report_queue(
     }
 
     const gap_address *peer = &identity->peer;
+#if GAP_IDENTITY_COUNT > 0
     if (identity_slot >= 0)
         peer = &gap_identities[identity_slot].peer;
+#endif
 
     uint32_t data_hash = 2166136261u;
 
@@ -1098,8 +1100,12 @@ static int gap_sync_info_accept(
     int slot = -1;
     const gap_address *peer = &fields->identity.peer;
     int identity_slot = gap_identity_find(peer->address, peer->type);
+#if GAP_IDENTITY_COUNT > 0
     const gap_address *resolved_peer = identity_slot >= 0 ?
                                         &gap_identities[identity_slot].peer : NULL;
+#else
+    const gap_address *resolved_peer = NULL;
+#endif
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         const gap_sync_context *sync = &gap_syncs[i];
@@ -1553,10 +1559,13 @@ static int gap_pawr_exchange(
     conn->central.central_anchor_set = 0;
     conn->link_layer.peer_sca_ppm = 500;
 
+#if GAP_IDENTITY_COUNT > 0
     if (peer_slot >= 0) {
         conn->peer = gap_identities[peer_slot].peer;
     }
-    else {
+    else
+#endif
+    {
         conn->peer.type = peer_type;
         memcpy(conn->peer.address, peer_address, 6);
     }

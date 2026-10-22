@@ -559,7 +559,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     memcpy(target, address, sizeof(target));
     int slot = gap_identity_find(address, type);
 
-#if GAP_PRIVACY_SUPPORT
+#if GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
     if (gap_privacy_timeout_15s) {
         if (!gap_privacy.resolvable) return 0;
 
@@ -841,10 +841,12 @@ static inline void gap_receive_report(
 
     const uint8_t *identity_address = frame + 2;
     uint8_t identity_type = address_type;
+#if GAP_IDENTITY_COUNT > 0
     if (slot >= 0) {
         identity_address = gap_identities[slot].peer.address;
         identity_type = gap_identities[slot].peer.type;
     }
+#endif
 
     if (gap_scanner.filter_duplicates) {
         // For directed advertising, compare the target address too.
