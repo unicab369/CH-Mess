@@ -3621,7 +3621,7 @@ static void test_connection_subrating(void) {
     const gap_conn_schedule *schedule = gap_conn_schedule_get();
     assert(schedule->factor == 5 && schedule->base_event < 5 &&
            schedule->latency == 1 && schedule->continuation == 1 &&
-           schedule->timeout == 300);
+           schedule->timeout_10ms == 300);
     gap_conn_end();
 
     // A Peripheral requests a range, then applies the Central's indication.

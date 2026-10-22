@@ -279,7 +279,7 @@ static void gap_conn_update_apply(
         conn->schedule.factor = conn->next_schedule.factor;
         conn->schedule.latency = conn->next_schedule.latency;
         conn->schedule.continuation = conn->next_schedule.continuation;
-        conn->schedule.timeout = conn->next_schedule.timeout;
+        conn->schedule.timeout_10ms = conn->next_schedule.timeout_10ms;
         conn->connection_status = 0;
         conn->c_subrate.continuations = 0;
         conn->c_subrate.force_event = 1;
@@ -334,7 +334,7 @@ static void gap_conn_update_apply(
 
         conn->schedule.interval_125us = (uint16_t)(conn->new_params.interval * 10);
         conn->schedule.latency = conn->new_params.latency;
-        conn->schedule.timeout = conn->new_params.supervision_timeout;
+        conn->schedule.timeout_10ms = conn->new_params.supervision_timeout;
         conn->window_size = conn->update_window_size;
         conn->link_layer.last_rx_ms = GET_MILLIS();
         conn->procedure_state.update_window_active = !instant_packet_received;
@@ -544,7 +544,7 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     ble_write_u16_le(conn->tx_frame + 5, conn->next_schedule.base_event);
     ble_write_u16_le(conn->tx_frame + 7, conn->next_schedule.latency);
     ble_write_u16_le(conn->tx_frame + 9, conn->next_schedule.continuation);
-    ble_write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout);
+    ble_write_u16_le(conn->tx_frame + 11, conn->next_schedule.timeout_10ms);
 }
 
 static void gap_send_rate_ind(
@@ -587,7 +587,7 @@ static void gap_send_rate_ind(
     ble_write_u16_le(conn->tx_frame + 9, conn->next_schedule.factor);
     ble_write_u16_le(conn->tx_frame + 11, conn->next_schedule.latency);
     ble_write_u16_le(conn->tx_frame + 13, conn->next_schedule.continuation);
-    ble_write_u16_le(conn->tx_frame + 15, conn->next_schedule.timeout);
+    ble_write_u16_le(conn->tx_frame + 15, conn->next_schedule.timeout_10ms);
 }
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
@@ -1578,7 +1578,7 @@ static uint8_t gap_conn_control(
                 conn->next_schedule.factor = factor_max;
                 conn->next_schedule.latency = latency;
                 conn->next_schedule.continuation = continuation;
-                conn->next_schedule.timeout = timeout;
+                conn->next_schedule.timeout_10ms = timeout;
                 gap_send_rate_ind(conn, reference_event, offsets);
                 break;
             }
@@ -1628,7 +1628,7 @@ static uint8_t gap_conn_control(
         conn->next_schedule.factor = factor;
         conn->next_schedule.latency = latency;
         conn->next_schedule.continuation = continuation;
-        conn->next_schedule.timeout = timeout;
+        conn->next_schedule.timeout_10ms = timeout;
         conn->c_rate.update_pending = 1;
 #if GAP_PERIPHERAL_SUPPORT
         if (!conn->is_central)
@@ -1696,7 +1696,7 @@ static uint8_t gap_conn_control(
                     conn->next_schedule.factor = factor;
                     conn->next_schedule.latency = max_latency;
                     conn->next_schedule.continuation = continuation;
-                    conn->next_schedule.timeout = timeout;
+                    conn->next_schedule.timeout_10ms = timeout;
                     conn->c_subrate.status = GAP_CONNECTION_PENDING;
                     gap_send_subrate_update(conn);
                     break;
@@ -1753,7 +1753,7 @@ static uint8_t gap_conn_control(
         conn->schedule.base_event = base;
         conn->schedule.latency = latency;
         conn->schedule.continuation = continuation;
-        conn->schedule.timeout = timeout;
+        conn->schedule.timeout_10ms = timeout;
 #if GAP_PERIPHERAL_SUPPORT
         conn->peripheral.latency_remaining = 0;
 #endif
@@ -2107,7 +2107,7 @@ int gap_subrate_set(
     conn->next_schedule.factor = factor;
     conn->next_schedule.latency = peripheral_latency;
     conn->next_schedule.continuation = continuation;
-    conn->next_schedule.timeout = timeout;
+    conn->next_schedule.timeout_10ms = timeout;
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.queued_flags |= GAP_SUBRATE_QUEUED_UPDATE;
     return 1;
@@ -2226,7 +2226,7 @@ int gap_conn_rate_set(
     conn->next_schedule.factor = factor;
     conn->next_schedule.latency = latency;
     conn->next_schedule.continuation = continuation;
-    conn->next_schedule.timeout = timeout;
+    conn->next_schedule.timeout_10ms = timeout;
     conn->c_rate.queued_flags |= GAP_RATE_QUEUED_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
     return 1;

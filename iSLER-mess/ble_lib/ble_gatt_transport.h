@@ -1764,9 +1764,12 @@ static ble_gatt_transport *ble_gap_gatt_transport_for(
     ble_gap_gatt_peer peers[GAP_CONNECTION_COUNT], gap_conn_handle handle
 ) {
     if (!peers || handle.slot >= GAP_CONNECTION_COUNT) return NULL;
+
     ble_gap_gatt_peer *peer = &peers[handle.slot];
     if (!peer->bound || !peer->connected ||
-        peer->handle.generation != handle.generation) return NULL;
+        peer->handle.generation != handle.generation
+    ) return NULL;
+
     return peer->transport;
 }
 

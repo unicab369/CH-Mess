@@ -366,7 +366,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                     conn->schedule.base_event = conn->next_schedule.base_event;
                     conn->schedule.latency = conn->next_schedule.latency;
                     conn->schedule.continuation = conn->next_schedule.continuation;
-                    conn->schedule.timeout = conn->next_schedule.timeout;
+                    conn->schedule.timeout_10ms = conn->next_schedule.timeout_10ms;
                     conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
                     conn->c_subrate.status = 0;
                 }
@@ -1134,7 +1134,7 @@ static void gap_conn_poll(void) {
     }
 
     if ((uint32_t)(now_ms - conn->link_layer.last_rx_ms) >=
-        (uint32_t)conn->schedule.timeout * 10
+        (uint32_t)conn->schedule.timeout_10ms * 10
     ) {
         gap_conn_end();
         return;

@@ -360,7 +360,7 @@ typedef struct {
     uint16_t factor;          // Subrate factor: normally one active event per this many base events.
     uint16_t latency;         // Maximum consecutive subrated events the Peripheral may skip.
     uint16_t continuation;    // Extra events kept active after packet activity.
-    uint16_t timeout;         // Supervision timeout in 10-ms units.
+    uint16_t timeout_10ms;    // Supervision timeout in 10-ms units.
     uint16_t base_event;      // Event-counter origin used to calculate this schedule's events.
     uint16_t win_offset;      // Connection anchor shift in 1.25-ms units at an update.
     uint16_t instant;         // Event counter when this schedule becomes active.
@@ -1712,7 +1712,7 @@ static int gap_conn_accept(
     conn->schedule.factor = 1;
     conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
     conn->schedule.latency = ble_read_u16_le(frame + 26);
-    conn->schedule.timeout = ble_read_u16_le(frame + 28);
+    conn->schedule.timeout_10ms = ble_read_u16_le(frame + 28);
     conn->data_length = (gap_data_length){27, 27, 328, 328};
     conn->remote_data_length = (gap_data_length){27, 27, 328, 328};
     conn->window_size = frame[21];
