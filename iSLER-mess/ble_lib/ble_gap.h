@@ -418,8 +418,8 @@ typedef struct {
 static struct {
     uint8_t enabled;      // Legacy advertising is enabled.
     uint8_t pdu_type;      // Advertising PDU type currently being transmitted.
-    uint8_t data_len;      // Number of valid bytes in gap_adv_tx_storage.advertising.data.
-    uint8_t scan_resp_len; // Number of valid bytes in gap_adv_tx_storage.advertising.scan_response.
+    uint8_t data_len;      // Number of valid bytes in adv_tx.advertising.data.
+    uint8_t scan_resp_len; // Number of valid bytes in adv_tx.advertising.scan_response.
     struct {
         uint8_t type;       // Address type used in the advertising PDU.
         uint8_t address[6]; // Device address in Bluetooth byte order.
@@ -886,7 +886,7 @@ static union {
     uint8_t unused;
 #endif
 
-} gap_adv_tx_storage GAP_RADIO_BUFFER_ATTR;
+} adv_tx GAP_RADIO_BUFFER_ATTR;
 
 
 #if GAP_CENTRAL_SUPPORT
@@ -894,6 +894,8 @@ static union {
         uint8_t active;
         gap_conn_mode mode;
         gap_address peer;
+        // When the Central starts looking for a device to connect to, this
+        // records when it should give up.
         uint32_t deadline_ms;
     } gap_initiator;
 

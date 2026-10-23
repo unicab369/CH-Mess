@@ -34,7 +34,7 @@ With `GAP_PERIPHERAL_SUPPORT=0` (Central-only), the Peripheral member is omitted
 from each connection context, saving another 32 bytes per link on the CH582 ABI.
 The table's advertising sizes assume `GAP_LEGACY_ADV_SUPPORT=1` (the default).
 Setting it to `0` omits `gap_adv` and `adv_evt` and removes the legacy payload
-from `gap_adv_tx_storage`; Central builds retain its 36-byte connection request.
+from `adv_tx`; Central builds retain its 36-byte connection request.
 
 | Structure | Purpose | Size | Allocation / build configuration |
 | --- | --- | ---: | --- |
@@ -45,9 +45,9 @@ from `gap_adv_tx_storage`; Central builds retain its 36-byte connection request.
 | `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,704 bytes each (3,408 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=0`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
 | `gap_conn_context` | Per-link connection, timing, Link Layer, and procedure state. | 1,840 bytes each (3,680 bytes for 2 links) | `GAP_EXT_ADV_SUPPORT=1`, `GAP_CONN_DATA_MAX=251`, `GAP_SMP_SUPPORT=1`, `GAP_LINK_ENCRYPTION_SUPPORT=1` |
 | `gap_scanner` | Scan timing, discovery mode, and duplicate-filter settings. | 10 bytes | One global scanner state |
-| `gap_adv` | Legacy advertising addresses, timing, and status. | 28 bytes | One global state; payload storage is in `gap_adv_tx_storage` |
+| `gap_adv` | Legacy advertising addresses, timing, and status. | 28 bytes | One global state; payload storage is in `adv_tx` |
 | `gap_initiator` | Central initiation mode, peer, and timeout state. | 20 bytes with Central support; omitted without | One global state; compiled only when `GAP_CENTRAL_SUPPORT=1` |
-| `gap_adv_tx_storage` | Legacy advertising payloads or a Central connection request. | 64 bytes with Central support; 62 bytes without | One global buffer; `GAP_ADV_DATA_MAX=31`; request and payload share storage |
+| `adv_tx` | Legacy advertising payloads or a Central connection request. | 64 bytes with Central support; 62 bytes without | One global buffer; `GAP_ADV_DATA_MAX=31`; request and payload share storage |
 | `adv_evt` | Advertising and scan-response radio frames plus connection-request event data. | 128 bytes | One global event state; `GAP_ADV_DATA_MAX=31` |
 | `gap_security_context` | Per-link encryption keys, counters, and encryption procedure state. | 112 bytes | Embedded in each `gap_conn_context`; already counted above |
 | `gap_smp_context` | Per-link pairing, SMP L2CAP, and Secure Connections procedure state. | 5,876 bytes each | SMP enabled; one per connection (`GAP_CONNECTION_COUNT`, 2 by default) |
@@ -60,7 +60,7 @@ receive timestamp. The table above does not include extended advertising
 buffers or every other GAP global; selected additional legacy allocations
 follow.
 
-With Central support enabled, `gap_adv_tx_storage` saves 34 bytes compared
+With Central support enabled, `adv_tx` saves 34 bytes compared
 with separate legacy advertising payloads and a Central connection-request
 buffer. With `GAP_CENTRAL_SUPPORT=0`, the Central state and request buffer are
 omitted; the two legacy advertising payload buffers remain.
