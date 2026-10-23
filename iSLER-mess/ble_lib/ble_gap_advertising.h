@@ -672,10 +672,21 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 #endif
 
     if (gap_conn_free_slot() < 0 || gap_scanner.scanning ||
-        gap_initiator.active || GAP_EXT_ADVERTISING_ENABLED ||
-        ((mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) &&
-         !gap_accept_list_mask)
+        gap_initiator.active || GAP_EXT_ADVERTISING_ENABLED
     ) return 0;
+
+    if (mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
+        uint8_t has_entry = 0;
+
+        for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
+            if (gap_accept_list[i].used) {
+                has_entry = 1;
+                break;
+            }
+        }
+
+        if (!has_entry) return 0;
+    }
 
     uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_initiator.peer.type : 0;
     const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?

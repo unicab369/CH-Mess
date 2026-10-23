@@ -861,9 +861,8 @@ static uint8_t gap_local_class[GAP_CHANN_CLASS_BYTES];
 #define GAP_CONN_SLOT_BIT(slot) ((uint8_t)(1u << (slot)))
 
 // Privacy and identity state.
-// Bit i marks an occupied entry; saves RAM only when GAP_ACCEPT_LIST_COUNT > 4.
-static uint32_t gap_accept_list_mask;
 static struct {
+    uint8_t used;
     gap_address peer;
 } gap_accept_list[GAP_ACCEPT_LIST_COUNT];
 
@@ -1259,7 +1258,7 @@ static int gap_accept_list_match(
 #endif
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        if (!(gap_accept_list_mask & ((uint32_t)1 << i)))
+        if (!gap_accept_list[i].used)
             continue;
 
         if (gap_accept_list[i].peer.type == (type != 0) &&
@@ -1291,22 +1290,20 @@ int gap_accept_list_add(const gap_address *peer) {
 
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        uint32_t bit = (uint32_t)1 << i;
-
-        if ((gap_accept_list_mask & bit) &&
+        if (gap_accept_list[i].used &&
             gap_accept_list[i].peer.type == type &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
-        if (!(gap_accept_list_mask & bit) && free_slot < 0)
+        if (!gap_accept_list[i].used && free_slot < 0)
             free_slot = i;
     }
 
     if (free_slot < 0) return 0;
 
-    gap_accept_list_mask |= (uint32_t)1 << free_slot;
     gap_accept_list[free_slot].peer.type = type;
     memcpy(gap_accept_list[free_slot].peer.address, address, 6);
+    gap_accept_list[free_slot].used = 1;
     return 1;
 }
 
@@ -1319,14 +1316,11 @@ int gap_accept_list_remove(const gap_address *peer) {
     if (gap_is_busy()) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
-        uint32_t bit = (uint32_t)1 << i;
-
-        if ((gap_accept_list_mask & bit) &&
+        if (gap_accept_list[i].used &&
             gap_accept_list[i].peer.type == type &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) {
             memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
-            gap_accept_list_mask &= ~bit;
             return 1;
         }
     }
@@ -1338,7 +1332,6 @@ int gap_accept_list_clear(void) {
     if (gap_is_busy()) return 0;
 
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
-    gap_accept_list_mask = 0;
     return 1;
 }
 

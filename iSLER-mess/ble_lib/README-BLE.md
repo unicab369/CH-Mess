@@ -80,7 +80,7 @@ Array totals use the default counts shown in the configuration column.
 | `gap_rx` | Shared received Link Layer packet and RSSI. | 41 bytes | One global buffer |
 | `gap_adv_scan` | Received advertising packet and RSSI awaiting processing. | 41 bytes | One global buffer |
 | `gap_identities` | Configured peer identities and privacy/filter policy. | 200 bytes | 4 identities |
-| `gap_accept_list` and mask | Controller accept-list addresses and membership bits. | 32 bytes | 4 addresses plus mask |
+| `gap_accept_list` | Controller accept-list addresses and per-entry used flags. | 32 bytes | 4 entries × 8 bytes |
 
 Extended advertising adds further buffers and queues whose total depends on
 `GAP_EXT_ADV_DATA_MAX` and the configured set, report, and sync counts; those
