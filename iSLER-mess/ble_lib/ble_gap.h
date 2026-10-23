@@ -321,6 +321,10 @@ typedef struct {
     uint8_t type, address[6];
 } gap_address;
 
+#define GAP_ADDRESS_EQUAL(a, b) \
+    (((a).type != 0) == ((b).type != 0) && \
+     memcmp((a).address, (b).address, 6) == 0)
+
 #if GAP_SMP_SUPPORT > 0
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
@@ -1261,12 +1265,14 @@ static int gap_accept_list_match(
         if (!gap_accept_list[i].used)
             continue;
 
-        if (gap_accept_list[i].peer.type == (type != 0) &&
+        if ((gap_accept_list[i].peer.type != 0) == (type != 0) &&
             memcmp(gap_accept_list[i].peer.address, address, 6) == 0
         ) return 1;
 
 #if GAP_IDENTITY_COUNT > 0
-        if (!identity || identity->peer.type != gap_accept_list[i].peer.type)
+        if (!identity ||
+            (identity->peer.type != 0) != (gap_accept_list[i].peer.type != 0)
+        )
             continue;
 
         if (memcmp(identity->peer.address, gap_accept_list[i].peer.address, 6) == 0)
@@ -1281,18 +1287,14 @@ static int gap_accept_list_match(
 // Add an identity address to the bounded list while GAP is idle.
 int gap_accept_list_add(const gap_address *peer) {
     if (!peer) return 0;
-    const uint8_t *address = peer->address;
-    // NOTE: Zero is public; any nonzero address type is treated as random.
-    uint8_t type = peer->type != 0;
     if (gap_is_busy() ||
-        (type && !gap_static_addr_valid(address))
+        (peer->type && !gap_static_addr_valid(peer->address))
     ) return 0;
 
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
-            gap_accept_list[i].peer.type == type &&
-            memcmp(gap_accept_list[i].peer.address, address, 6) == 0
+            GAP_ADDRESS_EQUAL(gap_accept_list[i].peer, *peer)
         ) return 1;
 
         if (!gap_accept_list[i].used && free_slot < 0)
@@ -1301,8 +1303,8 @@ int gap_accept_list_add(const gap_address *peer) {
 
     if (free_slot < 0) return 0;
 
-    gap_accept_list[free_slot].peer.type = type;
-    memcpy(gap_accept_list[free_slot].peer.address, address, 6);
+    gap_accept_list[free_slot].peer.type = peer->type;
+    memcpy(gap_accept_list[free_slot].peer.address, peer->address, 6);
     gap_accept_list[free_slot].used = 1;
     return 1;
 }
@@ -1310,15 +1312,11 @@ int gap_accept_list_add(const gap_address *peer) {
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const gap_address *peer) {
     if (!peer) return 0;
-    const uint8_t *address = peer->address;
-    // NOTE: Use the same public/nonzero-random convention as add.
-    uint8_t type = peer->type != 0;
     if (gap_is_busy()) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
-            gap_accept_list[i].peer.type == type &&
-            memcmp(gap_accept_list[i].peer.address, address, 6) == 0
+            GAP_ADDRESS_EQUAL(gap_accept_list[i].peer, *peer)
         ) {
             memset(&gap_accept_list[i], 0, sizeof(gap_accept_list[i]));
             return 1;
