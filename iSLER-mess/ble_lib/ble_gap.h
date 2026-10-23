@@ -1058,15 +1058,11 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     uint8_t hop = frame[35] & 0x1f;
 
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
-        !win_size || win_size > 8 ||
-        !ble_timing_valid(
-            interval, interval, latency, timeout) ||
-        win_size >= interval ||
+        !ble_timing_valid(interval, interval, latency, timeout) ||
         ble_read_u16_le(frame + 22) > interval ||
-        hop < 5 || hop > 16 ||
-        (frame[34] & 0xe0) ||
-        (uint32_t)timeout * 8 <=
-            2 * (uint32_t)(latency + 1) * interval
+        !win_size || win_size > 8 || win_size >= interval ||
+        (uint32_t)timeout * 8 <= 2 * (uint32_t)(latency + 1) * interval ||
+        (frame[34] & 0xe0) || hop < 5 || hop > 16
     ) return 0;
 
     uint8_t count = 0;
@@ -1075,10 +1071,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
             break;
     }
 
-    uint32_t access_address = (uint32_t)frame[14] |
-        (uint32_t)frame[15] << 8 | (uint32_t)frame[16] << 16 |
-        (uint32_t)frame[17] << 24;
-    return count >= 2 && gap_access_address_valid(access_address);
+    return count >= 2 && gap_access_address_valid(ble_read_u32_le(frame + 14));
 }
 
 // Application facing
