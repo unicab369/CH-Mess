@@ -304,7 +304,6 @@ static inline int gap_ext_adv_active(void) {
     return 0;
 }
 
-static void gap_ext_adv_connection_accept(void);
 #define GAP_EXT_ADVERTISING_ENABLED (gap_ext_adv_active())
 #else
 #define GAP_EXT_ADVERTISING_ENABLED 0
@@ -1802,7 +1801,8 @@ static int gap_conn_accept(
 #endif
 
 #if GAP_EXT_ADV_SUPPORT
-    gap_ext_adv_connection_accept();
+    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
+        gap_ext_adv[i].enabled = 0;
 #endif
 
 #if GAP_LEGACY_ADV_SUPPORT

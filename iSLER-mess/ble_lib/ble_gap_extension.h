@@ -214,11 +214,6 @@ typedef struct {
 static uint8_t gap_ext_adv_next_set;
 static uint8_t gap_periodic_advertising_next_set;
 
-static void gap_ext_adv_connection_accept(void) {
-    for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
-        gap_ext_adv[i].enabled = 0;
-}
-
 // -----------------------------------------------------------------------------
 // Extended advertising and periodic advertising control
 // -----------------------------------------------------------------------------
