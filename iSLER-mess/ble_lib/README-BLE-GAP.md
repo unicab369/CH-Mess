@@ -18,18 +18,14 @@ Status meanings:
 - `[ ] Hardware TODO` Verify on the target radio and with independent peers.
 - `N/A` Excluded from this product's supported feature set.
 
-`GAP_SMP_SUPPORT` defaults to `1`. Set it to `0` before including
-`ble_gap.h` to omit SMP pairing/bonding procedures and their per-link bond
-storage and protocol contexts. GATT and unsecured connections remain available;
-pairing, bonding, and SMP-based authentication are unavailable in that build.
-The application may still start Link Layer encryption with an externally
-provisioned key when `GAP_LINK_ENCRYPTION_SUPPORT` is enabled.
+`GAP_SECURITY_SUPPORT` defaults to `1` and selects the security feature level:
 
-`GAP_LINK_ENCRYPTION_SUPPORT` defaults to `1`. Set it to `0` before including
-`ble_gap.h` to omit the per-connection encryption context and Link Layer
-encryption procedures. SMP requires Link Layer encryption, so enabling SMP while
-disabling this feature is a compile-time error. The two settings are separate:
-encryption can be enabled without SMP for application-managed keys.
+- `0`: omit Link Layer encryption and SMP state and procedures.
+- `1`: enable Link Layer encryption for application-managed keys; omit SMP.
+- `2`: enable Link Layer encryption and SMP pairing/bonding procedures.
+
+Values outside `0`–`2` are rejected at compile time. Link encryption remains
+usable without SMP when the application provisions and supplies the LTK.
 
 `GAP_PRIVACY_SUPPORT` defaults to `1`. Set it to `0` before including
 `ble_gap.h` to omit local private-address rotation and privacy filters, including

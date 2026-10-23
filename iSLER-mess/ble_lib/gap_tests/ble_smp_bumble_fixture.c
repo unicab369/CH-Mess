@@ -8,7 +8,7 @@ void AES_ENCRYPT_BLOCK(const uint8_t *key, const uint8_t *input,
 }
 
 #include "../ble_crypto.h"
-#define GAP_SMP_SUPPORT 1
+#define GAP_SECURITY_SUPPORT 2
 #include "../ble_gap.h"
 
 static uint8_t outbound[L2CAP_SDU_MAX + 4];

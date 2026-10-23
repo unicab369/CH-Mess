@@ -14,7 +14,7 @@ __attribute__((weak)) int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len) {
 
 // Bond storage is application-owned until a reserved persistent region is
 // assigned. The generic GAP bond API safely reports storage as unavailable.
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
 __attribute__((weak)) int GAP_BOND_LOAD(uint8_t slot, gap_bond *bond) {
     (void)slot;
     if (bond)

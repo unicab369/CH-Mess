@@ -7,7 +7,7 @@
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
     gap_send_security(conn);
 #endif
 
@@ -268,7 +268,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         conn->link_state.rx_armed
     ) {
         uint8_t authenticated = 0;
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
@@ -380,7 +380,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
             conn->link_layer.tx_sn ^= 1;
             conn->link_layer.tx_pending = 0;
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
             conn->security.tx_sealed = 0;
             conn->security.tx_plain_len = 0;
             conn->security.tx_opcode = 0;
@@ -410,7 +410,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
               ((llid == 1 || llid == 2) && frame[1] && conn->queue_state.rx_ready));
 
         if (new_packet) {
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
             if (frame[1] && conn->security.phase &&
                 conn->security.phase != GAP_ENC_QUEUED &&
                 conn->security.phase != GAP_ENC_PAUSE_QUEUED
@@ -863,7 +863,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
     ) {
         uint8_t adv_pdu_type = adv_evt.adv_frame[0] & 0x0f;
         uint8_t peer_in_accept_list = gap_accept_list_match(
-            frame + 2, (frame[0] >> 6) & 1, peer_slot);
+                                    frame + 2, (frame[0] >> 6) & 1, peer_slot);
 
         if (adv_pdu_type != ADV_DIRECT_IND && frame[1] == 12 &&
             (frame[0] & 0x0f) == SCAN_REQ &&
@@ -1053,21 +1053,20 @@ static void gap_conn_poll(void) {
         }
 #endif
 
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
         if (smp_bond_load())
             conn->bonded = 1;
 #endif
     }
 
     // Bond loading is one-time; restoration and SMP protocol work are polled each event.
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
     gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     smp_bond_restore_poll(smp, conn);
     gap_smp_poll_context(smp, conn);
 #endif
     uint32_t now_ms = GET_MILLIS();
-#if GAP_LINK_ENCRYPTION_SUPPORT
-
+#if GAP_SECURITY_SUPPORT >= 1
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
     // GAP_ENC_PAUSE_QUEUED, and GAP_ENC_RESTART_QUEUED.
     if ((conn->security.phase & GAP_ENC_TIMEOUT_MASK) &&

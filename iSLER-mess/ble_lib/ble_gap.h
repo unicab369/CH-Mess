@@ -29,19 +29,14 @@
 #error "GAP_CONNECTION_COUNT must be between 1 and 4"
 #endif
 
-// Set to 0 to omit pairing, bonding, and SMP per-link protocol state.
-#ifndef GAP_SMP_SUPPORT
-#define GAP_SMP_SUPPORT 0
+// Security level: 0 disables Link Layer encryption and SMP; 1 enables Link
+// Layer encryption with application-managed keys while SMP remains disabled;
+// 2 enables both Link Layer encryption and SMP.
+#ifndef GAP_SECURITY_SUPPORT
+#define GAP_SECURITY_SUPPORT 1
 #endif
-
-// Set to 0 to omit Link Layer encryption state and procedures. SMP requires it.
-// With SMP disabled, applications can still pass a stored LTK to gap_encrypt()
-// and answer Peripheral key lookups through gap_key_request()/gap_key_reply().
-#ifndef GAP_LINK_ENCRYPTION_SUPPORT
-#define GAP_LINK_ENCRYPTION_SUPPORT 1
-#endif
-#if GAP_SMP_SUPPORT > 0 && !GAP_LINK_ENCRYPTION_SUPPORT
-#error "GAP_SMP_SUPPORT requires GAP_LINK_ENCRYPTION_SUPPORT"
+#if GAP_SECURITY_SUPPORT < 0 || GAP_SECURITY_SUPPORT > 2
+#error "GAP_SECURITY_SUPPORT must be 0, 1, or 2"
 #endif
 
 // Set either role to 0 to reject procedures that establish that local role.
@@ -325,7 +320,7 @@ typedef struct {
     ((a).type == (b).type && \
      memcmp((a).address, (b).address, 6) == 0)
 
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
 typedef struct {
     uint8_t ltk[16], rand[8], ediv[2];
 } gap_bond_key;
@@ -375,7 +370,7 @@ typedef struct {
     uint16_t generation; // Slot generation; rejects handles left over from a prior link.
 } gap_conn_handle;
 
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
 // Encryption procedure state; timed phases occupy the low nine bits.
 enum {
     GAP_ENC_IDLE = 0,
@@ -475,7 +470,7 @@ typedef struct {
     uint16_t sync_transfer_id;
 #endif
 
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
     uint8_t bonded, restore_started, restore_attempted;
     uint8_t bond_repair_pending;
     gap_bond bond;
@@ -495,7 +490,7 @@ typedef struct {
     gap_address peer;
     // Selects the local Central or Peripheral role and the matching initiator/responder address.
     uint8_t is_central;
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
     // Invalidates security work captured before this connection slot was reused.
@@ -853,7 +848,7 @@ static uint8_t gap_conn_slot;
 static uint8_t gap_conn_slot_mask;
 // Only one radio receive callback runs at a time. Decrypted frames are consumed
 // there or copied into the receiving link's rx_packet before the callback ends.
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
 static uint8_t gap_rx_plain[2 + GAP_CONN_PACKET_BUFFER_MAX];
 #endif
 
@@ -1270,8 +1265,7 @@ static int gap_accept_list_match(
         ) return 1;
 
 #if GAP_IDENTITY_COUNT > 0
-        if (!identity || !GAP_ADDRESS_EQUAL(identity->peer,
-                                             gap_accept_list[i].peer))
+        if (!identity || !GAP_ADDRESS_EQUAL(identity->peer, gap_accept_list[i].peer))
             continue;
 
         return 1;
@@ -1608,7 +1602,7 @@ int gap_use_public_address(void) {
 
 #include "ble_gap_connection.h"
 
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
 #include "ble_gap_smp.h"
 #endif
 
@@ -1636,12 +1630,12 @@ static int gap_conn_accept(
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
     conn = &gap_conn_ctx[gap_conn_slot];
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
     uint32_t security_generation = conn->security_generation + 1;
 #endif
     gap_wipe(conn, sizeof(*conn));
 
-#if GAP_LINK_ENCRYPTION_SUPPORT
+#if GAP_SECURITY_SUPPORT >= 1
     conn->security_generation = security_generation;
 #endif
     gap_data_capacity = data_capacity;
@@ -1649,7 +1643,7 @@ static int gap_conn_accept(
 
     conn->initiator.type = (frame[0] >> 6) & 1;
     memcpy(conn->initiator.address, frame + 2, 6);
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
     conn->responder.type = (frame[0] >> 7) & 1;
     memcpy(conn->responder.address, frame + 8, 6);
 #endif
@@ -1705,7 +1699,7 @@ static int gap_conn_accept(
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
-#if GAP_SMP_SUPPORT > 0
+#if GAP_SECURITY_SUPPORT >= 2
     if (!smp_link_init(&gap_smp_contexts[gap_conn_slot], &conn->l2cap)) {
         return 0;
     }

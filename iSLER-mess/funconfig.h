@@ -12,6 +12,6 @@
 #define FUNCONF_USE_DEBUGPRINTF   1
 #define RANDOM_STRENGTH           2
 
-#define GAP_SMP_SUPPORT           0
+#define GAP_SECURITY_SUPPORT           1
 
 #endif
