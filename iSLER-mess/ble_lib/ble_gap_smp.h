@@ -20,9 +20,6 @@ int GAP_BOND_DELETE(uint8_t slot);
 
 int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 
-// Declared here because SMP abort handling calls it before its definition.
-int gap_bond_remove(void);
-
 // - [ ] Add BR/EDR security-manager procedures only if Classic transport is
 //       supported; BR/EDR SMP is outside this LE SMP implementation.
 
@@ -370,6 +367,38 @@ static int gap_bond_valid(const gap_bond *bond) {
     return 1;
 }
 
+// Application facing
+int gap_bond_remove(gap_conn_context *conn) {
+    const gap_address *peer = &conn->bond.peer;
+    if (peer->type > 1 || (peer->type && (peer->address[5] & 0xc0) != 0xc0))
+        return 0;
+
+    if (!GAP_BOND_LOAD || !GAP_BOND_DELETE)
+        return 0;
+
+    gap_bond bond;
+
+    for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
+        memset(&bond, 0, sizeof(bond));
+        int loaded = GAP_BOND_LOAD(slot, &bond);
+
+        if (loaded < 0) {
+            gap_wipe(&bond, sizeof(bond));
+            return 0;
+        }
+
+        if (loaded && gap_bond_valid(&bond) &&
+            GAP_ADDRESS_EQUAL(bond.peer, *peer)
+        ) {
+            gap_wipe(&bond, sizeof(bond));
+            return GAP_BOND_DELETE(slot);
+        }
+
+        gap_wipe(&bond, sizeof(bond));
+    }
+    return 0;
+}
+
 static int smp_bond_store(const gap_bond *bond) {
     if (!bond) return 0;
 
@@ -435,7 +464,8 @@ static int smp_bond_store(const gap_bond *bond) {
 
 // Restore the old Central bond if a replacement was saved but pairing failed
 // before the peer acknowledged Master Identification.
-static void smp_bond_abort(gap_smp_context *smp, gap_conn_context *conn) {
+static void smp_bond_abort(gap_conn_context *conn) {
+    gap_smp_context *smp = &conn->smp;
     if (!conn->is_central || !smp->pairing.secure_connections ||
         !((smp->pairing.phase == SMP_PHASE_BOND_TX && smp->pairing.bond_tx_step >= 2) ||
           (smp->pairing.phase == SMP_PHASE_BOND_RX && smp->pairing.bond_rx_step >= 10))
@@ -447,7 +477,7 @@ static void smp_bond_abort(gap_smp_context *smp, gap_conn_context *conn) {
         conn->bonded = 1;
     }
     else {
-        gap_bond_remove();
+        gap_bond_remove(conn);
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
     }
@@ -455,9 +485,10 @@ static void smp_bond_abort(gap_smp_context *smp, gap_conn_context *conn) {
 
 // Stop the procedure and erase temporary secrets on every success/failure path.
 static void gap_smp_finish(
-    gap_smp_context *smp, gap_conn_context *conn, uint8_t status
+    gap_conn_context *conn, uint8_t status
 ) {
-    if (status) smp_bond_abort(smp, conn);
+    gap_smp_context *smp = &conn->smp;
+    if (status) smp_bond_abort(conn);
 
     if (status && !conn->bonded &&
         (smp->pairing.phase == SMP_PHASE_BOND_TX ||
@@ -842,9 +873,10 @@ static int gap_smp_local_identity(uint8_t irk[16], uint8_t address[7]) {
 
 // Finish a failed pairing and notify the peer with the failure reason.
 static void gap_smp_fail(
-    gap_smp_context *smp, gap_conn_context *conn, uint8_t status
+    gap_conn_context *conn, uint8_t status
 ) {
-    gap_smp_finish(smp, conn, status);
+    gap_smp_context *smp = &conn->smp;
+    gap_smp_finish(conn, status);
     gap_smp_queue(smp, SMP_PAIRING_FAILED, &status, 1);
 }
 
@@ -853,7 +885,7 @@ void gap_pairing_set(uint8_t enabled) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_pair_cfg.enabled = enabled;
     if (!enabled && conn->smp.pairing.phase)
-        gap_smp_fail(&conn->smp, conn, 5);
+        gap_smp_fail(conn, 5);
 }
 
 // Application facing
@@ -1092,7 +1124,7 @@ int gap_pair_cancel(void) {
     if (!conn->smp.pairing.phase || conn->smp.blocked)
         return 0;
 
-    gap_smp_fail(&conn->smp, conn, conn->smp.pairing.phase == SMP_PHASE_SC_USER ? 0x0c : 1);
+    gap_smp_fail(conn, conn->smp.pairing.phase == SMP_PHASE_SC_USER ? 0x0c : 1);
     return 1;
 }
 
@@ -1162,40 +1194,8 @@ uint8_t gap_pairing_status(void) {
 
 
 
-// Application facing
-int gap_bond_remove(void) {
-    const gap_address *peer = &gap_conn_ctx[gap_conn_slot].bond.peer;
-    if (peer->type > 1 || (peer->type && (peer->address[5] & 0xc0) != 0xc0))
-        return 0;
 
-    if (!GAP_BOND_LOAD || !GAP_BOND_DELETE)
-        return 0;
-
-    gap_bond bond;
-
-    for (uint8_t slot = 0; slot < GAP_BOND_SLOTS; slot++) {
-        memset(&bond, 0, sizeof(bond));
-        int loaded = GAP_BOND_LOAD(slot, &bond);
-
-        if (loaded < 0) {
-            gap_wipe(&bond, sizeof(bond));
-            return 0;
-        }
-
-        if (loaded && gap_bond_valid(&bond) &&
-            GAP_ADDRESS_EQUAL(bond.peer, *peer)
-        ) {
-            gap_wipe(&bond, sizeof(bond));
-            return GAP_BOND_DELETE(slot);
-        }
-
-        gap_wipe(&bond, sizeof(bond));
-    }
-    return 0;
-}
-
-static int smp_bond_load(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static int smp_bond_load(gap_conn_context *conn) {
     memset(&conn->bond, 0, sizeof(conn->bond));
 
     if (!GAP_BOND_LOAD || conn->peer.type > 1 ||
@@ -1242,25 +1242,22 @@ static int smp_bond_load(void) {
 }
 
 
-
-
 // Close pairing state and retain only its final status for the GAP API.
-static void gap_smp_link_close(void) {
-    gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+static void gap_smp_link_close(gap_conn_context *conn) {
     if (conn->is_central &&
         conn->smp.pairing.phase == SMP_PHASE_BOND_TX &&
         conn->smp.pairing.bond_tx_step == 2
     ) {
         // The peer may or may not have received Master Identification; retry
         // pairing on the next link to reconcile whichever bond was committed.
-        smp_bond_abort(&conn->smp, conn);
+        smp_bond_abort(conn);
         conn->bond_repair_pending = 1;
     }
 
     if (conn->is_central && conn->restore_started &&
         conn->security.status == 0x3d
     ) {
-        gap_bond_remove();
+        gap_bond_remove(conn);
         conn->bond_repair_pending = 1;
     }
 
@@ -1285,7 +1282,7 @@ static void smp_bond_restore_poll(
         !gap_security->phase && gap_security->status &&
         gap_security->status != GAP_CONNECTION_PENDING
     ) {
-        gap_bond_remove();
+        gap_bond_remove(conn);
         memset(&conn->bond, 0, sizeof(conn->bond));
         conn->bonded = 0;
         conn->restore_started = 0;
@@ -1320,8 +1317,9 @@ static void smp_bond_restore_poll(
 // The Core orders key distribution Peripheral first, then Central. This
 // completes the Peripheral set on the Central and starts the Central set.
 static void smp_bond_rx_complete(
-    gap_smp_context *smp, gap_conn_context *conn
+    gap_conn_context *conn
 ) {
+    gap_smp_context *smp = &conn->smp;
 
     if (conn->is_central) {
         uint8_t keyset = smp->pairing.response[5];
@@ -1331,7 +1329,7 @@ static void smp_bond_rx_complete(
             uint8_t address[7] = {0};
 
             if (!gap_smp_local_identity(conn->bond.local_irk.key, address)) {
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -1341,7 +1339,7 @@ static void smp_bond_rx_complete(
 
         if ((keyset & GAP_KEY_DIST_SIGNING) && !conn->bond.local_csrk.present) {
             if (!smp_random_bytes(conn->bond.local_csrk.key, sizeof(conn->bond.local_csrk.key))) {
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -1351,7 +1349,7 @@ static void smp_bond_rx_complete(
         if (keyset & GAP_KEY_DIST_ENCRYPTION) {
             smp->pairing.bond_tx_step = 1;
             if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.central.ltk, 16)) {
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
             return;
@@ -1359,7 +1357,7 @@ static void smp_bond_rx_complete(
         else if (keyset & GAP_KEY_DIST_IDENTITY) {
             smp->pairing.bond_tx_step = 3;
             if (!gap_smp_queue(smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
             return;
@@ -1368,7 +1366,7 @@ static void smp_bond_rx_complete(
             smp->pairing.bond_tx_step = 5;
 
             if (!gap_smp_queue(smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
             return;
@@ -1377,17 +1375,18 @@ static void smp_bond_rx_complete(
 
     if (smp_bond_store(&conn->bond)) {
         conn->bonded = 1;
-        gap_smp_finish(smp, conn, 0);
+        gap_smp_finish(conn, 0);
     }
     else {
-        gap_smp_finish(smp, conn, SMP_FAIL_UNSPECIFIED);
+        gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
         gap_wipe(&conn->bond, sizeof(conn->bond));
     }
 }
 
 static void smp_bond_peripheral_start(
-    gap_smp_context *smp, gap_conn_context *conn
+    gap_conn_context *conn
 ) {
+    gap_smp_context *smp = &conn->smp;
     uint8_t keyset = smp->pairing.response[6];
     smp->pairing.phase = SMP_PHASE_BOND_TX;
 
@@ -1399,7 +1398,7 @@ static void smp_bond_peripheral_start(
         do {
             if (++attempts > 4 || !smp_random_bytes((uint8_t *)&material, sizeof(material))) {
                 gap_wipe(&material, sizeof(material));
-                gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -1421,7 +1420,7 @@ static void smp_bond_peripheral_start(
         uint8_t address[7] = {0};
 
         if (!gap_smp_local_identity(conn->bond.local_irk.key, address)) {
-            gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -1431,7 +1430,7 @@ static void smp_bond_peripheral_start(
 
     if (keyset & GAP_KEY_DIST_SIGNING) {
         if (!smp_random_bytes(conn->bond.local_csrk.key, sizeof(conn->bond.local_csrk.key))) {
-            gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -1441,19 +1440,19 @@ static void smp_bond_peripheral_start(
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
         smp->pairing.bond_tx_step = 31;
         if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.peripheral.ltk, 16)) {
-            gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
     else if (keyset & GAP_KEY_DIST_IDENTITY) {
         smp->pairing.bond_tx_step = 33;
         if (!gap_smp_queue(smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
-            gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
     else if (keyset & GAP_KEY_DIST_SIGNING) {
         smp->pairing.bond_tx_step = 35;
         if (!gap_smp_queue(smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
-            gap_smp_fail(smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
     else {
@@ -1461,23 +1460,12 @@ static void smp_bond_peripheral_start(
         smp->pairing.bond_rx_step = (smp->pairing.secure_connections ? 20 : 0);
 
         if (!smp->pairing.response[5])
-            smp_bond_rx_complete(smp, conn);
+            smp_bond_rx_complete(conn);
     }
 }
 
 // Route only SMP (L2CAP CID 0x0006); leave ATT and other application data queued.
 // Called from connection polling and before an application takes an RX fragment.
-static void gap_smp_poll_context(
-    gap_conn_context *conn
-);
-
-static void gap_smp_poll(void) {
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
-        return;
-
-    gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot]);
-}
-
 static void gap_smp_poll_context(
     gap_conn_context *conn
 ) {
@@ -1498,7 +1486,7 @@ static void gap_smp_poll_context(
             conn->smp.bearer.rx_len = 0;
 
             if (pairing->phase)
-                gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
 
@@ -1519,7 +1507,7 @@ static void gap_smp_poll_context(
         uint32_t value = (action == SMP_USER_PASSKEY_DISPLAY ? passkey : 0);
 
         if (gap_smp_user_request_callback(gap_smp_user_request_context, action, value) < 0) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_PASSKEY_ENTRY);
+            gap_smp_fail(conn, SMP_FAIL_PASSKEY_ENTRY);
             return;
         }
 
@@ -1544,7 +1532,7 @@ static void gap_smp_poll_context(
 
     if (pairing->phase == SMP_PHASE_SC_USER && conn->smp.secure.numeric_reply) {
         if (conn->smp.secure.numeric_reply == 2) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_NUMERIC_COMPARISON); // Numeric Comparison Failed.
+            gap_smp_fail(conn, SMP_FAIL_NUMERIC_COMPARISON); // Numeric Comparison Failed.
         }
         else {
             pairing->authenticated = 1;
@@ -1563,7 +1551,7 @@ static void gap_smp_poll_context(
                     difference |= check[i] ^ conn->smp.secure.peer_check[i];
 
                 if (difference)
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_DHKEY_CHECK);
+                    gap_smp_fail(conn, SMP_FAIL_DHKEY_CHECK);
                 else {
                     gap_sc_dhkey_check(&conn->smp, conn, 0, check);
                     gap_smp_queue(&conn->smp, SMP_PAIRING_DHKEY_CHECK, check, sizeof(check));
@@ -1599,7 +1587,7 @@ static void gap_smp_poll_context(
             int queued = gap_smp_queue(&conn->smp, SMP_CENTRAL_IDENTIFICATION, master_id, sizeof(master_id));
             gap_wipe(master_id, sizeof(master_id));
             if (!queued) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -1612,7 +1600,7 @@ static void gap_smp_poll_context(
         ) {
             if (key_dist & GAP_KEY_DIST_IDENTITY) {
                 if (!gap_smp_queue(&conn->smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
 
@@ -1620,7 +1608,7 @@ static void gap_smp_poll_context(
             }
             else {
                 if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
 
@@ -1637,7 +1625,7 @@ static void gap_smp_poll_context(
             if (!available || !gap_smp_queue(&conn->smp, SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))
             ) {
                 gap_wipe(address, sizeof(address));
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED); return;
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
             }
 
             gap_wipe(address, sizeof(address));
@@ -1649,7 +1637,7 @@ static void gap_smp_poll_context(
             (key_dist & GAP_KEY_DIST_SIGNING)
         ) {
             if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -1659,19 +1647,19 @@ static void gap_smp_poll_context(
             pairing->phase = SMP_PHASE_BOND_RX;
             pairing->bond_rx_step = pairing->secure_connections ? 20 : 0;
             if (!pairing->response[5])
-                smp_bond_rx_complete(&conn->smp, conn);
+                smp_bond_rx_complete(conn);
             return;
 
         }
         else {
             if (conn->is_central && !smp_bond_store(&conn->bond)) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 gap_wipe(&conn->bond, sizeof(conn->bond));
                 return;
             }
 
             conn->bonded = 1;
-            gap_smp_finish(&conn->smp, conn, 0);
+            gap_smp_finish(conn, 0);
         }
     }
 
@@ -1757,22 +1745,22 @@ static void gap_smp_poll_context(
                     pairing->phase = SMP_PHASE_BOND_RX;
                     pairing->bond_rx_step = 30;
                     if (!pairing->response[6])
-                        smp_bond_rx_complete(&conn->smp, conn);
+                        smp_bond_rx_complete(conn);
                 }
                 else {
-                    smp_bond_peripheral_start(&conn->smp, conn);
+                    smp_bond_peripheral_start(conn);
                 }
                 return;
             }
 
-            gap_smp_finish(&conn->smp, conn, 0);
+            gap_smp_finish(conn, 0);
             return;
         }
 
         if (conn->smp.encryption_started && !gap_security->phase &&
             gap_security->status && gap_security->status != GAP_CONNECTION_PENDING
         ) {
-            gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -1796,7 +1784,7 @@ static void gap_smp_poll_context(
                 gap_key_reply(identifiers ? NULL : conn->smp.key.secure_ltk);
                 conn->smp.encryption_started = 1;
                 if (identifiers)
-                    gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
             }
         }
 
@@ -1818,14 +1806,14 @@ static void gap_smp_poll_context(
 
     if (pairing->phase == SMP_PHASE_ENCRYPT && gap_encrypted()) {
         if (!conn->smp.encryption_started) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED); return;
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
         }
 
         conn->authenticated = pairing->authenticated;
         conn->enc_key_size = pairing->key_size;
 
         if (!pairing->bond_requested) {
-            gap_smp_finish(&conn->smp, conn, 0);
+            gap_smp_finish(conn, 0);
             return;
         }
 
@@ -1838,7 +1826,7 @@ static void gap_smp_poll_context(
                     !smp_random_bytes((uint8_t *)&bond_data, sizeof(bond_data))
                 ) {
                     gap_wipe(&bond_data, sizeof(bond_data));
-                    gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
 
@@ -1868,7 +1856,7 @@ static void gap_smp_poll_context(
         conn->bond.authenticated = pairing->authenticated;
 
         if (!conn->is_central) {
-            smp_bond_peripheral_start(&conn->smp, conn);
+            smp_bond_peripheral_start(conn);
             return;
         }
 
@@ -1878,20 +1866,20 @@ static void gap_smp_poll_context(
         pairing->phase = SMP_PHASE_BOND_RX;
 
         if (!pairing->response[6])
-            smp_bond_rx_complete(&conn->smp, conn);
+            smp_bond_rx_complete(conn);
         return;
     }
 
     if (pairing->phase == SMP_PHASE_ENCRYPT) {
         if (conn->smp.encryption_started && !gap_security->phase && gap_security->status) {
-            gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
         if (conn->is_central && !conn->smp.encryption_started && !gap_security->phase) {
             if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
 
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
             conn->smp.encryption_started = 1;
@@ -1907,7 +1895,7 @@ static void gap_smp_poll_context(
             conn->smp.encryption_started = 1;
 
             if (zero) {
-                gap_smp_finish(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
         }
@@ -1955,7 +1943,7 @@ static void gap_smp_poll_context(
             conn->smp.l2cap_rx_pending = 0;
 
             if (assembled < 0 && !conn->smp.blocked)
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+                gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
         }
 
         return;
@@ -1971,7 +1959,7 @@ static void gap_smp_poll_context(
 
     if (!dispatched) {
         if (!conn->smp.blocked)
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
         return;
     }
 
@@ -1987,12 +1975,12 @@ static void gap_smp_poll_context(
         return;
 
     if (!smp_pdu_valid(pdu, pending_len)) {
-        gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+        gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
         return;
     }
 
     if (op == SMP_PAIRING_FAILED && pending_len == 2) {
-        gap_smp_finish(&conn->smp, conn, pdu[1]);
+        gap_smp_finish(conn, pdu[1]);
         return;
     }
 
@@ -2025,7 +2013,7 @@ static void gap_smp_poll_context(
                 memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
                 pairing->bond_rx_step = 32;
                 if (!identity && !signing)
-                    smp_bond_rx_complete(&conn->smp, conn);
+                    smp_bond_rx_complete(conn);
                 return;
             }
 
@@ -2049,7 +2037,7 @@ static void gap_smp_poll_context(
                 conn->peer = conn->bond.peer;
                 pairing->bond_rx_step = identity_step + 2;
                 if (!signing)
-                    smp_bond_rx_complete(&conn->smp, conn);
+                    smp_bond_rx_complete(conn);
                 return;
             }
 
@@ -2058,11 +2046,11 @@ static void gap_smp_poll_context(
             ) {
                 memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
                 conn->bond.peer_csrk.present = 1;
-                smp_bond_rx_complete(&conn->smp, conn);
+                smp_bond_rx_complete(conn);
                 return;
             }
 
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
             return;
         }
 
@@ -2095,7 +2083,7 @@ static void gap_smp_poll_context(
                 identifiers |= pdu[3 + i];
 
             if (!identifiers) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+                gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
                 return;
             }
 
@@ -2109,7 +2097,7 @@ static void gap_smp_poll_context(
                 return;
             }
 
-            smp_bond_rx_complete(&conn->smp, conn);
+            smp_bond_rx_complete(conn);
             return;
         }
 
@@ -2133,7 +2121,7 @@ static void gap_smp_poll_context(
             pairing->bond_rx_step = 4;
 
             if (!(pairing->response[5] & GAP_KEY_DIST_SIGNING))
-                smp_bond_rx_complete(&conn->smp, conn);
+                smp_bond_rx_complete(conn);
             return;
         }
 
@@ -2143,17 +2131,17 @@ static void gap_smp_poll_context(
         ) {
             memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
             conn->bond.peer_csrk.present = 1;
-            smp_bond_rx_complete(&conn->smp, conn);
+            smp_bond_rx_complete(conn);
             return;
         }
 
-        gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+        gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
         gap_wipe(&conn->bond, sizeof(conn->bond));
         return;
     }
 
     if (!gap_pair_cfg.enabled) {
-        gap_smp_fail(&conn->smp, conn, SMP_FAIL_PAIRING_NOT_SUPPORTED);
+        gap_smp_fail(conn, SMP_FAIL_PAIRING_NOT_SUPPORTED);
         return;
     }
 
@@ -2190,7 +2178,7 @@ static void gap_smp_poll_context(
         if (!pairing->keypress_active || !passkey_phase ||
             peer_io != GAP_IO_KEYBOARD_ONLY
         ) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
             return;
         }
 
@@ -2206,7 +2194,7 @@ static void gap_smp_poll_context(
     ) {
         if (gap_security->phase || gap_security->tx_enabled || gap_security->rx_enabled) {
             // Re-pairing an encrypted link is not supported yet.
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -2227,7 +2215,7 @@ static void gap_smp_poll_context(
             (peer.init_key_dist & ~key_dist_supported) ||
             (peer.resp_key_dist & ~key_dist_supported)
         ) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
             return;
         }
 
@@ -2236,7 +2224,7 @@ static void gap_smp_poll_context(
                 (peer.init_key_dist & (uint8_t)~local.init_key_dist) ||
                 (peer.resp_key_dist & (uint8_t)~local.resp_key_dist)
             ) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_INVALID_PARAMETERS);
+                gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
                 return;
             }
         }
@@ -2270,12 +2258,12 @@ static void gap_smp_poll_context(
         }
 
         if (gap_pair_cfg.secure_connections && !sc) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+            gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
             return;
         }
 
         if (key_size < gap_pair_cfg.min_key_size) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_ENCRYPTION_KEY_SIZE);
+            gap_smp_fail(conn, SMP_FAIL_ENCRYPTION_KEY_SIZE);
             return;
         }
 
@@ -2292,21 +2280,21 @@ static void gap_smp_poll_context(
         pairing->keypress_active = (auth_req & 0x10) && (peer.auth_req & 0x10);
 
         if (pairing->secure_connections && key_size != 16) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_ENCRYPTION_KEY_SIZE);
+            gap_smp_fail(conn, SMP_FAIL_ENCRYPTION_KEY_SIZE);
             return;
         }
 
         if (pairing->secure_connections &&
             ((pdu[5] | pdu[6]) & GAP_KEY_DIST_SIGNING)
         ) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+            gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
             return;
         }
 
         if (pdu[2] && (!pairing->secure_connections ||
              !conn->smp.local_oob.oob.valid)
         ) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_OOB_NOT_AVAILABLE);
+            gap_smp_fail(conn, SMP_FAIL_OOB_NOT_AVAILABLE);
             return;
         }
 
@@ -2322,7 +2310,7 @@ static void gap_smp_poll_context(
         pairing->bond_requested = bond_requested;
 
         if (gap_pair_cfg.bonding && !bond_requested) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+            gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
             return;
         }
 
@@ -2342,7 +2330,7 @@ static void gap_smp_poll_context(
                 (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))
             ) {
                 if (gap_pair_cfg.io == 3 || pdu[1] == 3 || (gap_pair_cfg.io < 2 && pdu[1] < 2)) {
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
+                    gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
                     return;
                 }
                 else if (pairing->secure_connections &&
@@ -2393,7 +2381,7 @@ static void gap_smp_poll_context(
         gap_wipe(pairing_random, sizeof(pairing_random));
 
         if (!entropy_ready) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -2414,7 +2402,7 @@ static void gap_smp_poll_context(
 
             if (!use_oob_key && !gap_sc_generate_key(&conn->smp)) {
                 if (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -2437,7 +2425,7 @@ static void gap_smp_poll_context(
             do {
                 if (++attempts > 8 || !smp_random_bytes(bytes, 4)) {
                     gap_wipe(bytes, sizeof(bytes));
-                    gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
 
@@ -2528,7 +2516,7 @@ static void gap_smp_poll_context(
                 return;
 
             // Invalid P-256 point or reflected key.
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_DHKEY_CHECK);
+            gap_smp_fail(conn, SMP_FAIL_DHKEY_CHECK);
             return;
         }
 
@@ -2542,7 +2530,7 @@ static void gap_smp_poll_context(
             gap_wipe(confirm, sizeof(confirm));
 
             if (difference) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_CONFIRM_VALUE);
+                gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
                 return;
             }
         }
@@ -2614,7 +2602,7 @@ static void gap_smp_poll_context(
         gap_wipe(confirm, sizeof(confirm));
 
         if (difference) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_CONFIRM_VALUE);
+            gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
             return;
         }
 
@@ -2638,7 +2626,7 @@ static void gap_smp_poll_context(
             gap_wipe(next_nonce, sizeof(next_nonce));
 
             if (!entropy_ready) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
@@ -2659,7 +2647,7 @@ static void gap_smp_poll_context(
         }
 
         if (!gap_sc_derive_keys(&conn->smp, conn)) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -2705,7 +2693,7 @@ static void gap_smp_poll_context(
             for (uint8_t i = 0; i < 16; i++)
                 difference |= check[i] ^ pdu[i + 1];
             if (difference) {
-                gap_smp_fail(&conn->smp, conn, SMP_FAIL_DHKEY_CHECK);
+                gap_smp_fail(conn, SMP_FAIL_DHKEY_CHECK);
                 return;
             }
 
@@ -2752,7 +2740,7 @@ static void gap_smp_poll_context(
         for (unsigned i = 0; i < 16; i++)
             difference |= confirm[i] ^ pairing->peer_confirm[i];
         if (difference) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_CONFIRM_VALUE);
+            gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
             return;
         }
 
@@ -2763,7 +2751,7 @@ static void gap_smp_poll_context(
         gap_wipe(s1_random, sizeof(s1_random));
 
         if (!stk_ready) {
-            gap_smp_fail(&conn->smp, conn, SMP_FAIL_UNSPECIFIED);
+            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             return;
         }
 
@@ -2779,8 +2767,14 @@ static void gap_smp_poll_context(
     }
 
     uint8_t unsupport = op >= SMP_ENCRYPTION_INFORMATION && op != SMP_SECURITY_REQUEST;
-    gap_smp_fail(&conn->smp, conn, unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
+    gap_smp_fail(conn, unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
 }
 
+static void gap_smp_poll(void) {
+    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
+        return;
+
+    gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot]);
+}
 
 #endif // BLE_GAP_SMP_H

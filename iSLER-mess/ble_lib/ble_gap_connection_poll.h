@@ -1054,7 +1054,7 @@ static void gap_conn_poll(void) {
 #endif
 
 #if GAP_SECURITY_SUPPORT >= 2
-        if (smp_bond_load())
+        if (smp_bond_load(conn))
             conn->bonded = 1;
 #endif
     }

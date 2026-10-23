@@ -145,7 +145,7 @@ typedef struct l2cap_connection {
     uint8_t remote_update_pending, remote_update_id;
     uint16_t remote_update_min, remote_update_max;
     uint16_t remote_update_latency, remote_update_timeout;
-    uint32_t remote_update_deadline_ms;
+    uint32_t remote_update_due_ms;
     uint16_t pending_local_cid[L2CAP_CHANNEL_MAX];
     uint32_t now_ms;
     uint32_t pending_deadline_ms;
@@ -817,7 +817,7 @@ static inline int l2cap_connection_update_reply(
 
     conn->remote_update_pending = 0;
     conn->remote_update_id = 0;
-    conn->remote_update_deadline_ms = 0;
+    conn->remote_update_due_ms = 0;
     return 1;
 }
 
@@ -829,7 +829,7 @@ static inline void l2cap_conn_reset(l2cap_connection *conn, int reason) {
     conn->pending_id = conn->pending_count = conn->pending_code = 0;
     conn->pending_deadline_ms = 0;
     conn->remote_update_pending = conn->remote_update_id = 0;
-    conn->remote_update_deadline_ms = 0;
+    conn->remote_update_due_ms = 0;
 }
 
 // Advance signaling/channel timers using a monotonic millisecond clock.
@@ -857,8 +857,8 @@ static inline int l2cap_conn_tick(l2cap_connection *conn, uint32_t now_ms) {
         expired++;
     }
 
-    if (conn->remote_update_pending && conn->remote_update_deadline_ms &&
-        (int32_t)(now_ms - conn->remote_update_deadline_ms) >= 0
+    if (conn->remote_update_pending && conn->remote_update_due_ms &&
+        (int32_t)(now_ms - conn->remote_update_due_ms) >= 0
     ) {
         if (l2cap_connection_update_reply(conn, 0))
             expired++;
@@ -1464,7 +1464,7 @@ static inline int l2cap_receive(
                         conn->remote_update_max = interval_max;
                         conn->remote_update_latency = latency;
                         conn->remote_update_timeout = timeout;
-                        conn->remote_update_deadline_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
+                        conn->remote_update_due_ms = conn->now_ms + L2CAP_SIGNAL_TIMEOUT_MS;
                     }
                 }
                 break;

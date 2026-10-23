@@ -165,7 +165,7 @@ static uint8_t gap_conn_subrate_busy(const gap_conn_context *conn) {
 }
 
 #if GAP_SECURITY_SUPPORT >= 2
-static void gap_smp_link_close(void);
+static void gap_smp_link_close(gap_conn_context *conn);
 static void gap_smp_poll(void);
 #endif // GAP_SECURITY_SUPPORT >= 2
 
@@ -188,7 +188,7 @@ static void gap_conn_end(void) {
     }
 
 #if GAP_SECURITY_SUPPORT >= 2
-    gap_smp_link_close();
+    gap_smp_link_close(conn);
     gap_wipe(&conn->bond, sizeof(conn->bond));
     conn->bonded = 0;
     conn->restore_started = 0;
