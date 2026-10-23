@@ -722,8 +722,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             int target_matches = 0;
 
             if (target_type == ((adv_tx.connect_request[0] >> 6) & 1))
-                target_matches = memcmp(frame + 8,
-                    adv_tx.connect_request + 2, 6) == 0;
+                target_matches = memcmp(frame + 8, adv_tx.connect_request + 2, 6) == 0;
 
 #if GAP_PRIVACY_SUPPORT
             if ((frame[13] & 0xc0) == 0x40 &&
@@ -753,16 +752,15 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
         }
 
-        adv_tx.connect_request[0] =
-            (adv_tx.connect_request[0] & 0x7f) |
-            (frame[0] & 0x40) << 1;
+        adv_tx.connect_request[0] = (adv_tx.connect_request[0] & 0x7f) |
+                                    (frame[0] & 0x40) << 1;
+
         memcpy(adv_tx.connect_request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_scan.channel_index;
         GAP_HW_STOP();
         gap_rx_armed = 0;
 
-        if (GAP_HW_ADV_TX(adv_tx.connect_request,
-                          sizeof(adv_tx.connect_request), channel) &&
+        if (GAP_HW_ADV_TX(adv_tx.connect_request, sizeof(adv_tx.connect_request), channel) &&
             gap_conn_accept(adv_tx.connect_request, GAP_HW_TICKS(),
                             HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
         ) {

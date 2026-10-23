@@ -689,21 +689,19 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
         if (!has_entry) return 0;
     }
 
-    uint8_t peer_type = (mode == GAP_CONN_MODE_DIRECT) ? gap_initiator.peer.type : 0;
-    const uint8_t *peer_address = (mode == GAP_CONN_MODE_DIRECT) ?
-                                  gap_initiator.peer.address : NULL;
+    uint8_t peer_type = 0;
     uint32_t access_address;
     if (!gap_access_addr(&access_address))
         return 0;
 
-    memset(adv_tx.connect_request, 0,
-           sizeof(adv_tx.connect_request));
+    memset(adv_tx.connect_request, 0, sizeof(adv_tx.connect_request));
     uint8_t local_type;
     int peer_slot = -1;
 
-    if (peer_address) {
-        peer_slot = gap_identity_find(peer_address, peer_type);
-        memcpy(adv_tx.connect_request + 8, peer_address, 6);
+    if (mode == GAP_CONN_MODE_DIRECT) {
+        peer_type = gap_initiator.peer.type;
+        peer_slot = gap_identity_find(gap_initiator.peer.address, peer_type);
+        memcpy(adv_tx.connect_request + 8, gap_initiator.peer.address, 6);
     }
 
     gap_local_addr_select(peer_slot, adv_tx.connect_request + 2, &local_type);
