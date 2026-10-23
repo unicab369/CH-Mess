@@ -506,9 +506,7 @@ static int smp_bond_store(const gap_bond *bond) {
             continue;
         }
 
-        if (current.peer.type == stored.peer.type &&
-            memcmp(current.peer.address, stored.peer.address, 6) == 0
-        ) {
+        if (GAP_ADDRESS_EQUAL(current.peer, stored.peer)) {
             int result = GAP_BOND_SAVE(slot, &stored);
             gap_wipe(&current, sizeof(current));
             gap_wipe(&stored, sizeof(stored));
@@ -1276,8 +1274,7 @@ int gap_bond_remove(void) {
         }
 
         if (loaded && gap_bond_valid(&bond) &&
-            bond.peer.type == peer->type &&
-            memcmp(bond.peer.address, peer->address, sizeof(peer->address)) == 0
+            GAP_ADDRESS_EQUAL(bond.peer, *peer)
         ) {
             gap_wipe(&bond, sizeof(bond));
             return GAP_BOND_DELETE(slot);
@@ -1307,9 +1304,7 @@ static int smp_bond_load(void) {
         }
 
         if (loaded && gap_bond_valid(&stored) &&
-            stored.peer.type == conn->peer.type &&
-            memcmp(stored.peer.address, conn->peer.address,
-                   sizeof(conn->peer.address)) == 0
+            GAP_ADDRESS_EQUAL(stored.peer, conn->peer)
         ) {
             stored.version = GAP_BOND_VERSION;
             if (!stored.peer_irk.present)

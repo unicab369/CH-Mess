@@ -549,7 +549,8 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
-    if (!peer || interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
+    if (!peer || peer->type > 1 ||
+        interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
     ) return 0;
 
@@ -572,7 +573,7 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
     }
 #endif
 
-    gap_adv.target.type = type != 0;
+    gap_adv.target.type = type;
     memcpy(gap_adv.target.address, target, sizeof(target));
     gap_adv.data_len = 0;
     gap_adv.scan_resp_len = 0;
@@ -751,12 +752,11 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
 // Initiate a legacy LE connection to one specified advertiser.
 // Uses a conservative fixed 30 ms interval, zero latency, and 2 s timeout.
 int gap_conn_start(const gap_address *peer) {
-    if (!peer || gap_conn_free_slot() < 0 ||
+    if (!peer || peer->type > 1 || gap_conn_free_slot() < 0 ||
         (gap_scanner.scanning || gap_initiator.active)
     ) return 0;
 
     gap_initiator.peer = *peer;
-    gap_initiator.peer.type = peer->type != 0;
     if (gap_conn_procedure_start(GAP_CONN_MODE_DIRECT, 0))
         return 1;
 

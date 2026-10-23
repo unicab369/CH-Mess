@@ -415,25 +415,23 @@ int gap_pawr_connect(
         return 0;
 
     gap_ext_adv_set *set = &gap_ext_adv[set_id];
-    if (!peer ||
+    if (!peer || peer->type > 1 ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
         (gap_initiator.active || gap_scanner.scanning) ||
         !set->periodic.enabled || !set->pawr.enabled ||
         subevent >= set->pawr.subevents
     ) return 0;
 
-    uint8_t random_type = peer->type != 0;
-
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
         if (gap_ext_adv[i].pawr_connect.pending)
             return 0;
 
-    if (!gap_peer_allowed(gap_identity_find(peer->address, random_type),
-                          peer->address, random_type)
+    if (!gap_peer_allowed(gap_identity_find(peer->address, peer->type),
+                          peer->address, peer->type)
     ) return 0;
 
     set->pawr_connect.subevent = subevent;
-    set->pawr_connect.peer_type = random_type;
+    set->pawr_connect.peer_type = peer->type;
     memcpy(set->pawr_connect.peer_address, peer->address, 6);
     set->pawr_connect.pending = 1;
     return 1;
@@ -788,8 +786,7 @@ static void gap_ext_report_queue(
         for (uint8_t i = 0; i < gap_ext_idx.seen_count; i++) {
             gap_ext_seen_entry *seen = &gap_ext_adv_seen[i];
 
-            if (!seen->used || seen->peer.type != peer->type ||
-                memcmp(seen->peer.address, peer->address, 6) ||
+            if (!seen->used || !GAP_ADDRESS_EQUAL(seen->peer, *peer) ||
                 seen->sid != identity->sid ||
                 seen->has_adi != identity->has_adi
             ) continue;
@@ -883,18 +880,15 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return -1;
 #endif
-    if (!peer || sid > 15 || timeout_ms < 100 ||
+    if (!peer || peer->type > 1 || sid > 15 || timeout_ms < 100 ||
         timeout_ms > 163840 ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
-    uint8_t random_type = peer->type != 0;
-
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++)
         if (gap_syncs[i].used &&
             gap_syncs[i].sid == sid &&
-            gap_syncs[i].peer.type == random_type &&
-            !memcmp(gap_syncs[i].peer.address, peer->address, 6)
+            GAP_ADDRESS_EQUAL(gap_syncs[i].peer, *peer)
         ) return -1;
 
     int slot = -1;
@@ -916,8 +910,7 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
     memset(sync, 0, sizeof(*sync));
     sync->used = 1;
     sync->sid = sid;
-    sync->peer.type = random_type;
-    memcpy(sync->peer.address, peer->address, 6);
+    sync->peer = *peer;
     sync->timeout_ms = timeout_ms;
     sync->last_event_ms = GET_MILLIS();
     return slot;
@@ -1112,10 +1105,8 @@ static int gap_sync_info_accept(
         if (!sync->used || sync->established || sync->sid != fields->identity.sid)
             continue;
 
-        if ((sync->peer.type == peer->type &&
-             !memcmp(sync->peer.address, peer->address, 6)) ||
-            (resolved_peer && sync->peer.type == resolved_peer->type &&
-             !memcmp(sync->peer.address, resolved_peer->address, 6))) {
+        if (GAP_ADDRESS_EQUAL(sync->peer, *peer) ||
+            (resolved_peer && GAP_ADDRESS_EQUAL(sync->peer, *resolved_peer))) {
             slot = i;
             break;
         }
@@ -1946,9 +1937,8 @@ static void gap_ext_scan_process(void) {
                     ctx->identity.adi == fields.identity.adi &&
                     ctx->identity.has_address == fields.identity.has_address &&
                     (!fields.identity.has_address ||
-                     (ctx->identity.peer.type == fields.identity.peer.type &&
-                      !memcmp(ctx->identity.peer.address,
-                              fields.identity.peer.address, 6)))
+                     GAP_ADDRESS_EQUAL(ctx->identity.peer,
+                                       fields.identity.peer))
                 ) {
                     context_slot = i;
                     break;
@@ -1978,9 +1968,8 @@ static void gap_ext_scan_process(void) {
                     (fields.identity.has_adi &&
                      (!ctx->identity.has_adi || ctx->identity.adi != fields.identity.adi)) ||
                     (fields.identity.has_address && ctx->identity.has_address &&
-                     (fields.identity.peer.type != ctx->identity.peer.type ||
-                      memcmp(fields.identity.peer.address,
-                             ctx->identity.peer.address, 6) != 0))
+                     !GAP_ADDRESS_EQUAL(fields.identity.peer,
+                                        ctx->identity.peer))
                 ) continue;
 
                 if (context_slot >= 0) {
