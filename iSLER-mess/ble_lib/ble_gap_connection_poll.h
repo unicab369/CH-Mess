@@ -7,19 +7,22 @@
 // Give security first use of TX, then start the next queued LL procedure.
 static void gap_conn_send_queued(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+
 #if GAP_SECURITY_SUPPORT >= 1
     gap_send_security(conn);
-#endif
-
-    if (gap_conn_security_busy(conn))
-        return;
+#endif // GAP_SECURITY_SUPPORT >= 1
+    // Keep this after gap_send_security: a busy security phase may still need
+    // to queue its next packet before other procedures are blocked.
+    if (gap_conn_security_busy(conn)) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
-        if (conn->central.local_update)
+        if (conn->central.local_update && !conn->tx_frame[1]) {
             gap_send_conn_update(conn);
+        }
 
-        if (conn->central.local_map && !gap_conn_tx_payload_len(conn)) {
+        // gap_send_conn_update may set tx_frame[1]; check it again before the map.
+        if (conn->central.local_map && !conn->tx_frame[1]) {
             conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
             conn->central.local_map = 0;
 
@@ -34,13 +37,12 @@ static void gap_conn_send_queued(void) {
             ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
         }
     }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 
-    // A Central connection update or channel map above may queue a TX frame,
-    // so check gap_conn_tx_payload_len(conn) before starting local parameters.
+    // A Central connection update or channel map above may queue a TX frame.
     if (conn->queue_state.local_params &&
         !conn->c_features.request_pending &&
-        !gap_conn_tx_payload_len(conn)
+        !conn->tx_frame[1]
     ) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
@@ -70,10 +72,11 @@ static void gap_conn_send_queued(void) {
         }
     }
 
-    if (conn->queue_state.length)
+    if (conn->queue_state.length && !conn->tx_frame[1]) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
+    }
 
-    if (conn->queue_state.phy_queued && !gap_conn_tx_payload_len(conn)) {
+    if (conn->queue_state.phy_queued && !conn->tx_frame[1]) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queue_state.phy_queued = 0;
         conn->procedure_state.phy_request = 1;
@@ -86,7 +89,7 @@ static void gap_conn_send_queued(void) {
         conn->tx_frame[4] = conn->phy_state.preferred.rx;
     }
 
-    if (!conn->c_features.request_pending && !gap_conn_tx_payload_len(conn)) {
+    if (!conn->c_features.request_pending && !conn->tx_frame[1]) {
         if (conn->c_subrate.queued_flags) {
             // Wait for the peer Link Layer and Host to confirm subrating support.
             if (!conn->c_features.known) {
@@ -99,12 +102,15 @@ static void gap_conn_send_queued(void) {
                     conn->c_subrate.queued_flags = 0;
                     conn->c_subrate.status = GAP_LL_ERR_REMOTE_FEATURE;
                 }
+
 #if GAP_CENTRAL_SUPPORT
                 else if (conn->is_central) {
-                    if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE)
+                    if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE) {
                         gap_send_subrate_update(conn);
+                    }
                 }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
+
 #if GAP_PERIPHERAL_SUPPORT
                 else if (conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_REQUEST) {
                     conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_REQUEST;
@@ -120,14 +126,13 @@ static void gap_conn_send_queued(void) {
                     ble_write_u16_le(conn->tx_frame + 9, conn->peripheral.subrate_request.continuation);
                     ble_write_u16_le(conn->tx_frame + 11, conn->peripheral.subrate_request.timeout_10ms);
                 }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
             }
         }
 
-        // Subrate handling above may queue a TX frame, so check
-        // gap_conn_tx_payload_len(conn) again before starting a rate request.
+        // Subrate handling above may have queued a TX frame.
         if (conn->c_rate.queued_flags && !conn->c_features.ext_pending &&
-            !gap_conn_tx_payload_len(conn)
+            !conn->tx_frame[1]
         ) {
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
@@ -156,10 +161,11 @@ static void gap_conn_send_queued(void) {
             }
 #if GAP_CENTRAL_SUPPORT
             else if (conn->is_central) {
-                if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET)
+                if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_SET) {
                     gap_send_rate_ind(conn, 0, NULL);
+                }
             }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 #if GAP_PERIPHERAL_SUPPORT
             else if (conn->c_rate.queued_flags & GAP_RATE_QUEUED_REQUEST) {
                 conn->tx_frame[0] = 0x03;
@@ -184,14 +190,13 @@ static void gap_conn_send_queued(void) {
                 conn->peripheral.rate_req_pending = 1;
                 conn->params_started_ms = GET_MILLIS();
             }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
         }
     }
 
 #if GAP_CENTRAL_SUPPORT
-    // The subrate or rate request above may queue a TX frame, so check
-    // gap_conn_tx_payload_len(conn) again before the channel report.
-    if (!gap_conn_tx_payload_len(conn) && conn->is_central &&
+    // The subrate or rate request above may have queued a TX frame.
+    if (!conn->tx_frame[1] && conn->is_central &&
         conn->central.channel_report_queued &&
         !conn->c_features.request_pending
     ) {
@@ -216,7 +221,7 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
         }
     }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 }
 
 // Handle the radio callback under its connection context, then restore the
@@ -233,6 +238,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
         gap_conn_slot = gap_poll.slot;
+
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
 #if GAP_EXT_ADV_SUPPORT
@@ -250,7 +256,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
 
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         conn->link_state.rx_armed
@@ -271,6 +277,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         event_counter = conn->link_layer.event_counter;
     }
 
+    // gap_conn_slot still selects conn here; earlier slot restorations return.
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         conn->link_state.rx_armed
     ) {
@@ -318,7 +325,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             frame = plain;
             authenticated = 1;
         }
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 1
 
         // Extended LL control PDUs (including PAST) can exceed 27 bytes after
         // Data Length Extension; enforce the negotiated RX size for all LLIDs.
@@ -378,12 +385,12 @@ void __attribute__((noinline)) gap_hw_received(void) {
                     conn->c_subrate.status = 0;
                 }
             }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 #if GAP_PERIPHERAL_SUPPORT
             if (!conn->is_central && conn->peripheral.rate_ack_waiting) {
                 conn->peripheral.rate_ack_waiting = 0;
             }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
 
             conn->link_layer.tx_sn ^= 1;
             conn->link_layer.tx_pending = 0;
@@ -391,7 +398,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->security.tx_sealed = 0;
             conn->security.tx_plain_len = 0;
             conn->security.tx_opcode = 0;
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 1
             // The in-place ciphertext is no longer a queued PDU after ACK.
             conn->tx_frame[1] = 0;
 
@@ -466,7 +473,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
 
             if (authenticated) conn->security.rx_counter++;
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 1
 
             if ((llid == 1 || llid == 2) && frame[1]) {
                 conn->rx_packet.llid = llid;
@@ -517,7 +524,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                     }
                     conn->sync_transfer_queued = 0;
                 }
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
             }
             if (!gap_conn_security_busy(conn)) {
 #if GAP_PERIPHERAL_SUPPORT
@@ -543,7 +550,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                         memcpy(conn->tx_frame + 3, gap_local_class, GAP_CHANN_CLASS_BYTES);
                     }
                 }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
 
                 if (gap_conn_tx_payload_len(conn) == 0 && conn->queue_state.tx_queued &&
                     !conn->link_state.terminate_after_reply
@@ -622,7 +629,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         if (!gap_peer_allowed(scanner_slot, frame + 2, scanner_type) ||
 #if GAP_PRIVACY_SUPPORT
             (gap_privacy.connection_filter && scanner_slot < 0) ||
-#endif
+#endif // GAP_PRIVACY_SUPPORT
             (gap_adv_filter.scan_accept &&
              !gap_accept_list_match(frame + 2, scanner_type, scanner_slot))
         ) {
@@ -670,7 +677,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         gap_conn_slot = previous_slot;
         return;
     }
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
     int peer_slot = -1;
 
     if (pdu_type <= ADV_SCAN_IND && frame[1] >= 6 && frame[1] <= 37) {
@@ -699,7 +706,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             peer_matches = !gap_privacy.scan_filter || peer_slot >= 0;
 #else
             peer_matches = 1;
-#endif
+#endif // GAP_PRIVACY_SUPPORT
         }
         else if (gap_initiator.mode & (GAP_CONN_MODE_SELECTIVE | GAP_CONN_MODE_AUTO)) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
@@ -742,7 +749,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                     irk = gap_identities[peer_slot].has_local_irk ?
                             gap_identities[peer_slot].local_irk : NULL;
                 }
-#endif
+#endif // GAP_IDENTITY_COUNT > 0
 
                 if (irk) {
                     uint8_t hash[3];
@@ -750,7 +757,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                     target_matches = memcmp(frame + 8, hash, 3) == 0;
                 }
             }
-#endif
+#endif // GAP_PRIVACY_SUPPORT
 
             if (!target_matches) {
                 gap_conn_slot = previous_slot;
@@ -780,7 +787,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 conn->peer = gap_identities[peer_slot].peer;
             }
             else
-#endif
+#endif // GAP_IDENTITY_COUNT > 0
             if (gap_initiator.mode != GAP_CONN_MODE_DIRECT) {
                 // The type is bit 6 of frame[0]; frame[1] is the length, and the
                 // address starts at frame[2], so they cannot be copied as one block.
@@ -811,10 +818,10 @@ void __attribute__((noinline)) gap_hw_received(void) {
         scan_frame_valid &&
 #if GAP_LEGACY_ADV_SUPPORT
         !adv_evt.rx_event &&
-#endif
+#endif // GAP_LEGACY_ADV_SUPPORT
 #if GAP_CENTRAL_SUPPORT
         (gap_initiator.mode != GAP_CONN_MODE_SELECTIVE || peer_matches) &&
-#endif
+#endif // GAP_CENTRAL_SUPPORT
         !gap_scan.active_pending
     ) {
 
@@ -823,7 +830,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
-#endif
+#endif // GAP_PRIVACY_SUPPORT
 
         // Preserve the advertisement while sending SCAN_REQ promptly.
         memcpy(gap_adv_scan.frame, frame, (size_t)frame[1] + 2);
@@ -864,7 +871,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
     if (adv_evt.rx_event &&
 #if GAP_PRIVACY_SUPPORT
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
-#endif
+#endif // GAP_PRIVACY_SUPPORT
         ((frame[0] >> 7) & 1) == ((adv_evt.adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, adv_evt.adv_frame + 2, 6) == 0
     ) {
@@ -907,7 +914,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             gap_conn_slot = previous_slot;
             return;
         }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
     }
 #endif // GAP_LEGACY_ADV_SUPPORT
 
@@ -931,7 +938,7 @@ void gap_hw_init(void) {
     gap_ext_scan.ready = 0;
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     memset(gap_aux_request, 0, sizeof(gap_aux_request));
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
     gap_rx_armed = 0;
     gap_poll.slot = 0;
     gap_poll.slot_valid = 0;
@@ -947,7 +954,7 @@ void gap_hw_init(void) {
     adv_evt.rx_event = 0;
     adv_evt.scan_resp_started = 0;
     adv_evt.conn_req_ready = 0;
-#endif
+#endif // GAP_LEGACY_ADV_SUPPORT
     GAP_HW_PACKET_CLEAR();
 }
 
@@ -1005,7 +1012,7 @@ static inline uint8_t gap_conn_can_skip_event(
             if (conn->peripheral.rate_ack_waiting && instant_delta < 0x8000)
                 return 0;
         }
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
     }
 
 #if GAP_CENTRAL_SUPPORT
@@ -1024,7 +1031,7 @@ static inline uint8_t gap_conn_can_skip_event(
                 return 0;
         }
     }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 
     if ((conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
         (event == conn->update_instant || event == (uint16_t)(conn->update_instant - 1))
@@ -1033,7 +1040,7 @@ static inline uint8_t gap_conn_can_skip_event(
 #if GAP_PERIPHERAL_SUPPORT
     if (!conn->is_central && conn->peripheral.latency_remaining)
         return 1;
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
 
     int32_t current_offset = (int32_t)event - (int32_t)conn->schedule.base_event;
     if (conn->schedule.factor && current_offset % conn->schedule.factor == 0)
@@ -1058,19 +1065,19 @@ static void gap_conn_poll(void) {
             if (peer_slot >= 0)
                 conn->peer = gap_identities[peer_slot].peer;
         }
-#endif
+#endif // GAP_IDENTITY_COUNT > 0
 
 #if GAP_SECURITY_SUPPORT >= 2
         if (smp_bond_load(conn))
             conn->bonded = 1;
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 2
     }
 
     // Bond loading is one-time; restoration and SMP protocol work are polled each event.
 #if GAP_SECURITY_SUPPORT >= 2
     smp_bond_restore_poll(conn);
     gap_smp_poll_context(conn);
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 2
     uint32_t now_ms = GET_MILLIS();
 #if GAP_SECURITY_SUPPORT >= 1
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
@@ -1082,7 +1089,7 @@ static void gap_conn_poll(void) {
         gap_conn_end();
         return;
     }
-#endif
+#endif // GAP_SECURITY_SUPPORT >= 1
 
     // phy.status
     if (conn->procedure_state.phy_request &&
@@ -1107,7 +1114,7 @@ static void gap_conn_poll(void) {
          conn->c_features.ext_pending ||
 #if GAP_PERIPHERAL_SUPPORT
          (!conn->is_central && conn->peripheral.rate_req_pending) ||
-#endif
+#endif // GAP_PERIPHERAL_SUPPORT
          conn->c_rate.update_pending) &&
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
@@ -1230,7 +1237,7 @@ static void gap_conn_poll(void) {
     // A connection event owns the single radio once its receive window opens.
     // Yield any periodic sync receive window before configuring the data channel.
     gap_connection_take_radio();
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
 
     // Scanning and advertising share this radio with connection events.
     if (gap_rx_armed) {
@@ -1304,7 +1311,7 @@ static void gap_conn_poll(void) {
         GAP_HW_LINK_TX();
         return;
     }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 
     GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
                         NULL, 0, conn->phy_state.current.tx, conn->phy_state.current.rx);
@@ -1366,7 +1373,7 @@ void gap_hw_scan_poll(void) {
     uint32_t now = GET_MILLIS();
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
-#endif
+#endif // GAP_PRIVACY_SUPPORT
 
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active &&
@@ -1379,7 +1386,7 @@ void gap_hw_scan_poll(void) {
         gap_scanner.active = 0;
         gap_scanner.generation++;
     }
-#endif
+#endif // GAP_CENTRAL_SUPPORT
 
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
@@ -1399,7 +1406,7 @@ void gap_hw_scan_poll(void) {
         memset(&gap_syncs[i], 0, sizeof(gap_syncs[i]));
         gap_sync_scan_finish();
     }
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
     // The connection poll owns an armed connection event. Only schedule a
     // periodic sync in the radio gaps between those events.
     if (gap_poll.slot_valid) return;
@@ -1564,7 +1571,7 @@ void gap_hw_scan_poll(void) {
         }
     }
 
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
     if (gap_scan.active_pending) {
         if ((int32_t)(now - gap_scan.active_deadline_ms) < 0)
             return;
@@ -1579,7 +1586,7 @@ void gap_hw_scan_poll(void) {
         window_ms = gap_central_timing.scan_window_ms;
     }
     else
-#endif
+#endif // GAP_CENTRAL_SUPPORT
     if (gap_scanner.scanning) {
         interval_ms = gap_scanner.interval_ms;
         window_ms = gap_scanner.window_ms;
@@ -1636,7 +1643,7 @@ int gap_send_due(
 
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
-#endif
+#endif // GAP_PRIVACY_SUPPORT
 #if GAP_EXT_ADV_SUPPORT
     int extended_result = gap_ext_send_due(now);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
@@ -1644,7 +1651,7 @@ int gap_send_due(
     if (extended_result == 1) return 0;
     if (extended_result) return extended_result;
 
-#endif
+#endif // GAP_EXT_ADV_SUPPORT
 #if GAP_LEGACY_ADV_SUPPORT
     int send_gap = gap_adv.enabled != 0 &&
                     (int32_t)(now - gap_adv.next_event_ms) >= 0;
@@ -1750,7 +1757,7 @@ int gap_send_due(
 #if GAP_CENTRAL_SUPPORT
                     gap_initiator.active = 0;
                     gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-#endif
+#endif // GAP_CENTRAL_SUPPORT
                     gap_scanner.scanning = 0;
                     gap_scanner.active = 0;
                     gap_scanner.generation++;
