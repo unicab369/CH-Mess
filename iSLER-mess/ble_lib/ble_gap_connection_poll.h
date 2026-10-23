@@ -1028,8 +1028,14 @@ static inline uint8_t gap_conn_can_skip_event(
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
+#if GAP_SECURITY_SUPPORT >= 1
+        uint8_t tx_payload_len = conn->security.tx_sealed ?
+            conn->security.tx_plain_len : conn->tx_frame[1];
+#else
+        uint8_t tx_payload_len = conn->tx_frame[1];
+#endif // GAP_SECURITY_SUPPORT >= 1
         if (conn->c_rate.update_pending && conn->link_layer.tx_pending &&
-            (conn->tx_frame[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 15 &&
+            (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 15 &&
             gap_conn_tx_control_opcode(conn) == LL_CONNECTION_RATE_IND
         ) return 0;
 

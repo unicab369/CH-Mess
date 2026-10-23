@@ -457,7 +457,7 @@ static void gap_conn_event_advance(gap_conn_context *conn) {
 // Build the queued Central update only when its TX slot is free, so the
 // Instant stays in the future while earlier packets wait for acknowledgement.
 static void gap_send_conn_update(gap_conn_context *conn) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
 
     conn->update_window_size = 1;
     conn->update_win_offset = 0;
@@ -506,7 +506,7 @@ static uint8_t gap_phy_preferred(uint8_t mask) {
 // Exchange the full feature octets so Connection Subrating and Host Support
 // are visible to the peer that is deciding whether to start the procedure.
 static void gap_send_feature_request(gap_conn_context *conn) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
 
     uint8_t supported_phys = GAP_HW_PHY_MASK();
     conn->c_features.request_pending = 1;
@@ -528,7 +528,7 @@ static void gap_send_feature_request(gap_conn_context *conn) {
 // Queue the Central's update. The new schedule takes effect locally only
 // after the peer acknowledges this PDU; until then both event phases are used.
 static void gap_send_subrate_update(gap_conn_context *conn) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
 
     conn->next_schedule.base_event = conn->link_layer.event_counter;
     conn->c_subrate.queued_flags &=
@@ -550,7 +550,7 @@ static void gap_send_rate_ind(
     gap_conn_context *conn, uint16_t reference_event,
     const uint16_t offsets[4]
 ) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
 
     conn->next_schedule.instant = (uint16_t)(conn->link_layer.event_counter +
                                 6 * (uint32_t)conn->next_schedule.factor *
@@ -591,7 +591,7 @@ static void gap_send_rate_ind(
 
 // Encode our LE 1M limits for both local requests and peer-request responses.
 static void gap_send_data_length(gap_conn_context *conn, uint8_t opcode) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
 
     if (opcode == LL_LENGTH_REQ) {
         conn->queue_state.length = 0;
@@ -1885,7 +1885,7 @@ static uint8_t gap_conn_control(
         }
 
         if (conn->is_central) {
-            if (!gap_conn_tx_payload_len(conn)) {
+            if (!conn->tx_frame[1]) {
                 uint8_t peer_tx = frame[3], peer_rx = frame[4];
                 // An empty intersection leaves that direction unchanged.
                 uint8_t tx = gap_phy_preferred(conn->phy_state.preferred.tx & peer_rx);
@@ -2525,7 +2525,7 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
         return conn->tx_frame;
     }
 
-    if (!gap_security->tx_enabled || !gap_conn_tx_payload_len(conn))
+    if (!gap_security->tx_enabled || !conn->tx_frame[1])
         return conn->tx_frame;
 
     if (gap_security->tx_counter >= (UINT64_C(1) << 39)) {
@@ -2558,7 +2558,7 @@ static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
 // Serialize encryption PDUs after earlier TX is acknowledged. Other data and
 // local control procedures stay queued until the start/pause handshake completes.
 static void gap_send_security(gap_conn_context *conn) {
-    if (gap_conn_tx_payload_len(conn)) return;
+    if (conn->tx_frame[1]) return;
     gap_security_context *gap_security = &conn->security;
 
     uint16_t phase = gap_security->phase;
