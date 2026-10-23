@@ -2659,13 +2659,13 @@ static void start_test_central_link(void) {
 
 static void test_connection_context_slots(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     assert(GAP_CONNECTION_COUNT >= 2);
     gap_conn_select_slot(0);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     start_test_central_link();
     gap_conn_handle first_handle;
     assert(gap_conn_current(&first_handle));
@@ -2693,7 +2693,7 @@ static void test_connection_context_slots(void) {
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     assert(gap_conn_slot == 1 && (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
            !conn->is_central && conn->link_layer.tx_sn == 0);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
@@ -2706,7 +2706,7 @@ static void test_connection_context_slots(void) {
     gap_conn_select_slot(first_handle.slot);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     conn->link_state.rx_armed = 1;
     conn->queue_state.rx_ready = 0;
     gap_connection_slot = first_handle.slot;
@@ -2719,7 +2719,7 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_select(second_handle));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     gap_hw_received();
     assert(gap_conn_slot == second_handle.slot);
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
@@ -2728,14 +2728,14 @@ static void test_connection_context_slots(void) {
     gap_conn_select_slot(first_handle.slot);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     conn->link_state.event_replied = 0;
     conn->link_state.rx_armed = 0;
     gap_connection_slot_valid = 0;
     gap_conn_select_slot(second_handle.slot);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     assert((gap_conn_slot_mask != 0) && gap_conn_free_slot() < 0);
     assert(!gap_conn_accept(request, GAP_HW_TICKS(),
         HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250)));
@@ -2746,14 +2746,14 @@ static void test_connection_context_slots(void) {
     assert(gap_conn_select(first_handle));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central && conn->link_layer.tx_sn == 1);
     assert(gap_security->tx_counter == 0x12345678 && smp->status == 0x31);
     assert(conn->tx_frame[3] == 0xa0);
     assert(gap_conn_select(second_handle));
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && !conn->is_central && conn->link_layer.tx_sn == 0);
     assert(gap_security->tx_counter == 0xabcdef && smp->status == 0x52);
     assert(conn->tx_frame[3] == 0xb1);
@@ -2842,7 +2842,7 @@ static void test_connection_context_slots(void) {
     gap_conn_select_slot(second_handle.slot);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
 
     gap_conn_end();
     assert((gap_conn_slot_mask != 0) && gap_conn_free_slot() == 1);
@@ -2858,7 +2858,7 @@ static void test_connection_context_slots(void) {
     gap_conn_select_slot(0);
     conn = &gap_conn_ctx[gap_conn_slot];
     gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    smp = &gap_smp_contexts[gap_conn_slot];
+    smp = &conn->smp;
     gap_conn_end();
     assert(gap_conn_slot_mask == 0 && gap_conn_free_slot() == 0);
 }
@@ -4158,8 +4158,8 @@ static void receive_test_smp(const uint8_t *p, uint8_t len, uint8_t split) {
 
 static void test_smp_pairing(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     // Published Bluetooth c1 test vector, using exact on-air byte order.
     uint8_t request[7] = {1,1,0,0,16,7,7}, response[7] = {2,3,0,0,8,0,5};
@@ -4280,8 +4280,8 @@ static void test_smp_pairing(void) {
 }
 
 static void test_smp_signing_key_distribution(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     memset(test_bonds, 0, sizeof(test_bonds));
     test_bond_storage_enabled = 1;
     assert(gap_bonding_set(1));
@@ -4474,8 +4474,8 @@ static void test_smp_signing_key_distribution(void) {
 
 // Independent AES calculation with the user's TK, rather than assuming TK=0.
 static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uint8_t out[16]) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     uint8_t key[16] = {0}, p1[16], p2[16] = {0}, block[16], encrypted[16];
     for (unsigned i = 0; i < 4; i++) key[15 - i] = (uint8_t)(passkey >> (8 * i));
     p1[0] = conn->link_layer.initiator_type; p1[1] = conn->link_layer.responder_type;
@@ -4493,8 +4493,8 @@ static void test_passkey_confirm(uint32_t passkey, const uint8_t random[16], uin
 
 static void test_passkey_pairing(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     assert(!gap_security_set(5, 0, 16));
     assert(!gap_security_set(GAP_IO_NONE, 1, 16));
     assert(!gap_security_set(2, 1, 6));
@@ -4651,8 +4651,8 @@ static void test_passkey_pairing(void) {
 }
 
 static void test_smp_keypress_notifications(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     test_smp_ui ui = {0};
     gap_pairing_set(1); // Keep pairing enabled for both roles.
     assert(gap_keypress_notifications_set(1));
@@ -4706,8 +4706,8 @@ static void test_smp_keypress_notifications(void) {
 
 static void test_secure_connections_just_works(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     int vector_result = ble_sc_crypto_test();
     if (vector_result)
         fprintf(stderr, "SC vector failed: %d\n", vector_result);
@@ -4917,7 +4917,7 @@ static void test_secure_connections_just_works(void) {
 }
 
 static void assert_test_oob_secrets_cleared(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     assert(!gap_sc_oob_local.valid && !gap_sc_oob_peer.valid);
     for (size_t i = 0; i < sizeof(gap_sc_oob_local.private_key); i++)
         assert(!gap_sc_oob_local.private_key[i]);
@@ -4932,8 +4932,8 @@ static void assert_test_oob_secrets_cleared(void) {
 }
 
 static void test_secure_connections_oob_rejects_bad_commitment(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     gap_pairing_set(1);
     assert(gap_secure_connections_set(1));
@@ -4970,8 +4970,8 @@ static void test_secure_connections_oob_rejects_bad_commitment(void) {
 
 static void test_secure_connections_oob_success(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     gap_pairing_set(1);
     assert(gap_security_set(GAP_IO_NONE, 0, 16));
@@ -5040,8 +5040,8 @@ static void test_secure_connections_oob_success(void) {
 }
 
 static void test_secure_connections_oob_rejects_missing_local_data(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     gap_pairing_set(1);
     assert(gap_security_set(GAP_IO_NONE, 0, 16));
@@ -5065,8 +5065,8 @@ static void test_secure_connections_oob_rejects_missing_local_data(void) {
 
 static void test_secure_connections_oob_peripheral_success(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     conn->is_central = 0;
     gap_pairing_set(1);
@@ -5147,7 +5147,7 @@ static void test_secure_connections_oob_peripheral_success(void) {
 }
 
 static void test_secure_connections_oob_cancel_clears_data(void) {
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     start_test_central_link();
     gap_pairing_set(1);
     assert(gap_security_set(GAP_IO_NONE, 0, 16));
@@ -5168,8 +5168,8 @@ static void test_secure_connections_oob_cancel_clears_data(void) {
 
 static void test_secure_connections_numeric_comparison(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     assert(gap_security_set(GAP_IO_DISPLAY_YES_NO, 1, 16));
     assert(gap_secure_connections_set(1));
     test_smp_ui ui = {0};
@@ -5301,8 +5301,8 @@ static void test_secure_connections_numeric_comparison(void) {
 
 static void test_secure_connections_passkey(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
-    gap_smp_context *smp = &gap_smp_contexts[gap_conn_slot];
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    gap_smp_context *smp = &conn->smp;
     assert(gap_security_set(GAP_IO_KEYBOARD_ONLY, 1, 16));
     assert(gap_secure_connections_set(1));
     start_test_central_link();

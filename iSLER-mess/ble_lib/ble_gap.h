@@ -345,6 +345,94 @@ typedef struct {
     uint8_t has_peripheral_ltk;
 } gap_bond;
 #endif
+#if GAP_SECURITY_SUPPORT >= 2
+// SMP transaction state is owned by the connection that carries it.
+// Pairing phases are needed by connection procedures before ble_gap_smp.h
+// is included, so define them with the connection-facing types.
+enum {
+    SMP_PHASE_IDLE,
+    SMP_PHASE_RESPONSE,
+    SMP_PHASE_CONFIRM,
+    SMP_PHASE_RANDOM,
+    SMP_PHASE_ENCRYPT,
+    SMP_PHASE_SECURITY_REQUEST,
+    SMP_PHASE_PASSKEY,
+    SMP_PHASE_BOND_TX,
+    SMP_PHASE_BOND_RX,
+    SMP_PHASE_SC_PUBLIC_KEY,
+    SMP_PHASE_SC_PASSKEY,
+    SMP_PHASE_SC_CONFIRM,
+    SMP_PHASE_SC_RANDOM,
+    SMP_PHASE_SC_USER,
+    SMP_PHASE_SC_DHKEY,
+    SMP_PHASE_SC_ENCRYPT
+};
+
+#ifndef SMP_PDU_MAX
+#define SMP_PDU_MAX 65
+#endif
+typedef struct {
+    uint8_t random[16], confirm[16];
+} gap_oob_data;
+
+typedef struct {
+    struct {
+        uint8_t valid;
+        gap_oob_data data;
+    } oob;
+    uint8_t private_key[32], public_key[64];
+} gap_oob_local;
+
+typedef struct {
+    uint8_t status, blocked, encryption_started;
+    uint8_t bond_tx_waiting;
+    uint8_t previous_bond_valid;
+    gap_bond previous_bond;
+    l2cap_tx_queue *tx_queue;
+    uint8_t *tx;
+    l2cap_connection *l2cap;
+    l2cap_reassembler l2cap_rx;
+    struct {
+        l2cap_connection *l2cap;
+        uint8_t tx[SMP_PDU_MAX];
+        uint8_t rx[SMP_PDU_MAX];
+        uint8_t tx_len, rx_len;
+        uint8_t procedure_active;
+        uint32_t now_ms;
+        uint32_t deadline_ms;
+    } bearer;
+    uint8_t random[16], peer_random[16];
+    struct {
+        uint8_t phase, local_is_central, key_size, authenticated, passkey_action;
+        uint8_t confirm_received, bond_requested, secure_connections;
+        uint8_t user_notified, numeric_notified, keypress_active;
+        uint8_t bond_tx_step, bond_rx_step;
+        uint8_t tk[16], request[7], response[7];
+        uint8_t peer_confirm[16];
+    } pairing;
+    struct {
+        uint8_t private_key[32], public_key[64], peer_public_key[64];
+        uint8_t dhkey[32], mac_key[16];
+        uint8_t oob_active, oob_peer_present;
+        uint8_t oob_local_random[16];
+        uint8_t numeric_required, numeric_reply;
+        uint8_t passkey_required, passkey_round;
+        uint8_t peer_check_rx, peer_check[16];
+        uint32_t numeric_value;
+    } secure;
+    union {
+        uint8_t stk[16];
+        uint8_t secure_ltk[16];
+    } key;
+    gap_oob_local local_oob;
+    struct {
+        uint8_t valid;
+        gap_oob_data data;
+    } peer_oob;
+    gap_oob_data oob_peer;
+    uint8_t l2cap_ready, l2cap_rx_pending;
+} gap_smp_context;
+#endif
 
 // GAP state and connection data types.
 typedef struct {
@@ -493,6 +581,9 @@ typedef struct {
 #if GAP_SECURITY_SUPPORT >= 1
     // Link encryption state shared by SMP and encrypted data handling.
     gap_security_context security;
+#if GAP_SECURITY_SUPPORT >= 2
+    gap_smp_context smp;
+#endif
     // Invalidates security work captured before this connection slot was reused.
     uint32_t security_generation;
 #endif
@@ -1704,7 +1795,7 @@ static int gap_conn_accept(
         gap_conn_generations[gap_conn_slot] = 1;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    if (!smp_link_init(&gap_smp_contexts[gap_conn_slot], &conn->l2cap)) {
+    if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
         return 0;
     }
 #endif

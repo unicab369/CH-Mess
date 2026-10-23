@@ -167,8 +167,6 @@ static uint8_t gap_conn_subrate_busy(const gap_conn_context *conn) {
 #if GAP_SECURITY_SUPPORT >= 2
 static void gap_smp_link_close(void);
 static void gap_smp_poll(void);
-static void gap_smp_receive_complete(void);
-static int gap_smp_blocks_encryption(void);
 #endif // GAP_SECURITY_SUPPORT >= 2
 
 #if GAP_EXT_ADV_SUPPORT
@@ -2499,7 +2497,7 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
     memcpy(data, conn->rx_packet.data, conn->rx_packet.len);
     conn->queue_state.rx_ready = 0;
 #if GAP_SECURITY_SUPPORT >= 2
-    gap_smp_receive_complete();
+    conn->smp.l2cap_rx_pending = 0;
 #endif
     return 1;
 }
@@ -2624,7 +2622,10 @@ int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     ) return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    if (gap_smp_blocks_encryption()) return 0;
+    uint8_t smp_phase = conn->smp.pairing.phase;
+    if (smp_phase && smp_phase != SMP_PHASE_ENCRYPT &&
+        smp_phase != SMP_PHASE_SC_ENCRYPT
+    ) return 0;
 #endif
 
     if (conn->c_features.known && !(conn->c_features.peer_feature_0 & 1)) {

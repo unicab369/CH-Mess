@@ -1638,6 +1638,7 @@ static inline int ble_gap_gatt_poll(
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
+        gap_conn_context *conn = &gap_conn_ctx[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
         ble_gap_gatt_peer *peer = &peers[slot];
@@ -1657,15 +1658,13 @@ static inline int ble_gap_gatt_poll(
         peer->handle = handle;
         if (!gap_conn_select(handle)) continue;
 
-        const gap_conn_context *conn = gap_conn_ctx_current();
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) ||
             (!conn->is_central && conn->link_layer.first_event))
             continue;
 
-        gap_conn_context *link = &gap_conn_ctx[gap_conn_slot];
         ble_gatt_transport *transport = peer->transport;
-        l2cap_connection *l2cap = &link->l2cap;
-        l2cap_tx_queue *tx_queue = &link->l2cap_tx_queue;
+        l2cap_connection *l2cap = &conn->l2cap;
+        l2cap_tx_queue *tx_queue = &conn->l2cap_tx_queue;
         if (!transport || !tx_queue->data ||
             tx_queue->capacity < 4 ||
             (transport->connected && (!transport->shared_l2cap ||
@@ -1732,7 +1731,7 @@ static inline int ble_gap_gatt_poll(
         }
         work += result;
 
-        uint16_t max_payload = gap_conn_ctx_current()->data_length.tx_octets;
+        uint16_t max_payload = conn->data_length.tx_octets;
         if (max_payload > (uint16_t)sizeof(fragment))
             max_payload = (uint16_t)sizeof(fragment);
         const uint8_t *tx_fragment = NULL;
