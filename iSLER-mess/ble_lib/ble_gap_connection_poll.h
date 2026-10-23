@@ -364,8 +364,14 @@ void __attribute__((noinline)) gap_hw_received(void) {
         ) {
 #if GAP_CENTRAL_SUPPORT
             if (conn->is_central) {
+#if GAP_SECURITY_SUPPORT >= 1
+                uint8_t tx_payload_len = conn->security.tx_sealed ?
+                    conn->security.tx_plain_len : conn->tx_frame[1];
+#else
+                uint8_t tx_payload_len = conn->tx_frame[1];
+#endif // GAP_SECURITY_SUPPORT >= 1
                 if (conn->central.channel_report_pending &&
-                    (conn->tx_frame[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 4 &&
+                    (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 4 &&
                     gap_conn_tx_control_opcode(conn) == LL_CHANNEL_REPORTING_IND
                 ) {
                     conn->central.channel_report_pending = 0;
@@ -373,7 +379,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 }
 
                 if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
-                    (conn->tx_frame[0] & 3) == 3 && gap_conn_tx_payload_len(conn) == 11 &&
+                    (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 11 &&
                     gap_conn_tx_control_opcode(conn) == LL_SUBRATE_IND
                 ) {
                     conn->schedule.factor = conn->next_schedule.factor;
@@ -505,7 +511,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
 
             if (!conn->link_state.terminate_after_reply) {
-                if (gap_conn_tx_payload_len(conn) == 0 && conn->link_state.terminate_queued) {
+                if (!conn->tx_frame[1] && conn->link_state.terminate_queued) {
                     conn->tx_frame[0] = 0x03;
                     conn->tx_frame[1] = 2;
                     conn->tx_frame[2] = LL_TERMINATE_IND;
@@ -518,7 +524,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 gap_conn_send_queued();
 
 #if GAP_EXT_ADV_SUPPORT
-                if (gap_conn_tx_payload_len(conn) == 0 &&
+                if (!conn->tx_frame[1] &&
                     !gap_conn_security_busy(conn) && conn->sync_transfer_queued
                 ) {
                     uint8_t slot = conn->sync_transfer_slot;
@@ -538,7 +544,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 ) {
                     uint32_t now_ms = GET_MILLIS();
 
-                    if (!gap_conn_tx_payload_len(conn) &&
+                    if (!conn->tx_frame[1] &&
                         (uint32_t)(now_ms - conn->peripheral.status_changed_ms) >=
                                 (uint32_t)conn->channel_report.max_delay_200ms * 200 &&
                         (!conn->peripheral.last_sent_valid ||
@@ -557,7 +563,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 }
 #endif // GAP_PERIPHERAL_SUPPORT
 
-                if (gap_conn_tx_payload_len(conn) == 0 && conn->queue_state.tx_queued &&
+                if (!conn->tx_frame[1] && conn->queue_state.tx_queued &&
                     !conn->link_state.terminate_after_reply
                 ) {
                     conn->tx_frame[0] = conn->tx_packet.llid;
@@ -568,12 +574,12 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
             // Control responses with no payload acknowledge using an empty
             // data PDU; a zero-length LL Control PDU is invalid.
-            if (gap_conn_tx_payload_len(conn) == 0)
+            if (!conn->tx_frame[1])
                 conn->tx_frame[0] = 0x01;
         }
 
         gap_conn_update_apply(conn, 1);
-        if (gap_conn_tx_payload_len(conn)) conn->c_subrate.event_activity = 1;
+        if (conn->tx_frame[1]) conn->c_subrate.event_activity = 1;
 
         // Each update stage can close the slot, so check before continuing.
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
