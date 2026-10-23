@@ -367,12 +367,15 @@ void __attribute__((noinline)) gap_hw_received(void) {
 #if GAP_SECURITY_SUPPORT >= 1
                 uint8_t tx_payload_len = conn->security.tx_sealed ?
                     conn->security.tx_plain_len : conn->tx_frame[1];
+                uint8_t tx_control_opcode = conn->security.tx_sealed ?
+                    conn->security.tx_opcode : conn->tx_frame[2];
 #else
                 uint8_t tx_payload_len = conn->tx_frame[1];
+                uint8_t tx_control_opcode = conn->tx_frame[2];
 #endif // GAP_SECURITY_SUPPORT >= 1
                 if (conn->central.channel_report_pending &&
                     (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 4 &&
-                    gap_conn_tx_control_opcode(conn) == LL_CHANNEL_REPORTING_IND
+                    tx_control_opcode == LL_CHANNEL_REPORTING_IND
                 ) {
                     conn->central.channel_report_pending = 0;
                     conn->connection_status = 0;
@@ -380,7 +383,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
                 if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
                     (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 11 &&
-                    gap_conn_tx_control_opcode(conn) == LL_SUBRATE_IND
+                    tx_control_opcode == LL_SUBRATE_IND
                 ) {
                     conn->schedule.factor = conn->next_schedule.factor;
                     conn->schedule.base_event = conn->next_schedule.base_event;
@@ -1031,12 +1034,15 @@ static inline uint8_t gap_conn_can_skip_event(
 #if GAP_SECURITY_SUPPORT >= 1
         uint8_t tx_payload_len = conn->security.tx_sealed ?
             conn->security.tx_plain_len : conn->tx_frame[1];
+        uint8_t tx_control_opcode = conn->security.tx_sealed ?
+            conn->security.tx_opcode : conn->tx_frame[2];
 #else
         uint8_t tx_payload_len = conn->tx_frame[1];
+        uint8_t tx_control_opcode = conn->tx_frame[2];
 #endif // GAP_SECURITY_SUPPORT >= 1
         if (conn->c_rate.update_pending && conn->link_layer.tx_pending &&
             (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 15 &&
-            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_RATE_IND
+            tx_control_opcode == LL_CONNECTION_RATE_IND
         ) return 0;
 
         if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&

@@ -85,16 +85,6 @@ enum {
     LL_CONNECTION_RATE_IND = 0x3f
 };
 
-static inline uint8_t gap_conn_tx_control_opcode(
-    const gap_conn_context *conn
-) {
-#if GAP_SECURITY_SUPPORT >= 1
-    return conn->security.tx_sealed ? conn->security.tx_opcode : conn->tx_frame[2];
-#else
-    return conn->tx_frame[2];
-#endif
-}
-
 static inline uint8_t gap_conn_security_busy(const gap_conn_context *conn) {
 #if GAP_SECURITY_SUPPORT >= 1
     return conn->security.phase != 0;
@@ -241,19 +231,23 @@ static void gap_conn_update_apply(
     gap_conn_context *conn, uint8_t instant_packet_received
 ) {
     // Instant handling does not change the queued TX frame.
+    const uint8_t central_tx_pending = conn->is_central && conn->link_layer.tx_pending;
 #if GAP_SECURITY_SUPPORT >= 1
     const uint8_t tx_payload_len = conn->security.tx_sealed ?
         conn->security.tx_plain_len : conn->tx_frame[1];
+    const uint8_t tx_control_opcode = conn->security.tx_sealed ?
+        conn->security.tx_opcode : conn->tx_frame[2];
 #else
     const uint8_t tx_payload_len = conn->tx_frame[1];
+    const uint8_t tx_control_opcode = conn->tx_frame[2];
 #endif // GAP_SECURITY_SUPPORT >= 1
 
     if (conn->c_rate.update_pending &&
         conn->next_schedule.instant == conn->link_layer.event_counter
     ) {
-        if (conn->is_central && conn->link_layer.tx_pending &&
+        if (central_tx_pending &&
             (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 15 &&
-            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_RATE_IND
+            tx_control_opcode == LL_CONNECTION_RATE_IND
         ) {
             conn->connection_status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
@@ -295,9 +289,9 @@ static void gap_conn_update_apply(
     ) {
         // Close an unsynchronized Central link instead of retransmitting an
         // unacknowledged timing update once its Instant is no longer in the future.
-        if (conn->is_central && conn->link_layer.tx_pending &&
+        if (central_tx_pending &&
             (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 12 &&
-            gap_conn_tx_control_opcode(conn) == LL_CONNECTION_UPDATE_IND
+            tx_control_opcode == LL_CONNECTION_UPDATE_IND
         ) {
             gap_conn_end();
             return;
@@ -346,9 +340,9 @@ static void gap_conn_update_apply(
     if ((conn->procedure_state.procedure_flags & GAP_PENDING_PHY_UPDATE) &&
         conn->phy_state.instant == conn->link_layer.event_counter
     ) {
-        if (conn->is_central && conn->link_layer.tx_pending &&
+        if (central_tx_pending &&
             (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 5 &&
-            gap_conn_tx_control_opcode(conn) == LL_PHY_UPDATE_IND
+            tx_control_opcode == LL_PHY_UPDATE_IND
         ) {
             conn->phy_state.status = GAP_LL_ERR_INSTANT;
             gap_conn_end();
@@ -370,9 +364,9 @@ static void gap_conn_update_apply(
     ) {
         // An unacknowledged map change cannot be retried after its Instant;
         // disconnect rather than let the two devices hop on different maps.
-        if (conn->is_central && conn->link_layer.tx_pending &&
+        if (central_tx_pending &&
             (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 8 &&
-            gap_conn_tx_control_opcode(conn) == LL_CHANNEL_MAP_IND
+            tx_control_opcode == LL_CHANNEL_MAP_IND
         ) {
             conn->connection_status = GAP_LL_ERR_INSTANT; // Instant passed.
             gap_conn_end();
