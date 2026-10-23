@@ -198,6 +198,7 @@ static void gap_conn_end(void) {
     l2cap_conn_reset(&conn->l2cap, 0x0013);
     conn->l2cap_tx_queue.length = conn->l2cap_tx_queue.offset = 0;
     gap_wipe(conn->l2cap_tx, sizeof(conn->l2cap_tx));
+
 #if GAP_SECURITY_SUPPORT >= 1
     // Preserve the final status while clearing the rest of the security state.
     gap_security_context *security = &conn->security;
@@ -2416,7 +2417,7 @@ int gap_phy_set(uint8_t tx, uint8_t rx) {
 }
 
 // Application facing
-    // Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
+// Keep data fragments within LE 1M time limits even at faster PHYs, so queued data
 // remains valid if a PHY update returns to 1M without re-fragmentation.
 // Queue one LL data fragment. LLID 2 begins an L2CAP PDU; LLID 1 continues it.
 int gap_send_data(uint8_t llid, const uint8_t *data, size_t len) {

@@ -427,7 +427,7 @@ int gap_pawr_connect(
             return 0;
 
     if (!gap_peer_allowed(gap_identity_find(peer->address, peer->type),
-                          peer->address, peer->type)
+                                            peer->address, peer->type)
     ) return 0;
 
     set->pawr_connect.subevent = subevent;
@@ -1092,12 +1092,12 @@ static int gap_sync_info_accept(
 
     int slot = -1;
     const gap_address *peer = &fields->identity.peer;
-    int identity_slot = gap_identity_find(peer->address, peer->type);
-#if GAP_IDENTITY_COUNT > 0
-    const gap_address *resolved_peer = identity_slot >= 0 ?
-                                        &gap_identities[identity_slot].peer : NULL;
-#else
     const gap_address *resolved_peer = NULL;
+
+#if GAP_IDENTITY_COUNT > 0
+    int identity_slot = gap_identity_find(peer->address, peer->type);
+    if (identity_slot >= 0)
+        resolved_peer = &gap_identities[identity_slot].peer;
 #endif
 
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
@@ -1106,7 +1106,8 @@ static int gap_sync_info_accept(
             continue;
 
         if (GAP_ADDRESS_EQUAL(sync->peer, *peer) ||
-            (resolved_peer && GAP_ADDRESS_EQUAL(sync->peer, *resolved_peer))) {
+            (resolved_peer && GAP_ADDRESS_EQUAL(sync->peer, *resolved_peer))
+        ) {
             slot = i;
             break;
         }

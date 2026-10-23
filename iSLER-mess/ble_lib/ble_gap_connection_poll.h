@@ -300,7 +300,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             gap_security_nonce(&conn->security, nonce, cnt, !conn->is_central);
 
             if (!GAP_CCM_DECRYPT(conn->security.session_key, nonce, frame[0] & 0xe3,
-                    plain + 2, plain[1], frame + 2 + plain[1])
+                                plain + 2, plain[1], frame + 2 + plain[1])
             ) {
                 conn->security.status = 0x3d;
                 gap_conn_end();

@@ -33,7 +33,7 @@
 // Layer encryption with application-managed keys while SMP remains disabled;
 // 2 enables both Link Layer encryption and SMP.
 #ifndef GAP_SECURITY_SUPPORT
-#define GAP_SECURITY_SUPPORT 1
+#define GAP_SECURITY_SUPPORT 0
 #endif
 #if GAP_SECURITY_SUPPORT < 0 || GAP_SECURITY_SUPPORT > 2
 #error "GAP_SECURITY_SUPPORT must be 0, 1, or 2"
@@ -1275,6 +1275,7 @@ static int gap_accept_list_match(
     return 0;
 }
 
+// Application facing
 // Filter Accept List API.
 // Add an identity address to the bounded list while GAP is idle.
 int gap_accept_list_add(const gap_address *peer) {
@@ -1300,6 +1301,7 @@ int gap_accept_list_add(const gap_address *peer) {
     return 1;
 }
 
+// Application facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const gap_address *peer) {
     if (!peer || peer->type > 1) return 0;
@@ -1316,6 +1318,7 @@ int gap_accept_list_remove(const gap_address *peer) {
     return 0;
 }
 
+// Application facing
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     if (gap_is_busy()) return 0;
@@ -1324,6 +1327,7 @@ int gap_accept_list_clear(void) {
     return 1;
 }
 
+// Application facing
 // Peer identity API.
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
@@ -1343,7 +1347,6 @@ int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
                 memset(&gap_identities[i], 0, sizeof(gap_identities[i]));
                 return 1;
             }
-
             slot = i;
             break;
         }
@@ -1361,19 +1364,18 @@ int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
     gap_identities[slot].has_irk = 0;
 
     for (uint8_t i = 0; i < 16; i++)
-        if (irk[i])
-            gap_identities[slot].has_irk = 1;
+        if (irk[i]) gap_identities[slot].has_irk = 1;
 
     gap_identities[slot].peer = *peer;
     memcpy(gap_identities[slot].irk, irk, 16);
     return 1;
 }
 
+// Application facing
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(const gap_address *peer, uint8_t mode) {
     if (!peer || peer->type > 1) return 0;
-    if (mode > GAP_PRIVACY_DEVICE ||
-        gap_is_busy()) return 0;
+    if (mode > GAP_PRIVACY_DEVICE || gap_is_busy()) return 0;
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -1386,21 +1388,19 @@ int gap_identity_privacy(const gap_address *peer, uint8_t mode) {
     return 0;
 }
 
+// Application facing
 // Resolve without replacing the received address, which is needed on the air.
 int gap_resolve(const gap_address *address, gap_address *identity) {
-    if (!address || address->type > 1 || !identity)
-        return 0;
-
+    if (!address || address->type > 1 || !identity) return 0;
     int slot = gap_identity_find(address->address, address->type);
-
     if (slot < 0) return 0;
-
     *identity = gap_identities[slot].peer;
     return 1;
 }
 #endif // GAP_IDENTITY_COUNT > 0
 
 #if GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
+// Application facing
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
@@ -1481,6 +1481,7 @@ static int gap_privacy_timeout_pick(
     return 0;
 }
 
+// Application facing
 // Configure local privacy while GAP is idle. Each timeout unit is 15 seconds;
 // valid nonzero bounds are 1..240 (15 seconds to one hour). Equal bounds use a
 // fixed timeout. An IRK with different bounds selects randomized RPA timing;
@@ -1526,6 +1527,7 @@ int gap_privacy_configure(
     return 1;
 }
 
+// Application facing
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
@@ -1570,6 +1572,7 @@ static void gap_local_addr_select(
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
+// Application facing
 // Local address API.
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
@@ -1586,6 +1589,7 @@ int gap_set_static_addr(const uint8_t address[6]) {
     return 1;
 }
 
+// Application facing
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
     if (gap_is_busy()) return 0;
