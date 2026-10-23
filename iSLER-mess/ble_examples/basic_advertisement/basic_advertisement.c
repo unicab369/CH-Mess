@@ -34,7 +34,8 @@ int main(void) {
         !gap_ad_flags(&builder, 0x06) ||
         !gap_ad_local_name(&builder, local_name,
                                sizeof(local_name) - 1, 1) ||
-        !gap_adv_start(advertising_data, builder.len, 100)) {
+        !gap_adv_start(ADV_NONCONN_IND, advertising_data, builder.len, NULL, 0, 100)
+    ) {
         for (;;) {}
     }
 

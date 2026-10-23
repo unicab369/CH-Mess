@@ -698,8 +698,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             peer_matches = gap_accept_list_match(frame + 2, advertiser_type, peer_slot);
         }
         else {
-            int target_slot = gap_identity_find(gap_initiator.peer.address,
-                                                gap_initiator.peer.type);
+            int target_slot = gap_identity_find(gap_initiator.peer.address, gap_initiator.peer.type);
             peer_matches = (advertiser_type == gap_initiator.peer.type &&
                             memcmp(frame + 2, gap_initiator.peer.address, 6) == 0) ||
                             (peer_slot >= 0 && peer_slot == target_slot);

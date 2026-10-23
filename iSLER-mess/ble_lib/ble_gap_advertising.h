@@ -484,7 +484,13 @@ static inline void gap_adv_enable(
     gap_adv.enabled = 1;
 }
 
-static inline int gap_adv_start_payload(
+// Start legacy advertising by selecting its PDU type:
+//   gap_adv_start(ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
+//   gap_adv_start(ADV_SCAN_IND, data, len, scan_rsp, rsp_len, interval_ms);
+//   gap_adv_start(ADV_IND, data, len, scan_rsp, rsp_len, interval_ms);
+// ADV_NONCONN_IND is not connectable or scannable; ADV_SCAN_IND is scannable;
+// ADV_IND is connectable and scannable. ADV_SCAN_IND requires a scan response.
+static inline int gap_adv_start(
     uint8_t pdu_type, const uint8_t *data, size_t data_len,
     const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
 ) {
@@ -494,7 +500,10 @@ static inline int gap_adv_start_payload(
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 0;
 #endif
-    if (!gap_ad_data_valid(data, data_len) ||
+    if ((pdu_type != ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND &&
+         pdu_type != ADV_IND) ||
+        (pdu_type == ADV_SCAN_IND && (!scan_response || !resp_len)) ||
+        !gap_ad_data_valid(data, data_len) ||
         !gap_ad_data_valid(scan_response, resp_len) ||
         interval_ms < GAP_ADV_INTERVAL_MIN_MS ||
         interval_ms > GAP_ADV_INTERVAL_MAX_MS
@@ -510,35 +519,7 @@ static inline int gap_adv_start_payload(
     return 1;
 }
 
-// Application facing
-// Start legacy non-connectable, non-scannable advertising.
-int gap_adv_start(const uint8_t *data, size_t len, uint16_t interval_ms) {
-    return gap_adv_start_payload(ADV_NONCONN_IND, data, len, NULL, 0, interval_ms);
-}
-
-// Application facing
-// Start legacy scannable advertising with the AD data returned in SCAN_RSP.
-int gap_adv_start_scannable(
-    const uint8_t *data, size_t len,
-    const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
-) {
-    if (!scan_response || !resp_len) return 0;
-    return gap_adv_start_payload(
-        ADV_SCAN_IND, data, len, scan_response, resp_len, interval_ms);
-}
-
 #if GAP_PERIPHERAL_SUPPORT
-// Application facing
-// Advertise as a connectable, scannable Peripheral. The platform polling loop
-// must run continuously to service connection events; GATT data is not handled yet.
-int gap_adv_start_connectable(
-    const uint8_t *data, size_t len,
-    const uint8_t *scan_response, size_t resp_len, uint16_t interval_ms
-) {
-    return gap_adv_start_payload(
-        ADV_IND, data, len, scan_response, resp_len, interval_ms);
-}
-
 // Application facing
 // Low duty cycle directed advertising to one peer; address bytes are PDU order.
 int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
