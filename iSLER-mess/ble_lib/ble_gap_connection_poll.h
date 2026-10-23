@@ -15,26 +15,29 @@ static void gap_conn_send_queued(void) {
         return;
 
 #if GAP_CENTRAL_SUPPORT
-    if (conn->is_central && conn->central.local_update)
-        gap_send_conn_update(conn);
+    if (conn->is_central) {
+        if (conn->central.local_update)
+            gap_send_conn_update(conn);
 
-    if (conn->is_central && conn->central.local_map &&
-        !gap_conn_tx_payload_len(conn)) {
-        conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
-        conn->central.local_map = 0;
+        if (conn->central.local_map && !gap_conn_tx_payload_len(conn)) {
+            conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
+            conn->central.local_map = 0;
 
-        // Choose the Instant when the TX slot opens so it stays ahead of retries.
-        // Allow six latency-adjusted event periods plus one extra event of lead.
-        conn->map_instant = (uint16_t)(conn->link_layer.event_counter +
-                                    6 * (conn->schedule.latency + 1) + 1);
-        conn->tx_frame[0] = 3;
-        conn->tx_frame[1] = 8;
-        conn->tx_frame[2] = LL_CHANNEL_MAP_IND;
-        memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
-        ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
+            // Choose the Instant when the TX slot opens so it stays ahead of retries.
+            // Allow six latency-adjusted event periods plus one extra event of lead.
+            conn->map_instant = (uint16_t)(conn->link_layer.event_counter +
+                                        6 * (conn->schedule.latency + 1) + 1);
+            conn->tx_frame[0] = 3;
+            conn->tx_frame[1] = 8;
+            conn->tx_frame[2] = LL_CHANNEL_MAP_IND;
+            memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
+            ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
+        }
     }
 #endif
 
+    // A Central connection update or channel map above may queue a TX frame,
+    // so check gap_conn_tx_payload_len(conn) before starting local parameters.
     if (conn->queue_state.local_params &&
         !conn->c_features.request_pending &&
         !gap_conn_tx_payload_len(conn)
@@ -121,6 +124,8 @@ static void gap_conn_send_queued(void) {
             }
         }
 
+        // Subrate handling above may queue a TX frame, so check
+        // gap_conn_tx_payload_len(conn) again before starting a rate request.
         if (conn->c_rate.queued_flags && !conn->c_features.ext_pending &&
             !gap_conn_tx_payload_len(conn)
         ) {
@@ -184,6 +189,8 @@ static void gap_conn_send_queued(void) {
     }
 
 #if GAP_CENTRAL_SUPPORT
+    // The subrate or rate request above may queue a TX frame, so check
+    // gap_conn_tx_payload_len(conn) again before the channel report.
     if (!gap_conn_tx_payload_len(conn) && conn->is_central &&
         conn->central.channel_report_queued &&
         !conn->c_features.request_pending
