@@ -1779,6 +1779,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
             continue;
 
+        gap_conn_context *conn = &gap_conn_ctx[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
         ble_gap_l2cap_peer *peer = &manager->peers[slot];
@@ -1794,9 +1795,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             memset(peer, 0, sizeof(*peer));
             peer->handle = handle;
             peer->upper = manager->upper;
-            gap_conn_context *link = &gap_conn_ctx[slot];
-            peer->connection = &link->l2cap;
-            peer->tx_queue = &link->l2cap_tx_queue;
+            peer->connection = &conn->l2cap;
+            peer->tx_queue = &conn->l2cap_tx_queue;
             peer->connection->local_mtu = manager->mtu;
             peer->connection->local_mps = manager->mps;
             peer->connection->local_credits = manager->initial_credits;
@@ -1809,7 +1809,6 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         uint8_t connected = gap_conn_select(handle);
         if (connected) {
-            const gap_conn_context *conn = gap_conn_ctx_current();
             connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
                 (conn->is_central || !conn->link_layer.first_event);
         }
@@ -1825,7 +1824,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         int result = 0;
 
         if (connected && peer->tx_queue->length) {
-            uint16_t max_len = gap_conn_ctx_current()->data_length.tx_octets;
+            uint16_t max_len = conn->data_length.tx_octets;
 
             if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
                 gap_conn_slot = previous_slot;
@@ -1883,16 +1882,13 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                         l2cap->remote_update_deadline_ms) >= 0;
 
                 if (!request_expired) {
-                    const gap_conn_context *conn = gap_conn_ctx_current();
-
                     if (!conn->is_central) {
                         if (l2cap_connection_update_reply(l2cap, 0))
                             result = 1;
                     }
                     else {
                         if (!peer->update_applied) {
-                            uint16_t current = (uint16_t)(
-                                conn->schedule.interval_125us / 10u);
+                            uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
                             uint16_t interval = current >= l2cap->remote_update_min &&
                                 current <= l2cap->remote_update_max ? current :
                                 l2cap->remote_update_min;
