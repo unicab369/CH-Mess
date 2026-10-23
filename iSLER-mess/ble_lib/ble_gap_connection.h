@@ -139,11 +139,6 @@ static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
     return busy;
 }
 
-static uint8_t gap_conn_subrate_busy(const gap_conn_context *conn) {
-    return conn->c_subrate.queued_flags ||
-            conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE;
-}
-
 #if GAP_SECURITY_SUPPORT >= 2
 static void gap_smp_link_close(gap_conn_context *conn);
 static void gap_smp_poll(void);
@@ -633,12 +628,13 @@ static void gap_privacy_poll(uint32_t now) {
     // Refresh cached local RPAs outside the RX interrupt, between exchanges.
 #if GAP_IDENTITY_COUNT > 0
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
-        if (gap_privacy.resolvable && gap_identities[i].used &&
-            gap_identities[i].local_key_set &&
-            gap_identities[i].has_local_irk &&
-            gap_private_addr_generate(gap_identities[i].local_irk, address,
-                                          gap_identities[i].local_address)
-        ) memcpy(gap_identities[i].local_address, address, 6);
+        gap_identity *identity = &gap_identities[i];
+        if (gap_privacy.resolvable && identity->used &&
+            identity->local_key_set && identity->has_local_irk &&
+            gap_private_addr_generate(identity->local_irk, address, identity->local_address)
+        ) {
+            memcpy(identity->local_address, address, 6);
+        }
     }
 #endif
 
@@ -857,24 +853,25 @@ static uint8_t gap_conn_control(
         if (frame[1] != 1)
             return gap_conn_unknown_resp(conn, frame[2]);
 
-        if (conn->is_central && authenticated &&
-            gap_security->phase == GAP_ENC_WAIT_PAUSE
-        ) {
+        if (conn->is_central) {
+            if (!authenticated || gap_security->phase != GAP_ENC_WAIT_PAUSE)
+                return gap_conn_unknown_resp(conn, frame[2]);
+
             gap_security->tx_enabled = 0;
             gap_security->rx_enabled = 0;
             conn->tx_frame[1] = 1;
             conn->tx_frame[2] = LL_PAUSE_ENC_RSP; // Central's final response is plaintext.
             gap_security->phase = GAP_ENC_RESTART_QUEUED;
         }
-        else if (!conn->is_central && !authenticated &&
-            gap_security->phase == GAP_ENC_PERIPHERAL_PAUSE
-        ) {
+        else {
+            if (authenticated || gap_security->phase != GAP_ENC_PERIPHERAL_PAUSE)
+                return gap_conn_unknown_resp(conn, frame[2]);
+
             gap_security->tx_enabled = 0;
             gap_security->rx_enabled = 0;
             gap_security->phase = GAP_ENC_PERIPHERAL_RESTART;
             gap_wipe(gap_security->session_key, sizeof(gap_security->session_key));
         }
-        else return gap_conn_unknown_resp(conn, frame[2]);
 
         break;
 
@@ -882,7 +879,8 @@ static uint8_t gap_conn_control(
     case LL_CONNECTION_UPDATE_IND: {
         if (!conn->is_central && frame[1] == 12 &&
             !(conn->procedure_state.procedure_flags & GAP_PENDING_TIMING_UPDATE) &&
-            !gap_conn_rate_busy(conn) && !gap_conn_subrate_busy(conn)
+            !gap_conn_rate_busy(conn) && !conn->c_subrate.queued_flags &&
+            conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE
         ) {
             uint8_t win_size = frame[3];
             uint16_t win_offset = ble_read_u16_le(frame + 4);
@@ -2008,6 +2006,13 @@ static uint8_t gap_conn_procedure_busy(const gap_conn_context *conn) {
         gap_conn_pending_procedure_busy(conn);
 }
 
+static uint8_t gap_conn_timing_busy(const gap_conn_context *conn) {
+    return gap_conn_procedure_busy(conn) ||
+        gap_conn_rate_busy(conn) ||
+        conn->c_subrate.queued_flags ||
+        conn->c_subrate.procedure_state != GAP_SUBRATE_IDLE;
+}
+
 // Application facing
 // Queue a Central timing update. Interval uses 1.25 ms units (6..3200),
 // latency counts skipped events (0..499), timeout uses 10 ms units (10..3200).
@@ -2018,8 +2023,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                         conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) || !conn->is_central ||
+    if (gap_conn_timing_busy(conn) || !conn->is_central ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * interval_125us * factor
     ) return 0;
@@ -2047,8 +2051,7 @@ int gap_conn_request(
                     conn->schedule.interval_125us <= maximum * 10 ?
                     conn->schedule.factor : 1;
 
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
+    if (gap_conn_timing_busy(conn) ||
         !ble_timing_valid( minimum, maximum, latency, timeout) ||
         (uint64_t)timeout * 80 <= 2ull * (latency + 1) * maximum * 10 * factor
     ) return 0;
@@ -2076,8 +2079,7 @@ int gap_subrate_set(
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
 
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
+    if (gap_conn_timing_busy(conn) ||
         !conn->is_central ||
         !gap_rate_parameters_valid(conn->schedule.interval_125us,
                                     factor, peripheral_latency, continuation, timeout)
@@ -2110,8 +2112,7 @@ int gap_subrate_request(
     uint16_t timeout_10ms
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) || conn->is_central ||
+    if (gap_conn_timing_busy(conn) || conn->is_central ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
         (uint64_t)timeout_10ms * 80 <= 2ull * conn->schedule.interval_125us * factor_min *
@@ -2149,8 +2150,7 @@ int gap_conn_rate_request(
     uint16_t preferred_periodicity_125us, const uint16_t offsets[4]
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
+    if (gap_conn_timing_busy(conn) ||
         conn->is_central ||
         intv_min_125us < 3 ||
         intv_max_125us > 32000 ||
@@ -2202,8 +2202,7 @@ int gap_conn_rate_set(
     uint16_t latency, uint16_t continuation, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (gap_conn_procedure_busy(conn) ||
-        gap_conn_rate_busy(conn) || gap_conn_subrate_busy(conn) ||
+    if (gap_conn_timing_busy(conn) ||
         !conn->is_central ||
         interval < gap_conn_min_interval(conn) ||
         !gap_rate_parameters_valid(interval, factor, latency, continuation,
