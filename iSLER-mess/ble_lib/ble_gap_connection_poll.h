@@ -386,19 +386,21 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 }
             }
 #endif // GAP_CENTRAL_SUPPORT
+
 #if GAP_PERIPHERAL_SUPPORT
             if (!conn->is_central && conn->peripheral.rate_ack_waiting) {
                 conn->peripheral.rate_ack_waiting = 0;
             }
 #endif // GAP_PERIPHERAL_SUPPORT
 
-            conn->link_layer.tx_sn ^= 1;
-            conn->link_layer.tx_pending = 0;
 #if GAP_SECURITY_SUPPORT >= 1
             conn->security.tx_sealed = 0;
             conn->security.tx_plain_len = 0;
             conn->security.tx_opcode = 0;
 #endif // GAP_SECURITY_SUPPORT >= 1
+
+            conn->link_layer.tx_sn ^= 1;
+            conn->link_layer.tx_pending = 0;
             // The in-place ciphertext is no longer a queued PDU after ACK.
             conn->tx_frame[1] = 0;
 
@@ -416,12 +418,14 @@ void __attribute__((noinline)) gap_hw_received(void) {
         }
 
         uint8_t llid = frame[0] & 3;
+        uint8_t is_control_pdu = llid == 3;
+        uint8_t has_data_payload = (llid == 1 || llid == 2) && frame[1];
         // Reject control PDUs without a payload or reply slot, and data PDUs
         // while the receive slot is occupied, so they remain unacknowledged.
         uint8_t new_packet =
             ((frame[0] >> 3) & 1) == conn->link_layer.expected_rx_sn &&
-            !((llid == 3 && (!frame[1] || conn->link_layer.tx_pending)) ||
-              ((llid == 1 || llid == 2) && frame[1] && conn->queue_state.rx_ready));
+            (!is_control_pdu || (frame[1] && !conn->link_layer.tx_pending)) &&
+            (!has_data_payload || !conn->queue_state.rx_ready);
 
         if (new_packet) {
 #if GAP_SECURITY_SUPPORT >= 1
@@ -429,7 +433,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 conn->security.phase != GAP_ENC_QUEUED &&
                 conn->security.phase != GAP_ENC_PAUSE_QUEUED
             ) {
-                uint8_t opcode = (llid == 3) ? frame[2] : 0xff;
+                uint8_t opcode = is_control_pdu ? frame[2] : 0xff;
                 uint8_t allowed = (opcode == LL_TERMINATE_IND);
 
                 switch (conn->security.phase) {
@@ -475,7 +479,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
             if (authenticated) conn->security.rx_counter++;
 #endif // GAP_SECURITY_SUPPORT >= 1
 
-            if ((llid == 1 || llid == 2) && frame[1]) {
+            // Keep this after security validation so rejected packets are not queued.
+            if (has_data_payload) {
                 conn->rx_packet.llid = llid;
                 conn->rx_packet.len = frame[1];
                 memcpy(conn->rx_packet.data, frame + 2, frame[1]);
@@ -488,7 +493,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->tx_frame[0] = 0x01;
             conn->tx_frame[1] = 0;
 
-            if (new_packet && (frame[0] & 3) == 3 && frame[1]) {
+            if (new_packet && is_control_pdu && frame[1]) {
                 conn->tx_frame[0] = 0x03;
 
                 if (gap_conn_control(frame, authenticated,
