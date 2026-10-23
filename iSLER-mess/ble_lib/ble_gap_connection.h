@@ -428,9 +428,9 @@ static void gap_conn_event_advance(gap_conn_context *conn) {
     if (!conn->link_layer.event_counter && conn->schedule.factor > 1) {
         // Preserve the event phase across the 16-bit counter wrap.
         uint32_t steps = (65536 - conn->schedule.base_event +
-                          conn->schedule.factor - 1) / conn->schedule.factor;
-        conn->schedule.base_event = (uint16_t)(
-            conn->schedule.base_event + steps * conn->schedule.factor - 65536);
+                            conn->schedule.factor - 1) / conn->schedule.factor;
+        conn->schedule.base_event = (uint16_t)(conn->schedule.base_event +
+                            steps * conn->schedule.factor - 65536);
 
         if (conn->is_central &&
             conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
@@ -456,10 +456,11 @@ static void gap_send_conn_update(gap_conn_context *conn) {
     conn->update_instant = (uint16_t)(conn->link_layer.event_counter +
                             6 * (conn->schedule.latency + 1) + 1);
     conn->procedure_state.procedure_flags |= GAP_PENDING_TIMING_UPDATE;
+    conn->procedure_state.params_state = GAP_CONN_PARAMS_NONE;
+
 #if GAP_CENTRAL_SUPPORT
     conn->central.local_update = 0;
 #endif
-    conn->procedure_state.params_state = GAP_CONN_PARAMS_NONE;
 
     conn->tx_frame[0] = 0x03;
     conn->tx_frame[1] = 12;
@@ -511,8 +512,8 @@ static void gap_send_feature_request(gap_conn_context *conn) {
     conn->tx_frame[4] = ((supported_phys & GAP_PHY_2M) ? 0x01 : 0) |
                         ((supported_phys & GAP_PHY_CODED) ? 0x08 : 0);
     conn->tx_frame[7] =   GAP_LL_FEATURES_SUBRATING |
-                        GAP_LL_FEATURES_SUBRATING_HOST |
-                        GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+                            GAP_LL_FEATURES_SUBRATING_HOST |
+                            GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
     conn->tx_frame[10] = GAP_LL_FEATURES_EXTENDED;
 }
 
@@ -522,8 +523,7 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
     if (conn->tx_frame[1]) return;
 
     conn->next_schedule.base_event = conn->link_layer.event_counter;
-    conn->c_subrate.queued_flags &=
-        (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
+    conn->c_subrate.queued_flags &= (uint8_t)~GAP_SUBRATE_QUEUED_UPDATE;
     conn->c_subrate.procedure_state = GAP_SUBRATE_UPDATE_PENDING;
     conn->c_subrate.started_ms = GET_MILLIS();
 
@@ -538,8 +538,7 @@ static void gap_send_subrate_update(gap_conn_context *conn) {
 }
 
 static void gap_send_rate_ind(
-    gap_conn_context *conn, uint16_t reference_event,
-    const uint16_t offsets[4]
+    gap_conn_context *conn, uint16_t reference_event, const uint16_t offsets[4]
 ) {
     if (conn->tx_frame[1]) return;
 
@@ -552,17 +551,17 @@ static void gap_send_rate_ind(
         // Core timing equation:
         // Δt = (new_interval - ((Instant - reference_event) * old_interval)
         //       % new_interval + Offset0) % new_interval.
-        int32_t event_delta = (int16_t)(conn->next_schedule.instant -
-                                       reference_event);
-        int32_t old_phase = (event_delta *
-                             conn->schedule.interval_125us) %
+        int32_t event_delta = (int16_t)(conn->next_schedule.instant - reference_event);
+        int32_t old_phase = (event_delta * conn->schedule.interval_125us) %
                             conn->next_schedule.interval_125us;
         if (old_phase < 0)
             old_phase += conn->next_schedule.interval_125us;
+
         conn->next_schedule.win_offset = (uint16_t)(
             (conn->next_schedule.interval_125us - old_phase + offsets[0]) %
             conn->next_schedule.interval_125us);
     }
+
     conn->c_rate.update_pending = 1;
     conn->c_rate.queued_flags &= (uint8_t)~GAP_RATE_QUEUED_SET;
     conn->connection_status = GAP_CONNECTION_PENDING;
@@ -606,14 +605,16 @@ static void gap_privacy_poll(uint32_t now) {
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return;
 #endif
-    if (!gap_privacy_timeout_15s || (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        gap_scan.active_pending
-    ) return;
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.rx_event) return;
 #endif
-    if ((int32_t)(now - gap_privacy_next_rotation_ms) < 0) return;
+
+    if (!gap_privacy_timeout_15s ||
+        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        gap_scan.active_pending ||
+        (int32_t)(now - gap_privacy_next_rotation_ms) < 0
+    ) return;
 
     if (gap_rx_armed) {
         GAP_HW_STOP();
@@ -621,14 +622,11 @@ static void gap_privacy_poll(uint32_t now) {
     }
 
     uint8_t address[6];
-    if (!gap_private_addr_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
-                                      address, gap_own_address.address)
-    ) return;
-
     uint8_t next_timeout_15s;
-    if (!gap_privacy_timeout_pick(gap_privacy_timeout_min_15s,
-                                  gap_privacy_timeout_max_15s,
-                                  &next_timeout_15s)
+    if (!gap_private_addr_generate(gap_privacy.resolvable ? gap_privacy.irk : NULL,
+                                   address, gap_own_address.address) ||
+        !gap_privacy_timeout_pick(gap_privacy_timeout_min_15s,
+                                  gap_privacy_timeout_max_15s, &next_timeout_15s)
     ) return;
 
     memcpy(gap_own_address.address, address, 6);
