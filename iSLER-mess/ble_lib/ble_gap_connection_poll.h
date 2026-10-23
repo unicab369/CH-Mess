@@ -203,7 +203,7 @@ static void gap_conn_send_queued(void) {
         if (!conn->c_features.known) {
             gap_send_feature_request(conn);
         }
-        else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CHANNEL_CLASSIFICATION)) {
+            else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
             conn->central.channel_report_queued = 0;
             conn->central.channel_report_pending = 0;
             conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;

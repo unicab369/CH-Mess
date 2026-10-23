@@ -166,7 +166,7 @@
 #define GAP_LL_FEATURES 0x2f
 #define GAP_LL_FEATURES_SUBRATING 0x20
 #define GAP_LL_FEATURES_SUBRATING_HOST 0x40
-#define GAP_LL_FEATURES_CHANNEL_CLASSIFICATION 0x80
+#define GAP_LL_FEATURES_CH_CLASS 0x80
 #define GAP_CHANN_CLASS_BYTES 10
 // Feature bit 63 enables LL_FEATURE_EXT_REQ/RSP, which carry the Core 6.2
 // Shorter Connection Intervals capabilities on feature page 1.

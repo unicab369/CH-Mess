@@ -3847,7 +3847,7 @@ static void test_channel_classification_reporting(void) {
 
     start_test_central_link();
     conn->c_features.known = 1;
-    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CH_CLASS;
     assert(gap_channel_reporting_set(1, 5, 10));
     gap_channel_reporting_start_queued();
     assert(conn->tx_frame[2] == 0x28 && conn->tx_frame[1] == 4 &&
@@ -3865,7 +3865,7 @@ static void test_channel_classification_reporting(void) {
     start_test_central_link();
     conn->is_central = 0;
     conn->c_features.known = 1;
-    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CHANNEL_CLASSIFICATION;
+    conn->c_features.peer_feature_4 = GAP_LL_FEATURES_CH_CLASS;
     assert(gap_channel_class_set(classification));
     uint8_t reserved_value[GAP_CHANN_CLASS_BYTES] = {0};
     reserved_value[0] = 2; // Classification value 2 is reserved.
