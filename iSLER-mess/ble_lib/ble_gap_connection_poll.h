@@ -13,16 +13,16 @@ static void gap_conn_send_queued(void) {
 #endif // GAP_SECURITY_SUPPORT >= 1
     // Keep this after gap_send_security: a busy security phase may still need
     // to queue its next packet before other procedures are blocked.
-    if (gap_conn_security_busy(conn)) return;
+    if (gap_conn_security_busy(conn) || conn->tx_frame[1]) return;
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
-        if (conn->central.local_update && !conn->tx_frame[1]) {
+        if (conn->central.local_update) {
             gap_send_conn_update(conn);
+            if (conn->tx_frame[1]) return;
         }
 
-        // gap_send_conn_update may set tx_frame[1]; check it again before the map.
-        if (conn->central.local_map && !conn->tx_frame[1]) {
+        if (conn->central.local_map) {
             conn->procedure_state.procedure_flags |= GAP_PENDING_CHANNEL_MAP;
             conn->central.local_map = 0;
 
@@ -35,14 +35,13 @@ static void gap_conn_send_queued(void) {
             conn->tx_frame[2] = LL_CHANNEL_MAP_IND;
             memcpy(conn->tx_frame + 3, conn->next_channel_map, 5);
             ble_write_u16_le(conn->tx_frame + 8, conn->map_instant);
+            return;
         }
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-    // A Central connection update or channel map above may queue a TX frame.
     if (conn->queue_state.local_params &&
-        !conn->c_features.request_pending &&
-        !conn->tx_frame[1]
+        !conn->c_features.request_pending
     ) {
         // Exchange features before sending the application's timing range.
         if (!conn->c_features.known) {
@@ -71,12 +70,14 @@ static void gap_conn_send_queued(void) {
             memset(conn->tx_frame + 14, 0xff, 12); // No anchor offset preference.
         }
     }
+    if (conn->tx_frame[1]) return;
 
-    if (conn->queue_state.length && !conn->tx_frame[1]) {
+    if (conn->queue_state.length) {
         gap_send_data_length(conn, LL_LENGTH_REQ);
+        if (conn->tx_frame[1]) return;
     }
 
-    if (conn->queue_state.phy_queued && !conn->tx_frame[1]) {
+    if (conn->queue_state.phy_queued) {
         // Encode local preferences once earlier TX has been acknowledged.
         conn->queue_state.phy_queued = 0;
         conn->procedure_state.phy_request = 1;
@@ -87,9 +88,10 @@ static void gap_conn_send_queued(void) {
         conn->tx_frame[2] = LL_PHY_REQ;
         conn->tx_frame[3] = conn->phy_state.preferred.tx;
         conn->tx_frame[4] = conn->phy_state.preferred.rx;
+        return;
     }
 
-    if (!conn->c_features.request_pending && !conn->tx_frame[1]) {
+    if (!conn->c_features.request_pending) {
         if (conn->c_subrate.queued_flags) {
             // Wait for the peer Link Layer and Host to confirm subrating support.
             if (!conn->c_features.known) {
@@ -130,10 +132,9 @@ static void gap_conn_send_queued(void) {
             }
         }
 
-        // Subrate handling above may have queued a TX frame.
-        if (conn->c_rate.queued_flags && !conn->c_features.ext_pending &&
-            !conn->tx_frame[1]
-        ) {
+        if (conn->tx_frame[1]) return;
+
+        if (conn->c_rate.queued_flags && !conn->c_features.ext_pending) {
             if (!conn->c_features.known) {
                 gap_send_feature_request(conn);
             }
@@ -194,32 +195,32 @@ static void gap_conn_send_queued(void) {
         }
     }
 
-#if GAP_CENTRAL_SUPPORT
-    // The subrate or rate request above may have queued a TX frame.
-    if (!conn->tx_frame[1] && conn->is_central &&
-        conn->central.channel_report_queued &&
-        !conn->c_features.request_pending
-    ) {
-        if (!conn->c_features.known) {
-            gap_send_feature_request(conn);
-        }
-            else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
-            conn->central.channel_report_queued = 0;
-            conn->central.channel_report_pending = 0;
-            conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
-        }
-        else {
-            conn->central.channel_report_queued = 0;
-            conn->central.channel_report_pending = 1;
-            conn->connection_status = GAP_CONNECTION_PENDING;
+    if (conn->tx_frame[1]) return;
 
-            conn->tx_frame[0] = 0x03;
-            conn->tx_frame[1] = 4;
-            conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
-            conn->tx_frame[3] = conn->channel_report.enabled;
-            conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
-            conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
-        }
+#if GAP_CENTRAL_SUPPORT
+    if (!conn->is_central || !conn->central.channel_report_queued ||
+        conn->c_features.request_pending
+    ) return;
+
+    if (!conn->c_features.known) {
+        gap_send_feature_request(conn);
+    }
+    else if (!(conn->c_features.peer_feature_4 & GAP_LL_FEATURES_CH_CLASS)) {
+        conn->central.channel_report_queued = 0;
+        conn->central.channel_report_pending = 0;
+        conn->connection_status = GAP_LL_ERR_REMOTE_FEATURE;
+    }
+    else {
+        conn->central.channel_report_queued = 0;
+        conn->central.channel_report_pending = 1;
+        conn->connection_status = GAP_CONNECTION_PENDING;
+
+        conn->tx_frame[0] = 0x03;
+        conn->tx_frame[1] = 4;
+        conn->tx_frame[2] = LL_CHANNEL_REPORTING_IND;
+        conn->tx_frame[3] = conn->channel_report.enabled;
+        conn->tx_frame[4] = conn->channel_report.min_spacing_200ms;
+        conn->tx_frame[5] = conn->channel_report.max_delay_200ms;
     }
 #endif // GAP_CENTRAL_SUPPORT
 }

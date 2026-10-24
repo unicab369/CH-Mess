@@ -277,7 +277,10 @@ int gap_ad_parse_next(
 
     if (*offset == len) return 0;
     uint8_t field_len = data[*offset];
-    if (!field_len) *offset = len; return 0;
+    if (!field_len) {
+        *offset = len;
+        return 0;
+    }
 
     if ((size_t)field_len + 1 > len - *offset)
         return -1;
