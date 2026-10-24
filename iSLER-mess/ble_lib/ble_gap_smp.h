@@ -2616,6 +2616,30 @@ static void gap_smp_poll_context(
         }
     }
 
+    if (op == SMP_PAIRING_CONFIRM && pending_len == 17) {
+        if (pairing->phase == SMP_PHASE_PASSKEY &&
+            !conn->is_central && !pairing->confirm_received
+        ) {
+            memcpy(pairing->peer_confirm, pdu + 1, 16);
+            pairing->confirm_received = 1;
+            return; // Wait for the user's passkey before sending our confirm.
+        }
+
+        if (!pairing->secure_connections && pairing->phase == SMP_PHASE_CONFIRM) {
+            memcpy(pairing->peer_confirm, pdu + 1, 16);
+
+            if (conn->is_central)
+                gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
+            else {
+                uint8_t confirm[16];
+                gap_smp_confirm(&conn->smp, conn, conn->smp.random, confirm);
+                gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, 16);
+            }
+            pairing->phase = SMP_PHASE_RANDOM;
+            return;
+        }
+    }
+
     if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
         pairing->secure_connections &&
         pairing->phase == SMP_PHASE_SC_RANDOM
@@ -2701,63 +2725,6 @@ static void gap_smp_poll_context(
         return;
     }
 
-    if (op == SMP_PAIRING_DHKEY_CHECK && pending_len == 17 &&
-        pairing->secure_connections
-    ) {
-        if (pairing->phase == SMP_PHASE_SC_USER &&
-            !conn->is_central && !conn->smp.secure.peer_check_rx
-        ) {
-            memcpy(conn->smp.secure.peer_check, pdu + 1, 16);
-            conn->smp.secure.peer_check_rx = 1;
-            return;
-        }
-
-        if (pairing->phase == SMP_PHASE_SC_DHKEY) {
-            uint8_t check[16], difference = 0;
-            gap_sc_dhkey_check(&conn->smp, conn, !conn->is_central, check);
-
-            // Check every byte so the failure path does not reveal the first mismatch.
-            for (uint8_t i = 0; i < 16; i++)
-                difference |= check[i] ^ pdu[i + 1];
-            if (difference) {
-                gap_smp_fail(conn, SMP_FAIL_DHKEY_CHECK);
-                return;
-            }
-
-            if (!conn->is_central) {
-                gap_sc_dhkey_check(&conn->smp, conn, 0, check);
-                gap_smp_queue(&conn->smp, SMP_PAIRING_DHKEY_CHECK, check, sizeof(check));
-            }
-
-            pairing->phase = SMP_PHASE_SC_ENCRYPT;
-            return;
-        }
-    }
-
-    if (op == SMP_PAIRING_CONFIRM && pending_len == 17) {
-        if (pairing->phase == SMP_PHASE_PASSKEY &&
-            !conn->is_central && !pairing->confirm_received
-        ) {
-            memcpy(pairing->peer_confirm, pdu + 1, 16);
-            pairing->confirm_received = 1;
-            return; // Wait for the user's passkey before sending our confirm.
-        }
-
-        if (!pairing->secure_connections && pairing->phase == SMP_PHASE_CONFIRM) {
-            memcpy(pairing->peer_confirm, pdu + 1, 16);
-
-            if (conn->is_central)
-                gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-            else {
-                uint8_t confirm[16];
-                gap_smp_confirm(&conn->smp, conn, conn->smp.random, confirm);
-                gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, 16);
-            }
-            pairing->phase = SMP_PHASE_RANDOM;
-            return;
-        }
-    }
-
     if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
         pairing->phase == SMP_PHASE_RANDOM
     ) {
@@ -2791,6 +2758,39 @@ static void gap_smp_poll_context(
             gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
         pairing->phase = SMP_PHASE_ENCRYPT;
         return;
+    }
+
+    if (op == SMP_PAIRING_DHKEY_CHECK && pending_len == 17 &&
+        pairing->secure_connections
+    ) {
+        if (pairing->phase == SMP_PHASE_SC_USER &&
+            !conn->is_central && !conn->smp.secure.peer_check_rx
+        ) {
+            memcpy(conn->smp.secure.peer_check, pdu + 1, 16);
+            conn->smp.secure.peer_check_rx = 1;
+            return;
+        }
+
+        if (pairing->phase == SMP_PHASE_SC_DHKEY) {
+            uint8_t check[16], difference = 0;
+            gap_sc_dhkey_check(&conn->smp, conn, !conn->is_central, check);
+
+            // Check every byte so the failure path does not reveal the first mismatch.
+            for (uint8_t i = 0; i < 16; i++)
+                difference |= check[i] ^ pdu[i + 1];
+            if (difference) {
+                gap_smp_fail(conn, SMP_FAIL_DHKEY_CHECK);
+                return;
+            }
+
+            if (!conn->is_central) {
+                gap_sc_dhkey_check(&conn->smp, conn, 0, check);
+                gap_smp_queue(&conn->smp, SMP_PAIRING_DHKEY_CHECK, check, sizeof(check));
+            }
+
+            pairing->phase = SMP_PHASE_SC_ENCRYPT;
+            return;
+        }
     }
 
     uint8_t unsupport = op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST;
