@@ -1771,7 +1771,6 @@ static void gap_smp_poll_context(
         ) {
             if (conn->is_central && !gap_security->phase) {
                 if (gap_encrypt(conn->smp.key.secure_ltk, (const uint8_t[8]){0}, 0))
-
                     conn->smp.encryption_started = 1;
             }
             else if (!conn->is_central && gap_key_request(NULL, NULL)) {
@@ -1871,20 +1870,25 @@ static void gap_smp_poll_context(
     }
 
     if (pairing->phase == SMP_PHASE_ENCRYPT) {
-        if (conn->smp.encryption_started && !gap_security->phase && gap_security->status) {
-            gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
-            return;
-        }
+        uint8_t encryption_started = conn->smp.encryption_started;
 
-        if (conn->is_central && !conn->smp.encryption_started && !gap_security->phase) {
-            if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
-
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+        if (encryption_started) {
+            if (!gap_security->phase && gap_security->status) {
+                gap_smp_finish(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
-            conn->smp.encryption_started = 1;
         }
-        else if (!conn->is_central && gap_key_request(NULL, NULL)) {
+
+        if (conn->is_central) {
+            if (!encryption_started && !gap_security->phase) {
+                if (!gap_encrypt(conn->smp.key.stk, (const uint8_t[8]){0}, 0)) {
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                    return;
+                }
+                conn->smp.encryption_started = 1;
+            }
+        }
+        else if (gap_key_request(NULL, NULL)) {
             uint8_t zero = (uint8_t)gap_security->ediv |
                             (uint8_t)(gap_security->ediv >> 8);
             // Check every byte so timing does not reveal where nonzero key data appears.
@@ -1908,11 +1912,9 @@ static void gap_smp_poll_context(
         !conn->restore_attempted && gap_security->phase == GAP_ENC_KEY_REQUEST
     ) {
         conn->restore_attempted = 1;
-        uint16_t bond_ediv = (uint16_t)conn->bond.central.ediv[0] |
-                             (uint16_t)conn->bond.central.ediv[1] << 8;
 
         if (!memcmp(gap_security->random, conn->bond.central.rand, 8) &&
-            gap_security->ediv == bond_ediv &&
+            gap_security->ediv == ble_read_u16_le(conn->bond.central.ediv) &&
             gap_key_reply(conn->bond.central.ltk)
         ) {
             conn->restore_started = 1;
