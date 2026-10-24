@@ -959,7 +959,7 @@ int gap_sync_pawr_respond(
 
     if (start_125us >= dur_125us ||
         pkt_dur_us + 150 >= (uint32_t)sync->pawr.timing.resp_spacing * 125 ||
-        start_125us * 125 + pkt_dur_us >= dur_125us * 125
+        pkt_dur_us + start_125us * 125 >= dur_125us * 125
     ) return 0;
 
     sync->pawr.subevent = subevent;
@@ -1813,7 +1813,7 @@ static void gap_ext_scan_process(void) {
                                 (uint32_t)sync->pawr.timing.resp_delay * 1250 +
                                 (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing * 125);
                 uint8_t response_channel = gap_sync_channel(&sync->params,
-                                        (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
+                                (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
 
                 if (response_start >= gap_ext_scan.ticks + HW_TICKS_FROM_US(150)) {
                     uint8_t *response = gap_ext_adv_frame;

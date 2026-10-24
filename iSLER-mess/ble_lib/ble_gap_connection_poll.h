@@ -1667,6 +1667,7 @@ int gap_send_due(
 #if GAP_PRIVACY_SUPPORT
     gap_privacy_poll(now);
 #endif // GAP_PRIVACY_SUPPORT
+
 #if GAP_EXT_ADV_SUPPORT
     int extended_result = gap_ext_send_due(now);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
@@ -1675,10 +1676,9 @@ int gap_send_due(
     if (extended_result) return extended_result;
 
 #endif // GAP_EXT_ADV_SUPPORT
-#if GAP_LEGACY_ADV_SUPPORT
-    int send_gap = gap_adv.enabled != 0 &&
-                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
 
+#if GAP_LEGACY_ADV_SUPPORT
+    int send_gap = gap_adv.enabled != 0 && (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad)
         return 0;
 
@@ -1703,8 +1703,7 @@ int gap_send_due(
         len = gap_adv.data_len;
     }
 
-    if (
-        (len && (!data || pdu_type == ADV_DIRECT_IND)) ||
+    if ( (len && (!data || pdu_type == ADV_DIRECT_IND)) ||
         (pdu_type > ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND) ||
         (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len) ||
         len > GAP_ADV_DATA_MAX
