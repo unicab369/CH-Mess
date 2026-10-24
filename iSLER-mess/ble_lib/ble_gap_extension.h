@@ -2326,13 +2326,13 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
     uint32_t event_window_us = conn->link_layer.first_event ||
             conn->procedure_state.update_window_active ? conn->window_size * 1250 : 1000;
     uint32_t packet_guard_us = 400 + 16 * subtract_clamp0_32(gap_data_capacity, 27);
+    uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
+    uint64_t late_ticks = widening_ticks + HW_TICKS_FROM_US(event_window_us + packet_guard_us);
     uint64_t open_ticks, close_ticks;
 
     for (;;) {
-        uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
         open_ticks = subtract_clamp0_64(event_ticks, early_ticks);
-        close_ticks = event_ticks + widening_ticks +
-                    HW_TICKS_FROM_US(event_window_us + packet_guard_us);
+        close_ticks = event_ticks + late_ticks;
 
         if (close_ticks >= start_ticks || !interval_ticks ||
             event_ticks > UINT64_MAX - interval_ticks
