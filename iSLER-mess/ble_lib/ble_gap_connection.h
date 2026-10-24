@@ -642,7 +642,9 @@ static void gap_privacy_poll(uint32_t now) {
             gap_identities[gap_adv.peer_slot].has_irk &&
             gap_private_addr_generate(gap_identities[gap_adv.peer_slot].irk, address,
                                           gap_adv.target.address)
-        ) memcpy(gap_adv.target.address, address, 6);
+        ) {
+            memcpy(gap_adv.target.address, address, 6);
+        }
 #endif
     }
 #endif
@@ -2241,10 +2243,8 @@ int gap_channel_reporting_set(
         conn->link_layer.first_event ||
         gap_conn_security_busy(conn) ||
         enable > 1 ||
-        min_spacing_200ms < 5 ||
-        min_spacing_200ms > 150 ||
-        max_delay_200ms < min_spacing_200ms ||
-        max_delay_200ms > 150 ||
+        !GAP_IN_RANGE_INCLUSIVE(min_spacing_200ms, 5, 150) ||
+        !GAP_IN_RANGE_INCLUSIVE(max_delay_200ms, min_spacing_200ms, 150) ||
         conn->central.channel_report_queued ||
         conn->central.channel_report_pending ||
         conn->link_state.terminate_queued ||
@@ -2284,18 +2284,18 @@ int gap_channel_class_set(
     const uint8_t classification[GAP_CHANN_CLASS_BYTES]
 ) {
     if (!gap_class_valid(classification)) return 0;
-
-    if (memcmp(gap_local_class, classification, GAP_CHANN_CLASS_BYTES) == 0
-    ) return 1;
-
+    if (memcmp(gap_local_class, classification, GAP_CHANN_CLASS_BYTES) == 0)
+        return 1;
     memcpy(gap_local_class, classification, GAP_CHANN_CLASS_BYTES);
+
 #if GAP_PERIPHERAL_SUPPORT
     uint32_t now_ms = GET_MILLIS();
 
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
-
+        if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)))
+            continue;
         gap_conn_context *conn = &gap_conn_ctx[slot];
+
         if (!conn->is_central) {
             conn->peripheral.status_changed_ms = now_ms;
             if (conn->channel_report.enabled)
@@ -2303,7 +2303,6 @@ int gap_channel_class_set(
         }
     }
 #endif
-
     return 1;
 }
 

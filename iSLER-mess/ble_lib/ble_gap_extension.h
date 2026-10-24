@@ -861,8 +861,7 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 #endif
 
     if (!peer || peer->type > 1 || sid > 15 ||
-        timeout_ms < 100 ||
-        timeout_ms > 163840 ||
+        !GAP_IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840) ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
@@ -899,8 +898,9 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 // Application facing
 // Enable receipt of periodic sync transfers from connected peers.
 int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
-    if (enabled > 1 || (enabled && (timeout_ms < 100 || timeout_ms > 163840)))
-        return 0;
+    if (enabled > 1 ||
+        (enabled && !GAP_IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840))
+    ) return 0;
 
     gap_past.enabled = enabled;
     if (enabled) gap_past.timeout_ms = timeout_ms;
@@ -2389,7 +2389,6 @@ static int gap_ext_send_due(uint32_t now) {
             gap_extended_adv_set *set = &gap_ext_adv[periodic_set];
             uint64_t interval = HW_TICKS_FROM_US((uint32_t)set->periodic.params.interval * 1250);
             uint64_t missed = interval ? (ticks - set->periodic.next_ticks) / interval : 0;
-
             set->periodic.event_counter = (uint16_t)(set->periodic.event_counter + missed);
             set->periodic.next_ticks += missed * interval;
 
@@ -2600,8 +2599,7 @@ static int gap_ext_send_due(uint32_t now) {
             header_offset += 10;
         }
 
-        if (first_chunk)
-            memcpy(frame + header_offset, set->data, first_chunk);
+        if (first_chunk) memcpy(frame + header_offset, set->data, first_chunk);
         data_offset += first_chunk;
         remaining -= first_chunk;
         uint64_t primary_start = GAP_HW_TICKS();

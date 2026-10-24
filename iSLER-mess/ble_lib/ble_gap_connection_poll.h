@@ -1695,7 +1695,8 @@ int gap_send_due(
 #endif // GAP_EXT_ADV_SUPPORT
 
 #if GAP_LEGACY_ADV_SUPPORT
-    int send_gap = gap_adv.enabled != 0 && (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    int send_gap = gap_adv.enabled != 0 &&
+                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad)
         return 0;
 
