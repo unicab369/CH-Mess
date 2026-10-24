@@ -2559,41 +2559,39 @@ static int gap_ext_send_due(uint32_t now) {
         gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
 
         uint16_t data_offset = 0;
+        uint8_t first_ext_len = (uint8_t)(9 + (set->periodic.enabled ? 18 : 0) +
+                                            (set->pawr.enabled ? 10 : 0));
+        uint8_t chain_ext_len = first_ext_len + 3;
         uint16_t remaining = set->data_len;
-        uint8_t has_sync_info = set->periodic.enabled;
-        uint8_t has_pawr = set->pawr.enabled;
-        uint8_t first_ext_len = (uint8_t)(9 + (has_sync_info ? 18 : 0) +
-                                            (has_pawr ? 10 : 0));
-        uint8_t chain_ext_len = (uint8_t)(12 + (has_sync_info ? 18 : 0) +
-                                            (has_pawr ? 10 : 0));
-        uint16_t first_limit = (uint16_t)(253 - 1 - chain_ext_len);
-        uint8_t has_chain = remaining > first_limit;
-        uint16_t first_chunk = has_chain ? first_limit : remaining;
+        uint16_t first_chunk = MIN(remaining, (uint16_t)(253 - 1 - chain_ext_len));
+        uint8_t has_chain = remaining > first_chunk;
 
         // AUX_ADV_IND includes AdvA and the first part of the advertising data.
         frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
-        frame[1] = (uint8_t)(1 + (has_chain ? chain_ext_len : first_ext_len) + first_chunk);
-        frame[2] = has_chain ? chain_ext_len : first_ext_len;
-        frame[3] = (uint8_t)(0x09 | (has_chain ? 0x10 : 0) |
-                                    (has_sync_info ? 0x20 : 0) |
-                                    (has_pawr ? 0x40 : 0));
+        frame[1] = (uint8_t)(1 + first_ext_len + first_chunk);
+        frame[2] = first_ext_len;
+        frame[3] = (uint8_t)(0x09 | (set->periodic.enabled ? 0x20 : 0) |
+                                    (set->pawr.enabled ? 0x40 : 0));
         memcpy(frame + 4, address, sizeof(address));
         ble_write_u16_le(frame + 10, adi);
         uint8_t *sync_info = NULL;
         uint8_t header_offset = 12;
 
         if (has_chain) {
+            frame[1] = (uint8_t)(1 + chain_ext_len + first_chunk);
+            frame[2] = chain_ext_len;
+            frame[3] |= 0x10; // AuxPtr.
             gap_aux_ptr_write(frame + header_offset, 1,
                 ((gap_phy_airtime_us(frame[1], set->aux_phy) + 629) / 30) * 30, set->aux_phy);
             header_offset += 3;
         }
 
-        if (has_sync_info) {
+        if (set->periodic.enabled) {
             sync_info = frame + header_offset;
             header_offset += 18;
         }
 
-        if (has_pawr) {
+        if (set->pawr.enabled) {
             uint8_t *timing = frame + header_offset;
             timing[0] = 9; // AD length: type plus eight timing bytes.
             timing[1] = 0x32; // Periodic Advertising Response Timing Information.
@@ -2632,13 +2630,12 @@ static int gap_ext_send_due(uint32_t now) {
                 target = set->periodic.next_ticks;
             }
 
-            uint64_t offset_ticks = subtract_clamp0_64(target, pdu_start);
-            uint32_t offset_us = (uint32_t)(offset_ticks / HW_TICKS_FROM_US(1));
+            uint32_t offset_us = (uint32_t)(subtract_clamp0_64(target, pdu_start) /
+                                                            HW_TICKS_FROM_US(1));
             uint8_t units_300 = offset_us >= 245700;
-            uint32_t unit_us = units_300 ? 300 : 30;
             // Round down so the announced event stays inside the receiver's
             // [SyncOffset, SyncOffset + one unit] listening window.
-            uint32_t units = offset_us / unit_us;
+            uint32_t units = offset_us / (units_300 ? 300 : 30);
 
             if (units > 0x1fff) units = 0; // The scanner will use a later SyncInfo.
             uint16_t offset = (uint16_t)units | (uint16_t)(units_300 && units ? 1 << 13 : 0);
@@ -2658,8 +2655,7 @@ static int gap_ext_send_due(uint32_t now) {
             return -1;
         }
 
-        if (has_sync_info)
-            set->periodic.sync_info_sent = 1;
+        if (sync_info) set->periodic.sync_info_sent = 1;
 
         if (has_chain) {
             uint64_t next_start = pdu_start + HW_TICKS_FROM_US(
