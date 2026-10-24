@@ -2448,8 +2448,7 @@ static int gap_ext_send_due(uint32_t now) {
     gap_extended_adv_set *set = &gap_ext_adv[send_extended];
     uint8_t address[6], address_type;
     gap_local_addr_select(-1, address, &address_type);
-    uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) |
-                              (set->did & 0x0fff));
+    uint16_t adi = (uint16_t)(((set->sid & 0x0f) << 12) | (set->did & 0x0fff));
     uint8_t *primary = gap_ext_primary_frame;
     uint8_t *frame = gap_ext_adv_frame;
 
@@ -2547,20 +2546,26 @@ static int gap_ext_send_due(uint32_t now) {
         ble_write_u16_le(primary + 4, adi);
         gap_aux_ptr_write(primary + 6, 0, 480, set->aux_phy);
 
-        uint16_t data_offset = 0;
-        uint8_t first_ext_len = (uint8_t)(9 + (set->periodic.enabled ? 18 : 0) +
-                                            (set->pawr.enabled ? 10 : 0));
-        uint8_t chain_ext_len = first_ext_len + 3;
+        uint8_t ext_len = 9;
+        uint8_t ext_flags = 0x09;
+        if (set->periodic.enabled) {
+            ext_len += 18;
+            ext_flags |= 0x20;
+        }
+        if (set->pawr.enabled) {
+            ext_len += 10;
+            ext_flags |= 0x40;
+        }
+        uint8_t chain_ext_len = ext_len + 3;
         uint16_t remaining = set->data_len;
         uint16_t first_chunk = MIN(remaining, (uint16_t)(253 - 1 - chain_ext_len));
         uint8_t has_chain = remaining > first_chunk;
 
         // AUX_ADV_IND includes AdvA and the first part of the advertising data.
         frame[0] = ADV_EXT_IND | (address_type ? 0x40 : 0);
-        frame[1] = (uint8_t)(1 + first_ext_len + first_chunk);
-        frame[2] = first_ext_len;
-        frame[3] = (uint8_t)(0x09 | (set->periodic.enabled ? 0x20 : 0) |
-                                    (set->pawr.enabled ? 0x40 : 0));
+        frame[1] = (uint8_t)(1 + ext_len + first_chunk);
+        frame[2] = ext_len;
+        frame[3] = ext_flags;
         memcpy(frame + 4, address, sizeof(address));
         ble_write_u16_le(frame + 10, adi);
         uint8_t *sync_info = NULL;
@@ -2593,7 +2598,7 @@ static int gap_ext_send_due(uint32_t now) {
         }
 
         if (first_chunk) memcpy(frame + header_offset, set->data, first_chunk);
-        data_offset += first_chunk;
+        uint16_t data_offset = first_chunk;
         remaining -= first_chunk;
         uint64_t primary_start = GAP_HW_TICKS();
 
@@ -2626,7 +2631,8 @@ static int gap_ext_send_due(uint32_t now) {
             uint32_t units = offset_us / (units_300 ? 300 : 30);
 
             if (units > 0x1fff) units = 0; // The scanner will use a later SyncInfo.
-            uint16_t offset = (uint16_t)units | (uint16_t)(units_300 && units ? 1 << 13 : 0);
+            uint16_t offset = (uint16_t)units;
+            if (units_300 && units) offset |= 1 << 13;
             ble_write_u16_le(sync_info, offset); // Offset adjust is zero.
             ble_write_u16_le(sync_info + 2, set->periodic.params.interval);
 
@@ -2643,6 +2649,7 @@ static int gap_ext_send_due(uint32_t now) {
             return -1;
         }
 
+        // Mark SyncInfo sent only after the PDU carrying it transmits successfully.
         if (sync_info) set->periodic.sync_info_sent = 1;
 
         if (has_chain) {
