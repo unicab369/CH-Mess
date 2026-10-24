@@ -2586,17 +2586,17 @@ static void gap_smp_poll_context(
     }
 
     if (op == SMP_PAIRING_CONFIRM && pending_len == 17) {
-        if (pairing->secure_connections) {
-            if (conn->smp.secure.passkey_required &&
-                pairing->phase == SMP_PHASE_SC_PASSKEY &&
-                !pairing->confirm_received &&
-                !conn->is_central
-            ) {
-                memcpy(pairing->peer_confirm, pdu + 1, 16);
-                pairing->confirm_received = 1;
-                return;
-            }
+        if (!conn->is_central && !pairing->confirm_received &&
+            (pairing->phase == SMP_PHASE_PASSKEY ||
+             (pairing->secure_connections && conn->smp.secure.passkey_required &&
+              pairing->phase == SMP_PHASE_SC_PASSKEY))
+        ) {
+            memcpy(pairing->peer_confirm, pdu + 1, 16);
+            pairing->confirm_received = 1;
+            return; // Wait for the user's passkey before sending our confirm.
+        }
 
+        if (pairing->secure_connections) {
             if (pairing->phase == SMP_PHASE_SC_CONFIRM) {
                 memcpy(pairing->peer_confirm, pdu + 1, 16);
 
@@ -2615,15 +2615,7 @@ static void gap_smp_poll_context(
             }
         }
 
-        if (pairing->phase == SMP_PHASE_PASSKEY &&
-            !conn->is_central && !pairing->confirm_received
-        ) {
-            memcpy(pairing->peer_confirm, pdu + 1, 16);
-            pairing->confirm_received = 1;
-            return; // Wait for the user's passkey before sending our confirm.
-        }
-
-        if (!pairing->secure_connections && pairing->phase == SMP_PHASE_CONFIRM) {
+        else if (pairing->phase == SMP_PHASE_CONFIRM) {
             memcpy(pairing->peer_confirm, pdu + 1, 16);
 
             if (conn->is_central)
