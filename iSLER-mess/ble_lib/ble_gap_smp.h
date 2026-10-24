@@ -2165,16 +2165,16 @@ static void gap_smp_poll_context(
     if (op == SMP_SECURITY_REQUEST && pending_len == 2 &&
         conn->is_central && !pairing->phase
     ) {
-        if (gap_pair()) {
-            if (pdu[1] & 4) {
-                pairing->request[3] |= 4;
-                conn->smp.tx_queue->data[7] |= 4;
-            }
+        if (!gap_pair()) return;
 
-            if ((pdu[1] & 0x10) && gap_pair_cfg.keypress_notifications) {
-                pairing->request[3] |= 0x10;
-                conn->smp.tx_queue->data[7] |= 0x10;
-            }
+        if (pdu[1] & 4) {
+            pairing->request[3] |= 4;
+            conn->smp.tx_queue->data[7] |= 4;
+        }
+
+        if ((pdu[1] & 0x10) && gap_pair_cfg.keypress_notifications) {
+            pairing->request[3] |= 0x10;
+            conn->smp.tx_queue->data[7] |= 0x10;
         }
 
         return;
@@ -2584,7 +2584,16 @@ static void gap_smp_poll_context(
         return;
     }
 
-    if (op == SMP_PAIRING_CONFIRM && pending_len == 17) {
+    uint8_t failure = SMP_FAIL_INVALID_PARAMETERS;
+    if (op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST)
+        failure = SMP_FAIL_COMMAND_NOT_SUPPORTED;
+
+    if (pending_len != 17) {
+        gap_smp_fail(conn, failure);
+        return;
+    }
+
+    if (op == SMP_PAIRING_CONFIRM) {
         if (!conn->is_central && !pairing->confirm_received &&
             (pairing->phase == SMP_PHASE_PASSKEY ||
              (pairing->secure_connections && conn->smp.secure.passkey_required &&
@@ -2629,7 +2638,7 @@ static void gap_smp_poll_context(
         }
     }
 
-    if (op == SMP_PAIRING_RANDOM && pending_len == 17) {
+    if (op == SMP_PAIRING_RANDOM) {
         if (pairing->phase == SMP_PHASE_SC_RANDOM && pairing->secure_connections) {
             uint8_t confirm[16], difference = 0;
             gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
@@ -2754,7 +2763,7 @@ static void gap_smp_poll_context(
         }
     }
 
-    if (op == SMP_PAIRING_DHKEY_CHECK && pending_len == 17 &&
+    if (op == SMP_PAIRING_DHKEY_CHECK &&
         pairing->secure_connections
     ) {
         if (pairing->phase == SMP_PHASE_SC_USER &&
@@ -2787,8 +2796,7 @@ static void gap_smp_poll_context(
         }
     }
 
-    uint8_t unsupport = op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST;
-    gap_smp_fail(conn, unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
+    gap_smp_fail(conn, failure);
 }
 
 #endif // BLE_GAP_SMP_H
