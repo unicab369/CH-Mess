@@ -2466,17 +2466,21 @@ static void gap_smp_poll_context(
 
         conn->smp.status = GAP_CONNECTION_PENDING;
 
+        uint8_t responder_keys = 0;
+        pairing->response[5] = 0;
+        pairing->response[6] = 0;
+
         if (op == SMP_PAIRING_REQUEST) {
             memcpy(pairing->request, pdu, 7);
-            uint8_t responder_keys = 0;
 
             if (pairing->bond_requested) {
-                responder_keys = pairing->secure_connections ? 0 :
-                                GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
-                uint8_t irk[16] = {0}, address[7] = {0};
+                if (!pairing->secure_connections)
+                    responder_keys = GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
 
+                uint8_t irk[16] = {0}, address[7] = {0};
                 if (gap_smp_local_identity(irk, address))
                     responder_keys |= GAP_KEY_DIST_IDENTITY;
+
                 gap_wipe(irk, sizeof(irk));
                 gap_wipe(address, sizeof(address));
                 responder_keys &= pdu[6];
@@ -2490,20 +2494,17 @@ static void gap_smp_poll_context(
                                     (pairing->secure_connections ? 8 : 0) |
                                     (pairing->keypress_active ? 0x10 : 0);
             pairing->response[4] = 16;
-            pairing->response[5] = pairing->bond_requested ? init_key_dist : 0;
-            pairing->response[6] = pairing->bond_requested ?
-                                   resp_key_dist & responder_keys : 0;
         }
         else {
-            memcpy(pairing->response, pdu, 7);
-            pairing->response[5] = pairing->bond_requested ? init_key_dist : 0;
-            pairing->response[6] = pairing->bond_requested ? resp_key_dist : 0;
+            memcpy(pairing->response, pdu, 5);
+
             if (pairing->secure_connections) {
                 uint8_t public_key[64];
 
-                for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
+                for (uint8_t coordinate = 0; coordinate < 2; coordinate++) {
                     gap_bytes_reverse(public_key + 32 * coordinate,
-                                   conn->smp.secure.public_key + 32 * coordinate, 32);
+                                    conn->smp.secure.public_key + 32 * coordinate, 32);
+                }
                 gap_smp_queue(&conn->smp, SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
             }
             else if (pairing->passkey_action != GAP_PASSKEY_INPUT) {
@@ -2511,6 +2512,14 @@ static void gap_smp_poll_context(
                 gap_smp_confirm(&conn->smp, conn, conn->smp.random, confirm);
                 gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, 16);
             }
+        }
+
+        if (pairing->bond_requested) {
+            pairing->response[5] = init_key_dist;
+            pairing->response[6] = resp_key_dist;
+
+            if (op == SMP_PAIRING_REQUEST)
+                pairing->response[6] &= responder_keys;
         }
 
         if (op == SMP_PAIRING_REQUEST)
@@ -2542,6 +2551,7 @@ static void gap_smp_poll_context(
             gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
                                  conn->smp.secure.peer_public_key,
                                  conn->smp.oob_peer.random, confirm);
+
             for (uint8_t i = 0; i < 16; i++)
                 difference |= confirm[i] ^ conn->smp.oob_peer.confirm[i];
             gap_wipe(confirm, sizeof(confirm));
