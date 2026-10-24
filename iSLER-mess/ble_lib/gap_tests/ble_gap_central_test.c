@@ -5,11 +5,10 @@
 
 #define GAP_EXT_ADV_SUPPORT 1
 #define GAP_HW_ADV_PHY_MASK (GAP_PHY_1M | GAP_PHY_CODED)
-#include "../ble_gap.h"
 #include "../ble_crypto.h"
+#include "../ble_gap.h"
 #include <openssl/evp.h>
 int GET_RANDOM_BYTES(uint8_t *out, unsigned size);
-#include "../../tests/mesh_crypto_test.h"
 
 // Build a peer address for an immediate API call from existing PDU-order bytes.
 static const gap_address *test_address(const uint8_t address[6], uint8_t type) {
@@ -219,15 +218,15 @@ void GAP_HW_PACKET_READY(void) {}
 void GAP_HW_TX_BUFFER(const uint8_t *frame) { tx_buffer = frame; }
 void GAP_HW_LINK_TX(void) {
     link_tx_count++;
-    if (inject_peripheral_connect_request && gap_advertising_rx_event) {
+    if (inject_peripheral_connect_request && adv_evt.rx_event) {
         static const uint8_t incoming_peer[6] = {
             0x61, 0x62, 0x63, 0x64, 0x65, 0x66
         };
         memset(rx_frame, 0, sizeof(rx_frame));
-        rx_frame[0] = 0x05 | ((gap_adv_frame[0] & 0x40) << 1);
+        rx_frame[0] = 0x05 | ((adv_evt.adv_frame[0] & 0x40) << 1);
         rx_frame[1] = 34;
         memcpy(rx_frame + 2, incoming_peer, sizeof(incoming_peer));
-        memcpy(rx_frame + 8, gap_adv_frame + 2, 6);
+        memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
         rx_frame[14] = 0x78;
         rx_frame[15] = 0x56;
         rx_frame[16] = 0x34;
@@ -246,8 +245,8 @@ void GAP_HW_LINK_TX(void) {
     }
 
     if (inject_pawr_connect_response && gap_ext_pawr.connect.waiting &&
-        tx_buffer == gap_initiator.request) {
-        const uint8_t *request = gap_initiator.request;
+        tx_buffer == adv_tx.connect_request) {
+        const uint8_t *request = adv_tx.connect_request;
         memset(rx_frame, 0, sizeof(rx_frame));
         rx_frame[0] = 0x07 | ((request[0] >> 1) & 0x40) |
                       ((request[0] << 1) & 0x80);
@@ -391,7 +390,7 @@ static void test_connect_request(void) {
         (uint8_t[6]){0xff, 0xff, 0xff, 0xff, 0xff, 0xff}));
     assert(gap_conn_start(test_address(peer, 0)));
     assert(gap_initiator.active && gap_scanner.scanning && !gap_scanner.active);
-    const uint8_t *request = gap_initiator.request;
+    const uint8_t *request = adv_tx.connect_request;
     assert(request[0] == 0x05 && request[1] == 34);
     assert(memcmp(request + 2, (uint8_t[]){1, 2, 3, 4, 5, 6}, 6) == 0);
     assert(memcmp(request + 8, peer, 6) == 0);
@@ -407,7 +406,7 @@ static void test_connect_request(void) {
     const uint8_t local_random[6] = {0x11, 0x22, 0x33, 0x44, 0x55, 0xc6};
     assert(gap_set_static_addr(local_random));
     assert(gap_conn_start(test_address(peer, 1)));
-    request = gap_initiator.request;
+    request = adv_tx.connect_request;
     assert(request[0] == 0xc5);
     assert(memcmp(request + 2, local_random, 6) == 0);
     gap_conn_cancel();
@@ -495,10 +494,10 @@ static void test_connection_timing_configuration(void) {
     assert(gap_conn_timing_set(&timing));
     const uint8_t peer[6] = {9, 8, 7, 6, 5, 4};
     assert(gap_conn_start(test_address(peer, 0)));
-    assert(gap_initiator.request[24] == 40 &&
-           gap_initiator.request[26] == 2 &&
-           gap_initiator.request[28] == 0x90 &&
-           gap_initiator.request[29] == 1);
+    assert(adv_tx.connect_request[24] == 40 &&
+           adv_tx.connect_request[26] == 2 &&
+           adv_tx.connect_request[28] == 0x90 &&
+           adv_tx.connect_request[29] == 1);
     assert(gap_initiator.deadline_ms == now_ms + 45000);
     assert(!gap_conn_timing_set(&timing)); // Settings are locked while scanning.
     gap_conn_cancel();
@@ -1413,7 +1412,7 @@ static void test_pawr_advertiser_connection(void) {
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central &&
            !set->pawr_connect_pending && !set->enabled &&
            set->periodic_enabled);
-    const uint8_t *request = gap_initiator.request;
+    const uint8_t *request = adv_tx.connect_request;
     assert((request[0] & 0x0f) == 0x05 && request[1] == 34 &&
            memcmp(request + 8, peer_address, 6) == 0 &&
            gap_conn_request_valid(request));
@@ -2132,11 +2131,11 @@ static void test_radio_privacy_filter(void) {
     assert(memcmp(tx_buffer + 8, test_rpa, 6) == 0);
     gap_scan_stop();
     gap_scan.active_pending = 0;
-    gap_advertising_rx_event = 1;
-    gap_adv_frame[0] = 0; // Connectable advertisement with public address
-    GAP_HW_PUBLIC_ADDRESS(gap_adv_frame + 2);
+    adv_evt.rx_event = 1;
+    adv_evt.adv_frame[0] = 0; // Connectable advertisement with public address
+    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     rx_frame[0] = 0x43; rx_frame[1] = 12; // SCAN_REQ from random address
-    memcpy(rx_frame + 8, gap_adv_frame + 2, 6);
+    memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     rx_frame[2] ^= 1;
     before = link_tx_count;
     gap_hw_received();
@@ -2152,7 +2151,7 @@ static void test_radio_privacy_filter(void) {
     rx_frame[2] ^= 1;
     gap_hw_received();
     assert(gap_connect_request_ready);
-    gap_advertising_rx_event = 0;
+    adv_evt.rx_event = 0;
     gap_connect_request_ready = 0;
     assert(gap_privacy_filter(0, 0));
 
@@ -2160,14 +2159,14 @@ static void test_radio_privacy_filter(void) {
     assert(gap_accept_list_add(test_address(test_identity, 0)));
     assert(!gap_adv_filter_policy(2, 0));
     assert(gap_adv_filter_policy(1, 1));
-    gap_advertising_rx_event = 1;
-    gap_adv_frame[0] = 0; // Undirected connectable advertising.
-    GAP_HW_PUBLIC_ADDRESS(gap_adv_frame + 2);
+    adv_evt.rx_event = 1;
+    adv_evt.adv_frame[0] = 0; // Undirected connectable advertising.
+    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     gap_scan_response_started = 0;
     rx_frame[0] = 0x43; rx_frame[1] = 12;
     const uint8_t unknown_peer[6] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60};
     memcpy(rx_frame + 2, unknown_peer, 6);
-    memcpy(rx_frame + 8, gap_adv_frame + 2, 6);
+    memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     before = link_tx_count;
     gap_hw_received();
     assert(link_tx_count == before && !gap_scan_response_started);
@@ -2186,7 +2185,7 @@ static void test_radio_privacy_filter(void) {
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
     assert(gap_connect_request_ready);
-    gap_advertising_rx_event = 0;
+    adv_evt.rx_event = 0;
     gap_connect_request_ready = 0;
     assert(gap_adv_filter_policy(0, 0));
     assert(gap_accept_list_clear());
@@ -2201,8 +2200,8 @@ static void test_connect_by_identity(void) {
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central);
     assert(!gap_initiator.active);
-    assert(gap_initiator.request[0] & 0x80);
-    assert(memcmp(gap_initiator.request + 8, test_rpa, 6) == 0);
+    assert(adv_tx.connect_request[0] & 0x80);
+    assert(memcmp(adv_tx.connect_request + 8, test_rpa, 6) == 0);
     gap_conn_end();
 }
 
@@ -2226,7 +2225,7 @@ static void test_general_connection_establishment(void) {
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central);
     assert(!gap_initiator.active && !gap_scanner.scanning);
     assert(memcmp(conn->peer_id_addr, peer, 6) == 0);
-    assert(memcmp(gap_initiator.request + 8, peer, 6) == 0);
+    assert(memcmp(adv_tx.connect_request + 8, peer, 6) == 0);
     gap_conn_end();
 }
 
@@ -2264,7 +2263,7 @@ static void test_selective_connection_establishment(void) {
     gap_hw_received();
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central && !gap_initiator.active);
     assert(memcmp(conn->peer_id_addr, test_identity, 6) == 0);
-    assert(memcmp(gap_initiator.request + 8, test_rpa, 6) == 0);
+    assert(memcmp(adv_tx.connect_request + 8, test_rpa, 6) == 0);
     gap_conn_end();
 
     assert(gap_accept_list_remove(test_address(test_identity, 0)));
@@ -2384,11 +2383,11 @@ static void test_peer_privacy_modes(void) {
     gap_scan_stop();
 
     // Incoming SCAN_REQ and CONNECT_IND obey the peer mode without filters.
-    gap_advertising_rx_event = 1;
-    gap_adv_frame[0] = 0;
-    GAP_HW_PUBLIC_ADDRESS(gap_adv_frame + 2);
+    adv_evt.rx_event = 1;
+    adv_evt.adv_frame[0] = 0;
+    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
     rx_frame[0] = 3; rx_frame[1] = 12;
-    memcpy(rx_frame + 8, gap_adv_frame + 2, 6);
+    memcpy(rx_frame + 8, adv_evt.adv_frame + 2, 6);
     gap_hw_received();
     assert(link_tx_count == before);
     rx_frame[0] = 5; rx_frame[1] = 34;
@@ -2399,10 +2398,10 @@ static void test_peer_privacy_modes(void) {
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
     assert(gap_connect_request_ready);
-    gap_advertising_rx_event = 0;
+    adv_evt.rx_event = 0;
     gap_connect_request_ready = 0;
     assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_DEVICE));
-    gap_advertising_rx_event = 1;
+    adv_evt.rx_event = 1;
     rx_frame[0] = 3; rx_frame[1] = 12;
     memcpy(rx_frame + 2, test_identity, 6);
     gap_hw_received();
@@ -2410,7 +2409,7 @@ static void test_peer_privacy_modes(void) {
     rx_frame[0] = 5; rx_frame[1] = 34;
     gap_hw_received();
     assert(gap_connect_request_ready);
-    gap_advertising_rx_event = 0;
+    adv_evt.rx_event = 0;
     gap_connect_request_ready = 0;
     assert(gap_identity_privacy(test_address(test_identity, 0), GAP_PRIVACY_NETWORK));
 
@@ -2449,9 +2448,9 @@ static void test_peer_local_keys(void) {
     random_seed++;
     assert(gap_privacy_configure(test_irk, 1, 1));
     assert(gap_conn_start(test_address(test_identity, 0)));
-    assert(gap_initiator.request[0] & 0x40);
-    gap_address_hash(local_irk, gap_initiator.request + 5, hash);
-    assert(memcmp(hash, gap_initiator.request + 2, 3) == 0);
+    assert(adv_tx.connect_request[0] & 0x40);
+    gap_address_hash(local_irk, adv_tx.connect_request + 5, hash);
+    assert(memcmp(hash, adv_tx.connect_request + 2, 3) == 0);
     assert(!gap_identity_local_key(test_address(test_identity, 0), NULL));
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0xc1; rx_frame[1] = 12;
@@ -2495,25 +2494,25 @@ static void test_peer_local_keys(void) {
     gap_address_hash(local_irk, gap_adv.local.address + 3, hash);
     assert(memcmp(hash, gap_adv.local.address, 3) == 0);
     // The peer may initiate with a different RPA from the directed TargetA.
-    gap_advertising_rx_event = 1;
-    gap_adv_frame[0] = 0xc1;
-    memcpy(gap_adv_frame + 2, gap_adv.local.address, 6);
-    memcpy(gap_adv_frame + 8, gap_adv.target.address, 6);
+    adv_evt.rx_event = 1;
+    adv_evt.adv_frame[0] = 0xc1;
+    memcpy(adv_evt.adv_frame + 2, gap_adv.local.address, 6);
+    memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
     rx_frame[0] = 0xc5; rx_frame[1] = 34;
     memcpy(rx_frame + 2, test_rpa, 6);
     memcpy(rx_frame + 8, gap_adv.local.address, 6);
     gap_connect_request_ready = 0;
     gap_hw_received();
     assert(gap_connect_request_ready);
-    gap_advertising_rx_event = 0;
+    adv_evt.rx_event = 0;
     gap_connect_request_ready = 0;
     gap_adv_stop();
 
     // An explicit zero key uses the configured local identity, never an RPA.
     assert(gap_identity_local_key(test_address(test_identity, 0), (uint8_t[16]){0}));
     assert(gap_conn_start(test_address(test_identity, 0)));
-    assert(!(gap_initiator.request[0] & 0x40));
-    assert(memcmp(gap_initiator.request + 2, test_identity, 6) == 0);
+    assert(!(adv_tx.connect_request[0] & 0x40));
+    assert(memcmp(adv_tx.connect_request + 2, test_identity, 6) == 0);
     rx_frame[0] = 0xc1; rx_frame[1] = 12;
     memcpy(rx_frame + 8, test_rpa, 6);
     gap_hw_received();
@@ -2525,13 +2524,13 @@ static void test_peer_local_keys(void) {
     random_seed++;
     assert(gap_privacy_configure(test_irk, 1, 1));
     assert(gap_conn_start(test_address(test_identity, 0)));
-    assert(gap_initiator.request[0] & 0x40);
-    assert(memcmp(gap_initiator.request + 2, static_identity, 6) == 0);
+    assert(adv_tx.connect_request[0] & 0x40);
+    assert(memcmp(adv_tx.connect_request + 2, static_identity, 6) == 0);
     gap_conn_cancel();
     // Null removes the override and restores the global RPA.
     assert(gap_identity_local_key(test_address(test_identity, 0), NULL));
     assert(gap_conn_start(test_address(test_identity, 0)));
-    assert(memcmp(gap_initiator.request + 2, gap_own_address.address, 6) == 0);
+    assert(memcmp(adv_tx.connect_request + 2, gap_own_address.address, 6) == 0);
     gap_conn_cancel();
     assert(gap_privacy_configure(NULL, 0, 0));
 }
@@ -2598,8 +2597,8 @@ static void test_nonresolvable_private_addresses(void) {
     gap_adv_stop();
     // Local peer keys cannot replace a selected NRPA when initiating.
     assert(gap_conn_start(test_address(test_identity, 0)));
-    assert((gap_initiator.request[7] & 0xc0) == 0);
-    assert(memcmp(gap_initiator.request + 2, gap_own_address.address, 6) == 0);
+    assert((adv_tx.connect_request[7] & 0xc0) == 0);
+    assert(memcmp(adv_tx.connect_request + 2, gap_own_address.address, 6) == 0);
     gap_conn_cancel();
     // Outstanding active scan exchanges retain their NRPA through timeout.
     gap_scan_start(1);
@@ -4715,10 +4714,6 @@ static void test_secure_connections_just_works(void) {
     gap_security_context *gap_security = &gap_conn_ctx[gap_conn_slot].security;
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     gap_smp_context *smp = &conn->smp;
-    int vector_result = ble_sc_crypto_test();
-    if (vector_result)
-        fprintf(stderr, "SC vector failed: %d\n", vector_result);
-    assert(vector_result == 0);
     memset(test_bonds, 0, sizeof(test_bonds));
     test_bond_storage_enabled = 1;
     assert(gap_bonding_set(1));

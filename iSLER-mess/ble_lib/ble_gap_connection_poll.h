@@ -233,7 +233,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
     uint64_t received_ticks = GAP_HW_TICKS();
     uint8_t pdu_type = frame[0] & 0x0f;
     uint64_t conn_anchor_ticks = 0;
-    uint16_t event_counter = 0;
 
     uint8_t previous_slot = gap_conn_slot;
     if (gap_poll.slot_valid)
@@ -275,8 +274,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
             conn_anchor_ticks = received_ticks - airtime_ticks;
         }
-        event_counter = conn->link_layer.event_counter;
-
         uint8_t authenticated = 0;
 #if GAP_SECURITY_SUPPORT >= 1
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
@@ -503,7 +500,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 conn->tx_frame[0] = 0x03;
 
                 if (gap_conn_control(frame, authenticated,
-                                    conn_anchor_ticks, event_counter)
+                                    conn_anchor_ticks,
+                                    conn->link_layer.event_counter)
                 ) {
                     gap_conn_slot = previous_slot;
                     return;
@@ -531,7 +529,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
                     if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used) {
                         gap_past_encode(conn->tx_frame, conn->sync_transfer_id,
-                            (uint8_t)slot, conn_anchor_ticks, event_counter);
+                            (uint8_t)slot, conn_anchor_ticks,
+                            conn->link_layer.event_counter);
                     }
                     conn->sync_transfer_queued = 0;
                 }
