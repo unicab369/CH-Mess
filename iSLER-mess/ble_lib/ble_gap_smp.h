@@ -32,11 +32,14 @@ int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 #define GAP_KEY_DIST_SIGNING 0x04
 
 // Pairing policy and per-link protocol state belong to the SMP adapter.
-#define GAP_IO_DISPLAY_ONLY 0
-#define GAP_IO_DISPLAY_YES_NO 1
-#define GAP_IO_KEYBOARD_ONLY 2
-#define GAP_IO_NONE 3
-#define GAP_IO_KEYBOARD_DISPLAY 4
+typedef enum {
+    GAP_IO_DISPLAY_ONLY = 0,
+    GAP_IO_DISPLAY_YES_NO = 1,
+    GAP_IO_KEYBOARD_ONLY = 2,
+    GAP_IO_NONE = 3,
+    GAP_IO_KEYBOARD_DISPLAY = 4
+} gap_io_capability;
+
 #define GAP_PASSKEY_DISPLAY 1
 #define GAP_PASSKEY_INPUT 2
 
@@ -149,7 +152,8 @@ typedef struct {
 static ble_smp_user_request_fn gap_smp_user_request_callback;
 static void *gap_smp_user_request_context;
 static struct {
-    uint8_t enabled, io, authenticated, min_key_size, bonding;
+    uint8_t enabled, authenticated, min_key_size, bonding;
+    gap_io_capability io;
     uint8_t secure_connections;
     uint8_t keypress_notifications;
 } gap_pair_cfg = {
@@ -2335,37 +2339,42 @@ static void gap_smp_poll_context(
                 if (gap_pair_cfg.io == GAP_IO_NONE || pdu[1] == GAP_IO_NONE ||
                     (gap_pair_cfg.io == GAP_IO_DISPLAY_ONLY &&
                      pdu[1] == GAP_IO_DISPLAY_ONLY) ||
-                    (!pairing->secure_connections && gap_pair_cfg.io < 2 &&
-                     pdu[1] < 2)
+                    (!pairing->secure_connections &&
+                     gap_pair_cfg.io < GAP_IO_KEYBOARD_ONLY &&
+                     pdu[1] < GAP_IO_KEYBOARD_ONLY)
                 ) {
                     gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
                     return;
                 }
                 else if (pairing->secure_connections &&
-                         (gap_pair_cfg.io == 1 || gap_pair_cfg.io == 4) &&
-                         (pdu[1] == 1 || pdu[1] == 4)
+                         (gap_pair_cfg.io == GAP_IO_DISPLAY_YES_NO ||
+                          gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY) &&
+                         (pdu[1] == GAP_IO_DISPLAY_YES_NO || pdu[1] == GAP_IO_KEYBOARD_DISPLAY)
                 ) {
                     model = SMP_MODEL_NUMERIC_COMPARISON;
                 }
                 else {
-                    uint8_t legacy_passkey_input = !pairing->secure_connections && pdu[1] == 4 &&
-                                                    !conn->is_central;
-                    if (gap_pair_cfg.io == 2 ||
-                        (gap_pair_cfg.io == 4 && (pdu[1] < 2 || legacy_passkey_input))
-                    ) model = SMP_MODEL_PASSKEY_INPUT;
+                    uint8_t legacy_passkey_input = !pairing->secure_connections &&
+                                                pdu[1] == GAP_IO_KEYBOARD_DISPLAY && !conn->is_central;
+
+                    if (gap_pair_cfg.io == GAP_IO_KEYBOARD_ONLY ||
+                        (gap_pair_cfg.io == GAP_IO_KEYBOARD_DISPLAY &&
+                            (pdu[1] < GAP_IO_KEYBOARD_ONLY || legacy_passkey_input))
+                    ) {
+                        model = SMP_MODEL_PASSKEY_INPUT;
+                    }
                     else
                         model = SMP_MODEL_PASSKEY_DISPLAY;
                 }
 
-                if (!pairing->secure_connections)
+                if (pairing->secure_connections) {
+                    conn->smp.secure.numeric_required = model == SMP_MODEL_NUMERIC_COMPARISON;
+                    conn->smp.secure.passkey_required = model == SMP_MODEL_PASSKEY_INPUT ||
+                                                    model == SMP_MODEL_PASSKEY_DISPLAY;
+                }
+                else {
                     pairing->authenticated = 1;
-            }
-
-            if (pairing->secure_connections) {
-                conn->smp.secure.numeric_required = model == SMP_MODEL_NUMERIC_COMPARISON;
-                conn->smp.secure.passkey_required = model == SMP_MODEL_PASSKEY_INPUT ||
-                                                model == SMP_MODEL_PASSKEY_DISPLAY;
-            }
+                }
         }
 
         if (model == SMP_MODEL_PASSKEY_INPUT)
