@@ -2069,82 +2069,80 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t central_sc = conn->is_central && pairing->bond_rx_step >= 30;
+        if (pairing->bond_rx_step < (conn->is_central ? 30 : 20)) {
+            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
+            gap_wipe(&conn->bond, sizeof(conn->bond));
+            return;
+        }
 
-        if (central_sc || (!conn->is_central && pairing->bond_rx_step >= 20)) {
-            uint8_t key_dist = pairing->response[5];
-            uint8_t step = pairing->bond_rx_step;
-            uint8_t identity_step = 20;
-            uint8_t identity = key_dist & GAP_KEY_DIST_IDENTITY;
-            uint8_t signing = key_dist & GAP_KEY_DIST_SIGNING;
+        uint8_t key_dist = pairing->response[5];
+        uint8_t step = pairing->bond_rx_step;
+        uint8_t identity_step = 20;
+        uint8_t identity = key_dist & GAP_KEY_DIST_IDENTITY;
+        uint8_t signing = key_dist & GAP_KEY_DIST_SIGNING;
 
-            if (central_sc) {
-                key_dist = pairing->response[6];
-                identity = key_dist & GAP_KEY_DIST_IDENTITY;
-                signing = key_dist & GAP_KEY_DIST_SIGNING;
-                identity_step = 30;
+        if (conn->is_central && pairing->bond_rx_step >= 30) {
+            key_dist = pairing->response[6];
+            identity = key_dist & GAP_KEY_DIST_IDENTITY;
+            signing = key_dist & GAP_KEY_DIST_SIGNING;
+            identity_step = 30;
 
-                if (key_dist & GAP_KEY_DIST_ENCRYPTION) {
-                    identity_step = 32;
+            if (key_dist & GAP_KEY_DIST_ENCRYPTION) {
+                identity_step = 32;
 
-                    if (step == 30 && ENCRYPTION_INFO) {
-                        memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
-                        for (unsigned i = pairing->key_size; i < 16; i++)
-                            conn->bond.peripheral.ltk[i] = 0;
-                        conn->bond.has_peripheral_ltk = 1;
-                        pairing->bond_rx_step = 31;
-                        return;
-                    }
-
-                    if (step == 31 && CENTRAL_IDENTIFICATION) {
-                        conn->bond.peripheral.ediv[0] = pdu[1];
-                        conn->bond.peripheral.ediv[1] = pdu[2];
-                        memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
-                        pairing->bond_rx_step = 32;
-                        if (identity | signing) return;
-
-                        smp_bond_rx_complete(conn);
-                        return;
-                    }
-                }
-            }
-
-            uint8_t signing_step = identity_step;
-
-            if (identity) {
-                signing_step += 2;
-
-                if (step == identity_step && ID_INFO) {
-                    memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
-                    conn->bond.peer_irk.present = 1;
-                    pairing->bond_rx_step = identity_step + 1;
+                if (step == 30 && ENCRYPTION_INFO) {
+                    memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
+                    for (unsigned i = pairing->key_size; i < 16; i++)
+                        conn->bond.peripheral.ltk[i] = 0;
+                    conn->bond.has_peripheral_ltk = 1;
+                    pairing->bond_rx_step = 31;
                     return;
                 }
 
-                if (step == identity_step + 1 && ID_ADDRESS_INFO &&
-                    pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
-                ) {
-                    memcpy(&conn->bond.peer, pdu + 1, sizeof(conn->bond.peer));
-                    conn->peer = conn->bond.peer;
-                    pairing->bond_rx_step = identity_step + 2;
-                    if (!signing) smp_bond_rx_complete(conn);
+                if (step == 31 && CENTRAL_IDENTIFICATION) {
+                    conn->bond.peripheral.ediv[0] = pdu[1];
+                    conn->bond.peripheral.ediv[1] = pdu[2];
+                    memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
+                    pairing->bond_rx_step = 32;
+                    if (identity | signing) return;
+
+                    smp_bond_rx_complete(conn);
                     return;
                 }
             }
+        }
 
-            if (signing && step == signing_step && SIGNING_INFO) {
-                memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
-                conn->bond.peer_csrk.present = 1;
-                smp_bond_rx_complete(conn);
+        uint8_t signing_step = identity_step;
+
+        if (identity) {
+            signing_step += 2;
+
+            if (step == identity_step && ID_INFO) {
+                memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
+                conn->bond.peer_irk.present = 1;
+                pairing->bond_rx_step = identity_step + 1;
                 return;
             }
 
-            gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
+            if (step == identity_step + 1 && ID_ADDRESS_INFO &&
+                pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
+            ) {
+                memcpy(&conn->bond.peer, pdu + 1, sizeof(conn->bond.peer));
+                conn->peer = conn->bond.peer;
+                pairing->bond_rx_step = identity_step + 2;
+                if (!signing) smp_bond_rx_complete(conn);
+                return;
+            }
+        }
+
+        if (signing && step == signing_step && SIGNING_INFO) {
+            memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
+            conn->bond.peer_csrk.present = 1;
+            smp_bond_rx_complete(conn);
             return;
         }
 
         gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
-        gap_wipe(&conn->bond, sizeof(conn->bond));
         return;
     }
 
