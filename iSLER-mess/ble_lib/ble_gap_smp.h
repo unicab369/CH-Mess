@@ -1530,9 +1530,6 @@ static void gap_smp_poll_context(
             conn->smp.secure.numeric_reply = 1;
     }
 
-    if (!conn->smp.tx_queue->length && conn->smp.bearer.tx_len)
-        (void)smp_poll(&conn->smp);
-
     if (pairing->phase == SMP_PHASE_SC_USER && conn->smp.secure.numeric_reply) {
         if (conn->smp.secure.numeric_reply == 2) {
             gap_smp_fail(conn, SMP_FAIL_NUMERIC_COMPARISON); // Numeric Comparison Failed.
@@ -1564,52 +1561,84 @@ static void gap_smp_poll_context(
         }
     }
 
-    if (pairing->phase == SMP_PHASE_BOND_TX &&
-        conn->smp.bond_tx_waiting
-    ) {
-        if (conn->link_layer.tx_pending || conn->queue_state.tx_queued)
-            return;
+    if (!conn->smp.tx_queue->length && conn->smp.bearer.tx_len)
+        (void)smp_poll(&conn->smp);
 
-        conn->smp.bond_tx_waiting = 0;
-        uint8_t key_dist = pairing->response[conn->is_central ? 5 : 6];
-
-        if ((conn->is_central && pairing->bond_tx_step == 1) ||
-            (!conn->is_central && pairing->bond_tx_step == 31)
-        ) {
-            uint8_t master_id[10];
-
-            if (conn->is_central) {
-                memcpy(master_id, conn->bond.central.ediv, 2);
-                memcpy(master_id + 2, conn->bond.central.rand, 8);
-            }
-            else {
-                memcpy(master_id, conn->bond.peripheral.ediv, 2);
-                memcpy(master_id + 2, conn->bond.peripheral.rand, 8);
-            }
-
-            int queued = gap_smp_queue(&conn->smp, SMP_CENTRAL_IDENTIFICATION, master_id, sizeof(master_id));
-            gap_wipe(master_id, sizeof(master_id));
-            if (!queued) {
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+    if (pairing->phase == SMP_PHASE_BOND_TX) {
+        if (conn->smp.bond_tx_waiting) {
+            if (conn->link_layer.tx_pending || conn->queue_state.tx_queued)
                 return;
-            }
 
-            pairing->bond_tx_step = conn->is_central ? 2 : 32;
-        }
-        else if (
-            ((conn->is_central && pairing->bond_tx_step == 2) ||
-            (!conn->is_central && pairing->bond_tx_step == 32)) &&
-            (key_dist & (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))
-        ) {
-            if (key_dist & GAP_KEY_DIST_IDENTITY) {
-                if (!gap_smp_queue(&conn->smp, SMP_ID_INFO, conn->bond.local_irk.key, 16)) {
+            conn->smp.bond_tx_waiting = 0;
+            uint8_t key_dist = pairing->response[conn->is_central ? 5 : 6];
+
+            if ((conn->is_central && pairing->bond_tx_step == 1) ||
+                (!conn->is_central && pairing->bond_tx_step == 31)
+            ) {
+                uint8_t master_id[10];
+
+                if (conn->is_central) {
+                    memcpy(master_id, conn->bond.central.ediv, 2);
+                    memcpy(master_id + 2, conn->bond.central.rand, 8);
+                }
+                else {
+                    memcpy(master_id, conn->bond.peripheral.ediv, 2);
+                    memcpy(master_id + 2, conn->bond.peripheral.rand, 8);
+                }
+
+                int queued = gap_smp_queue(&conn->smp, SMP_CENTRAL_IDENTIFICATION, master_id, sizeof(master_id));
+                gap_wipe(master_id, sizeof(master_id));
+                if (!queued) {
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
 
-                pairing->bond_tx_step = conn->is_central ? 3 : 33;
+                pairing->bond_tx_step = conn->is_central ? 2 : 32;
             }
-            else {
+            else if (
+                ((conn->is_central && pairing->bond_tx_step == 2) ||
+                (!conn->is_central && pairing->bond_tx_step == 32)) &&
+                (key_dist & (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))
+            ) {
+                if (key_dist & GAP_KEY_DIST_IDENTITY) {
+                    if (!gap_smp_queue(&conn->smp, SMP_ID_INFO, conn->bond.local_irk.key, 16)) {
+                        gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                        return;
+                    }
+
+                    pairing->bond_tx_step = conn->is_central ? 3 : 33;
+                }
+                else {
+                    if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
+                        gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                        return;
+                    }
+
+                    pairing->bond_tx_step = conn->is_central ? 5 : 35;
+                }
+            }
+            else if (
+                (conn->is_central && pairing->bond_tx_step == 3) ||
+                (!conn->is_central && pairing->bond_tx_step == 33)
+            ) {
+                uint8_t irk[16] = {0}, address[7] = {0};
+                int available = gap_smp_local_identity(irk, address);
+                gap_wipe(irk, sizeof(irk));
+                if (!available || !gap_smp_queue(&conn->smp, SMP_ID_ADDRESS_INFO,
+                                                address, sizeof(address))
+                ) {
+                    gap_wipe(address, sizeof(address));
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
+                }
+
+                gap_wipe(address, sizeof(address));
+                pairing->bond_tx_step = conn->is_central ? 4 : 34;
+            }
+            else if (
+                ((conn->is_central && pairing->bond_tx_step == 4) ||
+                (!conn->is_central && pairing->bond_tx_step == 34)) &&
+                (key_dist & GAP_KEY_DIST_SIGNING)
+            ) {
                 if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
@@ -1617,57 +1646,29 @@ static void gap_smp_poll_context(
 
                 pairing->bond_tx_step = conn->is_central ? 5 : 35;
             }
-        }
-        else if (
-            (conn->is_central && pairing->bond_tx_step == 3) ||
-            (!conn->is_central && pairing->bond_tx_step == 33)
-        ) {
-            uint8_t irk[16] = {0}, address[7] = {0};
-            int available = gap_smp_local_identity(irk, address);
-            gap_wipe(irk, sizeof(irk));
-            if (!available || !gap_smp_queue(&conn->smp, SMP_ID_ADDRESS_INFO,
-                                            address, sizeof(address))
-            ) {
-                gap_wipe(address, sizeof(address));
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
-            }
+            else if (!conn->is_central && pairing->bond_tx_step >= 32) {
+                pairing->phase = SMP_PHASE_BOND_RX;
+                pairing->bond_rx_step = pairing->secure_connections ? 20 : 0;
+                if (!pairing->response[5])
+                    smp_bond_rx_complete(conn);
+                return;
 
-            gap_wipe(address, sizeof(address));
-            pairing->bond_tx_step = conn->is_central ? 4 : 34;
-        }
-        else if (
-            ((conn->is_central && pairing->bond_tx_step == 4) ||
-            (!conn->is_central && pairing->bond_tx_step == 34)) &&
-            (key_dist & GAP_KEY_DIST_SIGNING)
-        ) {
-            if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+            }
+            else {
+                if (conn->is_central && !smp_bond_store(&conn->bond)) {
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                    gap_wipe(&conn->bond, sizeof(conn->bond));
+                    return;
+                }
+
+                conn->bonded = 1;
+                gap_smp_finish(conn, 0);
                 return;
             }
-
-            pairing->bond_tx_step = conn->is_central ? 5 : 35;
         }
-        else if (!conn->is_central && pairing->bond_tx_step >= 32) {
-            pairing->phase = SMP_PHASE_BOND_RX;
-            pairing->bond_rx_step = pairing->secure_connections ? 20 : 0;
-            if (!pairing->response[5])
-                smp_bond_rx_complete(conn);
-            return;
 
-        }
-        else {
-            if (conn->is_central && !smp_bond_store(&conn->bond)) {
-                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
-                gap_wipe(&conn->bond, sizeof(conn->bond));
-                return;
-            }
-
-            conn->bonded = 1;
-            gap_smp_finish(conn, 0);
-        }
-    }
-
-    if (pairing->phase == SMP_PHASE_BOND_TX) {
+        // The block above may clear bond_tx_waiting after completing a transmit.
+        // Send the next queued key PDU immediately in that same poll.
         if (!conn->smp.bond_tx_waiting && smp_tx_pending(&conn->smp) &&
             !conn->link_layer.tx_pending &&
             !conn->queue_state.tx_queued &&
