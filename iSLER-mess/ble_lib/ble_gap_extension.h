@@ -1638,6 +1638,143 @@ static int gap_periodic_tx(gap_extended_adv_set *set) {
 // -----------------------------------------------------------------------------
 // Extended scan radio processing and periodic sync transfer
 // -----------------------------------------------------------------------------
+// Reassemble primary and auxiliary extended advertising reports.
+static void gap_ext_scan_report_process(
+    uint8_t kind, gap_ext_fields *fields, uint32_t now
+) {
+    if (!gap_scanner.scanning || kind > GAP_EXT_ADV_AUXILIARY_PDU)
+        return;
+
+    for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+        gap_ext_scan_context *ctx = &gap_ext_ctx[i];
+
+        if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
+            gap_wipe(&gap_ext_ctx[i], sizeof(gap_ext_ctx[i]));
+    }
+
+    int context_slot = -1;
+    gap_ext_scan_context *context;
+
+    if (kind == GAP_EXT_ADV_PRIMARY_PDU) {
+        if (fields->has_aux_ptr) {
+            if (!fields->identity.has_adi || fields->aux_offset_zero)
+                return;
+        }
+        else {
+            if (!gap_ext_data_valid(fields->payload.data, fields->payload.len))
+                return;
+
+            if (!fields->identity.has_adi)
+                fields->identity.sid = 0xff;
+            gap_ext_report_queue(&fields->identity, fields->payload.data,
+                                 fields->payload.len, gap_ext_scan.rssi);
+            return;
+        }
+
+        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+            gap_ext_scan_context *ctx = &gap_ext_ctx[i];
+
+            if (ctx->active &&
+                ctx->identity.has_adi &&
+                ctx->identity.adi == fields->identity.adi &&
+                ctx->identity.has_address == fields->identity.has_address &&
+                (!fields->identity.has_address || GAP_ADDRESS_EQUAL(ctx->identity.peer,
+                                                                fields->identity.peer))
+            ) {
+                context_slot = i;
+                break;
+            }
+        }
+
+        if (context_slot < 0) {
+            context_slot = 0;
+            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
+                if (!gap_ext_ctx[i].active) {
+                    context_slot = i;
+                    break;
+                }
+        }
+
+        context = &gap_ext_ctx[context_slot];
+        gap_wipe(context, sizeof(*context));
+        context->active = 1;
+        context->identity = fields->identity;
+        context->await_scan_response = (fields->mode == 2);
+        context->rssi = gap_ext_scan.rssi;
+    }
+    else {
+        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
+            gap_ext_scan_context *ctx = &gap_ext_ctx[i];
+
+            if (!ctx->active ||
+                (fields->identity.has_adi &&
+                 (!ctx->identity.has_adi || ctx->identity.adi != fields->identity.adi)) ||
+                (fields->identity.has_address && ctx->identity.has_address &&
+                 !GAP_ADDRESS_EQUAL(fields->identity.peer, ctx->identity.peer))
+            ) continue;
+
+            if (context_slot >= 0) {
+                context_slot = -1;
+                break;
+            }
+
+            context_slot = i;
+        }
+
+        if (context_slot < 0) return;
+        context = &gap_ext_ctx[context_slot];
+
+        if (fields->identity.has_address) {
+            context->identity.has_address = 1;
+            context->identity.peer = fields->identity.peer;
+        }
+
+        if (fields->identity.has_adi) {
+            context->identity.has_adi = 1;
+            context->identity.adi = fields->identity.adi;
+            context->identity.sid = fields->identity.sid;
+        }
+
+        context->rssi = gap_ext_scan.rssi;
+    }
+
+    if (fields->payload.len > GAP_EXT_ADV_DATA_MAX - context->data_len) {
+        gap_wipe(context, sizeof(*context));
+        return;
+    }
+
+    if (fields->payload.len) {
+        memcpy(context->data + context->data_len, fields->payload.data, fields->payload.len);
+        context->data_len += fields->payload.len;
+    }
+
+    if (fields->has_aux_ptr) {
+        if (fields->aux_offset_zero) {
+            gap_wipe(context, sizeof(*context));
+            return;
+        }
+
+        context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+        return;
+    }
+
+    if (context->await_scan_response && fields->mode == 2) {
+        context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+        return;
+    }
+
+    if (fields->mode == 0)
+        context->await_scan_response = 0;
+
+    if (!gap_ext_data_valid(context->data, context->data_len)) {
+        gap_wipe(context, sizeof(*context));
+        return;
+    }
+
+    gap_ext_report_queue(&context->identity, context->data, context->data_len, context->rssi);
+    gap_wipe(context, sizeof(*context));
+}
+
 // Handle a received extended scan PDU, including follow-on AuxPtr and sync work.
 static void gap_ext_scan_process(void) {
     if (!gap_ext_scan.ready) return;
@@ -1843,140 +1980,7 @@ static void gap_ext_scan_process(void) {
     }
 
     uint32_t now = GET_MILLIS();
-
-    do {
-        if (!gap_scanner.scanning || kind > GAP_EXT_ADV_AUXILIARY_PDU)
-            break;
-
-        for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-            gap_ext_scan_context *ctx = &gap_ext_ctx[i];
-
-            if (ctx->active && (int32_t)(now - ctx->deadline_ms) >= 0)
-                gap_wipe(&gap_ext_ctx[i], sizeof(gap_ext_ctx[i]));
-        }
-
-        int context_slot = -1;
-        gap_ext_scan_context *context;
-
-        if (kind == GAP_EXT_ADV_PRIMARY_PDU) {
-            if (fields.has_aux_ptr) {
-                if (!fields.identity.has_adi || fields.aux_offset_zero)
-                    break;
-            }
-            else {
-                if (!gap_ext_data_valid(fields.payload.data, fields.payload.len))
-                    break;
-
-                if (!fields.identity.has_adi)
-                    fields.identity.sid = 0xff;
-                gap_ext_report_queue(&fields.identity, fields.payload.data,
-                                     fields.payload.len, gap_ext_scan.rssi);
-                break;
-            }
-
-            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-                gap_ext_scan_context *ctx = &gap_ext_ctx[i];
-
-                if (ctx->active &&
-                    ctx->identity.has_adi &&
-                    ctx->identity.adi == fields.identity.adi &&
-                    ctx->identity.has_address == fields.identity.has_address &&
-                    (!fields.identity.has_address || GAP_ADDRESS_EQUAL(ctx->identity.peer,
-                                                                    fields.identity.peer))
-                ) {
-                    context_slot = i;
-                    break;
-                }
-            }
-
-            if (context_slot < 0) {
-                context_slot = 0;
-                for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++)
-                    if (!gap_ext_ctx[i].active) {
-                        context_slot = i;
-                        break;
-                    }
-            }
-
-            context = &gap_ext_ctx[context_slot];
-            gap_wipe(context, sizeof(*context));
-            context->active = 1;
-            context->identity = fields.identity;
-            context->await_scan_response = (fields.mode == 2);
-            context->rssi = gap_ext_scan.rssi;
-        }
-        else {
-            for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
-                gap_ext_scan_context *ctx = &gap_ext_ctx[i];
-
-                if (!ctx->active ||
-                    (fields.identity.has_adi &&
-                     (!ctx->identity.has_adi || ctx->identity.adi != fields.identity.adi)) ||
-                    (fields.identity.has_address && ctx->identity.has_address &&
-                     !GAP_ADDRESS_EQUAL(fields.identity.peer, ctx->identity.peer))
-                ) continue;
-
-                if (context_slot >= 0) {
-                    context_slot = -1;
-                    break;
-                }
-
-                context_slot = i;
-            }
-
-            if (context_slot < 0) break;
-            context = &gap_ext_ctx[context_slot];
-
-            if (fields.identity.has_address) {
-                context->identity.has_address = 1;
-                context->identity.peer = fields.identity.peer;
-            }
-
-            if (fields.identity.has_adi) {
-                context->identity.has_adi = 1;
-                context->identity.adi = fields.identity.adi;
-                context->identity.sid = fields.identity.sid;
-            }
-
-            context->rssi = gap_ext_scan.rssi;
-        }
-
-        if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - context->data_len) {
-            gap_wipe(context, sizeof(*context));
-            break;
-        }
-
-        if (fields.payload.len) {
-            memcpy(context->data + context->data_len, fields.payload.data, fields.payload.len);
-            context->data_len += fields.payload.len;
-        }
-
-        if (fields.has_aux_ptr) {
-            if (fields.aux_offset_zero) {
-                gap_wipe(context, sizeof(*context));
-                break;
-            }
-
-            context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
-            break;
-        }
-
-        if (context->await_scan_response && fields.mode == 2) {
-            context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
-            break;
-        }
-
-        if (fields.mode == 0)
-            context->await_scan_response = 0;
-
-        if (!gap_ext_data_valid(context->data, context->data_len)) {
-            gap_wipe(context, sizeof(*context));
-            break;
-        }
-
-        gap_ext_report_queue(&context->identity, context->data, context->data_len, context->rssi);
-        gap_wipe(context, sizeof(*context));
-    } while (0);
+    gap_ext_scan_report_process(kind, &fields, now);
 
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.sync.has_info)
         (void)gap_sync_info_accept(&fields, pdu[1], packet_phy, gap_ext_scan.ticks);
@@ -1992,8 +1996,8 @@ static void gap_ext_scan_process(void) {
             if (fields.aux_offset_us > airtime_us) {
                 uint32_t tx_ca_ppm = fields.aux_ca ? 50 : 500;
                 uint32_t offset_unit_us = fields.aux_offset_unit ? 300 : 30;
-                uint32_t widen_us = ((tx_ca_ppm + 500) *
-                     (fields.aux_offset_us + offset_unit_us) + 999999) / 1000000 + 2;
+                uint32_t widen_us = ((tx_ca_ppm + 500) * (fields.aux_offset_us + offset_unit_us) +
+                                                            999999) / 1000000 + 2;
 
                 // AuxOffset starts at the PDU start; the timestamp is captured
                 // at PDU reception completion, so subtract this PDU's airtime.
@@ -2092,10 +2096,9 @@ static int gap_past_receive(
     uint32_t pa_widening_ppm = gap_sca_ppm[fields.sync.params.sca] + 500;
     uint32_t clock_sum_ppm = pa_widening_ppm + gap_sca_ppm[sca];
 
-    uint64_t drift_us = (uint64_t)pa_distance * interval_us * pa_widening_ppm +
+    uint64_t widen_us = ((uint64_t)pa_distance * interval_us * pa_widening_ppm +
                         (uint64_t)conn_distance * conn->schedule.interval_125us * 125 *
-                        (gap_sca_ppm[sca] + 500);
-    uint64_t widen_us = (drift_us + 999999) / 1000000;
+                        (gap_sca_ppm[sca] + 500) + 999999) / 1000000;
     widen_us = (widen_us * (1000000 + clock_sum_ppm) + 999999) / 1000000 + 16;
     if (widen_us > UINT32_MAX) return 0;
 
