@@ -894,9 +894,11 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (adv_evt.rx_event &&
+
 #if GAP_PRIVACY_SUPPORT
         (!gap_privacy.connection_filter || peer_slot >= 0) &&
 #endif // GAP_PRIVACY_SUPPORT
+
         ((frame[0] >> 7) & 1) == ((adv_evt.adv_frame[0] >> 6) & 1) &&
         memcmp(frame + 8, adv_evt.adv_frame + 2, 6) == 0
     ) {
@@ -924,15 +926,19 @@ void __attribute__((noinline)) gap_hw_received(void) {
         }
 
 #if GAP_PERIPHERAL_SUPPORT
-        if ((pdu_type == CONNECT_IND) &&
-            frame[1] == 34 && !(frame[0] & 0x20) &&
-            (adv_pdu_type == ADV_IND || adv_pdu_type == ADV_DIRECT_IND) &&
-            (!gap_adv_filter.connection_accept || peer_in_accept_list) &&
-            (adv_pdu_type != ADV_DIRECT_IND ||
-             (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
-             (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
-              memcmp(frame + 2, adv_evt.adv_frame + 8, 6) == 0))
-        ) {
+        uint8_t connect_ok = pdu_type == CONNECT_IND &&
+                            frame[1] == 34 && !(frame[0] & 0x20) &&
+                            (adv_pdu_type == ADV_IND || adv_pdu_type == ADV_DIRECT_IND) &&
+                            (!gap_adv_filter.connection_accept || peer_in_accept_list);
+
+        if (connect_ok && adv_pdu_type == ADV_DIRECT_IND) {
+            connect_ok =
+                (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
+                (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
+                 memcmp(frame + 2, adv_evt.adv_frame + 8, 6) == 0);
+        }
+
+        if (connect_ok) {
             memcpy(adv_evt.conn_req_frame, frame, 36);
             adv_evt.conn_req_ticks = received_ticks;
             adv_evt.conn_req_ready = 1;
@@ -940,6 +946,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             return;
         }
 #endif // GAP_PERIPHERAL_SUPPORT
+
     }
 #endif // GAP_LEGACY_ADV_SUPPORT
 
@@ -947,7 +954,6 @@ void __attribute__((noinline)) gap_hw_received(void) {
     gap_rx.rssi = GAP_HW_RSSI();
     gap_rx.ready = 1;
     GAP_HW_PACKET_READY();
-
     gap_conn_slot = previous_slot;
 }
 
