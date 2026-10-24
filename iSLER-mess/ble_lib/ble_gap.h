@@ -1020,12 +1020,12 @@ static inline int gap_is_busy(void) {
 #if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) return 1;
 #endif
-    if (GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
-        (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) return 1;
+
 #if GAP_CENTRAL_SUPPORT
     if (gap_initiator.active) return 1;
 #endif
-    return 0;
+    return GAP_EXT_ADVERTISING_ENABLED || gap_scanner.scanning ||
+           (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot));
 }
 
 // Application-facing
@@ -1188,9 +1188,7 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         !timing->attempt_timeout_s ||
         timing->attempt_timeout_s > 600 || gap_is_busy() ||
         !IN_RANGE_INCLUSIVE(timing->scan_interval_ms, 3, 40959) ||
-        !IN_RANGE_INCLUSIVE(
-            timing->scan_window_ms, 3, timing->scan_interval_ms
-        )
+        !IN_RANGE_INCLUSIVE(timing->scan_window_ms, 3, timing->scan_interval_ms)
     ) return 0;
 
     if ((uint32_t)timing->supervision_timeout * 4 <=

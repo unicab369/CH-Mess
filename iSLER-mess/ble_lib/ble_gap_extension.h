@@ -1263,26 +1263,28 @@ static int gap_pawr_conn_req(
         !gap_conn_request_valid(request)
     ) return 0;
 
-    gap_sync_context *sync = &gap_syncs[slot];
     uint8_t initiator_type = (request[0] >> 6) & 1;
-    uint8_t responder_type = (request[0] >> 7) & 1;
-
-    if (initiator_type != sync->peer.type ||
-        memcmp(request + 2, sync->peer.address, 6) != 0
-    ) return 0;
-
     int peer_slot = gap_identity_find(request + 2, initiator_type);
-    if (!gap_peer_allowed(peer_slot, request + 2, initiator_type))
-        return 0;
 
 #if GAP_PRIVACY_SUPPORT
     if (gap_privacy.connection_filter && peer_slot < 0)
         return 0;
 #endif
 
-    uint8_t local_address[6], local_type;
+    gap_sync_context *sync = &gap_syncs[slot];
+
+    if (initiator_type != sync->peer.type ||
+        memcmp(request + 2, sync->peer.address, 6) != 0
+    ) return 0;
+
+    if (!gap_peer_allowed(peer_slot, request + 2, initiator_type))
+        return 0;
+
+    uint8_t local_address[6];
+    uint8_t local_type;
     gap_local_addr_select(peer_slot, local_address, &local_type);
 
+    uint8_t responder_type = (request[0] >> 7) & 1;
     if (responder_type != local_type ||
         memcmp(request + 8, local_address, 6) != 0
     ) return 0;
@@ -1314,7 +1316,6 @@ static int gap_pawr_conn_req(
     while (!GAP_HW_TX_DONE() && GAP_HW_TICKS() < deadline) {}
 
     if (!GAP_HW_TX_DONE()) return 0;
-
     if (!gap_conn_accept(request, received_ticks, HW_TICKS_FROM_US(1250),
                                                 HW_TICKS_FROM_US(2500))
     ) return 0;
@@ -1678,7 +1679,6 @@ static void gap_ext_scan_process(void) {
     gap_rx_armed = 0;
 
     if (periodic && !sync) return;
-
     uint8_t *pdu = gap_ext_scan.frame;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
@@ -2018,14 +2018,11 @@ static void gap_ext_scan_process(void) {
                 }
 
                 gap_aux_request_context *request = &gap_aux_request[aux_slot];
-                uint32_t start_us = subtract_clamp0_32(after_packet_us, widen_us);
-                uint64_t start_offset_ticks = HW_TICKS_FROM_US(start_us);
-                uint64_t end_offset_ticks = HW_TICKS_FROM_US(after_packet_us +
-                                                    offset_unit_us + widen_us);
-
-                request->start_ticks = gap_ext_scan.ticks + start_offset_ticks;
+                uint64_t start_ticks = HW_TICKS_FROM_US(subtract_clamp0_32(after_packet_us, widen_us));
+                request->start_ticks = gap_ext_scan.ticks + start_ticks;
                 // The AuxPtr receive window lasts only a few milliseconds.
-                request->duration_ticks = (uint32_t)(end_offset_ticks - start_offset_ticks);
+                request->duration_ticks = (uint32_t)(HW_TICKS_FROM_US(after_packet_us +
+                                            offset_unit_us + widen_us) - start_ticks);
                 request->channel = fields.aux_channel;
                 request->phy = aux_phy;
                 request->active = 1;
@@ -2290,9 +2287,7 @@ static void gap_sync_window_missed(uint8_t slot) {
 // -----------------------------------------------------------------------------
 // Stop a lower-priority scan before the connection poll configures its channel.
 static void gap_connection_take_radio(void) {
-    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE)
-        return;
-
+    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_NONE) return;
     if (gap_rx_armed) GAP_HW_STOP();
     gap_rx_armed = 0;
 
@@ -2305,7 +2300,7 @@ static void gap_connection_take_radio(void) {
         ) gap_sync_window_missed(slot);
     }
 
-    if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
+    else if (gap_ext_scan.listen_state == GAP_EXT_SCAN_AUX) {
         uint8_t slot = gap_ext_scan.aux_slot;
         gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
 

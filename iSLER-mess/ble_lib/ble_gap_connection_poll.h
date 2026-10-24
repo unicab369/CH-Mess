@@ -1521,8 +1521,7 @@ void gap_hw_scan_poll(void) {
                 (uint32_t)(subtract_clamp0_64(target, gap_syncs[i].anchor_ticks) /
                            HW_TICKS_FROM_US(1)) + 999999) / 1000000) + 2;
 
-            gap_syncs[i].start_ticks = subtract_clamp0_64(
-                                        target, HW_TICKS_FROM_US(widen_us));
+            gap_syncs[i].start_ticks = subtract_clamp0_64(target, HW_TICKS_FROM_US(widen_us));
             gap_syncs[i].end_ticks = target + HW_TICKS_FROM_US(1250 + widen_us);
             gap_syncs[i].window_active = 1;
             gap_syncs[i].window_chain = 0;
@@ -1692,8 +1691,7 @@ int gap_send_due(
 #endif // GAP_EXT_ADV_SUPPORT
 
 #if GAP_LEGACY_ADV_SUPPORT
-    int send_gap = gap_adv.enabled != 0 &&
-                    (int32_t)(now - gap_adv.next_event_ms) >= 0;
+    int send_gap = gap_adv.enabled != 0 && (int32_t)(now - gap_adv.next_event_ms) >= 0;
     if (!send_gap && !fallback_ad)
         return 0;
 

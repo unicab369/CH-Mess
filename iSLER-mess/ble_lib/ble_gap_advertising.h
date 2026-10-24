@@ -583,9 +583,8 @@ int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
 // Advertisement saved while an active scan requests its scan response.
 
 // Application facing
-void gap_scan_start(uint8_t active) {
-    memset(&gap_scan, 0, sizeof(gap_scan));
-
+// Stop scanning and cancel any pending connection initiation.
+void gap_scan_stop(void) {
 #if GAP_EXT_ADV_SUPPORT
     gap_sync_started_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
@@ -594,10 +593,20 @@ void gap_scan_start(uint8_t active) {
 
 #if GAP_CENTRAL_SUPPORT
     gap_initiator.active = 0;
+    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
 #endif
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
+    gap_scanner.generation++;
+}
+
+// Application facing
+void gap_scan_start(uint8_t active) {
+    gap_scan_stop();
+    memset(&gap_scan, 0, sizeof(gap_scan));
+
     gap_scanner.scanning = 1;
     gap_scanner.active = active;
-    gap_scanner.generation++;
 }
 
 // Application facing
@@ -623,24 +632,6 @@ int gap_scan_configure(
     memset(&gap_scan, 0, sizeof(gap_scan));
     gap_scanner.generation++;
     return 1;
-}
-
-// Application facing
-// Start scanning; active mode requests scan-response data from advertisers.
-void gap_scan_stop(void) {
-#if GAP_EXT_ADV_SUPPORT
-    gap_sync_started_scan = 0;
-    memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
-    memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
-#endif
-
-#if GAP_CENTRAL_SUPPORT
-    gap_initiator.active = 0;
-    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-#endif
-    gap_scanner.scanning = 0;
-    gap_scanner.active = 0;
-    gap_scanner.generation++;
 }
 
 // General:   gap_conn_procedure_start(GAP_CONN_MODE_GENERAL, active_scan);
@@ -703,7 +694,6 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     memset(adv_tx.connect_request + 30, 0xff, 4);
     adv_tx.connect_request[34] = 0x1f; // data channels 0 through 36
     adv_tx.connect_request[35] = 5; // CSA #1 hop increment, SCA 500 ppm
-
     gap_initiator.mode = mode;
     gap_initiator.peer.type = peer_type;
 
@@ -752,8 +742,7 @@ int gap_conn_initiating(void) {
 
 // Application facing
 void gap_conn_cancel(void) {
-    if (gap_initiator.active)
-        gap_scan_stop();
+    if (gap_initiator.active) gap_scan_stop();
 }
 #endif // GAP_CENTRAL_SUPPORT
 
