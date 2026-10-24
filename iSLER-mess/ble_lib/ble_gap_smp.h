@@ -2562,24 +2562,24 @@ static void gap_smp_poll_context(
             }
         }
 
-        if (!conn->is_central) {
-            uint8_t public_key[64];
-
-            for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
-                gap_bytes_reverse(public_key + 32 * coordinate,
-                               conn->smp.secure.public_key + 32 * coordinate, 32);
-            gap_smp_queue(&conn->smp, SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
-        }
-
         uint8_t pass_required = conn->smp.secure.passkey_required;
         pairing->phase = pass_required ? SMP_PHASE_SC_PASSKEY : SMP_PHASE_SC_CONFIRM;
 
-        if (conn->is_central && !pass_required) {
-            uint8_t confirm[16];
-            gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
-                                 conn->smp.secure.peer_public_key,
-                                 conn->smp.random, confirm);
-            gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
+        if (conn->is_central) {
+            if (!pass_required) {
+                uint8_t confirm[16];
+                gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
+                                     conn->smp.secure.peer_public_key,
+                                     conn->smp.random, confirm);
+                gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
+            }
+        }
+        else {
+            uint8_t public_key[64];
+            for (uint8_t coordinate = 0; coordinate < 2; coordinate++)
+                gap_bytes_reverse(public_key + 32 * coordinate,
+                                  conn->smp.secure.public_key + 32 * coordinate, 32);
+            gap_smp_queue(&conn->smp, SMP_PAIRING_PUBLIC_KEY, public_key, sizeof(public_key));
         }
 
         return;
