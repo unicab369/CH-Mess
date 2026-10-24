@@ -1799,7 +1799,10 @@ static uint8_t gap_conn_control(
                 break;
 
             conn->remote_data_length = (gap_data_length){
-                values[2], values[0], values[3], values[1]
+                .rx_octets = values[0],
+                .tx_octets = values[2],
+                .rx_time = values[1],
+                .tx_time = values[3]
             };
 
             // Combine sender and receiver limits for new fragments;

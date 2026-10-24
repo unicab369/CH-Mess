@@ -435,10 +435,11 @@ typedef struct {
 
 // GAP state and connection data types.
 typedef struct {
-    uint8_t tx_octets;  // Maximum Link Layer payload bytes this device can transmit.
     uint8_t rx_octets;  // Maximum Link Layer payload bytes this device can receive.
-    uint16_t tx_time;   // Maximum transmit time, in microseconds, for that payload.
+    uint8_t tx_octets;  // Maximum Link Layer payload bytes this device can transmit.
+    // Bluetooth allows 328–17040 us; the maximum depends on supported features.
     uint16_t rx_time;   // Maximum receive time, in microseconds, for that payload.
+    uint16_t tx_time;   // Maximum transmit time, in microseconds, for that payload.
 } gap_data_length;
 
 typedef struct {
@@ -1766,6 +1767,11 @@ static int gap_conn_accept(
         if (conn->link_layer.channel_map[channel / 8] & (1 << (channel % 8)))
             count++;
 
+    conn->data_length = (gap_data_length){ .rx_octets = 27, .tx_octets = 27,
+                                            .rx_time = 328, .tx_time = 328 };
+    conn->remote_data_length = (gap_data_length){ .rx_octets = 27, .tx_octets = 27,
+                                            .rx_time = 328, .tx_time = 328 };
+
     conn->link_layer.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
                                 (uint32_t)frame[16] << 16 |
@@ -1777,28 +1783,27 @@ static int gap_conn_accept(
     static const uint16_t sca_ppm[8] = {500, 250, 150, 100, 75, 50, 30, 20};
     conn->link_layer.peer_sca_ppm = sca_ppm[frame[35] >> 5];
     conn->link_layer.next_ticks = received_ticks + (uint64_t)ble_read_u16_le(frame + 22) *
-                                    unit_ticks + delay_ticks;
+                                                    unit_ticks + delay_ticks;
     conn->link_layer.used_count = count;
     conn->link_layer.hop = frame[35] & 0x1f;
     conn->link_layer.last_rx_ms = GET_MILLIS();
     conn->link_layer.first_event = 1;
 
-    conn->schedule.factor = 1;
-    conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
-    conn->schedule.latency = ble_read_u16_le(frame + 26);
-    conn->schedule.timeout_10ms = ble_read_u16_le(frame + 28);
-    conn->data_length = (gap_data_length){27, 27, 328, 328};
-    conn->remote_data_length = (gap_data_length){27, 27, 328, 328};
     conn->window_size = frame[21];
     conn->local_tx_octets = 27;
     conn->load_pending = 1;
 
+    conn->schedule.factor = 1;
+    conn->schedule.interval_125us = ble_read_u16_le(frame + 24) * 10;
+    conn->schedule.latency = ble_read_u16_le(frame + 26);
+    conn->schedule.timeout_10ms = ble_read_u16_le(frame + 28);
     conn->channel_report.min_spacing_200ms = 5;
     conn->channel_report.max_delay_200ms = 5;
     conn->phy_state.current.tx = GAP_PHY_1M;
     conn->phy_state.current.rx = GAP_PHY_1M;
     conn->phy_state.preferred.tx = GAP_HW_PHY_MASK() & 7;
     conn->phy_state.preferred.rx = conn->phy_state.preferred.tx;
+
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
 
