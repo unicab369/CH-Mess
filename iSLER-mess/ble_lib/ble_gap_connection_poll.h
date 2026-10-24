@@ -1012,9 +1012,8 @@ static uint64_t gap_conn_close_ticks(
                             (500 + connection->link_layer.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max = (uint32_t)connection->schedule.interval_125us * 125 / 2;
 
-    widen_us = MIN(widen_us, widen_max);
     return connection->link_layer.next_ticks +
-            HW_TICKS_FROM_US(window_us + packet_us + widen_us);
+            HW_TICKS_FROM_US(window_us + packet_us + MIN(widen_us, widen_max));
 }
 
 
@@ -1043,6 +1042,7 @@ static inline uint8_t gap_conn_can_skip_event(
     if (conn->is_central) {
         uint8_t tx_len = conn->tx_frame[1];
         uint8_t tx_opcode = conn->tx_frame[2];
+
 #if GAP_SECURITY_SUPPORT >= 1
         if (conn->security.tx_sealed) {
             tx_len = conn->security.tx_plain_len;
@@ -1097,8 +1097,7 @@ static void gap_conn_poll(void) {
 #endif // GAP_IDENTITY_COUNT > 0
 
 #if GAP_SECURITY_SUPPORT >= 2
-        if (smp_bond_load(conn))
-            conn->bonded = 1;
+        if (smp_bond_load(conn)) conn->bonded = 1;
 #endif // GAP_SECURITY_SUPPORT >= 2
     }
 
@@ -1107,6 +1106,7 @@ static void gap_conn_poll(void) {
     smp_bond_restore_poll(conn);
     gap_smp_poll_context(conn);
 #endif // GAP_SECURITY_SUPPORT >= 2
+
     uint32_t now_ms = GET_MILLIS();
 #if GAP_SECURITY_SUPPORT >= 1
     // The mask excludes GAP_ENC_IDLE, GAP_ENC_QUEUED,
@@ -1148,8 +1148,7 @@ static void gap_conn_poll(void) {
         (uint32_t)(now_ms - conn->params_started_ms) >= 40000
     ) {
         conn->connection_status = GAP_STATUS_LL_RESPONSE_TIMEOUT; // LL response timeout.
-        uint8_t subrate_req =
-            conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING;
+        uint8_t subrate_req = conn->c_subrate.procedure_state == GAP_SUBRATE_REQUEST_PENDING;
 
         if (conn->c_subrate.queued_flags || subrate_req) {
             conn->c_subrate.queued_flags = 0;
