@@ -2103,24 +2103,24 @@ static int gap_past_receive(
     if (widen_us > UINT32_MAX) return 0;
 
     uint32_t unit_us = fields.sync.offset_unit ? 300 : 30;
-    uint64_t widening_ticks = HW_TICKS_FROM_US((uint32_t)widen_us);
-    uint64_t window_start = subtract_clamp0_64(target, widening_ticks);
-    uint64_t window_end = target + HW_TICKS_FROM_US(unit_us + (uint32_t)widen_us);
+    uint64_t interval_ticks = HW_TICKS_FROM_US(interval_us);
+    uint64_t end_offset_ticks = HW_TICKS_FROM_US(unit_us + (uint32_t)widen_us);
+    uint64_t window_end = target + end_offset_ticks;
     uint64_t now_ticks = GAP_HW_TICKS();
     uint16_t event_counter = fields.sync.event_counter;
     uint8_t skipped = 0;
 
     while (skipped < 6 && window_end < now_ticks) {
-        target += HW_TICKS_FROM_US(interval_us);
+        target += interval_ticks;
         event_counter++;
         skipped++;
-        window_start = subtract_clamp0_64(target, widening_ticks);
-        window_end = target + HW_TICKS_FROM_US(unit_us + (uint32_t)widen_us);
+        window_end = target + end_offset_ticks;
     }
 
     if (window_end < now_ticks || skipped >= 6)
         return 0;
 
+    uint64_t window_start = subtract_clamp0_64(target, HW_TICKS_FROM_US((uint32_t)widen_us));
     int free_slot = -1;
     for (uint8_t i = 0; i < GAP_PERIODIC_SYNC_COUNT; i++) {
         if (gap_syncs[i].used &&
