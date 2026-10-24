@@ -275,19 +275,28 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn_anchor_ticks = received_ticks - airtime_ticks;
         }
         uint8_t authenticated = 0;
+
 #if GAP_SECURITY_SUPPORT >= 1
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
         // The unacknowledged START_ENC_REQ retry remains plaintext.
         // A PAUSE_ENC_REQ retry remains encrypted during the transition.
+        uint8_t should_decrypt = frame[1] && conn->security.rx_enabled;
 
-        if (frame[1] &&
-            ((conn->security.rx_enabled &&
-              !(duplicate && conn->security.phase == GAP_ENC_WAIT_FINAL &&
-                frame[1] == 1 && (frame[0] & 3) == 3 && frame[2] == LL_START_ENC_REQ)) ||
-             (duplicate && conn->security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
-                frame[1] == 5 && (frame[0] & 3) == 3)
-            )
-        ) {
+        if (duplicate && (frame[0] & 3) == 3) {
+            if (conn->security.phase == GAP_ENC_WAIT_FINAL &&
+                frame[1] == 1 && frame[2] == LL_START_ENC_REQ
+            ) {
+                should_decrypt = 0;
+            }
+            else if (conn->security.phase == GAP_ENC_PERIPHERAL_PAUSE &&
+                     frame[1] == 5
+            ) {
+                should_decrypt = 1;
+            }
+        }
+
+        // This applies to ordinary encrypted packets and the PAUSE retry above.
+        if (should_decrypt) {
             uint64_t cnt = conn->security.rx_counter;
             if (duplicate && cnt) cnt--;
 
@@ -338,8 +347,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }
         else {
-            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(
-                gap_phy_airtime_us(frame[1], conn->phy_state.current.rx));
+            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_phy_airtime_us(frame[1],
+                                                        conn->phy_state.current.rx));
             conn->link_layer.next_ticks = received_ticks - rx_airtime_ticks +
                 HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
         }

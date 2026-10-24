@@ -649,6 +649,8 @@ void gap_scan_stop(void) {
 // Direct is called by gap_conn_start after it stores the peer address.
 #if GAP_CENTRAL_SUPPORT
 static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
+    if (active_scan > 1) return 0;
+
 #if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) return 0;
 #endif

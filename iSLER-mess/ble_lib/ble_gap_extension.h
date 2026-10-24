@@ -447,7 +447,10 @@ int gap_periodic_adv_update(
     if (set_id >= GAP_EXT_ADV_SET_COUNT) return 0;
     gap_extended_adv_set *set = &gap_ext_adv[set_id];
 
-    if (!set->periodic.enabled || !gap_ext_data_valid(data, len))
+    if (!set->periodic.enabled ||
+        (set->pawr.enabled && len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3) ||
+        !gap_ext_data_valid(data, len)
+    )
         return 0;
 
     uint32_t airtime_us = gap_periodic_tx_us(len, set->aux_phy);
@@ -455,9 +458,6 @@ int gap_periodic_adv_update(
         return 0;
 
     if (set->pawr.enabled) {
-        if (len > GAP_EXT_ADV_FINAL_PDU_DATA_MAX - 3)
-            return 0;
-
         uint16_t subevent_interval = set->pawr.subevents > 1 ?
                                 set->pawr.subevent_int : set->periodic.params.interval;
         if (airtime_us >= (uint32_t)subevent_interval * 1250 ||
