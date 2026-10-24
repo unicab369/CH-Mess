@@ -533,22 +533,24 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
                     if (slot < GAP_PERIODIC_SYNC_COUNT && gap_syncs[slot].used) {
                         gap_past_encode(conn->tx_frame, conn->sync_transfer_id,
-                            (uint8_t)slot, conn_anchor_ticks,
-                            conn->link_layer.event_counter);
+                                        (uint8_t)slot, conn_anchor_ticks,
+                                        conn->link_layer.event_counter);
                     }
                     conn->sync_transfer_queued = 0;
                 }
 #endif // GAP_EXT_ADV_SUPPORT
             }
+
             if (!gap_conn_security_busy(conn)) {
 #if GAP_PERIPHERAL_SUPPORT
                 if (!conn->is_central &&
-                    conn->channel_report.enabled && conn->peripheral.status_queued
+                    conn->channel_report.enabled &&
+                    conn->peripheral.status_queued
                 ) {
                     uint32_t now_ms = GET_MILLIS();
 
                     if (!conn->tx_frame[1] &&
-                        (uint32_t)(now_ms - conn->peripheral.status_changed_ms) >=
+                                (uint32_t)(now_ms - conn->peripheral.status_changed_ms) >=
                                 (uint32_t)conn->channel_report.max_delay_200ms * 200 &&
                         (!conn->peripheral.last_sent_valid ||
                                 (uint32_t)(now_ms - conn->peripheral.status_last_sent_ms) >=
@@ -600,8 +602,9 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
         conn->link_layer.tx_pending = 1;
         conn->tx_frame[0] = (conn->tx_frame[0] & 0x03) |
-                        (conn->link_layer.expected_rx_sn << 2) |
-                        (conn->link_layer.tx_sn << 3);
+                            (conn->link_layer.expected_rx_sn << 2) |
+                            (conn->link_layer.tx_sn << 3);
+
 #if GAP_SECURITY_SUPPORT >= 1
         uint8_t *transmit = gap_security_tx_frame(conn);
 #else
@@ -672,8 +675,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
     if ((gap_scanner.scanning || periodic_scan) &&
         !gap_ext_scan.ready &&
-        ((pdu_type == ADV_EXT_IND) ||
-            (pdu_type == CONNECT_IND && periodic_scan && frame[1] == 34))
+        ((pdu_type == ADV_EXT_IND) || (pdu_type == CONNECT_IND && periodic_scan && frame[1] == 34))
     ) {
         gap_ext_scan.kind = periodic_scan
                             ? GAP_EXT_ADV_PERIODIC_PDU
