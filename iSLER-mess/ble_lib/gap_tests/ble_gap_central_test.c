@@ -2939,9 +2939,15 @@ static void test_periodic_sync_transfer_receive(void) {
            !memcmp(gap_syncs[0].peer.address, advertiser, 6));
 
     uint64_t first_event = gap_syncs[0].next_event_ticks;
-    assert(gap_periodic_sync_receive(0, first_periodic_event,
-        sizeof(first_periodic_event), GAP_PHY_1M, -40,
-        first_event + 152));
+    memcpy(gap_ext_scan.frame, first_periodic_event, sizeof(first_periodic_event));
+    gap_ext_scan.kind = GAP_EXT_ADV_PERIODIC_PDU;
+    gap_ext_scan.periodic_slot = 0;
+    gap_ext_scan.periodic_rx_phy = GAP_PHY_1M;
+    gap_ext_scan.ticks = first_event + 152;
+    gap_ext_scan.rssi = -40;
+    gap_ext_scan.ready = 1;
+    gap_ext_scan_process();
+    assert(gap_syncs[0].established);
     assert(gap_sync_event_poll(&event) &&
            event.type == GAP_PERIODIC_SYNC_ESTABLISHED &&
            event.slot == 0 && event.sid == 6);

@@ -257,7 +257,7 @@ static uint32_t gap_periodic_tx_us(size_t data_len, uint8_t phy) {
         uint8_t ext_len = 3;
         uint8_t flags = 0x08;
 
-        if (remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX;) {
+        if (remaining > GAP_EXT_ADV_FINAL_PDU_DATA_MAX) {
             chunk = GAP_EXT_ADV_CHAIN_PDU_DATA_MAX;
             ext_len = 6;
             flags = 0x18;
@@ -1143,112 +1143,6 @@ static int gap_sync_info_accept(
 }
 
 // -----------------------------------------------------------------------------
-// Periodic synchronization event reception
-// -----------------------------------------------------------------------------
-// Reassemble one AUX_SYNC_IND and its AUX_CHAIN_IND subordinate packets.
-static int gap_periodic_sync_receive(
-    uint8_t slot, const uint8_t *pdu,
-    size_t pdu_len, uint8_t packet_phy, int8_t rssi,
-    uint64_t received_ticks
-) {
-    if (slot >= GAP_PERIODIC_SYNC_COUNT || !gap_syncs[slot].used)
-        return 0;
-
-    gap_sync_context *sync = &gap_syncs[slot];
-    gap_ext_fields fields;
-
-    if (!gap_ext_adv_decode(pdu, pdu_len, &fields) || fields.mode != 0)
-        return 0;
-    if (fields.identity.has_adi && fields.identity.sid != sync->sid)
-        return 0;
-
-    if (!sync->event_data_active) {
-        uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
-        if (received_ticks < HW_TICKS_FROM_US(airtime_us))
-            return 0;
-
-        uint64_t packet_start = received_ticks - HW_TICKS_FROM_US(airtime_us);
-        uint32_t subevent_offset_us = (uint32_t)sync->pawr.subevent *
-                                    sync->pawr.timing.subevent_interval * 1250;
-
-        if (!sync->pawr.timing.has_timing)
-            subevent_offset_us = 0;
-        uint64_t subevent_offset_ticks = HW_TICKS_FROM_US(subevent_offset_us);
-
-        if (packet_start < subevent_offset_ticks)
-            return 0;
-
-        // Keep anchor_ticks at subevent zero so successive selected subevents
-        // do not add the selection offset to the schedule a second time.
-        sync->anchor_ticks = packet_start - subevent_offset_ticks;
-        sync->next_ticks = sync->anchor_ticks + HW_TICKS_FROM_US(
-                            (uint32_t)sync->params.interval * 1250 + subevent_offset_us);
-
-        sync->last_event_counter = sync->event_counter;
-        sync->event_counter++;
-        sync->missed_events = 0;
-        sync->widening_ppm = (uint16_t)(gap_sca_ppm[sync->params.sca] + 500);
-        sync->last_event_ms = GET_MILLIS();
-        sync->data_len = 0;
-
-        if (fields.identity.has_adi)
-            sync->did = fields.identity.adi & 0x0fff;
-
-        if (!sync->established) {
-            sync->established = 1;
-            gap_sync_event_post(slot, GAP_PERIODIC_SYNC_ESTABLISHED);
-        }
-    }
-
-    sync->rssi = rssi;
-    sync->phy = packet_phy;
-
-    if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - sync->data_len) {
-        sync->event_data_active = 0;
-        sync->data_len = 0;
-        return 0;
-    }
-
-    if (fields.payload.len) {
-        memcpy(sync->data + sync->data_len, fields.payload.data, fields.payload.len);
-        sync->data_len += fields.payload.len;
-    }
-
-    if (fields.has_aux_ptr && !fields.aux_offset_zero) {
-        sync->event_data_active = 1;
-        return 1;
-    }
-
-    sync->event_data_active = 0;
-
-    if (!gap_ext_data_valid(sync->data, sync->data_len)) {
-        sync->data_len = 0;
-        return 0;
-    }
-
-    if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
-        gap_sync_reports.head = (gap_sync_reports.head + 1) % GAP_PERIODIC_REPORT_COUNT;
-        gap_sync_reports.count--;
-    }
-
-    uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) % GAP_PERIODIC_REPORT_COUNT;
-    gap_periodic_report *report = &gap_sync_reports.items[tail];
-
-    report->slot = (uint8_t)slot;
-    report->sid = sync->sid;
-    report->event_counter = sync->last_event_counter;
-    report->did = sync->did;
-    report->rssi = sync->rssi;
-    report->data_len = sync->data_len;
-
-    if (report->data_len)
-        memcpy(report->data, sync->data, report->data_len);
-    gap_sync_reports.count++;
-    sync->data_len = 0;
-    return 1;
-}
-
-// -----------------------------------------------------------------------------
 // PAwR radio response and connection procedures
 // -----------------------------------------------------------------------------
 static uint8_t gap_sync_channel(
@@ -1760,13 +1654,16 @@ static void gap_ext_scan_process(void) {
     uint8_t periodic = (kind == GAP_EXT_ADV_PERIODIC_PDU);
     uint8_t packet_phy = GAP_PHY_1M;
     int slot = -1;
+    gap_sync_context *sync = NULL;
 
     if (periodic) {
         slot = gap_ext_scan.periodic_slot;
         packet_phy = gap_ext_scan.periodic_rx_phy;
 
-        if (slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
-            gap_syncs[slot].window_active = 0;
+        if (slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT) {
+            sync = &gap_syncs[slot];
+            sync->window_active = 0;
+        }
     }
     else if (kind == GAP_EXT_ADV_AUXILIARY_PDU) {
         slot = gap_ext_scan.aux_slot;
@@ -1783,6 +1680,8 @@ static void gap_ext_scan_process(void) {
     if (gap_rx_armed) GAP_HW_STOP();
     gap_rx_armed = 0;
 
+    if (periodic && !sync) return;
+
     uint8_t *pdu = gap_ext_scan.frame;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
@@ -1794,18 +1693,99 @@ static void gap_ext_scan_process(void) {
 #endif // GAP_PERIPHERAL_SUPPORT
 
     gap_ext_fields fields;
-    if (!gap_ext_adv_decode(pdu, pdu_len, &fields))
-        return;
+    if (!gap_ext_adv_decode(pdu, pdu_len, &fields)) return;
 
-    if (periodic) {
-        int received = slot >= 0 && gap_periodic_sync_receive((uint8_t)slot, pdu, pdu_len,
-                        packet_phy, gap_ext_scan.rssi, gap_ext_scan.ticks);
+    if (sync) {
+        if (!sync->used || fields.mode != 0 ||
+            (fields.identity.has_adi && fields.identity.sid != sync->sid)
+        ) return;
 
-        if (received && !fields.has_aux_ptr && !fields.sync.has_info &&
-            fields.identity.has_adi && slot >= 0 &&
-            gap_syncs[slot].pawr.pending
+        if (!sync->event_data_active) {
+            uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
+            if (gap_ext_scan.ticks < HW_TICKS_FROM_US(airtime_us)) return;
+
+            uint64_t packet_start = gap_ext_scan.ticks - HW_TICKS_FROM_US(airtime_us);
+            uint32_t subevent_offset_us = (uint32_t)sync->pawr.subevent *
+                                          sync->pawr.timing.subevent_interval * 1250;
+            if (!sync->pawr.timing.has_timing)
+                subevent_offset_us = 0;
+
+            uint64_t offset_ticks = HW_TICKS_FROM_US(subevent_offset_us);
+            if (packet_start < offset_ticks) return;
+
+            // Keep anchor_ticks at subevent zero so successive selected subevents
+            // do not add the selection offset to the schedule a second time.
+            sync->anchor_ticks = packet_start - offset_ticks;
+            sync->next_ticks = sync->anchor_ticks + HW_TICKS_FROM_US(
+                                (uint32_t)sync->params.interval * 1250 + subevent_offset_us);
+
+            sync->last_event_counter = sync->event_counter;
+            sync->event_counter++;
+            sync->missed_events = 0;
+            sync->widening_ppm = (uint16_t)(gap_sca_ppm[sync->params.sca] + 500);
+            sync->last_event_ms = GET_MILLIS();
+            sync->data_len = 0;
+
+            if (fields.identity.has_adi)
+                sync->did = fields.identity.adi & 0x0fff;
+
+            if (!sync->established) {
+                sync->established = 1;
+                gap_sync_event_post((uint8_t)slot, GAP_PERIODIC_SYNC_ESTABLISHED);
+            }
+        }
+
+        sync->rssi = gap_ext_scan.rssi;
+        sync->phy = packet_phy;
+
+        if (fields.payload.len) {
+            if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - sync->data_len) {
+                sync->event_data_active = 0;
+                sync->data_len = 0;
+                return;
+            }
+
+            memcpy(sync->data + sync->data_len, fields.payload.data, fields.payload.len);
+            sync->data_len += fields.payload.len;
+        }
+
+        if (fields.has_aux_ptr && !fields.aux_offset_zero) {
+            sync->event_data_active = 1;
+        }
+        else {
+            sync->event_data_active = 0;
+
+            if (!gap_ext_data_valid(sync->data, sync->data_len)) {
+                sync->data_len = 0;
+                return;
+            }
+
+            if (gap_sync_reports.count == GAP_PERIODIC_REPORT_COUNT) {
+                gap_sync_reports.head = (gap_sync_reports.head + 1) %
+                                        GAP_PERIODIC_REPORT_COUNT;
+                gap_sync_reports.count--;
+            }
+
+            uint8_t tail = (gap_sync_reports.head + gap_sync_reports.count) %
+                           GAP_PERIODIC_REPORT_COUNT;
+            gap_periodic_report *report = &gap_sync_reports.items[tail];
+
+            report->slot = (uint8_t)slot;
+            report->sid = sync->sid;
+            report->event_counter = sync->last_event_counter;
+            report->did = sync->did;
+            report->rssi = sync->rssi;
+            report->data_len = sync->data_len;
+
+            if (report->data_len)
+                memcpy(report->data, sync->data, report->data_len);
+            gap_sync_reports.count++;
+            sync->data_len = 0;
+        }
+
+        if (!fields.has_aux_ptr && !fields.sync.has_info &&
+            fields.identity.has_adi && sync->pawr.pending
         ) {
-            gap_sync_context *sync = &gap_syncs[slot];
             uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
             uint64_t packet_start =
                 gap_ext_scan.ticks >= HW_TICKS_FROM_US(airtime_us)
@@ -1819,7 +1799,7 @@ static void gap_ext_scan_process(void) {
                 &sync->params, (uint16_t)(sync->last_event_counter ^ sync->pawr.subevent));
             uint8_t may_respond = response_start >= gap_ext_scan.ticks + HW_TICKS_FROM_US(150);
 
-            if (may_respond && slot < GAP_PERIODIC_SYNC_COUNT) {
+            if (may_respond) {
                 uint8_t *response = gap_ext_adv_frame;
                 // AUX_SYNC_SUBEVENT_RSP uses the extended advertising PDU format.
                 response[0] = ADV_EXT_IND;
@@ -1848,7 +1828,7 @@ static void gap_ext_scan_process(void) {
             }
         }
 
-        if (received && fields.has_aux_ptr && !fields.aux_offset_zero &&
+        if (fields.has_aux_ptr && !fields.aux_offset_zero &&
             fields.aux_offset_us != 0
         ) {
             uint8_t aux_phy = fields.aux_phy == 0 ? GAP_PHY_1M :
