@@ -1865,10 +1865,10 @@ static void gap_ext_scan_process(void) {
         }
 
         int context_slot = -1;
+        gap_ext_scan_context *context;
 
         if (kind == GAP_EXT_ADV_PRIMARY_PDU) {
             if (fields.has_aux_ptr) {
-
                 if (!fields.identity.has_adi || fields.aux_offset_zero)
                     break;
             }
@@ -1907,11 +1907,12 @@ static void gap_ext_scan_process(void) {
                     }
             }
 
-            gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
-            gap_ext_ctx[context_slot].active = 1;
-            gap_ext_ctx[context_slot].identity = fields.identity;
-            gap_ext_ctx[context_slot].await_scan_response = (fields.mode == 2);
-            gap_ext_ctx[context_slot].rssi = gap_ext_scan.rssi;
+            context = &gap_ext_ctx[context_slot];
+            gap_wipe(context, sizeof(*context));
+            context->active = 1;
+            context->identity = fields.identity;
+            context->await_scan_response = (fields.mode == 2);
+            context->rssi = gap_ext_scan.rssi;
         }
         else {
             for (uint8_t i = 0; i < GAP_EXT_ADV_CONTEXT_COUNT; i++) {
@@ -1933,64 +1934,57 @@ static void gap_ext_scan_process(void) {
             }
 
             if (context_slot < 0) break;
+            context = &gap_ext_ctx[context_slot];
 
             if (fields.identity.has_address) {
-                gap_ext_ctx[context_slot].identity.has_address = 1;
-                gap_ext_ctx[context_slot].identity.peer = fields.identity.peer;
+                context->identity.has_address = 1;
+                context->identity.peer = fields.identity.peer;
             }
 
             if (fields.identity.has_adi) {
-                gap_ext_ctx[context_slot].identity.has_adi = 1;
-                gap_ext_ctx[context_slot].identity.adi = fields.identity.adi;
-                gap_ext_ctx[context_slot].identity.sid = fields.identity.sid;
+                context->identity.has_adi = 1;
+                context->identity.adi = fields.identity.adi;
+                context->identity.sid = fields.identity.sid;
             }
 
-            gap_ext_ctx[context_slot].rssi = gap_ext_scan.rssi;
+            context->rssi = gap_ext_scan.rssi;
         }
 
-        if (fields.payload.len >
-            GAP_EXT_ADV_DATA_MAX - gap_ext_ctx[context_slot].data_len
-        ) {
-            gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
+        if (fields.payload.len > GAP_EXT_ADV_DATA_MAX - context->data_len) {
+            gap_wipe(context, sizeof(*context));
             break;
         }
 
         if (fields.payload.len) {
-            memcpy(gap_ext_ctx[context_slot].data + gap_ext_ctx[context_slot].data_len,
-                                            fields.payload.data, fields.payload.len);
-            gap_ext_ctx[context_slot].data_len += fields.payload.len;
+            memcpy(context->data + context->data_len, fields.payload.data, fields.payload.len);
+            context->data_len += fields.payload.len;
         }
 
         if (fields.has_aux_ptr) {
             if (fields.aux_offset_zero) {
-                gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
-                    break;
+                gap_wipe(context, sizeof(*context));
+                break;
             }
 
-            gap_ext_ctx[context_slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+            context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
             break;
         }
 
-        if (gap_ext_ctx[context_slot].await_scan_response && fields.mode == 2) {
-            gap_ext_ctx[context_slot].deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
+        if (context->await_scan_response && fields.mode == 2) {
+            context->deadline_ms = now + GAP_EXT_ADV_CHAIN_TIMEOUT_MS;
             break;
         }
 
         if (fields.mode == 0)
-            gap_ext_ctx[context_slot].await_scan_response = 0;
+            context->await_scan_response = 0;
 
-        if (!gap_ext_data_valid(gap_ext_ctx[context_slot].data,
-                                   gap_ext_ctx[context_slot].data_len)
-        ) {
-            gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
+        if (!gap_ext_data_valid(context->data, context->data_len)) {
+            gap_wipe(context, sizeof(*context));
             break;
         }
 
-        gap_ext_report_queue(&gap_ext_ctx[context_slot].identity,
-                             gap_ext_ctx[context_slot].data,
-                             gap_ext_ctx[context_slot].data_len,
-                             gap_ext_ctx[context_slot].rssi);
-        gap_wipe(&gap_ext_ctx[context_slot], sizeof(gap_ext_ctx[context_slot]));
+        gap_ext_report_queue(&context->identity, context->data, context->data_len, context->rssi);
+        gap_wipe(context, sizeof(*context));
     } while (0);
 
     if (kind == GAP_EXT_ADV_AUXILIARY_PDU && fields.sync.has_info)
@@ -2027,19 +2021,20 @@ static void gap_ext_scan_process(void) {
                                     gap_aux_request[1].start_ticks ? 0 : 1;
                 }
 
+                gap_aux_request_context *request = &gap_aux_request[aux_slot];
                 uint32_t start_us = after_packet_us > widen_us ?
                                     after_packet_us - widen_us : 0;
                 uint64_t start_offset_ticks = HW_TICKS_FROM_US(start_us);
                 uint64_t end_offset_ticks = HW_TICKS_FROM_US(after_packet_us +
                                                     offset_unit_us + widen_us);
 
-                gap_aux_request[aux_slot].start_ticks = gap_ext_scan.ticks + start_offset_ticks;
+                request->start_ticks = gap_ext_scan.ticks + start_offset_ticks;
                 // The AuxPtr receive window lasts only a few milliseconds.
-                gap_aux_request[aux_slot].duration_ticks =
+                request->duration_ticks =
                     (uint32_t)(end_offset_ticks - start_offset_ticks);
-                gap_aux_request[aux_slot].channel = fields.aux_channel;
-                gap_aux_request[aux_slot].phy = aux_phy;
-                gap_aux_request[aux_slot].active = 1;
+                request->channel = fields.aux_channel;
+                request->phy = aux_phy;
+                request->active = 1;
             }
         }
     }
