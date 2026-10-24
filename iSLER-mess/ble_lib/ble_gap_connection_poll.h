@@ -343,14 +343,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         }
 
         uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-
-        if (conn->is_central) {
-            conn->link_layer.next_ticks += interval_ticks;
-        }
-        else {
-            conn->link_layer.next_ticks = received_ticks + interval_ticks -
-                HW_TICKS_FROM_US(gap_phy_airtime_us(frame[1], conn->phy_state.current.rx));
-        }
+        conn->link_layer.next_ticks = conn_anchor_ticks + interval_ticks;
 
         conn->link_layer.last_rx_ms = GET_MILLIS();
         conn->link_state.rx_armed = 0;
@@ -365,27 +358,26 @@ void __attribute__((noinline)) gap_hw_received(void) {
         ) {
 #if GAP_CENTRAL_SUPPORT
             if (conn->is_central) {
+                uint8_t tx_len = conn->tx_frame[1];
+                uint8_t tx_opcode = conn->tx_frame[2];
 #if GAP_SECURITY_SUPPORT >= 1
-                uint8_t tx_payload_len = conn->security.tx_sealed ?
-                    conn->security.tx_plain_len : conn->tx_frame[1];
-                uint8_t tx_control_opcode = conn->security.tx_sealed ?
-                    conn->security.tx_opcode : conn->tx_frame[2];
-#else
-                uint8_t tx_payload_len = conn->tx_frame[1];
-                uint8_t tx_control_opcode = conn->tx_frame[2];
+                if (conn->security.tx_sealed) {
+                    tx_len = conn->security.tx_plain_len;
+                    tx_opcode = conn->security.tx_opcode;
+                }
 #endif // GAP_SECURITY_SUPPORT >= 1
 
                 if (conn->central.channel_report_pending &&
-                    (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 4 &&
-                    tx_control_opcode == LL_CHANNEL_REPORTING_IND
+                    (conn->tx_frame[0] & 3) == 3 && tx_len == 4 &&
+                    tx_opcode == LL_CHANNEL_REPORTING_IND
                 ) {
                     conn->central.channel_report_pending = 0;
                     conn->connection_status = 0;
                 }
 
                 if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
-                    (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 11 &&
-                    tx_control_opcode == LL_SUBRATE_IND
+                    (conn->tx_frame[0] & 3) == 3 && tx_len == 11 &&
+                    tx_opcode == LL_SUBRATE_IND
                 ) {
                     conn->schedule.factor = conn->next_schedule.factor;
                     conn->schedule.base_event = conn->next_schedule.base_event;
@@ -1040,18 +1032,17 @@ static inline uint8_t gap_conn_can_skip_event(
 
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
+        uint8_t tx_len = conn->tx_frame[1];
+        uint8_t tx_opcode = conn->tx_frame[2];
 #if GAP_SECURITY_SUPPORT >= 1
-        uint8_t tx_payload_len = conn->security.tx_sealed ?
-            conn->security.tx_plain_len : conn->tx_frame[1];
-        uint8_t tx_control_opcode = conn->security.tx_sealed ?
-            conn->security.tx_opcode : conn->tx_frame[2];
-#else
-        uint8_t tx_payload_len = conn->tx_frame[1];
-        uint8_t tx_control_opcode = conn->tx_frame[2];
+        if (conn->security.tx_sealed) {
+            tx_len = conn->security.tx_plain_len;
+            tx_opcode = conn->security.tx_opcode;
+        }
 #endif // GAP_SECURITY_SUPPORT >= 1
         if (conn->c_rate.update_pending && conn->link_layer.tx_pending &&
-            (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 15 &&
-            tx_control_opcode == LL_CONNECTION_RATE_IND
+            (conn->tx_frame[0] & 3) == 3 && tx_len == 15 &&
+            tx_opcode == LL_CONNECTION_RATE_IND
         ) return 0;
 
         if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&

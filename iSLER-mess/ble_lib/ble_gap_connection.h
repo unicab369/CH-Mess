@@ -222,14 +222,13 @@ static void gap_conn_end(void) {
 static void gap_conn_update_apply(
     gap_conn_context *conn, uint8_t instant_packet_received
 ) {
+    uint8_t tx_payload_len = conn->tx_frame[1];
+    uint8_t tx_control_opcode = conn->tx_frame[2];
 #if GAP_SECURITY_SUPPORT >= 1
-    const uint8_t tx_payload_len = conn->security.tx_sealed ?
-        conn->security.tx_plain_len : conn->tx_frame[1];
-    const uint8_t tx_control_opcode = conn->security.tx_sealed ?
-        conn->security.tx_opcode : conn->tx_frame[2];
-#else
-    const uint8_t tx_payload_len = conn->tx_frame[1];
-    const uint8_t tx_control_opcode = conn->tx_frame[2];
+    if (conn->security.tx_sealed) {
+        tx_payload_len = conn->security.tx_plain_len;
+        tx_control_opcode = conn->security.tx_opcode;
+    }
 #endif // GAP_SECURITY_SUPPORT >= 1
 
     // Instant handling does not change the queued TX frame.
