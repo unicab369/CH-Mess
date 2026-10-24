@@ -342,8 +342,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->c_subrate.event_received = 1;
         }
 
-        uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
-        conn->link_layer.next_ticks = conn_anchor_ticks + interval_ticks;
+        conn->link_layer.next_ticks = conn_anchor_ticks +
+            HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
 
         conn->link_layer.last_rx_ms = GET_MILLIS();
         conn->link_state.rx_armed = 0;
@@ -356,10 +356,12 @@ void __attribute__((noinline)) gap_hw_received(void) {
         if (conn->link_layer.tx_pending &&
             (((frame[0] >> 2) & 1) != conn->link_layer.tx_sn)
         ) {
+
 #if GAP_CENTRAL_SUPPORT
             if (conn->is_central) {
                 uint8_t tx_len = conn->tx_frame[1];
                 uint8_t tx_opcode = conn->tx_frame[2];
+
 #if GAP_SECURITY_SUPPORT >= 1
                 if (conn->security.tx_sealed) {
                     tx_len = conn->security.tx_plain_len;
@@ -367,25 +369,25 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 }
 #endif // GAP_SECURITY_SUPPORT >= 1
 
-                if (conn->central.channel_report_pending &&
-                    (conn->tx_frame[0] & 3) == 3 && tx_len == 4 &&
-                    tx_opcode == LL_CHANNEL_REPORTING_IND
-                ) {
-                    conn->central.channel_report_pending = 0;
-                    conn->connection_status = 0;
-                }
+                if ((conn->tx_frame[0] & 3) == 3) {
+                    if (conn->central.channel_report_pending && tx_len == 4 &&
+                        tx_opcode == LL_CHANNEL_REPORTING_IND
+                    ) {
+                        conn->central.channel_report_pending = 0;
+                        conn->connection_status = 0;
+                    }
 
-                if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
-                    (conn->tx_frame[0] & 3) == 3 && tx_len == 11 &&
-                    tx_opcode == LL_SUBRATE_IND
-                ) {
-                    conn->schedule.factor = conn->next_schedule.factor;
-                    conn->schedule.base_event = conn->next_schedule.base_event;
-                    conn->schedule.latency = conn->next_schedule.latency;
-                    conn->schedule.continuation = conn->next_schedule.continuation;
-                    conn->schedule.timeout_10ms = conn->next_schedule.timeout_10ms;
-                    conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
-                    conn->c_subrate.status = 0;
+                    if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
+                        tx_len == 11 && tx_opcode == LL_SUBRATE_IND
+                    ) {
+                        conn->schedule.factor = conn->next_schedule.factor;
+                        conn->schedule.base_event = conn->next_schedule.base_event;
+                        conn->schedule.latency = conn->next_schedule.latency;
+                        conn->schedule.continuation = conn->next_schedule.continuation;
+                        conn->schedule.timeout_10ms = conn->next_schedule.timeout_10ms;
+                        conn->c_subrate.procedure_state = GAP_SUBRATE_IDLE;
+                        conn->c_subrate.status = 0;
+                    }
                 }
             }
 #endif // GAP_CENTRAL_SUPPORT
@@ -492,6 +494,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->link_layer.expected_rx_sn ^= 1;
         }
 
+        // ACK handling above may have cleared tx_pending, allowing a new reply.
         if (!conn->link_layer.tx_pending) {
             conn->tx_frame[0] = 0x01;
             conn->tx_frame[1] = 0;
@@ -499,9 +502,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
             if (new_packet && is_control_pdu && frame[1]) {
                 conn->tx_frame[0] = 0x03;
 
-                if (gap_conn_control(frame, authenticated,
-                                    conn_anchor_ticks,
-                                    conn->link_layer.event_counter)
+                if (gap_conn_control(frame, authenticated, conn_anchor_ticks,
+                                     conn->link_layer.event_counter)
                 ) {
                     gap_conn_slot = previous_slot;
                     return;
