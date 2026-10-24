@@ -1345,6 +1345,8 @@ static void smp_bond_rx_complete(
             conn->bond.local_csrk.present = 1;
         }
 
+        // Queue one key type per step, in protocol order: encryption, identity, then signing.
+        // The next requested type is queued after this exchange completes.
         if (keyset & GAP_KEY_DIST_ENCRYPTION) {
             smp->pairing.bond_tx_step = 1;
             if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.central.ltk, 16)) {
@@ -1389,6 +1391,8 @@ static void smp_bond_peripheral_start(
     uint8_t keyset = smp->pairing.response[6];
     smp->pairing.phase = SMP_PHASE_BOND_TX;
 
+    // Queue one key type per step, in protocol order: encryption, identity, then signing.
+    // The next requested type is queued after this exchange completes.
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
         gap_bond_key material;
         uint8_t nonzero;
@@ -1400,17 +1404,17 @@ static void smp_bond_peripheral_start(
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
-
             nonzero = 0;
             for (unsigned i = 0; i < sizeof(material.rand); i++)
                 nonzero |= material.rand[i];
             for (unsigned i = 0; i < sizeof(material.ediv); i++)
                 nonzero |= material.ediv[i];
         } while (!nonzero);
-        conn->bond.peripheral = material;
 
+        conn->bond.peripheral = material;
         for (unsigned i = smp->pairing.key_size; i < 16; i++)
             conn->bond.peripheral.ltk[i] = 0;
+
         conn->bond.has_peripheral_ltk = 1;
         gap_wipe(&material, sizeof(material));
     }
@@ -1436,6 +1440,8 @@ static void smp_bond_peripheral_start(
         conn->bond.local_csrk.present = 1;
     }
 
+    // Keep this separate from key preparation above: all requested keys must be prepared,
+    // but this chain queues only the next key in protocol order.
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
         smp->pairing.bond_tx_step = 31;
         if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.peripheral.ltk, 16)) {
@@ -1621,7 +1627,8 @@ static void gap_smp_poll_context(
             uint8_t irk[16] = {0}, address[7] = {0};
             int available = gap_smp_local_identity(irk, address);
             gap_wipe(irk, sizeof(irk));
-            if (!available || !gap_smp_queue(&conn->smp, SMP_IDENTITY_ADDRESS_INFORMATION, address, sizeof(address))
+            if (!available || !gap_smp_queue(&conn->smp, SMP_IDENTITY_ADDRESS_INFORMATION,
+                                            address, sizeof(address))
             ) {
                 gap_wipe(address, sizeof(address));
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED); return;
