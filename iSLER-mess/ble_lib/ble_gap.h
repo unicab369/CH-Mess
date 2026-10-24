@@ -292,9 +292,9 @@ typedef struct {
     uint16_t data_len, scan_resp_len, interval_ms, did;
     uint32_t next_event_ms;
     uint8_t data[GAP_EXT_ADV_DATA_MAX];
-} gap_ext_adv_set;
+} gap_extended_adv_set;
 
-static gap_ext_adv_set gap_ext_adv[GAP_EXT_ADV_SET_COUNT];
+static gap_extended_adv_set gap_ext_adv[GAP_EXT_ADV_SET_COUNT];
 
 static inline int gap_ext_adv_active(void) {
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)

@@ -1128,7 +1128,7 @@ static void test_periodic_advertising_transmit(void) {
            sync[7] == 0xff && (sync[8] & 0x1f) == 0x1f);
     uint16_t set_adi = ble_read_u16_le(aux + 10);
     assert((set_adi >> 12) == 6 && (sync[16] | sync[17]) == 0);
-    gap_ext_adv_set *set = &gap_ext_adv[0];
+    gap_extended_adv_set *set = &gap_ext_adv[0];
     fake_radio_ticks = set->periodic_next_event_ticks;
     uint64_t scheduled_event = set->periodic_next_event_ticks;
     assert(gap_send_due(NULL, 0, now_ms, NULL, NULL) == 0);
@@ -1189,7 +1189,7 @@ static void test_periodic_advertising_with_central_connection(void) {
         sizeof(advertising_data), 4, 100, GAP_PHY_1M));
     assert(gap_periodic_adv_start(0, periodic_data,
         sizeof(periodic_data), 100));
-    gap_ext_adv_set *set = &gap_ext_adv[0];
+    gap_extended_adv_set *set = &gap_ext_adv[0];
     set->periodic_sync_info_sent = 1;
 
     // A PAwR advertiser that accepted a connection becomes Central while its
@@ -1242,7 +1242,7 @@ static void test_pawr_advertising_subevents(void) {
     assert(gap_pawr_set(0, 3, 6, 1, 2));
     assert(!gap_pawr_slots_set(0, 255));
     assert(gap_pawr_slots_set(0, 4));
-    gap_ext_adv_set *set = &gap_ext_adv[0];
+    gap_extended_adv_set *set = &gap_ext_adv[0];
     assert(set->pawr_enabled && set->pawr_num_response_slots == 4 &&
            gap_access_address_valid(set->periodic_response_access_address));
 
@@ -1319,8 +1319,8 @@ static void test_pawr_interleaved_advertising_sets(void) {
         sizeof(periodic_data1), 100));
     assert(gap_pawr_set(0, 2, 6, 1, 2));
     assert(gap_pawr_set(1, 2, 6, 1, 2));
-    gap_ext_adv_set *set0 = &gap_ext_adv[0];
-    gap_ext_adv_set *set1 = &gap_ext_adv[1];
+    gap_extended_adv_set *set0 = &gap_ext_adv[0];
+    gap_extended_adv_set *set1 = &gap_ext_adv[1];
     set0->periodic_sync_info_sent = 1;
     set1->periodic_sync_info_sent = 1;
 
@@ -1378,7 +1378,7 @@ static void test_pawr_advertiser_connection(void) {
     assert(gap_periodic_adv_start(0, periodic_data,
         sizeof(periodic_data), 24));
     assert(gap_pawr_set(0, 2, 6, 1, 2));
-    gap_ext_adv_set *set = &gap_ext_adv[0];
+    gap_extended_adv_set *set = &gap_ext_adv[0];
     set->periodic_sync_info_sent = 1;
     set->periodic_next_event_ticks = fake_radio_ticks;
 
