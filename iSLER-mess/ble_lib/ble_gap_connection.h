@@ -104,8 +104,7 @@ static inline uint8_t gap_conn_security_busy(const gap_conn_context *conn) {
 
 static inline uint8_t gap_conn_central_queued(const gap_conn_context *conn) {
 #if GAP_CENTRAL_SUPPORT
-    return conn->is_central &&
-        (conn->central.local_update || conn->central.local_map);
+    return conn->is_central && (conn->central.local_update || conn->central.local_map);
 #else
     (void)conn;
     return 0;
@@ -635,8 +634,8 @@ static void gap_privacy_poll(uint32_t now) {
 
 #if GAP_LEGACY_ADV_SUPPORT
     if (gap_adv.enabled) {
-        gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address,
-                                 &gap_adv.local.type);
+        gap_local_addr_select(gap_adv.peer_slot, gap_adv.local.address, &gap_adv.local.type);
+
 #if GAP_IDENTITY_COUNT > 0
         if (gap_privacy.resolvable && gap_adv.peer_slot >= 0 &&
             gap_identities[gap_adv.peer_slot].has_irk &&
@@ -1047,7 +1046,9 @@ static uint8_t gap_conn_control(
             // simultaneous locally initiated Peripheral request.
             if (conn->queue_state.local_params ||
                 conn->procedure_state.params_state == GAP_CONN_PARAMS_LOCAL
-            ) conn->connection_status = GAP_LL_ERR_COLLISION;
+            ) {
+                conn->connection_status = GAP_LL_ERR_COLLISION;
+            }
 
             conn->queue_state.local_params = 0;
             conn->c_features.request_pending = 0;
@@ -1403,8 +1404,7 @@ static uint8_t gap_conn_control(
         break;
 
     case LL_FEATURE_RSP:
-        if (frame[1] != 9)
-            return gap_conn_unknown_resp(conn, frame[2]);
+        if (frame[1] != 9) return gap_conn_unknown_resp(conn, frame[2]);
 
         conn->c_features.known = 1;
         conn->c_features.peer_feature_0 = frame[3];
@@ -1878,7 +1878,7 @@ static uint8_t gap_conn_control(
 
             // Allow six latency-adjusted event periods plus one extra event of lead.
             conn->phy_state.instant = tx || rx ? (uint16_t)(conn->link_layer.event_counter +
-                                    6 * (conn->schedule.latency + 1) + 1) : 0;
+                                                6 * (conn->schedule.latency + 1) + 1) : 0;
             conn->queue_state.phy_queued = 0;
             conn->procedure_state.phy_request = 0;
             conn->procedure_state.procedure_flags = (conn->procedure_state.procedure_flags &
@@ -2002,7 +2002,7 @@ int gap_conn_update(uint16_t interval, uint16_t latency, uint16_t timeout) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
     uint32_t interval_125us = (uint32_t)interval * 10;
     uint16_t factor = (interval_125us == conn->schedule.interval_125us) ?
-                        conn->schedule.factor : 1;
+                                                conn->schedule.factor : 1;
 
     if (gap_conn_timing_busy(conn) || !conn->is_central ||
         !ble_timing_valid(interval, interval, latency, timeout) ||

@@ -411,16 +411,11 @@ static int smp_bond_store(const gap_bond *bond) {
         return 0;
     }
 
-    if (!stored.peer_irk.present)
-        stored.peer_irk = (bond_opt_key){0};
-    if (!stored.local_irk.present)
-        stored.local_irk = (bond_opt_key){0};
-    if (!stored.peer_csrk.present)
-        stored.peer_csrk = (bond_opt_key){0};
-    if (!stored.local_csrk.present)
-        stored.local_csrk = (bond_opt_key){0};
-    if (!stored.has_peripheral_ltk)
-        stored.peripheral = (gap_bond_key){0};
+    if (!stored.peer_irk.present)   stored.peer_irk = (bond_opt_key){0};
+    if (!stored.local_irk.present)  stored.local_irk = (bond_opt_key){0};
+    if (!stored.peer_csrk.present)  stored.peer_csrk = (bond_opt_key){0};
+    if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
+    if (!stored.has_peripheral_ltk) stored.peripheral = (gap_bond_key){0};
 
     if (!GAP_BOND_LOAD || !GAP_BOND_SAVE) {
         gap_wipe(&stored, sizeof(stored));
@@ -1215,17 +1210,10 @@ static int smp_bond_load(gap_conn_context *conn) {
             GAP_ADDRESS_EQUAL(stored.peer, conn->peer)
         ) {
             stored.version = GAP_BOND_VERSION;
-            if (!stored.peer_irk.present)
-                stored.peer_irk = (bond_opt_key){0};
-
-            if (!stored.local_irk.present)
-                stored.local_irk = (bond_opt_key){0};
-
-            if (!stored.peer_csrk.present)
-                stored.peer_csrk = (bond_opt_key){0};
-
-            if (!stored.local_csrk.present)
-                stored.local_csrk = (bond_opt_key){0};
+            if (!stored.peer_irk.present)   stored.peer_irk = (bond_opt_key){0};
+            if (!stored.local_irk.present)  stored.local_irk = (bond_opt_key){0};
+            if (!stored.peer_csrk.present)  stored.peer_csrk = (bond_opt_key){0};
+            if (!stored.local_csrk.present) stored.local_csrk = (bond_opt_key){0};
 
             if (!stored.has_peripheral_ltk)
                 stored.peripheral = (gap_bond_key){0};
