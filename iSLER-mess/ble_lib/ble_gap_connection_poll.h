@@ -423,81 +423,77 @@ void __attribute__((noinline)) gap_hw_received(void) {
         }
 
         uint8_t llid = frame[0] & 3;
-        uint8_t new_packet =
-            ((frame[0] >> 3) & 1) == conn->link_layer.expected_rx_sn;
+        uint8_t data_payload = (llid == 1 || llid == 2) && frame[1];
+        uint8_t new_packet = ((frame[0] >> 3) & 1) == conn->link_layer.expected_rx_sn;
+
         // Reject control PDUs without a payload or reply slot.
-        if (new_packet && llid == 3 &&
-            (!frame[1] || conn->link_layer.tx_pending)
-        ) {
+        if (llid == 3 && (!frame[1] || conn->link_layer.tx_pending))
             new_packet = 0;
-        }
+
+        // Leave data PDUs unacknowledged until the receive slot is available.
+        if (data_payload && conn->queue_state.rx_ready)
+            new_packet = 0;
 
         if (new_packet) {
-            uint8_t data_payload = (llid == 1 || llid == 2) && frame[1];
-            // Leave data PDUs unacknowledged until the receive slot is available.
-            if (data_payload && conn->queue_state.rx_ready) {
-                new_packet = 0;
-            } else {
 #if GAP_SECURITY_SUPPORT >= 1
-                if (frame[1] && conn->security.phase &&
-                    conn->security.phase != GAP_ENC_QUEUED &&
-                    conn->security.phase != GAP_ENC_PAUSE_QUEUED
-                ) {
-                    uint8_t opcode = llid == 3 ? frame[2] : 0xff;
-                    uint8_t allowed = (opcode == LL_TERMINATE_IND);
+            if (frame[1] && conn->security.phase &&
+                conn->security.phase != GAP_ENC_QUEUED &&
+                conn->security.phase != GAP_ENC_PAUSE_QUEUED
+            ) {
+                uint8_t opcode = llid == 3 ? frame[2] : 0xff;
+                uint8_t allowed = (opcode == LL_TERMINATE_IND);
 
-                    switch (conn->security.phase) {
-                        case GAP_ENC_WAIT_RSP:
-                            allowed |= (opcode == LL_ENC_RSP); // Fall through for rejection.
-                        case GAP_ENC_WAIT_START:
-                            allowed |= (
-                                opcode == LL_UNKNOWN_RSP || opcode == LL_REJECT_IND ||
-                                opcode == LL_REJECT_EXT_IND ||
-                                (conn->security.phase == GAP_ENC_WAIT_START &&
-                                 opcode == LL_START_ENC_REQ)
-                            );
-                            break;
+                switch (conn->security.phase) {
+                    case GAP_ENC_WAIT_RSP:
+                        allowed |= (opcode == LL_ENC_RSP); // Fall through for rejection.
+                    case GAP_ENC_WAIT_START:
+                        allowed |= (
+                            opcode == LL_UNKNOWN_RSP || opcode == LL_REJECT_IND ||
+                            opcode == LL_REJECT_EXT_IND ||
+                            (conn->security.phase == GAP_ENC_WAIT_START &&
+                             opcode == LL_START_ENC_REQ)
+                        );
+                        break;
 
-                        case GAP_ENC_KEY_REQUEST:
-                            allowed |= (opcode == LL_UNKNOWN_RSP);
-                            break;
+                    case GAP_ENC_KEY_REQUEST:
+                        allowed |= (opcode == LL_UNKNOWN_RSP);
+                        break;
 
-                        case GAP_ENC_WAIT_FINAL:
-                        case GAP_ENC_PERIPHERAL_START:
-                            allowed |= (opcode == LL_START_ENC_RSP);
-                            break;
+                    case GAP_ENC_WAIT_FINAL:
+                    case GAP_ENC_PERIPHERAL_START:
+                        allowed |= (opcode == LL_START_ENC_RSP);
+                        break;
 
-                        case GAP_ENC_WAIT_PAUSE:
-                        case GAP_ENC_PERIPHERAL_PAUSE:
-                            allowed |= (opcode == LL_PAUSE_ENC_RSP);
-                            break;
+                    case GAP_ENC_WAIT_PAUSE:
+                    case GAP_ENC_PERIPHERAL_PAUSE:
+                        allowed |= (opcode == LL_PAUSE_ENC_RSP);
+                        break;
 
-                        case GAP_ENC_PERIPHERAL_RESTART:
-                            allowed |= (opcode == LL_ENC_REQ);
-                            break;
-                        default: break;
-                    }
-
-                    if (!allowed) {
-                        conn->security.status = 0x3d;
-                        gap_conn_end();
-                        gap_conn_slot = previous_slot;
-                        return;
-                    }
+                    case GAP_ENC_PERIPHERAL_RESTART:
+                        allowed |= (opcode == LL_ENC_REQ);
+                        break;
+                    default: break;
                 }
 
-                if (authenticated) conn->security.rx_counter++;
+                if (!allowed) {
+                    conn->security.status = 0x3d;
+                    gap_conn_end();
+                    gap_conn_slot = previous_slot;
+                    return;
+                }
+            }
+
+            if (authenticated) conn->security.rx_counter++;
 #endif // GAP_SECURITY_SUPPORT >= 1
 
-                // Keep this after security validation so rejected packets are not queued.
-                if (data_payload) {
-                    conn->rx_packet.llid = llid;
-                    conn->rx_packet.len = frame[1];
-                    memcpy(conn->rx_packet.data, frame + 2, frame[1]);
-                    conn->queue_state.rx_ready = 1;
-                }
-                conn->link_layer.expected_rx_sn ^= 1;
+            // Keep this after security validation so rejected packets are not queued.
+            if (data_payload) {
+                conn->rx_packet.llid = llid;
+                conn->rx_packet.len = frame[1];
+                memcpy(conn->rx_packet.data, frame + 2, frame[1]);
+                conn->queue_state.rx_ready = 1;
             }
+            conn->link_layer.expected_rx_sn ^= 1;
         }
 
         // ACK handling above may have cleared tx_pending, allowing a new reply.
