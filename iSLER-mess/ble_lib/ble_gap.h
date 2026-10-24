@@ -1920,57 +1920,57 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
 
         int result = 0;
 
-        if (connected && peer->tx_queue->length) {
-            uint16_t max_len = conn->data_length.tx_octets;
+        if (connected) {
+            if (peer->tx_queue->length) {
+                uint16_t max_len = conn->data_length.tx_octets;
 
-            if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
-                gap_conn_slot = previous_slot;
-                return -1;
-            }
-
-            uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
-            uint16_t chunk = MIN(remaining, max_len);
-            uint8_t llid = peer->tx_queue->offset ? 1 : 2;
-
-            if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
-                peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
-
-                if (peer->tx_queue->offset == peer->tx_queue->length) {
-                    peer->tx_queue->length = 0;
-                    peer->tx_queue->offset = 0;
+                if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
+                    gap_conn_slot = previous_slot;
+                    return -1;
                 }
+
+                uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
+                uint16_t chunk = MIN(remaining, max_len);
+                uint8_t llid = peer->tx_queue->offset ? 1 : 2;
+
+                if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
+                    peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
+
+                    if (peer->tx_queue->offset == peer->tx_queue->length) {
+                        peer->tx_queue->length = 0;
+                        peer->tx_queue->offset = 0;
+                    }
+                    result = 1;
+                }
+            }
+            else if (l2cap_ecfc_pump(peer->connection) &&
+                    peer->tx_queue->length
+            ) {
                 result = 1;
             }
-        }
-        else if (connected && l2cap_ecfc_pump(peer->connection) &&
-                peer->tx_queue->length
-        ) {
-            result = 1;
-        }
-        else if (connected) {
-            uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
-            size_t len = sizeof(fragment);
-            int received = gap_receive_data(&llid, fragment, &len);
+            else {
+                uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
+                size_t len = sizeof(fragment);
+                int received = gap_receive_data(&llid, fragment, &len);
 
-            if (received > 0) {
-                if (!len) {
-                    memset(&peer->reassembler, 0, sizeof(peer->reassembler));
+                if (received > 0) {
+                    if (!len) {
+                        memset(&peer->reassembler, 0, sizeof(peer->reassembler));
+                    }
+                    else {
+                        uint16_t cid = 0, sdu_len = 0;
+                        const uint8_t *sdu = NULL;
+                        int assembled = l2cap_reassembler_feed(
+                            &peer->reassembler, llid, fragment, len,
+                            &cid, &sdu, &sdu_len);
+                        if (assembled > 0)
+                            result = l2cap_receive(peer->connection, cid, sdu, sdu_len);
+                        else result = assembled;
+                    }
                 }
-                else {
-                    uint16_t cid = 0, sdu_len = 0;
-                    const uint8_t *sdu = NULL;
-                    int assembled = l2cap_reassembler_feed(
-                        &peer->reassembler, llid, fragment, len,
-                        &cid, &sdu, &sdu_len);
-                    if (assembled > 0)
-                        result = l2cap_receive(peer->connection, cid, sdu, sdu_len);
-                    else result = assembled;
-                }
+                else result = received;
             }
-            else result = received;
-        }
 
-        if (connected) {
             l2cap_connection *l2cap = peer->connection;
 
             if (l2cap->remote_update_pending) {
