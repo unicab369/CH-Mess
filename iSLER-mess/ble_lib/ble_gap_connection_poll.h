@@ -343,8 +343,8 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->c_subrate.event_received = 1;
         }
 
-        conn->link_layer.next_ticks = conn_anchor_ticks +
-            HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+        conn->link_layer.next_ticks = conn_anchor_ticks + HW_TICKS_FROM_US(
+                                        (uint32_t)conn->schedule.interval_125us * 125);
 
         conn->link_layer.last_rx_ms = GET_MILLIS();
         conn->link_state.rx_armed = 0;
@@ -411,9 +411,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->tx_frame[1] = 0;
 
             if (conn->link_state.terminate_sent) {
-                if ((frame[0] & 3) != 3 ||
-                    frame[1] != 2 || frame[2] != LL_TERMINATE_IND
-                ) {
+                if ((frame[0] & 3) != 3 || frame[1] != 2 || frame[2] != LL_TERMINATE_IND) {
                     gap_conn_end();
                     gap_conn_slot = previous_slot;
                     return;
@@ -789,17 +787,15 @@ void __attribute__((noinline)) gap_hw_received(void) {
             }
         }
 
-        adv_tx.connect_request[0] = (adv_tx.connect_request[0] & 0x7f) |
-                                    (frame[0] & 0x40) << 1;
-
+        adv_tx.connect_request[0] = (adv_tx.connect_request[0] & 0x7f) | (frame[0] & 0x40) << 1;
         memcpy(adv_tx.connect_request + 8, frame + 2, 6);
         uint8_t channel = 37 + gap_scan.channel_index;
         GAP_HW_STOP();
         gap_rx_armed = 0;
 
         if (GAP_HW_ADV_TX(adv_tx.connect_request, sizeof(adv_tx.connect_request), channel) &&
-            gap_conn_accept(adv_tx.connect_request, GAP_HW_TICKS(),
-                            HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
+            gap_conn_accept(adv_tx.connect_request, GAP_HW_TICKS(), HW_TICKS_FROM_US(1250),
+                                                    HW_TICKS_FROM_US(1250))
         ) {
             conn = &gap_conn_ctx[gap_conn_slot];
             conn->central.central_anchor_set = 0;
@@ -915,8 +911,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
 
             if (gap_adv.scan_resp_len)
-                memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response,
-                                            gap_adv.scan_resp_len);
+                memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response, gap_adv.scan_resp_len);
 
             GAP_HW_TX_BUFFER(adv_evt.scan_frame);
             adv_evt.scan_resp_started = 1;
@@ -932,10 +927,9 @@ void __attribute__((noinline)) gap_hw_received(void) {
                             (!gap_adv_filter.connection_accept || peer_allowed);
 
         if (connect_ok && adv_pdu_type == ADV_DIRECT_IND) {
-            connect_ok =
-                (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
-                (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
-                 memcmp(frame + 2, adv_evt.adv_frame + 8, 6) == 0);
+            connect_ok = (peer_slot >= 0 && peer_slot == gap_adv.peer_slot) ||
+                        (((frame[0] >> 6) & 1) == ((adv_evt.adv_frame[0] >> 7) & 1) &&
+                        memcmp(frame + 2, adv_evt.adv_frame + 8, 6) == 0);
         }
 
         if (connect_ok) {
@@ -1006,8 +1000,7 @@ static uint64_t gap_conn_close_ticks(
         // Two packets add 8 us per octet above 27 bytes: 400 us +
         // 2 * max(data_capacity - 27, 0) * 8 us.
         // Simplified: 400 us + 16 us * max(data_capacity - 27, 0).
-        packet_us = 400 + 16 * (gap_data_capacity > 27 ?
-                                    gap_data_capacity - 27 : 0);
+        packet_us = 400 + 16 * subtract_clamp0_32(gap_data_capacity, 27);
     }
 
     uint32_t window_us = connection->link_layer.first_event ||
@@ -1019,8 +1012,9 @@ static uint64_t gap_conn_close_ticks(
                             (500 + connection->link_layer.peer_sca_ppm) + 999) / 1000;
     uint32_t widen_max = (uint32_t)connection->schedule.interval_125us * 125 / 2;
 
-    if (widen_us > widen_max) widen_us = widen_max;
-    return connection->link_layer.next_ticks + HW_TICKS_FROM_US(window_us + packet_us + widen_us);
+    widen_us = MIN(widen_us, widen_max);
+    return connection->link_layer.next_ticks +
+            HW_TICKS_FROM_US(window_us + packet_us + widen_us);
 }
 
 
@@ -1244,9 +1238,7 @@ static void gap_conn_poll(void) {
     // widen_us = ceil((now_ms - last_rx_ms) * (500 + peer_sca_ppm) / 1000).
     uint32_t widen_us = ((uint32_t)(now_ms - conn->link_layer.last_rx_ms) *
                         (500 + conn->link_layer.peer_sca_ppm) + 999) / 1000;
-    uint32_t widen_max = (uint32_t)conn->schedule.interval_125us * 125 / 2;
-
-    if (widen_us > widen_max) widen_us = widen_max;
+    widen_us = MIN(widen_us, (uint32_t)conn->schedule.interval_125us * 125 / 2);
     uint64_t open_ticks = conn->link_layer.next_ticks;
     uint64_t early_ticks = HW_TICKS_FROM_US(200) + (uint64_t)widen_us * HW_TICKS_FROM_US(1);
 
