@@ -373,6 +373,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
                 uint8_t tx_payload_len = conn->tx_frame[1];
                 uint8_t tx_control_opcode = conn->tx_frame[2];
 #endif // GAP_SECURITY_SUPPORT >= 1
+
                 if (conn->central.channel_report_pending &&
                     (conn->tx_frame[0] & 3) == 3 && tx_payload_len == 4 &&
                     tx_control_opcode == LL_CHANNEL_REPORTING_IND
@@ -1048,8 +1049,7 @@ static inline uint8_t gap_conn_can_skip_event(
         if (conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING &&
             conn->next_schedule.factor
         ) {
-            int32_t next_offset = (int32_t)event -
-                                  (int32_t)conn->next_schedule.base_event;
+            int32_t next_offset = (int32_t)event - (int32_t)conn->next_schedule.base_event;
             if (next_offset % conn->next_schedule.factor == 0)
                 return 0;
         }

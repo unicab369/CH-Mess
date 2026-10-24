@@ -886,7 +886,7 @@ static uint8_t gap_conn_control(
             uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                                 conn->schedule.factor : 1;
 
-            if (win_size && win_size <= 8 &&
+            if (GAP_IN_RANGE_INCLUSIVE(win_size, 1, 8) &&
                 ble_timing_valid(interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2ull * (latency + 1) * interval_125us * factor
@@ -2136,8 +2136,7 @@ int gap_conn_rate_request(
     if (gap_conn_timing_busy(conn) ||
         conn->is_central ||
         intv_min_125us < 3 ||
-        intv_max_125us > 32000 ||
-        intv_min_125us > intv_max_125us ||
+        !GAP_IN_RANGE_INCLUSIVE(intv_max_125us, intv_min_125us, 32000) ||
         preferred_periodicity_125us > intv_max_125us ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
