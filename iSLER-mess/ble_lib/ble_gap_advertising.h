@@ -814,9 +814,8 @@ static inline void gap_receive_report(
             }
 
             // Check after scanning so Flags can appear anywhere in the payload.
-            if (!(flags & (gap_scanner.discovery_mode ==
-                GAP_DISCOVERY_LIMITED ? 0x01 : 0x03))
-            ) return;
+            if (!(flags & (gap_scanner.discovery_mode == GAP_DISCOVERY_LIMITED ? 0x01 : 0x03)))
+                return;
 
             if (GAP_SCANNABLE_ADV_PDU_MASK & (1u << pdu_type)) {
                 gap_scan.response_accepted = 1;

@@ -396,7 +396,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         if (mesh_state_save_record(&empty)) {
             mesh_state_record first;
             uint32_t old_addr = mesh_state_read(BLE_MESH_DATA_ADDR, &first) &&
-                                        first.generation == empty.generation
+                                    first.generation == empty.generation
                                     ? BLE_MESH_DATA_ADDR + SECTOR_SIZE
                                     : BLE_MESH_DATA_ADDR;
             if (flash_erase_data(old_addr, SECTOR_SIZE)) {
