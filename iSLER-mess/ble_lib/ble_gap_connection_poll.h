@@ -698,9 +698,10 @@ void __attribute__((noinline)) gap_hw_received(void) {
         return;
     }
 #endif // GAP_EXT_ADV_SUPPORT
+    uint8_t adv_length_valid = frame[1] >= 6 && frame[1] <= 37;
     int peer_slot = -1;
 
-    if (pdu_type <= ADV_SCAN_IND && frame[1] >= 6 && frame[1] <= 37) {
+    if (pdu_type <= ADV_SCAN_IND && adv_length_valid) {
         uint8_t peer_type = (frame[0] >> 6) & 1;
         peer_slot = gap_identity_find(frame + 2, peer_type);
         // Enforce each peer's privacy mode before responding or connecting,
@@ -717,7 +718,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
     if (
         pdu_type <= ADV_SCAN_IND &&
-        frame[1] >= 6 && frame[1] <= 37 &&
+        adv_length_valid &&
         (gap_initiator.active ||
          (gap_scanner.active && gap_initiator.mode == GAP_CONN_MODE_SELECTIVE))
     ) {
@@ -741,7 +742,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
 
     if (gap_initiator.active &&
         (pdu_type == ADV_IND || pdu_type == ADV_DIRECT_IND) &&
-        frame[1] >= 6 && frame[1] <= 37 && peer_matches
+        adv_length_valid && peer_matches
     ) {
         // Directed advertising must target our current address or an RPA
         // generated with our IRK before we send CONNECT_IND.
@@ -832,8 +833,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
     }
 #endif // GAP_CENTRAL_SUPPORT
 
-    uint8_t scan_frame_valid = gap_scanner.active &&
-                               frame[1] >= 6 && frame[1] <= 37;
+    uint8_t scan_frame_valid = gap_scanner.active && adv_length_valid;
     if ((pdu_type == ADV_IND || pdu_type == ADV_SCAN_IND) &&
         scan_frame_valid &&
 #if GAP_LEGACY_ADV_SUPPORT
