@@ -4260,7 +4260,7 @@ static void test_smp_signing_key_distribution(void) {
     conn->peer.type = 0;
     conn->peer.address[0] = 0x42;
 
-    uint8_t encryption_information[17] = {SMP_ENCRYPTION_INFORMATION};
+    uint8_t encryption_information[17] = {SMP_ENCRYPTION_INFO};
     memset(encryption_information + 1, 0x31, 16);
     receive_test_smp(encryption_information, sizeof(encryption_information), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX &&
@@ -4275,21 +4275,21 @@ static void test_smp_signing_key_distribution(void) {
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX &&
            smp->pairing.bond_rx_step == 2);
 
-    uint8_t identity_information[17] = {SMP_IDENTITY_INFORMATION};
+    uint8_t identity_information[17] = {SMP_ID_INFO};
     memset(identity_information + 1, 0xa5, 16);
     receive_test_smp(identity_information, sizeof(identity_information), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX &&
            smp->pairing.bond_rx_step == 3);
 
     uint8_t identity_address[8] = {
-        SMP_IDENTITY_ADDRESS_INFORMATION, 0,
+        SMP_ID_ADDRESS_INFO, 0,
         0x10, 0x21, 0x32, 0x43, 0x54, 0x65
     };
     receive_test_smp(identity_address, sizeof(identity_address), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX &&
            smp->pairing.bond_rx_step == 4);
 
-    uint8_t signing_information[17] = {SMP_SIGNING_INFORMATION};
+    uint8_t signing_information[17] = {SMP_SIGNING_INFO};
     memset(signing_information + 1, 0x79, 16);
     receive_test_smp(signing_information, sizeof(signing_information), 5);
     assert(!smp->pairing.phase && conn->bonded &&
@@ -4331,26 +4331,26 @@ static void test_smp_signing_key_distribution(void) {
     memset(conn->bond.central.ltk, 0x51, 16);
     conn->bond.central.rand[0] = 0x91;
     conn->bond.central.ediv[0] = 0x19;
-    uint8_t peer_ltk[17] = {SMP_ENCRYPTION_INFORMATION};
+    uint8_t peer_ltk[17] = {SMP_ENCRYPTION_INFO};
     memset(peer_ltk + 1, 0x3a, 16);
     receive_test_smp(peer_ltk, sizeof(peer_ltk), 0);
     uint8_t peer_ltk_id[11] = {SMP_CENTRAL_IDENTIFICATION};
     peer_ltk_id[1] = 0x55;
     peer_ltk_id[3] = 0x65;
     receive_test_smp(peer_ltk_id, sizeof(peer_ltk_id), 0);
-    uint8_t peer_irk[17] = {SMP_IDENTITY_INFORMATION};
+    uint8_t peer_irk[17] = {SMP_ID_INFO};
     memset(peer_irk + 1, 0x3c, 16);
     receive_test_smp(peer_irk, sizeof(peer_irk), 0);
     uint8_t peer_identity[8] = {
-        SMP_IDENTITY_ADDRESS_INFORMATION, 0,
+        SMP_ID_ADDRESS_INFO, 0,
         0x20, 0x31, 0x42, 0x53, 0x64, 0x75
     };
     receive_test_smp(peer_identity, sizeof(peer_identity), 0);
-    uint8_t peer_csrk[17] = {SMP_SIGNING_INFORMATION};
+    uint8_t peer_csrk[17] = {SMP_SIGNING_INFO};
     memset(peer_csrk + 1, 0x6d, 16);
     receive_test_smp(peer_csrk, sizeof(peer_csrk), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx_queue->length == 21 &&
-           smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
+           smp->tx[4] == SMP_ENCRYPTION_INFO &&
            conn->bond.peer_irk.present && conn->bond.peer_csrk.present &&
            conn->bond.has_peripheral_ltk &&
            !memcmp(conn->bond.peripheral.ltk, peer_ltk + 1, 16) &&
@@ -4361,13 +4361,13 @@ static void test_smp_signing_key_distribution(void) {
     // Central Identification, then Signing Information.
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
-    assert(conn->tx_packet.data[4] == SMP_ENCRYPTION_INFORMATION);
+    assert(conn->tx_packet.data[4] == SMP_ENCRYPTION_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->tx_packet.data[4] == SMP_CENTRAL_IDENTIFICATION);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
-    assert(conn->tx_packet.data[4] == SMP_SIGNING_INFORMATION);
+    assert(conn->tx_packet.data[4] == SMP_SIGNING_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(!smp->pairing.phase && conn->bonded &&
@@ -4392,7 +4392,7 @@ static void test_smp_signing_key_distribution(void) {
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX &&
            smp->pairing.bond_tx_step == 31 && smp->tx_queue->length == 21 &&
            smp->tx[2] == L2CAP_CID_SMP &&
-           smp->tx[4] == SMP_ENCRYPTION_INFORMATION &&
+           smp->tx[4] == SMP_ENCRYPTION_INFO &&
            conn->bond.has_peripheral_ltk && conn->bond.local_csrk.present);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
@@ -4404,17 +4404,17 @@ static void test_smp_signing_key_distribution(void) {
     memcpy(peripheral_csrk_copy, conn->bond.local_csrk.key, 16);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
-    assert(conn->tx_packet.data[4] == SMP_SIGNING_INFORMATION);
+    assert(conn->tx_packet.data[4] == SMP_SIGNING_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX);
-    uint8_t central_ltk[17] = {SMP_ENCRYPTION_INFORMATION};
+    uint8_t central_ltk[17] = {SMP_ENCRYPTION_INFO};
     memset(central_ltk + 1, 0x48, 16);
     receive_test_smp(central_ltk, sizeof(central_ltk), 0);
     uint8_t central_ltk_id[11] = {SMP_CENTRAL_IDENTIFICATION, 0x33};
     central_ltk_id[3] = 0x44;
     receive_test_smp(central_ltk_id, sizeof(central_ltk_id), 0);
-    uint8_t central_csrk[17] = {SMP_SIGNING_INFORMATION};
+    uint8_t central_csrk[17] = {SMP_SIGNING_INFO};
     memset(central_csrk + 1, 0x59, 16);
     receive_test_smp(central_csrk, sizeof(central_csrk), 0);
     assert(!smp->pairing.phase && conn->bonded &&
@@ -4730,21 +4730,21 @@ static void test_secure_connections_just_works(void) {
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_BOND_RX &&
            smp->pairing.bond_rx_step == 30);
-    uint8_t sc_peer_irk[17] = {SMP_IDENTITY_INFORMATION};
+    uint8_t sc_peer_irk[17] = {SMP_ID_INFO};
     memset(sc_peer_irk + 1, 0x81, 16);
     receive_test_smp(sc_peer_irk, sizeof(sc_peer_irk), 0);
     uint8_t sc_peer_identity[8] = {
-        SMP_IDENTITY_ADDRESS_INFORMATION, 0, 1, 2, 3, 4, 5, 6
+        SMP_ID_ADDRESS_INFO, 0, 1, 2, 3, 4, 5, 6
     };
     receive_test_smp(sc_peer_identity, sizeof(sc_peer_identity), 0);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx[4] ==
-           SMP_IDENTITY_INFORMATION);
+           SMP_ID_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(conn->queue_state.tx_queued &&
-           conn->tx_packet.data[4] == SMP_IDENTITY_ADDRESS_INFORMATION);
+           conn->tx_packet.data[4] == SMP_ID_ADDRESS_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll();
     assert(gap_pairing_status() == 0 && !smp->pairing.phase &&
@@ -4837,20 +4837,20 @@ static void test_secure_connections_just_works(void) {
     gap_security->tx_enabled = gap_security->rx_enabled = 1;
     gap_smp_poll();
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX && smp->tx[4] ==
-           SMP_IDENTITY_INFORMATION);
+           SMP_ID_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Send Peripheral Identity Information.
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Queue Peripheral Identity Address Information.
     assert(conn->queue_state.tx_queued && conn->tx_packet.data[4] ==
-           SMP_IDENTITY_ADDRESS_INFORMATION);
+           SMP_ID_ADDRESS_INFO);
     conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
     gap_smp_poll(); // Finish Peripheral's key set.
-    uint8_t central_irk[17] = {SMP_IDENTITY_INFORMATION};
+    uint8_t central_irk[17] = {SMP_ID_INFO};
     memset(central_irk + 1, 0x92, 16);
     receive_test_smp(central_irk, sizeof(central_irk), 0);
     const uint8_t central_identity[8] = {
-        SMP_IDENTITY_ADDRESS_INFORMATION, 0, 21, 22, 23, 24, 25, 26
+        SMP_ID_ADDRESS_INFO, 0, 21, 22, 23, 24, 25, 26
     };
     receive_test_smp(central_identity, sizeof(central_identity), 0);
     assert(gap_pairing_status() == 0 && !smp->pairing.phase &&

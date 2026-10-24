@@ -96,9 +96,9 @@ int main(void) {
     assert(smp_pdu_valid(public_key, sizeof(public_key)));
     assert(!smp_pdu_valid(public_key, sizeof(public_key) - 1));
     const uint8_t signing_information[17] = {
-        SMP_SIGNING_INFORMATION
+        SMP_SIGNING_INFO
     };
-    assert(smp_opcode_known(SMP_SIGNING_INFORMATION));
+    assert(smp_opcode_known(SMP_SIGNING_INFO));
     assert(smp_pdu_valid(signing_information,
                              sizeof(signing_information)));
     assert(!smp_pdu_valid(signing_information,

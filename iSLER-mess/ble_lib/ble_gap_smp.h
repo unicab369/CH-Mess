@@ -54,11 +54,11 @@ enum {
     SMP_PAIRING_CONFIRM = 0x03,
     SMP_PAIRING_RANDOM = 0x04,
     SMP_PAIRING_FAILED = 0x05,
-    SMP_ENCRYPTION_INFORMATION = 0x06,
+    SMP_ENCRYPTION_INFO = 0x06,
     SMP_CENTRAL_IDENTIFICATION = 0x07,
-    SMP_IDENTITY_INFORMATION = 0x08,
-    SMP_IDENTITY_ADDRESS_INFORMATION = 0x09,
-    SMP_SIGNING_INFORMATION = 0x0a,
+    SMP_ID_INFO = 0x08,
+    SMP_ID_ADDRESS_INFO = 0x09,
+    SMP_SIGNING_INFO = 0x0a,
     SMP_SECURITY_REQUEST = 0x0b,
     SMP_PAIRING_PUBLIC_KEY = 0x0c,
     SMP_PAIRING_DHKEY_CHECK = 0x0d,
@@ -104,13 +104,13 @@ enum {
                             (1u << SMP_KEYPRESS_NOTIFICATION),
     SMP_PDU_LEN_7_OPCODES = (1u << SMP_PAIRING_REQUEST) |
                             (1u << SMP_PAIRING_RESPONSE),
-    SMP_PDU_LEN_8_OPCODES = 1u << SMP_IDENTITY_ADDRESS_INFORMATION,
+    SMP_PDU_LEN_8_OPCODES = 1u << SMP_ID_ADDRESS_INFO,
     SMP_PDU_LEN_11_OPCODES = 1u << SMP_CENTRAL_IDENTIFICATION,
     SMP_PDU_LEN_17_OPCODES = (1u << SMP_PAIRING_CONFIRM) |
                              (1u << SMP_PAIRING_RANDOM) |
-                             (1u << SMP_ENCRYPTION_INFORMATION) |
-                             (1u << SMP_IDENTITY_INFORMATION) |
-                             (1u << SMP_SIGNING_INFORMATION) |
+                             (1u << SMP_ENCRYPTION_INFO) |
+                             (1u << SMP_ID_INFO) |
+                             (1u << SMP_SIGNING_INFO) |
                              (1u << SMP_PAIRING_DHKEY_CHECK),
     SMP_PDU_LEN_65_OPCODES = 1u << SMP_PAIRING_PUBLIC_KEY
 };
@@ -171,16 +171,16 @@ static inline int smp_pdu_valid(
     // case SMP_PAIRING_RESPONSE: return len == 7;
     // case SMP_PAIRING_CONFIRM:
     // case SMP_PAIRING_RANDOM:
-    // case SMP_ENCRYPTION_INFORMATION:
-    // case SMP_IDENTITY_INFORMATION:
-    // case SMP_SIGNING_INFORMATION:
+    // case SMP_ENCRYPTION_INFO:
+    // case SMP_ID_INFO:
+    // case SMP_SIGNING_INFO:
     // case SMP_PAIRING_DHKEY_CHECK: return len == 17;
     // case SMP_PAIRING_FAILED:
     // case SMP_SECURITY_REQUEST: return len == 2;
     // case SMP_KEYPRESS_NOTIFICATION:
     //     return len == 2 && pdu[1] <= SMP_KEYPRESS_COMPLETED;
     // case SMP_CENTRAL_IDENTIFICATION: return len == 11;
-    // case SMP_IDENTITY_ADDRESS_INFORMATION: return len == 8;
+    // case SMP_ID_ADDRESS_INFO: return len == 8;
     // case SMP_PAIRING_PUBLIC_KEY: return len == 65;
     // default: return 0;
 
@@ -241,11 +241,11 @@ static inline int smp_opcode_known(uint8_t opcode) {
         case SMP_PAIRING_CONFIRM:
         case SMP_PAIRING_RANDOM:
         case SMP_PAIRING_FAILED:
-        case SMP_ENCRYPTION_INFORMATION:
+        case SMP_ENCRYPTION_INFO:
         case SMP_CENTRAL_IDENTIFICATION:
-        case SMP_IDENTITY_INFORMATION:
-        case SMP_IDENTITY_ADDRESS_INFORMATION:
-        case SMP_SIGNING_INFORMATION:
+        case SMP_ID_INFO:
+        case SMP_ID_ADDRESS_INFO:
+        case SMP_SIGNING_INFO:
         case SMP_SECURITY_REQUEST:
         case SMP_PAIRING_PUBLIC_KEY:
         case SMP_PAIRING_DHKEY_CHECK:
@@ -1347,7 +1347,7 @@ static void smp_bond_rx_complete(
         // The next requested type is queued after this exchange completes.
         if (keyset & GAP_KEY_DIST_ENCRYPTION) {
             smp->pairing.bond_tx_step = 1;
-            if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.central.ltk, 16)) {
+            if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFO, conn->bond.central.ltk, 16)) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
@@ -1355,7 +1355,7 @@ static void smp_bond_rx_complete(
         }
         else if (keyset & GAP_KEY_DIST_IDENTITY) {
             smp->pairing.bond_tx_step = 3;
-            if (!gap_smp_queue(smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
+            if (!gap_smp_queue(smp, SMP_ID_INFO, conn->bond.local_irk.key, 16)) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
@@ -1364,7 +1364,7 @@ static void smp_bond_rx_complete(
         else if (keyset & GAP_KEY_DIST_SIGNING) {
             smp->pairing.bond_tx_step = 5;
 
-            if (!gap_smp_queue(smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
+            if (!gap_smp_queue(smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
             }
 
@@ -1442,19 +1442,19 @@ static void smp_bond_peripheral_start(
     // but this chain queues only the next key in protocol order.
     if (keyset & GAP_KEY_DIST_ENCRYPTION) {
         smp->pairing.bond_tx_step = 31;
-        if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFORMATION, conn->bond.peripheral.ltk, 16)) {
+        if (!gap_smp_queue(smp, SMP_ENCRYPTION_INFO, conn->bond.peripheral.ltk, 16)) {
             gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
     else if (keyset & GAP_KEY_DIST_IDENTITY) {
         smp->pairing.bond_tx_step = 33;
-        if (!gap_smp_queue(smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
+        if (!gap_smp_queue(smp, SMP_ID_INFO, conn->bond.local_irk.key, 16)) {
             gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
     else if (keyset & GAP_KEY_DIST_SIGNING) {
         smp->pairing.bond_tx_step = 35;
-        if (!gap_smp_queue(smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
+        if (!gap_smp_queue(smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
             gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
         }
     }
@@ -1602,7 +1602,7 @@ static void gap_smp_poll_context(
             (key_dist & (GAP_KEY_DIST_IDENTITY | GAP_KEY_DIST_SIGNING))
         ) {
             if (key_dist & GAP_KEY_DIST_IDENTITY) {
-                if (!gap_smp_queue(&conn->smp, SMP_IDENTITY_INFORMATION, conn->bond.local_irk.key, 16)) {
+                if (!gap_smp_queue(&conn->smp, SMP_ID_INFO, conn->bond.local_irk.key, 16)) {
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
@@ -1610,7 +1610,7 @@ static void gap_smp_poll_context(
                 pairing->bond_tx_step = conn->is_central ? 3 : 33;
             }
             else {
-                if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
+                if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
                     gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                     return;
                 }
@@ -1625,7 +1625,7 @@ static void gap_smp_poll_context(
             uint8_t irk[16] = {0}, address[7] = {0};
             int available = gap_smp_local_identity(irk, address);
             gap_wipe(irk, sizeof(irk));
-            if (!available || !gap_smp_queue(&conn->smp, SMP_IDENTITY_ADDRESS_INFORMATION,
+            if (!available || !gap_smp_queue(&conn->smp, SMP_ID_ADDRESS_INFO,
                                             address, sizeof(address))
             ) {
                 gap_wipe(address, sizeof(address));
@@ -1640,7 +1640,7 @@ static void gap_smp_poll_context(
             (!conn->is_central && pairing->bond_tx_step == 34)) &&
             (key_dist & GAP_KEY_DIST_SIGNING)
         ) {
-            if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFORMATION, conn->bond.local_csrk.key, 16)) {
+            if (!gap_smp_queue(&conn->smp, SMP_SIGNING_INFO, conn->bond.local_csrk.key, 16)) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
@@ -1989,60 +1989,60 @@ static void gap_smp_poll_context(
 
         if (central_sc || (!conn->is_central && pairing->bond_rx_step >= 20)) {
             uint8_t key_dist = pairing->response[central_sc ? 6 : 5];
-            uint8_t encryption = central_sc && (key_dist & GAP_KEY_DIST_ENCRYPTION);
             uint8_t identity = key_dist & GAP_KEY_DIST_IDENTITY;
             uint8_t signing = key_dist & GAP_KEY_DIST_SIGNING;
             uint8_t step = pairing->bond_rx_step;
+            uint8_t identity_step = central_sc ? 30 : 20;
 
-            if (encryption && step == 30 &&
-                op == SMP_ENCRYPTION_INFORMATION && pending_len == 17
-            ) {
-                memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
-                for (unsigned i = pairing->key_size; i < 16; i++)
-                    conn->bond.peripheral.ltk[i] = 0;
-                conn->bond.has_peripheral_ltk = 1;
-                pairing->bond_rx_step = 31;
-                return;
+            if (central_sc && (key_dist & GAP_KEY_DIST_ENCRYPTION)) {
+                identity_step = 32;
+
+                if (step == 30 && op == SMP_ENCRYPTION_INFO && pending_len == 17 ) {
+                    memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
+                    for (unsigned i = pairing->key_size; i < 16; i++)
+                        conn->bond.peripheral.ltk[i] = 0;
+                    conn->bond.has_peripheral_ltk = 1;
+                    pairing->bond_rx_step = 31;
+                    return;
+                }
+
+                if (step == 31 && op == SMP_CENTRAL_IDENTIFICATION && pending_len == 11 ) {
+                    conn->bond.peripheral.ediv[0] = pdu[1];
+                    conn->bond.peripheral.ediv[1] = pdu[2];
+                    memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
+                    pairing->bond_rx_step = 32;
+                    if (!identity && !signing)
+                        smp_bond_rx_complete(conn);
+                    return;
+                }
             }
 
-            if (encryption && step == 31 &&
-                op == SMP_CENTRAL_IDENTIFICATION && pending_len == 11
-            ) {
-                conn->bond.peripheral.ediv[0] = pdu[1];
-                conn->bond.peripheral.ediv[1] = pdu[2];
-                memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
-                pairing->bond_rx_step = 32;
-                if (!identity && !signing)
-                    smp_bond_rx_complete(conn);
-                return;
-            }
+            uint8_t signing_step = identity_step;
 
-            uint8_t identity_step = central_sc ? (encryption ? 32 : 30) : 20;
-            uint8_t signing_step = identity ? identity_step + 2 : identity_step;
+            if (identity) {
+                signing_step += 2;
 
-            if (identity && step == identity_step &&
-                op == SMP_IDENTITY_INFORMATION && pending_len == 17
-            ) {
-                memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
-                conn->bond.peer_irk.present = 1;
-                pairing->bond_rx_step = identity_step + 1;
-                return;
-            }
+                if (step == identity_step && op == SMP_ID_INFO && pending_len == 17
+                ) {
+                    memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
+                    conn->bond.peer_irk.present = 1;
+                    pairing->bond_rx_step = identity_step + 1;
+                    return;
+                }
 
-            if (identity && step == identity_step + 1 &&
-                op == SMP_IDENTITY_ADDRESS_INFORMATION && pending_len == 8 &&
-                pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
-            ) {
-                memcpy(&conn->bond.peer, pdu + 1, sizeof(conn->bond.peer));
-                conn->peer = conn->bond.peer;
-                pairing->bond_rx_step = identity_step + 2;
-                if (!signing)
-                    smp_bond_rx_complete(conn);
-                return;
+                if (step == identity_step + 1 && op == SMP_ID_ADDRESS_INFO && pending_len == 8 &&
+                    pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
+                ) {
+                    memcpy(&conn->bond.peer, pdu + 1, sizeof(conn->bond.peer));
+                    conn->peer = conn->bond.peer;
+                    pairing->bond_rx_step = identity_step + 2;
+                    if (!signing) smp_bond_rx_complete(conn);
+                    return;
+                }
             }
 
             if (signing && step == signing_step &&
-                op == SMP_SIGNING_INFORMATION && pending_len == 17
+                op == SMP_SIGNING_INFO && pending_len == 17
             ) {
                 memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
                 conn->bond.peer_csrk.present = 1;
@@ -2054,7 +2054,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (op == SMP_ENCRYPTION_INFORMATION && pending_len == 17 &&
+        if (op == SMP_ENCRYPTION_INFO && pending_len == 17 &&
             !pairing->bond_rx_step
         ) {
             if (!conn->bond.valid) {
@@ -2101,7 +2101,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (op == SMP_IDENTITY_INFORMATION && pending_len == 17 &&
+        if (op == SMP_ID_INFO && pending_len == 17 &&
             pairing->bond_rx_step == 2 &&
             (pairing->response[5] & GAP_KEY_DIST_IDENTITY)
         ) {
@@ -2111,7 +2111,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (op == SMP_IDENTITY_ADDRESS_INFORMATION && pending_len == 8 &&
+        if (op == SMP_ID_ADDRESS_INFO && pending_len == 8 &&
             pairing->bond_rx_step == 3 &&
             (pairing->response[5] & GAP_KEY_DIST_IDENTITY) &&
             pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
@@ -2125,7 +2125,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (op == SMP_SIGNING_INFORMATION && pending_len == 17 &&
+        if (op == SMP_SIGNING_INFO && pending_len == 17 &&
             pairing->bond_rx_step == 4 &&
             (pairing->response[5] & GAP_KEY_DIST_SIGNING)
         ) {
@@ -2771,7 +2771,7 @@ static void gap_smp_poll_context(
         return;
     }
 
-    uint8_t unsupport = op >= SMP_ENCRYPTION_INFORMATION && op != SMP_SECURITY_REQUEST;
+    uint8_t unsupport = op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST;
     gap_smp_fail(conn, unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
 }
 
