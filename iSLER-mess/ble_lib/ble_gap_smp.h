@@ -2630,124 +2630,121 @@ static void gap_smp_poll_context(
         }
     }
 
-    if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
-        pairing->secure_connections &&
-        pairing->phase == SMP_PHASE_SC_RANDOM
-    ) {
-        uint8_t confirm[16], difference = 0;
-        gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
-                             conn->smp.secure.public_key, pdu + 1, confirm);
+    if (op == SMP_PAIRING_RANDOM && pending_len == 17) {
+        if (pairing->secure_connections && pairing->phase == SMP_PHASE_SC_RANDOM) {
+            uint8_t confirm[16], difference = 0;
+            gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
+                                 conn->smp.secure.public_key, pdu + 1, confirm);
 
-        for (uint8_t i = 0; i < 16; i++)
-            difference |= confirm[i] ^ pairing->peer_confirm[i];
-        gap_wipe(confirm, sizeof(confirm));
+            for (uint8_t i = 0; i < 16; i++)
+                difference |= confirm[i] ^ pairing->peer_confirm[i];
+            gap_wipe(confirm, sizeof(confirm));
 
-        if (difference) {
-            gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
-            return;
-        }
-
-        memcpy(conn->smp.peer_random, pdu + 1, 16);
-
-        if (conn->smp.secure.passkey_required && conn->smp.secure.passkey_round < 19) {
-            if (!conn->is_central)
-                gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-            // Each passkey bit needs a fresh nonce. Discard it if the link ends
-            // while entropy is being generated.
-            uint8_t next_nonce[16];
-            int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
-
-            if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
-                gap_wipe(next_nonce, sizeof(next_nonce));
+            if (difference) {
+                gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
                 return;
             }
 
-            if (entropy_ready)
-                memcpy(conn->smp.random, next_nonce, sizeof(next_nonce));
-            gap_wipe(next_nonce, sizeof(next_nonce));
+            memcpy(conn->smp.peer_random, pdu + 1, 16);
 
-            if (!entropy_ready) {
+            if (conn->smp.secure.passkey_required && conn->smp.secure.passkey_round < 19) {
+                if (!conn->is_central)
+                    gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
+                // Each passkey bit needs a fresh nonce. Discard it if the link ends
+                // while entropy is being generated.
+                uint8_t next_nonce[16];
+                int entropy_ready = smp_random_bytes(next_nonce, sizeof(next_nonce));
+
+                if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))) {
+                    gap_wipe(next_nonce, sizeof(next_nonce));
+                    return;
+                }
+
+                if (entropy_ready)
+                    memcpy(conn->smp.random, next_nonce, sizeof(next_nonce));
+                gap_wipe(next_nonce, sizeof(next_nonce));
+
+                if (!entropy_ready) {
+                    gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                    return;
+                }
+
+                conn->smp.secure.passkey_round++;
+
+                if (conn->is_central) {
+                    uint8_t confirm[16];
+                    gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
+                                         conn->smp.secure.peer_public_key,
+                                         conn->smp.random, confirm);
+                    gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
+                    pairing->phase = SMP_PHASE_SC_CONFIRM;
+                }
+                else {
+                    pairing->phase = SMP_PHASE_SC_PASSKEY;
+                }
+                return;
+            }
+
+            if (!gap_sc_derive_keys(&conn->smp, conn)) {
                 gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
                 return;
             }
 
-            conn->smp.secure.passkey_round++;
+            if (conn->smp.secure.passkey_required)
+                pairing->authenticated = 1;
 
-            if (conn->is_central) {
-                uint8_t confirm[16];
-                gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
-                                     conn->smp.secure.peer_public_key,
-                                     conn->smp.random, confirm);
-                gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
-                pairing->phase = SMP_PHASE_SC_CONFIRM;
+            if (conn->smp.secure.numeric_required) {
+                conn->smp.secure.numeric_value = gap_sc_numeric_value(&conn->smp, conn);
+
+                if (!conn->is_central)
+                    gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
+                pairing->phase = SMP_PHASE_SC_USER;
             }
-            else {
-                pairing->phase = SMP_PHASE_SC_PASSKEY;
+            else if (conn->is_central) {
+                uint8_t check[16];
+                gap_sc_dhkey_check(&conn->smp, conn, 1, check);
+                gap_smp_queue(&conn->smp, SMP_PAIRING_DHKEY_CHECK, check, sizeof(check));
             }
+            else
+                gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
+
+            if (!conn->smp.secure.numeric_required)
+                pairing->phase = SMP_PHASE_SC_DHKEY;
             return;
         }
 
-        if (!gap_sc_derive_keys(&conn->smp, conn)) {
-            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
-            return;
-        }
+        if (pairing->phase == SMP_PHASE_RANDOM) {
+            uint8_t confirm[16], difference = 0;
+            gap_smp_confirm(&conn->smp, conn, pdu + 1, confirm);
 
-        if (conn->smp.secure.passkey_required)
-            pairing->authenticated = 1;
+            for (unsigned i = 0; i < 16; i++)
+                difference |= confirm[i] ^ pairing->peer_confirm[i];
+            if (difference) {
+                gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
+                return;
+            }
 
-        if (conn->smp.secure.numeric_required) {
-            conn->smp.secure.numeric_value = gap_sc_numeric_value(&conn->smp, conn);
+            uint8_t s1_random[16];
+            memcpy(s1_random, conn->is_central ? conn->smp.random : pdu + 1, 8);
+            memcpy(s1_random + 8, conn->is_central ? pdu + 1 : conn->smp.random, 8);
+            int stk_ready = smp_aes128(pairing->tk, s1_random, conn->smp.key.stk);
+            gap_wipe(s1_random, sizeof(s1_random));
+
+            if (!stk_ready) {
+                gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
+                return;
+            }
+
+            gap_wipe(pairing->tk, 16);
+            pairing->passkey_action = 0;
+            for (unsigned i = pairing->key_size; i < 16; i++)
+                conn->smp.key.stk[i] = 0;
 
             if (!conn->is_central)
                 gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-            pairing->phase = SMP_PHASE_SC_USER;
-        }
-        else if (conn->is_central) {
-            uint8_t check[16];
-            gap_sc_dhkey_check(&conn->smp, conn, 1, check);
-            gap_smp_queue(&conn->smp, SMP_PAIRING_DHKEY_CHECK, check, sizeof(check));
-        }
-        else
-            gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-
-        if (!conn->smp.secure.numeric_required)
-            pairing->phase = SMP_PHASE_SC_DHKEY;
-        return;
-    }
-
-    if (op == SMP_PAIRING_RANDOM && pending_len == 17 &&
-        pairing->phase == SMP_PHASE_RANDOM
-    ) {
-        uint8_t confirm[16], difference = 0;
-        gap_smp_confirm(&conn->smp, conn, pdu + 1, confirm);
-
-        for (unsigned i = 0; i < 16; i++)
-            difference |= confirm[i] ^ pairing->peer_confirm[i];
-        if (difference) {
-            gap_smp_fail(conn, SMP_FAIL_CONFIRM_VALUE);
+            pairing->phase = SMP_PHASE_ENCRYPT;
             return;
         }
-
-        uint8_t s1_random[16];
-        memcpy(s1_random, conn->is_central ? conn->smp.random : pdu + 1, 8);
-        memcpy(s1_random + 8, conn->is_central ? pdu + 1 : conn->smp.random, 8);
-        int stk_ready = smp_aes128(pairing->tk, s1_random, conn->smp.key.stk);
-        gap_wipe(s1_random, sizeof(s1_random));
-
-        if (!stk_ready) {
-            gap_smp_fail(conn, SMP_FAIL_UNSPECIFIED);
-            return;
-        }
-
-        gap_wipe(pairing->tk, 16);
-        pairing->passkey_action = 0;
-        for (unsigned i = pairing->key_size; i < 16; i++)
-            conn->smp.key.stk[i] = 0;
-
-        if (!conn->is_central)
-            gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-        pairing->phase = SMP_PHASE_ENCRYPT;
-        return;
     }
 
     if (op == SMP_PAIRING_DHKEY_CHECK && pending_len == 17 &&
