@@ -27,9 +27,14 @@ int GAP_RANDOM_SECURE_BYTES(uint8_t *out, size_t len);
 #define GAP_BOND_VERSION_LEGACY 1
 #define GAP_BOND_VERSION_CSRK 2
 #define GAP_BOND_VERSION 3
-#define GAP_KEY_DIST_ENCRYPTION 0x01
-#define GAP_KEY_DIST_IDENTITY 0x02
-#define GAP_KEY_DIST_SIGNING 0x04
+enum {
+    GAP_KEY_DIST_ENCRYPTION = 0x01,
+    GAP_KEY_DIST_IDENTITY = 0x02,
+    GAP_KEY_DIST_SIGNING = 0x04,
+    GAP_KEY_DIST_MASK = GAP_KEY_DIST_ENCRYPTION |
+                        GAP_KEY_DIST_IDENTITY |
+                        GAP_KEY_DIST_SIGNING
+};
 
 // Pairing policy and per-link protocol state belong to the SMP adapter.
 typedef enum {
@@ -2200,9 +2205,9 @@ static void gap_smp_poll_context(
         return;
     }
 
-    if ((op == SMP_PAIRING_REQUEST && !conn->is_central &&
-         (pairing->phase == SMP_PHASE_IDLE || pairing->phase == SMP_PHASE_SECURITY_REQUEST)) ||
-        (op == SMP_PAIRING_RESPONSE && conn->is_central && pairing->phase == SMP_PHASE_RESPONSE)
+    if ((op == SMP_PAIRING_RESPONSE && conn->is_central && pairing->phase == SMP_PHASE_RESPONSE) ||
+        (op == SMP_PAIRING_REQUEST && !conn->is_central && (pairing->phase == SMP_PHASE_IDLE ||
+                                                    pairing->phase == SMP_PHASE_SECURITY_REQUEST))
     ) {
         if (gap_security->phase || gap_security->tx_enabled || gap_security->rx_enabled) {
             // Re-pairing an encrypted link is not supported yet.
@@ -2210,28 +2215,25 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t key_dist_supported = GAP_KEY_DIST_ENCRYPTION |
-                                    GAP_KEY_DIST_IDENTITY |
-                                    GAP_KEY_DIST_SIGNING;
         smp_features peer = { pdu[1], pdu[2], pdu[3], pdu[4], pdu[5], pdu[6] };
-        smp_features local = (smp_features){
-            pairing->request[1],
-            pairing->request[2],
-            pairing->request[3],
-            pairing->request[4],
-            pairing->request[5],
-            pairing->request[6]
-        };
-
         if (!smp_features_valid(&peer) ||
-            (peer.init_key_dist & ~key_dist_supported) ||
-            (peer.resp_key_dist & ~key_dist_supported)
+            (peer.init_key_dist & ~GAP_KEY_DIST_MASK) ||
+            (peer.resp_key_dist & ~GAP_KEY_DIST_MASK)
         ) {
             gap_smp_fail(conn, SMP_FAIL_INVALID_PARAMETERS);
             return;
         }
 
+        smp_features local;
         if (op == SMP_PAIRING_RESPONSE) {
+            local = (smp_features){
+                pairing->request[1],
+                pairing->request[2],
+                pairing->request[3],
+                pairing->request[4],
+                pairing->request[5],
+                pairing->request[6]
+            };
             if (!smp_features_valid(&local) ||
                 (peer.init_key_dist & (uint8_t)~local.init_key_dist) ||
                 (peer.resp_key_dist & (uint8_t)~local.resp_key_dist)
@@ -2245,27 +2247,25 @@ static void gap_smp_poll_context(
                 .io_capability = gap_pair_cfg.io,
                 .oob_data_flag = conn->smp.local_oob.oob.valid,
                 .max_key_size = 16,
-                .init_key_dist = key_dist_supported,
-                .resp_key_dist = key_dist_supported,
+                .init_key_dist = GAP_KEY_DIST_MASK,
+                .resp_key_dist = GAP_KEY_DIST_MASK,
                 .auth_req = (gap_pair_cfg.bonding ? 1 : 0) |
                             (gap_pair_cfg.authenticated ? 4 : 0) |
                             (gap_pair_cfg.secure_connections ? 8 : 0)
             };
         }
 
-        uint8_t sc = (local.auth_req & SMP_AUTH_SECURE_CONNECTIONS) &&
-                     (peer.auth_req & SMP_AUTH_SECURE_CONNECTIONS);
+        uint8_t secure = (local.auth_req & SMP_AUTH_SECURE_CONNECTIONS) &&
+                         (peer.auth_req & SMP_AUTH_SECURE_CONNECTIONS);
         uint8_t key_size = MIN(local.max_key_size, peer.max_key_size);
         uint8_t init_key_dist = local.init_key_dist &
-                                peer.init_key_dist &
-                                key_dist_supported;
+                                peer.init_key_dist & GAP_KEY_DIST_MASK;
         uint8_t resp_key_dist = local.resp_key_dist &
-                                peer.resp_key_dist &
-                                key_dist_supported;
+                                peer.resp_key_dist & GAP_KEY_DIST_MASK;
 
         // EncKey is ignored for LE Secure Connections; never use it to send
         // legacy Encryption Information or Central Identification commands.
-        if (sc) {
+        if (secure) {
             init_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
             resp_key_dist &= (uint8_t)~SMP_KEY_DIST_ENCRYPTION;
         }
@@ -2279,10 +2279,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        // Keep the negotiated bonding flag with the key size and SC result.
-        uint8_t bonding = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
-                          (peer.auth_req & SMP_AUTH_BONDING_MASK);
-        pairing->secure_connections = sc;
+        pairing->secure_connections = secure;
         uint8_t auth_req = (op == SMP_PAIRING_RESPONSE) ? local.auth_req :
                                         (gap_pair_cfg.bonding ? 1 : 0) |
                                         (gap_pair_cfg.authenticated ? 4 : 0) |
@@ -2313,8 +2310,10 @@ static void gap_smp_poll_context(
                                     ? conn->smp.peer_oob.valid : pairing->request[2];
         conn->smp.secure.oob_active = pairing->secure_connections && (local_oob_flag || pdu[2]);
 
-        pairing->bond_requested = bonding && (pairing->secure_connections ||
-                                    ((init_key_dist | resp_key_dist) & GAP_KEY_DIST_ENCRYPTION));
+        pairing->bond_requested = (local.auth_req & SMP_AUTH_BONDING_MASK) &&
+                                  (peer.auth_req & SMP_AUTH_BONDING_MASK) &&
+                                  (pairing->secure_connections ||
+                                   ((init_key_dist | resp_key_dist) & GAP_KEY_DIST_ENCRYPTION));
 
         if (gap_pair_cfg.bonding && !pairing->bond_requested) {
             gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
