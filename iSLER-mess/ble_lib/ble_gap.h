@@ -1882,13 +1882,12 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         ble_gap_l2cap_peer *peer = &manager->peers[slot];
         seen[slot] = 1;
 
-        if (peer->initialized &&
-            peer->handle.generation != handle.generation) {
-            l2cap_conn_reset(peer->connection, 0x0013);
-            peer->initialized = 0;
-        }
+        if (!peer->initialized ||
+            peer->handle.generation != handle.generation
+        ) {
+            if (peer->initialized)
+                l2cap_conn_reset(peer->connection, 0x0013);
 
-        if (!peer->initialized) {
             memset(peer, 0, sizeof(*peer));
             peer->handle = handle;
             peer->upper = manager->upper;
@@ -1904,11 +1903,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             peer->initialized = 1;
         }
 
-        uint8_t connected = gap_conn_select(handle);
-        if (connected) {
-            connected = (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-                (conn->is_central || !conn->link_layer.first_event);
-        }
+        uint8_t connected = gap_conn_select(handle) &&
+            (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+            (conn->is_central || !conn->link_layer.first_event);
 
         if (connected != peer->connected) {
             if (!connected) l2cap_conn_reset(peer->connection, 0);
@@ -1918,95 +1915,102 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             memset(&peer->reassembler, 0, sizeof(peer->reassembler));
         }
 
+        if (!connected) {
+            if (!peer->update_applied)
+                l2cap_conn_tick(peer->connection, GET_MILLIS());
+            continue;
+        }
+
         int result = 0;
 
-        if (connected) {
-            if (peer->tx_queue->length) {
-                uint16_t max_len = conn->data_length.tx_octets;
+        if (peer->tx_queue->length) {
+            uint16_t max_len = conn->data_length.tx_octets;
 
-                if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
-                    gap_conn_slot = previous_slot;
-                    return -1;
-                }
-
-                uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
-                uint16_t chunk = MIN(remaining, max_len);
-                uint8_t llid = peer->tx_queue->offset ? 1 : 2;
-
-                if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
-                    peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
-
-                    if (peer->tx_queue->offset == peer->tx_queue->length) {
-                        peer->tx_queue->length = 0;
-                        peer->tx_queue->offset = 0;
-                    }
-                    result = 1;
-                }
+            if (!max_len || max_len > GAP_L2CAP_LL_MAX) {
+                gap_conn_slot = previous_slot;
+                return -1;
             }
-            else if (l2cap_ecfc_pump(peer->connection) &&
-                    peer->tx_queue->length
-            ) {
+
+            uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
+            uint16_t chunk = MIN(remaining, max_len);
+            uint8_t llid = peer->tx_queue->offset ? 1 : 2;
+
+            if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
+                peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
+
+                if (peer->tx_queue->offset == peer->tx_queue->length) {
+                    peer->tx_queue->length = 0;
+                    peer->tx_queue->offset = 0;
+                }
                 result = 1;
             }
-            else {
-                uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
-                size_t len = sizeof(fragment);
-                int received = gap_receive_data(&llid, fragment, &len);
+        }
+        else if (l2cap_ecfc_pump(peer->connection) && peer->tx_queue->length) {
+            result = 1;
+        }
+        else {
+            uint8_t llid, fragment[GAP_L2CAP_LL_MAX];
+            size_t len = sizeof(fragment);
+            int received = gap_receive_data(&llid, fragment, &len);
 
-                if (received > 0) {
-                    if (!len) {
-                        memset(&peer->reassembler, 0, sizeof(peer->reassembler));
-                    }
-                    else {
-                        uint16_t cid = 0, sdu_len = 0;
-                        const uint8_t *sdu = NULL;
-                        int assembled = l2cap_reassembler_feed(
-                            &peer->reassembler, llid, fragment, len,
-                            &cid, &sdu, &sdu_len);
-                        if (assembled > 0)
-                            result = l2cap_receive(peer->connection, cid, sdu, sdu_len);
-                        else result = assembled;
-                    }
+            if (received > 0) {
+                if (!len) {
+                    memset(&peer->reassembler, 0, sizeof(peer->reassembler));
                 }
-                else result = received;
+                else {
+                    uint16_t cid = 0, sdu_len = 0;
+                    const uint8_t *sdu = NULL;
+                    int assembled = l2cap_reassembler_feed(&peer->reassembler, llid,
+                                                        fragment, len, &cid, &sdu, &sdu_len);
+                    if (assembled > 0)
+                        result = l2cap_receive(peer->connection, cid, sdu, sdu_len);
+                    else result = assembled;
+                }
             }
+            else result = received;
+        }
 
-            l2cap_connection *l2cap = peer->connection;
+        l2cap_connection *l2cap = peer->connection;
 
-            if (l2cap->remote_update_pending) {
-                int request_expired = !peer->update_applied &&
-                    l2cap->remote_update_due_ms &&
-                    (int32_t)(GET_MILLIS() - l2cap->remote_update_due_ms) >= 0;
-
-                if (!request_expired) {
-                    if (!conn->is_central) {
-                        if (l2cap_connection_update_reply(l2cap, 0))
-                            result = 1;
-                    }
-                    else {
-                        if (!peer->update_applied) {
-                            uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-                            uint16_t interval = current >= l2cap->remote_update_min &&
-                                                current <= l2cap->remote_update_max ? current :
-                                                l2cap->remote_update_min;
-
-                            // GAP may be busy with another procedure. Leave
-                            // this request pending and retry on the next poll.
-                            if (gap_conn_update(interval, l2cap->remote_update_latency,
-                                                        l2cap->remote_update_timeout))
-                                peer->update_applied = 1;
-                        }
-
-                        if (peer->update_applied && l2cap_connection_update_reply(l2cap, 1)) {
+        if (l2cap->remote_update_pending) {
+            if (peer->update_applied ||
+                !l2cap->remote_update_due_ms ||
+                (int32_t)(GET_MILLIS() - l2cap->remote_update_due_ms) < 0
+            ) {
+                if (!conn->is_central) {
+                    if (l2cap_connection_update_reply(l2cap, 0))
+                        result = 1;
+                }
+                else {
+                    if (peer->update_applied) {
+                        if (l2cap_connection_update_reply(l2cap, 1)) {
                             peer->update_applied = 0;
                             result = 1;
                         }
                     }
+                    else {
+                        uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
+                        uint16_t interval = (current >= l2cap->remote_update_min &&
+                                            current <= l2cap->remote_update_max) ? current :
+                                            l2cap->remote_update_min;
+
+                        // GAP may be busy with another procedure. Leave
+                        // this request pending and retry on the next poll.
+                        if (gap_conn_update(interval, l2cap->remote_update_latency,
+                                            l2cap->remote_update_timeout)) {
+                            peer->update_applied = 1;
+
+                            if (l2cap_connection_update_reply(l2cap, 1)) {
+                                peer->update_applied = 0;
+                                result = 1;
+                            }
+                        }
+                    }
                 }
             }
-            else {
-                peer->update_applied = 0;
-            }
+        }
+        else {
+            peer->update_applied = 0;
         }
 
         // Once GAP queued the update, keep retrying the L2CAP response rather
