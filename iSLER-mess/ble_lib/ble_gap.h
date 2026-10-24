@@ -1913,7 +1913,8 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
         if (connected != peer->connected) {
             if (!connected) l2cap_conn_reset(peer->connection, 0);
             peer->connected = connected;
-            peer->tx_queue->length = peer->tx_queue->offset = 0;
+            peer->tx_queue->length = 0;
+            peer->tx_queue->offset = 0;
             memset(&peer->reassembler, 0, sizeof(peer->reassembler));
         }
 
@@ -1928,14 +1929,16 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             }
 
             uint16_t remaining = peer->tx_queue->length - peer->tx_queue->offset;
-            uint16_t chunk = remaining < max_len ? remaining : max_len;
+            uint16_t chunk = MIN(remaining, max_len);
             uint8_t llid = peer->tx_queue->offset ? 1 : 2;
 
-            if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)
-            ) {
+            if (gap_send_data(llid, peer->tx_queue->data + peer->tx_queue->offset, chunk)) {
                 peer->tx_queue->offset = (uint16_t)(peer->tx_queue->offset + chunk);
-                if (peer->tx_queue->offset == peer->tx_queue->length)
-                    peer->tx_queue->length = peer->tx_queue->offset = 0;
+
+                if (peer->tx_queue->offset == peer->tx_queue->length) {
+                    peer->tx_queue->length = 0;
+                    peer->tx_queue->offset = 0;
+                }
                 result = 1;
             }
         }
