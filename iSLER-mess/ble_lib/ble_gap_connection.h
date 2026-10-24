@@ -2710,10 +2710,6 @@ uint8_t gap_security_status(void) {
 
 #else
 
-static uint8_t *gap_security_tx_frame(gap_conn_context *conn) {
-    return conn->tx_frame;
-}
-
 int gap_encrypt(const uint8_t ltk[16], const uint8_t random[8], uint16_t ediv) {
     (void)ltk;
     (void)random;

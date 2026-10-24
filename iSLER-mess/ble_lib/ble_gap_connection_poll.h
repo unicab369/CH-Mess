@@ -258,6 +258,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
     }
 #endif // GAP_EXT_ADV_SUPPORT
 
+    // gap_conn_slot still selects conn here; earlier slot restorations return.
     if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
         conn->link_state.rx_armed
     ) {
@@ -275,12 +276,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn_anchor_ticks = received_ticks - airtime_ticks;
         }
         event_counter = conn->link_layer.event_counter;
-    }
 
-    // gap_conn_slot still selects conn here; earlier slot restorations return.
-    if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
-        conn->link_state.rx_armed
-    ) {
         uint8_t authenticated = 0;
 #if GAP_SECURITY_SUPPORT >= 1
         uint8_t duplicate = ((frame[0] >> 3) & 1) != conn->link_layer.expected_rx_sn;
@@ -603,7 +599,11 @@ void __attribute__((noinline)) gap_hw_received(void) {
         conn->tx_frame[0] = (conn->tx_frame[0] & 0x03) |
                         (conn->link_layer.expected_rx_sn << 2) |
                         (conn->link_layer.tx_sn << 3);
+#if GAP_SECURITY_SUPPORT >= 1
         uint8_t *transmit = gap_security_tx_frame(conn);
+#else
+        uint8_t *transmit = conn->tx_frame;
+#endif // GAP_SECURITY_SUPPORT >= 1
 
         if (!transmit) {
             gap_conn_slot = previous_slot;
@@ -1299,6 +1299,7 @@ static void gap_conn_poll(void) {
 
     GAP_HW_CRC_INIT(conn->link_layer.crc_init);
 
+    uint8_t *transmit = NULL;
 #if GAP_CENTRAL_SUPPORT
     if (conn->is_central) {
         if (!conn->central.central_anchor_set) {
@@ -1321,19 +1322,20 @@ static void gap_conn_poll(void) {
                         (conn->link_layer.expected_rx_sn << 2) |
                         (conn->link_layer.tx_sn << 3);
         GAP_HW_TX_CLEAR_DONE();
-        uint8_t *transmit = gap_security_tx_frame(conn);
+
+#if GAP_SECURITY_SUPPORT >= 1
+        transmit = gap_security_tx_frame(conn);
+#else
+        transmit = conn->tx_frame;
+#endif // GAP_SECURITY_SUPPORT >= 1
 
         if (!transmit) return;
-
-        GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                            transmit, 1, conn->phy_state.current.tx, conn->phy_state.current.rx);
     }
-    else
 #endif // GAP_CENTRAL_SUPPORT
-    {
-        GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                            NULL, 0, conn->phy_state.current.tx, conn->phy_state.current.rx);
-    }
+
+    GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
+                        transmit, transmit != NULL,
+                        conn->phy_state.current.tx, conn->phy_state.current.rx);
 
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
@@ -1342,7 +1344,7 @@ static void gap_conn_poll(void) {
     gap_rx_armed = 1;
 
 #if GAP_CENTRAL_SUPPORT
-    if (conn->is_central)
+    if (transmit)
         GAP_HW_LINK_TX();
     else
 #endif // GAP_CENTRAL_SUPPORT
