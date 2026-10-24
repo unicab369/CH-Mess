@@ -602,7 +602,13 @@ void gap_scan_stop(void) {
 
 // Application facing
 void gap_scan_start(uint8_t active) {
+#if GAP_CENTRAL_SUPPORT
+    gap_conn_mode mode = gap_initiator.mode;
+#endif
     gap_scan_stop();
+#if GAP_CENTRAL_SUPPORT
+    gap_initiator.mode = mode;
+#endif
     memset(&gap_scan, 0, sizeof(gap_scan));
 
     gap_scanner.scanning = 1;

@@ -9,6 +9,15 @@
 #include <string.h>
 #include "ble_l2cap.h"
 
+#ifndef IN_RANGE_INCLUSIVE
+#define IN_RANGE_INCLUSIVE(value, min, max) \
+    ((value) >= (min) && (value) <= (max))
+#endif
+#ifndef IN_RANGE_EXCLUSIVE
+#define IN_RANGE_EXCLUSIVE(value, min, max) \
+    ((value) > (min) && (value) < (max))
+#endif
+
 // Platform hooks used by the GAP controller and security procedures.
 #ifndef GAP_RADIO_BUFFER_ATTR
 #define GAP_RADIO_BUFFER_ATTR __attribute__((aligned(4)))
