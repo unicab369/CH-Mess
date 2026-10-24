@@ -1098,7 +1098,7 @@ static int gap_sync_info_accept(
                         (fields->sync.offset_us + unit_us) + 999999) / 1000000) + 2;
 
     uint64_t widen_ticks = HW_TICKS_FROM_US(widen_us);
-    uint64_t window_start = target > widen_ticks ? target - widen_ticks : 0;
+    uint64_t window_start = subtract_clamp0_64(target, widen_ticks);
     uint64_t window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
     uint64_t now_ticks = GAP_HW_TICKS();
     uint32_t interval_us = (uint32_t)fields->sync.params.interval * 1250;
@@ -1115,7 +1115,7 @@ static int gap_sync_info_accept(
         widen_us = (uint32_t)(((uint64_t)(gap_sca_ppm[fields->sync.params.sca] + 500) *
                                         elapsed_us + 999999) / 1000000) + 2;
         widen_ticks = HW_TICKS_FROM_US(widen_us);
-        window_start = target > widen_ticks ? target - widen_ticks : 0;
+        window_start = subtract_clamp0_64(target, widen_ticks);
         window_end = target + HW_TICKS_FROM_US(unit_us + widen_us);
     }
     // Sync acquisition expires after six consecutive periodic events are missed.
@@ -1192,9 +1192,8 @@ static void gap_pawr_report_push(
 
     uint8_t *pdu = gap_ext_pawr.response.frame;
     uint32_t airtime_us = gap_phy_airtime_us(pdu[1], set->aux_phy);
-    uint64_t pkt_start_ticks = gap_ext_pawr.response.ticks >=
-                            HW_TICKS_FROM_US(airtime_us) ? gap_ext_pawr.response.ticks -
-                            HW_TICKS_FROM_US(airtime_us) : 0;
+    uint64_t pkt_start_ticks = subtract_clamp0_64(gap_ext_pawr.response.ticks,
+                                            HW_TICKS_FROM_US(airtime_us));
     uint32_t resp_spacing_us = (uint32_t)set->pawr.resp_spacing * 125;
 
     for (uint8_t resp_slot = 0; resp_slot < set->pawr.resp_slots; resp_slot++) {
@@ -1579,7 +1578,7 @@ static int gap_periodic_tx(gap_extended_adv_set *set) {
             uint64_t slot_ticks = subevent_start_ticks + HW_TICKS_FROM_US(
                                         (uint32_t)set->pawr.resp_delay * 1250);
             const uint64_t lead_ticks = HW_TICKS_FROM_US(150);
-            uint64_t start_ticks = slot_ticks > lead_ticks ? slot_ticks - lead_ticks : 0;
+            uint64_t start_ticks = subtract_clamp0_64(slot_ticks, lead_ticks);
 
             while (GAP_HW_TICKS() < start_ticks) {}
             gap_ext_pawr.response.ready = 0;
@@ -1769,9 +1768,8 @@ static void gap_ext_scan_process(void) {
                     sync->window_chain = 1;
                     sync->end_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
                                       after_packet_us + unit_us + widen_us);
-                    sync->start_ticks = gap_ext_scan.ticks +
-                                        HW_TICKS_FROM_US(after_packet_us > widen_us ?
-                                        after_packet_us - widen_us : 0);
+                    sync->start_ticks = gap_ext_scan.ticks + HW_TICKS_FROM_US(
+                                        subtract_clamp0_32(after_packet_us, widen_us));
                 }
             }
         }
@@ -1809,8 +1807,8 @@ static void gap_ext_scan_process(void) {
                 fields.identity.has_adi && sync->pawr.pending
             ) {
                 uint32_t airtime_us = gap_phy_airtime_us(pdu[1], packet_phy);
-                uint64_t packet_start = gap_ext_scan.ticks >= HW_TICKS_FROM_US(airtime_us)
-                                        ? gap_ext_scan.ticks - HW_TICKS_FROM_US(airtime_us) : 0;
+                uint64_t packet_start = subtract_clamp0_64(gap_ext_scan.ticks,
+                                        HW_TICKS_FROM_US(airtime_us));
                 uint64_t response_start = packet_start + HW_TICKS_FROM_US(
                                 (uint32_t)sync->pawr.timing.resp_delay * 1250 +
                                 (uint32_t)sync->pawr.slot * sync->pawr.timing.resp_spacing * 125);
@@ -2022,8 +2020,7 @@ static void gap_ext_scan_process(void) {
                 }
 
                 gap_aux_request_context *request = &gap_aux_request[aux_slot];
-                uint32_t start_us = after_packet_us > widen_us ?
-                                    after_packet_us - widen_us : 0;
+                uint32_t start_us = subtract_clamp0_32(after_packet_us, widen_us);
                 uint64_t start_offset_ticks = HW_TICKS_FROM_US(start_us);
                 uint64_t end_offset_ticks = HW_TICKS_FROM_US(after_packet_us +
                                                     offset_unit_us + widen_us);
@@ -2116,7 +2113,7 @@ static int gap_past_receive(
 
     uint32_t unit_us = fields.sync.offset_unit ? 300 : 30;
     uint64_t widening_ticks = HW_TICKS_FROM_US((uint32_t)widen_us);
-    uint64_t window_start = target > widening_ticks ? target - widening_ticks : 0;
+    uint64_t window_start = subtract_clamp0_64(target, widening_ticks);
     uint64_t window_end = target + HW_TICKS_FROM_US(unit_us + (uint32_t)widen_us);
     uint64_t now_ticks = GAP_HW_TICKS();
     uint16_t event_counter = fields.sync.event_counter;
@@ -2126,7 +2123,7 @@ static int gap_past_receive(
         target += HW_TICKS_FROM_US(interval_us);
         event_counter++;
         skipped++;
-        window_start = target > widening_ticks ? target - widening_ticks : 0;
+        window_start = subtract_clamp0_64(target, widening_ticks);
         window_end = target + HW_TICKS_FROM_US(unit_us + (uint32_t)widen_us);
     }
 
@@ -2347,7 +2344,7 @@ static int gap_sync_conn_overlap(uint64_t start_ticks, uint64_t end_ticks) {
 
     for (;;) {
         uint64_t early_ticks = HW_TICKS_FROM_US(200) + widening_ticks;
-        open_ticks = event_ticks > early_ticks ? event_ticks - early_ticks : 0;
+        open_ticks = subtract_clamp0_64(event_ticks, early_ticks);
         close_ticks = event_ticks +
             HW_TICKS_FROM_US(event_window_us + packet_guard_us) + widening_ticks;
 
@@ -2651,7 +2648,7 @@ static int gap_ext_send_due(uint32_t now) {
                 target = set->periodic.next_ticks;
             }
 
-            uint64_t offset_ticks = target > pdu_start ? target - pdu_start : 0;
+            uint64_t offset_ticks = subtract_clamp0_64(target, pdu_start);
             uint32_t offset_us = (uint32_t)(offset_ticks / HW_TICKS_FROM_US(1));
             uint8_t units_300 = offset_us >= 245700;
             uint32_t unit_us = units_300 ? 300 : 30;

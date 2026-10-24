@@ -1046,6 +1046,14 @@ static inline void gap_bytes_reverse(
         out[i] = in[len - 1 - i];
 }
 
+static inline uint32_t subtract_clamp0_32(uint32_t value, uint32_t amount) {
+    return value > amount ? value - amount : 0;
+}
+
+static inline uint64_t subtract_clamp0_64(uint64_t value, uint64_t amount) {
+    return value > amount ? value - amount : 0;
+}
+
 static inline void ble_write_u32_le(uint8_t *dst, uint32_t value) {
     dst[0] = (uint8_t)value;
     dst[1] = (uint8_t)(value >> 8);
