@@ -130,7 +130,6 @@ int gap_ad_builder_init(
     gap_ad_builder *builder, uint8_t *data, size_t capacity
 ) {
     if (!builder || !data) return 0;
-
     builder->data = data;
     builder->capacity = capacity;
     builder->len = 0;
@@ -150,9 +149,7 @@ int gap_ad_append(
 
     // Copy first so value may overlap the builder buffer.
     uint8_t *ad = builder->data + builder->len;
-
-    if (value_len)
-        memmove(ad + 2, value, value_len);
+    if (value_len) memmove(ad + 2, value, value_len);
     ad[0] = (uint8_t)(value_len + 1);
     ad[1] = type;
     builder->len += value_len + 2;
@@ -280,10 +277,7 @@ int gap_ad_parse_next(
 
     if (*offset == len) return 0;
     uint8_t field_len = data[*offset];
-
-    if (!field_len) {
-        *offset = len; return 0;
-    }
+    if (!field_len) *offset = len; return 0;
 
     if ((size_t)field_len + 1 > len - *offset)
         return -1;
@@ -342,11 +336,10 @@ static int gap_ead_plaintext_valid(const uint8_t *data, size_t len) {
         uint8_t type;
         size_t value_len;
         const uint8_t *value;
-        int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
 
+        int parse_result = gap_ad_parse_next(data, len, &offset, &type, &value, &value_len);
         if (parse_result < 0) return 0;
         if (parse_result == 0) break;
-
         structures++;
     }
     return structures != 0;
@@ -434,7 +427,6 @@ static inline int gap_access_addr(uint32_t *address) {
     for (uint8_t attempt = 0; attempt < 32; attempt++) {
         // This is a random value, so little-endian conversion is not required.
         GAP_HW_RANDOM_BYTES((uint8_t *)address, sizeof(*address));
-
         if (gap_access_address_valid(*address))
             return 1;
     }
@@ -446,8 +438,7 @@ static inline int gap_access_addr(uint32_t *address) {
 // =============================================================================
 // Validate the AD payloads immediately before the advertising start path uses them
 static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
-    if ((!data && len) || len > GAP_ADV_DATA_MAX)
-        return 0;
+    if ((!data && len) || len > GAP_ADV_DATA_MAX) return 0;
 
     for (size_t offset = 0; offset < len;) {
         uint8_t field_len = data[offset];
@@ -457,7 +448,6 @@ static inline int gap_ad_data_valid(const uint8_t *data, size_t len) {
             for (; offset < len; offset++)
                 if (data[offset])
                     return 0;
-
             break;
         }
 
@@ -545,7 +535,6 @@ int gap_adv_start_directed(const gap_address *peer, uint16_t interval_ms) {
         if (slot >= 0 && gap_identities[slot].has_irk) {
             if (!gap_private_addr_generate(gap_identities[slot].irk, target, address))
                 return 0;
-
             type = 1;
         }
     }
@@ -610,7 +599,6 @@ void gap_scan_start(uint8_t active) {
     gap_initiator.mode = mode;
 #endif
     memset(&gap_scan, 0, sizeof(gap_scan));
-
     gap_scanner.scanning = 1;
     gap_scanner.active = active;
 }
@@ -665,7 +653,6 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
                 break;
             }
         }
-
         if (!has_entry) return 0;
     }
 
@@ -804,7 +791,6 @@ static inline void gap_receive_report(
 
             for (uint8_t offset = 0; offset < data_len;) {
                 uint8_t field_len = frame[8 + offset];
-
                 if (!field_len || (uint16_t)offset + field_len + 1 > data_len)
                     break;
 
@@ -884,7 +870,6 @@ static inline void gap_receive_report(
     report->target_address_type = (frame[0] >> 7) & 1;
     report->rssi = rssi;
     report->data_len = data_len;
-
     memcpy(report->address, frame + 2, 6);
     memcpy(report->identity_address, identity_address, 6);
 
@@ -923,7 +908,7 @@ int gap_scan_take_ad(
 
     // ADV_NONCONN_IND contains AdvA (6 bytes) followed by AD structures.
     if ((frame[0] & 0x0f) != ADV_NONCONN_IND ||
-        payload_len < 8 || payload_len > 37
+        !IN_RANGE_INCLUSIVE(payload_len, 8, 37)
     ) return 0;
 
     size_t end = (size_t)payload_len + 2;
