@@ -1028,7 +1028,7 @@ static inline int gap_is_busy(void) {
     return 0;
 }
 
-// Connection selection and application-facing handles.
+// Application-facing
 // Return the read-only context for the currently selected connection slot.
 const gap_conn_context *gap_conn_ctx_current(void) {
     return &gap_conn_ctx[gap_conn_slot];
@@ -1082,7 +1082,8 @@ static int gap_conn_free_slot(void) {
 
     return -1;
 }
-// Application-facing connection handle operations.
+// Application-facing
+// Count the live connection handles.
 static inline uint8_t gap_conn_count(void) {
     uint8_t count = 0;
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++)
@@ -1090,6 +1091,7 @@ static inline uint8_t gap_conn_count(void) {
     return count;
 }
 
+// Application-facing
 // Select a live link for the existing connection-specific GAP operations.
 static inline int gap_conn_select(gap_conn_handle handle) {
     if (handle.slot >= GAP_CONNECTION_COUNT || !handle.generation ||
@@ -1101,6 +1103,7 @@ static inline int gap_conn_select(gap_conn_handle handle) {
     return 1;
 }
 
+// Application-facing
 // Capture the currently selected link's handle for later API calls.
 static inline int gap_conn_current(gap_conn_handle *handle) {
     if (!handle || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
@@ -1173,7 +1176,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     return count >= 2 && gap_access_address_valid(ble_read_u32_le(frame + 14));
 }
 
-// Application facing
+// Application-facing
 // Configure initial Central connection parameters and the finite scan timeout
 // used by Direct, General, and Selective Connection Establishment.
 #if GAP_CENTRAL_SUPPORT
@@ -1374,7 +1377,7 @@ static int gap_accept_list_match(
     return 0;
 }
 
-// Application facing
+// Application-facing
 // Filter Accept List API.
 // Add an identity address to the bounded list while GAP is idle.
 int gap_accept_list_add(const gap_address *peer) {
@@ -1400,7 +1403,7 @@ int gap_accept_list_add(const gap_address *peer) {
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const gap_address *peer) {
     if (!peer || peer->type > 1) return 0;
@@ -1417,7 +1420,7 @@ int gap_accept_list_remove(const gap_address *peer) {
     return 0;
 }
 
-// Application facing
+// Application-facing
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     if (gap_is_busy()) return 0;
@@ -1426,7 +1429,7 @@ int gap_accept_list_clear(void) {
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Peer identity API.
 // Add/update an identity, or remove it with a null IRK, while GAP is idle.
 // New entries default to network privacy; updating an IRK preserves the mode.
@@ -1470,7 +1473,7 @@ int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(const gap_address *peer, uint8_t mode) {
     if (!peer || peer->type > 1) return 0;
@@ -1487,7 +1490,7 @@ int gap_identity_privacy(const gap_address *peer, uint8_t mode) {
     return 0;
 }
 
-// Application facing
+// Application-facing
 // Resolve without replacing the received address, which is needed on the air.
 int gap_resolve(const gap_address *address, gap_address *identity) {
     if (!address || address->type > 1 || !identity) return 0;
@@ -1499,7 +1502,7 @@ int gap_resolve(const gap_address *address, gap_address *identity) {
 #endif // GAP_IDENTITY_COUNT > 0
 
 #if GAP_PRIVACY_SUPPORT && GAP_IDENTITY_COUNT > 0
-// Application facing
+// Application-facing
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
@@ -1580,7 +1583,7 @@ static int gap_privacy_timeout_pick(
     return 0;
 }
 
-// Application facing
+// Application-facing
 // Configure local privacy while GAP is idle. Each timeout unit is 15 seconds;
 // valid nonzero bounds are 1..240 (15 seconds to one hour). Equal bounds use a
 // fixed timeout. An IRK with different bounds selects randomized RPA timing;
@@ -1626,7 +1629,7 @@ int gap_privacy_configure(
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Optionally accept only listed identities for scanning and incoming requests.
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
@@ -1671,7 +1674,7 @@ static void gap_local_addr_select(
     else GAP_HW_PUBLIC_ADDRESS(address);
 }
 
-// Application facing
+// Application-facing
 // Local address API.
 // Select a static random address for GAP advertising and active scanning.
 // Address bytes are in advertising PDU order (least significant byte first).
@@ -1688,7 +1691,7 @@ int gap_set_static_addr(const uint8_t address[6]) {
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Use the controller's factory public address for GAP advertising and scanning.
 int gap_use_public_address(void) {
     if (gap_is_busy()) return 0;
@@ -1845,7 +1848,7 @@ static inline int ble_gap_l2cap_accept_psm(void *context, uint16_t psm) {
     return !peer->upper.accept_psm || peer->upper.accept_psm(peer->upper.context, psm);
 }
 
-// Application facing
+// Application-facing
 static inline int ble_gap_l2cap_init(
     ble_gap_l2cap *manager, const l2cap_ops *upper,
     uint16_t mtu, uint16_t mps, uint16_t initial_credits
@@ -1862,7 +1865,7 @@ static inline int ble_gap_l2cap_init(
     return 1;
 }
 
-// Application facing
+// Application-facing
 // Poll each live connection; GAP supplies its LL data directly.
 static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     if (!manager) return -1;
@@ -1877,9 +1880,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
             continue;
 
         gap_conn_context *conn = &gap_conn_ctx[slot];
+        ble_gap_l2cap_peer *peer = &manager->peers[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
-        ble_gap_l2cap_peer *peer = &manager->peers[slot];
         seen[slot] = 1;
 
         if (!peer->initialized ||
@@ -2039,7 +2042,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
     return work;
 }
 
-// Application facing
+// Application-facing
 // Return a live connection's L2CAP instance to inspect channels/read SDUs or
 // accept/reject a pending peer parameter request.
 static inline l2cap_connection *ble_gap_l2cap_for(

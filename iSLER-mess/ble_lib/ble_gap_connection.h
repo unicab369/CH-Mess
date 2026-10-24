@@ -430,9 +430,8 @@ static void gap_conn_event_advance(gap_conn_context *conn) {
         ) {
             steps = (65536 - conn->next_schedule.base_event +
                      conn->next_schedule.factor - 1) / conn->next_schedule.factor;
-            conn->next_schedule.base_event = (uint16_t)(
-                    conn->next_schedule.base_event +
-                    steps * conn->next_schedule.factor - 65536);
+            conn->next_schedule.base_event = (uint16_t)(conn->next_schedule.base_event +
+                                        steps * conn->next_schedule.factor - 65536);
         }
     }
 }
@@ -1011,10 +1010,8 @@ static uint8_t gap_conn_control(
         ) return gap_conn_reject_resp(conn, frame[2], error);
 
         if (frame[2] == LL_CONNECTION_PARAM_RSP) {
-            if (minimum < conn->params_request.min_intvl_1p25ms)
-                minimum = conn->params_request.min_intvl_1p25ms;
-            if (maximum > conn->params_request.max_intvl_1p25ms)
-                maximum = conn->params_request.max_intvl_1p25ms;
+            minimum = MAX(minimum, conn->params_request.min_intvl_1p25ms);
+            maximum = MIN(maximum, conn->params_request.max_intvl_1p25ms);
 
             error = GAP_LL_ERR_UNSUPPORTED_PARAM; // Unsupported LL parameter value.
             if (minimum > maximum)

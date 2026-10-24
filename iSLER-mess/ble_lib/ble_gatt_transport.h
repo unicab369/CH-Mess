@@ -1639,9 +1639,9 @@ static inline int ble_gap_gatt_poll(
     for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
         if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot))) continue;
         gap_conn_context *conn = &gap_conn_ctx[slot];
+        ble_gap_gatt_peer *peer = &peers[slot];
         handle.slot = slot;
         handle.generation = gap_conn_generations[slot];
-        ble_gap_gatt_peer *peer = &peers[slot];
         seen[slot] = 1;
         if (!peer->bound) continue;
 

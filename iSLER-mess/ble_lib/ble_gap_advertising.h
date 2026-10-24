@@ -584,12 +584,14 @@ int gap_adv_filter_policy(uint8_t scan_accept, uint8_t connection_accept) {
 
 // Application facing
 void gap_scan_start(uint8_t active) {
+    memset(&gap_scan, 0, sizeof(gap_scan));
+
 #if GAP_EXT_ADV_SUPPORT
     gap_sync_started_scan = 0;
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
-    memset(&gap_scan, 0, sizeof(gap_scan));
+
 #if GAP_CENTRAL_SUPPORT
     gap_initiator.active = 0;
 #endif
@@ -631,12 +633,13 @@ void gap_scan_stop(void) {
     memset(gap_ext_ctx, 0, sizeof(gap_ext_ctx));
     memset(&gap_ext_idx, 0, sizeof(gap_ext_idx));
 #endif
-    gap_scanner.scanning = 0;
-    gap_scanner.active = 0;
+
 #if GAP_CENTRAL_SUPPORT
     gap_initiator.active = 0;
     gap_initiator.mode = GAP_CONN_MODE_DIRECT;
 #endif
+    gap_scanner.scanning = 0;
+    gap_scanner.active = 0;
     gap_scanner.generation++;
 }
 
@@ -719,8 +722,8 @@ static int gap_conn_procedure_start(gap_conn_mode mode, uint8_t active_scan) {
     }
 
     gap_initiator.active = 1;
-    gap_initiator.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 :
-                        GET_MILLIS() + (uint32_t)gap_central_timing.attempt_timeout_s * 1000;
+    gap_initiator.deadline_ms = (mode == GAP_CONN_MODE_AUTO) ? 0 : GET_MILLIS() +
+                                (uint32_t)gap_central_timing.attempt_timeout_s * 1000;
     return 1;
 }
 
