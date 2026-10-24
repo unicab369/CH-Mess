@@ -127,17 +127,6 @@ static struct {
 } adv_evt;
 #endif
 
-// Application facing
-// Read the currently applied connection timing and subrate schedule.
-const gap_conn_schedule *gap_conn_schedule_get(void) {
-    return &gap_conn_ctx_current()->schedule;
-}
-
-// Application facing
-uint8_t gap_subrate_status(void) {
-    return gap_conn_ctx_current()->c_subrate.status;
-}
-
 static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
     uint8_t busy = conn->c_rate.queued_flags || conn->c_rate.update_pending;
 #if GAP_PERIPHERAL_SUPPORT
@@ -1535,29 +1524,26 @@ static uint8_t gap_conn_control(
             error = GAP_LL_ERR_COLLISION;
         }
         else {
-            uint16_t interval = conn->schedule.interval_125us;
-
-            if (interval < minimum || interval > maximum)
-                interval = minimum;
+            uint16_t min_interval = MAX(minimum, gap_conn_min_interval(conn));
+            uint16_t interval = GAP_IN_RANGE_INCLUSIVE(conn->schedule.interval_125us, minimum, maximum) ?
+                                    conn->schedule.interval_125us : minimum;
 
             if (periodicity_125us) {
                 uint32_t lower = ((uint32_t)interval / periodicity_125us) * periodicity_125us;
                 uint32_t upper = lower + periodicity_125us;
-                uint8_t lower_valid = lower >= minimum && lower >= gap_conn_min_interval(conn);
+                uint8_t lower_valid = lower >= min_interval;
                 uint8_t upper_valid = upper <= maximum;
 
                 if (lower_valid && upper_valid)
-                    interval = (interval - lower <= upper - interval) ?
-                               (uint16_t)lower : (uint16_t)upper;
+                    interval = (uint16_t)(interval - lower <= upper - interval ?
+                                          lower : upper);
                 else if (upper_valid)
                     interval = (uint16_t)upper;
                 else if (lower_valid)
                     interval = (uint16_t)lower;
             }
 
-            if (interval < gap_conn_min_interval(conn))
-                interval = gap_conn_min_interval(conn);
-
+            interval = MAX(interval, min_interval);
             if (interval <= maximum &&
                 gap_rate_parameters_valid(interval, factor_max, latency, continuation, timeout)
             ) {
@@ -2046,9 +2032,8 @@ int gap_conn_request(
     uint16_t latency, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t factor = minimum * 10 <= conn->schedule.interval_125us &&
-                    conn->schedule.interval_125us <= maximum * 10 ?
-                    conn->schedule.factor : 1;
+    uint16_t factor = GAP_IN_RANGE_INCLUSIVE(conn->schedule.interval_125us,
+                    minimum * 10, maximum * 10) ? conn->schedule.factor : 1;
 
     if (gap_conn_timing_busy(conn) ||
         !ble_timing_valid( minimum, maximum, latency, timeout) ||

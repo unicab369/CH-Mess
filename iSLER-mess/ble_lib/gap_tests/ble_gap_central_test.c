@@ -3625,8 +3625,8 @@ static void test_connection_subrating(void) {
     receive_test_link_packet(1);
     assert(conn->c_subrate.factor == 5 &&
            conn->c_subrate.procedure_state == GAP_SUBRATE_IDLE &&
-           gap_subrate_status() == 0);
-    const gap_conn_schedule *schedule = gap_conn_schedule_get();
+           gap_conn_ctx_current()->c_subrate.status == 0);
+    const gap_conn_schedule *schedule = &gap_conn_ctx_current()->schedule;
     assert(schedule->factor == 5 && schedule->base_event < 5 &&
            schedule->latency == 1 && schedule->continuation == 1 &&
            schedule->timeout_10ms == 300);
@@ -3647,7 +3647,7 @@ static void test_connection_subrating(void) {
     assert(conn->c_subrate.factor == 6 && conn->c_subrate.base_event == 4 &&
            conn->c_subrate.latency == 2 && conn->c_subrate.continuation == 1 &&
            conn->procedures.params.supervision_timeout == 300 &&
-           gap_subrate_status() == 0);
+           gap_conn_ctx_current()->c_subrate.status == 0);
     gap_conn_end();
 
     // A Central accepts a Peripheral request and changes only after its IND
@@ -3659,7 +3659,7 @@ static void test_connection_subrating(void) {
            conn->c_subrate.procedure_state == GAP_SUBRATE_UPDATE_PENDING);
     assert(conn->c_subrate.pending_factor == 6);
     receive_test_link_packet(1);
-    assert(conn->c_subrate.factor == 6 && gap_subrate_status() == 0);
+    assert(conn->c_subrate.factor == 6 && conn->c_subrate.status == 0);
     gap_conn_end();
 
     start_test_central_link();
@@ -3681,7 +3681,7 @@ static void test_connection_subrating(void) {
     assert(gap_subrate_set(5, 1, 1, 300));
     receive_test_link_packet(1);
     receive_test_control(0x09, (uint8_t[8]){0}, 8);
-    assert(gap_subrate_status() == 0x1a &&
+    assert(gap_conn_ctx_current()->c_subrate.status == 0x1a &&
            !(conn->c_subrate.queued_flags & GAP_SUBRATE_QUEUED_UPDATE));
     gap_conn_end();
 
@@ -3690,7 +3690,8 @@ static void test_connection_subrating(void) {
     conn->c_subrate.status = GAP_CONNECTION_PENDING;
     conn->c_subrate.started_ms = now_ms - 40000;
     gap_conn_poll();
-    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && gap_subrate_status() == 0x22);
+    assert(!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) &&
+           gap_conn_ctx_current()->c_subrate.status == 0x22);
 
     start_test_central_link();
     conn->c_subrate.factor = 5;
