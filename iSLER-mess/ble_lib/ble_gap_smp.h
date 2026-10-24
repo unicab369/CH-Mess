@@ -1132,8 +1132,10 @@ int gap_pair_cancel(void) {
 // Central starts pairing; Peripheral asks its Central to start it.
 int gap_pair(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    if (!gap_pair_cfg.enabled || !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
-        (!conn->is_central && conn->link_layer.first_event) || conn->smp.pairing.phase ||
+    if (!gap_pair_cfg.enabled ||
+        !(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) ||
+        (!conn->is_central && conn->link_layer.first_event) ||
+        conn->smp.pairing.phase ||
         conn->smp.blocked || conn->security.phase ||
         gap_encrypted() || conn->smp.tx_queue->length || conn->smp.bearer.tx_len
     ) return 0;
@@ -1142,35 +1144,36 @@ int gap_pair(void) {
     conn->smp.bond_tx_waiting = 0;
     conn->smp.pairing.local_is_central = conn->is_central;
     conn->smp.pairing.phase = conn->is_central ?
-                    SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
+                                SMP_PHASE_RESPONSE : SMP_PHASE_SECURITY_REQUEST;
     conn->smp.previous_bond_valid = conn->is_central && conn->bonded;
     conn->smp.previous_bond = (conn->smp.previous_bond_valid) ? conn->bond : (gap_bond){0};
     conn->smp.status = GAP_CONNECTION_PENDING;
+
+    uint8_t auth_req = (gap_pair_cfg.authenticated ? SMP_AUTH_MITM : 0) |
+                       (gap_pair_cfg.bonding ? 1 : 0) |
+                       (gap_pair_cfg.secure_connections ? SMP_AUTH_SECURE_CONNECTIONS : 0) |
+                       (gap_pair_cfg.keypress_notifications ? SMP_AUTH_KEYPRESS : 0);
 
     if (conn->is_central) {
         uint8_t identity_irk[16] = {0}, identity_address[7] = {0};
         uint8_t *request = conn->smp.pairing.request;
         request[0] = 1;
         request[1] = gap_pair_cfg.io;
-        request[2] = gap_pair_cfg.secure_connections &&
-                     conn->smp.peer_oob.valid;
-        request[3] = (gap_pair_cfg.authenticated ? 4 : 0) |
-                     (gap_pair_cfg.bonding ? 1 : 0) |
-                     (gap_pair_cfg.secure_connections ? 8 : 0) |
-                     (gap_pair_cfg.keypress_notifications ? 0x10 : 0);
+        request[2] = gap_pair_cfg.secure_connections && conn->smp.peer_oob.valid;
+        request[3] = auth_req;
         request[4] = 16;
         request[5] = 0;
         request[6] = 0;
 
         if (gap_pair_cfg.bonding) {
-            if (!gap_pair_cfg.secure_connections)
+            if (!gap_pair_cfg.secure_connections) {
                 request[5] = GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
+                request[6] = GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
+            }
             if (gap_smp_local_identity(identity_irk, identity_address))
                 request[5] |= GAP_KEY_DIST_IDENTITY;
 
-            request[6] = GAP_KEY_DIST_IDENTITY;
-            if (!gap_pair_cfg.secure_connections)
-                request[6] |= GAP_KEY_DIST_SIGNING | GAP_KEY_DIST_ENCRYPTION;
+            request[6] |= GAP_KEY_DIST_IDENTITY;
         }
 
         gap_wipe(identity_irk, sizeof(identity_irk));
@@ -1178,11 +1181,7 @@ int gap_pair(void) {
         gap_smp_queue(&conn->smp, SMP_PAIRING_REQUEST, request + 1, 6);
     }
     else {
-        uint8_t auth = (gap_pair_cfg.authenticated ? 4 : 0) |
-                        (gap_pair_cfg.bonding ? 1 : 0) |
-                        (gap_pair_cfg.secure_connections ? 8 : 0) |
-                        (gap_pair_cfg.keypress_notifications ? 0x10 : 0);
-        gap_smp_queue(&conn->smp, SMP_SECURITY_REQUEST, &auth, 1);
+        gap_smp_queue(&conn->smp, SMP_SECURITY_REQUEST, &auth_req, 1);
     }
     return 1;
 }
