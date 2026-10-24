@@ -15,6 +15,8 @@ static uint8_t configured_tx;
 static uint8_t tx_started, rx_started;
 
 uint32_t GET_MILLIS(void) { return 1000; }
+uint32_t GAP_CRITICAL_ENTER(void) { return 0; }
+void GAP_CRITICAL_EXIT(uint32_t state) { (void)state; }
 const uint8_t *GAP_HW_RX_FRAME(void) { return NULL; }
 int8_t GAP_HW_RSSI(void) { return -40; }
 void GAP_HW_INIT(void) {}

@@ -300,7 +300,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             uint64_t cnt = conn->security.rx_counter;
             if (duplicate && cnt) cnt--;
 
-            if (frame[1] <= 4 || frame[1] > gap_data_capacity + 4 ||
+            if (!GAP_IN_RANGE_INCLUSIVE(frame[1], 5, gap_data_capacity + 4) ||
                 cnt >= (UINT64_C(1) << 39) || (duplicate && !conn->security.rx_counter)
             ) {
                 conn->security.status = 0x3d;
@@ -342,15 +342,14 @@ void __attribute__((noinline)) gap_hw_received(void) {
             conn->c_subrate.event_received = 1;
         }
 
+        uint64_t interval_ticks = HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+
         if (conn->is_central) {
-            conn->link_layer.next_ticks +=
-                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+            conn->link_layer.next_ticks += interval_ticks;
         }
         else {
-            uint64_t rx_airtime_ticks = HW_TICKS_FROM_US(gap_phy_airtime_us(frame[1],
-                                                        conn->phy_state.current.rx));
-            conn->link_layer.next_ticks = received_ticks - rx_airtime_ticks +
-                HW_TICKS_FROM_US((uint32_t)conn->schedule.interval_125us * 125);
+            conn->link_layer.next_ticks = received_ticks + interval_ticks -
+                HW_TICKS_FROM_US(gap_phy_airtime_us(frame[1], conn->phy_state.current.rx));
         }
 
         conn->link_layer.last_rx_ms = GET_MILLIS();

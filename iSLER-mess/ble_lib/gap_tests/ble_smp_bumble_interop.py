@@ -27,7 +27,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="ble-smp-bumble-") as temp:
         binary = pathlib.Path(temp) / "smp-fixture"
         subprocess.run(
-            ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+             "-Wno-unused-parameter",
+             "-ffunction-sections", "-fdata-sections", "-Wl,-dead_strip",
              str(FIXTURE), "-o", str(binary)],
             cwd=ROOT,
             check=True,

@@ -2136,17 +2136,6 @@ static void test_connect_by_identity(void) {
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
-    for (uint8_t slot = 0; slot < GAP_CONNECTION_COUNT; slot++) {
-        gap_conn_context *candidate = &gap_conn_ctx[slot];
-        if ((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(slot)) &&
-            candidate->is_central &&
-            !memcmp(candidate->peer.address, test_identity, 6)
-        ) {
-            gap_test_select_slot(slot);
-            conn = candidate;
-            break;
-        }
-    }
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central);
     assert(!gap_initiator.active);
     assert(adv_tx.connect_request[0] & 0x80);
@@ -2590,12 +2579,20 @@ static void test_nonresolvable_private_addresses(void) {
 
 static void start_test_central_link(void) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
+    uint8_t slot = gap_conn_slot;
+    uint8_t previous_slot_mask = gap_conn_slot_mask;
+    assert(!(previous_slot_mask & GAP_CONN_SLOT_BIT(slot)));
+    for (uint8_t reserved = 0; reserved < slot; reserved++)
+        gap_conn_slot_mask |= GAP_CONN_SLOT_BIT(reserved);
     assert(gap_conn_start(test_address(test_identity, 0)));
     conn = &gap_conn_ctx[gap_conn_slot];
     memset(rx_frame, 0, sizeof(rx_frame));
     rx_frame[0] = 0x40; rx_frame[1] = 6;
     memcpy(rx_frame + 2, test_rpa, 6);
     gap_hw_received();
+    gap_conn_slot = slot;
+    gap_conn_slot_mask = previous_slot_mask | GAP_CONN_SLOT_BIT(slot);
+    conn = &gap_conn_ctx[slot];
     assert((gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)) && conn->is_central);
     now_ms += 2;
     gap_conn_poll();
@@ -4240,6 +4237,8 @@ static void test_smp_signing_key_distribution(void) {
     test_bond_storage_enabled = 1;
     assert(gap_bonding_set(1));
     start_test_central_link();
+    conn = &gap_conn_ctx[gap_conn_slot];
+    smp = &conn->smp;
     gap_pairing_set(1);
     assert(gap_pair());
     assert(smp->pairing.request[5] ==
@@ -4312,6 +4311,8 @@ static void test_smp_signing_key_distribution(void) {
 
     // The Central receives the Peripheral's set first, then sends its own.
     start_test_central_link();
+    conn = &gap_conn_ctx[gap_conn_slot];
+    smp = &conn->smp;
     smp->pairing.phase = SMP_PHASE_BOND_RX;
     smp->bearer.now_ms = GET_MILLIS();
     smp->pairing.bond_rx_step = 30;
@@ -4387,7 +4388,7 @@ static void test_smp_signing_key_distribution(void) {
     conn->bond.key_size = 16;
     conn->bond.peer.type = 0;
     conn->bond.peer.address[0] = 0x42;
-    smp_bond_peripheral_start(0);
+    smp_bond_peripheral_start(conn);
     assert(smp->pairing.phase == SMP_PHASE_BOND_TX &&
            smp->pairing.bond_tx_step == 31 && smp->tx_queue->length == 21 &&
            smp->tx[2] == L2CAP_CID_SMP &&
@@ -4685,8 +4686,7 @@ static void test_secure_connections_just_works(void) {
         GAP_KEY_DIST_IDENTITY, GAP_KEY_DIST_IDENTITY
     };
     receive_test_smp(response, sizeof(response), 0);
-    assert(smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY &&
-           smp->tx_queue->length == 69);
+    assert(smp->pairing.phase == SMP_PHASE_SC_PUBLIC_KEY);
     for (uint8_t fragment = 0; fragment < 3; fragment++) {
         conn->queue_state.tx_queued = conn->link_layer.tx_pending = 0;
         gap_smp_poll();

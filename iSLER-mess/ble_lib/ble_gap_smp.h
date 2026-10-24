@@ -2325,7 +2325,12 @@ static void gap_smp_poll_context(
             if ((pdu[3] & SMP_AUTH_MITM) || gap_pair_cfg.authenticated ||
                 (conn->is_central && (pairing->request[3] & SMP_AUTH_MITM))
             ) {
-                if (gap_pair_cfg.io == 3 || pdu[1] == 3 || (gap_pair_cfg.io < 2 && pdu[1] < 2)) {
+                if (gap_pair_cfg.io == GAP_IO_NONE || pdu[1] == GAP_IO_NONE ||
+                    (gap_pair_cfg.io == GAP_IO_DISPLAY_ONLY &&
+                     pdu[1] == GAP_IO_DISPLAY_ONLY) ||
+                    (!pairing->secure_connections && gap_pair_cfg.io < 2 &&
+                     pdu[1] < 2)
+                ) {
                     gap_smp_fail(conn, SMP_FAIL_AUTHENTICATION_REQUIREMENTS);
                     return;
                 }

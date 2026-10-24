@@ -6,7 +6,8 @@
 #include <string.h>
 
 #ifndef L2CAP_SDU_MAX
-#define L2CAP_SDU_MAX 32
+// SMP Secure Connections public keys are 65-byte PDUs.
+#define L2CAP_SDU_MAX 65
 #endif
 
 #define L2CAP_CID_ATT 0x0004u
