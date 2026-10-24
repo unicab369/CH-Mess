@@ -1758,14 +1758,23 @@ static void gap_ext_scan_process(void) {
 
     uint8_t kind = gap_ext_scan.kind;
     uint8_t periodic = (kind == GAP_EXT_ADV_PERIODIC_PDU);
-    int slot = periodic ? gap_ext_scan.periodic_slot :
-                (kind == GAP_EXT_ADV_AUXILIARY_PDU) ? gap_ext_scan.aux_slot : -1;
+    uint8_t packet_phy = GAP_PHY_1M;
+    int slot = -1;
 
-    if (kind == GAP_EXT_ADV_AUXILIARY_PDU && slot < GAP_EXT_ADV_CONTEXT_COUNT)
-        gap_aux_request[slot].active = 0;
+    if (periodic) {
+        slot = gap_ext_scan.periodic_slot;
+        packet_phy = gap_ext_scan.periodic_rx_phy;
 
-    if (periodic && slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
-        gap_syncs[slot].window_active = 0;
+        if (slot >= 0 && slot < GAP_PERIODIC_SYNC_COUNT)
+            gap_syncs[slot].window_active = 0;
+    }
+    else if (kind == GAP_EXT_ADV_AUXILIARY_PDU) {
+        slot = gap_ext_scan.aux_slot;
+        packet_phy = gap_ext_scan.aux_rx_phy;
+
+        if (slot >= 0 && slot < GAP_EXT_ADV_CONTEXT_COUNT)
+            gap_aux_request[slot].active = 0;
+    }
 
     gap_ext_scan.listen_state = GAP_EXT_SCAN_NONE;
     gap_ext_scan.ready = 0;
@@ -1775,8 +1784,6 @@ static void gap_ext_scan_process(void) {
     gap_rx_armed = 0;
 
     uint8_t *pdu = gap_ext_scan.frame;
-    uint8_t packet_phy = kind == GAP_EXT_ADV_AUXILIARY_PDU ?
-        gap_ext_scan.aux_rx_phy : periodic ? gap_ext_scan.periodic_rx_phy : GAP_PHY_1M;
     size_t pdu_len = (size_t)pdu[1] + 2;
 
 #if GAP_PERIPHERAL_SUPPORT
@@ -1787,7 +1794,6 @@ static void gap_ext_scan_process(void) {
 #endif // GAP_PERIPHERAL_SUPPORT
 
     gap_ext_fields fields;
-
     if (!gap_ext_adv_decode(pdu, pdu_len, &fields))
         return;
 
