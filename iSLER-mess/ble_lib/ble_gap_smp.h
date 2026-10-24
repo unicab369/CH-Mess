@@ -2585,38 +2585,36 @@ static void gap_smp_poll_context(
         return;
     }
 
-    if (op == SMP_PAIRING_CONFIRM && pending_len == 17 &&
-        pairing->secure_connections
-    ) {
-        if (conn->smp.secure.passkey_required &&
-            pairing->phase == SMP_PHASE_SC_PASSKEY &&
-            !pairing->confirm_received &&
-            !conn->is_central
-        ) {
-            memcpy(pairing->peer_confirm, pdu + 1, 16);
-            pairing->confirm_received = 1;
-            return;
-        }
-
-        if (pairing->phase == SMP_PHASE_SC_CONFIRM) {
-            memcpy(pairing->peer_confirm, pdu + 1, 16);
-
-            if (conn->is_central) {
-                gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
-            }
-            else {
-                uint8_t confirm[16];
-                gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
-                                     conn->smp.secure.peer_public_key,
-                                     conn->smp.random, confirm);
-                gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
-            }
-            pairing->phase = SMP_PHASE_SC_RANDOM;
-            return;
-        }
-    }
-
     if (op == SMP_PAIRING_CONFIRM && pending_len == 17) {
+        if (pairing->secure_connections) {
+            if (conn->smp.secure.passkey_required &&
+                pairing->phase == SMP_PHASE_SC_PASSKEY &&
+                !pairing->confirm_received &&
+                !conn->is_central
+            ) {
+                memcpy(pairing->peer_confirm, pdu + 1, 16);
+                pairing->confirm_received = 1;
+                return;
+            }
+
+            if (pairing->phase == SMP_PHASE_SC_CONFIRM) {
+                memcpy(pairing->peer_confirm, pdu + 1, 16);
+
+                if (conn->is_central) {
+                    gap_smp_queue(&conn->smp, SMP_PAIRING_RANDOM, conn->smp.random, 16);
+                }
+                else {
+                    uint8_t confirm[16];
+                    gap_sc_confirm_value(&conn->smp, conn->smp.secure.public_key,
+                                         conn->smp.secure.peer_public_key,
+                                         conn->smp.random, confirm);
+                    gap_smp_queue(&conn->smp, SMP_PAIRING_CONFIRM, confirm, sizeof(confirm));
+                }
+                pairing->phase = SMP_PHASE_SC_RANDOM;
+                return;
+            }
+        }
+
         if (pairing->phase == SMP_PHASE_PASSKEY &&
             !conn->is_central && !pairing->confirm_received
         ) {
