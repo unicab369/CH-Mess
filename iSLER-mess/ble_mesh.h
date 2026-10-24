@@ -387,8 +387,7 @@ int BLE_MESH_ADV_POLL(uint8_t *adv_data, size_t *len, int8_t *rssi) {
         --radio_queue[slot].remaining) {
         radio_queue[slot].started = 1;
         radio_queue[slot].order = radio_order++;
-        radio_queue[slot].send_at_ms = sent_at +
-            radio_queue[slot].interval_ms + jitter;
+        radio_queue[slot].send_at_ms = sent_at + radio_queue[slot].interval_ms + jitter;
     }
     // Finish Node Reset after its reply is sent; retry failed flash operations.
     if (reset_slot >= 0 && !radio_queue[reset_slot].remaining) {

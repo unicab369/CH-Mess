@@ -1686,11 +1686,11 @@ int gap_send_due(
 #endif // GAP_PRIVACY_SUPPORT
 
 #if GAP_EXT_ADV_SUPPORT
-    int extended_result = gap_ext_send_due(now);
+    int result = gap_ext_send_due(now);
     // Result: 0 = none due, 1 = handled, -1 = failure, 2 = retry.
     // A handled extended event does not mean the fallback packet was sent.
-    if (extended_result == 1) return 0;
-    if (extended_result) return extended_result;
+    if (result == 1) return 0;
+    if (result) return result;
 
 #endif // GAP_EXT_ADV_SUPPORT
 
@@ -1699,13 +1699,7 @@ int gap_send_due(
     if (!send_gap && !fallback_ad)
         return 0;
 
-    if (gap_rx_armed) {
-        GAP_HW_STOP();
-        gap_rx_armed = 0;
-    }
-
     const uint8_t *data = fallback_ad;
-    const uint8_t *random_address = NULL;
     uint8_t target_type = 0;
     // Keep the selected PDU type for validation and packet framing.
     uint8_t pdu_type = ADV_NONCONN_IND;
@@ -1714,28 +1708,33 @@ int gap_send_due(
 
     if (send_gap) {
         data = adv_tx.advertising.data;
-        random_address = gap_adv.local.type ? gap_adv.local.address : NULL;
         target_type = gap_adv.target.type;
         pdu_type = gap_adv.pdu_type;
         len = gap_adv.data_len;
     }
 
-    if ( (len && (!data || pdu_type == ADV_DIRECT_IND)) ||
+    if ((len && pdu_type == ADV_DIRECT_IND) ||
         (pdu_type > ADV_NONCONN_IND && pdu_type != ADV_SCAN_IND) ||
         (pdu_type == ADV_SCAN_IND && !gap_adv.scan_resp_len) ||
         len > GAP_ADV_DATA_MAX
     ) return -1;
 
-    uint8_t public_address[6];
-    GAP_HW_PUBLIC_ADDRESS(public_address);
-    adv_evt.adv_frame[0] = pdu_type | (random_address ? 0x40 : 0);
-    adv_evt.adv_frame[1] = 6 + len;
+    if (gap_rx_armed) {
+        GAP_HW_STOP();
+        gap_rx_armed = 0;
+    }
 
-    const uint8_t *address = random_address ? random_address : public_address;
-    memcpy(adv_evt.adv_frame + 2, address, 6);
+    adv_evt.adv_frame[0] = pdu_type;
+    adv_evt.adv_frame[1] = 6 + len;
+    GAP_HW_PUBLIC_ADDRESS(adv_evt.adv_frame + 2);
+
+    if (send_gap && gap_adv.local.type) {
+        adv_evt.adv_frame[0] |= 0x40;
+        memcpy(adv_evt.adv_frame + 2, gap_adv.local.address, 6);
+    }
 
     if (pdu_type == ADV_DIRECT_IND) {
-        adv_evt.adv_frame[0] |= target_type << 7;
+        if (target_type) adv_evt.adv_frame[0] |= 0x80;
         adv_evt.adv_frame[1] = 12;
         memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
     }
@@ -1785,21 +1784,20 @@ int gap_send_due(
                 GAP_HW_STOP();
                 adv_evt.rx_event = 0;
 
-                if (gap_conn_accept(adv_evt.conn_req_frame,
-                        adv_evt.conn_req_ticks,
-                        HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
+                if (gap_conn_accept(adv_evt.conn_req_frame, adv_evt.conn_req_ticks,
+                                    HW_TICKS_FROM_US(1250), HW_TICKS_FROM_US(1250))
                 ) {
+#if GAP_CENTRAL_SUPPORT
+                    // An incoming Peripheral connection wins over any
+                    // simultaneous Central initiation or discovery scan.
+                    gap_initiator.active = 0;
+                    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
+#endif // GAP_CENTRAL_SUPPORT
                     adv_evt.conn_req_ready = 0;
                     gap_rx.ready = 0;
                     gap_adv_scan.ready = 0;
                     gap_scan.active_pending = 0;
                     gap_rx_armed = 0;
-                    // An incoming Peripheral connection wins over any
-                    // simultaneous Central initiation or discovery scan.
-#if GAP_CENTRAL_SUPPORT
-                    gap_initiator.active = 0;
-                    gap_initiator.mode = GAP_CONN_MODE_DIRECT;
-#endif // GAP_CENTRAL_SUPPORT
                     gap_scanner.scanning = 0;
                     gap_scanner.active = 0;
                     gap_scanner.generation++;
