@@ -300,7 +300,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
             uint64_t cnt = conn->security.rx_counter;
             if (duplicate && cnt) cnt--;
 
-            if (!GAP_IN_RANGE_INCLUSIVE(frame[1], 5, gap_data_capacity + 4) ||
+            if (!IN_RANGE_INCLUSIVE(frame[1], 5, gap_data_capacity + 4) ||
                 cnt >= (UINT64_C(1) << 39) || (duplicate && !conn->security.rx_counter)
             ) {
                 conn->security.status = 0x3d;
@@ -903,12 +903,11 @@ void __attribute__((noinline)) gap_hw_received(void) {
         memcmp(frame + 8, adv_evt.adv_frame + 2, 6) == 0
     ) {
         uint8_t adv_pdu_type = adv_evt.adv_frame[0] & 0x0f;
-        uint8_t peer_in_accept_list = gap_accept_list_match(
-                                    frame + 2, (frame[0] >> 6) & 1, peer_slot);
+        uint8_t peer_allowed = gap_accept_list_match(frame + 2, (frame[0] >> 6) & 1, peer_slot);
 
         if (adv_pdu_type != ADV_DIRECT_IND && frame[1] == 12 &&
             (frame[0] & 0x0f) == SCAN_REQ &&
-            (!gap_adv_filter.scan_accept || peer_in_accept_list)
+            (!gap_adv_filter.scan_accept || peer_allowed)
         ) {
             adv_evt.scan_frame[0] = SCAN_RSP | (adv_evt.adv_frame[0] & 0x40);
             adv_evt.scan_frame[1] = 6 + gap_adv.scan_resp_len;
@@ -929,7 +928,7 @@ void __attribute__((noinline)) gap_hw_received(void) {
         uint8_t connect_ok = pdu_type == CONNECT_IND &&
                             frame[1] == 34 && !(frame[0] & 0x20) &&
                             (adv_pdu_type == ADV_IND || adv_pdu_type == ADV_DIRECT_IND) &&
-                            (!gap_adv_filter.connection_accept || peer_in_accept_list);
+                            (!gap_adv_filter.connection_accept || peer_allowed);
 
         if (connect_ok && adv_pdu_type == ADV_DIRECT_IND) {
             connect_ok =
@@ -1097,10 +1096,8 @@ static void gap_conn_poll(void) {
 
 #if GAP_IDENTITY_COUNT > 0
         if (!conn->is_central) {
-            int peer_slot = gap_identity_find(conn->initiator.address,
-                                              conn->initiator.type);
-            if (peer_slot >= 0)
-                conn->peer = gap_identities[peer_slot].peer;
+            int peer_slot = gap_identity_find(conn->initiator.address, conn->initiator.type);
+            if (peer_slot >= 0) conn->peer = gap_identities[peer_slot].peer;
         }
 #endif // GAP_IDENTITY_COUNT > 0
 

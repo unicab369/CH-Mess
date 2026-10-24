@@ -607,8 +607,8 @@ int gap_scan_configure(
     uint16_t interval_ms, uint16_t window_ms,
     uint8_t discovery_mode, uint8_t filter_duplicates
 ) {
-    if (interval_ms < 3 || interval_ms >= 40960 ||
-        window_ms < 3 || window_ms > interval_ms ||
+    if (!IN_RANGE_INCLUSIVE(interval_ms, 3, 40959) ||
+        !IN_RANGE_INCLUSIVE(window_ms, 3, interval_ms) ||
         discovery_mode > GAP_DISCOVERY_LIMITED
     ) return 0;
 

@@ -1187,10 +1187,10 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
         ) ||
         !timing->attempt_timeout_s ||
         timing->attempt_timeout_s > 600 || gap_is_busy() ||
-        timing->scan_interval_ms < 3 ||
-        timing->scan_interval_ms >= 40960 ||
-        timing->scan_window_ms < 3 ||
-        timing->scan_window_ms > timing->scan_interval_ms
+        !IN_RANGE_INCLUSIVE(timing->scan_interval_ms, 3, 40959) ||
+        !IN_RANGE_INCLUSIVE(
+            timing->scan_window_ms, 3, timing->scan_interval_ms
+        )
     ) return 0;
 
     if ((uint32_t)timing->supervision_timeout * 4 <=
@@ -1993,7 +1993,7 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                     }
                     else {
                         uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-                        uint16_t interval = GAP_IN_RANGE_INCLUSIVE(current,
+                        uint16_t interval = IN_RANGE_INCLUSIVE(current,
                             l2cap->remote_update_min, l2cap->remote_update_max) ?
                             current : l2cap->remote_update_min;
 

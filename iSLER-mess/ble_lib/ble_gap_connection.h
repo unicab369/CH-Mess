@@ -13,12 +13,12 @@
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
-#ifndef GAP_IN_RANGE_INCLUSIVE
-#define GAP_IN_RANGE_INCLUSIVE(value, min, max) \
+#ifndef IN_RANGE_INCLUSIVE
+#define IN_RANGE_INCLUSIVE(value, min, max) \
     ((value) >= (min) && (value) <= (max))
 #endif
-#ifndef GAP_IN_RANGE_EXCLUSIVE
-#define GAP_IN_RANGE_EXCLUSIVE(value, min, max) \
+#ifndef IN_RANGE_EXCLUSIVE
+#define IN_RANGE_EXCLUSIVE(value, min, max) \
     ((value) > (min) && (value) < (max))
 #endif
 
@@ -885,7 +885,7 @@ static uint8_t gap_conn_control(
             uint16_t factor = interval_125us == conn->schedule.interval_125us ?
                                 conn->schedule.factor : 1;
 
-            if (GAP_IN_RANGE_INCLUSIVE(win_size, 1, 8) &&
+            if (IN_RANGE_INCLUSIVE(win_size, 1, 8) &&
                 ble_timing_valid(interval, interval, latency, timeout) &&
                 win_size < interval && win_offset <= interval &&
                 (uint32_t)timeout * 80 > 2ull * (latency + 1) * interval_125us * factor
@@ -1020,7 +1020,7 @@ static uint8_t gap_conn_control(
 
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
-            interval = GAP_IN_RANGE_INCLUSIVE(interval, minimum, maximum) ? interval : minimum;
+            interval = IN_RANGE_INCLUSIVE(interval, minimum, maximum) ? interval : minimum;
 
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t) ((minimum + frame[11] - 1) / frame[11]) * frame[11];
@@ -1521,7 +1521,7 @@ static uint8_t gap_conn_control(
         }
         else {
             uint16_t min_interval = MAX(minimum, gap_conn_min_interval(conn));
-            uint16_t interval = GAP_IN_RANGE_INCLUSIVE(conn->schedule.interval_125us, minimum, maximum) ?
+            uint16_t interval = IN_RANGE_INCLUSIVE(conn->schedule.interval_125us, minimum, maximum) ?
                                     conn->schedule.interval_125us : minimum;
 
             if (periodicity_125us) {
@@ -2028,7 +2028,7 @@ int gap_conn_request(
     uint16_t latency, uint16_t timeout
 ) {
     gap_conn_context *conn = &gap_conn_ctx[gap_conn_slot];
-    uint16_t factor = GAP_IN_RANGE_INCLUSIVE(conn->schedule.interval_125us,
+    uint16_t factor = IN_RANGE_INCLUSIVE(conn->schedule.interval_125us,
                     minimum * 10, maximum * 10) ? conn->schedule.factor : 1;
 
     if (gap_conn_timing_busy(conn) ||
@@ -2134,7 +2134,7 @@ int gap_conn_rate_request(
     if (gap_conn_timing_busy(conn) ||
         conn->is_central ||
         intv_min_125us < 3 ||
-        !GAP_IN_RANGE_INCLUSIVE(intv_max_125us, intv_min_125us, 32000) ||
+        !IN_RANGE_INCLUSIVE(intv_max_125us, intv_min_125us, 32000) ||
         preferred_periodicity_125us > intv_max_125us ||
         !gap_schedule_parameters_valid(factor_min, factor_max, max_latency,
                                       continuation, timeout_10ms) ||
@@ -2243,8 +2243,8 @@ int gap_channel_reporting_set(
         conn->link_layer.first_event ||
         gap_conn_security_busy(conn) ||
         enable > 1 ||
-        !GAP_IN_RANGE_INCLUSIVE(min_spacing_200ms, 5, 150) ||
-        !GAP_IN_RANGE_INCLUSIVE(max_delay_200ms, min_spacing_200ms, 150) ||
+        !IN_RANGE_INCLUSIVE(min_spacing_200ms, 5, 150) ||
+        !IN_RANGE_INCLUSIVE(max_delay_200ms, min_spacing_200ms, 150) ||
         conn->central.channel_report_queued ||
         conn->central.channel_report_pending ||
         conn->link_state.terminate_queued ||

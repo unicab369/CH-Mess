@@ -861,7 +861,7 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 #endif
 
     if (!peer || peer->type > 1 || sid > 15 ||
-        !GAP_IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840) ||
+        !IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840) ||
         (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
     ) return -1;
 
@@ -899,7 +899,7 @@ int gap_sync_start(const gap_address *peer, uint8_t sid, uint32_t timeout_ms) {
 // Enable receipt of periodic sync transfers from connected peers.
 int gap_past_enable(uint8_t enabled, uint32_t timeout_ms) {
     if (enabled > 1 ||
-        (enabled && !GAP_IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840))
+        (enabled && !IN_RANGE_INCLUSIVE(timeout_ms, 100, 163840))
     ) return 0;
 
     gap_past.enabled = enabled;
