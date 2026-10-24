@@ -1327,23 +1327,25 @@ static void gap_conn_poll(void) {
 
         GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
                             transmit, 1, conn->phy_state.current.tx, conn->phy_state.current.rx);
-        gap_poll.slot = gap_conn_slot;
-        gap_poll.slot_valid = 1;
-        conn->link_state.rx_armed = 1;
-        conn->link_state.channel_selected = 1;
-        gap_rx_armed = 1;
-        GAP_HW_LINK_TX();
-        return;
     }
+    else
 #endif // GAP_CENTRAL_SUPPORT
+    {
+        GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
+                            NULL, 0, conn->phy_state.current.tx, conn->phy_state.current.rx);
+    }
 
-    GAP_HW_LINK_CONFIG(conn->link_layer.access_address, selected_channel,
-                        NULL, 0, conn->phy_state.current.tx, conn->phy_state.current.rx);
     gap_poll.slot = gap_conn_slot;
     gap_poll.slot_valid = 1;
     conn->link_state.rx_armed = 1;
     conn->link_state.channel_selected = 1;
     gap_rx_armed = 1;
+
+#if GAP_CENTRAL_SUPPORT
+    if (conn->is_central)
+        GAP_HW_LINK_TX();
+    else
+#endif // GAP_CENTRAL_SUPPORT
     GAP_HW_LINK_RX();
 }
 
@@ -1377,17 +1379,17 @@ static inline void gap_conn_poll_all(void) {
 
     // Save the slot because the loop changes gap_conn_slot for each link.
     uint8_t selected_slot = gap_conn_slot;
-    uint8_t owner_at_entry = gap_poll.slot_valid ? gap_poll.slot : UINT8_MAX;
+    uint8_t last_owner = gap_poll.slot_valid ? gap_poll.slot : UINT8_MAX;
 
     for (uint8_t index = 0; index < count; index++) {
         gap_conn_slot = order[index];
         gap_conn_poll();
 
-        if (gap_poll.slot_valid && gap_poll.slot != owner_at_entry ) {
+        if (gap_poll.slot_valid && gap_poll.slot != last_owner) {
             // Rotate ties so one link cannot repeatedly win an overlapping
             // event window just because it occupies the lower-numbered slot.
             gap_poll.poll_cursor = (uint8_t)((gap_poll.slot + 1) % GAP_CONNECTION_COUNT);
-            owner_at_entry = gap_poll.slot;
+            last_owner = gap_poll.slot;
         }
     }
     gap_conn_slot = selected_slot;
@@ -1711,17 +1713,20 @@ int gap_send_due(
 
     uint8_t public_address[6];
     GAP_HW_PUBLIC_ADDRESS(public_address);
-    adv_evt.adv_frame[0] = pdu_type | (random_address ? 0x40 : 0) |
-                        (pdu_type == ADV_DIRECT_IND ? target_type << 7 : 0);
-    adv_evt.adv_frame[1] = (pdu_type == ADV_DIRECT_IND) ? 12 : 6 + len;
+    adv_evt.adv_frame[0] = pdu_type | (random_address ? 0x40 : 0);
+    adv_evt.adv_frame[1] = 6 + len;
 
     const uint8_t *address = random_address ? random_address : public_address;
     memcpy(adv_evt.adv_frame + 2, address, 6);
 
-    if (pdu_type == ADV_DIRECT_IND)
+    if (pdu_type == ADV_DIRECT_IND) {
+        adv_evt.adv_frame[0] |= target_type << 7;
+        adv_evt.adv_frame[1] = 12;
         memcpy(adv_evt.adv_frame + 8, gap_adv.target.address, 6);
-    else if (len)
+    }
+    else if (len) {
         memcpy(adv_evt.adv_frame + 8, data, len);
+    }
 
     int transmit_result = 1;
 
