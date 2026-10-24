@@ -910,13 +910,13 @@ void __attribute__((noinline)) gap_hw_received(void) {
             (frame[0] & 0x0f) == SCAN_REQ &&
             (!gap_adv_filter.scan_accept || peer_in_accept_list)
         ) {
-            uint8_t response_len = gap_adv.scan_resp_len;
             adv_evt.scan_frame[0] = SCAN_RSP | (adv_evt.adv_frame[0] & 0x40);
-            adv_evt.scan_frame[1] = 6 + response_len;
+            adv_evt.scan_frame[1] = 6 + gap_adv.scan_resp_len;
             memcpy(adv_evt.scan_frame + 2, adv_evt.adv_frame + 2, 6);
 
-            if (response_len)
-                memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response, response_len);
+            if (gap_adv.scan_resp_len)
+                memcpy(adv_evt.scan_frame + 8, adv_tx.advertising.scan_response,
+                                            gap_adv.scan_resp_len);
 
             GAP_HW_TX_BUFFER(adv_evt.scan_frame);
             adv_evt.scan_resp_started = 1;
