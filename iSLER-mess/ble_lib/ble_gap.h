@@ -1718,15 +1718,12 @@ static int gap_conn_accept(
         return 0;
 
     uint16_t data_capacity = GAP_HW_DATA_MAX();
-
     if (data_capacity < 27) return 0;
-
-    if (data_capacity > GAP_CONN_DATA_MAX)
-        data_capacity = GAP_CONN_DATA_MAX;
+    data_capacity = MIN(data_capacity, GAP_CONN_DATA_MAX);
 
     int free_slot = gap_conn_free_slot();
-
     if (free_slot < 0) return 0;
+    gap_data_capacity = data_capacity;
 
     // Must precede per-slot state initialization and slot-sensitive helpers.
     gap_conn_slot = free_slot;
@@ -1741,16 +1738,9 @@ static int gap_conn_accept(
     conn->security_generation = security_generation;
 #endif
 
-    gap_data_capacity = data_capacity;
     memcpy(conn->link_layer.channel_map, frame + 30, 5);
-
     conn->initiator.type = (frame[0] >> 6) & 1;
     memcpy(conn->initiator.address, frame + 2, 6);
-
-#if GAP_SECURITY_SUPPORT >= 2
-    conn->responder.type = (frame[0] >> 7) & 1;
-    memcpy(conn->responder.address, frame + 8, 6);
-#endif
 
     conn->peer = conn->initiator;
     conn->l2cap_tx_queue.data = conn->l2cap_tx;
@@ -1758,9 +1748,20 @@ static int gap_conn_accept(
     l2cap_ops l2cap_ops = {0};
     l2cap_ops.tx_queue = &conn->l2cap_tx_queue;
 
+#if GAP_SECURITY_SUPPORT >= 2
+    conn->responder.type = (frame[0] >> 7) & 1;
+    memcpy(conn->responder.address, frame + 8, 6);
+#endif
+
     if (!l2cap_conn_init(&conn->l2cap, &l2cap_ops, NULL,
             L2CAP_CHANNEL_MTU_MAX, L2CAP_CHANNEL_MPS_MAX, 0)
     ) return 0;
+
+#if GAP_SECURITY_SUPPORT >= 2
+    if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
+        return 0;
+    }
+#endif
 
     uint8_t count = 0;
     for (uint8_t channel = 0; channel < 37; channel++)
@@ -1769,8 +1770,7 @@ static int gap_conn_accept(
 
     conn->data_length = (gap_data_length){ .rx_octets = 27, .tx_octets = 27,
                                             .rx_time = 328, .tx_time = 328 };
-    conn->remote_data_length = (gap_data_length){ .rx_octets = 27, .tx_octets = 27,
-                                            .rx_time = 328, .tx_time = 328 };
+    conn->remote_data_length = conn->data_length;
 
     conn->link_layer.access_address = (uint32_t)frame[14] |
                                 (uint32_t)frame[15] << 8 |
@@ -1806,12 +1806,6 @@ static int gap_conn_accept(
 
     if (++gap_conn_generations[gap_conn_slot] == 0)
         gap_conn_generations[gap_conn_slot] = 1;
-
-#if GAP_SECURITY_SUPPORT >= 2
-    if (!smp_link_init(&gap_conn_ctx[gap_conn_slot].smp, &conn->l2cap)) {
-        return 0;
-    }
-#endif
 
 #if GAP_EXT_ADV_SUPPORT
     for (uint8_t i = 0; i < GAP_EXT_ADV_SET_COUNT; i++)
