@@ -1023,9 +1023,7 @@ static uint8_t gap_conn_control(
 
         if (conn->is_central) {
             uint16_t interval = ((conn->schedule.interval_125us + 9) / 10);
-
-            if (interval < minimum || interval > maximum)
-                interval = minimum;
+            interval = GAP_IN_RANGE_INCLUSIVE(interval, minimum, maximum) ? interval : minimum;
 
             if (frame[11] && minimum != maximum) {
                 uint16_t preferred = (uint16_t) ((minimum + frame[11] - 1) / frame[11]) * frame[11];
