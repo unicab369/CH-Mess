@@ -1985,9 +1985,9 @@ static void gap_smp_poll_context(
     }
 
     if (pairing->phase == SMP_PHASE_BOND_RX) {
-        uint8_t encryption_info = (op == SMP_ENCRYPTION_INFO) && pending_len == 17;
+        uint8_t ENCRYPTION_INFO = (op == SMP_ENCRYPTION_INFO) && pending_len == 17;
 
-        if (encryption_info && !pairing->bond_rx_step) {
+        if (ENCRYPTION_INFO && !pairing->bond_rx_step) {
             if (!conn->bond.valid) {
                 memset(&conn->bond, 0, sizeof(conn->bond));
                 conn->bond.version = GAP_BOND_VERSION;
@@ -2002,9 +2002,9 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t central_identification = (op == SMP_CENTRAL_IDENTIFICATION) && pending_len == 11;
+        uint8_t CENTRAL_IDENTIFICATION = (op == SMP_CENTRAL_IDENTIFICATION) && pending_len == 11;
 
-        if (central_identification && pairing->bond_rx_step == 1) {
+        if (CENTRAL_IDENTIFICATION && pairing->bond_rx_step == 1) {
             conn->bond.central.ediv[0] = pdu[1];
             conn->bond.central.ediv[1] = pdu[2];
             memcpy(conn->bond.central.rand, pdu + 3, 8);
@@ -2032,9 +2032,9 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t id_info = op == SMP_ID_INFO && pending_len == 17;
+        uint8_t ID_INFO = op == SMP_ID_INFO && pending_len == 17;
 
-        if (id_info && pairing->bond_rx_step == 2 &&
+        if (ID_INFO && pairing->bond_rx_step == 2 &&
             (pairing->response[5] & GAP_KEY_DIST_IDENTITY)
         ) {
             memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
@@ -2043,9 +2043,9 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t id_address_info = op == SMP_ID_ADDRESS_INFO && pending_len == 8;
+        uint8_t ID_ADDRESS_INFO = op == SMP_ID_ADDRESS_INFO && pending_len == 8;
 
-        if (id_address_info && pairing->bond_rx_step == 3 &&
+        if (ID_ADDRESS_INFO && pairing->bond_rx_step == 3 &&
             (pairing->response[5] & GAP_KEY_DIST_IDENTITY) &&
             pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
         ) {
@@ -2058,9 +2058,9 @@ static void gap_smp_poll_context(
             return;
         }
 
-        uint8_t signing_info = op == SMP_SIGNING_INFO && pending_len == 17;
+        uint8_t SIGNING_INFO = op == SMP_SIGNING_INFO && pending_len == 17;
 
-        if (signing_info && pairing->bond_rx_step == 4 &&
+        if (SIGNING_INFO && pairing->bond_rx_step == 4 &&
             (pairing->response[5] & GAP_KEY_DIST_SIGNING)
         ) {
             memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
@@ -2072,32 +2072,40 @@ static void gap_smp_poll_context(
         uint8_t central_sc = conn->is_central && pairing->bond_rx_step >= 30;
 
         if (central_sc || (!conn->is_central && pairing->bond_rx_step >= 20)) {
-            uint8_t key_dist = pairing->response[central_sc ? 6 : 5];
+            uint8_t key_dist = pairing->response[5];
+            uint8_t step = pairing->bond_rx_step;
+            uint8_t identity_step = 20;
             uint8_t identity = key_dist & GAP_KEY_DIST_IDENTITY;
             uint8_t signing = key_dist & GAP_KEY_DIST_SIGNING;
-            uint8_t step = pairing->bond_rx_step;
-            uint8_t identity_step = central_sc ? 30 : 20;
 
-            if (central_sc && (key_dist & GAP_KEY_DIST_ENCRYPTION)) {
-                identity_step = 32;
+            if (central_sc) {
+                key_dist = pairing->response[6];
+                identity = key_dist & GAP_KEY_DIST_IDENTITY;
+                signing = key_dist & GAP_KEY_DIST_SIGNING;
+                identity_step = 30;
 
-                if (step == 30 && encryption_info) {
-                    memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
-                    for (unsigned i = pairing->key_size; i < 16; i++)
-                        conn->bond.peripheral.ltk[i] = 0;
-                    conn->bond.has_peripheral_ltk = 1;
-                    pairing->bond_rx_step = 31;
-                    return;
-                }
+                if (key_dist & GAP_KEY_DIST_ENCRYPTION) {
+                    identity_step = 32;
 
-                if (step == 31 && central_identification) {
-                    conn->bond.peripheral.ediv[0] = pdu[1];
-                    conn->bond.peripheral.ediv[1] = pdu[2];
-                    memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
-                    pairing->bond_rx_step = 32;
-                    if (!identity && !signing)
+                    if (step == 30 && ENCRYPTION_INFO) {
+                        memcpy(conn->bond.peripheral.ltk, pdu + 1, 16);
+                        for (unsigned i = pairing->key_size; i < 16; i++)
+                            conn->bond.peripheral.ltk[i] = 0;
+                        conn->bond.has_peripheral_ltk = 1;
+                        pairing->bond_rx_step = 31;
+                        return;
+                    }
+
+                    if (step == 31 && CENTRAL_IDENTIFICATION) {
+                        conn->bond.peripheral.ediv[0] = pdu[1];
+                        conn->bond.peripheral.ediv[1] = pdu[2];
+                        memcpy(conn->bond.peripheral.rand, pdu + 3, 8);
+                        pairing->bond_rx_step = 32;
+                        if (identity | signing) return;
+
                         smp_bond_rx_complete(conn);
-                    return;
+                        return;
+                    }
                 }
             }
 
@@ -2106,14 +2114,14 @@ static void gap_smp_poll_context(
             if (identity) {
                 signing_step += 2;
 
-                if (step == identity_step && id_info) {
+                if (step == identity_step && ID_INFO) {
                     memcpy(conn->bond.peer_irk.key, pdu + 1, 16);
                     conn->bond.peer_irk.present = 1;
                     pairing->bond_rx_step = identity_step + 1;
                     return;
                 }
 
-                if (step == identity_step + 1 && id_address_info &&
+                if (step == identity_step + 1 && ID_ADDRESS_INFO &&
                     pdu[1] <= 1 && (!pdu[1] || (pdu[7] & 0xc0) == 0xc0)
                 ) {
                     memcpy(&conn->bond.peer, pdu + 1, sizeof(conn->bond.peer));
@@ -2124,7 +2132,7 @@ static void gap_smp_poll_context(
                 }
             }
 
-            if (signing && step == signing_step && signing_info) {
+            if (signing && step == signing_step && SIGNING_INFO) {
                 memcpy(conn->bond.peer_csrk.key, pdu + 1, 16);
                 conn->bond.peer_csrk.present = 1;
                 smp_bond_rx_complete(conn);
