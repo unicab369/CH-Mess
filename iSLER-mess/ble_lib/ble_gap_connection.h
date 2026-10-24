@@ -128,7 +128,7 @@ static uint8_t gap_conn_rate_busy(const gap_conn_context *conn) {
 
 #if GAP_SECURITY_SUPPORT >= 2
 static void gap_smp_link_close(gap_conn_context *conn);
-static void gap_smp_poll(void);
+static void gap_smp_poll_context(gap_conn_context *conn);
 #endif // GAP_SECURITY_SUPPORT >= 2
 
 #if GAP_EXT_ADV_SUPPORT
@@ -2436,7 +2436,8 @@ int gap_receive_data(uint8_t *llid, uint8_t *data, size_t *len) {
         return 0;
 
 #if GAP_SECURITY_SUPPORT >= 2
-    gap_smp_poll();
+    if (gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot))
+        gap_smp_poll_context(conn);
 #endif
 
     if (*len < conn->rx_packet.len) return -1;

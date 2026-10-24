@@ -2631,11 +2631,12 @@ static void gap_smp_poll_context(
     }
 
     if (op == SMP_PAIRING_RANDOM && pending_len == 17) {
-        if (pairing->secure_connections && pairing->phase == SMP_PHASE_SC_RANDOM) {
+        if (pairing->phase == SMP_PHASE_SC_RANDOM && pairing->secure_connections) {
             uint8_t confirm[16], difference = 0;
             gap_sc_confirm_value(&conn->smp, conn->smp.secure.peer_public_key,
                                  conn->smp.secure.public_key, pdu + 1, confirm);
 
+            // Check every byte so timing does not reveal the first mismatch.
             for (uint8_t i = 0; i < 16; i++)
                 difference |= confirm[i] ^ pairing->peer_confirm[i];
             gap_wipe(confirm, sizeof(confirm));
@@ -2713,7 +2714,7 @@ static void gap_smp_poll_context(
             return;
         }
 
-        if (pairing->phase == SMP_PHASE_RANDOM) {
+        else if (pairing->phase == SMP_PHASE_RANDOM) {
             uint8_t confirm[16], difference = 0;
             gap_smp_confirm(&conn->smp, conn, pdu + 1, confirm);
 
@@ -2725,8 +2726,15 @@ static void gap_smp_poll_context(
             }
 
             uint8_t s1_random[16];
-            memcpy(s1_random, conn->is_central ? conn->smp.random : pdu + 1, 8);
-            memcpy(s1_random + 8, conn->is_central ? pdu + 1 : conn->smp.random, 8);
+            const uint8_t *first_random = pdu + 1;
+            const uint8_t *second_random = conn->smp.random;
+            if (conn->is_central) {
+                first_random = conn->smp.random;
+                second_random = pdu + 1;
+            }
+
+            memcpy(s1_random, first_random, 8);
+            memcpy(s1_random + 8, second_random, 8);
             int stk_ready = smp_aes128(pairing->tk, s1_random, conn->smp.key.stk);
             gap_wipe(s1_random, sizeof(s1_random));
 
@@ -2782,13 +2790,6 @@ static void gap_smp_poll_context(
 
     uint8_t unsupport = op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST;
     gap_smp_fail(conn, unsupport ? SMP_FAIL_COMMAND_NOT_SUPPORTED : SMP_FAIL_INVALID_PARAMETERS);
-}
-
-static void gap_smp_poll(void) {
-    if (!(gap_conn_slot_mask & GAP_CONN_SLOT_BIT(gap_conn_slot)))
-        return;
-
-    gap_smp_poll_context(&gap_conn_ctx[gap_conn_slot]);
 }
 
 #endif // BLE_GAP_SMP_H
