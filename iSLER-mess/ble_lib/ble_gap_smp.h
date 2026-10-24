@@ -2588,6 +2588,7 @@ static void gap_smp_poll_context(
     if (op >= SMP_ENCRYPTION_INFO && op != SMP_SECURITY_REQUEST)
         failure = SMP_FAIL_COMMAND_NOT_SUPPORTED;
 
+    // Confirm, Random, and DHKey Check PDUs contain an opcode and a 16-byte value.
     if (pending_len != 17) {
         gap_smp_fail(conn, failure);
         return;

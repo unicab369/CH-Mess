@@ -284,11 +284,9 @@ int gap_periodic_adv_start(
     if (!set->enabled || set->scannable ||
         set->periodic.enabled || interval < 6 ||
         !gap_ext_data_valid(data, len) ||
-        (uint32_t)interval * 1250 < gap_periodic_tx_us(len, set->aux_phy)
+        (uint32_t)interval * 1250 < gap_periodic_tx_us(len, set->aux_phy) ||
+        !gap_access_addr(&set->periodic.params.access_address)
     ) return 0;
-
-    if (!gap_access_addr(&set->periodic.params.access_address))
-        return 0;
 
     uint8_t random[3];
     GAP_HW_RANDOM_BYTES(random, sizeof(random));
