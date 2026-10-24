@@ -1990,9 +1990,9 @@ static inline int ble_gap_l2cap_poll(ble_gap_l2cap *manager) {
                     }
                     else {
                         uint16_t current = (uint16_t)(conn->schedule.interval_125us / 10u);
-                        uint16_t interval = (current >= l2cap->remote_update_min &&
-                                            current <= l2cap->remote_update_max) ? current :
-                                            l2cap->remote_update_min;
+                        uint16_t interval = GAP_IN_RANGE_INCLUSIVE(current,
+                            l2cap->remote_update_min, l2cap->remote_update_max) ?
+                            current : l2cap->remote_update_min;
 
                         // GAP may be busy with another procedure. Leave
                         // this request pending and retry on the next poll.

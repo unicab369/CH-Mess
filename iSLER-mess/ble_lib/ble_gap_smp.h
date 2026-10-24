@@ -1684,15 +1684,11 @@ static void gap_smp_poll_context(
 
         size_t max_len = conn->data_length.tx_octets;
         size_t time_len = conn->data_length.tx_time / 8;
-        size_t time_overhead = 10 + (gap_security->tx_enabled ? 4 : 0);
-        time_len = time_len > time_overhead ? time_len - time_overhead : 0;
-        if (max_len > time_len)
-            max_len = time_len;
-
-        size_t remaining = conn->smp.tx_queue->length - conn->smp.tx_queue->offset;
-
-        if (max_len > remaining)
-            max_len = remaining;
+        time_len = (size_t)subtract_clamp0_64(time_len,
+                                    10 + (gap_security->tx_enabled ? 4 : 0));
+        max_len = MIN(max_len, time_len);
+        max_len = MIN(max_len, conn->smp.tx_queue->length -
+                                conn->smp.tx_queue->offset);
 
         if (!max_len || !gap_send_data(conn->smp.tx_queue->offset ? 1 : 2,
                 conn->smp.tx_queue->data + conn->smp.tx_queue->offset, max_len)

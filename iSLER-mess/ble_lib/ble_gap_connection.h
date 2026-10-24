@@ -13,6 +13,14 @@
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
+#ifndef GAP_IN_RANGE_INCLUSIVE
+#define GAP_IN_RANGE_INCLUSIVE(value, min, max) \
+    ((value) >= (min) && (value) <= (max))
+#endif
+#ifndef GAP_IN_RANGE_EXCLUSIVE
+#define GAP_IN_RANGE_EXCLUSIVE(value, min, max) \
+    ((value) > (min) && (value) < (max))
+#endif
 
 enum {
     GAP_LL_ERR_UNSUPPORTED_FEATURE = 0x11,
