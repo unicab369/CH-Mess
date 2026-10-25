@@ -1141,7 +1141,6 @@ static int gap_access_address_valid(uint32_t address) {
             bytes_equal = 0;
 
     if (bytes_equal) return 0;
-
     uint8_t transitions = 0, msb_transitions = 0, run = 1;
     uint8_t previous = address & 1;
 
@@ -1152,8 +1151,7 @@ static int gap_access_address_valid(uint32_t address) {
         if (value != previous) {
             transitions++;
             run = 1;
-            if (bit >= 27)
-                msb_transitions++;
+            if (bit >= 27) msb_transitions++;
         }
         else if (++run > 6) {
             return 0;
@@ -1174,7 +1172,7 @@ static int gap_conn_request_valid(const uint8_t frame[36]) {
     if ((frame[0] & 0x0f) != 0x05 || frame[1] != 34 ||
         !ble_timing_valid(interval, interval, latency, timeout) ||
         ble_read_u16_le(frame + 22) > interval ||
-        !win_size || win_size > 8 || win_size >= interval ||
+        !IN_RANGE_INCLUSIVE(win_size, 1, 8) || win_size >= interval ||
         (uint32_t)timeout * 8 <= 2 * (uint32_t)(latency + 1) * interval ||
         (frame[34] & 0xe0) || hop < 5 || hop > 16
     ) return 0;
@@ -1197,8 +1195,8 @@ int gap_conn_timing_set(const gap_timing_cfg *timing) {
             timing->interval, timing->interval, timing->latency,
             timing->supervision_timeout
         ) ||
-        !timing->attempt_timeout_s ||
-        timing->attempt_timeout_s > 600 || gap_is_busy() ||
+        gap_is_busy() ||
+        !IN_RANGE_INCLUSIVE(timing->attempt_timeout_s, 1, 600) ||
         !IN_RANGE_INCLUSIVE(timing->scan_interval_ms, 3, 40959) ||
         !IN_RANGE_INCLUSIVE(timing->scan_window_ms, 3, timing->scan_interval_ms)
     ) return 0;
@@ -1251,8 +1249,8 @@ static int gap_private_addr_generate(
             GAP_HW_RANDOM_BYTES(address + 3, 3);
             address[5] = (address[5] & 0x3f) | 0x40;
             uint32_t random = (uint32_t)address[3] |
-                            (uint32_t)address[4] << 8 |
-                            (uint32_t)(address[5] & 0x3f) << 16;
+                                (uint32_t)address[4] << 8 |
+                                (uint32_t)(address[5] & 0x3f) << 16;
             if (!random || random == 0x3fffff)
                 continue;
 
@@ -1267,7 +1265,6 @@ static int gap_private_addr_generate(
             for (uint8_t i = 0; i < 6; i++) {
                 if (address[i])
                     all_zero = 0;
-
                 if (address[i] != (i == 5 ? 0x3f : 0xff))
                     all_one = 0;
             }
@@ -1324,9 +1321,9 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
     gap_identity *identity = &gap_identities[slot];
 
     return !identity->has_irk ||
-        identity->privacy_mode == GAP_PRIVACY_DEVICE ||
-        type != identity->peer.type ||
-        memcmp(address, identity->peer.address, 6) != 0;
+            identity->privacy_mode == GAP_PRIVACY_DEVICE ||
+            type != identity->peer.type ||
+            memcmp(address, identity->peer.address, 6) != 0;
 }
 #else
 static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
@@ -1340,8 +1337,7 @@ static int gap_peer_allowed(int slot, const uint8_t address[6], uint8_t type) {
 // A static random address has 11 type bits and a nonzero, non-all-ones 46-bit
 // random part. Identity and Filter Accept List entries use the same rule.
 static int gap_static_addr_valid(const uint8_t address[6]) {
-    if (!address || (address[5] & 0xc0) != 0xc0)
-        return 0;
+    if (!address || (address[5] & 0xc0) != 0xc0) return 0;
 
     static const uint8_t zero[5] = {0};
     static const uint8_t ones[5] = {0xff, 0xff, 0xff, 0xff, 0xff};
@@ -1349,7 +1345,6 @@ static int gap_static_addr_valid(const uint8_t address[6]) {
 
     // Check the remaining bytes only if the top six bits could complete an
     // all-zero or all-one random part.
-
     if ((!random_bits && !memcmp(address, zero, sizeof(zero))) ||
         (random_bits == 0x3f && !memcmp(address, ones, sizeof(ones)))
     ) return 0;
@@ -1379,7 +1374,6 @@ static int gap_accept_list_match(
 #if GAP_IDENTITY_COUNT > 0
         if (!identity || !GAP_ADDRESS_EQUAL(identity->peer, gap_accept_list[i].peer))
             continue;
-
         return 1;
 #endif
     }
@@ -1391,8 +1385,7 @@ static int gap_accept_list_match(
 // Filter Accept List API.
 // Add an identity address to the bounded list while GAP is idle.
 int gap_accept_list_add(const gap_address *peer) {
-    if (!peer || peer->type > 1) return 0;
-    if (gap_is_busy() ||
+    if (!peer || peer->type > 1 || gap_is_busy() ||
         (peer->type && !gap_static_addr_valid(peer->address))
     ) return 0;
 
@@ -1407,7 +1400,6 @@ int gap_accept_list_add(const gap_address *peer) {
     }
 
     if (free_slot < 0) return 0;
-
     gap_accept_list[free_slot].peer = *peer;
     gap_accept_list[free_slot].used = 1;
     return 1;
@@ -1416,8 +1408,7 @@ int gap_accept_list_add(const gap_address *peer) {
 // Application-facing
 // Remove an identity address from the Filter Accept List while GAP is idle.
 int gap_accept_list_remove(const gap_address *peer) {
-    if (!peer || peer->type > 1) return 0;
-    if (gap_is_busy()) return 0;
+    if (!peer || peer->type > 1 || gap_is_busy()) return 0;
 
     for (uint8_t i = 0; i < GAP_ACCEPT_LIST_COUNT; i++) {
         if (gap_accept_list[i].used &&
@@ -1434,7 +1425,6 @@ int gap_accept_list_remove(const gap_address *peer) {
 // Empty the Filter Accept List while GAP is idle.
 int gap_accept_list_clear(void) {
     if (gap_is_busy()) return 0;
-
     memset(gap_accept_list, 0, sizeof(gap_accept_list));
     return 1;
 }
@@ -1445,8 +1435,7 @@ int gap_accept_list_clear(void) {
 // New entries default to network privacy; updating an IRK preserves the mode.
 #if GAP_IDENTITY_COUNT > 0
 int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
-    if (!peer || peer->type > 1) return 0;
-    if (gap_is_busy() ||
+    if (!peer || peer->type > 1 || gap_is_busy() ||
         (peer->type && !gap_static_addr_valid(peer->address))
     ) return 0;
 
@@ -1468,7 +1457,6 @@ int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
     }
 
     if (!irk || slot < 0) return 0;
-
     if (!gap_identities[slot].used)
         gap_identities[slot].privacy_mode = GAP_PRIVACY_NETWORK;
 
@@ -1486,8 +1474,8 @@ int gap_identity_set(const gap_address *peer, const uint8_t irk[16]) {
 // Application-facing
 // Set a listed peer's network/device privacy mode while GAP is idle.
 int gap_identity_privacy(const gap_address *peer, uint8_t mode) {
-    if (!peer || peer->type > 1) return 0;
-    if (mode > GAP_PRIVACY_DEVICE || gap_is_busy()) return 0;
+    if (!peer || peer->type > 1 || mode > GAP_PRIVACY_DEVICE || gap_is_busy())
+        return 0;
 
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
         if (gap_identities[i].used &&
@@ -1516,8 +1504,7 @@ int gap_resolve(const gap_address *address, gap_address *identity) {
 // Configure the local IRK distributed to this peer while GAP is idle.
 // A zero key selects our identity address; null restores the global local IRK.
 int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
-    if (!peer || peer->type > 1) return 0;
-    if (gap_is_busy()) return 0;
+    if (!peer || peer->type > 1 || gap_is_busy()) return 0;
 
     int slot = -1;
     for (uint8_t i = 0; i < GAP_IDENTITY_COUNT; i++) {
@@ -1530,7 +1517,6 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
     }
 
     if (slot < 0) return 0;
-
     gap_identity *identity = &gap_identities[slot];
     uint8_t key_bits = 0, local[6] = {0};
 
@@ -1541,12 +1527,16 @@ int gap_identity_local_key(const gap_address *peer, const uint8_t irk[16]) {
     if (key_bits && !gap_private_addr_generate(irk, local, identity->local_address))
         return 0;
 
-    if (irk)
+    if (irk) {
         memcpy(identity->local_irk, irk, sizeof(identity->local_irk));
-    else memset(identity->local_irk, 0, sizeof(identity->local_irk));
+        identity->local_key_set = 1;
+    }
+    else {
+        memset(identity->local_irk, 0, sizeof(identity->local_irk));
+        identity->local_key_set = 0;
+    }
 
     memcpy(identity->local_address, local, sizeof(identity->local_address));
-    identity->local_key_set = (irk != NULL);
     identity->has_local_irk = (key_bits != 0);
     return 1;
 }
@@ -1584,7 +1574,6 @@ static int gap_privacy_timeout_pick(
             return 0;
 
         uint32_t value = (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8;
-
         if (value < limit) {
             *timeout_15s = (uint8_t)(min_15s + value % range);
             return 1;
@@ -1603,8 +1592,8 @@ static int gap_privacy_timeout_pick(
 int gap_privacy_configure(
     const uint8_t irk[16], uint16_t min_timeout_15s, uint16_t max_timeout_15s
 ) {
-    if (gap_is_busy() || min_timeout_15s > max_timeout_15s ||
-        max_timeout_15s > 240 ||
+    if (gap_is_busy() ||
+        !IN_RANGE_INCLUSIVE(max_timeout_15s, min_timeout_15s, 240) ||
         (!min_timeout_15s && (irk || max_timeout_15s)) ||
         (min_timeout_15s != max_timeout_15s && !irk)
     ) return 0;
@@ -1644,7 +1633,6 @@ int gap_privacy_configure(
 // Listed peers must also pass their individual network/device privacy mode.
 int gap_privacy_filter(uint8_t scan, uint8_t connection) {
     if (scan > 1 || connection > 1 || gap_is_busy()) return 0;
-
     gap_privacy.scan_filter = scan;
     gap_privacy.connection_filter = connection;
     return 1;
@@ -1678,7 +1666,6 @@ static void gap_local_addr_select(
 #endif
 
     *type = gap_own_address.type;
-
     if (*type)
         memcpy(address, gap_own_address.address, 6);
     else GAP_HW_PUBLIC_ADDRESS(address);
@@ -1690,7 +1677,6 @@ static void gap_local_addr_select(
 // Address bytes are in advertising PDU order (least significant byte first).
 int gap_set_static_addr(const uint8_t address[6]) {
     if (gap_is_busy() || !gap_static_addr_valid(address)) return 0;
-
     memcpy(gap_own_address.address, address, 6);
 #if GAP_PRIVACY_SUPPORT
     memcpy(gap_identity_address.address, address, 6);
