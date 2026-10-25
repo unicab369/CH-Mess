@@ -1802,7 +1802,6 @@ static int gap_conn_accept(
 
 typedef struct {
     gap_conn_handle handle;
-    l2cap_ops upper;
     l2cap_connection *connection;
     l2cap_reassembler reassembler;
     uint8_t initialized, connected;
@@ -1814,17 +1813,18 @@ static ble_gap_l2cap_peer ble_gap_l2cap_peers[GAP_CONNECTION_COUNT];
 static l2cap_ops ble_gap_l2cap_upper;
 
 static inline int ble_gap_l2cap_accept_service_id(void *context, uint16_t service_id) {
-    ble_gap_l2cap_peer *peer = context;
-    return !peer->upper.accept_service_id || peer->upper.accept_service_id(peer->upper.context, service_id);
+    (void)context;
+    return !ble_gap_l2cap_upper.accept_service_id ||
+        ble_gap_l2cap_upper.accept_service_id(ble_gap_l2cap_upper.context, service_id);
 }
 
 static inline void gap_configure_channel_cb(
     void *context, uint16_t service_id, l2cap_channel_config *config
 ) {
-    ble_gap_l2cap_peer *peer = context;
+    (void)context;
     // The application can adjust a setting here, e.g. config->max_sdu_size = 128.
-    if (peer->upper.configure_channel)
-        peer->upper.configure_channel(peer->upper.context, service_id, config);
+    if (ble_gap_l2cap_upper.configure_channel)
+        ble_gap_l2cap_upper.configure_channel(ble_gap_l2cap_upper.context, service_id, config);
 }
 
 // Application-facing
@@ -1861,12 +1861,11 @@ static inline int ble_gap_l2cap_poll(void) {
 
             memset(peer, 0, sizeof(*peer));
             peer->handle = handle;
-            peer->upper = ble_gap_l2cap_upper;
             peer->connection = &conn->l2cap;
             peer->tx_queue = &conn->l2cap_tx_queue;
             peer->connection->ops.accept_service_id = ble_gap_l2cap_accept_service_id;
             peer->connection->ops.configure_channel = gap_configure_channel_cb;
-            peer->connection->ops.context = peer;
+            peer->connection->ops.context = NULL;
 
             peer->initialized = 1;
         }

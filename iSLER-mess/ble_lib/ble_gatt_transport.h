@@ -734,7 +734,7 @@ static inline int gatt_transport_eatt_receive_att(
     return -1;
 }
 
-static inline uint16_t gatt_transport_authorize_service_id(
+static inline uint16_t gatt_authorize_service_id_cb(
     void *context, uint16_t service_id
 ) {
     ble_gatt_transport *transport = context;
@@ -954,8 +954,7 @@ static inline int gatt_transport_eatt_init(
     }
 
     if (transport->l2cap_link) {
-        transport->l2cap_link->ops.authorize_service_id =
-            gatt_transport_authorize_service_id;
+        transport->l2cap_link->ops.authorize_service_id = gatt_authorize_service_id_cb;
         transport->l2cap_link->ops.configure_channel = gatt_configure_channel_cb;
     }
     transport->eatt_enabled = 1;
@@ -1675,7 +1674,7 @@ static inline int ble_gap_gatt_poll(
         l2cap->ops.tx_queue = tx_queue;
         l2cap->ops.context = transport;
 #if BLE_GATT_ENABLE_EATT
-        l2cap->ops.authorize_service_id = gatt_transport_authorize_service_id;
+        l2cap->ops.authorize_service_id = gatt_authorize_service_id_cb;
         l2cap->ops.configure_channel = gatt_configure_channel_cb;
         if (transport->eatt_enabled) {
             if (L2CAP_LOCAL_MAX_PDU_PAYLOAD < L2CAP_ECFC_MPS_MIN ||
